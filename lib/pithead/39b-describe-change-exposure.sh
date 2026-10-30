@@ -52,7 +52,11 @@ describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
     P2POOL_CLEARNET)
         if [ "$new" == "true" ] && egress_direct_for p2pool; then
             flag=CONFIRM
-            msg="⚠ P2Pool sidechain peers over CLEARNET — p2pool dials peers directly and resumes clearnet seed-node DNS lookups, and that route is open, so this host's IP becomes visible to the P2Pool network."
+            if jq -e '(.p2pool.extra_flags // []) | index("--no-dns") != null' "$CONFIG_FILE" >/dev/null 2>&1; then
+                msg="⚠ P2Pool sidechain peers over CLEARNET — p2pool dials peers directly, so this host's IP becomes visible to the P2Pool network; seed-node DNS stays disabled by expert --no-dns."
+            else
+                msg="⚠ P2Pool sidechain peers over CLEARNET — p2pool dials peers directly and resumes clearnet seed-node DNS lookups, and that route is open, so this host's IP becomes visible to the P2Pool network."
+            fi
         else
             msg="P2Pool sidechain peers back on Tor — outbound dials go through the bundled Tor proxy and clearnet seed-node DNS stays off."
         fi

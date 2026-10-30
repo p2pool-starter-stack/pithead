@@ -249,6 +249,7 @@ the desired value is not presented as proof of what the still-running services u
 | `p2pool.stratum_password` | `""` _(off; new installs get `"auto"`)_ | Password every rig must send to mine through the proxy. Turns the otherwise-open `3333` port into authenticated stratum. `""` (the fallback for an absent key, which is what pre-#208 installs have) = no password, any rig may connect. `"auto"` = generate a random secret once and keep it stable (shown after `setup`/`apply` and stored in `.env`); set it as each rig's stratum `pass` — the wizard and `config.minimal.json` write this for every new install. Any literal string of 1–128 characters drawn from `A-Z a-z 0-9 . _ : @ -` = use exactly that password; anything else (spaces, quotes, `$`) is rejected at `apply`, since the value travels through `.env` onto the proxy's command line. Only devices that know the secret can mine, which also shrinks the worker-name [SSRF](workers.md#authentication) surface. The password is sent in cleartext over stratum, so this is access control ("who may mine"), not encryption. Pair it with `stratum_bind`/a firewall. See [Connecting Miners › Authentication](workers.md#authentication). |
 | `p2pool.stratum_tls` | `false` | Serve TLS on the stratum port (#261). Same port, per-connection detection: cleartext rigs keep mining while rigs opt in one at a time (`pools[].tls: true` + pinning the certificate's SHA-256 fingerprint, printed after `apply` and by `status`). The self-signed cert lives under the data root and keeps its fingerprint across upgrades; regenerating it (delete + `apply`) is the rotation. Confidentiality only — pair with `stratum_password` for access control. See [Connecting Miners › Stratum over TLS](workers.md#stratum-over-tls). |
 | `p2pool.clearnet` | `false` | Privacy-relevant, default off (Tor). P2Pool's `--onion-address` only advertises an onion for inbound peers; its outbound sidechain dials need a SOCKS proxy or they go over clearnet, exposing your home IP. Default (`false`) routes those dials through the bundled Tor proxy (`--socks5 <tor>:9050 --socks5-proxy-type tor`) and turns off P2Pool's clearnet seed-node DNS lookups (`--no-dns`). Set `true` to dial peers directly over clearnet with the default firewall still on: only P2Pool gets an IPv4 exception, removed when the flag is turned off and applied. Tor costs about 10 % of P2Pool yield on `mini`; Tor latency raises the stale/uncle-share rate and onion-only shrinks the peer set, both worse on `--mini`/`--nano`, so a high-variance small rig may prefer clearnet (at the cost of IP exposure). Full threat model: [Privacy › P2Pool outbound peers](privacy.md#p2pool-outbound-peers-165---tor-by-default). |
+| `p2pool.extra_flags` | `[]` | Expert string-array options for the pinned P2Pool version; config file or Advanced Configuration JSON only. See [Expert P2Pool options](#expert-p2pool-options). |
 | `proxy.donate_level` | `0` | xmrig-proxy's built-in dev-fee donation to the xmrig developers, as a percentage of submitted hashrate. Defaults to `0`, no donation (xmrig-proxy's own compiled-in default, which the stack now renders explicitly so it's visible rather than invisible). Set an integer `1`–`99` to donate that share to the xmrig devs if you want to support them. This is not the XvB donation; that's the separate `xvb.*` mechanism the optimizer steers, never this dev fee. |
 | `local_miner.enabled` | DIY `false`; appliance `true` | New installs pin this platform choice; existing appliance configs that omit it keep `false` until the key-diet migration. Also mine on the stack host itself with its spare CPU: a RigForge worker co-located on this box, pointed at the stack's own stratum over loopback. `setup` asks about it; `setup`/`up`/`apply` print the pool URL and stratum password, or state that none is set, including an unchanged apply. On the appliance, apply starts or stops the built-in miner in the same invocation without rebooting. On DIY, install and manage RigForge separately. See [Connecting Miners › Mine on the stack host itself](workers.md#mine-on-the-stack-host-itself). |
 | `xvb.enabled` | `false` (legacy absent: `true`) | **(beta in 2.0.0)** Enable XMRvsBeast bonus-round hashrate switching. Both setup wizards write `false` for a new install without asking; enable it later from the Configuration view. The reference stays `true` for existing configs. |
@@ -334,6 +335,56 @@ the desired value is not presented as proof of what the still-running services u
 | `network.tor_egress_firewall` | `true` _(on)_ | Privacy-relevant, default on. Enforces "behind Tor" fail-closed: at `up`/`apply`, `pithead` installs host firewall rules (Docker's `DOCKER-USER` chain) that drop any direct clearnet dial from the mining containers (monerod/p2pool/tari/xmrig-proxy). Only Tor and containers explicitly selected for clearnet can reach the public internet directly; every other mining container remains blocked. On a DIY host `pithead-egress.service` restores the rules at boot, before Docker starts the containers. Needs root (like the GRUB/HugePages steps); removed at `down`. Set `false` (which also removes the boot unit) to skip it and rely on per-app Tor config only (e.g. a host where you manage egress yourself, or where `iptables` isn't available). An opted-in Monero or Tari initial sync gets an exception for that node only; the host removes and verifies it before the node restarts on Tor, then attests the live daemon and rules. P2Pool also gets a scoped exception while `p2pool.clearnet` is true; xmrig-proxy gets one only while XvB is enabled and `xvb.tor` is false. Each is removed at apply when its choice is turned off. Every other container keeps its restriction. See [Privacy › Optional clearnet initial sync](privacy.md#optional-clearnet-initial-sync-off-by-default). Full detail: [Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270). |
 
 ---
+
+### Expert P2Pool options
+
+Set `p2pool.extra_flags` in `config.json`, then apply. The Advanced Configuration JSON
+editor uses the same host validation and confirmation when configuration editing is enabled.
+There is no wizard question or dedicated control for this list.
+
+Each element is one exact flag, optionally followed by one ASCII space and one value:
+
+```json
+"p2pool": {
+  "extra_flags": ["--loglevel 3", "--out-peers 20", "--no-dns"]
+}
+```
+
+The allowlist follows the [P2Pool v4.18.1 command-line documentation](https://github.com/SChernykh/p2pool/blob/v4.18.1/docs/COMMAND_LINE.MD).
+Review it when changing the pinned P2Pool version.
+
+| Options | Accepted value |
+|---|---|
+| `--no-dns`, `--no-console-log`, `--no-cache`, `--no-color`, `--full-validation` | None. |
+| `--no-randomx` | None; requires `monero.mode` to be `local`, because every proof-of-work check uses node RPC. |
+| `--loglevel` | Integer 0–6. |
+| `--out-peers`, `--in-peers`, `--in-peers-localhost` | Integer 10–450. |
+| `--p2p-external-port` | Integer 1–65535; the router must forward this port to the P2Pool peer port for inbound clearnet peers. |
+| `--addpeers` | Comma-separated `host:port` pairs, with ports 1–65535. Host characters: ASCII letters, digits, dot, underscore and hyphen; first character alphanumeric. IPv6 bracket notation is not accepted. |
+
+Values contain only ASCII letters, digits, dot, underscore, colon, comma and hyphen,
+and begin with a letter or digit. Quotes, dollar signs, backticks, semicolons, pipes,
+ampersands, globs, newlines, tabs and additional spaces are rejected. The list must be
+an array of strings; `null` is rejected. Unknown options are rejected rather than passed
+through. Invalid input stops validation before configuration writeback or service changes.
+
+The stack owns pool selection, wallet and node endpoints, RPC options, merge-mining,
+onion advertisement, stratum and peer listeners, data API, data directories and file
+logging. Their options and aliases are rejected with the owning key or profile in the
+error. Network-profile options (`--no-clearnet-p2p`, `--no-upnp`, `--no-igd`) and automatic
+RAM selection (`--light-mode`) are reserved too. Parameter files, custom sidechains and
+other unlisted options are not accepted.
+
+Exact, valueless `--no-dns` is the narrow exception to stack-owned option rejection:
+it is accepted in both Tor and clearnet modes and emitted at most once, including when
+Tor rendering already supplies it. Other valid options follow the derived flags in list
+order. An absent or empty list preserves the existing `P2POOL_FLAGS` value.
+
+The apply preview shows the final options. DNS, peer-destination and advertised-port
+changes are CONFIRM; logging and peer-limit changes are INFO. A control-channel change
+to the list always requires typed `APPLY`, even when deduplication leaves the rendered
+arguments unchanged. These changes restart P2Pool without changing the selected sidechain
+or resetting its PPLNS window.
 
 ### XvB raffle auto-registration (`XVB_SUBMIT_URL`)
 

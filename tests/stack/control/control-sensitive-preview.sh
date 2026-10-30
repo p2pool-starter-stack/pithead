@@ -114,4 +114,48 @@ assert_not_contains "adding Tor keeps the PPLNS window (#3382)" "$out" "PPLNS"
 out="$(run_sourced "$C" describe_change P2POOL_PORT 37888 37890)"
 assert_contains "pool port change retains the PPLNS reset warning (#3382)" "$out" "PPLNS window resets"
 
+cp "$C/config.json" "$C/extra-baseline.json"
+cp "$C/.env" "$C/extra-baseline.env"
+for extra_route in false true; do
+    jq --argjson route "$extra_route" '.p2pool.clearnet=$route | .p2pool.extra_flags=[]' "$C/extra-baseline.json" >"$C/config.json"
+    (
+        cd "$C" || exit 1
+        PATH="$C/bin:$PATH" bash -c '
+            source ./pithead
+            PITHEAD_DRY_RUN=1
+            parse_and_validate_config
+            load_preserved_state
+            resolve_dashboard_host
+            render_env "$PITHEAD_ENV_DRYRUN"
+            mv "$PITHEAD_ENV_DRYRUN" "$ENV_FILE"
+        ' >/dev/null 2>&1
+    )
+    assert_rc "expert flag baseline renders ($extra_route)" "$?" 0
+    jq '.p2pool.extra_flags=["--no-dns"]' "$C/config.json" >"$C/cand.json"
+    preview_only "$C/cand.json"
+    assert_eq "expert no-dns previews confirmed ($extra_route)" \
+        "$(jq -r '.status == "previewed" and .destructive and any(.changes[]; .key == "p2pool.extra_flags" and .flag == "CONFIRM" and (.msg | contains("--no-dns")))' "$RESULTS/$UUID5.json")" true
+    assert_eq "expert no-dns does not reset PPLNS ($extra_route)" "$(preview_without "PPLNS")" true
+    gate_reason=$(cd "$C" && PATH="$C/bin:$PATH" bash -c 'source ./pithead; if control_approval_gate "$@"; then exit 0; else exit "$?"; fi' ./pithead "$C/cand.json" "" "$UUID5" admin null "$C/data/control")
+    assert_rc "expert no-dns refuses direct gate ($extra_route)" "$?" 1
+    assert_contains "expert no-dns asks for typed APPLY ($extra_route)" "$gate_reason" "type APPLY"
+    assert_eq "unconfirmed expert flag is not persisted ($extra_route)" "$(jq -c '.p2pool.extra_flags' "$C/config.json")" '[]'
+    gate_reason=$(cd "$C" && PATH="$C/bin:$PATH" bash -c 'source ./pithead; if control_approval_gate "$@"; then exit 0; else exit "$?"; fi' ./pithead "$C/cand.json" APPLY "$UUID5" admin null "$C/data/control")
+    assert_rc "expert no-dns confirmed gate accepts ($extra_route): $gate_reason" "$?" 0
+    jq '.p2pool.extra_flags=["--wallet bad"]' "$C/config.json" >"$C/cand.json"
+    preview_only "$C/cand.json"
+    assert_eq "owned expert flag fails staged validation ($extra_route)" "$(jq -r '.status' "$RESULTS/$UUID5.json")" rejected
+    assert_eq "invalid expert flag leaves live config alone ($extra_route)" "$(jq -c '.p2pool.extra_flags' "$C/config.json")" '[]'
+done
+cp "$C/extra-baseline.json" "$C/config.json"
+cp "$C/extra-baseline.env" "$C/.env"
+jq '.p2pool.extra_flags=["--no-dns"]' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY null
+assert_eq "expert no-dns confirmed commit applies" "$(jq -r '.status' "$RESULTS/$UUID5.json")" applied
+assert_eq "expert no-dns confirmed commit persists" "$(jq -c '.p2pool.extra_flags' "$C/config.json")" '["--no-dns"]'
+jq '.p2pool.extra_flags=[]' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY null
+assert_eq "expert flag fixture restored" "$(jq -r '.status' "$RESULTS/$UUID5.json")" applied
+rm -f "$C/extra-baseline.json" "$C/extra-baseline.env" "$C/cand.json.confirmed"
+
 unset -f preview_only previewed_with preview_without exposure_previews
