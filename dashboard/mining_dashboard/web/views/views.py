@@ -310,10 +310,10 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     badges = build_badges(
         data, metrics, mode_tok, db_healthy, wallet_change=recent_wallet_change(state_mgr)
     )
-    badges.append(_egress_badge(egress["summary"]))  # glanceable Tor-only / leak header badge
-
+    badges.append(_egress_badge(egress["summary"]))
     return {
         "syncing": metrics.global_syncing,
+        "tari_gates_sync": bool(config.TARI_REQUIRED and not data.get("sync_gate_monero_only")),
         "page_title": "Pithead Dashboard - Syncing"
         if metrics.global_syncing
         else "Pithead Dashboard",

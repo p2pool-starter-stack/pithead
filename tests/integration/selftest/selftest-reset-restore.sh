@@ -141,6 +141,9 @@ drive_reset_restore() (
     case "$fault" in refused | written | stopped | other)
         printf '|intact=%s|%s' "${RESET_RESTORE_STACK_INTACT:-0}" "$(grep -c '#3346' "$OUT_DIR/output")"
         ;;
+    residue | census)
+        printf '|%s|elapsed=%s' "$(tail -n 1 "$OUT_DIR/output")" "$(now_s)"
+        ;;
     esac
 )
 PROBE_COPY=$(mktemp -t reset-restore-probe.XXXXXX) || exit 1
@@ -230,6 +233,14 @@ for fault in snapshot backup archive active reset absent down prompt restore up 
     else
         it_fail "reset recovery refuses $fault failure" "unexpected verdict $verdict"
     fi
+done
+for channel in diy appliance; do
+    assert_contains "$channel reset residue failure names the exited container after the bounded wait" \
+        "$(drive_reset_restore residue "$channel")" \
+        'project residue or engine read failure before configless down: exited-container|elapsed=60'
+    assert_contains "$channel reset census failure reports an unreadable engine after the bounded wait" \
+        "$(drive_reset_restore census "$channel")" \
+        'project residue or engine read failure before configless down: unreadable|elapsed=60'
 done
 if reset_restore_shutdown_clean "$PROBE_COPY.absent" 2>/dev/null; then
     it_fail "missing reset log cannot pass the warning guard" "reader error accepted"

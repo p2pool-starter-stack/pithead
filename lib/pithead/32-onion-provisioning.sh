@@ -20,7 +20,8 @@ provision_tor() {
     compose_up --pull "$(resolve_pull_policy)" -d tor || {
         local rc=$?
         warn "Tor image build or startup failed (exit $rc). Configuration was retained; check Docker's error above before retrying setup."
-        return "$rc"
+        warn "Docker dependency failure during Tor provisioning. See $DOCS_URL/docs/getting-started.md#interrupted-source-build."
+        exit "$rc"
     }
     log "Waiting for Tor hidden services to be generated..."
     P2POOL_ONION=$(wait_for_onion p2pool) ||

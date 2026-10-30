@@ -347,7 +347,12 @@ only copy. The five keys:
 A refusal by the pregate's current-state check phase adds no `readiness` line, because that phase
 reads the deployed branch. A dashboard that does not answer the post-deploy wait or the Tari timeout prints no Tari key, because the branch may have broken it.
 The pregate records both of each phase's output streams and classifies only what it recorded. If a
-recording or a read of it fails, the pregate refuses the destructive phases and prints no line.
+recording or a read of it fails, the pregate refuses the destructive phases and adds no marker.
+A phase marker already forwarded to stdout may remain; a failed recording does not guarantee
+that its output reached stdout. The selftest injects capture failures that either discard or
+forward the stream before returning nonzero, independently of file-size limits and `tee` write
+ordering. Each forwarding control fails one capture stream while the other records normally.
+It checks refusal in both cases and preserves a Tari marker only when it was forwarded.
 Any `--check` run can print `workers-offline`, the pregate's check phase included; bench-ci accepts
 it only in its `check` mode. Within one process only the first line prints, and the pregate prints
 `readiness` only when its readiness phase printed no line itself. [`tests/integration/lib/e2e-env.sh`](../../tests/integration/lib/e2e-env.sh) holds the
@@ -796,11 +801,25 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
   --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
   is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
-  running, `remove_lan_guard` refuses and the rule stays live. The restore proof records
-  `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
-  plus `pithead-lan.timer` and its check service
-  as it does the egress units: a unit the run added is removed and checked absent, including from
-  the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
+  running, `remove_lan_guard` refuses and the rule stays live. Before a deploying run takes a
+  backup, captures wallets or deploys, the wrapper records the pre-run existence of the egress
+  boot unit and timer, both LAN boot units and the LAN timer. Each `systemctl` read has a
+  three-second timeout and one-second termination grace. Only a readable unit establishes
+  presence; only a successful `LoadState=not-found` read establishes absence. Unknown state
+  refuses deployment without running the restore mutation. Restoration stays disarmed during
+  capture, so interruption also leaves the baseline untouched. Read-only `check` still assesses
+  the live stack. Fixed diagnostic classes distinguish transport failure, failed systemd reads,
+  unsupported load states and unavailable probe output; raw unit text and stderr are discarded.
+  The restore proof checks each saved variable against its capture record before any unit
+  removal, distinguishing missing capture evidence from state changed after capture. It restores
+  `pithead-lan-guard.service` and `pithead-lan-hold.service` plus `pithead-lan.timer` and its check
+  service as it does the egress units: a unit the run added is removed and checked absent,
+  including from the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
+  `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads, record loss,
+  diagnostic privacy, interrupted capture and the pre-mutation refusal through the wrapper's real functions.
+  Its scratch directory uses `mktemp`'s platform default when `TMPDIR` is unset; a failed
+  directory allocation stops the selftest before it writes fixtures.
+  Historical unknown state remains unknown; current unit metadata cannot reconstruct it.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
 - Stratum password and TLS client controls run in the two `*-stratum-tls` scenarios (#3078).
@@ -854,7 +873,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 For one representative config:
 
 - Encrypted reset recovery saves the original configuration bytes in owner-only scratch storage before making a separate candidate-schema fixture. It copies only supported keys already present in the baseline, leaves missing keys absent, and refuses to drop any wallet or payout field, including a field set to null or false. Candidate apply stamps the synthetic configuration before its new encrypted backup is created; no original backup is relabelled. Interruptions continue through the existing destructive-phase safety backup and runner restoration. Every normal return, including a failed recovery, applies the saved baseline, reinstalls its exact bytes after apply has stamped any legacy configuration, then starts the stack and requires matching bytes and secret fingerprints plus consecutive healthy status reads within 240 seconds. Unverified cleanup fails the row and retains the private recovery copy outside artifacts. `reset-restore.fixture.json` records validated numeric candidate and applied fixture version stamps, plus the original baseline stamp or null when it is absent or invalid, and refuses an unstamped fixture before backup. Fixture apply and cleanup output are retained in `reset-restore.fixture-apply.log` and `reset-restore.cleanup.log`; restore and startup keep their separate logs. The newer-backup refusal remains covered by `tests/stack/config/version.sh` and the retained failing lifecycle job 2889.
-- Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels.
+- Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census for up to 60 seconds until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels. A census timeout includes the last remaining container IDs in the failure detail, or `unreadable` when the last census returned no output after an engine error.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
   container StartedAt and RestartCount), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).
   On the appliance, reset recovery first waits up to 300 seconds for a running wizard and
