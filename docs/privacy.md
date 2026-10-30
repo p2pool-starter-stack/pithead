@@ -304,6 +304,12 @@ the loss is uncles/late shares, not rejects; see the box above), and `--no-clear
 peer set to onion-only. The Tor-by-default flip was gated on that benchmark, which is why it's a v1.1
 change (#165), not a v1.0 default. The opt-out works with the default egress firewall on (#2790).
 
+### Pithead project donations
+
+Hashpower donation is unavailable while the image’s destination fields are empty.
+There is no project-donation egress. See [Project donations](donation.md) for the
+baked destination and its validation contract.
+
 ### XvB donation mining (#166) — ✅ Tor by default
 
 When the optimizer donates to XMRvsBeast (XvB), it points the proxy at `na.xmrvsbeast.com:4247`. As

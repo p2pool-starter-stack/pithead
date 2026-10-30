@@ -59,6 +59,7 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 	for t in tests/os/selftest*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
 
 test-tools:
+	python3 tests/stack/standalone/test_donation_destination.py
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
