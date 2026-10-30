@@ -37,20 +37,25 @@ run_cli_wizard_defaults() {
 
 cli_wizard_defaults_trial() {
     local monero="$1" tari="$2" cfg out rc
+    run_cli_wizard_eof "$monero" "$tari" || return 1
     out=$(rx "PITHEAD_CONFIG_FILE=\"\$PWD/.itest-wizard-defaults.json\"
         source $(quote_arg "$IT_PITHEAD")
         wizard_tari_disk_default local >/dev/null
         {
-            printf '%s\\n\\n2\\n%s\\n' $(quote_arg "$monero") $(quote_arg "$tari")
+            printf 'garbage\\n%s\\n\\n2\\ngarbage\\n%s\\n' $(quote_arg "$monero") $(quote_arg "$tari")
             printf '\\n\\n\\n\\n\\n\\n\\n'
         } | { wizard_ask_core; wizard_ask_shape; wizard_write_config; }
         jq -e '.xvb.enabled == false and .monero.clearnet_initial_sync == false and
             .tari.mode == \"local\" and .dashboard.tari_required == false and
-            .tari.clearnet_initial_sync == false and (.dashboard.auth.password | length) == 32' .itest-wizard-defaults.json >/dev/null")
+            .tari.clearnet_initial_sync == false and (.dashboard.auth.password | length) == 32' .itest-wizard-defaults.json >/dev/null" 2>&1)
     rc=$?
     assert_rc "fresh CLI wizard writes the explicit Tari yes, no XvB, Tor sync and a generated dashboard password" "$rc" 0
     [ "$rc" = 0 ] || return 1
+    assert_eq "CLI wizard retries a malformed Monero payout" "$([[ "$out" == *"Not a valid Monero primary address"* ]] && echo true || echo false)" true
+    assert_eq "CLI wizard retries a malformed Tari payout" "$([[ "$out" == *"Not a valid Tari address"* ]] && echo true || echo false)" true
     cfg=$(rx 'cat .itest-wizard-defaults.json') || return 1
+    assert_eq "CLI wizard saves the valid Monero payout after retry" "$([[ "$(jq -r '.monero.wallet_address' <<<"$cfg")" = "$monero" ]] && echo true || echo false)" true
+    assert_eq "CLI wizard saves the valid Tari payout after retry" "$([[ "$(jq -r '.tari.wallet_address' <<<"$cfg")" = "$tari" ]] && echo true || echo false)" true
     assert_eq "fresh CLI Tari answer is the explicit yes" "$(jq -r '.tari.mode' <<<"$cfg")" "local"
     assert_eq "fresh CLI generated password is printed once" "$(grep -Fc "$(jq -r '.dashboard.auth.password' <<<"$cfg")" <<<"$out")" 1
     cfg=$(jq --argjson baseline "$BASELINE_CONFIG" '

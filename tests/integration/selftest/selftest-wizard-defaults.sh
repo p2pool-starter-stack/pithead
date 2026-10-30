@@ -7,6 +7,8 @@ source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-wizard-defaults.sh
 source "$HERE/../lib/run-wizard-defaults.sh"
+# shellcheck source=tests/integration/lib/run-wizard-eof.sh
+source "$HERE/../lib/run-wizard-eof.sh"
 
 WORK="$(mktemp -d -t wizard-defaults.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
@@ -40,6 +42,7 @@ unset BASELINE_JSON
 quote_arg() { printf '%q' "$1"; }
 rx() {
     case "${WIZARD_FAILURE:-}:$1" in
+    eof-fails:*'wizard-eof.XXXXXX'*) return 17 ;;
     entry-read-fails:'cat config.json' | env-fails:*'DEPLOYMENT_COMPLETED=false'* | startup-fails:*'test ! -e .itest-first-run-done'*) return 17 ;;
     setup-fails:*' setup --skip-deps --skip-optimize') return 17 ;;
     esac
@@ -48,7 +51,7 @@ rx() {
         printf 'TARI_REQUIRED=false\n' >>"$WORK/.env"
         printf 'Deployment preparation complete\n'
         ;;
-    *) (cd "$WORK" && PATH="$WORK/bin:$PATH" bash -c "$1" | tee "$WORK/rx.log") ;;
+    *) (cd "$WORK" && TMPDIR="$WORK" PATH="$WORK/bin:$PATH" bash -c "$1" | tee "$WORK/rx.log") ;;
     esac
 }
 push_config() {
@@ -141,7 +144,7 @@ wizard_failure_result() {
         printf '%s|%s|%s|%s|%s' "$result_rc" "$failed" "$restored" "$applied" "$waits"
     )
 }
-for failure in initial-push-fails env-fails setup-fails startup-fails; do
+for failure in eof-fails initial-push-fails env-fails setup-fails startup-fails; do
     assert_eq "wizard $failure restores its entry configuration before returning failure" \
         "$(wizard_failure_result "$failure")" '1|yes|yes|yes|1'
 done
@@ -159,6 +162,49 @@ assert_eq "an unreadable entry config refuses before any fixture push" \
 for failure in entry-empty entry-invalid; do
     assert_eq "an invalid entry config refuses before any fixture push ($failure)" \
         "$(wizard_failure_result "$failure")" '1|yes|no|no|0'
+done
+
+wizard_retry_diagnostics() {
+    (
+        DIAGNOSTIC_CASE="$1" IT_FAIL=0
+        run_cli_wizard_eof() { return 0; }
+        rx() {
+            case "$1" in
+            'cat config.json') printf '%s' "$ENTRY_CONFIG" ;;
+            'cat .itest-wizard-defaults.json')
+                if [ "$DIAGNOSTIC_CASE" = wallets ]; then
+                    jq '.monero.wallet_address = "monero-wallet-mismatch-fixture" | .tari.wallet_address = "tari-wallet-mismatch-fixture" | .tari.mode = "local" | .dashboard.auth.password = "generated-password-fixture"' <<<"$BASELINE_CONFIG"
+                else
+                    printf '%s' "$BASELINE_CONFIG"
+                fi
+                ;;
+            'rm -f .itest-wizard-defaults.json') : ;;
+            *)
+                if [ "$DIAGNOSTIC_CASE" = wallets ]; then
+                    printf 'Not a valid Monero primary address\nNot a valid Tari address\n'
+                fi
+                printf 'Generated dashboard password: generated-password-fixture\n'
+                ;;
+            esac
+        }
+        push_config() { return 1; }
+        run_cli_wizard_defaults
+    )
+}
+retry_failure=$(wizard_retry_diagnostics messages)
+
+assert_contains "missing Monero retry message reports its assertion" "$retry_failure" 'CLI wizard retries a malformed Monero payout'
+assert_contains "missing Tari retry message reports its assertion" "$retry_failure" 'CLI wizard retries a malformed Tari payout'
+assert_eq "retry failure diagnostics omit the generated password" "$([[ "$retry_failure" == *generated-password-fixture* ]] && echo exposed || echo omitted)" omitted
+
+wallet_failure=$(wizard_retry_diagnostics wallets)
+assert_contains "Monero payout mismatch reports a failed assertion" \
+    "$(grep -F 'CLI wizard saves the valid Monero payout after retry' <<<"$wallet_failure")" '✗'
+assert_contains "Tari payout mismatch reports a failed assertion" \
+    "$(grep -F 'CLI wizard saves the valid Tari payout after retry' <<<"$wallet_failure")" '✗'
+for value in "$monero" "$tari" monero-wallet-mismatch-fixture tari-wallet-mismatch-fixture; do
+    assert_eq "wallet mismatch diagnostics omit expected and generated payout values" \
+        "$([[ "$wallet_failure" == *"$value"* ]] && echo exposed || echo omitted)" omitted
 done
 
 missing_result=$(
