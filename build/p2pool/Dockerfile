@@ -15,19 +15,12 @@ RUN wget -O p2pool.tar.gz https://github.com/SChernykh/p2pool/releases/download/
     && chmod +x /usr/local/bin/p2pool \
     && rm -rf p2pool*
 
-# Copy the wrapper script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 755 /usr/local/bin/entrypoint.sh
 
-# Stratum-port liveness healthcheck (#90)
 COPY healthcheck.sh /usr/local/bin/p2pool-healthcheck.sh
 RUN chmod 755 /usr/local/bin/p2pool-healthcheck.sh
 
-# Run non-root (#255). Reuse ubuntu:24.04's built-in 'ubuntu' user (uid 1000) and keep p2pool's data
-# under that user's home; pithead chowns the ${P2POOL_DATA_DIR} bind-mount (mapped to /home/ubuntu)
-# + /stats to match, so the cache and data-api writes succeed as uid 1000. The IPC_LOCK/SYS_NICE
-# caps granted in compose are not effective for a non-root process, but p2pool only needs them for
-# mlock (covered by the unlimited memlock ulimit) and best-effort thread priority — neither is fatal.
 RUN install -d -o ubuntu -g ubuntu /home/ubuntu
 WORKDIR /home/ubuntu
 USER ubuntu
