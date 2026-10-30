@@ -11,6 +11,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Added
+
+- Appliance reboot and clean power-off in the lean UI preview's Advanced > Maintenance section,
+  with typed confirmation and host-side cooldowns (#2384).
+
 ### Fixed
 
 - Tor auto-heal now works on **No login** appliances through a host-restricted healing channel. General dashboard control remains disabled, and state recovery retains its evidence, onion-identity, lock and six-hour cooldown checks (#3166).

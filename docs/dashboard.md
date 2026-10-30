@@ -33,7 +33,13 @@ The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
 and asks the operator to sign in again when the session expires. Its page bodies and most Settings
 controls are still being built; the preview does not announce a cutover from the legacy UI. The
-drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
+drawer supplies its container and Appearance controls. Advanced > Maintenance offers **Reboot**
+and **Power off** on an appliance with dashboard control enabled; these controls are absent on DIY.
+Type `REBOOT` or `POWEROFF` to confirm. Reboot pauses mining and reconnects this page; power-off
+stops the appliance until someone presses its physical power button. The host accepts one power
+request per drain and refuses the same action for five minutes, including across reboots.
+If it cannot persist the cooldown, it refuses the request without ordering a restart or shutdown.
+Other Maintenance and Inspect controls belong to
 [#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
 
 ---

@@ -391,6 +391,15 @@ The remote Monero node change is 13.15.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
+### M17 — clean shutdown and physical-button restart
+
+1. Open the lean UI preview and choose **Advanced > Maintenance > Power off**.
+2. Type `POWEROFF`, confirm, and wait until the appliance powers off on its own.
+3. Press the physical power button. Confirm the dashboard returns and mining resumes unaided.
+
+KVM proves the software shutdown and restart with `virsh start`; this check proves the firmware's
+physical-button behavior on the release hardware.
+
 ### 13.23 Settings by USB stick
 
 **What you do:**

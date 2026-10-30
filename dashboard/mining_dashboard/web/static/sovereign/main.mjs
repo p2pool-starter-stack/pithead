@@ -1,6 +1,7 @@
 import { html, render } from "../app/preact.mjs";
 import { createNavigation, PAGES, readRoute, routeUrl } from "./navigation.mjs";
 import { createPolling } from "./polling.mjs";
+import { PowerControl } from "./power.mjs";
 import { Shell } from "./shell.mjs";
 
 export function initSovereign({
@@ -47,7 +48,9 @@ export function initSovereign({
         doc.documentElement.dataset.theme = theme;
         paint();
       }} onNavigate=${(page, section) => navigation.go(page, section)}
-      onRetry=${() => polling.tick()} renderPage=${renderPage} renderSection=${renderSection} />`,
+      onRetry=${() => polling.tick()} renderPage=${renderPage} renderSection=${(section) =>
+        section === "maintenance" ? html`${renderSection?.(section, data.snapshot)}<${PowerControl} snapshot=${data.snapshot} />`
+          : renderSection?.(section, data.snapshot)} />`,
       root,
     );
   };

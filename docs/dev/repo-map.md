@@ -368,6 +368,11 @@ undercount and failure controls.
 
 ## What stays at the root
 
+Appliance power controls use `lib/pithead/46b-control-power.sh`, the dashboard's
+`web/views/power_views.py` route, and the lean UI's `web/static/sovereign/power.mjs` component.
+`tests/os/appliance-power-leg.sh` exercises dashboard-ordered reboot and clean shutdown in the
+provision phase; the physical-button boundary is covered by the manual appliance battery.
+
 - Runtime contracts: generated `pithead`, `pithead-completion.bash`,
   `docker-compose.yml`, `config.*.json`, `cosign.pub`, and `VERSION`.
 - The public bootstrap script, `install.sh`, whose URL is a published interface.
