@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2034,SC2030,SC2031,SC2329
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${BACKUP_ONLY_TEST_ROOT:-$HERE/..}"
+source "$HERE/../lib.sh"
+fixture="$(mktemp -d)"
+trap 'rm -rf "$fixture"' EXIT
+
+run_selection() {
+    local name="$1" backup_rc="$2" health_rc="$3"
+    shift 3
+    (
+        eval "$(sed -n '/^IT_MODE=/,/^INTEGRATION_RUN_SUITE=1/p' "$ROOT/run.sh")"
+        source "$ROOT/lib/run-cli.sh"
+        source "$ROOT/lib/run-safety.sh"
+        eval "$(sed -n '/^main() {$/,/^}$/p' "$ROOT/run.sh")"
+        IT_PASS=0 IT_FAIL=0 IT_ALERT_REFUSED=0 IT_FAILED_NAMES="" _UPGRADE_RESTORE_ARMED=0
+        OUT_DIR="$fixture/$name"
+        mkdir -p "$OUT_DIR/source"
+        printf '{}' >"$OUT_DIR/source/config.json"
+        printf 'fixture=true\n' >"$OUT_DIR/source/.env"
+        archive="$OUT_DIR/backup.tar.gz"
+        trace="$OUT_DIR/trace"
+        : >"$trace"
+        preflight() { printf 'preflight\n' >>"$trace"; }
+        rig_lock() { printf 'lock\n' >>"$trace"; }
+        validate_live_gate_args() { :; }
+        rx() {
+            case "$name:$1" in
+            cleanup-failed:rm*) return 1 ;;
+            corrupt:tar*)
+                printf 'config.json\n.env\n'
+                return 2
+                ;;
+            *:'pwd -P')
+                printf '%s/source\n' "$OUT_DIR"
+                return 0
+                ;;
+            esac
+            eval "$1"
+        }
+        pithead() {
+            printf '%s\n' "$*" >>"$trace"
+            [ "$*" = 'backup -y --no-encrypt' ] || return 99
+            if [ "$name" = wrong-root ]; then
+                tar -czf "$archive" -C "$OUT_DIR" source/config.json source/.env
+            elif [ "$name" = misleading ]; then
+                mv "$OUT_DIR/source/config.json" "$OUT_DIR/source/config.json.bad"
+                mv "$OUT_DIR/source/.env" "$OUT_DIR/source/.env.bad"
+                tar -czf "$archive" -C / "${OUT_DIR#/}/source/config.json.bad" "${OUT_DIR#/}/source/.env.bad"
+            else
+                tar -czf "$archive" -C / "${OUT_DIR#/}/source/config.json" "${OUT_DIR#/}/source/.env"
+            fi
+            printf 'Backup written to: %s\n' "$archive"
+            return "$backup_rc"
+        }
+        wait_status_ok() {
+            printf 'health\n' >>"$trace"
+            return "$health_rc"
+        }
+        safety_restore_exact() {
+            printf 'recovery\n' >>"$trace"
+            SAFETY_RESTORE_FAILED=1
+            return 1
+        }
+        for fn in hugepages_begin hugepages_finish arm_safety_abort_restore run_scenario run_lifecycle \
+            run_fault_injection run_auth_fail_closed restore_baseline safety_rollback_if_failed; do
+            eval "$fn() { printf '%s\n' '$fn' >>\"\$trace\"; }"
+        done
+        scenario_matrix() { printf 'fixture\t{}\n'; }
+        main --local "$@"
+    ) >"$fixture/$name.log" 2>&1
+}
+
+echo "== exclusive backup-only selection, archive validation and recovery =="
+run_selection success 0 0 --backup-only
+assert_rc "backup-only succeeds" "$?" 0
+assert_eq "only reservation, preflight, backup and health run" \
+    "$(cat "$fixture/success/trace")" $'lock\npreflight\nbackup -y --no-encrypt\nhealth'
+assert_contains "archive members are validated" "$(cat "$fixture/success.log")" 'backup archive contains config.json'
+assert_contains "env member is validated" "$(cat "$fixture/success.log")" 'backup archive contains .env'
+assert_contains "completion identifies the focused selection" "$(cat "$fixture/success.log")" 'backup-only selection completed'
+assert_eq "successful backup archive is cleaned" "$(if [ -e "$fixture/success/backup.tar.gz" ]; then echo present; else echo absent; fi)" absent
+
+run_selection failed 7 0 --backup-only
+assert_rc "backup failure fails the selection" "$?" 1
+assert_eq "failed backup cannot reach scenarios or cleanup" \
+    "$(cat "$fixture/failed/trace")" $'lock\npreflight\nbackup -y --no-encrypt'
+assert_eq "failed restart retains the archive" "$(if [ -f "$fixture/failed/backup.tar.gz" ]; then echo present; else echo absent; fi)" present
+
+run_selection unhealthy 0 1 --backup-only
+assert_rc "unhealthy post-backup stack fails" "$?" 1
+assert_contains "existing recovery is preserved" "$(cat "$fixture/unhealthy/trace")" recovery
+assert_eq "failed recovery retains the archive" "$(if [ -f "$fixture/unhealthy/backup.tar.gz" ]; then echo present; else echo absent; fi)" present
+
+for name in cleanup-failed corrupt misleading wrong-root; do
+    run_selection "$name" 0 0 --backup-only
+    assert_rc "$name cannot pass backup-only" "$?" 1
+    assert_eq "$name retains the archive" "$(if [ -f "$fixture/$name/backup.tar.gz" ]; then echo present; else echo absent; fi)" present
+    assert_eq "$name cannot claim completion" "$(grep -c 'backup-only selection completed' "$fixture/$name.log")" 0
+done
+
+for flag in --lifecycle --fault-injection --auth-fail-closed --hardening --rotate-onion --rigforge \
+    --rigforge-control --subnet --rotate-secrets --xvb-routing-smoke --alert-egress \
+    --mergemine-submit --tari-stranded --monero-stranded --mergemine-localnet --check --readiness --keep; do
+    name="refused-${flag#--}"
+    run_selection "$name" 0 0 --backup-only "$flag"
+    assert_rc "backup-only refuses $flag" "$?" 2
+    assert_eq "refusal precedes target access for $flag" "$(cat "$fixture/$name/trace")" ''
+done
+run_selection scenario 0 0 --backup-only --scenario local-pruned-main-secure-tari
+assert_rc "backup-only refuses an explicit scenario" "$?" 2
+assert_eq "scenario refusal precedes target access" "$(cat "$fixture/scenario/trace")" ''
+
+run_selection modifier 0 0 --safety-backup
+assert_rc "the original safety-backup modifier still works" "$?" 0
+assert_contains "the modifier still runs scenarios" "$(cat "$fixture/modifier/trace")" run_scenario
+
+source "$HERE/../lib/harness-args.sh"
+validate_wrapper() {
+    (
+        MODE="$1" BORROW_MINER="$2" KEEP="$3" SCENARIO="$4"
+        shift 4
+        HARNESS_ARGS=("$@")
+        die() { exit 2; }
+        validate_harness_args || exit $?
+        printf '%s|%s' "$HARNESS_PHASE_ARGS" "${TARGETED_SCENARIO_ARGS-unset}"
+    )
+}
+assert_eq "targeted wrapper suppresses its scenario" "$(validate_wrapper targeted 0 0 '' --backup-only)" ' --backup-only|'
+assert_eq "matrix wrapper selects backup-only" "$(validate_wrapper matrix 0 0 '' --backup-only)" ' --backup-only|'
+for args in 'targeted 1 0' 'targeted 0 1' 'check 0 0'; do
+    # shellcheck disable=SC2086
+    validate_wrapper $args '' --backup-only >/dev/null
+    assert_rc "wrapper refuses incompatible settings: $args" "$?" 2
+done
+validate_wrapper matrix 0 0 local-pruned-main-secure-tari --backup-only >/dev/null
+assert_rc "wrapper refuses a scenario" "$?" 2
+validate_wrapper targeted 0 0 '' --backup-only --lifecycle >/dev/null
+assert_rc "wrapper refuses a lifecycle phase" "$?" 2
+validate_wrapper targeted 0 0 '' --backup-only --sweep >/dev/null
+assert_rc "wrapper refuses a sweep" "$?" 2
+
+it_log "$IT_PASS passed, $IT_FAIL failed"
+[ "$IT_FAIL" -eq 0 ]

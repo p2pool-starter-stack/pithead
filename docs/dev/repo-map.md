@@ -273,6 +273,9 @@ records; effective Caddy configuration is reported only as matcher/log-destinati
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
+The focused safety-backup selector is `--backup-only` in `tests/integration/run.sh`;
+`tests/integration/selftest/selftest-backup-only.sh` checks exclusive selection, archive
+validation and recovery without scenarios or lifecycle operations.
 `tests/integration/lib/tari-readiness.sh` supplies the running-state battery's fresh
 required-Tari observation. `mergemine-probe.sh` in the same directory binds the gRPC
 proof to the current container epoch. Their pure controls live in
