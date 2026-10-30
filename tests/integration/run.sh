@@ -117,6 +117,8 @@ source "$HERE/lib/run-scenario.sh" || exit $?
 source "$HERE/lib/run-source-image.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-wizard-defaults.sh
 source "$HERE/lib/run-wizard-defaults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-wizard-eof.sh
+source "$HERE/lib/run-wizard-eof.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-connection-announcements.sh
 source "$HERE/lib/run-connection-announcements.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-reset-restore.sh
@@ -268,11 +270,9 @@ main() {
     fi
     local lifecycle_ok=1 _gated
     LIFECYCLE_STACK_INTACT=0
-    # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
-    # name every requested one in the summary instead of dropping it silently (#2755).
     if [ "$rig_control_ok" != 1 ]; then
-        for _gated in LIFECYCLE:lifecycle ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
-            XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
+        for _gated in LIFECYCLE:lifecycle ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening ROTATE_ONION:rotate-onion \
+            XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit TARI_STRANDED:tari-stranded MONERO_STRANDED:monero-stranded \
             MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
             local _flag="RUN_${_gated%%:*}"
             [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
