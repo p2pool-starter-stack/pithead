@@ -233,6 +233,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and closing A/B migration update. A dashboard-password edit commits through the panel behind
   typed `APPLY` and the approval envelope, after its preview names the lockout and console-login
   costs; the new login must read the dashboard, and the fixture password is restored the same way.
+  After the commit POST, the host polls the result spool up to 140 times at three-second intervals,
+  treating `previewed`, `pending`, `accepted` and `running` as in flight. A commit that stays
+  `previewed` fails at the bound and reports that status; only `applied` passes.
   The same password change checks root-password status and, through a guest-only probe, that its
   hash equals the dashboard password; `/etc`'s upperdir must be under `/run` on tmpfs. It repeats
   those checks after the password change, an unaided reboot while changed, and restoration.
