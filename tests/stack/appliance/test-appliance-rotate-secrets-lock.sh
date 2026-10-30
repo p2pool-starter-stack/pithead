@@ -55,9 +55,10 @@ RSHELD="$SANDBOX/rotate-lock-held.lock" # held by rs_hold for the contended case
 RSDOCKER="$RS/docker.log"
 
 rs_seed() { # a deployed local-mode box with stratum auth on "auto": re-armed before EVERY run
+    seed_node_onion_state "$RS/data/tor"
     cat >"$RS/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
+MONERO_ONION_ADDRESS=$TEST_MONERO_ONION
+TARI_ONION_ADDRESS=$TEST_TARI_ONION
 P2POOL_ONION_ADDRESS=p2pa.onion
 PROXY_AUTH_TOKEN=ORIGINALTOKEN
 HOST_IP=box.lan

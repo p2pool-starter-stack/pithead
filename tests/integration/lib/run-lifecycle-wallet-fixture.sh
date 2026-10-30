@@ -119,6 +119,39 @@ cleanup_failed_tari_wallet_fixture() {
     fi
 }
 
+record_uninstall_secrets() { # <before|after>
+    local stage="$1" tor_dir fp artifact="$OUT_DIR/uninstall-$1.secrets.txt"
+    if ! upgrade_secret_fingerprints >"$artifact"; then
+        it_fail "uninstall $stage secret diagnostics readable (#2951)" "secret category fingerprint failed"
+        return 1
+    fi
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
+        tor_dir="$(env_on_box TOR_DATA_DIR)"
+        fp="$(rx "v=\$(sudo -n cat $(quote_arg "$tor_dir/monero/hostname") 2>/dev/null) && [ -n \"\$v\" ] && printf '%s\\n' \"\$v\" | sha256sum | cut -d' ' -f1")" || fp=""
+        if [[ ! "$fp" =~ ^[0-9a-f]{64}$ ]]; then
+            it_fail "uninstall $stage onion diagnostics readable (#2951)" "kept hostname fingerprint failed"
+            return 1
+        fi
+        if ! printf 'monero-hostname=%s\n' "$fp" >>"$artifact"; then
+            it_fail "uninstall $stage secret diagnostics writable (#2951)" "monero-hostname artifact append failed"
+            return 1
+        fi
+        fp="$(rx "v=\$(grep '^MONERO_ONION_ADDRESS=' .env | head -n1 | cut -d= -f2-); [ -n \"\$v\" ] && printf '%s\\n' \"\$v\" | sha256sum | cut -d' ' -f1")" || fp=""
+        if [[ ! "$fp" =~ ^[0-9a-f]{64}$ ]]; then
+            it_fail "uninstall $stage onion diagnostics readable (#2951)" "rendered address fingerprint failed"
+            return 1
+        fi
+        if ! printf 'monero-env=%s\n' "$fp" >>"$artifact"; then
+            it_fail "uninstall $stage secret diagnostics writable (#2951)" "monero-env artifact append failed"
+            return 1
+        fi
+    fi
+    if [ "$stage" = after ] && ! cmp -s "$OUT_DIR/uninstall-before.secrets.txt" "$artifact"; then
+        it_fail "setup after uninstall preserves every secret category (#2951)" "categorized secrets or kept onion identity changed"
+        return 1
+    fi
+}
+
 prove_wallet_supersession() {
     skip_appliance_checkout_probe \
         "the wallet supersession proof tool is not shipped; strict proof runs on DIY" \
