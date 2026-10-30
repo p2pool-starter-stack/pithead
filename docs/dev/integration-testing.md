@@ -325,6 +325,66 @@ Deploying modes that borrow a miner require a positive integer; other runs accep
 `selftest-e2e-boundary.sh` checks these worker-count rules before SSH, including
 zero-worker runs and malformed counts.
 
+### No-deployment receipt
+
+The wrapper optionally emits a version 1 receipt for a configuration-restore compatibility
+refusal before baseline mutation. This producer contract serves
+[p2pool-starter-stack/bench-ci#2308](https://github.com/p2pool-starter-stack/bench-ci/issues/2308);
+it does not qualify the baseline or change the failed candidate result.
+
+Supply all four environment variables, or leave all four unset for existing callers:
+
+| Variable | Required value |
+|---|---|
+| `E2E_NO_DEPLOY_DIR` | Existing private absolute directory on the wrapper controller, outside the candidate checkout and its results directory; allocate a new directory for every attempt. |
+| `E2E_JOB_ID` | Positive decimal job ID, at most 20 digits. |
+| `E2E_INVOCATION_ID` | Fresh unpredictable 32-character lowercase hexadecimal nonce for this attempt. |
+| `E2E_CANDIDATE_SHA` | Full 40-character lowercase Git SHA, matching both the controller checkout and provisioned candidate. |
+
+The caller owns the directory and must prevent other writers. Before any bench operation,
+the wrapper validates the binding and exclusively creates `.no-deployment-claim` inside it.
+An existing claim or receipt refuses reuse, including attempts interrupted before publication.
+Invalid or incomplete bindings refuse the invocation without a receipt. A mismatched provisioned
+checkout also refuses without proof. Disposable checkout provisioning and pregate evidence cleanup
+are outside the baseline-mutation boundary.
+
+On compatibility refusal only, the wrapper marks restoration unnecessary and atomically renames
+a private temporary file to `no-deployment.json` in that directory. The UTF-8 JSON object is
+bounded to 1024 bytes and contains exactly these fields:
+
+```json
+{
+  "schema_version": 1,
+  "job_id": "3177",
+  "invocation_id": "0123456789abcdef0123456789abcdef",
+  "candidate_sha": "0000000000000000000000000000000000000000",
+  "status": "refused",
+  "reason_code": "restore_compatibility_unverified",
+  "baseline_mutated": false
+}
+```
+
+`restore_compatibility_unverified` is the sole version 1 reason code: the configuration pair
+was incompatible or its compatibility could not be read or established. The example SHA is
+a placeholder; the actual receipt carries the bound candidate. No configuration content,
+credentials, wallet values, paths or topology enter the record.
+
+The trusted compatibility check runs before the candidate CLI build. Eligibility ends before
+that candidate-controlled build, hence before the safety backup, wallet capture, miner borrowing,
+deployment and any restoration. Later failures and cancellation never publish proof.
+Publication failure preserves a nonzero refusal with unavailable evidence. A receipt is final
+only after the wrapper process and its children have stopped with a nonzero result; cancellation
+or an uncertain process outcome is unknown even if a file survives. Never accept a temporary file.
+
+The consumer must validate the exact schema, types, fixed values and job/invocation/candidate
+binding against its own fresh attempt, collect the final file from the controller directory
+even when no candidate results directory exists, and independently verify canonical ownership,
+images, health and sync. Missing fields, unsupported versions, unknown reason codes, stale or
+mismatched bindings, and unavailable evidence remain unknown and retain ordinary restoration
+safeguards. The receipt alone never authorizes recovery or makes a candidate pass. Historical
+job verdicts remain unchanged. `selftest-no-deployment.sh` exercises this boundary and its
+failure, cancellation and reuse controls without a live stack.
+
 Pre-flight, before anything is locked or borrowed: the wrapper waits up to 120 seconds for both
 chains to read `done` on the bench dashboard's sync panels. This allows a brief `loading` state
 while the dashboard polls an already-synced node. If the wait expires, it prints each
@@ -395,7 +455,10 @@ via an `EXIT` trap):
    drift is loud instead of a stale config being deployed silently. Either way the seed carries
    the same wallet, secrets, onion keys, and shared `monero/tari/p2pool` data dirs — only the
    branch's code differs.
-3. Safety backup (`pithead backup`) as the rollback anchor.
+3. Verify the seeded and canonical configuration versions against the candidate before taking
+   the safety backup (`pithead backup`), capturing wallets, borrowing a miner or deploying.
+   An incompatible or unreadable version refuses the run without invoking wrapper restoration.
+   The newer-configuration restore guard remains enforced.
 4. Borrows a miner (default the configured miner): backs up its xmrig config and repoints it at the
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
    Scenarios with a stratum password hand the rendered credential to the borrowed test pool

@@ -99,6 +99,7 @@ OPTIONS:
 ENV OVERRIDES: BENCH_HOST, MINER_HOST, CANONICAL_DIR, E2E_DIR, MINER_XMRIG_CONFIG, GIT_REMOTE_URL, and
   RIG_HOST, RIG_NAME, IT_RIG_TOKEN, IT_RIG_ROLLBACK_CHANGES, IT_RIG_POOLS_PROBE, RIG_CONTROL_PORT, RIGFORGE_CONFIG, RIGFORGE_BOOTSTRAP_VERSION,
   IT_MONERO_VIEW_KEY, IT_TARI_VIEW_KEY, IT_TARI_SPEND_PUBLIC_KEY (payout-confirm row; sent to the harness on stdin)
+  E2E_NO_DEPLOY_DIR, E2E_JOB_ID, E2E_INVOCATION_ID, E2E_CANDIDATE_SHA (opt-in no-deployment receipt)
   IT_SCRATCH_DIR (existing target scratch directory; inherited as TMPDIR by target commands and the detached harness)
 
 EXAMPLES:
@@ -206,6 +207,7 @@ restore_all() {
         warn "  Re-run without --keep, or restore by hand: canonical=$CANONICAL_DIR, miner cfg backup=$MINER_CFG_BACKUP"
         return
     fi
+    no_deployment_invalidate
     drain_harness_or_refuse
     parent_lock_checkpoint restore || {
         warn "Refusing an unreserved restore; preserve $MINER_CFG_BACKUP and repair the bench by hand."
@@ -315,6 +317,8 @@ restore_all() {
     fi
     if [ "$rc" -eq 0 ]; then ok "restore complete."; else warn "restore complete (the run itself failed — see above)."; fi
 }
+source "$HERE/lib/e2e-no-deployment.sh" || exit $?
+no_deployment_init || die "Invalid or reused no-deployment binding; refusing before any bench operation."
 trap e2e_exit EXIT
 # --- Small waiters / helpers ------------------------------------------------
 wait_bench_healthy() { # <timeout_s>
@@ -457,7 +461,7 @@ provision() {
         # that seed thinking clean spares them.
         git -C '$E2E_DIR' checkout -q -f -B '$BRANCH' FETCH_HEAD
         git -C '$E2E_DIR' reset -q --hard FETCH_HEAD
-        git -C '$E2E_DIR' clean -qfdx -e /results -e /backups -e /data && bash '$E2E_DIR/scripts/build-pithead.sh' >/dev/null
+        git -C '$E2E_DIR' clean -qfdx -e /results -e /backups -e /data
     " || die "Failed to provision/checkout '$BRANCH' in $E2E_DIR."
     local head
     head="$(on_bench "git -C '$E2E_DIR' rev-parse --short HEAD")"
@@ -657,7 +661,7 @@ main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"
     preflight
     provision
-    # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
+    prepare_candidate
     if [ "$MODE" != "check" ]; then
         backup_stack
         wallet_fixture_capture
@@ -666,7 +670,6 @@ main() {
     fi
     local hrc=0
     run_harness || hrc=$?
-    # restore_all runs via the EXIT trap.
     echo ""
     if [ "$hrc" -eq 0 ]; then
         ok "E2E PASSED for '$BRANCH' (mode=$MODE)."
