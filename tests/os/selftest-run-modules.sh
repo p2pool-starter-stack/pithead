@@ -29,10 +29,7 @@ VM=selftest DISK="$SERIAL.disk" SSH_ERR="$SERIAL.ssh-error"
 # shellcheck source=tests/os/lib/core.sh
 source "$HERE/lib/core.sh" || exit $?
 SSH_ERR="$SERIAL.ssh-error"
-bash "$HERE/selftest-control-drain.sh" || exit $?
-grep -Fq 'phase_provision_power_regressions' "$HERE/provision-browser-submit.sh" || exit 1
-grep -Fq '. "$SCRIPT_DIR/appliance-power-leg.sh"' "$HERE/run.sh" || exit 1
-bash "$HERE/appliance-power-leg.sh" --self-test || exit $?
+bash "$HERE/selftest-control-drain.sh" && bash "$HERE/selftest-power-control.sh" || exit $?
 # shellcheck source=tests/os/wizard-redirect-leg.sh
 source "$HERE/wizard-redirect-leg.sh" || exit $?
 source "$HERE/wizard-identity-leg.sh" || exit $?
