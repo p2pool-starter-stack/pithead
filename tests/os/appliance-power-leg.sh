@@ -4,6 +4,10 @@ power_verdict() { # <result-json> <status-string> — true if the result names e
     printf '%s' "$1" | jq -e --arg s "$2" '.status == $s' >/dev/null
 }
 
+power_shutdown_verdict() {
+    printf '%s' "$1" | grep -Eq 'pithead-boot.service: Deactivated successfully|Stopped Pithead stack at boot'
+}
+
 phase_provision_power_regressions() {
     local before result journal mtries=0 miner_back=0 code
     before=$(_boot_id) || before=""
@@ -74,6 +78,16 @@ phase_provision_power_regressions() {
         bad "the guest never came back up after being started following the poweroff ($(_ssh_unreachable_reason "$ip"))"
         return
     fi
+    journal=$(_ssh "journalctl -b -1 -u pithead-boot.service --no-pager -o cat" 2>/dev/null) || {
+        bad "could not read the previous boot's stack shutdown journal"
+        return
+    }
+    if power_shutdown_verdict "$journal"; then
+        ok "the prior boot's journal records an orderly stop of the stack unit"
+    else
+        bad "the prior boot's journal does not record an orderly stop of the stack unit"
+        return
+    fi
     journal=$(_ssh "dmesg" 2>/dev/null) || {
         bad "could not read shutdown recovery evidence after the power-button restart"
         return
@@ -100,6 +114,10 @@ phase_provision_power_regressions() {
 
 _power_self_test() {
     local f=0
+    power_shutdown_verdict 'pithead-boot.service: Deactivated successfully.' || f=$((f + 1))
+    power_shutdown_verdict 'Stopped Pithead stack at boot — render, up, health-gated A/B commit.' || f=$((f + 1))
+    power_shutdown_verdict 'Starting Pithead stack at boot.' && f=$((f + 1))
+    power_shutdown_verdict '' && f=$((f + 1))
     power_verdict '{"status":"rejected"}' rejected || f=$((f + 1))
     power_verdict '{"status":"rebooting"}' rejected && f=$((f + 1))
     power_verdict '{"status":"shutting-down"}' rejected && f=$((f + 1))

@@ -118,6 +118,13 @@ assert_contains "the cooldown refusal names the window" "$(jq -r '.error' "$PWRE
 assert_eq "the cooled-down reboot ordered nothing" "$(wc -l <"$PWC/sysctl.log" | tr -d ' ')" "0"
 rm -f "$PWRES/$PW1.json"
 touch -t 202001010000 "$PWC/data/control/.power-stamp.sys-reboot"
+touch -t 209901010000 "$PWC/data/control/.power-stamp.sys-reboot"
+pw_intent "$PW1" sys-reboot
+pwrun >/dev/null
+assert_eq "a future cooldown stamp is rejected after a backwards clock step" "$(jq -r '.status' "$PWRES/$PW1.json")" "rejected"
+assert_eq "a future cooldown stamp orders nothing" "$(wc -l <"$PWC/sysctl.log" | tr -d ' ')" "0"
+rm -f "$PWRES/$PW1.json"
+touch -t 202001010000 "$PWC/data/control/.power-stamp.sys-reboot"
 pw_intent "$PW1" sys-reboot
 pwrun >/dev/null
 assert_eq "an aged cooldown lets the next reboot through" "$(jq -r '.status' "$PWRES/$PW1.json" 2>/dev/null)" "rebooting"
