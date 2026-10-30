@@ -18,6 +18,27 @@ export function electricityError(raw) {
     : "Enter a finite electricity price of zero or more per kWh; zero leaves power cost unset.";
 }
 
+export function earningsWording(value) {
+  return [
+    ["dashboard.energy.cost_per_kwh", "Electricity price"],
+    ["xvb.enabled", "Join the XvB bonus"],
+    ["XVB_ENABLED", "Join the XvB bonus"],
+    ["dashboard.energy", "Power and price settings"],
+    ["DASHBOARD_ENERGY", "Power and price settings"],
+  ].reduce((text, [key, label]) => text.replaceAll(key, label), String(value ?? ""));
+}
+
+export function earningsPreview(preview) {
+  return {
+    ...preview,
+    changes: preview.changes?.map((change) => ({ ...change, msg: earningsWording(change.msg) })),
+    preview_values: preview.preview_values?.map((value) => ({
+      ...value,
+      label: earningsWording(value.label),
+    })),
+  };
+}
+
 export class EarningsControl extends ConfigView {
   constructor(props) {
     super(props);
@@ -80,14 +101,14 @@ export class EarningsControl extends ConfigView {
         phase === "idle"
           ? null
           : review
-            ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview}
+            ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${earningsPreview(preview)}
         confirmText=${confirmText} onConfirmText=${(value) => this.setState({ confirmText: value })}
         payoutSuffixes=${payoutSuffixes} onPayoutSuffix=${(chain, value) => this.setState({ payoutSuffixes: { ...payoutSuffixes, [chain]: value } })}
         onConfirm=${() => this.commit()} onCancel=${() => this.dismiss()} onClose=${close} busy=${phase === "committing"} />`
             : html`<${Modal} ref=${this.modalRef} title=${field.label} onCancel=${() => !busy && this.dismiss()} onClose=${close}>
           ${phase === "loading" ? html`<p role="status">Loading the host's current settings…</p>` : null}
           ${phase === "disabled" ? html`<p>Settings are unavailable on this host.</p>` : null}
-          ${error ? html`<p role="alert">${typeof error === "string" ? error : "The host rejected this change. Review the configuration before trying again."}</p>` : null}
+          ${error ? html`<p role="alert">${typeof error === "string" ? earningsWording(error) : "The host rejected this change. Review the configuration before trying again."}</p>` : null}
           ${
             candidate && ["form", "previewing"].includes(phase)
               ? html`

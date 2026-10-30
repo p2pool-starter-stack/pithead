@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EarningsPage, priceAssumption } from "../../../mining_dashboard/web/static/sovereign/earnings.mjs";
-import { EarningsControl, electricityError } from "../../../mining_dashboard/web/static/sovereign/earnings-control.mjs";
+import { EarningsControl, electricityError, earningsPreview } from "../../../mining_dashboard/web/static/sovereign/earnings-control.mjs";
 import { payoutRows, trackingNotice, xvbLine } from "../../../mining_dashboard/web/static/sovereign/earnings-model.mjs";
 import { render } from "../helpers/render.mjs";
 
@@ -86,6 +86,19 @@ test("XvB and price source data distinguish off, unknown, stale and recorded pro
 test("electricity rejects blanks, negatives and non-finite values but accepts an unset zero", () => {
   for (const raw of ["", " ", "-1", "NaN", "Infinity", "1e309", "oops"]) assert.ok(electricityError(raw));
   for (const raw of ["0", "0.12", "1e-2"]) assert.equal(electricityError(raw), null);
+});
+
+test("real host preview keys get plain labels while the transaction and effects remain intact", () => {
+  const original = { id: "host-1", destructive: true, approval_required: true,
+    changes: [{ flag: "CONFIRM", msg: "XMRvsBeast setting (XVB_ENABLED): false → true; restart affected services." },
+      { flag: "INFO", msg: "Energy calculator settings (dashboard.energy) — electricity price / currency / XMR price updated." }],
+    preview_values: [{ key: "dashboard.energy.cost_per_kwh", label: "dashboard.energy.cost_per_kwh", old: 0.1, new: 0.2 }] };
+  const shown = earningsPreview(original);
+  assert.match(shown.changes[0].msg, /Join the XvB bonus.*restart affected services/);
+  assert.doesNotMatch(shown.changes.map((change) => change.msg).join(" "), /XVB_ENABLED|dashboard\.energy/);
+  assert.equal(shown.preview_values[0].label, "Electricity price");
+  assert.deepEqual({ ...shown, changes: original.changes, preview_values: original.preview_values }, original);
+  assert.equal(original.preview_values[0].label, "dashboard.energy.cost_per_kwh");
 });
 
 test("scoped edits reuse host preview, preserve masked secrets and unknown keys, and commit only the preview ID", async () => {

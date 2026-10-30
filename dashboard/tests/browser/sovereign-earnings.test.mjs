@@ -44,7 +44,8 @@ for (const theme of ["light", "dark"]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await main.getByRole("button", { name: "Electricity price", exact: true }).focus();
+      await main.getByRole("button", { name: "Join the XvB bonus", exact: true }).focus();
+      await page.keyboard.press("Tab");
       await expect(
         main.getByRole("button", { name: "Electricity price", exact: true }),
       ).toBeFocused();
@@ -96,7 +97,18 @@ test("Electricity price validates locally, previews exactly one change, and comm
         status: "previewed",
         destructive: true,
         changes: [
-          { flag: "CONFIRM", msg: "Electricity price changes; affected services restart." },
+          {
+            flag: "CONFIRM",
+            msg: "Energy calculator settings (dashboard.energy); affected services restart.",
+          },
+        ],
+        preview_values: [
+          {
+            key: "dashboard.energy.cost_per_kwh",
+            label: "dashboard.energy.cost_per_kwh",
+            old: 0.1,
+            new: 0.25,
+          },
         ],
       },
     });
@@ -125,16 +137,18 @@ test("Electricity price validates locally, previews exactly one change, and comm
   await edit.getByRole("button", { name: "Review changes", exact: true }).click();
   const review = page.getByRole("dialog", { name: "Review changes", exact: true });
   await expect(review.getByText(/affected services restart/)).toBeVisible();
+  await expect(review).not.toContainText("dashboard.energy");
+  await expect(review.getByText("Electricity price:", { exact: true })).toBeVisible();
   await expect(review.getByRole("button", { name: "Confirm & apply" })).toBeDisabled();
   await review.getByLabel(/Type APPLY to confirm/).fill("APPLY");
   await review.getByRole("button", { name: "Confirm & apply" }).click();
   await page.clock.fastForward(2000);
   await expect(page.getByText("Changes applied.", { exact: true })).toBeVisible();
   expect(requests).toHaveLength(2);
+  const { _editable_keys, ...currentConfig } = config;
   expect(requests[0].body).toEqual({
     config: {
-      ...config,
-      _editable_keys: undefined,
+      ...currentConfig,
       dashboard: { ...config.dashboard, energy: { cost_per_kwh: 0.25, currency: "USD" } },
     },
   });
