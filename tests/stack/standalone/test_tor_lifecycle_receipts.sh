@@ -6,7 +6,7 @@ if [ "${1:-}" = fixture ]; then
     source "$ROOT/lib/pithead/32-onion-provisioning.sh"
     source "$ROOT/lib/pithead/32a-tor-lifecycle-receipts.sh"
     source "$ROOT/lib/pithead/02b1-lan-guard-compose.sh"
-    TOR_DATA_DIR="$2/tor"
+    TOR_DATA_DIR="$2/tor" DOCS_URL="https://example.invalid"
     DASHBOARD_ONION_ENABLED=true DASHBOARD_ONION_CLIENT_AUTH=false
     MONERO_MODE=remote TARI_MODE=remote
     stop_rc="$3" up_rc="$4" up_calls=0
