@@ -137,6 +137,8 @@ source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
 source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-webhook-validation.sh
 source "$HERE/lib/run-webhook-validation.sh" || exit $?
+# shellcheck source=tests/integration/lib/hardening-onion-state.sh
+source "$HERE/lib/hardening-onion-state.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
 source "$HERE/lib/run-tari-off-preview.sh" || exit $?

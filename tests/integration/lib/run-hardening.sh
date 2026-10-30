@@ -50,45 +50,48 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
     return 1
 }
 
-# Reap the root pithead-control systemd units THIS checkout installed, idempotently (#477).
-# The hardening phase installs pithead-control.{path,service} to exercise the #33 spool; the restore
-# apply is supposed to remove them, but that removal runs EARLY in apply (provision_control_runner) —
-# before container recreation + the tor restart — so a restore apply that dies partway (render/preflight
-# failure, or wait_status_ok timing out mid-apply) leaves the ROOT path unit watching the control spool
-# past the phase and beyond. A later apply is convergent and would clean it, but only if it runs. This
-# teardown mirrors provision_control_runner's removal branch and runs regardless of the restore
-# apply's exit code. Units owned by ANOTHER checkout are left in place and count as success: the
-# unit names are box-global, and on a shared bench the live stack's runner uses them too — reaping
-# it strands that dashboard's control requests (config editor stuck at "Previewing…"). rx runs in
-# $IT_REMOTE_DIR, so the snippet's working dir is this run's checkout on the box. Ownership
-# compares PHYSICAL paths, mirroring the provision_control_runner branch: one checkout has two
-# spellings (the `current` symlink vs the versioned dir production units carry). No-ops where
-# there's no systemd (macOS/dev). Returns non-zero ONLY if a unit WE own survives (e.g. sudo
-# unavailable) so the caller can warn loudly instead of silently passing.
-_remove_control_units() {
+_control_unit_dir_on_box() {
     rx '
+        source lib/pithead/10-installer-preseed.sh || exit 1
+        source lib/pithead/50-control-runner-provisioning.sh || exit 1
+        control_unit_dir
+    '
+}
+
+_control_service_exec_start() {
+    local unit_dir
+    unit_dir="$(_control_unit_dir_on_box)" || return 1
+    rx "grep -m1 '^ExecStart=' $(quote_arg "$unit_dir/pithead-control.service") 2>/dev/null"
+}
+
+_remove_control_units() {
+    local cdir unit_dir snippet
+    cdir="$(env_on_box CONTROL_DIR 2>/dev/null)" || cdir=""
+    unit_dir="$(_control_unit_dir_on_box)" || return 1
+    snippet='
         command -v systemctl >/dev/null 2>&1 || exit 0
-        ud=/etc/systemd/system
-        if [ -e "$ud/pithead-control.service" ]; then
-            owner_dir=$(sed -n "s|^ExecStart=\(/.*\)/pithead control-run-pending\$|\1|p" \
-                "$ud/pithead-control.service" | head -n 1)
-            dir=$owner_dir tail=""
-            while [ -n "$dir" ] && [ "$dir" != "/" ] && [ ! -d "$dir" ]; do
-                tail="/$(basename "$dir")$tail"
-                dir=$(dirname "$dir")
-            done
-            if [ -z "$owner_dir" ] ||
-                [ "$(cd "$dir" 2>/dev/null && pwd -P)$tail" != "$(pwd -P)" ]; then
-                exit 0
-            fi
+        ud=$HARDENING_EXPECTED_UNITS
+        cdir=$HARDENING_EXPECTED_CONTROL
+        service=$ud/pithead-control.service
+        path=$ud/pithead-control.path
+        [ ! -L "$service" ] && [ ! -L "$path" ] || exit 0
+        if [ -e "$service" ]; then
+            start=$(sed -n "s|^ExecStart=||p" "$service")
+            [ "$start" = "$(pwd -P)/pithead control-run-pending" ] || exit 0
         fi
-        if [ -e "$ud/pithead-control.path" ] || [ -e "$ud/pithead-control.service" ]; then
+        if [ -e "$path" ]; then
+            [ -n "$cdir" ] && cdir=$(cd "$cdir" 2>/dev/null && pwd -P) || exit 0
+            glob=$(sed -n "s|^PathExistsGlob=||p" "$path")
+            [ "$glob" = "$cdir/requests/*.json" ] || exit 0
+        fi
+        if [ -e "$path" ] || [ -e "$service" ]; then
             sudo systemctl disable --now pithead-control.path >/dev/null 2>&1 || true
-            sudo rm -f "$ud/pithead-control.path" "$ud/pithead-control.service"
+            sudo rm -f "$path" "$service"
             sudo systemctl daemon-reload >/dev/null 2>&1 || true
         fi
-        [ ! -e "$ud/pithead-control.path" ] && [ ! -e "$ud/pithead-control.service" ]
+        [ ! -e "$path" ] && [ ! -e "$service" ]
     '
+    rx "HARDENING_EXPECTED_CONTROL=$(quote_arg "$cdir") HARDENING_EXPECTED_UNITS=$(quote_arg "$unit_dir") bash -c $(quote_arg "$snippet")"
 }
 
 # Tier-4 hardening phase (#377/#33/#424): the v1.4 host-mutation + hardening surfaces that ONLY a
@@ -124,23 +127,54 @@ run_hardening() {
                 "expected 'Read-only file system', got: ${probe_out:-<write SUCCEEDED — rootfs is writable>}"
         fi
     done
-    # 2. The onion is reachable from OUTSIDE (privacy surface, #343/#360) and SURVIVES the #424 heal
-    #    action. An independent external Tor client (its own image/tor/circuits) fetches the dashboard
-    #    onion over the real Tor network — no stack SOCKS or plumbing involved. First a baseline; then
-    #    we restart tor (the heal's action — the stuck-guard TRIGGER is guard-selection luck and not
-    #    reproducible) and assert the onion comes back, proving tor rebuilt circuits + republished its
-    #    descriptor. Gated on the baseline so a genuinely-bad live Tor network can't false-fail the
-    #    gate: recovery is only asserted when the onion was reachable to begin with.
-    #    (Reachability is INBOUND; the clearnet-EXIT half of #424 is not externally observable and
-    #    stays with the doctor egress check, which is the stack self-checking its own egress.)
-    local pre_onion=0
-    if [ "$(env_on_box DASHBOARD_ONION_ADDRESS)" = "placeholder" ] || [ -z "$(env_on_box DASHBOARD_ONION_ADDRESS)" ]; then
-        it_skip_leg "dashboard onion external reachability (#424/#343)" "onion not provisioned on this box"
+    if ! hardening_onion_snapshot; then
+        it_fail "dashboard onion baseline snapshot created (#2603)" "refusing to provision without protected recovery copies"
+        return 1
+    fi
+    local ctrl_config ctrl_apply_rc
+    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.secure=true | .dashboard.auth={username:"admin",password:"a tier4 control passphrase"} | .dashboard.control={enabled:true} | .dashboard.onion={enabled:true,client_auth:true} | .notifications.webhooks=[] | .dashboard.energy.cost_per_kwh=0')"
+    push_config "$ctrl_config"
+    it_step "apply with dashboard.control enabled (installs the systemd path unit)…"
+    pithead apply -y >/dev/null 2>&1
+    ctrl_apply_rc=$?
+    wait_status_ok 180 || true
+    if rx "systemctl is-enabled pithead-control.path >/dev/null 2>&1"; then
+        it_pass "pithead-control.path installed + enabled by apply (#33)"
+    else
+        it_fail "pithead-control.path installed + enabled by apply (#33)" "unit not enabled"
+    fi
+    assert_contains "the enabled control units name THIS checkout, not another install (#1085)" \
+        "$(_control_service_exec_start || true)" \
+        "ExecStart=$(rx 'pwd -P')/pithead control-run-pending"
+
+    local pre_onion=0 onion_rc
+    if [ "$ctrl_apply_rc" -ne 0 ]; then
+        it_fail "dashboard onion provisioned for hardening (#2603)" "onion and control apply failed"
+    elif [ "$(env_on_box DASHBOARD_ONION_ADDRESS)" = "placeholder" ] || [ -z "$(env_on_box DASHBOARD_ONION_ADDRESS)" ]; then
+        it_fail "dashboard onion provisioned for hardening (#2603)" "apply left no dashboard onion address"
     else
         it_step "external Tor client: reach the dashboard onion before the restart (baseline)…"
-        _onion_reachable_external && pre_onion=1
+        if _onion_reachable_external "" "" required; then
+            pre_onion=1
+        else
+            onion_rc=$?
+            case "$onion_rc" in
+            1 | 2) : ;;
+            *) it_fail "dashboard onion authorized probe obtains CLI credentials (#2603)" "credential acquisition or probe failed before reachability could be checked" ;;
+            esac
+        fi
         if [ "$pre_onion" = "1" ]; then
             it_pass "dashboard onion reachable from an independent external Tor client (#343/#360)"
+            if _onion_reachable_external "" "" none; then
+                onion_rc=0
+            else
+                onion_rc=$?
+            fi
+            if _onion_reachable_external "" "" required; then
+                assert_rc "dashboard onion refuses an independent client without a key (#2603)" "$onion_rc" 1
+            else
+                it_fail "dashboard onion refuses an independent client without a key (#2603)" "authorized control failed after the keyless probe (exit $?; keyless exit $onion_rc)"
+            fi
         else
             it_skip_leg "dashboard onion post-restart recovery (#424)" "onion not reachable from outside before the restart (live Tor network) — can't prove recovery"
         fi
@@ -151,37 +185,14 @@ run_hardening() {
         assert_rc "stack healthy after a tor restart (#424 heal action)" "$?" "0"
         if [ "$pre_onion" = "1" ]; then
             it_step "external Tor client: dashboard onion must come back after the restart…"
-            if _onion_reachable_external; then
+            if _onion_reachable_external "" "" required; then
                 it_pass "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)"
             else
-                it_fail "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)" "external client could not reach the onion within the probe window"
+                onion_rc=$?
+                it_fail "dashboard onion reachable from outside AFTER the tor restart (#424 recovery)" "external client probe failed (stage ${ONION_EXTERNAL_PROBE_STAGE:-client-error}; exit $onion_rc)"
             fi
         fi
     fi
-    # 3. The #33 control channel end-to-end THROUGH THE REAL SYSTEMD PATH UNIT. Tier-1 runs
-    #    control-run-pending by hand; only here does pithead-control.path actually fire on a spooled
-    #    file. Needs a dashboard password (control refuses to enable without one). Enable control,
-    #    let apply install + enable the unit, then drop requests and let systemd act.
-    local ctrl_config
-    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.secure=true | .dashboard.auth={username:"admin",password:"a tier4 control passphrase"} | .dashboard.control={enabled:true} | .notifications.webhooks=[] | .dashboard.energy.cost_per_kwh=0')"
-    push_config "$ctrl_config"
-    it_step "apply with dashboard.control enabled (installs the systemd path unit)…"
-    pithead apply -y >/dev/null 2>&1
-    wait_status_ok 180 || true
-    if rx "systemctl is-enabled pithead-control.path >/dev/null 2>&1"; then
-        it_pass "pithead-control.path installed + enabled by apply (#33)"
-    else
-        it_fail "pithead-control.path installed + enabled by apply (#33)" "unit not enabled"
-    fi
-    # The unit names are box-global, so on a bench that also hosts a live stack the assertion above
-    # was already true before this phase ran — the LIVE install's units satisfy it, and it stays
-    # green even if our apply installed nothing at all. That is why #1085 went unnoticed for two
-    # releases. Bind it to the ExecStart instead: after our apply the units must name THIS checkout,
-    # in the exact line provision_control_runner writes. Physical path on both sides (pithead cd -P's
-    # to SCRIPT_DIR, rx runs in the checkout), so `current` vs a versioned dir cannot cry wolf.
-    assert_contains "the enabled control units name THIS checkout, not another install (#1085)" \
-        "$(rx "grep -m1 '^ExecStart=' /etc/systemd/system/pithead-control.service 2>/dev/null" || true)" \
-        "ExecStart=$(rx 'pwd -P')/pithead control-run-pending"
 
     local cdir
     cdir="$(env_on_box CONTROL_DIR)"
@@ -323,22 +334,11 @@ run_hardening() {
         it_fail "failed logins retained beyond 256 KiB and native gzip rotation (#3265)" "$probe_out"
     fi
 
-    # Restore the baseline ourselves: re-applying with control off uninstalls the path unit, so the
-    # root systemd unit never outlives the phase even though the end-of-run restore would also do it.
-    it_step "restoring baseline (disables control, removes the path unit)…"
-    push_config "$BASELINE_CONFIG"
-    pithead apply -y >/dev/null 2>&1
-    # 240s: this apply follows the control enable/disable + a tor restart, so the stack has more to
-    # re-settle than a plain apply (180s timed out here on a real run).
-    wait_status_ok 240 || true
-    # #477: reap the control units unconditionally — the restore apply above is supposed to remove them,
-    # but if it died before provision_control_runner ran, the ROOT path unit would linger past the phase.
-    # (develop's #424 added a fire-and-forget inline version here; this supersedes it — it verifies the
-    # units are actually gone and warns loudly if not, rather than swallowing the outcome with `|| true`.)
-    if _remove_control_units; then
+    if hardening_onion_restore; then
+        it_pass "dashboard onion identity and environment restored exactly (#2603)"
         it_pass "control systemd units removed after the hardening phase (#477)"
     else
-        it_warn "pithead-control units survived teardown — remove them by hand on the box (sudo unavailable?)"
+        it_fail "dashboard onion identity and environment restored exactly (#2603)" "restore failed; protected recovery copies retained"
     fi
 }
 
