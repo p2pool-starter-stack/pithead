@@ -151,6 +151,7 @@ Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
 | `service/workers/` | Worker state and control | `tests/service/workers/` |
 | `service/xvb/` | XvB switching, calculations, and outcomes | `tests/service/xvb/` |
 | `web/views/` | HTTP views and response construction | `tests/web/views/` |
+| `web/views/sovereign_views.py` | Opt-in lean UI route | `tests/web/views/test_sovereign_views.py` |
 | `web/server.py` | HTTP application setup and route registration | `tests/web/` |
 | `wizard/server.py`, `wizard/form.py`, `wizard/defaults.py` | Appliance wizard server, disk-based defaults, form translation, and install handoff | `tests/web/test_wizard*.py` |
 | `wizard_*.py` | Wizard config shaping, install validation, node probe, recovery, submission transaction and cleanup, plain-port redirect | `tests/web/test_wizard*.py` |
@@ -186,7 +187,11 @@ its fake-transport cases run through `selftest-wizard-redirect.sh`.
 `python -m mining_dashboard.wizard` remains the appliance's wizard launch command;
 the package's `__main__.py` delegates to its server.
 
-Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
+Browser assets live in `web/static/`. The opt-in lean preview is in `web/static/sovereign/`,
+with its template at `web/templates/sovereign.html`; its frontend tests are in
+`tests/frontend/sovereign/` and its browser journey is `dashboard/tests/browser/sovereign.test.mjs`.
+The browser workflow retains its sanitized shell and drawer screenshots as `sovereign-visual-proof`, including passing runs.
+JavaScript feature folders are `app/`,
 `config/`, `network/`, `system/`, `workers/`, `xvb/`, and `wizard/`.
 `tests/frontend/` mirrors those folders. Its `harness.mjs`, `helpers/`, and
 `fixtures/` provide shared test inputs and rendering support. Node discovers the
