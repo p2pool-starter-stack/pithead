@@ -394,3 +394,7 @@ Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugep
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+The e2e sync sampler in `tests/integration/e2e-sync-sample.sh` rejects restored dashboard
+snapshots before the deploy, preflight and restore waits accept chain readiness. Its portable
+regression suite is `tests/integration/selftest/selftest-e2e-sync-freshness.sh`.

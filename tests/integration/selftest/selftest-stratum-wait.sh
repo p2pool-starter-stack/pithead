@@ -35,5 +35,26 @@ case_ "empty /api/state -> wait" 1 ''
 unset EXPECTED_WORKERS
 case_ "EXPECTED_WORKERS unset defaults to 1" 0 '{"proxy_workers":1,"stratum":{"total_hashes":1}}'
 
+echo "== worker reconnection is polled to the configured count (#2511) =="
+CLOCK="$(mktemp)"
+trap 'rm -f "$CLOCK"' EXIT
+poll_case() (
+    EXPECTED_WORKERS=2
+    printf '0\n' >"$CLOCK"
+    now_s() { cat "$CLOCK"; }
+    sleep() { printf '%s\n' "$(($(now_s) + $1))" >"$CLOCK"; }
+    api_state() {
+        local workers=1
+        [ "$RETURN_SECOND" != yes ] || [ "$(now_s)" -lt 20 ] || workers=2
+        printf '{"proxy_workers":%s,"stratum":{"total_hashes":12345}}' "$workers"
+    }
+    RETURN_SECOND="$1"
+    local rc=0
+    wait_stratum_hashes 30 >/dev/null 2>&1 || rc=$?
+    printf '%s|%s' "$rc" "$(now_s)"
+)
+assert_eq "one returning worker cannot finish the wait before its sibling" "$(poll_case yes)" '0|20'
+assert_eq "a missing sibling exhausts the bounded wait" "$(poll_case no)" '1|30'
+
 printf '\n%s: %d bad\n' "$([ "$BAD" -eq 0 ] && echo PASS || echo FAIL)" "$BAD"
-[ "$BAD" -eq 0 ]
+[ "$BAD" -eq 0 ] && [ "$IT_FAIL" -eq 0 ]

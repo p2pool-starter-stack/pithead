@@ -5,6 +5,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
+source "$HERE/../e2e-sync-sample.sh"
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/../lib/detached-harness.sh"
 # shellcheck source=tests/integration/lib/remote-endpoints.sh
@@ -63,7 +64,7 @@ synced_of() { # <state> [wait_synced's 2nd argument] -> the lines wait_synced pr
         ok() { :; }
         warn() { :; }
         sleep() { :; }
-        on_bench() { printf '%s' "$STATE"; }
+        on_bench() { printf '%s live' "$STATE"; }
         eval "$WAIT_SRC"
         wait_synced 0 "${2:-}"
         echo "rc=$?"

@@ -25,6 +25,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # lib.sh: rig_lock/rig_lock_remote (#430) from rigforge#183. rig-supply.sh: the write phase's rig host + token (#1378).
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/lib.sh" || exit $?
+source "$HERE/e2e-sync-sample.sh" || exit $?
 # shellcheck source=tests/integration/lib/rig-supply.sh
 source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
@@ -323,13 +324,12 @@ wait_bench_healthy() { # <timeout_s>
         sleep 10
     done
 }
-# Tari rebuilds its Tor circuits after a deploy (>18min, #2455), so the readiness row waits for a synced chain.
-wait_synced() { # <timeout_s>
-    local deadline=$(($(date +%s) + ${1:-300})) st refusal="destructive phases"
+wait_synced() {
+    local deadline=$(($(date +%s) + ${1:-300})) st freshness refusal="destructive phases"
     [ "${2:-}" = restore ] && refusal="baseline proof"
     while :; do
-        st="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '\"\(.sync.monero.state)/\(.sync.tari.state)\"' 2>/dev/null" || true)"
-        [ "$st" = "done/done" ] && {
+        read -r st freshness <<<"$(e2e_sync_sample || true)"
+        [ "$st" = "done/done" ] && [ "$freshness" = live ] && {
             ok "monero + tari re-confirmed synced ($st) — existing chains reused, no re-sync"
             return 0
         }
