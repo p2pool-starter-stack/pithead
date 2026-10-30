@@ -1,24 +1,9 @@
-# --- Lifecycle Helpers ---
-
-# The Compose project name is pinned to "pithead" (docker-compose.yml `name:`). A stack first
-# deployed under the old directory-derived project name still has containers holding our
-# container_names (tor, monerod, …) under that old project — they'd block `up` with a name
-# clash. Remove ONLY those — the containers belonging to the exact project THIS directory used
-# to create — so the renamed project can take over. We never touch a container that merely
-# shares a service name with us (e.g. someone else's `caddy` from an unrelated project). Chain
-# data lives in the bind-mounted data dirs and the Tor onion keys in a bind mount too, so
-# nothing is lost; Caddy re-issues its local TLS cert once under the new name.
 migrate_compose_project() {
     local cfg our_project dir_project names name cid proj
-    # Best-effort and must never abort pithead, so every substitution is guarded (a bare
-    # `var=$(failing)` would trip `set -e`).
     cfg=$(docker compose config --format json 2>/dev/null) || return 0
     [ -n "$cfg" ] || return 0
     our_project=$(printf '%s' "$cfg" | jq -r '.name // "pithead"' 2>/dev/null) || our_project="pithead"
-    [ -n "$our_project" ] || our_project="pithead"
-    # The old project name is the one Compose derived from this directory's basename (lowercased,
-    # sanitised to [a-z0-9_-]). Matching it exactly is what keeps us from removing an unrelated
-    # container. If it already equals our pinned name there's nothing to migrate.
+    [ "$our_project" = pithead ] || return 0
     dir_project=$(basename "$PWD" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')
     { [ -n "$dir_project" ] && [ "$dir_project" != "$our_project" ]; } || return 0
     names=$(printf '%s' "$cfg" | jq -r '.services[].container_name // empty' 2>/dev/null) || return 0
@@ -126,16 +111,11 @@ remove_deactivated_profile_containers() {
         warn "Could not remove the deactivated container(s): ${gone[*]} — remove them manually with 'docker rm -f ${gone[*]}'."
 }
 
-# #2595: compose recreates a container by creating its replacement as "<old id[:12]>_<name>",
-# removing the old one, then renaming the replacement. A pass that aborts in between (another
-# service's start failing cancels the rest) leaves the replacement beside the old container, and a
-# later pass removes the old one as surplus but never renames: compose finds the service by label.
-# Bench job 840 ran monerod as "4556c4f42f1d_monerod" from then on, so everything that addresses it
-# by name (exec, stop, the dashboard's control calls) missed it. Rename such a leftover once its
-# name is free; while the old container still holds it, the next pass decides which one survives.
 restore_recreate_names() {
+    local project
+    project=$(compose_project_name) || return 1
     local names name
-    names=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) || return 0
+    names=$(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}}' 2>/dev/null) || return 0
     while IFS= read -r name; do
         [[ "$name" =~ ^[0-9a-f]{12}_(.+)$ ]] || continue
         grep -qxF -- "${BASH_REMATCH[1]}" <<<"$names" && continue
@@ -242,11 +222,25 @@ stack_up() {
     log "Starting stack..."
     warn_missing_data_dirs
     migrate_compose_project
+    # Install the Tor-only egress firewall BEFORE the containers start (#270). DOCKER-USER is a static
+    # chain whose rules reference the fixed subnet/Tor IP, so they can go in before the network exists;
+    # Docker preserves DOCKER-USER and (re)adds the FORWARD jump when it creates the network. Doing this
+    # first closes the startup window in which a clearnet app (e.g. Tari) could dial out unfenced; the
+    # firewall resets such a flow once it is in (#2672), but the packets sent before that have leaked.
     apply_tor_egress_firewall
-    provision_egress_check_units
+    provision_egress_check_units # #2599: the dashboard reads the firewall's live state
     provision_lan_guard_check_units
+    # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
+    # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
+    # the one unverified pull. Same guard: source checkouts skip, a missing cosign.pub warns and
+    # proceeds (#461 — an install predating the first signed release has no key to verify against),
+    # a present key that fails aborts before anything starts.
     verify_release_images
+    # Docker Compose automatically picks up COMPOSE_PROFILES from .env
+    #
+    # PITHEAD_HOLD_CHAIN=1 defers chains and LMDB changes until A/B commit (#851); plain `up` starts them afterward.
     if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
+        # Revoke the carried mining latch before dashboard startup; ordinary outages retain it.
         local dashboard_dir
         dashboard_dir=$(env_get DASHBOARD_DATA_DIR)
         [ -n "$dashboard_dir" ] && rearm_sync_gate_marker "$dashboard_dir" 1 || error "Could not reset the mining sync gate for the data migration."
@@ -264,10 +258,8 @@ stack_up() {
     elif ! compose_up_checked -d; then
         error "Stack failed to start — see the error above."
     fi
-    if is_appliance; then
-        reconcile_compose_images || error "Stack failed to converge containers to their declared images."
-    fi
     log "Stack started successfully!"
+    # Remind the operator at start-time if a node is coming up on clearnet (#183).
     print_clearnet_banner
     announce_dashboard_url
     print_first_run_epilogue

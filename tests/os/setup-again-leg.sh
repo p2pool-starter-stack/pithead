@@ -71,9 +71,12 @@ _setup_again_session() {
         rm -f "$jar"
         return 1
     }
-    ok "the setup page is up on the set-up-again boot, with a fresh token"
+    ok "the setup page is up on the set-up-again boot, with a fresh token ($token)"
 }
 
+# Submit the rig form and wait for its card. $1 = worker, $2 = pool (default the guest's own sshd
+# over IPv4), $3 = a jq filter for what to print (default the token and address on one line, which
+# is what legs 1 and 2 read). Prints that; rc 1 = reported.
 _setup_again_rig_submit() {
     local scode card tries=0 pool="${2:-127.0.0.1:22}"
     scode=$(curl -sSk -b "$jar" --data "role=rig&rig_pool=$pool&rig_worker=$1" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
@@ -217,7 +220,7 @@ rig_setup_again_coordinator_leg() {
     *) bad "the setup entry did not follow the default to slot B — cmdline: $(printf '%s' "$cmd" | cut -c1-160)" ;;
     esac
     _setup_again_session || return
-    scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
+    scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini&role=pithead" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "coordinator submit on the set-up-again page returned ${scode:-none}, want 200"
         rm -f "$jar"

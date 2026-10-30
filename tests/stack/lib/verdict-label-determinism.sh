@@ -140,6 +140,7 @@ test-control-core.sh|reowned
 test-control-diagnostics.sh|_c
 test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
+test-control-editable-allowlist.sh|inactive_guidance
 test-control-editable-allowlist.sh|k
 test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
@@ -163,6 +164,7 @@ test-release.sh|comp
 test-release.sh|pin_rel
 test-release.sh|svc
 test-render-quadlet.sh|f
+test-render-quadlet.sh|profile
 test-restore-configless.sh|rcf_status
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
@@ -178,6 +180,10 @@ test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
+test-wizard-addresses.sh|wa_chain
+test-wizard-addresses.sh|wa_eof
+test-wizard-addresses.sh|wa_existing
+test-wizard-addresses.sh|wa_message
 test-wizard-tari.sh|mono
 test-wizard-tari.sh|size
 test-wizard-tari.sh|tari

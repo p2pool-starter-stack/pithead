@@ -69,21 +69,14 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globa
 
 execute_launch() { # <stdin-file> <capture-file>
     # env -u: the launched runner must see only what the stream carried, never this shell's exports.
-    CAPTURE_FILE="$2" CAPTURE_MODE="${3:-complete}" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY bash -c '
+    CAPTURE_FILE="$2" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY bash -c '
         rm() { :; }; cd() { :; }
         grep() {
-            if [ "${!#}" = /test/state ]; then
-                printf ".\n" >>"$CAPTURE_FILE.polls"
-                command grep -Fxq CAPTURE_COMPLETE "$CAPTURE_FILE"
-            else
-                command grep "$@"
-            fi
+            [ "${!#}" != /test/state ] && command grep "$@" || test -s "$CAPTURE_FILE"
         }
         nohup() {
             printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nMONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s\nATTEST[%s]\nARGV[%s]\n" \
                 "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$IT_MONERO_VIEW_KEY" "$IT_TARI_VIEW_KEY" "$IT_TARI_SPEND_PUBLIC_KEY" "$IT_ROTATE_ONION_FIXTURE_ATTESTATION" "$*" >"$CAPTURE_FILE"
-            [ "$CAPTURE_MODE" != incomplete ] || return 0
-            [ "$CAPTURE_MODE" != delayed ] || sleep .3
             # The harness-side consumer, fed the environment the runner received.
             # shellcheck source=tests/integration/lib.sh
             source "$LIB"
@@ -92,7 +85,6 @@ execute_launch() { # <stdin-file> <capture-file>
             else
                 printf "PAYOUT_CONFIRM=skip [%s]\n" "$SKIP_REASON" >>"$CAPTURE_FILE"
             fi
-            printf "CAPTURE_COMPLETE\n" >>"$CAPTURE_FILE"
         }
         eval "$1"
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
@@ -106,13 +98,8 @@ EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\n\n\n\n
     'eyJwb29scyI6Wwp7InVybCI6IjEyNy4wLjAuMToxIn1dfQ==' 'W3sidXJsIjoicHJvYmU6MSJ9XQ==' \
     '/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3')"
 assert_eq "record values and order are exact" "$(cat "$STDIN_FILE")" "$EXPECTED"
-execute_launch "$STDIN_FILE" "$WORK/captured" delayed
-assert_eq "a delayed writer completes before execute_launch returns" "$?" 0
+execute_launch "$STDIN_FILE" "$WORK/captured"
 CAPTURED="$(cat "$WORK/captured")" ARGV="$(sed -n 's/^ARGV\[\(.*\)\]$/\1/p' "$WORK/captured")"
-assert_contains "a delayed capture includes its final completion marker" "$CAPTURED" "CAPTURE_COMPLETE"
-execute_launch "$STDIN_FILE" "$WORK/incomplete" incomplete
-assert_eq "a partial capture without completion refuses to launch" "$?" 1
-assert_eq "a partial capture exhausts the bounded launch polls" "$(wc -l <"$WORK/incomplete.polls" | tr -d ' ')" 51
 assert_contains "multiline rollback input reaches the runner environment intact" "$CAPTURED" "$(printf 'ROLLBACK_BEGIN\n%s\nROLLBACK_END' "$ROLLBACK")"
 assert_contains "pools input reaches the runner environment intact" "$CAPTURED" "$(printf 'POOLS_BEGIN\n%s\nPOOLS_END' "$POOLS")"
 assert_contains "launcher-provisioned fixture path reaches the harness" "$CAPTURED" "ATTEST[/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3]"

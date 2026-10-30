@@ -60,11 +60,30 @@ env_get_file() {
 
 env_get() { env_get_file "$ENV_FILE" "$1"; }
 
-# Normalize a config truthy value to the literal "true"/"false". Accepts 1/true/yes/on
-# (case-insensitive) as true; everything else (incl. empty/absent) is false. Matches the
-# dashboard's MONERO_PRUNE parsing so config booleans read the same on both sides (#183).
-# ponytail: deliberately distinct from config_bool below — this normalizes an already-extracted
-# STRING; config_bool does the null-aware JSON READ. Merging them risks the #294 `// false` bug.
+compose_project_name() {
+    local project="" assignment rc=0
+    if [ "${COMPOSE_PROJECT_NAME+x}" = x ]; then
+        project=$COMPOSE_PROJECT_NAME
+    elif [ -e "${ENV_FILE:-.env}" ]; then
+        assignment=$(grep -E '^[[:space:]]*(export[[:space:]]+)?COMPOSE_PROJECT_NAME([^a-zA-Z0-9_]|$)' "${ENV_FILE:-.env}") || rc=$?
+        [ "$rc" -le 1 ] || return 1
+        if [ -n "$assignment" ]; then
+            if [[ "$assignment" != COMPOSE_PROJECT_NAME=* || "$assignment" == *$'\n'* ]]; then
+                warn "Use one literal COMPOSE_PROJECT_NAME assignment in the environment file."
+                return 1
+            fi
+            project=${assignment#COMPOSE_PROJECT_NAME=}
+            case "$project" in \'*\' | \"*\") project=${project:1:${#project}-2} ;; esac
+        fi
+    fi
+    project=${project:-pithead}
+    if ! [[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+        warn "COMPOSE_PROJECT_NAME must be a literal lowercase Compose project name."
+        return 1
+    fi
+    printf '%s' "$project"
+}
+
 normalize_bool() {
     case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
     true | 1 | yes | on) printf 'true' ;;
@@ -250,11 +269,22 @@ is_ipv4() {
     return 0
 }
 
+# Addresses held by container-engine interfaces (podman/docker/compose bridges and their veth
+# ends, matched by the engines' own naming so a LAN bridge like br0 or br-lan is kept), one per line; nothing when `ip` is absent. These come and go with the engine: a bridge
+# the setup wizard or a previous boot created is still in `hostname -I` when the Caddyfile is
+# rendered and gone by the time `up` starts Caddy. Listening on a literal that vanished fails the
+# whole file with "bind: cannot assign requested address" (#3406). Interface-name based, not an
+# engine query, so the answer never depends on the engine being reachable (see
+# appliance_site_names).
 container_bridge_addrs() {
     command -v ip >/dev/null 2>&1 || return 0
-    ip -o addr show 2>/dev/null | awk '$2 ~ /^(podman[0-9]+|docker[0-9]+|veth[0-9a-f]*|cni-podman[0-9]+|cni[0-9]+)$/ || ($2 ~ /^br-[0-9a-f]+$/ && length($2) == 15) { split($4, a, "/"); print a[1] }'
+    ip -o addr show 2>/dev/null | awk '$2 ~ /^(podman[0-9]+|docker[0-9]+|br-[0-9a-f]{12}|veth[0-9a-f]*|cni-podman[0-9]+|cni[0-9]+)$/ { split($4, a, "/"); print a[1] }'
 }
 
+# True if $1 is a globally-routable (public) IP literal — i.e. NOT loopback/private/link-local/
+# CGNAT/ULA. Pure + testable (#113): the stratum port is unauthenticated, so setup/doctor warn when
+# the host is publicly addressable. IPv4 excluded ranges: 0/8, 10/8, 127/8, 169.254/16, 172.16/12,
+# 192.168/16, 100.64/10 (CGNAT). IPv6: only 2000::/3 (global unicast) is treated as public.
 is_public_ip() {
     local addr="$1" a b h
     case "$addr" in

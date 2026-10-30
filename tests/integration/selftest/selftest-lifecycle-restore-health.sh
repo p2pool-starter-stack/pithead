@@ -30,7 +30,6 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         trace_lifecycle() { [ -z "${LIFECYCLE_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$LIFECYCLE_TRACE_OUT"; }
-        trace_restore_order() { [ -z "${RESTORE_ORDER_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$RESTORE_ORDER_TRACE_OUT"; }
         capture_artifacts() {
             printf 'CAPTURE:%s\n' "$1"
             trace_lifecycle "capture:$1"
@@ -62,26 +61,13 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
-        run_restore_dashboard_probe() {
-            trace_restore_order dashboard-probe
-            [ "$RESTORE_CASE" != dashboard-probe-fails ] || {
-                it_fail
-                return 1
-            }
-        }
-        run_tari_background_sync() {
-            trace_restore_order tari
-            [ "$RESTORE_CASE" != tari-fails ] || {
-                it_fail
-                return 1
-            }
-        }
         dashboard_tls_identity() { printf identity; }
         assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
             it_fail
             return 1
         }; }
         run_password_tls_continuity() { :; }
+        run_tari_background_sync() { :; }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
@@ -89,13 +75,12 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             *) printf absent ;;
             esac
         }
-        prove_wallet_supersession() { :; }
-        prove_wallet_recovery() { :; }
-        tor_recovery_healthy_probe() { :; }
-        run_connection_announcements() { :; }
+        prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
+        prove_wallet_recovery() { :; }        # Recovery proof has its own selftest.
+        tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
+        run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
         # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
-        run_reset_restore() {
-            trace_restore_order reset-restore
+        run_reset_restore() { # the leg is driven by selftest-reset-restore.sh
             case "$RESTORE_CASE" in
             reset-refused-intact)
                 RESET_RESTORE_STACK_INTACT=1
@@ -150,20 +135,6 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
-
-ORDER_TRACE=$(mktemp) || exit 1
-assert_eq "the dashboard probe runs before a failing Tari trial" \
-    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes tari-fails)" "1|1"
-assert_eq "Tari failure stops the later reset recovery" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari'
-: >"$ORDER_TRACE"
-assert_eq "a dashboard probe failure prevents the Tari trial" \
-    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes dashboard-probe-fails)" "1|1"
-assert_eq "a failed dashboard probe stops before Tari and reset" "$(cat "$ORDER_TRACE")" dashboard-probe
-: >"$ORDER_TRACE"
-assert_eq "healthy dashboard and Tari probes still reach reset recovery" \
-    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes)" "0|0"
-assert_eq "healthy probes keep the full recovery order" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari\nreset-restore'
-rm -f "$ORDER_TRACE"
 
 assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
@@ -260,27 +231,51 @@ fi
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1 _gated$/,/^    fi # fault-injection gate$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"
 
-drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
+drive_gate() {
     (
-        # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
+        # shellcheck disable=SC2034
         RUN_LIFECYCLE=1 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
-            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 \
+            RUN_ROTATE_ONION="${4:-0}" RUN_TARI_STRANDED="${4:-0}" RUN_MONERO_STRANDED="${4:-0}" \
+            rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1" preview_rc="${3:-0}"
+        run_p2pool_preview() { return "$preview_rc"; }
         run_lifecycle() {
             LIFECYCLE_STACK_INTACT="${intact:-0}"
             return "$lifecycle_rc"
         }
         run_fault_injection() { fault_ran=yes; }
-        it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
+        if [ "${5:-}" != summary ]; then
+            it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
+        fi
         gate() { eval "$MAIN_SRC"; }
         gate >/dev/null 2>&1 || true
-        printf '%s' "$fault_ran"
+        if [ "${5:-}" = summary ]; then
+            printf '%s|%b' "$IT_SKIPPED_PHASES" "$IT_SKIPPED_NAMES"
+        else
+            printf '%s' "$fault_ran"
+        fi
     )
 }
 
 assert_eq "fault injection runs after a healthy lifecycle" "$(drive_gate 0)" "yes"
+assert_eq "fault injection is reported skipped after a failed P2Pool preview (#3382)" "$(drive_gate 0 1 1)" "skipped:fault-injection "
 assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)" "$(drive_gate 1)" "skipped:fault-injection "
 assert_eq "fault injection runs after a lifecycle row failed with the stack intact (#3342)" "$(intact=1 drive_gate 1)" "yes"
 assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection "
+
+assert_eq "a failed rigforge-control names onion rotation and stranded-node phases (#2771)" "$(drive_gate 0 0 0 1)" \
+    "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection skipped:rotate-onion skipped:tari-stranded skipped:monero-stranded "
+
+GATED_SUMMARY="$(drive_gate 0 0 0 1 summary)"
+assert_eq "all six requested phases are counted after rigforge-control failure" "${GATED_SUMMARY%%|*}" "6"
+for phase in rotate-onion tari-stranded monero-stranded; do
+    assert_contains "$phase has a named missing-phase record and reason" "$GATED_SUMMARY" \
+        "[missing] PHASE    $phase — the rigforge-control phase failed, so the rig is not back on its baseline"
+done
+GATED_SUMMARY="$(drive_gate 0 0 0 0 summary)"
+assert_eq "unrequested phases do not inflate the skip count" "${GATED_SUMMARY%%|*}" "3"
+GATED_SUMMARY="$(drive_gate 0 1 0 1 summary)"
+assert_eq "successful rigforge-control does not report phases skipped" "${GATED_SUMMARY%%|*}" "0"
 
 echo "selftest-lifecycle-restore-health: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

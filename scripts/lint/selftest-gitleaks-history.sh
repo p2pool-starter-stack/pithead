@@ -2,7 +2,7 @@
 # Prove the historical Digest exception without exempting later copies of the fixture.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SANDBOX=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/gitleaks-history.XXXXXX")
+SANDBOX=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/gitleaks-history.XXXXXX")
 trap 'rm -rf "$SANDBOX"' EXIT
 COMMIT=051add657bebb7f744aef9e0622ad2ea9591d96b
 FIXTURE=tests/integration/selftest/test_restore_curl_connection.py
@@ -172,3 +172,30 @@ COPY=$(git -C "$SANDBOX/stratum-repo" rev-parse HEAD)
 expect_finding "$COPY:$STRATUM_FILE:generic-api-key:1" git "$SANDBOX/stratum-repo" "${ARGS[@]}" \
     --gitleaks-ignore-path "$SANDBOX/with-stratum.ignore" --log-opts="$COPY^..$COPY"
 echo 'PASS: exact stratum fixture ignored; missing exception and later copy detected'
+
+GOLDEN_FILE=tests/stack/fixtures/config-2.0.0/diy.env
+git init -q "$SANDBOX/golden-repo"
+mkdir -p "$SANDBOX/golden-repo/$(dirname "$GOLDEN_FILE")"
+printf 'NTFY_TOKEN=\nNOTIFY_TOR=true\n' >"$SANDBOX/golden-repo/$GOLDEN_FILE"
+git -C "$SANDBOX/golden-repo" add .
+git -C "$SANDBOX/golden-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false commit -qm 'Empty token render golden'
+scan git "$SANDBOX/golden-repo" "${ARGS[@]}" --log-opts=HEAD
+for CONTROL in token boolean path; do
+    CONTROL_FILE=$GOLDEN_FILE
+    case $CONTROL in
+    token) printf 'NTFY_TOKEN=%s\nNOTIFY_TOR=true\n' "$(printf 'golden-token-control' | sha256sum | cut -d' ' -f1)" >"$SANDBOX/golden-repo/$CONTROL_FILE" ;;
+    boolean) printf 'NTFY_TOKEN=\nNOTIFY_TOR=%s\n' "$(printf 'golden-boolean-control' | sha256sum | cut -d' ' -f1)" >"$SANDBOX/golden-repo/$CONTROL_FILE" ;;
+    path)
+        CONTROL_FILE=unreviewed.env
+        printf 'NTFY_TOKEN=\nNOTIFY_TOR=true\n' >"$SANDBOX/golden-repo/$CONTROL_FILE"
+        ;;
+    esac
+    git -C "$SANDBOX/golden-repo" add "$CONTROL_FILE"
+    git -C "$SANDBOX/golden-repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+        -c commit.gpgsign=false commit -qm "Changed empty-token golden $CONTROL control"
+    COPY=$(git -C "$SANDBOX/golden-repo" rev-parse HEAD)
+    expect_finding "$COPY:$CONTROL_FILE:generic-api-key:1" git "$SANDBOX/golden-repo" "${ARGS[@]}" \
+        --log-opts="$COPY^..$COPY"
+done
+echo 'PASS: empty-token goldens accepted; populated tokens, changed booleans and other paths detected'

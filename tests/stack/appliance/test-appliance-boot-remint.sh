@@ -51,13 +51,8 @@ assert_eq "coverage plus a certificate-expiry fail does NOT (two fails)" \
     "$(bc_run "$(dj fail "$COVER" fail 'The dashboard certificate expires in 12 days')")" "not"
 assert_eq "no doctor file at all does NOT" "$(bc_run "")" "not"
 assert_eq "a malformed doctor file does NOT" "$(bc_run 'not json')" "not"
-# The prefix the trigger matches must be the one doctor prints, or a reworded doctor silently
-# disarms the re-mint while every row above stays green: both sides are pinned to the source.
-# BOTH ARMS, since #1213 split this check into host and appliance wording: this gate runs ONLY on
-# an appliance, so the arm it actually reads is the SECOND one. A pin naming one arm would leave a
-# reworded appliance arm free to disarm the re-mint with this row still green.
 assert_eq "the trigger's prefix is doctor's own coverage message, verbatim at source" \
-    "$(grep -c 'dr_fail_surface "The dashboard certificate does not cover: ' "$ROOT/lib/pithead/20-doctor-install-checks.sh")" "1"
+    "$(grep -c 'dr_fail_surface dashboard-certificate "The dashboard certificate does not cover: ' "$ROOT/lib/pithead/20-doctor-install-checks.sh")" "1"
 assert_eq "…and the appliance arm — the only one this gate ever reads — carries it too" \
     "$(grep -o 'The dashboard certificate does not cover: ' "$ROOT/lib/pithead/20-doctor-install-checks.sh" | grep -c .)" "2"
 assert_eq "…and the boot script matches exactly that prefix" \
@@ -135,7 +130,7 @@ assert_eq "the re-mint branch follows the ready check and precedes progress, sle
     "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_progress:-0}" ] && [ "${l_progress:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
 l_gr=$(grep -n -F 'gate_ready() {' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 l_set=$(grep -n -F '    gate_doctor_ran=1' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
-l_doc=$(grep -n -F './pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
+l_doc=$(grep -n -F '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 assert_eq "gate_ready marks the round BEFORE it runs doctor, so a quiet round can never act on last round's file" \
     "$([ "${l_gr:-0}" -lt "${l_set:-0}" ] && [ "${l_set:-0}" -lt "${l_doc:-0}" ] && echo ordered)" "ordered"
 

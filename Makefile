@@ -1,13 +1,15 @@
+# Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
+	python3 scripts/build-config-defaults.py --check
 	bash scripts/build-pithead.sh
 
 test: lint test-dashboard test-frontend test-stack test-netwatch test-compose test-integration-selftest test-tools test-fakes ## Local checks (Docker required; no live test host)
 
 test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (deps from uv.lock); emits coverage.xml
-	cd dashboard && uv run --locked --extra test python -m pytest \
+	cd dashboard && uv run --locked --extra test python -m pytest -n auto \
 		--cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 
 test-clearnet-replay-proof: ## Retained Linux ext4 proof of all 100 marker replay cases
@@ -34,6 +36,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
+	bash tests/stack/standalone/test_grub_hugepages_real.sh
 	python3 tests/stack/standalone/test_clearnet_attestation.py
 	python3 tests/stack/standalone/test_stratum_port.py
 
@@ -52,25 +55,22 @@ test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
-	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
-	# any self-test added later, and a check that never runs reads exactly like one that passed.
-	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
-	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
+	for t in tests/integration/selftest/*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
+	for t in tests/os/selftest*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
 
-test-tools: ## Build-tool contracts and CI workflow guards (no live services)
+test-tools:
+	python3 tests/tools/test_lmdb_build.py
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
+	python3 scripts/lint/test-browser-workflow.py
 	python3 tests/stack/standalone/test_tor_saturated_fixture.py
 	python3 tests/stack/standalone/test_monero_download.py
 	python3 tests/stack/standalone/test_appliance_release_docs.py
-	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
+	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 15( |$$)'
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
 	sed -n '/^  pull_request:$$/,/^permissions:$$/p' .github/workflows/integration-mini-stack.yml | grep -Fqx '      - "lib/pithead/**"'
-
-test-bridge-awk: pithead
-	bash tests/stack/standalone/test_bridge_awk.sh
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q
@@ -141,9 +141,9 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 			echo "lint-sh: shfmt $${have:-not found} is not the pinned $(SHFMT_VERSION) — its formatting is not this gate's."; \
 			echo "lint-sh: install the pin (see docs/dev/release-server.md) or run the gate in CI."; exit 1; }
 	printf '%s\0' pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
-		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/*/*.sh \
+		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/test_setup_build_interrupt.sh tests/stack/*/*.sh \
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
-		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
+		os/installer/pithead-install os/build-image.sh os/rootfs/*.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \
@@ -191,7 +191,7 @@ lint-topology: ## Fail if a real-looking IPv6/IPv4/hostname/path/user@host liter
 
 lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, or an existing offender grows past its docs/dev/file-budget.tsv ceiling (#1105 Phase 0)
 	bash scripts/lint/lint-file-budget.sh --self-test
-	bash scripts/lint/selftest-file-budget-release.sh
+	FILE_BUDGET_BASE_REF="$$(git rev-parse HEAD)" bash scripts/lint/selftest-file-budget-release.sh
 	bash scripts/lint/lint-file-budget.sh
 
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards

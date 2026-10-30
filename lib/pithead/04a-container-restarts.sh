@@ -15,7 +15,6 @@ container_restart_snapshot() {
 container_restarting_names() {
     local before after id name state count started
     local -A before_count before_started before_name reported
-    [ "${PITHEAD_BOOT_GATE:-0}" = 1 ] && return 0
     before=$(container_restart_snapshot) || return 1
     [ -n "$before" ] || return 0
     sleep 3
@@ -57,16 +56,15 @@ container_restarting_names() {
 
 check_container_restarts() {
     local names name failed=0
-    [ "${PITHEAD_BOOT_GATE:-0}" = 1 ] && return 0
     if ! names=$(container_restarting_names); then
-        dr_fail "Container restart observation failed — the engine state could not be read twice."
+        dr_fail container-restarts "Container restart observation failed — the engine state could not be read twice."
         return 0
     fi
     while IFS= read -r name; do
         [ -n "$name" ] || continue
-        dr_fail "$name is restarting or restarted during the health check — it may be crash-looping."
+        dr_fail container-restarts "$name is restarting or restarted during the health check — it may be crash-looping."
         failed=1
     done <<<"$names"
-    [ "$failed" -eq 0 ] && dr_ok "No containers were observed restarting during the health check."
+    [ "$failed" -eq 0 ] && dr_ok container-restarts "No containers were observed restarting during the health check."
     return 0
 }

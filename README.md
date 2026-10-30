@@ -32,8 +32,9 @@ mining, and the **Compose stack** you run on a host you manage.
 ## What it does
 
 - ⛏️ **P2Pool payouts, Tari merge-mined.** Mines Monero on [P2Pool](https://p2pool.io/): no pool
-  operator, no fee, rewards paid to your own wallet. Every hash can merge-mine Tari on the same
-  work — the appliance's setup wizard asks, and a machine that declines mines Monero alone.
+  operator, no pool fee, rewards paid to your own wallet; the optional project donation is off
+  by default. Every hash can merge-mine Tari on the same work — the appliance's setup wizard
+  asks, and a machine that declines mines Monero alone.
   P2Pool's PPLNS payouts are lumpy, and Tari's solo merge-mining payouts are lumpier still;
   see [payout expectations](docs/dashboard.md#earnings--expected-vs-actual).
 - 🧠 **XvB switching engine.** Watches the XMRvsBeast raffle and shifts hashrate to hold your tier,
@@ -89,8 +90,8 @@ mining, and the **Compose stack** you run on a host you manage.
 | **Pithead OS** — the appliance | A bootable USB image that installs itself on a dedicated machine: no Linux to set up, configured from a browser, updated as one signed OS image with A/B fallback. Fallback covers the OS image only; it cannot undo a one-way data migration such as Tari v6. | [The appliance guide](docs/appliance.md#updates) |
 | **The Compose stack** — DIY | The same stack on a host you manage (Ubuntu Server 24.04): you keep the OS, `pithead` drives Docker Compose. | The Quick Start below |
 
-Same stack, same dashboard, same configuration either way. The appliance is the short road;
-DIY is for a box that already does other things.
+Choose between [connecting an existing miner, keeping a managed host, or installing the appliance](docs/getting-started.md#choose-your-next-action).
+The guide separates coordinator and worker resources, disk writes, and optional local mining.
 
 ---
 
@@ -109,8 +110,9 @@ cd pithead
 
 > Leave `config.json` absent for the setup wizard; have a Monero payout address ready, and a
 > Tari payout address only if you enable merge-mining. For manual configuration, copy
-> `config.minimal.json` or `config.reference.json` and edit it before setup; those files inherit
-> reference defaults rather than the wizard's new-install choices. To build from source (a `dev`
+> `config.minimal.json` or `config.reference.json` and edit it before setup. The minimal file uses
+> the shared wizard defaults for a new install, including Tari off; the reference file retains
+> legacy absent-key values to preserve existing configs. To build from source (a `dev`
 > build), e.g. to contribute, see [Install from source](docs/getting-started.md#alternative-build-from-source).
 > Release archives include the generated `pithead` executable and offline operator guides; source
 > clones build the executable with `make`.
@@ -149,7 +151,7 @@ Full walkthrough: [docs/getting-started.md](docs/getting-started.md)
 | Guide | What's inside |
 |---|---|
 | **[Pithead OS — the appliance](docs/appliance.md)** | Write a USB stick, install on a dedicated machine, configure from a browser. Signed OS image updates with [A/B fallback](docs/appliance.md#updates) for the OS only, not one-way data migrations such as Tari v6. |
-| **[Getting Started](docs/getting-started.md)** | The DIY path: prerequisites, install, first-run setup, and what to expect while the node syncs. |
+| **[Getting Started](docs/getting-started.md)** | Deployment chooser, DIY setup, miner connection, first accepted work, reward checks, and stop/remove controls. |
 | **[Hardware Requirements](docs/hardware.md#choose-the-arrangement)** | Coordinator only, coordinator plus a local worker, or worker only: separate sizing for each role, and how to run leaner. |
 | **[Configuration](docs/configuration.md)** | Every `config.json` key, applying changes safely, reusing an existing node, and remote Monero or Tari nodes. |
 | **[The Dashboard](docs/dashboard.md)** | Sync Mode, a tour of the live operational view, and the opt-in control channel: editing config, one-click upgrades, and the audit logs from the browser. |
@@ -253,7 +255,7 @@ Everything runs through `pithead` (`./pithead help` lists it all):
 | `./pithead doctor` | Read-only health report (deps, Docker, AVX2, HugePages, RAM/disk, onion state). |
 | `./pithead version` | Print the installed stack version on one line (offline; also `-V` / `--version`). |
 | `./pithead backup` | Save config, secrets, the Tor onion keys, and the dashboard's database to a passphrase-encrypted archive under `backups/` (`--with-chains` adds blockchain data; `--no-encrypt` writes plaintext; `-y` / `--yes` skips the prompts). |
-| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env`, `Caddyfile`, and the masked dashboard configuration from the configuration (asks before overwriting; `-y` / `--yes` skips the prompt). |
+| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; `-y` / `--yes` skips the prompt). |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak — see [Rotating the internal secrets](docs/operations.md#rotating-the-internal-secrets). |
 
 Commands chain in one call (`./pithead apply upgrade` runs both, stopping on the first failure;
@@ -267,7 +269,8 @@ Full reference: **[Operations & Maintenance](docs/operations.md)**.
 
 ## 🤝 Donate
 
-If this stack saved you time, donations to this XMR wallet are appreciated:
+The [optional hashpower donation](docs/donation.md) is off by default and appears only in releases
+that publish a project endpoint; for a manual transfer, use this XMR wallet:
 
 ```
 486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R

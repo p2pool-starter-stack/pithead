@@ -21,7 +21,10 @@ mini-stack/     docker overlay running the real dashboard + docker-control again
 
 The live matrix here is tier 4 of the broader plan. See
 [`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md) for all four tiers and the full
-scenario catalog.
+scenario catalog. The Tor fault records bounded numeric mining-witness samples in the
+harness transcript: accepted shares, worker count, worker hashrate and minimum uptime.
+API failures are explicit; worker identities and raw responses are omitted. The five-minute
+mining-continuity assertion remains unchanged.
 
 Quick start:
 
@@ -38,3 +41,37 @@ make test-integration-selftest
 
 Full guide — provisioning the box, the safety model, the matrix, artifacts, and CI/release
 wiring — is in [`docs/dev/integration-testing.md`](../../docs/dev/integration-testing.md).
+
+## Fake stratum endpoint
+
+`fakes/fake_stratum.py` serves JSON lines over TCP using the P2Pool login and submit
+response shapes recorded in `fakes/contract/v1/PROVENANCE`. The job values are synthetic;
+real xmrig-proxy compatibility remains unverified until the stub-only donation routing
+phase runs in tier 4. It does not verify proof of work or mine to a project endpoint.
+
+Use `FakeStratum()` as a context manager. Tests bind to loopback on an OS-assigned port.
+`logins` records only the received `login`, `pass` and `agent` fields; `login` is the
+pool user. Each login has a separate record. `fixture_metadata` contains `url` and
+`coin` supplied by the fixture, not fields observed in the stratum protocol. Assert the
+actual `url`, `user`, `pass`, `coin` and per-pool `socks5` at the controller configuration
+boundary instead. `test_stratum_pool_contract.py` covers both route orders and Tor
+choices there; `test_fake_stratum.py` separately proves traversal using
+`FakeSocks.connected` and the login received by the stratum fake.
+
+`mode="accept"` acknowledges submissions and increments `accepted`; `mode="reject"`
+returns a low-difficulty error and increments `rejected`. `mode="silent"` records
+submissions without replying, while still answering login. `mode="refuse"` or
+`refuse=True` closes new connections. `submissions` records received submit parameters.
+These modes simulate outcomes without validating hashes, session IDs or job IDs.
+
+For a mini-stack container, explicitly request a non-loopback bind:
+
+```bash
+python tests/integration/fakes/fake_stratum.py --host 0.0.0.0 --port 3333 --mode accept
+```
+
+Without `--host`, standalone mode also binds only to loopback. It prints the bound
+fixture metadata once on startup. Add `--log PATH` to append JSON-line login and submit
+events for inspection. Logs include received login passwords: use synthetic test
+credentials only. No mini-stack service is added here; the donation routing phase owns
+its container wiring. Run the socket contracts with `make test-fakes`.

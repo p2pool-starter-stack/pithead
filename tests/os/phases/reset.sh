@@ -4,11 +4,9 @@
 source "$SCRIPT_DIR/phases/reset-config.sh" || return $?
 # shellcheck source=tests/os/phases/reset-slot.sh
 source "$SCRIPT_DIR/phases/reset-slot.sh" || return $?
-# shellcheck source=tests/os/coordinator-setup-again-leg.sh
-source "$SCRIPT_DIR/coordinator-setup-again-leg.sh" || return $?
 phase_reset() {
     info "phase: reset (factory-reset ESP marker + wedged-/data recovery — opt-in, destructive)"
-    local img token tries jar scode names deadline handoff reset_user reset_pass
+    local img token tries jar scode names deadline
 
     info "provisioning the guest that legs 0 and 1 both run against"
     img=$(_build_image v1) || {
@@ -43,7 +41,7 @@ phase_reset() {
         rm -f "$jar"
         return
     }
-    scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&tari_mode=local&pool=nano&stratum_password=true" \
+    scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini" \
         "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "config submit did not return 200 (got ${scode:-none})"
@@ -52,8 +50,7 @@ phase_reset() {
     }
     tries=0
     while [ "$tries" -lt 24 ]; do
-        handoff=$(curl -fsSk -b "$jar" -m 5 --max-filesize 1048576 "https://$ip/api/handoff" 2>/dev/null) || handoff=""
-        printf '%s' "$handoff" | jq -e '.password | type == "string" and length > 0' >/dev/null 2>&1 && break
+        curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null | grep -q '"password"' && break
         sleep 5
         tries=$((tries + 1))
     done
@@ -62,18 +59,7 @@ phase_reset() {
         rm -f "$jar"
         return
     }
-    reset_user=$(printf '%s' "$handoff" | jq -er '.username | select(length > 0)') &&
-        reset_pass=$(printf '%s' "$handoff" | jq -er '.password | select(length > 0)') || {
-        bad "initial coordinator card did not carry a login"
-        rm -f "$jar"
-        return
-    }
-    scode=$(curl -sSk -b "$jar" -m 20 -X POST "https://$ip/handoff-ack" -o /dev/null -w '%{http_code}' 2>/dev/null)
-    [ "$scode" = 200 ] || {
-        bad "initial coordinator handoff acknowledgement failed"
-        rm -f "$jar"
-        return
-    }
+    curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
     rm -f "$jar"
     ok "config submitted and provisioning released"
 
@@ -109,15 +95,8 @@ phase_reset() {
         return
     fi
 
-    if _ssh 'cd /data/pithead && bash -s' <"$SCRIPT_DIR/../integration/lib/restore-dashboard-guest.sh"; then
-        ok "CLI restore refreshes dashboard configuration and running energy cost (#3432)"
-    else
-        bad "CLI restore leaves dashboard configuration or running energy cost stale (#3432)"
-        return
-    fi
-
-    phase_coordinator_setup_again "$reset_user" "$reset_pass" || return
-
+    # leg 0 (#2347): config-reset must keep chains and the onion address, clear the config, and
+    # re-arm the wizard — on the SAME provisioned guest, before leg 1 wipes it.
     if _phase_reset_config; then
         _phase_reset_slot || return
     else

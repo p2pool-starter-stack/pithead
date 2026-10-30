@@ -35,14 +35,9 @@ ensure_config_exists() {
     wizard_print_pointer
 }
 
-# Stage 1 (required — only the operator can answer these): the Monero payout address, local/remote
-# node (+ remote details), the Tari merge-mining question (delegated to wizard_ask_tari), pool tier,
-# and a generated dashboard login (with an explicit opt-out). Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
-# MONERO_MODE_WIZ, REMOTE_HOST, REMOTE_RPC, REMOTE_ZMQ, IN_MONERO_USER, IN_MONERO_PASS, POOL_TIER,
-# IN_DASH_USER, IN_DASH_PASS — plus wizard_ask_tari's own.
 wizard_ask_core() {
     while :; do
-        read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || break
+        read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || error "End of input while reading the Monero payout address. Aborting."
         case "$(monero_address_type "$IN_MONERO_WALLET")" in
         primary) break ;;
         subaddress) echo "  ✗ That's a subaddress (8…) — p2pool can't pay it. Use your PRIMARY address (starts with 4)." >&2 ;;
@@ -161,7 +156,7 @@ wizard_tari_disk_default() {
         echo "Disk: a Tari chain is already on this machine's data disk, so keeping merge-mining on is the default."
         return 0
     fi
-    WIZ_TARI_DEFAULT="off"
+    WIZ_TARI_DEFAULT=$(default_of tari.mode)
     need_gib=$(wizard_stack_need_gib "$monero_mode")
     mount=$(disk_fs_mount "$PWD/data" 2>/dev/null) || mount=""
     avail_kb=""
@@ -225,8 +220,8 @@ wizard_ask_tari() {
     fi
 
     while :; do
-        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || break
-        [ -z "$IN_TARI_WALLET" ] && break # the required-field check below owns this
+        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || error "End of input while reading the Tari payout address. Aborting."
+        [ -z "$IN_TARI_WALLET" ] && break
         case "$(tari_address_type "$IN_TARI_WALLET")" in
         ok | unchecked) break ;;
         checksum) echo "  ✗ Checksum failed — at least one character is mistyped. Re-copy the address from your Tari wallet." >&2 ;;
@@ -277,14 +272,14 @@ wizard_ask_shape() {
         read -r -p "Telegram chat id: " TELEGRAM_CHAT_ID || true
     fi
 
-    # Local miner opt-in (#593). A box that runs the stack 24/7 can mine with its spare CPU by
-    # co-locating a RigForge worker pointed at the stack's own loopback stratum. Off by default —
-    # this only records the intent; setup prints the two values a RigForge install needs (the pool
-    # URL and stratum secret) at the end. Pithead never installs or tunes the miner: RigForge owns
-    # all host tuning (HugePages/GRUB/MSR) and the miner service.
-    read -r -p "Also mine on this machine with its spare CPU (co-locate a RigForge worker)? (y/N): " IN_LOCAL_MINER || true
-    LOCAL_MINER=false
-    [[ "$IN_LOCAL_MINER" =~ ^[Yy] ]] && LOCAL_MINER=true
+    LOCAL_MINER=$(default_of local_miner.enabled)
+    local miner_prompt="y/N"
+    [ "$LOCAL_MINER" != true ] || miner_prompt="Y/n"
+    read -r -p "Also mine on this machine with its spare CPU (co-locate a RigForge worker)? ($miner_prompt): " IN_LOCAL_MINER || true
+    case "$IN_LOCAL_MINER" in
+    [Yy]*) LOCAL_MINER=true ;;
+    [Nn]*) LOCAL_MINER=false ;;
+    esac
 
     wizard_ask_stratum_password
 }
@@ -302,6 +297,7 @@ wizard_ask_stratum_password() {
 wizard_write_config() {
     local cfg
     cfg=$(jq -n \
+        --argjson defaults "$(new_install_defaults)" \
         --arg mode "$MONERO_MODE_WIZ" \
         --arg mwallet "$IN_MONERO_WALLET" \
         --arg mu "$IN_MONERO_USER" \
@@ -309,23 +305,13 @@ wizard_write_config() {
         --arg tmode "$TARI_MODE_WIZ" \
         --arg pool "$POOL_TIER" \
         --arg stratum_password "${WIZ_STRATUM_PASSWORD:-}" \
-        '{monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
+        '$defaults * {monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
           tari: {mode: $tmode},
           p2pool: {pool: $pool, stratum_password: $stratum_password},
-          xvb: {enabled: false},
           dashboard: {secure: true}}')
 
-    # tari.mode is written EXPLICITLY, and it is the one key here that departs from the rest of the
-    # wizard's omit-and-inherit habit (#1916). A config with no tari.mode parses as "local" — the
-    # deliberate default that keeps a 1.x upgrade merge-mining (28-parse-and-validate-config.sh) —
-    # so omitting the key on a decline would merge-mine anyway, which is the whole defect. The
-    # payout address goes the other way: a machine that merge-mines nothing has nowhere to be paid,
-    # so the key is absent rather than written empty. Same two rules as the browser wizard's
-    # build_config, for the same two reasons.
     if [ "$TARI_MODE_WIZ" != "off" ]; then
-        # A Yes on a new install must not let an opted-in beta Tari hold or reject Monero mining
-        # (#3333); an operator can raise dashboard.tari_required in the config later.
-        cfg=$(jq --arg tw "$IN_TARI_WALLET" '.tari.wallet_address = $tw | .dashboard.tari_required = false' <<<"$cfg")
+        cfg=$(jq --arg tw "$IN_TARI_WALLET" '.tari.wallet_address = $tw' <<<"$cfg")
     fi
 
     if [ "$TARI_MODE_WIZ" == "remote" ]; then
@@ -356,12 +342,9 @@ wizard_write_config() {
         cfg=$(jq --arg t "$TELEGRAM_BOT_TOKEN" --arg c "$TELEGRAM_CHAT_ID" '.telegram = {enabled: true, bot_token: $t, chat_id: $c}' <<<"$cfg")
     fi
 
-    if [ "${LOCAL_MINER:-false}" = true ]; then
-        cfg=$(jq '.local_miner = {enabled: true}' <<<"$cfg")
-    fi
+    cfg=$(jq --argjson enabled "${LOCAL_MINER:-$(default_of local_miner.enabled)}" \
+        '.local_miner.enabled = $enabled' <<<"$cfg")
 
-    # Subshell umask (#368): the file must be owner-only from its FIRST byte — a chmod after the
-    # write leaves a world-readable window under the default umask.
     (
         umask 077
         printf '%s\n' "$cfg" >"$CONFIG_FILE"
