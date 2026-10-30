@@ -2,7 +2,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=${LAN_CRASH_SOURCE_ROOT:-$HERE/..}
-fixture=$(mktemp -d "${TMPDIR:?}/lan-crash-selftest.XXXXXX")
+fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 mkdir -p "$fixture/bin" "$fixture/stack/data/lan-guard"
 export CAPTURE_CALLS="$fixture/calls"
