@@ -106,25 +106,21 @@ _wait_new_boot() { # $1 = boot id before the reboot, $2 = seconds
     info "no new boot within $2 s — boot id ${now:-unreadable}, was $1"
     return 1
 }
-_reboot_wait() { # $1 = the command that reboots the guest, $2 = seconds to wait for the new boot
+_reboot_wait() {
     local before
     before=$(_boot_id) || info "could not read the boot id before '$1' — a reconnect and a reboot would look alike"
     [ -n "$before" ] || return 1
-    _ssh "$1" >/dev/null 2>&1 || true # the session dies with the reboot
+    _ssh "$1" >/dev/null 2>&1 || true
     _wait_new_boot "$before" "$2"
 }
-# Classify why _wait_ssh gave up, using only signals that do NOT need a working SSH session — the
-# guest either isn't running, isn't the one we're still probing, or is running and refusing the
-# connection (sshd not up yet, or genuinely dead) vs. not answering the network at all. $1 is the
-# ip that was being probed.
 _ssh_unreachable_reason() {
     local probed_ip="$1" state cur_ip
-    state=$(virsh domstate "$VM" 2>/dev/null || echo unknown)
+    state=$(vm_state 2>/dev/null || echo unknown)
     if [ "$state" != "running" ]; then
         printf 'guest VM is not running (libvirt state: %s) — it never had a chance to answer SSH' "$state"
         return
     fi
-    cur_ip=$(virsh domifaddr "$VM" 2>/dev/null | awk '/ipv4/{print $4}' | cut -d/ -f1 | head -1)
+    cur_ip=$(vm_lease_ip)
     if [ -n "$cur_ip" ] && [ "$cur_ip" != "$probed_ip" ]; then
         printf 'guest now holds a DIFFERENT DHCP lease (%s, was probing %s) — it rebooted mid-boot and the probe was aimed at a dead lease, not a dead sshd' "$cur_ip" "$probed_ip"
         return
@@ -133,12 +129,6 @@ _ssh_unreachable_reason() {
         printf 'guest answers on the network but refuses port 22 — sshd is still gated behind the /data mount + host-key generation (pithead-ssh-host-keys.conf), or failed to start; not a network problem'
         return
     fi
-    # An auth rejection is the single most diagnostic answer here and it used to fall through to
-    # the catch-all below, which reported a BENCH KEY MISMATCH as "guest never answered the
-    # network — DHCP/routing/firewall problem". That is the opposite of what happened: sshd was up,
-    # reachable, and said no. The misreport sent several sessions hunting product-side boot theories
-    # (socket activation, RequiresMountsFor=/data) for a harness misconfiguration, so the classifier
-    # names it explicitly and says which key it offered.
     if grep -qiE 'permission denied|no supported authentication|too many authentication' "$SSH_ERR" 2>/dev/null; then
         printf 'guest sshd is UP and REJECTED our key (%s) — this is authentication, not boot and not networking. The image bakes the pubkey passed to os/build-image.sh --ssh; if that is not the counterpart of the key this harness probes with, every phase that needs SSH fails like a dead guest' "$KEY"
         return
@@ -163,13 +153,11 @@ _dash_marker_served() {
     return 1
 }
 
-# Poll until the guest has taken a DHCP lease. No guest agent in the appliance image (by
-# design), so the lease is the source of truth. Sets the global `ip`. $1 seconds.
 _wait_dhcp_ip() {
     local deadline=$(($(date +%s) + $1))
     ip=""
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        ip=$(virsh domifaddr "$VM" 2>/dev/null | awk '/ipv4/{print $4}' | cut -d/ -f1 | head -1)
+        ip=$(vm_lease_ip)
         [ -n "$ip" ] && return 0
         sleep 3
     done
@@ -333,12 +321,9 @@ require_probe_key_matches_image() {
     }
 }
 
-# A stray VM on the same libvirt network can take the DHCP lease the harness then reads back,
-# so the battery silently drives someone else's guest. This happened with a hand-started
-# diagnostic VM and produced passing legs that proved nothing. Refuse to run rather than report.
 require_clean_bench() {
     local guests strays
-    guests=$(virsh list --name 2>/dev/null) || {
+    guests=$(vm_list_running 2>/dev/null) || {
         echo "refusing to run: libvirt could not enumerate the bench." >&2
         exit 2
     }
