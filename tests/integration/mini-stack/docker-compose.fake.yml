@@ -97,6 +97,7 @@ services:
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
       TOR_SOCKS_PROXY: ""
       DASHBOARD_CONTROL_ENABLED: "true"
+      TELEGRAM_COMMANDS_ENABLED: "${TELEGRAM_COMMANDS_ENABLED:-false}"
       TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-true}"
       TELEGRAM_BOT_TOKEN: "itest-token"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-itest-chat}"
@@ -174,6 +175,7 @@ services:
     image: busybox:1.36
     container_name: itest-p2pool
     networks: [itestnet]
+    volumes: ["dashboard_stats:/stats"]
     command: ["sh", "-c", "while true; do sleep 30; done"]
 
   xmrig-proxy:
