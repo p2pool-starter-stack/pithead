@@ -41,7 +41,10 @@ which:
 - reuses the synced chain data dirs (it never re-syncs, never re-provisions Tor), and
 - preserves secrets (`PROXY_AUTH_TOKEN`, onion addresses).
 
-For each scenario it writes a `config.json`, applies it, then waits on real readiness signals
+For each scenario it renders `config.json` from the saved baseline. Remote Monero overrides
+clear `monero.view_key`; remote Tari overrides clear `tari.view_key` and `tari.spend_public_key`.
+These local-only payout inputs stay intact for the other currency. Wallet addresses, scan
+heights and data directories are preserved. It applies the config, then waits on real readiness signals
 (container health, `pithead status`, dashboard sync %, miner-released) with timeouts. Never a
 fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini when
 `p2pool.pool` is omitted. It then runs the assertion battery below. All reads happen on the box
@@ -49,7 +52,9 @@ fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini 
 behave identically and never depend on resolving the box's dashboard hostname.
 
 Before the first scenario it snapshots the box's original `config.json` and a fingerprint of
-its secrets. After the run it restores the original config and re-applies (unless `--keep`).
+its secrets. After the run it restores the original config, including both currencies' payout
+inputs, and re-applies (unless `--keep`). It waits for health and verifies the config and
+secret fingerprint match the baseline.
 
 ### Safety model
 
