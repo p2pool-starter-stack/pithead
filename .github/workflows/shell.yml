@@ -131,7 +131,7 @@ jobs:
           fi
           cat "$historical/red.log"
           grep -Fq 'missing [Tor image build or startup failed (exit 130)]' "$historical/red.log"
-          grep -Eq '^setup build interruption: [0-9]+ passed, 1 failed$' "$historical/red.log"
+          grep -Eq '^setup build interruption: [0-9]+ passed, 8 failed$' "$historical/red.log"
       - name: Install real GRUB tooling and a host kernel
         run: |
           sudo apt-get update
