@@ -99,7 +99,7 @@ OPTIONS:
 ENV OVERRIDES: BENCH_HOST, MINER_HOST, CANONICAL_DIR, E2E_DIR, MINER_XMRIG_CONFIG, GIT_REMOTE_URL, and
   RIG_HOST, RIG_NAME, IT_RIG_TOKEN, IT_RIG_ROLLBACK_CHANGES, IT_RIG_POOLS_PROBE, RIG_CONTROL_PORT, RIGFORGE_CONFIG, RIGFORGE_BOOTSTRAP_VERSION,
   IT_MONERO_VIEW_KEY, IT_TARI_VIEW_KEY, IT_TARI_SPEND_PUBLIC_KEY (payout-confirm row; sent to the harness on stdin)
-  E2E_NO_DEPLOY_DIR, E2E_JOB_ID, E2E_INVOCATION_ID, E2E_CANDIDATE_SHA (opt-in no-deployment receipt)
+  E2E_NO_DEPLOY_DIR, E2E_JOB_ID, E2E_INVOCATION_ID, E2E_CANDIDATE_SHA, E2E_CONTROLLER_SHA (opt-in no-deployment receipt)
   IT_SCRATCH_DIR (existing target scratch directory; inherited as TMPDIR by target commands and the detached harness)
 
 EXAMPLES:
@@ -659,6 +659,8 @@ run_harness() {
 # --- Main -------------------------------------------------------------------
 main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"
+    no_deployment_admit
+    no_deployment_invalidate
     preflight
     provision
     prepare_candidate
