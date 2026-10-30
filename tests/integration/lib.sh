@@ -186,24 +186,20 @@ resolve_overrides() {
         out="$out tari.remote.host=$REMOTE_TARI_HOST"
     fi
 
-    # Payout confirmation (#381/#462, #942): monero.view_key / tari.view_key are real wallet-scanning
-    # secrets for the box's OWN wallet — never hardcoded in the matrix. The scenario instead carries
-    # the marker "payout_confirm=env" (not a real config path, always stripped below); an
-    # operator-supplied key gates the row, the same shape as remote mode needing an endpoint: either
-    # IT_MONERO_VIEW_KEY, or Tari's pair (IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY, BOTH set), which
-    # also carries the bench wallet's first payout day as the birthday (#2731). Each folds in if set.
+    # Both wallets must run so a payout scenario proves both configured identities (#2885).
     if printf '%s' "$overrides" | tr ' ' '\n' | grep -qx 'payout_confirm=env'; then
         out="$(printf '%s' "$out" | tr ' ' '\n' | grep -vx 'payout_confirm=env' | tr '\n' ' ')"
-        out="${out% }" # strip the trailing space left by removing the marker token
-        out="${out# }" # ...and a leading one, when the marker was the only/first token
-        local tari_pair=""
-        [ -n "${IT_TARI_VIEW_KEY:-}" ] && [ -n "${IT_TARI_SPEND_PUBLIC_KEY:-}" ] && tari_pair=1
-        [ -n "${IT_MONERO_VIEW_KEY:-}$tari_pair" ] || {
-            SKIP_REASON="needs IT_MONERO_VIEW_KEY, or IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY (env; the box's own wallet keys)"
+        out="${out% }"
+        out="${out# }"
+        local key missing=""
+        for key in IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY; do
+            [ -n "${!key:-}" ] || missing="${missing:+$missing, }$key"
+        done
+        [ -z "$missing" ] || {
+            SKIP_REASON="needs $missing (env; the box's own wallet keys)"
             return 1
         }
-        [ -z "${IT_MONERO_VIEW_KEY:-}" ] || out="${out:+$out }monero.view_key=$IT_MONERO_VIEW_KEY"
-        [ -z "$tari_pair" ] || out="${out:+$out }tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
+        out="${out:+$out }monero.view_key=$IT_MONERO_VIEW_KEY tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
     fi
 
     RESOLVED="$out"
