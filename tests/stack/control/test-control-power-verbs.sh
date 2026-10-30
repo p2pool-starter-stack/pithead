@@ -117,7 +117,6 @@ assert_eq "a second sys-reboot inside the cooldown is rejected" "$(jq -r '.statu
 assert_contains "the cooldown refusal names the window" "$(jq -r '.error' "$PWRES/$PW1.json" 2>/dev/null)" "less than five minutes ago"
 assert_eq "the cooled-down reboot ordered nothing" "$(wc -l <"$PWC/sysctl.log" | tr -d ' ')" "0"
 rm -f "$PWRES/$PW1.json"
-touch -t 202001010000 "$PWC/data/control/.power-stamp.sys-reboot"
 touch -t 209901010000 "$PWC/data/control/.power-stamp.sys-reboot"
 pw_intent "$PW1" sys-reboot
 pwrun >/dev/null
