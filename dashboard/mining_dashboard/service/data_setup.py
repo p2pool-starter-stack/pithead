@@ -31,6 +31,7 @@ from mining_dashboard.service.health.update_checker import GitHubReleaseClient, 
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
 from mining_dashboard.service.notify.alert_service import AlertService
 from mining_dashboard.service.notify.healthchecks import HealthchecksClient
+from mining_dashboard.service.sync_status import SyncStatus
 from mining_dashboard.service.worker_probe import WorkerProber
 from mining_dashboard.service.xvb.price_feed import CoinGeckoClient, PriceFeed
 
@@ -49,9 +50,9 @@ def _runtime():
 class DataSetupMixin:
     def __init__(self, state_manager, proxy_client, xvb_client):
         self.state_manager = state_manager
+        self.sync_status = SyncStatus()
         self.proxy_client = proxy_client
         self.xvb_client = xvb_client
-        # Per-worker connection tracking for true uptime (#169) + stale-row fall-off (#182).
         self._lifecycle = WorkerLifecycle(WORKER_FALLOFF_SEC)
         # New-release check (#224): off unless dashboard.check_for_updates is set. Routed over the
         # bridge Tor SOCKS (reusing TOR_SOCKS_PROXY) so it can't reveal the host IP to GitHub.

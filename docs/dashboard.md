@@ -31,7 +31,7 @@ not hide known Monero progress. Progress is unknown when an unfinished gating ch
 The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
-and asks the operator to sign in again when the session expires. Its page bodies and most Settings
+and asks the operator to sign in again when the session expires. Most page bodies and Settings
 controls are still being built; the preview does not announce a cutover from the legacy UI. The
 drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
 [#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
@@ -47,7 +47,34 @@ disabled, anyone on that LAN can retrieve it; enable a dashboard login before sh
 An onion-published dashboard requires a login. With no stratum password, the block says
 **No stratum password** and miners connect without one.
 
-## Sync Mode
+## Overview synchronization and recovery
+
+In the lean preview, Overview shows a read-only sync page whenever a running node is syncing,
+unreachable or regressing, or the host holds mining or rejects workers during recovery. Other
+pages remain reachable. When nodes are ready and the host clears its holds, Overview returns
+automatically to its ordinary page content. Optional Tari can continue syncing while Monero
+mining is admitted; the page explains the effective required-node gate separately. Tari is absent
+when off. This view adds no controls on appliance, DIY with login or DIY without login.
+
+Each node shows percentage and an approximate time remaining based on at least three advancing
+samples from the last five minutes. A pause, regression, changed endpoint or target, insufficient
+samples, a stale snapshot or a failed probe makes the estimate unavailable. Raw block counts use
+thousands separators. Estimates describe recent observed progress, not a promised completion time.
+
+Reachability, synchronization, stable health and mining admission are separate statements. During
+recovery the host reports the continuous-reachability window before re-admission. Admission does
+not prove accepted mining work. Required-service recreation is unknown until the host supplies
+that observation; the page never initiates a restart. Remote nodes show their configured host and
+port without URL credentials, reported state, initial-sync verdict, probe failure and wait age.
+The dashboard logs remote-state transitions once per change, without endpoints or probe details.
+
+Polling failure preserves the last successful snapshot and labels it disconnected with its age.
+A tab-scoped sync-only snapshot and its bounded sample history survive reload; unrelated dashboard
+data and secrets are not saved by this cache. Unknown, zero and stale readings remain distinct.
+When an active profile is reported, a Settings link notes that Performance syncs faster; the view
+does not wait for the profile model.
+
+### Legacy Sync Mode
 
 The dashboard shows Sync Mode the first time you start the stack, or any time the Monero or Tari
 node is still catching up. A `Syncing...` badge appears next to the hostname, the headline reads
