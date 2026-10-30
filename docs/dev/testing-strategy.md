@@ -77,6 +77,13 @@ slow-primary and HTTP-error recovery, checksum rejection on both sources, bounde
 HTTPS downgrade refusal and Dockerfile wiring. It needs curl, OpenSSL and sha256sum, without
 Docker or public-network access. The Dockerfile still requires the current-head tier-4 proof below.
 
+The standalone [Monero LMDB tools](lmdb-tools.md) workflow compiles the pinned
+Monero LMDB copy/stat utilities and verifies ordinary and compact copies against
+a separate reader while a disposable writer advances. It retains source/build
+provenance, digests and the generation observations in the CI archive. Builder
+input and extraction tests run in `make test-tools`; no active chain or service
+is used, and this workflow does not establish real-chain capture acceptance.
+
 The rootfs Compose/Cosign source-fetch regression runs through
 `tests/os/selftest-go-source-fetch.sh` in `make test-integration-selftest`.
 It executes the Dockerfile's fetch command against a local Git HTTP repository:
@@ -177,8 +184,8 @@ but `lib.sh`. Shared control and backup builders initialize the nine #2048 prere
 without sourcing predecessors; a separate Shell matrix runs each with only `lib.sh` in a fresh
 process. Both matrices must pass for the required Shell status to pass. Block 3 keeps the four dependent
 approval/SSRF fragments together; block 4 starts the independent editable-key round trips,
-worker masking and spool audit from a fresh fixture. Each block retains its 12-minute timeout;
-the split gives both expensive control groups separate budgets. Before any block runs,
+worker masking and spool audit from a fresh fixture. Each block has a 15-minute job limit,
+including setup and cleanup; the split gives both expensive control groups separate budgets. Before any block runs,
 `run.sh` checks that every suite file sits in exactly one block, that sourced fragments have domain
 accounting, and that the workflow matrix lists every block. Audit parser failures stop execution;
 tally producer failures and counts that are not nonnegative integers stop the full-run verdict.
