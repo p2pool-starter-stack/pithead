@@ -39,11 +39,19 @@ ssh_source=$(awk '/^_ssh\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit 
         shift
         "$@"
     }
-    ssh() { bash -c "${!#}"; }
+    ssh() {
+        cat >"$fixture/ssh-stdin"
+        bash -c "${!#}"
+    }
     failed=0
     phase_provision_proxy_health >"$fixture/guest-capture.log"
     [ "$failed" -eq 1 ]
     grep -qF 'FAIL: fixture guest stderr retained' "$fixture/guest-capture.log"
+    printf 'bash -c "cat >/dev/null"\n\necho "PASS: native Quadlet proxy health proof complete"\n' >"$SCRIPT_DIR/proxy-quadlet-proof.sh"
+    failed=0
+    phase_provision_proxy_health >"$fixture/stdin-capture.log" <<<"caller input"
+    [ "$failed" -eq 0 ]
+    [ ! -s "$fixture/ssh-stdin" ]
     ssh() {
         echo 'FAIL: fixture transport stderr retained' >&2
         return 255
@@ -53,7 +61,7 @@ ssh_source=$(awk '/^_ssh\(\) \{/ { copy=1 } copy { print } copy && /^\}/ { exit 
     [ "$failed" -eq 1 ]
     grep -qF 'FAIL: fixture transport stderr retained' "$fixture/transport-capture.log"
 )
-echo 'PASS: proxy leg retains guest and transport stderr through the real SSH helper'
+echo 'PASS: proxy leg isolates script stdin and retains stderr through the real SSH helper'
 preflight_source=$(awk '/^proof_stage=preflight$/ { copy=1 } /^cleanup\(\) \{/ { exit } copy { print }' "$SCRIPT_DIR/proxy-quadlet-proof.sh")
 proof_name="fixture-name"
 for lookup_rc in 0 1 125; do
