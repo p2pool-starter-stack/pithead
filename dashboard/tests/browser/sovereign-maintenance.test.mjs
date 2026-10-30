@@ -150,3 +150,14 @@ test("a long health request remains queued or running and a wait timeout is not 
   await expect(page.getByRole("alert")).toContainText("may still be queued or running");
   await expect(page.getByRole("region", { name: "Health report" })).toHaveCount(0);
 });
+
+test("a refused mesh preference save stays usable for this visit", async ({ page, ui }) => {
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => { throw new Error("storage refused"); };
+  });
+  await ui.openPreview("?advanced=inspect");
+  const mesh = page.getByLabel("Show the internal mesh");
+  await mesh.check();
+  await expect(mesh).toBeChecked();
+  await expect(page.getByText("The browser could not save the mesh preference. It applies only to this visit.", { exact: true })).toBeVisible();
+});

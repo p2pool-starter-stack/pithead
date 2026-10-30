@@ -16,12 +16,15 @@ export class Inspect extends Component {
   constructor(props) {
     super(props);
     let internal = false;
+    let preferenceError = "";
     try {
       internal = localStorage.getItem("dashboardTopoMesh") === "1";
-    } catch {}
-    this.state = { internal, selected: null };
+    } catch {
+      preferenceError = "Saved mesh preference is unavailable. Using the default for this visit.";
+    }
+    this.state = { internal, selected: null, preferenceError };
   }
-  render({ state }, { internal, selected }) {
+  render({ state }, { internal, selected, preferenceError }) {
     const topology = state?.topology;
     const nodes = (topology?.nodes || []).filter(
       ({ internal: meshNode, id }) =>
@@ -57,11 +60,17 @@ export class Inspect extends Component {
     return html`<section class="panel" aria-label="Configured topology">
       <h4>Configured topology</h4><p>Configured paths are not observed traffic or proof of reachability. Local or remote describes placement separately from transport.</p>
       <label><input type="checkbox" checked=${internal} onChange=${(event) => {
-        this.setState({ internal: event.target.checked });
+        this.setState({ internal: event.target.checked, preferenceError: "" });
         try {
           localStorage.setItem("dashboardTopoMesh", event.target.checked ? "1" : "0");
-        } catch {}
+        } catch {
+          this.setState({
+            preferenceError:
+              "The browser could not save the mesh preference. It applies only to this visit.",
+          });
+        }
       }} />Show the internal mesh</label>
+      ${preferenceError ? html`<p role="status">${preferenceError}</p>` : null}
       ${
         topology
           ? html`<ul class="topology-map">${nodes.map(

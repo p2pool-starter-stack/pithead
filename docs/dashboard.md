@@ -55,7 +55,8 @@ signed-in identity.
 optional internal mesh and a service inspector linking to node settings. Configuration is separate
 from observed node health: the diagram does not measure traffic or RPC/ZMQ/gRPC reachability.
 Monero, active Tari, network and pool statistics use the current snapshot and its timestamp; missing
-readings remain unavailable. The internal-mesh preference persists between visits.
+readings remain unavailable. The internal-mesh preference persists between visits when browser storage
+is available; a refused read or save shows a notice and inspection still works for the current visit.
 
 ---
 

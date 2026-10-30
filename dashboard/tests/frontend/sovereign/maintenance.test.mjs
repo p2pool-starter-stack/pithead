@@ -134,3 +134,16 @@ test("reported memory, disk and database problems stay visible without a fabrica
     assert.doesNotMatch(out, /undefined|null|NaN/);
   }
 });
+
+test("unavailable browser storage keeps inspection usable and reports the default preference", (t) => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, get() { throw new Error("storage refused"); } });
+  t.after(() => {
+    if (saved) Object.defineProperty(globalThis, "localStorage", saved);
+    else delete globalThis.localStorage;
+  });
+  const out = renderToString(html`<${Inspect} state=${{}} />`);
+  assert.match(out, /Saved mesh preference is unavailable/);
+  assert.match(out, /Using the default for this visit/);
+  assert.match(out, /Node, network and pool statistics/);
+});
