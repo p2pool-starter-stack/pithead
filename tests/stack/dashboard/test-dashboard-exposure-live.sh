@@ -140,7 +140,8 @@ onion_phase_out=$(
     }
     ok() { :; }
     bad() { printf 'BAD:%s\n' "$1"; }
-    phase_provision_dashboard_onion_exposure
+    phase_provision_dashboard_onion_control() { return 0; }
+    phase_provision_dashboard_onion_exposure fixture-user fixture-password
 )
 assert_contains "phase still restores the config after the NETWORK_PREFIX guard fires" "$onion_phase_out" "RESTORED"
 assert_contains "phase reports the NETWORK_PREFIX read failure" "$onion_phase_out" "BAD:onion exposure: could not read NETWORK_PREFIX"
@@ -160,7 +161,8 @@ onion_apply_fail_out=$(
     tor_health_evidence() { printf 'TOR-EVIDENCE\n'; }
     ok() { :; }
     bad() { printf 'BAD:%s\n' "$1"; }
-    phase_provision_dashboard_onion_exposure
+    phase_provision_dashboard_onion_control() { return 0; }
+    phase_provision_dashboard_onion_exposure fixture-user fixture-password
 )
 assert_contains "a refused apply still restores the config" "$onion_apply_fail_out" "RESTORED"
 assert_contains "a refused apply is reported" "$onion_apply_fail_out" "BAD:onion exposure: ./pithead apply -y did not accept the onion-enabled config"

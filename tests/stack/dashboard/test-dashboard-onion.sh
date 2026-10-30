@@ -373,7 +373,7 @@ caddy_rotate_capture=$(
     env_get() { :; }
     render_env() { :; }
     resolve_dashboard_host() { HOST_IP=box.lan; }
-    # The shadowed provision the issue asks for: a fresh address on rotate.
+    compose_up_checked() { :; }
     provision_tor() { DASHBOARD_ONION="newaddr5678.onion"; }
     onion_client_key() { :; }
     export DASHBOARD_ONION_ENABLED=true

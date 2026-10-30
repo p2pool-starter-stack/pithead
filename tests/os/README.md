@@ -165,7 +165,10 @@ the configured test registry fail before the image build. Release builds do not 
 - **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; proves Tor sync, XvB off, persisted choices, a generated working dashboard login, and firstboot/system journals free of bcrypt credentials.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
-  served, generated login authenticating, firstboot and system journals free of bcrypt credentials,
+  served, generated login authenticating, the onion header state matching Tor and the rendered
+  environment, both client-key forms returned through control with an applied audit row and timed
+  host-result redaction, firstboot and system journals free of bcrypt credentials,
+  state-failure diagnostics limited to HTTP/curl status and agreement booleans,
   built-in miner up. Journal reads must succeed and contain entries; the check never prints matched hashes. The Tor-only egress enforcement backstop — a real clearnet dial from a
   mining container, which must be DROPPED while the same container still reaches clearnet through
   Tor's SOCKS (up to three attempts, with retries isolated by SOCKS username, [#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)) — runs on EVERY path through this phase, including the aborting ones, and reports RED

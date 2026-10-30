@@ -139,17 +139,116 @@ dashboard_onion_exposure_verdict() { # <Caddyfile> <ss> <doctor-json> <bridge-ga
     echo "onion-enabled appliance keeps Caddy's listeners private: the onion vhost binds the bridge gateway, no wildcard socket appears, and doctor agrees"
 }
 
-# dashboard.onion.enabled is a setup-time-only field: it names no row in ANY of 42-control-policy-
-# and-host-checks.sh's three committable-key tiers, so the dashboard's own control-commit API
-# refuses to change it at all ("this change alters a security-sensitive setting ... that is not
-# committable from the dashboard ... use 'Set up again' if you need to change it" — measured
-# directly: job 428 hit exactly this refusal when this leg first tried the control-commit route).
-# "Set up again" itself means a reboot into the wizard, too heavy for one leg — so this toggles it
-# the way `apply` (a host command, outside the dashboard's committable-key gate entirely) already
-# supports: edit config.json and re-apply, using appliance-config-approval-leg.sh's own
-# snapshot/restore pair (approval_capture_restore_snapshot/approval_restore_pending) so the box is
-# always left as it was found, whatever the verdict.
+dashboard_onion_state_verdict() {
+    printf '%s' "$1" | jq -e --arg onion "$2" '
+        .dashboard_onion.url == ("http://" + $onion) and
+        .dashboard_onion.client_auth == true' >/dev/null 2>&1
+}
+
+dashboard_onion_key_verdict() {
+    printf '%s' "$1" | jq -e --arg onion "$2" '
+        .status == "applied" and
+        (.id | type == "string" and test("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) and
+        .onion_url == ("http://" + $onion) and
+        (.client_key | type == "string" and test("^[A-Z2-7]{52}$")) and
+        .torrc_line == (($onion | sub("\\.onion$"; "")) + ":descriptor:x25519:" + .client_key)' >/dev/null 2>&1
+}
+
+dashboard_onion_state_evidence() {
+    printf '%s' "$1" | jq -Rsc --arg http "$2" --argjson curl "$3" --arg onion "$4" '
+        (try fromjson catch null) as $d |
+        {http:$http, curl:$curl, json:($d | type == "object"),
+         onion_present:(try ($d.dashboard_onion | type == "object") catch false),
+         url_matches:(try ($d.dashboard_onion.url == ("http://" + $onion)) catch false),
+         client_auth:(try ($d.dashboard_onion.client_auth == true) catch false)}' 2>/dev/null
+}
+
+phase_provision_dashboard_onion_control() {
+    local onion state result rid n response http=none crc=0
+    n=0
+    while [ "$n" -lt 20 ]; do
+        onion=$(_ssh 'set -eu
+cd /data/pithead
+onion=$(podman exec tor cat /var/lib/tor/dashboard/hostname)
+test "$onion" = "$(sed -n "s/^DASHBOARD_ONION_ADDRESS=//p" .env)"
+printf "%s" "$onion"' 2>/dev/null) || onion=""
+        onion=$(printf '%s' "$onion" | tr -d '\r\n')
+        [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] && break
+        n=$((n + 1))
+        sleep 3
+    done
+    if [ "$n" -eq 20 ]; then
+        bad "dashboard onion address does not match Tor hostname and rendered environment (#3074)"
+        return 1
+    fi
+    ok "dashboard onion address matches Tor hostname and rendered environment (#3074)"
+    n=0
+    while [ "$n" -lt 20 ]; do
+        crc=0
+        response=$(dashboard_curl -sSk -m 8 -w '\n%{http_code}' "https://$ip/api/state" 2>/dev/null) || crc=$?
+        http=${response##*$'\n'}
+        if [[ $http =~ ^[0-9]{3}$ ]]; then
+            state=${response%$'\n'*}
+        else
+            http=none state=""
+        fi
+        if [ "$crc" -eq 0 ] && [ "$http" = 200 ] && dashboard_onion_state_verdict "$state" "$onion"; then
+            break
+        fi
+        n=$((n + 1))
+        sleep 3
+    done
+    if [ "$n" -eq 20 ]; then
+        bad "dashboard header state did not publish the provisioned client-authorized onion (#3074)"
+        dashboard_onion_state_evidence "$state" "$http" "$crc" "$onion"
+        _ssh "set -euo pipefail
+podman inspect dashboard --format '{{json .Config.Env}}' | jq -ce --arg onion '$onion' '
+            {runtime_enabled:(index(\"DASHBOARD_ONION_ENABLED=true\") != null),
+             runtime_address_matches:(index(\"DASHBOARD_ONION_ADDRESS=\" + \$onion) != null),
+             runtime_client_auth:(index(\"DASHBOARD_ONION_CLIENT_AUTH=true\") != null)}'" 2>/dev/null ||
+            printf '%s\n' 'dashboard onion runtime evidence unavailable'
+        return 1
+    fi
+    ok "dashboard header state publishes the provisioned client-authorized onion (#3074)"
+    result=$(dashboard_control_request onion-client-key '{}') || result=""
+    if ! dashboard_onion_key_verdict "$result" "$onion"; then
+        result=""
+        bad "Show client key did not return both coherent key forms through the appliance control route (#3074)"
+        return 1
+    fi
+    rid=$(printf '%s' "$result" | jq -r .id)
+    result=""
+    ok "Show client key returns both key forms for the provisioned onion (#3074)"
+    n=0
+    while [ "$n" -lt 6 ]; do
+        if _ssh "jq -es --arg id '$rid' 'any(.[]; .id == \$id and .action == \"onion-client-key\" and .status == \"applied\")' /data/pithead/data/control/audit/control.log >/dev/null" 2>/dev/null; then
+            break
+        fi
+        n=$((n + 1))
+        sleep 1
+    done
+    if [ "$n" -lt 6 ]; then
+        ok "Show client key records an applied audit row for its request (#3074)"
+    else
+        bad "Show client key has no applied audit row for its request (#3074)"
+    fi
+    n=0
+    while [ "$n" -lt 12 ]; do
+        if _ssh "jq -e '.status == \"applied\" and has(\"client_key\") and has(\"torrc_line\") and .client_key == null and .torrc_line == null and .onion_url == \"http://$onion\"' /data/pithead/data/control/results/$rid.json >/dev/null" 2>/dev/null; then
+            ok "Show client key host result redacts both secret forms after its timer (#3074)"
+            return 0
+        fi
+        n=$((n + 1))
+        sleep 5
+    done
+    bad "Show client key host result retained a secret or became unreadable after 60 seconds (#3074)"
+    return 1
+}
+
+# Host-side apply provisions the fixture before exercising the dashboard control route.
 phase_provision_dashboard_onion_exposure() {
+    # shellcheck disable=SC2034
+    local DASH_USER="$1" DASH_PASS="$2"
     local caddy sockets doctor prefix gw verdict apply_out
     # Before the snapshot, so a spool that never drains leaves the guest exactly as it was found.
     # Apply does not stop a running runner (#2363); this is the harness's phase boundary.
@@ -163,7 +262,7 @@ phase_provision_dashboard_onion_exposure() {
     }
     if ! apply_out=$(_ssh 'set -eu
 cd /data/pithead
-jq -c ".dashboard.onion.enabled = true" config.json >config.json.onion-test
+jq -c ".dashboard.onion.enabled = true | .dashboard.onion.client_auth = true" config.json >config.json.onion-test
 mv config.json.onion-test config.json
 ./pithead apply -y' 2>&1); then
         bad "onion exposure: ./pithead apply -y did not accept the onion-enabled config"
@@ -174,7 +273,7 @@ mv config.json.onion-test config.json
         approval_restore_pending || bad "onion exposure: cleanup after a failed apply also failed"
         return
     fi
-    ok "dashboard Tor onion enabled via a host-side apply (the dashboard's own control-commit route refuses this field by design)"
+    ok "dashboard Tor onion fixture enabled with client authorization via host-side apply"
 
     prefix=$(_ssh "grep '^NETWORK_PREFIX=' /data/pithead/.env | cut -d= -f2" | tr -d '\r\n')
     if [ -z "$prefix" ]; then
@@ -190,6 +289,8 @@ mv config.json.onion-test config.json
             bad "$verdict"
         fi
     fi
+
+    phase_provision_dashboard_onion_control || bad "dashboard onion control acceptance did not complete (#3074)"
 
     approval_restore_pending || bad "onion-enable cleanup (restoring the original config) failed"
 }
