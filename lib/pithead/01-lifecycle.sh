@@ -274,17 +274,17 @@ stack_up() {
     mutation_lock_release
 }
 
-# One-time onboarding after the stack first comes up (#384): explain that mining doesn't start until
-# both chains finish their initial sync, and where to watch progress. Keyed on a marker file beside
-# .env so it shows once (fresh setup/up) and not on every restart of an already-running box. The
-# dashboard itself drives the sync-then-mine handoff (#35) — this is just the "what happens next".
 print_first_run_epilogue() {
     [ -f "$FIRST_RUN_MARKER" ] && return 0
     : >"$FIRST_RUN_MARKER" 2>/dev/null || true
+    local chains="Monero"
+    if [ "$(env_get TARI_REQUIRED 2>/dev/null || true)" != false ]; then
+        chains="Monero and Tari"
+    fi
     log "What happens next:"
-    log "  The miner is held until Monero and Tari finish their first sync, then starts automatically."
+    log "  The miner is held until the initial sync finishes for $chains, then starts automatically."
     log "  Watch progress with '$0 status' or live on the dashboard."
-    log "  First-time sync of both chains can take several hours to a few days, depending on disk and network."
+    log "  Initial chain sync can take several hours to a few days, depending on disk and network."
 }
 
 stack_down() {

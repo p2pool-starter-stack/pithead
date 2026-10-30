@@ -1062,7 +1062,10 @@ you recover the node. Monero mining is not affected. Recover in this order:
 **The dashboard data looks broken and you want a clean slate.**
 `./pithead reset-dashboard` wipes and recreates the dashboard and P2Pool data. This is
 **destructive**: it drops P2Pool sidechain state and dashboard history (blockchains and wallets are
-unaffected). Pass `-y` / `--yes` to skip the confirmation prompt.
+unaffected). Targets come from `DASHBOARD_DATA_DIR` and `P2POOL_DATA_DIR` in the live
+`.env`, including absolute paths with spaces. Directory values containing CR or LF are refused
+before containers stop or data is removed, including encoded line breaks in quoted `.env` values.
+Pass `-y` / `--yes` to skip the confirmation prompt.
 
 ---
 
