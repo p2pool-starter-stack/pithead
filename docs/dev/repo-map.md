@@ -85,6 +85,10 @@ executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
 
+Doctor verdict ids are pinned in `tests/stack/doctor/check-ids.py`;
+`tests/stack/doctor/test-doctor-appliance.sh` checks the JSON and support-bundle rows,
+and the surface and memory suites check that an id survives verdict and wording changes.
+
 Container restart observation is shared by status and doctor in
 `lib/pithead/04a-container-restarts.sh`; its Docker and Podman fixtures are in
 `tests/os/selftest-container-restarts.sh`, and the appliance Caddy crash-loop proof runs in the
