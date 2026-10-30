@@ -31,6 +31,7 @@ cd dashboard/tests/browser
 | Tor access | Explicit client-key request and CSRF, busy/readonly gates, refusal/retry, secret dismissal/reload, clipboard success/denial feedback | Actual Tor client authorization, server secret expiry and browser clipboard permissions (#3074) |
 | Topology | Expandable details, mesh visibility/persistence and refreshed warning state | Actual routing, firewall enforcement and network reachability |
 | Diagnostics | Doctor and log requests, CSRF headers, transient polling failure, refusal/retry | Live doctor/repair meaning and redaction (#3262, #3277) |
+| Lean Maintenance/Inspect | Retained health reports, keyboard disclosures, failed/missing/long-running checks, reviewed bundle download, read-only gates, configured topology, light/dark desktop/phone captures | Real host collection and redaction, authenticated bundle delivery and restoration in deploying hardening proof |
 | OS update | One-click error Close and focus return, busy Escape refusal, exact reboot confirmation, Later clears confirmation, host refusal | Signed bundle/slot writes, unattended boot/health/rollback (#3260), certificate trust (#3242) |
 | DIY update | Exact typed confirmation and version payload, cancel, busy Escape refusal, restart polling, completion/reload and appliance/readonly gates | Signed release validation, container recreation and actual rollback/data preservation |
 

@@ -69,6 +69,7 @@ source "$ROOT/lib/run-egress-status.sh" || exit $?
 source "$ROOT/lib/run-webhook-validation.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$ROOT/lib/run-hardening.sh" || exit $?
+source "$ROOT/lib/run-browser-bundle.sh" || exit $?
 source "$ROOT/lib/run-tari-off-preview.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$ROOT/lib/run-rotate-onion.sh" || exit $?

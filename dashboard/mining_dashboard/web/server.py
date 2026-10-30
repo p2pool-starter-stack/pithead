@@ -446,7 +446,7 @@ async def handle_control_result(request):
         raise web.HTTPBadRequest(text="'id' must be a UUID.") from None
     if res is None:
         return web.json_response({"status": "pending"}, status=202)
-    return web.json_response(res)
+    return browser_bundle_views.result_response(request, res)
 
 
 # --- Security logs (#349) ---------------------------------------------------------------------

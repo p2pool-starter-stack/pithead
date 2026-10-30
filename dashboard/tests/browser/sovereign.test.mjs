@@ -238,17 +238,15 @@ test("polling failure and expired session keep the snapshot and retry recovers",
   await expect(page.getByRole("heading", { name: "Machines", exact: true })).toBeVisible();
 });
 
-test("shell leaves maintenance actions with their owning page", async ({ page, ui }) => {
+test("read-only maintenance keeps health information without enabling host actions", async ({
+  page,
+  ui,
+}) => {
+  ui.state.control_enabled = false;
   await ui.openPreview("?page=overview&advanced=maintenance");
-  await expect(page.getByRole("dialog", { name: "Advanced", exact: true })).toBeVisible();
-  await expect(
-    page.getByText(
-      "This section is being built for the new interface. Continue using the current dashboard until cutover.",
-    ),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Run health check|Prepare support bundle/ }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Server health", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run health check" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Prepare support bundle" })).toBeDisabled();
 });
 
 for (const [query, pageName, section] of [

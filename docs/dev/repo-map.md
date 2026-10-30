@@ -190,7 +190,10 @@ the package's `__main__.py` delegates to its server.
 
 Browser assets live in `web/static/`. The opt-in lean preview is in `web/static/sovereign/`,
 with its template at `web/templates/sovereign.html`; its frontend tests are in
-`tests/frontend/sovereign/` and its browser journey is `dashboard/tests/browser/sovereign.test.mjs`.
+`tests/frontend/sovereign/`. Shell journeys are in `dashboard/tests/browser/sovereign.test.mjs`;
+Maintenance/Inspect journeys are in `dashboard/tests/browser/sovereign-maintenance.test.mjs`.
+The corresponding page components are `web/static/sovereign/maintenance.mjs` and
+`web/static/sovereign/inspect.mjs`; they reuse the existing diagnostic readers and state contract.
 The browser workflow retains its sanitized shell and drawer screenshots as `sovereign-visual-proof`, including passing runs.
 JavaScript feature folders are `app/`,
 `config/`, `network/`, `system/`, `workers/`, `xvb/`, and `wizard/`.
@@ -210,6 +213,8 @@ The separate HTTPS backup fixture verifies complete encrypted downloads in Chrom
 `wizard/`. `vendor/` contains third-party browser libraries and their provenance.
 Keep local code out of `vendor/`.
 
+`lib/pithead/46b-control-browser-bundle.sh` handles the bounded, redacted browser bundle;
+`tests/stack/standalone/test_browser_bundle.sh` checks the host contract.
 The Tari-off preview regression is `tests/stack/control/test-control-editable-allowlist.sh`;
 `tests/integration/lib/run-tari-off-preview.sh` exercises the combined candidate through
 the deployed CLI during the hardening phase.
