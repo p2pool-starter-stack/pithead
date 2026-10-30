@@ -28,6 +28,9 @@ pithead/
 └── .github/              CI, templates, and ownership
 ```
 
+The [project donation planner](project-donation-planner.md) defines the pure
+cycle planner, simulator and provisional policy for the dark feature.
+
 ## Product entry points
 
 | Area | Start here | Change and verify |
