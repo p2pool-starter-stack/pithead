@@ -113,7 +113,7 @@ image_source=$(awk '/^proof_stage="image-lookup"$/ { copy=1 } /^proof_stage="uni
     [ "$image" = 'sha256:fixture-candidate-image' ]
 )
 echo 'PASS: proxy proof selects the actual candidate image without file build provenance'
-unit="$SCRIPT_DIR/../../os/quadlet/xmrig-proxy.container"
+unit="$SCRIPT_DIR/../../os/quadlet/common/xmrig-proxy.container"
 rewrite() {
     awk -v image=fixture-image -v name=fixture-name -f "$SCRIPT_DIR/proxy-quadlet-unit.awk" "$1"
 }
