@@ -4,15 +4,16 @@
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-lifecycle-miners.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-miners.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
-run_lifecycle() {
+_run_lifecycle() {
     IT_CURRENT_SCENARIO="lifecycle"
     local lifecycle_ok=1 reset_failed=0
-    echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
-    run_cli_wizard_defaults || return 1
+    lifecycle_mining_step run_cli_wizard_defaults run_cli_wizard_defaults || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
     prove_wallet_recovery || return 1
@@ -58,9 +59,9 @@ run_lifecycle() {
     else
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
-    run_source_image_reconcile || return 1
-    run_restore_dashboard_probe || return 1
-    run_tari_background_sync || return 1
+    lifecycle_mining_step run_source_image_reconcile run_source_image_reconcile || return 1
+    lifecycle_mining_step run_restore_dashboard_probe run_restore_dashboard_probe || return 1
+    lifecycle_mining_step run_tari_background_sync run_tari_background_sync || return 1
     local cur_pool fp_before other restore_tls_before
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
@@ -98,7 +99,7 @@ run_lifecycle() {
         pithead status >/dev/null 2>&1
         assert_rc "status non-zero when node down" "$?" "1"
         it_step "starting monerod and waiting for readmit…"
-        rx "docker compose start monerod" >/dev/null 2>&1
+        lifecycle_mining_step node-recovery rx "docker compose start monerod" >/dev/null 2>&1
         wait_status_ok 240 || true
         pithead status >/dev/null 2>&1
         assert_rc "status OK after node recovery" "$?" "0"
@@ -217,8 +218,8 @@ run_lifecycle() {
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
     run_password_tls_continuity || lifecycle_ok=0
-    run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
-    [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
+    lifecycle_mining_step run_reset_restore run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
+    [ "$reset_failed" = 1 ] || lifecycle_mining_step run_uninstall_round_trip run_uninstall_round_trip || lifecycle_ok=0
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
     [ "$lifecycle_ok$reset_failed" = 10 ]
 }
@@ -237,7 +238,6 @@ kept_chain_files_snippet() { # <path>...
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
     printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths -type f -name '*.mdb' -exec stat -c '%i %.9W %n' {} + | LC_ALL=C sort"
 }
-
 # uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
 # path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
 # re-provisions from what was kept (and the harness's own secrets). The stack is stopped before
@@ -344,7 +344,6 @@ run_uninstall_round_trip() {
     assert_eq "setup after uninstall keeps the Monero onion address" "$(env_on_box MONERO_ONION_ADDRESS)" "$onion_before"
     [ "$IT_FAIL" -le "$fails_before" ]
 }
-
 # Table names and counts only (never row values): which families lost rows, and whether either probe
 # came back empty — an empty snapshot is a probe failure, not a divergence.
 telemetry_rows_diff() { # <before-lines> <after-lines>
