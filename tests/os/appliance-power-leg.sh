@@ -133,6 +133,27 @@ phase_provision_power_regressions() {
 _power_self_test() {
     local f=0
     (
+        local trace
+        trace=$(mktemp) || exit 1
+        trap 'rm -f "$trace"' EXIT
+        _boot_id() { printf 'boot-before\n'; }
+        _wait_new_boot() { return 0; }
+        _wait_dhcp_ip() { return 0; }
+        _wait_ssh() { return 0; }
+        _ssh() { return 1; }
+        sleep() { :; }
+        ok() { :; }
+        bad() { :; }
+        curl() { printf '401'; }
+        _poweroff_wait() { return 1; }
+        dashboard_control_request() {
+            printf '%s\n' "$2" >>"$trace"
+            printf '{}'
+        }
+        if phase_provision_power_regressions; then exit 1; fi
+        [ "$(wc -l <"$trace" | tr -d ' ')" = 1 ]
+    ) || f=$((f + 1))
+    (
         _ssh() { return 0; }
         power_wait_stack 1
     ) || f=$((f + 1))
