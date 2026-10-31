@@ -13,7 +13,28 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
-- With the Tor egress firewall on, a remote Monero or Tari node entered by a dual-stack LAN name is now accepted on its private IPv4 answer, in the first-boot wizard and in a day-two configuration commit, instead of being refused with the egress-firewall message (#2351).
+- With the Tor egress firewall on, a remote Monero or Tari node entered by a dual-stack LAN name is
+  now accepted on its private IPv4 answer, in the first-boot wizard and in a day-two configuration
+  commit, instead of being refused with the egress-firewall message (#2351).
+
+## [2.0.2] - Unreleased
+
+### Fixed
+
+- A command-line restore over an existing install refreshes the dashboard configuration before
+  startup, so Configuration and the earnings calculator use the restored values (#3432).
+- Docker bridge detection works with older mawk on Debian 12 and Ubuntu 22.04, keeping engine
+  bridge addresses out of Caddy's bind and certificate-name lists (#3653).
+- Configuration preview and apply refuse an occupied stratum port before committing the change,
+  keeping the running proxy and mining intact (#3417).
+- The appliance release gate accepts a measured Secure Boot non-boot for every version as
+  unsupported by design. An unmeasured guest still fails; Secure Boot must remain off (#3678).
+
+### Security
+
+- The dashboard development lock raises filelock to 4.2.4 and virtualenv to 21.14.13 to clear their
+  dependency advisories. Both are development tooling only and are absent from the dashboard image
+  (#3662, #3014).
 
 ## [2.0.1] - 2026-10-25
 
@@ -95,8 +116,8 @@ Entries below apply to both channels unless they say otherwise.
 
 ### Known issues in 2.0.1
 
-These three ship in 2.0.1. The first two are planned for 2.0.2. The known issues listed for 2.0.0
-still apply, except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
+These three ship in 2.0.1. #3375 is planned for 2.0.2; #3432 is fixed in 2.0.2. The known issues
+listed for 2.0.0 still apply, except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
   boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot (#3375).
@@ -268,7 +289,7 @@ changelog and the wizard text only.
   keeps serving the pre-restore configuration, including in the earnings calculator. The first save
   from Configuration can then re-propose the old values and undo part of the restore. Run
   `./pithead apply` once, then `./pithead restart`. A restore from the setup wizard is not
-  affected. Planned for 2.0.2
+  affected. Fixed in 2.0.2
   ([#3432](https://github.com/p2pool-starter-stack/pithead/issues/3432)).
 - On DIY, the dashboard's HTTPS certificate comes from Caddy's internal CA, which issues 12-hour
   certificates and renews them before they expire. If you accepted the certificate itself in the
