@@ -332,11 +332,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # routes 404 when off, so this is display gating only, not a security control. Read at
         # call time (module attribute, not from-import) so tests can flip the flag per-app.
         "control_enabled": config.DASHBOARD_CONTROL_ENABLED,
-        # Appliance OS-update state (step + verdict) | None off an appliance. Presence swaps the
-        # header's tarball Upgrade button for the OS update control.
         "os_update": read_os_update_state(),
-        # #559: use the snapshot's own timestamp, not now — a restored stale snapshot must
-        # report its true age; falls back to now only when timestamp is missing/0.
         "last_update": format_time_abs(data.get("timestamp") or time.time()),
         "range": range_arg,
         "window": {"from": window[0], "to": window[1]} if window else None,
@@ -347,6 +343,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "hashrate": build_hashrate(metrics, mode_tok, p2p_tok, xvb_tok),
         "system": build_system(data),
         "sync": build_sync(metrics, pool_net["monero"]["db_size"]),
+        "sync_status": data.get("sync_status"),
         "stratum": pool_net["stratum"],
         "pool": pool_net["pool"],
         "network": pool_net["network"],

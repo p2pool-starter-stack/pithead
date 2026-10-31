@@ -2,6 +2,8 @@ import { html, render } from "../app/preact.mjs";
 import { createNavigation, PAGES, readRoute, routeUrl } from "./navigation.mjs";
 import { createPolling } from "./polling.mjs";
 import { Shell } from "./shell.mjs";
+import { createSyncHistory } from "./sync-model.mjs";
+import { overviewContent } from "./sync-view.mjs";
 
 export function initSovereign({
   win = window,
@@ -35,7 +37,16 @@ export function initSovereign({
     initial.searchParams.set("page", read("pitheadPage"));
   let route = readRoute(initial, read("dashboardView"));
   win.history.replaceState(null, "", routeUrl(initial, route.page, route.advanced));
-  let data = { snapshot: null, connected: true, sessionExpired: false };
+  let snapshotStorage;
+  try {
+    snapshotStorage = win.sessionStorage;
+  } catch {}
+  const syncHistory = createSyncHistory(snapshotStorage);
+  let data = {
+    snapshot: syncHistory.snapshot,
+    connected: !syncHistory.snapshot,
+    sessionExpired: false,
+  };
   const paint = () => {
     doc.title = `Pithead — ${PAGES[route.page][0]}`;
     render(
@@ -47,7 +58,7 @@ export function initSovereign({
         doc.documentElement.dataset.theme = theme;
         paint();
       }} onNavigate=${(page, section) => navigation.go(page, section)}
-      onRetry=${() => polling.tick()} renderPage=${renderPage} renderSection=${renderSection} />`,
+      onRetry=${() => polling.tick()} renderPage=${(page, state) => overviewContent({ page, state, history: syncHistory, connected: data.connected, renderPage })} renderSection=${renderSection} />`,
       root,
     );
   };
@@ -64,6 +75,7 @@ export function initSovereign({
     },
   });
   const polling = createPolling({
+    initialSnapshot: syncHistory.snapshot,
     fetchFn: (signal) => {
       const params = new URL(win.location.href).searchParams;
       const query = new URLSearchParams();
@@ -72,6 +84,7 @@ export function initSovereign({
       return fetchFn(`/api/state?${query}`, { signal, cache: "no-store" });
     },
     publish: (next) => {
+      if (next.connected) syncHistory.observe(next.snapshot);
       data = next;
       paint();
     },
