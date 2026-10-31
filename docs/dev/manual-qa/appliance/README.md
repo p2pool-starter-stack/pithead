@@ -36,7 +36,7 @@ the Run sheet wins.
 
 ## How section 13 works
 
-Run section 13 on the **appliance box**. Each step names the battery row it serves (M1–M16,
+Run section 13 on the **appliance box**. Each step names the battery row it serves (M1–M17,
 defined in [appliance-release.md](../../appliance-release.md)); why the hands-on rows cannot be
 automated is in [the hardware battery](hardware-battery.md). Follow
 [the appliance guide](../../../appliance.md) as a user would, and file anything you had to know
@@ -101,7 +101,7 @@ No release image exists before GA, so every appliance step runs on the debug ima
 
 ### Step 2: Run the hardware battery before `--start`
 
-1. Run M1–M10: 13.1–13.12 and 13.19. M5, in 13.18, may run on the second appliance instead.
+1. Run M1–M10: 13.1–13.12 and 13.19, then [M17](13b-updates-restore-and-media.md#m17--clean-shutdown-and-physical-button-restart) for dashboard power-off and physical-button restart. M5, in 13.18, may run on the second appliance instead.
 2. Cut power (M8 in 13.11, M10 in 13.19) only before the window opens.
 3. Run M15 (13.13 and 13.14) before `--start` or after day 7, never inside the window.
 4. Run the [Tor](../README.md#glossary) drill (9.6a, in

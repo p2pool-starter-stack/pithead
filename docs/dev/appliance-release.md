@@ -488,6 +488,11 @@ that archive with the kit's passphrase, and finish installation. Expected: the n
 the restored config, its payout wallet and onion address exactly match the recorded values, and
 the dashboard answers. Keep the timestamp with the release evidence so the archive is unambiguous.
 
+**M17 — dashboard power-off and physical-button restart.** Follow the
+[M17 hardware check](manual-qa/appliance/13b-updates-restore-and-media.md#m17--clean-shutdown-and-physical-button-restart).
+The appliance must power off on its own, then boot and resume mining after a physical button press.
+KVM verifies the software round trip; the button and firmware remain hardware evidence.
+
 **M16 — change settings after provisioning.** In Configuration, change one benign energy value,
 preview it, apply it, reload, and confirm it persisted. Then point one node endpoint at a reachable
 test node: confirm the preview warns, verify a commit without the literal `APPLY` is refused, type
@@ -668,7 +673,7 @@ channels share the final cut commit, one version and one GitHub Release.
    ```
 
    Record both sizes and checksums in the release issue. Stop if either asset reaches 2 GiB.
-   Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15 and M16) on
+   Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15, M16 and M17) on
    real hardware by flashing `pithead-os-${tag}.img.xz` with the command in
    [the appliance guide](../appliance.md#1-write-the-image-to-a-usb-stick). The soak starts from
    that same compressed artifact. Record results. The human half of a

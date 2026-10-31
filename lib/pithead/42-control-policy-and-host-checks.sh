@@ -7,7 +7,7 @@
 # Telegram lifecycle verbs, #338), `worker-apply`/`worker-upgrade` (a rig's own control API,
 # #185/#597), `backup` (an encrypted archive + one-time emergency kit, #908), the five staged
 # appliance OS-update verbs `os-check`/`os-download`/`os-verify`/`os-install`/`os-reboot`
-# (47-/48-os-update-*.sh), the two read-only diagnostics verbs `diag-doctor`/`diag-logs`
+# (47-/48-os-update-*.sh), appliance power verbs `sys-reboot`/`sys-poweroff`, and `diag-doctor`/`diag-logs`
 # (#913/#943, 46a-control-diagnostics.sh), and `onion-client-key` (the dashboard onion's
 # client-auth credential as a one-time kit, #1882, 45-control-backup.sh). The dispatching `case`
 # in 49-control-request-loop.sh is the list this sentence must match; check it there before
