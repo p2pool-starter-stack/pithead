@@ -53,7 +53,14 @@ flaky=$(mktemp)
 assert_eq "a read that fails once and then answers is retried to its answer" \
     "$(unit_state_with "n=\$(cat $flaky 2>/dev/null || echo 0); echo \$((n+1)) >$flaky; [ \$n -ge 2 ] || exit 255; [ \"\$1\" = show ] && echo not-found; [ \"\$1\" = show ]")" "absent"
 rm -f "$flaky"
-assert_contains "a read that never answers names the unit and the attempts" "$(unit_state_with 'exit 1' 2>&1 >/dev/null)" "pithead-lan-guard.service unread after 3 attempts"
+transport_down=$(
+    on_bench() { echo "ssh: connect timed out" >&2; return 255; }
+    warn() { printf 'warn:%s\n' "$*" >&2; }
+    UNIT_STATE_RETRY_DELAY=0
+    egress_boot_unit_state pithead-lan-guard.service 2>&1 >/dev/null
+)
+assert_contains "a transport failure names the unit, the attempts, the exit code and the stderr" "$transport_down" \
+    "pithead-lan-guard.service unread after 3 attempts (bench command exit 255, stderr: ssh: connect timed out"
 assert_eq "...and the restore then refuses and removes nothing" \
     "$(lan_restore pithead-lan-guard.service "$(unit_state_with 'exit 1')" present)" "1 present 0"
 assert_contains "verify_restore_proof restores both LAN units" "$(declare -f verify_restore_proof)" \
