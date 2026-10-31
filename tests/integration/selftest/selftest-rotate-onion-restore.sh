@@ -319,7 +319,7 @@ fi
 
 state_line="$(grep -n 'ROTATE_ONION_OLD_KEY_FP="\$old_key_fp"' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
 arm_line="$(grep -n '^[[:space:]]*ROTATE_ONION_RESTORE_ARMED=1$' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
-rotate_line="$(grep -n 'pithead rotate-dashboard-onion -y' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
+rotate_line="$(grep -n '    rotation_with_receipts' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
 if [ "$state_line" -lt "$arm_line" ] && [ "$arm_line" -lt "$rotate_line" ]; then
     it_pass "restore state is complete before the trap arms and rotation begins"
 else

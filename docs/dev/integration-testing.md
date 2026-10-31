@@ -1283,6 +1283,28 @@ hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it
 Each run writes a manifest (`results/manifest.txt`) recording exactly what was under test: the
 stack `VERSION`, git revision, and `docker compose images`. A run is reproducible.
 
+The onion-rotation phase retains `results/tor-lifecycle/rotation.jsonl` and
+`results/tor-lifecycle/healer.jsonl` on successful and failed calls. Each receipt contains
+only a UTC timestamp, caller, operation ID, opaque engine container ID (or `unavailable`),
+requested action and result. Rotation records each Compose stop/up exit status, including
+staged LAN-bind retries and restoration calls. The healer resolves container identity and
+issues each Docker action under the same shared mutation lock, so a replacement while
+waiting is identified after the lock is acquired. Identity lookup failure records
+`unavailable` without preventing the action. The healer records
+`confirmed` or `unconfirmed`, since a lost engine response does not prove the action failed.
+`requested` records precede the call. Receipt collection keeps at most 128 records per
+command, accepts only the fixed schema and consumes lines in 1025-byte chunks. It discards
+oversized lines, credentials, onion addresses, keys and ordinary command output.
+Receipt failures do not replace lifecycle command results or prevent recovery.
+The healer also records host-gated `recover` submissions and their terminal host result or
+unconfirmed timeout; these identify the control request, not individual host engine calls.
+
+After restoring the original onion identity, the phase invokes the deployed healer with a
+controlled probe failure and an expired cooldown to exercise its real Tor stop/start branch.
+It also makes a start request for a deliberately absent container to retain an unconfirmed
+call. Monero is not restarted by this fixture. The phase verifies both callers' receipts and
+waits for stack health. These per-job artifacts pass through ordinary artifact redaction;
+they add no persistent runtime audit history and cannot identify a historical caller.
 The Tari-enable lifecycle trial retains its exact numeric `height_before` diagnostic baseline
 and pre-apply `enable_started` freshness threshold in `tari-enable/snapshots.log`. The before-off
 snapshot is a separate API observation and may have a different height. Snapshots, per-poll `samples.jsonl`, and
