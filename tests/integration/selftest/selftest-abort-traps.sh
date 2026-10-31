@@ -1,21 +1,4 @@
 #!/usr/bin/env bash
-#
-# Self-test for the harness's ABORT TRAPS (#1401): WALKS every `*.sh` under tests/integration/ and
-# asserts that each `trap` statement names `EXIT` and nothing else. It checked two hardcoded (file,
-# handler) pairs until #1515, and the walk is the fix: measured, the two-site version stayed green
-# against all three shapes that reintroduce the defect — a signal added to a file the change never
-# touched, a brand-new selftest, and a second handler beside the guarded one inside e2e.sh itself.
-# The scan is `*.sh` only; verified at the time of writing that no shell file under this directory
-# lacks that extension, so nothing is currently out of reach, but one added later would be.
-# The scan finds the population; a CLASSIFIER then reads each hit, and #1567 was two faults in
-# that half — a handler strip that could not span the `'\''` idiom, and a `trap …` literal held
-# as test data being asserted against as though this tree installed it. Both are fixed below, at
-# `trap_line_signals` and `trap_hit_is_data`, which carry the rules rather than have them
-# restated here — a recipe written in two places is one that drifts apart.
-# Standalone (not sourced by selftest.sh) so it never touches that file's budget ceiling — the
-# #1258/#1301 "moved into its own file" precedent. Run directly, or via
-# `make test-integration-selftest`. No server needed.
-#
 # WHAT THIS EXISTS TO STOP, and why a comment alone would not have. `trap handler EXIT INT TERM` is
 # the common idiom and it READS as more careful than bare `EXIT`, so it gets re-added by anyone who
 # has not measured it. Measured here rather than assumed: a bare EXIT trap already runs when the
@@ -257,19 +240,9 @@ LITERAL
 assert_eq "the literal below is genuinely non-compliant — an exemption over nothing proves nothing" \
     "$(trap_line_signals "${noncompliant_literal##*$'\n'}")" "EXIT INT TERM"
 
-echo "== every trap under tests/integration/ names EXIT and nothing else (#1401/#1515) =="
-# A WALK, not a list of known sites: #1401's second live instance was found by enumerating the class,
-# and a check wired to named sites cannot enumerate anything. If one of these reds, read the block at
-# the top of this file before "fixing" it by re-adding the signals — that is the change this file
-# exists to refuse.
-#
-# The scan reads the WORKING TREE, not `git ls-files`, so a file not yet `git add`ed is still swept;
-# #1486 is this same kind of check made blind in exactly that way.
+echo "== every restore trap names EXIT; e2e termination exits explicitly =="
 trap_scan="$(grep -rnE '^[[:space:]]*trap[[:space:]]' --include='*.sh' "$HERE/..")"
 
-# Fed by a heredoc rather than a pipe on purpose: `grep ... | while` runs the loop body in a
-# SUBSHELL, so every it_pass/it_fail it recorded would be discarded when the pipeline ended and the
-# summary below would count zero of them while printing green.
 TRAP_DATA_HITS=0
 while IFS= read -r hit; do
     [ -n "$hit" ] || continue
@@ -281,8 +254,15 @@ while IFS= read -r hit; do
         it_warn "declared DATA, NOT asserted (#1567): ${hit_file#"$HERE"/}:$hit_line"
         continue
     fi
-    assert_eq "${hit_file#"$HERE"/}:$hit_line traps on EXIT alone (#1401)" \
-        "$(trap_line_signals "${hit_rest#*:}")" "EXIT"
+    case "${hit_file#"$HERE"/../}:${hit_rest#*:}" in
+    "e2e.sh:trap 'exit 143' TERM" | "lib/parent-lock.sh:    trap '' TERM")
+        it_pass "e2e termination exits or protects the EXIT restore"
+        ;;
+    *)
+        assert_eq "${hit_file#"$HERE"/}:$hit_line traps on EXIT alone (#1401)" \
+            "$(trap_line_signals "${hit_rest#*:}")" "EXIT"
+        ;;
+    esac
 done <<EOF
 $trap_scan
 EOF

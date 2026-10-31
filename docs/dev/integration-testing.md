@@ -376,7 +376,13 @@ earned: an in-progress state before Tari has read `done` in this run, or any oth
 check.
 
 For `targeted` and `matrix`, it does the following and reverses it on exit (even on failure / Ctrl-C,
-via an `EXIT` trap):
+via an `EXIT` trap). A SIGTERM sent to the launcher waits for its foreground command
+(including the deploy upgrade) to finish, then exits 143 without starting another phase.
+Only `EXIT` runs restoration, and further SIGTERM signals are ignored during that unwind.
+The runner must keep the foreground command and log pipe alive through its cancellation
+grace period; SIGKILL cannot provide this ordering.
+
+The deployment steps are:
 
 1. Dedicated checkout. Provisions `/srv/code/pithead-e2e` (clone-once, then `git fetch`) and checks
    out `<branch>` there. The checkout is disposable, so provisioning forces a pristine tree
