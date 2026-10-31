@@ -43,12 +43,9 @@ _setup_again_boot() {
         bad "pithead-setup-again is '${st:-unreadable}' 120 s into the boot — the flag was not honoured"
 }
 
-# The wizard session on a set-up-again boot: the token THIS boot minted (read past the offset
-# _setup_again_boot took before the reboot, never the last session's), the page served, a session
-# cookie in $jar. Sets token and jar in the caller; rc 1 = reported.
 _setup_again_session() {
     local tries=0 from="${SA_SERIAL_OFFSET:-0}"
-    # A harness-driven guest boot truncates the console log; then everything in it is this boot's.
+    _setup_again_journal_token || return 1
     [ "$(stat -c %s "$SERIAL" 2>/dev/null || echo 0)" -ge "$from" ] || from=0
     token=""
     while [ "$tries" -lt 40 ]; do
@@ -61,6 +58,11 @@ _setup_again_session() {
         bad "no one-time token appeared on the console after the reboot into the setup entry"
         return 1
     }
+    [ "$token" = "$SA_JOURNAL_TOKEN" ] || {
+        bad "the console token does not match the current boot journal"
+        return 1
+    }
+    _setup_again_console_proof || return 1
     _wait_setup_page 120 || {
         bad "the setup page never served on the set-up-again boot"
         return 1

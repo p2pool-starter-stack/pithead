@@ -189,6 +189,11 @@ password and certificate. Both have mutation self-tests beside their harnesses.
 
 `lib/pithead/12a-wizard-addresses.sh` supplies non-bridge host addresses for the
 setup container and prints the journal and physical-console connection announcements.
+It atomically publishes the same details to a private temporary getty issue file, so
+login-prompt startup can repeat the current session. `tests/os/wizard-console-leg.sh`
+checks journal minting, serial delivery and tty1 text on each setup-again session,
+including a paused-writer getty restart and a publication-disabled negative control.
+`tests/os/selftest-wizard-console.sh` covers publication, replacement, cleanup and failure verdicts.
 `lib/pithead/12a-wizard-page.sh` starts each page container with those addresses,
 its per-round token and certificate, then restores the reset slot and announces the page.
 `tests/os/wizard-redirect-leg.sh` checks the plain-port
