@@ -392,7 +392,10 @@ tests/integration/run.sh --host you@server --dir pithead --readiness
 > format: it appears while monerod holds the environment, and the same tool opens an idle copy of
 > the same chain. Measured here on monerod 0.18.5.1, where both DBs read magic `0xbeefc0de`,
 > version 1 (#1446) — one bench, one build, so treat the reading as ours rather than universal.
-> It is not corruption — do not stop monerod over it. Often the best move is to leave the free pages alone.
+> It is not corruption — do not stop monerod over it. The [Monero LMDB tools](lmdb-tools.md)
+> workflow supplies reviewed compatible copy/stat binaries with source provenance and
+> disposable concurrent-writer tests. Installation and real-chain capture remain separate
+> owner-operated work; never bypass the live locks. Often the best move is to leave the free pages alone.
 
 ## Bench allocation and the rig lock
 
