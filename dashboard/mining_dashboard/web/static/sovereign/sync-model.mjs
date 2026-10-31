@@ -52,31 +52,13 @@ export function admission(state) {
   if (mining.held || !mining.released) {
     const chains = state.sync_status?.chains;
     const ready = (name) => chains?.[name]?.reachable === true && chains?.[name]?.synced === true;
-    const pending = (state.tari_gates_sync ? ["monero", "tari"] : ["monero"]).filter(
-      (name) => !ready(name),
-    );
-    if (!pending.length)
+    if (ready("monero") && (!state.tari_gates_sync || ready("tari")))
       return "Required nodes are synced; waiting for the host to start required services and admit mining";
-    const reasons = pending.map((name) => {
-      const node = chains?.[name];
-      const { local: localNode, node: address } = node || {};
-      const label = name === "monero" ? "Monero" : "required Tari";
-      const remote =
-        localNode === false
-          ? ` (remote node: ${typeof address === "string" && address ? address : "unknown"})`
-          : "";
-      const waiting = [];
-      if (node?.reachable !== true)
-        waiting.push(node?.reachable === false ? "become reachable" : "report reachability");
-      if (node?.synced !== true)
-        waiting.push(node?.synced === false ? "sync" : "report synchronization");
-      return `${label}${remote} to ${waiting.join(" and ")}`;
-    });
-    const next =
-      !state.tari_gates_sync && chains?.tari
-        ? "optional Tari does not hold the first release"
-        : "the host then starts the required services";
-    return `Mining waiting for ${reasons.join(" and ")}; ${next}`;
+    return state.tari_gates_sync
+      ? "Mining waiting for Monero and required Tari to sync; the host then starts the required services"
+      : state.sync_status?.chains?.tari
+        ? "Mining waiting for Monero to sync; optional Tari does not hold the first release"
+        : "Mining waiting for Monero to sync; the host then starts the required services";
   }
   return "Mining admitted by the host; this is not proof of accepted mining work";
 }
