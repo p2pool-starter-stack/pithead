@@ -14,6 +14,8 @@
 
 # shellcheck source=tests/integration/lib/restore-chain-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/restore-chain-sync.sh" || return $?
+# shellcheck source=tests/integration/lib/restore-unit-state.sh
+source "$(dirname "${BASH_SOURCE[0]}")/restore-unit-state.sh" || return $?
 
 # What the live stack was RUNNING, by service, before this run touched anything. Image IDs, not
 # tags: the defect this catches is a tag that MOVED. Empty is never a restore pass.
@@ -25,12 +27,6 @@ EGRESS_UNIT_BEFORE=""
 # The same record for pithead-egress.timer and its pithead-egress-check.service (#2599).
 EGRESS_CHECK_BEFORE=""
 LAN_CHECK_BEFORE=""
-
-# absent only when systemd itself answers not-found: a failed lookup is "" (unknown), never absent.
-egress_boot_unit_state() { # [unit] -> present | absent | "" (the bench could not be asked)
-    local u="${1:-pithead-egress.service}"
-    on_bench "if systemctl cat $u >/dev/null 2>&1; then echo present; elif [ \"\$(systemctl show -p LoadState --value $u 2>/dev/null)\" = not-found ]; then echo absent; fi" 2>/dev/null || true
-}
 
 # The egress check pair (#2599), restored on the same rule as the boot unit below.
 restore_egress_check_units() {
