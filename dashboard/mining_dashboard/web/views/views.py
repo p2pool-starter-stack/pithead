@@ -375,8 +375,6 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "xvb_standby": state_mgr.get_xvb_standby(),
         "tari": build_tari(data),
         "workers": build_workers(data.get("workers", []), data.get("rigforge_release")),
-        # Fleet power draw / efficiency and (once a price is set) net profit after power (#260),
-        # with live feed prices (#520) when dashboard.energy.price_feed is on.
         "energy": build_energy(data.get("workers", []), data.get("prices")),
         "proxy_summary": build_proxy_summary(data),
         "share_stats": build_share_stats(share_stats, range_arg, window),

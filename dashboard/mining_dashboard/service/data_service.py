@@ -333,12 +333,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     if self.miner_released:
                         await self._apply_worker_rejection(monero_down, tari_down)
 
-                    # 5. Operator alerts (Issues #121/#45): push debounced node/worker/sync/host
-                    # edges to Telegram. Consumes the flags computed above; worker presence is only
-                    # tracked while the proxy is actually serving (miner released and not rejected) —
-                    # its intentional absence otherwise must not read as offline. Disk usage is read
-                    # once here and reused in the snapshot below. No-op unless Telegram is configured;
-                    # never raises.
                     disk_usage = get_disk_usage()
                     hugepages = get_hugepages_status()
                     memory = get_memory_usage()

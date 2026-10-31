@@ -27,7 +27,7 @@ def get_cpu_avx2():
                     return _avx2_supported
     except OSError:
         pass
-    return None  # unknown — don't cache, and callers treat None as "can't judge" (no badge/alert)
+    return None
 
 
 def _record_resource(name, value, reason=None):
