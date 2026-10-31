@@ -5,6 +5,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
 export INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/run-auth-probe.sh
+source "$HERE/../lib/run-auth-probe.sh"
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/../lib/run-hardening.sh"
 TD="$(mktemp -d)"

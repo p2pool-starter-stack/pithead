@@ -3,7 +3,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$HERE/.."
-modules=(run-cli.sh run-matrix.sh run-egress-claim.sh run-onion-targets.sh run-state.sh run-tari-wallet.sh run-lan-guard.sh run-scenario.sh run-source-image.sh run-wizard-defaults.sh run-wizard-eof.sh run-connection-announcements.sh run-reset-restore.sh run-pool-preview.sh run-lifecycle.sh run-rotate-secrets.sh run-faults.sh run-pool-sync-fault.sh run-tor-probe-fault.sh run-egress-status.sh run-webhook-validation.sh run-hardening.sh run-tari-off-preview.sh run-rotate-onion.sh run-safety.sh run-rigforge.sh run-rig-control.sh run-rig-reverse.sh run-alert-egress.sh run-mergemine-submit.sh run-tari-stranded.sh run-monero-stranded.sh run-mergemine-localnet.sh)
+modules=(run-cli.sh run-matrix.sh run-egress-claim.sh run-onion-targets.sh run-state.sh run-tari-wallet.sh run-lan-guard.sh run-scenario.sh run-source-image.sh run-wizard-defaults.sh run-wizard-eof.sh run-connection-announcements.sh run-reset-restore.sh run-pool-preview.sh run-lifecycle.sh run-rotate-secrets.sh run-faults.sh run-pool-sync-fault.sh run-tor-probe-fault.sh run-egress-status.sh run-webhook-validation.sh run-auth-probe.sh run-hardening.sh run-tari-off-preview.sh run-rotate-onion.sh run-safety.sh run-rigforge.sh run-rig-control.sh run-rig-reverse.sh run-alert-egress.sh run-mergemine-submit.sh run-tari-stranded.sh run-monero-stranded.sh run-mergemine-localnet.sh)
 
 echo "== run.sh modules load completely in their preserved order =="
 expected_modules="$(printf 'lib/%s ' "${modules[@]}" | sed 's/ $//')"
@@ -67,6 +67,8 @@ source "$ROOT/lib/run-tor-probe-fault.sh" || exit $?
 source "$ROOT/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-webhook-validation.sh
 source "$ROOT/lib/run-webhook-validation.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-auth-probe.sh
+source "$ROOT/lib/run-auth-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$ROOT/lib/run-hardening.sh" || exit $?
 source "$ROOT/lib/run-tari-off-preview.sh" || exit $?
