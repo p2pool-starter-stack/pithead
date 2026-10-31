@@ -135,15 +135,41 @@ def main():
         "shares": [{"ts": NOW - 120}],
         "workers": WORKERS,
         "global_sync": False,
+        "sync_status": {
+            "sampled_at": NOW,
+            "chains": {
+                name: {
+                    "local": name == "monero",
+                    "node": None if name == "monero" else "tari.example:18142",
+                    "reachable": True,
+                    "synced": True,
+                    "healthy": True,
+                    "down": False,
+                    "health": {"level": "green", "reasons": []},
+                    "base_node_state": None if name == "monero" else "LISTENING",
+                    "sync_state": None if name == "monero" else "DONE",
+                    "initializing": None,
+                    "initial_sync_achieved": None if name == "monero" else True,
+                    "error": None,
+                    "wait_seconds": 0,
+                    "recovery_remaining": None,
+                    "service_recreated": None,
+                }
+                for name in ("monero", "tari")
+            },
+            "mining": {
+                "released": True,
+                "held": False,
+                "workers_rejected": False,
+                "fail_closed": False,
+            },
+        },
         "total_live_h15": 10000,
         "monero_sync": {"percent": 100, "current": 3000000, "target": 3000000},
         "tari_sync": {"percent": 100, "current": 50000, "target": 50000},
         "update": {"available": True, "latest": "v9.9.9", "url": "https://example/releases/v9.9.9"},
     }
     state = views.build_state(data, _state_mgr(), "all")
-    # Optional output path so the drift guard (tests/web/views/test_views.py) can regenerate to a temp
-    # file and diff the shape without clobbering the checked-in fixture. This script patches
-    # time.time process-wide, so callers run it as a subprocess, never import it.
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("state.json")
     out.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
     print(f"wrote {out} ({out.stat().st_size} bytes)")
