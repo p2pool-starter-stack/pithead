@@ -5,6 +5,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 python3 "$HERE/selftest-migration-recovery.py"
 # shellcheck source=tests/os/migration-recovery.sh
 source "$HERE/migration-recovery.sh"
+# shellcheck source=tests/os/lib/identity.sh
+source "$HERE/lib/identity.sh"
 SCRIPT_DIR=$HERE
 T=$(mktemp -d "${TMPDIR:?}/migration-recovery.XXXXXX")
 trap 'rm -rf "$T"' EXIT
@@ -199,12 +201,10 @@ for mode in advancing stalled malformed unhealthy; do
     [ "$result" = "$expected" ] || fail "mining poll $mode"
 done
 unset -f date sleep _ssh
-# The real phase must not substitute remote readiness for any held-boot evidence.
-# shellcheck disable=SC2034 # sourced helpers read runner globals.
+# shellcheck disable=SC2034
 OS_RUN_SUITE=1
 # shellcheck source=tests/os/phases/provision-migration.sh
 source "$HERE/phases/provision-migration.sh"
-# Inspect names come from the shipped Compose contract, not a copy of the query.
 monero_container=$(awk '$0 == "  monerod:" {service=1} service && /container_name:/ {print $2; exit}' "$HERE/../../docker-compose.yml")
 tari_container=$(awk '$0 == "  tari:" {service=1} service && /container_name:/ {print $2; exit}' "$HERE/../../docker-compose.yml")
 [ -n "$monero_container" ] && [ -n "$tari_container" ] || fail 'chain container names missing from Compose'
@@ -243,10 +243,22 @@ for missing in none candidate commit hold claim stopped startup startup_monerod 
         }
         _ssh() {
             case "$1" in
+            bash)
+                local field
+                echo snapshot >>"$calls"
+                for field in config env machine ssh wallet tor env_project env_other selected_project; do
+                    printf '%s=%064d\n' "$field" 0
+                done
+                printf 'env_project_present=0\n'
+                printf 'source_commit=%s\n' "$(git rev-parse HEAD)"
+                ;;
             'cat /opt/pithead/BUILD_COMMIT')
                 if [ "$missing" = candidate ]; then printf '%040d\n' 1; else git rev-parse HEAD; fi
                 ;;
-            *'./pithead os-update'*) grep -qx seed "$calls" || fail 'upgrade before seed' ;;
+            *'./pithead os-update'*)
+                grep -qx seed "$calls" || fail 'upgrade before seed'
+                grep -qx snapshot "$calls" || fail 'upgrade before identity snapshot'
+                ;;
             *'cat /data/pithead/.os-migration-pending'*) echo 2.0.0 ;;
             *'grub-editenv'*) [ "$missing" != commit ] ;;
             *'holding chain services'*) [ "$missing" != hold ] ;;
@@ -271,6 +283,7 @@ for missing in none candidate commit hold claim stopped startup startup_monerod 
         _phase_provision_migration
         if [ "$missing" = none ]; then
             grep -qx remote "$calls" || fail 'complete commit proof did not recover'
+            [ "$(grep -cx snapshot "$calls")" = 2 ] || fail 'missing identity comparison after commit'
         elif grep -qx remote "$calls"; then
             fail "$missing proof was replaced by remote readiness"
         fi

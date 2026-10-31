@@ -153,7 +153,16 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   stick across a reboot, and `rauc status mark-bad booted` still rolls off a committed version.
   Also asserts `/data` grew to fill the disk, and that host identity (SSH host-key fingerprint,
   machine-id) survives the A/B swap (#894/#895) — both live on `/data`, untouched by the slot
-  swap.
+  swap. After the provisioned dashboard update and unhealthy-container fallback, leg 6
+  installs a fresh marked good bundle through `os-update`, waits for the product to commit it,
+  runs the operator rollback and requires the earlier slot to pass `doctor --json` and serve
+  authenticated `/api/state` with HTTP 200. Config, `.env`, wallet addresses, Tor identities,
+  machine-id and the SSH host key must match their pre-update hashes.
+  An `.env` mismatch reports project-identity presence/equality and equality of the remaining
+  bytes, without printing values or hashes. The sole exception is the selected-project field
+  added by #3605 when the baseline predates it; candidate ancestry, independent project-label
+  validation and exact equality of all remaining identity bytes are required. The version gate
+  and negative controls are documented in [migration-recovery.md](migration-recovery.md).
 - **install** — stage a chosen token and valid config on the ESP before the first removable-media
   boot, authenticate case and prefix variants, and check prefilled answers with no disk selected.
   Reboot with malformed JSON and require serial rejection with a blank form carrying the reference

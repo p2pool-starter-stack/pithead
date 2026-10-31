@@ -96,6 +96,10 @@ the selected old dashboard writer in `migration-release-snapshot.py`, and measur
 mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
 `selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
 The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
+`tests/os/lib/identity.sh` compares target-side hashes from `identity-snapshot-guest.sh`
+across migration, crossupdate and the provisioned operator rollback in
+`phases/update-rollback-leg.sh`; the identity and rollback selftests exercise their
+negative controls.
 
 Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
 `tests/stack/appliance/test-appliance-reset-slot.sh` and
