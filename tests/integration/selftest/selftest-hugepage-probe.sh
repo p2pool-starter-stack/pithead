@@ -23,7 +23,6 @@ stop_stand_in() {
     stand_in=""
 }
 trap 'stop_stand_in; rm -rf "$TMP"' EXIT
-trap 'exit 1' HUP INT TERM
 T=$'\t'
 
 # Counters around one gate call: how many passes, fails and skips it added.
