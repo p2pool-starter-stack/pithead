@@ -101,6 +101,9 @@ the selected old dashboard writer in `migration-release-snapshot.py`, and measur
 mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
 `selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
 The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
+Approval-snapshot restoration is shared in `tests/os/approval-restore.sh`;
+`approval-restore-output.py` projects command output onto fixed diagnostic phrases.
+`selftest-approval-restore.sh` exercises every restore boundary and snapshot retention.
 
 Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
 `tests/stack/appliance/test-appliance-reset-slot.sh` and
