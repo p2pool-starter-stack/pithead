@@ -176,8 +176,8 @@ grep -Fq 'intentionally held until this slot commits' "$td/migration-hold.out" |
 export SERVICE_NAME=caddy SERVICE_STATE=running MIGRATION_HOLD=0 RESTART_SCENARIO=advancing
 
 DR_ROWS=
-dr_fail() { DR_ROWS="${DR_ROWS}${DR_ROWS:+$'\n'}fail:$*"; }
-dr_ok() { DR_ROWS="${DR_ROWS}${DR_ROWS:+$'\n'}ok:$*"; }
+dr_fail() { DR_ROWS="${DR_ROWS}${DR_ROWS:+$'\n'}fail:$2"; }
+dr_ok() { DR_ROWS="${DR_ROWS}${DR_ROWS:+$'\n'}ok:$2"; }
 source "$ROOT/lib/pithead/21-doctor-stack-checks.sh"
 export RESTART_SCENARIO=malformed
 rm -f "$RESTART_STATE"

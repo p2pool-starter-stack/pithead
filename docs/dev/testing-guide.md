@@ -128,8 +128,9 @@ cd dashboard
 uv run --extra test python tests/frontend/fixtures/_gen_state.py
 ```
 
-The drift guard in `tests/web/views/test_views.py` compares the generated payload structure
-with the checked-in fixture, including nested keys. See [browser testing](browser-testing.md)
+The drift guard in `dashboard/tests/web/views/test_xvb_views_earnings_vs_actual.py` compares the
+generated payload structure with the checked-in fixture, including nested keys. New state blocks
+need representative readings in the generator as well as a regenerated fixture. See [browser testing](browser-testing.md)
 for the shared fixture's API and live-acceptance limits.
 
 ## Conventions

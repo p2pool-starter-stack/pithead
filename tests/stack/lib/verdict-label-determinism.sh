@@ -151,6 +151,7 @@ test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-grub-hugepages.sh|mode
 test-grub-hugepages.sh|param
+test-manual-qa-oracle.sh|id
 test-payout-wallet-pairs.sh|chain
 test-payout-wallet-pairs.sh|field
 test-payout-wallet-pairs.sh|k
@@ -180,6 +181,10 @@ test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
+test-wizard-addresses.sh|wa_chain
+test-wizard-addresses.sh|wa_eof
+test-wizard-addresses.sh|wa_existing
+test-wizard-addresses.sh|wa_message
 test-wizard-tari.sh|mono
 test-wizard-tari.sh|size
 test-wizard-tari.sh|tari
