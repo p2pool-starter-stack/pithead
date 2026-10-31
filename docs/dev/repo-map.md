@@ -101,6 +101,9 @@ the selected old dashboard writer in `migration-release-snapshot.py`, and measur
 mining with `migration-readiness.py`. `selftest-migration-recovery.sh` and
 `selftest-migration-snapshot.sh` check ancestry refusal, persistence and recovery contracts.
 The runner input and acceptance contract is in `tests/os/migration-recovery.md`.
+Approval-snapshot restoration is shared in `tests/os/approval-restore.sh`;
+`approval-restore-output.py` projects command output onto fixed diagnostic phrases.
+`selftest-approval-restore.sh` exercises every restore boundary and snapshot retention.
 
 The xmrig-proxy Quadlet healthcheck is rendered in `lib/pithead/36-quadlet-units.sh`.
 `tests/stack/test-render-quadlet.sh` checks Compose parity through
@@ -210,8 +213,12 @@ the package's `__main__.py` delegates to its server.
 
 Browser assets live in `web/static/`. The opt-in lean preview is in `web/static/sovereign/`,
 with its template at `web/templates/sovereign.html`; its frontend tests are in
-`tests/frontend/sovereign/` and its browser journey is `dashboard/tests/browser/sovereign.test.mjs`.
-The browser workflow retains its sanitized shell and drawer screenshots as `sovereign-visual-proof`, including passing runs.
+`tests/frontend/sovereign/`. Shell and Earnings browser journeys are
+`dashboard/tests/browser/sovereign.test.mjs` and `dashboard/tests/browser/sovereign-earnings.test.mjs`.
+The Earnings page, payout presentation and scoped host-control adapter are in
+`web/static/sovereign/earnings.mjs`, `earnings-model.mjs` and `earnings-control.mjs`.
+The browser workflow retains sanitized shell, drawer and Earnings screenshots as
+`sovereign-visual-proof`, including passing runs.
 JavaScript feature folders are `app/`,
 `config/`, `network/`, `system/`, `workers/`, `xvb/`, and `wizard/`.
 `tests/frontend/` mirrors those folders. Its `harness.mjs`, `helpers/`, and
@@ -431,6 +438,10 @@ Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugep
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+The ENOSPC fault lifecycle is `tests/integration/lib/disk-enospc-target.sh`, transmitted
+through the shared target wrapper by `run-faults.sh`. Its mount ownership and interruption
+controls are in `tests/integration/selftest/selftest-enospc-cleanup.sh`.
 
 The e2e wrapper captures required pre-run systemd unit states through
 `tests/integration/lib/restore-unit-state.sh`. Restoration checks their capture records before

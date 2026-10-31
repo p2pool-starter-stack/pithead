@@ -1,0 +1,51 @@
+.earnings-page {
+  max-width: 72rem;
+  overflow-wrap: anywhere;
+}
+.earnings-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.payout-list {
+  list-style: none;
+  padding: 0;
+}
+.payout-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 2rem;
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.earnings-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1.5rem;
+}
+.earnings-facts dt {
+  color: var(--muted);
+}
+.earnings-facts dd {
+  margin: 0.4rem 0 0;
+  font-weight: 700;
+}
+.earnings-control dialog {
+  width: min(40rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.earnings-control dialog label {
+  display: block;
+  margin-block: 1rem;
+}
+.earnings-control input:not([type="checkbox"]) {
+  display: block;
+  max-width: 100%;
+  margin-top: 0.5rem;
+}
+.earnings-control dialog button {
+  margin: 0.5rem 0.5rem 0 0;
+}
