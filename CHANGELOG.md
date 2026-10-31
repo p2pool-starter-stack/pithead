@@ -15,26 +15,27 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 Pithead 2.0.2 is a patch release after 2.0.1. It makes a command-line restore refresh the
 dashboard configuration, catches an occupied stratum port before Configuration applies it, and
-fixes Docker bridge detection on older mawk, along with build and setup fixes. Entries below apply
+makes the commands that act on data directories refuse a path with a line break in it. It changes
+no configuration keys and no component version, and runs no data migration. Entries below apply
 to both channels unless they say otherwise.
 
 ### Fixed
 
 - A command-line restore over an existing install refreshes the dashboard configuration before
   startup, so Configuration and the earnings calculator use the restored values (#3432).
-- Docker bridge detection works with older mawk on Debian 12 and Ubuntu 22.04, keeping engine
-  bridge addresses out of Caddy's bind and certificate-name lists (#3653).
 - Configuration preview and apply refuse an occupied stratum port before committing the change,
-  keeping the running proxy and mining intact (#3417).
-- The appliance release gate accepts a measured Secure Boot non-boot for every version as
-  unsupported by design. An unmeasured guest still fails; Secure Boot must remain off (#3678).
-- The Monero, P2Pool and xmrig-proxy image builds retry a failed apt index update up to three
-  times with a pause, so a brief mirror outage no longer fails those builds (#1802).
+  keeping the running proxy and mining intact. The check runs only when the port changes and does
+  not reserve the port (#3417).
+- Reset and the other commands that act on data directories refuse a directory path that contains
+  a carriage return or line feed, including one read from `.env`, so they never work on a
+  truncated path (#3502).
 - First-start guidance names the chains your setup actually has to sync before mining starts
   (#3598).
-- A data directory whose path contains a carriage return or line feed is refused, whether it comes
-  from `.env` or the configuration, so reset and the other commands that act on data directories
-  never work on a truncated path (#3502).
+- DIY: building the Monero, P2Pool and xmrig-proxy images from a source checkout tries the apt
+  index update up to three times, pausing 5 and then 10 seconds, so a mirror outage of a few
+  seconds no longer fails those builds (#1802).
+- The appliance release gate accepts a measured Secure Boot non-boot for every version as
+  unsupported by design. An unmeasured guest still fails; Secure Boot must remain off (#3678).
 
 ### Security
 
@@ -44,16 +45,25 @@ to both channels unless they say otherwise.
 
 ### Known issues in 2.0.2
 
-The known issues listed for 2.0.1, including those it carries over from 2.0.0, still apply,
-except #3432 and #3417, which are fixed above. These are planned for 2.0.3:
+The [known issues listed for 2.0.1](https://github.com/p2pool-starter-stack/pithead/blob/main/CHANGELOG.md#known-issues-in-201),
+including those it carries over from 2.0.0, still apply, except #3432 and #3417, which are fixed
+above. Four further issues are planned for 2.0.3:
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
   boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot (#3375).
 - On the appliance, after `config-reset`, a restore and `pithead up`, the stack starts but the
-  enabled built-in miner can stay stopped (#3623).
-- DIY: a checkout made under a restrictive umask such as `umask 077` builds a Tor image whose
-  entrypoint the `tor` user cannot read, so Tor fails before setup completes. Make the checkout
-  under the usual `umask 022` (#3431).
+  enabled built-in miner may not start, so its workers do not reconnect and the dashboard shows
+  0 H/s for it. No workaround has been established (#3623).
+- DIY: a checkout made under a restrictive umask such as `umask 077` builds images whose files
+  their non-root service users cannot read, and Tor then fails before setup completes. Make the
+  checkout under the usual `umask 022` (#3431).
+- With the default Tor egress firewall, the setup wizard refuses a remote node entered by
+  hostname, even one that resolves to a private IPv4 address. Enter the node's private IPv4
+  address instead (#2351).
+
+One more is open. The appliance's cosign binary is the same build as in 2.0.1. It carries go-jose
+4.1.4, which scanners report as CVE-2026-116587 (HIGH, fixed in go-jose 4.1.6). Whether Pithead's
+use of cosign is exposed has not been established (#3761).
 
 ## [2.0.1] - 2026-10-25
 
