@@ -1,5 +1,7 @@
+from dataclasses import replace
+
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from mining_dashboard.service.donation.planner import plan_cycle
@@ -50,9 +52,24 @@ def test_daily_share_with_room(percent, xvb_ms):
     percent=st.floats(0.1, 10, allow_nan=False, allow_infinity=False),
     xvb_ms=st.one_of(st.just(0), st.integers(15_000, 300_000)),
 )
+@example(percent=0.28, xvb_ms=0)
 def test_weekly_share_with_room_stays_within_one_slice(percent, xvb_ms):
     cycles = 7 * 144
     result = simulate([xvb_ms] * cycles, percent, 0.85)
     target_ms = cycles * 600_000 * percent / 100
     assert 0 <= target_ms - result.project_ms < 60_000
-    assert result.debt_ms == pytest.approx(target_ms - result.project_ms)
+    assert result.debt_ms == pytest.approx(target_ms - result.project_ms, rel=0, abs=1e-6)
+
+
+@pytest.mark.parametrize("percent", [0.1, 0.28])
+@pytest.mark.parametrize("drift_ms", [-0.001, 0.001])
+def test_weekly_debt_rejects_accounting_drift(monkeypatch, percent, drift_ms):
+    result = simulate([0] * (7 * 144), percent, 0.85)
+    monkeypatch.setattr(
+        f"{__name__}.simulate",
+        lambda *_args: replace(result, debt_ms=result.debt_ms + drift_ms),
+    )
+    with pytest.raises(AssertionError):
+        test_weekly_share_with_room_stays_within_one_slice.hypothesis.inner_test(
+            percent=percent, xvb_ms=0
+        )
