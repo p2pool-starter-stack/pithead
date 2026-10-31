@@ -57,14 +57,14 @@ container_restarting_names() {
 check_container_restarts() {
     local names name failed=0
     if ! names=$(container_restarting_names); then
-        dr_fail "Container restart observation failed — the engine state could not be read twice."
+        dr_fail container-restarts "Container restart observation failed — the engine state could not be read twice."
         return 0
     fi
     while IFS= read -r name; do
         [ -n "$name" ] || continue
-        dr_fail "$name is restarting or restarted during the health check — it may be crash-looping."
+        dr_fail container-restarts "$name is restarting or restarted during the health check — it may be crash-looping."
         failed=1
     done <<<"$names"
-    [ "$failed" -eq 0 ] && dr_ok "No containers were observed restarting during the health check."
+    [ "$failed" -eq 0 ] && dr_ok container-restarts "No containers were observed restarting during the health check."
     return 0
 }
