@@ -287,7 +287,13 @@ main() {
     fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
         if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then
-            run_fault_injection_maybe
+            if ! run_fault_injection_maybe; then
+                SAFETY_RESTORE_FAILED=1
+                it_fail "fault phase storage verified before continuing" "ENOSPC cleanup unverified; retain the safety archive for operator recovery"
+                hugepages_finish
+                summary
+                return 1
+            fi
         else
             it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"
         fi

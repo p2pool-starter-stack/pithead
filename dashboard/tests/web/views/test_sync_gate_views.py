@@ -32,3 +32,13 @@ def test_effective_tari_sync_gate(
     assert state["tari_gates_sync"] is gating
     assert state["sync"]["monero"]["percent"] == 42
     assert state["sync"]["tari"]["state"] == "loading"
+
+
+def test_sync_status_reaches_the_read_only_payload(_data, _state_mgr):
+    status = {
+        "sampled_at": 1000,
+        "chains": {"tari": {"initial_sync_achieved": False, "base_node_state": "HEADER_SYNC"}},
+        "mining": {"released": False, "held": True},
+    }
+    state = build_state(_data(sync_status=status), _state_mgr(), "all")
+    assert state["sync_status"] == status
