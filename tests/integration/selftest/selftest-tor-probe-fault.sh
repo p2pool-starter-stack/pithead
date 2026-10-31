@@ -86,7 +86,7 @@ for flag in 0 unset; do
 done
 
 echo "== Lifecycle recovery proof rejects false success and unexpected-abort advice =="
-for fixture in clears refusal abort success wrong-guard busy error deadline; do
+for fixture in clears refusal abort success wrong-guard busy error deadline sampler-timeout; do
     (
         IT_FAIL=0 IT_PASS=0
         OUT_DIR="$SCRATCH/$fixture"
@@ -97,7 +97,9 @@ for fixture in clears refusal abort success wrong-guard busy error deadline; do
         sleep() { clock=$((clock + $1)); }
         rx() {
             if [[ "$1" == *lslocks* ]]; then
-                printf '%s\n' 'lock-record: unrecorded' 'kernel-lock: pid=42 mode=WRITE' 'untrusted diagnostic payload'
+                printf '%s\n' "$1" >"$OUT_DIR/sampler-command"
+                [ "$fixture" != sampler-timeout ] || return 124
+                printf '%s\n' 'lock-record: pid=42 verb=apply since=2026-10-31T00:00:00Z' 'kernel-lock: pid=42 mode=WRITE' 'untrusted diagnostic payload'
                 return 0
             fi
             [ "$1" != 'docker exec tor /usr/local/bin/tor-recovery-diagnose.sh' ]
@@ -106,7 +108,7 @@ for fixture in clears refusal abort success wrong-guard busy error deadline; do
             printf '%s|%s\n' "$((60 - clock))" "${IT_PITHEAD:-./pithead}" >>"$OUT_DIR/commands"
             echo attempt >>"$OUT_DIR/calls"
             case "$fixture" in
-            busy | clears)
+            busy | clears | sampler-timeout)
                 if [ "$fixture" = busy ] || [ "$(wc -l <"$OUT_DIR/calls")" -lt 3 ]; then
                     echo 'Timed out waiting for another pithead operation (holder unrecorded)'
                     return 75
@@ -135,7 +137,7 @@ for fixture in clears refusal abort success wrong-guard busy error deadline; do
         set +e
         tor_recovery_healthy_probe
         set -e
-        if [ "$fixture" = refusal ] || [ "$fixture" = clears ]; then
+        if [ "$fixture" = refusal ] || [ "$fixture" = clears ] || [ "$fixture" = sampler-timeout ]; then
             check test "$IT_FAIL" -eq 0
             check test "$IT_PASS" -eq 6
         elif [ "$fixture" = busy ] || [ "$fixture" = error ] || [ "$fixture" = deadline ]; then
@@ -146,18 +148,26 @@ for fixture in clears refusal abort success wrong-guard busy error deadline; do
         while IFS='|' read -r remaining command; do
             check test "$command" = "timeout --kill-after=2 $remaining ./pithead"
         done <"$OUT_DIR/commands"
+        if [ -f "$OUT_DIR/sampler-command" ]; then
+            check grep -q '^timeout --kill-after=1 5 bash -c ' "$OUT_DIR/sampler-command"
+        fi
         case "$fixture" in
         clears)
             check test "$(wc -l <"$OUT_DIR/calls")" -eq 3
             check grep -q 'elapsed_s=4 rc=1' "$OUT_DIR/tor-recovery-admission.log"
             check grep -q 'rc=75' "$OUT_DIR/tor-recovery-admission.log"
             check grep -q 'kernel-lock: pid=42 mode=WRITE' "$OUT_DIR/tor-recovery-admission.log"
+            check grep -q '^lock-record: pid=42 verb=apply since=2026-10-31T00:00:00Z$' "$OUT_DIR/tor-recovery-admission.log"
             check test "$(grep -c 'untrusted' "$OUT_DIR/tor-recovery-admission.log")" -eq 0
             ;;
         busy)
             check test "$clock" -eq 60
             check test "$(wc -l <"$OUT_DIR/calls")" -eq 30
             check grep -q 'admission: elapsed_s=60 rc=75' "$OUT_DIR/tor-recovery-admission.log"
+            ;;
+        sampler-timeout)
+            check test "$(wc -l <"$OUT_DIR/calls")" -eq 3
+            check grep -q '^kernel-lock: unavailable$' "$OUT_DIR/tor-recovery-admission.log"
             ;;
         deadline)
             check test "$(wc -l <"$OUT_DIR/calls")" -eq 1
@@ -213,5 +223,12 @@ check grep -q '^kernel-lock: unavailable$' <<<"$out"
 printf '%s\n' '{"locks": []}' >"$LOCKS_JSON"
 out=$(cd "$SCRATCH/target" && PATH="$SCRATCH/bin:$PATH" bash -c "$(tor_recovery_lock_snapshot_snippet)")
 check grep -q '^kernel-lock: none-observed$' <<<"$out"
+jq -n --arg path "$SCRATCH/target/.pithead.lock" '{locks: [range(1;33) |
+    {pid: ., type: "FLOCK", mode: "WRITE", path: $path}
+]}' >"$LOCKS_JSON"
+out=$(cd "$SCRATCH/target" && PATH="$SCRATCH/bin:$PATH" bash -c "$(tor_recovery_lock_snapshot_snippet)")
+check test "$(grep -c '^kernel-lock: pid=' <<<"$out")" -eq 16
+check grep -q '^kernel-lock: pid=16 mode=WRITE$' <<<"$out"
+check test "$(grep -c '^kernel-lock: pid=17 ' <<<"$out")" -eq 0
 printf 'snapshot fixture: %s passed, %s failed\n' "$PASS" "$FAIL"
 test "$FAIL" -eq 0
