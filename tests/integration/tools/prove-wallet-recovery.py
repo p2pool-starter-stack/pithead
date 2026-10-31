@@ -124,7 +124,7 @@ def check_cleanup(fixture, scratch, snapshot, job):
     if (
         {p.name for p in snapshot.iterdir()} != {"state.json"}
         or state["stage"] != "ready"
-        or {p.name for p in job.iterdir()} != {RECEIPT}
+        or {p.name for p in job.iterdir()} != {RECEIPT, "wallet-fixture-recovery.json"}
         or list(scratch.glob("pithead-wallet-proof-*"))
         or helpers
     ):
@@ -211,10 +211,11 @@ def prove(baseline, progress, context):
         raise ProofFailure("receipt_not_verified")
     progress("cleanup")
     check_cleanup(fixture, scratch, snapshot, job)
-    progress("replay_refusal")
+    progress("exact_replay")
+    original = json.loads(out)
     code, out = run_recovery(baseline, snapshot, job, raw, scratch, REPLAY_TIMEOUT, log)
-    if code == 0 or refusal_reason(out) != "receipt":
-        raise ProofFailure("replay_not_refused")
+    if code != 0 or json.loads(out) != original:
+        raise ProofFailure("replay_not_exact")
     return {
         "schema": 1,
         "restore_proven": True,
@@ -225,7 +226,7 @@ def prove(baseline, progress, context):
         "receipt_verified": True,
         "ready_fence_proven": True,
         "cleanup_proven": True,
-        "replay_refused": True,
+        "replay_proven": True,
     }
 
 

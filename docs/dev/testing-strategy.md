@@ -181,8 +181,8 @@ but `lib.sh`. Shared control and backup builders initialize the nine #2048 prere
 without sourcing predecessors; a separate Shell matrix runs each with only `lib.sh` in a fresh
 process. Both matrices must pass for the required Shell status to pass. Block 3 keeps the four dependent
 approval/SSRF fragments together; block 4 starts the independent editable-key round trips,
-worker masking and spool audit from a fresh fixture. Each block retains its 12-minute timeout;
-the split gives both expensive control groups separate budgets. Before any block runs,
+worker masking and spool audit from a fresh fixture. Each block has a 15-minute job limit,
+including setup and cleanup; the split gives both expensive control groups separate budgets. Before any block runs,
 `run.sh` checks that every suite file sits in exactly one block, that sourced fragments have domain
 accounting, and that the workflow matrix lists every block. Audit parser failures stop execution;
 tally producer failures and counts that are not nonnegative integers stop the full-run verdict.

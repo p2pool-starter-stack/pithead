@@ -89,7 +89,7 @@ class SuccessTest(ProofBase):
                 "receipt_verified": True,
                 "ready_fence_proven": True,
                 "cleanup_proven": True,
-                "replay_refused": True,
+                "replay_proven": True,
             },
         )
         self.assertEqual(
@@ -108,7 +108,7 @@ class SuccessTest(ProofBase):
                 "verdict",
                 "receipt",
                 "cleanup",
-                "replay_refusal",
+                "exact_replay",
             ],
         )
         first, replay = self.runs
@@ -296,7 +296,7 @@ class FailureTest(ProofBase):
                 )
                 self.job_cleanup()
 
-    def test_a_replay_that_is_not_refused_at_the_receipt_fails_the_replay_stage(self):
+    def test_a_replay_without_the_original_verdict_fails_the_replay_stage(self):
         for second in (
             (0, b"{}"),
             (1, b'{"schema": 1, "status": "REFUSED", "reason": "readiness"}'),
@@ -307,7 +307,7 @@ class FailureTest(ProofBase):
                 result = self.result()
                 self.assertEqual(
                     (result["failed_stage"], result["failure_reason"]),
-                    ("replay_refusal", "replay_not_refused"),
+                    ("exact_replay", "replay_not_exact"),
                 )
                 self.job_cleanup()
 
