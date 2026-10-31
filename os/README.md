@@ -12,6 +12,10 @@ the fixes the spike forced (`TimeoutStartSec=infinity`, tmpfs `mode=` instead of
 pool (#2562). The Tor unit now receives the selected P2Pool P2P port; the entrypoint
 uses it for the onion target (#2936).
 
+The xmrig-proxy unit uses the same degrading shell healthcheck as Compose: an absent or
+nonexecutable script reports healthy; an executable probe keeps its own exit status.
+`Notify=healthy` waits for that verdict with `TimeoutStartSec=infinity`.
+
 These files are fixtures, not deployable configuration. The appliance always renders
 its own units from `config.json`. `tests/stack/run.sh` compares each remote, local
 and payout render byte-for-byte with its complete expected unit set and rejects
@@ -27,6 +31,11 @@ node units and local renders free of payout wallet units; shared files do not
 automatically enable units. The 17 stored units preserve all 33 original profile
 outputs without regenerating expected bytes from the renderer. Changing expected
 bytes still requires bench proof; deduplication does not replace that evidence.
+
+Appliance boot remains Compose-managed through Podman. The KVM provision phase
+renders a disposable native xmrig-proxy unit using the appliance proxy container's
+immutable image ID, starts it without networking or published ports, checks healthy
+notification and the real API probe, and verifies cleanup.
 
 The translation rules the spike established, with evidence, live in
 [`docs/dev/dual-distribution-plan.md`](../docs/dev/dual-distribution-plan.md)

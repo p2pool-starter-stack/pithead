@@ -14,15 +14,9 @@ _phase_provision_initial() {
     _phase_provision_initial_body || rc=$?
     phase_provision_egress_backstop "$rc"
     phase_provision_monero_rpc
-    # Same placement and the same reason as the backstop above (#2059), learned the same way: this
-    # leg first ran inside the body, downstream of the hostname and approval legs, and #2060's
-    # known mDNS failures left the dashboard unreadable — so it reported its own precondition
-    # failure as if day-two tari switching were broken. Out here it runs on every path and, when
-    # the phase is already red, says it was NOT EXERCISED instead of blaming the wrong subject.
+    phase_provision_proxy_health
     phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"
-    # After the switch leg restores tari.mode, and before the LAN guard recreates the nodes (#2731).
     phase_provision_tari_wallet "$rc"
-    # Last, and on every path like the two above: it recreates the node containers (#2616).
     phase_provision_lan_guard "$rc"
     return "$rc"
 }
