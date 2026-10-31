@@ -10,8 +10,9 @@
 
 EB="$SANDBOX/egress-boot"
 mkdir -p "$EB/bin" "$EB/units"
+make_host_tool_stubs "$EB/bin" iptables-restore
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$EB/bin/sudo"
-printf '#!/usr/bin/env bash\necho Linux\n' >"$EB/bin/uname" # OS_TYPE is read when pithead is sourced
+printf '#!/usr/bin/env bash\necho Linux\n' >"$EB/bin/uname"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s/ipt.log"\n' "$EB" >"$EB/bin/iptables"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$EB/bin/iptables-save"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$EB/bin/nft"

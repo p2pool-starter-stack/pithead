@@ -187,6 +187,26 @@ including setup and cleanup; the split gives both expensive control groups separ
 accounting, and that the workflow matrix lists every block. Audit parser failures stop execution;
 tally producer failures and counts that are not nonnegative integers stop the full-run verdict.
 
+The shared shell harness redirects `PITHEAD_UNIT_DIR` into its sandbox and places
+host-command guards after each test's explicit fixture tools on `PATH`. Unmocked
+service and firewall probes, including supported `sudo` calls, report unavailable.
+Unmocked mutations are blocked and
+make the process fail at exit, even if the caller ignores the command's error.
+Provide fixture `sudo`, `systemctl` and firewall tools for tests that exercise those
+operations, including sourced probes; pass their fixture `PATH` and keep writes inside
+the fixture. The two real-UID ownership fixtures
+use the captured `STACK_FIXTURE_SUDO` executable explicitly for their sandbox files.
+The guards cover command lookup, not absolute executable paths or tests that replace `PATH` entirely.
+`tests/stack/standalone/test_host_isolation.py` runs through `make test-tools` and
+checks blocked mutations, child-process failures, and preservation of pre-existing
+unit and firewall fixtures after success, failure and interruption. It also checks
+that the Tari parser fixture renders with its own config and bounded cleanup paths.
+
+`tests/stack/fixtures/tor-egress/lifecycle-order.sh` checks firewall-before-Compose
+ordering for up, upgrade, apply retries and dashboard reset. It also checks onion
+password initialization before validation and release-image verification before
+Compose on release installs.
+
 A domain file is a fragment, not a script. It holds no assertion primitives of its own, so running
 one directly printed every `assert_*` call as `command not found` and still exited 0 for 21 of the
 55 — a domain reporting success having executed nothing, and building its fixtures in the caller's

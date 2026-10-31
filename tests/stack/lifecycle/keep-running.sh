@@ -10,8 +10,8 @@ echo "== unit: PITHEAD_KEEP_RUNNING scopes compose_up_checked (#2639) =="
 KR="$SANDBOX/keep-running"
 KRBIN="$KR/bin"
 mkdir -p "$KRBIN"
+make_host_tool_stubs "$KRBIN" systemctl
 printf 'COMPOSE_PROFILES=local_node,local_tari,payout_confirm,tari_payout_confirm\n' >"$KR/.env"
-# RUNNING_STUB lists the containers `docker ps` reports running; the service list is the stack's.
 cat >"$KRBIN/docker" <<'EOF'
 #!/usr/bin/env bash
 echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"
@@ -28,15 +28,21 @@ EOF
 chmod +x "$KRBIN/docker"
 KRLOG="$KR/docker.log"
 
-kr_up() { # <keep> <running> <compose_up_checked args...> -> rc; the up line lands in $KRLOG
+kr_compose_up() {
+    apply_tor_egress_firewall() { :; }
+    lan_guard_prepare_up() { :; }
+    compose_up_checked "$@"
+}
+
+kr_up() {
     local keep="$1" running="$2"
     shift 2
     : >"$KRLOG"
-    DOCKER_LOG="$KRLOG" RUNNING_STUB="$running" PITHEAD_KEEP_RUNNING="$keep" PATH="$KRBIN:$PATH" \
-        run_sourced "$KR" compose_up_checked "$@" >"$KR/out" 2>&1
+    PITHEAD_UNIT_DIR="$KR/units" DOCKER_LOG="$KRLOG" RUNNING_STUB="$running" PITHEAD_KEEP_RUNNING="$keep" PATH="$KRBIN:$PATH" \
+        run_sourced "$KR" kr_compose_up "$@" >"$KR/out" 2>&1
 }
 kr_line() { grep 'compose up' "$KRLOG" | tail -1; }
-kr_names() { kr_line | tr ' ' '\n'; } # one word per line, so 'tari' never matches 'tari-wallet'
+kr_names() { kr_line | tr ' ' '\n'; }
 
 kr_up "monerod tari" "monerod tari" -d
 assert_rc "a scoped up succeeds when every kept service is running" "$?" "0"

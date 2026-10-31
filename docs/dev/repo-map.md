@@ -132,6 +132,9 @@ part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
 its shell regressions are in `tests/stack/config/version.sh`. The Configuration newer-config warning card is
 `web/static/config/configversion.mjs`, with response metadata in `service/config_operations.py`.
+Lifecycle ordering fixtures are in `tests/stack/fixtures/tor-egress/lifecycle-order.sh`.
+The shell harness host-command guards are in `tests/stack/lib/host-guard.sh`;
+`tests/stack/standalone/test_host_isolation.py` exercises their failure and isolation contracts.
 The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
 sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
 readback helpers are in `02d-tor-egress-verify.sh`.

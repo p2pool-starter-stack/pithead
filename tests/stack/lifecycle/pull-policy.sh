@@ -7,11 +7,12 @@
 echo "== unit: compose_up_checked fetches missing non-buildable images on a source checkout (#2654) =="
 PP="$SANDBOX/pull2654"
 mkdir -p "$PP/src/dashboard" "$PP/rel/build/tari"
+make_host_tool_stubs "$PP/bin" systemctl
 : >"$PP/src/dashboard/Dockerfile"
-# $1 = checkout dir, $2 = `fail` to make the pull fail. Prints every docker argv in call order.
 pp_up() {
     (
         cd "$1" || exit
+        export PITHEAD_UNIT_DIR="$PP/units" PATH="$PP/bin:$PATH"
         set --
         # shellcheck disable=SC1090
         source "$STACK" 2>/dev/null
@@ -22,7 +23,9 @@ pp_up() {
             [ "$PP_FAIL" != fail ] || [ "$2" != pull ]
         }
         remove_deactivated_profile_containers() { :; }
-        lan_guard_watched_ports() { :; } # the image-pull probe has no published node ports
+        apply_tor_egress_firewall() { :; }
+        lan_guard_prepare_up() { :; }
+        lan_guard_watched_ports() { :; }
         mutation_lock_path() { echo /dev/null; }
         compose_up_checked -d
     )

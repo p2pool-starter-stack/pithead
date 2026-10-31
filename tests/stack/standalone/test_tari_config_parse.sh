@@ -27,12 +27,18 @@ source "$ROOT/tests/stack/lib.sh"
 WORK_DIR="$SANDBOX"
 CONTAINER="tari-config-parse-check-$$"
 CALIBRATION="$CONTAINER-libtor"
-# rm -rf can leave root-owned files behind (the container ran --user root against $WORK_DIR/node)
-# and exit non-zero on them — `|| true` so cleanup never flips an otherwise-passing run to red.
-trap 'docker rm -f "$CONTAINER" "$CALIBRATION" >/dev/null 2>&1 || true; rm -rf "$WORK_DIR" 2>/dev/null || true; rm -f "$ROOT/build/tari/config.toml"' EXIT
-echo "CLEARNET_STATE_DIR=$WORK_DIR/clearnet-state" >"$WORK_DIR/.env"
+tari_parse_cleanup() {
+    local rc=$?
+    stack_host_guard_check || rc=1
+    docker rm -f "$CONTAINER" "$CALIBRATION" >/dev/null 2>&1 || true
+    rm -rf "$WORK_DIR" 2>/dev/null || true
+    rm -f "$ROOT/build/tari/config.toml"
+    exit "$rc"
+}
+trap tari_parse_cleanup EXIT
+# shellcheck source=tests/stack/fixtures/tari-render.sh
+source "$ROOT/tests/stack/fixtures/tari-render.sh"
 
-# 00-prelude.sh declares ENV_FILE readonly from PITHEAD_ENV_FILE, so this has to be set first.
 export PITHEAD_ENV_FILE="$WORK_DIR/.env"
 # shellcheck source=lib/pithead/00-prelude.sh
 source "$ROOT/lib/pithead/00-prelude.sh"
