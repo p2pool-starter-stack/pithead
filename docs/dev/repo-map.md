@@ -430,6 +430,10 @@ Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugep
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
 
+The ENOSPC fault lifecycle is `tests/integration/lib/disk-enospc-target.sh`, transmitted
+through the shared target wrapper by `run-faults.sh`. Its mount ownership and interruption
+controls are in `tests/integration/selftest/selftest-enospc-cleanup.sh`.
+
 The e2e wrapper captures required pre-run systemd unit states through
 `tests/integration/lib/restore-unit-state.sh`. Restoration checks their capture records before
 unit removal; `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads
