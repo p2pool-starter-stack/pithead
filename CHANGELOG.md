@@ -11,7 +11,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
-## [2.0.2] - Unreleased
+## [2.0.2] - 2026-10-31
+
+Pithead 2.0.2 is a patch release after 2.0.1. It makes a command-line restore refresh the
+dashboard configuration, catches an occupied stratum port before Configuration applies it, and
+fixes Docker bridge detection on older mawk, along with build and setup fixes. Entries below apply
+to both channels unless they say otherwise.
 
 ### Fixed
 
@@ -23,12 +28,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   keeping the running proxy and mining intact (#3417).
 - The appliance release gate accepts a measured Secure Boot non-boot for every version as
   unsupported by design. An unmeasured guest still fails; Secure Boot must remain off (#3678).
-- Image builds retry a failed apt index update up to three times with a pause, so a brief mirror
-  outage no longer fails the build (#2160).
+- The Monero, P2Pool and xmrig-proxy image builds retry a failed apt index update up to three
+  times with a pause, so a brief mirror outage no longer fails those builds (#1802).
 - First-start guidance names the chains your setup actually has to sync before mining starts
-  (#3608).
-- Destructive reset commands refuse a target path that contains a carriage return or line feed
-  (#3509).
+  (#3598).
+- A data directory whose path contains a carriage return or line feed is refused, whether it comes
+  from `.env` or the configuration, so reset and the other commands that act on data directories
+  never work on a truncated path (#3502).
 
 ### Security
 
@@ -38,8 +44,16 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Known issues in 2.0.2
 
-The known issues listed for 2.0.1 still apply. The fix for the built-in miner staying at 0 H/s
-after a backup or recovery boot (#3375) moved to 2.0.3.
+The known issues listed for 2.0.1, including those it carries over from 2.0.0, still apply,
+except #3432 and #3417, which are fixed above. These are planned for 2.0.3:
+
+- On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
+  boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot (#3375).
+- On the appliance, after `config-reset`, a restore and `pithead up`, the stack starts but the
+  enabled built-in miner can stay stopped (#3623).
+- DIY: a checkout made under a restrictive umask such as `umask 077` builds a Tor image whose
+  entrypoint the `tor` user cannot read, so Tor fails before setup completes. Make the checkout
+  under the usual `umask 022` (#3431).
 
 ## [2.0.1] - 2026-10-25
 
@@ -258,7 +272,7 @@ changelog and the wizard text only.
   2.0.1 ([#3390](https://github.com/p2pool-starter-stack/pithead/issues/3390)).
 - Setting the stratum port in Configuration to a port another service already uses is not caught
   by the preview. Apply then fails part-way with the proxy stopped; Configuration's recovery
-  restores it. Planned for 2.1.0
+  restores it. Fixed in 2.0.2
   ([#3417](https://github.com/p2pool-starter-stack/pithead/issues/3417)).
 - After a rejected stale Configuration change, the message can say it was saved. Fixed in 2.0.1
   ([#3376](https://github.com/p2pool-starter-stack/pithead/issues/3376)).
