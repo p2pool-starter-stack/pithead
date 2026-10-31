@@ -26,14 +26,15 @@ to both channels unless they say otherwise.
 - Configuration preview and apply refuse an occupied stratum port before committing the change,
   keeping the running proxy and mining intact. The check runs only when the port changes and does
   not reserve the port (#3417).
-- Reset and the other commands that act on data directories refuse a directory path that contains
-  a carriage return or line feed, including one read from `.env`, so they never work on a
-  truncated path (#3502).
+- `reset-dashboard` refuses a data directory whose path in `.env` contains a carriage return or
+  line feed, so it never deletes a truncated path. The other data-directory checks refuse such a
+  path too (#3502).
 - First-start guidance names the chains your setup actually has to sync before mining starts
   (#3598).
-- DIY: building the Monero, P2Pool and xmrig-proxy images from a source checkout tries the apt
-  index update up to three times, pausing 5 and then 10 seconds, so a mirror outage of a few
-  seconds no longer fails those builds (#1802).
+- DIY: building the Monero, P2Pool and xmrig-proxy images from a source checkout tries
+  `apt-get update` up to three times, pausing 5 and then 10 seconds, so a mirror that is briefly
+  mid-sync no longer fails those builds at the index update. The package install is not retried
+  (#1802).
 - The appliance release gate accepts a measured Secure Boot non-boot for every version as
   unsupported by design. An unmeasured guest still fails; Secure Boot must remain off (#3678).
 
@@ -47,19 +48,19 @@ to both channels unless they say otherwise.
 
 The [known issues listed for 2.0.1](https://github.com/p2pool-starter-stack/pithead/blob/main/CHANGELOG.md#known-issues-in-201),
 including those it carries over from 2.0.0, still apply, except #3432 and #3417, which are fixed
-above. Four further issues are planned for 2.0.3:
+above. Four issues are planned for 2.0.3, including #3375 from the 2.0.1 list:
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
   boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot (#3375).
 - On the appliance, after `config-reset`, a restore and `pithead up`, the stack starts but the
-  enabled built-in miner may not start, so its workers do not reconnect and the dashboard shows
-  0 H/s for it. No workaround has been established (#3623).
+  enabled built-in miner may not start, so its saved workers do not reconnect. No workaround has
+  been established (#3623).
 - DIY: a checkout made under a restrictive umask such as `umask 077` builds images whose files
   their non-root service users cannot read, and Tor then fails before setup completes. Make the
   checkout under the usual `umask 022` (#3431).
-- With the default Tor egress firewall, the setup wizard refuses a remote node entered by
-  hostname, even one that resolves to a private IPv4 address. Enter the node's private IPv4
-  address instead (#2351).
+- With the default Tor egress firewall, the setup wizard and Configuration refuse a remote node
+  hostname whose DNS answer includes an IPv6 address, as on a dual-stack LAN, even when it also
+  resolves to a private IPv4 address. Enter the node's private IPv4 address instead (#2351).
 
 One more is open. The appliance's cosign binary is the same build as in 2.0.1. It carries go-jose
 4.1.4, which scanners report as CVE-2026-116587 (HIGH, fixed in go-jose 4.1.6). Whether Pithead's
