@@ -62,6 +62,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
+        run_image_permissions() { :; }
         run_restore_dashboard_probe() {
             trace_restore_order dashboard-probe
             [ "$RESTORE_CASE" != dashboard-probe-fails ] || {

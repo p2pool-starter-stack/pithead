@@ -226,9 +226,13 @@ rig — keep means keep whatever the role says.
 `os/rauc/grub.cfg`'s fourth entry boots the slot the default would have booted and appends
 `pithead.setup=1` to that one boot's kernel cmdline. `pithead-setup-again.service`, the flag's
 only reader, runs `pithead firstboot-wizard` on a provisioned machine with `PITHEAD_SETUP_AGAIN=1`
-and `Before=pithead-boot.service`, so the role's normal boot waits behind the page. Under the
-switch (`lib/pithead/12a-setup-again.sh`) three things change and nothing else: the "already a
-rig" and "config.json present" short-circuits are skipped; `stage_wizard_spool` publishes
+and `Before=pithead-boot.service`, so the role's normal boot waits behind the page. Each
+announcement atomically publishes the URL, one-time token and certificate fingerprint to
+`/run/issue.d/pithead-setup.issue` with mode `0600`. The login prompts reload that file and
+print it again when either getty starts; the same text is copied directly to tty1 and ttyS0.
+A new round replaces the file. The wizard's exit trap and both units' `ExecStopPost` remove it.
+Under the switch (`lib/pithead/12a-setup-again.sh`) three things change and nothing else:
+the "already a rig" and "config.json present" short-circuits are skipped; `stage_wizard_spool` publishes
 `saved-role.json` and points the pre-fill at the saved answers (`rig-defaults.json` gets the saved
 pool + worker; `last-attempt.json` gets `config.json` through `strip_config_secrets`, unless a
 failed retry's context is already there); and the inner loop honours `keep-role`. The page shows

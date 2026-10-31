@@ -112,7 +112,7 @@ wizard_setup_failed() {
 for stub in clear_legacy_wizard_snapshots clear_restore_stages wizard_clear_restore_state \
     clear_setup_candidate clear_restore_submission clear_restore_carry \
     wizard_clear_submission_transaction _console load_baked_images wizard_host_addresses \
-    reset_slot_restore_good wizard_announce_setup ensure_appliance_dashboard_password \
+    reset_slot_restore_good wizard_announce_setup wizard_clear_announcement ensure_appliance_dashboard_password \
     apply_appliance_defaults wizard_publish_retry_config; do
     eval "$stub() { :; }"
 done

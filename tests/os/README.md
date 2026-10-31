@@ -324,8 +324,15 @@ the configured test registry fail before the image build. Release builds do not 
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
-  with local chains and the non-default nano pool. The authenticated wizard must name the saved
-  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  with local chains and the non-default nano pool. Each setup-again session separately checks
+  the current boot journal for a minted token, the new-boot serial slice and tty1 text from
+  `/dev/vcs1`. `wizard-console-leg.sh` restarts both gettys during a paused direct announcement
+  and requires the current URL and token before releasing it; disabling issue publication is
+  its negative control. Bounded console captures and getty properties are retained between `BEGIN setup-console`
+  and `END setup-console` markers in the collected rig log.
+  `selftest-wizard-console.sh` checks publication, replacement, cleanup and failed verdicts.
+  The authenticated wizard must name the saved `pithead` role and prefill its answers with
+  secrets blank. POST **Keep it** through the wizard;
   require the original dashboard login, unchanged configuration and host identity, both chain
   sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
   the served config; require the credentials card's login and the same chains and identity.

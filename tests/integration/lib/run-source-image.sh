@@ -142,3 +142,26 @@ run_source_image_reconcile() {
     capture_artifacts "source-image-reconcile" "$OUT_DIR"
     return 1
 }
+
+run_image_permissions() {
+    if ! rx 'test -f dashboard/Dockerfile'; then
+        it_skip_leg "restrictive checkout image permissions (#3431)" "release install: no local builds" "by-design"
+        return 0
+    fi
+    local probe service ref out rc before="$IT_FAIL"
+    for probe in tor:c59e5ad6fc7c1fe82eb7558a2f962c18c1266299 tor:HEAD monero:HEAD p2pool:HEAD xmrig-proxy:HEAD dashboard:HEAD; do
+        service=${probe%%:*}
+        ref=${probe#*:}
+        out=$(rx "set -e; image=pithead-permission-probe-\$\$:$(quote_arg "$service"); trap 'docker image rm -f \"\$image\" >/dev/null 2>&1' EXIT; timeout --kill-after=30 1200 bash tests/stack/standalone/test_image_permissions.sh $(quote_arg "$service") \"\$image\" $(quote_arg "$ref")" 2>&1)
+        rc=$?
+        printf '%s\n' "$out" | redact >"$OUT_DIR/image-permissions-$service-$ref.log"
+        if [ "$ref" != HEAD ]; then
+            assert_rc "Tor restrictive checkout reproduces the reported failure at c59e5ad (#3431)" "$rc" 1
+            assert_contains "Tor baseline fails on its unreadable template (#3431)" "$out" 'FAIL: unreadable runtime file: /etc/tor/torrc.template'
+            continue
+        fi
+        assert_rc "$service non-root image accepts a restrictive checkout (#3431)" "$rc" 0
+        assert_contains "$service runtime files are accessible under umask 077 (#3431)" "$out" "PASS: $service runtime file permissions"
+    done
+    [ "$IT_FAIL" -eq "$before" ]
+}

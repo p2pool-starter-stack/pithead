@@ -142,6 +142,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/control-runner-recovery-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
+# shellcheck source=tests/os/wizard-console-leg.sh
+. "$SCRIPT_DIR/wizard-console-leg.sh"
 # shellcheck source=tests/os/rig-config-meta-wait.sh
 . "$SCRIPT_DIR/rig-config-meta-wait.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
