@@ -1,13 +1,37 @@
+import asyncio
+import fcntl
 import json
 import logging
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from mining_dashboard.client.docker.docker_control import DockerControl
 from mining_dashboard.service.health.tor_heal import BROKEN_AFTER_SEC, COOLDOWN_SEC, TorEgressHealer
-from tests.service.health.test_tor_heal_restart import _FlakyDocker, _heal_to_restart
+from tests.client.test_docker_control import _AsyncCM, _FakeResp
+from tests.service.health.test_tor_heal_restart import _FlakyDocker as _BaseDocker
+from tests.service.health.test_tor_heal_restart import _heal_to_restart
 
 MODULE = "mining_dashboard.service.health.tor_lifecycle"
+
+
+class _FlakyDocker(_BaseDocker):
+    async def _identify(self, on_identity):
+        try:
+            value = await self.identity("tor")
+        except Exception:
+            value = "unavailable"
+        on_identity(value)
+
+    async def stop(self, container, on_identity=None, **kwargs):
+        if on_identity is not None:
+            await self._identify(on_identity)
+        return await super().stop(container, **kwargs)
+
+    async def start(self, container, on_identity=None, **kwargs):
+        if on_identity is not None:
+            await self._identify(on_identity)
+        return await super().start(container, **kwargs)
 
 
 def receipts(caplog):
@@ -116,3 +140,60 @@ async def test_host_gated_recovery_receipts_include_terminal_failures(outcome, c
     assert "private" not in json.dumps(rows)
     submit.assert_called_once_with("tor-recover", actor="tor-heal")
     assert not docker.calls
+
+
+@pytest.mark.parametrize("action", ["stop", "start"])
+async def test_replacement_while_waiting_receipts_match_mutated_container(action, tmp_path, caplog):
+    lock_file = tmp_path / "mutation.lock"
+    lock_file.touch()
+    control = DockerControl(lock_file=lock_file)
+    healer = TorEgressHealer(control, enabled=False)
+    engine = {"identity": "a" * 64}
+    actual = []
+    waiting = asyncio.Event()
+    session = MagicMock()
+    real_flock = fcntl.flock
+
+    def observed_flock(lock, operation):
+        try:
+            return real_flock(lock, operation)
+        except BlockingIOError:
+            waiting.set()
+            raise
+
+    def inspect(*args, **kwargs):
+        return _AsyncCM(_FakeResp(200, json.dumps({"Id": engine["identity"]})))
+
+    def mutate(*args, **kwargs):
+        with lock_file.open("rb") as contender:
+            with pytest.raises(BlockingIOError):
+                real_flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        actual.append(engine["identity"])
+        return _AsyncCM(_FakeResp(204))
+
+    session.get.side_effect = inspect
+    session.post.side_effect = mutate
+    with lock_file.open("rb") as holder:
+        real_flock(holder, fcntl.LOCK_EX)
+        with (
+            caplog.at_level(logging.INFO),
+            patch("mining_dashboard.client.docker.docker_control.fcntl.flock", observed_flock),
+            patch(
+                "mining_dashboard.client.docker.docker_control.aiohttp.ClientSession",
+                return_value=_AsyncCM(session),
+            ),
+        ):
+            task = asyncio.create_task(healer._tor_call(action))
+            try:
+                await asyncio.wait_for(waiting.wait(), 2)
+                assert not actual
+                session.get.assert_not_called()
+                engine["identity"] = "b" * 64
+            finally:
+                real_flock(holder, fcntl.LOCK_UN)
+                result = await asyncio.wait_for(task, 2)
+    assert result is True
+    assert actual == ["b" * 64]
+    rows = receipts(caplog)
+    assert [row["result"] for row in rows] == ["requested", "confirmed"]
+    assert [row["container"] for row in rows] == actual * 2

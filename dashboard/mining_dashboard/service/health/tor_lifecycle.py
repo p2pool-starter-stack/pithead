@@ -26,14 +26,33 @@ class TorLifecycleMixin:
         return operation, identity
 
     async def _tor_call(self, action, **kwargs):
-        operation, identity = await self._tor_begin(action)
+        operation = "unavailable"
         try:
-            result = await getattr(self._docker, action)(self.CONTAINER, **kwargs)
-        except BaseException:
-            self._tor_receipt(operation, identity, action, "unconfirmed")
-            raise
-        self._tor_receipt(operation, identity, action, "confirmed" if result else "unconfirmed")
-        return result
+            if action == "stop" or not getattr(self, "_receipt_operation", None):
+                self._receipt_operation = uuid.uuid4().hex
+            operation = self._receipt_operation
+        except Exception:
+            operation = "unavailable"
+        identity = "unavailable"
+        requested = False
+
+        def identified(value):
+            nonlocal identity, requested
+            if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
+                identity = value
+            self._tor_receipt(operation, identity, action, "requested")
+            requested = True
+
+        result = False
+        try:
+            result = await getattr(self._docker, action)(
+                self.CONTAINER, on_identity=identified, **kwargs
+            )
+            return result
+        finally:
+            if not requested:
+                identified("unavailable")
+            self._tor_receipt(operation, identity, action, "confirmed" if result else "unconfirmed")
 
     def _tor_recovery_result(self, result):
         operation, identity = getattr(self, "_host_receipt", ("unavailable", "unavailable"))

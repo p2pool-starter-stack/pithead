@@ -70,16 +70,9 @@ class DockerControl:
             lock.close()
             raise
 
-    async def stop(self, container, stop_timeout=10, quiet=False, request_timeout=None):
-        """Stop a container. Returns True on success (incl. already-stopped).
-
-        `quiet` logs success at debug instead of info — used by the sync-gate hold (#35),
-        which re-asserts the stop every cycle and would otherwise flood the log for hours.
-        `request_timeout` overrides the HTTP timeout: Docker holds the stop request open until
-        the container is down (up to `stop_timeout` seconds before SIGKILL), so a slow-stopping
-        daemon needs an HTTP timeout that OUTLASTS `stop_timeout` or the call gives up early and
-        wrongly reports failure (#234: Tari took >5s to stop, so the default timeout aborted it).
-        """
+    async def stop(
+        self, container, stop_timeout=10, quiet=False, request_timeout=None, on_identity=None
+    ):
         return await self._post(
             f"/containers/{container}/stop",
             params={"t": stop_timeout},
@@ -87,10 +80,10 @@ class DockerControl:
             container=container,
             quiet=quiet,
             request_timeout=request_timeout,
+            on_identity=on_identity,
         )
 
-    async def start(self, container, quiet=False, request_timeout=None):
-        """Start a container. Returns True on success (incl. already-running)."""
+    async def start(self, container, quiet=False, request_timeout=None, on_identity=None):
         return await self._post(
             f"/containers/{container}/start",
             params=None,
@@ -98,20 +91,24 @@ class DockerControl:
             container=container,
             quiet=quiet,
             request_timeout=request_timeout,
+            on_identity=on_identity,
         )
 
     async def _post(
-        self, path, params, action, container, quiet=False, request_timeout=None
+        self, path, params, action, container, quiet=False, request_timeout=None, on_identity=None
     ) -> bool:
         url = f"{self.base_url}{path}"
         try:
-            # Every dashboard start/stop routes here. The CLI takes the same inode before config
-            # writes and compose; both sides therefore acquire lock→engine and never nest the lock.
             lock = await self._acquire_lock()
         except OSError as e:
             logger.error(f"Container {container} {action} refused: pithead lock unavailable: {e}")
             return False
         try:
+            if on_identity is not None:
+                try:
+                    on_identity(await self.identity(container))
+                except Exception:
+                    logger.debug("Container lifecycle identity observer unavailable")
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     url, params=params, timeout=request_timeout or self.timeout

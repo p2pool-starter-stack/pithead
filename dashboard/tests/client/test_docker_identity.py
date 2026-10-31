@@ -38,3 +38,27 @@ async def test_identity_failure_is_unavailable():
         side_effect=OSError("private"),
     ):
         assert await DockerControl().identity("tor") == "unavailable"
+
+
+@pytest.mark.parametrize("failure", ["identity", "observer"])
+async def test_receipt_metadata_failure_preserves_mutation(failure, tmp_path):
+    lock_file = tmp_path / "mutation.lock"
+    lock_file.touch()
+    control = DockerControl(lock_file=lock_file)
+    session = MagicMock()
+    session.get.return_value = _AsyncCM(_FakeResp(200, json.dumps({"Id": "a" * 64})))
+    session.post.return_value = _AsyncCM(_FakeResp(204))
+    if failure == "identity":
+        session.get.side_effect = OSError("private")
+
+    def observed(identity):
+        assert identity == ("unavailable" if failure == "identity" else "a" * 64)
+        if failure == "observer":
+            raise ValueError("private")
+
+    with patch(
+        "mining_dashboard.client.docker.docker_control.aiohttp.ClientSession",
+        return_value=_AsyncCM(session),
+    ):
+        assert await control.start("tor", on_identity=observed) is True
+    session.post.assert_called_once()
