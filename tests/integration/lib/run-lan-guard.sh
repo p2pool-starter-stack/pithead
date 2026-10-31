@@ -32,7 +32,44 @@ _lan_strip() {
     rx 'rm -f data/lan-guard/enforced' >/dev/null 2>&1 || true
 }
 
-assert_lan_guard_live() { # <config>
+_lan_capture() {
+    local port="$1" sample="$2" evidence rc=0
+    if mkdir -p "$OUT_DIR/lan-guard" && evidence=$(mktemp "$OUT_DIR/lan-guard/probe-$port-$sample.XXXXXX"); then
+        {
+            printf 'sample=%s\n' "$sample"
+            rx "timeout --kill-after=2 25 bash -s -- $port" --stdin <"${BASH_SOURCE[0]%/*}/lan-guard-snapshot.sh" 2>/dev/null
+        } | redact | head -c 8192 >"$evidence" || rc=$?
+        printf 'lan-guard diagnostic: port=%s sample=%s capture-exit=%s\n' "$port" "$sample" "$rc"
+        sed 's/^/lan-guard diagnostic: /' "$evidence"
+        [ "$rc" -eq 0 ] || it_fail "LAN failure evidence captured" "snapshot or artifact write failed"
+    else
+        it_fail "LAN failure evidence captured" "could not create artifact"
+    fi
+}
+
+_lan_probe_open() { [ "$(_lan_probe "$1" "$2")" = open ]; }
+
+_lan_assert_open() {
+    local label="$1" source="$2" port="$3" timeout="${4:-240}" observed started
+    observed=$(_lan_probe "$source" "$port")
+    if [ "$observed" != open ]; then
+        _lan_capture "$port" initial
+        if [ "$timeout" -eq 0 ]; then
+            assert_eq "$label" "$observed" open
+            return
+        fi
+        started=$(now_s)
+        if wait_for "$timeout" 5 "$label" _lan_probe_open "$source" "$port"; then
+            observed=open
+        else
+            _lan_capture "$port" timeout
+        fi
+        printf 'lan-guard readiness: port=%s elapsed_s=%s result=%s\n' "$port" "$(($(now_s) - started))" "${observed:-unavailable}"
+    fi
+    assert_eq "$label" "$observed" open
+}
+
+assert_lan_guard_live() {
     local config="$1" ports="" p mode tmode
     mode="$(jq_get "$config" '.monero.mode')"
     tmode="$(jq_get "$config" '.tari.mode')"
@@ -44,7 +81,7 @@ assert_lan_guard_live() { # <config>
     [ -n "$ports" ] || return 0
     for p in $ports; do
         assert_eq "LAN port $p: a non-private source cannot connect (#2616)" "$(_lan_probe 198.51.100 "$p")" closed
-        assert_eq "LAN port $p: a private source can (#2616)" "$(_lan_probe 10.254.254 "$p")" open
+        _lan_assert_open "LAN port $p: a private source can (#2616)" 10.254.254 "$p"
     done
     # shellcheck disable=SC2086
     assert_lan_guard_timer_flush $ports
@@ -90,7 +127,7 @@ assert_lan_guard_timer_flush() { # <port>...
     assert_eq "marker survives the check finishing (#3034)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
     _lan_flush_rules
     assert_eq "flush left the boot marker intact (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
-    assert_eq "control: a non-private source reaches the unguarded port (#2846)" "$(_lan_probe 198.51.100 "$1")" open
+    _lan_assert_open "control: a non-private source reaches the unguarded port (#2846)" 198.51.100 "$1" 0
     rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
     since=$(date +%s)
     deadline=$((since + 150))
@@ -114,7 +151,7 @@ assert_lan_guard_timer_flush() { # <port>...
     rx './pithead up' >/dev/null 2>&1 || rc=$?
     assert_rc "up restores the rule and nodes after the flush (#2846)" "$rc" 0
     for p in "$@"; do
-        assert_eq "LAN port $p admits a private source after recovery (#2846)" "$(_lan_probe 10.254.254 "$p")" open
+        _lan_assert_open "LAN port $p admits a private source after recovery (#2846)" 10.254.254 "$p"
     done
 }
 
@@ -219,9 +256,10 @@ assert_lan_guard_boot_restore() { # <port>...
         "$(rx 'systemctl is-enabled pithead-lan-guard.service 2>/dev/null')" "enabled"
     assert_contains "docker.service pulls it in (#2749)" "$(rx 'systemctl show -p Wants --value docker.service')" "pithead-lan-guard.service"
     assert_contains "docker.service starts only after it (#2749)" "$(rx 'systemctl show -p After --value docker.service')" "pithead-lan-guard.service"
+    _lan_assert_open "LAN port $1 is ready before boot-rule removal (#3490)" 10.254.254 "$1"
     _lan_strip
     assert_eq "the rule is gone, as after a reboot" "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-lan-guard')" "0"
-    assert_eq "control: with the rule gone, a non-private source reaches port $1" "$(_lan_probe 198.51.100 "$1")" open
+    _lan_assert_open "control: with the rule gone, a non-private source reaches port $1" 198.51.100 "$1" 0
     rx 'sudo systemctl restart pithead-lan-guard.service' >/dev/null 2>&1 || rc=$?
     assert_rc "the boot unit starts cleanly on the real kernel (#2749)" "$rc" "0"
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" != false ]; then
@@ -238,7 +276,7 @@ assert_lan_guard_boot_restore() { # <port>...
     fi
     for p in "$@"; do
         assert_eq "after the boot unit, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
-        assert_eq "after the boot unit, port $p: a private source can (#2749)" "$(_lan_probe 10.254.254 "$p")" open
+        _lan_assert_open "after the boot unit, port $p: a private source can (#2749)" 10.254.254 "$p"
     done
     rc=0
     rx "bash -c 'source ./pithead && lan_guard_enforced $*'" >/dev/null 2>&1 || rc=$?
@@ -313,7 +351,7 @@ assert_lan_guard_boot_failure() { # <port>...
     done
     for p in "$@"; do
         assert_eq "recovery, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
-        assert_eq "recovery, port $p: a private source can (#2749)" "$(_lan_probe 10.254.254 "$p")" open
+        _lan_assert_open "recovery, port $p: a private source can (#2749)" 10.254.254 "$p"
     done
     # Teardown asks the live engine, not the stop or the .env (#2749): with the nodes running,
     # remove_lan_guard refuses and leaves the rule. (A marker it cannot delete: tier 1.)
