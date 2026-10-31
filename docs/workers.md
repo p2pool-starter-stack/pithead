@@ -468,7 +468,7 @@ runs it as a managed service. During setup it asks for your stack's hostname and
 `3333` connection.
 
 ```bash
-git clone https://github.com/p2pool-starter-stack/rigforge.git
+git clone --branch v1.18.0 https://github.com/p2pool-starter-stack/rigforge.git
 cd rigforge
 chmod +x rigforge.sh
 sudo ./rigforge.sh

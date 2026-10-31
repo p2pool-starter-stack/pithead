@@ -113,6 +113,14 @@ _phase_provision_power_cut() {
             sleep 10
             htries_before=$((htries_before + 1))
         done
+        [ -n "$height_before" ] || {
+            bad "M10.$i: empty pre-cut monerod height read"
+            return 1
+        }
+        [[ "$height_before" =~ ^[0-9]+$ ]] || {
+            bad "M10.$i: invalid pre-cut monerod height read"
+            return 1
+        }
         _ssh sync || {
             bad "M10.$i: could not flush the guest before the power cut"
             return 1
@@ -145,6 +153,12 @@ _phase_provision_power_cut() {
             bad "M10.$i: the stack did NOT return before the next cut (wanted: '$names_before'; running: '${names:-none}')"
             return 1
         }
+        if provisioning_settled 900 && ! provisioning_setup_failed; then
+            ok "M10.$i: provisioning settled — $(provisioning_state)"
+        else
+            bad "M10.$i: provisioning did not finish successfully — $(provisioning_state)"
+            return 1
+        fi
         m10_recovered "$i" || return 1
     done
 }

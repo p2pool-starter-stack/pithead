@@ -7,6 +7,35 @@ starts); with `dashboard.secure: false` it serves plain HTTP.
 The dashboard has two states. While the nodes catch up to the network it shows Sync Mode. Once both
 chains are synced it switches to the operational view.
 
+## Current dashboard and lean preview
+
+The dashboard at the stack URL remains the legacy default UI. The lean development preview is
+available at `/ui-preview` only when the dashboard process has `DASHBOARD_UI_PREVIEW=1`; without
+that environment setting the path is not served. The preview has four shell links — **Overview**,
+**Machines**, **Earnings**, and **Settings** — and turns them into a bottom navigation bar on a
+phone-sized viewport, with **Advanced** as its fifth item. The 232 px desktop sidebar keeps the
+brand, version and host first, then stack status and profile, the four page links, the update link
+and Advanced at the bottom.
+
+The preview follows the operating system theme by default. **Advanced › Appearance** can set Light,
+Dark, or Auto. Dark uses warm charcoal panels and an orange accent; Light uses white panels and
+a darker orange accent. Heavy system-sans headings share the accessible palette. The existing
+persisted `dashboardTheme` preference is retained. Explicit page, Advanced and legacy-view URLs
+take priority over the saved page; a saved page is used only when the URL has no route. Chart-range
+query parameters remain intact when moving between pages. A profile reads **Profile not reported** until the profile is emitted by [#3557](https://github.com/p2pool-starter-stack/pithead/issues/3557).
+
+The status chip separates ordinary synchronization from faults and counts each attention condition
+once. While synchronizing it shows the least complete unfinished chain that gates mining: Monero,
+and Tari only when required without a Monero-only bypass. A loading optional or off Tari node does
+not hide known Monero progress. Progress is unknown when an unfinished gating chain has no reading.
+The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
+
+The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
+and asks the operator to sign in again when the session expires. Most page bodies and Settings
+controls are still being built; the preview does not announce a cutover from the legacy UI. The
+drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
+[#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
+
 ---
 
 ## Connect a miner
@@ -18,7 +47,41 @@ disabled, anyone on that LAN can retrieve it; enable a dashboard login before sh
 An onion-published dashboard requires a login. With no stratum password, the block says
 **No stratum password** and miners connect without one.
 
-## Sync Mode
+## Overview synchronization and recovery
+
+In the lean preview, Overview shows a read-only sync page whenever a running node is syncing,
+unreachable or regressing, or the host holds mining or rejects workers during recovery. Other
+pages remain reachable. When nodes are ready and the host clears its holds, Overview returns
+automatically to its ordinary page content. Optional Tari can continue syncing while Monero
+mining is admitted. The admission reason names only required nodes whose reachability or
+synchronization is not ready, with the missing condition for each. Once Monero is ready, only
+required Tari is named if it still blocks release; optional Tari is never named as a blocker.
+Missing observations wait for a reported verdict. Tari is absent when off. This view adds no
+controls on appliance, DIY with login or DIY without login.
+
+Each node shows percentage and an approximate time remaining based on at least three advancing
+samples from the last five minutes. A pause, regression, changed endpoint or target, insufficient
+samples, a stale snapshot or a failed probe makes the estimate unavailable. Raw block counts use
+thousands separators. Estimates describe recent observed progress, not a promised completion time.
+
+Reachability, synchronization, stable health and mining admission are separate statements. During
+recovery the host reports the continuous-reachability window before re-admission. Admission does
+not prove accepted mining work. Required-service recreation is unknown until the host supplies
+that observation; the page never initiates a restart. A pending remote node is identified in the
+admission reason by its sanitized host and port, or marked unknown if not reported. Its node card
+also shows that identity, reported state, initial-sync verdict, probe failure and wait age, without
+URL credentials, paths or query data.
+The dashboard logs remote-state transitions once per change, without endpoints or probe details.
+
+Polling failure preserves the last successful snapshot and labels it disconnected with its age.
+A tab-scoped sync-only snapshot and its bounded sample history survive reload; unrelated dashboard
+data and secrets are not saved by this cache. If the browser blocks tab storage, only the in-memory
+snapshot survives polling failures; reload retention is unavailable. Unknown, zero and stale readings
+remain distinct.
+When an active profile is reported, a Settings link notes that Performance syncs faster; the view
+does not wait for the profile model.
+
+### Legacy Sync Mode
 
 The dashboard shows Sync Mode the first time you start the stack, or any time the Monero or Tari
 node is still catching up. A `Syncing...` badge appears next to the hostname, the headline reads
@@ -93,7 +156,7 @@ the node logs directly:
 
 ---
 
-## The operational view
+## The legacy operational view
 
 Once both nodes are synced, the dashboard shows the operational view. P2Pool then syncs its
 own sidechain. While its reported difficulty is at the default minimum (100,000) and its
@@ -108,8 +171,8 @@ percentage; this detects its initial minimum-difficulty view, not later stalls o
   <img alt="Operational dashboard — Simple view" src="./images/launch/simple-light.png">
 </picture>
 
-The page updates every 30 seconds, refreshing each panel in place rather than reloading. Scroll
-position, the worker-table sort column, and the chart stay put between updates. View preferences —
+The legacy page updates every 30 seconds, refreshing each panel in place rather than reloading. Scroll
+position, the worker-table sort column, and the chart stay put between updates. Legacy view preferences —
 theme, Simple/Advanced view, the chart's averaging window and series toggles, the worker-table
 sort, the earnings tab, and the topology mesh toggle — are also
 remembered across reloads. A poll that fails —
@@ -239,15 +302,68 @@ the mining datapath (`xmrig-proxy` → `p2pool` → `monerod`) runs independentl
 instead, but only for genuinely **unrecoverable** failures: the DB self-heal above failing on its
 own rebuild attempt (not an ordinary write blip, which stays alert-only), or the `dashboard`
 container itself crash-looping. A red `Miner held (fail-closed)` badge shows while held, next to
-`p2pool` and `xmrig-proxy`, stopped the same way the [Sync Mode hold](#sync-mode) does; unlike that
+`p2pool` and `xmrig-proxy`, stopped the same way the [Sync Mode hold](#legacy-sync-mode) does; unlike that
 one-way sync gate, both containers start again on their own once the condition clears — no restart
 needed.
 The database also keeps three smaller series: pool block-found events, hourly monerod-DB-size and
 host-disk-usage samples, and XvB-credited scalar samples taken roughly every 5 minutes. `/api/state`
 serves them as `blocks`, `disk_growth`, and `xvb_history`, range-filtered the same way as
 `share_stats`. The [mine cart train](#mine-cart-train) reads `blocks` and the chart's donation
-overlay reads `xvb_history`; only `disk_growth` is persistence and API exposure alone, no
-renderer yet.
+overlay reads `xvb_history`. The existing `disk_growth` history also supplies the host capacity
+outlook described below; it has no chart renderer.
+
+### Host resources for Maintenance
+
+The new Maintenance section consumes `/api/state.host_resources`. This is a data contract;
+this change adds no screen to the current dashboard. It describes the dashboard host, separately
+from workers and services. It contains current values and a capacity estimate, with no new
+resource-history table or series.
+
+Each resource has `state` (`available` or `unavailable`), `reason`, `sampled_at` (Unix seconds),
+`age_seconds`, `value`, `unit` and `source`. The existing collector reads supply the sample
+metadata at collection time, not at request time. The API computes age on every request. A
+missing or failed read has no value; a sample older than the greater of 60 seconds or three
+collection intervals is unavailable with reason `stale`. A timestamp ahead of the request
+clock is unavailable with reason `clock_changed` and has no age. Snapshots saved before this
+metadata existed are unavailable until collection succeeds. Zero is a valid measured value;
+it is never substituted for a missing reading in this payload. The legacy `system` section
+keeps its existing presentation contract for the current UI.
+
+| Resource | Units and source | Unavailable cases |
+|---|---|---|
+| `cpu` | Percent busy between two aggregate `/proc/stat` reads; idle includes I/O wait and guest time is not counted twice. | First read, read failure, nonpositive elapsed counters or inconsistent/reset counters. |
+| `load` | Runnable or uninterruptible-wait tasks averaged over 1, 5 and 15 minutes, in that order, from `os.getloadavg()`. This is not CPU percent. | Failed or invalid read. |
+| `memory` | `total`, `used` and `available` bytes from `/proc/meminfo`; used is total minus available. Kernel kB values are multiplied by 1024. | Missing fields, invalid units or inconsistent values. |
+| `filesystem` | `total` and `used` bytes from `shutil.disk_usage()` on the configured data filesystem. This is filesystem capacity, not the Monero database size. | Inaccessible filesystem or invalid capacity. |
+| `hugepages` | `total`, `used` and `free` page counts from `/proc/meminfo`. Zero allocated pages is a valid measurement. | Missing or inconsistent counts or failed read. |
+| `swap`, `temperature`, `smart`, `io_latency`, `containers` | No collector in this increment; `source` and `value` are null. | Always `unavailable`, reason `unsupported`. |
+
+The existing `disk_growth` series records Unix seconds, `monero_db_bytes` in bytes and
+`disk_used_gb` / `disk_total_gb` in GiB (1024³ bytes, despite their historical names). Its
+source is the Monero sync response and the same data-filesystem reading above. It is sampled
+at most hourly and kept permanently, about 24 rows/day, with no retention prune or total row
+bound. Failed historical filesystem reads may have zero capacity; the outlook discards them
+rather than treating them as measured zero growth. History timestamps describe historical
+samples, not a live host reading; the outlook reports the newest usable sample as `to`.
+
+`capacity_outlook` examines at most the newest 169 existing rows in a seven-day window, reusing
+the disk-history query already needed by `/api/state`. Its basis is explicit: `window_seconds`,
+`sample_count`, `minimum_samples`, `from` and `to`. It needs 24 valid samples spanning at least
+23 hours on the current capacity. A capacity change, decreasing used space, invalid sample,
+duplicate timestamp or gap longer than three hours starts a new segment. Shorter gaps use
+actual elapsed time, not invented zero-growth samples. A future-dated sample invalidates the
+estimate, and the newest historical sample must be at most three hours old. A fresh current
+filesystem reading must agree with the historical capacity and must not show a usage reset.
+A same-size replacement with no observed usage decrease cannot be distinguished by this
+existing series; the estimate does not assert disk identity.
+
+The result is `estimated` only when those conditions hold and measured growth is positive.
+`growth_bytes_per_day` is the segment's used-space increase divided by its actual duration;
+`days_remaining` divides current free space by that rate. This is an uncertain estimate based
+on recent behavior, never a guaranteed disk-full countdown. Other states are
+`insufficient_history`, `no_growth` and `unavailable`; they have no rate or countdown. Current
+values are refreshed at the existing collection cadence, and no additional host reads or
+storage writes are introduced.
 
 A sustained outage of a required node stops `xmrig-proxy` so workers fail over to their
 configured backup pools. A `Workers rejected` badge shows; confirmed recovery restarts the
