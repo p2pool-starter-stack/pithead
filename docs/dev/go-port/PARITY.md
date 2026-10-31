@@ -6,8 +6,9 @@ Incremental port for issue #3811, based on
 `a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`. The owner
 authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 `4565297a`, host probes at `d9c9d1ff`, verifier/daemon probes at `82d34cfd`,
-control/miner probes at `22374d87`, grouped disk checks at `eec3afce`, and
-data/deployment probes at `a84818dd`. The operator commits later rounds because
+control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
+data/deployment probes at `a84818dd`, and Tor address probes at `af91d3d8`.
+The operator commits later rounds because
 this sandbox cannot write shared Git metadata. No performance benefit is claimed.
 
 ## Scope and continuation criteria
@@ -72,6 +73,7 @@ selection is not implemented.
 | Missing data directories and deployment state | Native packages; Bash callers | 8 tagged data/deployment groups and Go units |
 | Tor onion-address report | Native probe; Bash doctor collector | 8 tagged address groups and Go units |
 | Shared dashboard onion text | Used by native status and doctor packages | Existing status comparisons and Go units |
+| Monero/Tari address classifiers and config diagnostics | Native packages; Bash config readers and doctor collector | 11 tagged comparison groups and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -158,6 +160,10 @@ oracles:
   the original address helpers. Getter outputs and program names reach native
   probes without changing source tests or contacting Tor; a guard prevents the
   supplied program name from turning source loading into a CLI launch.
+- `doctor_config_reference.sh` extracts the guarded config-diagnostics block and
+  calls the unchanged payout-address classifiers. Supplied jq/variant outputs,
+  public vectors and isolated Python availability reach native packages without
+  changing source tests. JSON parsing and variant-file reading remain Bash.
 
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
@@ -165,7 +171,8 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-parity`, `test-go-doctor-memory-parity`,
 `test-go-doctor-host-parity`, `test-go-doctor-verification-parity`,
 `test-go-doctor-control-parity`, `test-go-doctor-disk-parity` and
-`test-go-doctor-data-parity` and `test-go-doctor-onion-parity`.
+`test-go-doctor-data-parity`, `test-go-doctor-onion-parity` and
+`test-go-doctor-config-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -385,6 +392,46 @@ no remaining defects. Existing tests, fixtures, goldens, lint rules and Make che
 remain unchanged; no Git write, download, Tor request, live probe or daemon contact
 occurred.
 
+## Config diagnostics and payout-address slice (2026-10-31)
+
+`go/internal/address/` ports Monero block Base58/legacy Keccak and Tari
+Base58/emoji/DammSum classification, network/feature checks and public-key
+extraction. `go/internal/doctor/config.go` ports SSH release policy and ordered
+payout-address findings, including placeholders, getter newline trimming and
+DIY/appliance wording. Inputs are config-presence and getter outputs; JSON and
+variant-file parsing and the production collector remain Bash. Verification
+availability is an explicit input preserving shape-only/unchecked behavior when
+Python cannot run. Non-ASCII Monero doctor input declines a native verdict because
+Bash shape counting depends on locale; the reusable classifier uses byte counting.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Address classifiers and config diagnostics | `PITHEAD_IMPL=bash make test-go-doctor-config-parity`: PASS, 11 tagged comparison groups and Go units | `tests/go-parity/run.sh make test-go-doctor-config-parity test-go-doctor-parity test-go-parity`: PASS |
+| CLI and doctor JSON | `PITHEAD_IMPL=bash make test-go-doctor-config-parity test-go-doctor-parity test-go-parity`: PASS, initial 10 address/config groups plus 13 JSON and 12 CLI groups | Combined Go command above: PASS, 11 + 13 + 12 groups |
+| Existing doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
+| Dashboard and fake daemons | `PITHEAD_IMPL=python make test-dashboard` and `PITHEAD_IMPL=python make test-fakes`: PASS, 3716 tests/97.42% and 54 tests | Same Go wrapper commands: PASS, same counts/coverage; backend remains Python |
+| Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: same result |
+| File budget, build, docs voice, paths and operator strings | Baseline commands/base in the control slice: PASS | Same Go commands/base: PASS |
+| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+| Existing CLI suite | `PITHEAD_IMPL=bash make test-stack`: unavailable, macOS refusal; exit 2 | `tests/go-parity/run.sh make test-stack`: same result |
+
+Additional checks pass: `go -C go test -tags=parity -race -count=1
+./internal/doctor ./internal/address`, `go -C go vet -tags=parity ./...` and the
+Linux build command above. After the locale correction, `go -C go test -race
+-count=1 ./internal/address`, `go -C go test -tags=parity -race -count=1 -run
+TestConfigMoneroByteShape ./internal/doctor` and `go -C go test -count=1 ./...`
+pass. The new byte-shape group also passes in both modes with `PITHEAD_IMPL=bash
+go -C go test -tags=parity -count=1 -run TestConfigMoneroByteShape
+./internal/doctor` and the same command through `tests/go-parity/run.sh`.
+Cross-compilation provides no Linux runtime verdict. Adapter syntax, pinned
+ShellCheck/shfmt, Go formatting and scoped Markdown checks pass.
+Comparisons caught and corrected a missing word in the appliance Tari message;
+review caught and corrected direct Monero shape counting under the C locale.
+Independent static review now passes with no remaining defects. Private
+command/exit records use `.go-cache/logs/config-*`. Existing tests, fixtures,
+goldens, lint rules and Make checks remain unchanged; no Git write, download,
+network request, live probe or daemon contact occurred.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
@@ -412,7 +459,7 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port the remaining doctor config, network, container and appliance-state checks.
+1. Port the remaining doctor network, container and appliance-state checks.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and

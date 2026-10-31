@@ -85,6 +85,10 @@ relocated-install warnings with Bash using disposable files and getter outputs.
 `go/internal/onion/` shares dashboard address formatting between status and doctor.
 `go/internal/doctor/onion_addresses.go` implements the Tor address report;
 `make test-go-doctor-onion-parity` compares it with Bash using getter outputs.
+`go/internal/address/` implements Monero and Tari payout-address classification,
+checksums and public-key extraction. `go/internal/doctor/config.go` implements the
+config diagnostics; `make test-go-doctor-config-parity` compares both with Bash
+using public vectors and supplied config getter outputs.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
