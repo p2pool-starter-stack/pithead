@@ -515,7 +515,7 @@ compose hardening, config rendering, dashboard tests.
 | Caddy-fronted `/metrics` with dashboard authentication | Medium. Supply the live credential input and record the missing leg tracked by [#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058). |
 | Multi-worker scale: the harness assumes ~2 workers | Medium. Add a load-gen worker + assert proxy routing/hashrate for perf confidence; [#1999](https://github.com/p2pool-starter-stack/pithead/issues/1999) tracks it. |
 | Real Tari merge-mined block acceptance | Low. Probabilistic; rely on template/connectivity checks. |
-| Fault injection over SSH: no recorded live evidence | Low-Medium. The faults already use the shared SSH/local target wrapper; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) tracks the focused remote quoting, cleanup, and restoration proof. |
+| Fault injection between two machines | Low-Medium. `--harness-arg --fault-injection-ssh` exercises the `rx()` SSH branch and its extra shell quoting by dialing the reserved bench's own alias; it does not prove a second machine's network. See [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) for the managed phase's exact-head stop, SIGSTOP, remove, cleanup and restoration evidence. |
 
 Recommended before release: record the new combined upgrade/XvB run. The remaining rows are
 explicit residual gaps.

@@ -55,6 +55,8 @@ CHECK_ONLY=0
 READINESS=0
 RUN_LIFECYCLE=0
 RUN_FAULTS=0
+FAULT_SSH=0
+FAULT_SSH_DEST=""
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
 RUN_ROTATE_ONION=0
@@ -285,7 +287,7 @@ main() {
     fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
         if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then
-            if ! run_fault_injection; then
+            if ! run_fault_injection_maybe; then
                 SAFETY_RESTORE_FAILED=1
                 it_fail "fault phase storage verified before continuing" "ENOSPC cleanup unverified; retain the safety archive for operator recovery"
                 hugepages_finish

@@ -244,6 +244,7 @@ drive_gate() {
             return "$lifecycle_rc"
         }
         run_fault_injection() { fault_ran=yes; }
+        run_fault_injection_maybe() { run_fault_injection; }
         if [ "${5:-}" != summary ]; then
             it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         fi

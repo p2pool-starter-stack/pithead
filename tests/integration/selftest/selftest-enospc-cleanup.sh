@@ -227,22 +227,25 @@ assert_eq "unsafe phase still restores the host firewall" "$(grep -c '^firewall-
 
 gate=$(sed -n '/^    if \[ "$rig_control_ok" = 1 \] && \[ "$RUN_FAULTS" = "1" \]; then$/,/^    fi # fault-injection gate$/p' "$ROOT/run.sh")
 [ -n "$gate" ] || exit 1
-(
-    export rig_control_ok=1 RUN_FAULTS=1 lifecycle_ok=1 LIFECYCLE_STACK_INTACT=0
-    SAFETY_RESTORE_FAILED=0
-    sampling_finished=0
-    run_fault_injection() { return 1; }
-    hugepages_finish() { sampling_finished=1; }
-    summary() { printf 'restore_failed=%s sampling_finished=%s\n' "$SAFETY_RESTORE_FAILED" "$sampling_finished"; }
-    run_gate() {
-        eval "$gate"
-        echo unsafe-continuation
-    }
-    run_gate
-) >"$FAKE/gate.out" 2>&1
-assert_eq "unverified ENOSPC storage stops the runner" "$?" 1
-assert_contains "unverified storage disables EXIT backup restore" "$(cat "$FAKE/gate.out")" 'restore_failed=1'
-assert_contains "unsafe storage summary waits for sampling to finish" "$(cat "$FAKE/gate.out")" 'sampling_finished=1'
-assert_eq "later phases cannot run on unverified storage" "$(grep -c '^unsafe-continuation$' "$FAKE/gate.out" || true)" 0
+for fault_ssh in 0 1; do
+    (
+        export rig_control_ok=1 RUN_FAULTS=1 lifecycle_ok=1 LIFECYCLE_STACK_INTACT=0
+        FAULT_SSH="$fault_ssh" FAULT_SSH_DEST="runner@bench"
+        SAFETY_RESTORE_FAILED=0
+        sampling_finished=0
+        run_fault_injection() { return 1; }
+        hugepages_finish() { sampling_finished=1; }
+        summary() { printf 'restore_failed=%s sampling_finished=%s\n' "$SAFETY_RESTORE_FAILED" "$sampling_finished"; }
+        run_gate() {
+            eval "$gate"
+            echo unsafe-continuation
+        }
+        run_gate
+    ) >"$FAKE/gate.out" 2>&1
+    assert_eq "unverified ENOSPC storage stops the runner (SSH=$fault_ssh)" "$?" 1
+    assert_contains "unverified storage disables EXIT backup restore (SSH=$fault_ssh)" "$(cat "$FAKE/gate.out")" 'restore_failed=1'
+    assert_contains "unsafe storage summary waits for sampling to finish (SSH=$fault_ssh)" "$(cat "$FAKE/gate.out")" 'sampling_finished=1'
+    assert_eq "later phases cannot run on unverified storage (SSH=$fault_ssh)" "$(grep -c '^unsafe-continuation$' "$FAKE/gate.out" || true)" 0
+done
 printf '%s passed / %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" = 0 ]
