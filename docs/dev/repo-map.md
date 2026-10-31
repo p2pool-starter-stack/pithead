@@ -94,6 +94,10 @@ Doctor's stratum exposure, listening and Tor runtime probes live in
 `go/internal/doctor/stratum_exposure.go` and `network_runtime.go`.
 `make test-go-doctor-network-parity` compares findings and tool arguments with
 Bash using fake `ip`, `ss`, `docker` and `curl` commands.
+`go/internal/firewall/` implements LAN firewall rule readback;
+`go/internal/doctor/lan_guard.go` and `lan_guard_hold.go` implement LAN access
+reports and boot-hold diagnostics. `make test-go-doctor-lan-parity` compares
+readback, reports and tool arguments with Bash using fake firewall and host tools.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
