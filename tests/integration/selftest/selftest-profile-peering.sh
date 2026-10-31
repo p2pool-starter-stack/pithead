@@ -52,14 +52,26 @@ for address_type, address in ((4, [b"\x00" * 16]), (3, [b"\x03", b"abc"])):
     result = probe_response([b"\x05\x00", bytes((5, 0, 0, address_type))] + address + [b"\x00" * 2, b"x"])
     assert result["challenge_received"] is True
 with patch.object(module.time, "monotonic", side_effect=[0, 16]):
-    assert probe_response([]) == {"stage": "greeting"}
+    assert probe_response([]) == {"stage": "greeting", "failure": "timeout"}
 assert probe_response([b"\x05\x00", b"\x05\x04\x00\x01"]) == {"stage": "reply", "socks_reply": 4}
-assert probe_response([b"\x05\xff"]) == {"stage": "greeting"}
-assert probe_response([b"\x05\x00", b""]) == {"stage": "reply"}
-assert probe_response([b"\x05\x00", TimeoutError("private timeout")]) == {"stage": "reply"}
-assert probe_response([b"\x05\x00", b"\x04\x00\x00\x01"]) == {"stage": "reply"}
+assert probe_response([b"\x05\xff"]) == {"stage": "greeting", "failure": "invalid-greeting"}
+assert probe_response([b"\x05\x00", b""]) == {"stage": "reply", "failure": "eof"}
+assert probe_response([b"\x05\x00", TimeoutError("private timeout")]) == {"stage": "reply", "failure": "timeout"}
+assert probe_response([b"\x05\x00", b"\x05\x00\x00\x09"]) == {"stage": "reply", "socks_reply": 0, "failure": "invalid-address-type"}
+assert probe_response([b"\x05\x00", b"\x04\x00\x00\x01"]) == {"stage": "reply", "failure": "invalid-reply"}
 with patch.object(module.socket, "create_connection", side_effect=OSError("private endpoint")):
-    assert module.onion_probe("127.0.0.3", onion, 37888) == {"stage": "connect"}
+    assert module.onion_probe("127.0.0.3", onion, 37888) == {"stage": "connect", "failure": "socket"}
+with patch.object(module, "command", return_value="Bootstrapped 100% private-endpoint\nNo more HSDir available to query\nis failing a very large amount of circuits") as tor_log:
+    result = module.tor_diagnostics("fixture")
+    assert "private-endpoint" not in str(result)
+    tor_log.assert_called_once_with("docker", "logs", "--tail", "100", "fixture")
+    assert module.tor_diagnostics("fixture") == {
+        "bootstrap_seen": True, "descriptor_lookup_failure_seen": True, "circuit_failure_seen": True
+    }
+with patch.object(module, "command", return_value="private-endpoint"):
+    assert not any(module.tor_diagnostics("fixture").values())
+with patch.object(module, "command", side_effect=RuntimeError("private-endpoint")):
+    assert module.tor_diagnostics("fixture") == {"logs_unavailable": True}
 for proxy, host, port in (("invalid", onion, 37888), ("127.0.0.3", "invalid", 37888), ("127.0.0.3", onion, 3333)):
     with patch.object(module.socket, "create_connection") as connect:
         try:
@@ -150,6 +162,7 @@ with TemporaryDirectory() as image_workdir:
             raise AssertionError("deadline accepted as a passing handshake")
     diagnostic = module.json.loads(output.getvalue())
     assert diagnostic["fixture"]["outbound_target"] is True
+    assert diagnostic["fixture_tor"]["bootstrap_seen"] is True
     assert diagnostic["onion_probe"] == {"stage": "reply", "socks_reply": 4}
     onion_diagnostic.assert_called_once_with("127.0.0.3", onion, 37888)
     assert cleanup.call_count == 2 and secret not in output.getvalue() and onion not in output.getvalue()

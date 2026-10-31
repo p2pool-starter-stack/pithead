@@ -75,19 +75,21 @@ def onion_probe(proxy_ip, onion, port):
                     connection.settimeout(min(5, remaining))
                     chunk = connection.recv(size - len(data))
                     if not chunk:
-                        raise OSError
+                        raise EOFError
                     data += chunk
                 return data
 
             result["stage"] = "greeting"
             connection.sendall(bytes((5, 1, 0)))
             if receive(2) != bytes((5, 0)):
+                result["failure"] = "invalid-greeting"
                 return result
             result["stage"] = "reply"
             host = onion.encode("ascii")
             connection.sendall(bytes((5, 1, 0, 3, len(host))) + host + port.to_bytes(2, "big"))
             header = receive(4)
             if header[0] != 5 or header[1] > 8 or header[2] != 0:
+                result["failure"] = "invalid-reply"
                 return result
             result["socks_reply"] = header[1]
             if header[1]:
@@ -99,13 +101,30 @@ def onion_probe(proxy_ip, onion, port):
             elif header[3] == 3:
                 receive(receive(1)[0])
             else:
+                result["failure"] = "invalid-address-type"
                 return result
             receive(2)
             result["stage"] = "challenge"
             result["challenge_received"] = bool(receive(1))
+    except TimeoutError:
+        result["failure"] = "timeout"
+    except EOFError:
+        result["failure"] = "eof"
     except OSError:
-        pass
+        result["failure"] = "socket"
     return result
+
+
+def tor_diagnostics(name):
+    try:
+        logs = command("docker", "logs", "--tail", "100", name)
+    except RuntimeError:
+        return {"logs_unavailable": True}
+    return {
+        "bootstrap_seen": "Bootstrapped 100%" in logs,
+        "descriptor_lookup_failure_seen": "No more HSDir available to query" in logs,
+        "circuit_failure_seen": "is failing" in logs and "amount of circuits" in logs,
+    }
 
 
 def diagnostics(name, stats_path, target=None):
@@ -279,6 +298,7 @@ def main():
                 {
                     "candidate": diagnostics("p2pool", "/stats/local/p2p"),
                     "fixture": diagnostics(peer, stats_path, onion),
+                    "fixture_tor": tor_diagnostics(client),
                     "onion_probe": onion_probe(proxy_ip, onion, port),
                 },
                 sort_keys=True,

@@ -167,6 +167,7 @@ test-release.sh|pin_rel
 test-release.sh|svc
 test-render-quadlet.sh|f
 test-render-quadlet.sh|profile
+test-render-quadlet.sh|qnode
 test-restore-configless.sh|rcf_status
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
