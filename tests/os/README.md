@@ -233,6 +233,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and closing A/B migration update. A dashboard-password edit commits through the panel behind
   typed `APPLY` and the approval envelope, after its preview names the lockout and console-login
   costs; the new login must read the dashboard, and the fixture password is restored the same way.
+  After the commit POST, the host polls the result spool up to 140 times at three-second intervals,
+  treating `previewed`, `pending`, `accepted` and `running` as in flight. A commit that stays
+  `previewed` fails at the bound and reports that status; only `applied` passes.
   The same password change checks root-password status and, through a guest-only probe, that its
   hash equals the dashboard password; `/etc`'s upperdir must be under `/run` on tmpfs. It repeats
   those checks after the password change, an unaided reboot while changed, and restoration.
@@ -487,23 +490,26 @@ The final summary carries the same missing/by-design/covered skip vocabulary as 
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
 re-implemented so the two tier-4 summaries read the same way (#2064). It prints the three buckets
 separately — scenarios, phases, legs — and the class breakdown under them in the integration
-summary's own wording, so the two can be compared line for line. A green `--phase all` ends with
-its five skip rows accounted like this:
+summary's own wording, so the two can be compared line for line. For a run with no other skips,
+the rig and update phases contribute four skip rows:
 
 ```
 os harness: <N> passed, 0 failed
-skipped: 0 scenarios, 0 phases, 5 legs
-  of which: 3 missing (an input would have run it), 1 by-design (this run's mode excludes it), 1 covered elsewhere
+skipped: 0 scenarios, 0 phases, 4 legs
+  of which: 2 missing (an input would have run it), 1 by-design (this run's mode excludes it), 1 covered elsewhere
 ```
 
-The pass total is the part that tracks the run; the five skip rows are what `--phase all` always
-enumerates — the rig phase's one by-design row, the update phase's three missing rows, and leg 4's
-covered row. A bench whose reserved Monero node requires an RPC login adds a sixth, the provision
-phase's reserved-node commit (`6 legs`, `4 missing, 1 by-design, 1 covered`; see the remote-node
-row below). Narrower invocations print a subset and nothing else: `--phase update` drops the
-by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
-`--phase rig` prints that row alone, and `--phase provision` prints only the reserved-node row,
-and only on a credentialed bench.
+These four rows are the rig phase's one by-design row, the update phase's two missing rows,
+and leg 4's covered row. `--phase update` contributes three rows (`2 missing, 0 by-design,
+1 covered`), and `--phase rig` contributes the by-design row. These counts assume update leg 4
+reaches its commit verdict; otherwise its covered row becomes missing.
+
+Conditional skips add to these counts. Without Node.js on the harness host, the rig phase adds
+one missing leg for the card's rendered text. Without reserved Monero-node inputs, it adds two
+missing legs for coordinator mining and recovery after a coordinator power cut. Other phases
+also count their unavailable-fixture skips. The provision phase's reserved-node row is a
+mandatory assertion, including when the node requires an RPC login; missing required inputs
+fail rather than add a skip.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer
@@ -519,10 +525,16 @@ box have covered it?**
   guest and asserts the commit verdict, so the row is recorded **after** leg 4, classed on what
   leg 4 actually did. A leg 4 that returned early downgrades it to `missing` — a skip that claims
   cover on a run where nothing covered it is worse than no skip at all.
-- `missing` — yes, and this is the only class that is a gap. The held-chain release, the
-  boot-menu version repair and the /data-floor restore (#2055 G1) are all pithead-boot's, all
-  unreachable from `--phase update`, and all proven by `--phase provision` or `--phase all`.
-  Calling them `by-design` would book a real, reachable gap as accepted.
+- `missing` — yes, and this is the only class that is a gap. The held-chain release and the
+  /data-floor restore (#2055 G1) belong to pithead-boot, remain unexercised by `--phase update`,
+  and are proven by `--phase provision` or `--phase all`. Calling them `by-design` would book
+  a real, reachable gap as accepted.
+
+Boot-menu version repair runs through `pithead-boot-version.service` on provisioned and
+unprovisioned guests, once the ESP is mounted. The update phase replaces the initial slot's
+version metadata with the plain version, restarts that service, and requires the build label
+restored in grubenv. It also checks both slot titles in the serial menu after the committed
+update. This repair is an assertion, not a missing skip.
 
 This is distinct from the remote-node row below, where a missing input stays a counted
 **failure**: the classes are for rows the configuration excludes, never for inputs the bench
