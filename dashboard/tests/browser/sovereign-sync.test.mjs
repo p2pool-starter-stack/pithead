@@ -105,13 +105,14 @@ test("appliance waits for required remote Tari after Monero finishes, retains th
   });
   await ui.openPreview();
   const view = page.getByRole("region", { name: "Getting ready to mine" });
-  await expect(view.getByText(/remote-node.example:18142/)).toBeVisible();
+  const tari = view.getByRole("article", { name: "Tari sync" });
+  await expect(tari.getByText(/remote-node.example:18142/)).toBeVisible();
   await expect(
     view.getByRole("article", { name: "Monero sync" }).getByText("100% · Sync complete"),
   ).toBeVisible();
   await expect(
     view.getByText(
-      "Mining waiting for Monero and required Tari to sync; the host then starts the required services",
+      "Mining waiting for required Tari (remote node: remote-node.example:18142) to sync; the host then starts the required services",
       { exact: true },
     ),
   ).toBeVisible();
@@ -124,7 +125,7 @@ test("appliance waits for required remote Tari after Monero finishes, retains th
   await page.clock.fastForward(120000);
   await expect(view.getByText(/Disconnected.*Sample age:/)).toBeVisible();
   await page.reload();
-  await expect(view.getByText(/remote-node.example:18142/)).toBeVisible();
+  await expect(tari.getByText(/remote-node.example:18142/)).toBeVisible();
   await expect(view.getByText(/Last probe error: GetTipInfo probe failed/)).toBeVisible();
   await expect(view.getByText(/Disconnected.*Sample age:/)).toBeVisible();
   await expect(view.locator("button,input,select")).toHaveCount(0);
@@ -168,6 +169,7 @@ for (const theme of ["light", "dark"]) {
   test(`sync visual proof and contrast in ${theme}`, async ({ page, ui }, info) => {
     await page.addInitScript((value) => localStorage.setItem("dashboardTheme", value), theme);
     syncing(ui, true);
+    ui.state.sync_status.chains.tari.node = `${"a".repeat(63)}.example:18142`;
     ui.state.profile = { name: "Performance" };
     await ui.openPreview();
     await expect(page.getByRole("link", { name: /Performance syncs faster/ })).toBeVisible();

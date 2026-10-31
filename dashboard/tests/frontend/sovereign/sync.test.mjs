@@ -150,7 +150,40 @@ test("synced required nodes with a host hold wait for services rather than anoth
   assert.match(admission(state), /Required nodes are synced.*start required services/);
   state.tari_gates_sync = true;
   state.sync_status.chains.tari = { reachable: true, synced: false };
-  assert.match(admission(state), /Monero and required Tari to sync/);
+  assert.equal(admission(state), "Mining waiting for required Tari to sync; the host then starts the required services");
   state.sync_status.chains.tari.synced = true;
   assert.match(admission(state), /Required nodes are synced.*admit mining/);
+});
+
+test("admission names only pending required chains and their missing readiness", () => {
+  const state = reading(100);
+  state.tari_gates_sync = true;
+  state.sync_status.chains.tari = { reachable: true, synced: false };
+  assert.equal(admission(state), "Mining waiting for Monero to sync and required Tari to sync; the host then starts the required services");
+  state.sync_status.chains.tari.synced = true;
+  assert.equal(admission(state), "Mining waiting for Monero to sync; the host then starts the required services");
+  state.sync_status.chains.monero = { reachable: false, synced: true };
+  assert.equal(admission(state), "Mining waiting for Monero to become reachable; the host then starts the required services");
+  state.sync_status.chains.monero.synced = false;
+  assert.equal(admission(state), "Mining waiting for Monero to become reachable and sync; the host then starts the required services");
+  state.sync_status.chains.monero = { synced: true };
+  assert.equal(admission(state), "Mining waiting for Monero to report reachability; the host then starts the required services");
+  state.sync_status.chains.monero = { reachable: true };
+  assert.equal(admission(state), "Mining waiting for Monero to report synchronization; the host then starts the required services");
+  state.sync_status.chains.monero = {};
+  assert.equal(admission(state), "Mining waiting for Monero to report reachability and report synchronization; the host then starts the required services");
+});
+
+test("pending remote nodes are identified without making optional Tari a blocker", () => {
+  const state = reading(100);
+  state.tari_gates_sync = true;
+  state.sync_status.chains.monero.synced = true;
+  state.sync_status.chains.tari = { local: false, node: "node.example:18142", reachable: true, synced: false };
+  assert.equal(admission(state), "Mining waiting for required Tari (remote node: node.example:18142) to sync; the host then starts the required services");
+  state.sync_status.chains.tari.node = null;
+  assert.match(admission(state), /required Tari \(remote node: unknown\) to sync/);
+  state.tari_gates_sync = false;
+  assert.match(admission(state), /^Required nodes are synced; waiting for the host/);
+  state.sync_status.chains.monero = { local: false, node: "monero.example:18081", reachable: true, synced: false };
+  assert.equal(admission(state), "Mining waiting for Monero (remote node: monero.example:18081) to sync; optional Tari does not hold the first release");
 });

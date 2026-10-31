@@ -13,7 +13,7 @@ export function SyncView({ state, history, connected, now = Date.now() / 1000 })
   const stale = !connected || age === null || age > 90;
   return html`<section class="sync-overview" aria-labelledby="sync-title">
     <h2 id="sync-title">Getting ready to mine</h2>
-    <p role="status">${admission(state)}</p>
+    <p role="status" class="sync-address">${admission(state)}</p>
     <p>${connected ? (stale ? "Stale snapshot" : "Last successful snapshot") : "Disconnected — keeping the last successful snapshot"} · Sample age: ${duration(age)}</p>
     <div class="sync-nodes">${["monero", "tari"]
       .filter((name) => name === "monero" || status?.chains?.tari)

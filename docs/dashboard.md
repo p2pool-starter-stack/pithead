@@ -53,8 +53,11 @@ In the lean preview, Overview shows a read-only sync page whenever a running nod
 unreachable or regressing, or the host holds mining or rejects workers during recovery. Other
 pages remain reachable. When nodes are ready and the host clears its holds, Overview returns
 automatically to its ordinary page content. Optional Tari can continue syncing while Monero
-mining is admitted; the page explains the effective required-node gate separately. Tari is absent
-when off. This view adds no controls on appliance, DIY with login or DIY without login.
+mining is admitted. The admission reason names only required nodes whose reachability or
+synchronization is not ready, with the missing condition for each. Once Monero is ready, only
+required Tari is named if it still blocks release; optional Tari is never named as a blocker.
+Missing observations wait for a reported verdict. Tari is absent when off. This view adds no
+controls on appliance, DIY with login or DIY without login.
 
 Each node shows percentage and an approximate time remaining based on at least three advancing
 samples from the last five minutes. A pause, regression, changed endpoint or target, insufficient
@@ -64,8 +67,10 @@ thousands separators. Estimates describe recent observed progress, not a promise
 Reachability, synchronization, stable health and mining admission are separate statements. During
 recovery the host reports the continuous-reachability window before re-admission. Admission does
 not prove accepted mining work. Required-service recreation is unknown until the host supplies
-that observation; the page never initiates a restart. Remote nodes show their configured host and
-port without URL credentials, reported state, initial-sync verdict, probe failure and wait age.
+that observation; the page never initiates a restart. A pending remote node is identified in the
+admission reason by its sanitized host and port, or marked unknown if not reported. Its node card
+also shows that identity, reported state, initial-sync verdict, probe failure and wait age, without
+URL credentials, paths or query data.
 The dashboard logs remote-state transitions once per change, without endpoints or probe details.
 
 Polling failure preserves the last successful snapshot and labels it disconnected with its age.
