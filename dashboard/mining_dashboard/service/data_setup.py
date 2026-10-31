@@ -23,6 +23,7 @@ from mining_dashboard.service.data_helpers import (
     WorkerLifecycle,
 )
 from mining_dashboard.service.health.degradation import DegradationMonitor
+from mining_dashboard.service.health.monero_backups import MoneroBackups
 from mining_dashboard.service.health.monero_health import MoneroChainHealth
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.health.tari_health import TariChainHealth
@@ -149,9 +150,10 @@ class DataSetupMixin:
             "timestamp": 0,
         }
 
-        # Node-down detection + optional worker rejection (Issue #31).
         self.docker_control = DockerControl()
         self.monero_health = NodeHealthMonitor()
+        self.monero_backups = MoneroBackups()
+        self.monero_pool_health = NodeHealthMonitor()
         self.tari_health = NodeHealthMonitor(
             down_after=TARI_NODE_DOWN_AFTER_SEC, ever_up=TARI_MODE != "off"
         )

@@ -76,7 +76,7 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TO
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES TOR_COMPOSE_PROFILES
     MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS
-    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD'
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD MONERO_BACKUP_NODES P2POOL_BACKUP_ARGS_B64'
 
 # The approval-gated editable set (2026-09-13 perimeter audit): env keys the dashboard MAY commit behind the typed
 # approval envelope. This is the NARROWEST of the three tiers and the one to be most suspicious of,
@@ -116,7 +116,8 @@ CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED HOST
 # which remains ordinary, so the host checks p2pool.clearnet separately. Inactive remote-node
 # fields produce no env row, but keep the same CONFIRM-only contract as active node endpoints.
 CONTROL_DASHBOARD_APPROVAL_PATHS='p2pool.clearnet'
-CONTROL_DASHBOARD_CONFIRM_PATHS='monero.remote.host
+CONTROL_DASHBOARD_CONFIRM_PATHS='monero.backup_nodes
+monero.remote.host
 monero.remote.rpc_port
 monero.remote.zmq_port
 tari.remote.host
@@ -132,7 +133,7 @@ control_committable_re() {
 # approval gate cannot forget the login when only a credential changes. Every key here must also be
 # confirm-gated; the probe itself no-ops for a local chain.
 CONTROL_NODE_PREFLIGHT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT
-    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD TARI_GRPC_ADDRESS'
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD TARI_GRPC_ADDRESS MONERO_BACKUP_NODES P2POOL_BACKUP_ARGS_B64'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
 # only the retired SSH settings. Exact dotted paths/prefixes, space separated. Checked against
