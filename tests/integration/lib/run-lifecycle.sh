@@ -321,9 +321,6 @@ run_uninstall_round_trip() {
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
 
-    # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
-    # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
-    # wallet volume created under a new password would not open under the restored old one.
     rx "grep -v '^DEPLOYMENT_COMPLETED=' .env.itest-round-trip >.env && rm -f .env.itest-round-trip"
     it_step "pithead setup re-provisions from the kept config…"
     out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"

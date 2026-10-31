@@ -102,7 +102,6 @@ setup)
         echo 'final setup diagnostic'
         exit 1
     fi
-    # The real setup refuses a deployed .env; the harness must hand back its secrets without the flag.
     ! grep -q '^DEPLOYMENT_COMPLETED=' .env && grep -q '^PROXY_AUTH_TOKEN=tok$' .env || exit 1
     cp .env.fixture .env
     [ "$FAKE_CASE" != resync ] || { rm data/monero/lmdb/data.mdb && truncate -s 70M data/monero/lmdb/data.mdb; }
