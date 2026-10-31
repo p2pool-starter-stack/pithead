@@ -70,6 +70,7 @@ Webhook member validation is shared by CLI apply and control previews in
 `lib/pithead/27-defaults-and-config-validation.sh`. Its RC trigger is in
 `tests/stack/control/test-control-secret-and-dial-guards.sh`;
 `tests/integration/lib/run-webhook-validation.sh` exercises the real control spool in hardening.
+`tests/integration/lib/run-auth-probe.sh` holds the mutation window across the empty-token refusal probe, so a concurrent operation cannot rewrite `.env` before `pithead up` evaluates it.
 
 `scripts/release/appliance.sh` builds and verifies the appliance assets before draft creation;
 `tests/os/selftest-release-appliance.sh` supplies refusal controls, and the KVM update phase
