@@ -5,6 +5,10 @@
 .PHONY: test-go-doctor-memory-parity
 .PHONY: test-go-doctor-host-parity
 .PHONY: test-go-doctor-verification-parity
+.PHONY: test-go-doctor-control-parity
+
+test-go-doctor-control-parity: go-build test-go ## Compare doctor control-unit and local-miner findings with Bash
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestControl ./internal/doctor
 
 test-go-doctor-verification-parity: go-build test-go ## Compare doctor verifier and daemon availability with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestVerification ./internal/doctor

@@ -151,6 +151,9 @@ func decisionPages(marker string) (string, bool) {
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
 			return strconv.Itoa(hugePages), false
 		}
+		if strings.ContainsRune(line, 0) {
+			return strconv.Itoa(hugePages), false
+		}
 		line = strings.TrimSuffix(line, "\n")
 		if !strings.HasPrefix(line, "pages=") {
 			if readErr != nil {

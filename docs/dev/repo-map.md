@@ -72,6 +72,10 @@ probes with the Bash reference using synthetic tools.
 `go/internal/doctor/release.go` and `go/internal/doctor/daemon.go` implement
 verifier and engine availability findings. `make test-go-doctor-verification-parity` compares their
 output and engine calls against the unchanged Bash checks using fake tools.
+Control-unit ownership and local-miner HugePages findings are in
+`go/internal/doctor/control.go` and `go/internal/doctor/local_miner.go`.
+`make test-go-doctor-control-parity` compares them with Bash against synthetic
+installs and unit files; systemctl is discovered without being executed.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

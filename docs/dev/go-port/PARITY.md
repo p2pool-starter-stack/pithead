@@ -5,8 +5,8 @@ STATUS: IN PROGRESS
 Incremental port for issue #3811, based on
 `a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`. The owner
 authorized implementation on 2026-10-31. Rounds 1–4 are committed at
-`4565297a`, and the host-probe slice at `d9c9d1ff`; the operator commits later
-rounds because this sandbox cannot write
+`4565297a`, the host-probe slice at `d9c9d1ff`, and verifier/daemon probes at
+`82d34cfd`. The operator commits later rounds because this sandbox cannot write
 the shared Git worktree metadata. No performance benefit is claimed.
 
 ## Scope and continuation criteria
@@ -66,6 +66,7 @@ selection is not implemented.
 | Doctor memory and clock probes | Native packages; Bash collector | 11 tagged comparison groups and Go units |
 | Doctor engine, boot, CPU and dependencies | Native packages; Bash collector | 9 tagged host groups and Go units |
 | Doctor release verification and engine availability | Native packages; Bash collector | 4 tagged verification groups and Go units |
+| Doctor control units and local-miner HugePages gate | Native packages; Bash collector | 9 tagged control groups and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -132,6 +133,11 @@ oracles:
   disposable installs and fake engines because the existing doctor suite sources
   Bash functions. They compare exact TSV/human bytes and engine calls, without a
   daemon, network, image pull or verification container.
+- `doctor_control_reference.sh` invokes unchanged control-unit and local-miner
+  functions with supplied getter outputs, synthetic unit files and isolated tools.
+  The original tests source Bash functions; this adapter reaches native packages
+  without changing those tests or executing systemctl. Environment/config parsing
+  remains in Bash.
 - `doctor_host_reference.sh` extracts guarded dependency, boot and CPU verdict
   blocks. It uses controlled CPU files and isolated fake host tools because the
   existing source tests cannot reach Go packages. No real engine, systemd, sysctl,
@@ -140,8 +146,9 @@ oracles:
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
-`test-go-doctor-parity`, `test-go-doctor-memory-parity` and
-`test-go-doctor-host-parity` and `test-go-doctor-verification-parity`.
+`test-go-doctor-parity`, `test-go-doctor-memory-parity`,
+`test-go-doctor-host-parity`, `test-go-doctor-verification-parity` and
+`test-go-doctor-control-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -266,6 +273,51 @@ was bypassed. Current logs and command/exit records use
 No existing test, fixture, golden, lint rule or Make check was modified. No
 network downloads, Git writes or live probes were performed in this slice.
 
+## Control-unit and local-miner slice (2026-10-31)
+
+`go/internal/doctor/control.go` ports unit-directory selection, owner extraction
+and the control-channel finding. It compares physical install paths, preserves
+missing owner suffixes, distinguishes missing units and foreign spools, and keeps
+the superseded rollback-directory guard. It discovers systemctl without executing
+it. `go/internal/doctor/local_miner.go` ports the appliance's reduced-HugePages
+warning using the existing reservation parser. Getter values are inputs; general
+`.env` and config parsing and production collection still use Bash.
+
+The paired cases cover section headings, exact TSV/human findings, appliance
+wording, bool normalization, symlink/current/versioned paths, deleted owners,
+custom egress units, marker tiers and silent gates. Parent-directory components,
+multiline paths, relative executable lookup, sed metacharacters and NUL inputs
+decline a native verdict. Safe relative unit directories resolve from the install.
+Comparisons exposed Bash's trailing-newline trimming and NUL stripping warning;
+the checked marker parser now returns unsupported on NUL lines so memory and
+local-miner collection can preserve the Bash diagnostic through fallback.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Control units and miner gate | `PITHEAD_IMPL=bash make test-go-doctor-control-parity`: PASS, 9 tagged groups plus Go units | `tests/go-parity/run.sh make test-go-doctor-control-parity`: PASS |
+| CLI/doctor JSON regressions | `PITHEAD_IMPL=bash make test-go-doctor-parity test-go-parity`: PASS, 13 + 12 paired groups | `tests/go-parity/run.sh make test-go-doctor-parity test-go-parity`: PASS |
+| Existing doctor contract/catalog | `PITHEAD_IMPL=bash python3 tests/stack/doctor/test-json-contract.py` and `PITHEAD_IMPL=bash python3 tests/stack/doctor/check-ids.py .`: PASS, 2 tests and catalog | `tests/go-parity/run.sh python3 tests/stack/doctor/test-json-contract.py` and `tests/go-parity/run.sh python3 tests/stack/doctor/check-ids.py .`: PASS; source tests still use Bash |
+| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests, 97.42% | `tests/go-parity/run.sh make test-dashboard`: PASS, same tests/coverage; backend remains Python |
+| Patch coverage | `PITHEAD_IMPL=python COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage`: PASS, not applicable; no Python changes | Same compare base with `tests/go-parity/run.sh make test-patch-coverage`: same result |
+| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
+| File budget, build guards, docs voice, paths and operator strings | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb PITHEAD_IMPL=bash make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings`: PASS | Same base with `tests/go-parity/run.sh make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings`: PASS |
+| Full gate | `PITHEAD_IMPL=bash make test`: FAIL at 22 cached Markdown findings after shell/Python/JS/YAML lint; exit 2 | `tests/go-parity/run.sh make test`: same failure, exit 2; no Docker target reached |
+
+Final checks pass: `go -C go test -tags=parity -race -count=1 ./internal/doctor`
+(all 33 tagged comparison groups plus Go units), `go -C go vet -tags=parity ./...`
+and `GOOS=linux GOARCH=amd64 go -C go build -o
+../.go-cache/pithead-linux-amd64 ./cmd/pithead`. Cross-compilation is build evidence,
+not a Linux runtime verdict. The new adapter passes `bash -n`,
+pinned ShellCheck and shfmt. Changed Markdown uses the two-file `--no-globs`
+command above; the whole-tree Markdown gate remains unchanged. Static independent
+review found no remaining defects. Linux/Docker runtime checks remain unavailable.
+
+The unchanged shell suite still refuses macOS in both modes using the commands
+recorded above. Current private logs and command/exit records are
+`.go-cache/logs/control-*`.
+Existing tests, fixtures, goldens, lint rules and Make checks remain unchanged.
+No network download, Git write, systemd call, Docker daemon or bench was used.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
@@ -293,7 +345,7 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port remaining doctor probes, starting with control-unit and config checks.
+1. Port the remaining doctor config, storage, network and container checks.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and
