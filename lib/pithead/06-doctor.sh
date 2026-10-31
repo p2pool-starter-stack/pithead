@@ -9,26 +9,27 @@ doctor() {
     echo "  Version: $(show_version)"
     echo ""
 
+    # --- Dependencies ---
     echo "Dependencies:"
     if command -v jq >/dev/null 2>&1; then
-        dr_ok dependency-jq "jq found ($(jq --version 2>/dev/null || echo 'unknown version'))."
+        dr_ok "jq found ($(jq --version 2>/dev/null || echo 'unknown version'))."
     else
-        dr_fail_surface dependency-jq "jq not found — install it (Ubuntu: 'sudo apt-get install -y jq')." "jq is not present, so doctor cannot read this machine's configuration. The appliance image ships it, so this system copy is faulty."
+        dr_fail_surface "jq not found — install it (Ubuntu: 'sudo apt-get install -y jq')." "jq is not present, so doctor cannot read this machine's configuration. The appliance image ships it, so this system copy is faulty."
     fi
     if command -v openssl >/dev/null 2>&1; then
-        dr_ok dependency-openssl "openssl found."
+        dr_ok "openssl found."
     else
-        dr_fail_surface dependency-openssl "openssl not found — install it (Ubuntu: 'sudo apt-get install -y openssl')." "openssl is not present, so the dashboard certificate cannot be checked. The appliance image ships it, so this system copy is faulty."
+        dr_fail_surface "openssl not found — install it (Ubuntu: 'sudo apt-get install -y openssl')." "openssl is not present, so the dashboard certificate cannot be checked. The appliance image ships it, so this system copy is faulty."
     fi
     if command -v docker >/dev/null 2>&1; then
-        dr_ok dependency-docker "docker found ($(docker --version 2>/dev/null || echo 'unknown version'))."
+        dr_ok "docker found ($(docker --version 2>/dev/null || echo 'unknown version'))."
     else
-        dr_fail_surface dependency-docker "docker not found — install Docker and the compose v2 plugin." "The container engine is not present, so the mining stack cannot start. The appliance image ships it, so this system copy is faulty."
+        dr_fail_surface "docker not found — install Docker and the compose v2 plugin." "The container engine is not present, so the mining stack cannot start. The appliance image ships it, so this system copy is faulty."
     fi
     if docker compose version >/dev/null 2>&1; then
-        dr_ok dependency-compose "docker compose (v2 plugin) found."
+        dr_ok "docker compose (v2 plugin) found."
     else
-        dr_fail_surface dependency-compose "docker compose (v2 plugin) not found — install 'docker-compose-v2'." "The container engine's compose plugin is not present, so the mining stack cannot start. The appliance image ships it, so this system copy is faulty."
+        dr_fail_surface "docker compose (v2 plugin) not found — install 'docker-compose-v2'." "The container engine's compose plugin is not present, so the mining stack cannot start. The appliance image ships it, so this system copy is faulty."
     fi
     check_release_verification
 
@@ -37,25 +38,30 @@ doctor() {
     echo "Docker daemon:"
     if [ "$(container_engine)" = "podman" ]; then
         if podman info >/dev/null 2>&1; then
-            dr_ok container-engine "Container engine (podman) is reachable."
+            dr_ok "Container engine (podman) is reachable."
         else
-            dr_fail_surface container-engine "Container engine (podman) is not reachable — check 'systemctl status podman.socket' (rootful podman has no daemon; the socket serves the API)." "The container engine is not reachable, so the mining stack cannot run. This machine starts it at boot, so this system copy is faulty."
+            dr_fail_surface "Container engine (podman) is not reachable — check 'systemctl status podman.socket' (rootful podman has no daemon; the socket serves the API)." "The container engine is not reachable, so the mining stack cannot run. This machine starts it at boot, so this system copy is faulty."
         fi
     elif ! command -v docker >/dev/null 2>&1; then
-        dr_info container-engine "Skipped — docker is not installed."
+        dr_info "Skipped — docker is not installed."
     elif docker info >/dev/null 2>&1; then
-        dr_ok container-engine "Docker daemon is reachable."
+        dr_ok "Docker daemon is reachable."
     else
-        dr_fail_surface container-engine "Docker daemon is not reachable — start it (e.g. 'sudo systemctl start docker') and ensure your user is in the 'docker' group." "The container engine is not reachable, so the mining stack cannot run. This machine starts it at boot, so this system copy is faulty."
+        dr_fail_surface "Docker daemon is not reachable — start it (e.g. 'sudo systemctl start docker') and ensure your user is in the 'docker' group." "The container engine is not reachable, so the mining stack cannot run. This machine starts it at boot, so this system copy is faulty."
     fi
 
+    # --- Docker boot persistence (Linux/systemd) ---
+    # `restart: unless-stopped` only brings the stack back after a reboot if the Docker daemon
+    # itself starts at boot. Ubuntu's docker.io/docker-ce enables it by default, but --skip-deps,
+    # rootless, or a manually-disabled unit won't come back after a power loss — surface that, since
+    # the documented use case is an unattended miner (#137).
     if [ "$OS_TYPE" != "Darwin" ] && command -v systemctl >/dev/null 2>&1; then
         echo ""
         echo "Boot persistence:"
         if docker_boot_enabled; then
-            dr_ok container-engine-boot "Docker is enabled to start at boot — the stack will come back after a reboot."
+            dr_ok "Docker is enabled to start at boot — the stack will come back after a reboot."
         else
-            dr_warn_surface container-engine-boot "The container engine is NOT enabled to start at boot — after a power loss/reboot the stack won't restart. Fix: 'sudo systemctl enable --now docker' (docker) or 'sudo systemctl enable --now podman.socket' (podman)." "The container engine is NOT enabled to start at boot — after a power loss or reboot the mining stack won't restart. This machine enables it at install time, so this system copy is faulty."
+            dr_warn_surface "The container engine is NOT enabled to start at boot — after a power loss/reboot the stack won't restart. Fix: 'sudo systemctl enable --now docker' (docker) or 'sudo systemctl enable --now podman.socket' (podman)." "The container engine is NOT enabled to start at boot — after a power loss or reboot the mining stack won't restart. This machine enables it at install time, so this system copy is faulty."
         fi
     fi
 
@@ -65,42 +71,45 @@ doctor() {
     echo ""
     echo "CPU:"
     if cpu_has_avx2; then
-        dr_ok cpu-avx2 "AVX2 supported."
+        dr_ok "AVX2 supported."
     else
-        dr_warn cpu-avx2 "AVX2 not detected — mining performance will be poor (performance only, not fatal)."
+        dr_warn "AVX2 not detected — mining performance will be poor (performance only, not fatal)."
     fi
 
+    # --- Time sync (mining is time-sensitive; P2Pool strongly recommends NTP before mining) ---
     case "$(clock_sync_status)" in
-    synced) dr_ok clock-sync "System clock is NTP-synchronized." ;;
-    unsynced) dr_warn_surface clock-sync "System clock is NOT NTP-synchronized — clock skew gets shares/blocks rejected. Enable time sync: 'sudo timedatectl set-ntp true' (or run chrony/systemd-timesyncd/ntpd)." "System clock is NOT NTP-synchronized — clock skew gets shares and blocks rejected. There is no dashboard control that sets the clock." ;;
-    *) dr_info clock-sync "Could not verify system-clock sync (no timedatectl) — make sure NTP is running; mining is time-sensitive." ;;
+    synced) dr_ok "System clock is NTP-synchronized." ;;
+    unsynced) dr_warn_surface "System clock is NOT NTP-synchronized — clock skew gets shares/blocks rejected. Enable time sync: 'sudo timedatectl set-ntp true' (or run chrony/systemd-timesyncd/ntpd)." "System clock is NOT NTP-synchronized — clock skew gets shares and blocks rejected. There is no dashboard control that sets the clock." ;;
+    *) dr_info "Could not verify system-clock sync (no timedatectl) — make sure NTP is running; mining is time-sensitive." ;;
     esac
 
+    # --- Monero payout address must be a PRIMARY address (p2pool can't pay subaddresses/integrated) (#250) ---
     if [ -f "$CONFIG_FILE" ]; then
         if is_appliance && [ "$(appliance_variant)" = release ] &&
             [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE" 2>/dev/null)" = true ]; then
-            dr_warn ssh-release "ssh.enabled is ignored on this release image — SSH is available only in a debug build."
+            dr_warn "ssh.enabled is ignored on this release image — SSH is available only in a debug build."
         fi
         local _mw
         _mw=$(jq -r '.monero.wallet_address // empty' "$CONFIG_FILE" 2>/dev/null)
         if [ -n "$_mw" ] && [ "$_mw" != "your_monero_wallet_address" ]; then
             case "$(monero_address_type "$_mw")" in
-            primary) dr_ok monero-address-type "Monero payout address is a primary address (p2pool/XvB can pay it)." ;;
-            subaddress) dr_fail_surface monero-address-type "Monero payout address is a SUBADDRESS (8…) — p2pool CANNOT pay it, so you are NOT being paid. Set monero.wallet_address to your PRIMARY address (4…) and run './pithead apply'." "Monero payout address is a SUBADDRESS (8…) — p2pool CANNOT pay it, so you are NOT being paid. Open Configuration, replace it with your PRIMARY address (4…), and complete the confirmation step." ;;
-            integrated) dr_fail_surface monero-address-type "Monero payout address is an INTEGRATED address — p2pool can't pay it. Use your plain PRIMARY address (4…)." "Monero payout address is an INTEGRATED address — p2pool can't pay it. Open Configuration, replace it with your plain PRIMARY address (4…), and complete the confirmation step." ;;
-            checksum) dr_fail_surface monero-address-type "Monero payout address FAILS its checksum — at least one character is mistyped, and p2pool crashes on it at startup. Re-copy the address from your wallet into monero.wallet_address and run './pithead apply'." "Monero payout address FAILS its checksum — at least one character is mistyped, and p2pool crashes on it at startup. Open Configuration, re-copy it from your wallet, and complete the confirmation step." ;;
-            *) dr_warn monero-address-type "Monero payout address doesn't look like a primary address (expected 95 chars starting with 4)." ;;
+            primary) dr_ok "Monero payout address is a primary address (p2pool/XvB can pay it)." ;;
+            subaddress) dr_fail_surface "Monero payout address is a SUBADDRESS (8…) — p2pool CANNOT pay it, so you are NOT being paid. Set monero.wallet_address to your PRIMARY address (4…) and run './pithead apply'." "Monero payout address is a SUBADDRESS (8…) — p2pool CANNOT pay it, so you are NOT being paid. Open Configuration, replace it with your PRIMARY address (4…), and complete the confirmation step." ;;
+            integrated) dr_fail_surface "Monero payout address is an INTEGRATED address — p2pool can't pay it. Use your plain PRIMARY address (4…)." "Monero payout address is an INTEGRATED address — p2pool can't pay it. Open Configuration, replace it with your plain PRIMARY address (4…), and complete the confirmation step." ;;
+            checksum) dr_fail_surface "Monero payout address FAILS its checksum — at least one character is mistyped, and p2pool crashes on it at startup. Re-copy the address from your wallet into monero.wallet_address and run './pithead apply'." "Monero payout address FAILS its checksum — at least one character is mistyped, and p2pool crashes on it at startup. Open Configuration, re-copy it from your wallet, and complete the confirmation step." ;;
+            *) dr_warn "Monero payout address doesn't look like a primary address (expected 95 chars starting with 4)." ;;
             esac
         fi
+        # Same class of check for the Tari payout address: both forms carry a DammSum checksum.
         local _tw
         _tw=$(jq -r '.tari.wallet_address // empty' "$CONFIG_FILE" 2>/dev/null)
         if [ -n "$_tw" ] && [ "$_tw" != "your_tari_wallet_address" ]; then
             case "$(tari_address_type "$_tw")" in
-            ok) dr_ok tari-address-type "Tari payout address passes its checksum." ;;
-            unchecked) dr_info tari-address-type "Could not verify the Tari payout address checksum (no usable python3)." ;;
-            checksum) dr_fail_surface tari-address-type "Tari payout address FAILS its checksum — at least one character is mistyped, and Tari rewards are silently lost. Re-copy the address from your Tari wallet into tari.wallet_address and run './pithead apply'." "Tari payout address FAILS its checksum — at least one character is mistyped, and Tari rewards are silently lost. Open Configuration, re-copy it from your Tari wallet, and complete the confirmation step." ;;
-            network) dr_fail_surface tari-address-type "Tari payout address is for a different Tari network — this stack mines MAINNET Tari. Set tari.wallet_address to your mainnet address and run './pithead apply'." "Tari payout address is for a different Tari network — this machine mines MAINNET Tari, and this address came from a testnet wallet. Open Configuration, replace it with your mainnet address, and complete the confirmation step." ;;
-            *) dr_warn tari-address-type "Tari payout address doesn't look like a valid Tari address (base58 or emoji form)." ;;
+            ok) dr_ok "Tari payout address passes its checksum." ;;
+            unchecked) dr_info "Could not verify the Tari payout address checksum (no usable python3)." ;;
+            checksum) dr_fail_surface "Tari payout address FAILS its checksum — at least one character is mistyped, and Tari rewards are silently lost. Re-copy the address from your Tari wallet into tari.wallet_address and run './pithead apply'." "Tari payout address FAILS its checksum — at least one character is mistyped, and Tari rewards are silently lost. Open Configuration, re-copy it from your Tari wallet, and complete the confirmation step." ;;
+            network) dr_fail_surface "Tari payout address is for a different Tari network — this stack mines MAINNET Tari. Set tari.wallet_address to your mainnet address and run './pithead apply'." "Tari payout address is for a different Tari network — this machine mines MAINNET Tari, and this address came from a testnet wallet. Open Configuration, replace it with your mainnet address, and complete the confirmation step." ;;
+            *) dr_warn "Tari payout address doesn't look like a valid Tari address (base58 or emoji form)." ;;
             esac
         fi
     fi
@@ -109,7 +118,7 @@ doctor() {
     echo ""
     echo "Memory:"
     if [ "$OS_TYPE" != "Linux" ]; then
-        dr_info memory-platform "Skipped HugePages / free-RAM checks — not supported on $OS_TYPE (Linux-only)."
+        dr_info "Skipped HugePages / free-RAM checks — not supported on $OS_TYPE (Linux-only)."
     else
         check_hugepages_reserved
         check_hugepages_degraded
@@ -121,13 +130,13 @@ doctor() {
         local mem_avail_kb mem_avail_mb
         mem_avail_kb=$(awk '/^MemAvailable/{print $2}' /proc/meminfo 2>/dev/null || true)
         if [ -z "$mem_avail_kb" ]; then
-            dr_warn free-ram "Could not read MemAvailable from /proc/meminfo."
+            dr_warn "Could not read MemAvailable from /proc/meminfo."
         else
             mem_avail_mb=$((mem_avail_kb / 1024))
             if [ "$mem_avail_mb" -ge 2048 ] 2>/dev/null; then
-                dr_ok free-ram "Free RAM: ${mem_avail_mb} MiB available."
+                dr_ok "Free RAM: ${mem_avail_mb} MiB available."
             else
-                dr_warn free-ram "Free RAM low: ${mem_avail_mb} MiB available — the stack (Tari especially) may be memory-starved."
+                dr_warn "Free RAM low: ${mem_avail_mb} MiB available — the stack (Tari especially) may be memory-starved."
             fi
         fi
     fi
@@ -148,18 +157,26 @@ doctor() {
         local _cn=""
         monero_clearnet_exposed && _cn="Monero"
         tari_clearnet_exposed && _cn="${_cn:+$_cn + }Tari"
-        dr_warn clearnet-initial-sync "CLEARNET initial sync or Tor transition is pending for $_cn — this host's IP may be exposed until the host verifies Tor and the closed firewall exception (Monero tx-broadcast stays on Tor). See $DOCS_URL/docs/privacy.md#optional-clearnet-initial-sync-off-by-default. The dashboard retries automatically; this WARN clears after host verification."
+        dr_warn "CLEARNET initial sync or Tor transition is pending for $_cn — this host's IP may be exposed until the host verifies Tor and the closed firewall exception (Monero tx-broadcast stays on Tor). See $DOCS_URL/docs/privacy.md#optional-clearnet-initial-sync-off-by-default. The dashboard retries automatically; this WARN clears after host verification."
     else
-        dr_ok clearnet-initial-sync "No clearnet initial sync active — all node P2P is Tor-only."
+        dr_ok "No clearnet initial sync active — all node P2P is Tor-only."
     fi
 
+    # p2pool Tor-routing fail-safe (#273): with clearnet off, P2POOL_FLAGS carries the #165 --socks5;
+    # the RUNNING p2pool must actually carry it. A STALE p2pool image (pre-#165 entrypoint) ignores the
+    # env var and dials sidechain peers directly — over CLEARNET, exposing the home IP. The #270 firewall
+    # now DROPs that dial (so a stale p2pool just can't peer rather than leaking), but surface the cause
+    # loudly so the fix — rebuild with 'pithead upgrade' — is obvious instead of a silent leak/stall.
+    # Read the EXEC'd args from /proc/1/cmdline (the env flags are word-split in the entrypoint, so they
+    # never appear in the container's Args). Empty = p2pool not running (often an intentional sync hold
+    # #31/#35) — don't flag.
     if printf '%s' "$(env_get P2POOL_FLAGS 2>/dev/null)" | grep -q -- '--socks5'; then
         local _p2args
         _p2args=$(docker exec p2pool cat /proc/1/cmdline 2>/dev/null | tr '\0' ' ')
         case "$_p2args" in
         "") : ;;
-        *--socks5*) dr_ok p2pool-tor "p2pool routes outbound sidechain P2P via Tor (#165)." ;;
-        *) dr_fail_surface p2pool-tor "p2pool is NOT routing over Tor despite p2pool.clearnet=false — its sidechain P2P would hit CLEARNET (exposing your IP). Almost certainly a STALE p2pool image not applying P2POOL_FLAGS (#165/#273): run './pithead upgrade' to rebuild it. (#270's egress firewall blocks the dial meanwhile, so p2pool can't peer until you do.)" "p2pool is NOT routing over Tor despite p2pool.clearnet=false — its sidechain P2P would hit CLEARNET (exposing your IP). Almost certainly a STALE p2pool image not applying its Tor flags: install the latest update from the dashboard to rebuild it. (The Tor-only egress firewall blocks the dial meanwhile, so p2pool cannot peer until you do.)" ;;
+        *--socks5*) dr_ok "p2pool routes outbound sidechain P2P via Tor (#165)." ;;
+        *) dr_fail_surface "p2pool is NOT routing over Tor despite p2pool.clearnet=false — its sidechain P2P would hit CLEARNET (exposing your IP). Almost certainly a STALE p2pool image not applying P2POOL_FLAGS (#165/#273): run './pithead upgrade' to rebuild it. (#270's egress firewall blocks the dial meanwhile, so p2pool can't peer until you do.)" "p2pool is NOT routing over Tor despite p2pool.clearnet=false — its sidechain P2P would hit CLEARNET (exposing your IP). Almost certainly a STALE p2pool image not applying its Tor flags: install the latest update from the dashboard to rebuild it. (The Tor-only egress firewall blocks the dial meanwhile, so p2pool cannot peer until you do.)" ;;
         esac
     fi
 
@@ -208,7 +225,7 @@ doctor() {
         dash_dir="$PWD/data/dashboard"
         tor_dir="$PWD/data/tor"
         doctor_prune=1
-        dr_info data-directories "No data dirs in $ENV_FILE — checking the default ./data location."
+        dr_info "No data dirs in $ENV_FILE — checking the default ./data location."
     fi
     check_disk_grouped doctor "$doctor_prune" \
         "$mono_dir" "$tari_dir" "$p2pool_dir" "$dash_dir" "$tor_dir"
@@ -219,24 +236,26 @@ doctor() {
     _stale=$(missing_data_dirs)
     if [ -n "$_stale" ]; then
         while IFS= read -r _l; do
-            dr_warn_surface data-directories "Data dir from .env not found: ${_l%%=*}=${_l#*=} — a relocated/copied install re-syncs from scratch. Move the data here, or set the data_dir in config.json and run 'apply'." "Data dir from .env not found: ${_l%%=*}=${_l#*=} — this machine re-syncs that data from scratch, and the dashboard history recorded against it is orphaned. With the dashboard control channel on, all five data dirs can be repointed from Configuration behind its confirmation step. Moving existing data back is not a dashboard action and needs console access to this machine."
+            dr_warn_surface "Data dir from .env not found: ${_l%%=*}=${_l#*=} — a relocated/copied install re-syncs from scratch. Move the data here, or set the data_dir in config.json and run 'apply'." "Data dir from .env not found: ${_l%%=*}=${_l#*=} — this machine re-syncs that data from scratch, and the dashboard history recorded against it is orphaned. With the dashboard control channel on, all five data dirs can be repointed from Configuration behind its confirmation step. Moving existing data back is not a dashboard action and needs console access to this machine."
         done <<<"$_stale"
     elif [ "$(env_get DEPLOYMENT_COMPLETED 2>/dev/null)" = "true" ]; then
-        dr_ok data-directories "Data directories named in .env are present."
+        dr_ok "Data directories named in .env are present."
     fi
 
+    # --- .env / deployment state ---
     echo ""
     echo "Deployment:"
     if [ ! -f "$ENV_FILE" ]; then
-        dr_warn_surface environment-file "No $ENV_FILE found — the stack has not been set up. Run './pithead setup'. (Skipping env-dependent checks.)" "The stack has not been set up — finish setup from this machine's setup page. (Skipping the checks that depend on it.)"
+        dr_warn_surface "No $ENV_FILE found — the stack has not been set up. Run './pithead setup'. (Skipping env-dependent checks.)" "The stack has not been set up — finish setup from this machine's setup page. (Skipping the checks that depend on it.)"
     else
-        dr_ok environment-file "$ENV_FILE present."
+        dr_ok "$ENV_FILE present."
         if [ "$(env_get DEPLOYMENT_COMPLETED)" == "true" ]; then
-            dr_ok deployment-completed "DEPLOYMENT_COMPLETED=true — setup finished."
+            dr_ok "DEPLOYMENT_COMPLETED=true — setup finished."
         else
-            dr_warn_surface deployment-completed "DEPLOYMENT_COMPLETED is not true — setup may be incomplete. Run './pithead setup'." "Setup did not finish, so parts of this machine may be unconfigured. Its setup page closes once the machine is provisioned, so no dashboard surface resumes it — correcting this needs console access."
+            dr_warn_surface "DEPLOYMENT_COMPLETED is not true — setup may be incomplete. Run './pithead setup'." "Setup did not finish, so parts of this machine may be unconfigured. Its setup page closes once the machine is provisioned, so no dashboard surface resumes it — correcting this needs console access."
         fi
 
+        # --- Tor onion addresses ---
         echo ""
         echo "Tor onion addresses:"
         local k onion onion_profiles needs onion_fix
@@ -251,7 +270,7 @@ doctor() {
             *) needs="" ;;
             esac
             if [ -n "$needs" ] && [[ "$onion_profiles" != *",$needs,"* ]]; then
-                dr_ok node-onion-address "$k not needed — that node runs elsewhere, so it has no inbound hidden service."
+                dr_ok "$k not needed — that node runs elsewhere, so it has no inbound hidden service."
                 continue
             fi
             onion=$(env_get "$k")
@@ -268,17 +287,20 @@ doctor() {
                 else
                     onion_fix="This machine regenerates it the next time it applies its configuration, so saving any change from the dashboard provisions it."
                 fi
-                dr_warn_surface node-onion-address "$k is not provisioned (value: '${onion:-empty}') — re-run './pithead setup' to generate Tor hidden services." "$k is not provisioned (value: '${onion:-empty}') — its Tor hidden service has not been generated. $onion_fix"
+                dr_warn_surface "$k is not provisioned (value: '${onion:-empty}') — re-run './pithead setup' to generate Tor hidden services." "$k is not provisioned (value: '${onion:-empty}') — its Tor hidden service has not been generated. $onion_fix"
             else
-                dr_ok node-onion-address "$k set."
+                dr_ok "$k set."
             fi
         done
+        # Dashboard onion (#343): only meaningful when opted in. Print the address — the operator needs
+        # it to reach the panel — but never the client PRIVATE key: this status is a paste-able report,
+        # so the key lives behind the explicit 'onion-client-key' command instead.
         if [ "$(env_get DASHBOARD_ONION_ENABLED)" == "true" ]; then
             local onion_line
             if onion_line=$(dashboard_onion_status); then
-                dr_ok dashboard-onion-address "Dashboard onion: $onion_line"
+                dr_ok "Dashboard onion: $onion_line"
             else
-                dr_warn_surface dashboard-onion-address "DASHBOARD_ONION_ADDRESS is not provisioned yet — re-run './pithead setup' or './pithead apply'." "DASHBOARD_ONION_ADDRESS is not provisioned yet — the dashboard's own hidden service has not been generated. This machine regenerates it the next time it applies its configuration, so saving any change from the dashboard provisions it."
+                dr_warn_surface "DASHBOARD_ONION_ADDRESS is not provisioned yet — re-run './pithead setup' or './pithead apply'." "DASHBOARD_ONION_ADDRESS is not provisioned yet — the dashboard's own hidden service has not been generated. This machine regenerates it the next time it applies its configuration, so saving any change from the dashboard provisions it."
             fi
         fi
     fi
@@ -289,9 +311,9 @@ doctor() {
     echo ""
     echo "Containers:"
     if ! command -v docker >/dev/null 2>&1; then
-        dr_info container-status "Skipped — docker is not installed."
+        dr_info "Skipped — docker is not installed."
     elif ! docker info >/dev/null 2>&1; then
-        dr_info container-status "Skipped — Docker daemon is not reachable."
+        dr_info "Skipped — Docker daemon is not reachable."
     else
         local ps_out
         ps_out=$(docker compose ps 2>/dev/null || true)
@@ -299,9 +321,9 @@ doctor() {
             printf '%s\n' "$ps_out" | while IFS= read -r line; do
                 printf '    %s\n' "$line"
             done
-            dr_ok container-status "Read container status from 'docker compose ps' (review the table above)."
+            dr_ok "Read container status from 'docker compose ps' (review the table above)."
         else
-            dr_warn_surface container-status "No containers reported by 'docker compose ps' — the stack may be stopped (run './pithead up') or run from a different directory." "No containers are running — the mining stack is stopped on this machine."
+            dr_warn_surface "No containers reported by 'docker compose ps' — the stack may be stopped (run './pithead up') or run from a different directory." "No containers are running — the mining stack is stopped on this machine."
         fi
         check_container_restarts
         check_revenue_containers
@@ -341,7 +363,7 @@ doctor_json() {
     DR_JSON_FILE=$(mktemp)
     doctor >&2 || rc=$?
     jq -Rs --arg version "$PITHEAD_VERSION" --argjson rc "$rc" \
-        'split("\n") | map(select(length > 0) | split("\t") | {id: .[2], status: .[0], message: .[1]})
+        'split("\n") | map(select(length > 0) | split("\t") | {status: .[0], message: .[1]})
          | {version: $version, exit: $rc,
             summary: {ok: map(select(.status == "ok")) | length,
                       warn: map(select(.status == "warn")) | length,

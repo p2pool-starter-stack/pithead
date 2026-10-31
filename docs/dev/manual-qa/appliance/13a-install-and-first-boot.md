@@ -90,17 +90,12 @@ install, and the first checks on the installed appliance (steps 13.1 to 13.9).
 1. From the laptop, open `https://pithead.local`.
 2. Then open the IP the console printed.
 3. Enter a wrong token five times.
-4. After the fresh token appears on the console, try the previous token once, then the fresh one.
 
 **What you should see:**
 
 - Both addresses show the token page after one certificate warning.
 - The fingerprint in the browser matches the one on the console.
 - Five wrong tokens mint a fresh one on the console.
-- The previous token is refused; the fresh token opens the role and disk page.
-
-The KVM boot phase checks the served certificate fingerprint, five-token lockout and fresh-token
-authentication. Check browser certificate warnings and both addresses by hand.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 

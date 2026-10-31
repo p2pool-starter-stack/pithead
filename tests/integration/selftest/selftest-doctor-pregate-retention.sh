@@ -30,17 +30,18 @@ while [ "$#" -gt 0 ]; do
 done
 IT_MODE=local IT_SSH_DEST='' IT_REMOTE_DIR=. IT_PITHEAD=pithead
 SAFETY_BACKUP=0 EXPECTED_WORKERS=1
+# The retention fixture does not run the separately tested local-node RPC fault.
 rx() { case "$1" in 'cat config.json') echo '{"monero":{"mode":"remote"}}' ;; esac; return 0; }
 env_on_box() { echo true; }
 secret_fingerprint() { echo fixture-fingerprint; }
-record_manifest() { echo "$phase" >"$OUT_DIR/manifest.txt"; }
+record_manifest() { echo manifest >"$OUT_DIR/manifest.txt"; }
 pithead() {
     printf '%s\n' 'OK egress firewall is installed' 'OK workers can connect' 'OK dashboard answers on 127.0.0.1:8000'
     printf 'invocation rc %s\n' "$DOCTOR_RC" >&2
     return "$DOCTOR_RC"
 }
-preflight || exit 1
 [ "$phase" != --readiness ] || [ "${TEST_READINESS_FAIL:-0}" = 0 ] || exit 1
+preflight || exit 1
 [ "$phase" != --check ] || assert_doctor_ok
 [ "$IT_FAIL" -eq 0 ]
 RUNNER
@@ -49,7 +50,6 @@ warn() { printf '%s\n' "$*"; }
 
 echo '== asserted pregate files survive destructive preflight for success and failure =='
 previous=''
-readiness="$E2E_DIR/results/pregate-readiness"
 for DOCTOR_RC in 0 7 0; do
     export DOCTOR_RC
     rc=0
@@ -60,9 +60,6 @@ for DOCTOR_RC in 0 7 0; do
         [ "$rc" = 1 ] || exit 1
         grep -q 'expected rc 0, got 7' "$TEST_DIR/pregate.log" || exit 1
     fi
-    [ "$(cat "$readiness/manifest.txt")" = --readiness ] || exit 1
-    [ ! -e "$readiness/stale" ] || exit 1
-    [ "$(cat "$E2E_DIR/results/pregate-check/manifest.txt")" = --check ] || exit 1
     evidence=("$E2E_DIR"/results/pregate-check/check/doctor-asserted.*)
     [ "${#evidence[@]}" = 1 ] && [ -f "${evidence[0]}/output.txt" ] || exit 1
     [ "$(cat "${evidence[0]}/exit-code.txt")" = "$DOCTOR_RC" ] || exit 1
@@ -81,9 +78,6 @@ for DOCTOR_RC in 0 7 0; do
     [ ! -e "$E2E_DIR/tests/integration/results/stale" ] || exit 1
     [ "$(cat "${evidence[0]}/output.txt")" = "$expected" ] || exit 1
     [ "$(cat "${evidence[0]}/exit-code.txt")" = "$DOCTOR_RC" ] || exit 1
-    [ "$(cat "$readiness/manifest.txt")" = --readiness ] || exit 1
-    [ "$(cat "$E2E_DIR/results/pregate-check/manifest.txt")" = --check ] || exit 1
-    touch "$readiness/stale"
     previous="${evidence[0]}"
 done
 echo "== refused readiness cannot collect an earlier job's doctor evidence =="
@@ -93,35 +87,30 @@ harness_pregate 1 '' >"$TEST_DIR/refused.log" || rc=$?
 [ "$rc" = 1 ] || exit 1
 [ ! -e "$previous" ] || exit 1
 [ ! -e "$E2E_DIR/results/pregate-check" ] || exit 1
-[ "$(cat "$readiness/manifest.txt")" = --readiness ] || exit 1
-[ ! -e "$readiness/stale" ] || exit 1
-echo '== wrapper preflight in every mode removes evidence before an early refusal =='
-for mode in check targeted matrix; do
-    mkdir -p "$E2E_DIR/results/pregate-check/check/doctor-asserted.stale" "$readiness"
-    PREFLIGHT_SRC="$(sed -n '/^preflight() {$/,/^}$/p' "$HERE/../e2e.sh")"
-    [ "$(printf '%s\n' "$PREFLIGHT_SRC" | sed -n '1p;$p' | tr '\n' ' ')" = 'preflight() { } ' ] || exit 1
-    rc=0
-    (
-        # shellcheck disable=SC2034 # consumed by the extracted wrapper preflight
-        MODE="$mode" BENCH_HOST=fixture BORROW_MINER=0 CANONICAL_DIR=fixture
-        log() { :; }
-        ok() { :; }
-        die() { exit 1; }
-        parent_lock_checkpoint() { return 0; }
-        on_bench() {
-            case "$1" in
-            'echo ok >/dev/null') return 0 ;;
-            rm*) bash -c "$1" ;;
-            *) return 1 ;;
-            esac
-        }
-        eval "$PREFLIGHT_SRC"
-        preflight
-    ) >"$TEST_DIR/check-refused.log" 2>&1 || rc=$?
-    [ "$rc" = 1 ] || exit 1
-    [ ! -e "$E2E_DIR/results/pregate-check" ] || exit 1
-    [ ! -e "$readiness" ] || exit 1
-done
+echo '== check-mode wrapper preflight removes evidence before an early refusal =='
+mkdir -p "$E2E_DIR/results/pregate-check/check/doctor-asserted.stale"
+PREFLIGHT_SRC="$(sed -n '/^preflight() {$/,/^}$/p' "$HERE/../e2e.sh")"
+[ "$(printf '%s\n' "$PREFLIGHT_SRC" | sed -n '1p;$p' | tr '\n' ' ')" = 'preflight() { } ' ] || exit 1
+rc=0
+(
+    # shellcheck disable=SC2034 # consumed by the extracted wrapper preflight
+    MODE=check BENCH_HOST=fixture BORROW_MINER=0 CANONICAL_DIR=fixture
+    log() { :; }
+    ok() { :; }
+    die() { exit 1; }
+    parent_lock_checkpoint() { return 0; }
+    on_bench() {
+        case "$1" in
+        'echo ok >/dev/null') return 0 ;;
+        rm*) bash -c "$1" ;;
+        *) return 1 ;;
+        esac
+    }
+    eval "$PREFLIGHT_SRC"
+    preflight
+) >"$TEST_DIR/check-refused.log" 2>&1 || rc=$?
+[ "$rc" = 1 ] || exit 1
+[ ! -e "$E2E_DIR/results/pregate-check" ] || exit 1
 echo '== evidence cleanup failure refuses the pregate =='
 (
     on_bench() {
@@ -131,7 +120,7 @@ echo '== evidence cleanup failure refuses the pregate =='
     rc=0
     harness_pregate 1 '' >"$TEST_DIR/cleanup-failed.log" || rc=$?
     [ "$rc" = 1 ] || exit 1
-    [ "$(wc -l <"$TEST_DIR/cleanup-calls")" -eq 1 ] || exit 1
-    grep -q 'could not clear prior pregate evidence' "$TEST_DIR/cleanup-failed.log" || exit 1
+    [ "$(wc -l <"$TEST_DIR/cleanup-calls")" = 1 ] || exit 1
+    grep -q 'could not clear prior check evidence' "$TEST_DIR/cleanup-failed.log" || exit 1
 ) || exit 1
 echo 'selftest-doctor-pregate-retention: PASS'

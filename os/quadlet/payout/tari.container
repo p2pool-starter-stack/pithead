@@ -1,0 +1,35 @@
+[Unit]
+Description=pithead tari
+After=tor.service
+Requires=tor.service
+[Container]
+ContainerName=tari
+Image=ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
+Network=mining.network
+IP=172.28.0.27
+User=1000:1000
+DNS=127.0.0.1
+Environment=WAIT_FOR_TOR=1 "TARI_CLEARNET_SYNC=false"
+Entrypoint=/var/tari/config/entrypoint.sh
+Exec=--disable-splash-screen --non-interactive
+Volume=/opt/pithead/data/tari:/var/tari/node
+Volume=/home/pithead/build/tari:/var/tari/config
+Volume=/opt/pithead/data/clearnet-state:/clearnet-state:ro
+Tmpfs=/tmp:size=64m,mode=1777
+PublishPort=127.0.0.1:18142:18142
+ReadOnly=true
+NoNewPrivileges=true
+RunInit=true
+StopTimeout=60
+PodmanArgs=--memory 7680m --memory-swap 7680m
+HealthCmd=ps | grep '[m]inotari_node' || exit 1
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=120s
+Notify=healthy
+[Service]
+Restart=always
+TimeoutStartSec=infinity
+[Install]
+WantedBy=multi-user.target

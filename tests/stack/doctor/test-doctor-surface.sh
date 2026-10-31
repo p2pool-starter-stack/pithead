@@ -1,19 +1,27 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
+# Doctor's remedial strings are surface-aware (#1213, #1776, #1777): the dr_*_surface switch, the
+# data-dir verdict's wording, and the sweep over the shipped artifact for plain verdicts that name a
+# CLI verb. Moved out of tests/stack/run.sh unchanged. Sourced by tests/stack/run.sh after lib.sh.
 
 echo "== unit: doctor's remedial strings are surface-aware (#1213) =="
+# Doctor's verdicts reach the dashboard verbatim now that the diagnostics verbs ship them
+# (control_diag_doctor runs `doctor --json`; doctor_json emits every message as {status, message}),
+# so a remedial string naming a CLI verb is a dead end on an appliance, which has no shell. Two
+# instruments, because either alone passes for the wrong reason: the switch has to actually FLIP,
+# and no verdict may be left behind it.
+#
+# 1. The mechanism. Argument one is the DIY/host wording, argument two the appliance's; each side
+#    must print its own and NOT the other's -- asserting only that the right text appears would
+#    stay green if both were printed.
 for _s in fail warn info; do
-    : >"$SANDBOX/surface-ids"
-    out=$(DR_JSON_FILE="$SANDBOX/surface-ids" PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" "dr_${_s}_surface" surface-check "DIYSIDE" "APPLIANCESIDE" 2>&1)
-    assert_eq "surface verdict keeps its check id" "$(cut -f3 "$SANDBOX/surface-ids")" "surface-check"
+    out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" "dr_${_s}_surface" "DIYSIDE" "APPLIANCESIDE" 2>&1)
     assert_contains "dr_${_s}_surface off the appliance prints the host wording" "$out" "DIYSIDE"
     case "$out" in
     *APPLIANCESIDE*) bad "dr_${_s}_surface off the appliance withholds the appliance wording" "both sides printed: $out" ;;
     *) ok "dr_${_s}_surface off the appliance withholds the appliance wording" ;;
     esac
-    : >"$SANDBOX/surface-ids"
-    out=$(DR_JSON_FILE="$SANDBOX/surface-ids" PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" "dr_${_s}_surface" surface-check "DIYSIDE" "APPLIANCESIDE" 2>&1)
-    assert_eq "surface verdict keeps its check id" "$(cut -f3 "$SANDBOX/surface-ids")" "surface-check"
+    out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" "dr_${_s}_surface" "DIYSIDE" "APPLIANCESIDE" 2>&1)
     assert_contains "dr_${_s}_surface on the appliance prints the appliance wording" "$out" "APPLIANCESIDE"
     case "$out" in
     *DIYSIDE*) bad "dr_${_s}_surface on the appliance withholds the host wording" "both sides printed: $out" ;;
@@ -101,7 +109,28 @@ else
     esac
 fi
 
-_dr_leaks() { grep -nE '(dr_fail|dr_warn|dr_info) ([a-z0-9-]+ )?"' | grep -E "\./pithead |docker compose |docker pull |docker-compose-v2|Start the Docker daemon|sudo |systemctl|git pull|([Rr]e-?)?[Rr]un '?(\./pithead )?(apply|setup|up|down|restart|doctor|status|logs)'?" | grep -v "appliance-unreachable" || true; }
+# 3. Totality over the SHIPPED artifact. The SITES are enumerated mechanically out of the built
+#    `pithead`, not a hand list -- a hand list is blind to the site nobody remembered, and this
+#    sweep found nine of those. A PLAIN dr_fail/dr_warn/dr_info literal has no appliance side, so
+#    naming a CLI verb there tells an appliance operator to run it; `dr_*_surface` calls do not
+#    match, their host argument keeping its verb by design. An exemption states its reason inline.
+#
+#    #1777 WIDENED THE ALTERNATION TO THE IMPERATIVE, not just the executable form: it carried
+#    `\./pithead ` but no token for a verb written as a bare or quoted word, so it returned 0 over
+#    #1776's site, which it fully covers. Over the artifact the widened branch adds exactly one
+#    site -- the "Run doctor there" info below -- and that one takes the marker, not a conversion.
+#
+#    WHICH LEAVES THE CONTROL AS THE ONLY THING VALIDATING THE WIDENING: with that marker in place
+#    the new branch has NO live target, so its 0 is what a needle matching nothing also prints. The
+#    seed is the pre-marker text, run through _dr_leaks -- the helper the sweep itself calls, never
+#    a second spelling of it, which would be mutated in lockstep with nothing.
+#
+#    STILL NOT COVERED: the needle list is hand-kept, so a verdict using a token nobody listed
+#    passes clean -- green means "none of the KNOWN forms leaked", never "no verb leaked". And it
+#    is LITERAL-ONLY: a message arriving in a VARIABLE is beyond any needle -- read
+#    05-doctor-checks.sh:111 and 21-doctor-stack-checks.sh:261 by hand. A THIRD site left this list
+#    when #1772 made the stratum-exposure warn a dr_warn_surface; it is test-doctor-exposure.sh's.
+_dr_leaks() { grep -nE '(dr_fail|dr_warn|dr_info) "' | grep -E "\./pithead |docker compose |docker pull |docker-compose-v2|Start the Docker daemon|sudo |systemctl|git pull|([Rr]e-?)?[Rr]un '?(\./pithead )?(apply|setup|up|down|restart|doctor|status|logs)'?" | grep -v "appliance-unreachable" || true; }
 if [ -z "$(printf '%s\n' '    dr_info "This is not the live install -- X/current points at Y. Run doctor there to check its control channel."' | _dr_leaks)" ]; then
     bad "control: the sweep catches an imperative naming a bare pithead verb (#1777)" "the widened alternation cannot fire; the 0 below is not evidence"
 else

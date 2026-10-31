@@ -89,10 +89,17 @@ echo "== unit: release.sh refuses to publish unsigned (#960/#1108) =="
 # cosign.pub is committed it ships in every bundle, and every one-click upgrade REFUSES a release
 # with no pithead.tar.gz.sig. So a cut on a box with no key does not make a degraded release, it
 # makes one the whole fleet rejects — and GitHub release assets are immutable, so the signature can
+# never be added afterwards. That is how v1.18.0 shipped unsigned and had to be withdrawn (#960).
+# resolve_signing must therefore ABORT the cut. MUTATION PROOF: change its final die() to warn() and
+# "an unconfigured signing box aborts the cut" goes red (verified — see the PR).
+# Without a committed public key the legacy unsigned path still works, which is the case below it.
 SGN="$SANDBOX/signing960"
 mkdir -p "$SGN/bin" "$SGN/v3" "$SGN/nopub"
-for f in pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.minimal.appliance.json config.reference.json config.core-keys.json docs build; do ln -s "$ROOT/$f" "$SGN/nopub/$f"; done
+for f in pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json docs build; do ln -s "$ROOT/$f" "$SGN/nopub/$f"; done
+# A cosign that advertises --tlog-upload, the flag both signing calls pass.
 printf '#!/usr/bin/env bash\necho "      --tlog-upload   upload to the transparency log"\nexit 0\n' >"$SGN/bin/cosign"
+# cosign v3 removed that flag: the box passes every other check and then dies at stage 6b, with the
+# images already promoted (#960 — the release box had drifted to v3.1.2 exactly this way).
 printf '#!/usr/bin/env bash\necho "      --yes   skip confirmation"\nexit 0\n' >"$SGN/v3/cosign"
 chmod +x "$SGN/bin/cosign" "$SGN/v3/cosign"
 : >"$SGN/cosign.key"

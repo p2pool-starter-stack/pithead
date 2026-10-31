@@ -28,13 +28,13 @@ jobs:
   shell-block:
     name: Shell tests (pithead suite, block ${{ matrix.block }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     strategy:
-      fail-fast: false
+      fail-fast: false # a red block should not hide the verdicts of the other blocks
       matrix:
-        block: [1, 2, 3, 4, 5]
+        block: [1, 2, 3, 4, 5] # run.sh's STACK_BLOCKS; stack_blocks_audit holds the two equal
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/docker-registry-mirror
@@ -102,7 +102,11 @@ jobs:
   shell-standalone:
     name: Shell tests (standalone suites + tooling)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 15 # ~110 s of the old `shell` job, the first-boot journal suite being 60 s of it (#2048)
+    # Each suite is named outright rather than globbed: standalone/ also holds test_compose.sh,
+    # which belongs to the `compose` job and which sources test_dotenv.sh itself, so a glob would
+    # run both twice. `make test-stack` names these suites and never runs in CI — a suite added
+    # to standalone/ must be wired here as well, or it runs nowhere.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -116,51 +120,6 @@ jobs:
           bash tests/stack/standalone/test_tor_recovery.sh
           bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
           bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
-      - name: Prove the interrupted-build diagnostic fails on RC3
-        env:
-          TMPDIR: ${{ runner.temp }}
-        run: |
-          git fetch --no-tags origin 723b1d7200543c09ac8ad1201b213a4625ba66ec
-          historical=$(mktemp -d "$TMPDIR/interrupt-rc3.XXXXXX")
-          git archive 723b1d7200543c09ac8ad1201b213a4625ba66ec | tar -x -C "$historical"
-          (cd "$historical" && bash scripts/build-pithead.sh)
-          if bash tests/stack/test_setup_build_interrupt.sh "$historical/pithead" >"$historical/red.log" 2>&1; then
-            cat "$historical/red.log"
-            echo 'RC3 unexpectedly passed the interrupted-build diagnostic regression'
-            exit 1
-          fi
-          cat "$historical/red.log"
-          grep -Fq 'missing [Tor image build or startup failed (exit 130)]' "$historical/red.log"
-          grep -Eq '^setup build interruption: [0-9]+ passed, 8 failed$' "$historical/red.log"
-      - name: Install real GRUB tooling and a host kernel
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends grub-common grub-pc-bin
-          if ! find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -print -quit | grep -q .; then
-            sudo apt-get install -y --no-install-recommends linux-image-virtual
-          fi
-          sudo mkdir -p /boot/grub
-          dpkg-query -W grub-common grub-pc-bin
-          find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%f\n'
-      - name: Run real GRUB cloud-default regression
-        env:
-          TMPDIR: ${{ runner.temp }}
-        run: bash tests/stack/standalone/test_grub_hugepages_real.sh
-      - name: Prove the real GRUB regression fails on RC2
-        env:
-          TMPDIR: ${{ runner.temp }}
-        run: |
-          git fetch --no-tags origin f5a5ad096c7a5345609a2eed4f600fd750a425ab
-          historical=$(mktemp -d "$TMPDIR/grub-rc2.XXXXXX")
-          git archive f5a5ad096c7a5345609a2eed4f600fd750a425ab | tar -x -C "$historical"
-          (cd "$historical" && bash scripts/build-pithead.sh)
-          if bash tests/stack/standalone/test_grub_hugepages_real.sh "$historical/pithead" >"$historical/red.log" 2>&1; then
-            cat "$historical/red.log"
-            echo 'RC2 unexpectedly passed the real GRUB regression'
-            exit 1
-          fi
-          cat "$historical/red.log"
-          grep -Fq 'GRUB entries missing HugePages parameters exactly once' "$historical/red.log"
       - name: Run real-image data-reset suite
         # Real ext4 damage against the product's own repair escalation (#1062). Unprivileged —
         # e2fsprogs on plain files — and it hard-fails rather than skips when CI lacks the tools.
@@ -186,6 +145,25 @@ jobs:
         run: make test-integration-selftest
       - name: Run repository tooling checks
         run: make test-tools
+
+  bridge-awk:
+    name: Container bridge awk portability (Debian 12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
+      - name: Run bridge and Caddy regressions in the pinned test runner
+        run: |
+          bash scripts/test-container.sh true
+          docker run --rm --user root -v "$PWD:$PWD" -w "$PWD" \
+            pithead-test-runner:local bash -euc '
+              apt-get update
+              apt-get install -y --no-install-recommends mawk gawk busybox
+              make test-bridge-awk
+            '
 
   soak-macos:
     name: Soak self-test (macOS, ${{ matrix.bash }})

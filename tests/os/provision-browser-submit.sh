@@ -1,15 +1,11 @@
 # shellcheck shell=bash
-#
-# Browser-shaped wizard submission: read the served config, set the page's answer paths,
-# then POST the whole JSON beside auth_mode=auto. Tier 1 drives --self-test without a guest.
-# Poll six times, 5 s apart; WIZ_STATE holds the selected value, WIZ_STATE_WHY the last failure.
 # shellcheck source=tests/os/control-request-evidence.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/control-request-evidence.sh"
-wizard_state_poll() { # <ip> <jar> <jq-filter>
+wizard_state_poll() {
     local raw="" http="" crc=0 tries=0
     WIZ_STATE="" WIZ_STATE_WHY=""
     while [ "$tries" -lt 6 ]; do
-        raw=$(curl -sSk -b "$2" -m 5 -w '\n%{http_code}' "https://$1/api/wizard-state" 2>/dev/null)
+        raw=$(curl -sSk -b "$2" -m 5 --max-filesize 1048576 -w '\n%{http_code}' "https://$1/api/wizard-state" 2>/dev/null)
         crc=$?
         http=${raw##*$'\n'}
         raw=${raw%$'\n'*}
@@ -83,7 +79,6 @@ provision_node_preflight() { # <ip> <jar> <host> <reason> <error-substring> <lab
         return 1
     fi
 }
-# POST a control request and follow its result through dashboard restarts.
 dashboard_curl() {
     local auth="${DASH_USER}:${DASH_PASS}"
     case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
@@ -91,20 +86,20 @@ dashboard_curl() {
     auth=${auth//\"/\\\"}
     curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
-# Poll results omit the id. Reattach the resolved POST id for every verb, including backup,
-# whose POST always returns 202 and whose terminal result arrives only through polling.
-control_result_stamp_id() { # <result-json> <id>
+control_result_stamp_id() {
     printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
 }
-dashboard_control_request() { # <route> <json-body> [deadline-seconds]
+dashboard_control_request() {
     local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code crc=0
     out=$(control_request_post "$route" "$body" "$deadline") || crc=$?
+    if [ "$crc" -eq 7 ]; then
+        control_request_guest_evidence
+        return 1
+    fi
     if [ "$crc" -eq 0 ]; then
         response_code=${out##*$'\n'}
         if [[ $response_code =~ ^[0-9]{3}$ ]]; then
             out=${out%$'\n'*}
-            # curl's 000 and a proxy's 5xx can follow an accepted request while the dashboard
-            # restarts. A received 4xx is a definite refusal; the caller id is otherwise pollable.
             case "$response_code" in 000 | 2* | 5*) ;; *)
                 control_request_guest_evidence
                 return 1
@@ -112,23 +107,16 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
             esac
         fi
         if [[ $response_code =~ ^5 ]]; then
-            # A failing proxy can name another request; the fresh preview id in the caller wins.
             out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
         else
             rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
         fi
-        # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
-        # or malformed successful response. Only an explicit JSON error is a real refusal; the
-        # caller's id still names a request the host may complete, so poll it.
         if [ -z "$rid" ] && ! printf '%s' "$out" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1; then
             out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
         fi
     else
-        # A dashboard restart can lose the POST response in flight. The caller-supplied id is still
-        # pollable whether curl reports that loss or returns an empty successful response.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
-    # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
     [ -n "$rid" ] || {
         control_request_guest_evidence
         return 1
@@ -136,11 +124,7 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        accepted) [ "$route" = worker-apply ] && {
-            control_result_stamp_id "$out" "$rid"
-            return 0
-        } ;;
-        pending | running | downloading | installing | "") ;;
+        pending | accepted | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
             control_result_stamp_id "$out" "$rid"
             return 0

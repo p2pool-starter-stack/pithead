@@ -39,12 +39,6 @@ This file tests the product through short stories that cross sections: each one 
 - All four refuse it.
 - All four refusals mean the same thing.
 - Each refuses it before anything mines.
-- The CLI asks again after each rejection and saves the valid replacement.
-- EOF at either CLI payout prompt aborts, even after text without a trailing newline.
-  It creates no configuration and leaves an existing configuration unchanged.
-
-The CLI cases run in `tests/stack/test-wizard-addresses.sh` and the integration
-`lifecycle` phase. The other three input paths still need their own checks.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -113,10 +107,6 @@ A [rig](../README.md#glossary) is a machine that only mines.
 
 - Both changes are in the change history, with the right user and outcome.
 - Mining continues throughout.
-
-**Automated boundary:** `tests/integration/mini-stack/test-boot-health-proxy.sh` proves
-that Caddy forwards the authenticated name and overwrites a spoofed actor header.
-The complete change-history outcome and mining-continuity scenario remains manual.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 

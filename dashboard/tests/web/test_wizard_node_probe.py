@@ -141,8 +141,7 @@ async def test_monero_probe_uses_configured_digest_login_and_live_rpc_and_zmq():
     ("mode", "reason"),
     [("wrong-protocol", "protocol"), ("thin", "protocol"), ("auth", "auth")],
 )
-async def test_wrong_monero_protocol_and_auth_fail_instead_of_passing(mode, reason, monkeypatch):
-    monkeypatch.setattr(wizard_node_probe, "_TIMEOUT", 0.25)
+async def test_wrong_monero_protocol_and_auth_fail_instead_of_passing(mode, reason):
     with _monerod(mode) as (rpc_port, _handler):
         cfg = _candidate()
         cfg["monero"]["remote"].update(rpc_port=rpc_port, zmq_port=rpc_port)

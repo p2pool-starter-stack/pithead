@@ -188,7 +188,9 @@ render_local_miner_config() {
     if [ "$(machine_role)" = "rig" ]; then return 0; fi
     local dir
     dir=$(rigforge_dir)
-    if [ "$(config_get .local_miner.enabled 2>/dev/null || echo false)" != "true" ]; then
+    if [ "$(config_bool '.local_miner.enabled' false 2>/dev/null || echo false)" != "true" ]; then
+        # Derived means derived: switched off, the config goes away — the boot leg then has
+        # nothing to start, and a stale stratum password does not linger on /data.
         rm -f "$dir/config.json"
         return 0
     fi
@@ -254,7 +256,10 @@ provision_local_miner() {
     fi
     local dir
     dir=$(rigforge_dir)
-    if [ "$(config_get .local_miner.enabled 2>/dev/null || echo false)" != "true" ]; then
+    if [ "$(config_bool '.local_miner.enabled' false 2>/dev/null || echo false)" != "true" ]; then
+        # Switched off: stop a still-running miner now rather than waiting for the reboot that
+        # would drop its runtime unit anyway. Best-effort — absent unit, absent systemctl (tests)
+        # and DIY hosts all land in the same quiet no-op.
         systemctl stop xmrig.service >/dev/null 2>&1 || true
         return 0
     fi

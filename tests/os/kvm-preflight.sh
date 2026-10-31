@@ -20,10 +20,6 @@ kvm_preflight() {
     return 1
 }
 
-vm_state() { virsh domstate "$VM"; }
-vm_lease_ip() { virsh domifaddr "$VM" 2>/dev/null | awk '/ipv4/{print $4}' | cut -d/ -f1 | head -1; }
-vm_list_running() { virsh list --name; }
-
 vm_destroy() {
     local domains
     virsh destroy "$VM" >/dev/null 2>&1 || true

@@ -108,7 +108,7 @@ for _xp_surface in 0 1; do
     done
 done
 
-echo "== unit: auto-heal works without dashboard control (#3166) =="
+echo "== unit: auto-heal requires dashboard control (#3166) =="
 build_doctor_stubs
 for _xp_surface in 0 1; do
     for _xp_heal in false true; do
@@ -117,14 +117,20 @@ for _xp_surface in 0 1; do
             _xp_row="surface=$_xp_surface heal=$_xp_heal control=$_xp_control"
             _xp_out=$(PITHEAD_APPLIANCE="$_xp_surface" RUNNING_CONTAINERS=tor PATH="$DRBIN:$PATH" run_sourced "$_xp_env" check_tor_running 2>&1)
             assert_not_contains "$_xp_row: prerequisite never FAILs" "$_xp_out" "FAIL"
-            assert_not_contains "$_xp_row: no inert-heal diagnostic" "$_xp_out" "only probes and logs"
-            assert_not_contains "$_xp_row: no login prerequisite" "$_xp_out" "dashboard login"
+            if [ "$_xp_heal" = true ] && [ "$_xp_control" = false ]; then
+                assert_contains "$_xp_row: INFO for inert heal" "$_xp_out" "•"
+                assert_contains "$_xp_row: describes limitation" "$_xp_out" "only probes and logs"
+                assert_contains "$_xp_row: names login" "$_xp_out" "dashboard login"
+                assert_contains "$_xp_row: names control" "$_xp_out" "enable dashboard control"
+                assert_contains "$_xp_row: manual recovery" "$_xp_out" "restart Tor by hand"
+            else
+                assert_not_contains "$_xp_row: no inert-heal diagnostic" "$_xp_out" "only probes and logs"
+            fi
         done
     done
     _xp_out=$(PITHEAD_APPLIANCE="$_xp_surface" RUNNING_CONTAINERS=p2pool PATH="$DRBIN:$PATH" run_sourced "$_xp_env" check_tor_running 2>&1)
     if [ "$_xp_surface" = 0 ]; then
-        assert_contains "Tor down hint names auto-heal" "$_xp_out" "tor.auto_heal:true"
-        assert_not_contains "Tor down hint has no control prerequisite" "$_xp_out" "dashboard.control.enabled:true"
+        assert_contains "Tor down hint names control prerequisite" "$_xp_out" "dashboard.control.enabled:true"
     fi
 done
 
@@ -132,6 +138,5 @@ done
 printf '#!/usr/bin/env bash\nexit 1\n' >"$DRBIN/curl"
 chmod +x "$DRBIN/curl"
 _xp_out=$(PITHEAD_APPLIANCE=0 RUNNING_CONTAINERS=tor PATH="$DRBIN:$PATH" run_sourced "$_xp_env" check_tor_clearnet_egress 2>&1)
-assert_contains "Tor egress hint names auto-heal" "$_xp_out" "tor.auto_heal:true"
-assert_not_contains "Tor egress hint has no control prerequisite" "$_xp_out" "dashboard.control.enabled:true"
-assert_not_contains "Tor egress hint has no login prerequisite" "$_xp_out" "dashboard login"
+assert_contains "Tor egress hint names control prerequisite" "$_xp_out" "dashboard.control.enabled:true"
+assert_contains "Tor egress hint names login prerequisite" "$_xp_out" "dashboard login"

@@ -2,8 +2,7 @@
 
 Corroborate failed probes on isolated circuits and two targets before bounded NEWNYM requests.
 For saturated history, the final step requests host-gated tor-recover, including its persistent
-six-hour cooldown and identity checks. Heal-only host requests do not require general dashboard
-control or a login. Otherwise a final restart re-dials local Monero.
+six-hour cooldown and identity checks. Otherwise a final restart re-dials local Monero.
 """
 
 import asyncio

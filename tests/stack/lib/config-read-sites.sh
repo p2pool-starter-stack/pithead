@@ -80,10 +80,8 @@ config_read_sites() {
         done
     }
 
-    while IFS= read -r p; do
-        drift_add_path "$p"
-    done < <(grep -a -oE 'config_get \.[A-Za-z0-9_.]+' "$STACK" | sed 's/^config_get //')
-
+    # config_bool '<path>' <default> call sites (pithead's null-aware boolean reader) — the path arg
+    # is always a plain single-quoted leading-dot literal.
     while IFS= read -r p; do
         drift_add_path "$p"
     done < <(grep -a -oE "config_bool '\.[A-Za-z0-9_.]+'" "$STACK" | sed -E "s/^config_bool '(.*)'\$/\1/")

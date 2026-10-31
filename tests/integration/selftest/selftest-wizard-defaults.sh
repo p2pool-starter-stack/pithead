@@ -8,8 +8,6 @@ source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-wizard-defaults.sh
 source "$HERE/../lib/run-wizard-defaults.sh"
-# shellcheck source=tests/integration/lib/run-wizard-eof.sh
-source "$HERE/../lib/run-wizard-eof.sh"
 
 WORK="$(mktemp -d -t wizard-defaults.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
@@ -47,7 +45,7 @@ rx() {
         printf 'TARI_REQUIRED=false\n' >>"$WORK/.env"
         printf 'Deployment preparation complete\n'
         ;;
-    *) (cd "$WORK" && TMPDIR="$WORK" PATH="$WORK/bin:$PATH" bash -c "$1" | tee "$WORK/rx.log") ;;
+    *) (cd "$WORK" && PATH="$WORK/bin:$PATH" bash -c "$1" | tee "$WORK/rx.log") ;;
     esac
 }
 push_config() {
@@ -128,22 +126,7 @@ failed_apply_result=$(
 )
 assert_eq "wizard restore diagnostics preserve failed apply and omit its status wait" "$failed_apply_result" '1|1'
 
-retry_failure=$(
-    IT_FAIL=0
-    run_cli_wizard_eof() { return 0; }
-    rx() {
-        case "$1" in
-        'cat .itest-wizard-defaults.json') printf '%s' "$BASELINE_CONFIG" ;;
-        *) printf 'Generated dashboard password: generated-password-fixture\n' ;;
-        esac
-    }
-    push_config() { return 1; }
-    run_cli_wizard_defaults
-)
-assert_contains "missing Monero retry message reports its assertion" "$retry_failure" 'CLI wizard retries a malformed Monero payout'
-assert_contains "missing Tari retry message reports its assertion" "$retry_failure" 'CLI wizard retries a malformed Tari payout'
-assert_eq "retry failure diagnostics omit the generated password" "$([[ "$retry_failure" == *generated-password-fixture* ]] && echo exposed || echo omitted)" omitted
-
+# Missing fixture inputs must count a failure before any remote wizard or deployment runs.
 missing_result=$(
     BASELINE_CONFIG='{}'
     IT_FAIL=0

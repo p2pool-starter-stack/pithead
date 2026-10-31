@@ -195,10 +195,6 @@ A new install leaves XvB off and never asks (#3099), so this panel is where a us
 - It lists your recent requests.
 - It counts the wrong password from step [5.10](05-dashboard-tour.md#510-login).
 
-**Automated:** `tests/integration/mini-stack/test-boot-health-proxy.sh` feeds real Caddy
-JSON into the audit service and checks request fields, authenticated username and
-exactly two failed logins. The page rendering remains a manual check.
-
 **Record:** PASS, FAIL or N/A in the results sheet.
 
 ### 7.9 Get the view keys from the docs alone

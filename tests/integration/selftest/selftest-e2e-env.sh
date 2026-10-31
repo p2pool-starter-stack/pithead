@@ -138,10 +138,11 @@ wait_rc ok
 assert_rc "wait_tari_synced still passes when Tari is synced" "$?" "0"
 
 echo "== readiness: harness_pregate's readiness phase refused (never its check phase) =="
-pregate_of() {
+pregate_of() { # <failing phase|none> [readiness names Tari: 1] [check says workers-offline: 1] [mode] [nofile] -> lines, rc
+    # mode: health-out | health-err | health-tari | diag-err | tee; nofile makes every capture write fail.
     # shellcheck disable=SC2034,SC2329  # the stubs and inputs are read by harness_pregate
     (
-        E2E_DIR=/srv/code/pithead-e2e FAIL="$1" TARI="${2:-0}" WORKERS_LINE="${3:-0}" MODE="${4:-}" CAPTURE_LOSS="${5:-}"
+        E2E_DIR=/srv/code/pithead-e2e FAIL="$1" TARI="${2:-0}" WORKERS_LINE="${3:-0}" MODE="${4:-}"
         warn() { :; }
         [ "$MODE" != tee ] || tee() {
             cat >/dev/null
@@ -165,14 +166,7 @@ pregate_of() {
                 ;;
             esac
         }
-        [ -z "$CAPTURE_LOSS" ] || tee() {
-            # shellcheck disable=SC2154
-            if [ "$CAPTURE_LOSS:$1" = "stderr-loss:$errf" ] || [ "$CAPTURE_LOSS:$1" = "stdout-loss:$said" ]; then
-                cat
-                return 1
-            fi
-            command tee "$@"
-        }
+        [ "${5:-}" != nofile ] || ulimit -f 0 # a capture write now fails (SIGXFSZ kills the writer)
         harness_pregate 1 ""
         echo "rc=$?"
     ) </dev/null 2>/dev/null | grep -a -e 'e2e-env:' -e '^rc='
@@ -195,16 +189,12 @@ assert_eq "a failed capture on a passing transport still refuses, silently" "$(p
 assert_eq "a failed capture of a Tari refusal adds no marker of its own" "$(pregate_of readiness 1 0 tee)" "rc=1"
 assert_eq "a failed capture of the check phase refuses silently" "$(pregate_of check 0 1 tee)" "rc=1"
 assert_eq "a lost stderr capture of an unhealthy stack refuses without a readiness line" \
-    "$(pregate_of readiness 0 0 health-err stderr-loss)" "rc=1"
+    "$(pregate_of readiness 0 0 health-err nofile)" "rc=1"
 assert_eq "a lost stderr capture on a passing transport refuses rather than passing" \
-    "$(pregate_of none 0 0 diag-err stderr-loss)" "rc=1"
+    "$(pregate_of none 0 0 diag-err nofile)" "rc=1"
 assert_eq "control: the same passing transport with its stderr recorded passes" "$(pregate_of none 0 0 diag-err)" "rc=0"
-assert_eq "a failed capture that forwards a Tari refusal keeps its one tari-not-done line" \
-    "$(pregate_of readiness 1 0 "" stdout-loss)" $'e2e-env: tari-not-done\nrc=1'
-assert_eq "a failed capture without output still refuses a passing transport" \
-    "$(pregate_of none 0 0 "" stdout-loss)" "rc=1"
-assert_eq "a failed capture of simultaneous health and Tari failures adds no marker" \
-    "$(pregate_of readiness 0 0 health-tari stdout-loss)" "rc=1"
+assert_eq "a lost capture of a Tari refusal still carries its one tari-not-done line" \
+    "$(pregate_of readiness 1 0 "" nofile)" $'e2e-env: tari-not-done\nrc=1'
 
 echo "== chains-behind: the #914 preflight finds the bench chains off tip (preflight) =="
 preflight_of() { # <sync summary> [skip_preflight] -> the lines preflight printed, then rc

@@ -62,39 +62,6 @@ else
     it_fail "a valid --workers reaches SSH (the guard doesn't over-reject)" "ssh never called"
 fi
 
-accepted_before_ssh_args() {
-    local label="$1"
-    shift
-    rm -f "$MARKER"
-    env PATH="$TMP:/usr/bin:/bin" SSH_MARKER="$MARKER" BENCH_HOST=bench MINER_HOST=rig \
-        bash "$HERE/../e2e.sh" candidate "$@" >"$TMP/argv.log" 2>&1
-    local rc=$?
-    if [ "$rc" -ne 0 ] && [ -e "$MARKER" ]; then
-        it_pass "$label"
-    else
-        it_fail "$label" "rc=$rc ssh_called=$([ -e "$MARKER" ] && echo yes || echo no)"
-    fi
-}
-accepted_before_ssh_args "check mode accepts zero workers without borrowing" --mode check --no-miner --workers 0
-accepted_before_ssh_args "check mode accepts zero workers with the default borrow flag" --mode check --workers 0
-accepted_before_ssh_args "check mode accepts positive workers with the default borrow flag" --mode check --workers 2
-for mode in targeted matrix; do
-    accepted_before_ssh_args "$mode without a miner accepts zero workers" --mode "$mode" --no-miner --workers 0
-    rejected_before_ssh_args "$mode borrowing still rejects zero workers" --mode "$mode" --workers 0
-done
-for workers in bad '1;touch' -1 1.5 ''; do
-    rejected_before_ssh_args "check mode with the default borrow flag rejects invalid worker count '$workers'" \
-        --mode check --workers "$workers"
-done
-for args_mode in check targeted matrix; do
-    accepted_before_ssh_args "$args_mode without a miner accepts positive workers" \
-        --mode "$args_mode" --no-miner --workers 2
-    for workers in bad '1;touch' -1 1.5 ''; do
-        rejected_before_ssh_args "$args_mode without a miner rejects invalid worker count '$workers'" \
-            --mode "$args_mode" --no-miner --workers "$workers"
-    done
-done
-
 echo "== --harness-arg (#2179): only the run.sh phase allowlist reaches the harness, never a shell =="
 rejected_before_ssh_args "an unlisted flag never reaches SSH" --harness-arg '--image-upgrade'
 rejected_before_ssh_args "a bare shell metacharacter never reaches SSH" --harness-arg ';touch'

@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
-# Sourced by release.sh; shares its configuration and stage state.
 
-# The CLI tools the blocking test gate (`make test` → `make lint`) shells out to: shellcheck + shfmt
-# (lint-sh), node/npx (lint-js/md/toml), uv/uvx (lint-py/lint-yaml). A reimaged release box loses these
-# (#426 — the v1.3.0 cut died ~1 min in with a bare `shellcheck: not found`). docker/jq are checked
-# elsewhere. Verify them here so a missing tool fails preflight with an actionable message, before any
-# build, instead of mid-gate.
-LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx)
+LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx go)
+GO_MIN_MINOR=21
 BENCH_TIER4_CONTEXT="bench-ci/tier4"
 
-# Dies on a real cut; on --dry-run prints the verdict and lets the rehearsal continue. A preview that
-# can only ever abort is not a preview — the same call #1108 made for the signing check.
 bench_tier4_reject() {
     [ "$DRY_RUN" -eq 1 ] || die "$@"
     warn "$* [--dry-run: continuing]"
@@ -125,7 +118,7 @@ apply_release_path() {
 }
 
 check_release_toolchain() {
-    local tool resolved missing=()
+    local tool resolved go_version missing=()
     for tool in "${LINT_TOOLCHAIN[@]}"; do
         if resolved="$(command -v "$tool")"; then
             log "Lint/test tool $tool: $resolved"
@@ -136,6 +129,9 @@ check_release_toolchain() {
     if [ "${#missing[@]}" -gt 0 ]; then
         die "Missing lint/test tool(s): ${missing[*]}. Effective PATH: $PATH. Set RELEASE_TOOL_PATH to the installed tool directories; see docs/dev/release-server.md § The lint/release toolchain."
     fi
+    go_version="$(go version 2>&1)" || true
+    [[ "$go_version" =~ go1\.([0-9]+) ]] && [ "${BASH_REMATCH[1]}" -ge "$GO_MIN_MINOR" ] ||
+        die "go 1.$GO_MIN_MINOR or newer is required by test-stack's go-raise-watch self-test (found: ${go_version:-no output}). Set RELEASE_TOOL_PATH to a newer Go; see docs/dev/release-server.md § The lint/release toolchain."
     ok "Lint/test toolchain present (${LINT_TOOLCHAIN[*]})."
 }
 
@@ -322,11 +318,6 @@ preflight() {
     require_release_toolchain
     apply_signing_defaults
     resolve_signing
-    if [ "${PITHEAD_REHEARSAL:-0}" != 1 ]; then
-        [ "$COSIGN_ENABLED" -eq 1 ] || die "A complete release draft requires cosign signatures."
-        command -v gh >/dev/null 2>&1 || die "gh is required to create a complete release draft."
-        require_appliance_inputs
-    fi
     check_verifier_image
 
     bash "$REPO_ROOT/scripts/release/resolve-pins.sh" ||

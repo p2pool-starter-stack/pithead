@@ -11,7 +11,7 @@ class ApplianceReleaseDocs(unittest.TestCase):
     def test_verify_commit_survives_sudo(self):
         self.assertIn(
             'sudo env PITHEAD_EXPECT_COMMIT="$(git rev-parse HEAD)" '
-            'tests/os/verify-image.sh "$artifact_dir/appliance-system.img"',
+            "tests/os/verify-image.sh <image>",
             DOC,
         )
         self.assertNotRegex(DOC, r"PITHEAD_EXPECT_COMMIT=\S+[^\n]* sudo ")
@@ -19,20 +19,12 @@ class ApplianceReleaseDocs(unittest.TestCase):
     def test_probe_cleanup_never_prompts(self):
         self.assertRegex(DOC, r"trap '[^\n]*rm -rf \"\$work_dir\"' EXIT")
 
-    def test_manual_checks_use_retained_packaged_bytes(self):
-        self.assertIn('read -r -p "Retained artifact directory: " artifact_dir', DOC)
-        self.assertIn("Do not rebuild\n   or repackage.", DOC)
+    def test_packaging_can_write_root_owned_build_directory(self):
         self.assertIn(
-            'cmp "$artifact_dir/appliance-system.img" '
-            '<(xz -dc "$artifact_dir/appliance/pithead-os-${tag}.img.xz")',
+            "sudo scripts/release/package-appliance.sh os/rauc/build/system.img "
+            "os/rauc/build/update.raucb os/rauc/build/release",
             DOC,
         )
-        self.assertIn(
-            '(cd "$artifact_dir/appliance" && sha256sum -c '
-            '"pithead-os-${tag}.img.xz.sha256" "pithead-os-${tag}.raucb.sha256")',
-            DOC,
-        )
-        self.assertNotIn("sudo scripts/release/package-appliance.sh", DOC)
 
     def test_shipped_fixes_appear_in_generated_release_notes(self):
         notes = subprocess.run(

@@ -27,20 +27,14 @@ uv run --project dashboard pre-commit install
 `make test` and `make lint-py` run through uv automatically (no venv to activate); `pre-commit`
 runs `ruff` (plus a few hygiene hooks) on your changed files. If you change dependencies in
 `dashboard/pyproject.toml`, run `uv lock --project dashboard` and commit the updated `uv.lock`.
-For a transitive security fix, update the affected package and any parent whose constraint
-rejects the fixed version. For example, the developer tooling's filelock fix needs a compatible
-virtualenv version:
-
-```bash
-uv lock --project dashboard --upgrade-package filelock==4.2.1 --upgrade-package virtualenv==21.10.0
-```
-
-Review the lockfile diff, run the dashboard tests, and require the built dashboard image's
-Trivy scan to pass without adding an ignore entry.
-`dashboard/tests/test_dependency_security.py` checks the locked security floors, loaded runtime
-dependency versions, and that Requests' CA bundle excludes the compromised emSign ECC Root CA - G3.
-Filelock is locked through the `dev` extra's pre-commit/virtualenv chain; its floor is checked
-in the lockfile because the dashboard runtime and `test` extra do not install it.
+For a transitive security fix, update only the affected package with
+`uv lock --project dashboard --upgrade-package certifi==2026.10.19` (substitute the package and
+verified fixed version). Review the lockfile diff, run the dashboard tests, and require the
+built dashboard image's Trivy scan to pass without adding an ignore entry.
+`dashboard/tests/test_dependency_security.py` checks the locked and loaded runtime security
+floors, requires locked virtualenv 21.14.13 and filelock 4.2.1 or newer for pre-commit's
+dev-only environments, and verifies that Requests' CA bundle excludes the compromised
+emSign ECC Root CA - G3.
 
 The root `pithead` executable is generated and git-ignored. Plain `make` builds it from the
 numbered `lib/pithead/*.sh` sources; the test targets also build it when needed. Edit the slices,
@@ -87,9 +81,7 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
      with `make lint-<surface>`): `lint-sh` (shellcheck + shfmt), `lint-py` (ruff), `lint-js` (Biome),
      `lint-yaml` (yamllint), `lint-md` (markdownlint), `lint-docs-voice` (banned-word check),
      `lint-path-references` (every repo path named in a comment, docstring or doc has to resolve, and
-     so does every statically resolvable `source` target; the prose scan matches complete supported
-     filename extensions, ignoring checksum and other longer suffixes, and accepts sentence-ending
-     periods after a path — a reorganization moves the target and leaves
+     so does every statically resolvable `source` target — a reorganization moves the target and leaves
      the pointer, and nothing else here notices; the run prints how many `source` expressions it could
      not resolve statically, so that blind spot stays visible; deliberate absences go in the script's
      own `allowed_absent()` with a reason, never a per-file exemption),
@@ -123,15 +115,7 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
      non-Python tools run via `npx`/`uvx`/`docker`, so a contributor needs **Node, uv, and Docker**
      on PATH (plus `shfmt`); `pre-commit` runs the same checks on changed files. Link-checking
      (`lychee`) runs on a weekly schedule, not per-PR.
-   - **test-dashboard** — the dashboard `pytest` suite, using pytest-xdist with `-n auto`
-     (must stay ≥ the **80% total coverage gate**). The Docker test stage keeps its serial coverage
-     gate. To run the suite serially on the host with the same gate:
-
-     ```bash
-     cd dashboard && uv run --locked --extra test python -m pytest -n 0 \
-       --cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
-     ```
-
+   - **test-dashboard** — the dashboard `pytest` suite (must stay ≥ the **80% total coverage gate**).
      CI also runs **`make test-patch-coverage`** (`diff-cover`): new/changed lines must be **≥ 90%**
      covered against the PR's own base branch, the ratchet that stops coverage rotting at the margin. The gate
      says so explicitly when a diff has nothing it measures (shell/docs-only PRs pass loudly), and
@@ -204,12 +188,6 @@ make lint-file-budget FILE_BUDGET_BASE_REF=origin/develop-v2.0.2
 to a commit. Without either selection, the gate tries `origin/develop`, then
 local `develop`. If neither resolves, CI fails; a local checkout prints a note
 and skips the ratchet comparison. Enumeration and per-file checks still run.
-
-Release validation uses the frozen release commit as `FILE_BUDGET_BASE_REF` for
-`make test`, so later ceiling reductions on `develop` cannot reject that commit.
-Per-file ceilings and the 800-line hard ceiling remain enforced. On a clean
-release tree, comparing the budget with that same commit makes ceiling raises
-and first appearances inapplicable; PR validation still rejects them.
 `make lint-file-budget` exercises these modes with isolated Git fixtures,
 including divergent integration and release-branch budgets. The self-tests
 clear inherited base selections before creating their fixture refs.

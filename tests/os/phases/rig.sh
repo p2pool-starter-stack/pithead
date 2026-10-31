@@ -385,8 +385,6 @@ phase_rig() {
     if [ -z "$rn_mh" ] || [ -z "$rn_rpc" ] || [ -z "$rn_zmq" ]; then
         it_skip_leg "the rig mines an accepted share against a booted coordinator (#2063)" \
             "no reserved remote Monero node for this bench — set PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT and PITHEAD_OS_MONERO_ZMQ_PORT to run it" missing
-        it_skip_leg "M10 mining: accepted shares resume after a coordinator power cut (#3077)" \
-            "no reserved remote Monero node for this bench" missing
     else
         rig_share_leg "$img" "$rn_mh" "$rn_rpc" "$rn_zmq" \
             "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" "${PITHEAD_OS_MONERO_NODE_PASSWORD:-}" \

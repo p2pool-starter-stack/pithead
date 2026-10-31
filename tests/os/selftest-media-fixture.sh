@@ -3,7 +3,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT=$(mktemp -d) || exit $?
 export OS_RUN_SUITE=1
-SCRIPT_DIR="$HERE"
 # shellcheck source=tests/os/phases/media.sh
 source "${1:-$HERE/phases/media.sh}" || exit $?
 for scenario in ready delayed absent loop format mount write unmount detach ownership foreign-mount mount-timeout mount-probe; do

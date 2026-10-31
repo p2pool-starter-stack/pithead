@@ -176,7 +176,7 @@ check_disk_grouped() {
     done
 
     if [ "${#mounts[@]}" -eq 0 ]; then
-        [ "$mode" = "doctor" ] && dr_info disk-space "No data dirs resolved to a filesystem — skipping disk check."
+        [ "$mode" = "doctor" ] && dr_info "No data dirs resolved to a filesystem — skipping disk check."
         return 0
     fi
 
@@ -192,9 +192,9 @@ check_disk_grouped() {
         avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}')
         if [ "$mode" = "doctor" ]; then
             if [ -n "$avail_kb" ] && [ "$avail_kb" -ge "$need_kb" ] 2>/dev/null; then
-                dr_ok disk-space "Data on $mount ($comps): ${avail_h:-?} free — needs ~${req_gib[i]} GiB."
+                dr_ok "Data on $mount ($comps): ${avail_h:-?} free — needs ~${req_gib[i]} GiB."
             else
-                dr_warn disk-space "Data on $mount ($comps): ${avail_h:-?} free — below the ~${req_gib[i]} GiB the stack needs there."
+                dr_warn "Data on $mount ($comps): ${avail_h:-?} free — below the ~${req_gib[i]} GiB the stack needs there."
             fi
         else
             if [ -n "$avail_kb" ] && [ "$avail_kb" -lt "$need_kb" ] 2>/dev/null; then

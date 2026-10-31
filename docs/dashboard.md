@@ -7,35 +7,6 @@ starts); with `dashboard.secure: false` it serves plain HTTP.
 The dashboard has two states. While the nodes catch up to the network it shows Sync Mode. Once both
 chains are synced it switches to the operational view.
 
-## Current dashboard and lean preview
-
-The dashboard at the stack URL remains the legacy default UI. The lean development preview is
-available at `/ui-preview` only when the dashboard process has `DASHBOARD_UI_PREVIEW=1`; without
-that environment setting the path is not served. The preview has four shell links — **Overview**,
-**Machines**, **Earnings**, and **Settings** — and turns them into a bottom navigation bar on a
-phone-sized viewport, with **Advanced** as its fifth item. The 232 px desktop sidebar keeps the
-brand, version and host first, then stack status and profile, the four page links, the update link
-and Advanced at the bottom.
-
-The preview follows the operating system theme by default. **Advanced › Appearance** can set Light,
-Dark, or Auto. Dark uses warm charcoal panels and an orange accent; Light uses white panels and
-a darker orange accent. Heavy system-sans headings share the accessible palette. The existing
-persisted `dashboardTheme` preference is retained. Explicit page, Advanced and legacy-view URLs
-take priority over the saved page; a saved page is used only when the URL has no route. Chart-range
-query parameters remain intact when moving between pages. A profile reads **Profile not reported** until the profile is emitted by [#3557](https://github.com/p2pool-starter-stack/pithead/issues/3557).
-
-The status chip separates ordinary synchronization from faults and counts each attention condition
-once. While synchronizing it shows the least complete unfinished chain that gates mining: Monero,
-and Tari only when required without a Monero-only bypass. A loading optional or off Tari node does
-not hide known Monero progress. Progress is unknown when an unfinished gating chain has no reading.
-The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
-
-The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
-and asks the operator to sign in again when the session expires. Its page bodies and most Settings
-controls are still being built; the preview does not announce a cutover from the legacy UI. The
-drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
-[#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
-
 ---
 
 ## Connect a miner
@@ -122,7 +93,7 @@ the node logs directly:
 
 ---
 
-## The legacy operational view
+## The operational view
 
 Once both nodes are synced, the dashboard shows the operational view. P2Pool then syncs its
 own sidechain. While its reported difficulty is at the default minimum (100,000) and its
@@ -137,8 +108,8 @@ percentage; this detects its initial minimum-difficulty view, not later stalls o
   <img alt="Operational dashboard — Simple view" src="./images/launch/simple-light.png">
 </picture>
 
-The legacy page updates every 30 seconds, refreshing each panel in place rather than reloading. Scroll
-position, the worker-table sort column, and the chart stay put between updates. Legacy view preferences —
+The page updates every 30 seconds, refreshing each panel in place rather than reloading. Scroll
+position, the worker-table sort column, and the chart stay put between updates. View preferences —
 theme, Simple/Advanced view, the chart's averaging window and series toggles, the worker-table
 sort, the earnings tab, and the topology mesh toggle — are also
 remembered across reloads. A poll that fails —

@@ -163,12 +163,11 @@ gate_order="$SANDBOX/gate-order"
     smoke_test() { :; }
     promote() { printf 'promote\n' >>"$gate_order"; }
     sign_images() { :; }
-    prepare_appliance() { printf 'appliance\n' >>"$gate_order"; }
     publish() { :; }
-    DRAFT=1 DRY_RUN=0 IMAGES=(tor) TAG=v9.9.9 REGISTRY=ghcr.io/test
+    DRY_RUN=0 IMAGES=(tor) TAG=v9.9.9 REGISTRY=ghcr.io/test
     main
 ) >/dev/null 2>&1
-assert_eq "the bench gate runs before any build or promotion" "$(tr '\n' ' ' <"$gate_order")" "bench build promote appliance "
+assert_eq "the bench gate runs before any build or promotion" "$(tr '\n' ' ' <"$gate_order")" "bench build promote "
 echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
 dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
 release_tree_gate() { # <dry-run> <allow-dirty>

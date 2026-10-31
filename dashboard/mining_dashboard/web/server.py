@@ -16,7 +16,7 @@ from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
-from mining_dashboard.web.views import diagnostics_views, download_views, sovereign_views
+from mining_dashboard.web.views import diagnostics_views, download_views
 from mining_dashboard.web.views.charts import canonical_window, parse_window
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
 from mining_dashboard.web.views.prometheus import render_prometheus
@@ -435,6 +435,7 @@ async def handle_worker_upgrade(request):
 
 
 async def handle_control_result(request):
+    """Client-side polling endpoint for a 202'd preview/commit."""
     try:
         res = control_service.result(request.query.get("id", ""))
     except ValueError:
@@ -603,18 +604,26 @@ def create_app(state_manager, latest_data_ref):
                 web.post("/api/control/upgrade", handle_control_upgrade),
                 web.get("/api/control/result", handle_control_result),
                 web.get("/api/audit", handle_audit_log),
+                # Worker Inspect (#185): read a worker's detail + config history, and push a
+                # writable-key change to its rig. Gated with the rest of the control channel.
                 web.get("/api/worker", handle_worker_detail),
                 web.post("/api/control/worker-apply", handle_worker_apply),
+                # One-click rig upgrade (#597): spools name + confirmed version only; the host
+                # re-derives the real target and dials the rig. Same gate as the rest.
                 web.post("/api/control/worker-upgrade", handle_worker_upgrade),
+                # Encrypted backup + one-time emergency kit (#908): trigger, then stream the
+                # archive the host produced for the id it names in its result.
                 web.post("/api/control/backup", handle_control_backup),
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
+                # Appliance OS update: one route, a closed action set, every judgment host-side.
                 web.post("/api/control/os-update", handle_control_os_update),
+                # Service Diagnostics (#913/#943): read-only, polls /api/control/result above.
                 web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
                 web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),
                 web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_key),
             ]
         )
-    app.router.add_get("/ui-preview", sovereign_views.handle_preview)
+
     static_path = os.path.join(os.path.dirname(__file__), "static")
     app.router.add_static("/static", static_path)
 

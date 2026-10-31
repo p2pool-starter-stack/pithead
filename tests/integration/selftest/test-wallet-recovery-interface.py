@@ -93,8 +93,10 @@ class InterfaceTest(base.RecoveryBase):
                 (code, text), (1, '{"schema": 1, "status": "REFUSED", "reason": "request"}')
             )
             code, text = recovery.run(argv, raw, self.steps)
-            self.assertEqual(code, 0)
-            self.assertEqual(json.loads(text)["status"], "RESTORED")
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                json.loads(text), {"schema": 1, "status": "REFUSED", "reason": "receipt"}
+            )
             with (
                 patch.object(recovery, "recover", side_effect=RuntimeError("secret path")),
                 patch("sys.stderr", io.StringIO()) as log,

@@ -1,8 +1,11 @@
+# Single writer for the env file. Derives every value from the parsed config plus the preserved
+# secrets/onions/host, so it is safe to call repeatedly (bootstrap, finalize, or apply).
+# $1 = target file (defaults to $ENV_FILE); apply renders to a temp file first to diff it.
 render_env() {
-    local target="${1:-$ENV_FILE}" project
-    project=$(compose_project_name) || return 1
+    local target="${1:-$ENV_FILE}"
     log "Rendering environment configuration ($target)..."
 
+    # Mode → host / ports / compose profile
     local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
         mono_host="${NETWORK_PREFIX}.26" rpc_port="18081" zmq_port="18083" profiles="local_node"
@@ -124,8 +127,11 @@ render_env() {
     p2pool_socks=$(p2pool_outbound_flags "$(jq -r '.p2pool.clearnet // false' "$CONFIG_FILE")" "$NETWORK_PREFIX")
     [ -n "$p2pool_socks" ] && p2pool_flags="${p2pool_flags:+$p2pool_flags }$p2pool_socks"
 
+    # XvB config. The xmrig_proxy.* alias is gone (#1832) — migrated to xvb.* before any read.
     local xvb_enabled xvb_url xvb_donor xvb_donation_level xvb_tor
-    xvb_enabled=$(config_get .xvb.enabled)
+    xvb_enabled=$(jq -r 'if .xvb.enabled != null then .xvb.enabled else "true" end' "$CONFIG_FILE")
+    # Route XvB donation mining through Tor by default (#166); xvb.tor:false opts out for max yield.
+    # config_bool so xvb.tor=false (route XvB over clearnet) is honoured rather than coerced to Tor (#294).
     xvb_tor=$(normalize_bool "$(config_bool '.xvb.tor' true)")
     xvb_url=$(jq -r '.xvb.url // empty' "$CONFIG_FILE")
     [ -z "$xvb_url" ] && xvb_url="na.xmrvsbeast.com:4247"
@@ -137,10 +143,19 @@ render_env() {
     xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
 
+    # How much Tari blocks the stack (#31/#35/#51/#897); monerod is required, not configurable. A Tari
+    # outage never rejects workers (p2pool mines Monero through it), but tari_required (default true)
+    # makes the miner wait for Tari's sync while the sync gate STOPS p2pool and xmrig-proxy. TARI_MODE
+    # off decides it outright (#1855): no node to wait for, Monero must still mine; local/remote keep it.
     local tari_required
-    tari_required=$(config_get .dashboard.tari_required)
-    [ "$TARI_MODE" != "off" ] || tari_required=false
+    tari_required=$(jq -r --arg m "$TARI_MODE" 'if $m == "off" then "false" elif .dashboard.tari_required != null then .dashboard.tari_required | tostring else "true" end' "$CONFIG_FILE")
 
+    # Opt-in fail-closed miner hold on an unrecoverable dashboard health failure (#490), default
+    # false. The dashboard is an observability layer, not the mining datapath, so the default is
+    # alert-only (loud Telegram/Healthchecks alert + badge; mining continues). true reuses the #35
+    # sync-gate's own hold to stop p2pool+xmrig-proxy until a DB-recovery failure or a
+    # crash-looping dashboard container clears — see dashboard .../service/data_service.py
+    # DataService._apply_fail_closed_gate for the exact "unrecoverable" set.
     local fail_closed
     fail_closed=$(normalize_bool "$(config_bool '.dashboard.fail_closed' false)")
 
@@ -440,7 +455,6 @@ MONERO_ZMQ_PORT=$(dotenv_render_value "$zmq_port")
 TARI_MODE=$(dotenv_render_value "$TARI_MODE")
 TARI_GRPC_ADDRESS=$(dotenv_render_value "$tari_grpc_addr")
 TARI_GRPC_BIND=$(dotenv_render_value "$tari_grpc_bind")
-COMPOSE_PROJECT_NAME=$(dotenv_render_value "$project")
 COMPOSE_PROFILES=$(dotenv_render_value "$profiles")
 TOR_COMPOSE_PROFILES=$(dotenv_render_value "$tor_profiles")
 DASHBOARD_SECURE=$(dotenv_render_value "$DASHBOARD_SECURE")

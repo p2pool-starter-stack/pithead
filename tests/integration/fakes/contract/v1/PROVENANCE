@@ -1,15 +1,2 @@
 ref=b2d4c3d9ca1da74d0e6d5ccce772d401acc8be03
 version=1.18.0
-stratum_upstream=https://github.com/SChernykh/p2pool/blob/v4.18.1/src/stratum_server.cpp
-stratum_release=v4.18.1
-stratum_login_source=StratumServer::on_login
-stratum_login_reply={"id":1,"jsonrpc":"2.0","result":{"id":"1","job":{"blob":"hex","job_id":"1","target":"ffffffff","algo":"rx/0","height":1,"seed_hash":"hex"},"extensions":["algo"],"status":"OK"}}
-stratum_submit_source=StratumServer::on_after_share_found
-stratum_accept_reply={"id":2,"jsonrpc":"2.0","error":null,"result":{"status":"OK"}}
-stratum_reject_reply={"id":2,"jsonrpc":"2.0","error":{"message":"Low\u0020diff\u0020share"}}
-stratum_login_request_source=https://github.com/xmrig/xmrig-proxy/blob/v6.26.0/src/base/net/stratum/Client.cpp
-stratum_login_request={"id":1,"method":"login","params":{"login":"user","pass":"password","agent":"client"}}
-stratum_submit_request={"id":2,"method":"submit","params":{"id":"1","job_id":"1","nonce":"00000000","result":"hex"}}
-stratum_fixture_metadata=url_and_coin_are_supplied_metadata_not_observed_protocol_fields
-stratum_job_values=synthetic_not_a_valid_chain_template
-stratum_real_proxy_compatibility=unverified_until_stub_only_tier4_e2e

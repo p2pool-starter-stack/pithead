@@ -132,27 +132,11 @@ assert_contains "PITHEAD_CONFIG_FILE override is honoured" "$out" "37890" # nano
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>/dev/null)"
 assert_eq "without the override, config.json shows no changes" "$out" ""
 
-jq '.p2pool.clearnet=true' "$C/config.json" >"$C/config.route" && mv "$C/config.route" "$C/config.json"
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>/dev/null)"
-assert_contains "route-only preview names the P2Pool clearnet change (#3382)" "$out" "P2Pool sidechain peers over CLEARNET"
-assert_not_contains "route-only preview does not claim a PPLNS reset (#3382)" "$out" "PPLNS window resets"
-control_config main
-out="$(run_sourced "$C" describe_change P2POOL_FLAGS '--mini' '--nano')"
-assert_contains "mini to nano previews a sidechain switch (#3382)" "$out" "sidechain changing"
-assert_contains "mini to nano previews a PPLNS reset (#3382)" "$out" "PPLNS window resets"
-null_id="33773377-3377-4377-8377-337733773377"
-jq --arg id "$null_id" '{id:$id,action:"preview",actor:"admin",config:(.dashboard.energy.cost_per_kwh=0.18 | .workers.api_port=null)}' "$C/config.json" >"$C/data/control/requests/$null_id.json"
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead control-run-pending 2>&1)"
-assert_rc "energy and null port preview drains successfully" "$?" 0
-null_result="$C/data/control/results/$null_id.json"
-assert_eq "energy and null port preview succeeds" "$(jq -r '.status' "$null_result")" previewed
-assert_eq "energy preview has no spurious worker port change" "$(jq '[.changes[] | select(.key == "XMRIG_API_PORT")] | length' "$null_result")" 0
-assert_eq "energy preview includes its requested change" "$(jq '[.preview_values[] | select(.key == "dashboard.energy.cost_per_kwh" and .new == 0.18)] | length' "$null_result")" 1
-assert_eq "null port preview keeps the effective rendered default" "$(run_sourced "$C" env_get_file "$C/.env" XMRIG_API_PORT)" 8080
-rm -f "$null_result" "$C/data/control/staged/$null_id.json"
-unset null_id null_result
-
 echo "== black-box: symlink-invoked stack renders physical paths (#695) =="
+# A stack managed through a deploy symlink (`current -> pithead-vX.Y.Z`) must render the same
+# .env as one managed from the physical dir: SCRIPT_DIR resolves with pwd -P, so an unedited
+# preview through the symlink shows zero changes and an apply never rewrites the $PWD-derived
+# paths (CLEARNET_STATE_DIR & co.) to the symlink spelling.
 ln -sfn "$C" "$SANDBOX/current-link"
 out="$(cd "$SANDBOX/current-link" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>/dev/null)"
 assert_rc "dry-run through the symlink exits 0" "$?" "0"

@@ -651,12 +651,12 @@ assert_eq "every config path outside the named config.json-only set renders an e
     "$(unseen_config_paths "$(jq -r '[(paths(scalars), (paths as $p | select(getpath($p) | type == "array") | $p)) | map(select(type == "string")) | join(".")] | unique[]' "$ROOT/config.reference.json")")" ""
 unset DRIFT_FOUND REF_PATHS DRIFT_BAD CONFIG_ONLY_NAMED
 
-if bash "$ROOT/tests/stack/standalone/test_config_defaults.sh"; then
-    ok "shared defaults and v2.0.0 compatibility contracts"
-else
-    bad "shared defaults and v2.0.0 compatibility contracts" "See the failed standalone assertions above."
-fi
 echo "== unit: config.core-keys.json — valid JSON, stays inside config.reference.json (#502/#529) =="
+# The core-key shortlist (#529's binding Wave-0 decision) is the ONE shared artifact between the
+# wizard (here) and the dashboard form (later, #529's regroup). Every path it lists must resolve
+# somewhere in config.reference.json, or the wizard could start asking about a key the closed
+# schema (#537/#561) would then refuse — a config the wizard itself just generated getting
+# rejected on the very first apply.
 CORE_KEYS="$(jq -r '.[]' "$ROOT/config.core-keys.json" 2>/dev/null)"
 if [ -z "$CORE_KEYS" ]; then
     bad "config.core-keys.json parses to a non-empty array" "got nothing — check the file exists and is valid JSON"

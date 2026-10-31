@@ -65,16 +65,14 @@ virtual machines.
 - For the upgrade box, install the previous release with `clearnet_initial_sync` set to `true`
   under both `monero` and `tari`. That exposes the box's IP while it syncs, which is acceptable on
   a sandbox. Otherwise, start it a few days ahead.
-- 1.1–1.11 do not need the chains synced. The default run marks 1.12 N/A and runs 1.13 once
-  Monero has synced. The separate Tari opt-in case from 1.4b runs 1.12 while Monero is synced
-  and Tari is still syncing, then also observes Tari completing in 1.13.
+- 1.1–1.11 do not need the chains synced. 1.12 needs Monero synced while Tari is still syncing,
+  and 1.13 needs both synced.
 
 ## Two boxes at once
 
 Session 9 uses both boxes.
 
-- The fresh box runs its own Monero chain in 1.13. Use its separate Tari opt-in fixture for
-  1.12 and the Tari off/on checks in 10.1–10.2; keep the default-run results separate.
+- The fresh box runs its own chains in 1.12, 1.13, 10.1, 10.2 and 10.7.
 - In 10.3, 10.3a, 10.4 and 10.6, the upgrade box serves its node to a second machine that runs no
   chain of its own.
 
@@ -86,16 +84,14 @@ follow the [Run sheet](../README.md#run-sheet) as written. The fresh box is the 
 1. Fresh box: session 2 (1.1–1.11). Set it aside.
 2. Upgrade box: install the previous release, let it sync, and take the *previous release
    synced* snapshot. Then run sessions 3–8. Set it aside.
-3. Fresh box: finish the default Monero-only run, recording 1.12 as N/A and running 1.13 once
-   Monero is synced. Save that run's snapshot and results. Separately repeat the Tari opt-in
-   case from 1.4b, starting from *clean*, and watch its dashboard a few times a day. Run 1.12
-   while Monero is synced and Tari is still syncing. Once Tari also syncs, finish the opt-in
-   checks in 1.13 and run 10.1, 10.2 and 10.7 on that fixture. Set it aside.
-   - In the opt-in run only, if Tari finishes first, the window never happened: record 1.12 as
-     SKIP and say so.
-   - If the opt-in window passed before you saw it, 1.12 is not covered yet; do not record SKIP.
-     Note it as missed and carry on. After step 5, repeat the opt-in case from 1.4b on a *clean*
-     fixture, and check the dashboard more often until 1.12 runs in its window.
+3. Fresh box: start it again and watch its sync on the dashboard a few times a day. If Monero
+   finishes its first sync while Tari is still syncing, run 1.12 in that window. Once both chains
+   are synced, run 1.13, 10.1, 10.2 and 10.7. Set it aside.
+   - If Tari finishes first, the window never happened: record 1.12 as SKIP and say so.
+   - If the window passed before you saw it, 1.12 is not covered yet; do not record SKIP. Note it
+     as missed and carry on. After step 5, revert the fresh box to its *clean* snapshot, run
+     1.1–1.11 again, and check the dashboard more often during the sync until 1.12 runs in its
+     window.
 4. Upgrade box: start it again, and start a small VM as the second machine, configured for a
    remote node. Run 10.3, 10.3a, 10.4 and 10.6, then 10.5 and 11.1–11.5. Remove the small VM.
 5. Fresh box: start it again for session 13 (S1–S8 where they use it, then 11.6 and 11.7 last).

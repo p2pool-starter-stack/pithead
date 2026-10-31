@@ -11,10 +11,10 @@ egress_direct_for() { # <p2pool|xmrig-proxy>
     egress_firewall_exempts "$1"
 }
 
-egress_firewall_exempts() {
+egress_firewall_exempts() { # <component>; the candidate config is parsed for this preview
     case "$1" in
     p2pool) return 0 ;;
-    xmrig-proxy) [ "$(config_get .xvb.enabled)" = true ] ;;
+    xmrig-proxy) [ "$(config_bool '.xvb.enabled' true)" = true ] ;;
     *) return 1 ;;
     esac
 }
@@ -31,7 +31,7 @@ describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
         fi
         ;;
     XVB_TOR_ENABLED)
-        if [ "$new" == "false" ] && [ "$(config_get .xvb.enabled)" != true ]; then
+        if [ "$new" == "false" ] && [ "$(config_bool '.xvb.enabled' true)" != true ]; then
             flag=CONFIRM
             msg="XvB donation mining set OFF Tor while XvB is disabled — there is no donation dial now; enabling XvB later opens a direct dial and exposes this host's IP to the XvB pool."
         elif [ "$new" == "false" ] && egress_direct_for xmrig-proxy; then

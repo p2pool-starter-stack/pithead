@@ -12,22 +12,10 @@ the fixes the spike forced (`TimeoutStartSec=infinity`, tmpfs `mode=` instead of
 pool (#2562). The Tor unit now receives the selected P2Pool P2P port; the entrypoint
 uses it for the onion target (#2936).
 
-These files are fixtures, not deployable configuration. The appliance always renders
-its own units from `config.json`. `tests/stack/run.sh` compares each remote, local
-and payout render byte-for-byte with its complete expected unit set and rejects
-extra or missing units.
-
-`quadlet/common/` stores byte-identical units once: six used by all three profiles,
-plus the Monero node, Tari node, P2Pool and Tor units shared by local and payout.
-Profile-specific units stay in `quadlet/` (remote), `quadlet/local/` and
-`quadlet/payout/`, beside each profile's `fixture.env`. For each expected filename,
-the parity test uses the profile-specific fixture when present, otherwise the
-shared fixture. The explicit profile inventories keep remote renders free of local
-node units and local renders free of payout wallet units; shared files do not
-automatically enable units. The 17 stored units preserve all 33 original profile
-outputs without regenerating expected bytes from the renderer. Changing expected
-bytes still requires bench proof; deduplication does not replace that evidence.
-
-The translation rules the spike established, with evidence, live in
+These files are fixtures, not deployable configuration. They are consumed only as the
+parity test's expected output (`tests/stack/run.sh`, `render_quadlet_units()` diffed
+byte-for-byte against `quadlet/`, `quadlet/local/` and `quadlet/payout/`) — never
+deployed directly; the appliance always renders its own units from `config.json`. The
+translation rules the spike established, with evidence, live in
 [`docs/dev/dual-distribution-plan.md`](../docs/dev/dual-distribution-plan.md)
 (Runtime architecture) and on issue #78.

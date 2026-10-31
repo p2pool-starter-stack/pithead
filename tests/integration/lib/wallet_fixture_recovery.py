@@ -70,9 +70,6 @@ def load_module(name, filename):
     return module
 
 
-records = load_module("wallet_fixture_recovery_record", "wallet_fixture_recovery_record.py")
-
-
 def request_data(raw):
     def unique(pairs):
         result = {}
@@ -109,9 +106,7 @@ def request_data(raw):
 def validate_verdict(verdict):
     proof = verdict.get("proof") if isinstance(verdict, dict) else None
     if (
-        not isinstance(verdict, dict)
-        or set(verdict) != VERDICT_FIELDS
-        or type(verdict["schema"]) is not int
+        set(verdict) != VERDICT_FIELDS
         or verdict["schema"] != 1
         or verdict["status"] != "RESTORED"
         or verdict["receipt_fingerprint"] != VERIFIED
@@ -128,6 +123,15 @@ def validate_verdict(verdict):
     ):
         raise ValueError("invalid recovery verdict")
     request_data(json.dumps(verdict["request"]).encode())
+
+
+def fingerprints(fixture, state):
+    """The verdict's archive and keys digests, from a snapshot that names exactly one prepared pair."""
+    keys = state["contents"][fixture.wallet_keys(state["contents"])]
+    result = (state["archive_sha256"], keys[2] if len(keys) > 2 else None)
+    if any(not isinstance(value, str) or not HEX64.fullmatch(value) for value in result):
+        raise ValueError("recorded wallet fingerprint is malformed")
+    return result
 
 
 def hold_bench_lock():
@@ -274,7 +278,7 @@ def recover(fixture, retire, directory, baseline, job, raw, steps, branch):
         stage = evidence(fixture, retire, directory, job, request)
     with refusing("receipt"):
         receipt = retire.read_private(fixture, job / RECEIPT, 11)
-        if receipt not in STARTS | {b"VERIFIED\n"}:
+        if receipt not in STARTS:
             raise ValueError("wallet restoration receipt cannot be recovered")
     with refusing("identity"):
         configured = json.loads((directory / "state.json").read_bytes())["identity"]
@@ -283,23 +287,7 @@ def recover(fixture, retire, directory, baseline, job, raw, steps, branch):
     with refusing("archive"):
         state = fixture.load(directory, baseline, cleanup_only=stage == "ready")
     with refusing("pair"):
-        archive_fingerprint, keys_fingerprint = records.fingerprints(fixture, state)
-    with refusing("verdict"):
-        expected = (request, archive_fingerprint, keys_fingerprint)
-        saved = records.read(
-            fixture, retire, job, directory, baseline, state, expected, validate_verdict
-        )
-    if saved is not None:
-        with refusing("lock"):
-            steps.lock_check()
-        with refusing("seal"):
-            fixture.sync_directory(job)
-            records.seal(
-                fixture, directory, baseline, job, receipt, state["stage"], ready_from_not_proven
-            )
-        return saved
-    if receipt == b"VERIFIED\n" or stage == "ready":
-        raise Refusal("receipt")
+        archive_fingerprint, keys_fingerprint = fingerprints(fixture, state)
     with refusing("helper"):
         helpers = fixture.docker(
             "ps",
@@ -347,11 +335,12 @@ def recover(fixture, retire, directory, baseline, job, raw, steps, branch):
     with refusing("verdict"):
         validate_verdict(verdict)
     with refusing("seal"):
-        state = fixture.load(directory, baseline, cleanup_only=True)
-        records.publish(fixture, job, directory, baseline, state, verdict)
-        records.seal(
-            fixture, directory, baseline, job, receipt, state["stage"], ready_from_not_proven
-        )
+        if receipt == b"NOT_PROVEN\n":
+            ready_from_not_proven(fixture, job)
+        else:
+            fixture.receipt(job, "READY")
+        fixture.cleanup(directory, baseline)
+        fixture.receipt(job, "VERIFIED")
     return verdict
 
 

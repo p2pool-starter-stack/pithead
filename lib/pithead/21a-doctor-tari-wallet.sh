@@ -3,13 +3,13 @@
 check_tari_wallet_address() {
     container_is_running tari-wallet || return 0
     if ! command -v curl >/dev/null || ! command -v python3 >/dev/null; then
-        dr_info tari-wallet-address "Tari wallet address check skipped — needs curl and python3."
+        dr_info "Tari wallet address check skipped — needs curl and python3."
         return 0
     fi
     local expected expected_key verdict
     expected=$(env_get TARI_WALLET_ADDRESS 2>/dev/null)
     [ -n "$expected" ] || {
-        dr_info tari-wallet-address "Tari wallet address check skipped — no payout address configured."
+        dr_info "Tari wallet address check skipped — no payout address configured."
         return 0
     }
     expected_key=$(TARI_ADDRESS_KEY_ONLY=1 tari_address_type "$expected")
@@ -70,9 +70,9 @@ except (OSError, subprocess.SubprocessError, ValueError):
 PY
     )
     case "$verdict" in
-    match) dr_ok tari-wallet-address "Tari payout wallet gRPC answers and its address matches tari.wallet_address." ;;
-    mismatch) dr_warn_surface tari-wallet-address "Tari payout wallet gRPC answers, but its address differs from tari.wallet_address — check the view and public spend keys." "Tari payout wallet scans an address other than the configured payout target." ;;
-    *) dr_warn_surface tari-wallet-address "Tari payout wallet gRPC did not answer — payout tracking is unavailable." "Tari payout wallet is not answering gRPC." ;;
+    match) dr_ok "Tari payout wallet gRPC answers and its address matches tari.wallet_address." ;;
+    mismatch) dr_warn_surface "Tari payout wallet gRPC answers, but its address differs from tari.wallet_address — check the view and public spend keys." "Tari payout wallet scans an address other than the configured payout target." ;;
+    *) dr_warn_surface "Tari payout wallet gRPC did not answer — payout tracking is unavailable." "Tari payout wallet is not answering gRPC." ;;
     esac
     return 0
 }

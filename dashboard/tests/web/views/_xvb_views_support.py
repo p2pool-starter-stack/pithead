@@ -38,8 +38,11 @@ from mining_dashboard.web.views.xvb_views import (
 
 
 def _xvb_archive():
+    # In a checkout the repo root is three levels up (dashboard/ moved to the repo root, #1106);
+    # inside the dashboard image the tests live at /app/tests and there is no repo root at all —
+    # parents[3] itself raises there, so the lookup must fail soft for the skipif to see "absent".
     try:
-        root = Path(__file__).parents[4]
+        root = Path(__file__).parents[3]
     except IndexError:
         return None
     return (

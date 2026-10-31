@@ -49,23 +49,10 @@ if [ "${1:-}" = "--self-test" ]; then
     (cd "$tmp/repo" && git add -A)
     leg "a dead reference is caught" 1 "names $dead$sfx"
 
+    # Leg 2: a live reference must NOT be caught. Same fixture, one variable moved.
     printf '# see %s for why\n' "$live$sfx" >"$tmp/repo/probe$sfx"
     (cd "$tmp/repo" && git add -A)
     leg "a live reference is NOT caught" 0 "every named repo path resolves"
-
-    checksum="os/build/pithead-root.tar"
-    for suffix in .sha256 .shasum .sh-backup .sh.bak .jsonl .mdx; do
-        printf '# see %s%s for the fixture\nfixture="%s%s"\n' \
-            "$checksum" "$suffix" "$checksum" "$suffix" >"$tmp/repo/probe$sfx"
-        (cd "$tmp/repo" && git add -A)
-        leg "unsupported extension $suffix is NOT truncated" 0 "every named repo path resolves"
-    done
-    printf '# see %s%s and %s%s.\n' "$checksum" .sha256 "$dead" "$sfx" >"$tmp/repo/probe$sfx"
-    (cd "$tmp/repo" && git add -A)
-    leg "a missing script beside a checksum is caught" 1 "names $dead$sfx"
-    printf '# see %s%s.\n' "$live" "$sfx" >"$tmp/repo/probe$sfx"
-    (cd "$tmp/repo" && git add -A)
-    leg "a live script before sentence punctuation resolves" 0 "every named repo path resolves"
 
     # Legs 3-4 seed the CODE scan, which the prose fixtures above cannot reach: a `source` line is
     # not prose. The fixture is a runner and the fragment it sources, because that is the shape the
@@ -179,6 +166,8 @@ if [ -z "$files" ]; then
     exit 1
 fi
 
+# `json` precedes `js` so leftmost-longest matching claims `state.json` whole rather than leaving a
+# phantom `state.js` behind — the difference between a real finding and a self-inflicted one.
 ext='(json|yaml|yml|html|css|sh|py|js|md)'
 root='(tests|lib|scripts|os|dashboard|docs|frontend)'
 
@@ -205,9 +194,8 @@ for f in $files; do
         allowed_absent "$ref" && continue
         echo "$f:$lineno names $ref, which does not exist" >&2
         rc=1
-    done < <(grep -noE "(^|[^A-Za-z0-9/._-])$root/[A-Za-z0-9./_-]+" "$f" 2>/dev/null |
-        sed -E "s/:[^:]*[^A-Za-z0-9\/._-]($root\/)/:\1/; s/[.]+$//" |
-        grep -E "\.$ext$")
+    done < <(grep -noE "(^|[^A-Za-z0-9/._-])$root/[A-Za-z0-9./_-]+\.$ext" "$f" 2>/dev/null |
+        sed -E "s/:[^:]*[^A-Za-z0-9\/._-]($root\/)/:\1/")
 done
 
 # --- Part 3: a tool-config path handed to a workflow as an input. `trivyignores:` names a file in

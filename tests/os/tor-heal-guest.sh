@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Guest-only Tor saturation fault. Never run against a shared stack.
 set -Eeuo pipefail
 stage=initialization
 sink_started=0
@@ -11,6 +12,7 @@ export TMPDIR="$control/work"
 mkdir -p "$TMPDIR"
 work=$(mktemp -d "$TMPDIR/tor-heal.XXXXXX")
 cp config.json "$work/config.json"
+cp "$data/state" "$work/original-state"
 identities() {
     find "$data" -type f -name hs_ed25519_secret_key -exec sha256sum {} + | sort
 }
@@ -23,7 +25,11 @@ restore() {
         systemctl stop pithead-test-tor-alert.service >/dev/null 2>&1 || restored=1
     fi
     cp "$work/config.json" config.json || restored=1
-    docker compose stop tor >"$work/restore-stop.log" 2>&1 || restored=1
+    if docker compose stop tor >"$work/restore-stop.log" 2>&1; then
+        cp "$work/original-state" "$data/state" || restored=1
+    else
+        restored=1
+    fi
     docker compose start tor >"$work/restore-start.log" 2>&1 || restored=1
     ./pithead apply -y >"$work/restore.log" 2>&1 || restored=1
     if [ "$rc" != 0 ] || [ "$restored" != 0 ]; then
@@ -38,6 +44,9 @@ restore() {
     exit "$rc"
 }
 trap restore EXIT
+# An isolated guest-local webhook proves delivery while Tor egress is disabled. The dashboard runs
+# on the host network (docker-compose.yml), so it reaches a loopback sink; a container bridge
+# gateway does not exist for it.
 stage=webhook-gateway
 gateway=127.0.0.1
 cat >"$work/sink.py" <<'PYTHON'
@@ -64,178 +73,118 @@ PYTHON
 sink_started=1
 systemd-run --unit pithead-test-tor-alert --property Type=exec \
     python3 "$work/sink.py" "$gateway" "$work/alerts.jsonl" >/dev/null
+saturated() {
+    grep -qx 'CircuitBuildAbandonedCount 1000' "$1" &&
+        grep -qx 'TotalBuildTimes 1000' "$1" &&
+        ! grep -q '^CircuitBuildTimeBin ' "$1"
+}
 configure() {
     jq --argjson enabled "$1" --arg webhook "http://$gateway:18918/" \
-        '.tor.auto_heal=$enabled | .dashboard.auth.password="" | .dashboard.control.enabled=false
-        | .notifications.tor=false | .notifications.webhooks=[$webhook]' config.json >"$work/next-config"
+        '.tor.auto_heal=$enabled | .notifications.tor=false | .notifications.webhooks=[$webhook]' config.json >"$work/next-config"
     cp "$work/next-config" config.json
     ./pithead apply -y >"$work/apply.log" 2>&1
 }
-egress() {
-    timeout 60 docker exec dashboard python3 -c '
-from mining_dashboard.service.health.tor_heal import TorEgressHealer
-ok, evidence = TorEgressHealer._probe_egress()
-print("EGRESS_UP" if ok else "EGRESS_DOWN")
-print(evidence)
-' >"$work/egress.log" 2>&1 || return 2
-    if grep -qx EGRESS_UP "$work/egress.log"; then return 0; fi
-    if grep -qx EGRESS_DOWN "$work/egress.log"; then return 1; fi
-    return 2
-}
-require_egress_down() {
-    local rc=0
-    egress || rc=$?
-    [ "$rc" = 1 ]
-}
-container_start() {
-    local stamp
-    stamp=$(timeout 20 docker inspect --format '{{.State.StartedAt.Unix}}' "$1") || return 1
-    [[ "$stamp" =~ ^[0-9]+$ ]] && [ "$stamp" -gt 0 ] || return 1
-    printf '%s\n' "$stamp"
-}
-disable_network() {
-    local reply attempt
+poison() {
+    docker compose stop tor >"$work/stop.log" 2>&1
+    awk '!/^CircuitBuild/ && !/^TotalBuildTimes /' "$work/original-state" >"$data/state"
+    printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >>"$data/state"
+    docker compose start tor >"$work/start.log" 2>&1
+    # SETCONF is in-memory only: a recovery stop/start lifts DisableNetwork.
+    local reply
     for ((attempt = 0; attempt < 30; attempt++)); do
         reply=$(docker exec tor sh -c '
             cookie=$(xxd -p -c 256 /var/lib/tor/control_auth_cookie)
-            printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nGETCONF DisableNetwork\r\nQUIT\r\n" "$cookie" |
+            printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nQUIT\r\n" "$cookie" |
                 nc -w 3 127.0.0.1 9051' 2>/dev/null | tr -d '\r') || reply=""
-        if [ "$(printf '%s\n' "$reply" | grep -c '^250 OK$')" = 2 ] &&
-            printf '%s\n' "$reply" | grep -qx '250 DisableNetwork=1'; then
-            require_egress_down || return 1
-            return 0
+        if [ "$(printf '%s\n' "$reply" | grep -c '^250 OK$')" = 2 ]; then
+            saturated "$data/state"
+            return
         fi
         sleep 1
     done
     return 1
 }
+# The disabled leg leaves Tor network-disabled; `pithead apply` waits for a healthy Tor, so
+# return it to its original state and wait for health before the next apply.
 reset_tor() {
     docker compose stop tor >"$work/reset-stop.log" 2>&1
+    cp "$work/original-state" "$data/state"
     docker compose start tor >"$work/reset-start.log" 2>&1
     for ((attempt = 0; attempt < 60; attempt++)); do
-        if docker exec tor /usr/local/bin/tor-healthcheck.sh >/dev/null 2>&1 && egress; then return; fi
+        docker exec tor /usr/local/bin/tor-healthcheck.sh >/dev/null 2>&1 && return
         sleep 5
     done
     return 1
-}
-applied_heals() {
-    [ -f "$control/audit/control.log" ] || return 0
-    jq -c --arg since "$since" 'select(.ts >= $since and .actor == "tor-heal" and .status == "applied")' \
-        "$control/audit/control.log"
-}
-confirmed_newnyms() {
-    local id ids
-    ids=$(applied_heals | jq -r 'select(.action == "tor-newnym") | .id' | sort -u)
-    [ "$(printf '%s\n' "$ids" | grep -c .)" = 2 ] || return 1
-    while read -r id; do
-        jq -e '.status == "applied" and .action == "tor-newnym"' "$control/results/$id.json" >/dev/null || return 1
-    done <<<"$ids"
-}
-recovery_diagnostics() {
-    local newnyms=0 tor_after monero_after probe_rc=0 health outgoing notices
-    confirmed_newnyms && newnyms=1
-    tor_after=$(container_start tor 2>/dev/null) || tor_after=unavailable
-    monero_after=$(container_start monerod 2>/dev/null) || monero_after=unavailable
-    egress || probe_rc=$?
-    health=$(timeout 20 docker inspect --format '{{.State.Health.Status}}' monerod 2>/dev/null) || health=unavailable
-    case "$health" in healthy | unhealthy | starting) ;; *) health=unavailable ;; esac
-    outgoing=$(timeout 20 docker exec monerod /usr/local/bin/monerod-peers.sh 2>/dev/null |
-        jq -ce '.outgoing | numbers' 2>/dev/null) || outgoing=unavailable
-    notices=$(jq -s -e '[.[] | select(.text | contains("egress recovered following Tor restart;"))] | length' \
-        "$work/alerts.jsonl" 2>/dev/null) || notices=unavailable
-    printf 'Tor recovery evidence: confirmed_newnyms=%s probe_rc=%s recovery_notices=%s\n' "$newnyms" "$probe_rc" "$notices"
-    printf 'Tor recovery starts: tor=%s->%s monerod=%s->%s\n' "$tor_started" "$tor_after" "$monero_started" "$monero_after"
-    printf 'Monero recovery evidence: health=%s outgoing=%s\n' "$health" "$outgoing"
-    jq -c --arg since "$since" '
-        select((.ts | type) == "string") |
-        select(.ts | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")) |
-        select(.ts >= $since and .actor == "tor-heal") |
-        select(.action == "tor-history" or .action == "tor-newnym" or .action == "tor-recover") |
-        select(.status == "applied" or .status == "rejected" or .status == "failed") |
-        {ts,action,status}' "$control/audit/control.log" >"$work/recovery-audit.log" 2>/dev/null ||
-        printf 'Tor action audit unavailable\n' >"$work/recovery-audit.log"
-    if ! timeout 20 docker logs --since "$since" --tail 1000 dashboard 2>&1 |
-        grep -E '^[0-9-]+ [0-9:,.]+ \[(INFO|WARNING|DEBUG)\] (Tor (egress self-heal|clearnet egress|NEWNYM|recovery control|heal cycle)|Restarting monerod alongside tor)' |
-        tail -50 >"$work/healer.log"; then
-        printf 'Tor healer log unavailable\n' >"$work/healer.log"
-    fi
 }
 backup_count() {
     find "$data" -maxdepth 1 -name 'state.backup.*' -type f | wc -l
 }
 stage=configure-disabled
 configure false
-if ./pithead control-run-pending >"$work/disabled-runner.log" 2>&1; then exit 1; fi
-grep -qx 'DASHBOARD_CONTROL_ENABLED=false' .env
 before=$(backup_count)
-tor_started=$(container_start tor)
-monero_started=$(container_start monerod)
-egress
-since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 stage=inject-disabled
-disable_network
+poison
 stage=observe-disabled
 deadline=$(($(date +%s) + 90 * 60))
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    require_egress_down
-    [ "$(container_start tor)" = "$tor_started" ]
-    [ "$(container_start monerod)" = "$monero_started" ]
-    applied_heals | jq -s -e 'length == 0' >/dev/null
+    saturated "$data/state"
     [ "$(backup_count)" = "$before" ]
     sleep 30
 done
-echo 'PASS: auto-heal off leaves real egress broken with no healing throughout the recovery window (#3118, #3166)'
+echo 'PASS: auto-heal off preserves saturated state throughout the full recovery window (#3118)'
 : >"$work/alerts.jsonl"
 stage=reset-tor
 reset_tor
 stage=configure-enabled
 configure true
-stage=verify-heal-only
-grep -qx 'DASHBOARD_CONTROL_ENABLED=false' .env
-systemctl is-active --quiet pithead-control.path
-id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-jq -n --arg id "$id" '{id:$id,action:"restart",actor:"tor-heal"}' >"$work/request.json"
-cp "$work/request.json" "$control/requests/.$id.tmp"
-mv "$control/requests/.$id.tmp" "$control/requests/$id.json"
-for ((attempt = 0; attempt < 60; attempt++)); do
-    [ ! -f "$control/results/$id.json" ] || break
-    sleep 1
-done
-jq -e '.status == "rejected" and .error == "only Tor healing is enabled"' "$control/results/$id.json" >/dev/null
-echo 'PASS: No login keeps general control disabled and rejects unrelated requests (#3166)'
 before=$(backup_count)
-tor_started=$(container_start tor)
-monero_started=$(container_start monerod)
-egress
-since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 stage=inject-enabled
-disable_network
+poison
 started=$(date +%s)
-deadline=$((started + 110 * 60))
-stage=host-recovery
-recovered=0
+deadline=$((started + 25 * 60))
+stage=first-round-alert
+diagnosed=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    if confirmed_newnyms && tor_after=$(container_start tor) && monero_after=$(container_start monerod) &&
-        [ "$tor_after" != "$tor_started" ] && [ "$monero_after" != "$monero_started" ] && egress &&
-        [ "$(docker inspect --format '{{.State.Health.Status}}' monerod)" = healthy ] &&
-        docker exec monerod /usr/local/bin/monerod-peers.sh | jq -e '(.outgoing | numbers) > 0' >/dev/null &&
-        jq -e 'select(.text | contains("egress recovered following Tor restart;"))' "$work/alerts.jsonl" >/dev/null; then
-        recovered=1
+    if jq -e 'select(.text | contains("circuit-build-time history is saturated"))' \
+        "$work/alerts.jsonl" >/dev/null 2>&1; then
+        diagnosed=1
         break
     fi
     sleep 30
 done
-if [ "$recovered" != 1 ]; then recovery_diagnostics; fi
-[ "$recovered" = 1 ]
+[ "$diagnosed" = 1 ]
+echo 'PASS: first-round saturated alert is delivered within 25 minutes (#3118)'
+deadline=$((started + 95 * 60))
+stage=host-recovery
+applied=0
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    if find "$control/results" -maxdepth 1 -name '*.json' -type f -exec \
+        jq -e --argjson started "$started" 'select(.action == "tor-recover" and .status == "applied" and .ts >= $started)' {} \; 2>/dev/null |
+        grep 'tor-recover' >/dev/null; then
+        applied=1
+        break
+    fi
+    sleep 30
+done
+[ "$applied" = 1 ]
 stage=verify-recovery
-confirmed_newnyms
-applied_heals | jq -s -e '[.[] | select(.action == "tor-recover")] | length == 0' >/dev/null
-[ "$(backup_count)" = "$before" ]
+[ "$(backup_count)" -gt "$before" ]
+stamp=$(cat "$control/tor-recovery-at")
+saturated "$data/state.backup.$stamp"
+[ -s "$data/state" ] && ! saturated "$data/state"
 identities >"$work/after-identities"
 cmp "$work/identities" "$work/after-identities"
 docker exec tor /usr/local/bin/tor-healthcheck.sh
-jq -s -e '[.[] | select(.text | contains("egress recovered following Tor restart;"))] | length == 1' "$work/alerts.jsonl" >/dev/null
-docker logs --since "$since" dashboard >"$work/healer.log" 2>&1
-grep -qF 'Restarting Tor; mining connections will drop.' "$work/healer.log"
-grep -qF 'Restarting monerod alongside tor' "$work/healer.log"
-echo 'PASS: No login host-runner NEWNYM and final healer restart restore real egress and local Monero, preserving onion keys (#3118, #3166)'
+# Both diagnosis and confirmed-reset notes must be delivered once for this outage.
+deadline=$(($(date +%s) + 10 * 60))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    if jq -e 'select(.text | contains("reset saturated circuit history and guards"))' "$work/alerts.jsonl" >/dev/null; then
+        break
+    fi
+    sleep 30
+done
+jq -s -e '
+    [.[] | select(.text | contains("circuit-build-time history is saturated"))] | length == 1' "$work/alerts.jsonl" >/dev/null
+jq -s -e '
+    [.[] | select(.text | contains("reset saturated circuit history and guards"))] | length == 1' "$work/alerts.jsonl" >/dev/null
+echo 'PASS: guest host-gated recovery backs up saturation, clears state, preserves identities and restores Tor health (#3118)'

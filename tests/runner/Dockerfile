@@ -1,3 +1,21 @@
+# The Linux toolchain `make test` assumes, as an image (#2078).
+#
+# This exists so a contributor on macOS or Windows can run tiers 1-3 and get the verdict CI gets.
+# #2041 made the shell suite REFUSE on Darwin, because the assertions are written against GNU
+# sed/stat and BSD tools differ without failing loudly — and because a host `grep` that is a ugrep
+# shim silently matched nothing for a pattern holding a non-terminal `$`, which three reviewers
+# read as evidence. A fallback cannot fix that class: the binary has the right name, the right
+# flags, exit code 0, and the wrong answer. Only a known userland can.
+#
+# Same argument scripts/install-test-tools.sh makes for the bench's tool images, one level up:
+# pinned images are visible to Dependabot and Trivy, host installs are not.
+#
+# Nothing here reaches a user. The release bundle (scripts/release/bundle.sh) and the appliance
+# image (os/rootfs/Dockerfile) are strict allowlists of named paths, and no tests/ path can enter
+# either — tests/stack/release asserts that rather than trusting it.
+#
+# Node is the awkward pin (CI runs 20, Debian ships 18), so the base solves it. Python is uv's
+# job: dashboard/.python-version pins 3.11 and uv fetches it on first run.
 FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
 
 # The versions come from the Makefile — it is the one place either is written (#1679, #1688) — and
@@ -14,9 +32,39 @@ ARG SHFMT_SHA256_arm64=32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1
 ARG SHELLCHECK_SHA256_x86_64=8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
 ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588
 
+# e2fsprogs: the shell suite builds loopback filesystems for the data-reset and hugepages fixtures.
+# openssh-client: tier 4's live matrix drives a REMOTE box (`run.sh --host`), so the driver needs
+# an ssh client even though nothing else here does.
+# python3: a SYSTEM interpreter on PATH, which uv does not provide — its Python belongs to the
+# project. The address-validation suites shell out to `python3` for Monero's keccak checksum and
+# Tari's DammSum, and WITHOUT it they do not error: they degrade to shape-only and report
+# 'unchecked'/'primary'. That is the largest cluster of the 60 failures this image's missing tools
+# produced between them — not separately attributed, because no controlled one-tool-at-a-time run
+# was made. CONTRIBUTING lists Python 3 as a host requirement for exactly this reason.
+# xxd: build/tor/healthcheck-selftest.sh builds an isolated PATH by symlinking each command the
+# tor image ships. A missing one does not skip — `command -v` yields empty, `ln` makes a link to
+# nothing, and the case that should prove PATH isolation reports the wrong verdict instead.
+# docker-cli + compose plugin: test-compose, test-mini-stack, test-netwatch and lint-proto all
+# shell out to docker. The daemon is the HOST's, reached through the mounted socket.
+# sudo: ONE fixture needs real root — tests/stack/appliance/test-appliance-wizard-spool.sh builds a
+# genuine root/page UID boundary with setpriv and refuses to count itself as passed without it
+# (`bad ... "not run"`, #2086). It is a deliberate widening and worth naming rather than slipping
+# in: this container is already handed the host's Docker socket, which is host-root-equivalent by
+# itself (`docker run -v /:/host --privileged` is one command away), so NOPASSWD root INSIDE the
+# container grants strictly less than it already holds. The default user stays non-root, so the
+# permission-denied fixtures that root would silently bypass are untouched.
+# jq is deliberately NOT in this list — it is pinned from upstream below; see that block for why.
+# The two keyrings below are fetched over TLS with no fingerprint pin — the method each vendor
+# documents, and weaker than the byte-exact sha256 pins this file uses for shellcheck and shfmt.
+# Named rather than hidden: it is trust-on-first-use against download.docker.com and
+# cli.github.com, and it is the least-pinned thing in this image.
+# buildx is NOT optional here, and the failure it prevents is not obvious: without the plugin,
+# `docker compose build` falls back to the classic builder, which rejects the
+# `RUN --mount=type=cache` in dashboard/Dockerfile. Tier 3 dies at "docker compose build failed"
+# with nothing pointing at the real cause. Measured, not guessed (#2078).
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash ca-certificates coreutils curl e2fsprogs findutils git gnupg iproute2 make \
+    bash ca-certificates coreutils curl e2fsprogs findutils git gnupg make \
     openssh-client python3 sudo xxd \
     procps tar xz-utils \
     && install -m 0755 -d /etc/apt/keyrings \

@@ -50,5 +50,5 @@ assert_eq "...and the restore then refuses and removes nothing" \
     "$(lan_restore pithead-lan-guard.service "$(unit_state_with 'exit 1')" present)" "1 present 0"
 assert_contains "verify_restore_proof restores both LAN units" "$(declare -f verify_restore_proof)" \
     'restore_lan_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE"'
-assert_contains "e2e.sh records both before deploy_branch installs them" "${RESTORE_UNIT_MAP[*]}" \
-    'LAN_UNIT_BEFORE:pithead-lan-guard.service HOLD_UNIT_BEFORE:pithead-lan-hold.service'
+assert_contains "e2e.sh records both before deploy_branch installs them" "$(cat "$E2E_SRC")" \
+    'LAN_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-guard.service)" HOLD_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-hold.service)"'

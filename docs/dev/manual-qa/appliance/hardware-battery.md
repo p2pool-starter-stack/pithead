@@ -72,11 +72,8 @@ plug at the wall on real hardware to confirm Restore on AC Power Loss, not the w
 
 ### M10 — power cut during normal mining
 
-*Covered by: the `provision` phase checks stack recovery after each of three cuts
-(`tests/os/phases/provision-power-cut.sh`). With reserved remote nodes, the `rig` phase
-also cuts a mining coordinator and requires both its built-in miner and the attached rig
-to advance their accepted counters on the new boot (`tests/os/rig-share-leg.sh`, #3077).
-Firmware Restore on AC Power Loss remains a hardware check.*
+*Covered by: `provision` phase's power-cut leg (M10, #2067, `tests/os/phases/provision-power-cut.sh`),
+which checks the complete recovery after every one of its three cuts — same caveat.*
 
 **What you do:**
 

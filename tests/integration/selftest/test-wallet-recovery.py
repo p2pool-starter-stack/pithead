@@ -371,8 +371,8 @@ class RecoveryTest(RecoveryBase):
             self.assertEqual({p.name for p in self.directory.iterdir()}, {"state.json"})
         state["contents"][keys] = good
         fixture.write_state(self.directory, state)
-        self.refused("receipt")
-        self.assertEqual(self.receipt(), b"READY\n")
+        self.assertEqual(self.recover()["proof"]["keys_fingerprint"], good[2])
+        self.assertEqual(self.receipt(), b"VERIFIED\n")
 
     def test_a_verdict_that_fails_its_schema_keeps_the_receipt_and_the_fence(self):
         self.prepare()
@@ -382,16 +382,16 @@ class RecoveryTest(RecoveryBase):
         self.assertEqual(self.receipt(), b"ARMED\n")
         self.assertTrue((self.directory / "wallet.tar").exists())
 
-    def test_a_completed_cleanup_without_durable_proof_refuses_without_importing(self):
+    def test_a_completed_cleanup_without_a_verified_receipt_resumes_without_importing(self):
         self.prepare()
         fixture.restore(self.directory, self.baseline, self.root / "branch")
         fixture.receipt(self.job, "READY")
         fixture.cleanup(self.directory, self.baseline)
         self.docker.calls.clear()
-        self.refused("receipt")
-        self.assertEqual(self.receipt(), b"READY\n")
-        self.assertFalse(self.docker.calls)
-        self.assertEqual(self.steps.calls, [])
+        verdict = self.recover()
+        self.assertEqual(verdict["proof"]["method"], "resumed")
+        self.assertEqual(self.receipt(), b"VERIFIED\n")
+        self.assertFalse(self.imports())
 
 
 if __name__ == "__main__":

@@ -17,8 +17,8 @@ baseline, and the readiness gate lives in this repository's harness.
 
 Run `tests/integration/lib/wallet_fixture_recovery.py` from its source checkout, as the snapshot
 owner, with the files it loads and sources kept at their relative layout: `tests/integration/lib.sh`
-and, in `tests/integration/lib/`, the Python files `wallet-fixture.py`,
-`wallet_fixture_supersession.py` and `wallet_fixture_recovery_record.py` and the scripts `wallet-fixture-recovery.sh`, `chain-keep.sh`,
+and, in `tests/integration/lib/`, the Python files `wallet-fixture.py` and
+`wallet_fixture_supersession.py` and the scripts `wallet-fixture-recovery.sh`, `chain-keep.sh`,
 `parent-lock.sh`, `readiness-churn.sh`, `redact-it-password.sh`, `remote-endpoints.sh`,
 `reset-restore-web.sh`, `restore-mining-ready.sh`, `run-tari-wallet.sh`, `skip-accounting.sh` and
 `wallet-diagnostics.sh`. Pass the baseline checkout, the snapshot directory and the original job
@@ -54,8 +54,6 @@ live-wallet proof, two graceful stops, the start and the gate) can add up to mor
 
 ## Steps
 
-A matching durable record takes the replay path described below. A new restoration runs these steps:
-
 1. Validate the request, the owner-only job directory and snapshot, the archive sizes, the receipt
    (`ARMED`, `NOT_PROVEN` or `READY`), that the baseline wallet identity in `.env` still equals the
    snapshot's, and the archive digests and manifest. The manifest must name exactly one prepared wallet
@@ -75,8 +73,7 @@ A matching durable record takes the replay path described below. A new restorati
    and wait for synced chains, a healthy status and running mining services.
 5. Run the same readiness gate (`assert_payout_wallet_ready confirmed Monero`): the 1200-second Monero
    catch-up and the 420-second authenticated dashboard and address checks.
-6. Verify the lock again and atomically persist the validated verdict in the job directory. Write
-   `READY`, run `cleanup` to remove the archives, then write `VERIFIED`.
+6. Verify the lock again, write `READY`, run `cleanup` to remove the archives, then write `VERIFIED`.
 
 The start does not run `recreate_test_checkout_containers` or `verify_restore_proof`, which `e2e.sh`
 runs before it verifies the wallet, so `VERIFIED` vouches for the wallet only: the caller proves the rest
@@ -131,12 +128,12 @@ A refusal exits 1 with a fixed reason and no other text:
 | Reason | Cause |
 |---|---|
 | `request`, `evidence` | Malformed request, wrong argument count, or an unsafe or mismatched job directory, snapshot or archive size |
-| `superseded`, `receipt`, `helper` | The fixture is retired, the receipt is not recoverable (`VERIFIED` requires matching durable proof), or a helper container for the snapshot is active |
+| `superseded`, `receipt`, `helper` | The fixture is retired, the receipt is not `ARMED`, `NOT_PROVEN` or `READY`, or a helper container for the snapshot is active |
 | `identity`, `archive` | The baseline wallet identity changed or the live wallet is not the snapshot's; the archive or image digest, or the manifest, differs |
 | `pair` | The snapshot does not name exactly one prepared wallet pair (several retained pairs, or no keys file), or a recorded archive or keys fingerprint is missing or malformed |
 | `busy`, `lock` | The rig lock is held elsewhere, or the runner's lock no longer verifies |
 | `import`, `startup`, `readiness` | The restore, the baseline start, or the readiness gate failed or timed out |
-| `verdict`, `seal` | The verdict or durable proof is malformed, unsafe or mismatched, or proof publication, receipt sealing or cleanup failed |
+| `verdict`, `seal` | The verdict failed its own schema (before any receipt is written), or a receipt or cleanup write failed |
 | `interrupted`, `internal` | SIGTERM, SIGHUP or SIGINT arrived, or an unexpected error occurred |
 
 A refusal before the import leaves the receipt, the snapshot and its stage unchanged. After the import
@@ -147,40 +144,16 @@ both keep the fence the runner holds.
 ## Retry and resume
 
 An import interrupted at `restoring` re-imports from scratch on retry, whatever state the wallet
-consumer is in by then (removed, exited non-zero, or still scanning), and reports `resumed`.
-
-Before irreversible cleanup, the helper writes
-`wallet-fixture-recovery.json` in the job directory with mode `0600`, flushes and fsyncs it, atomically
-renames it, then fsyncs the job directory. The record contains the original validated verdict, exact
-request, job/snapshot/baseline paths and a sha256 fingerprint of the snapshot metadata excluding its
-mutable stage. It contains no address, view key or credential and stays private with the job evidence.
-The helper owns this record; callers must not construct, edit or substitute it.
-
-An exact retry validates the private record, closed schemas, request, paths, immutable snapshot state,
-archive and keys fingerprints, configured wallet identity and receipt while holding the recovery lock.
-A published record at `import_verified` or `ready` resumes only receipt sealing and cleanup. A completed
-`VERIFIED` operation requires stage `ready` and only `state.json` left in the snapshot, and returns the
-original verdict. Neither path imports, starts or reads the live wallet again. This is historical proof
-of the completed restoration, not a claim that the wallet or baseline has stayed unchanged since then.
-An interruption after proof publication, during cleanup, after the final receipt write or before stdout
-delivery therefore supports the same exact retry. Altered requests, malformed/unsafe proof or mismatched
-snapshot metadata refuse without changing receipts, archives or retained holds. A `VERIFIED` receipt
-or a cleaned snapshot at stage `ready` without this record is insufficient and refuses; the removed
-archives cannot reconstruct the original request-bound proof.
-
-The record relies on private ownership and filesystem integrity, not a signature against its owner.
-Keep it under the caller's protected evidence retention budget alongside the receipt and snapshot state.
-Do not publish its paths or metadata. The caller must validate the returned verdict against its saved
-request and snapshot fingerprints, independently verify the canonical baseline and synchronization,
-then durably record its own transaction before releasing only the matching reservation and fence.
-A receipt or this wallet-only proof cannot replace those caller checks.
+consumer is in by then (removed, exited non-zero, or still scanning), and reports `resumed`. A run that
+finished `cleanup` but not the `VERIFIED` write leaves stage `ready` with the archives gone; the retry
+skips the import, starts the baseline, runs the gate again and writes the receipts. A receipt left at
+`READY` retries the same way.
 
 ## Verification
 
 `tests/integration/selftest/selftest-wallet-recovery.sh` runs without Docker or a wallet. The Python
-tests (`test-wallet-recovery.py`, `test-wallet-recovery-interface.py`,
-`test-wallet-recovery-live.py`, and `test-wallet-recovery-replay.py`) cover the success path, an interrupted
-import resumed from
+tests (`test-wallet-recovery.py`, `test-wallet-recovery-interface.py` and
+`test-wallet-recovery-live.py`) cover the success path, an interrupted import resumed from
 `restoring`, a corrupt archive, a wallet identity that does not match (configuration and live), a live
 wallet in the e2e checkout or a third one, a retry after the import began with the consumer gone, a
 superseded fixture, an active helper, unsafe receipts and job directories, a failed start or gate, a
@@ -189,9 +162,7 @@ tampered recorded fingerprint refused as `pair` before any lock, start or import
 stage unchanged, a verdict that fails its schema refused as `verdict`, the closed request and verdict
 schemas, the rig lock held for the whole run, and the process-group stop on a timeout. The shell checks
 cover the start command for a source checkout and a bundle, the reused readiness gate and the lock
-verification. They also inject interruption before proof publication, between rename and directory
-fsync, after publication, after `READY`, during partial cleanup, after `VERIFIED`, and before response
-delivery, requiring safe exact replay and refusal of damaged or mismatched proof.
+verification.
 
 The live path (real Docker, the baseline start and the gate) is proved by the lifecycle phase on a DIY
 checkout, as a `tier4-e2e` job with `phases: [lifecycle]` on the PR's head and a borrowed miner. The
@@ -210,9 +181,8 @@ harness's own prepared wallet and never on another job's evidence:
    fingerprints, and to report a live comparison (`encrypted_keys` or `isolated_open`) with the import
    verified and the wallet ready.
 4. Require the `VERIFIED` receipt; only `state.json` left in the snapshot with stage `ready`; only the
-   receipt and private recovery record in the job directory; no helper container for the snapshot and
-   no proof directory left.
-5. Run the same request again and require the identical validated verdict.
+   receipt in the job directory; no helper container for the snapshot and no proof directory left.
+5. Run the same request again and require the refusal `receipt`.
 
 `selftest-wallet-recovery-proof.sh` covers the proof's plumbing, assertions and failure labels and the shell
 leg without a bench. `selftest-lifecycle-gate-wiring.sh` requires a failed proof to end `run_lifecycle` with

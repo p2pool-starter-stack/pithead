@@ -86,13 +86,12 @@ seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 kept_dir="$V/"'kept $literal'
 jq --arg dir "$kept_dir" '.monero.data_dir = $dir' "$V/config.json" >"$V/config.json.tmp" && mv "$V/config.json.tmp" "$V/config.json"
-out="$(cd "$V" && COMPOSE_PROJECT_NAME=pithead-gate PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
 assert_rc "uninstall fixture: self-provisioned apply succeeds" "$rc" "0"
-assert_eq "render preserves the exported project" "$(grep '^COMPOSE_PROJECT_NAME=' "$V/.env")" "COMPOSE_PROJECT_NAME=pithead-gate"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "apply with a project from env succeeds" "$?" "0"
-assert_eq "apply retains the env project" "$(grep '^COMPOSE_PROJECT_NAME=' "$V/.env")" "COMPOSE_PROJECT_NAME=pithead-gate"
+# apply's ensure_directories/prepare_control_dirs/inject_service_configs create every derived
+# state dir unconditionally (#2379 §3), regardless of which chain/TLS flags the fixture config
+# sets — sanity-check that before trusting the removal assertions below.
 missing_derived=""
 for d in data/control data/clearnet-state data/caddy-logs data/proxy-tls; do
     [ -d "$V/$d" ] || missing_derived="$missing_derived $d"
@@ -166,7 +165,7 @@ case "$*" in
 "compose up --no-deps --no-start tari-wallet")
     grep -Eq '^COMPOSE_PROFILES=.*(^|,)tari_payout_confirm(,|$)' .env || exit 1
     [ ! -f .wallet-volume ] || exit 1
-    printf 'pithead-gate/tari_wallet_db\n' >.wallet-volume
+    printf 'pithead/tari_wallet_db\n' >.wallet-volume
     : >.wallet-container
     echo "[docker] $*" >>"$DOCKER_LOG" ;;
 "compose rm -sf tari-wallet")
@@ -176,12 +175,12 @@ case "$*" in
     if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_db; fi ;;
 "volume ls -q")
     [ "${FAIL_WALLET_LIST:-0}" != 1 ] || exit 1
-    [ ! -f .wallet-volume ] || echo pithead-gate_tari_wallet_db
+    [ ! -f .wallet-volume ] || echo pithead_tari_wallet_db
     [ ! -f .unrelated-volume ] || echo pithead_itest_unrelated ;;
-'volume inspect pithead-gate_tari_wallet_db --format {{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}')
+'volume inspect pithead_tari_wallet_db --format {{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}')
     [ "${FAIL_WALLET_INSPECT:-0}" != 1 ] || exit 1
     cat .wallet-volume ;;
-"volume rm pithead-gate_tari_wallet_db")
+"volume rm pithead_tari_wallet_db")
     [ "${FAIL_WALLET_RM:-0}" != 1 ] || exit 1
     echo "[docker] $*" >>"$DOCKER_LOG"
     rm .wallet-volume ;;
@@ -198,7 +197,7 @@ sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari,tari_p
 out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" docker compose up --no-deps --no-start tari-wallet 2>&1)
 assert_rc "active Compose profile creates the wallet service" "$?" "0"
 assert_eq "Compose creation leaves the wallet volume with project and volume ownership" \
-    "$(cat "$V/.wallet-volume" 2>/dev/null)" "pithead-gate/tari_wallet_db"
+    "$(cat "$V/.wallet-volume" 2>/dev/null)" "pithead/tari_wallet_db"
 assert_eq "Compose created the wallet container before profile disable" \
     "$([ -f "$V/.wallet-container" ] && echo yes)" "yes"
 (cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" docker compose rm -sf tari-wallet)
@@ -212,7 +211,7 @@ assert_eq "inactive Compose model excludes the wallet volume" \
 # With -y: the three columns print, all named volumes go, every derived path is removed,
 # and every kept path survives byte-identical.
 : >"$DOCKER_LOG"
-out=$(cd "$V" && TOR_AUTO_HEAL=true DOCKER_LOG="$DOCKER_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
 assert_contains "uninstall states the removed column" "$out" "Removed:"
 assert_contains "uninstall states the kept column" "$out" "Kept (yours):"
 assert_contains "uninstall states the left-behind column" "$out" "Left behind"
@@ -228,7 +227,7 @@ assert_eq "uninstall removes the Tari wallet volume outside the inactive Compose
 assert_eq "uninstall preserves the unrelated volume" \
     "$([ -f "$V/.unrelated-volume" ] && echo present)" "present"
 assert_eq "uninstall removes only the exact Tari wallet volume" \
-    "$(grep -F '[docker] volume rm ' "$DOCKER_LOG")" "[docker] volume rm pithead-gate_tari_wallet_db"
+    "$(grep -F '[docker] volume rm ' "$DOCKER_LOG")" "[docker] volume rm pithead_tari_wallet_db"
 assert_eq "uninstall removes .env" "$([ -f "$V/.env" ] || echo gone)" "gone"
 assert_eq "uninstall removes Caddyfile" "$([ -f "$V/Caddyfile" ] || echo gone)" "gone"
 assert_eq "uninstall removes the rendered Tari config" "$([ -f "$V/build/tari/config.toml" ] || echo gone)" "gone"
@@ -279,7 +278,9 @@ rm -f "$V/bin/systemctl"
 unset UNINSTALL_UNITS
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
-out="$(cd "$V" && COMPOSE_PROJECT_NAME=pithead-gate PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+# A derived key an operator pointed at the data root is refused, never `rm -rf`'d: .env is
+# editable, and no edit may turn uninstall into the removal of the chains under it.
 grep -v '^CONTROL_DIR=\|^CLEARNET_STATE_DIR=' "$V/.env" >"$V/.env.tmp" && mv "$V/.env.tmp" "$V/.env"
 printf 'CONTROL_DIR=%s\nCLEARNET_STATE_DIR=%s\n' "$V/data" "$SANDBOX/elsewhere/clearnet-state" >>"$V/.env"
 mkdir -p "$V/data/tari" "$SANDBOX/elsewhere/clearnet-state" && printf 'marker' >"$V/data/tari/guard.txt"
@@ -294,32 +295,32 @@ chmod +x "$V/bin/systemctl"
 : >"$V/data/control/.claim.1"
 SECONDS=0
 cp "$V/bin/docker-wallet" "$V/bin/docker"
-printf 'pithead-gate/tari_wallet_db\n' >"$V/.wallet-volume"
+printf 'pithead/tari_wallet_db\n' >"$V/.wallet-volume"
 rc=0
 out=$(cd "$V" && FAIL_WALLET_LIST=1 PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
 assert_eq "uninstall refuses a failed wallet volume list" "$([ "$rc" -ne 0 ] && echo refused)" "refused"
 assert_contains "uninstall reports the wallet listing failure" "$out" "Could not list Docker volumes"
 assert_eq "failed wallet listing keeps .env for retry" "$([ -f "$V/.env" ] && echo yes)" "yes"
-assert_eq "failed wallet listing keeps the volume" "$(cat "$V/.wallet-volume")" "pithead-gate/tari_wallet_db"
+assert_eq "failed wallet listing keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_db"
 rc=0
 out=$(cd "$V" && FAIL_WALLET_INSPECT=1 PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
 assert_eq "uninstall refuses a failed wallet volume inspection" "$([ "$rc" -ne 0 ] && echo refused)" "refused"
-assert_contains "uninstall reports the wallet inspection failure" "$out" "Could not inspect pithead-gate_tari_wallet_db"
+assert_contains "uninstall reports the wallet inspection failure" "$out" "Could not inspect pithead_tari_wallet_db"
 assert_eq "failed wallet inspection keeps .env for retry" "$([ -f "$V/.env" ] && echo yes)" "yes"
-assert_eq "failed wallet inspection keeps the volume" "$(cat "$V/.wallet-volume")" "pithead-gate/tari_wallet_db"
+assert_eq "failed wallet inspection keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_db"
 rc=0
 out=$(cd "$V" && FAIL_WALLET_RM=1 PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
 assert_eq "uninstall refuses a failed wallet volume removal" "$([ "$rc" -ne 0 ] && echo refused)" "refused"
-assert_contains "uninstall reports the wallet removal failure" "$out" "Could not remove pithead-gate_tari_wallet_db"
+assert_contains "uninstall reports the wallet removal failure" "$out" "Could not remove pithead_tari_wallet_db"
 assert_eq "failed wallet removal keeps .env for retry" "$([ -f "$V/.env" ] && echo yes)" "yes"
-assert_eq "failed wallet removal keeps the volume" "$(cat "$V/.wallet-volume")" "pithead-gate/tari_wallet_db"
+assert_eq "failed wallet removal keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_db"
 printf 'other/volume\n' >"$V/.wallet-volume"
 FOREIGN_VOLUME_LOG="$V/docker-foreign.log"
 : >"$FOREIGN_VOLUME_LOG"
 out=$(cd "$V" && DOCKER_LOG="$FOREIGN_VOLUME_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
 assert_eq "uninstall keeps a same-named volume without Pithead's Compose labels" \
     "$(cat "$V/.wallet-volume")" "other/volume"
-assert_not_contains "uninstall does not remove a foreign volume" "$(cat "$FOREIGN_VOLUME_LOG")" "volume rm pithead-gate_tari_wallet_db"
+assert_not_contains "uninstall does not remove a foreign volume" "$(cat "$FOREIGN_VOLUME_LOG")" "volume rm pithead_tari_wallet_db"
 cp "$V/bin/docker-base" "$V/bin/docker"
 rm -f "$V/.wallet-volume" "$V/bin/docker-wallet" "$V/bin/docker-base"
 assert_eq "uninstall drains the runner in the CONTROL_DIR restored from .env" "$([ "$SECONDS" -lt 20 ] && echo prompt || echo "waited ${SECONDS}s")" "prompt"

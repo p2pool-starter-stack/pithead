@@ -14,28 +14,46 @@ DR_FAIL=0
 
 dr_ok() {
     DR_OK=$((DR_OK + 1))
-    dr_record ok "$2" "$1"
-    printf '  %b✓ OK%b   %s\n' "$C_GREEN" "$C_RESET" "$2"
+    dr_record ok "$1"
+    printf '  %b✓ OK%b   %s\n' "$C_GREEN" "$C_RESET" "$1"
 }
 dr_warn() {
     DR_WARN=$((DR_WARN + 1))
-    dr_record warn "$2" "$1"
-    printf '  %b⚠ WARN%b %s\n' "$C_YELLOW" "$C_RESET" "$2"
+    dr_record warn "$1"
+    printf '  %b⚠ WARN%b %s\n' "$C_YELLOW" "$C_RESET" "$1"
 }
 dr_fail() {
     DR_FAIL=$((DR_FAIL + 1))
-    dr_record fail "$2" "$1"
-    printf '  %b✗ FAIL%b %s\n' "$C_RED" "$C_RESET" "$2"
+    dr_record fail "$1"
+    printf '  %b✗ FAIL%b %s\n' "$C_RED" "$C_RESET" "$1"
 }
+# Neutral note for context lines that aren't pass/fail (e.g. a skipped Linux-only check).
 dr_info() {
-    dr_record info "$2" "$1"
-    printf '  %b•%b      %s\n' "$C_YELLOW" "$C_RESET" "$2"
+    dr_record info "$1"
+    printf '  %b•%b      %s\n' "$C_YELLOW" "$C_RESET" "$1"
 }
-dr_fail_surface() { if is_appliance; then dr_fail "$1" "$3"; else dr_fail "$1" "$2"; fi; }
-dr_warn_surface() { if is_appliance; then dr_warn "$1" "$3"; else dr_warn "$1" "$2"; fi; }
-dr_info_surface() { if is_appliance; then dr_info "$1" "$3"; else dr_info "$1" "$2"; fi; }
-dr_record() { [ -n "${DR_JSON_FILE:-}" ] && printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$DR_JSON_FILE" || true; }
+# One verdict, worded for the surface the operator is actually on (#1213). Doctor's messages reach
+# the dashboard verbatim since the diagnostics verbs landed -- control_diag_doctor runs
+# `doctor --json` and every dr_fail/dr_warn message ships as {status, message} -- so a remedial
+# string naming a CLI verb is a dead end on an appliance, which has no shell. That is the defect
+# class the refusal strings were already fixed for; these are the same treatment for doctor.
+# First argument is the DIY/host wording, byte for byte what it always was. The second is what an
+# appliance operator is told instead, and it NEVER invents a remedy: it names a dashboard surface
+# only where one exists (the setup page, the one-click upgrade, the per-container log view) and
+# otherwise states the diagnosis and stops -- the same choice describe_change makes when there is
+# no remedy to offer. is_appliance resolves at call time, as it already does elsewhere here.
+dr_fail_surface() { if is_appliance; then dr_fail "$2"; else dr_fail "$1"; fi; }
+dr_warn_surface() { if is_appliance; then dr_warn "$2"; else dr_warn "$1"; fi; }
+dr_info_surface() { if is_appliance; then dr_info "$2"; else dr_info "$1"; fi; }
+# `doctor --json` capture (#77 phase 1): every check verdict lands as a status<TAB>message line in
+# DR_JSON_FILE when set; doctor assembles the machine report from it. TSV keeps this a plain
+# append — messages are prose and never carry tabs.
+dr_record() { [ -n "${DR_JSON_FILE:-}" ] && printf '%s\t%s\n' "$1" "$2" >>"$DR_JSON_FILE" || true; }
 
+# Best-effort system-clock sync status. Mining is time-sensitive — P2Pool/Monero stamp shares and
+# blocks, so a skewed clock gets shares/blocks rejected ("strongly recommended to synchronize your
+# system clock before you start mining"). Prints: synced | unsynced | unknown. Pure given the
+# timedatectl output, so a stubbed timedatectl makes the classification unit-testable.
 clock_sync_status() {
     command -v timedatectl >/dev/null 2>&1 || {
         echo unknown
@@ -90,9 +108,20 @@ docker_boot_enabled() {
 check_hugepages_degraded() {
     local marker="${PITHEAD_HUGEPAGES_MARKER:-/run/pithead-hugepages-degraded}"
     [ -f "$marker" ] || return 0
-    dr_warn hugepages-degraded "$(head -n 1 "$marker" | tr '\t' ' ')"
+    dr_warn "$(head -n 1 "$marker" | tr '\t' ' ')"
 }
 
+# The Memory section's HugePages verdict. A pool counts as reserved only when it holds this
+# machine's budget (hugepages_decision_pages: the full 3072 pages, or the appliance's recorded
+# reduced pool), and never less than P2Pool's own RandomX pages — any non-zero pool used to read
+# OK, and a bench said OK at 186 pages (#2610). A short pool is a WARN, never a FAIL: the
+# appliance's A/B commit gate takes doctor's exit code. Below P2Pool's dataset the wording states
+# the cost: P2Pool puts its dataset and caches in up to 2592 MiB of ordinary RAM, which its 4 GiB
+# memory limit holds (#2562) but the rest of the machine loses. Above that a short pool says the
+# same conditionally: monerod builds no dataset unless it mines, but its two RandomX caches and a
+# scratchpad page per hashing thread share the pool, so no fixed size short of the budget
+# guarantees P2Pool its 1040.
+# Reads PITHEAD_MEMINFO, the overlay's override, so the stack suite runs it against fixtures.
 check_hugepages_reserved() {
     local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" total free need who="this machine needs for RandomX" short
     total=$(awk '/^HugePages_Total/{print $2}' "$meminfo" 2>/dev/null || true)
@@ -102,9 +131,9 @@ check_hugepages_reserved() {
         need=$P2POOL_RANDOMX_PAGES who="P2Pool's RandomX dataset and its two caches need"
     fi
     if [[ ! "$total" =~ ^[0-9]+$ ]]; then
-        dr_warn hugepages "Could not read HugePages from $meminfo."
+        dr_warn "Could not read HugePages from $meminfo."
     elif [ "$total" -ge "$need" ]; then
-        dr_ok hugepages "HugePages reserved: ${total} total, ${free:-?} free (RandomX uses these)."
+        dr_ok "HugePages reserved: ${total} total, ${free:-?} free (RandomX uses these)."
     else
         local fallback="P2Pool puts its RandomX dataset (${P2POOL_RANDOMX_DATASET_PAGES} pages) and caches in ordinary RAM instead: up to $((P2POOL_RANDOMX_PAGES * 2)) MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
         if [ "$total" -eq 0 ]; then
@@ -117,17 +146,24 @@ check_hugepages_reserved() {
                 short="${short} If monerod's own RandomX pages leave fewer than ${P2POOL_RANDOMX_DATASET_PAGES} free when P2Pool starts, ${fallback}"
             fi
         fi
-        dr_warn_surface hugepages "${short} Run './pithead setup' (kernel optimization) to grow the pool. For persistence, accept setup's GRUB drop-in and reboot after it verifies the generated kernel entries; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
+        dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. For persistence, accept setup's GRUB drop-in and reboot after it verifies the generated kernel entries; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
     fi
 }
 
+# #1103: on the REDUCED tier, render_local_miner_config and provision_local_miner both refuse to
+# co-locate the built-in miner even though local_miner.enabled is on (see the comment above
+# local_miner_hugepages_blocked for why no headroom value could make that safe). Say so here too,
+# the same way the reduced reservation itself is announced above — an operator staring at an empty
+# Workers view otherwise has nothing telling them the opt-in was refused rather than just slow.
 check_local_miner_hugepages_blocked() {
     is_appliance || return 0
-    [ "$(config_get .local_miner.enabled 2>/dev/null || echo false)" = "true" ] || return 0
+    [ "$(config_bool '.local_miner.enabled' false 2>/dev/null || echo false)" = "true" ] || return 0
     local_miner_hugepages_blocked || return 0
-    dr_warn local-miner-hugepages "Local mining opt-in is ON, but this machine's reduced HugePages reservation cannot also fit a co-located miner — the built-in RigForge worker is not started. Use a 16 GB machine for the built-in miner."
+    dr_warn "Local mining opt-in is ON, but this machine's reduced HugePages reservation cannot also fit a co-located miner — the built-in RigForge worker is not started. Use a 16 GB machine for the built-in miner."
 }
 
+# True (rc 0) when the host CPU advertises AVX2 — RandomX wants it, but it's performance-only,
+# not fatal. Linux reads /proc/cpuinfo; the macOS sysctl arm is DEPRECATED and untested (#2041).
 cpu_has_avx2() {
     if [ "$OS_TYPE" == "Darwin" ]; then
         sysctl -a 2>/dev/null | grep "machdep.cpu" | grep -q "AVX2"
@@ -136,17 +172,25 @@ cpu_has_avx2() {
     fi
 }
 
+# Release-signature verification (#376): the state the next pull — `up` or `upgrade` — will act on.
+# Extracted from doctor() so each branch is unit-testable, like the other doctor checks. Every branch
+# mirrors a refusal the one-click upgrade runner makes, so this answers "can this box take an
+# upgrade" BEFORE one is attempted rather than during it (#1108). Read-only: nothing is pulled.
 check_release_verification() {
     if is_source_checkout; then
-        dr_info release-verification "Source checkout — images build locally and are not signature-verified, and the dashboard's one-click upgrade does not apply: upgrade with 'git pull' then './pithead upgrade'." # appliance-unreachable
+        dr_info "Source checkout — images build locally and are not signature-verified, and the dashboard's one-click upgrade does not apply: upgrade with 'git pull' then './pithead upgrade'." # appliance-unreachable: is_source_checkout excludes is_appliance
     elif [ ! -f cosign.pub ]; then
-        dr_warn release-verification "No cosign.pub next to pithead — image pulls are NOT signature-verified. Release bundles ship the key from the first signed release."
+        dr_warn "No cosign.pub next to pithead — image pulls are NOT signature-verified. Release bundles ship the key from the first signed release."
     elif ! cosign_available; then
-        dr_warn_surface release-verification "cosign.pub is present but docker is not available to run the verifier — 'up'/'upgrade' refuse to pull until it is. Start the Docker daemon." "The container engine is not available to run the release verifier, so no image can be pulled until it is back. The appliance image ships that engine, so this system copy is faulty."
+        dr_warn_surface "cosign.pub is present but docker is not available to run the verifier — 'up'/'upgrade' refuse to pull until it is. Start the Docker daemon." "The container engine is not available to run the release verifier, so no image can be pulled until it is back. The appliance image ships that engine, so this system copy is faulty."
     elif docker image inspect "$COSIGN_IMAGE" >/dev/null 2>&1; then
-        dr_ok release-verification "'up' and 'upgrade' verify the release images against cosign.pub; the pinned verifier image is already here, nothing to install."
+        dr_ok "'up' and 'upgrade' verify the release images against cosign.pub; the pinned verifier image is already here, nothing to install."
     else
-        dr_warn_surface release-verification "The pinned release verifier image is not on this host yet — the next 'up' or 'upgrade' fetches it. If that fetch fails, the operation reports a signature failure even though nothing was tampered with. Pre-fetch it with: docker pull $COSIGN_IMAGE" "The pinned release verifier image is not on this machine yet — the next update fetches it. If that fetch fails, the update reports a signature failure even though nothing was tampered with."
+        # The verifier is fetched on demand, so a box that has never run a verified operation simply
+        # does not have it yet. Worth saying plainly: if that one fetch fails, the operation reports a
+        # *signature* failure — which reads as a tampered release rather than as an image this host
+        # could not pull (#1084).
+        dr_warn_surface "The pinned release verifier image is not on this host yet — the next 'up' or 'upgrade' fetches it. If that fetch fails, the operation reports a signature failure even though nothing was tampered with. Pre-fetch it with: docker pull $COSIGN_IMAGE" "The pinned release verifier image is not on this machine yet — the next update fetches it. If that fetch fails, the update reports a signature failure even though nothing was tampered with."
     fi
 }
 
@@ -169,9 +213,9 @@ check_tari_chain() {
     level=${v%%$'\t'*}
     detail=${v#*$'\t'}
     case "$level" in
-    green) dr_ok tari-chain "Tari node: no degraded signal confirmed (a stale tip, lost peers or explorer lag counts only once sustained; a disabled explorer is not checked)." ;;
-    amber) dr_warn tari-chain "Tari node may be stalling: $detail" ;;
-    *) dr_fail tari-chain "Tari node is NOT following the chain; merge-mined Tari work is wasted: $detail" ;;
+    green) dr_ok "Tari node: no degraded signal confirmed (a stale tip, lost peers or explorer lag counts only once sustained; a disabled explorer is not checked)." ;;
+    amber) dr_warn "Tari node may be stalling: $detail" ;;
+    *) dr_fail "Tari node is NOT following the chain; merge-mined Tari work is wasted: $detail" ;;
     esac
     return 0
 }
@@ -207,8 +251,8 @@ check_monero_chain() {
     [ -n "$v" ] || return 0
     level=${v%%$'\t'*}
     case "$level" in
-    green) dr_ok monero-chain "Monero node is at the tip with peers (dashboard verdict: outgoing peers within 10 min, height moved within 30)." ;;
-    *) dr_fail monero-chain "Monero node is NOT following the chain; mining sits on a stale tip: ${v#*$'\t'}" ;;
+    green) dr_ok "Monero node is at the tip with peers (dashboard verdict: outgoing peers within 10 min, height moved within 30)." ;;
+    *) dr_fail "Monero node is NOT following the chain; mining sits on a stale tip: ${v#*$'\t'}" ;;
     esac
     return 0
 }
@@ -260,16 +304,16 @@ monerod_peers_and_tip() { # <user> <pass> <url>
         note=", last block ${age}s ago"
     fi
     if [ -z "$out" ]; then
-        dr_info monerod-peers-and-tip "monerod peers: no reading (the in-container helper gave none)${note}."
+        dr_info "monerod peers: no reading (the in-container helper gave none)${note}."
         [ -z "$ts" ] || [ "$age" -le 1800 ] ||
-            dr_warn_surface monerod-peers-and-tip "monerod's last block is ${age}s old — a stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
+            dr_warn_surface "monerod's last block is ${age}s old — a stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
                 "monerod's last block is ${age}s old — the node may be stale; check its container logs in the dashboard."
         return 0
     fi
     if [ "$out" -eq 0 ] || { [ -n "$ts" ] && [ "$age" -gt 1800 ]; }; then
-        dr_warn_surface monerod-peers-and-tip "monerod peers: ${out} out / ${inn:-?} in${note} — an isolated or stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
+        dr_warn_surface "monerod peers: ${out} out / ${inn:-?} in${note} — an isolated or stalled node mines on a stale tip; if it stays like this, './pithead restart monerod' re-dials." \
             "monerod peers: ${out} out / ${inn:-?} in${note} — the node may be isolated or stale; check its container logs in the dashboard."
     else
-        dr_ok monerod-peers-and-tip "monerod peers: ${out} out / ${inn:-?} in${note}."
+        dr_ok "monerod peers: ${out} out / ${inn:-?} in${note}."
     fi
 }

@@ -69,11 +69,6 @@ case "$ovr" in
 *) it_pass "the off scenario leaves tari_required to the host's derivation" ;;
 esac # no assert_not_contains in this lib
 
-defaults_ovr="$(scenario_overrides new-install-defaults)"
-for setting in tari.mode=off xvb.enabled=false dashboard.tari_required=false dashboard.host=auto local_miner.enabled=false; do
-    assert_contains "new-install scenario carries $setting" "$defaults_ovr" "$setting"
-done
-
 echo ""
 echo "selftest-tari-mode-off: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

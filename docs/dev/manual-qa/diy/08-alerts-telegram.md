@@ -2,11 +2,6 @@
 
 This part checks the Telegram bot: the test alert, the read-only commands, worker and node alerts, the daily summary and the online message.
 
-[Mini-stack scenario 13](../../testing-strategy.md#c1-outbound-third-party-integrations) automates the
-`/status` figures in 8.2 and foreign-chat silence in 8.3 through a queued fake Telegram HTTP API,
-including polling offsets and replay suppression. Keep the manual steps for real Telegram
-delivery, the other commands and the deployed configuration.
-
 ## Before you start
 
 - Machine: the **upgrade box**, in a terminal in the install directory, with the dashboard open on the laptop.

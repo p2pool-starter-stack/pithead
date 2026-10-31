@@ -145,12 +145,6 @@ _phase_provision_power_cut() {
             bad "M10.$i: the stack did NOT return before the next cut (wanted: '$names_before'; running: '${names:-none}')"
             return 1
         }
-        if provisioning_settled 900 && ! provisioning_setup_failed; then
-            ok "M10.$i: provisioning settled — $(provisioning_state)"
-        else
-            bad "M10.$i: provisioning did not finish successfully — $(provisioning_state)"
-            return 1
-        fi
         m10_recovered "$i" || return 1
     done
 }

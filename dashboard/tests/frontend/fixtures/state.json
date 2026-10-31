@@ -451,7 +451,6 @@
     "wallet": "Unknown",
     "wallet_short": "Unknown"
   },
-  "tari_gates_sync": true,
   "topology": {
     "edges": [
       {

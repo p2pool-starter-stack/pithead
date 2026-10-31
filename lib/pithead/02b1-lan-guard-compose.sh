@@ -13,15 +13,15 @@ lan_guard_prepare_up() {
     lan_guard_check_keep_running || return 1
 }
 
+# A staged rule has no start marker. Stop any already-running LAN node before even the first
+# loopback-bound compose pass; a failed engine query cannot be mistaken for an empty set.
 lan_guard_stop_published() {
-    local project
-    project=$(compose_project_name) || return 1
     local ids kp c id seen=" "
     for kp in $(lan_guard_published); do
         c=$(lan_guard_container "${kp#*:}")
         [[ "$seen" == *" $c "* ]] && continue
         seen+="$c "
-        ids=$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$c" 2>/dev/null) ||
+        ids=$(docker ps -q --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" 2>/dev/null) ||
             {
                 warn "lan-guard:engine-unreadable — cannot check running LAN nodes."
                 return 1

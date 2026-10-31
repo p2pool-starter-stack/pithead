@@ -1,34 +1,48 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
+# Quadlet-render parity domain (#1105 Phase 1, appliance lane): the one section that pins
+# render_quadlet_units against the os/quadlet fixtures committed from the #78 spike. It renders
+# each of its three modes off that mode's fixture env file — the default remote-node set, the
+# local-node set, and the payout-confirm set — and diffs every emitted unit against the
+# checked-in file byte-for-byte. Two negative assertions pin what each mode must NOT emit: the
+# remote render carries no node units, and the local render carries no wallet units. The rendered
+# Tari node and wallet images must equal the compose stack's pins (#2624). The fixtures ran live on the bench, so a
+# diff here means the renderer drifted from something proven, not that a fixture went stale
+# (#77 phase 1).
+# Sourced by tests/stack/run.sh.
+#
+# The block is contiguous and its source stanza sits at its exact former position, so execution
+# order is unchanged — a pure relocation, not a regrouping.
+#
+# Re-derivations. $ROOT and $SANDBOX come from lib.sh, where both are assigned at COLUMN 1 at top
+# level, outside every function body — so neither is the ordering dependency the $WALLET case
+# turned out to be. (Re-derive by grepping lib.sh for the assignment and reading the indent, not
+# by line number: a citation into another file is the perishable part of any claim here.) Every other name is assigned here: $QOUT, $QLOCAL, $QPAY, the loops'
+# own $f and $svc, and $compose_tari. The only provider functions called are run_sourced, assert_eq
+# and assert_contains. Every write lands in
+# the three $SANDBOX/quadlet-*-out trees, and a sweep of all of tests/stack/ finds those three
+# paths named ONLY in this block — nothing else in the suite reads what this file creates, so it
+# carries no ambient-fixture coupling in either direction.
+
 : "${ROOT:?}" "${SANDBOX:?}"
 
 echo "== unit: render-quadlet parity vs os/quadlet fixtures (#77 phase 1) =="
-assert_quadlet_parity() {
-    local profile="$1" fixture_dir="$2" output="$3" f expected
-    shift 3
-    assert_eq "quadlet $profile complete unit set" \
-        "$(find "$output" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort)" \
-        "$(printf '%s\n' "$@" | LC_ALL=C sort)"
-    for f in "$@"; do
-        expected="$fixture_dir/$f"
-        if [ ! -f "$expected" ]; then
-            expected="$ROOT/os/quadlet/common/$f"
-        fi
-        assert_eq "quadlet $profile parity: $f" "$(diff -u "$expected" "$output/$f" 2>&1 | head -c 300)" ""
-    done
-}
-
-assert_eq "Quadlet fixtures store identical units once" \
-    "$(find "$ROOT/os/quadlet" -type f \( -name '*.container' -o -name '*.network' \) -exec sha256sum {} + | cut -d ' ' -f 1 | sort | uniq -d)" ""
-
+# The renderer must reproduce the spike-proven unit set byte-for-byte from the fixture env — the
+# os/quadlet files ran live in the #78 spike, so any drift here needs a bench re-proof, not just
+# an updated fixture.
 QOUT="$SANDBOX/quadlet-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QOUT" >/dev/null
 assert_contains "remote Quadlet Tor receives P2Pool onion port (#2936)" \
     "$(sed -n 's/^Environment=//p' "$QOUT/tor.container")" '"P2POOL_PORT=37888"'
-assert_quadlet_parity remote "$ROOT/os/quadlet" "$QOUT" \
-    mining.network proxy.network tor.container p2pool.container xmrig-proxy.container \
-    caddy.container docker-proxy.container docker-control.container dashboard.container
+for f in mining.network proxy.network tor.container p2pool.container xmrig-proxy.container \
+    caddy.container docker-proxy.container docker-control.container dashboard.container; do
+    assert_eq "quadlet parity: $f" "$(diff -u "$ROOT/os/quadlet/$f" "$QOUT/$f" 2>&1 | head -c 300)" ""
+done
 assert_eq "quadlet p2pool disables its persistent file log (#1989)" "$(grep -c '^Exec=--no-log-file ' "$QOUT/p2pool.container")" "1"
+# The appliance must run the Caddy the Compose stack was proven with (#2630): a tag-only Image=
+# lets podman pull whatever the tag points at that day. Compare the rendered ref, less podman's
+# docker.io/library/ qualifier, with compose's pin; the parity loops carry it to all three
+# fixture sets. The first row is the parse's control: an empty parse must not pass vacuously.
 compose_caddy=$(awk '/^  caddy:/{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2; exit}' "$ROOT/docker-compose.yml")
 assert_eq "compose parse finds a digest-pinned caddy image (control)" \
     "$(printf '%s\n' "$compose_caddy" | grep -cE '^caddy:[0-9.]+@sha256:[0-9a-f]{64}$')" "1"
@@ -109,23 +123,30 @@ assert_eq "#2040 arming: the fixture really carries a literal % and a %H specifi
 assert_eq "#2040: literal % is doubled so systemd does not expand %H to the hostname" \
     "$qpct_line" '"P2POOL_FLAGS=--x 50%% --host %%H"'
 
+# The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null
 assert_contains "local Quadlet Tor receives P2Pool onion port (#2936)" \
     "$(sed -n 's/^Environment=//p' "$QLOCAL/tor.container")" '"P2POOL_PORT=37888"'
-assert_quadlet_parity local "$ROOT/os/quadlet/local" "$QLOCAL" \
-    mining.network proxy.network tor.container monerod.container tari.container \
+for f in mining.network proxy.network tor.container monerod.container tari.container \
     p2pool.container xmrig-proxy.container caddy.container docker-proxy.container \
-    docker-control.container dashboard.container
+    docker-control.container dashboard.container; do
+    assert_eq "quadlet local parity: $f" "$(diff -u "$ROOT/os/quadlet/local/$f" "$QLOCAL/$f" 2>&1 | head -c 300)" ""
+done
+# #2627: the node must not be PID 1 — a zombie PID 1 cannot be signalled, so a stop fails.
 assert_eq "#2627: tari runs under podman's init (RunInit)" "$(grep -c '^RunInit=true$' "$QLOCAL/tari.container")" "1"
 assert_contains "local render passes TARI_MODE to the dashboard" \
     "$(sed -n 's/^Environment=//p' "$QLOCAL/dashboard.container")" '"TARI_MODE=local"'
+# The payout-confirm variant (bench-proven 2026-07-24): both wallet profiles, 13 files, the
+# dashboard gains the payout env keys only in this set (the others stay byte-identical).
 QPAY="$SANDBOX/quadlet-payout-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/payout/fixture.env" "$QPAY" >/dev/null
-assert_quadlet_parity payout "$ROOT/os/quadlet/payout" "$QPAY" \
-    mining.network proxy.network tor.container monerod.container tari.container \
+for f in mining.network proxy.network tor.container monerod.container tari.container \
     wallet-rpc.container tari-wallet.container p2pool.container xmrig-proxy.container \
-    caddy.container docker-proxy.container docker-control.container dashboard.container
+    caddy.container docker-proxy.container docker-control.container dashboard.container; do
+    assert_eq "quadlet payout parity: $f" "$(diff -u "$ROOT/os/quadlet/payout/$f" "$QPAY/$f" 2>&1 | head -c 300)" ""
+done
+# #2657: the console wallet must not be PID 1: a zombie PID 1 cannot be signalled, so a stop fails.
 assert_eq "#2657: tari-wallet runs under podman's init (RunInit)" "$(grep -c '^RunInit=true$' "$QPAY/tari-wallet.container")" "1"
 assert_eq "#2899: tari-wallet has the same 10 s container stop timeout as Compose" "$(awk '/^\[Container\]$/{in_container=1;next} /^\[/{in_container=0} in_container && /^StopTimeout=10$/{n++} END{print n+0}' "$QPAY/tari-wallet.container")" "1"
 assert_eq "payout profiles keep Tor's quadlet unchanged (#2859)" "$(diff -u "$QLOCAL/tor.container" "$QPAY/tor.container" 2>&1)" ""

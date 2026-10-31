@@ -86,8 +86,10 @@ phase_update() {
     }
     ok "built v2 bundle: $(basename "$bundle")"
     package_appliance_verdict os/rauc/build/system.img "$bundle" || return
-    release_appliance_verdict os/rauc/build/system.img "$bundle" || return
-    _install_or_fail() {
+    # Install failures MUST be surfaced. Both candidates failed silently for several rounds
+    # because the install was fired with `|| true` and only the marker was checked afterwards —
+    # the harness reported "update did not take" when the real story was "install never ran".
+    _install_or_fail() { # $1 human label
         local out
         out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1")
         local rc=$?
