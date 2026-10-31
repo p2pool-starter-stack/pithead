@@ -6,7 +6,8 @@ Incremental port for issue #3811, based on
 `a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`. The owner
 authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 `4565297a`, host probes at `d9c9d1ff`, verifier/daemon probes at `82d34cfd`,
-and control/miner probes at `22374d87`. The operator commits later rounds because
+control/miner probes at `22374d87`, and grouped disk checks at `eec3afce`.
+The operator commits later rounds because
 this sandbox cannot write the shared Git worktree metadata. No performance
 benefit is claimed.
 
@@ -69,6 +70,7 @@ selection is not implemented.
 | Doctor release verification and engine availability | Native packages; Bash collector | 4 tagged verification groups and Go units |
 | Doctor control units and local-miner HugePages gate | Native packages; Bash collector | 9 tagged control groups and Go units |
 | Grouped disk checks for doctor and setup preflight | Native package; Bash callers | 8 tagged disk groups and Go units |
+| Missing data directories and deployment state | Native packages; Bash callers | 8 tagged data/deployment groups and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -147,13 +149,18 @@ oracles:
 - `doctor_disk_reference.sh` invokes unchanged disk-budget, mount-resolution and
   grouped-check functions against fake df responses. Existing tests source Bash;
   this adapter compares native findings and df calls without host disk probes.
+- `doctor_data_directories_reference.sh` invokes the unchanged missing-directory
+  functions and extracts guarded doctor/deployment verdict blocks. Getter outputs
+  and disposable filesystem fixtures reach native packages without changing the
+  source-based tests; dotenv parsing remains in Bash.
 
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-parity`, `test-go-doctor-memory-parity`,
-`test-go-doctor-host-parity`, `test-go-doctor-verification-parity` and
-`test-go-doctor-control-parity` and `test-go-doctor-disk-parity`.
+`test-go-doctor-host-parity`, `test-go-doctor-verification-parity`,
+`test-go-doctor-control-parity`, `test-go-doctor-disk-parity` and
+`test-go-doctor-data-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -245,38 +252,20 @@ that `exec.LookPath` searches before `Cmd.Dir` takes effect; release probing now
 declines relative PATH entries after its source/no-key short circuits. The new
 adapter's source boundaries are checked so an upstream edit fails the test.
 
-```bash
-PITHEAD_IMPL=bash make test-go-doctor-verification-parity
-tests/go-parity/run.sh make test-go-doctor-verification-parity
-```
-
 | Suite | Baseline command and result | Go command and result |
 |---|---|---|
 | Verifier/daemon findings | `PITHEAD_IMPL=bash make test-go-doctor-verification-parity`: PASS, 4 paired groups plus Go units | `tests/go-parity/run.sh make test-go-doctor-verification-parity`: PASS, same groups and units |
 | CLI and doctor JSON regressions | `PITHEAD_IMPL=bash make test-go-doctor-parity test-go-parity`: PASS, 13 + 12 paired groups | `tests/go-parity/run.sh make test-go-doctor-parity test-go-parity`: PASS, same groups |
-| Unchanged doctor JSON contract | `PITHEAD_IMPL=bash python3 tests/stack/doctor/test-json-contract.py`: PASS, 2 tests | `tests/go-parity/run.sh python3 tests/stack/doctor/test-json-contract.py`: PASS, 2 tests; sources Bash |
-| Pinned doctor IDs | `PITHEAD_IMPL=bash python3 tests/stack/doctor/check-ids.py .`: PASS | `tests/go-parity/run.sh python3 tests/stack/doctor/check-ids.py .`: PASS; source catalog only |
-| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests, 97.42% coverage | `tests/go-parity/run.sh make test-dashboard`: PASS, same tests/coverage; backend remains Python |
-| Dashboard patch coverage | `PITHEAD_IMPL=python COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage`: PASS, not applicable; no Python changes | `COMPARE=a73ffced33800de9435779a9cabef53864455acb tests/go-parity/run.sh make test-patch-coverage`: same result |
-| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
-| File budget, build guards and affected docs lints | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb PITHEAD_IMPL=bash make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings`: PASS | Same base with `tests/go-parity/run.sh make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings`: PASS |
-| Full local gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
 
-Additional checks pass with the local caches: `go -C go test -tags=parity -race
--count=1 ./internal/doctor`, `go -C go vet -tags=parity ./...`, and
-`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
-./cmd/pithead`. The race run includes all 24 tagged comparison groups and ordinary
-Go units. Cross-compilation provides no Linux runtime verdict. The new adapter
-passes `bash -n`, pinned ShellCheck and shfmt. Changed Markdown passes the same
-rules with the two-file `--no-globs` command recorded above. Static independent
-review of the final code found no remaining defects.
+The other consolidated checks reran with the same results; commands are recorded
+above and each arm's private logs are identified below.
 
-The unchanged `PITHEAD_IMPL=bash make test-stack` and
-`tests/go-parity/run.sh make test-stack` still refuse macOS (exit 2); no guard
-was bypassed. Current logs and command/exit records use
-`.go-cache/logs/verification-*`.
-No existing test, fixture, golden, lint rule or Make check was modified. No
-network downloads, Git writes or live probes were performed in this slice.
+The consolidated Go race, tagged vet and Linux build commands pass (24 tagged
+comparison groups plus units). Adapter syntax, pinned ShellCheck/shfmt and scoped
+Markdown checks pass. Independent static review found no remaining defects.
+The unchanged shell-suite commands still refuse macOS (exit 2). Private command
+and exit records use `.go-cache/logs/verification-*`. Existing tests/checks remain
+unchanged; no download, Git write or live probe occurred.
 
 ## Control-unit and local-miner slice (2026-10-31)
 
@@ -300,28 +289,17 @@ local-miner collection can preserve the Bash diagnostic through fallback.
 | Suite | Baseline command and result | Go command and result |
 |---|---|---|
 | Control units and miner gate | `PITHEAD_IMPL=bash make test-go-doctor-control-parity`: PASS, 9 tagged groups plus Go units | `tests/go-parity/run.sh make test-go-doctor-control-parity`: PASS |
-| CLI/doctor JSON regressions | `PITHEAD_IMPL=bash make test-go-doctor-parity test-go-parity`: PASS, 13 + 12 paired groups | `tests/go-parity/run.sh make test-go-doctor-parity test-go-parity`: PASS |
-| Existing doctor contract/catalog | `PITHEAD_IMPL=bash python3 tests/stack/doctor/test-json-contract.py` and `PITHEAD_IMPL=bash python3 tests/stack/doctor/check-ids.py .`: PASS, 2 tests and catalog | `tests/go-parity/run.sh python3 tests/stack/doctor/test-json-contract.py` and `tests/go-parity/run.sh python3 tests/stack/doctor/check-ids.py .`: PASS; source tests still use Bash |
-| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests, 97.42% | `tests/go-parity/run.sh make test-dashboard`: PASS, same tests/coverage; backend remains Python |
-| Patch coverage | `PITHEAD_IMPL=python COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage`: PASS, not applicable; no Python changes | Same compare base with `tests/go-parity/run.sh make test-patch-coverage`: same result |
-| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
 | File budget, build guards, docs voice, paths and operator strings | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb PITHEAD_IMPL=bash make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings`: PASS | Same base with `tests/go-parity/run.sh make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings`: PASS |
-| Full gate | `PITHEAD_IMPL=bash make test`: FAIL at 22 cached Markdown findings after shell/Python/JS/YAML lint; exit 2 | `tests/go-parity/run.sh make test`: same failure, exit 2; no Docker target reached |
 
-Final checks pass: `go -C go test -tags=parity -race -count=1 ./internal/doctor`
-(all 33 tagged comparison groups plus Go units), `go -C go vet -tags=parity ./...`
-and `GOOS=linux GOARCH=amd64 go -C go build -o
-../.go-cache/pithead-linux-amd64 ./cmd/pithead`. Cross-compilation is build evidence,
-not a Linux runtime verdict. The new adapter passes `bash -n`,
-pinned ShellCheck and shfmt. Changed Markdown uses the two-file `--no-globs`
-command above; the whole-tree Markdown gate remains unchanged. Static independent
-review found no remaining defects. Linux/Docker runtime checks remain unavailable.
+The other consolidated checks reran with the same results; commands are recorded
+above and each arm's private logs are identified below.
 
-The unchanged shell suite still refuses macOS in both modes using the commands
-recorded above. Current private logs and command/exit records are
-`.go-cache/logs/control-*`.
-Existing tests, fixtures, goldens, lint rules and Make checks remain unchanged.
-No network download, Git write, systemd call, Docker daemon or bench was used.
+The consolidated Go race, tagged vet and Linux build commands pass (33 tagged
+comparison groups plus units). Adapter syntax, pinned ShellCheck/shfmt and scoped
+Markdown checks pass. Independent static review found no remaining defects.
+The shell suite still refuses macOS in both modes. Private command/exit records
+use `.go-cache/logs/control-*`. Existing tests/checks remain unchanged; no download,
+Git write, systemd call, Docker daemon or bench was used.
 
 ## Grouped disk slice (2026-10-31)
 
@@ -337,23 +315,46 @@ Go retains df, awk and dirname calls to preserve their output and failure paths.
 | Suite | Baseline command and result | Go command and result |
 |---|---|---|
 | Disk, CLI and doctor JSON | `PITHEAD_IMPL=bash make test-go-doctor-disk-parity test-go-doctor-parity test-go-parity`: PASS, 8 disk + 13 JSON + 12 CLI groups and Go units | `tests/go-parity/run.sh make test-go-doctor-disk-parity test-go-doctor-parity test-go-parity`: PASS |
-| Existing doctor contract/catalog | The two baseline Python commands recorded above: PASS, 2 tests and catalog | The same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
+
+The other consolidated checks reran with the same results; commands are recorded
+above and each arm's private logs are identified below.
+
+The consolidated Go race, tagged vet and Linux build commands pass (41 tagged
+comparison groups plus units). Adapter syntax, pinned ShellCheck/shfmt and scoped
+Markdown checks pass. The integer parser now matches Bash's ASCII whitespace
+handling. Independent static review found no remaining defects. Final parity logs
+use `.go-cache/logs/storage-final-parity-*`, race/vet/build use `storage-reviewed-*`,
+and other command/exit records use `storage-*`. Existing tests/checks remain
+unchanged; no Git write, download, live disk probe or daemon contact occurred.
+
+## Missing-data and deployment slice (2026-10-31)
+
+`data_directories.go` ports missing-data enumeration, doctor findings and the
+relocated-install warning bodies. `deployment.go` ports environment-file and
+setup-completion findings. Both preserve literal `true` gating, getter newline
+trimming, variable order, symlinks, relative paths and DIY/appliance wording.
+Inputs are getter outputs; dotenv parsing and production callers remain Bash.
+Unsupported paths/NUL values and warning escapes decline a native verdict.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Data/deployment, CLI and JSON | `PITHEAD_IMPL=bash make test-go-doctor-data-parity test-go-doctor-parity test-go-parity`: PASS, 8 + 13 + 12 paired groups and Go units | `tests/go-parity/run.sh make test-go-doctor-data-parity test-go-doctor-parity test-go-parity`: PASS |
+| Existing doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
 | Dashboard and fake daemons | `PITHEAD_IMPL=python make test-dashboard` and `PITHEAD_IMPL=python make test-fakes`: PASS, 3716 tests/97.42% and 54 tests | `tests/go-parity/run.sh make test-dashboard` and `tests/go-parity/run.sh make test-fakes`: PASS, same counts/coverage; backend remains Python |
 | Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: same result |
-| File budget, build, docs voice, paths and operator strings | Same baseline commands/base as the control slice: PASS | Same Go commands/base: PASS |
+| File budget, build, docs voice, paths and operator strings | Baseline commands/base in the control slice: PASS | Same Go commands/base: PASS |
 | Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
 
 Additional checks pass: `go -C go test -tags=parity -race -count=1 ./internal/doctor`
-(41 tagged comparison groups plus Go units), `go -C go vet -tags=parity ./...`
-and `GOOS=linux GOARCH=amd64 go -C go build -o
-../.go-cache/pithead-linux-amd64 ./cmd/pithead`. Cross-compilation is build evidence
-only. New adapter syntax, pinned ShellCheck/shfmt and the changed-Markdown command
-above also pass. Initial comparisons exposed Bash's acceptance of ASCII whitespace
-around integers; the parser now matches it. Independent static review found no
-remaining defects. Final parity logs are `.go-cache/logs/storage-final-parity-*`;
-the final race/vet/build logs use `storage-reviewed-*`. Other commands and exit
-records use `storage-*`. Existing tests and checks remain unchanged; no Git writes,
-network download, live disk probe or daemon contact occurred.
+(49 tagged comparison groups plus units), `go -C go vet -tags=parity ./...` and
+the Linux build command above. Cross-compilation provides no Linux runtime
+verdict. New adapter syntax, pinned ShellCheck/shfmt, scoped Markdown and Go
+formatting checks pass. Independent static review found no remaining defects.
+Current private command/exit records use `.go-cache/logs/stale-*`.
+The first Go full gate also caught an extra ledger blank line; it was corrected
+before the rerun recorded as `stale-gate-final-go`.
+Existing tests, fixtures, goldens, lint rules and Make checks remain unchanged;
+no Git write, download, live probe or daemon contact occurred.
 
 ## Unavailable and known host constraints
 
@@ -382,7 +383,7 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port the remaining doctor config, stale-data/storage, network and container checks.
+1. Port the remaining doctor config, network, container and appliance-state checks.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and

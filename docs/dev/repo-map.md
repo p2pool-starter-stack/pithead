@@ -79,6 +79,9 @@ installs and unit files; systemctl is discovered without being executed.
 `go/internal/doctor/disk.go` implements the grouped disk check shared by doctor
 and setup preflight. `make test-go-doctor-disk-parity` compares budgets, ancestor
 resolution, filesystem grouping and findings with Bash using fake df responses.
+`go/internal/doctor/data_directories.go` and `deployment.go` implement missing-data
+and setup-state findings. `make test-go-doctor-data-parity` compares them and the
+relocated-install warnings with Bash using disposable files and getter outputs.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

@@ -7,6 +7,10 @@
 .PHONY: test-go-doctor-verification-parity
 .PHONY: test-go-doctor-control-parity
 .PHONY: test-go-doctor-disk-parity
+.PHONY: test-go-doctor-data-parity
+
+test-go-doctor-data-parity: go-build test-go ## Compare missing data-directory and deployment findings with Bash
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestDataDirectory ./internal/doctor
 
 test-go-doctor-disk-parity: go-build test-go ## Compare doctor and preflight disk checks with Bash using fake df
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestDisk ./internal/doctor
