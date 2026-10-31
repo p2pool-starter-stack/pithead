@@ -37,6 +37,11 @@ Configuration defaults live in `dashboard/mining_dashboard/config/defaults.json`
 DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.json`).
 `dashboard/mining_dashboard/config/defaults.py` reads the same table for the dashboard and wizards.
 
+Host-resource availability and the existing disk-history capacity estimate are computed in
+`dashboard/mining_dashboard/service/host_resources.py`; the collector metadata stays in
+`dashboard/mining_dashboard/collector/system.py`. Their unit tests live in the matching
+`dashboard/tests/service/` and `dashboard/tests/collector/` folders.
+
 ## Product entry points
 
 | Area | Start here | Change and verify |
