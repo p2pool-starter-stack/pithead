@@ -36,17 +36,24 @@ BOOT_FAIL_COUNT=.boot-gate-failures
 # wearing /data. A plain variable: the suite points it somewhere writable.
 BOOT_DOCTOR_JSON=/run/pithead-boot-doctor.json
 boot_gate_passed() { rm -f "$BOOT_FAIL_COUNT" .config-reset-good-slot; }
-fail_boot() { # <what went wrong>
+fail_boot() {
     echo "pithead-boot: $1 — slot left uncommitted so A/B fallback stays armed" >&2
     local status_problems
-    boot_status || true # named on this boot, even if the dashboard probe did not reach status
+    if [ -z "${gate_deadline:-}" ]; then boot_status || true; fi
+    if [ -n "${gate_timeout_reason:-}" ]; then
+        echo "pithead-boot: health probe exceeded its time budget: $gate_timeout_reason" >&2
+    fi
     status_problems=$(boot_status_blocking)
+    if [ "${gate_remint_state:-}" = restart-pending ]; then
+        status_problems="${status_problems}${status_problems:+$'\n'}container caddy: certificate restart failed"
+    fi
     [ -n "$status_problems" ] && printf '%s\n' "$status_problems" | sed 's/^/pithead-boot: held by /' >&2
-    # The rollback verdict names what held the gate (#1265): the last doctor run is still on /run,
-    # and the in-flight flag carries its failing checks to the fallback boot's os_update_rollback_verdict.
     if [ -n "${OS_INFLIGHT:-}" ] && [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
         local doctor_msgs='[]'
         [ -s "$BOOT_DOCTOR_JSON" ] && doctor_msgs=$(jq -c '[.checks[]? | select(.status == "fail") | .message]' "$BOOT_DOCTOR_JSON" 2>/dev/null || echo '[]')
+        if [ -n "${gate_timeout_reason:-}" ]; then
+            doctor_msgs=$(jq -cn --argjson checks "$doctor_msgs" --arg probe "$gate_timeout_reason" '$checks + ["Health probe exceeded its time budget: " + $probe]')
+        fi
         if [ "$doctor_msgs" != '[]' ] || [ -n "$status_problems" ]; then
             jq --argjson d "$doctor_msgs" --arg s "$status_problems" \
                 '.blocking = ($d + (if $s == "" then [] else ($s | split("\n")) end))' \
@@ -151,22 +158,21 @@ gate_blocked_only_by_cert() { # -> 0 when the last doctor run's ONLY failing che
         "$BOOT_DOCTOR_JSON" >/dev/null 2>&1
 }
 gate_remint_give_up() { [ "$gate_remint_state" = failed ] || gate_remint_state=$1 && return 1; }
-gate_remint_cert() { # re-mint via render; restart Caddy only if the certificate changed
+gate_remint_cert() {
     [ "$boot_remints" -lt "$BOOT_REMINT_MAX" ] || gate_remint_give_up exhausted || return 1
     boot_remints=$((boot_remints + 1))
     local crt before after
     crt="${PITHEAD_TLS_DIR:-data/tls}/wizard.crt"
     before=$(sha256sum "$crt" 2>/dev/null | cut -d' ' -f1)
-    ./pithead render >/dev/null 2>&1 || gate_remint_give_up failed || return 1
+    gate_run render ./pithead render >/dev/null 2>&1 || gate_remint_give_up failed || return 1
     after=$(sha256sum "$crt" 2>/dev/null | cut -d' ' -f1)
     if [ "$before" = "$after" ]; then
         gate_remint_state=unchanged
         echo "pithead-boot: doctor reports the dashboard certificate does not cover a served name, but render minted no new certificate ($boot_remints/$BOOT_REMINT_MAX) — render and doctor disagree about the names; that is this machine's address list, not the slot, so the gate records it and commits"
         return 1
     fi
-    gate_remint_state=reminted
     echo "pithead-boot: re-minted the dashboard certificate for an address that arrived after render ($boot_remints/$BOOT_REMINT_MAX) — restarting Caddy so it serves it"
-    ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1 || true
+    gate_restart_caddy
 }
 
 gate_cert_advisory() { # -> 0 and doctor's coverage message in gate_advisory when the hold may commit
@@ -334,30 +340,23 @@ gate_resolve_args=()
 gate_rs=$(gate_resolve_spec "$gate_host" "$gate_port")
 [ -n "$gate_rs" ] && gate_resolve_args=(--resolve "$gate_rs")
 gate_wait_started=$SECONDS
-for gate_attempt in $(seq 90); do
+gate_deadline=$((gate_wait_started + BOOT_GATE_WAIT_SECONDS))
+echo "pithead-boot: health gate started; deadline $BOOT_GATE_WAIT_SECONDS seconds"
+gate_attempt=0
+while [ "$SECONDS" -lt "$((gate_deadline - 2))" ]; do
+    gate_attempt=$((gate_attempt + 1))
     gate_doctor_ran=0 gate_pass=0
-    # SNI and the Host header carry the site's real name, so Caddy vhost-matches it;
-    # --connect-to keeps names and IP literals on loopback, which the appliance always binds.
-    # `read` clears both when curl prints nothing, so a silent curl cannot leave the previous
-    # round's success standing.
-    read -r code size <<<"$(gate_probe_header | curl --header @- -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
-        --noproxy '*' --connect-to '::127.0.0.1:' "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null)"
-    # Cheapest first, inside gate_ready: the probe is fast and gates entry to the slow doctor run, so
-    # an unhealthy or still-booting stack just loops here without paying for a full diagnostic.
-    # doctor only has to pass ONCE — a chain node that is still 'starting' fails a pass and the loop
-    # retries it, so the gate waits out a slow start without ever committing on partial evidence.
+    gate_probe_dashboard
     if gate_ready "${code:-000}" "${size:-0}"; then
         gate_pass=1
     elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then
-        gate_remint_cert || true # a bounded, narrow re-mint (#1265); the next round re-judges
+        gate_remint_cert || true
         gate_cert_advisory_ready && gate_pass=1
     fi
-    if [ "$gate_pass" = 1 ]; then
+    if [ "$gate_pass" = 1 ] && [ "$SECONDS" -lt "$gate_deadline" ]; then
         command -v rauc >/dev/null 2>&1 && rauc status mark-good
         boot_gate_passed
         echo "pithead-boot: stack is serving (HTTP $code) and doctor reports ${gate_advisory:-healthy}${gate_advisory:+ as its only failing check} — booted slot committed${gate_advisory:+ with that recorded as advisory; run './pithead apply' on the machine to re-mint}"
-        # OS-update verdict, success half: this slot just committed while an in-flight flag names
-        # exactly this version — the dashboard-driven update landed and can no longer fall back.
         if [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
             to=$(jq -r '.to // ""' "$OS_INFLIGHT" 2>/dev/null)
             if [ -n "$to" ] && [ "$to" = "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ]; then
@@ -389,6 +388,9 @@ for gate_attempt in $(seq 90); do
             [ -w "$gate_console" ] && { printf '%s\n' "$gate_progress" >"$gate_console"; } 2>/dev/null || true
         done
     fi
-    sleep 10
+    gate_remaining=$((gate_deadline - SECONDS))
+    [ "$gate_remaining" -gt 0 ] || break
+    [ "$gate_remaining" -le 10 ] || gate_remaining=10
+    sleep "$gate_remaining"
 done
 fail_boot "the stack never became healthy (serving + doctor + status)"

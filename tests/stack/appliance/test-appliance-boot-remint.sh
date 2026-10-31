@@ -110,17 +110,15 @@ assert_contains "the fourth call is refused (BOOT_REMINT_MAX=3)" "$rm_out" "call
 assert_contains "  …before render runs: three renders for four calls" "$rm_out" "renders=3"
 
 echo "== unit: the gate loop is wired — the re-mint sits between this round's ready check and the sleep (#1265) =="
-# Below the sourcing boundary, assert reset, ready, this round's re-mint, progress, sleep, fail.
-# Mutations deleting elif or moving the reset above the loop must fail (stale doctor verdicts).
 BOOTSCRIPT="$ROOT/os/overlay/pithead-boot"
 bl_line() { grep -n -F -- "$1" "$BOOTSCRIPT" | head -1 | cut -d: -f1; }
-l_loop=$(bl_line 'for gate_attempt in $(seq 90); do')
+l_loop=$(bl_line 'while [ "$SECONDS" -lt "$((gate_deadline - 2))" ]; do')
 l_reset=$(bl_line '    gate_doctor_ran=0')
 l_ready=$(bl_line '    if gate_ready "')
 l_elif=$(bl_line '    elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then')
 l_remint=$(bl_line '        gate_remint_cert || true')
 l_progress=$(bl_line '    if ((gate_attempt % 6 == 0)); then')
-l_sleep=$(bl_line '    sleep 10')
+l_sleep=$(bl_line '    sleep "$gate_remaining"')
 l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor + status)"')
 assert_eq "every anchor is present exactly where a reader would look" \
     "$([ -n "$l_loop" ] && [ -n "$l_reset" ] && [ -n "$l_ready" ] && [ -n "$l_elif" ] && [ -n "$l_remint" ] && [ -n "$l_progress" ] && [ -n "$l_sleep" ] && [ -n "$l_fail" ] && echo all)" "all"
@@ -130,7 +128,7 @@ assert_eq "the re-mint branch follows the ready check and precedes progress, sle
     "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_progress:-0}" ] && [ "${l_progress:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
 l_gr=$(grep -n -F 'gate_ready() {' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 l_set=$(grep -n -F '    gate_doctor_ran=1' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
-l_doc=$(grep -n -F '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
+l_doc=$(grep -n -F '    gate_run doctor ./pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 assert_eq "gate_ready marks the round BEFORE it runs doctor, so a quiet round can never act on last round's file" \
     "$([ "${l_gr:-0}" -lt "${l_set:-0}" ] && [ "${l_set:-0}" -lt "${l_doc:-0}" ] && echo ordered)" "ordered"
 

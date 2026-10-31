@@ -448,9 +448,14 @@ The appliance keeps **two copies of the system**, and only one runs at a time. A
 is written to the copy that is idle, so the running system is never modified in place.
 The machine installs an update, reboots into the new version, and checks that the stack
 came up. While the health gate waits, every sixth failed check prints elapsed minutes
-to the screen, serial console and journal, with an approximate 16-minute wait and a
-reminder to leave the machine powered on. Six checks take about a minute plus the
-time spent checking health; the estimate is not a deadline. Console writes are
+to the screen, serial console and journal, with a 16-minute health-gate deadline and a
+reminder to leave the machine powered on. The deadline starts after render and stack
+startup; it includes probes, certificate re-minting and pauses. Each diagnostic or
+re-mint command has a 30-second limit and a two-second forced-kill grace, shortened
+to the remaining deadline. The deadline governs the health verdict and repairs,
+not RAUC's subsequent slot commit. A timed-out probe cannot commit a slot,
+and a failed Caddy restart must succeed before the next health verdict can pass.
+The rollback cause retains the probe name or unhealthy container. Console writes are
 best-effort, and a missing console does not stop the journal message or health gate.
 A gate that passes in its first minute prints no progress line.
 If the stack does not start, or the machine fails to boot, **the machine
