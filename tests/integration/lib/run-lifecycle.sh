@@ -26,40 +26,6 @@ run_lifecycle() {
     assert_rc "status OK after restart" "$?" "0"
     lifecycle_gate_sample after-restart
     run_connection_announcements || return 1
-    if rx 'test -f dashboard/Dockerfile'; then
-        local proxy_ref proxy_id proxy_fails="$IT_FAIL"
-        proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
-        proxy_id="$(rx "docker image inspect --format '{{.Id}}' $(quote_arg "$proxy_ref")" 2>/dev/null)"
-        lifecycle_gate_sample before-image-down
-        it_step "removing the pinned socket-proxy image, then pithead up (#2654)…"
-        if [ -n "$proxy_ref" ] && [ -n "$proxy_id" ] && pithead down >/dev/null 2>&1 &&
-            rx "docker image rm -f $(quote_arg "$proxy_id")" >/dev/null 2>&1; then
-            local up_out up_rc
-            up_out="$(pithead up 2>&1)"
-            up_rc=$?
-            lifecycle_gate_sample after-image-up
-            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
-            [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
-            [ "$up_rc" -eq 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
-            rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
-            assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
-            assert_eq "docker-proxy runs from the fetched image (#2654)" "$(svc_state_of "$(service_state docker-proxy)")" "running"
-            if wait_status_ok 240; then
-                it_pass "status OK after up restored a missing pinned image (#2654)"
-            else
-                it_fail "status OK after up restored a missing pinned image (#2654)" "pithead status did not recover"
-                [ "$up_rc" -ne 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
-            fi
-            [ "$IT_FAIL" -le "$proxy_fails" ] || lifecycle_ok=0
-        else
-            it_fail "missing pinned image fixture armed (#2654)" "no socket-proxy image found, or down / image rm returned non-zero"
-            lifecycle_ok=0
-        fi
-    else
-        it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
-    fi
-    run_source_image_reconcile || return 1
-    run_tari_background_sync || return 1
     local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before
     cur_pool="$(lifecycle_pool_start)" || {
         it_fail "pool change starting sidechain established" "config or rendered flags unreadable or inconsistent"
@@ -105,10 +71,46 @@ run_lifecycle() {
         rx "docker compose start monerod" >/dev/null 2>&1
         wait_status_ok 240 || true
         pithead status >/dev/null 2>&1
-        assert_rc "status OK after node recovery" "$?" "0"
+        local node_recovery_rc=$?
+        assert_rc "status OK after node recovery" "$node_recovery_rc" "0"
+        [ "$node_recovery_rc" = 0 ] || return 1
     else
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
+    if rx 'test -f dashboard/Dockerfile'; then
+        local proxy_ref proxy_id proxy_fails="$IT_FAIL"
+        proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
+        proxy_id="$(rx "docker image inspect --format '{{.Id}}' $(quote_arg "$proxy_ref")" 2>/dev/null)"
+        lifecycle_gate_sample before-image-down
+        it_step "removing the pinned socket-proxy image, then pithead up (#2654)…"
+        if [ -n "$proxy_ref" ] && [ -n "$proxy_id" ] && pithead down >/dev/null 2>&1 &&
+            rx "docker image rm -f $(quote_arg "$proxy_id")" >/dev/null 2>&1; then
+            local up_out up_rc
+            up_out="$(pithead up 2>&1)"
+            up_rc=$?
+            lifecycle_gate_sample after-image-up
+            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
+            [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
+            [ "$up_rc" -eq 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
+            rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
+            assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
+            assert_eq "docker-proxy runs from the fetched image (#2654)" "$(svc_state_of "$(service_state docker-proxy)")" "running"
+            if wait_status_ok 240; then
+                it_pass "status OK after up restored a missing pinned image (#2654)"
+            else
+                it_fail "status OK after up restored a missing pinned image (#2654)" "pithead status did not recover"
+                [ "$up_rc" -ne 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
+            fi
+            [ "$IT_FAIL" -le "$proxy_fails" ] || lifecycle_ok=0
+        else
+            it_fail "missing pinned image fixture armed (#2654)" "no socket-proxy image found, or down / image rm returned non-zero"
+            lifecycle_ok=0
+        fi
+    else
+        it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
+    fi
+    run_source_image_reconcile || return 1
+    run_tari_background_sync || return 1
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then

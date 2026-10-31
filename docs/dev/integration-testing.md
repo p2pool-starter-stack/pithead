@@ -907,14 +907,16 @@ For one representative config:
   recreation, immutable image/Compose-owner assertions and cleanup remain binding.
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
   exactly, the same per-category comparison a safety rollback makes.
-- An `apply` that changes the sidechain recreates only the affected containers and preserves
-  every wallet, proxy, dashboard, RPC, and onion secret category; unreadable or changed
-  fingerprints fail the transition. The dashboard reflects the new pool; then it's reverted. The starting pool
+- Before the missing-image and source-image fixtures, an `apply` changes the sidechain,
+  recreates only the affected containers and preserves every wallet, proxy, dashboard, RPC,
+  and onion secret category; unreadable or changed fingerprints fail the transition. The dashboard reflects the new pool; then it's reverted. The starting pool
   comes from the deployed config after the preceding scenario and lifecycle probes,
   checked against its rendered flags. An omitted `p2pool.pool` means mini, so the
   alternate is main. Active main and nano pools switch to mini; active mini switches
   to main. The apply must return healthy and render the alternate flags before the
   transition passes; dashboard classification retains its bounded peer-lag verdict.
+  The local-node fault and bounded recovery run next. A failed recovery stops the phase before
+  either image fixture can mutate the stack; remote-node scenarios retain their by-design skip.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
   stop `monerod` → `status` returns non-zero (node down) and the dashboard rejects workers
   (stops `xmrig-proxy`) → start `monerod` → workers readmitted → `status` → `0`.
@@ -931,7 +933,10 @@ For one representative config:
   with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
 
-A source checkout first reuses `assert_mining_probe_ready`: both P2Pool and xmrig-proxy
+After the pool-change and node-recovery proof, the missing pinned-image fixture requires the
+socket-proxy declaration and existing image before stopping the stack. Its `up`, fetched image,
+proxy state and bounded healthy status assertions remain binding. The following source-image
+fixture reuses `assert_mining_probe_ready`: both P2Pool and xmrig-proxy
 must be running for two consecutive samples, five seconds apart, with a 1500-second
 readiness deadline. Each Docker probe has a 10-second TERM deadline and two-second
 forced-kill grace.
