@@ -292,7 +292,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
   failed-update premise. The power-cut leg (M10, #2067) then cuts power three times WHILE the
   provisioned stack is live — every earlier power cut in the battery landed on a bare guest
-  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
+  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. Before each cut,
+  poll the monerod height up to 18 times, 10 seconds apart. An empty result fails the row and
+  returns before flushing or cutting power. A non-empty result that is not a non-negative
+  integer also fails before flushing or cutting power. After EVERY cut, the leg
   asserts every container returns and provisioning settles within 900 seconds without failed setup
   before recovery checks or the next cut, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),

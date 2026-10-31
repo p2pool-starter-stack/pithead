@@ -19,24 +19,14 @@ RUN_SRC="$HERE/../lib/run-cli.sh"
 assert_eq "rig-supply.sh actually defines rig_supply (#1378)" \
     "$(type -t rig_supply)" "function"
 
-# --- Extract run_harness from the shipped e2e.sh --------------------------------------------
-# Fail CLOSED: if a refactor moves or renames the function this must go red, never silently stop
-# testing. A self-test whose subject quietly evaporates is the exact shape of gate this file exists
-# to catch, so the extraction is asserted before anything is evaluated.
 HARNESS_SRC="$(sed -n '/^run_harness() {$/,/^}$/p' "$E2E_SRC")"
-# An empty extraction fails this too — "" does not open and close — so no separate non-empty guard.
 assert_eq "the extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$HARNESS_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_harness() { } "
 assert_contains "the extracted function still composes the rigforge phases" \
     "$HARNESS_SRC" '--rigforge-control'
-
-# --- Drive the real function with ssh stubbed out ------------------------------------------
-# Files outlive the pipeline subshell and /dev/null keeps an unpiped stub from hanging.
-drive_harness() { # <mode> <borrow_miner> [rig-token] -> launch, stdin and pregate records
+drive_harness() {
     local launch lf sf pf
     lf="$(mktemp)" sf="$(mktemp)" pf="$(mktemp)"
-    # SC2034/SC2329: the config vars and the log/step/warn/ok/die/on_bench stubs below are all read
-    # and called by the eval'd run_harness, which shellcheck cannot follow into.
     # shellcheck disable=SC2034,SC2329
     launch="$(
         exec </dev/null
@@ -45,8 +35,6 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> launch, stdin and prega
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         [ "${STUB_REMOTE:-0}" != 1 ] || REMOTE_NODE_ARGS=(--remote-monero-host node.example --remote-monero-rpc-port 28081 --remote-monero-zmq-port 28083 --remote-tari-host tari.example)
         [ "${STUB_REMOTE:-0}" != 1 ] || REMOTE_NODE_HOSTS=(node.example tari.example)
-        # rig_supply's inputs (#1378). MINER_HOST is what RIG_HOST defaults to; the token comes off
-        # the stubbed on_miner, so the empty-token path is reachable by passing "".
         MINER_HOST=rig1 RIG_HOST="" RIG_NAME="" IT_RIG_TOKEN="" RIGFORGE_CONFIG=/opt/rigforge/config.json
         STUB_TOKEN="${3-s3cr3t-tok3n}" FAIL_PRECHECK="${6:-}"
         LAUNCH_FILE="$lf" STDIN_FILE="$sf" PREGATE_FILE="$pf"
@@ -62,21 +50,24 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> launch, stdin and prega
             exit 1
         }
         on_bench() {
-            case "$1" in
+            local command="$1"
+            case "$command" in
+            *inline-pregate-remote.sh*" run "*) command="$(python3 -c 'import shlex,sys; print(shlex.split(sys.argv[1])[-1])' "$command")" || return 1 ;;
+            esac
+            case "$command" in
             *nohup*)
-                printf '%s' "$1" >"$LAUNCH_FILE"
+                printf '%s' "$command" >"$LAUNCH_FILE"
                 cat >"$STDIN_FILE"
                 echo 4242
                 ;;
             *"tests/integration/run.sh"*--readiness*)
-                printf '%s\n' "$1" >>"$PREGATE_FILE"
+                printf '%s\n' "$command" >>"$PREGATE_FILE"
                 [ "$FAIL_PRECHECK" != readiness ] || return 1
                 ;;
             *"tests/integration/run.sh"*" --check"*)
-                printf '%s\n' "$1" >>"$PREGATE_FILE"
+                printf '%s\n' "$command" >>"$PREGATE_FILE"
                 [ "$FAIL_PRECHECK" != check ] || return 1
                 ;;
-            # rig_supply's proof dial; the unreachable-rig path is driven separately by rc_of.
             *curl*Authorization*) return 0 ;;
             *borrow-rearm.request*) return 1 ;;
             *e2e-harness.done*)
