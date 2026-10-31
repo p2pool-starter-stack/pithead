@@ -189,6 +189,11 @@ password and certificate. Both have mutation self-tests beside their harnesses.
 
 `lib/pithead/12a-wizard-addresses.sh` supplies non-bridge host addresses for the
 setup container and prints the journal and physical-console connection announcements.
+It atomically publishes the same details to a private temporary getty issue file, so
+login-prompt startup can repeat the current session. `tests/os/wizard-console-leg.sh`
+checks journal minting, serial delivery and tty1 text on each setup-again session,
+including a paused-writer getty restart and a publication-disabled negative control.
+`tests/os/selftest-wizard-console.sh` covers publication, replacement, cleanup and failure verdicts.
 `lib/pithead/12a-wizard-page.sh` starts each page container with those addresses,
 its per-round token and certificate, then restores the reset slot and announces the page.
 `tests/os/wizard-redirect-leg.sh` checks the plain-port
@@ -332,6 +337,8 @@ through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
 to prove saturated-history recovery and the disabled control with production timers.
+The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
+run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
 run by the Tor image build job. It verifies either startup repair of all 1000 abandoned
 observations and an empty persisted history, or the legacy warning and shutdown-write

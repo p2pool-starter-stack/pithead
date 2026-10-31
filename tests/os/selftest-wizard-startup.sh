@@ -56,7 +56,8 @@ run_case() (
     wizard_mint_token() { printf token; }
     wizard_host_addresses() { printf '192.0.2.1'; }
     reset_slot_restore_good() { :; }
-    wizard_announce_setup() { :; }
+    wizard_announce_setup() { touch console-issue; }
+    wizard_clear_announcement() { rm -f console-issue; }
     wizard_keep_requested() { return 1; }
     wizard_submission_ready() { return 1; }
     firstboot_consume_rig() { return 2; }
@@ -74,6 +75,7 @@ failures=0
 for mode in startup round retry kept installer; do
     rc=0
     run_case "$mode" >"$work/$mode.log" 2>&1 || rc=$?
+    [ ! -e "$work/$mode/console-issue" ] || exit 1
     runs=$(grep -c '^run$' "$work/$mode/calls")
     case "$mode" in
     startup | round) expected_rc=0 expected_runs=1 ;;
