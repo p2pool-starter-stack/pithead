@@ -1495,7 +1495,9 @@ when client authorization is on and the config editor with it, a **Show client k
 it, because on a machine with no shell an address nothing can open is the same as no address at
 all. The key is not in this container: the button asks the host, the host answers once through the
 read-only results spool and then wipes its copy, and the reveal is recorded in the [config-change
-log](#access-log-and-recent-config-changes). This panel still redacts the address.
+log](#access-log-and-recent-config-changes). This panel still redacts the address. When apply or
+upgrade first discovers the onion address, or rotation replaces it, the dashboard is recreated
+with the rendered address so the header reflects it in the same operation.
 
 A `[redacted].onion` here is not a promise that the address is absent from
 the browser — scroll up and it is in the header on both the Compose stack and the appliance. When

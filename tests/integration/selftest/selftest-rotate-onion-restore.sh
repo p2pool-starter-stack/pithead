@@ -14,6 +14,7 @@ source "$ROOT/lib/run-onion-targets.sh"
 source "$ROOT/lib/run-hardening.sh"
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$ROOT/lib/run-rotate-onion.sh"
+wait_for() { return 0; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -32,7 +33,7 @@ trial() {
             case "$1" in
                 *"docker compose up -d tor"*) printf "swap\n" >>"$CALLS" ;;
                 *"/hostname"*) printf "hostname\n" >>"$CALLS"; printf "old.onion\n" ;;
-                *"restart caddy"*) printf "caddy\n" >>"$CALLS" ;;
+                *"up -d --no-deps dashboard"*) printf "dashboard\ncaddy\n" >>"$CALLS" ;;
                 *"rm -f"*) printf "cleanup\n" >>"$CALLS" ;;
             esac
         }
@@ -40,6 +41,7 @@ trial() {
         rotate_onion_env_fingerprint() { printf "envs\n"; }
         pithead() { printf "render\n" >>"$CALLS"; }
         wait_status_ok() { printf "health\n" >>"$CALLS"; }
+        wait_for() { printf "runtime\n" >>"$CALLS"; }
         _onion_reachable_external() { printf "external\n" >>"$CALLS"; }
         SAFETY_BACKUP=0 RUN_ROTATE_ONION=1 SAFETY_ARCHIVE="" SAFETY_RESTORE_FAILED=0
         _SAFETY_RESTORE_ARMED=0 _SAFETY_FOREIGN_TRAP=""
@@ -58,7 +60,7 @@ trial() {
         rc=$?
     fi
     local expected
-    expected="$(printf 'swap\nkey\nhostname\nrender\ncaddy\nhealth\nexternal\ncleanup')"
+    expected="$(printf 'swap\nkey\nhostname\nrender\ndashboard\ncaddy\nhealth\nruntime\nexternal\ncleanup')"
     [ "$rc" -ne 0 ] && [ "$(cat "$calls")" = "$expected" ]
 }
 
