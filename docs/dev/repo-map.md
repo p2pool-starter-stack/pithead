@@ -89,6 +89,11 @@ relocated-install warnings with Bash using disposable files and getter outputs.
 checksums and public-key extraction. `go/internal/doctor/config.go` implements the
 config diagnostics; `make test-go-doctor-config-parity` compares both with Bash
 using public vectors and supplied config getter outputs.
+`go/internal/host/public_ip.go` implements the legacy public-interface classifier.
+Doctor's stratum exposure, listening and Tor runtime probes live in
+`go/internal/doctor/stratum_exposure.go` and `network_runtime.go`.
+`make test-go-doctor-network-parity` compares findings and tool arguments with
+Bash using fake `ip`, `ss`, `docker` and `curl` commands.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

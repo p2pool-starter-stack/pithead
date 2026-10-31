@@ -10,6 +10,10 @@
 .PHONY: test-go-doctor-data-parity
 .PHONY: test-go-doctor-onion-parity
 .PHONY: test-go-doctor-config-parity
+.PHONY: test-go-doctor-network-parity
+
+test-go-doctor-network-parity: go-build test-go ## Compare network diagnostic findings and probes with Bash using fake tools
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestNetwork ./internal/doctor
 
 test-go-doctor-config-parity: go-build test-go ## Compare payout-address classification and config diagnostics with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestConfig ./internal/doctor

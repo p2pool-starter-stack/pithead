@@ -7,8 +7,8 @@ Incremental port for issue #3811, based on
 authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 `4565297a`, host probes at `d9c9d1ff`, verifier/daemon probes at `82d34cfd`,
 control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
-data/deployment probes at `a84818dd`, and Tor address probes at `af91d3d8`.
-The operator commits later rounds because
+data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
+payout-address/config probes at `f74043ae`. The operator commits later rounds because
 this sandbox cannot write shared Git metadata. No performance benefit is claimed.
 
 ## Scope and continuation criteria
@@ -74,6 +74,7 @@ selection is not implemented.
 | Tor onion-address report | Native probe; Bash doctor collector | 8 tagged address groups and Go units |
 | Shared dashboard onion text | Used by native status and doctor packages | Existing status comparisons and Go units |
 | Monero/Tari address classifiers and config diagnostics | Native packages; Bash config readers and doctor collector | 11 tagged comparison groups and Go units |
+| Public-IP classification, stratum exposure/listening and Tor runtime | Native packages; Bash doctor collector | 16 tagged comparison groups and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -164,6 +165,10 @@ oracles:
   calls the unchanged payout-address classifiers. Supplied jq/variant outputs,
   public vectors and isolated Python availability reach native packages without
   changing source tests. JSON parsing and variant-file reading remain Bash.
+- `doctor_network_reference.sh` calls unchanged IP, stratum and Tor checks with
+  supplied getter outputs and isolated tools. It compares native findings,
+  setup warnings and command arguments without changing source tests or using
+  real interfaces, listeners, containers or network requests.
 
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
@@ -172,7 +177,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-host-parity`, `test-go-doctor-verification-parity`,
 `test-go-doctor-control-parity`, `test-go-doctor-disk-parity` and
 `test-go-doctor-data-parity`, `test-go-doctor-onion-parity` and
-`test-go-doctor-config-parity`.
+`test-go-doctor-config-parity` and `test-go-doctor-network-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -432,6 +437,56 @@ command/exit records use `.go-cache/logs/config-*`. Existing tests, fixtures,
 goldens, lint rules and Make checks remain unchanged; no Git write, download,
 network request, live probe or daemon contact occurred.
 
+## Network diagnostics slice (2026-10-31)
+
+`host.PublicIP` and `PublicIPs` retain the legacy IPv4 exclusions, lexical
+leading-zero behavior, permissive IPv6 first-hextet gate, interface order,
+duplicates and unterminated-record handling. Native doctor packages port effective
+stratum settings, exposure findings/setup warnings, container-state queries,
+Tor-running findings, listener checks and the bounded Tor clearnet probe. They
+retain getter gates, exact tool arguments, partial output on nonzero status,
+short-circuit order and listener pipeline failures. Doctor exposure messages
+withhold public IP and password values; setup warnings retain public IP values.
+The production collector and dotenv parsing remain Bash.
+
+Unsupported launches, NUL/overflow inputs, tool diagnostics and unusual narrowed
+binds decline a native verdict. Narrowed exposure also falls back when grep is
+missing, bind text looks like an option, or public output exceeds 512 bytes;
+this preserves the original grep-option and printf/grep pipefail behavior.
+Setup warning escapes also fall back.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Network probes | `PITHEAD_IMPL=bash make test-go-doctor-network-parity`: PASS, 16 tagged comparison groups and Go units | `tests/go-parity/run.sh make test-go-doctor-network-parity`: PASS |
+| CLI and doctor JSON | `PITHEAD_IMPL=bash make test-go-doctor-network-parity test-go-doctor-parity test-go-parity`: PASS, 15 initial network groups plus 13 JSON and 12 CLI groups | Same targets through `tests/go-parity/run.sh`: PASS |
+| Existing doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
+| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests/97.42% | `tests/go-parity/run.sh make test-dashboard`: PASS on retry, same count/coverage; backend remains Python |
+| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
+| Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: same result, including after the retry |
+| File budget, build, docs voice, paths and operator strings | Baseline commands/base in the control slice: PASS | Same Go commands/base: PASS |
+| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+| Existing CLI suite | `PITHEAD_IMPL=bash make test-stack`: unavailable, macOS refusal; exit 2 | `tests/go-parity/run.sh make test-stack`: same result |
+
+`go -C go test -tags=parity -race -count=1 -run
+'TestNetwork|TestStratumExposure|TestPublicIP' ./internal/doctor ./internal/host`,
+`go -C go test -count=1 ./...`, `go -C go vet -tags=parity ./...` and the Linux
+build command above pass. The final TLS-tool comparison also runs under race
+checking with `go -C go test -tags=parity -race -count=1 -run
+TestNetworkTLSNormalizationTools ./internal/doctor`: PASS. Linux compilation
+provides no runtime verdict. Adapter syntax, pinned ShellCheck/shfmt pass;
+Go formatting and scoped Markdown checks pass. Independent static review
+passes with no remaining defects.
+
+The first Go dashboard run had 3715 passes and one failure in
+`TestBoundedRead.test_a_trickled_body_does_not_cost_quadratic_time` (5.66 seconds
+against its unchanged four-second limit); the same full suite passed on retry.
+Early new-harness compile, ShellCheck and diagnostic-stream assertions were
+corrected before paired runs; one fixture process also reported a syntax error
+during an adapter edit. Stable reruns pass. Existing tests, fixtures, goldens,
+lint rules and Make checks remain unchanged. Private command/exit records use
+`.go-cache/logs/network-*`. No Git write, download, real interface/listener probe,
+external network request, live container or daemon contact occurred.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
@@ -459,7 +514,8 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port the remaining doctor network, container and appliance-state checks.
+1. Port doctor firewall/LAN guards, Tor transition/history, remaining container
+   checks and appliance-state checks.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and
