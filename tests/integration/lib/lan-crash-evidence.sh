@@ -7,7 +7,7 @@ if ! timeout --kill-after=1 1 docker inspect -f 'node={{.State.Running}} exit={{
 fi
 for unit in pithead-lan.timer pithead-lan-check.service; do
     echo "unit=$unit"
-    timeout --kill-after=1 1 systemctl show -p ActiveState,SubState,Result,ExecMainStatus,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,LastTriggerUSecMonotonic,NextElapseUSecMonotonic "$unit" 2>/dev/null || echo unit=unavailable
+    timeout --kill-after=1 1 systemctl show -p ActiveState,SubState,Result,ExecMainStatus,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic "$unit" 2>/dev/null || echo unit=unavailable
 done
 if test -s data/lan-guard/enforced; then echo marker=present; else echo marker=absent; fi
 CAPTURE
@@ -27,7 +27,7 @@ rx \"\$1\""
         timeout --kill-after=1 "$remaining" bash -c "$transport" _ "timeout --kill-after=1 $remaining bash -c $(quote_arg "$(_lan_crash_snippet)") _ $(quote_arg "$node")" 2>/dev/null | head -c 8193
     ) || out=""
     if [ "${#out}" -gt 8192 ]; then out=""; fi
-    kept=$(printf '%s\n' "$out" | LC_ALL=C grep -E '^(captured_utc=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z|node=(true|false) exit=[0-9]{1,3} oom=(true|false) starts=[0-9]{1,9} started=[0-9TZ:.+-]{1,40} finished=[0-9TZ:.+-]{1,40}|node=unavailable|unit=(pithead-lan.timer|pithead-lan-check.service|unavailable)|ActiveState=(active|activating|deactivating|inactive|failed|reloading)|SubState=(dead|running|waiting|elapsed|exited|start|start-pre|start-post|stop|stop-sigterm|stop-sigkill|failed|auto-restart)|Result=(success|resources|timeout|exit-code|signal|core-dump|watchdog|start-limit-hit|protocol|condition|assert|dependency)|ExecMainStatus=[0-9]{1,3}|(ExecMainStartTimestampMonotonic|ExecMainExitTimestampMonotonic|LastTriggerUSecMonotonic|NextElapseUSecMonotonic)=[0-9]{1,20}|marker=(present|absent))$' | head -n 32) || true
+    kept=$(printf '%s\n' "$out" | LC_ALL=C grep -E '^(captured_utc=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z|node=(true|false) exit=[0-9]{1,3} oom=(true|false) starts=[0-9]{1,9} started=[0-9TZ:.+-]{1,40} finished=[0-9TZ:.+-]{1,40}|node=unavailable|unit=(pithead-lan.timer|pithead-lan-check.service|unavailable)|ActiveState=(active|activating|deactivating|inactive|failed|reloading)|SubState=(dead|running|waiting|elapsed|exited|start|start-pre|start-post|stop|stop-sigterm|stop-sigkill|failed|auto-restart)|Result=(success|resources|timeout|exit-code|signal|core-dump|watchdog|start-limit-hit|protocol|condition|assert|dependency)|ExecMainStatus=[0-9]{1,3}|(ExecMainStartTimestampMonotonic|ExecMainExitTimestampMonotonic)=[0-9]{1,20}|marker=(present|absent))$' | head -n 32) || true
     {
         printf 'sample_utc=%s stage=%s observed=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$stage" "$observed"
         if [ -n "$kept" ]; then

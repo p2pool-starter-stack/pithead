@@ -144,7 +144,7 @@ _lan_exit_code() { # <container>
 }
 
 assert_lan_guard_crash_restart() {
-    local p c containers="" code since deadline up rc=0 LAN_CRASH_EVIDENCE
+    local p c containers="" code since deadline up rc=0 LAN_CRASH_EVIDENCE negative_node="" negative_evidence=""
     [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
     for p in "$@"; do
         c=$(rx "bash -c 'source ./pithead && lan_guard_container $p'")
@@ -163,6 +163,10 @@ assert_lan_guard_crash_restart() {
         else
             it_fail "LAN crash diagnostic storage available" "allocation unavailable; controls continue"
             LAN_CRASH_EVIDENCE=/dev/null
+        fi
+        if [ -z "$negative_node" ]; then
+            negative_node=$c
+            negative_evidence=$LAN_CRASH_EVIDENCE
         fi
         _lan_crash_capture "$c" before-crash unknown "$(($(date +%s) + 4))"
         rx "docker kill --signal SEGV $c" >/dev/null 2>&1 || true
@@ -186,6 +190,8 @@ assert_lan_guard_crash_restart() {
         done
         assert_eq "$c is running again within the timer interval, rule live (#3290)" "$up" true
     done
+    c=$negative_node
+    LAN_CRASH_EVIDENCE=$negative_evidence
     _lan_crash_capture "$c" before-negative unknown "$(($(date +%s) + 4))"
     assert_eq "the rule is still live after the restart (#3290)" \
         "$(rx "bash -c 'source ./pithead && lan_guard_enforced $*' && echo live")" live
@@ -193,8 +199,6 @@ assert_lan_guard_crash_restart() {
         it_fail "LAN check service finished before the no-rule crash (#3290)" "still running after 30s; negative case skipped"
         return 0
     fi
-    c=${containers# }
-    c=${c%% *}
     rx "docker kill --signal KILL $c" >/dev/null 2>&1 || true
     assert_ne "$c is down before the rule is flushed (#3290)" "$(_lan_exit_code "$c")" running
     _lan_flush_rules

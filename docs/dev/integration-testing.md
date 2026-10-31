@@ -777,10 +777,12 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   Before testing boot recovery, the crash leg sends SIGSEGV (SIGKILL fallback), retains
   the nonzero-exit assertions and polls for a running node within the same 180-second
   deadline. `lan-crash-<node>.*/observations.log` records UTC samples before injection, after the
-  exit observation, during recovery polls and before the missing-rule control. Samples
+  exit observation and during recovery polls. The node selected for the missing-rule
+  control receives a `before-negative` sample in its own observation file. Samples
   retain only node running/exit/OOM state, Docker start/finish timestamps and restart
-  counts, plus the LAN timer/check service states, results and monotonic execution/trigger
-  timestamps. The marker observation is separate from the existing live-rule assertion.
+  counts, plus the LAN timer/check service states, results and numeric service execution
+  timestamps. Timer trigger and next-elapse timestamps are not retained. The marker
+  observation is separate from the existing live-rule assertion.
   Each diagnostic command has a three-second bound (one-second hard-kill grace), reduced
   to the remaining recovery time, and at most 8 KiB of input and 32 allowlisted lines
   per sample are retained. Failed or oversized captures report unavailable; discarded
@@ -1465,8 +1467,9 @@ after its payout-confirm record, using the launcher's bounded readiness loop. A 
 writer must finish before assertions read the capture; an incomplete writer must fail
 within the launch deadline.
 `selftest-lan-crash-evidence.sh` exercises the real crash capture against fake commands,
-including unavailable and oversized reads, and checks that the crash deadline and
-missing-rule controls remain intact.
+including unavailable and oversized reads. It checks both nonzero-exit assertions,
+the crash deadline, unknown-target refusal and the missing-rule controls. Its two-node
+case verifies that the negative-control target receives the sample in its own file.
 `selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
 assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
 timer flush and boot recovery assertions and rejects unexpected missing commands,
