@@ -19,6 +19,7 @@ export function SyncView({ state, history, connected, now = Date.now() / 1000 })
       .filter((name) => name === "monero" || status?.chains?.tari)
       .map((name) => {
         const node = status?.chains?.[name] || {};
+        const { local: localNode } = node;
         const chain = state.sync?.[name];
         const measured = history?.eta(name, chain) ?? null;
         const eta =
@@ -39,7 +40,7 @@ export function SyncView({ state, history, connected, now = Date.now() / 1000 })
               ? Math.max(0, Math.min(100, chain.percent))
               : null;
         return html`<article class="panel sync-node" aria-label=${name === "monero" ? "Monero sync" : "Tari sync"}>
-        <h3>${name === "monero" ? "Monero" : "Tari"} · ${node.local === true ? "Local node" : node.local === false ? "Remote node" : "Node location unknown"}</h3>
+        <h3>${name === "monero" ? "Monero" : "Tari"} · ${localNode === true ? "Local node" : localNode === false ? "Remote node" : "Node location unknown"}</h3>
         <p class="sync-headline">${progress === null ? "Progress unknown" : `${progress}%`} · ${eta === 0 ? "Sync complete" : eta === null ? "Estimate unavailable" : `Roughly ${duration(eta)} left`}</p>
         <progress max="100" value=${progress ?? undefined} aria-label=${`${name} sync progress`}></progress>
         <dl><dt>Reachability</dt><dd>${verdict(node.reachable, "Reachable", "Unreachable")}</dd>
@@ -49,7 +50,7 @@ export function SyncView({ state, history, connected, now = Date.now() / 1000 })
           <dt>Blocks</dt><dd>${count(chain?.current)} / ${count(chain?.target)} · ${count(chain?.remaining)} remaining</dd>
           <dt>Database / mode</dt><dd>${chain?.db_size || "Unknown"} / ${chain?.mode || "Unknown"}</dd>
           <dt>Required-service recreation</dt><dd>${verdict(node.service_recreated, "Recreated", "Not recreated")}</dd></dl>
-        ${node.local === false ? html`<p>Remote ${name === "monero" ? "Monero" : "Tari"} node: <span class="sync-address">${node.node || "Unknown"}</span>. Reported state: ${node.initializing || node.base_node_state || node.sync_state || verdict(node.synced, "SYNCED", "SYNCING")}. Initial sync: ${name === "monero" && node.initial_sync_achieved == null ? "Unknown — not reported by Monero" : verdict(node.initial_sync_achieved, "achieved", "not yet achieved")}. Waiting: ${duration(node.wait_seconds)}.</p>` : null}
+        ${localNode === false ? html`<p>Remote ${name === "monero" ? "Monero" : "Tari"} node: <span class="sync-address">${node.node || "Unknown"}</span>. Reported state: ${node.initializing || node.base_node_state || node.sync_state || verdict(node.synced, "SYNCED", "SYNCING")}. Initial sync: ${name === "monero" && node.initial_sync_achieved == null ? "Unknown — not reported by Monero" : verdict(node.initial_sync_achieved, "achieved", "not yet achieved")}. Waiting: ${duration(node.wait_seconds)}.</p>` : null}
         ${node.error ? html`<p role="status">Last probe error: ${node.error}</p>` : null}
         ${node.recovery_remaining > 0 ? html`<p>Recovery window: ${duration(node.recovery_remaining)} remaining with continuous reachability.</p>` : null}
       </article>`;
