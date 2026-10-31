@@ -2,11 +2,12 @@ package status
 
 import (
 	"errors"
-	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/p2pool-starter-stack/pithead/go/internal/host"
 )
 
 type restartSnapshot struct {
@@ -127,16 +128,7 @@ func shellTSVFields(line string, count int) []string {
 }
 
 func containerEngine() string {
-	if engine := os.Getenv("PITHEAD_ENGINE"); engine == "docker" || engine == "podman" {
-		return engine
-	}
-	if _, err := exec.LookPath("docker"); err == nil {
-		return "docker"
-	}
-	if _, err := exec.LookPath("podman"); err == nil {
-		return "podman"
-	}
-	return "docker"
+	return host.Engine()
 }
 
 func restartName(name string) string {

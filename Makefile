@@ -3,6 +3,10 @@
 .PHONY: go-build test-go test-go-parity go-cache
 .PHONY: test-go-status-parity test-go-doctor-parity
 .PHONY: test-go-doctor-memory-parity
+.PHONY: test-go-doctor-host-parity
+
+test-go-doctor-host-parity: go-build test-go ## Compare native doctor host and dependency probes with Bash
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestHost ./internal/doctor
 
 test-go-doctor-memory-parity: go-build test-go ## Compare native doctor memory and clock probes with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run Parity ./internal/doctor

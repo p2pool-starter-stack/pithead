@@ -66,6 +66,9 @@ and the unchanged Bash formatter.
 Native memory and clock probes are in `go/internal/doctor/memory.go` and
 `go/internal/doctor/clock.go`. `make test-go-doctor-memory-parity` compares them with the
 Bash reference. Doctor's CLI collector still uses Bash.
+Engine selection is shared by native status and doctor in `go/internal/host/`.
+`make test-go-doctor-host-parity` compares boot persistence, CPU and dependency
+probes with the Bash reference using synthetic tools.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
