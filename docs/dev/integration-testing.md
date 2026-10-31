@@ -774,6 +774,21 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   invalidate the marker and close each port within its check interval
   ([#2846](https://github.com/p2pool-starter-stack/pithead/issues/2846),
   [#3034](https://github.com/p2pool-starter-stack/pithead/issues/3034)). `up` restores the nodes.
+  Before testing boot recovery, the crash leg sends SIGSEGV (SIGKILL fallback), retains
+  the nonzero-exit assertions and polls for a running node within the same 180-second
+  deadline. `lan-crash-<node>.*/observations.log` records UTC samples before injection, after the
+  exit observation, during recovery polls and before the missing-rule control. Samples
+  retain only node running/exit/OOM state, Docker start/finish timestamps and restart
+  counts, plus the LAN timer/check service states, results and monotonic execution/trigger
+  timestamps. The marker observation is separate from the existing live-rule assertion.
+  Each diagnostic command has a three-second bound (one-second hard-kill grace), reduced
+  to the remaining recovery time, and at most 8 KiB of input and 32 allowlisted lines
+  per sample are retained. Failed or oversized captures report unavailable; discarded
+  fields mark a capture as filtered. Raw errors,
+  environment values and journal messages are excluded. These are sampled observations,
+  not a complete event trace; a later PASS does not explain an earlier failed window.
+  A diagnostic storage failure records a failed row and continues the existing controls.
+  The missing-rule negative control and subsequent `up` recovery remain required.
   The row then strips the
   rule as a reboot does, checks that the non-private dial now connects, runs
   `pithead-lan-guard.service` before `pithead-egress.service` on the bench, verifies the live
@@ -1449,6 +1464,9 @@ Several self-tests sit beside it as standalone files, picked up by the same glob
 after its payout-confirm record, using the launcher's bounded readiness loop. A delayed
 writer must finish before assertions read the capture; an incomplete writer must fail
 within the launch deadline.
+`selftest-lan-crash-evidence.sh` exercises the real crash capture against fake commands,
+including unavailable and oversized reads, and checks that the crash deadline and
+missing-rule controls remain intact.
 `selftest-check-lan-guard.sh` checks read-only and deploying dispatch with unrelated
 assertions, including onion targets, explicitly stubbed. It retains the LAN probes,
 timer flush and boot recovery assertions and rejects unexpected missing commands,
