@@ -325,6 +325,77 @@ Deploying modes that borrow a miner require a positive integer; other runs accep
 `selftest-e2e-boundary.sh` checks these worker-count rules before SSH, including
 zero-worker runs and malformed counts.
 
+### No-deployment receipt
+
+The wrapper optionally emits a version 2 receipt for a configuration-restore compatibility
+refusal before baseline mutation. This producer contract serves
+[p2pool-starter-stack/bench-ci#2308](https://github.com/p2pool-starter-stack/bench-ci/issues/2308);
+it does not qualify the baseline or change the failed candidate result.
+
+Supply all five environment variables, or leave all five unset for existing callers:
+
+| Variable | Required value |
+|---|---|
+| `E2E_NO_DEPLOY_DIR` | Existing private absolute directory on the wrapper controller, outside the candidate checkout and its results directory; allocate a new directory for every attempt. |
+| `E2E_JOB_ID` | Positive decimal job ID, at most 20 digits. |
+| `E2E_INVOCATION_ID` | Fresh unpredictable 32-character lowercase hexadecimal nonce for this attempt. |
+| `E2E_CANDIDATE_SHA` | Full 40-character lowercase candidate commit SHA available in the trusted controller Git object store; pass this exact SHA as the wrapper positional argument. |
+| `E2E_CONTROLLER_SHA` | Full 40-character lowercase trusted controller revision, matching its checkout HEAD. |
+
+The caller supplies an immutable controller checkout at the reviewed trusted revision, independently
+of candidate code, and owns the private receipt directory with no other writers. Before any bench operation,
+the wrapper validates the binding and exclusively creates `.no-deployment-claim` inside it.
+An existing claim or receipt refuses reuse, including attempts interrupted before publication.
+Invalid or incomplete bindings, a named ref instead of the requested full SHA, an unavailable
+candidate commit or a mismatched controller revision refuse the invocation without a receipt.
+The controller and candidate revisions may differ. Admission reads the candidate VERSION blob
+from the trusted controller Git object store, and checks the live seed and canonical configurations
+with the trusted checker before preflight or candidate provisioning. It does not consult reusable
+candidate Git metadata or copy configurations into candidate-controlled destinations. A live pointer
+into the reusable candidate checkout, a broken pointer, or unreadable live config or environment
+file refuses admission; an existing but unusable seed never falls back to canonical configuration.
+Only an absent current pointer selects the canonical seed.
+
+On compatibility refusal only, the wrapper marks restoration unnecessary and atomically renames
+a private temporary file to `no-deployment.json` in that directory. The UTF-8 JSON object is
+bounded to 1024 bytes and contains exactly these fields:
+
+```json
+{
+  "schema_version": 2,
+  "job_id": "3177",
+  "invocation_id": "0123456789abcdef0123456789abcdef",
+  "candidate_sha": "0000000000000000000000000000000000000000",
+  "controller_sha": "1111111111111111111111111111111111111111",
+  "status": "refused",
+  "reason_code": "restore_compatibility_unverified",
+  "baseline_mutated": false
+}
+```
+
+`restore_compatibility_unverified` is the sole version 2 reason code: the configuration pair
+was incompatible or its compatibility could not be read or established. The example SHAs are
+placeholders; the actual receipt carries both bound revisions. No configuration content,
+credentials, wallet values, paths or topology enter the record.
+
+Eligibility ends before preflight, including its prior-evidence cleanup, and before any candidate
+provisioning, reusable Git state, configuration copies, CLI build, safety backup, wallet capture,
+miner borrowing, deployment or restoration. The post-provision compatibility guard remains enforced;
+its refusal grants no receipt because candidate state has already been touched. Later failures
+and cancellation never publish proof.
+Publication failure preserves a nonzero refusal with unavailable evidence. A receipt is final
+only after the wrapper process and its children have stopped with a nonzero result; cancellation
+or an uncertain process outcome is unknown even if a file survives. Never accept a temporary file.
+
+The consumer must validate the exact schema, types, fixed values and controller/job/invocation/candidate
+binding against its own fresh attempt, collect the final file from the controller directory
+even when no candidate results directory exists, and independently verify canonical ownership,
+images, health and sync. The unsafe draft version 1 is unsupported and must never be consumed.
+Missing fields, unsupported versions, unknown reason codes, stale or mismatched bindings, and unavailable evidence remain unknown and retain ordinary restoration
+safeguards. The receipt alone never authorizes recovery or makes a candidate pass. Historical
+job verdicts remain unchanged. `selftest-no-deployment.sh` exercises this boundary and its
+failure, cancellation and reuse controls without a live stack.
+
 Pre-flight, before anything is locked or borrowed: the wrapper waits up to 120 seconds for both
 chains to read `done` on the bench dashboard's sync panels. This allows a brief `loading` state
 while the dashboard polls an already-synced node. If the wait expires, it prints each
@@ -395,7 +466,10 @@ via an `EXIT` trap):
    drift is loud instead of a stale config being deployed silently. Either way the seed carries
    the same wallet, secrets, onion keys, and shared `monero/tari/p2pool` data dirs — only the
    branch's code differs.
-3. Safety backup (`pithead backup`) as the rollback anchor.
+3. Verify the seeded and canonical configuration versions against the candidate before taking
+   the safety backup (`pithead backup`), capturing wallets, borrowing a miner or deploying.
+   An incompatible or unreadable version refuses the run without invoking wrapper restoration.
+   The newer-configuration restore guard remains enforced.
 4. Borrows a miner (default the configured miner): backs up its xmrig config and repoints it at the
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
    Scenarios with a stratum password hand the rendered credential to the borrowed test pool
