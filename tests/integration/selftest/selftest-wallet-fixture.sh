@@ -108,6 +108,8 @@ RESTORE_SRC="$(sed -n '/^restore_all() {$/,/^}$/p' "$HERE/e2e.sh")"
     # shellcheck disable=SC2034
     CONTROL_PROOF_FAILED=0 CONTROL_VERDICT_BEFORE="" SAFETY_ARCHIVE=""
     # shellcheck disable=SC2329
+    stop_load_worker() { :; }
+    # shellcheck disable=SC2329
     parent_lock_checkpoint() { :; }
     # shellcheck disable=SC2329
     parent_lock_miner_restore() { :; }

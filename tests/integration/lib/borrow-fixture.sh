@@ -83,5 +83,10 @@ handle_borrow_rearm() { # <request> <ack> <run-id>
         ;;
     *) return 1 ;;
     esac
-    wait_workers "$WORKERS" 180 && printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
+    if [ -n "${LOAD_WORKER_NAME:-}" ]; then
+        refresh_load_borrowed_name && wait_load_workers 180 || return 1
+    else
+        wait_workers "$WORKERS" 180 || return 1
+    fi
+    printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
 }
