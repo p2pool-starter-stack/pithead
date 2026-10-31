@@ -53,7 +53,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Containers | `build/<daemon>/` | Dockerfiles, entrypoints, healthchecks, and Monero's bounded archive downloader; CI builds the images, and `make test-tools` checks download recovery. |
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. Quadlet golden units share `os/quadlet/common/`; `tests/stack/test-render-quadlet.sh` checks complete profile inventories and byte parity. `os/rootfs/fetch-go-source.sh` bounds pinned Go-source fetches; `tests/os/selftest-go-source-fetch.sh` runs its local Git transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
-| Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; the start page holds the run sheet, result rules and glossary. |
+| Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; `broken-configs.tsv` and `tests/stack/test-manual-qa-oracle.sh` replay the documented dry-run refusals in shell block 5. The start page holds the run sheet, result rules and glossary. |
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
