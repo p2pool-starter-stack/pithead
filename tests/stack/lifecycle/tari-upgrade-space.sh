@@ -113,14 +113,15 @@ chmod +x "$U2/bin/docker"
 cp "$ROOT/build/tari/config.toml.template" "$U2/build/tari/"
 truncate -s 100G "$U2/data/tari/mainnet/data/base_node/db/data.mdb"
 cat >"$U2/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
+MONERO_ONION_ADDRESS=$TEST_MONERO_ONION
+TARI_ONION_ADDRESS=$TEST_TARI_ONION
 P2POOL_ONION_ADDRESS=p2pa.onion
 PROXY_AUTH_TOKEN=ORIGINALTOKEN
 HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 EOF
+seed_node_onion_state "$U2/data/tor"
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$U2/config.json"
 U2L="$U2/docker.log"
 : >"$U2L"
