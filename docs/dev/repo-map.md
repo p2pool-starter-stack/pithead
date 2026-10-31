@@ -69,6 +69,9 @@ Bash reference. Doctor's CLI collector still uses Bash.
 Engine selection is shared by native status and doctor in `go/internal/host/`.
 `make test-go-doctor-host-parity` compares boot persistence, CPU and dependency
 probes with the Bash reference using synthetic tools.
+`go/internal/doctor/release.go` and `go/internal/doctor/daemon.go` implement
+verifier and engine availability findings. `make test-go-doctor-verification-parity` compares their
+output and engine calls against the unchanged Bash checks using fake tools.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

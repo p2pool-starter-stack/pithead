@@ -5,7 +5,8 @@ STATUS: IN PROGRESS
 Incremental port for issue #3811, based on
 `a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`. The owner
 authorized implementation on 2026-10-31. Rounds 1–4 are committed at
-`4565297a`; the operator commits later rounds because this sandbox cannot write
+`4565297a`, and the host-probe slice at `d9c9d1ff`; the operator commits later
+rounds because this sandbox cannot write
 the shared Git worktree metadata. No performance benefit is claimed.
 
 ## Scope and continuation criteria
@@ -64,6 +65,7 @@ selection is not implemented.
 | `doctor` | Go JSON formatting with Bash collection; human, terminal JSON and unsupported cases fall back | 13-group paired JSON suite and Go units |
 | Doctor memory and clock probes | Native packages; Bash collector | 11 tagged comparison groups and Go units |
 | Doctor engine, boot, CPU and dependencies | Native packages; Bash collector | 9 tagged host groups and Go units |
+| Doctor release verification and engine availability | Native packages; Bash collector | 4 tagged verification groups and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -125,6 +127,11 @@ oracles:
   temporary generated CLI, retaining its dispatcher and Bash JSON oracle.
 - `doctor_memory_reference.sh` extracts guarded free-RAM and clock verdict blocks
   and substitutes controlled meminfo because existing tests source Bash.
+- `doctor_verification_reference.sh` invokes the unchanged release-verification
+  function and extracts the guarded daemon verdict block. New tagged tests use
+  disposable installs and fake engines because the existing doctor suite sources
+  Bash functions. They compare exact TSV/human bytes and engine calls, without a
+  daemon, network, image pull or verification container.
 - `doctor_host_reference.sh` extracts guarded dependency, boot and CPU verdict
   blocks. It uses controlled CPU files and isolated fake host tools because the
   existing source tests cannot reach Go packages. No real engine, systemd, sysctl,
@@ -134,13 +141,13 @@ The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-parity`, `test-go-doctor-memory-parity` and
-`test-go-doctor-host-parity`.
+`test-go-doctor-host-parity` and `test-go-doctor-verification-parity`.
 
 ## Consolidated results (2026-10-31)
 
 Commands used worktree-local caches. Raw logs and status records remain ignored
 under `.go-cache/logs/`. The operator provided the Python 3.11 runtime environment
-at `dashboard/.venv`; this turn installed its 18 locked test and 11 locked
+at `dashboard/.venv`; the host-probe round installed its 18 locked test and 11 locked
 development packages. Tool downloads also populated the local caches for
 Biome 2.5.0, yamllint 1.38.0 and npm package `@taplo/cli@0.7.0`. No application
 runtime dependencies were downloaded by the port. Tests used `UV_OFFLINE=1`,
@@ -181,7 +188,7 @@ Markdown glob includes cached diff-cover templates and virtualenv license files
 under `.uv-cache/`. No lint rule, Make check or cached tool content was changed
 to suppress these findings.
 
-This round reran all native comparison targets, the unchanged doctor contracts,
+The host-probe round reran all native comparison targets, the unchanged doctor contracts,
 restart observer, dashboard/fakes, Go race/vet/build checks and affected lints.
 Frontend, portable tools, netwatch and integration selftest rows retain evidence
 from rounds 1–4. Those rounds also supply default-budget and topology evidence.
@@ -210,6 +217,55 @@ environment, `PITHEAD_IMPL=bash make test` and
 locked grpcio 1.84.0/Pygments 2.20.0. The current dashboard and fake-daemon
 results above supersede that blocker.
 
+## Verifier and daemon availability slice (2026-10-31)
+
+`go/internal/doctor/release.go` ports the release-verification diagnostic: source
+checkout detection, public-key presence, Docker availability, and cached verifier
+image findings. It preserves regular-file and symlink behavior and checks Docker
+regardless of the selected engine. It never runs the verifier or pulls an image.
+`go/internal/doctor/daemon.go` ports Docker/Podman reachability, including missing
+Docker's info finding, engine precedence and appliance wording.
+
+These are native package ports; the production doctor collector still executes
+Bash. Unsupported shell-script launches and relative executable discovery return
+`ErrUnsupportedProbeInput` without a finding. The first new comparison exposed
+that `exec.LookPath` searches before `Cmd.Dir` takes effect; release probing now
+declines relative PATH entries after its source/no-key short circuits. The new
+adapter's source boundaries are checked so an upstream edit fails the test.
+
+```bash
+PITHEAD_IMPL=bash make test-go-doctor-verification-parity
+tests/go-parity/run.sh make test-go-doctor-verification-parity
+```
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Verifier/daemon findings | `PITHEAD_IMPL=bash make test-go-doctor-verification-parity`: PASS, 4 paired groups plus Go units | `tests/go-parity/run.sh make test-go-doctor-verification-parity`: PASS, same groups and units |
+| CLI and doctor JSON regressions | `PITHEAD_IMPL=bash make test-go-doctor-parity test-go-parity`: PASS, 13 + 12 paired groups | `tests/go-parity/run.sh make test-go-doctor-parity test-go-parity`: PASS, same groups |
+| Unchanged doctor JSON contract | `PITHEAD_IMPL=bash python3 tests/stack/doctor/test-json-contract.py`: PASS, 2 tests | `tests/go-parity/run.sh python3 tests/stack/doctor/test-json-contract.py`: PASS, 2 tests; sources Bash |
+| Pinned doctor IDs | `PITHEAD_IMPL=bash python3 tests/stack/doctor/check-ids.py .`: PASS | `tests/go-parity/run.sh python3 tests/stack/doctor/check-ids.py .`: PASS; source catalog only |
+| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests, 97.42% coverage | `tests/go-parity/run.sh make test-dashboard`: PASS, same tests/coverage; backend remains Python |
+| Dashboard patch coverage | `PITHEAD_IMPL=python COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage`: PASS, not applicable; no Python changes | `COMPARE=a73ffced33800de9435779a9cabef53864455acb tests/go-parity/run.sh make test-patch-coverage`: same result |
+| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
+| File budget, build guards and affected docs lints | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb PITHEAD_IMPL=bash make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings`: PASS | Same base with `tests/go-parity/run.sh make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings`: PASS |
+| Full local gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+
+Additional checks pass with the local caches: `go -C go test -tags=parity -race
+-count=1 ./internal/doctor`, `go -C go vet -tags=parity ./...`, and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
+./cmd/pithead`. The race run includes all 24 tagged comparison groups and ordinary
+Go units. Cross-compilation provides no Linux runtime verdict. The new adapter
+passes `bash -n`, pinned ShellCheck and shfmt. Changed Markdown passes the same
+rules with the two-file `--no-globs` command recorded above. Static independent
+review of the final code found no remaining defects.
+
+The unchanged `PITHEAD_IMPL=bash make test-stack` and
+`tests/go-parity/run.sh make test-stack` still refuse macOS (exit 2); no guard
+was bypassed. Current logs and command/exit records use
+`.go-cache/logs/verification-*`.
+No existing test, fixture, golden, lint rule or Make check was modified. No
+network downloads, Git writes or live probes were performed in this slice.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
@@ -237,7 +293,7 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port release-verification and remaining doctor probes.
+1. Port remaining doctor probes, starting with control-unit and config checks.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and
