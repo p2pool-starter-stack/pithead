@@ -6,10 +6,9 @@ Incremental port for issue #3811, based on
 `a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`. The owner
 authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 `4565297a`, host probes at `d9c9d1ff`, verifier/daemon probes at `82d34cfd`,
-control/miner probes at `22374d87`, and grouped disk checks at `eec3afce`.
-The operator commits later rounds because
-this sandbox cannot write the shared Git worktree metadata. No performance
-benefit is claimed.
+control/miner probes at `22374d87`, grouped disk checks at `eec3afce`, and
+data/deployment probes at `a84818dd`. The operator commits later rounds because
+this sandbox cannot write shared Git metadata. No performance benefit is claimed.
 
 ## Scope and continuation criteria
 
@@ -71,6 +70,8 @@ selection is not implemented.
 | Doctor control units and local-miner HugePages gate | Native packages; Bash collector | 9 tagged control groups and Go units |
 | Grouped disk checks for doctor and setup preflight | Native package; Bash callers | 8 tagged disk groups and Go units |
 | Missing data directories and deployment state | Native packages; Bash callers | 8 tagged data/deployment groups and Go units |
+| Tor onion-address report | Native probe; Bash doctor collector | 8 tagged address groups and Go units |
+| Shared dashboard onion text | Used by native status and doctor packages | Existing status comparisons and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -153,6 +154,10 @@ oracles:
   functions and extracts guarded doctor/deployment verdict blocks. Getter outputs
   and disposable filesystem fixtures reach native packages without changing the
   source-based tests; dotenv parsing remains in Bash.
+- `doctor_onion_reference.sh` extracts the guarded address-report block and calls
+  the original address helpers. Getter outputs and program names reach native
+  probes without changing source tests or contacting Tor; a guard prevents the
+  supplied program name from turning source loading into a CLI launch.
 
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
@@ -160,7 +165,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-parity`, `test-go-doctor-memory-parity`,
 `test-go-doctor-host-parity`, `test-go-doctor-verification-parity`,
 `test-go-doctor-control-parity`, `test-go-doctor-disk-parity` and
-`test-go-doctor-data-parity`.
+`test-go-doctor-data-parity` and `test-go-doctor-onion-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -339,11 +344,8 @@ Unsupported paths/NUL values and warning escapes decline a native verdict.
 | Suite | Baseline command and result | Go command and result |
 |---|---|---|
 | Data/deployment, CLI and JSON | `PITHEAD_IMPL=bash make test-go-doctor-data-parity test-go-doctor-parity test-go-parity`: PASS, 8 + 13 + 12 paired groups and Go units | `tests/go-parity/run.sh make test-go-doctor-data-parity test-go-doctor-parity test-go-parity`: PASS |
-| Existing doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
-| Dashboard and fake daemons | `PITHEAD_IMPL=python make test-dashboard` and `PITHEAD_IMPL=python make test-fakes`: PASS, 3716 tests/97.42% and 54 tests | `tests/go-parity/run.sh make test-dashboard` and `tests/go-parity/run.sh make test-fakes`: PASS, same counts/coverage; backend remains Python |
-| Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: same result |
-| File budget, build, docs voice, paths and operator strings | Baseline commands/base in the control slice: PASS | Same Go commands/base: PASS |
-| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+
+The other consolidated commands reran with the same results.
 
 Additional checks pass: `go -C go test -tags=parity -race -count=1 ./internal/doctor`
 (49 tagged comparison groups plus units), `go -C go vet -tags=parity ./...` and
@@ -355,6 +357,33 @@ The first Go full gate also caught an extra ledger blank line; it was corrected
 before the rerun recorded as `stale-gate-final-go`.
 Existing tests, fixtures, goldens, lint rules and Make checks remain unchanged;
 no Git write, download, live probe or daemon contact occurred.
+
+## Tor address slice (2026-10-31)
+
+`go/internal/doctor/onion_addresses.go` ports the ordered node/dashboard report,
+exact profile gates, placeholder handling and key-specific appliance remedies.
+`go/internal/onion/` shares missing-address detection and dashboard text with native
+status while preserving its getter order. Getter outputs are inputs; doctor
+collection and dotenv parsing remain Bash. No address validation was added.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Tor addresses, status, JSON and CLI | `PITHEAD_IMPL=bash make test-go-doctor-onion-parity test-go-status-parity test-go-doctor-parity test-go-parity`: PASS, 8 + 9 + 13 + 12 paired groups and Go units | `tests/go-parity/run.sh make test-go-doctor-onion-parity test-go-status-parity test-go-doctor-parity test-go-parity`: PASS |
+| Existing doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
+| Dashboard and fake daemons | `PITHEAD_IMPL=python make test-dashboard` and `PITHEAD_IMPL=python make test-fakes`: PASS, 3716 tests/97.42% and 54 tests | `tests/go-parity/run.sh make test-dashboard` and `tests/go-parity/run.sh make test-fakes`: PASS, same counts/coverage; backend remains Python |
+| Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: same result |
+| File budget, build, docs voice, paths and operator strings | Baseline commands/base in the control slice: PASS | Same Go commands/base: PASS |
+| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+
+Additional checks pass: `go -C go test -tags=parity -race -count=1
+./internal/doctor ./internal/status ./internal/onion` (57 tagged doctor comparison
+groups plus units), `go -C go vet -tags=parity ./...` and the Linux build command
+above. Cross-compilation provides no Linux runtime verdict. Adapter syntax, pinned
+ShellCheck/shfmt, scoped Markdown and Go formatting checks pass. Current private
+command/exit records use `.go-cache/logs/onion-*`. Independent static review found
+no remaining defects. Existing tests, fixtures, goldens, lint rules and Make checks
+remain unchanged; no Git write, download, Tor request, live probe or daemon contact
+occurred.
 
 ## Unavailable and known host constraints
 

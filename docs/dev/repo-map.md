@@ -82,6 +82,9 @@ resolution, filesystem grouping and findings with Bash using fake df responses.
 `go/internal/doctor/data_directories.go` and `deployment.go` implement missing-data
 and setup-state findings. `make test-go-doctor-data-parity` compares them and the
 relocated-install warnings with Bash using disposable files and getter outputs.
+`go/internal/onion/` shares dashboard address formatting between status and doctor.
+`go/internal/doctor/onion_addresses.go` implements the Tor address report;
+`make test-go-doctor-onion-parity` compares it with Bash using getter outputs.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

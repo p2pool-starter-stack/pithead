@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/p2pool-starter-stack/pithead/go/internal/onion"
 )
 
 const docsURL = "https://github.com/p2pool-starter-stack/pithead/blob/main"
@@ -13,13 +15,10 @@ func (r *Runner) onionStatus() string {
 		return ""
 	}
 	address := r.get("DASHBOARD_ONION_ADDRESS")
-	if address == "" || address == "placeholder" {
+	if onion.Missing(address) {
 		return ""
 	}
-	if r.get("DASHBOARD_ONION_CLIENT_AUTH") == "true" {
-		return "http://" + address + " (client-auth ON + login; get your client key with '" + r.Program + " onion-client-key')"
-	}
-	return "http://" + address + " (login required)"
+	return onion.Status(r.Program, address, r.get("DASHBOARD_ONION_CLIENT_AUTH"))
 }
 
 func (r *Runner) announceStratumAuth() {
