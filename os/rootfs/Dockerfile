@@ -5,7 +5,7 @@ ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 ARG COSIGN_VERSION=v3.1.3
 ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7"
+ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7 github.com/go-jose/go-jose/v4@v4.1.6"
 ENV CGO_ENABLED=0
 
 COPY os/rootfs/fetch-go-source.sh /usr/local/bin/fetch-go-source
@@ -29,12 +29,9 @@ RUN /out/docker-compose version && /out/cosign version \
     && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
     && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.10" \
     && go version /out/cosign | grep -qxF "/out/cosign: go1.26.10" \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]'
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
-# ---------------------------------------------------------------------------------------------
-# Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
-# bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
-# box — every Debian package here is frozen until the next bake.
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 
 ENV DEBIAN_FRONTEND=noninteractive
