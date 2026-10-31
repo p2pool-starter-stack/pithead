@@ -204,8 +204,12 @@ the package's `__main__.py` delegates to its server.
 
 Browser assets live in `web/static/`. The opt-in lean preview is in `web/static/sovereign/`,
 with its template at `web/templates/sovereign.html`; its frontend tests are in
-`tests/frontend/sovereign/` and its browser journey is `dashboard/tests/browser/sovereign.test.mjs`.
-The browser workflow retains its sanitized shell and drawer screenshots as `sovereign-visual-proof`, including passing runs.
+`tests/frontend/sovereign/`. Shell and Earnings browser journeys are
+`dashboard/tests/browser/sovereign.test.mjs` and `dashboard/tests/browser/sovereign-earnings.test.mjs`.
+The Earnings page, payout presentation and scoped host-control adapter are in
+`web/static/sovereign/earnings.mjs`, `earnings-model.mjs` and `earnings-control.mjs`.
+The browser workflow retains sanitized shell, drawer and Earnings screenshots as
+`sovereign-visual-proof`, including passing runs.
 JavaScript feature folders are `app/`,
 `config/`, `network/`, `system/`, `workers/`, `xvb/`, and `wizard/`.
 `tests/frontend/` mirrors those folders. Its `harness.mjs`, `helpers/`, and

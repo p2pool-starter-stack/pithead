@@ -54,6 +54,7 @@ jobs:
           path: |
             dashboard/tests/browser/test-results/sovereign-*/shell-*.png
             dashboard/tests/browser/test-results/sovereign-*/drawer-*.png
+            dashboard/tests/browser/test-results/sovereign-*/earnings-*.png
           retention-days: 7
           if-no-files-found: error
   chrome-backup:
