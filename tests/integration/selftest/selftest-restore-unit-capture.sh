@@ -141,6 +141,7 @@ preflight_case() {
         parent_lock_checkpoint() { :; }
         drain_harness_or_refuse() { echo restore >>"$scratch/mutations"; }
         parent_lock_miner_restore() { return 1; }
+        harness_clear_check_evidence() { :; }
         harness_clear_pregate_evidence() { :; }
         stack_image_census() { echo fixture; }
         on_bench() {
