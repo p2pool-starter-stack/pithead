@@ -18,6 +18,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 RESTORED=no
         OUT_DIR="$(mktemp -d)"
         trap 'rm -rf "$OUT_DIR"' EXIT
+        mkdir -p "$OUT_DIR/backups/.pithead-e2e-safety"
+        touch "$OUT_DIR/backups/pithead-backup-test.tar.gz" "$OUT_DIR/backups/.pithead-e2e-safety/pithead-backup-test.tar.gz"
         # A file carries failures out of command substitutions and redirected/conditional calls.
         command_not_found_handle() {
             printf 'restore fixture: command not found: %s\n' "$1" >>"$OUT_DIR/missing-command"
@@ -26,6 +28,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }
         it_log() { :; }
         it_step() { :; }
+        backup_prune() { :; }
         it_pass() { :; }
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
@@ -36,6 +39,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }
         pithead() {
             [ "$RESTORE_CASE:$1:$PUSH_COUNT" != carry-apply-fails:down:3 ] || trace_lifecycle carry-cleanup-down
+            [ "$RESTORE_CASE:$1" = archive-missing:backup ] || [ "$1" != backup ] || printf '[pithead] Backup written to: backups/pithead-backup-test.tar.gz\n'
             case "$RESTORE_CASE:$1" in
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
                 echo 'carry apply failed before health wait'
@@ -120,6 +124,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             *"image inspect --format"*) printf 'sha256:id' ;;
             "docker image inspect "*) [ "$RESTORE_CASE" != up-fails ] || trace_lifecycle post-up-image-inspect ;;
             ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;;
+            "rm -f backups/pithead-backup-test.tar.gz"*) (cd "$OUT_DIR" && bash -c "$1") ;;
             "rm -rf -- "*) [ "$RESTORE_CASE" != carry-cleanup-fails ] ;;
             esac
         }
@@ -132,10 +137,14 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         fi
         printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
+        if [ "$RESTORE_CASE" = cleanup-record ]; then
+            printf '|archive=%s|marker=%s' "$([ -e "$OUT_DIR/backups/pithead-backup-test.tar.gz" ] && echo yes || echo no)" "$([ -e "$OUT_DIR/backups/.pithead-e2e-safety/pithead-backup-test.tar.gz" ] && echo yes || echo no)"
+        fi
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
 
+assert_eq "lifecycle removes the archive and its provenance record" "$(drive_restore yes cleanup-record)" "0|0|archive=no|marker=no"
 assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
 assert_eq "restore rejects a newly introduced marker" "$(drive_restore yes marker-introduced)" "1|1"
