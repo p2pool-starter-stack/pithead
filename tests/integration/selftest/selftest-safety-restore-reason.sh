@@ -82,6 +82,7 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
         rx() {
             printf '%s\n' "$1" >>"$td/rx"
             case "$1" in
+            'python3 -') cat >/dev/null ;;
             'test -f'*) return 0 ;;
             tar*) printf 'config.json\n.env\n' ;;
             *'docker compose ps')
@@ -113,12 +114,12 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
             safety_backup &&
                 [ ! -e "$OUT_DIR/safety-backup-recovery" ] &&
                 [ "$wait_calls:$restore_calls:$cleanup_calls" = 1:0:0 ] &&
-                [ "$(wc -l <"$td/rx")" -eq 2 ]
+                [ "$(wc -l <"$td/rx")" -eq 3 ]
         else
             ! safety_backup &&
                 [ "$wait_calls:$restore_calls:$cleanup_calls" = 1:1:1 ] &&
                 [ "$capture_started" = 1 ] && {
-                [ "$(wc -l <"$td/rx")" -eq "$([ "$mode" = mkdir-fail ] && echo 2 || echo 4)" ] &&
+                [ "$(wc -l <"$td/rx")" -eq "$([ "$mode" = mkdir-fail ] && echo 3 || echo 5)" ] &&
                     case "$mode" in
                     mkdir-fail) [ ! -e "$OUT_DIR/safety-backup-recovery" ] ;;
                     normal)

@@ -5,10 +5,13 @@ safety_backup() {
         [ "$RUN_ROTATE_ONION" != "1" ] || arm_safety_abort_restore
         return 0
     fi
+    if ! rx "python3 -" --stdin <"$HERE/tools/check-restore-version.py"; then
+        it_fail "safety backup restore compatibility" "refused before backup or destructive scenarios"
+        return 1
+    fi
+    it_pass "safety backup restore compatibility"
     [ "$RUN_IMAGE_UPGRADE" != "1" ] || UPGRADE_TELEMETRY_EPOCH="$(rx 'date +%s')"
     it_log "Taking a safety backup before destructive scenarios (pithead backup -y)…"
-    # Read the archive path the CLI itself reports, not `ls -t backups/*` — a concurrent bench
-    # run's archive can win that race, and rolling back onto a foreign archive is unrecoverable.
     if ! pithead backup -y --no-encrypt >"$OUT_DIR/backup.log" 2>&1; then
         SAFETY_ARCHIVE="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
         it_fail "safety backup created" "see $OUT_DIR/backup.log"
