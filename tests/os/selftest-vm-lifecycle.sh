@@ -17,22 +17,28 @@ SSH_ERR="$scratch/ssh.err"
 fake_state=running state_rc=0 list_rc=0
 fake_domains=$'pithead-os-test\nunrelated'
 lease=$'vnet0 ignored ipv6 2001:db8::1/64\nvnet0 ignored ipv4 192.0.2.10/24\nvnet1 ignored ipv4 192.0.2.11/24'
-virsh() {
-    printf '%s\n' "$*" >>"$scratch/calls"
-    case "$*" in
-    "domstate $VM")
-        printf '%s\n' "$fake_state"
-        return "$state_rc"
-        ;;
-    "domifaddr $VM") printf '%s\n' "$lease" ;;
-    'list --name' | 'list --all --name')
-        printf '%s\n' "$fake_domains"
-        return "$list_rc"
-        ;;
-    "destroy $VM" | "undefine $VM --nvram") return 1 ;;
-    *) return 99 ;;
-    esac
-}
+export scratch VM fake_state state_rc list_rc fake_domains lease
+mkdir "$scratch/bin"
+cat >"$scratch/bin/virsh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$scratch/calls"
+case "$*" in
+"domstate $VM")
+    printf '%s\n' "$fake_state"
+    exit "$state_rc"
+    ;;
+"domifaddr $VM") printf '%s\n' "$lease" ;;
+'list --name' | 'list --all --name')
+    printf '%s\n' "$fake_domains"
+    exit "$list_rc"
+    ;;
+"destroy $VM" | "undefine $VM --nvram") exit 1 ;;
+*) exit 99 ;;
+esac
+STUB
+chmod +x "$scratch/bin/virsh"
+PATH="$scratch/bin:$PATH"
+
 expect_rc() {
     local expected="$1" got=0
     shift
