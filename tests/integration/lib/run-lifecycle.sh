@@ -62,6 +62,7 @@ run_lifecycle() {
     run_restore_dashboard_probe || return 1
     run_tari_background_sync || return 1
     local cur_pool fp_before other restore_tls_before
+    run_image_permissions || return 1
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
