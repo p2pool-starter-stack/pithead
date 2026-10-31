@@ -16,7 +16,12 @@ from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
-from mining_dashboard.web.views import diagnostics_views, download_views, power_views, sovereign_views
+from mining_dashboard.web.views import (
+    diagnostics_views,
+    download_views,
+    power_views,
+    sovereign_views,
+)
 from mining_dashboard.web.views.charts import canonical_window, parse_window
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
 from mining_dashboard.web.views.prometheus import render_prometheus

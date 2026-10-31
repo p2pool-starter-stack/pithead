@@ -8,30 +8,43 @@ power_shutdown_verdict() {
     printf '%s' "$1" | grep -Eq 'pithead-boot.service: Deactivated successfully|Stopped Pithead stack at boot'
 }
 
+power_wait_stack() {
+    local attempt=0
+    while [ "$attempt" -lt "${1:-60}" ]; do
+        _ssh "systemctl is-active --quiet pithead-boot.service" 2>/dev/null && return 0
+        attempt=$((attempt + 1))
+        sleep 5
+    done
+    return 1
+}
+
 phase_provision_power_regressions() {
-    local before result journal mtries=0 miner_back=0 code
+    local before shutdown_boot result journal mtries=0 miner_back=0 code
     before=$(_boot_id) || before=""
     [ -n "$before" ] || {
         bad "could not read the boot id before the dashboard-ordered reboot"
-        return
+        return 1
     }
     result=$(dashboard_control_request power '{"action":"reboot"}' 30) || true
     if power_verdict "$result" rejected; then
         bad "sys-reboot was refused through the control channel ($(control_result_payload "$result"))"
-        return
+        return 1
     fi
     if [ -n "$before" ] && _wait_new_boot "$before" 300; then
         ok "sys-reboot was ordered through the dashboard control channel and the guest returned unaided"
     else
         # shellcheck disable=SC2154 # $ip is shared through the assembled runner scope.
         bad "the guest never came back after a dashboard-ordered reboot ($(_ssh_unreachable_reason "$ip"))"
-        return
+        return 1
     fi
     _wait_dhcp_ip 120 || {
         bad "no DHCP lease after the dashboard-ordered reboot — every probe below would red for that, not for the product"
-        return
+        return 1
     }
-    _wait_ssh 120 || true
+    if ! _wait_ssh 120 || ! power_wait_stack; then
+        bad "the boot service never became active after the dashboard-ordered reboot"
+        return 1
+    fi
     code=""
     local tries=0 answered=0
     while [ "$tries" -lt 36 ]; do
@@ -50,47 +63,52 @@ phase_provision_power_regressions() {
         ok "the dashboard answers again after the dashboard-ordered reboot (HTTP $code)"
     else
         bad "the dashboard never answered after the dashboard-ordered reboot (last: $code)"
-        return
+        return 1
     fi
 
+    shutdown_boot=$(_boot_id) || return 1
     result=$(dashboard_control_request power '{"action":"poweroff"}' 30) || true
     if power_verdict "$result" rejected; then
         bad "sys-poweroff was refused through the control channel ($(control_result_payload "$result"))"
-        return
+        return 1
     fi
     if _poweroff_wait 180; then
         ok "sys-poweroff was ordered through the dashboard control channel and the guest reached 'shut off' on its own"
     else
         bad "the guest never reached 'shut off' after the dashboard-ordered poweroff"
-        return
+        return 1
     fi
     virsh start "$VM" >/dev/null 2>&1 || {
         bad "could not start the guest again after the dashboard-ordered poweroff"
-        return
+        return 1
     }
     _wait_dhcp_ip 180 || {
         bad "no DHCP lease after the power-button restart — every probe below would red for that, not for the product"
-        return
+        return 1
     }
     if _wait_ssh 300; then
         ok "the guest boots back up once started — the physical-power-button half of the round trip"
     else
         bad "the guest never came back up after being started following the poweroff ($(_ssh_unreachable_reason "$ip"))"
-        return
+        return 1
     fi
-    journal=$(_ssh "journalctl -b -1 -u pithead-boot.service --no-pager -o cat" 2>/dev/null) || {
+    if ! power_wait_stack; then
+        bad "the boot service never became active after the power-button restart"
+        return 1
+    fi
+    journal=$(_ssh "journalctl -b '$shutdown_boot' -u pithead-boot.service --no-pager -o cat" 2>/dev/null) || {
         bad "could not read the previous boot's stack shutdown journal"
-        return
+        return 1
     }
     if power_shutdown_verdict "$journal"; then
         ok "the prior boot's journal records an orderly stop of the stack unit"
     else
         bad "the prior boot's journal does not record an orderly stop of the stack unit"
-        return
+        return 1
     fi
     journal=$(_ssh "dmesg" 2>/dev/null) || {
         bad "could not read shutdown recovery evidence after the power-button restart"
-        return
+        return 1
     }
     if printf '%s' "$journal" | grep -qi 'recovering journal\|Superblock has_journal'; then
         bad "this boot's dmesg shows a journal recovery — the previous shutdown was not clean"
@@ -114,6 +132,15 @@ phase_provision_power_regressions() {
 
 _power_self_test() {
     local f=0
+    (
+        _ssh() { return 0; }
+        power_wait_stack 1
+    ) || f=$((f + 1))
+    (
+        _ssh() { return 1; }
+        sleep() { :; }
+        ! power_wait_stack 1
+    ) || f=$((f + 1))
     power_shutdown_verdict 'pithead-boot.service: Deactivated successfully.' || f=$((f + 1))
     power_shutdown_verdict 'Stopped Pithead stack at boot — render, up, health-gated A/B commit.' || f=$((f + 1))
     power_shutdown_verdict 'Starting Pithead stack at boot.' && f=$((f + 1))

@@ -49,7 +49,7 @@ export function initSovereign({
         paint();
       }} onNavigate=${(page, section) => navigation.go(page, section)}
       onRetry=${() => polling.tick()} renderPage=${renderPage} renderSection=${(section) =>
-        section === "maintenance"
+        section === "maintenance" && data.snapshot?.os_update && data.snapshot?.control_enabled
           ? html`${renderSection?.(section, data.snapshot)}<${PowerControl} snapshot=${data.snapshot} />`
           : renderSection?.(section, data.snapshot)} />`,
       root,
