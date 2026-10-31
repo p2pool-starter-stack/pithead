@@ -1597,10 +1597,10 @@ artifact's page arithmetic and the row's place in `run.sh`, drives the reduced-t
 against fixture pin files (fitting exactly, missing by one page, unreadable, empty, absent, and
 against the checked-out repo's own `os/overlay/pithead-hugepages`), and reads a live stand-in
 Python 3 process through the sample snippet so the `/proc` parsing is exercised on the Linux
-CI host. The stand-in writes its daemon identity to `/proc/self/comm`, lives for at most
+CI host. The stand-in writes its daemon name without a newline to `/proc/self/comm`, lives for at most
 60 seconds, and is stopped and reaped by the EXIT-only cleanup trap on completion or
 interruption, following the harness abort-trap contract. The selftest waits
-up to five seconds for that identity before reading PID, start time, hugetlb usage and
+up to five seconds for that identity, checks its exact bytes, then reads PID, start time, hugetlb usage and
 thread count; absent-process and wrong-command controls remain binding.
 `selftest-zmq-block.sh` exercises the block observer over loopback with complete short and long
 frames, unrelated traffic, silence, malformed JSON, invalid block fields, truncated frames,
