@@ -83,8 +83,22 @@ out=$(
     printf '|%s|%s' "$?" "$NODE_PROBE_REASON"
 )
 assert_contains "the restore-safe address floor refuses a link-local remote node" "$out" "|1|address"
-# The other rc-2 arm, on the Tari leg: the resolver itself failed or timed out rather than
-# answering NXDOMAIN. Same cause, so it must reach the same word.
+rna() {
+    (
+        cd "$PFSB" || exit
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        RNA_ANSWERS=$(printf '%s\n' "$@")
+        _resolve_host_ips() { printf '%s\n' "$RNA_ANSWERS"; }
+        a=$(remote_node_address "$PFSB/dns.json" nodee.lan)
+        printf '|%s|%s' "$?" "$a"
+    )
+}
+assert_eq "a dual-stack private name is accepted and pinned to its IPv4" "$(rna 192.168.1.20 fd00::20)" "|0|192.168.1.20"
+assert_eq "a name answering only over IPv6 keeps the egress refusal" "$(rna fd00::20)" "|1|"
+assert_eq "a private plus public IPv4 mix keeps the egress refusal" "$(rna 192.168.1.20 8.8.8.8 fd00::20)" "|1|"
+assert_eq "a loopback AAAA beside a private A record is still refused" "$(rna 192.168.1.20 ::1)" "|1|"
 printf '{"monero":{"mode":"local"},"tari":{"mode":"remote","remote":{"host":"tarii.lan","grpc_port":18142}}}' >"$PFSB/dnstari.json"
 out=$(
     cd "$PFSB" || exit
