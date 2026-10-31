@@ -41,9 +41,11 @@ print(\"tari-only\")' $(quote_arg "$ddir/sync-gate-reset")" 2>/dev/null
 }
 
 run_tari_background_sync() {
-    # Only a local Tari baseline can prove off -> local without changing the node fixture.
-    if [ "$(env_on_box TARI_MODE)" != local ]; then
-        it_skip_leg "Tari-only apply keeps Monero mining (#3094)" "requires a local Tari baseline" "missing"
+    local tari_mode skip_class=missing
+    tari_mode="$(env_on_box TARI_MODE)" || tari_mode=""
+    if [ "$tari_mode" != local ]; then
+        [ "$tari_mode" != remote ] || skip_class=by-design
+        it_skip_leg "Tari-only apply keeps Monero mining (#3094)" "requires a local Tari baseline" "$skip_class"
         return 0
     fi
     local last_state=unobserved last_connected=unobserved last_current=unobserved last_height=unobserved template_updated=unobserved receipt_state=unobserved receipt_height=unobserved
