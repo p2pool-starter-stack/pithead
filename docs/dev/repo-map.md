@@ -100,7 +100,9 @@ lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure control
 `tests/integration/selftest/selftest-reset-restore.sh`. Shared web ownership checks are in
 `tests/integration/lib/reset-restore-web.sh`. Host-miner startup and worker-return checks are in
 `tests/integration/lib/reset-restore-miner.sh`, with lifecycle logic covered by
-`tests/os/selftest-local-miner-up.sh`. The startup-window restore fixture is
+`tests/os/selftest-local-miner-up.sh`, which also executes normal and migration boot entry paths
+to check post-commit miner ordering. Boot and setup pass `PITHEAD_DEFER_LOCAL_MINER=1` through
+stack startup when they own the later miner step. The startup-window restore fixture is
 `tests/integration/lib/reset-restore-startup.sh`, with the guest-only pause in
 `tests/os/wizard-startup-guest.sh` and pure controls in `tests/os/selftest-wizard-startup.sh`.
 Consecutive status censuses are in

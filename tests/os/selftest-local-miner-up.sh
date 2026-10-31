@@ -11,6 +11,7 @@ probe() (
     local appliance=$1 enabled=$2 hold=$3 compose_rc=$4 miner_rc=$5
     local locked=0 started=0
     export PITHEAD_HOLD_CHAIN=$hold
+    export PITHEAD_DEFER_LOCAL_MINER=${6:-${PITHEAD_DEFER_LOCAL_MINER:-0}}
     export REVENUE_CHAIN_CONTAINERS="monerod tari wallet-rpc tari-wallet"
     mutation_lock_acquire() { locked=1; }
     mutation_lock_release() {
@@ -83,4 +84,71 @@ if output=$(probe 1 true 0 1 0); then
     exit 1
 fi
 [ "$output" = compose ]
-printf 'local miner up selftest: PASS (7 lifecycle cases)\n'
+
+export ROOT td
+export -f probe stack_up provision_local_miner
+mkdir -p "$td/boot/bin"
+cp "$ROOT/os/overlay/pithead-boot-stack-health" "$td/boot/"
+python3 - "$ROOT/os/overlay/pithead-boot" "$td/boot/pithead-boot" <<'PY'
+import pathlib
+import sys
+
+script = pathlib.Path(sys.argv[1]).read_text()
+script = script.replace('cd /data/pithead || exit 1', '''cd "$BOOT_TEST_ROOT" || exit 1
+gate_url() { printf 'http|fixture|80'; }
+gate_target_url() { printf 'http://fixture/'; }
+gate_resolve_spec() { :; }
+gate_probe_header() { :; }
+gate_ready() { return 0; }''')
+script = script.replace('/usr/local/sbin/pithead-media-config', ':')
+pathlib.Path(sys.argv[2]).write_text(script)
+PY
+cat >"$td/boot/pithead" <<'EOF'
+#!/usr/bin/env bash
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    os_prepare_migration_hold() { return "$BOOT_TEST_MIGRATION_RC"; }
+    return 0
+fi
+case "$1" in
+up) probe 1 true "${PITHEAD_HOLD_CHAIN:-0}" 0 0 >>"$BOOT_TEST_TRACE" ;;
+local-miner)
+    [ -f "$BOOT_TEST_ROOT/committed" ] || exit 91
+    printf 'miner-after-commit\n' >>"$BOOT_TEST_TRACE"
+    exit 124
+    ;;
+load-images | render) : ;;
+*) exit 92 ;;
+esac
+EOF
+cat >"$td/boot/bin/rauc" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = 'status mark-good' ] || exit 93
+touch "$BOOT_TEST_ROOT/committed"
+printf 'commit\n' >>"$BOOT_TEST_TRACE"
+EOF
+cat >"$td/boot/bin/timeout" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = 1800 ] || exit 94
+printf 'timeout 1800\n' >>"$BOOT_TEST_TRACE"
+shift
+"$@"
+EOF
+printf '#!/usr/bin/env bash\nprintf "200 100\\n"\n' >"$td/boot/bin/curl"
+chmod +x "$td/boot/pithead" "$td/boot/bin/"*
+for migration in 0 1; do
+    rm -f "$td/boot/committed" "$td/boot/trace"
+    BOOT_TEST_ROOT="$td/boot" BOOT_TEST_TRACE="$td/boot/trace" \
+        BOOT_TEST_MIGRATION_RC=$((1 - migration)) PATH="$td/boot/bin:$PATH" \
+        bash "$td/boot/pithead-boot" >"$td/boot/output" 2>&1
+    expected=$'compose\nreleased\ncommit\n'
+    [ "$migration" = 0 ] || expected+=$'compose\nreleased\n'
+    expected+=$'timeout 1800\nminer-after-commit'
+    [ "$(cat "$td/boot/trace")" = "$expected" ] || {
+        printf 'FAIL: boot miner order (migration=%s)\n' "$migration" >&2
+        cat "$td/boot/trace" >&2
+        exit 1
+    }
+done
+check $'compose\nreleased' 1 true 0 0 0 1
+[ ! -e "$td/stops" ]
+printf 'local miner up selftest: PASS (8 lifecycle cases, normal and migration boot ordering)\n'

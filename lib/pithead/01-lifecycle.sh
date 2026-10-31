@@ -267,7 +267,9 @@ stack_up() {
     if is_appliance; then
         reconcile_compose_images || error "Stack failed to converge containers to their declared images."
     fi
-    [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ] || provision_local_miner || true
+    if [ "${PITHEAD_HOLD_CHAIN:-0}" != 1 ] && [ "${PITHEAD_DEFER_LOCAL_MINER:-0}" != 1 ]; then
+        provision_local_miner || true
+    fi
     log "Stack started successfully!"
     print_clearnet_banner
     announce_dashboard_url

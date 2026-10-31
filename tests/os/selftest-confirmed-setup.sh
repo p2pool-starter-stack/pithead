@@ -19,13 +19,17 @@ mutation_lock_acquire() { trace lock; }
 mutation_lock_release() { trace unlock; }
 render_env() { trace render; }
 provision_tor() { trace tor; }
-prompt_start_stack() { trace start; }
+prompt_start_stack() {
+    trace start
+    [ "${PITHEAD_DEFER_LOCAL_MINER:-0}" = 1 ] || provision_local_miner
+}
+provision_local_miner() { trace miner; }
 for stub in check_prerequisites ensure_config_exists ensure_onion_password parse_and_validate_config \
     preflight_resources check_stratum_exposure load_preserved_state resolve_dashboard_host \
     reconcile_appliance_hostname prepare_directories inject_service_configs optimize_kernel \
     generate_caddyfile provision_control_runner provision_egress_check_units \
     provision_lan_guard_check_units render_local_miner_config update_current_symlink \
-    announce_dashboard_url provision_local_miner; do
+    announce_dashboard_url; do
     eval "$stub() { :; }"
 done
 REBOOT_REQUIRED=false deployed=yes
@@ -37,6 +41,15 @@ grep -q 'Already provisioned' "$work/direct.log"
 [ ! -e "$work/trace" ]
 deployed=no
 setup </dev/null
+[ "$(grep -c '^miner$' "$work/trace")" = 1 ] || {
+    printf 'FAIL: setup must provision the miner exactly once\n' >&2
+    cat "$work/trace" >&2
+    exit 1
+}
+printf 'lock\nrender\ntor\nrender\nunlock\nstart\nminer\n' >"$work/expected"
+cmp "$work/expected" "$work/trace"
+rm "$work/trace"
+PITHEAD_DEFER_LOCAL_MINER=1 setup_confirmed </dev/null
 printf 'lock\nrender\ntor\nrender\nunlock\nstart\n' >"$work/expected"
 cmp "$work/expected" "$work/trace"
 deployed=yes
@@ -141,7 +154,7 @@ for mode in keep absent rejected invalid accepted restored failed; do
             echo "accepted coordinator resubmit failed: exit $rc" >&2
             exit 1
         }
-        printf 'handoff\nrole\nlock\nrender\ntor\nrender\nunlock\nstart\naudit\n' >"$work/expected"
+        printf 'handoff\nrole\nlock\nrender\ntor\nrender\nunlock\nstart\nminer\naudit\n' >"$work/expected"
         cmp "$work/expected" "$work/trace"
         ;;
     failed)

@@ -51,7 +51,7 @@ setup_confirmed() {
         echo "Please run: 'sudo reboot' now."
         echo "After reboot, start the stack with: '$0 up'"
     else
-        prompt_start_stack
-        provision_local_miner || true
+        PITHEAD_DEFER_LOCAL_MINER=1 prompt_start_stack
+        [ "${PITHEAD_DEFER_LOCAL_MINER:-0}" = 1 ] || provision_local_miner || true
     fi
 }
