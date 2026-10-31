@@ -104,6 +104,11 @@ The fresh-spare negative control is in `tests/os/phases/update-spare-slot.sh`.
 The real A/B reset leg is `tests/os/phases/reset-slot.sh`; it checks wizard setup, CLI restore
 and reboot with setup still open before the final provisioned reboot.
 
+The DIY lifecycle support-bundle leg is `tests/integration/lib/run-support-bundle.sh`;
+`check-support-bundle.py` in the same directory inspects archives without extraction.
+`tests/integration/selftest/selftest-support-bundle.sh` supplies archive and restoration
+failure controls through the integration selftest target.
+
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the
