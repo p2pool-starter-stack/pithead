@@ -1,12 +1,58 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-_set_env_token() { # _set_env_token <value>
-    rx "(
+_env_token_cmd() {
+    printf '%s' "(
         umask 077
         tmp=\$(mktemp .env.itest.XXXXXX) || exit 1
         trap 'rm -f \"\$tmp\"' EXIT
         awk -v t=$(quote_arg "$1") '/^PROXY_AUTH_TOKEN=/{print \"PROXY_AUTH_TOKEN=\" t; next} {print}' .env > \"\$tmp\" &&
             chown --reference=.env \"\$tmp\" && mv -f \"\$tmp\" .env
+    )"
+}
+
+_set_env_token() {
+    rx "$(_env_token_cmd "$1")"
+}
+
+_empty_token_probe() {
+    local wait="${AUTH_PROBE_ADMIT_SECS:-300}" hold=1
+    case "$IT_PITHEAD" in sudo*) hold=0 ;; esac
+    rx "(
+        restore() { $(_env_token_cmd "$1"); }
+        if [ $hold = 1 ]; then
+            lock=\${PITHEAD_LOCK_FILE:-}
+            if [ -z \"\$lock\" ]; then
+                here=\$(cd -P . && pwd -P)
+                if printf '%s' \"\$(basename \"\$here\")\" | grep -Eq '^pithead-v[0-9]+\\.[0-9]+\\.[0-9]+\$'; then
+                    lock=\$(dirname \"\$here\")/.pithead.lock
+                else
+                    lock=\$here/.pithead.lock
+                fi
+            fi
+            exec 9>>\"\$lock\" || { echo 'auth-probe: cannot open the mutation lock'; exit 70; }
+            start=\$SECONDS
+            if ! flock -w $wait 9; then
+                echo 'auth-probe: not admitted within ${wait}s'
+                exit 75
+            fi
+            export PITHEAD_LOCK_HELD=\$\$
+            echo \"auth-probe: admitted after \$((SECONDS - start))s\"
+        else
+            echo 'auth-probe: admitted after 0s without a held window (privileged invocation)'
+        fi
+        trap restore EXIT HUP INT TERM
+        $(_env_token_cmd '') || { echo 'auth-probe: token replacement failed'; exit 76; }
+        if grep -qx 'PROXY_AUTH_TOKEN=' .env; then
+            echo 'auth-probe: token empty at evaluation'
+        else
+            echo 'auth-probe: token not empty at evaluation'
+        fi
+        $IT_PITHEAD up 2>&1
+        rc=\$?
+        echo \"auth-probe: up exit \$rc\"
+        trap - EXIT HUP INT TERM
+        restore || echo 'auth-probe: token restore failed'
+        exit \$rc
     )"
 }
 
@@ -356,21 +402,20 @@ run_auth_fail_closed() {
     fi
 
     local fails_before="$IT_FAIL"
-    # 1. Empty the token; `pithead up` must refuse to start AND name the documented fix.
     it_step "emptying PROXY_AUTH_TOKEN in .env and running 'pithead up'…"
-    if ! _set_env_token ""; then
-        it_fail "empty PROXY_AUTH_TOKEN for fail-closed probe" "environment replacement failed"
+    local out rc
+    out="$(_empty_token_probe "$orig" 2>&1)"
+    rc=$?
+    it_log "$(grep '^auth-probe:' <<<"$out")"
+    if ! grep -q '^auth-probe: admitted after' <<<"$out" || grep -q '^auth-probe: token replacement failed' <<<"$out"; then
+        it_fail "empty-token probe admitted to the mutation window with the token emptied" "$out"
         return 1
     fi
-    local out rc
-    out="$(pithead up 2>&1)"
-    rc=$?
+    assert_contains "token was empty when pithead up evaluated it" "$out" "auth-probe: token empty at evaluation"
     assert_ne "pithead up fails closed (non-zero exit) on an empty PROXY_AUTH_TOKEN" "$rc" "0"
     assert_contains "compose guard refuses the unauthenticated proxy API (#153)" \
         "$out" "refusing to start an unauthenticated xmrig-proxy control API"
-    # 2. Restore the EXACT original token (apply would mint a new one) and recover.
-    it_step "restoring the original PROXY_AUTH_TOKEN and recovering…"
-    _set_env_token "$orig" || it_fail "restore PROXY_AUTH_TOKEN" "environment replacement failed"
+    it_step "verifying the original PROXY_AUTH_TOKEN and recovering…"
     if [ "$(env_on_box PROXY_AUTH_TOKEN)" = "$orig" ]; then
         it_pass "original PROXY_AUTH_TOKEN restored verbatim"
     else
