@@ -32,7 +32,9 @@ import requests
 
 from mining_dashboard.config.config import (
     HEALTHCHECKS_PING_URL,
-    TOR_SOCKS_PROXY,
+)
+from mining_dashboard.config.config import (
+    NOTIFICATION_PROXY as TOR_SOCKS_PROXY,
 )
 from mining_dashboard.helper.http import bounded_get
 

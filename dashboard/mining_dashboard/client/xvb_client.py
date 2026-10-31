@@ -5,7 +5,8 @@ from typing import Any
 
 import requests
 
-from mining_dashboard.config.config import TOR_SOCKS_PROXY, XVB_SUBMIT_URL
+from mining_dashboard.config.config import XVB_HTTP_PROXY as TOR_SOCKS_PROXY
+from mining_dashboard.config.config import XVB_SUBMIT_URL
 from mining_dashboard.helper.http import bounded_get
 from mining_dashboard.helper.utils import parse_hashrate
 

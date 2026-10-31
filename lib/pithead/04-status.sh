@@ -256,11 +256,8 @@ stack_status() {
     dashboard_sync_progress || true
 
     echo ""
-    # A clearnet initial sync (#183) is a privacy-relevant state, not a fault — surface it
-    # prominently every time the operator checks status, separate from the service verdict.
+    profile_status
     print_clearnet_banner
-    # When the remote-access onion (#343) is on, show its URL here too — `status` is where an operator
-    # looks first, not just `doctor`. The client key stays behind 'onion-client-key'.
     local onion_line
     if onion_line=$(dashboard_onion_status); then
         log "Dashboard onion (remote access): $onion_line"

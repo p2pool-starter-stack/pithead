@@ -1,18 +1,3 @@
-"""Dashboard side of the host-mutation control channel (#33).
-
-The container can only ASK. This module reads the host-rendered PRE-MASKED config copy (#440) to
-prefill the editor form, writes typed JSON intents into the requests/ spool — the container's
-single writable leg — and reads results back from the read-only results/ mount. The host-side
-runner (``pithead control-run-pending``) re-validates and executes; nothing here runs a command.
-
-Existing secret values never enter the editor/browser through this path: the host masks every set
-secret to the ``{"__secret__": true}`` sentinel before the copy is mounted (the raw config.json is
-not mounted at all), a proposal carries the sentinel back for an untouched secret, and the host
-swaps it for the live value when it stages the intent. The running dashboard still receives the
-runtime credentials it consumes through its environment, including read-only worker probe tokens.
-``read_config`` masks again before serving configuration.
-"""
-
 import asyncio
 import json
 import logging
@@ -21,6 +6,7 @@ import time
 import uuid
 
 from mining_dashboard.config import config, documents
+from mining_dashboard.config.defaults import profile_config, select_profile
 from mining_dashboard.service import audit_service, config_operations, request_spool
 
 logger = logging.getLogger("ControlService")
@@ -210,6 +196,7 @@ CONFIRM_ENV_KEY_PATHS = {
     "TOR_DATA_DIR": ("tor.data_dir",),
     "DASHBOARD_DATA_DIR": ("dashboard.data_dir",),
     "STRATUM_PORT": ("p2pool.stratum_port",),
+    "PITHEAD_PROFILE": ("profile",),
     "MONERO_CLEARNET_SYNC": ("monero.clearnet_initial_sync",),
     "TARI_CLEARNET_SYNC": ("tari.clearnet_initial_sync",),
     "MONERO_PRUNE": ("monero.prune",),
@@ -289,7 +276,7 @@ def read_config():
         with open(config.HOST_REFERENCE_PATH) as f:
             reference = json.load(f)
         reference.pop("_docs", None)
-        cfg = _deep_merge(reference, cfg)
+        cfg = _deep_merge(reference, profile_config(cfg))
     except (OSError, ValueError):
         logger.warning("config.reference.json unavailable — serving the host config alone.")
     mask_secrets(cfg)
@@ -318,12 +305,12 @@ def submit(action, cfg=None, actor="", intent_id=None, version=None, confirm=Non
     rid = str(uuid.UUID(intent_id)) if intent_id else str(uuid.uuid4())
     request = {"id": rid, "action": action, "actor": actor}
     if cfg is not None:
-        # Both editor modes round-trip response metadata; shed it at this choke point so the host's
-        # closed-schema check still rejects every other unknown key (#679).
-        # A non-dict cfg passes through untouched: the host runner already rejects it with its
-        # own "config must be a JSON object" result, which the UI knows how to surface.
         if isinstance(cfg, dict):
             cfg = config_operations.strip_editor_metadata(cfg)
+            if cfg.get("profile") in ("performance", "balance", "privacy") and cfg[
+                "profile"
+            ] != _load_host_config().get("profile", "balance"):
+                cfg = select_profile(cfg, cfg["profile"])
         request["config"] = cfg
     if version is not None:
         request["version"] = version

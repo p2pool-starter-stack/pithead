@@ -104,11 +104,8 @@ class ClearnetSyncSupervisor:
             return False
 
     async def maybe_transition(self, name, container, flag_on, synced):
-        """Drive one chain's clearnet→Tor transition. Idempotent; call every poll cycle.
-
-        Returns True while clearnet is active or the Tor transition awaits host verification;
-        the caller keeps the transition warning visible until then.
-        """
+        if config.PITHEAD_PROFILE == "performance":
+            return bool(flag_on)
         if not flag_on:
             self._flipped.discard(name)
             self._pending.pop(name, None)

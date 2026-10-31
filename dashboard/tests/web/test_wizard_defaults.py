@@ -75,8 +75,9 @@ async def test_new_install_submission_pins_disk_answer_raffle_and_private_sync(
         assert written["tari"]["mode"] == mode
         assert written["dashboard"]["tari_required"] is False
         assert written["xvb"]["enabled"] is False
-        assert written["monero"]["clearnet_initial_sync"] is False
-        assert written["tari"]["clearnet_initial_sync"] is False
+        assert written["profile"] == "balance"
+        assert "clearnet_initial_sync" not in written["monero"]
+        assert "clearnet_initial_sync" not in written["tari"]
 
 
 async def test_no_javascript_fast_sync_response_warns_for_both_local_networks(
