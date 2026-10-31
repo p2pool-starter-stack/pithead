@@ -264,7 +264,6 @@ if in_block 4; then
     # shellcheck source=tests/stack/test-spool-audit.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 fi
-
 if in_block 5; then
     # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
@@ -274,7 +273,6 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy-layout.sh" && domain_ran test-control-deploy-layout.sh "$_d0" "$?" || domain_ran test-control-deploy-layout.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-lifecycle-verbs.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-lifecycle-verbs.sh" && domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?" || domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-backup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-backup.sh" && domain_ran test-control-backup.sh "$_d0" "$?" || domain_ran test-control-backup.sh "$_d0" "$?"
     # shellcheck source=tests/stack/doctor/test-doctor-exposure.sh disable=SC2015
@@ -291,6 +289,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-tari.sh" && domain_ran test-wizard-tari.sh "$_d0" "$?" || domain_ran test-wizard-tari.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-wizard-addresses.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-addresses.sh" && domain_ran test-wizard-addresses.sh "$_d0" "$?" || domain_ran test-wizard-addresses.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-provisioning.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-provisioning.sh" && domain_ran test-control-provisioning.sh "$_d0" "$?" || domain_ran test-control-provisioning.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-runner-drain.sh disable=SC2015
