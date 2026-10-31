@@ -40,9 +40,18 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
                 echo 'carry apply failed before health wait'
                 return 1
-            } ;; # the third push is the carry
+            } ;;
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
+            up-long-fails:up)
+                echo 'Stratum password: fixture-secret'
+                echo 'Stratum authentication is ON: every rig must connect with pass "fixture-secret" (set it as the xmrig/RigForge stratum password).'
+                echo 'No such image: tecnativa/docker-socket-proxy:v0.5.0@sha256:x' >&2
+                printf 'compose output %s\n' {1..30}
+                echo 'PROXY_AUTH_TOKEN=fixture-secret' >&2
+                echo 'final up diagnostic'
+                return 1
+                ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
         }
@@ -126,6 +135,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         eval "$LIFECYCLE_SRC"
         run_lifecycle >"${LIFECYCLE_OUT:-/dev/null}"
         local lifecycle_rc=$?
+        [ -z "${LIFECYCLE_ARTIFACT_OUT:-}" ] || cp "$OUT_DIR/lifecycle-up/up.log" "$LIFECYCLE_ARTIFACT_OUT"
         if [ -s "$OUT_DIR/missing-command" ]; then
             printf '127|%s' "$((IT_FAIL + 1))"
             exit 127
@@ -183,10 +193,22 @@ assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHEC
 assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
 LIFECYCLE_OUT="$(mktemp)"
 LIFECYCLE_TRACE_OUT="$(mktemp)"
+LIFECYCLE_UP_LOG="$(mktemp)"
 SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null || it_fail "missing-image diagnostic fixture executes"
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
 assert_contains "a failed missing-image up captures Tor's first unhealthy state (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
 assert_eq "missing-image up captures Tor before the next image operation (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-up\npost-up-image-inspect'
+assert_eq "a long failed missing-image up fails lifecycle (#3345)" "$(SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" LIFECYCLE_ARTIFACT_OUT="$LIFECYCLE_UP_LOG" drive_restore yes up-long-fails)" "1|1"
+assert_contains "a long failed missing-image up keeps its early cause (#3345)" "$(cat "$LIFECYCLE_OUT")" "No such image"
+assert_contains "a long failed missing-image up keeps its final line (#3345)" "$(cat "$LIFECYCLE_OUT")" "final up diagnostic"
+assert_contains "a long failed missing-image up redacts credentials (#3345)" "$(cat "$LIFECYCLE_OUT")" "PROXY_AUTH_TOKEN=<redacted>"
+assert_contains "a long failed missing-image up redacts the password announcement (#3345)" "$(cat "$LIFECYCLE_OUT")" "Stratum password: <redacted>"
+assert_contains "a long failed missing-image up redacts the rig instructions (#3345)" "$(cat "$LIFECYCLE_OUT")" "connect with pass <redacted>"
+assert_eq "a long failed missing-image up never prints credentials (#3345)" "$(grep -c fixture-secret "$LIFECYCLE_OUT" || true)" "0"
+for expected in "No such image" "final up diagnostic" "PROXY_AUTH_TOKEN=<redacted>" "Stratum password: <redacted>" "connect with pass <redacted>"; do
+    assert_contains "missing-image artifact retains $expected (#3345)" "$(cat "$LIFECYCLE_UP_LOG")" "$expected"
+done
+assert_eq "missing-image artifact never saves credentials (#3345)" "$(grep -c fixture-secret "$LIFECYCLE_UP_LOG" || true)" "0"
 : >"$LIFECYCLE_TRACE_OUT"
 LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-apply-fails >/dev/null || it_fail "carry apply diagnostic fixture executes"
 assert_contains "a failed carry captures Tor before cleanup (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
@@ -196,7 +218,7 @@ LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-health-fails >/dev/null |
 assert_contains "a carry health timeout captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
 SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore no >/dev/null || it_fail "missing-image health diagnostic fixture executes"
 assert_contains "a later missing-image health failure captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
-rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT"
+rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT" "$LIFECYCLE_UP_LOG"
 
 eval "$(grep '^carried_rows()' "$HERE/../lib/live-state-support.sh")"
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
