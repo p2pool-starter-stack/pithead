@@ -31,7 +31,7 @@ not hide known Monero progress. Progress is unknown when an unfinished gating ch
 The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
-and asks the operator to sign in again when the session expires. Its page bodies and most Settings
+and asks the operator to sign in again when the session expires. Most page bodies and Settings
 controls are still being built; the preview does not announce a cutover from the legacy UI. The
 drawer supplies its container and Appearance controls. Advanced > Maintenance offers **Reboot**
 and **Power off** on an appliance with dashboard control enabled; these controls are absent on DIY.
@@ -53,7 +53,41 @@ disabled, anyone on that LAN can retrieve it; enable a dashboard login before sh
 An onion-published dashboard requires a login. With no stratum password, the block says
 **No stratum password** and miners connect without one.
 
-## Sync Mode
+## Overview synchronization and recovery
+
+In the lean preview, Overview shows a read-only sync page whenever a running node is syncing,
+unreachable or regressing, or the host holds mining or rejects workers during recovery. Other
+pages remain reachable. When nodes are ready and the host clears its holds, Overview returns
+automatically to its ordinary page content. Optional Tari can continue syncing while Monero
+mining is admitted. The admission reason names only required nodes whose reachability or
+synchronization is not ready, with the missing condition for each. Once Monero is ready, only
+required Tari is named if it still blocks release; optional Tari is never named as a blocker.
+Missing observations wait for a reported verdict. Tari is absent when off. This view adds no
+controls on appliance, DIY with login or DIY without login.
+
+Each node shows percentage and an approximate time remaining based on at least three advancing
+samples from the last five minutes. A pause, regression, changed endpoint or target, insufficient
+samples, a stale snapshot or a failed probe makes the estimate unavailable. Raw block counts use
+thousands separators. Estimates describe recent observed progress, not a promised completion time.
+
+Reachability, synchronization, stable health and mining admission are separate statements. During
+recovery the host reports the continuous-reachability window before re-admission. Admission does
+not prove accepted mining work. Required-service recreation is unknown until the host supplies
+that observation; the page never initiates a restart. A pending remote node is identified in the
+admission reason by its sanitized host and port, or marked unknown if not reported. Its node card
+also shows that identity, reported state, initial-sync verdict, probe failure and wait age, without
+URL credentials, paths or query data.
+The dashboard logs remote-state transitions once per change, without endpoints or probe details.
+
+Polling failure preserves the last successful snapshot and labels it disconnected with its age.
+A tab-scoped sync-only snapshot and its bounded sample history survive reload; unrelated dashboard
+data and secrets are not saved by this cache. If the browser blocks tab storage, only the in-memory
+snapshot survives polling failures; reload retention is unavailable. Unknown, zero and stale readings
+remain distinct.
+When an active profile is reported, a Settings link notes that Performance syncs faster; the view
+does not wait for the profile model.
+
+### Legacy Sync Mode
 
 The dashboard shows Sync Mode the first time you start the stack, or any time the Monero or Tari
 node is still catching up. A `Syncing...` badge appears next to the hostname, the headline reads
@@ -274,7 +308,7 @@ the mining datapath (`xmrig-proxy` → `p2pool` → `monerod`) runs independentl
 instead, but only for genuinely **unrecoverable** failures: the DB self-heal above failing on its
 own rebuild attempt (not an ordinary write blip, which stays alert-only), or the `dashboard`
 container itself crash-looping. A red `Miner held (fail-closed)` badge shows while held, next to
-`p2pool` and `xmrig-proxy`, stopped the same way the [Sync Mode hold](#sync-mode) does; unlike that
+`p2pool` and `xmrig-proxy`, stopped the same way the [Sync Mode hold](#legacy-sync-mode) does; unlike that
 one-way sync gate, both containers start again on their own once the condition clears — no restart
 needed.
 The database also keeps three smaller series: pool block-found events, hourly monerod-DB-size and
