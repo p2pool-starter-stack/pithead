@@ -5,9 +5,10 @@ STATUS: IN PROGRESS
 Incremental port for issue #3811, based on
 `a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`. The owner
 authorized implementation on 2026-10-31. Rounds 1–4 are committed at
-`4565297a`, the host-probe slice at `d9c9d1ff`, and verifier/daemon probes at
-`82d34cfd`. The operator commits later rounds because this sandbox cannot write
-the shared Git worktree metadata. No performance benefit is claimed.
+`4565297a`, host probes at `d9c9d1ff`, verifier/daemon probes at `82d34cfd`,
+and control/miner probes at `22374d87`. The operator commits later rounds because
+this sandbox cannot write the shared Git worktree metadata. No performance
+benefit is claimed.
 
 ## Scope and continuation criteria
 
@@ -67,6 +68,7 @@ selection is not implemented.
 | Doctor engine, boot, CPU and dependencies | Native packages; Bash collector | 9 tagged host groups and Go units |
 | Doctor release verification and engine availability | Native packages; Bash collector | 4 tagged verification groups and Go units |
 | Doctor control units and local-miner HugePages gate | Native packages; Bash collector | 9 tagged control groups and Go units |
+| Grouped disk checks for doctor and setup preflight | Native package; Bash callers | 8 tagged disk groups and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -142,13 +144,16 @@ oracles:
   blocks. It uses controlled CPU files and isolated fake host tools because the
   existing source tests cannot reach Go packages. No real engine, systemd, sysctl,
   network or host probe runs.
+- `doctor_disk_reference.sh` invokes unchanged disk-budget, mount-resolution and
+  grouped-check functions against fake df responses. Existing tests source Bash;
+  this adapter compares native findings and df calls without host disk probes.
 
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-parity`, `test-go-doctor-memory-parity`,
 `test-go-doctor-host-parity`, `test-go-doctor-verification-parity` and
-`test-go-doctor-control-parity`.
+`test-go-doctor-control-parity` and `test-go-doctor-disk-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -318,6 +323,38 @@ recorded above. Current private logs and command/exit records are
 Existing tests, fixtures, goldens, lint rules and Make checks remain unchanged.
 No network download, Git write, systemd call, Docker daemon or bench was used.
 
+## Grouped disk slice (2026-10-31)
+
+`go/internal/doctor/disk.go` ports component budgets, nearest-existing-ancestor
+resolution and per-filesystem grouping shared by doctor and setup preflight.
+It preserves component order, remote-component omission, the 528 GiB combined
+budget, unknown-capacity behavior and preflight's warning-only output. Env/config
+getters and production callers still use Bash. Relative data paths resolve from
+the supplied install directory. Unsupported path/tool inputs and failed capacity
+reads decline a native verdict so a future collector can retain Bash behavior.
+Go retains df, awk and dirname calls to preserve their output and failure paths.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Disk, CLI and doctor JSON | `PITHEAD_IMPL=bash make test-go-doctor-disk-parity test-go-doctor-parity test-go-parity`: PASS, 8 disk + 13 JSON + 12 CLI groups and Go units | `tests/go-parity/run.sh make test-go-doctor-disk-parity test-go-doctor-parity test-go-parity`: PASS |
+| Existing doctor contract/catalog | The two baseline Python commands recorded above: PASS, 2 tests and catalog | The same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
+| Dashboard and fake daemons | `PITHEAD_IMPL=python make test-dashboard` and `PITHEAD_IMPL=python make test-fakes`: PASS, 3716 tests/97.42% and 54 tests | `tests/go-parity/run.sh make test-dashboard` and `tests/go-parity/run.sh make test-fakes`: PASS, same counts/coverage; backend remains Python |
+| Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: same result |
+| File budget, build, docs voice, paths and operator strings | Same baseline commands/base as the control slice: PASS | Same Go commands/base: PASS |
+| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+
+Additional checks pass: `go -C go test -tags=parity -race -count=1 ./internal/doctor`
+(41 tagged comparison groups plus Go units), `go -C go vet -tags=parity ./...`
+and `GOOS=linux GOARCH=amd64 go -C go build -o
+../.go-cache/pithead-linux-amd64 ./cmd/pithead`. Cross-compilation is build evidence
+only. New adapter syntax, pinned ShellCheck/shfmt and the changed-Markdown command
+above also pass. Initial comparisons exposed Bash's acceptance of ASCII whitespace
+around integers; the parser now matches it. Independent static review found no
+remaining defects. Final parity logs are `.go-cache/logs/storage-final-parity-*`;
+the final race/vet/build logs use `storage-reviewed-*`. Other commands and exit
+records use `storage-*`. Existing tests and checks remain unchanged; no Git writes,
+network download, live disk probe or daemon contact occurred.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
@@ -345,7 +382,7 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port the remaining doctor config, storage, network and container checks.
+1. Port the remaining doctor config, stale-data/storage, network and container checks.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and

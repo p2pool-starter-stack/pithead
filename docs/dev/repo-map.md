@@ -76,6 +76,9 @@ Control-unit ownership and local-miner HugePages findings are in
 `go/internal/doctor/control.go` and `go/internal/doctor/local_miner.go`.
 `make test-go-doctor-control-parity` compares them with Bash against synthetic
 installs and unit files; systemctl is discovered without being executed.
+`go/internal/doctor/disk.go` implements the grouped disk check shared by doctor
+and setup preflight. `make test-go-doctor-disk-parity` compares budgets, ancestor
+resolution, filesystem grouping and findings with Bash using fake df responses.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

@@ -6,6 +6,10 @@
 .PHONY: test-go-doctor-host-parity
 .PHONY: test-go-doctor-verification-parity
 .PHONY: test-go-doctor-control-parity
+.PHONY: test-go-doctor-disk-parity
+
+test-go-doctor-disk-parity: go-build test-go ## Compare doctor and preflight disk checks with Bash using fake df
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestDisk ./internal/doctor
 
 test-go-doctor-control-parity: go-build test-go ## Compare doctor control-unit and local-miner findings with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestControl ./internal/doctor
