@@ -84,15 +84,37 @@ for (const platform of ["appliance", "diy-login", "diy-readonly"]) {
   });
 }
 
-test("remote-Tari wait, error, disconnect and reload preserve the snapshot and age", async ({
+test("appliance waits for required remote Tari after Monero finishes, retains the reason and hands over", async ({
   page,
   ui,
 }) => {
   await page.clock.install();
   syncing(ui, true);
+  ui.state.os_update = {};
+  ui.state.control_enabled = true;
+  Object.assign(ui.state.sync.monero, {
+    state: "done",
+    percent: 100,
+    current: 2000,
+    remaining: 0,
+  });
+  Object.assign(ui.state.sync_status.chains.monero, {
+    synced: true,
+    healthy: true,
+    health: { level: "green", reasons: [] },
+  });
   await ui.openPreview();
   const view = page.getByRole("region", { name: "Getting ready to mine" });
   await expect(view.getByText(/remote-node.example:18142/)).toBeVisible();
+  await expect(
+    view.getByRole("article", { name: "Monero sync" }).getByText("100% · Sync complete"),
+  ).toBeVisible();
+  await expect(
+    view.getByText(
+      "Mining waiting for Monero and required Tari to sync; the host then starts the required services",
+      { exact: true },
+    ),
+  ).toBeVisible();
   await expect(view.getByText(/HEADER_SYNC.*not yet achieved.*12 min/)).toBeVisible();
   ui.state.sync_status.chains.tari.error = "GetTipInfo probe failed";
   ui.state.sync_status.chains.tari.reachable = false;
@@ -106,6 +128,40 @@ test("remote-Tari wait, error, disconnect and reload preserve the snapshot and a
   await expect(view.getByText(/Last probe error: GetTipInfo probe failed/)).toBeVisible();
   await expect(view.getByText(/Disconnected.*Sample age:/)).toBeVisible();
   await expect(view.locator("button,input,select")).toHaveCount(0);
+  await page.unroute("**/api/state?**");
+  ui.state.syncing = false;
+  Object.assign(ui.state.sync.tari, {
+    state: "done",
+    percent: 100,
+    current: 2000,
+    target: 2000,
+    remaining: 0,
+  });
+  Object.assign(ui.state.sync_status.chains.tari, {
+    reachable: true,
+    synced: true,
+    healthy: true,
+    base_node_state: "LISTENING",
+    initial_sync_achieved: true,
+    error: null,
+  });
+  ui.state.sync_status.mining = {
+    released: true,
+    held: false,
+    workers_rejected: false,
+    fail_closed: false,
+  };
+  ui.state.sync_status.sampled_at = await page.evaluate(() => Date.now() / 1000);
+  await page.clock.fastForward(30000);
+  await expect(view).toHaveCount(0);
+  await expect(
+    page
+      .getByText(
+        "This page is being built for the new interface. Continue using the current dashboard until cutover.",
+        { exact: true },
+      )
+      .first(),
+  ).toBeVisible();
 });
 
 for (const theme of ["light", "dark"]) {

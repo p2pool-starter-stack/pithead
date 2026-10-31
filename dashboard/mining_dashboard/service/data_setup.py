@@ -54,8 +54,6 @@ class DataSetupMixin:
         self.proxy_client = proxy_client
         self.xvb_client = xvb_client
         self._lifecycle = WorkerLifecycle(WORKER_FALLOFF_SEC)
-        # New-release check (#224): off unless dashboard.check_for_updates is set. Routed over the
-        # bridge Tor SOCKS (reusing TOR_SOCKS_PROXY) so it can't reveal the host IP to GitHub.
         self.update_checker = UpdateChecker(
             GitHubReleaseClient(GITHUB_RELEASES_API, TOR_SOCKS_PROXY),
             (os.environ.get("PITHEAD_VERSION") or "").strip(),
