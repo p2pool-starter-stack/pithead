@@ -1,13 +1,13 @@
 # shellcheck shell=bash
 
-_reserved_node_is_ipv4() { # <host>
+_reserved_node_is_ipv4() {
     [[ "$1" =~ ^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$ ]] || return 1
     local octet
     for octet in "${BASH_REMATCH[@]:1}"; do [ "$octet" -le 255 ] || return 1; done
     return 0
 }
 
-provision_node_preflight_accepts_reserved_name() { # <ip> <authenticated-cookie-jar>
+provision_node_preflight_accepts_reserved_name() {
     local ip="$1" jar="$2" th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}"
     local state cfg code raw body
     if [ -z "$th" ] || [ -z "$grpc" ]; then
