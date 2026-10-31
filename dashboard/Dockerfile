@@ -38,14 +38,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Lock + metadata first (better layer caching), then the source.
 COPY pyproject.toml uv.lock ./
 COPY mining_dashboard/ ./mining_dashboard/
+RUN chmod -R a+rX mining_dashboard
 
-# ==========================================================================
-# Build stage: uv resolves the locked runtime deps into /app/.venv. uv is COPYed in
-# here (and in test) but never into production.
-# ==========================================================================
 FROM base AS build
 COPY --from=ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /bin/
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
@@ -65,16 +61,9 @@ RUN python -m pytest --cov=mining_dashboard --cov-report=term-missing --cov-fail
 # ==========================================================================
 FROM base AS production
 COPY --from=build /app/.venv /app/.venv
-# entrypoint runs the app; healthcheck.sh (#904) HEADs /api/state with the venv's own python3
-# (the slim image ships no curl/wget).
 COPY entrypoint.sh healthcheck.sh ./
-RUN chmod +x entrypoint.sh healthcheck.sh
+RUN chmod 755 entrypoint.sh healthcheck.sh
 
-# Stack version, baked at build so the running container is self-describing (Issue #58).
-# PITHEAD_VERSION comes from the top-level VERSION file (the source of truth); the git args
-# mark a dev/working-tree build. pithead's render_env feeds these via docker-compose build args.
-# The dashboard reads them at runtime (mining_dashboard/version.py) for the header badge; the OCI
-# labels make the same info readable with `docker inspect`.
 ARG PITHEAD_VERSION=""
 ARG PITHEAD_GIT_COMMIT=""
 ARG PITHEAD_GIT_BRANCH=""
