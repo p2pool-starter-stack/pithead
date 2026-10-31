@@ -107,15 +107,25 @@ _ssh() {
 }
 for scenario in success stale unreadable-monitor no-writer cleanup-failed; do
     printf 'https://fixture.local One-time token: pit-ABC123\n' >"$SERIAL"
-    if _setup_again_console_race published "$work/race" fixture; then
+    if _setup_again_console_race published "$work/race" fixture >"$work/race-capture"; then
         [ "$scenario" = success ]
     else
         [ "$scenario" != success ]
     fi
 done
 scenario=success
-_setup_again_console_race control "$work/control" fixture
+_setup_again_console_race control "$work/control" fixture >"$work/control-capture"
 scenario=restart-failed
-! _setup_again_console_race control "$work/control" fixture
+! _setup_again_console_race control "$work/control" fixture >"$work/failed-control-capture"
 [ "$(wc -l <"$work/cleanup" | tr -d ' ')" = 7 ]
 echo 'PASS: race proof rejects stale captures, failed gettys, absent writers and missing monitor reads, and always cleans up'
+
+wizard_console_record_capture fixture "$work/http-console" >"$work/capture.log"
+grep -Fxq 'BEGIN setup-console fixture' "$work/capture.log"
+grep -Fxq 'END setup-console fixture' "$work/capture.log"
+grep -Fq 'One-time token: pit-DEF456' "$work/capture.log"
+head -c 65537 /dev/zero >"$work/oversize"
+! wizard_console_record_capture oversize "$work/oversize" >"$work/oversize.log"
+[ ! -s "$work/oversize.log" ]
+! wizard_console_record_capture missing "$work/missing" >"$work/missing.log"
+echo 'PASS: bounded console captures reach the collected harness log and unavailable captures fail'

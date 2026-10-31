@@ -6,6 +6,14 @@ wizard_console_details_present() {
     }
 }
 
+wizard_console_record_capture() {
+    local label=$1 capture=$2
+    [ -f "$capture" ] && [ "$(wc -c <"$capture")" -le 65536 ] || return 1
+    printf '\nBEGIN setup-console %s\n' "$label"
+    cat "$capture" || return 1
+    printf '\nEND setup-console %s\n' "$label"
+}
+
 _setup_again_journal_token() {
     local n=0
     SA_JOURNAL_TOKEN=""
@@ -55,6 +63,9 @@ _setup_again_console_race() (
             n=$((n + 1))
         done
     fi
+    wizard_console_record_capture "${prefix##*/}-tty1" "$prefix.tty1.log" || return 1
+    wizard_console_record_capture "${prefix##*/}-serial" "$prefix.serial.log" || return 1
+    wizard_console_record_capture "${prefix##*/}-getty" "$prefix.getty.txt" || return 1
     [ "$ready" = 1 ] && [ "$started" = 1 ] || return 1
     if [ "$mode" = control ]; then
         [ "$found" = 0 ]
@@ -70,7 +81,7 @@ _setup_again_console_proof() {
     host=$(_ssh hostname 2>/dev/null | tr -d '\r\n') || return 1
     boot_id=$(_ssh cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '\r\n') || return 1
     [[ "$boot_id" =~ ^[0-9a-f-]{36}$ ]] || return 1
-    prefix="${CI_ARTIFACTS:-$(dirname "$SERIAL")}/setup-console-$boot_id"
+    prefix="${TMPDIR:-$(dirname "$SERIAL")}/setup-console-$boot_id"
     while [ "$n" -lt 20 ]; do
         if _ssh 'cat /dev/vcs1' >"$prefix.tty1.log" && wizard_console_details_present "$prefix.tty1.log" "$token" "$host"; then
             monitor_ok=1
@@ -79,6 +90,7 @@ _setup_again_console_proof() {
         sleep 1
         n=$((n + 1))
     done
+    wizard_console_record_capture "$boot_id-initial-tty1" "$prefix.tty1.log" || return 1
     [ "$monitor_ok" = 1 ] && ok "the current setup URL and token are readable on tty1" || {
         bad "the current setup URL and token are missing from the tty1 capture"
         return 1

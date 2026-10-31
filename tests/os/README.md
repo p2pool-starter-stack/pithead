@@ -325,7 +325,8 @@ the configured test registry fail before the image build. Release builds do not 
   the current boot journal for a minted token, the new-boot serial slice and tty1 text from
   `/dev/vcs1`. `wizard-console-leg.sh` restarts both gettys during a paused direct announcement
   and requires the current URL and token before releasing it; disabling issue publication is
-  its negative control. Console captures and getty properties are retained as job artifacts.
+  its negative control. Bounded console captures and getty properties are retained between `BEGIN setup-console`
+  and `END setup-console` markers in the collected rig log.
   `selftest-wizard-console.sh` checks publication, replacement, cleanup and failed verdicts.
   The authenticated wizard must name the saved `pithead` role and prefill its answers with
   secrets blank. POST **Keep it** through the wizard;
