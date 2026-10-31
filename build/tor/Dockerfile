@@ -24,8 +24,6 @@ RUN chmod 755 /usr/local/bin/tor-recovery-diagnose.sh
 
 RUN mkdir -p /var/lib/tor && chown -R tor /var/lib/tor
 
-# Switch to the non-root 'tor' user for enhanced security
 USER tor
 
-# Render torrc from the template (subnet-prefix substitution), then exec Tor — see entrypoint.sh.
 ENTRYPOINT ["/usr/local/bin/tor-entrypoint.sh"]
