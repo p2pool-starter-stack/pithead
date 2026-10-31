@@ -13,6 +13,11 @@
 #
 set -Eeuo pipefail
 
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${PITHEAD_IMPL:-}" = go ]; then
+    _pithead_go_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+    PITHEAD_GO_REFERENCE="$0" exec "${PITHEAD_GO_BINARY:-$_pithead_go_dir/go/bin/pithead}" "$@"
+fi
+
 # --- Logging Utilities ---
 # Colour only when stdout is a terminal and NO_COLOR is unset (https://no-color.org).
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then

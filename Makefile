@@ -1,5 +1,32 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
+.PHONY: go-build test-go test-go-parity go-cache
+.PHONY: test-go-status-parity test-go-doctor-parity
+.PHONY: test-go-doctor-memory-parity
+
+test-go-doctor-memory-parity: go-build test-go ## Compare native doctor memory and clock probes with Bash
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run Parity ./internal/doctor
+
+test-go-doctor-parity: go-build test-go ## Compare Go doctor JSON reports with Bash using synthetic probes
+	python3 tests/go-parity/test_doctor.py
+
+test-go-status-parity: go-build test-go ## Compare native status with Bash against synthetic services
+	python3 tests/go-parity/test_status.py
+
+GO_ENV = env GOCACHE="$(CURDIR)/.go-cache/build" GOMODCACHE="$(CURDIR)/.go-cache/mod" GOPATH="$(CURDIR)/.go-cache/gopath" TMPDIR="$(CURDIR)/.go-cache/tmp"
+
+go-cache:
+	mkdir -p "$(CURDIR)/.go-cache/tmp"
+
+go-build: pithead go-cache ## Build the Go CLI alongside the Bash reference
+	cd go && $(GO_ENV) go build -o bin/pithead ./cmd/pithead
+
+test-go: go-cache ## Go unit tests
+	cd go && $(GO_ENV) go test ./...
+
+test-go-parity: go-build test-go ## Compare Bash and Go CLI output, errors, and exit codes
+	python3 tests/go-parity/test_cli.py
+
 .PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI

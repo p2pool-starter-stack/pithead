@@ -327,6 +327,9 @@ doctor() {
     fi
     # Propagate a non-zero exit when any critical check FAILED, so `doctor` is usable as a health
     # gate in cron/CI/monitoring (mirrors `status`). Warnings alone still exit 0 (#127).
+    if [ -n "${PITHEAD_GO_DOCTOR_DONE:-}" ]; then
+        : >"$PITHEAD_GO_DOCTOR_DONE"
+    fi
     [ "$DR_FAIL" -gt 0 ] && return 1
     return 0
 }

@@ -7,6 +7,7 @@ under the directories below.
 ```text
 pithead/
 ├── lib/pithead/           ordered source slices for the generated CLI
+├── go/                    incremental Go commands and feature packages
 ├── dashboard/
 │   ├── mining_dashboard/ Python application and browser assets
 │   └── tests/            Python and frontend tests, grouped like the source
@@ -47,6 +48,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Area | Start here | Change and verify |
 |---|---|---|
 | CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. |
+| Go port | `go/cmd/pithead/`, `go/internal/`, [parity ledger](go-port/PARITY.md) | `make go-build`, `make test-go-parity`; `tests/go-parity/` holds adapters for unchanged reference suites. |
 | Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
@@ -54,6 +56,16 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. Quadlet golden units share `os/quadlet/common/`; `tests/stack/test-render-quadlet.sh` checks complete profile inventories and byte parity. `os/rootfs/fetch-go-source.sh` bounds pinned Go-source fetches; `tests/os/selftest-go-source-fetch.sh` runs its local Git transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; `broken-configs.tsv` and `tests/stack/test-manual-qa-oracle.sh` replay the documented dry-run refusals in shell block 5. The start page holds the run sheet, result rules and glossary. |
+
+The native Go status path lives in `go/internal/status/`.
+`make test-go-status-parity` compares it with the Bash reference using the
+synthetic executables in `tests/go-parity/`.
+Go doctor JSON reporting lives in `go/internal/doctor/`; probe collection still
+uses Bash. `make test-go-doctor-parity` compares reports using synthetic probes
+and the unchanged Bash formatter.
+Native memory and clock probes are in `go/internal/doctor/memory.go` and
+`go/internal/doctor/clock.go`. `make test-go-doctor-memory-parity` compares them with the
+Bash reference. Doctor's CLI collector still uses Bash.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
