@@ -42,13 +42,13 @@ for line in document.split("## Broken configs", 1)[1].splitlines():
     if not line.lstrip().startswith("|"):
         continue
     cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-    if cells == ["Change", "The message contains"]:
+    if cells == ["Case", "Change", "The message contains"]:
         continue
     if all(re.fullmatch(r":?-+:?", cell) for cell in cells):
         continue
-    if len(cells) != 2:
-        raise ValueError("checklist row needs a change and refusal message")
-    table_rows.append(cells)
+    if len(cells) != 3:
+        raise ValueError("checklist row needs a case, change and refusal message")
+    table_rows.append(cells[1:])
 changes = [cells[0] for cells in table_rows]
 if changes != expected_changes:
     raise ValueError("checklist mutations changed; update the matching test cases")
