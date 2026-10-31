@@ -15,7 +15,15 @@ source "$HERE/../lib.sh"
 source "$HERE/../lib/hugepage-probe.sh"
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+stand_in=""
+stop_stand_in() {
+    [ -n "$stand_in" ] || return 0
+    kill "$stand_in" 2>/dev/null
+    wait "$stand_in" 2>/dev/null
+    stand_in=""
+}
+trap 'stop_stand_in; rm -rf "$TMP"' EXIT
+trap 'exit 1' HUP INT TERM
 T=$'\t'
 
 # Counters around one gate call: how many passes, fails and skips it added.
@@ -211,9 +219,14 @@ fi
 echo "== sample snippet: reads a live process through a stand-in docker =="
 if [ -r /proc/self/smaps_rollup ]; then
     mkdir -p "$TMP/bin"
-    cp "$(command -v sleep)" "$TMP/bin/p2pool"
-    "$TMP/bin/p2pool" 60 &
+    python3 -c 'from pathlib import Path; import time; Path("/proc/self/comm").write_text("p2pool\n"); time.sleep(60)' &
     stand_in=$!
+    for _ in {1..50}; do
+        [ "$(cat "/proc/$stand_in/comm" 2>/dev/null)" = p2pool ] && break
+        kill -0 "$stand_in" 2>/dev/null || break
+        sleep 0.1
+    done
+    assert_eq "the stand-in establishes its daemon identity" "$(cat "/proc/$stand_in/comm" 2>/dev/null)" "p2pool"
     cat >"$TMP/bin/docker" <<EOF
 #!/usr/bin/env bash
 [ "\${4:-}" = p2pool ] && echo $stand_in && exit 0
@@ -222,10 +235,15 @@ EOF
     chmod +x "$TMP/bin/docker"
     sample="$(IT_MODE=local IT_REMOTE_DIR="$TMP" PATH="$TMP/bin:$PATH" hugepage_sample)"
     start="$(awk '{print $22}' "/proc/$stand_in/stat")"
-    kill "$stand_in" 2>/dev/null
-    wait "$stand_in" 2>/dev/null
+    stand_pid=$stand_in
+    stop_stand_in
+    if kill -0 "$stand_pid" 2>/dev/null; then
+        it_fail "the stand-in is stopped and reaped" "pid $stand_pid still running"
+    else
+        it_pass "the stand-in is stopped and reaped"
+    fi
     stand_row="$(row "[0-9]*${T}p2pool" "$sample")"
-    assert_eq "the running daemon reads its pid" "$(cut -f3 <<<"$stand_row")" "$stand_in"
+    assert_eq "the running daemon reads its pid" "$(cut -f3 <<<"$stand_row")" "$stand_pid"
     assert_eq "its starttime from /proc/<pid>/stat" "$(cut -f4 <<<"$stand_row")" "$start"
     assert_eq "an ordinary process holds 0 kB hugetlb" "$(cut -f5 <<<"$stand_row")" "0"
     assert_eq "its thread count" "$(cut -f6 <<<"$stand_row")" "1"
