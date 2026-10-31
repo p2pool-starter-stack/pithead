@@ -64,22 +64,17 @@ harness_clear_pregate_evidence() {
     }
 }
 
-# Safe pre-gate for the destructive phases: readiness (is this box fit to be a release server?)
-# then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
-# warned and carried on graded the branch against a bench that was already broken, so a failure
-# here refuses the destructive phases rather than reporting their fallout as a branch regression.
-# Only a readiness refusal on a healthy stack is the bench's, so only it prints `readiness` (docs/dev/integration-testing.md).
-harness_pregate() { # <workers> <no_mining flags>
+pregate_on_bench() {
+    local phase="$1" command="$2"
+    if [ -n "${INLINE_PREGATE_REMOTE_BASE:-}" ]; then
+        on_bench "nohup setsid --wait bash $(quote_arg "$E2E_DIR/tests/integration/lib/inline-pregate-remote.sh") run $(quote_arg "$INLINE_PREGATE_REMOTE_BASE.$phase") $(quote_arg "$command")"
+    else
+        on_bench "$command"
+    fi
+}
+
+harness_pregate() {
     local phase lock_pair out_arg said errf stf st rc_on rc_err said_rc health_rc
-    # Fed as a here-string rather than a pipe (#2457). The sub-phase does read both lines, so a pipe
-    # carried the bytes correctly — but a pipeline whose reader can return before the write lands
-    # leaves this writing into a closed pipe, and `set -o pipefail` then promotes that SIGPIPE to the
-    # pipeline's status. A readiness that PASSED is read as "reported issues" and the destructive
-    # launch is refused for a failure that never happened. A here-string has no pipeline to poison.
-    # $( ) strips the trailing newline that <<< then re-adds, so `a` and `n` arrive byte-identical to
-    # what the pipe delivered. The one difference: with NONCE unset the second read hits EOF (rc 1)
-    # rather than reading an empty line. Nothing consumes that rc — the remote command joins its
-    # reads with `;`, not `&&`, and sets no `-e` — so the values, and the phase's verdict, are unchanged.
     lock_pair="$(printf '%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}")"
     said="" errf="" stf=""
     said="$(mktemp)" && errf="$(mktemp)" && stf="$(mktemp)" || {
@@ -93,7 +88,7 @@ harness_pregate() { # <workers> <no_mining flags>
     for phase in readiness check; do
         out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-$phase")"
         (
-            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
+            pregate_on_bench "$phase" "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
             printf '%s %s\n' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}" >"$stf"
         ) 3>&1 | tee "$said"
         st=("${PIPESTATUS[@]}")

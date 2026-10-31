@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+INLINE_PREGATE_PID="" INLINE_PREGATE_REMOTE_BASE="" INLINE_PREGATE_STARTING=0
+E2E_EXIT_OWNER=$BASHPID
 rig_lock_remote_release() {
     [ -n "${RIG_LOCK_SSH_PID:-}" ] || return 0
     local rc=0
@@ -11,9 +13,89 @@ rig_lock_remote_release() {
     return "$rc"
 }
 
+inline_pregate_alive() {
+    local processes
+    processes="$(ps -axo pgid=,stat=)" || return 2
+    awk -v group="$INLINE_PREGATE_PID" '$1 == group && $2 !~ /^Z/ { alive=1 } END { exit !alive }' <<<"$processes"
+}
+
+drain_local_pregate() {
+    if [ "$INLINE_PREGATE_STARTING" = 1 ] && [ "${!:-}" != "$INLINE_PREGATE_PREVIOUS_JOB" ]; then
+        INLINE_PREGATE_PID=$!
+    fi
+    [ -n "${INLINE_PREGATE_PID:-}" ] || return 0
+    local deadline state sig
+    for sig in TERM KILL; do
+        kill -"$sig" -- "-$INLINE_PREGATE_PID" 2>/dev/null || true
+        sudo -n kill -"$sig" -- "-$INLINE_PREGATE_PID" 2>/dev/null || true
+        deadline=$((SECONDS + 5))
+        while :; do
+            inline_pregate_alive
+            state=$?
+            if [ "$state" -eq 1 ]; then
+                wait "$INLINE_PREGATE_PID" 2>/dev/null || true
+                INLINE_PREGATE_PID=""
+                return 0
+            fi
+            [ "$state" -eq 0 ] || return 1
+            [ "$SECONDS" -lt "$deadline" ] || break
+            sleep .1
+        done
+    done
+    return 1
+}
+
+drain_inline_pregate() {
+    drain_local_pregate || return 1
+    if [ -n "${INLINE_PREGATE_REMOTE_BASE:-}" ]; then
+        local phase
+        for phase in readiness check; do
+            on_bench "bash $(quote_arg "$E2E_DIR/tests/integration/lib/inline-pregate-remote.sh") drain $(quote_arg "$INLINE_PREGATE_REMOTE_BASE.$phase")" || return 1
+        done
+        INLINE_PREGATE_REMOTE_BASE=""
+    fi
+}
+
+run_inline_pregate() {
+    local rc=0 monitor=0
+    [[ "$-" != *m* ]] || monitor=1
+    INLINE_PREGATE_REMOTE_BASE=""
+    if [ -z "${RIG_LOCK_PARENT_ACTOR:-}${RIG_LOCK_PARENT_NONCE:-}${RIG_LOCK_PARENT_FD:-}" ]; then
+        INLINE_PREGATE_REMOTE_BASE="$E2E_DIR/results/inline-pregate.$$.$RANDOM"
+        on_bench "mkdir -p $(quote_arg "$E2E_DIR/results") && umask 077 && printf 'intent\n' >$(quote_arg "$INLINE_PREGATE_REMOTE_BASE.readiness") && printf 'intent\n' >$(quote_arg "$INLINE_PREGATE_REMOTE_BASE.check")" || return 1
+    fi
+    INLINE_PREGATE_PREVIOUS_JOB=${!:-}
+    INLINE_PREGATE_STARTING=1
+    set -m
+    (
+        trap - EXIT
+        set +m
+        local out_fd err_fd out_pid err_pid status=0
+        exec {out_fd}> >(redact_remote_output)
+        out_pid=$!
+        exec {err_fd}> >(redact_remote_output >&2)
+        err_pid=$!
+        harness_pregate "$@" 1>&"$out_fd" 2>&"$err_fd" || status=$?
+        exec {out_fd}>&- {err_fd}>&-
+        wait "$out_pid" || status=1
+        wait "$err_pid" || status=1
+        exit "$status"
+    ) &
+    INLINE_PREGATE_PID=$!
+    INLINE_PREGATE_STARTING=0
+    [ "$monitor" -eq 1 ] || set +m
+    wait "$INLINE_PREGATE_PID" || rc=$?
+    drain_inline_pregate || return 1
+    return "$rc"
+}
+
 e2e_exit() {
     local rc=$? restore_rc=0
-    # A restore refusal calls exit. Isolate it so every outcome still reaps our child.
+    [ "$BASHPID" = "$E2E_EXIT_OWNER" ] || exit "$rc"
+    drain_inline_pregate || {
+        warn "inline pregate could not be stopped; refusing baseline restoration"
+        exit 1
+    }
     (restore_all "$rc") || restore_rc=$?
     rig_lock_remote_release || restore_rc=1
     [ "$restore_rc" -eq 0 ] || rc=$restore_rc
