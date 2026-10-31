@@ -14,8 +14,8 @@ echo "== unit: doctor's HugePages verdict holds the pool to the stack's budget (
 MEMD="$SANDBOX/doctor-memory"
 mkdir -p "$MEMD"
 _meminfo() { printf 'MemTotal:       16318412 kB\nHugePages_Total:    %s\nHugePages_Free:     %s\n' "$1" "$2" >"$MEMD/meminfo"; }
-_hp() { # appliance(0|1) -> check_hugepages_reserved's output
-    PITHEAD_APPLIANCE="$1" PITHEAD_MEMINFO="$MEMD/meminfo" PITHEAD_HUGEPAGES_MARKER="$MEMD/marker" \
+_hp() {
+    DR_JSON_FILE="$MEMD/ids" PITHEAD_APPLIANCE="$1" PITHEAD_MEMINFO="$MEMD/meminfo" PITHEAD_HUGEPAGES_MARKER="$MEMD/marker" \
         run_sourced "$SANDBOX" check_hugepages_reserved 2>&1
 }
 rm -f "$MEMD/marker"
@@ -145,3 +145,5 @@ out="$(cd "$MDOC" && PITHEAD_APPLIANCE=0 PITHEAD_MEMINFO="$MEMD/meminfo" PITHEAD
     PATH="$MDOC/bin:$PATH" ./pithead doctor 2>&1)"
 assert_contains "doctor at 186 pages: WARN names the shortfall" "$out" "⚠ WARN HugePages reserved: only 186 of the 3072 pages"
 assert_not_contains "doctor at 186 pages: no OK for the pool" "$out" "✓ OK   HugePages reserved"
+assert_eq "HugePages keeps its id across outcomes and surfaces" \
+    "$(cut -f3 "$MEMD/ids" | sort -u)" "hugepages"

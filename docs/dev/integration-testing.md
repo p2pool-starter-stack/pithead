@@ -844,7 +844,9 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   service as it does the egress units: a unit the run added is removed and checked absent,
   including from the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
   `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads, record loss,
-  diagnostic privacy, interrupted capture and the pre-mutation refusal through the wrapper's real functions.
+  diagnostic privacy, interrupted capture, pre-mutation refusal and read-only assessment through
+  the wrapper's real functions. Its isolated preflight fixture stubs pregate evidence
+  cleanup so each path reaches the unit-state capture boundary.
   Its scratch directory uses `mktemp`'s platform default when `TMPDIR` is unset; a failed
   directory allocation stops the selftest before it writes fixtures.
   Historical unknown state remains unknown; current unit metadata cannot reconstruct it.
