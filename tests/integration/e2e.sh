@@ -648,7 +648,7 @@ run_harness() {
 
     echo ""
     log "Harness finished (exit $rc). Full log:"
-    on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/  /'
+    on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed '/^\[ITEST\]/!s/^/  /'
     return "${rc:-1}"
 }
 # --- Main -------------------------------------------------------------------
