@@ -218,14 +218,17 @@ fi
 echo "== sample snippet: reads a live process through a stand-in docker =="
 if [ -r /proc/self/smaps_rollup ]; then
     mkdir -p "$TMP/bin"
-    python3 -c 'from pathlib import Path; import time; Path("/proc/self/comm").write_text("p2pool\n"); time.sleep(60)' &
+    python3 -c 'from pathlib import Path; import time; Path("/proc/self/comm").write_text("p2pool"); time.sleep(60)' &
     stand_in=$!
     for _ in {1..50}; do
         [ "$(cat "/proc/$stand_in/comm" 2>/dev/null)" = p2pool ] && break
         kill -0 "$stand_in" 2>/dev/null || break
         sleep 0.1
     done
-    assert_eq "the stand-in establishes its daemon identity" "$(cat "/proc/$stand_in/comm" 2>/dev/null)" "p2pool"
+    assert_eq "the stand-in establishes its exact daemon identity" "$(
+        cat "/proc/$stand_in/comm" 2>/dev/null
+        printf .
+    )" $'p2pool\n.'
     cat >"$TMP/bin/docker" <<EOF
 #!/usr/bin/env bash
 [ "\${4:-}" = p2pool ] && echo $stand_in && exit 0
