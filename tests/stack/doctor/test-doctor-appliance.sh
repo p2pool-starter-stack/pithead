@@ -1,14 +1,5 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Doctor domain, appliance half (#1105 Phase 1, module 7): engine-aware checks (container_engine /
-# docker_boot_enabled), `doctor --json` + support-bundle, the wipe-note surfaced through doctor,
-# and the appliance-only control-unit-location and certificate SAN/expiry checks. Sourced by
-# tests/stack/run.sh after lib.sh. (Two check_appliance_cert sections — "excludes proxy_net's
-# gateway live" and "WARNs when the engine can't be asked" — stay in run.sh: they sit inside, and
-# share fixtures with, the appliance certificate MINT/render block (appliance_mint_cert,
-# generate_caddyfile's SAN agreement, the re-mint-on-change guard) that isn't otherwise splitting,
-# and extracting only the doctor-facing half of that block would fragment it. The map's
-# "certificate SAN/expiry" item is still fully covered by the SAN-coverage/expiry section below.)
 
 echo "== unit: engine-aware doctor checks (#77 phase 2) =="
 # Same check names and verdict semantics on both engines; PITHEAD_ENGINE pins the appliance.
@@ -49,16 +40,17 @@ COMPOSE_PROFILES=local_node
 EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$VALID_PRIMARY" >"$DJ/config.json"
 (cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-# doctor --json: valid JSON on stdout, the human report on stderr, summary counters (including
-# info) sum to the full check list (#1807 — a consumer totalling ok+warn+fail alone under-reports
-# by the number of info rows).
 dj_out="$DJ/doctor.json"
 dj_err="$DJ/doctor.err"
-(cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --json >"$dj_out" 2>"$dj_err") || true
+dj_rc=0
+(cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --json >"$dj_out" 2>"$dj_err") || dj_rc=$?
+assert_rc "doctor process status matches its JSON exit" "$dj_rc" "$(jq -r .exit "$dj_out")"
 assert_eq "doctor --json has checks + summary" "$(jq -r 'has("checks") and has("summary")' "$dj_out" 2>/dev/null)" "true"
 assert_eq "doctor --json summary has an info count" "$(jq -r '.summary | has("info")' "$dj_out" 2>/dev/null)" "true"
 assert_eq "doctor --json counters sum to the check total" \
     "$(jq -r '(.summary.ok + .summary.warn + .summary.fail + .summary.info) == (.checks | length)' "$dj_out" 2>/dev/null)" "true"
+assert_eq "doctor --json gives every row a stable slug" \
+    "$(jq -r '(.checks | length > 0) and all(.checks[]; (.id | type == "string") and (.id | test("^[a-z][a-z0-9]*(-[a-z0-9]+)*$")))' "$dj_out")" "true"
 assert_contains "doctor --json human report on stderr" "$(cat "$dj_err")" "Diagnostics summary"
 assert_eq "all dashboard payout remedies point at Configuration + confirmation (#1959)" \
     "$(grep -c 'payout address.*Open Configuration.*complete the confirmation step' "$STACK")" "5"
@@ -77,6 +69,15 @@ assert_eq "support bundle is chmod 600" "$(stat -c '%a' "$sb_tar" 2>/dev/null ||
 mkdir -p "$DJ/sb-extract"
 tar -xzf "$sb_tar" -C "$DJ/sb-extract"
 assert_eq "bundle carries doctor.json" "$(jq -r 'has("summary")' "$DJ/sb-extract/bundle/doctor.json" 2>/dev/null)" "true"
+assert_eq "bundle doctor JSON preserves every check id" \
+    "$(jq -r '[.checks[].id] | join(" ")' "$DJ/sb-extract/bundle/doctor.json")" \
+    "$(jq -r '[.checks[].id] | join(" ")' "$dj_out")"
+jq -e . "$DJ/sb-extract/bundle/doctor.json" >/dev/null
+assert_rc "redacted bundle doctor remains valid JSON" "$?" "0"
+python3 "$ROOT/tests/stack/doctor/test-json-contract.py"
+assert_rc "doctor JSON keeps ids across outcomes, surfaces and wording" "$?" "0"
+python3 "$ROOT/tests/stack/doctor/check-ids.py" "$ROOT" "$dj_out" "$DJ/sb-extract/bundle/doctor.json"
+assert_rc "doctor and bundle rows match the pinned check catalog" "$?" "0"
 assert_contains "bundle .env redacts token keys" "$(cat "$DJ/sb-extract/bundle/env.redacted")" "PROXY_AUTH_TOKEN=[redacted]"
 assert_eq "no raw secret value anywhere in the bundle" "$(grep -rc "ORIGINALTOKEN" "$DJ/sb-extract" | grep -vc ":0")" "0"
 
