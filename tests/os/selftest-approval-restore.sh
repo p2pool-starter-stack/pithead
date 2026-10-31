@@ -53,7 +53,7 @@ _ssh() {
     : >"$SSH_ERR"
     if [ "$scenario" = "$operation" ]; then
         printf 'No space left on device: fake-private-host fake-password\n'
-        printf 'Permission denied: /home/fake-user/private 192.0.2.16\n' >"$SSH_ERR"
+        printf 'Permission denied: /home/user/private 192.0.2.16\n' >"$SSH_ERR"
         return 32
     fi
     command=${command//\/data\/pithead/"$guest"}
@@ -139,7 +139,7 @@ import subprocess
 import sys
 
 payload = (
-    b"\x1b[31mPermission denied\x1b[0m: secret.example /home/private token=hidden\n"
+    b"\x1b[31mPermission denied\x1b[0m: secret.example /home/user/private token=hidden\n"
     b"No space left on device 192.0.2.16 wallet=hidden\n"
     + b"a" * 100000
     + b"\n"
