@@ -98,7 +98,7 @@ assert_eq "empty-token up never ran without the window" "$([ -e "$TD/unlocked" ]
 assert_contains "probe diagnostics record admission and the empty token" "$(cat "$TD/positive.log")" 'auth-probe: token empty at evaluation'
 
 echo "== auth admission: clearing and persistent mutation overlap =="
-hold_lock() { # <seconds>
+hold_lock() {
     rm -f "$TD/held"
     (
         exec 8>>"$TD/.pithead.lock"
