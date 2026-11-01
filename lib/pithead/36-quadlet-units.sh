@@ -1,10 +1,3 @@
-# Appliance unit rendering (#77 phase 1). Emits Podman Quadlet units from a rendered .env — the
-# second render target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime
-# architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
-# drift needs a bench re-proof. Spike-proven rules baked in: Notify=healthy services carry
-# TimeoutStartSec=infinity (a finite timeout KILLS a not-yet-healthy service — compose's
-# start_period never does); plain depends_on maps to After=+Wants= (Requires= would stop-couple);
-# tmpfs options use mode= (podman rejects uid=/gid=).
 render_quadlet_units() {
     local envf="$1" outdir="$2"
     [ -f "$envf" ] || error "render-quadlet: env file not found: $envf"
@@ -287,8 +280,15 @@ ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true
 PodmanArgs=--memory 512m --memory-swap 512m
+HealthCmd=/bin/sh -c '[ -x /usr/local/bin/xmrig-proxy-healthcheck.sh ] && exec /usr/local/bin/xmrig-proxy-healthcheck.sh || exit 0'
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=30s
+Notify=healthy
 [Service]
 Restart=always
+TimeoutStartSec=infinity
 [Install]
 WantedBy=multi-user.target
 EOF
