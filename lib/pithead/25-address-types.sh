@@ -18,6 +18,7 @@
 # here (setup/apply, the appliance wizard spool, the dashboard control runner), so this is the
 # one checksum gate for all of them.
 monero_address_type() {
+    if declare -F _config_address_type_go >/dev/null && _config_address_type_go monero "$1"; then return; fi
     local shape
     case "$1" in
     4*) case "${#1}" in 95) shape=primary ;; 106) shape=integrated ;; *) shape=invalid ;; esac ;;
@@ -142,6 +143,7 @@ PYEOF
 # python3 does the math, same as the Monero gate above. Without it the address is "unchecked" —
 # accepted, the pre-gate behaviour, degraded, never a false reject.
 tari_address_type() {
+    if declare -F _config_address_type_go >/dev/null && _config_address_type_go tari "$1"; then return; fi
     command -v python3 >/dev/null 2>&1 || {
         echo "unchecked"
         return

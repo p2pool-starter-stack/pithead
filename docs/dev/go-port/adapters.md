@@ -259,3 +259,10 @@ its opening validation gates, before hardware or credential generation.
 `test_config_input.py` compares diagnostics, error precedence, native selection
 and fallback with disposable documents and helper stubs. Existing parser and
 render suites remain unchanged.
+
+`wallet_classifiers_reference.sh` calls the production wallet classifiers and
+extracts the parser's unchanged diagnostic cases for paired gate comparisons.
+`test_wallet_classifiers.py` reuses public addresses from the original CLI fixtures
+and checks native selection, fallback, callback order and stdin-only helper input.
+The original Monero/Tari domain and config-application suites retain their Linux
+harness; the existing render fixture/goldens run unchanged.

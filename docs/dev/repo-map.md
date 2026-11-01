@@ -196,10 +196,14 @@ credentials through `lib/pithead/27k-go-config-access.sh`; `make test-go-config-
 checks state, callback order and complete renders. Username reads, generation and persistence stay in Bash.
 `go/internal/config/wallet_settings.go` validates the required-wallet gate through
 `lib/pithead/27j-go-wallet-settings.sh`; `make test-go-wallet-settings-parity` checks
-state, error order and full renders. Mode getters and checksum classifiers stay in Bash.
+state, error order and full renders. Mode getters stay in Bash.
+`go/internal/cli/config_address.go` exposes the existing native address decoders
+through `lib/pithead/25a-go-address-types.sh`. `make test-go-wallet-classifiers-parity`
+compares ordinary CLI verdicts, parser diagnostics and fallback boundaries,
+while running unchanged wallet-settings and render comparisons.
 `go/internal/config/payout_settings.go` parses payout-confirmation scalars via
 `lib/pithead/27i-go-payout-settings.sh`; `make test-go-payout-settings-parity` checks
-validation and partial state. Time reads and address decoding stay in Bash.
+validation and partial state. Time reads and key-only decoding stay in Bash/Python.
 `go/internal/payoutkeys/` derives public view keys from canonical private scalars
 via `lib/pithead/25c-go-payout-keys.sh`; `make test-go-payout-keys-parity` compares
 curve encodings and callback failures. Python remains the compatibility fallback.
