@@ -127,7 +127,7 @@ selection is not implemented.
 | Raw config document parse/validation | Native Go-selected gate, with Python compatibility fallback | 5 tagged groups / 134 scenarios, unchanged parser and wiring suites |
 | Config defaults, materialization and getters | Native with runtime table; jq compatibility fallback | 5 tagged groups / 744 scenarios and wiring/render-fixture tests |
 | Worker, energy, webhook and control-character validation | Native Go-selected validators; jq compatibility fallback | Paired validator corpus and wiring checks; Go units |
-| Caddyfile serialization | Native from prepared Bash state; original block fallback | Whole-file byte/status/log/call comparisons and Go units |
+| Caddyfile serialization and site URLs | Native fragments and site/port formatting; Bash host expansion/preparation/writes and compatibility fallback | Supplementary Caddy/host/port comparisons and Go units; Linux/Docker oracle unavailable |
 | `.env` serialization | Native bulk formatter with Bash derivation/writes and compatibility fallback | Unchanged render fixture/goldens pass in Go mode; full Linux suite unavailable |
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
@@ -258,6 +258,9 @@ oracles:
   logs, statuses and preparation calls, including partial-file failures. A binary
   shim proves native sections succeed without recording their secret inputs.
   Docker-backed Caddy parsing remains an unavailable separate contract check.
+  `caddy_sites_reference.sh` reuses that unchanged adapter with controlled IFS and
+  working-directory fixtures; `test_caddy_sites.py` adds host/port/protocol cases
+  because the original adapter cannot vary IFS before sourcing the renderer.
 
 - `env_render_reference.sh` invokes the original dotenv formatter for supplied
   values. `test_env_render.py` calls the unchanged render fixture with additional
@@ -298,7 +301,8 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-node-zmq-exchange-parity`, `test-go-config-document-parity` and
 `test-go-config-defaults-parity`, `test-go-config-validation-parity` and
 `test-go-caddy-parity`, `test-go-env-parity`, `test-go-env-network-parity` and
-`test-go-env-dashboard-parity` and `test-go-env-memory-parity`.
+`test-go-env-dashboard-parity`, `test-go-env-memory-parity` and
+`test-go-caddy-sites-parity`.
 
 ## Earlier slice results
 
@@ -306,54 +310,52 @@ Detailed paired commands, results and limits are preserved in
 [baseline and early results](results-baseline.md), [CLI probe results](results-cli-probes.md) and
 [network and firewall results](results-network-probes.md), plus
 [remote-node probe results](results-node-probes.md) and
-[configuration results](results-config.md).
+[configuration results](results-config.md) and [render results](results-render.md).
 
-## Memory render settings slice (2026-11-01)
+## Caddy site preparation slice (2026-11-01)
 
-Go reads the Tari/Monero memory settings with the original jq fallback semantics.
-Nonlocal Tari modes retain the inert `0m` placeholder and skip the Tari memory
-lookup. The native auto calculation subtracts HugePages, reserves one quarter
-with a 2 GiB minimum, then floors the Tari ceiling at 2 GiB. Unknown RAM uses
-16 GiB, matching the reference. Explicit configured limits keep their bytes.
+Go now formats the HTTP/HTTPS site lists and normalizes scheme-default ports
+inside the existing Caddy fragment calls. Bash supplies its expanded host tokens,
+preserving IFS, globbing, order and duplicates. The tagged `sites-v1` frame checks
+host count, producer status and EOF before rendering; the legacy frame remains
+supported. This adds no helper processes. Unsupported helpers retain Bash fallback.
 
-`lib/pithead/33d-go-env-memory.sh` supplies config and memory facts over stdin.
-The settings producer reports its status; both operations require complete NUL
-fields, successful helper exit and EOF before committing values. Unsupported
-JSON/numeric formats and malformed helpers retain the original Bash path.
-Bash keeps hardware discovery, fact normalization, secret-file transactions and
-all writes. This slice adds no host or network probe and changes no existing test.
-
-The unchanged render fixture/goldens and raw-parser suite pass in both modes.
-Seven supplementary Python tests compare full output, `.env`/secret bytes and
-0600 modes, hardware-read order, explicit and nonlocal modes, memory boundaries,
-unsupported settings and poisoned helper plans. Native success is verified.
+Bash keeps bind discovery, auth decoding, certificate preparation, reference port
+preparation, logs and file writes. The original Caddy source slice is unchanged,
+so standalone source consumers retain their existing dependencies and behavior.
+The existing supplementary Caddy comparisons pass unchanged, including partial-file
+failures. Bash command-substitution newline trimming is retained at the Go
+protocol boundary. Three new supplementary tests cover whole-file bytes, call
+order, host/port/IFS cases, native execution and malformed frames. The original
+Linux CLI and Docker Caddy parsing suites remain unproven locally.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
 and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
-Docker socket. Private command/status records use `.go-cache/logs/config-memory-*`.
+Docker socket. Private command/status records use `.go-cache/logs/config-caddy-sites-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-env-memory-parity test-go-config-defaults-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-config-document-parity test-go-config-validation-parity test-go-caddy-parity test-go-parity` | PASS, including unchanged render fixture/goldens, raw parser suite and 7 new memory tests | Same result, native memory settings/formula verified |
+| `make test-go-caddy-sites-parity test-go-caddy-parity test-go-config-defaults-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-config-document-parity test-go-config-validation-parity test-go-parity` | PASS, including unchanged render fixture/goldens and raw parser suite | Same result |
+| `make test-go-caddy-sites-parity test-go-caddy-parity` (final newline fix) | PASS, 3 new and 5 unchanged supplementary tests; Go units | Same result; native sections verified |
 | `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
 | `make test-fakes` | PASS, 54 tests | Same result; Python backend |
 | `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
 | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
 | `make test` | FAIL, existing `config_defaults_reference.sh` case indentation, pinned shfmt, exit 2 | Same failure; ShellCheck passes |
-| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, third-party cache findings, exit 2 | Same result |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
 | `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
 
-Native checks pass with canonical worktree cache/temp paths:
+Native checks pass: `make go-build test-go`,
 `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
 `go -C go vet -tags=parity ./...` and
 `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
-(compilation only). Generated-CLI/new-adapter ShellCheck and shfmt, Go formatting,
-locked Ruff and `git diff --check` pass. Source/security reviews are clean.
-Scoped Markdown uses the original rules:
+(compilation only). Generated CLI/new-adapter ShellCheck and shfmt, Go formatting,
+locked Ruff, scoped Markdown and `git diff --check` pass. Source/security reviews
+are clean. Scoped Markdown uses the original rules:
 
 ```bash
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
-  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md
 ```
 
 ## Unavailable and known host constraints
@@ -387,7 +389,7 @@ Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
 and dashboard on 2026-11-01; appliance host scripts and container entrypoint ports
 are excluded. Next, in order:
 
-1. Finish typed validation and move Caddy preparation into Go. Obtain the unchanged Linux CLI and Docker parser verdicts.
+1. Finish typed validation and remaining Caddy preparation. Obtain unchanged Linux CLI and Docker parser verdicts.
 2. Port `render`, `apply`, `up`, `down` and `restart` using that config layer.
 3. Implement dashboard routes, HTTP/JSON, state/polling, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.

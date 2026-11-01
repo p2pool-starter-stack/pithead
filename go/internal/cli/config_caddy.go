@@ -8,6 +8,9 @@ import (
 )
 
 func configCaddy(args []string, input io.Reader, output io.Writer) error {
+	if len(args) == 2 && args[1] == "sites-v1" {
+		return configCaddySites(args[0], input, output)
+	}
 	unsupported := &ExitError{Code: 125}
 	if len(args) != 1 {
 		return unsupported

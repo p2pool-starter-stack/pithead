@@ -151,10 +151,13 @@ control-character validation through the same internal binary marker.
 proves native selection without jq. Unsupported inputs keep the original
 validators. `go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
-statuses and preparation calls. The protocol hook is the adjacent
-`lib/pithead/35a-caddy-go-render.sh` slice. Bash retains address/certificate
-preparation and file writes. `go/internal/config/env.go` serializes the complete
-ordered `.env` batch via `lib/pithead/33a-go-env-render.sh`.
+statuses and preparation calls. `go/internal/config/caddy_sites.go` formats
+site URLs and scheme-default ports; `make test-go-caddy-sites-parity` checks host
+expansion, ports and framing. The adjacent `lib/pithead/35a-caddy-go-render.sh`
+hook supplies Bash-expanded hosts through the tagged `sites-v1` protocol,
+retaining the legacy frame. Bash keeps host expansion, bind/auth/certificate
+preparation, reference port preparation and file writes. `go/internal/config/env.go`
+serializes the complete ordered `.env` batch via `lib/pithead/33a-go-env-render.sh`.
 `make test-go-env-parity` adds byte/protocol comparisons; the unchanged sparse
 render fixture and goldens remain the oracle. `go/internal/config/env_network.go`
 derives daemon routing, profiles, binds and P2Pool settings via
