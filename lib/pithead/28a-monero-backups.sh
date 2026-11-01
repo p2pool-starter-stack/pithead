@@ -14,6 +14,8 @@ validate_monero_backups() {
               elif (.zmq_port | port | not) then "\($p).zmq_port must be an integer TCP port 1–65535."
               elif has("rpc_login") and ((.rpc_login | type) != "string")
               then "\($p).rpc_login must be a string."
+              elif ((.rpc_login // "") | startswith(":"))
+              then "\($p).rpc_login requires a nonempty username."
               else empty end) end' "$CONFIG_FILE") || error "Cannot validate monero.backup_nodes."
     [ -z "$reason" ] || error "$reason"
     primary="$NETWORK_PREFIX.26"

@@ -61,6 +61,8 @@ error() { printf '%s\\n' "$*" >&2; exit 1; }
             [dict(NODE, host="host,fork")],
             [dict(NODE, rpc_ssl=True)],
             [dict(NODE, rpc_login={})],
+            [dict(NODE, rpc_login=":secret")],
+            [dict(NODE, rpc_login=":")],
             [NODE, NODE],
             [dict(NODE, host="primary.example", rpc_port=18081, zmq_port=18083)],
         ]:
@@ -74,6 +76,13 @@ error() { printf '%s\\n' "$*" >&2; exit 1; }
             self.shell("validate_monero_backups", {"monero": {"backup_nodes": [NODE]}}).returncode,
             0,
         )
+        for login in ("", "alice", "alice:", "alice:pass:word"):
+            with self.subTest(login=login):
+                result = self.shell(
+                    "validate_monero_backups",
+                    {"monero": {"backup_nodes": [dict(NODE, rpc_login=login)]}},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
         result = self.shell(
             "MONERO_MODE=local; validate_monero_backups",
             {

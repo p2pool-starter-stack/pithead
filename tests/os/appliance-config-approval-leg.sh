@@ -49,18 +49,8 @@ test "$(stat -c %a /data/pithead/data/control/.os1966-original-config.json)" = 6
     APPROVAL_RESTORE_SNAPSHOT=/data/pithead/data/control/.os1966-original-config.json
 }
 
-approval_restore_pending() {
-    [ -n "$APPROVAL_RESTORE_SNAPSHOT" ] || return 0
-    # Keep the harness restore at a quiet phase boundary; apply does not stop a running runner (#2363).
-    _control_requests_drained || return 1
-    _ssh 'set -euo pipefail
-install -m 600 /data/pithead/data/control/.os1966-original-config.json /data/pithead/config.json
-cd /data/pithead
-./pithead apply -y >/dev/null
-cmp -s /data/pithead/config.json /data/pithead/data/control/.os1966-original-config.json
-rm -f /data/pithead/data/control/.os1966-original-config.json' || return 1
-    APPROVAL_RESTORE_SNAPSHOT=""
-}
+# shellcheck source=tests/os/approval-restore.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/approval-restore.sh"
 
 approval_fixture_cleanup() {
     approval_restore_pending || {
@@ -321,21 +311,18 @@ _hostname_landed_fallback_self_test() (
     esac
 )
 
-# The restore keeps its own phase boundary quiet before `pithead apply` (#2363). Driving the real
-# function with one request stuck in requests/ forever must refuse, and must leave `pithead apply`
-# uncalled — removing the `_control_requests_drained` line makes both halves fail.
-# The real `_control_requests_drained` is driven by selftest-run-modules.sh; deleting this caller's
-# call to it fails both halves below.
 _restore_waits_for_control_drain_self_test() (
-    local applied=0 drained=1
+    local applied drained=1
+    applied=$(mktemp) || return 1
+    trap 'rm -f "$applied"' EXIT
     APPROVAL_RESTORE_SNAPSHOT=/data/pithead/data/control/.os1966-original-config.json
     _control_requests_drained() { [ "$drained" -eq 0 ]; }
-    _ssh() { case "$*" in *'pithead apply'*) applied=1 ;; esac }
+    _ssh() { case "$*" in *'pithead apply'*) printf 'applied' >"$applied" ;; esac }
     ! approval_restore_pending || return 1
-    [ "$applied" -eq 0 ] || return 1
+    [ ! -s "$applied" ] || return 1
     drained=0
     approval_restore_pending || return 1
-    [ "$applied" -eq 1 ]
+    [ "$(cat "$applied")" = applied ]
 )
 
 # #2333: a fresh-chain sync-gate-hold row must be checked before the reserved-node round trip

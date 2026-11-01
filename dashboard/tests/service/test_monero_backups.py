@@ -3,6 +3,7 @@ import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from requests.auth import HTTPDigestAuth
 
 from mining_dashboard.service import data_service as ds
 from mining_dashboard.service.control_service import mask_secrets
@@ -30,6 +31,26 @@ def test_each_node_gets_its_own_credentials_and_ports(monkeypatch):
         mb.MoneroBackups()
     assert client.call_args_list[0].args == ("http://one.example:28081", "alice", "pass:word")
     assert client.call_args_list[1].args == ("http://two.example:38081", "", "")
+
+
+@pytest.mark.parametrize("status,expected", [(200, True), (401, False)])
+def test_backup_rpc_uses_configured_digest_auth(monkeypatch, status, expected):
+    monkeypatch.setenv("MONERO_BACKUP_NODES", json.dumps(NODES[:1]))
+    pool = mb.MoneroBackups()
+    response = MagicMock(status_code=status)
+    response.json.return_value = {"synchronized": True, "height": 42}
+    with (
+        patch(
+            "mining_dashboard.client.monero.monero_client.bounded_get", return_value=response
+        ) as request,
+        patch.object(mb, "zmq_publisher", return_value=True) as publisher,
+    ):
+        assert pool.usable({"reachable": False}) is expected
+    auth = request.call_args.kwargs["auth"]
+    assert isinstance(auth, HTTPDigestAuth)
+    assert (auth.username, auth.password) == ("alice", "pass:word")
+    assert request.call_args.kwargs["allow_redirects"] is False
+    assert publisher.call_count == int(expected)
 
 
 @pytest.mark.parametrize(
