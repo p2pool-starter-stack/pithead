@@ -397,4 +397,4 @@ state succeeds. `make test-go-dashboard-views-parity` includes unchanged views,
 location, metrics and JSON suites. Workers, energy, earnings, polling and storage
 remain Python; this does not prove a complete native backend.
 
-See [fleet and host-resource adapters](adapters-dashboard-fleet.md) for the next native state layer.
+See [fleet and host-resource adapters](adapters-dashboard-fleet.md) for the next native state layer. [Overview and badge adapters](adapters-dashboard-overview.md) cover the next state fields.

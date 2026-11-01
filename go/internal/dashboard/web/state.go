@@ -13,6 +13,7 @@ func buildState(raw json.RawMessage) (map[string]json.RawMessage, error) {
 		Chart        charts.Input               `json:"chart"`
 		Series       map[string]series.Request  `json:"series"`
 		Presentation map[string]json.RawMessage `json:"presentation"`
+		Overview     map[string]json.RawMessage `json:"overview"`
 	}
 	if json.Unmarshal(raw, &input) != nil || input.State == nil {
 		return nil, ErrInputsUnavailable
@@ -48,7 +49,7 @@ func buildState(raw json.RawMessage) (map[string]json.RawMessage, error) {
 			return nil, err
 		}
 	}
-	return input.State, nil
+	return completeOverview(input.State, input.Overview)
 }
 
 func seriesField(field, operation string) bool {

@@ -7,10 +7,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/badges"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/charts"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/domain"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/fleet"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/infra"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/overview"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/resources"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/runtime"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/series"
@@ -40,6 +42,14 @@ func main() {
 			err = streamHelper(fleet.Run, os.Stdin, os.Stdout)
 		case "resources-stream":
 			err = streamHelper(resources.Run, os.Stdin, os.Stdout)
+		case "overview":
+			err = overview.Run(os.Stdin, os.Stdout)
+		case "overview-stream":
+			err = streamHelper(overview.Run, os.Stdin, os.Stdout)
+		case "badges":
+			err = badges.Run(os.Stdin, os.Stdout)
+		case "badges-stream":
+			err = streamHelper(badges.Run, os.Stdin, os.Stdout)
 		default:
 			os.Exit(125)
 		}

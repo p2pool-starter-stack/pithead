@@ -60,13 +60,13 @@ Host-resource availability and the existing disk-history capacity estimate are c
 The incremental dashboard server lives in `go/internal/dashboard/web/` and
 `go/internal/dashboard/runtime/`, launched by `go/cmd/dashboard/`. Go owns the
 route/method table, security headers, shell/static/preview transport, history
-charts, domain metrics, infrastructure/series/fleet/resource presentation and connection/standby/Prometheus
+charts, domain metrics, infrastructure/series/fleet/resource/overview/badge presentation and connection/standby/Prometheus
 formatting. Native chart processing
 lives in `go/internal/dashboard/charts/`; JSON and exposition builders live in
 `go/internal/dashboard/api/`; domain calculations live in
 `go/internal/dashboard/domain/`; state display builders live in
-`go/internal/dashboard/infra/`, `series/`, `fleet/` and `resources/`. Python's
-`dashboard/mining_dashboard/go_bridge.py`, `go_domain.py`, `go_views.py` and `go_fleet.py` supply
+`go/internal/dashboard/infra/`, `series/`, `fleet/`, `resources/`, `overview/` and `badges/`. Python's
+`dashboard/mining_dashboard/go_bridge.py`, `go_domain.py`, `go_views.py`, `go_fleet.py` and `go_overview.py` supply
 config/storage inputs and remaining state presentation; polling,
 control and SQLite remain Python. The normal container command remains Python.
 `make test-go-dashboard-http-parity` retains the transport comparisons;
@@ -78,6 +78,8 @@ proves both state and Prometheus requests compute their domain values in Go.
 suites and proves native state builders through an HTTP ownership guard.
 `make test-go-dashboard-fleet-parity` adds unchanged worker, energy and resource
 suites and their native-state ownership comparison.
+`make test-go-dashboard-overview-parity` adds unchanged pool, raffle, update and
+badge suites with a native-state ownership comparison; earnings and polling remain Python.
 
 Regular-file dotenv publication lives in `go/internal/config/env_write.go`,
 with the stdin adapter in `go/internal/cli/config_env_write.go` and Bash hook in

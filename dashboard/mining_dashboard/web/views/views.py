@@ -63,7 +63,7 @@ from mining_dashboard.web.views.series_views import (
 # build_state assembles these sections, build_hashrate uses the low-hashrate title, and
 # service/notify/telegram_commands.py imports build_badges from here.
 from mining_dashboard.web.views.xvb_views import (
-    build_badges,
+    build_badges,  # noqa: F401
     build_earnings,
     build_earnings_vs_actual,
     build_xvb_calc,
@@ -90,7 +90,6 @@ build_hashrate = _series_views.build_hashrate
 build_payouts = _series_views.build_payouts
 build_share_stats = _series_views.build_share_stats
 build_xvb_history = _series_views.build_xvb_history
-
 logger = logging.getLogger("WebViews")
 
 
@@ -270,7 +269,8 @@ def build_state(
     metrics = build_metrics(data, state_mgr, history) if metrics is None else metrics
     db_healthy = state_mgr.is_db_healthy()
     mode_tok, p2p_tok, xvb_tok = _mode_palette(metrics.mode)
-    pool_net = build_pool_network(data, metrics, (section_builders or {}).get("build_monero"))
+    monero = (section_builders or {}).get("build_monero")
+    pool_net = section("build_pool_network", data, metrics, monero)
     # Built once, consumed twice: the Earnings card reads the full payload, the expected-vs-actual
     # summary (#808) rolls the same figures up — one build, so the two can't disagree.
     earnings = build_earnings(
@@ -315,10 +315,10 @@ def build_state(
 
     egress = egress_posture_from_config()  # per-component egress route + privacy roll-up (#170)
     topology = topology_from_config()  # full stack wiring for the panel (#170); shares summary
-    badges = build_badges(
-        data, metrics, mode_tok, db_healthy, wallet_change=recent_wallet_change(state_mgr)
+    badges = section(
+        "build_badges", data, metrics, mode_tok, db_healthy, recent_wallet_change(state_mgr)
     )
-    badges.append(_egress_badge(egress["summary"]))
+    badges.append(section("_egress_badge", egress["summary"]))
 
     disk_growth = state_mgr.get_disk_growth()
     return {
@@ -337,7 +337,7 @@ def build_state(
         "version": resolve_version(),
         # {available, latest, url} | None — new-release badge (#224), self-consistency-guarded:
         # never advertise the version already running (#664).
-        "update": visible_update(data.get("update")),
+        "update": section("visible_update", data.get("update")),
         # Whether the control channel is on (#33) — gates the header Upgrade button (#59). The
         # routes 404 when off, so this is display gating only, not a security control. Read at
         # call time (module attribute, not from-import) so tests can flip the flag per-app.
@@ -363,8 +363,8 @@ def build_state(
         "monero": pool_net["monero"],
         "shares_window": pool_net["shares_window"],
         "cadence": section("build_cadence", metrics),
-        "raffle_eligible": build_raffle_eligibility(metrics),
-        "raffle_wins": build_raffle_log(raffle_wins),
+        "raffle_eligible": section("build_raffle_eligibility", metrics),
+        "raffle_wins": section("build_raffle_log", raffle_wins),
         "proxy_workers": metrics.workers_online,
         # Confirmed payouts (#381): the stored list rides in when the feature is on, else None
         # (feature off → earnings shows only the estimate). Built above, before the payload.

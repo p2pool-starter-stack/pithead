@@ -3,7 +3,7 @@ import os
 
 from aiohttp import web
 
-from mining_dashboard import go_domain, go_fleet, go_views
+from mining_dashboard import go_domain, go_fleet, go_overview, go_views
 from mining_dashboard.config import config
 from mining_dashboard.web import server
 from mining_dashboard.web.views import charts, header
@@ -20,6 +20,7 @@ async def _finish_state(request):
     chart = {}
     series = {}
     presentation = {}
+    overview = {}
 
     def capture(history, shares, range_arg, window, avg_window, **markers):
         chart.update(
@@ -46,9 +47,16 @@ async def _finish_state(request):
         section_builders={
             **go_views.builders(prepared.get("sections", {}), series),
             **go_fleet.builders(presentation),
+            **go_overview.builders(overview),
         },
     )
-    return {"state": state, "chart": chart, "series": series, "presentation": presentation}
+    return {
+        "state": state,
+        "chart": chart,
+        "series": series,
+        "presentation": presentation,
+        "overview": overview,
+    }
 
 
 def _miner_connection(_request):
