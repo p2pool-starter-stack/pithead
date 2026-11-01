@@ -792,6 +792,7 @@ services:
       # bridge Tor SOCKS as TOR_SOCKS_PROXY so it leaks neither the host IP nor a DNS lookup (safe to
       # default on). Set dashboard.check_for_updates:false to opt out. See docs/privacy.md.
       - DASHBOARD_CHECK_UPDATES=${DASHBOARD_CHECK_UPDATES:-true}
+      - PITHEAD_INSTALL_ROUTE=${PITHEAD_INSTALL_ROUTE:-}
       # Dashboard config editing (#33, config.json: dashboard.control.enabled). Default OFF.
       # When off, the control routes are not registered at all (they 404); the spool mounts above
       # are inert because no host-side runner is installed.

@@ -221,6 +221,8 @@ P2POOL_CLEARNET = os.environ.get("P2POOL_CLEARNET", "false").strip().lower() == 
 # as XvB (socks5h, so DNS goes through Tor too), so it reveals neither the host IP nor a DNS lookup to
 # GitHub — which is why it's safe to default on; it fails silently offline. Opt out with `false`.
 CHECK_FOR_UPDATES = os.environ.get("DASHBOARD_CHECK_UPDATES", "true").strip().lower() == "true"
+INSTALL_ROUTE = os.environ.get("PITHEAD_INSTALL_ROUTE", "").strip().lower()
+APT_UPDATE_COMMAND = "sudo apt update && sudo apt upgrade"
 
 # --- Dashboard control channel (#33, config.json: dashboard.control.enabled) ---
 # Default OFF. When on, the config-editing routes (/api/config, /api/control/*) are registered and

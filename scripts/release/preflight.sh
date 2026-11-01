@@ -297,6 +297,21 @@ check_registry_policy() {
     fi
 }
 
+apt_channel_enabled() { [[ "$STACK_VERSION" != *-* ]]; }
+
+resolve_apt_signing() {
+    apt_channel_enabled || return 0
+    [ -s packaging/apt/fingerprint ] && [ -s packaging/apt/pithead.asc ] ||
+        die "packaging/apt/fingerprint and packaging/apt/pithead.asc are not committed: the owner must generate the APT signing key and commit its public half before a stable release (docs/dev/releasing.md § The APT feed)."
+    APT_FPR="$(tr -d ' \t\r\n' <packaging/apt/fingerprint)"
+    local tool
+    for tool in gpg dpkg-deb apt-ftparchive; do
+        command -v "$tool" >/dev/null 2>&1 || die "$tool is required to build the APT feed."
+    done
+    gpg --batch --list-secret-keys "$APT_FPR" >/dev/null 2>&1 ||
+        die "The APT signing key $APT_FPR is not in this box's GnuPG keyring; the feed is signed at cut time and the key is never a CI secret."
+}
+
 preflight() {
     check_registry_policy
     stage "1/7  Preflight"
@@ -332,6 +347,7 @@ preflight() {
     is_semver "$STACK_VERSION" || die "VERSION ('$STACK_VERSION') is not SemVer (expected X.Y.Z)."
     TAG="v$STACK_VERSION"
     STAGING_TAG="${TAG}-rc.${RC}"
+    [ "${PITHEAD_REHEARSAL:-0}" = 1 ] || resolve_apt_signing
     # Used by the image labels and bundle manifest in the later release stages.
     # shellcheck disable=SC2034
     BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

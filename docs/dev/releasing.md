@@ -698,10 +698,39 @@ number for good. When a published release turns out broken:
 3. Operators already on the bad version roll back per
    [Operations › The deploy-box layout](../operations.md#the-deploy-box-layout).
 
+## The APT feed
+
+A stable release also publishes `pithead_X.Y.Z_amd64.deb` and `pithead-apt-feed.tar.gz` (a flat,
+signed feed: `Packages`, `Release`, `Release.gpg`, `InRelease`, `pithead.asc`) on the draft.
+`scripts/release/apt.sh` builds both from the signed bundle tree, on the release host, at cut time;
+`make release` skips them for a version with a prerelease suffix.
+
+- **Key custody.** The owner generates a dedicated OpenPGP key and keeps the private half offline
+  (NAS escrow plus a cold copy). It is never a GitHub secret or CI variable. The release host
+  imports it only for the cut; preflight refuses a stable cut when the key named in
+  `packaging/apt/fingerprint` is not in its keyring.
+- **Pinned key.** `packaging/apt/fingerprint` (40 hex digits) and `packaging/apt/pithead.asc` (the
+  public key) are committed by the owner.
+- **Deploy.** `.github/workflows/apt-feed.yml` runs when a release is *published* (not on tag push:
+  `make release` pushes the tag before the owner publishes) and skips drafts and prereleases. It
+  takes the pinned fingerprint and key from `main` (the tag must be an ancestor of `main`, and it must
+be the latest release), verifies `Release.gpg`, `InRelease` and the published key file against them, checks that the served
+  package is byte-identical to the release asset and that its version equals the tag, runs
+  `apt-get update` and `apt-get download` against the feed, then deploys it with GitHub Pages. The
+  feed holds the latest release only.
+- **Owner steps.** Generate the key; commit the two pinned files to `main`; enable Pages on the
+  repository with GitHub Actions as the source (Settings › Pages); protect the `github-pages`
+  environment with required reviewers and add a tag ruleset, because the workflow file runs from the
+  tag.
+- **Test.** `tests/packaging/deb-lifecycle.sh` (run by `.github/workflows/deb-package.yml` on a
+  clean Ubuntu 24.04 VM) installs, upgrades, fails and retries a stack move, removes and purges the
+  package, and builds, verifies and tampers with a signed feed.
+
 ## Install & upgrade
 
 - Install: download the release's compose bundle (or `git checkout vX.Y.Z`) → `./pithead setup`.
-  Images are pulled from GHCR; no local build.
+  Images are pulled from GHCR; no local build. Ubuntu 24.04 amd64 can use the APT feed instead
+  (see above); its upgrade is `sudo apt update && sudo apt upgrade`.
 - Upgrade: the dashboard shows "vX.Y.Z available"
   ([#59](https://github.com/p2pool-starter-stack/pithead/issues/59)) → run `./pithead upgrade` →
   it pulls the new single-tagged images and recreates only what changed.
