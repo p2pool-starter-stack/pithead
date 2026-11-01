@@ -145,6 +145,21 @@ for temporary_source in TMPDIR RUNNER_TEMP; do
         [[ "$phase_state" == "$RUNNER_TEMP"/* ]]
     done
 done
+(
+    unset TMPDIR RUNNER_TEMP
+    PHASE_RC=0
+    mktemp() {
+        if [ "$1" = -d ]; then
+            [ "$2" = /tmp/lifecycle-mining.XXXXXX ] || return 99
+            command mktemp -d "$work/scratch/portable.XXXXXX"
+        else
+            command mktemp "$@"
+        fi
+    }
+    run_lifecycle
+    [[ "$phase_state" == "$work/scratch/portable."* ]]
+    [ ! -e "${phase_state%/*}" ]
+)
 export TMPDIR="$RUNNER_TEMP"
 printf '%s\n' 'PASS: lifecycle worker return, reset counters, refusal and mining opt-out'
 

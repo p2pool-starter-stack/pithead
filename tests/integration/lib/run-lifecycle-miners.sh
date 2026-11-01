@@ -145,7 +145,7 @@ pithead() {
 
 run_lifecycle() {
     local LIFECYCLE_MINING_ACTIVE=1 LIFECYCLE_MINER_STOPPED=0 LIFECYCLE_MINER_NAMES directory rc
-    directory=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?temporary directory required}}/lifecycle-mining.XXXXXX") || return 1
+    directory=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/lifecycle-mining.XXXXXX") || return 1
     local LIFECYCLE_MINER_STATE="$directory/state.json" LIFECYCLE_MINER_DIAGNOSTICS="$directory/diagnostics.log"
     if _run_lifecycle; then rc=0; else rc=$?; fi
     if [ -s "$LIFECYCLE_MINER_DIAGNOSTICS" ]; then

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-work=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/miner-diagnostics.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/miner-diagnostics.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 # shellcheck source=tests/os/appliance-miner-recovery-leg.sh
 source "$ROOT/tests/os/appliance-miner-recovery-leg.sh"
