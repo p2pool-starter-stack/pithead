@@ -110,6 +110,12 @@ Approval-snapshot restoration is shared in `tests/os/approval-restore.sh`;
 `approval-restore-output.py` projects command output onto fixed diagnostic phrases.
 `selftest-approval-restore.sh` exercises every restore boundary and snapshot retention.
 
+The xmrig-proxy Quadlet healthcheck is rendered in `lib/pithead/36-quadlet-units.sh`.
+`tests/stack/test-render-quadlet.sh` checks Compose parity through
+`tests/stack/standalone/test_quadlet_health.py`; `tests/os/appliance-proxy-health-leg.sh`
+starts its disposable native unit during KVM provision. `tests/os/selftest-proxy-health.sh`
+checks evidence refusal, resource isolation and cleanup failures.
+
 Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
 `tests/stack/appliance/test-appliance-reset-slot.sh` and
 `tests/stack/appliance/test-appliance-reset-slot-boot.sh`.
@@ -212,11 +218,15 @@ the package's `__main__.py` delegates to its server.
 
 Browser assets live in `web/static/`. The opt-in lean preview is in `web/static/sovereign/`,
 with its template at `web/templates/sovereign.html`; its frontend tests are in
-`tests/frontend/sovereign/`. Shell and Earnings browser journeys are
-`dashboard/tests/browser/sovereign.test.mjs` and `dashboard/tests/browser/sovereign-earnings.test.mjs`.
+`tests/frontend/sovereign/`. Shell, Earnings and Machines browser journeys are
+`dashboard/tests/browser/sovereign.test.mjs`, `sovereign-earnings.test.mjs` and
+`sovereign-machines.test.mjs`.
 The Earnings page, payout presentation and scoped host-control adapter are in
 `web/static/sovereign/earnings.mjs`, `earnings-model.mjs` and `earnings-control.mjs`.
-The browser workflow retains sanitized shell, drawer and Earnings screenshots as
+The Machines page, its rig list model and its inspector are in `web/static/sovereign/machines.mjs`,
+`machines-model.mjs` and `machines-inspector.mjs`; `tests/frontend/fixtures/rigs.mjs` builds the
+2-, 50- and 100-rig fleets both test tiers use.
+The browser workflow retains sanitized shell, drawer, Earnings and Machines screenshots as
 `sovereign-visual-proof`, including passing runs.
 JavaScript feature folders are `app/`,
 `config/`, `network/`, `system/`, `workers/`, `xvb/`, and `wizard/`.
@@ -353,6 +363,8 @@ certificate comparison and bounded orchestration controls without Docker or a gu
 
 The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to prove
 continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
+Its `lifecycle-pool.sh` helper checks the deployed starting sidechain and requires a
+healthy apply with different rendered pool flags; pool selftests run through the integration selftest glob.
 The provision and setup-defaults phases check firstboot and system journals for bcrypt credentials with
 `tests/os/credential-journals.sh`; `selftest-credential-journals.sh` covers leaks and unreadable journals.
 The provision phase streams `tests/os/tor-recovery-refusal-guest.sh` after initial provisioning

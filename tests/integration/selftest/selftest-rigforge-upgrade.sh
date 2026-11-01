@@ -52,7 +52,8 @@ POSTQ="$(mktemp)"  # answers to successive worker-upgrade POSTs
 RESQ="$(mktemp)"   # successive /api/control/result statuses
 FLIP_F="$(mktemp)" # version the rig starts reporting once an upgrade is POSTed ("" = never)
 POST_LOG="$(mktemp)"
-trap 'rm -f "$VER_F" "$UPD_F" "$POSTQ" "$RESQ" "$FLIP_F" "$POST_LOG"' EXIT
+FLEET_PLAN_F="$(mktemp)" # "behind" makes the update-all plan list the rig and accept a start
+trap 'rm -f "$VER_F" "$UPD_F" "$POSTQ" "$RESQ" "$FLIP_F" "$POST_LOG" "$FLEET_PLAN_F"' EXIT
 
 rig_reports() { printf '%s' "$1" >"$VER_F"; }
 offers() { printf '%s' "$1" >"$UPD_F"; }
@@ -73,6 +74,13 @@ rx() {
     *"/api/state"*)
         printf '{"workers":[{"name":"rig1","rigforge":{"version":"%s"},"rigforge_update":%s}]}' \
             "$(cat "$VER_F")" "$(cat "$UPD_F")"
+        ;;
+    *"worker-upgrade-all"*)
+        if [ "$(cat "$FLEET_PLAN_F")" = "behind" ]; then
+            case "$1" in *"-X POST"*) printf '202' ;; *) printf '{"eligible":[{"name":"rig1"}]}' ;; esac
+        else
+            case "$1" in *"-X POST"*) printf '409' ;; *) printf '{"eligible":[]}' ;; esac
+        fi
         ;;
     *"worker-upgrade"*)
         # Record the payload so "which version was proposed" is a fact about the wire rather than
@@ -169,8 +177,6 @@ check_no_posts "and it POSTed nothing"
 
 echo "== the real upgrade leg (#1237) =="
 
-# The happy path: 202+id, applied terminal, the rig comes back on the new version, then the noop
-# follow-on on a precondition this run established. 3 passes + 2 = 5.
 snap
 rig_reports "1.15.1"
 offers "$UPD_AVAIL"
@@ -178,7 +184,7 @@ answers "$PENDING" "$SYNC_NOOP"
 queue_results applied
 comes_back_on "1.16.0"
 run_rigforge_upgrade rig1 >/dev/null 2>&1
-want "behind latest -> real upgrade + version readback + noop follow-on" 5 0 0 0 0
+want "behind latest -> real upgrade + version readback + noop follow-on + update-all nothing-behind" 7 0 0 0 0
 printf '%s' "$(posts)" | grep -q 'version.*v1[.]16[.]0'
 check "and it proposed the dashboard's latest, not the rig's own version" $?
 
@@ -207,15 +213,13 @@ queue_results throttled
 run_rigforge_upgrade rig1 >/dev/null 2>&1
 want "rig throttled -> by-design skip after the hand-off pass" 1 0 1 0 1
 
-# KILLS: collapsing the host's 90s poll cap into a failure. "accepted" means still running; the
-# rig's own report is the confirmation of record, so it promotes to applied once the rig settles.
 snap
 rig_reports "1.15.1"
 answers "$PENDING" "$SYNC_NOOP"
 queue_results accepted
 comes_back_on "1.16.0"
 run_rigforge_upgrade rig1 >/dev/null 2>&1
-want "accepted (host poll cap) settles to applied against the rig" 5 0 0 0 0
+want "accepted (host poll cap) settles to applied against the rig" 7 0 0 0 0
 
 # KILLS: treating any terminal as success, and KILLS double-counting one cause: a refusal reds
 # ONCE, it does not also red the version readback it made impossible.
@@ -258,6 +262,17 @@ snap
 answers '{"status":"pending","id":"q-1"}'
 _rigforge_upgrade_noop_leg rig1 v1.16.0 >/dev/null 2>&1
 want "a non-noop answer to a repeat click -> FAIL" 0 2 0 0 0
+
+echo "== update all rigs (#3823) =="
+
+snap
+printf 'behind' >"$FLEET_PLAN_F"
+_rigforge_fleet_nothing_behind_leg rig1 v1.16.0 >/dev/null 2>&1
+want "update-all listing the current rig and accepting a start -> two FAILs" 0 2 0 0 0
+snap
+: >"$FLEET_PLAN_F"
+_rigforge_fleet_nothing_behind_leg rig1 v1.16.0 >/dev/null 2>&1
+want "update-all with nothing behind -> listed none, start refused" 2 0 0 0 0
 
 echo "== explicit no-feed bootstrap =="
 snap

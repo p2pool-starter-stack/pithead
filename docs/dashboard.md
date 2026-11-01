@@ -31,8 +31,8 @@ not hide known Monero progress. Progress is unknown when an unfinished gating ch
 The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
-and asks the operator to sign in again when the session expires. Earnings shows recorded payouts;
-the other page bodies and most Settings controls are still being built. The preview does not
+and asks the operator to sign in again when the session expires. Earnings shows recorded payouts
+and Machines lists the rigs; the Overview and Settings bodies are still being built. The preview does not
 announce a cutover from the legacy UI. The
 drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
 [#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
@@ -60,6 +60,54 @@ the existing preview, typed confirmations and apply-result contract. Electricity
 kWh in the configured currency; zero leaves power cost unset. Read-only hosts and disconnected
 sessions show neither control. Tier and expert Earnings settings remain in Advanced under the
 Settings work. The preview adds no hashrate scenario, coin tabs or assumptions toggle.
+
+### Machines in the lean preview
+
+Machines answers whether the rigs are mining and how to add one. **Connect a miner** shows the
+pool address the stratum listener serves and the rig password in clear when one is set. Whenever
+the listener reports TLS, it also shows that TLS is on and the certificate fingerprint rigs pin,
+with or without a Privacy profile. **Copy rig settings** copies the pool address, plus the password
+when one is set. There is no Reveal, Hide or separate password copy. After the session expires,
+the card hides a set password and its Copy until you sign in again.
+
+On the appliance, with the settings editor on and the session connected, **Also mine on this box**
+opens the host's `local_miner.enabled` setting through the same preview, typed confirmation and
+apply-result contract as the Earnings controls. DIY hosts do not show it. **Update all rigs** is not
+built yet: the rolling upgrade belongs to
+[#3823](https://github.com/p2pool-starter-stack/pithead/issues/3823), and until then the per-rig
+upgrade sits in the inspector's Advanced section.
+
+The rig list shows each rig's name, status and 1-minute hashrate. The statuses are **Mining**,
+**Offline** and **Behind**, where Behind means a newer RigForge release is available. A rig the
+stack does not manage still reads Mining, with a quiet **unmanaged** tag. An offline rig, or an
+online rig that reports no hashrate, says so instead of showing zero. Rigs that need attention
+(offline, behind or not reporting) come first, then the rest by name. Duplicate names keep their
+host order. The headline counts only rigs reporting hashrate as mining. On a phone each rig is a
+single-column card. The list renders every rig without paging. The 100-rig browser fixture asserts
+that it fits 375 px without horizontal scroll and records the time from opening the page to the
+last rig appearing.
+The list's **Advanced** section holds find, sort (attention first, name or hashrate), and a
+shares-and-version column; no list control appears outside it.
+
+Clicking or activating a rig is the only way into its inspector. Outside Advanced the inspector
+shows health only: status, the last time the rig recorded hashrate in the past 24 hours, its
+RigForge version against the latest release, the 24-hour average hashrate, and accepted and
+rejected shares. Each snapshot poll refreshes the inspector, except while an edit or apply is in
+progress; a failed refresh says the details may be out of date. The host addresses rigs by name,
+so when several rigs report one name the inspector says so, shows status and shares for the row
+opened, and offers no change until each rig has its own name.
+Its **Advanced** section offers only what the rig supports. With rig control off, while the
+session is disconnected or expired, or while several rigs share the name, it says so and withholds
+Apply and the upgrade; an unsaved edit stays in the editor. When a shared name becomes unique, the
+inspector reloads the rig and drops an edit typed against the other rig's values. An unadopted rig gets the
+existing adopt form (host, ports, token, typed APPLY), which confirms the saved entry; managed
+telemetry follows the next poll of the rig. For an adopted rig, **Update this rig** offers the
+upgrade when the rig is behind and its release page is reported, and otherwise says why not. The
+configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
+from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
+upgrade is not held. Closing the inspector returns focus to the rig and keeps the list's scroll position.
+The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
+no rig restart verb exists yet ([#3825](https://github.com/p2pool-starter-stack/pithead/issues/3825)).
 
 ---
 

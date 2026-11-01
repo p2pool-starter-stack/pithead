@@ -321,8 +321,8 @@ takeover.
 The runner dispatches a fixed set of actions and rejects everything else: `apply --dry-run
 --porcelain` (preview), `apply -y` (commit), a release upgrade — the dashboard's
 [Upgrade button](dashboard.md#upgrading-from-the-dashboard), for which the runner re-derives the
-target from the GitHub release API itself and refuses any other version — the two worker actions
-(`worker-apply`, `worker-upgrade`), which forward a config change or an upgrade to a rig's own
+target from the GitHub release API itself and refuses any other version — the worker actions
+(`worker-apply`, `worker-upgrade`, and `worker-upgrade-all`, which runs `worker-upgrade` over up to 20 rigs in turn), which forward a config change or an upgrade to a rig's own
 control API rather than touching this host, and the `restart` / `apply` lifecycle pair. An
 unrecognized action is rejected and audited, never run.
 

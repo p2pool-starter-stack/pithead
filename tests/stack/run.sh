@@ -80,8 +80,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-upgrade-lock.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-lock.sh" && domain_ran test-control-upgrade-lock.sh "$_d0" "$?" || domain_ran test-control-upgrade-lock.sh "$_d0" "$?"
-    # shellcheck source=tests/stack/control/test-control-upgrade-apt.sh disable=SC2015
-    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-apt.sh" && domain_ran test-control-upgrade-apt.sh "$_d0" "$?" || domain_ran test-control-upgrade-apt.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-worker-upgrade-all.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-worker-upgrade-all.sh" && domain_ran test-control-worker-upgrade-all.sh "$_d0" "$?" || domain_ran test-control-worker-upgrade-all.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-verify.sh" && domain_ran test-release-verify.sh "$_d0" "$?" || domain_ran test-release-verify.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-signing.sh disable=SC2015
