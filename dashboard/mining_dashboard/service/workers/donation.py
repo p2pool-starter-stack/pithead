@@ -1,7 +1,5 @@
 from mining_dashboard.helper.utils import effective_hashrate
 
-LEVELS = (0, 1, 2, 5)
-
 
 def reported_level(summary):
     level = summary.get("donate_level") if isinstance(summary, dict) else None
@@ -15,7 +13,7 @@ def fleet_donation(workers):
     hashing = [(effective_hashrate(w), w.get("donate_level")) for w in rigs]
     hashing = [(rate, level) for rate, level in hashing if rate > 0]
     total = sum(rate for rate, _ in hashing)
-    known = all(level is not None for _, level in hashing)
+    known = all(w.get("donate_level") is not None for w in rigs)
     out = {
         "available": bool(hashing) and known,
         "rigs": len(rigs),

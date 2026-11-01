@@ -70,7 +70,7 @@ export class RigInspector extends WorkerInspect {
     const version = detail.rigforge?.version;
     const latest = detail.rigforge_update?.latest;
     const shared = this.props.shared > 1;
-    const donation = rigDonation(this.props.worker, detail.rig_config);
+    const donation = rigDonation(this.props.worker, shared ? null : detail.rig_config);
     return html`${
       shared
         ? html`<p role="note">${this.props.shared} rigs report the name ${this.props.name}. Status and shares are for the rig you opened; the rest is for the first rig the host lists with that name, so changes are off until each rig has its own name.</p>`

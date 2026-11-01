@@ -69,9 +69,14 @@ def test_an_unknown_hashing_rig_makes_the_fleet_figure_unavailable_not_zero():
     assert out["unknown"] == 1
 
 
-def test_offline_and_idle_rigs_do_not_weigh_in():
-    out = fleet_donation([_rig("a", 100, 2), _rig("b", 0, None), _rig("c", 900, None, "offline")])
+def test_offline_and_idle_known_rigs_do_not_weigh_in():
+    out = fleet_donation([_rig("a", 100, 2), _rig("b", 0, 5), _rig("c", 900, None, "offline")])
     assert out["available"] is True and out["percent"] == 2
+
+
+def test_an_idle_online_rig_with_no_level_still_blocks_an_off_verdict():
+    out = fleet_donation([_rig("a", 100, 0), _rig("b", 0, None)])
+    assert out["available"] is False and out["unknown"] == 1
 
 
 def test_no_rigs_is_unavailable():

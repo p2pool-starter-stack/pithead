@@ -73,6 +73,7 @@ test("an unmanaged, stock or control-off rig shows its level read-only with no c
   assert.doesNotMatch(inspect(managed, { control_enabled: false }), /Support the XMRig developers/);
   const shared = renderToString(html`<${Ready} name="rig" writable=${true} shared=${2} worker=${managed} detail=${detail()} />`);
   assert.doesNotMatch(shared, /Support the XMRig developers/);
+  assert.doesNotMatch(renderToString(html`<${Ready} name="rig" writable=${true} shared=${2} worker=${{ ...managed, donate_level: 1 }} detail=${detail()} />`), /Configured 0 %/);
 });
 
 function control(props = {}) {
