@@ -90,8 +90,11 @@ run_lifecycle() {
             up_rc=$?
             lifecycle_gate_sample after-image-up
             assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
-            [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
-            [ "$up_rc" -eq 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
+            if [ "$up_rc" -ne 0 ]; then
+                mkdir -p "$OUT_DIR/lifecycle-up"
+                printf '%s\n' "$up_out" | redact | tee "$OUT_DIR/lifecycle-up/up.log" | sed 's/^/        /'
+                capture_artifacts "lifecycle-up" "$OUT_DIR"
+            fi
             rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
             assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
             assert_eq "docker-proxy runs from the fetched image (#2654)" "$(svc_state_of "$(service_state docker-proxy)")" "running"
@@ -323,19 +326,16 @@ run_uninstall_round_trip() {
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
 
-    # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
-    # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
-    # wallet volume created under a new password would not open under the restored old one.
     rx "grep -v '^DEPLOYMENT_COMPLETED=' .env.itest-round-trip >.env && rm -f .env.itest-round-trip"
-    # A source checkout (every bench box) runs `compose up --pull never`, which cannot bring back
-    # the pinned third-party images uninstall just removed; `missing` is what a release install,
-    # the channel uninstall serves, runs anyway (01-lifecycle.sh resolve_pull_policy; #2654).
     it_step "pithead setup re-provisions from the kept config…"
     out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
     rc=$?
     assert_rc "setup after uninstall succeeded" "$rc" "0"
+    if [ "$rc" -ne 0 ]; then
+        mkdir -p "$OUT_DIR/lifecycle-setup"
+        printf '%s\n' "$out" | redact | tee "$OUT_DIR/lifecycle-setup/setup.log" | sed 's/^/        /'
+    fi
     rr_web_ports_owned_by_dashboard "setup after uninstall" || return 1
-    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 15 | redact | sed 's/^/        /'
     if wait_status_ok 600; then
         it_pass "status OK after setup-after-uninstall"
     else
