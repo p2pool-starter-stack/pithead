@@ -8,24 +8,24 @@ control_worker_upgrade_all() { # <claimed-file> <id> <actor> <control-dir>
     local version rigs total i=0 sub rigf out
     version=$(jq -r '.version // ""' "$file")
     if ! printf '%s' "$version" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-        control_write_result "$results" "$id" "$(jq -n '{status:"rejected",error:"malformed or missing '"'"'version'"'"' in the upgrade request.",ts:(now|floor)}')"
+        control_write_result "$results" "$id" "$(jq -n '{status:"rejected",action:"worker-upgrade-all",error:"malformed or missing '"'"'version'"'"' in the upgrade request.",ts:(now|floor)}')"
         control_audit "$auditf" "$id" "$actor" "worker-upgrade-all" "rejected"
         return 0
     fi
     if ! jq -e '(.workers | type == "array") and (.workers | length >= 1 and length <= 100) and
         all(.workers[]; type == "string" and test("^[!-~]{1,128}$")) and ((.workers | length) == (.workers | unique | length))' "$file" >/dev/null 2>&1; then
-        control_write_result "$results" "$id" "$(jq -n '{status:"rejected",error:"'"'"'workers'"'"' must be 1 to 100 distinct rig names.",ts:(now|floor)}')"
+        control_write_result "$results" "$id" "$(jq -n '{status:"rejected",action:"worker-upgrade-all",error:"'"'"'workers'"'"' must be 1 to 100 distinct rig names.",ts:(now|floor)}')"
         control_audit "$auditf" "$id" "$actor" "worker-upgrade-all" "rejected"
         return 0
     fi
     if [ "${CONTROL_WU_BUDGET:-0}" -le 0 ]; then
-        control_write_result "$results" "$id" "$(jq -n '{status:"rejected",error:"another worker upgrade is already in this cycle — retry in a moment.",ts:(now|floor)}')"
+        control_write_result "$results" "$id" "$(jq -n '{status:"rejected",action:"worker-upgrade-all",error:"another worker upgrade is already in this cycle — retry in a moment.",ts:(now|floor)}')"
         control_audit "$auditf" "$id" "$actor" "worker-upgrade-all" "rejected"
         return 0
     fi
     local stampf="$cdir/staged/.worker-upgrade-all-stamp"
     if [ -n "$(find "$stampf" -mmin -"$CONTROL_WUA_COOLDOWN_MIN" 2>/dev/null)" ]; then
-        control_write_result "$results" "$id" "$(jq -n --argjson m "$CONTROL_WUA_COOLDOWN_MIN" '{status:"rejected",error:"an Update all run finished less than \($m) minutes ago — retry shortly.",ts:(now|floor)}')"
+        control_write_result "$results" "$id" "$(jq -n --argjson m "$CONTROL_WUA_COOLDOWN_MIN" '{status:"rejected",action:"worker-upgrade-all",error:"an Update all run finished less than \($m) minutes ago — retry shortly.",ts:(now|floor)}')"
         control_audit "$auditf" "$id" "$actor" "worker-upgrade-all" "rejected"
         return 0
     fi

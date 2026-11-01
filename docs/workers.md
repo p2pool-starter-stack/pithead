@@ -471,7 +471,7 @@ terminal outcome. One rig's failure never stops the others.
 
 The run's result file lists every rig with its settled outcome (`applied`, `noop`, `throttled`,
 `rolled_back`, `rejected`, `failed`, or `accepted` while the rig is still rebuilding) as it lands, and
-`GET` returns the newest run, so progress survives navigation and reload. An accepted request is not
+`GET` returns the newest run, including a run the host rejected whole (for example inside the cooldown), so progress and refusals survive navigation and reload. An accepted request is not
 reported as done. Each outcome is also recorded in the rig's change history, and one Telegram (and
 webhook or ntfy) summary is sent when the run settles. It goes to every enabled sink, with no
 per-event toggle, so it is silent only when notifications are off.

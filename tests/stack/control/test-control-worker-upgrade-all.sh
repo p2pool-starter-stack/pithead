@@ -6,10 +6,10 @@ mkdir -p "$WUA/staged" "$WUA/results" "$WUA/audit" "$WUA/bin"
 printf 'v9.9.9' >"$WUA/staged/.rigforge-latest-tag"
 cat >"$WUA/config.json" <<'EOF2'
 { "workers": { "list": [
-    { "name": "rig-a", "host": "10.0.0.1", "control_port": 8082, "token": "tok-a" },
-    { "name": "rig-b", "host": "10.0.0.2", "control_port": 8082, "token": "tok-b" },
-    { "name": "rig-c", "host": "10.0.0.3", "control_port": 8082, "token": "tok-c" },
-    { "name": "rig-d", "host": "10.0.0.4" }
+    { "name": "rig-a", "host": "192.0.2.1", "control_port": 8082, "token": "tok-a" },
+    { "name": "rig-b", "host": "192.0.2.2", "control_port": 8082, "token": "tok-b" },
+    { "name": "rig-c", "host": "192.0.2.3", "control_port": 8082, "token": "tok-c" },
+    { "name": "rig-d", "host": "192.0.2.4" }
 ] } }
 EOF2
 cat >"$WUA/bin/curl" <<EOF2
@@ -25,8 +25,8 @@ done
 echo "\$url" >>"$WUA/dials.log"
 case "\$url" in
 */upgrade) printf '{"change_id":"chg-9"}' >"\$out"; printf '202' ;;
-http://10.0.0.2:*/status) printf '{"change_id":"chg-9","status":"failed","reason":"build broke"}' >"\$out"; printf '200' ;;
-http://10.0.0.3:*/status) printf '{"change_id":"chg-9","status":"noop","reason":"already on v9.9.9"}' >"\$out"; printf '200' ;;
+http://192.0.2.2:*/status) printf '{"change_id":"chg-9","status":"failed","reason":"build broke"}' >"\$out"; printf '200' ;;
+http://192.0.2.3:*/status) printf '{"change_id":"chg-9","status":"noop","reason":"already on v9.9.9"}' >"\$out"; printf '200' ;;
 */status) printf '{"change_id":"chg-9","status":"applied"}' >"\$out"; printf '200' ;;
 *) printf '000' ;;
 esac
@@ -52,7 +52,7 @@ assert_contains "a rig that cannot take the upgrade carries its reason" \
 assert_contains "a failed rig carries the rig's reason" \
     "$(jq -r '.rigs[1].reason' "$WUA/results/$wua1.json")" "build broke"
 assert_eq "the rigs are dialed strictly one after another" \
-    "$(grep '/upgrade$' "$WUA/dials.log" | sed -E 's#http://([0-9.]+):.*#\1#' | tr '\n' ' ')" "10.0.0.1 10.0.0.2 10.0.0.3 "
+    "$(grep '/upgrade$' "$WUA/dials.log" | sed -E 's#http://([0-9.]+):.*#\1#' | tr '\n' ' ')" "192.0.2.1 192.0.2.2 192.0.2.3 "
 assert_eq "no per-rig result files are left behind" "$(find "$WUA/results" -type f | wc -l | tr -d ' ')" "1"
 assert_contains "the run is audited as completed" "$(cat "$WUA/audit/control.log")" '"action":"worker-upgrade-all","status":"completed"'
 assert_contains "each rig upgrade is audited too" "$(cat "$WUA/audit/control.log")" '"action":"worker-upgrade","status":"applied"'
@@ -73,11 +73,12 @@ assert_contains "duplicate rig names are rejected" "$(jq -r '.error' "$WUA/resul
 wua6="9a9a9a9a-9a9a-4a9a-9a9a-9a9a9a9a9a9a"
 wua_run "$wua6" "{\"id\":\"$wua6\",\"action\":\"worker-upgrade-all\",\"actor\":\"admin\",\"version\":\"v9.9.9\",\"workers\":[\"rig-a\"]}"
 assert_contains "a second run inside the cooldown is rejected" "$(jq -r '.error' "$WUA/results/$wua6.json")" "less than 5 minutes ago"
+assert_eq "and the rejection names its action so the dashboard can show it" "$(jq -r '.action' "$WUA/results/$wua6.json")" "worker-upgrade-all"
 wua7="abababab-abab-4bab-9bab-abababababab"
 wua_run "$wua7" "{\"id\":\"$wua7\",\"action\":\"worker-upgrade-all\",\"actor\":\"admin\",\"version\":\"v9.9.9\",\"workers\":[\"bad name\"]}"
 assert_contains "a rig name outside the printable charset is rejected" "$(jq -r '.error' "$WUA/results/$wua7.json")" "distinct rig names"
 rm -f "$WUA/staged/.worker-upgrade-all-stamp"
-jq -n '{workers: {list: [range(0;22) | {name: ("big-" + tostring), host: "10.0.1.1", control_port: 8082, token: "tok-big"}]}}' >"$WUA/config.json"
+jq -n '{workers: {list: [range(0;22) | {name: ("big-" + tostring), host: "192.0.2.50", control_port: 8082, token: "tok-big"}]}}' >"$WUA/config.json"
 : >"$WUA/dials.log"
 wua5="89898989-8989-4898-9898-898989898989"
 wua_names=$(jq -nc '[range(0;22) | "big-" + tostring]')

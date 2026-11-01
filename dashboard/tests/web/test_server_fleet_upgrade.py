@@ -1,4 +1,5 @@
 # ruff: noqa: F403, F405
+import os
 import time
 
 from mining_dashboard.service.workers import fleet_upgrade, worker_refresh
@@ -56,6 +57,22 @@ class TestFleetUpgradeState:
         _write_result(fleet_client.spool, str(uuid.uuid4()), {"action": "tor-newnym"})
         body = await (await fleet_client.get("/api/control/worker-upgrade-all")).json()
         assert body["run"]["id"] == rid and body["run"]["status"] == "running"
+
+    async def test_a_host_rejection_is_the_newest_run_and_replaces_the_old_one(self, fleet_client):
+        done = str(uuid.uuid4())
+        _write_result(
+            fleet_client.spool, done, {"action": "worker-upgrade-all", "status": "completed"}
+        )
+        os.utime(fleet_client.spool / "results" / f"{done}.json", (1, 1))
+        rejected = str(uuid.uuid4())
+        _write_result(
+            fleet_client.spool,
+            rejected,
+            {"action": "worker-upgrade-all", "status": "rejected", "error": "cooldown"},
+        )
+        body = await (await fleet_client.get("/api/control/worker-upgrade-all")).json()
+        assert body["run"]["id"] == rejected
+        assert body["run"]["status"] == "rejected" and body["run"]["error"] == "cooldown"
 
 
 class TestFleetUpgradeStart:
