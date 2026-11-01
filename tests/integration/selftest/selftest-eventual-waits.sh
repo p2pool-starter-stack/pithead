@@ -2,7 +2,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$HERE/lib.sh"
-source "$HERE/lib/fake-eventual.sh"
+source "$HERE/lib/selftest/fake-eventual.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 ready='{"proxy_workers":1,"stratum":{"total_hashes":1},"sync":{"monero":{"state":"done"},"tari":{"state":"done"}},"pool":{"type":"Mini"},"db_healthy":true,"share_stats":[{}]}'

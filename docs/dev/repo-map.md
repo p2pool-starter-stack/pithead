@@ -122,7 +122,7 @@ original-byte cleanup and private recovery retention are exercised by
 `tests/integration/selftest/selftest-reset-recovery-fixture.sh`. Shared web ownership checks are in
 `tests/integration/lib/reset-restore-web.sh`; consecutive status censuses are in
 `tests/integration/lib/readiness-churn.sh`. Deterministic changing responses for
-integration and appliance selftests live in `tests/integration/lib/fake-eventual.sh`;
+integration and appliance selftests live in `tests/integration/lib/selftest/fake-eventual.sh`;
 `tests/integration/test_selftest_runner.py` guards their isolated Makefile discovery.
 
 Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only

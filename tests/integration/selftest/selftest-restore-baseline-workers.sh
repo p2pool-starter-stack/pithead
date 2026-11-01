@@ -5,7 +5,7 @@ echo "== Image-upgrade rollback worker reconnection =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/lib.sh"
-source "$HERE/lib/fake-eventual.sh"
+source "$HERE/lib/selftest/fake-eventual.sh"
 # shellcheck source=tests/integration/lib/live-state-support.sh
 source "$HERE/lib/live-state-support.sh"
 eval "$(sed -n '/^restore_upgrade_baseline() {/,/^}/p' "$HERE/lib/live-upgrade-support.sh")"

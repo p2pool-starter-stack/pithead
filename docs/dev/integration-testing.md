@@ -1515,7 +1515,7 @@ executes the Makefile recipe against passing and failing fixtures. It checks bot
 globs, later-file execution, each reported exit code and environment isolation.
 
 Use `fake_eventual COUNTER MODE DELAY PENDING READY` from
-`tests/integration/lib/fake-eventual.sh` for changing command responses.
+`tests/integration/lib/selftest/fake-eventual.sh` for changing command responses.
 `after` returns `PENDING` for `DELAY` reads, then `READY`; `never` always returns
 `PENDING`; `flapping` alternates pending and ready responses. The counter is a
 file so reads inside command substitutions advance the same sequence. Each test

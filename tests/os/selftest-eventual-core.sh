@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "$HERE/../integration/lib/fake-eventual.sh"
+source "$HERE/../integration/lib/selftest/fake-eventual.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 for name in _control_requests_drained _wait_ssh _wait_new_boot _reboot_wait \

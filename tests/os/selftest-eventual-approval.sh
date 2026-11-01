@@ -3,7 +3,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$HERE/provision-browser-submit.sh"
 source "$HERE/appliance-config-approval-leg.sh"
-source "$HERE/../integration/lib/fake-eventual.sh"
+source "$HERE/../integration/lib/selftest/fake-eventual.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 msg='Dashboard login password CHANGED: a mistake locks this session out and changes the console root login.'
