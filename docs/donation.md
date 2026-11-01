@@ -13,7 +13,7 @@ so the level adds no direct internet connection from the rig.
   2 % and 5 % (XMRig donates whole percents only). Review shows the share, the time (for 1 %:
   1 minute in every 100 minutes, roughly 15 minutes a day) and the estimated cost at the rig's
   current hashrate. Typing `APPLY` writes the rig's `DONATION` through the control path.
-- **Default is Off.** Pithead never changes a rig's level except by that explicit action;
+- **Default is Off** for rigs RigForge builds (rigforge#603). Pithead never changes a rig's level except by that explicit action;
   adopting a rig shows its current level.
 - **The shown level is the miner's own report** (`donate_level` in its summary), not only the
   configured one. When they differ the panel says so. A running level above the configured one
@@ -21,9 +21,9 @@ so the level adds no direct internet connection from the rig.
 - **Unmanaged rigs** (no control path) and stock XMRig rigs show the level read-only, or
   "Own donation: unknown". Stock XMRig donates at least 1 %. They have no control.
 - **Fleet view.** Earnings shows the hashrate-weighted share and how many rigs donate. It
-  reports "unavailable" when any hashing rig does not report a level, never 0 %. The
-  P2Pool-based expected earnings already exclude donated time, because donated hashes never
-  reach P2Pool; the level only changes what a rig contributes to your pool.
+  reports "unavailable" when any hashing rig does not report a level, never 0 %. The expected
+  earnings figures (still unavailable on that page) are to subtract this share; the Overview
+  strip reads the same `xmrig_donation` figure.
 - **To stop**, set the rig to Off and wait for the miner to report 0 %.
 
 The same figure is published as `/api/state.xmrig_donation`:

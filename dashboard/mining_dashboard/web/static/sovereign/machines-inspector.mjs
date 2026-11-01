@@ -120,8 +120,12 @@ export class RigInspector extends WorkerInspect {
             canEdit=${!blocked} busy=${busy} onDone=${() => this.load()} />`
             : html`<p>This rig is on the latest release it reports.</p>`
       }
-      <${DonationControl} name=${this.props.name} worker=${this.props.worker} rigConfig=${detail.rig_config}
-        earnings=${this.props.earnings} canEdit=${!blocked && !busy} onDone=${() => this.load()} />
+      ${
+        detail.writable_keys?.includes("DONATION")
+          ? html`<${DonationControl} name=${this.props.name} worker=${this.props.worker} rigConfig=${detail.rig_config}
+        earnings=${this.props.earnings} canEdit=${!blocked && !busy} onDone=${() => this.load()} />`
+          : null
+      }
       <h3>Configuration</h3>
       <div role="group" aria-label="Configuration view">
         <button type="button" aria-pressed=${mode === "table"} onClick=${() => this.setMode("table")}>Table</button>
