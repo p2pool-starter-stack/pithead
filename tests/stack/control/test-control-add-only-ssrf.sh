@@ -124,28 +124,49 @@ assert_contains "the refusal names dashboard.workers as a schema-unknown key" "$
 assert_contains "the refusal is the closed-schema door, not the descriptor door" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "not in the schema"
 assert_eq "config.json keeps no worker descriptors" "$(jq -r '.dashboard.workers // "unset"' "$C/config.json")" "unset"
 
-# workers.list[] (#506): only an append (adopt) passes, behind APPLY (#2641); repoint, reorder or removal is refused even WITH it. rig1 is seeded from the host CLI.
+# workers.list[] (#506, #912): any descriptor change commits behind the typed APPLY and the SSRF floor. rig1 is seeded from the host CLI.
 jq '.workers.list=[{name:"rig1",host:"10.0.0.9",control_port:8082,token:"tok_rig1"}]' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_eq "workers.list seed applies from the host CLI" "$(jq -r '.workers.list[0].token' "$C/config.json")" "tok_rig1"
-jq '.workers.list=[{name:"rig1",host:"attacker.example",token:"stolen"}]' "$C/config.json" >"$C/cand.json"
+jq '.workers.list[0].host="10.0.0.77" | .workers.list[0].token="tok_new"' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_contains "a repoint without APPLY asks for it and shows the host delta" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "repointed: rig1 from 10.0.0.9 to 10.0.0.77) — type APPLY in the dashboard to confirm"
+assert_eq "config.json keeps the seeded rig1 host after the unconfirmed repoint" "$(jq -r '.workers.list[0].host' "$C/config.json")" "10.0.0.9"
+jq '.workers.list[0].host="127.0.0.1" | .workers.list[0].token="tok_new"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
-assert_eq "workers.list REPOINT of an existing entry is refused even with APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "the repoint refusal names the adopted-rig boundary" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "already controls"
-assert_eq "config.json keeps the seeded rig1 host after the repoint attempt" "$(jq -r '.workers.list[0].host' "$C/config.json")" "10.0.0.9"
+assert_contains "a repoint onto the host's own loopback is refused even with APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "resolves inside this host"
+jq '.workers.list[0].host="10.0.0.77"' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_contains "a repoint that keeps the old token is refused even with APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "enter its token again"
+jq '.workers.list[0].host="10.0.0.77" | .workers.list[0].token="tok_new"' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_eq "a confirmed repoint with a fresh token is applied" "$(jq -r '"\(.workers.list[0].host)|\(.workers.list[0].token)"' "$C/config.json")" "10.0.0.77|tok_new"
+assert_contains "the repoint commit is audited as confirmed and names workers.list" "$(tail -n 1 "$AUDIT")" '"action":"commit-confirmed","status":"applied","keys":"workers.list"'
+jq '.workers.list[0].control_port=9082 | .workers.list[0].token="tok_port"' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_eq "a confirmed control-port change with a fresh token is applied" "$(jq -r '.workers.list[0].control_port' "$C/config.json")" "9082"
 jq '.workers.list=[]' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_contains "a removal without APPLY names the rig" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "removed: rig1"
 gate_try "$C/cand.json" APPLY
-assert_eq "workers.list REMOVAL of an existing entry is refused even with APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_eq "a confirmed removal is applied" "$(jq -c '.workers.list' "$C/config.json")" "[]"
+jq '.workers.list=[{name:"rig1",host:"10.0.0.9",control_port:8082,token:"tok_rig1"}]' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_eq "a confirmed re-adopt restores rig1" "$(jq -c '[.workers.list[] | [.host, .token]]' "$C/config.json")" '[["10.0.0.9","tok_rig1"]]'
 jq '.workers.list=[{name:"rig0",host:"10.0.0.8",control_port:8082,token:"tok_rig0"}] + .workers.list' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY
-assert_eq "a workers.list PREPEND (reordering the adopted rig) is refused even with APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_eq "a confirmed prepend lands rig0 before rig1" "$(jq -c '[.workers.list[].name]' "$C/config.json")" '["rig0","rig1"]'
+jq '.workers.list|=reverse' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY
+assert_eq "a confirmed reorder is applied" "$(jq -c '[.workers.list[].name]' "$C/config.json")" '["rig1","rig0"]'
+jq '.workers.list|=map(select(.name=="rig1"))' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY
+assert_eq "rig0 is removed again" "$(jq -c '[.workers.list[].name]' "$C/config.json")" '["rig1"]'
 jq '.workers.list += [{name:"rig2",host:"192.168.1.50",control_port:8082,token:"tok_rig2"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "a safe workers.list append without the typed APPLY is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "the unconfirmed append asks for APPLY and names the rig" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "(adopting a rig: rig2 at 192.168.1.50) — type APPLY in the dashboard to confirm"
+assert_contains "the unconfirmed append asks for APPLY and names the rig" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "(changing rigs: added: rig2 at 192.168.1.50) — type APPLY in the dashboard to confirm"
 jq '.workers.list += [{name:"rig1",host:"10.0.0.51",token:{__secret__:true}}]' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY
 assert_eq "a second rig1 descriptor (it would inherit rig1's token) is refused even with APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 jq '.workers.list += [{name:"rig1",host:"10.0.0.51",token:"tok_dup"}]' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY
-assert_contains "a second rig1 descriptor with its own token is refused as a duplicate name" "$(jq -r '"\(.status): \(.error)"' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected: a rig named rig1 already has a worker descriptor"
+assert_contains "a second rig1 descriptor with its own token is refused as a duplicate name" "$(jq -r '"\(.status): \(.error)"' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected: a rig named rig1 would have two worker descriptors"
 assert_eq "config.json keeps only rig1 after the unconfirmed append" "$(jq -c '[.workers.list[].host]' "$C/config.json")" '["10.0.0.9"]'
 
 # NEGATIVE — the #122 SSRF floor on a NEWLY appended entry (_control_host_is_internal): a

@@ -102,8 +102,12 @@ Apply and the upgrade; an unsaved edit stays in the editor. When a shared name b
 inspector reloads the rig and drops an edit typed against the other rig's values. An unadopted rig gets the
 existing adopt form (host, ports, token, typed APPLY), which confirms the saved entry; managed
 telemetry follows the next poll of the rig. For an adopted rig, **Update this rig** offers the
-upgrade when the rig is behind and its release page is reported, and otherwise says why not. The
-configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
+upgrade when the rig is behind and its release page is reported, and otherwise says why not.
+**Connection** shows the rig's saved address and ports: **Save address** repoints or edits it, and
+**Remove this rig** deletes its descriptor. A blank token keeps the stored one only while the
+address is unchanged; a new address needs the token entered again. Both preview the change, name
+each added, repointed or removed rig, and apply only after typed APPLY; removing a rig stops the
+dashboard managing it and leaves the miner running. The configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
 from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
 upgrade is not held. Closing the inspector returns focus to the rig and keeps the list's scroll position.
 The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:

@@ -153,9 +153,50 @@ test("AdoptRigForm: a well-formed submission previews, shows the host's warning,
   assert.equal(inst.state.result, null);
   const out = renderToString(inst.render());
   assert.match(out, /Adopting a rig: rig1 at 10\.0\.0\.9/);
-  assert.match(out, /Type <code>APPLY<\/code> to adopt this rig/);
+  assert.match(out, /Type <code>APPLY<\/code> to confirm/);
   assert.match(out, /<button[^>]*disabled[^>]*>Confirm<\/button>/); // armed only by the typed word
   assert.match(out, /<input type="password" disabled/); // the previewed fields are locked
+});
+
+const LIVE_RIG = { name: "rig1", host: "10.0.0.9", port: 8081, control_port: 8082, token: { __secret__: true } };
+
+test("AdoptRigForm: an existing rig prefills its address from the live config", async () => {
+  const inst = adoptForm({ existing: true });
+  await withFetchSequence([{ body: { workers: { list: [LIVE_RIG] } } }], () => inst.componentDidMount());
+  assert.equal(inst.state.host, "10.0.0.9");
+  assert.match(renderToString(inst.render()), /Remove this rig/);
+});
+
+test("AdoptRigForm: editing an existing rig replaces its descriptor and keeps the masked token", async () => {
+  const inst = adoptForm({ existing: true });
+  inst.state.host = "10.0.0.77";
+  inst.state.token = TOKEN;
+  await withFetchSequence([{ body: { workers: { list: [LIVE_RIG] } } }, { body: ADOPT_PREVIEW }], async (calls) => {
+    await inst.adopt();
+    assert.deepEqual(calls[1].body.config.workers.list, [
+      { name: "rig1", host: "10.0.0.77", port: 8081, control_port: 8082, token: TOKEN },
+    ]);
+  });
+  assert.equal(inst.state.preview.id, "req-1");
+});
+
+test("AdoptRigForm: an existing rig needs no token for a same-address save", async () => {
+  const inst = adoptForm({ existing: true });
+  inst.state.host = "10.0.0.9";
+  await withFetchSequence([{ body: { workers: { list: [LIVE_RIG] } } }, { body: ADOPT_PREVIEW }], async (calls) => {
+    await inst.adopt();
+    assert.deepEqual(calls[1].body.config.workers.list, [LIVE_RIG]);
+  });
+});
+
+test("AdoptRigForm: Remove previews the list without the rig and still waits for APPLY", async () => {
+  const inst = adoptForm({ existing: true });
+  await withFetchSequence([{ body: { workers: { list: [LIVE_RIG] } } }, { body: ADOPT_PREVIEW }], async (calls) => {
+    await inst.remove();
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[1].body.config.workers.list, []);
+  });
+  assert.equal(inst.state.preview.id, "req-1");
 });
 
 test("AdoptRigForm: the typed APPLY rides the commit and an applied result notifies", async () => {

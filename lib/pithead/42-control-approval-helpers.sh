@@ -222,15 +222,6 @@ control_physical_presence_error() {
     printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
 }
 
-# Worker descriptors (workers.list[], #506) are classified here for both gate and preview;
-# api_token may also render an env row. Unchanged: prints nothing. A pure
-# append — every live entry byte-for-byte and in order, then the new ones (#893's prefix match) —
-# prints one "name at host" per new entry, once each new host clears the #122 SSRF floor. The
-# gate then asks for the typed APPLY (#2641): friction, not a second identity (the #1959 ruling).
-# Any other change edits a rig the dashboard already controls, and is refused (#912's scope). So is
-# a new entry reusing a name: first-declared wins, so it would be inert, and the preview's by-name
-# token restore would hand it an existing rig's token.
-# An appliance's documented route for an existing descriptor is the stick, not "Set up again".
 _control_worker_remedy() {
     if is_appliance; then
         printf 'To change one, put the new workers.list in pithead-config.json on a configuration stick and reboot with it inserted.'
@@ -240,34 +231,59 @@ _control_worker_remedy() {
 }
 
 control_worker_append() { # <staged-file>
-    local staged="$1" live_n new_host hosts dup
+    local staged="$1" delta hosts new_host dup unbound
     jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' \
         "$staged" >/dev/null 2>&1 && return 0
-    if ! live_n=$(jq -er --slurpfile live "$CONFIG_FILE" '
-        (($live[0].workers.list // []) | length) as $n
-        | select((.workers.list | type) == "array" and (.workers.list | length) > $n
-            and .workers.list[0:$n] == ($live[0].workers.list // [])) | $n' "$staged" 2>/dev/null); then
-        printf 'this change edits or removes a rig the dashboard already controls (workers.list); only adopting a new rig is committable from the dashboard. %s' "$(_control_worker_remedy)"
+    if ! jq -e '(.workers.list | type) == "array" and all(.workers.list[]; type == "object" and (.name | type) == "string")' \
+        "$staged" >/dev/null 2>&1; then
+        printf 'workers.list must be a list of rigs, each with a name — refusing'
         return 1
     fi
-    dup=$(jq -r --argjson n "$live_n" '.workers.list as $l | [range($n; $l | length) as $i
-        | $l[$i].name as $x | select(any($l[0:$i][]; .name == $x)) | $x] | first // empty' "$staged" 2>/dev/null) &&
-        hosts=$(jq -r --argjson n "$live_n" '.workers.list[$n:][] | select(has("host")) | .host' "$staged" 2>/dev/null) || {
-        printf 'could not read the new worker descriptors — refusing'
+    dup=$(jq -r --slurpfile live "$CONFIG_FILE" '
+        def dups: group_by(.name) | map(select(length > 1) | .[0].name);
+        ((.workers.list | dups) - ([($live[0].workers.list // [])[] | select(type == "object")] | dups)) | first // empty' "$staged" 2>/dev/null) || {
+        printf 'could not read the worker descriptors — refusing'
         return 1
     }
     if [ -n "$dup" ]; then
-        printf 'a rig named %s already has a worker descriptor (workers.list), so a second one would be ignored; only a rig with no descriptor can be adopted from the dashboard. %s' "$dup" "$(_control_worker_remedy)"
+        printf 'a rig named %s would have two worker descriptors (workers.list), and only the first is used. %s' "$dup" "$(_control_worker_remedy)"
         return 1
     fi
+    local common='def byname($l): reduce $l[] as $w ({}; if .[$w.name] == null then .[$w.name] = $w else . end);
+        def endpoint: [.host, .port, .control_port];
+        (byname([($live[0].workers.list // [])[] | select(type == "object" and (.name | type) == "string")])) as $a
+        | (byname(.workers.list)) as $b'
+    unbound=$(jq -r --slurpfile live "$CONFIG_FILE" "$common"'
+        | [$b | to_entries[] | .key as $k | select($a[$k] != null and ($a[$k] | endpoint) != (.value | endpoint)
+            and (($a[$k].token // "") != "" or ($a[$k].api_token // "") != "")
+            and (.value.token // "") == ($a[$k].token // "") and (.value.api_token // "") == ($a[$k].api_token // "")) | $k] | first // empty' "$staged" 2>/dev/null) || {
+        printf 'could not read the worker descriptors — refusing'
+        return 1
+    }
+    if [ -n "$unbound" ]; then
+        printf 'rig %s would keep its control token at a new address — enter its token again to repoint it, so the old token never travels to an address you did not give it.' "$unbound"
+        return 1
+    fi
+    hosts=$(jq -r --slurpfile live "$CONFIG_FILE" "$common"'
+        | $b | to_entries[] | .key as $k | select(.value | has("host")) | select(($a[$k].host // null) != .value.host) | .value.host' "$staged" 2>/dev/null) &&
+        delta=$(jq -r --slurpfile live "$CONFIG_FILE" "$common"'
+        | ([$b | to_entries[] | .key as $k | select($a[$k] == null)
+            | "added: \($k)" + (if .value | has("host") then " at \(.value.host)" else " (no control address)" end)]
+         + [$b | to_entries[] | .key as $k | select($a[$k] != null and $a[$k] != .value)
+            | if ($a[$k].host // null) != (.value.host // null) then "repointed: \($k) from \($a[$k].host // "no address") to \(.value.host // "no address")" else "edited: \($k)" end]
+         + [$a | keys[] | select($b[.] == null) | "removed: \(.)"]) as $d
+        | (if ($d | length) == 0 then ["reordered the rig list"] else $d end)[]' "$staged" 2>/dev/null) || {
+        printf 'could not read the worker descriptors — refusing'
+        return 1
+    }
     while IFS= read -r new_host; do
         [ -n "$new_host" ] || continue
         if _control_host_is_internal "$new_host"; then
-            printf 'a new worker descriptor points at %s, which resolves inside this host'"'"'s own network — a rig'"'"'s control address must be a distinct machine on your LAN, not this host or one of its own containers.' "$new_host"
+            printf 'a worker descriptor points at %s, which resolves inside this host'"'"'s own network — a rig'"'"'s control address must be a distinct machine on your LAN, not this host or one of its own containers.' "$new_host"
             return 1
         fi
     done <<<"$hosts"
-    jq -r --argjson n "$live_n" '.workers.list[$n:][] | .name + (if has("host") then " at \(.host)" else " (no control address)" end)' "$staged"
+    printf '%s\n' "$delta"
 }
 
 control_carried_ssh() { # <staged-file>

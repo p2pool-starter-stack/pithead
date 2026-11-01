@@ -101,19 +101,19 @@ The stack's defaults:
   reach. An authenticated dashboard session can repoint payouts, credentials, onion exposure, the
   control channel, and the Tor egress firewall. The operator owns that exposure, including password
   strength and how the dashboard is exposed over Tor.
-  **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) have
-  a narrower route: the dashboard can only adopt a new rig (#2641). It may append a descriptor when
-  every existing one comes back unchanged, no existing rig's name is reused, the new host does not
-  resolve to loopback, link-local, this machine's own interface addresses, or any bridge subnet on
-  it, and the operator types `APPLY`. The audit log records the commit as confirmed and names
-  `workers.list`. Repointing, reordering or removing a rig the dashboard already controls is
-  refused even with `APPLY` and stays host-CLI-only (a configuration stick on an appliance); #912
-  owns any broader descriptor editing. Every host-side control request to a rig is pinned to the
+  **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) are
+  editable behind typed `APPLY` (#2641, #912): the dashboard can add, repoint, edit, reorder and
+  remove rigs. No name may be listed twice, and a new or repointed host must not resolve to
+  loopback, link-local, this machine's own interface addresses, or any bridge subnet on it. A
+  repointed rig must arrive with a token entered again, so the host never sends a stored token to
+  an address the operator did not type. The audit log records the commit as confirmed and names
+  `workers.list`. Every host-side control request to a rig is pinned to the
   numeric address that passed that check, so a later DNS answer cannot redirect it; the
   dashboard container's own read probes and adopt request are not host-pinned. The typed
   `APPLY` is friction, not a second identity: the dashboard container writes its own request, so a
-  compromised dashboard can adopt a rig at a LAN address of its choosing and send that address a
-  token it chose. It cannot take over a rig already adopted.
+  compromised dashboard can add or repoint a rig at a LAN address of its choosing and send that
+  address a token it chose, or drop a rig from management. It cannot send a stored rig token to a
+  new address, because a repoint must carry a replacement token.
   No reference field is refused from the dashboard (#2367); `ssh.*` is absent from release
   images. The dashboard password and the `telegram.events.wallet_changed` /
   `telegram.events.clearnet_exposed` tamper alarms are changeable behind typed `APPLY` and the

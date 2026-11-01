@@ -394,7 +394,7 @@ not proven.
   dashboard never exposes, so "changing these later means reinstalling" no longer holds.
   The CLI remainder is on the dashboard too now — support bundle, doctor detail, rotations
   (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
-  (#911) and fleet descriptor editing (#912).
+  (#911).
 - **The manual hardware battery has run once, on a dev image, and is incomplete (#2044).** The
   operator ran it on one physical box on 2026-09-18 and 2026-09-19 against a debug image built
   from `develop` at `1b0da07016`; the per-step results are in the manual release checklist's

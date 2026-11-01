@@ -246,9 +246,9 @@ _control_ip_is_local() {
 # Resolve a worker host to one validated numeric address. Mirrors the READ-path SSRF guard a
 # miner-claimed IP already gets (_safe_probe_host,
 # dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
-# WRITE path: an add-only append is DASHBOARD-chosen (the operator confirms it in the browser, but
+# WRITE path: a worker address is DASHBOARD-chosen (the operator confirms it in the browser, but
 # the actual HTTP request is built and sent by the — possibly compromised — dashboard container),
-# so without this a malicious/compromised dashboard could append a phantom descriptor pointed at
+# so without this a malicious/compromised dashboard could add or repoint a descriptor at
 # its own host's loopback services or a sibling container, then immediately dial it (with an
 # attacker-chosen bearer) via the pre-existing worker-apply/worker-upgrade path, which resolves and
 # dials strictly from the HOST's own config. That reach includes this machine's own interface
