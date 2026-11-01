@@ -57,7 +57,7 @@ rm -rf "$own_d"
 unset own_d own_id
 
 echo "== control channel: GUI backup then operator CLI backup in one checkout (#3363) =="
-if ! sudo -n true 2>/dev/null; then
+if ! "$STACK_FIXTURE_SUDO" -n true 2>/dev/null; then
     if [ -n "${GITHUB_ACTIONS:-}" ]; then
         bad "passwordless sudo is available for the cross-surface backup rows" "sudo -n failed on CI"
     else
@@ -69,6 +69,7 @@ else
         "$XB/ctl/staged" "$XB/ctl/results" "$XB/ctl/audit"
     cp "$STACK" "$XB/pithead"
     cp "$ROOT/build/tari/config.toml.template" "$XB/build/tari/"
+    make_host_tool_stubs "$XB/bin" systemctl iptables iptables-save iptables-restore nft
     XB_DOCKER_LOG="$XB/docker.log"
     : >"$XB_DOCKER_LOG"
     cat >"$XB/bin/docker" <<EOS
@@ -96,9 +97,8 @@ EOS
     xb_id="a0a0a0a0-0000-4000-8000-0000000033b3"
     printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$xb_id" >"$XB/req.json"
 
-    # The GUI half, as the privileged control user: the real CLI is the child control_backup starts.
-    # shellcheck disable=SC2024  # the redirect is deliberately the caller's: only the command is privileged
-    sudo -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 \
+    # shellcheck disable=SC2024
+    "$STACK_FIXTURE_SUDO" -n env PATH="$XB/bin:$PATH" PITHEAD_SELF="$XB/pithead" APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 \
         bash -Eeuo pipefail -c 'cd "$1"; source ./pithead; shift; "$@"' _ "$XB" \
         control_process_request "$XB/req.json" "$XB/ctl" >"$XB/gui.out" 2>&1
     assert_eq "the GUI backup (privileged) is applied" "$(jq -r .status "$XB/ctl/results/$xb_id.json" 2>/dev/null)" "applied"
@@ -114,6 +114,6 @@ EOS
     assert_eq "backups/ belongs to the operator" "$(stat -c '%u' "$XB/backups" 2>/dev/null)" "$(id -u)"
     assert_eq "the stack was started again after each of the two backups" \
         "$(grep -c '^compose up' "$XB_DOCKER_LOG")" "2"
-    sudo -n rm -rf "$XB"
+    "$STACK_FIXTURE_SUDO" -n rm -rf "$XB"
     unset XB XB_DOCKER_LOG xb_id xb_archive
 fi

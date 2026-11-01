@@ -106,6 +106,8 @@ upg455_order=$(
     log() { :; }
     docker() { :; }
     apply_tor_egress_firewall() { :; }
+    provision_egress_check_units() { :; }
+    provision_lan_guard_check_units() { :; }
     migrate_dashboard_data() { echo migrate; }
     update_current_symlink() { echo symlink; }
     compose_up_checked() { echo compose; }
@@ -134,6 +136,8 @@ upg455_fail=$(
     log() { :; }
     docker() { :; }
     apply_tor_egress_firewall() { :; }
+    provision_egress_check_units() { :; }
+    provision_lan_guard_check_units() { :; }
     migrate_dashboard_data() { :; }
     update_current_symlink() { echo symlink; }
     compose_up_checked() { return 1; }
@@ -182,6 +186,8 @@ apply2360() {
         render_local_miner_config() { :; }
         migrate_compose_project() { :; }
         apply_tor_egress_firewall() { :; }
+    provision_egress_check_units() { :; }
+    provision_lan_guard_check_units() { :; }
         reconcile_appliance_hostname() { :; }
         migrate_dashboard_data() { printf 'migrate\n' >>"$APPLY2360_LOG"; }
         compose_up_checked() {

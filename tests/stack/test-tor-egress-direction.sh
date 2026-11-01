@@ -15,6 +15,8 @@
 EGD="$SANDBOX/egress-direction"
 EGD_FIX="$ROOT/tests/stack/fixtures/tor-egress"
 mkdir -p "$EGD/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$EGD/bin/systemctl"
+chmod +x "$EGD/bin/systemctl"
 
 echo "== unit: tor_egress_rules / render_tor_egress_nft — replies only, a grandfathered flow is reset (#2672) =="
 EGD_IPT=$(run_sourced "$SANDBOX" tor_egress_rules 172.28.0.0/24 172.28.0.25)

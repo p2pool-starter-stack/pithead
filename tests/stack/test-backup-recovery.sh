@@ -5,6 +5,7 @@ WALLET="${WALLET:-$VALID_PRIMARY}"
 echo "== black-box: backup failures recover a previously running stack (#551, #1965) =="
 FB="$SANDBOX/failbackup"
 mkdir -p "$FB/build/tari" "$FB/data/tor" "$FB/data/dashboard" "$FB/bin"
+make_host_tool_stubs "$FB/bin" iptables iptables-save iptables-restore nft
 cp "$STACK" "$FB/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$FB/build/tari/"
 cat >"$FB/bin/docker" <<'EOF'

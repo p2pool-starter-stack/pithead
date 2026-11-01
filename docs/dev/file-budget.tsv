@@ -63,7 +63,7 @@ tests/os/selftest-run-modules.sh	462
 tests/stack/appliance/test-appliance-boot-remint.sh	445
 tests/stack/appliance/test-appliance-boot.sh	639
 tests/stack/appliance/test-appliance-identity-boot.sh	465
-tests/stack/appliance/test-appliance-identity.sh	483
+tests/stack/appliance/test-appliance-identity.sh	482
 tests/stack/appliance/test-appliance-install.sh	449
 tests/stack/appliance/test-appliance-media.sh	407
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
@@ -72,15 +72,13 @@ tests/stack/appliance/test-appliance-restore.sh	404
 tests/stack/appliance/test-appliance-rig-miner.sh	466
 tests/stack/control/test-control-add-only-ssrf.sh	447
 tests/stack/control/test-control-core.sh	407
-tests/stack/control/test-control-upgrade.sh	795
-tests/stack/dashboard/test-dashboard-onion.sh	422
+tests/stack/control/test-control-upgrade.sh	625
 tests/stack/dashboard/test-dashboard.sh	591
 tests/stack/doctor/test-doctor.sh	470
 tests/stack/standalone/test_compose.sh	462
-tests/stack/firewall/tor-egress-enforcement.sh	444
 tests/stack/test-backup.sh	476
 tests/stack/test-cli.sh	410
 tests/stack/test-config.sh	705
 tests/stack/test-monero-tari.sh	557
 tests/stack/test-rig-worker.sh	616
-tests/stack/test-tor-network.sh	776
+tests/stack/test-tor-network.sh	477
