@@ -14,8 +14,11 @@ import (
 const commands = "setup apply render up down restart tor-recover upgrade logs status test-alert doctor support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending egress-run-pending egress-status lan-guard-check onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
 
 func Run(reference string, args []string, stdout io.Writer) error {
-	if os.Getenv("PITHEAD_GO_HELPER") == "config-document" {
+	switch os.Getenv("PITHEAD_GO_HELPER") {
+	case "config-document":
 		return configDocument(args, stdout)
+	case "config-defaults":
+		return configDefaults(args, os.Stdin, stdout)
 	}
 	switch nativeCommand(args) {
 	case "help":

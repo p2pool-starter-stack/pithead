@@ -5,6 +5,21 @@ config_defaults_json() {
 PITHEAD_DEFAULTS_JSON
 }
 
+_config_defaults_go() {
+    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" platform table_rc=0
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    [ -n "$binary" ] && [ -x "$binary" ] && command -v jq >/dev/null 2>&1 || return 125
+    [ ! -t 1 ] || return 125
+    if [ "$1" != defaults ]; then
+        platform=$(config_platform)
+        set -- "$@" "$platform"
+    fi
+    {
+        config_defaults_json || table_rc=$?
+        printf '\n%d' "$table_rc"
+    } | PITHEAD_GO_HELPER=config-defaults "$binary" "$@"
+}
+
 config_platform() {
     if is_appliance; then printf appliance; else printf diy; fi
 }
@@ -12,6 +27,7 @@ config_platform() {
 config_defaults() {
     local platform mode="${1:-new}"
     platform="${2:-$(config_platform)}"
+    if _config_defaults_go defaults "$mode" "$platform" 2>/dev/null; then return 0; fi
     config_defaults_json | jq --arg platform "$platform" --arg mode "$mode" '
         . as $table | (.values * (if $platform == "appliance" then .appliance else {} end))
         | if $mode == "legacy" then
@@ -22,10 +38,12 @@ config_defaults() {
 }
 
 default_of() {
+    if _config_defaults_go default "$1" "${2:-new}" 2>/dev/null; then return 0; fi
     config_defaults "${2:-new}" | jq -r --arg path "${1#.}" 'getpath($path | split(".")) | if . == null then error("unknown default") else . end'
 }
 
 new_install_defaults() {
+    if _config_defaults_go install 2>/dev/null; then return 0; fi
     local defaults
     defaults=$(config_defaults)
     config_defaults_json | jq --argjson defaults "$defaults" '
@@ -34,6 +52,7 @@ new_install_defaults() {
 }
 
 config_get() {
+    if _config_defaults_go get "$1" "${2:-$CONFIG_FILE}" 2>/dev/null; then return 0; fi
     local fallback
     fallback=$(config_defaults legacy | jq -c --arg path "${1#.}" 'getpath($path | split("."))') || return 1
     jq -r --argjson fallback "$fallback" --arg path "${1#.}" '

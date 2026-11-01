@@ -141,8 +141,11 @@ Native raw config parsing and duplicate/placeholder validation live in
 `go/internal/config/document.go`. `make test-go-config-document-parity` compares
 exact diagnostics and runs the unchanged raw-parser suite through the selected
 gate. The CLI's Bash fallback carries an internal Go-binary marker; unsupported
-JSON retains the embedded Python parser. Defaults, typed validation and rendering
-remain Bash.
+JSON retains the embedded Python parser. `go/internal/config/defaults.go` and
+`jq_json.go` implement defaults, materialization and getters with ordered jq-style
+output. `make test-go-config-defaults-parity` checks runtime tables, exact bytes,
+compatibility fallback and the unchanged v2.0.0 render fixture/goldens. Typed
+validation and the `.env`/Caddyfile renderers remain Bash.
 
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates
