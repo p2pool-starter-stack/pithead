@@ -1247,6 +1247,11 @@ claims rather than one restated:
 4. Only then, on a precondition this run established rather than assumed, the repeat-click `noop`
    is asserted: a synchronous `noop` carrying **no** `id`, which is what says the dashboard's
    shortcut answered it without dialing the rig and spending its throttle.
+5. Last, update-all (#3823) is asked about the same rig: `GET /api/control/worker-upgrade-all`
+   lists no eligible rig, and a `POST` of the same version is refused with `409`. This checks the
+   plan against the rig's real feed. The host's rolling loop over several rigs is proved at tier 1
+   with stub rigs (`tests/stack/control/test-control-worker-upgrade-all.sh`), because the harness
+   has one borrowed rig and the rig's six-hour throttle allows one real upgrade per run.
 
 **Otherwise the leg skips, loudly and classified.** `compute_update` returns `None` for "already on
 latest", "ahead of latest" and "no release cached over Tor" alike, and nothing else in `/api/state`
