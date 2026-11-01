@@ -27,7 +27,7 @@ phases_of() { # <mode> <borrow-miner> <wrapper-scenario> <harness-arg...>
         # shellcheck source=tests/integration/lib/harness-args.sh
         source "$HERE/../lib/harness-args.sh"
         # shellcheck disable=SC2034 # read by the validator and the eval'd run_harness
-        MODE="$mode" KEEP=0 SCENARIO="$scenario" HARNESS_ARGS=("$@")
+        MODE="$mode" BORROW_MINER="$borrow" KEEP=0 SCENARIO="$scenario" HARNESS_ARGS=("$@")
         die() {
             echo "REFUSED: $*"
             exit 1
@@ -85,6 +85,11 @@ assert_eq "the sweep joins other hand-picked phases, in front of them" \
 assert_eq "--mode matrix with the token is the same sweep" \
     "$(phase_set "$(phases_of matrix 0 '' --sweep)")" "--no-mining-asserts --safety-backup "
 
+assert_eq "backup-only launches without a preset scenario or lifecycle" \
+    "$(phase_set "$(phases_of targeted 0 '' --backup-only)")" "--backup-only --no-mining-asserts "
+assert_eq "matrix backup-only launches without its scenario sweep" \
+    "$(phase_set "$(phases_of matrix 0 '' --backup-only)")" "--backup-only --no-mining-asserts "
+
 echo "== nothing else changes =="
 assert_eq "targeted without the token still pins its scenario and runs its preset" \
     "$(phases_of targeted 0 '')" "--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle --no-mining-asserts"
@@ -130,6 +135,7 @@ match = re.search(
 print(" ".join(p.strip()[2:] for p in match.group(1).split("|")) if match else "")
 PY
 )"
+assert_contains "backup-only is in the discoverable phase list" " $advertised " " backup-only "
 assert_contains "sweep is in the discoverable phase list" " $advertised " " sweep "
 assert_contains "and the earlier phases are still there" " $advertised " " lifecycle "
 
