@@ -54,7 +54,10 @@ assert_eq "a read that fails once and then answers is retried to its answer" \
     "$(unit_state_with "n=\$(cat $flaky 2>/dev/null || echo 0); echo \$((n+1)) >$flaky; [ \$n -ge 2 ] || exit 255; [ \"\$1\" = show ] && echo not-found; [ \"\$1\" = show ]")" "absent"
 rm -f "$flaky"
 transport_down=$(
-    on_bench() { echo "ssh: connect timed out" >&2; return 255; }
+    on_bench() {
+        echo "ssh: connect timed out" >&2
+        return 255
+    }
     warn() { printf 'warn:%s\n' "$*" >&2; }
     UNIT_STATE_RETRY_DELAY=0
     egress_boot_unit_state pithead-lan-guard.service 2>&1 >/dev/null
