@@ -115,6 +115,7 @@ test-appliance-boot-labels.sh|medium
 test-appliance-boot-labels.sh|row
 test-appliance-boot-labels.sh|tran
 test-appliance-boot.sh|ph
+test-appliance-headless-install.sh|hsp_bad
 test-appliance-hostname.sh|mode
 test-appliance-hostname.sh|op
 test-appliance-identity-boot.sh|cli_pages
