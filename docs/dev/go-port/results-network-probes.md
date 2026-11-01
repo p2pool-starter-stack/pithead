@@ -311,4 +311,58 @@ findings were corrected; the Markdown rerun contains only cache errors. Existing
 fixtures, goldens, lint rules and Make checks remain unchanged. Private command
 and exit records use `.go-cache/logs/container-*`.
 
+## Monero RPC diagnostics slice (2026-10-31)
+
+`go/internal/doctor/monero.go` implements sync, peer-count and tip-age findings.
+The container/tool gates, digest-auth arguments, RPC request order, exact TSV
+and human wording, appliance messages and stale-tip boundary match Bash.
+Peer counts come only from the in-container helper; restricted RPC counters do
+not substitute for it. A failed helper gives no reading, while nonempty partial
+curl output is still classified, matching the dispatcher's conditional context.
+The collector, config getters and clock reader remain Bash.
+
+Nine tagged groups cover 80 scenarios using fake tools and synthetic credentials.
+Peer counts or positive timestamps in decimal/exponent notation, counts above
+the safe integer range, malformed or multiple JSON documents, Unicode escapes, invalid
+UTF-8, NUL diagnostics and unsupported tool launches return
+`ErrUnsupportedProbeInput`; jq-specific parsing and exposed shell diagnostics
+remain the fallback's responsibility. No real RPC, engine or network call runs.
+Independent correctness and security reviews found no remaining new defect.
+
+Commands below use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) for the
+baseline and `tests/go-parity/run.sh` for Go selection, with the local caches above.
+Private command/exit records use `.go-cache/logs/rpc-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-doctor-monero-parity` | PASS, 9 groups / 80 scenarios | PASS, same scenarios |
+| `make test-go-doctor-containers-parity test-go-doctor-history-parity test-go-doctor-parity test-go-parity` | PASS, plus Go units | PASS, plus Go units |
+| `python3 tests/stack/doctor/test-json-contract.py` and `python3 tests/stack/doctor/check-ids.py .` | PASS, 2 contract tests and pinned IDs | PASS; original source contracts |
+| `make test-dashboard` | PASS on unchanged rerun, 3716 tests, 97.42% coverage | PASS, 3716 tests, 97.42%; Python backend |
+| `make test-fakes` | PASS, 54 tests | PASS, 54 tests; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no Python changes | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
+| `make test` with absent Docker socket and local npm cache | FAIL, 22 third-party cache Markdown findings, exit 2 | Same result; shell/Python/JS/YAML lint pass |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal |
+
+`go -C go test -count=1 ./...`,
+`go -C go test -tags=parity -race -count=1 -run TestMonero ./internal/doctor`,
+`go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+pass. The Linux result proves compilation only.
+The new adapter passes `bash -n`, ShellCheck 0.11.0 and shfmt 3.13.1.
+
+The first baseline dashboard run had 3715 passes and one failure in
+`TestBoundedRead.test_a_trickled_body_does_not_cost_quadratic_time` (4.6s).
+The full baseline suite passed unchanged after the concurrent checks finished;
+the initial failure remains recorded in `rpc-dashboard-baseline`.
+
+Scoped Markdown passes in both modes with the worktree-local npm cache:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md \
+  docs/dev/go-port/results-cli-probes.md docs/dev/go-port/results-network-probes.md
+```
+
 [Back to the parity ledger](PARITY.md)

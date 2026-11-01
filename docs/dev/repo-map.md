@@ -118,6 +118,10 @@ with Bash using fake engines and sleep. Collector and hold discovery remain Bash
 findings with supplied RPC getters and time. `make test-go-doctor-monero-parity`
 compares findings, authentication arguments and probe order with fake tools;
 the collector and config/time readers remain Bash.
+`go/internal/nodeprobe/monero.go` implements remote Monero RPC preflight with
+supplied endpoint/login/cap values. `make test-go-node-monero-parity` compares
+reasons, arguments and stdin config bytes against Bash using fake tools;
+config readers, address policy and ZMTP orchestration remain Bash.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

@@ -9,7 +9,7 @@ authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
 data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
 payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
-LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, and container diagnostics at `975161c6`.
+LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, container diagnostics at `975161c6`, and Monero sync/peer/tip probes at `aa68ca87`.
 The operator commits later rounds because
 this sandbox cannot write shared Git metadata. No performance benefit is claimed.
 
@@ -85,6 +85,7 @@ selection is not implemented.
 | Tor heal outage transitions and validity | Native canonical-record planner/validator; Bash locks and persistence | 2 tagged groups, 28 scenarios and Go units |
 | Container restart observation and revenue readiness | Native probes with supplied migration hold; Bash collector | 8 tagged groups and Go units |
 | Monero sync, peer counts and tip age | Native probes with supplied RPC getters/time; Bash collector | 9 tagged groups and Go units |
+| Remote Monero RPC preflight | Native package with supplied endpoint/login/cap; Bash config readers and orchestration | 9 tagged groups, 87 scenarios and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -208,6 +209,11 @@ oracles:
   source-based tests cannot invoke Go packages; this compares exact findings,
   authentication arguments and call order without an RPC server or container.
 
+- `node_monero_reference.sh` extracts unchanged `monero_rpc_speaks` with a synthetic
+  config and fake timeout/curl so the CLI's readonly cap does not override fixtures.
+  Source-based suites cannot invoke native packages; it compares reason/exit
+  status, command arguments and stdin credential bytes.
+
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
@@ -218,7 +224,8 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-config-parity`, `test-go-doctor-network-parity` and
 `test-go-doctor-lan-parity`, `test-go-doctor-egress-parity` and
 `test-go-doctor-nft-parity`, `test-go-doctor-history-parity` and
-`test-go-doctor-containers-parity`, `test-go-doctor-monero-parity`.
+`test-go-doctor-containers-parity`, `test-go-doctor-monero-parity` and
+`test-go-node-monero-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -300,34 +307,33 @@ Detailed paired commands, results and limits are preserved in
 [CLI probe results](results-cli-probes.md) and
 [network and firewall results](results-network-probes.md).
 
-## Monero RPC diagnostics slice (2026-10-31)
+## Remote Monero preflight slice (2026-10-31)
 
-`go/internal/doctor/monero.go` implements sync, peer-count and tip-age findings.
-The container/tool gates, digest-auth arguments, RPC request order, exact TSV
-and human wording, appliance messages and stale-tip boundary match Bash.
-Peer counts come only from the in-container helper; restricted RPC counters do
-not substitute for it. A failed helper gives no reading, while nonempty partial
-curl output is still classified, matching the dispatcher's conditional context.
-The collector, config getters and clock reader remain Bash.
+`go/internal/nodeprobe/monero.go` implements the RPC probe in `10-node-probe.sh`.
+It preserves IPv6 brackets, the supplied/default response cap, stdin-only digest
+credentials, exact curl/timeout arguments, HTTP/body framing and failure reasons.
+The JSON verdict requires `OK`, an accepted network and nonnegative numeric
+heights; decimal/exponent forms, negative zero, unsafe-size integers, malformed
+or multiple JSON documents, Unicode escapes and invalid JSON UTF-8 defer to Bash.
+NUL output and unusual tool launches also defer rather than hide diagnostics.
+Config readers, address allowlists, ZMTP and caller orchestration remain Bash;
+the new package has no production caller yet.
 
-Nine tagged groups cover 80 scenarios using fake tools and synthetic credentials.
-Peer counts or positive timestamps in decimal/exponent notation, counts above
-the safe integer range, malformed or multiple JSON documents, Unicode escapes, invalid
-UTF-8, NUL diagnostics and unsupported tool launches return
-`ErrUnsupportedProbeInput`; jq-specific parsing and exposed shell diagnostics
-remain the fallback's responsibility. No real RPC, engine or network call runs.
-Independent correctness and security reviews found no remaining new defect.
+Nine tagged groups compare 87 scenarios against the unchanged Bash function.
+The first run caught a literal backslash/newline mismatch in curl's `-w` argv;
+the Go argument now matches Bash exactly. Credentials and mismatch diagnostics
+remain synthetic and credential-free, respectively. All probes use fake tools.
+Private command and exit records use `.go-cache/logs/preflight-*`.
 
-Commands below use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) for the
-baseline and `tests/go-parity/run.sh` for Go selection, with the local caches above.
-Private command/exit records use `.go-cache/logs/rpc-*`.
+Commands below use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as the
+baseline and `tests/go-parity/run.sh` for Go selection, with local caches.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-doctor-monero-parity` | PASS, 9 groups / 80 scenarios | PASS, same scenarios |
-| `make test-go-doctor-containers-parity test-go-doctor-history-parity test-go-doctor-parity test-go-parity` | PASS, plus Go units | PASS, plus Go units |
+| `make test-go-node-monero-parity` | PASS, 9 groups / 87 scenarios | PASS, same scenarios |
+| `make test-go-doctor-monero-parity test-go-doctor-parity test-go-parity` | PASS, plus Go units | PASS, plus Go units |
 | `python3 tests/stack/doctor/test-json-contract.py` and `python3 tests/stack/doctor/check-ids.py .` | PASS, 2 contract tests and pinned IDs | PASS; original source contracts |
-| `make test-dashboard` | PASS on unchanged rerun, 3716 tests, 97.42% coverage | PASS, 3716 tests, 97.42%; Python backend |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | PASS, same counts; Python backend |
 | `make test-fakes` | PASS, 54 tests | PASS, 54 tests; Python backend |
 | `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no Python changes | Same result |
 | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
@@ -335,18 +341,15 @@ Private command/exit records use `.go-cache/logs/rpc-*`.
 | `make test-stack` | macOS refusal, exit 2 | Same refusal |
 
 `go -C go test -count=1 ./...`,
-`go -C go test -tags=parity -race -count=1 -run TestMonero ./internal/doctor`,
-`go -C go vet -tags=parity ./...` and
-`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
-pass. The Linux result proves compilation only.
-The new adapter passes `bash -n`, ShellCheck 0.11.0 and shfmt 3.13.1.
+`go -C go test -tags=parity -race -count=1 ./internal/nodeprobe`,
+`go -C go vet -tags=parity ./...`,
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` and
+`GOOS=linux GOARCH=amd64 go -C go test -c -o ../.go-cache/nodeprobe-linux.test ./internal/nodeprobe`
+pass. Linux compilation is not a Linux runtime verdict.
+Source and security reviews found no remaining implementation defect.
+The adapter passes `bash -n`, ShellCheck 0.11.0 and shfmt 3.13.1.
 
-The first baseline dashboard run had 3715 passes and one failure in
-`TestBoundedRead.test_a_trickled_body_does_not_cost_quadratic_time` (4.6s).
-The full baseline suite passed unchanged after the concurrent checks finished;
-the initial failure remains recorded in `rpc-dashboard-baseline`.
-
-Scoped Markdown passes in both modes with the worktree-local npm cache:
+Scoped Markdown passes in both modes with the local npm cache:
 
 ```bash
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
@@ -381,8 +384,8 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port `monero_rpc_speaks` remote-node preflight in `10-node-probe.sh`, then the
-   separate ZMTP greeting/publisher checks and remaining dashboard/appliance checks.
+1. Port the separate ZMTP greeting/publisher checks in `10-node-probe.sh`, then
+   remaining dashboard/appliance diagnostics and remote-node orchestration.
 2. Port Tor recovery mount, lock and persistence handling.
 3. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
