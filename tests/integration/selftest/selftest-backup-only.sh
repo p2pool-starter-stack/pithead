@@ -72,7 +72,7 @@ run_selection() {
             if [ "$name" = wrong-root ]; then
                 tar -czf "$archive" -C "$OUT_DIR" source/config.json source/.env
             elif [ "$name" = linked-stack ]; then
-                ln -s source "$OUT_DIR/link"
+                ln -s "$OUT_DIR/source" "$OUT_DIR/link"
                 tar -czf "$archive" -C / "${OUT_DIR#/}/link/config.json" "${OUT_DIR#/}/link/.env"
             elif [ "$name" = dot-prefix ]; then
                 tar -czf "$archive" -C / "./${OUT_DIR#/}/source/config.json" "./${OUT_DIR#/}/source/.env"
