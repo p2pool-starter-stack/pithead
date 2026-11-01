@@ -83,6 +83,7 @@ hsp_run() {
     : >"$HSP/install.log"
     (
         cd "$SANDBOX" || exit
+        # shellcheck disable=SC1090
         source "$STACK"
         set +e
         mutation_lock_acquire() { :; }
