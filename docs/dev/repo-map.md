@@ -125,7 +125,7 @@ original-byte cleanup and private recovery retention are exercised by
 
 `post_op_invariants` in `tests/integration/lib/post-op-invariants.sh` runs after the lifecycle restart,
 backup restore and reset recovery steps. It asserts what a user sees, not only process health: every
-worker online before the step is online again, `failures_24h` is unchanged, the dashboard and not the
+worker online before the step is online again, `failures_24h` is unchanged (the reset-recovery step allows the one unauthenticated web probe its own check sends), the dashboard and not the
 setup page serves the web port with no wizard container, every running container keeps its Id,
 `StartedAt` and restart count for 60 seconds and is healthy, and on the appliance no pithead or xmrig
 unit has failed. A fault case per check is in `tests/integration/selftest/selftest-post-op-invariants.sh`.

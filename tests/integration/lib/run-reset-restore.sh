@@ -211,7 +211,7 @@ run_reset_restore_fixture() {
     rr_web_ports_owned_by_dashboard "reset recovery" || return 1
     if wait_status_ok 600; then
         it_pass "stack healthy after encrypted restore following config-reset"
-        post_op_invariants "after reset recovery"
+        POI_PROBES_ALLOWED=1 post_op_invariants "after reset recovery"
     else
         it_fail "stack healthy after encrypted restore following config-reset" "status did not recover"
         return 1

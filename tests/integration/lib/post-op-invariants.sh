@@ -8,7 +8,7 @@ poi_workers_missing() {
 
 poi_failures_unchanged() {
     case "$1$2" in '' | *[!0-9]*) return 1 ;; esac
-    [ "$1" = "$2" ]
+    [ "$2" -ge "$1" ] && [ $(($2 - $1)) -le "${3:-0}" ]
 }
 
 poi_containers_drift() {
@@ -58,7 +58,7 @@ post_op_invariants() {
         fi
     fi
     after_failures=$(poi_failures_24h)
-    if poi_failures_unchanged "$POI_FAILURES" "$after_failures"; then
+    if poi_failures_unchanged "$POI_FAILURES" "$after_failures" "${POI_PROBES_ALLOWED:-0}"; then
         it_pass "$label: failures_24h unchanged by the step"
     else
         it_fail "$label: failures_24h unchanged by the step" "before [${POI_FAILURES}], after [${after_failures}]"
