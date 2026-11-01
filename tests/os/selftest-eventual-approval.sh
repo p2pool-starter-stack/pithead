@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== appliance approval eventual waits =="
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$HERE/provision-browser-submit.sh"
 source "$HERE/appliance-config-approval-leg.sh"

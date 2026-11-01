@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== integration eventual waits =="
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$HERE/lib.sh"
 source "$HERE/lib/selftest/fake-eventual.sh"

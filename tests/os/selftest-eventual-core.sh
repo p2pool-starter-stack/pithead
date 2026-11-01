@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "== appliance core eventual waits =="
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$HERE/../integration/lib/selftest/fake-eventual.sh"
 work=$(mktemp -d)

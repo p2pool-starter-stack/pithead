@@ -1529,6 +1529,7 @@ waits retain their existing first-success contract. The rollback worker selftest
 uses the same fake while executing the complete rollback function.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
+Each shell selftest prints a literal `== section ==` header for `tests/inventory.sh`.
 `selftest-inventory-scenarios.sh` requires the real inventory to exit zero with empty stderr,
 then checks that its scenario count and list include literal-tab rows and exclude plain `t`
 and backslash-`t` decoys. The fixture retains the inventory's other suites and drift gates.

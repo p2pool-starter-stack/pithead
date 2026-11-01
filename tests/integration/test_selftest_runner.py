@@ -6,6 +6,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = Path(os.environ.get("SELFTEST_MAKEFILE", ROOT / "Makefile"))
+FIRST_INTEGRATION = str(Path("tests/integration/selftest") / "01-first.sh")
+LAST_INTEGRATION = str(Path("tests/integration/selftest") / "99-last.sh")
+FIRST_OS = str(Path("tests/os") / "selftest01-first.sh")
+LAST_OS = str(Path("tests/os") / "selftest99-last.sh")
 
 
 class SelftestRunnerTest(unittest.TestCase):
@@ -18,10 +22,10 @@ class SelftestRunnerTest(unittest.TestCase):
                 "test-integration-selftest:\n" + "\n".join(recipe) + "\n"
             )
             names = [
-                "tests/integration/selftest/01-first.sh",
-                "tests/integration/selftest/99-last.sh",
-                "tests/os/selftest01-first.sh",
-                "tests/os/selftest99-last.sh",
+                FIRST_INTEGRATION,
+                LAST_INTEGRATION,
+                FIRST_OS,
+                LAST_OS,
             ]
             for name in names:
                 script = root / name
@@ -49,16 +53,16 @@ class SelftestRunnerTest(unittest.TestCase):
         self.run_fixture({})
 
     def test_integration_failure_keeps_both_globs_running(self):
-        self.run_fixture({"tests/integration/selftest/01-first.sh": 7})
+        self.run_fixture({FIRST_INTEGRATION: 7})
 
     def test_os_failure_keeps_later_files_running(self):
-        self.run_fixture({"tests/os/selftest01-first.sh": 9})
+        self.run_fixture({FIRST_OS: 9})
 
     def test_multiple_failures_are_reported(self):
         self.run_fixture(
             {
-                "tests/integration/selftest/01-first.sh": 7,
-                "tests/os/selftest01-first.sh": 9,
+                FIRST_INTEGRATION: 7,
+                FIRST_OS: 9,
             }
         )
 
