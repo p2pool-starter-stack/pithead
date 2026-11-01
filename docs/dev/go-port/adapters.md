@@ -3,6 +3,11 @@
 Only new files under `tests/go-parity/` adapt unchanged suites or supply parity
 oracles:
 
+- `config_migrations_reference.sh` sources the original worker/XvB and Telegram migration functions
+  with controlled file failures; `test_config_migrations.py` compares decisions, exact file/backup bytes,
+  permissions, callback order and the unchanged config-read extractor.
+  `test_config_migrations_protocol.py` checks helper framing. The original migration suites need Linux.
+
 - `config_version_reference.sh` sources the original version functions with controlled file operations;
   `test_config_version.py` compares policy, file bytes, metadata, cleanup and failure paths.
   The original version suite needs Linux; unchanged render fixtures run through the existing adapters.

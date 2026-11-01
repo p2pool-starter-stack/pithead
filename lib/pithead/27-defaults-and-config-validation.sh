@@ -109,23 +109,33 @@ validate_worker_endpoints() {
 readonly XVB_ALIAS_KEYS_JQ='["enabled", "url", "donor_id"]'
 readonly XVB_ALIAS_V1_DEFAULTS_JQ='{"enabled": true, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}'
 migrate_legacy_workers() {
-    local conflict owner populated tmp="${CONFIG_FILE}.tmp"
+    local conflict owner populated tmp="${CONFIG_FILE}.tmp" native_plan=0
+    local _config_migration_conflict _config_migration_need _config_migration_populated
     [ -f "$CONFIG_FILE" ] || return 0
     # The refusal is checked on EVERY run, dry or not: a config that sets an old and a new name to
     # different values must fail the apply it was handed to, not just the one that would rewrite it.
-    conflict=$(jq -r --argjson ks "$XVB_ALIAS_KEYS_JQ" --argjson v1 "$XVB_ALIAS_V1_DEFAULTS_JQ" '
+    if command -v _config_workers_plan_go >/dev/null 2>&1 && _config_workers_plan_go; then
+        conflict="$_config_migration_conflict"
+        native_plan=1
+    else
+        conflict=$(jq -r --argjson ks "$XVB_ALIAS_KEYS_JQ" --argjson v1 "$XVB_ALIAS_V1_DEFAULTS_JQ" '
         [ (select(((.dashboard // {}) | .workers // []) != [] and ((.workers // {}) | .list // []) != []
                   and (.dashboard.workers != .workers.list))
            | "workers.list[] and dashboard.workers[]"),
           ($ks[] as $k | select(((.xmrig_proxy // {}) | has($k)) and ((.xvb // {}) | has($k))
                                 and (.xmrig_proxy[$k] != .xvb[$k]) and (.xmrig_proxy[$k] != $v1[$k]))
            | "xvb.\($k) and xmrig_proxy.\($k)") ] | join("; ")' "$CONFIG_FILE" 2>/dev/null)
+    fi
     if [ -n "$conflict" ]; then
         error "config.json sets both a removed 1.x key and its replacement to different values ($conflict). The 1.x names were removed in 2.0.0; keep the replacement, delete the old key, and re-run."
     fi
     [ "$PITHEAD_DRY_RUN" -eq 1 ] && return 0
     # Nothing to move is the common case — do not touch the file, and do not leave a backup.
-    jq -e 'has("xmrig_proxy") or ((.dashboard // {}) | has("workers"))' "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    if [ "$native_plan" -eq 1 ]; then
+        [ "$_config_migration_need" = true ] || return 0
+    else
+        jq -e 'has("xmrig_proxy") or ((.dashboard // {}) | has("workers"))' "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    fi
     # Is there 1.x DATA here, or only names to drop? An empty dashboard.workers[] and an
     # xmrig_proxy block xvb already mirrors lose nothing if the move fails. Populated ones are
     # lost SILENTLY once the fallback reads are gone: the validator sees an empty workers.list[]
@@ -135,12 +145,16 @@ migrate_legacy_workers() {
     # stay best-effort when it would not — a blanket error would break `backup` and
     # `release-verify`, which call parse_and_validate_config on paths that write nothing. The
     # same answer picks the success line: only a populated config had anything to migrate.
-    populated=1
-    jq -e --argjson ks "$XVB_ALIAS_KEYS_JQ" '. as $r
+    if [ "$native_plan" -eq 1 ]; then
+        if [ "$_config_migration_populated" = true ]; then populated=1; else populated=0; fi
+    else
+        populated=1
+        jq -e --argjson ks "$XVB_ALIAS_KEYS_JQ" '. as $r
         | (((.dashboard // {}) | .workers // []) != [])
           or ([ $ks[] as $k | select((($r.xmrig_proxy // {}) | has($k))
                                      and ((($r.xvb // {}) | has($k)) | not)) ] | length > 0)' \
-        "$CONFIG_FILE" >/dev/null 2>&1 || populated=0
+            "$CONFIG_FILE" >/dev/null 2>&1 || populated=0
+    fi
     if ! cp -p "$CONFIG_FILE" "${CONFIG_FILE}.bak-1x" 2>/dev/null; then
         if [ "$populated" -eq 1 ]; then
             error "Could not back up $CONFIG_FILE before migrating its 1.x config keys, and it carries 1.x settings 2.0.0 no longer reads. Refusing: applying now would report success while dropping your XvB settings and per-rig hosts and tokens. Free space or fix the permissions on the config directory, then re-run."
@@ -151,7 +165,8 @@ migrate_legacy_workers() {
     owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
     if (
         umask 077
-        jq --argjson ks "$XVB_ALIAS_KEYS_JQ" '
+        if [ "$native_plan" -eq 1 ] && command -v _config_workers_write_go >/dev/null 2>&1 && _config_workers_write_go "$tmp"; then :; else
+            jq --argjson ks "$XVB_ALIAS_KEYS_JQ" '
             (if ((.dashboard // {}) | .workers // []) != []
              then .workers = ((.workers // {}) + {list: .dashboard.workers}) else . end)
             | (if (.dashboard | type) == "object" then .dashboard |= del(.workers) else . end)
@@ -159,6 +174,7 @@ migrate_legacy_workers() {
                 if ((.xmrig_proxy // {}) | has($k)) and (((.xvb // {}) | has($k)) | not)
                 then (.xvb //= {}) | .xvb[$k] = .xmrig_proxy[$k] else . end)
             | del(.xmrig_proxy)' "$CONFIG_FILE" >"$tmp" 2>/dev/null
+        fi
     ); then
         mv "$tmp" "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"
@@ -189,18 +205,27 @@ migrate_legacy_workers() {
 # guard, and is not: #561's config-read extractor is fixed-shape and FAILS LOUD on a shape it
 # does not recognise, so the bare `.telegram |= del(.control)` form reds that gate.
 migrate_removed_telegram_control() {
-    local owner tmp="${CONFIG_FILE}.tmp"
+    local owner tmp="${CONFIG_FILE}.tmp" native_plan=0
+    local _config_migration_need _config_migration_enabled
     [ -f "$CONFIG_FILE" ] || return 0
-    jq -e '(.telegram // {}) | has("control")' "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    if command -v _config_telegram_plan_go >/dev/null 2>&1 && _config_telegram_plan_go; then
+        native_plan=1
+        [ "$_config_migration_need" = true ] || return 0
+    else
+        jq -e '(.telegram // {}) | has("control")' "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    fi
     [ "$PITHEAD_DRY_RUN" -eq 1 ] && return 0
-    if [ "$(jq -r '(.telegram.control.enabled // false) | tostring' "$CONFIG_FILE" 2>/dev/null)" == "true" ]; then
+    if { [ "$native_plan" -eq 1 ] && [ "$_config_migration_enabled" = true ]; } ||
+        { [ "$native_plan" -eq 0 ] && [ "$(jq -r '(.telegram.control.enabled // false) | tostring' "$CONFIG_FILE" 2>/dev/null)" == "true" ]; }; then
         warn "telegram.control was removed: the Telegram bot is read-only now. /restart and /apply are gone, and configuration changes no longer ask for an approval in Telegram — confirm them in the dashboard instead. Dropping the key from $CONFIG_FILE."
     fi
     owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
     if (
         umask 077
-        jq 'if (.telegram | type) == "object" then .telegram |= del(.control) else . end' \
-            "$CONFIG_FILE" >"$tmp" 2>/dev/null
+        if [ "$native_plan" -eq 1 ] && command -v _config_telegram_write_go >/dev/null 2>&1 && _config_telegram_write_go "$tmp"; then :; else
+            jq 'if (.telegram | type) == "object" then .telegram |= del(.control) else . end' \
+                "$CONFIG_FILE" >"$tmp" 2>/dev/null
+        fi
     ); then
         mv "$tmp" "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"

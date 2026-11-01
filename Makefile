@@ -2,14 +2,11 @@
 .DEFAULT_GOAL := pithead
 .PHONY: go-build test-go test-go-parity go-cache
 .PHONY: test-go-status-parity test-go-doctor-parity
-.PHONY: test-go-doctor-memory-parity
-.PHONY: test-go-doctor-host-parity
+.PHONY: test-go-doctor-memory-parity test-go-doctor-host-parity
 .PHONY: test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity
-.PHONY: test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity
-.PHONY: test-go-doctor-history-parity
-.PHONY: test-go-doctor-containers-parity
-.PHONY: test-go-doctor-monero-parity
-.PHONY: test-go-node-monero-parity
+.PHONY: test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity
+.PHONY: test-go-doctor-history-parity test-go-doctor-containers-parity
+.PHONY: test-go-doctor-monero-parity test-go-node-monero-parity
 .PHONY: test-go-node-zmq-parity
 .PHONY: test-go-node-zmq-exchange-parity
 .PHONY: test-go-config-document-parity test-go-config-defaults-parity test-go-config-validation-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-wallet-settings-parity
@@ -20,6 +17,10 @@
 .PHONY: test-go-dashboard-access-parity test-go-dashboard-auth-parity
 .PHONY: test-go-directories-parity
 .PHONY: test-go-caddy-bind-parity test-go-payout-settings-parity
+
+test-go-config-migrations-parity: go-build test-go ## Compare config migration plans and file bytes with Bash
+	python3 tests/go-parity/test_config_migrations.py
+	python3 tests/go-parity/test_config_migrations_protocol.py
 
 test-go-config-version-parity: go-build test-go ## Compare config version policy and stamped JSON with Bash
 	python3 tests/go-parity/test_config_version.py
