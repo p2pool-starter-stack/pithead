@@ -155,14 +155,20 @@ settings through `lib/pithead/27b-stratum-endpoint.sh`, retaining Bash fallback.
 `go/internal/config/network_settings.go` derives/validates network, remote and pool
 settings through `lib/pithead/27d-go-network-settings.sh`;
 `make test-go-network-settings-parity` checks verdict order and partial globals.
+`go/internal/config/proxy_settings.go` parses explicit stratum passwords, TLS and
+donation settings through `lib/pithead/27e-go-proxy-settings.sh`;
+`make test-go-proxy-settings-parity` checks state, errors and auto-password fallback.
 `go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
 statuses and preparation calls. `go/internal/config/caddy_sites.go` formats
 site URLs and scheme-default ports; `make test-go-caddy-sites-parity` checks host
 expansion, ports and framing. The adjacent `lib/pithead/35a-caddy-go-render.sh`
 hook supplies Bash-expanded hosts through the tagged `sites-v1` protocol,
-retaining the legacy frame. Bash keeps host expansion, bind/auth/certificate
-preparation, reference port preparation and file writes. `go/internal/config/env.go`
+retaining the legacy frame. `go/internal/config/caddy_auth.go` prepares auth blocks
+and the boot digest through `lib/pithead/35b-caddy-go-auth.sh`;
+`make test-go-caddy-auth-parity` checks complete renders and preparation fallback.
+Bash keeps host expansion, bind/bcrypt/certificate preparation, reference port
+preparation and file writes. `go/internal/config/env.go`
 serializes the complete ordered `.env` batch via `lib/pithead/33a-go-env-render.sh`.
 `make test-go-env-parity` adds byte/protocol comparisons; the unchanged sparse
 render fixture and goldens remain the oracle. `go/internal/config/env_network.go`

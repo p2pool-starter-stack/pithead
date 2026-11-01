@@ -2,7 +2,6 @@ parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
     validate_webhook_config
-
     validate_config_control_characters
 
     if is_appliance && [ "$(appliance_variant)" = release ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
@@ -198,37 +197,39 @@ parse_and_validate_config() {
     #   <literal> → use exactly this password.
     # Rendered to PROXY_STRATUM_PASSWORD. The password travels CLEARTEXT over stratum, so this is
     # access control ("who may mine"), not encryption — pair it with a LAN-only bind / firewall.
-    STRATUM_PASSWORD=$(jq -r '.p2pool.stratum_password // ""' "$CONFIG_FILE")
-    if [ "$STRATUM_PASSWORD" = "auto" ]; then
-        STRATUM_PASSWORD=$(env_get PROXY_STRATUM_PASSWORD) # reuse a previously generated one
-        [ -n "$STRATUM_PASSWORD" ] || STRATUM_PASSWORD=$(openssl rand -hex 12)
-    fi
-    # A non-empty password is written to .env and substituted into the proxy's CLI args, so restrict
-    # it to a shell/.env-safe charset — a space, quote, or '$' could break .env parsing or the
-    # compose command. (The auto-generated hex always passes.)
-    if [ -n "$STRATUM_PASSWORD" ] && ! printf '%s' "$STRATUM_PASSWORD" | grep -qE '^[A-Za-z0-9._:@-]{1,128}$'; then
-        error "p2pool.stratum_password must be \"auto\", empty, or 1–128 chars of letters, digits, and . _ : @ - (no spaces or quotes)."
-    fi
+    if ! command -v _parse_proxy_config_go >/dev/null 2>&1 || ! _parse_proxy_config_go; then
+        STRATUM_PASSWORD=$(jq -r '.p2pool.stratum_password // ""' "$CONFIG_FILE")
+        if [ "$STRATUM_PASSWORD" = "auto" ]; then
+            STRATUM_PASSWORD=$(env_get PROXY_STRATUM_PASSWORD) # reuse a previously generated one
+            [ -n "$STRATUM_PASSWORD" ] || STRATUM_PASSWORD=$(openssl rand -hex 12)
+        fi
+        # A non-empty password is written to .env and substituted into the proxy's CLI args, so restrict
+        # it to a shell/.env-safe charset — a space, quote, or '$' could break .env parsing or the
+        # compose command. (The auto-generated hex always passes.)
+        if [ -n "$STRATUM_PASSWORD" ] && ! printf '%s' "$STRATUM_PASSWORD" | grep -qE '^[A-Za-z0-9._:@-]{1,128}$'; then
+            error "p2pool.stratum_password must be \"auto\", empty, or 1–128 chars of letters, digits, and . _ : @ - (no spaces or quotes)."
+        fi
 
-    # Stratum-over-TLS (#261): confidentiality on the miner↔stack leg, on top of the access
-    # control above — orthogonal, usable together. Single-port model: with a cert configured,
-    # xmrig-proxy AUTODETECTS TLS on the same stratum bind (verified against the pinned 6.26.0
-    # binary), so cleartext rigs keep mining while rigs opt in one at a time (pools[].tls +
-    # fingerprint pinning, rigforge#115). Rigs authenticate the server by pinning the cert's
-    # SHA-256 fingerprint — xmrig does no CA validation for stratum — so the cert is self-signed
-    # and long-lived, and enforcing TLS-only is deliberately NOT a v1.9 knob (rigs first, posture
-    # flip later — the same discipline as the #208 default).
-    STRATUM_TLS=$(normalize_bool "$(config_bool '.p2pool.stratum_tls' false)")
+        # Stratum-over-TLS (#261): confidentiality on the miner↔stack leg, on top of the access
+        # control above — orthogonal, usable together. Single-port model: with a cert configured,
+        # xmrig-proxy AUTODETECTS TLS on the same stratum bind (verified against the pinned 6.26.0
+        # binary), so cleartext rigs keep mining while rigs opt in one at a time (pools[].tls +
+        # fingerprint pinning, rigforge#115). Rigs authenticate the server by pinning the cert's
+        # SHA-256 fingerprint — xmrig does no CA validation for stratum — so the cert is self-signed
+        # and long-lived, and enforcing TLS-only is deliberately NOT a v1.9 knob (rigs first, posture
+        # flip later — the same discipline as the #208 default).
+        STRATUM_TLS=$(normalize_bool "$(config_bool '.p2pool.stratum_tls' false)")
 
-    # xmrig-proxy dev-fee donation level (#173). xmrig-proxy's own compiled default is 0% (no
-    # donation) — which the stack inherited silently; expose it so operators can both SEE it and
-    # opt in. Default 0 (off); set N to donate N% of submitted hashrate to the xmrig developers
-    # (integer 0–99). Rendered to PROXY_DONATE_LEVEL and passed verbatim as --donate-level so the
-    # effective level is always visible. NOTE: this is NOT the XvB donation — that is xvb.* steered
-    # by the decision engine, never the proxy dev fee.
-    DONATE_LEVEL=$(jq -r '.proxy.donate_level // 0' "$CONFIG_FILE")
-    if ! printf '%s' "$DONATE_LEVEL" | grep -qE '^[0-9]+$' || [ "$DONATE_LEVEL" -gt 99 ]; then
-        error "proxy.donate_level must be an integer 0–99 (percent); default 0 (got \"$DONATE_LEVEL\")."
+        # xmrig-proxy dev-fee donation level (#173). xmrig-proxy's own compiled default is 0% (no
+        # donation) — which the stack inherited silently; expose it so operators can both SEE it and
+        # opt in. Default 0 (off); set N to donate N% of submitted hashrate to the xmrig developers
+        # (integer 0–99). Rendered to PROXY_DONATE_LEVEL and passed verbatim as --donate-level so the
+        # effective level is always visible. NOTE: this is NOT the XvB donation — that is xvb.* steered
+        # by the decision engine, never the proxy dev fee.
+        DONATE_LEVEL=$(jq -r '.proxy.donate_level // 0' "$CONFIG_FILE")
+        if ! printf '%s' "$DONATE_LEVEL" | grep -qE '^[0-9]+$' || [ "$DONATE_LEVEL" -gt 99 ]; then
+            error "proxy.donate_level must be an integer 0–99 (percent); default 0 (got \"$DONATE_LEVEL\")."
+        fi
     fi
 
     MONERO_USER=$(jq -r '.monero.node_username // empty' "$CONFIG_FILE")
@@ -408,5 +409,4 @@ parse_and_validate_config() {
         error "dashboard.control.enabled is true on a published onion (dashboard.onion.enabled) but dashboard.onion.client_auth is false. A root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable .onion. Set dashboard.onion.client_auth: true (the default) and re-run."
     fi
     stamp_config_version
-
 }

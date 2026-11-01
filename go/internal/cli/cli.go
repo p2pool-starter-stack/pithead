@@ -25,8 +25,12 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configStratum(args, stdout)
 	case "config-network-settings":
 		return configNetworkSettings(args, stdout)
+	case "config-proxy-settings":
+		return configProxySettings(args, stdout)
 	case "config-caddy":
 		return configCaddy(args, os.Stdin, stdout)
+	case "config-caddy-auth":
+		return configCaddyAuth(args, os.Stdin, stdout)
 	case "config-env":
 		return configEnv(args, os.Stdin, stdout)
 	case "config-env-network":

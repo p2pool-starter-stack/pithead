@@ -31,6 +31,13 @@
 .PHONY: test-go-env-memory-parity
 .PHONY: test-go-stratum-parity
 .PHONY: test-go-network-settings-parity
+.PHONY: test-go-proxy-settings-parity test-go-caddy-auth-parity
+
+test-go-proxy-settings-parity: go-build test-go ## Compare proxy setting validation and partial state with Bash
+	python3 tests/go-parity/test_proxy_settings.py
+
+test-go-caddy-auth-parity: go-build test-go ## Compare Caddy auth preparation and rendered bytes with Bash
+	python3 tests/go-parity/test_caddy_auth.py
 
 test-go-network-settings-parity: go-build test-go ## Compare network settings validation and state with Bash
 	python3 tests/go-parity/test_network_settings.py

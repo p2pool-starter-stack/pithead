@@ -4,7 +4,6 @@ sha256_hex() {
         sha256sum | cut -d' ' -f1
     else shasum -a 256 | cut -d' ' -f1; fi
 }
-
 # HMAC-SHA256 without putting the key in a child process's argv. ACCESS_TOKEN is header-clean ASCII,
 # so bash can hold it losslessly; only padded key bytes flow to openssl on stdin.
 hmac_sha256_hex() { # <key> <message>
@@ -31,7 +30,6 @@ hmac_sha256_hex() { # <key> <message>
         } | openssl dgst -sha256 -binary
     } | openssl dgst -sha256 | sed 's/^.*= //'
 }
-
 # bcrypt-hash a dashboard password with the PINNED Caddy image (read straight from docker-compose.yml
 # so it tracks the digest), returned base64-encoded so the raw bcrypt '$' never lands in .env (#8).
 # Returns non-zero if Docker / the image isn't available.
@@ -48,7 +46,6 @@ caddy_hash_password_b64() {
     [ -n "$hash" ] || return 1
     printf '%s' "$hash" | openssl base64 -A
 }
-
 generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
     local native_caddy
@@ -60,10 +57,12 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     # hash is decoded from its base64 .env form back to the raw bcrypt string Caddy expects; it
     # protects every route, so the dashboard prompts for login before anything is served.
     local auth=""
-    if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
-        local hash
-        hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
-        auth=$(printf '    basic_auth {\n        %s %s\n    }' "$DASHBOARD_AUTH_USER" "$hash")
+    if ! command -v _caddy_auth_go >/dev/null 2>&1 || ! auth=$(_caddy_auth_go auth); then
+        if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
+            local hash
+            hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
+            auth=$(printf '    basic_auth {\n        %s %s\n    }' "$DASHBOARD_AUTH_USER" "$hash")
+        fi
     fi
     # Access log (#349): every vhost writes a JSON line per request (timestamp, status, method,
     # URI, authenticated user) to one shared file under the host-mounted CADDY_LOG_DIR; the
@@ -125,7 +124,6 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
         [ "$dport" == "80" ] && dport=""
         [ -n "$dport" ] && port_suffix=":$dport"
     fi
-
     # The site addresses — and the certificate's SAN list — now come from ONE shared builder
     # (appliance_site_names, #1132): a name Caddy serves and a name the certificate covers can no
     # longer drift apart the way they did when each kept its own copy of this expansion. DIY
@@ -299,7 +297,9 @@ $(_bind_line)
     # Missing login disables the 401 exemption. A local fronting proxy cannot mint the
     # capability for its untrusted clients; the header is removed from logs and upstreams.
     local boot_capability boot_marker=""
-    boot_capability=$(printf 'pithead-boot-health-v1:%s' "${DASHBOARD_AUTH_HASH_B64:-}" | sha256_hex)
+    if ! command -v _caddy_auth_go >/dev/null 2>&1 || ! boot_capability=$(_caddy_auth_go boot); then
+        boot_capability=$(printf 'pithead-boot-health-v1:%s' "${DASHBOARD_AUTH_HASH_B64:-}" | sha256_hex)
+    fi
     [ -z "$auth" ] || boot_marker='        log_append @boot_health <pithead_probe boot-health-v1'
     # Only the host's exact credential-free boot request earns this log field. remote_ip
     # uses the socket peer, never a client-supplied forwarding header. Onion sites do not
