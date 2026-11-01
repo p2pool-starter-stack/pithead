@@ -221,17 +221,7 @@ case "$*" in
 esac
 exit 0
 EOF
-    cat >"$bin/python3" <<'EOF'
-#!/usr/bin/env bash
-real=$(PATH=$(printf %s "$PATH" | tr : '\n' | grep -vxF "$(dirname "$0")" | paste -sd: -) command -v python3) || exit 127
-if [ "${1:-}" = - ]; then
-  script=$(cat)
-  case "$script" in *errno.EADDRINUSE*) exit 0 ;; esac
-  printf '%s\n' "$script" | "$real" "$@"
-else
-  "$real" "$@"
-fi
-EOF
+    cp "$ROOT/tests/stack/fixtures/python3-shim" "$bin/python3"
     printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/iptables"
     printf '#!/usr/bin/env bash\ncat >/dev/null\n' >"$bin/iptables-restore"
     command -v python3 >/dev/null 2>&1 || rm -f "$bin/python3"
