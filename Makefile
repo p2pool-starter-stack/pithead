@@ -55,8 +55,8 @@ test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
-	@result=0; for t in tests/integration/selftest/*.sh tests/os/selftest*.sh; do \
-		env -i PATH=/usr/local/bin:/usr/bin:/bin bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; result=1; }; \
+	@result=0; home=$$(mktemp -d); trap 'rm -rf "$$home"' EXIT; for t in tests/integration/selftest/*.sh tests/os/selftest*.sh; do \
+		env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$$home" bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; result=1; }; \
 	done; exit $$result
 
 test-tools:

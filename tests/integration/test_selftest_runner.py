@@ -32,7 +32,8 @@ class SelftestRunnerTest(unittest.TestCase):
                 script.parent.mkdir(parents=True, exist_ok=True)
                 script.write_text(
                     'printf "%s\\n" "$0" >> calls\n'
-                    'test "${SELFTEST_LEAK+x}${TMPDIR+x}${RUNNER_TEMP+x}${HOME+x}${BASH_ENV+x}" = "" || exit 81\n'
+                    'test "${SELFTEST_LEAK+x}${TMPDIR+x}${RUNNER_TEMP+x}${BASH_ENV+x}" = "" || exit 81\n'
+                    f'test "$HOME" != "{os.environ["HOME"]}" || exit 83\n'
                     'test "$PATH" = /usr/local/bin:/usr/bin:/bin || exit 82\n'
                     f"exit {failures.get(name, 0)}\n"
                 )
