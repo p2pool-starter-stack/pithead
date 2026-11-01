@@ -35,12 +35,13 @@ publish() {
         local deb="$WORKDIR/pithead_${STACK_VERSION}_amd64.deb" feed="$WORKDIR/pithead-apt-feed.tar.gz"
         if [ "$DRY_RUN" -eq 0 ]; then
             bash scripts/release/apt.sh deb "$bundle" "$STACK_VERSION" "$deb" || die "Could not build the Debian package."
-            bash scripts/release/apt.sh feed "$deb" "$WORKDIR/apt-feed" "$APT_FPR" || die "Could not build and sign the APT feed."
+            bash scripts/release/apt.sh feed "$deb" "$WORKDIR/apt-feed" "$APT_FPR" packaging/apt/pithead.asc || die "Could not build and sign the APT feed."
             bash scripts/release/apt.sh verify "$WORKDIR/apt-feed" packaging/apt/pithead.asc "$APT_FPR" ||
                 die "The signed APT feed does not verify against the pinned key."
             tar -czf "$feed" -C "$WORKDIR/apt-feed" .
         fi
-        apt_assets=("$deb" "$feed")
+        sign_bundle "$deb" "$deb.sig"
+        apt_assets=("$deb" "$deb.sig" "$feed")
     fi
     command -v gh >/dev/null 2>&1 || die "gh is required to create the release draft."
     confirm "Create git tag $TAG, push it, fast-forward main, and create a complete release draft?" || {

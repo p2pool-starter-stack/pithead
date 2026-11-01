@@ -160,7 +160,7 @@ mkdir -m 700 "$GNUPGHOME"
 gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key "Pithead Test <test@example.invalid>" rsa3072 sign never >/dev/null 2>&1
 FPR=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" {print $10; exit}')
 gpg --batch --armor --export "$FPR" >"$WORK/pinned.asc"
-bash "$APT" feed "$V3" "$WORK/feed" "$FPR"
+bash "$APT" feed "$V3" "$WORK/feed" "$FPR" "$WORK/pinned.asc"
 check "the feed verifies against the pinned key" bash "$APT" verify "$WORK/feed" "$WORK/pinned.asc" "$FPR"
 refuse "a different pinned fingerprint is refused" bash "$APT" verify "$WORK/feed" "$WORK/pinned.asc" 0000000000000000000000000000000000000000
 
@@ -181,6 +181,11 @@ cp -a "$WORK/feed" "$WORK/feed-tampered-index"
 sed -i 's/^Origin: pithead$/Origin: pitheax/' "$WORK/feed-tampered-index/Release" "$WORK/feed-tampered-index/InRelease"
 refuse "apt refuses a tampered Release" apt_probe "$WORK/feed-tampered-index" "$WORK/pinned.asc" "$WORK/dl2"
 refuse "verify refuses a tampered Release" bash "$APT" verify "$WORK/feed-tampered-index" "$WORK/pinned.asc" "$FPR"
+
+cp -a "$WORK/feed" "$WORK/feed-extra-key"
+gpg --batch --pinentry-mode loopback --passphrase '' --quick-generate-key "Other <other@example.invalid>" rsa3072 sign never >/dev/null 2>&1
+gpg --batch --armor --export other@example.invalid >>"$WORK/feed-extra-key/pithead.asc"
+refuse "verify refuses a key file that carries an extra key" bash "$APT" verify "$WORK/feed-extra-key" "$WORK/pinned.asc" "$FPR"
 
 cp -a "$WORK/feed" "$WORK/feed-tampered-deb"
 printf 'x' >>"$WORK/feed-tampered-deb/pithead_1.0.2_amd64.deb"

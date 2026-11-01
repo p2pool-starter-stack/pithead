@@ -669,12 +669,15 @@ signed feed: `Packages`, `Release`, `Release.gpg`, `InRelease`, `pithead.asc`) o
   public key) are committed by the owner.
 - **Deploy.** `.github/workflows/apt-feed.yml` runs when a release is *published* (not on tag push:
   `make release` pushes the tag before the owner publishes) and skips drafts and prereleases. It
-  verifies `Release.gpg` and `InRelease` against the pinned fingerprint, checks that the served
+  takes the pinned fingerprint and key from `main` (the tag must be an ancestor of `main`, and it must
+be the latest release), verifies `Release.gpg`, `InRelease` and the published key file against them, checks that the served
   package is byte-identical to the release asset and that its version equals the tag, runs
   `apt-get update` and `apt-get download` against the feed, then deploys it with GitHub Pages. The
   feed holds the latest release only.
-- **Owner steps.** Generate the key; commit the two pinned files; enable Pages on the repository
-  with GitHub Actions as the source (Settings › Pages).
+- **Owner steps.** Generate the key; commit the two pinned files to `main`; enable Pages on the
+  repository with GitHub Actions as the source (Settings › Pages); protect the `github-pages`
+  environment with required reviewers and add a tag ruleset, because the workflow file runs from the
+  tag.
 - **Test.** `tests/packaging/deb-lifecycle.sh` (run by `.github/workflows/deb-package.yml` on a
   clean Ubuntu 24.04 VM) installs, upgrades, fails and retries a stack move, removes and purges the
   package, and builds, verifies and tampers with a signed feed.

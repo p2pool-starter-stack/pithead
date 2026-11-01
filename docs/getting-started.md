@@ -128,7 +128,11 @@ sudo pithead setup
 The package keeps its pristine program tree in `/usr/share/pithead` and copies it to
 `/var/lib/pithead`, where `config.json`, `.env` and the stack's data live. Run every `pithead`
 command through `/usr/bin/pithead`, which re-runs itself with `sudo` when needed. The same
-`.deb` is attached to each GitHub release if you prefer `sudo apt install ./pithead_X.Y.Z_amd64.deb`.
+`.deb` is attached to each GitHub release with a cosign signature (`pithead_X.Y.Z_amd64.deb.sig`); if
+you install it by hand, verify it first with `cosign verify-blob --key cosign.pub --signature
+pithead_X.Y.Z_amd64.deb.sig --insecure-ignore-tlog=true pithead_X.Y.Z_amd64.deb` (the key is
+[`cosign.pub`](https://github.com/p2pool-starter-stack/pithead/blob/main/cosign.pub) in the
+repository), then run `sudo apt install ./pithead_X.Y.Z_amd64.deb`.
 An APT install has no in-app updater: see
 [Operations › Updating an APT install](operations.md#updating-an-apt-install).
 

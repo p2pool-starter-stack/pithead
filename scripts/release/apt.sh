@@ -5,7 +5,7 @@ apt_usage() {
     cat <<'USAGE'
 Usage:
   apt.sh deb <bundle.tar.gz> <version> <out.deb>      repack the signed bundle tree as an amd64 package
-  apt.sh feed <deb> <out-dir> <fingerprint>           build and sign a flat APT feed (needs the secret key in GNUPGHOME)
+  apt.sh feed <deb> <out-dir> <fingerprint> <pinned.asc>  build and sign a flat APT feed (needs the secret key in GNUPGHOME)
   apt.sh verify <feed-dir> <pinned.asc> <fingerprint> check the feed signatures against the pinned key
 USAGE
 }
@@ -51,15 +51,16 @@ CONTROL
 }
 
 apt_feed() {
-    local deb=$1 out=$2 fpr=$3
+    local deb=$1 out=$2 fpr=$3 pinned=$4
+    [ -f "$pinned" ] || apt_die "no pinned public key at $pinned"
     [ -f "$deb" ] || apt_die "no package at $deb"
     gpg --batch --list-secret-keys "$fpr" >/dev/null 2>&1 || apt_die "the secret key $fpr is not available"
     rm -rf "$out"
     mkdir -p "$out"
     cp "$deb" "$out/"
+    cp "$pinned" "$out/pithead.asc"
     (
         cd "$out"
-        gpg --batch --armor --export "$fpr" >pithead.asc
         apt-ftparchive packages . >Packages
         gzip -n -k -f Packages
         apt-ftparchive -o APT::FTPArchive::Release::Origin=pithead -o APT::FTPArchive::Release::Label=pithead \
@@ -80,11 +81,11 @@ apt_verify() {
     fpr=$(gpg --batch --show-keys --with-colons "$pinned" | awk -F: '$1 == "fpr" {print $10; exit}')
     [ "$fpr" = "$want" ] || apt_die "the pinned key is $fpr, not $want"
     gpg --batch --import "$pinned" >/dev/null 2>&1
-    fpr=$(gpg --batch --show-keys --with-colons "$feed/pithead.asc" | awk -F: '$1 == "fpr" {print $10; exit}')
-    [ "$fpr" = "$want" ] || apt_die "the feed publishes key $fpr, not the pinned $want"
+    cmp -s "$feed/pithead.asc" "$pinned" || apt_die "the feed publishes a key file that is not the pinned one"
     status=$(gpg --batch --status-fd 1 --verify "$feed/Release.gpg" "$feed/Release" 2>/dev/null) || apt_die "Release.gpg does not verify"
     grep -q "^\[GNUPG:\] VALIDSIG .* $want\$" <<<"$status" || apt_die "Release.gpg was not made by the pinned key"
     status=$(gpg --batch --status-fd 1 --verify "$feed/InRelease" 2>/dev/null) || apt_die "InRelease does not verify"
+    gpg --batch --decrypt "$feed/InRelease" 2>/dev/null | cmp -s - "$feed/Release" || apt_die "InRelease and Release differ"
     grep -q "^\[GNUPG:\] VALIDSIG .* $want\$" <<<"$status" || apt_die "InRelease was not made by the pinned key"
     [ "$(find "$feed" -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ')" = 1 ] || apt_die "the feed must hold exactly one package"
 }
@@ -101,7 +102,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
         apt_deb "$@"
         ;;
     feed)
-        [ "$#" -eq 3 ] || {
+        [ "$#" -eq 4 ] || {
             apt_usage >&2
             exit 2
         }

@@ -29,7 +29,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
+          fetch-depth: 0
           persist-credentials: false
+      - name: Pin the trust anchor to main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          mkdir "$RUNNER_TEMP/pinned"
+          git show refs/remotes/origin/main:packaging/apt/fingerprint >"$RUNNER_TEMP/pinned/fingerprint"
+          git show refs/remotes/origin/main:packaging/apt/pithead.asc >"$RUNNER_TEMP/pinned/pithead.asc"
       - name: Install packaging tools
         run: sudo apt-get update && sudo apt-get install -y apt-utils
       - name: Require the latest published stable release
@@ -49,7 +57,7 @@ jobs:
           tar -xzf release/pithead-apt-feed.tar.gz -C public
       - name: Verify the signatures against the pinned fingerprint
         run: |
-          bash scripts/release/apt.sh verify public packaging/apt/pithead.asc "$(cat packaging/apt/fingerprint)"
+          bash scripts/release/apt.sh verify public "$RUNNER_TEMP/pinned/pithead.asc" "$(cat "$RUNNER_TEMP/pinned/fingerprint")"
           cmp public/pithead_*_amd64.deb release/pithead_*_amd64.deb
           test "$(dpkg-deb -f public/pithead_*_amd64.deb Version)" = "${RELEASE_TAG#v}"
       - name: Update and download through apt
@@ -57,8 +65,9 @@ jobs:
           state=$(mktemp -d)
           chmod 755 "$state"
           mkdir -p "$state/lists/partial" "$state/download"
-          chmod -R a+rX public packaging/apt
-          printf 'deb [signed-by=%s/packaging/apt/pithead.asc] file:%s/public ./\n' "$PWD" "$PWD" >"$state/sources.list"
+          cp "$RUNNER_TEMP/pinned/pithead.asc" "$state/pithead.asc"
+          chmod -R a+rX public "$state"
+          printf 'deb [signed-by=%s/pithead.asc] file:%s/public ./\n' "$state" "$PWD" >"$state/sources.list"
           options=(-o "Dir::Etc::sourcelist=$state/sources.list" -o Dir::Etc::sourceparts=- -o "Dir::State::lists=$state/lists")
           sudo apt-get "${options[@]}" update
           cd "$state/download"
