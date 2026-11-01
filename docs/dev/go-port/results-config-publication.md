@@ -61,3 +61,65 @@ Earlier Tari publication results are preserved in the linked configuration ledge
 Original Linux lifecycle/config suites remain unavailable locally. Dashboard,
 fake-daemon and patch-coverage suites are not rerun for this CLI-only change;
 earlier paired results remain in the linked ledgers.
+
+## Tari secret ownership repair slice (2026-11-01)
+
+The new `config-tari-secret-owned` helper can repair the temporary file's UID and GID with
+an fd-based chown when permitted. It verifies both before publishing by rename.
+Matching UID still ignores GID, including its sentinel value, as Bash does.
+Ownership failure or unsupported IDs remove the temporary file with mode 0600 and
+leave the prior destination intact before Bash retries its original chown/sudo
+path. Tool interposition, dry-run and directory guards retain their reference
+behavior. The existing strict Go API and private helper remain same-UID-only.
+
+On this unprivileged host, supplementary comparisons prove matching-UID native
+publication, owned-helper selection with zero argv, protocol refusals, sentinel
+refusals, failed foreign-UID cleanup and the unchanged sudo fallback. The sudo
+fixture is a local failure stub. Privilege-dependent tests are conditional: successful
+foreign-UID chown, its verification and final publication are not proven locally.
+The unchanged render fixture/goldens, parser and CLI suites remain the oracle;
+mocked ownership commands in the render fixture select compatibility fallback.
+Original Linux ownership/lifecycle suites are still unavailable. Main verb
+operations remain Bash and the dashboard remains Python.
+
+Baseline uses `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`. Runs use
+worktree caches and an absent Docker socket. Private records are under
+`.go-cache/logs/tari-owner-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-tari-ownership-parity` | Pass; 6 new methods, prior Tari/env comparisons, render fixture/goldens and 12-group CLI suite, plus Go units | Same result |
+| `make test-go` repeated after portable ownership assertions | Pass; portable ownership assertions included | Same result |
+| `make test-go-config-input-parity test-go-caddy-parity` | Pass; unchanged 7-test raw-parser suite and supplementary parser/Caddy comparisons | Same result |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
+| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make test-stack` | Exit 2: macOS refusal | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at cache Markdown findings | Same result |
+
+The paired core command combined all three targets above. Native checks pass:
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build
+-o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+
+Changed Go files pass `gofmt -l`; the changed shell hook passes `shfmt -i 4 -d`.
+`shellcheck -x --severity=warning pithead` passes. Security review found no
+remaining defect; adversarial review identified the unexecuted privileged
+success path as the proof limit recorded above.
+
+The final paired lint run reports 22 third-party cache Markdown findings. Its
+initial run also read a private Markdown audit copy; that copy now has a text
+extension, and the unchanged lint command was repeated. Locked Ruff lint and
+formatting pass for all 634 Python files. Dashboard extras are restored with
+`uv sync --locked --project dashboard --extra dev --extra test`.
+
+Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
+.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths.
+Paired `make lint-file-budget lint-docs-voice` passes after the ledger update
+with the starting-SHA budget override above.
+
+Existing tests, fixtures and Make behavior remain unchanged. The new target
+adds supplementary coverage and existing dependencies; implementation and new
+test checksums remain frozen after validation. Earlier env publication results
+are preserved in the linked publication ledger. Dashboard, fake-daemon and
+patch-coverage suites are not rerun for this CLI-only change; earlier paired
+results remain in the linked ledgers.

@@ -53,6 +53,8 @@ stamp_config_version() {
     # Presence matters: an absent stamp means 2.0.0, but still needs to be written.
     if { [ "$native_plan" -eq 1 ] && [ "$_config_version_equal" = true ]; } ||
         { [ "$native_plan" -eq 0 ] && [ "$stamp" = "$version" ] && jq -e --arg version "$version" 'if .config_version == $version then true else false end' "$CONFIG_FILE" >/dev/null; }; then return 0; fi
+    if [ "$native_plan" -eq 1 ] && declare -F _config_version_publish_go >/dev/null &&
+        _config_version_publish_go "$CONFIG_FILE" "$version"; then return 0; fi
     owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
     tmp=$(mktemp "${CONFIG_FILE}.version.XXXXXXXXXX") || {
         warn "Could not write config_version — continuing without a stamp."

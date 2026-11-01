@@ -11,7 +11,7 @@ import (
 func configVersion(args []string, input io.Reader, output io.Writer) error {
 	unsupported := &ExitError{Code: 125}
 	if len(args) == 0 {
-		return unsupported
+		return configVersionPublish(nil, input)
 	}
 	switch args[0] {
 	case "normalize":

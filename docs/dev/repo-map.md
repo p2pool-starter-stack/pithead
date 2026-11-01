@@ -63,6 +63,13 @@ with the stdin adapter in `go/internal/cli/config_env_write.go` and Bash hook in
 in-place writes and unchanged render/CLI contracts. Symlinks and interposed
 writers retain the heredoc path; final chmod remains Bash.
 
+Config-version publication lives in `go/internal/config/version_publish.go`,
+with its stdin adapter in `go/internal/cli/config_version_publish.go` and Bash
+bridge in `lib/pithead/27l-go-config-version.sh`.
+`make test-go-config-version-publish-parity` runs the unchanged version suite and
+native publication comparisons. Caller gates/warnings, interposed tools and umasks
+that suppress owner-write permission retain Bash behavior.
+
 Tari wallet secret publication lives in `go/internal/config/tari_secret.go`,
 with the stdin adapter in `go/internal/cli/config_tari_secret.go` and Bash hook in
 `lib/pithead/33e-go-tari-secret.sh`. `make test-go-tari-ownership-parity` compares

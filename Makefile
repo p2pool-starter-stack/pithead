@@ -1,8 +1,10 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity test-go-tari-ownership-parity
+.PHONY: go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity test-go-tari-ownership-parity test-go-config-version-publish-parity
 .PHONY: test-go-doctor-history-parity test-go-doctor-containers-parity test-go-doctor-monero-parity test-go-node-monero-parity test-go-node-zmq-parity test-go-node-zmq-exchange-parity test-go-config-masked-parity test-go-config-document-parity test-go-config-defaults-parity test-go-config-validation-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-wallet-settings-parity
 .PHONY: test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-site-names-parity test-go-stratum-parity test-go-network-settings-parity test-go-proxy-settings-parity test-go-caddy-auth-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-worker-read-parity
+test-go-config-version-publish-parity: test-go-config-version-parity test-go-env-write-parity ## Compare config version publication and unchanged render contracts
+	python3 tests/go-parity/test_config_version_publish.py
 test-go-tari-ownership-parity: test-go-tari-secret-parity test-go-env-write-parity ## Compare native Tari ownership repair and unchanged render contracts
 	python3 tests/go-parity/test_tari_secret_ownership.py
 test-go-env-write-parity: test-go-env-parity test-go-parity ## Compare native env publication and unchanged render contracts
@@ -166,10 +168,8 @@ go-build: pithead go-cache ## Build the Go CLI alongside the Bash reference
 
 test-go: go-cache ## Go unit tests
 	cd go && $(GO_ENV) go test ./...
-
 test-go-parity: go-build test-go ## Compare Bash and Go CLI output, errors, and exit codes
 	python3 tests/go-parity/test_cli.py
-
 .PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI

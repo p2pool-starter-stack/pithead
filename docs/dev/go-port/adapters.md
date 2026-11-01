@@ -297,3 +297,12 @@ compares bytes, inodes, links, owner/mode, umask, callback/error-trap behavior a
 private stdin framing. A spy also checks native writes through the unchanged
 render fixture. `make test-go-env-write-parity` includes existing env/render and
 CLI comparisons; the original Linux lifecycle/config suites remain unchanged.
+
+`config_version_publish_reference.sh` only sets a caller umask before executing
+the unchanged version reference adapter. `test_config_version_publish.py`
+compares atomic publication, native zero-argv invocation, bytes, owners, modes,
+links, inode replacement, dry-run/no-op behavior and helper/tool fallback. A
+different-group symlink case checks link ownership where permissions allow it;
+temporary names, private paths and Bash diagnostic line numbers are normalized.
+`make test-go-config-version-publish-parity` includes the unchanged version suite
+and existing env/render and CLI comparisons. Original Linux suites stay unchanged.
