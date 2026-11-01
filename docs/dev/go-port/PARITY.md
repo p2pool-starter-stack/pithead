@@ -9,7 +9,7 @@ authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
 data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
 payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
-LAN guard probes at `e1792854`, and Docker egress probes at `7a43aa30`.
+LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, and nft/sync-state at `525a359b`.
 The operator commits later rounds because
 this sandbox cannot write shared Git metadata. No performance benefit is claimed.
 
@@ -81,6 +81,8 @@ selection is not implemented.
 | Docker Tor egress readback and doctor report | Native packages with supplied config/sync state; Bash collector | 18 tagged groups and Go units |
 | nft Tor egress readback and doctor report | Native when nft is present; missing-nft compatibility fallback; Bash collector | 7 tagged groups and Go units |
 | Tor sync-IP selection and markers | Native with supplied getter/state-dir values; Bash readers | 11 marker/selection scenarios and Go units |
+| Tor history saturation, current egress and doctor report | Native probes with supplied mount/config values; Bash collector | 6 tagged comparison groups and Go units |
+| Tor heal outage transitions and validity | Native canonical-record planner/validator; Bash locks and persistence | 2 tagged groups, 28 scenarios and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -190,6 +192,11 @@ oracles:
   this adapter compares native selection without changing those suites or reading
   live stack state.
 
+- `tor_history_reference.sh` calls the original history/control predicates with
+  supplied time/config/mount values and fake tools. Its lock/result/audit hooks
+  isolate the pure outage transition and preserve record bytes without touching
+  stack state; the existing source-based tests cannot invoke native packages.
+
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
@@ -199,7 +206,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-data-parity`, `test-go-doctor-onion-parity` and
 `test-go-doctor-config-parity`, `test-go-doctor-network-parity` and
 `test-go-doctor-lan-parity`, `test-go-doctor-egress-parity` and
-`test-go-doctor-nft-parity`.
+`test-go-doctor-nft-parity` and `test-go-doctor-history-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -670,6 +677,54 @@ Existing tests, fixtures, goldens, lint rules and Make checks remain unchanged.
 No Git metadata write, dependency download, external network request, live
 firewall, container, systemd, bench or daemon probe occurred.
 
+## Tor history diagnostics and outage evidence slice (2026-10-31)
+
+This slice starts at `525a359bd5bbfbb033d4fb68c7a506160980158c`.
+
+Native probes preserve the root/sudo gate, regular-file and symlink checks,
+ordered exact-line greps, two-target curl short-circuit and both doctor messages.
+Any successful HTTP response proves egress; the source's quiet final-grep error
+behavior is retained. Exposed id/sudo/grep output or curl stdout declines to Bash;
+the originally suppressed sudo/curl stderr stays suppressed. Isolation credentials
+retain the per-request PID/random shape; new parity tests validate that shape before normalizing its nondeterministic bytes.
+Mount and config values are supplied; discovery and collector wiring remain Bash.
+
+`torhistory.Next` preserves compact record bytes/key order, duplicate/delayed
+observations, tombstones, new outages and 900-second rolling rounds. `Valid`
+checks the same evidence windows. The parser supports canonical five-field
+records or `{}`, with one optional LF and safe decimal integers. Reordered,
+escaped, duplicate, extra, fractional, exponent, unsafe or unexpected input
+falls back. Locking, persistence, schemas, audits and recovery mutations stay Bash.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| History probes and outage evidence | `PITHEAD_IMPL=bash make test-go-doctor-history-parity`: PASS, 8 tagged groups/62 scenarios plus Go units, including after the diagnostic fallback fix | `tests/go-parity/run.sh make test-go-doctor-history-parity`: PASS |
+| Existing nft/egress/network, JSON and CLI comparisons | `PITHEAD_IMPL=bash make test-go-doctor-history-parity test-go-doctor-nft-parity test-go-doctor-egress-parity test-go-doctor-network-parity test-go-doctor-parity test-go-parity`: PASS | Same targets through `tests/go-parity/run.sh`: PASS |
+| Existing doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
+| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests/97.42% | `tests/go-parity/run.sh make test-dashboard`: PASS, same count/coverage; Python backend |
+| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
+| Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: PASS, not applicable |
+| File budget, build, docs voice, paths and operator strings | Baseline commands/base in the control slice: PASS | Same Go commands/base: PASS |
+| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+| Existing CLI/firewall suite | `PITHEAD_IMPL=bash make test-stack`: unavailable, macOS refusal; exit 2 | `tests/go-parity/run.sh make test-stack`: same result |
+
+`go -C go test -tags=parity -race -count=1 -run
+'TestTorHistory|TestTorCircuit|TestTorRecovery|TestTorState|TestNext|TestValid'
+./internal/doctor ./internal/torhistory`, `go -C go test -count=1 ./...` and
+`go -C go vet -tags=parity ./...` pass. The CLI Linux build command above and
+`GOOS=linux GOARCH=amd64 go -C go test -c -o
+../.go-cache/torhistory-linux-amd64.test ./internal/torhistory` pass; no Linux
+runtime verdict is claimed. The adapter passes `bash -n`, pinned ShellCheck and
+shfmt. Scoped Markdown passes in both modes with the command recorded above.
+Independent static and security reviews pass after the diagnostic fallback fix.
+
+Early adapter runs corrected a missing fake-PATH `cat`, a new fixture name
+collision and repeated command labels in the new trace. No existing test,
+fixture, golden, lint rule or Make check changed. Private command/exit records
+use `.go-cache/logs/history-*`. No Git metadata write, dependency download,
+external network request, live firewall, container, systemd, bench or daemon
+probe occurred.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
@@ -697,8 +752,8 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port Tor transition/history, remaining container checks and appliance-state
-   checks.
+1. Port remaining container/appliance diagnostics and Tor recovery mount, lock
+   and persistence handling.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and

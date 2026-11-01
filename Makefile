@@ -14,6 +14,10 @@
 .PHONY: test-go-doctor-lan-parity
 .PHONY: test-go-doctor-egress-parity
 .PHONY: test-go-doctor-nft-parity
+.PHONY: test-go-doctor-history-parity
+
+test-go-doctor-history-parity: go-build test-go ## Compare Tor history diagnostics and outage evidence with Bash
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestTorHistory ./internal/doctor ./internal/torhistory
 
 test-go-doctor-nft-parity: go-build test-go ## Compare nft Tor-egress readback and sync-state selection with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run 'TestNFTEgress|TestTorSync' ./internal/firewall ./internal/doctor

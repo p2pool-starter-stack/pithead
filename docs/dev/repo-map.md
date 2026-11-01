@@ -106,6 +106,10 @@ Bash using isolated tools. `go/internal/firewall/tor_sync_state.go` selects sync
 exceptions from supplied getters and marker metadata; config/state-dir readers
 and collector wiring remain Bash. `make test-go-doctor-nft-parity` compares nft
 readback, doctor output and sync-state selection against Bash.
+`go/internal/torhistory/` plans canonical outage-record transitions and validates
+heal evidence. `go/internal/doctor/tor_history.go` checks saturation, current Tor
+egress and the circuit-history finding. `make test-go-doctor-history-parity`
+compares these with Bash; mount discovery, locks, writes and recovery stay Bash.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
