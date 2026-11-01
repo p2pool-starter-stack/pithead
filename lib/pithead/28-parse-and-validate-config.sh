@@ -1,15 +1,19 @@
 parse_and_validate_config() {
+    local _ssh_release=false _node_generate_user='' _node_generate_pass=''
     log "Parsing configuration..."
     validate_config_document
     validate_webhook_config
     validate_config_control_characters
-    if is_appliance && [ "$(appliance_variant)" = release ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
-        [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || [ "${PITHEAD_CONFIG_CARRIED_SSH:-0}" = 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
-    elif [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
-        case "$(jq -r '.ssh.authorized_key // ""' "$CONFIG_FILE")" in
-        ssh-* | ecdsa-* | sk-*) ;;
-        *) error "ssh.enabled is true but ssh.authorized_key is not a public key (expected it to start with ssh-, ecdsa- or sk-). Paste the PUBLIC key (e.g. ~/.ssh/id_ed25519.pub)." ;;
-        esac
+    if is_appliance && [ "$(appliance_variant)" = release ]; then _ssh_release=true; fi
+    if ! command -v _parse_config_access_ssh_go >/dev/null 2>&1 || ! _parse_config_access_ssh_go; then
+        if [ "$_ssh_release" = true ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
+            [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || [ "${PITHEAD_CONFIG_CARRIED_SSH:-0}" = 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
+        elif [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
+            case "$(jq -r '.ssh.authorized_key // ""' "$CONFIG_FILE")" in
+            ssh-* | ecdsa-* | sk-*) ;;
+            *) error "ssh.enabled is true but ssh.authorized_key is not a public key (expected it to start with ssh-, ecdsa- or sk-). Paste the PUBLIC key (e.g. ~/.ssh/id_ed25519.pub)." ;;
+            esac
+        fi
     fi
     TARI_MODE=$(config_get .tari.mode)
     if ! command -v _parse_wallet_settings_go >/dev/null 2>&1 || ! _parse_wallet_settings_go; then
@@ -225,19 +229,16 @@ parse_and_validate_config() {
         fi
     fi
     MONERO_USER=$(jq -r '.monero.node_username // empty' "$CONFIG_FILE")
-    MONERO_PASS=$(jq -r '.monero.node_password // empty' "$CONFIG_FILE")
-    # A local node always needs working RPC creds. If they're missing — empty, or still the
-    # template placeholder — generate them and persist back to config.json, so an unedited/partial
-    # config never produces a broken "rpc-login=:" and the creds stay stable across `apply`.
-    # Remote mode is left untouched: empty creds there mean "no auth", and we can't invent
-    # credentials for someone else's node.
+    if ! command -v _parse_config_access_node_go >/dev/null 2>&1 || ! _parse_config_access_node_go; then
+        MONERO_PASS=$(jq -r '.monero.node_password // empty' "$CONFIG_FILE")
+    fi
     if [ "$MONERO_MODE" == "local" ]; then
         local creds_generated=0
-        if cred_needs_generating "$MONERO_USER" "$PLACEHOLDER_NODE_USER"; then
+        if [ "$_node_generate_user" = true ] || { [ -z "$_node_generate_user" ] && cred_needs_generating "$MONERO_USER" "$PLACEHOLDER_NODE_USER"; }; then
             MONERO_USER=$(default_node_username)
             creds_generated=1
         fi
-        if cred_needs_generating "$MONERO_PASS" "$PLACEHOLDER_NODE_PASS"; then
+        if [ "$_node_generate_pass" = true ] || { [ -z "$_node_generate_pass" ] && cred_needs_generating "$MONERO_PASS" "$PLACEHOLDER_NODE_PASS"; }; then
             MONERO_PASS=$(generate_node_password)
             creds_generated=1
         fi
@@ -246,7 +247,6 @@ parse_and_validate_config() {
             log "Auto-generated missing local Monero node RPC credentials (saved in $CONFIG_FILE)."
         fi
     fi
-    # Resolve data directories ("auto"/empty/legacy DYNAMIC_DATA → the stack default under ./data)
     local _data_root _dash_cfg
     if ! command -v _parse_directories_go >/dev/null 2>&1 || ! _parse_directories_go; then
         MONERO_DIR=$(resolve_default "$(jq -r '.monero.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/monero")

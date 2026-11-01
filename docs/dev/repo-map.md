@@ -169,6 +169,9 @@ SHA-256, stable hash reconciliation, bcrypt and warning decisions stay in Bash.
 `go/internal/config/directories.go` derives data paths and the shared data root via
 `lib/pithead/27h-go-directories.sh`; `make test-go-directories-parity` compares
 layouts, preserved spellings and original caller-side safety checks.
+`go/internal/config/ssh_settings.go` and `node_credentials.go` validate SSH policy and plan RPC
+credentials through `lib/pithead/27k-go-config-access.sh`; `make test-go-config-access-parity`
+checks state, callback order and complete renders. Username reads, generation and persistence stay in Bash.
 `go/internal/config/wallet_settings.go` validates the required-wallet gate through
 `lib/pithead/27j-go-wallet-settings.sh`; `make test-go-wallet-settings-parity` checks
 state, error order and full renders. Mode getters and checksum classifiers stay in Bash.
