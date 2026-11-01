@@ -219,5 +219,14 @@ missing_result=$(
 )
 assert_eq "missing baseline wallet fails the proof before remote I/O" "$missing_result" '1|1'
 
+eof_unset_tmpdir_result=$(
+    IT_FAIL=0
+    rx() { (cd "$WORK" && env -u TMPDIR PATH="$WORK/bin:$PATH" bash -c "$1"); }
+    leftovers() { compgen -G "$WORK/wizard-eof.*" | wc -l | tr -d ' '; }
+    run_cli_wizard_eof "$monero" "$tari" >/dev/null 2>&1
+    printf '%s|%s|%s' "$?" "$IT_FAIL" "$(leftovers)"
+)
+assert_eq "payout EOF fixture runs without TMPDIR and removes only its scratch directory" "$eof_unset_tmpdir_result" '0|0|0'
+
 echo "selftest-wizard-defaults: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
