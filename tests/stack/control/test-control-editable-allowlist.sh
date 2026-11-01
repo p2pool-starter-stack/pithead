@@ -110,7 +110,10 @@ python3 -c 'import socket,sys,time
 s=socket.socket(); s.bind(("0.0.0.0",0)); s.listen(1)
 open(sys.argv[1],"w").write(str(s.getsockname()[1])); time.sleep(60)' "$STRATUM_HOLD_PORT_FILE" &
 STRATUM_HOLD_PID=$!
-for _ in $(seq 50); do [ -s "$STRATUM_HOLD_PORT_FILE" ] && break; sleep 0.1; done
+for _ in $(seq 50); do
+    [ -s "$STRATUM_HOLD_PORT_FILE" ] && break
+    sleep 0.1
+done
 STRATUM_HELD=$(cat "$STRATUM_HOLD_PORT_FILE")
 jq --argjson p "$STRATUM_HELD" '.p2pool.stratum_port=$p' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
