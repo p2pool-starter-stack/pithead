@@ -234,7 +234,7 @@ fi
 EOF
     printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/iptables"
     printf '#!/usr/bin/env bash\ncat >/dev/null\n' >"$bin/iptables-restore"
-    chmod +x "$bin/docker" "$bin/sudo" "$bin/python3" "$bin/iptables""$bin/iptables-restore"
+    chmod +x "$bin/docker" "$bin/sudo" "$bin/python3" "$bin/iptables" "$bin/iptables-restore"
 }
 
 # --- shared test fixtures hoisted from run.sh (#1105 Phase 1, module 1b), verbatim ---------
