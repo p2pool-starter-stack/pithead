@@ -25,6 +25,7 @@ export class FleetUpgrade extends Component {
       if (!this.gone) this.setState({ plan: null });
     }
     if (this.gone) return;
+    clearTimeout(this.timer);
     this.timer = setTimeout(
       () => this.refresh(),
       this.state.run?.status === "running" ? RUNNING_MS : IDLE_MS,
