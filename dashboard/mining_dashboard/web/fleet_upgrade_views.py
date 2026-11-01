@@ -25,7 +25,7 @@ async def handle_fleet_upgrade_state(request):
     return web.json_response(body)
 
 
-async def _finalize(app, rid, version):
+async def _finalize(app, rid, version) -> None:
     try:
         res = await control_service.wait_result(
             rid, done=lambda r: r.get("status") != fleet_upgrade.RUNNING, timeout_s=RUN_WAIT_S
