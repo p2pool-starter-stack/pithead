@@ -110,6 +110,10 @@ readback, doctor output and sync-state selection against Bash.
 heal evidence. `go/internal/doctor/tor_history.go` checks saturation, current Tor
 egress and the circuit-history finding. `make test-go-doctor-history-parity`
 compares these with Bash; mount discovery, locks, writes and recovery stay Bash.
+`go/internal/doctor/container_restarts.go` observes restart snapshots and reports
+crash loops; `revenue.go` reports chain/miner readiness with a supplied migration
+hold. `make test-go-doctor-containers-parity` compares findings and command order
+with Bash using fake engines and sleep. Collector and hold discovery remain Bash.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

@@ -15,6 +15,10 @@
 .PHONY: test-go-doctor-egress-parity
 .PHONY: test-go-doctor-nft-parity
 .PHONY: test-go-doctor-history-parity
+.PHONY: test-go-doctor-containers-parity
+
+test-go-doctor-containers-parity: go-build test-go ## Compare container restart and revenue-readiness findings with Bash
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestContainerParity ./internal/doctor
 
 test-go-doctor-history-parity: go-build test-go ## Compare Tor history diagnostics and outage evidence with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestTorHistory ./internal/doctor ./internal/torhistory
