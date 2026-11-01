@@ -123,3 +123,74 @@ test checksums remain frozen after validation. Earlier env publication results
 are preserved in the linked publication ledger. Dashboard, fake-daemon and
 patch-coverage suites are not rerun for this CLI-only change; earlier paired
 results remain in the linked ledgers.
+
+## Config-version publication slice (2026-11-01)
+
+Go now publishes supported version stamps through a unique sibling temporary
+file. It uses the existing ordered JSON transform, retains the source path's
+lstat UID/GID, applies mode 0600, always attempts chown, verifies metadata and
+closes before rename. A successful rename is the final fallible operation.
+Pre-publication failures remove the temporary file before the original Bash
+transaction retries. Warnings and the caller's dry-run/no-change gates remain Bash; existing Go
+version planning and formatting are reused. Other config writers and verb
+operations remain Bash.
+
+The existing `config-version` helper accepts publication frames with zero argv;
+its named scalar/document operations retain their existing contracts. The
+unchanged 16-method version suite passes with the new writer reachable through
+its existing sourced hook. Supplementary comparisons prove actual native
+success, exact bytes, mode/owner, inode replacement, symlink replacement,
+hard-link separation, protocol/tool fallback and no-op behavior. A local
+symlink with a different group from its target confirms lstat ownership; BSD
+and GNU stat probes agree. No successful foreign-UID ownership change is
+claimed from this unprivileged host.
+
+Caller umasks that suppress owner-write permission retain Bash: its mktemp file
+would otherwise fail when reopened by the writer, whereas Go holds an open fd.
+A five-line adapter only sets that caller umask before executing the unchanged
+version reference adapter. New comparisons normalize temporary names, private
+paths and Bash diagnostic line numbers; existing tests and goldens are unchanged.
+The original Linux config/lifecycle suite is still unavailable. The dashboard
+remains Python.
+
+Baseline uses `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`. Runs use
+worktree caches and an absent Docker socket. Private records are under
+`.go-cache/logs/version-publish-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-config-version-publish-parity` | Pass; unchanged 16-method version suite, 7 new methods, prior env/render comparisons and 12-group CLI suite, plus Go units | Same result |
+| `make test-go-config-input-parity test-go-caddy-parity` | Pass; unchanged 7-test raw-parser suite and supplementary parser/Caddy comparisons | Same result |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
+| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make test-stack` | Exit 2: macOS refusal | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 third-party cache Markdown findings | Same result |
+
+The paired core command combined all three targets above. The seven new
+comparison methods were repeated after adding the different-group symlink case
+with `python3 tests/go-parity/test_config_version_publish.py` in both modes.
+Native checks pass: `go -C go test -json -tags=parity -race -count=1
+./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
+./cmd/pithead` (compile only).
+
+Changed Go files pass `gofmt -l`; changed shell files pass `shfmt -i 4 -d`.
+`shellcheck -x --severity=warning pithead
+tests/go-parity/config_version_publish_reference.sh` passes. Locked Ruff lint
+and formatting pass for all 635 Python files through `make lint-py`; dashboard
+extras are restored with `uv sync --locked --project dashboard --extra dev
+--extra test`.
+
+Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
+.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths.
+Paired `make lint-file-budget lint-docs-voice` passes after the ledger update
+with the starting-SHA budget override above.
+
+Independent security and adversarial reviews found no remaining defect.
+Frozen-source checksums confirm the tested implementation and new comparisons
+remain unchanged after validation. Existing tests, fixtures and Make behavior
+remain unchanged; the new target adds supplementary coverage and existing
+dependencies. Earlier Tari publication results are preserved in the linked
+publication ledger. Dashboard, fake-daemon and patch-coverage suites are not
+rerun for this CLI-only change; earlier paired results remain in the linked
+ledgers.

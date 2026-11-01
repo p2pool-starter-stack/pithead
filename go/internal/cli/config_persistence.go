@@ -9,6 +9,9 @@ import (
 
 func configPersistence(args []string, input io.Reader, output io.Writer) error {
 	unsupported := &ExitError{Code: 125}
+	if len(args) == 2 && args[0] == "credentials" && args[1] == "publish" {
+		return configCredentialsPublish(input)
+	}
 	if len(args) != 1 {
 		return unsupported
 	}

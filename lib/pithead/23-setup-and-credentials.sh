@@ -185,6 +185,11 @@ persist_node_credentials() {
     # A dry run must only read (#556) — the caller already generated the creds in memory for the
     # render/diff; skip the write-back to config.json (or a staged control-channel copy).
     [ "$PITHEAD_DRY_RUN" -eq 1 ] && return 0
+    if declare -F _config_credentials_publish_go >/dev/null &&
+        _config_credentials_publish_go "$CONFIG_FILE" "$user" "$pass"; then
+        chmod 600 "$CONFIG_FILE"
+        return
+    fi
     # Subshell umask (#368): the temp file carries the credentials, so it too must be owner-only
     # from creation — mv preserves its mode onto config.json.
     if (

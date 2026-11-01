@@ -145,7 +145,8 @@ selection is not implemented.
 | Payout-confirmation scalar config and restore bounds | Native supported settings; Bash time read, address decoding and compatibility fallback | Supplementary comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
 | Config version policy and stamping | Native supported validation/transform and atomic publication with source ownership; Bash warnings/gates, interposed tools, restrictive umasks and compatibility fallback | Unchanged 16-method version suite and 7 new publication methods, native success spy and Go units; original Linux version suite unavailable |
 | Config migrations | Native supported legacy-worker/XvB and Telegram-control plans/transforms; Bash file I/O, callbacks and compatibility fallback | 14 supplementary migration/static comparisons, 2 protocol tests and Go units; original Linux migration suites unavailable |
-| Config credential write-back and CLI appliance defaults | Native supported ordered JSON transforms; Bash generation, default-table reads, warnings and file I/O with jq fallback | 22 supplementary comparisons/static tests and Go units; original Linux suites unavailable |
+| Config credential and CLI appliance-default JSON transforms | Native supported ordered JSON transforms; Bash generation, default-table reads, warnings and appliance-default file I/O with jq fallback | 22 supplementary comparisons/static tests and Go units; original Linux suites unavailable |
+| Node RPC credential publication | Native for a fresh fixed stage and standard tools; Bash final chmod, existing-stage handling and compatibility fallback | Unchanged persistence suite and 8 new publication methods, native success spy and Go units; Linux secrets/control oracle unavailable |
 | Masked config prefill JSON | Native supported ordered transform; Bash validation, file I/O, warnings and worker callbacks with jq fallback | 9 supplementary methods, including 21 paired renders and native/protocol checks; original Linux masking/worker suites unavailable |
 | Worker read-credential JSON | Native supported JSON stages; Bash validation, HMAC, warnings and file transactions with jq fallback | 13 supplementary tests, including 25 paired renders and native/protocol checks; original Linux worker-config suite unavailable |
 | Config change descriptions and `.env` diff | Native supported messages/flags and byte-order comparisons; callback/locale compatibility fallback | 12 supplementary methods and Go units; original Linux config/approval suites unavailable |
@@ -176,62 +177,61 @@ Detailed paired commands, results and limits are preserved in
 [later configuration results](results-config-followup.md), plus
 [configuration publication results](results-config-publication.md).
 
-## Config-version publication slice (2026-11-01)
+## Node credential publication slice (2026-11-01)
 
-Go now publishes supported version stamps through a unique sibling temporary
-file. It uses the existing ordered JSON transform, retains the source path's
-lstat UID/GID, applies mode 0600, always attempts chown, verifies metadata and
-closes before rename. A successful rename is the final fallible operation.
-Pre-publication failures remove the temporary file before the original Bash
-transaction retries. Warnings and the caller's dry-run/no-change gates remain Bash; existing Go
-version planning and formatting are reused. Other config writers and verb
-operations remain Bash.
+Go now publishes supported node RPC credentials when the fixed sibling staging
+path is absent. The existing ordered JSON transform runs before filesystem
+work. Exclusive creation and explicit mode 0600 precede credential bytes, even
+under a restrictive caller umask. The file is closed before rename; rename is
+the final fallible Go operation. Replacement ownership comes from the new file,
+as with Bash, rather than being copied from the old config.
 
-The existing `config-version` helper accepts publication frames with zero argv;
-its named scalar/document operations retain their existing contracts. The
-unchanged 16-method version suite passes with the new writer reachable through
-its existing sourced hook. Supplementary comparisons prove actual native
-success, exact bytes, mode/owner, inode replacement, symlink replacement,
-hard-link separation, protocol/tool fallback and no-op behavior. A local
-symlink with a different group from its target confirms lstat ownership; BSD
-and GNU stat probes agree. No successful foreign-UID ownership change is
-claimed from this unprivileged host.
-
-Caller umasks that suppress owner-write permission retain Bash: its mktemp file
-would otherwise fail when reopened by the writer, whereas Go holds an open fd.
-A five-line adapter only sets that caller umask before executing the unchanged
-version reference adapter. New comparisons normalize temporary names, private
-paths and Bash diagnostic line numbers; existing tests and goldens are unchanged.
-The original Linux config/lifecycle suite is still unavailable. The dashboard
+Bash keeps the dry-run gate, final mandatory chmod and its error/ERR-trap
+semantics. A native success followed by a chmod failure never retries the
+transaction. Existing staging files, links and other entries retain the entire
+reference transaction, including its existing-temp mode at the first move.
+Unsupported JSON, interposed tools and pre-publication failures keep fallback.
+Other config transactions and main verb operations remain Bash; the dashboard
 remains Python.
+
+The unchanged persistence suite passes through its original sourced hook,
+including its exact native-helper trace and existing-temp/error assertions.
+The new helper operation is `config-persistence credentials publish`; its argv
+contains only these operation words, with JSON, path and credentials on stdin.
+The original one-word JSON operations keep their existing contracts. Eight new
+comparison methods prove native success, regular/symlink/hardlink behavior,
+private bytes/mode, existing-stage fallback, dry-run, caller umasks, helper/tool
+failures, and post-publication chmod errors in normal and conditional callers.
+The new adapter sources production functions and supplies caller contexts and
+local failure fixtures; it does not replace any existing suite. Diagnostic
+comparisons normalize private paths and Bash line numbers. Foreign-UID source
+replacement is conditional in Go tests and remains unproven locally; original
+Linux secrets/control/lifecycle suites remain unavailable.
 
 Baseline uses `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`. Runs use
 worktree caches and an absent Docker socket. Private records are under
-`.go-cache/logs/version-publish-*`.
+`.go-cache/logs/credentials-publish-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-config-version-publish-parity` | Pass; unchanged 16-method version suite, 7 new methods, prior env/render comparisons and 12-group CLI suite, plus Go units | Same result |
+| `make test-go-credentials-publish-parity` | Pass; unchanged 16-method persistence suite and 6 existing alias comparisons, 8 new methods, prior env/render comparisons and 12-group CLI suite, plus Go units | Same result |
 | `make test-go-config-input-parity test-go-caddy-parity` | Pass; unchanged 7-test raw-parser suite and supplementary parser/Caddy comparisons | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
 | `make test-stack` | Exit 2: macOS refusal | Same refusal |
 | `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 third-party cache Markdown findings | Same result |
 
-The paired core command combined all three targets above. The seven new
-comparison methods were repeated after adding the different-group symlink case
-with `python3 tests/go-parity/test_config_version_publish.py` in both modes.
-Native checks pass: `go -C go test -json -tags=parity -race -count=1
-./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
-`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
-./cmd/pithead` (compile only).
+The paired core command was `make test-go-credentials-publish-parity
+test-go-config-input-parity test-go-caddy-parity`. Native checks pass:
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build
+-o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
 
 Changed Go files pass `gofmt -l`; changed shell files pass `shfmt -i 4 -d`.
 `shellcheck -x --severity=warning pithead
-tests/go-parity/config_version_publish_reference.sh` passes. Locked Ruff lint
-and formatting pass for all 635 Python files through `make lint-py`; dashboard
-extras are restored with `uv sync --locked --project dashboard --extra dev
---extra test`.
+tests/go-parity/credentials_publish_reference.sh` passes. Locked Ruff lint and
+formatting pass for all 636 Python files through `make lint-py`; dashboard extras
+are restored with `uv sync --locked --project dashboard --extra dev --extra test`.
 
 Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
 .config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths.
@@ -242,7 +242,7 @@ Independent security and adversarial reviews found no remaining defect.
 Frozen-source checksums confirm the tested implementation and new comparisons
 remain unchanged after validation. Existing tests, fixtures and Make behavior
 remain unchanged; the new target adds supplementary coverage and existing
-dependencies. Earlier Tari publication results are preserved in the linked
+dependencies. Earlier version publication results are preserved in the linked
 publication ledger. Dashboard, fake-daemon and patch-coverage suites are not
 rerun for this CLI-only change; earlier paired results remain in the linked
 ledgers.

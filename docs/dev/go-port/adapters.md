@@ -306,3 +306,13 @@ different-group symlink case checks link ownership where permissions allow it;
 temporary names, private paths and Bash diagnostic line numbers are normalized.
 `make test-go-config-version-publish-parity` includes the unchanged version suite
 and existing env/render and CLI comparisons. Original Linux suites stay unchanged.
+
+`credentials_publish_reference.sh` sources the production credential writer and
+Go bridge, supplying caller umasks, normal/conditional contexts and local failure
+fixtures. `test_credentials_publish.py` compares fresh-stage publication, links,
+existing-stage fallback, bytes/modes, dry-run, helper/tool failures, ERR traps and
+final chmod failures after native publication. Credentials remain on stdin;
+private paths and Bash diagnostic line numbers are normalized.
+`make test-go-credentials-publish-parity` also runs the unchanged persistence suite
+and existing env/render and CLI comparisons. Linux secrets/control suites stay
+unchanged and unavailable locally.

@@ -63,6 +63,14 @@ with the stdin adapter in `go/internal/cli/config_env_write.go` and Bash hook in
 in-place writes and unchanged render/CLI contracts. Symlinks and interposed
 writers retain the heredoc path; final chmod remains Bash.
 
+Fresh-stage node credential publication lives in
+`go/internal/config/credentials_publish.go`, with its stdin adapter in
+`go/internal/cli/config_credentials_publish.go` and Bash bridge in
+`lib/pithead/27n-go-config-persistence.sh`.
+`make test-go-credentials-publish-parity` runs the unchanged persistence suite
+and new publication/context comparisons. Existing staging files and interposed
+tools retain the reference path; Bash keeps the final chmod and error behavior.
+
 Config-version publication lives in `go/internal/config/version_publish.go`,
 with its stdin adapter in `go/internal/cli/config_version_publish.go` and Bash
 bridge in `lib/pithead/27l-go-config-version.sh`.
