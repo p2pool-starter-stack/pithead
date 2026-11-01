@@ -381,7 +381,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `rotate-dashboard-onion` | covered | DIY `--rotate-onion`: isolated fixture, real Tor reachability, old-address retirement, and identity restoration |
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
 | `config-reset` | covered | KVM (appliance-only verb, `--phase reset` leg 0) |
-| `render-quadlet` | missing | #1217 — the podman/quadlet render has no live run anywhere |
+| `support-bundle` | missing | #2342 — the verb itself never runs live (`diag-logs`/`diag-doctor` exercise the log redactor, not `support-bundle`); the archive's owner-only creation and cleanup after a failed `tar` are tier-1 unit cases (#3757); its `.env` redactor was a denylist with real gaps until #1631's survivor-allowlist inversion |
 | `render-quadlet` | covered | KVM provision: native Quadlet proxy health leg (`appliance-proxy-health-leg.sh`) |
 | `test-alert` | by-design | deliberately deferred — real notification sinks; wire-level coverage is #2263 |
 | `logs` | by-design | a passthrough verb; tier 1 is the honest ceiling |
