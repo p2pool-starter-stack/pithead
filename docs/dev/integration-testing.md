@@ -1126,7 +1126,7 @@ The row is polled to a terminal status within a ninety-second observation budget
 60 seconds for it to go live, and a rollback repeats that before the rig publishes `rolled_back`
 and the dashboard's next poll consumes it
 ([#3819](https://github.com/p2pool-starter-stack/pithead/issues/3819)). A change that rolls back
-therefore fails as `expected applied, got rolled_back` instead of timing out on `accepted`.
+therefore fails as `expected [applied], got [rolled_back]` instead of timing out on `accepted`.
 The result is the last history status whose transport and JSON decoding succeeded within that
 budget; reads or decoding finishing later cannot pass. A nonzero transport exit discards even valid JSON
 and records `dashboard.poll=failed`. Decoding must succeed with one JSON object; trailing junk

@@ -172,7 +172,7 @@ _pred_history_row_terminal() { # <rig> <change_id>
 # the caller reds immediately instead of burning the bound on a verdict already known; a row that
 # never settles stays "accepted" and reds too. The one answer it must never invent is "applied"
 # for a row nobody has confirmed — which is what reading the row unwaited did, across a window of
-# the rig apply and the next dashboard poll. The 90s assertion remains a bounded check;
+# the rig apply and the next dashboard poll. The assertion stays a bounded check;
 # exact-ID samples correlate publication/consumption delays from an unfinished rig apply.
 #
 # The `>&2` is this module's #1454 discipline, for the same reason: stdout is the return value and
