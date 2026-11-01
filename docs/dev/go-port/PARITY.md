@@ -52,8 +52,10 @@ PITHEAD_IMPL=bash ./pithead --help
 make test-go-parity
 ```
 
-The Go module has no third-party dependencies and uses Go 1.23 language features;
-local builds use Go 1.27.1. Make confines `GOCACHE`, `GOMODCACHE`, `GOPATH` and
+The Go module pins `modernc.org/sqlite` 1.61.1 and its transitive dependencies in
+`go.mod`/`go.sum`, requiring Go 1.26 or later. Local builds and the bounded CI job
+use Go 1.27.1. Both commands cross-build for Linux amd64 and arm64 with CGO disabled.
+Make confines `GOCACHE`, `GOMODCACHE`, `GOPATH` and
 `TMPDIR` under `.go-cache/`; uv uses `.uv-cache/`. Both caches and `go/bin/` are
 ignored.
 
@@ -170,16 +172,16 @@ selection is not implemented.
 | State response generation | One frozen input envelope across hybrid request phases | Forced-interleaving and single-clock regressions, Go transport unit and unchanged state/view suites |
 | Dashboard route/method table, security headers and shell/static/preview transport | Native Go server with explicit Python data/control fallback | 19 unchanged HTTP tests, 7 new comparisons and Go units; full unchanged 3716-test suite passes through adapter |
 | Miner connection, XvB standby and Prometheus routes | Native payload/exposition with Go domain computation and Python config/storage inputs; compatibility fallback | Unchanged route suites and new native-ownership comparisons; full backend remains hybrid |
-| `/api/state` history chart | Native filtering, downsampling, gaps and markers; Python storage and other state sections | Unchanged chart/state suites through new adapter, supplementary oracle comparisons and Go units |
+| `/api/state` history chart | Native filtering, downsampling, gaps and markers; Python query construction and other state sections, native SQLite | Unchanged chart/state suites through new adapter, supplementary oracle comparisons and Go units |
 | Dashboard domain metrics | Native for state and Prometheus requests; Python supplies config/locality and stored/raw snapshots | All 55 unchanged metrics/average tests through the Go adapter, native-ownership guard and Go units |
-| History series and headline cards | Native filtering/buckets, payouts, hashrate and cadence; Python storage/config inputs | Unchanged series/state suites through the views adapter, comparisons and Go units |
+| History series and headline cards | Native filtering/buckets, payouts, hashrate and cadence; Python business/config inputs, native SQLite | Unchanged series/state suites through the views adapter, comparisons and Go units |
 | System/proxy/Tari/sync/Monero presentation | Native five builders; Python raw snapshots and remaining state assembly | Unchanged infrastructure/Monero/location suites, HTTP ownership guard and Go units |
 | Worker rows, RigForge display and energy | Native supported snapshots/config inputs in state; Python supplies descriptors | Unchanged view/worker suites through the new fleet adapter, comparisons and Go units; final results below |
 | Host-resource availability and capacity | Native bounded forecast and validation; unsupported large capacity operands fall back | Unchanged resource/state/cost suites through the fleet adapter, comparisons and Go units |
 | Pool/network, raffle history/eligibility and update filtering | Native supported display inputs; Python supplies the existing native Monero result and running version | 171 unchanged focused tests and new A/B cases; full results below |
 | Header status badges | Native ordered badges with supplied metrics, thresholds and locality | Unchanged badge/wallet/header suites and native HTTP ownership guard; wallet KV reading remains Python |
 | Remaining state presentation, polling and Tor | Python reference behind Go HTTP routing | Earnings, base metadata, egress/topology derivation and polling remain Python; no complete state proof |
-| SQLite schema, migrations and recovery | Python reference, including Go server child | Full unchanged suite passes in hybrid mode; native storage not ported |
+| SQLite engine, open, schema, migrations and recovery | Native Go in the normal Go server child; Python memory state and business SQL construction remain | 343 unchanged focused tests with ported Python paths fatal, existing/legacy/corrupt startup comparisons, Go units and paired full 3719-test suites |
 | Wizard launch and control channel | Bash/Python reference | Not ported |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
 | Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
@@ -237,10 +239,39 @@ snapshot tests (3719 total). Python coverage is 97.07% for reference and 86.40%
 for Go selection. The patch gate passes at 93% for reference; Go-only patch
 coverage fails at 83%, while Go plus overview/fleet A/B append passes at 93%.
 
-This is still a hybrid dashboard. Python owns polling, SQLite, earnings/XvB,
-wizard/control and remaining handlers. Native SQLite startup on existing/corrupt
-files has not been proved. The next slice is storage, following the operator's
-review order; Go ownership guards will make Python storage fatal in that adapter.
+These review results preceded the native SQLite slice below. Python still owns
+polling, earnings/XvB, wizard/control, business SQL construction and remaining handlers.
+
+## Native SQLite results (2026-11-01)
+
+`go/internal/dashboard/storage/` now owns the SQLite engine, connection settings,
+15 application tables, ten indexes, legacy migrations, integrity checks and
+corrupt-database quarantine/recovery. `go_storage.py` connects the remaining Python
+StateManager logic to the Go helper; the normal Go child installs it before app
+construction. Missing bridge support fails before opening a Python database.
+Stateless transport fixtures remain an explicitly supported compatibility case.
+
+The [storage results](results-storage.md) list exact commands, adapter hooks,
+failure controls and limits. Existing tests and fixtures remain unchanged.
+
+| Check | Reference | Go selection |
+|---|---|---|
+| Unchanged storage/worker suites | 343 passed | 343 passed with Python connection/schema/recovery paths fatal |
+| Full dashboard suite | 3719 passed; 94.53% Python coverage | 3719 passed; 85.04% Python coverage, storage and presentation adapters enabled |
+| Patch coverage | 92% passed | Go-only 84% fails; Go plus presentation A/B append 93% passes |
+| Additional storage checks | Reference seeds and expected values | Four startup cases and ten bridge cases passed; race units, vet, module verification and CGO-free Linux amd64/arm64 builds pass |
+
+Startup cases use the normal Go command on existing, legacy and corrupt databases
+and serve state/miner-connection contracts without caller retries. No polling or
+daemon client is started in these fixtures. Native units also cover migration
+failure transaction boundaries, literal database filenames and recovery failures.
+
+The reference's second-resolution quarantine naming can overwrite a previous
+quarantine on an immediate recovery retry in the same second. Go preserves that
+behavior for parity; a correction must change both implementations together.
+Python StateManager caches and business methods remain in use; this is not a
+complete native storage service or a performance result. Production container
+selection, wizard/control and shipping artifacts remain unimplemented.
 
 ## Unavailable and known host constraints
 
@@ -274,8 +305,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Port SQLite open/schema/migrations/corrupt-database recovery together; require native ownership and make Python storage fatal in the adapter.
-2. Port wizard/control, then the production selection switch and release/dashboard/appliance shipping artifacts with reference fallback.
-3. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
-4. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
-5. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.
+1. Port wizard/control, then the production selection switch and release/dashboard/appliance shipping artifacts with reference fallback.
+2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
+3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
+4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

@@ -1,7 +1,7 @@
 # Go port parity adapters
 
 Review ownership, selection and descriptor adapters are listed in
-[the review results](results-review.md#additive-adapters-and-compatibility).
+[the review results](results-review.md#additive-adapters-and-compatibility); native SQLite hooks are in [the storage results](results-storage.md#adapters).
 
 Only new files under `tests/go-parity/` adapt unchanged suites or supply parity
 oracles:

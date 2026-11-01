@@ -136,9 +136,6 @@ class StateManager(
         # qualifier counts. Same memory-only, refetch-on-restart, staleness-by-last_update rules.
         self._xvb_round_stats = {"stats": {}, "last_update": 0.0}
 
-        # Initialize persistent DB connection
-        # check_same_thread=False allows the connection to be used by multiple threads
-        # (serialized via self._db_lock)
         # Persistence-health flag (#131): flipped False on any init/write failure so /api/state can
         # surface "history isn't being saved" instead of silently losing everything on the next restart.
         self.db_healthy = True
@@ -166,12 +163,15 @@ class StateManager(
         # nothing about the handle, so a closed one leaves them all reading healthy — read through
         # get_table_health, which folds that in (#1615), never this dict directly.
         self.table_health = {n: {"healthy": True, "last_write": None} for n in _TELEMETRY_TABLES}
-
-        self._conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+        self._conn = self._open_db()
 
         self._init_db()
         self.load()
+
+    def _open_db(self):
+        conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def update_history(
         self, hashrate: float, p2pool_hr: float = 0, xvb_hr: float = 0, windows=None

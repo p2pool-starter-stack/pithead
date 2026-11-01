@@ -1,6 +1,6 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: test-go-legacy-helper-parity test-go-native-guards go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity test-go-tari-ownership-parity test-go-config-version-publish-parity test-go-credentials-publish-parity go-dashboard-build test-go-dashboard-http-parity test-go-dashboard-state-parity test-go-dashboard-domain-parity test-go-dashboard-views-parity test-go-dashboard-fleet-parity test-go-dashboard-overview-parity
+.PHONY: test-go-dashboard-storage-parity test-go-legacy-helper-parity test-go-native-guards go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity test-go-tari-ownership-parity test-go-config-version-publish-parity test-go-credentials-publish-parity go-dashboard-build test-go-dashboard-http-parity test-go-dashboard-state-parity test-go-dashboard-domain-parity test-go-dashboard-views-parity test-go-dashboard-fleet-parity test-go-dashboard-overview-parity
 .PHONY: test-go-doctor-history-parity test-go-doctor-containers-parity test-go-doctor-monero-parity test-go-node-monero-parity test-go-node-zmq-parity test-go-node-zmq-exchange-parity test-go-config-masked-parity test-go-config-document-parity test-go-config-defaults-parity test-go-config-validation-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-wallet-settings-parity
 .PHONY: test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-site-names-parity test-go-stratum-parity test-go-network-settings-parity test-go-proxy-settings-parity test-go-caddy-auth-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-worker-read-parity
 test-go-legacy-helper-parity: go-build test-go
@@ -9,6 +9,8 @@ test-go-native-guards: go-build go-dashboard-build
 	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_http_plugin tests/web/test_miner_connection.py "$(CURDIR)/tests/go-parity/test_native_ownership_guards.py" tests/test_go_snapshot_interleave.py tests/test_go_snapshot_clock.py
 	python3 tests/go-parity/test_reference_selection.py
 	python3 tests/go-parity/test_status_closed_descriptors.py
+test-go-dashboard-storage-parity: go-dashboard-build
+	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_storage_plugin -p dashboard_overview_plugin tests/service/test_storage*.py tests/service/workers/test_worker_*.py "$(CURDIR)/tests/go-parity/dashboard_storage_startup.py" "$(CURDIR)/tests/go-parity/dashboard_storage_bridge_compare.py"
 go-dashboard-build: go-cache ## Build the incremental Go dashboard with Python fallback
 	cd go && $(GO_ENV) go build -o bin/dashboard ./cmd/dashboard
 test-go-dashboard-overview-parity: go-dashboard-build
@@ -135,10 +137,8 @@ test-go-doctor-nft-parity: go-build test-go ## Compare nft Tor-egress readback a
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run 'TestNFTEgress|TestTorSync' ./internal/firewall ./internal/doctor
 test-go-doctor-egress-parity: go-build test-go ## Compare Docker Tor-egress readback and doctor reports with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestEgress ./internal/firewall ./internal/doctor
-
 test-go-doctor-lan-parity: go-build test-go ## Compare LAN guard readback, boot holds and doctor findings with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestLAN ./internal/doctor
-
 test-go-doctor-network-parity: go-build test-go ## Compare network diagnostic findings and probes with Bash using fake tools
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestNetwork ./internal/doctor
 

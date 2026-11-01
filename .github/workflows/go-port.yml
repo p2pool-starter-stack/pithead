@@ -54,3 +54,4 @@ jobs:
           make test-go-dashboard-http-parity test-go-dashboard-state-parity
           test-go-dashboard-domain-parity test-go-dashboard-views-parity
           test-go-dashboard-fleet-parity test-go-dashboard-overview-parity
+          test-go-dashboard-storage-parity

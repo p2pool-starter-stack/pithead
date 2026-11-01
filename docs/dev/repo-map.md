@@ -67,8 +67,9 @@ lives in `go/internal/dashboard/charts/`; JSON and exposition builders live in
 `go/internal/dashboard/domain/`; state display builders live in
 `go/internal/dashboard/infra/`, `series/`, `fleet/`, `resources/`, `overview/` and `badges/`. Python's
 `dashboard/mining_dashboard/go_bridge.py`, `go_domain.py`, `go_snapshot.py`, `go_views.py`, `go_fleet.py` and `go_overview.py` supply
-config/storage inputs and remaining state presentation; polling,
-control and SQLite remain Python. The normal container command remains Python.
+config inputs and remaining state presentation; polling and control remain Python.
+`go/internal/dashboard/storage/` owns SQLite, schema, migrations and recovery through
+`go_storage.py`; Python retains memory state and business SQL. The container command remains Python.
 `make test-go-dashboard-http-parity` retains the transport comparisons;
 `make test-go-dashboard-state-parity` runs unchanged chart/JSON suites through
 the new adapter and compares native handlers with Python.
@@ -80,6 +81,7 @@ suites and proves native state builders through an HTTP ownership guard.
 suites and their native-state ownership comparison.
 `make test-go-dashboard-overview-parity` adds unchanged pool, raffle, update and
 badge suites with a native-state ownership comparison; earnings and polling remain Python.
+`make test-go-dashboard-storage-parity` runs unchanged storage/worker suites with Python lifecycle paths fatal and checks existing/corrupt startup through the normal Go command.
 
 Regular-file dotenv publication lives in `go/internal/config/env_write.go`,
 with the stdin adapter in `go/internal/cli/config_env_write.go` and Bash hook in

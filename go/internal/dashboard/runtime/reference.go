@@ -18,8 +18,20 @@ import (
 
 const referenceProgram = `import socket
 from aiohttp import web
+storage_installed = False
+try:
+    from mining_dashboard.service import storage_service
+except ModuleNotFoundError as error:
+    if error.name not in {"mining_dashboard.service", "mining_dashboard.service.storage_service"}:
+        raise
+else:
+    from mining_dashboard.go_storage import install as install_storage
+    install_storage()
+    storage_installed = True
 from mining_dashboard.main import SHUTDOWN_TIMEOUT, build_app
 app = build_app()
+if not storage_installed and "state_manager" in app:
+    raise RuntimeError("native dashboard storage unavailable")
 if "state_manager" in app and "latest_data" in app:
     try:
         from mining_dashboard.go_bridge import install
@@ -64,7 +76,11 @@ func startReference(webRoot string, stderr io.Writer) (*referenceBackend, error)
 	}
 	command := exec.Command(python, "-c", referenceProgram)
 	command.Dir = directory
-	command.Env = append(os.Environ(), "PITHEAD_IMPL=python")
+	binary, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	command.Env = append(os.Environ(), "PITHEAD_IMPL=python", "PITHEAD_DASHBOARD_GO_BINARY="+binary)
 	command.ExtraFiles = []*os.File{file}
 	command.Stdout, command.Stderr = stderr, stderr
 	if err := command.Start(); err != nil {

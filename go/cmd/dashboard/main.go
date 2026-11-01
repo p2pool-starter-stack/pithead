@@ -16,12 +16,15 @@ import (
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/resources"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/runtime"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/series"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/storage"
 )
 
 func main() {
 	if helper := os.Getenv("PITHEAD_DASHBOARD_HELPER"); helper != "" {
 		var err error
 		switch helper {
+		case "storage":
+			err = storage.Run(os.Stdin, os.Stdout)
 		case "chart":
 			err = charts.Run(os.Stdin, os.Stdout)
 		case "domain":
