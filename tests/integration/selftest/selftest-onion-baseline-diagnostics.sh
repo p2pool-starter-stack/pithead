@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-set -uo pipefail
 # shellcheck disable=SC2034 # globals are consumed by sourced functions
+set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 export INTEGRATION_RUN_SUITE=1
