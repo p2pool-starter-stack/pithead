@@ -50,35 +50,33 @@ parse_and_validate_config() {
     *:network) error "tari.wallet_address is for a different Tari network (a testnet). This stack mines MAINNET Tari — use your mainnet address." ;;
     *) error "tari.wallet_address (${#TARI_WALLET} chars) is not a valid Tari address in either the base58 or the emoji form. Copy it from your Tari wallet." ;;
     esac
-    MONERO_MODE=$(jq -r '.monero.mode // "local"' "$CONFIG_FILE")
-    case "$MONERO_MODE" in
-    local | remote) ;;
-    *) error "monero.mode must be \"local\" or \"remote\" (got \"$MONERO_MODE\")." ;;
-    esac
-    # On-chain payout confirmation (#381). The operator supplies the PRIVATE VIEW KEY for
-    # monero.wallet_address; the stack runs a view-only monero-wallet-rpc against the LOCAL node to
-    # confirm payouts actually landed. The view key is a SECRET (it reveals all incoming amounts and
-    # timing to anyone who can read config.json/.env) — handled like node_password: never logged or
-    # echoed. Empty (the default) = feature off, nothing new runs. Phase 1 is LOCAL NODE ONLY:
-    # scanning through a third-party daemon changes the trust story, so a view key set on a remote
-    # node is refused, loudly — the wrong way to fail is silent.
-    MONERO_VIEW_KEY=$(jq -r '.monero.view_key // empty' "$CONFIG_FILE")
-    PAYOUT_SCAN_HEIGHT=$(jq -r '.monero.payout_scan_height // "auto"' "$CONFIG_FILE")
-    PAYOUT_CONFIRM_ENABLED=false
-    if [ -n "$MONERO_VIEW_KEY" ]; then
-        if [ "$MONERO_MODE" != "local" ]; then
-            error "monero.view_key is set but monero.mode is \"$MONERO_MODE\". On-chain payout confirmation scans against the LOCAL node only — a remote/third-party daemon changes the trust story. Unset monero.view_key, or switch to a local node."
-        fi
-        # A view key is 64 lowercase hex chars. Reject a malformed value before it reaches the wallet.
-        if ! printf '%s' "$MONERO_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "monero.view_key must be the 64-character hex SECRET VIEW KEY for monero.wallet_address (Monero GUI: Settings › Wallet › Show seed & keys › 'Secret view key'; monero-wallet-cli: viewkey). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#MONERO_VIEW_KEY} chars."
-        fi
-        case "$PAYOUT_SCAN_HEIGHT" in
-        '' | auto) ;;
-        *[!0-9]*) error "monero.payout_scan_height must be \"auto\" or a block height (integer)." ;;
-        *) ;;
+    if ! command -v _parse_payout_monero_go >/dev/null 2>&1 || ! _parse_payout_monero_go; then
+        MONERO_MODE=$(jq -r '.monero.mode // "local"' "$CONFIG_FILE")
+        case "$MONERO_MODE" in
+        local | remote) ;;
+        *) error "monero.mode must be \"local\" or \"remote\" (got \"$MONERO_MODE\")." ;;
         esac
-        PAYOUT_CONFIRM_ENABLED=true
+        # On-chain payout confirmation (#381). The operator supplies the PRIVATE VIEW KEY for
+        # monero.wallet_address; the stack runs a view-only monero-wallet-rpc against the LOCAL node to
+        # confirm payouts actually landed. The view key is a SECRET (it reveals all incoming amounts and
+        # timing to anyone who can read config.json/.env) — handled like node_password: never logged or
+        # echoed. Empty (the default) = feature off, nothing new runs. Phase 1 is LOCAL NODE ONLY:
+        # scanning through a third-party daemon changes the trust story, so a view key set on a remote
+        # node is refused, loudly — the wrong way to fail is silent.
+        MONERO_VIEW_KEY=$(jq -r '.monero.view_key // empty' "$CONFIG_FILE")
+        PAYOUT_SCAN_HEIGHT=$(jq -r '.monero.payout_scan_height // "auto"' "$CONFIG_FILE")
+        PAYOUT_CONFIRM_ENABLED=false
+        if [ -n "$MONERO_VIEW_KEY" ]; then
+            [ "$MONERO_MODE" = "local" ] || error "monero.view_key is set but monero.mode is \"$MONERO_MODE\". On-chain payout confirmation scans against the LOCAL node only — a remote/third-party daemon changes the trust story. Unset monero.view_key, or switch to a local node."
+            # A view key is 64 lowercase hex chars. Reject a malformed value before it reaches the wallet.
+            printf '%s' "$MONERO_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$' || error "monero.view_key must be the 64-character hex SECRET VIEW KEY for monero.wallet_address (Monero GUI: Settings › Wallet › Show seed & keys › 'Secret view key'; monero-wallet-cli: viewkey). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#MONERO_VIEW_KEY} chars."
+            case "$PAYOUT_SCAN_HEIGHT" in
+            '' | auto) ;;
+            *[!0-9]*) error "monero.payout_scan_height must be \"auto\" or a block height (integer)." ;;
+            *) ;;
+            esac
+            PAYOUT_CONFIRM_ENABLED=true
+        fi
     fi
     # Tari on-chain payout confirmation (#462), the sibling of #381 for the merge-mine half. The
     # operator supplies the PRIVATE VIEW KEY plus the PUBLIC SPEND KEY for the Tari payout address;
@@ -90,25 +88,29 @@ parse_and_validate_config() {
     # mirroring monero.mode — scanning through a third-party node changes the trust story.
     # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE 2022-01-01 (#2731), so a fresh
     # wallet doesn't rescan from genesis. TARI_MODE was already parsed and validated above.
-    TARI_VIEW_KEY=$(jq -r '.tari.view_key // empty' "$CONFIG_FILE")
-    TARI_SPEND_PUBLIC_KEY=$(jq -r '.tari.spend_public_key // empty' "$CONFIG_FILE")
-    TARI_WALLET_BIRTHDAY=$(jq -r '.tari.payout_scan_birthday // "auto"' "$CONFIG_FILE")
-    TARI_PAYOUT_CONFIRM_ENABLED=false
+    if ! command -v _parse_payout_tari_go >/dev/null 2>&1 || ! _parse_payout_tari_go; then
+        TARI_VIEW_KEY=$(jq -r '.tari.view_key // empty' "$CONFIG_FILE")
+        TARI_SPEND_PUBLIC_KEY=$(jq -r '.tari.spend_public_key // empty' "$CONFIG_FILE")
+        TARI_WALLET_BIRTHDAY=$(jq -r '.tari.payout_scan_birthday // "auto"' "$CONFIG_FILE")
+        TARI_PAYOUT_CONFIRM_ENABLED=false
+        if [ -n "$TARI_VIEW_KEY" ]; then
+            [ "$TARI_MODE" = "local" ] || error "tari.view_key is set but tari.mode is \"$TARI_MODE\". Payout confirmation scans the LOCAL Tari node, so it needs tari.mode: local — unset tari.view_key, or use a local Tari node."
+            # Tari view / public-spend keys are 64 lowercase hex chars (32-byte Ristretto scalar / point).
+            printf '%s' "$TARI_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$' || error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (Tari Universe: 'view_private_key_hex' in config_wallet.json; minotari_console_wallet: export-view-key-and-spend-key). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#TARI_VIEW_KEY} chars."
+        fi
+    fi
     if [ -n "$TARI_VIEW_KEY" ]; then
-        if [ "$TARI_MODE" != "local" ]; then
-            error "tari.view_key is set but tari.mode is \"$TARI_MODE\". Payout confirmation scans the LOCAL Tari node, so it needs tari.mode: local — unset tari.view_key, or use a local Tari node."
-        fi
-        # Tari view / public-spend keys are 64 lowercase hex chars (32-byte Ristretto scalar / point).
-        if ! printf '%s' "$TARI_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (Tari Universe: 'view_private_key_hex' in config_wallet.json; minotari_console_wallet: export-view-key-and-spend-key). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#TARI_VIEW_KEY} chars."
-        fi
         # "auto" or a day no later than today: a future day scans from the tip, missing past payouts.
         local tari_today=$((($(date +%s) - 1640995200) / 86400))
-        case "$TARI_WALLET_BIRTHDAY" in
-        '' | auto) ;;
-        *[!0-9]*) error "tari.payout_scan_birthday must be \"auto\" or DAYS SINCE 2022-01-01 (Tari's wallet birthday; Tari Universe's wallet_birthday works as-is), NOT a block height. Got \"$TARI_WALLET_BIRTHDAY\"." ;;
-        *) { [ "${#TARI_WALLET_BIRTHDAY}" -le 5 ] && [ "$((10#$TARI_WALLET_BIRTHDAY))" -le "$tari_today" ]; } || error "tari.payout_scan_birthday must be days since 2022-01-01 (Tari's wallet birthday), no later than today ($tari_today). Got \"$TARI_WALLET_BIRTHDAY\"; a days-since-1970 value is too large." ;;
-        esac
+        if command -v _validate_payout_birthday_go >/dev/null 2>&1 && _validate_payout_birthday_go; then
+            [ -z "$_payout_birthday_reason" ] || error "$_payout_birthday_reason"
+        else
+            case "$TARI_WALLET_BIRTHDAY" in
+            '' | auto) ;;
+            *[!0-9]*) error "tari.payout_scan_birthday must be \"auto\" or DAYS SINCE 2022-01-01 (Tari's wallet birthday; Tari Universe's wallet_birthday works as-is), NOT a block height. Got \"$TARI_WALLET_BIRTHDAY\"." ;;
+            *) { [ "${#TARI_WALLET_BIRTHDAY}" -le 5 ] && [ "$((10#$TARI_WALLET_BIRTHDAY))" -le "$tari_today" ]; } || error "tari.payout_scan_birthday must be days since 2022-01-01 (Tari's wallet birthday), no later than today ($tari_today). Got \"$TARI_WALLET_BIRTHDAY\"; a days-since-1970 value is too large." ;;
+            esac
+        fi
         TARI_PAYOUT_CONFIRM_ENABLED=true
     fi
     validate_payout_keys
@@ -285,7 +287,6 @@ parse_and_validate_config() {
     for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$CLEARNET_STATE_DIR" "$CONTROL_DIR" "$CADDY_LOG_DIR" "$PROXY_TLS_DIR"; do
         assert_safe_dir "$d"
     done
-
     local dashboard_access_timezone
     if command -v _parse_dashboard_access_go >/dev/null 2>&1 && _parse_dashboard_access_go; then
         DASHBOARD_TZ=$(resolve_default "$dashboard_access_timezone" "$(detect_host_timezone)")
@@ -313,7 +314,6 @@ parse_and_validate_config() {
         # override. Rendered into .env as DASHBOARD_TZ.
         DASHBOARD_TZ=$(resolve_default "$(jq -r '.dashboard.timezone // empty' "$CONFIG_FILE")" "$(detect_host_timezone)")
     fi
-
     # Optional dashboard login (#8): Caddy basic_auth in front of the dashboard. OPT-IN — an empty
     # password (the default) leaves it open, today's behavior, which is fine for the LAN appliance;
     # turn it on before exposing/co-hosting the dashboard. The plaintext lives only in config.json
@@ -356,7 +356,6 @@ parse_and_validate_config() {
             warn "dashboard.auth is set but dashboard.secure is false — login credentials would travel over plain HTTP. Set dashboard.secure: true for HTTPS."
         fi
     fi
-
     # Optional dashboard onion (#343). Opt-in, default off. When on, pithead publishes the dashboard
     # as a Tor v3 hidden service — reachable from anywhere over Tor, no exposed ports, no public IP.
     # Because that puts a CONTROL PANEL at a stable address, FAIL CLOSED: refuse to enable it without
@@ -389,7 +388,6 @@ parse_and_validate_config() {
                 ;;
             esac
         fi
-
         # Dashboard control channel (#33). Opt-in, default off. When on, the dashboard's Configuration
         # view can stage config changes that the host-side runner (control-run-pending) validates and
         # applies. That is a host-mutation channel that can change the payout wallet, so FAIL CLOSED:
