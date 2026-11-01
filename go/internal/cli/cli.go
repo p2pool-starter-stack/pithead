@@ -25,6 +25,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configCaddy(args, os.Stdin, stdout)
 	case "config-env":
 		return configEnv(args, os.Stdin, stdout)
+	case "config-env-network":
+		return configEnvNetwork(args, os.Stdin, stdout)
 	}
 	switch nativeCommand(args) {
 	case "help":

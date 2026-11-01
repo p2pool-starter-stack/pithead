@@ -203,3 +203,63 @@ Scoped Markdown is checked with the original configuration:
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
   docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
 ```
+
+## Bulk environment serialization slice (2026-11-01)
+
+Go serializes all 133 ordered `.env` assignments in one batch from prepared Bash
+values. `lib/pithead/33a-go-env-render.sh` sends key/value pairs over stdin;
+producer status is framed separately so an incomplete/failed producer emits no
+native output. The terminal marker preserves trailing newlines across capture.
+The original Bash value derivation, Tari secret-file transaction, `umask 077`,
+cat writes and mandatory `chmod 600` remain in place. The two read-only render
+getters are captured once before selection with their original nested-command
+failure and diagnostic behavior, so a compatibility retry cannot repeat them.
+
+Go matches the Bash quoting/escape contract for supported values. Locale-specific
+Unicode whitespace/control/format values, invalid UTF-8, unusual locales,
+unsupported targets and unavailable helpers retain the original renderer.
+The remaining typed validation and config value derivation are still Bash.
+
+The existing `test_config_defaults.py` runs the unchanged v2.0.0 render fixture
+and compares its complete `.env` bytes with unchanged DIY/appliance goldens.
+It passes in both modes with this serializer selected. This is local oracle
+evidence; the complete original CLI suite and Compose dotenv parser require
+Linux/Docker and remain unproven here. New comparisons supplement that evidence.
+Private command/exit records use `.go-cache/logs/config-env-*`.
+
+Seven new tests compare ordered bulk/value escaping, malformed/failed producer
+frames, eight complete render cases, four target failures, compatibility fallback
+and cached getter diagnostics/ERR traps. They require one successful native batch
+for supported renders and compare `.env`/Tari secret-file bytes and 0600 modes.
+No existing test, fixture, golden, budget or check changed.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
+and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
+Docker socket.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-config-defaults-parity` | PASS, including unchanged render fixture/goldens | Same result, native batch separately verified |
+| `make test-go-config-document-parity test-go-config-validation-parity test-go-caddy-parity test-go-parity` | PASS, including unchanged raw parser suite and prior comparisons | Same result |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
+| `make test-fakes` | PASS, 54 tests | Same result; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
+| `make test-go-env-parity` | PASS, 7 supplementary tests and Go units | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
+| `make test` | FAIL, existing `config_defaults_reference.sh` case indentation, pinned shfmt, exit 2 | Same failure; ShellCheck passes |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
+
+Native checks pass with canonical worktree cache/temp paths:
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+(compilation only). Generated-CLI and adapter ShellCheck, shfmt, Go formatting,
+locked Ruff and `git diff --check` pass. Initial formatting findings in the new
+tests were corrected using the repository gate. Source/security reviews are clean.
+Scoped Markdown uses the original configuration:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
+```

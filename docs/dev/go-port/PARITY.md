@@ -14,12 +14,12 @@ The operator commits later rounds; Git metadata is read-only. No performance ben
 
 ## Scope and continuation criteria
 
-The owner's 2026-11-01 ruling limits the port to the CLI and dashboard backend,
-including the wizard and control channel. Appliance host scripts and container
-entrypoint ports are out of scope. The dashboard implementation selection switch
-remains part of its launch contract. Preserve Bash/Python as the reference and
-fallback, upstream daemons, browser assets, runtime filenames, database migrations
-and wire formats.
+The owner's 2026-11-01 ruling supersedes the original brief: port only the CLI
+and dashboard backend, including the wizard and control channel. Appliance host
+scripts and container entrypoint ports are out of scope. The dashboard
+implementation selection switch remains part of its launch contract. Preserve
+Bash/Python as the reference and fallback, upstream daemons, browser assets,
+runtime filenames, database migrations and wire formats.
 
 The existing Bash and Python suites are the parity oracle. Do not port, rewrite,
 replace or weaken them, their fixtures or their checks. Every slice requires
@@ -129,6 +129,7 @@ selection is not implemented.
 | Worker, energy, webhook and control-character validation | Native Go-selected validators; jq compatibility fallback | Paired validator corpus and wiring checks; Go units |
 | Caddyfile serialization | Native from prepared Bash state; original block fallback | Whole-file byte/status/log/call comparisons and Go units |
 | `.env` serialization | Native bulk formatter with Bash derivation/writes and compatibility fallback | Unchanged render fixture/goldens pass in Go mode; full Linux suite unavailable |
+| Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
 | Dashboard routes, state, polling and Tor | Python reference | Baseline suites pass; Go backend not ported |
 | SQLite schema, migrations and recovery | Python reference | Baseline suites pass; Go backend not ported |
@@ -263,6 +264,13 @@ oracles:
   getter and inherited-ERR-trap coverage using the same unchanged fixture for
   setup. These added cases supplement the unchanged suites.
 
+- `test_env_network.py` invokes the same unchanged render fixture with network
+  configuration cases and a helper-status shim. It checks complete output/files
+  and proves the network plan succeeds natively or takes compatibility fallback.
+  `env_network_reference.sh` sources that unchanged fixture, then stubs CPU count
+  for a second render because the original fixture fixes it at eight. Malformed
+  private frames and poisoned success/trailing-data cases are supplementary checks.
+
 Sourcing Bash functions alone does not establish native behavior. Native slices
 use tagged comparisons or helper/wiring checks that prove Go execution. Current
 targets are `test-go-parity`, `test-go-status-parity`,
@@ -277,7 +285,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-node-monero-parity`, `test-go-node-zmq-parity` and
 `test-go-node-zmq-exchange-parity`, `test-go-config-document-parity` and
 `test-go-config-defaults-parity`, `test-go-config-validation-parity` and
-`test-go-caddy-parity` and `test-go-env-parity`.
+`test-go-caddy-parity`, `test-go-env-parity` and `test-go-env-network-parity`.
 
 ## Earlier slice results
 
@@ -287,47 +295,38 @@ Detailed paired commands, results and limits are preserved in
 [remote-node probe results](results-node-probes.md) and
 [configuration results](results-config.md).
 
-## Bulk environment serialization slice (2026-11-01)
+## Daemon network render plan slice (2026-11-01)
 
-Go serializes all 133 ordered `.env` assignments in one batch from prepared Bash
-values. `lib/pithead/33a-go-env-render.sh` sends key/value pairs over stdin;
-producer status is framed separately so an incomplete/failed producer emits no
-native output. The terminal marker preserves trailing newlines across capture.
-The original Bash value derivation, Tari secret-file transaction, `umask 077`,
-cat writes and mandatory `chmod 600` remain in place. The two read-only render
-getters are captured once before selection with their original nested-command
-failure and diagnostic behavior, so a compatibility retry cannot repeat them.
+Go derives the daemon addresses, Compose profiles, LAN bind addresses, pruning,
+clearnet flags, thread setting, peer target and P2Pool flags/ports in one plan.
+`lib/pithead/33b-go-env-network.sh` sends the config snapshot and validated remote
+globals over stdin; Go does not re-read the remote endpoints from the document.
+The Tor profile snapshot precedes payout profiles, matching Bash. This is config
+value derivation; it adds no network probe.
 
-Go matches the Bash quoting/escape contract for supported values. Locale-specific
-Unicode whitespace/control/format values, invalid UTF-8, unusual locales,
-unsupported targets and unavailable helpers retain the original renderer.
-The remaining typed validation and config value derivation are still Bash.
+Bash retains CPU discovery and its thread clamp, peer-count diagnostics, all
+remaining value derivation, secret-file preparation and writes. Unsupported JSON,
+compound values, ambiguous numeric formatting, failed producers and unavailable
+helpers use the original block. The fixed output fields are read into local
+variables without evaluating shell text. Existing tests and fixtures are unchanged.
 
-The existing `test_config_defaults.py` runs the unchanged v2.0.0 render fixture
-and compares its complete `.env` bytes with unchanged DIY/appliance goldens.
-It passes in both modes with this serializer selected. This is local oracle
-evidence; the complete original CLI suite and Compose dotenv parser require
-Linux/Docker and remain unproven here. New comparisons supplement that evidence.
-Private command/exit records use `.go-cache/logs/config-env-*`.
-
-Seven new tests compare ordered bulk/value escaping, malformed/failed producer
-frames, eight complete render cases, four target failures, compatibility fallback
-and cached getter diagnostics/ERR traps. They require one successful native batch
-for supported renders and compare `.env`/Tari secret-file bytes and 0600 modes.
-No existing test, fixture, golden, budget or check changed.
+The unchanged raw-parser suite and v2.0.0 render fixture/goldens pass in both
+modes. The complete Linux CLI and Docker parser verdicts remain unavailable.
+Seven new Python tests supplement that oracle with whole-render, CPU-clamp,
+peer-error and private-frame cases. Supported fixtures require a successful native
+plan; poisoned complete plans with trailing bytes or fields must fall back.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
 and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
-Docker socket.
+Docker socket. Private command/status records use `.go-cache/logs/config-network-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-config-defaults-parity` | PASS, including unchanged render fixture/goldens | Same result, native batch separately verified |
-| `make test-go-config-document-parity test-go-config-validation-parity test-go-caddy-parity test-go-parity` | PASS, including unchanged raw parser suite and prior comparisons | Same result |
+| `make test-go-env-network-parity test-go-config-defaults-parity test-go-env-parity` | PASS, including unchanged render fixture/goldens and 7 new network tests | Same result; native plan separately verified |
+| `make test-go-config-defaults-parity test-go-config-document-parity test-go-config-validation-parity test-go-env-parity test-go-caddy-parity test-go-parity` | PASS, including unchanged raw parser suite | Same result |
 | `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
 | `make test-fakes` | PASS, 54 tests | Same result; Python backend |
 | `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
-| `make test-go-env-parity` | PASS, 7 supplementary tests and Go units | Same result |
 | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
 | `make test` | FAIL, existing `config_defaults_reference.sh` case indentation, pinned shfmt, exit 2 | Same failure; ShellCheck passes |
 | `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
@@ -337,10 +336,10 @@ Native checks pass with canonical worktree cache/temp paths:
 `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
 `go -C go vet -tags=parity ./...` and
 `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
-(compilation only). Generated-CLI and adapter ShellCheck, shfmt, Go formatting,
-locked Ruff and `git diff --check` pass. Initial formatting findings in the new
-tests were corrected using the repository gate. Source/security reviews are clean.
-Scoped Markdown uses the original configuration:
+(compilation only). Generated-CLI and new-adapter ShellCheck/shfmt, Go formatting,
+locked Ruff and `git diff --check` pass. Source/security reviews pass after the
+helper reader was tightened to reject every trailing field or byte. The CPU and
+peer checks remain shared Bash code. Scoped Markdown uses the original rules:
 
 ```bash
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
@@ -378,7 +377,7 @@ Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
 and dashboard on 2026-11-01; appliance host scripts and container entrypoint ports
 are excluded. Next, in order:
 
-1. Finish typed validation and `.env` value derivation; move Caddy preparation into Go. Obtain the unchanged Linux CLI and Docker parser verdicts.
+1. Finish typed validation and the remaining `.env` value derivation; move Caddy preparation into Go. Obtain the unchanged Linux CLI and Docker parser verdicts.
 2. Port `render`, `apply`, `up`, `down` and `restart` using that config layer.
 3. Implement dashboard routes, HTTP/JSON, state/polling, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.

@@ -3,74 +3,75 @@ render_env() {
     project=$(compose_project_name) || return 1
     log "Rendering environment configuration ($target)..."
 
-    local mono_host rpc_port zmq_port mono_rpc_url profiles
-    if [ "$MONERO_MODE" == "local" ]; then
-        mono_host="${NETWORK_PREFIX}.26" rpc_port="18081" zmq_port="18083" profiles="local_node"
-        mono_rpc_url="http://127.0.0.1:18081" # host loopback, not the bridge IP above
-    else
-        # Reuse the parse-time validated globals — the validated value IS the rendered value.
-        mono_host="$MONERO_REMOTE_HOST" rpc_port="$MONERO_REMOTE_RPC_PORT" zmq_port="$MONERO_REMOTE_ZMQ_PORT"
-        profiles="" # Empty profile disables local monerod
-        # Bracket a literal IPv6 host for URL use (RFC 3986).
-        case "$mono_host" in *:*) mono_rpc_url="http://[$mono_host]:$rpc_port" ;; *) mono_rpc_url="http://$mono_host:$rpc_port" ;; esac
+    local mono_host rpc_port zmq_port mono_rpc_url profiles tari_grpc_addr tor_profiles tari_grpc_bind tari_grpc_lan
+    local prune monero_clearnet tari_clearnet prep_threads cores out_peers rpc_bind rpc_lan zmq_bind zmq_lan
+    local pool_type p2pool_flags p2pool_port p2pool_socks native_network=false
+    if _render_env_network_go 2>/dev/null; then native_network=true; fi
+    if [ "$native_network" != true ]; then
+        if [ "$MONERO_MODE" == "local" ]; then
+            mono_host="${NETWORK_PREFIX}.26" rpc_port="18081" zmq_port="18083" profiles="local_node"
+            mono_rpc_url="http://127.0.0.1:18081" # host loopback, not the bridge IP above
+        else
+            # Reuse the parse-time validated globals — the validated value IS the rendered value.
+            mono_host="$MONERO_REMOTE_HOST" rpc_port="$MONERO_REMOTE_RPC_PORT" zmq_port="$MONERO_REMOTE_ZMQ_PORT"
+            profiles="" # Empty profile disables local monerod
+            # Bracket a literal IPv6 host for URL use (RFC 3986).
+            case "$mono_host" in *:*) mono_rpc_url="http://[$mono_host]:$rpc_port" ;; *) mono_rpc_url="http://$mono_host:$rpc_port" ;; esac
+        fi
+
+        # Tari mode → gRPC address / compose profile (#103/#1855), mirroring Monero above. local -> the
+        # bundled node at its bridge IP plus the local_tari profile. remote -> a third-party node's
+        # host:port. off -> neither profile nor merge-mining, so the address stays the stock local
+        # default as an INERT placeholder: the profiled-off tari service still interpolates it, and
+        # p2pool's entrypoint is to drop the --merge-mine triple from argv on TARI_MODE=off (#1903).
+        tari_grpc_addr="${NETWORK_PREFIX}.27:18142"
+        if [ "$TARI_MODE" == "local" ]; then
+            profiles="${profiles:+$profiles,}local_tari"
+        elif [ "$TARI_MODE" == "remote" ]; then
+            # Reuse the parse-time validated globals (see Monero above) — single source of truth.
+            tari_grpc_addr="${TARI_REMOTE_HOST}:${TARI_REMOTE_GRPC_PORT}"
+        fi
+        tor_profiles="$profiles"
+
+        # Tari gRPC LAN exposure (#760), mirroring monerod's rpc_lan_access above. Default
+        # localhost-only: in-stack consumers reach the node over the internal Docker network
+        # regardless, so the published port only serves other machines — the serving side of the
+        # remote mode (#103). The gRPC is plaintext and unauthenticated: trusted LAN only (#754
+        # trust model). N/A in remote mode (the tari service is profile-gated off; nothing binds).
+        tari_grpc_lan=$(jq -r '.tari.grpc_lan_access // false' "$CONFIG_FILE")
+        if [ "$tari_grpc_lan" == "true" ]; then tari_grpc_bind="0.0.0.0"; else tari_grpc_bind="127.0.0.1"; fi
+
+        # On-chain payout confirmation (#381): the view-only wallet-rpc service only starts when its
+        # compose profile is active, which is only when a view key is set on a local node. Off = no
+        # container, dashboard unchanged. PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config
+        # (which also refuses a view key on a remote node and validates the key/height).
+        if [ "${PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
+            profiles="${profiles:+$profiles,}payout_confirm"
+        fi
+
+        # Tari on-chain payout confirmation (#462) uses its own profile when a view key is set on a
+        # local Tari node, independently of Monero's payout_confirm.
+        # TARI_PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config (which also refuses a view key
+        # on a remote Tari node and validates the key/spend key/birthday).
+        if [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
+            profiles="${profiles:+$profiles,}tari_payout_confirm"
+        fi
+
+        # Pruning is on unless config explicitly sets monero.prune:false (config_bool honours that
+        # explicit false rather than coercing it back to the default — see #294).
+        prune=$(monero_prune_flag)
+
+        # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
+        # this host's IP (Monero keeps tx-proxy=tor). The host firewall admits only the chosen
+        # chain's container until its sync marker appears (#2678).
+        monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
+        tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
+
+        # Block-verification threads — hardware-dependent, so derive from THIS host's core count
+        # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores
+        # and cap at 8 (diminishing returns past that). Override with monero.prep_blocks_threads.
+        prep_threads=$(jq -r '.monero.prep_blocks_threads // "auto"' "$CONFIG_FILE")
     fi
-
-    # Tari mode → gRPC address / compose profile (#103/#1855), mirroring Monero above. local -> the
-    # bundled node at its bridge IP plus the local_tari profile. remote -> a third-party node's
-    # host:port. off -> neither profile nor merge-mining, so the address stays the stock local
-    # default as an INERT placeholder: the profiled-off tari service still interpolates it, and
-    # p2pool's entrypoint is to drop the --merge-mine triple from argv on TARI_MODE=off (#1903).
-    local tari_grpc_addr="${NETWORK_PREFIX}.27:18142"
-    if [ "$TARI_MODE" == "local" ]; then
-        profiles="${profiles:+$profiles,}local_tari"
-    elif [ "$TARI_MODE" == "remote" ]; then
-        # Reuse the parse-time validated globals (see Monero above) — single source of truth.
-        tari_grpc_addr="${TARI_REMOTE_HOST}:${TARI_REMOTE_GRPC_PORT}"
-    fi
-    local tor_profiles="$profiles"
-
-    # Tari gRPC LAN exposure (#760), mirroring monerod's rpc_lan_access above. Default
-    # localhost-only: in-stack consumers reach the node over the internal Docker network
-    # regardless, so the published port only serves other machines — the serving side of the
-    # remote mode (#103). The gRPC is plaintext and unauthenticated: trusted LAN only (#754
-    # trust model). N/A in remote mode (the tari service is profile-gated off; nothing binds).
-    local tari_grpc_bind tari_grpc_lan
-    tari_grpc_lan=$(jq -r '.tari.grpc_lan_access // false' "$CONFIG_FILE")
-    if [ "$tari_grpc_lan" == "true" ]; then tari_grpc_bind="0.0.0.0"; else tari_grpc_bind="127.0.0.1"; fi
-
-    # On-chain payout confirmation (#381): the view-only wallet-rpc service only starts when its
-    # compose profile is active, which is only when a view key is set on a local node. Off = no
-    # container, dashboard unchanged. PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config
-    # (which also refuses a view key on a remote node and validates the key/height).
-    if [ "${PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
-        profiles="${profiles:+$profiles,}payout_confirm"
-    fi
-
-    # Tari on-chain payout confirmation (#462) uses its own profile when a view key is set on a
-    # local Tari node, independently of Monero's payout_confirm.
-    # TARI_PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config (which also refuses a view key
-    # on a remote Tari node and validates the key/spend key/birthday).
-    if [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
-        profiles="${profiles:+$profiles,}tari_payout_confirm"
-    fi
-
-    # Pruning is on unless config explicitly sets monero.prune:false (config_bool honours that
-    # explicit false rather than coercing it back to the default — see #294).
-    local prune
-    prune=$(monero_prune_flag)
-
-    # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
-    # this host's IP (Monero keeps tx-proxy=tor). The host firewall admits only the chosen
-    # chain's container until its sync marker appears (#2678).
-    local monero_clearnet tari_clearnet
-    monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
-    tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
-
-    # Block-verification threads — hardware-dependent, so derive from THIS host's core count
-    # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores
-    # and cap at 8 (diminishing returns past that). Override with monero.prep_blocks_threads.
-    local prep_threads cores
-    prep_threads=$(jq -r '.monero.prep_blocks_threads // "auto"' "$CONFIG_FILE")
     if ! [[ "$prep_threads" =~ ^[0-9]+$ ]]; then
         cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
         prep_threads=$((cores - 2))
@@ -83,46 +84,45 @@ render_env() {
     # The default STAYS 48 — more peers means more aggregate bandwidth during a Tor initial sync,
     # and a new operator's first run is exactly that. Once synced, 32 (P2Pool's clearnet
     # recommendation) cuts monerod's circuit count by a third with no mining impact.
-    local out_peers
-    out_peers=$(jq -r '.monero.out_peers // 48' "$CONFIG_FILE")
+    if [ "$native_network" != true ]; then
+        out_peers=$(jq -r '.monero.out_peers // 48' "$CONFIG_FILE")
+    fi
     if ! [[ "$out_peers" =~ ^[0-9]+$ ]] || [ "$out_peers" -lt 8 ] || [ "$out_peers" -gt 1024 ]; then
         error "monero.out_peers must be an integer between 8 and 1024 (got \"$out_peers\")."
     fi
 
-    # monerod RPC LAN exposure. Default localhost-only: p2pool reaches monerod over the internal
-    # Docker network regardless, so the published port is only for external wallets.
-    local rpc_bind rpc_lan
-    rpc_lan=$(jq -r '.monero.rpc_lan_access // false' "$CONFIG_FILE")
-    if [ "$rpc_lan" == "true" ]; then rpc_bind="0.0.0.0"; else rpc_bind="127.0.0.1"; fi
+    if [ "$native_network" != true ]; then
+        # monerod RPC LAN exposure. Default localhost-only: p2pool reaches monerod over the internal
+        # Docker network regardless, so the published port is only for external wallets.
+        rpc_lan=$(jq -r '.monero.rpc_lan_access // false' "$CONFIG_FILE")
+        if [ "$rpc_lan" == "true" ]; then rpc_bind="0.0.0.0"; else rpc_bind="127.0.0.1"; fi
 
-    # monerod ZMQ LAN exposure (#760). A separate key from rpc_lan_access on purpose: that key's
-    # documented use is wallets (RPC only), and widening it to also open ZMQ would change the
-    # exposure of existing deployments. A node SERVING remote stacks (#103's other half) needs
-    # both: rpc_lan_access for the RPC, zmq_lan_access for the block-notification feed p2pool
-    # requires. ZMQ pub has no auth — trusted LAN only.
-    local zmq_bind zmq_lan
-    zmq_lan=$(jq -r '.monero.zmq_lan_access // false' "$CONFIG_FILE")
-    if [ "$zmq_lan" == "true" ]; then zmq_bind="0.0.0.0"; else zmq_bind="127.0.0.1"; fi
+        # monerod ZMQ LAN exposure (#760). A separate key from rpc_lan_access on purpose: that key's
+        # documented use is wallets (RPC only), and widening it to also open ZMQ would change the
+        # exposure of existing deployments. A node SERVING remote stacks (#103's other half) needs
+        # both: rpc_lan_access for the RPC, zmq_lan_access for the block-notification feed p2pool
+        # requires. ZMQ pub has no auth — trusted LAN only.
+        zmq_lan=$(jq -r '.monero.zmq_lan_access // false' "$CONFIG_FILE")
+        if [ "$zmq_lan" == "true" ]; then zmq_bind="0.0.0.0"; else zmq_bind="127.0.0.1"; fi
 
-    # P2Pool pool type → flags + p2p port
-    local pool_type p2pool_flags p2pool_port
-    pool_type=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
-    p2pool_flags=""
-    p2pool_port="37889"
-    if [ "$pool_type" == "mini" ]; then
-        p2pool_flags="--mini"
-        p2pool_port="37888"
-    elif [ "$pool_type" == "nano" ]; then
-        p2pool_flags="--nano"
-        p2pool_port="37890"
+        # P2Pool pool type → flags + p2p port
+        pool_type=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
+        p2pool_flags=""
+        p2pool_port="37889"
+        if [ "$pool_type" == "mini" ]; then
+            p2pool_flags="--mini"
+            p2pool_port="37888"
+        elif [ "$pool_type" == "nano" ]; then
+            p2pool_flags="--nano"
+            p2pool_port="37890"
+        fi
+
+        # Route outbound sidechain P2P through Tor by default (#165); p2pool.clearnet opts out for yield.
+        # See p2pool_outbound_flags + docs/privacy.md. Uses the configured subnet so a custom NETWORK_PREFIX
+        # (#180) still points at the Tor container (.25).
+        p2pool_socks=$(p2pool_outbound_flags "$(jq -r '.p2pool.clearnet // false' "$CONFIG_FILE")" "$NETWORK_PREFIX")
+        [ -n "$p2pool_socks" ] && p2pool_flags="${p2pool_flags:+$p2pool_flags }$p2pool_socks"
     fi
-
-    # Route outbound sidechain P2P through Tor by default (#165); p2pool.clearnet opts out for yield.
-    # See p2pool_outbound_flags + docs/privacy.md. Uses the configured subnet so a custom NETWORK_PREFIX
-    # (#180) still points at the Tor container (.25).
-    local p2pool_socks
-    p2pool_socks=$(p2pool_outbound_flags "$(jq -r '.p2pool.clearnet // false' "$CONFIG_FILE")" "$NETWORK_PREFIX")
-    [ -n "$p2pool_socks" ] && p2pool_flags="${p2pool_flags:+$p2pool_flags }$p2pool_socks"
 
     local xvb_enabled xvb_url xvb_donor xvb_donation_level xvb_tor
     xvb_enabled=$(config_get .xvb.enabled)
