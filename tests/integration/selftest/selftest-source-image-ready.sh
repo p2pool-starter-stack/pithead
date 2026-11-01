@@ -56,7 +56,11 @@ run_case() (
         *'docker compose ps --services --status running'*) eval "$1" ;;
         *'source ./pithead'*)
             echo "fixture:$NOW" >>"$OUT_DIR/trace"
-            case "$CASE" in never | one | unreadable | stalled) return 1 ;; esac
+            case "$CASE" in never | one | unreadable | stalled)
+                echo 'source-image: diagnostic: failed at reconcile' >&2
+                return 1
+                ;;
+            esac
             [ "$NOW" -ge 20 ] || return 1
             printf '%s\n' 'source-image: live old image differs from built declaration' \
                 'Recreating xmrig-proxy: its container still uses the previous image.'
@@ -96,6 +100,10 @@ for test_case in delayed never one unreadable stalled wait-fails-fixture-succeed
     *)
         assert_contains "$test_case records a binding prerequisite failure" "$result" 'both services did not remain running for two consecutive samples within 1500s'
         assert_contains "$test_case captures diagnostics after failure" "$(cat "$scratch/$test_case/trace")" captured
+        if [ "$test_case" != wait-fails-fixture-succeeds ]; then
+            assert_contains "$test_case prints the fixture's failure stage into the job log" "$result" 'source-image-log: source-image: diagnostic: failed at reconcile'
+            assert_eq "$test_case retains the fixture log with the scenario artifacts" "$([ -f "$scratch/$test_case/source-image-reconcile/source-image-reconcile.log" ] && echo yes)" yes
+        fi
         if [ "$test_case" = wait-fails-fixture-succeeds ]; then
             assert_contains "successful image assertions cannot erase readiness failure" "$result" 'RESULT rc=1 failures=1'
         else
