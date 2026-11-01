@@ -8,7 +8,8 @@ authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 `4565297a`, host probes at `d9c9d1ff`, verifier/daemon probes at `82d34cfd`,
 control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
 data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
-payout-address/config probes at `f74043ae`, and network probes at `fef0e656`.
+payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
+LAN guard probes at `e1792854`.
 The operator commits later rounds because
 this sandbox cannot write shared Git metadata. No performance benefit is claimed.
 
@@ -77,6 +78,7 @@ selection is not implemented.
 | Monero/Tari address classifiers and config diagnostics | Native packages; Bash config readers and doctor collector | 11 tagged comparison groups and Go units |
 | Public-IP classification, stratum exposure/listening and Tor runtime | Native packages; Bash doctor collector | 16 tagged comparison groups and Go units |
 | LAN firewall readback, boot holds and access diagnostics | Native packages; Bash doctor collector | 20 tagged groups and Go units |
+| Docker Tor egress readback and doctor report | Native packages with supplied config/sync state; Bash collector and nft fallback | 18 tagged groups and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -176,6 +178,11 @@ oracles:
   Existing tests source Bash; this adapter compares native verdicts, exact report
   bytes and command arguments without invoking a host firewall, engine or systemd.
   Report calls retain the dispatcher's conditional context for Bash `errexit`.
+- `doctor_egress_reference.sh` calls unchanged Tor token/CIDR helpers, rules,
+  readback and doctor reports. Config getters and active sync IPs are supplied
+  because the source-based suites cannot reach Go packages. Its formatter-only
+  operation substitutes a readback status to compare both backend/surface message
+  mappings; separate readback tests use the unchanged Bash verifier and fake tools.
 
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
@@ -185,7 +192,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-control-parity`, `test-go-doctor-disk-parity` and
 `test-go-doctor-data-parity`, `test-go-doctor-onion-parity` and
 `test-go-doctor-config-parity`, `test-go-doctor-network-parity` and
-`test-go-doctor-lan-parity`.
+`test-go-doctor-lan-parity` and `test-go-doctor-egress-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -553,6 +560,59 @@ No existing test changed. Private command/exit
 records use `.go-cache/logs/firewall-*`. No shared Git metadata write, external network request,
 live firewall, container, systemd or daemon probe occurred.
 
+## Docker Tor egress diagnostics slice (2026-10-31)
+
+This slice starts at `e17928548b1b9ddadba3cfbcbf997a85b983344a`.
+
+Native firewall helpers preserve the libxtables quoted-token format, partial
+token output on malformed quotes, CIDR overlap/containment, source negation,
+foreign-rule shadowing, sync-ACCEPT validation and canonical option ordering.
+The Docker readback preserves return codes 0–5, rule order, exemption counts,
+late/conditional/duplicate exemption rejection, tagged-rule membership and the
+canonical FORWARD jump with preceding-rule checks. Exact state/config getter
+outputs are supplied; their collection, marker interpretation, transitions and
+all mutations remain Bash. Podman/nft readback declines a native verdict for
+fallback. Doctor reports retain the toggle/Tor gates, backend/surface wording,
+boot-unit warning and command arguments.
+
+NUL, quoted newlines, unquoted non-ASCII text, unsafe arithmetic, octal prefixes in containment/overlap,
+ambiguous trailing-dot arithmetic, unsupported executable formats and missing
+text tools decline a native verdict. Decimal leading-zero validation and the
+source's permissive tagged-rule membership behavior are preserved.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Tor egress probes | `PITHEAD_IMPL=bash make test-go-doctor-egress-parity`: PASS, 18 tagged groups and Go units, including after the locale fallback fix | `tests/go-parity/run.sh make test-go-doctor-egress-parity`: PASS |
+| CLI and doctor JSON | `PITHEAD_IMPL=bash make test-go-doctor-egress-parity test-go-doctor-parity test-go-parity`: PASS, 18 egress, 13 JSON and 12 CLI groups, plus Go units | Same targets through `tests/go-parity/run.sh`: PASS |
+| Existing doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
+| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests/97.42% | `tests/go-parity/run.sh make test-dashboard`: PASS, same count/coverage; Python backend |
+| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
+| Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: PASS, not applicable |
+| File budget, build, docs voice, paths and operator strings | Baseline commands/base in the control slice: PASS | Same Go commands/base: PASS |
+| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+| Existing CLI/firewall suite | `PITHEAD_IMPL=bash make test-stack`: unavailable, macOS refusal; exit 2 | `tests/go-parity/run.sh make test-stack`: same result |
+
+`go -C go test -tags=parity -race -count=1 -run TestEgress
+./internal/firewall ./internal/doctor`, `go -C go test -count=1 ./...`,
+`go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build
+-o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` pass. Cross-compilation
+provides no Linux runtime verdict. Adapter and scoped Markdown checks pass.
+Independent static review passes with no remaining defects. A local Bash oracle
+confirmed the U+2003 duplicate-source witness returns rc 1 in `C` and rc 0 in
+`en_US.UTF-8`. The native parser now declines that locale-dependent input;
+`go -C go test -race -count=1 -run TestEgressUnquotedUnicodeFallback
+./internal/firewall` passes and also checks quoted Unicode preservation.
+
+Initial new-test runs corrected the canonical empty-input case and a reordered
+fixture whose leading jump did not satisfy the source's literal-space check.
+A no-shebang fixture initially attempted to overwrite a tool symlink; the sandbox
+blocked it, and the fixture now unlinks the symlink before creating its fake.
+No external file changed. Private command/exit records use
+`.go-cache/logs/egress-*`. Existing tests, fixtures, goldens, lint rules and Make
+checks remain unchanged. No shared Git metadata write, dependency download,
+external network request, live firewall, container, systemd, bench or daemon
+probe occurred.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
@@ -580,8 +640,8 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port doctor Tor egress readback, Tor transition/history, remaining container
-   checks and appliance-state checks.
+1. Port nft Tor egress readback and sync-state collection, Tor transition/history,
+   remaining container checks and appliance-state checks.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and

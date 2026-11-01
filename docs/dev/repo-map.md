@@ -98,6 +98,11 @@ Bash using fake `ip`, `ss`, `docker` and `curl` commands.
 `go/internal/doctor/lan_guard.go` and `lan_guard_hold.go` implement LAN access
 reports and boot-hold diagnostics. `make test-go-doctor-lan-parity` compares
 readback, reports and tool arguments with Bash using fake firewall and host tools.
+`go/internal/firewall/egress*.go` implements Docker Tor egress readback, token and
+CIDR checks, and sync-rule validation with supplied config/state values.
+`go/internal/doctor/egress_firewall.go` implements its doctor report;
+`make test-go-doctor-egress-parity` compares helpers, readback and messages with
+Bash using isolated tools. nft readback and sync-state collection remain Bash.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
