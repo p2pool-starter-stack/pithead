@@ -498,9 +498,13 @@ the configured test registry fail before the image build. Release builds do not 
 
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate and tor-heal, including image-upgrade, fault, reset and stack, and the full run is required once for
-every RC candidate.
+the whole battery; the run exits non-zero if anything failed. Standalone `all` means every phase
+except crossupdate and tor-heal, including image-upgrade, fault, reset and stack.
+
+Every RC candidate needs the full battery, but not as one bench-ci `phases: ["all"]` job: that
+exceeds the 240-minute cap, and bench-ci refuses it before job creation. Submit the phase groups in
+[the release procedure](../../docs/dev/releasing.md#which-gates-are-automated-and-which-are-not).
+Completed rows stay valid when a later phase fails or times out.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
