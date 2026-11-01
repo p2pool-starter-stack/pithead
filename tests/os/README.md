@@ -40,6 +40,10 @@ flapping responses. `selftest-eventual-approval.sh` exercises password commit
 polling through `pending`, `accepted`, `running` and `previewed`, including the
 140-poll timeout and its final-status diagnostic. Both use the integration
 harness's file-backed `fake_eventual` and run through the same selftest glob.
+`selftest-eventual-guest-waits.sh` extracts the XVB proxy, Tor and gate-release waits, the
+p2pool sync-gate hold, the wizard-state poll, the migration mining wait, the reset-slot wait
+and the unit-condition wait, and checks each passes on a late response and fails at its bound
+on a response that never arrives.
 
 After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
 with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and

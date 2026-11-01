@@ -79,6 +79,30 @@ for mode in after never flapping; do
     fi
 done
 
+eval "$(sed -n '/^wait_db() {/,/^}/p' "$HERE/lib/disk-enospc-target.sh")"
+db_drive() (
+    mode=$1 clock=0 rc=0
+    printf '0\n' >"$work/reads"
+    sleep() {
+        clock=$((clock + $1))
+        [ "$clock" -le 1000 ] || exit 99
+    }
+    curl() { fake_eventual "$work/reads" "$mode" 2 '{"db_healthy":false}' '{"db_healthy":true}'; }
+    wait_db true || rc=$?
+    if [ "$mode" = never ]; then
+        [ "$rc" = 1 ] && [ "$clock" = 90 ]
+    else
+        [ "$rc" = 0 ] && [ "$clock" = 10 ]
+    fi
+)
+for mode in after never; do
+    db_drive "$mode" || {
+        printf 'FAIL: wait_db %s\n' "$mode" >&2
+        exit 1
+    }
+    printf 'PASS: wait_db %s\n' "$mode"
+done
+
 printf '0\n' >"$work/reads"
 [ "$(fake_eventual "$work/reads" after 1 'not ready' 'ready with spaces')" = 'not ready' ]
 [ "$(fake_eventual "$work/reads" after 1 'not ready' 'ready with spaces')" = 'ready with spaces' ]

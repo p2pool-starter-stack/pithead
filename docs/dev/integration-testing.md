@@ -1527,6 +1527,14 @@ fake clock through delayed, never-ready and flapping responses. The status wait
 still requires two consecutive matching container censuses; single-observation
 waits retain their existing first-success contract. The rollback worker selftest
 uses the same fake while executing the complete rollback function.
+`selftest-eventual-lifecycle-waits.sh` extracts the onion-retirement, worker-apply settle,
+history-row, borrowed-pool re-arm, control-result, wallet-recovery, upgrade-result, egress-state,
+reset-restore and rig-control waits from their modules and runs each once with a late response
+and once with a response that never arrives. Boolean waits must pass late and fail after their
+bound; the result-status polls must also skip the in-flight statuses. Timeouts print the last
+observation only where the wait already does: `_wait_control_status` and
+`_poll_upgrade_result` return without one, and adding it changes a live leg that needs its own
+tier-4 proof. `wait_db` is covered in `selftest-eventual-waits.sh`.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
 Each shell selftest prints a literal `== section ==` header for `tests/inventory.sh`.
