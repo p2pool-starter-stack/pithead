@@ -81,7 +81,7 @@ headless_install_rejection() {
     fi
 }
 
-headless_serial_boot() { # <stick-config> <serial> <target-disk> <target-serial> <foreign-disk> <foreign-serial>
+headless_serial_boot() { # <stick-config> <serial> <target-disk> <target-serial> <foreign-disk> <foreign-serial> <fresh-disk> <fresh-serial>
     local err
     headless_install_stage "$1" "$2" || return 1
     : >"$SERIAL"
@@ -93,6 +93,7 @@ headless_serial_boot() { # <stick-config> <serial> <target-disk> <target-serial>
         --disk "path=$DISK,format=raw,bus=usb,removable=on,serial=PHSTICK01,boot.order=1" \
         --disk "path=$3,format=raw,bus=virtio,serial=$4,boot.order=2" \
         --disk "path=$5,format=raw,bus=scsi,serial=$6" \
+        --disk "path=$7,format=raw,bus=virtio,serial=$8" \
         --network network=default,model=virtio --graphics none \
         --serial "file,path=$SERIAL" --noautoconsole 2>&1) || {
         bad "virt-install failed to define the serial-install VM: $(printf '%s' "$err" | tail -3 | tr '\n' ' ' | cut -c1-300)"
@@ -110,13 +111,19 @@ headless_serial_shut_off() {
     return 1
 }
 
+headless_serial_hashes() {
+    local d
+    for d in "$@"; do sha256sum "$d" | cut -d' ' -f1; done
+}
+
 headless_serial_leg() { # <stick-config> <target-disk> <target-serial> <foreign-disk> <foreign-serial>
     local config="$1" target_disk="$2" target_serial="$3" foreign_disk="$4" foreign_serial="$5"
-    local foreign_before target_before
-    foreign_before=$(sha256sum "$foreign_disk" | cut -d' ' -f1)
-    target_before=$(sha256sum "$target_disk" | cut -d' ' -f1)
+    local fresh_disk="${foreign_disk%/*}/pithead-headless.img" fresh_serial="PHHEADLESS01" before after
+    rm -f "$fresh_disk"
+    qemu-img create -f raw "$fresh_disk" 30G >/dev/null || return 1
+    before=$(headless_serial_hashes "$target_disk" "$foreign_disk" "$fresh_disk")
     vm_destroy_or_refuse || return 1
-    headless_serial_boot "$config" PHNOMATCH01 "$target_disk" "$target_serial" "$foreign_disk" "$foreign_serial" || return 1
+    headless_serial_boot "$config" PHNOMATCH01 "$target_disk" "$target_serial" "$foreign_disk" "$foreign_serial" "$fresh_disk" "$fresh_serial" || return 1
     if wait_serial 'offered disks match the serial file' 360 && _wait_setup_page 240 &&
         [ "$(virsh domstate "$VM" 2>/dev/null)" = running ]; then
         ok "a serial matching no attached disk refuses and opens the setup page (#979)"
@@ -125,15 +132,14 @@ headless_serial_leg() { # <stick-config> <target-disk> <target-serial> <foreign-
         return 1
     fi
     vm_destroy_or_refuse || return 1
-    if [ "$(sha256sum "$foreign_disk" | cut -d' ' -f1)" = "$foreign_before" ] &&
-        [ "$(sha256sum "$target_disk" | cut -d' ' -f1)" = "$target_before" ]; then
-        ok "the refused serial left both disks byte-for-byte untouched (#979)"
+    after=$(headless_serial_hashes "$target_disk" "$foreign_disk" "$fresh_disk")
+    if [ "$before" = "$after" ]; then
+        ok "the refused serial left every attached disk byte-for-byte untouched (#979)"
     else
-        bad "the refused serial left both disks byte-for-byte untouched (#979)"
+        bad "the refused serial left every attached disk byte-for-byte untouched (#979)"
         return 1
     fi
-    foreign_before=$(sha256sum "$foreign_disk" | cut -d' ' -f1)
-    headless_serial_boot "$config" "$target_serial" "$target_disk" "$target_serial" "$foreign_disk" "$foreign_serial" || return 1
+    headless_serial_boot "$config" "$fresh_serial" "$target_disk" "$target_serial" "$foreign_disk" "$foreign_serial" "$fresh_disk" "$fresh_serial" || return 1
     if headless_serial_shut_off && wait_serial "Headless install complete" 5; then
         ok "the stick's serial file installed the named disk with no browser and powered off (#979)"
     else
@@ -141,10 +147,13 @@ headless_serial_leg() { # <stick-config> <target-disk> <target-serial> <foreign-
         return 1
     fi
     vm_destroy_or_refuse || return 1
-    if [ "$(sha256sum "$foreign_disk" | cut -d' ' -f1)" = "$foreign_before" ]; then
-        ok "the other disk stayed byte-for-byte untouched by the named install (#979)"
+    after=$(headless_serial_hashes "$target_disk" "$foreign_disk" "$fresh_disk")
+    if [ "$(printf '%s\n' "$before" | sed -n 1,2p)" = "$(printf '%s\n' "$after" | sed -n 1,2p)" ] &&
+        [ "$(printf '%s\n' "$before" | sed -n 3p)" != "$(printf '%s\n' "$after" | sed -n 3p)" ]; then
+        ok "only the named disk changed; the other two stayed byte-for-byte untouched (#979)"
     else
-        bad "the other disk stayed byte-for-byte untouched by the named install (#979)"
+        bad "only the named disk changed; the other two stayed byte-for-byte untouched (#979)"
         return 1
     fi
+    rm -f "$fresh_disk"
 }
