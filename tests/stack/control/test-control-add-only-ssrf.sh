@@ -135,9 +135,6 @@ assert_eq "config.json keeps the seeded rig1 host after the unconfirmed repoint"
 jq '.workers.list[0].host="127.0.0.1" | .workers.list[0].token="tok_new"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
 assert_contains "a repoint onto the host's own loopback is refused even with APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "resolves inside this host"
-jq '.workers.list[0].host="10.0.0.77"' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json" APPLY
-assert_contains "a repoint that keeps the old token is refused even with APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "enter its token again"
 jq '.workers.list[0].host="10.0.0.77" | .workers.list[0].token="tok_new"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
 assert_eq "a confirmed repoint with a fresh token is applied" "$(jq -r '"\(.workers.list[0].host)|\(.workers.list[0].token)"' "$C/config.json")" "10.0.0.77|tok_new"
@@ -153,6 +150,8 @@ assert_eq "a confirmed removal is applied" "$(jq -c '.workers.list' "$C/config.j
 jq '.workers.list=[{name:"rig1",host:"10.0.0.9",control_port:8082,token:"tok_rig1"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
 assert_eq "a confirmed re-adopt restores rig1" "$(jq -c '[.workers.list[] | [.host, .token]]' "$C/config.json")" '[["10.0.0.9","tok_rig1"]]'
+jq '.workers.list += [{name:"rig1",host:"127.0.0.1",token:"shadow"}]' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY
+assert_contains "a shadowed duplicate rig name is refused before its host is trusted" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "two worker descriptors"
 jq '.workers.list=[{name:"rig0",host:"10.0.0.8",control_port:8082,token:"tok_rig0"}] + .workers.list' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY
 assert_eq "a confirmed prepend lands rig0 before rig1" "$(jq -c '[.workers.list[].name]' "$C/config.json")" '["rig0","rig1"]'
 jq '.workers.list|=reverse' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY

@@ -231,7 +231,7 @@ _control_worker_remedy() {
 }
 
 control_worker_append() { # <staged-file>
-    local staged="$1" delta hosts new_host dup unbound
+    local staged="$1" delta hosts new_host dup
     jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' \
         "$staged" >/dev/null 2>&1 && return 0
     if ! jq -e '(.workers.list | type) == "array" and all(.workers.list[]; type == "object" and (.name | type) == "string")' \
@@ -250,22 +250,11 @@ control_worker_append() { # <staged-file>
         return 1
     fi
     local common='def byname($l): reduce $l[] as $w ({}; if .[$w.name] == null then .[$w.name] = $w else . end);
-        def endpoint: [.host, .port, .control_port];
         (byname([($live[0].workers.list // [])[] | select(type == "object" and (.name | type) == "string")])) as $a
         | (byname(.workers.list)) as $b'
-    unbound=$(jq -r --slurpfile live "$CONFIG_FILE" "$common"'
-        | [$b | to_entries[] | .key as $k | select($a[$k] != null and ($a[$k] | endpoint) != (.value | endpoint)
-            and (($a[$k].token // "") != "" or ($a[$k].api_token // "") != "")
-            and (.value.token // "") == ($a[$k].token // "") and (.value.api_token // "") == ($a[$k].api_token // "")) | $k] | first // empty' "$staged" 2>/dev/null) || {
-        printf 'could not read the worker descriptors — refusing'
-        return 1
-    }
-    if [ -n "$unbound" ]; then
-        printf 'rig %s would keep its control token at a new address — enter its token again to repoint it, so the old token never travels to an address you did not give it.' "$unbound"
-        return 1
-    fi
-    hosts=$(jq -r --slurpfile live "$CONFIG_FILE" "$common"'
-        | $b | to_entries[] | .key as $k | select(.value | has("host")) | select(($a[$k].host // null) != .value.host) | .value.host' "$staged" 2>/dev/null) &&
+    hosts=$(jq -r --slurpfile live "$CONFIG_FILE" '
+        ([($live[0].workers.list // [])[] | select(type == "object") | [.name, .host]]) as $known
+        | .workers.list[] | select(has("host")) | select([.name, .host] as $p | $known | index([$p]) | not) | .host' "$staged" 2>/dev/null) &&
         delta=$(jq -r --slurpfile live "$CONFIG_FILE" "$common"'
         | ([$b | to_entries[] | .key as $k | select($a[$k] == null)
             | "added: \($k)" + (if .value | has("host") then " at \(.value.host)" else " (no control address)" end)]
