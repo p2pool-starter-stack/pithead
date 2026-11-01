@@ -40,9 +40,18 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
                 echo 'carry apply failed before health wait'
                 return 1
-            } ;; # the third push is the carry
+            } ;;
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
+            up-long-fails:up)
+                echo 'Stratum password: fixture-secret'
+                echo 'Stratum authentication is ON: every rig must connect with pass "fixture-secret" (set it as the xmrig/RigForge stratum password).'
+                echo 'No such image: tecnativa/docker-socket-proxy:v0.5.0@sha256:x' >&2
+                printf 'compose output %s\n' {1..30}
+                echo 'PROXY_AUTH_TOKEN=fixture-secret' >&2
+                echo 'final up diagnostic'
+                return 1
+                ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
         }
@@ -126,6 +135,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         eval "$LIFECYCLE_SRC"
         run_lifecycle >"${LIFECYCLE_OUT:-/dev/null}"
         local lifecycle_rc=$?
+        [ -z "${LIFECYCLE_ARTIFACT_OUT:-}" ] || cp "$OUT_DIR/lifecycle-up/up.log" "$LIFECYCLE_ARTIFACT_OUT"
         if [ -s "$OUT_DIR/missing-command" ]; then
             printf '127|%s' "$((IT_FAIL + 1))"
             exit 127
@@ -183,10 +193,22 @@ assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHEC
 assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
 LIFECYCLE_OUT="$(mktemp)"
 LIFECYCLE_TRACE_OUT="$(mktemp)"
+LIFECYCLE_UP_LOG="$(mktemp)"
 SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null || it_fail "missing-image diagnostic fixture executes"
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
 assert_contains "a failed missing-image up captures Tor's first unhealthy state (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
 assert_eq "missing-image up captures Tor before the next image operation (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-up\npost-up-image-inspect'
+assert_eq "a long failed missing-image up fails lifecycle (#3345)" "$(SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" LIFECYCLE_ARTIFACT_OUT="$LIFECYCLE_UP_LOG" drive_restore yes up-long-fails)" "1|1"
+assert_contains "a long failed missing-image up keeps its early cause (#3345)" "$(cat "$LIFECYCLE_OUT")" "No such image"
+assert_contains "a long failed missing-image up keeps its final line (#3345)" "$(cat "$LIFECYCLE_OUT")" "final up diagnostic"
+assert_contains "a long failed missing-image up redacts credentials (#3345)" "$(cat "$LIFECYCLE_OUT")" "PROXY_AUTH_TOKEN=<redacted>"
+assert_contains "a long failed missing-image up redacts the password announcement (#3345)" "$(cat "$LIFECYCLE_OUT")" "Stratum password: <redacted>"
+assert_contains "a long failed missing-image up redacts the rig instructions (#3345)" "$(cat "$LIFECYCLE_OUT")" "connect with pass <redacted>"
+assert_eq "a long failed missing-image up never prints credentials (#3345)" "$(grep -c fixture-secret "$LIFECYCLE_OUT" || true)" "0"
+for expected in "No such image" "final up diagnostic" "PROXY_AUTH_TOKEN=<redacted>" "Stratum password: <redacted>" "connect with pass <redacted>"; do
+    assert_contains "missing-image artifact retains $expected (#3345)" "$(cat "$LIFECYCLE_UP_LOG")" "$expected"
+done
+assert_eq "missing-image artifact never saves credentials (#3345)" "$(grep -c fixture-secret "$LIFECYCLE_UP_LOG" || true)" "0"
 : >"$LIFECYCLE_TRACE_OUT"
 LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-apply-fails >/dev/null || it_fail "carry apply diagnostic fixture executes"
 assert_contains "a failed carry captures Tor before cleanup (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
@@ -196,7 +218,7 @@ LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-health-fails >/dev/null |
 assert_contains "a carry health timeout captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
 SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore no >/dev/null || it_fail "missing-image health diagnostic fixture executes"
 assert_contains "a later missing-image health failure captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
-rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT"
+rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT" "$LIFECYCLE_UP_LOG"
 
 eval "$(grep '^carried_rows()' "$HERE/../lib/live-state-support.sh")"
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
@@ -233,19 +255,27 @@ assert_contains "the extracted gate includes lifecycle and fault injection" "$MA
 
 drive_gate() {
     (
-        # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
+        # shellcheck disable=SC2034
         RUN_LIFECYCLE=1 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
-            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1" preview_rc="${3:-0}"
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 \
+            RUN_ROTATE_ONION="${4:-0}" RUN_TARI_STRANDED="${4:-0}" RUN_MONERO_STRANDED="${4:-0}" \
+            rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1" preview_rc="${3:-0}"
         run_p2pool_preview() { return "$preview_rc"; }
         run_lifecycle() {
             LIFECYCLE_STACK_INTACT="${intact:-0}"
             return "$lifecycle_rc"
         }
         run_fault_injection() { fault_ran=yes; }
-        it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
+        if [ "${5:-}" != summary ]; then
+            it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
+        fi
         gate() { eval "$MAIN_SRC"; }
         gate >/dev/null 2>&1 || true
-        printf '%s' "$fault_ran"
+        if [ "${5:-}" = summary ]; then
+            printf '%s|%b' "$IT_SKIPPED_PHASES" "$IT_SKIPPED_NAMES"
+        else
+            printf '%s' "$fault_ran"
+        fi
     )
 }
 
@@ -254,6 +284,20 @@ assert_eq "fault injection is reported skipped after a failed P2Pool preview (#3
 assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)" "$(drive_gate 1)" "skipped:fault-injection "
 assert_eq "fault injection runs after a lifecycle row failed with the stack intact (#3342)" "$(intact=1 drive_gate 1)" "yes"
 assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection "
+
+assert_eq "a failed rigforge-control names onion rotation and stranded-node phases (#2771)" "$(drive_gate 0 0 0 1)" \
+    "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection skipped:rotate-onion skipped:tari-stranded skipped:monero-stranded "
+
+GATED_SUMMARY="$(drive_gate 0 0 0 1 summary)"
+assert_eq "all six requested phases are counted after rigforge-control failure" "${GATED_SUMMARY%%|*}" "6"
+for phase in rotate-onion tari-stranded monero-stranded; do
+    assert_contains "$phase has a named missing-phase record and reason" "$GATED_SUMMARY" \
+        "[missing] PHASE    $phase — the rigforge-control phase failed, so the rig is not back on its baseline"
+done
+GATED_SUMMARY="$(drive_gate 0 0 0 0 summary)"
+assert_eq "unrequested phases do not inflate the skip count" "${GATED_SUMMARY%%|*}" "3"
+GATED_SUMMARY="$(drive_gate 0 1 0 1 summary)"
+assert_eq "successful rigforge-control does not report phases skipped" "${GATED_SUMMARY%%|*}" "0"
 
 echo "selftest-lifecycle-restore-health: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

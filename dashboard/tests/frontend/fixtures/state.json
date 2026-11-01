@@ -302,6 +302,109 @@
   },
   "host_addr": "100.68.38.126",
   "host_ip": "Unknown Host",
+  "host_resources": {
+    "capacity_outlook": {
+      "days_remaining": null,
+      "from": null,
+      "growth_bytes_per_day": null,
+      "minimum_samples": 24,
+      "reason": "filesystem_unavailable",
+      "sample_count": 0,
+      "state": "unavailable",
+      "to": null,
+      "window_seconds": 604800
+    },
+    "containers": {
+      "age_seconds": null,
+      "reason": "unsupported",
+      "sampled_at": null,
+      "source": null,
+      "state": "unavailable",
+      "unit": null,
+      "value": null
+    },
+    "cpu": {
+      "age_seconds": null,
+      "reason": "missing",
+      "sampled_at": null,
+      "source": "proc_stat",
+      "state": "unavailable",
+      "unit": "percent",
+      "value": null
+    },
+    "filesystem": {
+      "age_seconds": null,
+      "reason": "missing",
+      "sampled_at": null,
+      "source": "data_filesystem",
+      "state": "unavailable",
+      "unit": "bytes",
+      "value": null
+    },
+    "hugepages": {
+      "age_seconds": null,
+      "reason": "missing",
+      "sampled_at": null,
+      "source": "proc_meminfo",
+      "state": "unavailable",
+      "unit": "pages",
+      "value": null
+    },
+    "io_latency": {
+      "age_seconds": null,
+      "reason": "unsupported",
+      "sampled_at": null,
+      "source": null,
+      "state": "unavailable",
+      "unit": "seconds",
+      "value": null
+    },
+    "load": {
+      "age_seconds": null,
+      "reason": "missing",
+      "sampled_at": null,
+      "source": "getloadavg",
+      "state": "unavailable",
+      "unit": "runnable_or_waiting_tasks",
+      "value": null
+    },
+    "memory": {
+      "age_seconds": null,
+      "reason": "missing",
+      "sampled_at": null,
+      "source": "proc_meminfo",
+      "state": "unavailable",
+      "unit": "bytes",
+      "value": null
+    },
+    "smart": {
+      "age_seconds": null,
+      "reason": "unsupported",
+      "sampled_at": null,
+      "source": null,
+      "state": "unavailable",
+      "unit": null,
+      "value": null
+    },
+    "swap": {
+      "age_seconds": null,
+      "reason": "unsupported",
+      "sampled_at": null,
+      "source": null,
+      "state": "unavailable",
+      "unit": "bytes",
+      "value": null
+    },
+    "temperature": {
+      "age_seconds": null,
+      "reason": "unsupported",
+      "sampled_at": null,
+      "source": null,
+      "state": "unavailable",
+      "unit": "degrees_celsius",
+      "value": null
+    }
+  },
   "last_update": "00:00:00",
   "monero": {
     "db_size": "\u2014",
@@ -412,6 +515,57 @@
       "target": 50000
     }
   },
+  "sync_status": {
+    "chains": {
+      "monero": {
+        "base_node_state": null,
+        "down": false,
+        "error": null,
+        "health": {
+          "level": "green",
+          "reasons": []
+        },
+        "healthy": true,
+        "initial_sync_achieved": null,
+        "initializing": null,
+        "local": true,
+        "node": null,
+        "reachable": true,
+        "recovery_remaining": null,
+        "service_recreated": null,
+        "sync_state": null,
+        "synced": true,
+        "wait_seconds": 0
+      },
+      "tari": {
+        "base_node_state": "LISTENING",
+        "down": false,
+        "error": null,
+        "health": {
+          "level": "green",
+          "reasons": []
+        },
+        "healthy": true,
+        "initial_sync_achieved": true,
+        "initializing": null,
+        "local": false,
+        "node": "tari.example:18142",
+        "reachable": true,
+        "recovery_remaining": null,
+        "service_recreated": null,
+        "sync_state": "DONE",
+        "synced": true,
+        "wait_seconds": 0
+      }
+    },
+    "mining": {
+      "fail_closed": false,
+      "held": false,
+      "released": true,
+      "workers_rejected": false
+    },
+    "sampled_at": 1735689600
+  },
   "syncing": false,
   "system": {
     "cpu": {
@@ -451,6 +605,7 @@
     "wallet": "Unknown",
     "wallet_short": "Unknown"
   },
+  "tari_gates_sync": true,
   "topology": {
     "edges": [
       {

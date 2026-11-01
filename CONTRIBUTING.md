@@ -87,7 +87,9 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
      with `make lint-<surface>`): `lint-sh` (shellcheck + shfmt), `lint-py` (ruff), `lint-js` (Biome),
      `lint-yaml` (yamllint), `lint-md` (markdownlint), `lint-docs-voice` (banned-word check),
      `lint-path-references` (every repo path named in a comment, docstring or doc has to resolve, and
-     so does every statically resolvable `source` target — a reorganization moves the target and leaves
+     so does every statically resolvable `source` target; the prose scan matches complete supported
+     filename extensions, ignoring checksum and other longer suffixes, and accepts sentence-ending
+     periods after a path — a reorganization moves the target and leaves
      the pointer, and nothing else here notices; the run prints how many `source` expressions it could
      not resolve statically, so that blind spot stays visible; deliberate absences go in the script's
      own `allowed_absent()` with a reason, never a per-file exemption),

@@ -41,7 +41,10 @@ which:
 - reuses the synced chain data dirs (it never re-syncs, never re-provisions Tor), and
 - preserves secrets (`PROXY_AUTH_TOKEN`, onion addresses).
 
-For each scenario it writes a `config.json`, applies it, then waits on real readiness signals
+For each scenario it renders `config.json` from the saved baseline. Remote Monero overrides
+clear `monero.view_key`; remote Tari overrides clear `tari.view_key` and `tari.spend_public_key`.
+These local-only payout inputs stay intact for the other currency. Wallet addresses, scan
+heights and data directories are preserved. It applies the config, then waits on real readiness signals
 (container health, `pithead status`, dashboard sync %, miner-released) with timeouts. Never a
 fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini when
 `p2pool.pool` is omitted. It then runs the assertion battery below. All reads happen on the box
@@ -49,7 +52,9 @@ fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini 
 behave identically and never depend on resolving the box's dashboard hostname.
 
 Before the first scenario it snapshots the box's original `config.json` and a fingerprint of
-its secrets. After the run it restores the original config and re-applies (unless `--keep`).
+its secrets. After the run it restores the original config, including both currencies' payout
+inputs, and re-applies (unless `--keep`). It waits for health and verifies the config and
+secret fingerprint match the baseline.
 
 ### Safety model
 
@@ -240,7 +245,7 @@ Useful flags (full list in `run.sh --help`):
 | `--remote-tari-host <h>` | Bare host or IPv4 address for the external Tari node used by the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)). Pithead renders `tari.remote.grpc_port` separately; `e2e.sh` accepts and forwards the host. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
 | `--lifecycle` | Also run the lifecycle phase (restart, setup/up/apply connection announcements including an unchanged apply, apply secret-preservation, backup→restore, which must keep every wallet, proxy, dashboard, RPC, and onion secret category exact (the onion key reads need passwordless sudo), then uninstall→setup). Same-box restore must preserve the prior sync-gate marker state (absent or durable Tari-only policy) and leave P2Pool running; introduced, changed or unreadable marker state fails. The Tari off→local trial requires proxy continuity, advancing proxy hash counts across the Tari-enable window regardless of Tari state (at least 120 seconds, with no 120-second hash stall), and later merge-mining templates; it retains the exact numeric diagnostic baseline as `height_before` in `tari-enable/snapshots.log` before changing Tari mode, alongside the separately observed snapshots, on pass and failure. It retains allowlisted per-poll observation timestamps, worker/hash counts, sync progress, template state and the P2Pool merge-mining stats receipt's write time, channel state and height in `tari-enable/samples.jsonl`. The receipt fields come from one bounded read and `fstat` of the same descriptor. A template assertion failure keeps its row name and reports the last observed sync state (required `done`), connection (required `true`), synced Tari height (required to be a positive integer), stats receipt write time (required at or after the retained pre-apply enable threshold), receipt channel state (required `READY`), receipt height (required to match the API template height) and template height (required above the synced height); an unreadable value is explicit. The announcement probe confirms the supported setup rerun through a terminal with `tests/integration/tools/connection-setup-pty.py`, answers each prompt when it appears, skips host tuning, and declines startup; it compares credentials on the target and retains only assertion results, the exit code, and fixed failure-stage labels in `connection-announcements.log`; raw CLI output and credentials are not retained. The confirmed dashboard data-dir carry saves redacted apply output to `dashboard-carry.apply.log`. Restore command, health, unreadable verification input, or failed restored pool/secrets assertion prevents later fault injection, which the summary then lists under "did NOT run"; peer-timing pool warnings remain non-fatal. |
-| `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
+| `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). The ENOSPC leg uses a run-specific tmpfs and one target-side exit/signal cleanup; dashboard recovery requires ownership-checked removal and verification of the original filesystem. Failed cleanup stops the phase. Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
 | `--hardening` | Also exercise the host control spool through its systemd path unit. The wallet preview candidate clears the baseline view key so address/key validation does not reject it before the confirmation gate. The candidate is never applied. A wallet change must preview with typed confirmation required; a commit carrying the correct payout suffix but no `APPLY` must be refused by the host, leaving `config.json` and `.env` unchanged. With the temporary authenticated dashboard, three real wrong-password requests must remain in `/api/access` after authenticated padding moves them beyond 256 KiB, then after native Caddy rotation into a compressed generation. The assertion changes no rotation settings and never rewrites or truncates the security logs; padding and requests are bounded. Restores the original configuration and removes the test-owned control units. Local mode only. |
 | `--image-upgrade <old-sha> <new-sha>` | Run the supported `pithead upgrade` path and prove old/new image identities, exact persistent mount sources, Monero/Tari captured-prefix anchors and non-regressing heights, durable dashboard table continuity, categorized secrets, returning workers, and resumed hashes. Remote-node installs omit the absent local daemon from the running-image comparison and candidate verification. Prefix continuity does not claim that no same-chain bytes were re-downloaded. Requires exact lowercase 40-hex commits, `--candidate-bundle`, `--safety-backup`, every data dir outside the running version dir (the same precondition `pithead upgrade` has for a fresh version dir; otherwise it refuses before stopping the stack), and a successful private snapshot of every enumerated persistent mount (a `cp --reflink=always` clone of each data-dir bind mount, a copy of each named volume) while writers are stopped; no upgrade starts if any trust, backup, derived-state fingerprint, or snapshot check fails. |
 | `--candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>` | Name the private candidate, detached signature, and its externally anchored bundle public key. All are absolute local paths; the signed archive's `PITHEAD_COMMIT` must equal `<new-sha>`. Before staging, the harness uses private snapshots to verify the bundle signature, requires every Compose image to be digest-pinned, and verifies the active service profile's Pithead-built image signatures and exact OCI revisions against `--candidate-image-key` when provided (otherwise the bundle key). The public key inside the candidate must match that external image trust root before the candidate CLI may use it. Registry trust follows `verify_release_images`: a `cosign.registry-ca.crt` inside the signed candidate is passed to cosign, otherwise a debug variant verifies from a non-ghcr registry over HTTP. A refusal names the trust sub-step it stopped at. |
@@ -248,7 +253,7 @@ Useful flags (full list in `run.sh --help`):
 | `--xvb-routing-smoke` | From a known live `xvb.enabled=true`, `xvb.tor=true` baseline with hooked kernel DROP rules, prove the candidate wallet-bearing client in a temporary Tor-only Docker network, then use a strict apply that refuses to start containers unless those rules are installed. Observe the real proxy/dashboard move from P2Pool to XvB and naturally return, then restore exact enabled config, route, worker identities, hashes, and secrets. The isolated fetch proves the candidate client/network leg, not process attribution for the host-network dashboard. Requires `--safety-backup`; no recent PPLNS share is a failure. Every poll is bounded; worst case is about 45 minutes. |
 | `--auth-fail-closed` | Also empty `PROXY_AUTH_TOKEN` in `.env` and assert `pithead up` refuses to start (the live counterpart to the tier-1 compose-config check, [#153](https://github.com/p2pool-starter-stack/pithead/issues/153)/[#203](https://github.com/p2pool-starter-stack/pithead/issues/203)), then restore the exact token and recover. Token edits keep the temporary and replacement `.env` owner-only (0600), preserve its owner and group, and remove the temporary file on failure. Restore mismatches report no token values. `selftest-auth-fail-closed.sh` covers permissions under a 022 umask and a failed-restore negative control without a live stack. Destructive-then-restored; ssh or local mode. |
 | `--rotate-onion` | Also run `rotate-dashboard-onion` on a reserved non-production fixture ([#2345](https://github.com/p2pool-starter-stack/pithead/issues/2345)). After the safety backup, `e2e.sh` creates a one-run Tor data directory and uses `pithead render` followed by the normal `rotate-dashboard-onion` path to mint and persist fresh dashboard, client-auth, and mining identities there after capturing the baseline chain snapshot and before deploying consumer containers; a provisioning failure refuses deployment. The bootstrap render explicitly adopts the reserved host's control and firewall units, as the following upgrade does; baseline restoration converges their original owner afterward. It binds the harness to that exact directory with a root-owned marker outside the mount, then removes the fixture and its credential snapshot after baseline convergence detaches its container mounts; no live identity is copied, and `--keep` is refused. The phase rotates the fixture again, then proves the new address answers over the real Tor network, the retired address becomes unreachable with its original key after a bounded transition, every fixture mining key stays unchanged, the Caddyfile names only the new vhost ([#546](https://github.com/p2pool-starter-stack/pithead/issues/546)'s regression), and `HOST_IP` survives the render ([#356](https://github.com/p2pool-starter-stack/pithead/issues/356)'s regression). Destructive-then-restored: keeps the client credential in a fingerprinted, owner-only file outside container mounts, swaps the saved Tor hidden-service key files back into place, verifies their fingerprints and hostname, renders the old address into the derived files, and proves it externally reachable again; the run-level EXIT restore does the same after a failed or interrupted phase. The wrapper retains the fixture and fails cleanup if either recovery copy remains after phase restoration. A missing, invalid, or unreachable fixture fails instead of skipping. |
-| `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). A failed phase stops every later requested phase, and the summary lists each of them under "did NOT run". |
+| `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). A failed phase stops every later requested phase, and the summary counts and lists each of them under "did NOT run", including onion rotation and the Tari and Monero stranded-node smokes. Unrequested phases do not count as skipped. |
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
 | `--backup-only` | Take and validate a safety backup, wait for stack health, clean the archive and stop. No scenarios or lifecycle operations run. Exclusive of other phases, scenarios, `--check`, `--readiness` and `--keep`. |
@@ -316,6 +321,10 @@ tests/integration/e2e.sh claude/my-feature --mode matrix   # full config sweep (
 `--mode check` is the exception to that mutation workflow: it provisions only the disposable branch
 checkout so its harness code is available, then runs those reads against the currently active install
 directory. It does not take a stack backup, borrow a miner, deploy the branch, or run a restore.
+`--workers` defaults to `1` and accepts `0` in check mode or with `--no-miner`.
+Deploying modes that borrow a miner require a positive integer; other runs accept nonnegative integers.
+`selftest-e2e-boundary.sh` checks these worker-count rules before SSH, including
+zero-worker runs and malformed counts.
 
 Pre-flight, before anything is locked or borrowed: the wrapper waits up to 120 seconds for both
 chains to read `done` on the bench dashboard's sync panels. This allows a brief `loading` state
@@ -348,7 +357,12 @@ only copy. The five keys:
 A refusal by the pregate's current-state check phase adds no `readiness` line, because that phase
 reads the deployed branch. A dashboard that does not answer the post-deploy wait or the Tari timeout prints no Tari key, because the branch may have broken it.
 The pregate records both of each phase's output streams and classifies only what it recorded. If a
-recording or a read of it fails, the pregate refuses the destructive phases and prints no line.
+recording or a read of it fails, the pregate refuses the destructive phases and adds no marker.
+A phase marker already forwarded to stdout may remain; a failed recording does not guarantee
+that its output reached stdout. The selftest injects capture failures that either discard or
+forward the stream before returning nonzero, independently of file-size limits and `tee` write
+ordering. Each forwarding control fails one capture stream while the other records normally.
+It checks refusal in both cases and preserves a Tari marker only when it was forwarded.
 Any `--check` run can print `workers-offline`, the pregate's check phase included; bench-ci accepts
 it only in its `check` mode. Within one process only the first line prints, and the pregate prints
 `readiness` only when its readiness phase printed no line itself. [`tests/integration/lib/e2e-env.sh`](../../tests/integration/lib/e2e-env.sh) holds the
@@ -817,11 +831,27 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
   --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
   is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
-  running, `remove_lan_guard` refuses and the rule stays live. The restore proof records
-  `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
-  plus `pithead-lan.timer` and its check service
-  as it does the egress units: a unit the run added is removed and checked absent, including from
-  the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
+  running, `remove_lan_guard` refuses and the rule stays live. Before a deploying run takes a
+  backup, captures wallets or deploys, the wrapper records the pre-run existence of the egress
+  boot unit and timer, both LAN boot units and the LAN timer. Each `systemctl` read has a
+  three-second timeout and one-second termination grace. Only a readable unit establishes
+  presence; only a successful `LoadState=not-found` read establishes absence. Unknown state
+  refuses deployment without running the restore mutation. Restoration stays disarmed during
+  capture, so interruption also leaves the baseline untouched. Read-only `check` still assesses
+  the live stack. Fixed diagnostic classes distinguish transport failure, failed systemd reads,
+  unsupported load states and unavailable probe output; raw unit text and stderr are discarded.
+  The restore proof checks each saved variable against its capture record before any unit
+  removal, distinguishing missing capture evidence from state changed after capture. It restores
+  `pithead-lan-guard.service` and `pithead-lan-hold.service` plus `pithead-lan.timer` and its check
+  service as it does the egress units: a unit the run added is removed and checked absent,
+  including from the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
+  `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads, record loss,
+  diagnostic privacy, interrupted capture, pre-mutation refusal and read-only assessment through
+  the wrapper's real functions. Its isolated preflight fixture stubs both check and pregate
+  evidence cleanup helpers so each path reaches the unit-state capture boundary.
+  Its scratch directory uses `mktemp`'s platform default when `TMPDIR` is unset; a failed
+  directory allocation stops the selftest before it writes fixtures.
+  Historical unknown state remains unknown; current unit metadata cannot reconstruct it.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
 - Stratum password and TLS client controls run in the two `*-stratum-tls` scenarios (#3078).
@@ -875,7 +905,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 For one representative config:
 
 - Encrypted reset recovery saves the original configuration bytes in owner-only scratch storage before making a separate candidate-schema fixture. It copies only supported keys already present in the baseline, leaves missing keys absent, and refuses to drop any wallet or payout field, including a field set to null or false. Candidate apply stamps the synthetic configuration before its new encrypted backup is created; no original backup is relabelled. Interruptions continue through the existing destructive-phase safety backup and runner restoration. Every normal return, including a failed recovery, applies the saved baseline, reinstalls its exact bytes after apply has stamped any legacy configuration, then starts the stack and requires matching bytes and secret fingerprints plus consecutive healthy status reads within 240 seconds. Unverified cleanup fails the row and retains the private recovery copy outside artifacts. `reset-restore.fixture.json` records validated numeric candidate and applied fixture version stamps, plus the original baseline stamp or null when it is absent or invalid, and refuses an unstamped fixture before backup. Fixture apply and cleanup output are retained in `reset-restore.fixture-apply.log` and `reset-restore.cleanup.log`; restore and startup keep their separate logs. The newer-backup refusal remains covered by `tests/stack/config/version.sh` and the retained failing lifecycle job 2889.
-- Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels.
+- Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census for up to 60 seconds until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels. A census timeout includes the last remaining container IDs in the failure detail, or `unreadable` when the last census returned no output after an engine error.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
   container StartedAt and RestartCount), and backup → restore must do the same before a later fault-injection phase can run. One exception keeps coverage: when the reset-restore refusal row fails with a non-zero restore exit and no configuration file written, the stack is untouched, so the lifecycle phase still fails but fault-injection runs (#3342).
   On the appliance, reset recovery first waits up to 300 seconds for a running wizard and
@@ -1150,7 +1180,15 @@ cancelled CI job used to leave a borrowed production miner on a probe value, whi
 `restore_all` reported a clean restore of the *pool* config and said nothing about the writable keys
 ([#1379](https://github.com/p2pool-starter-stack/pithead/issues/1379)).
 
-The wrapper runs its restore inside the EXIT handler, then explicitly ends and reaps its own
+The wrapper runs the inline readiness/check pregate and its output redactors in a separate
+process group. Before restoration, its EXIT handler terminates that group, allows up to five
+seconds to stop, then kills any remaining processes and verifies that none are running. It reaps
+the pregate child before restoring, so candidate assertions cannot continue against the baseline.
+For SSH transport, each remote pregate also records its process group and start time under
+`results/`. A fresh connection drains those groups before restoration; a locked stop record
+prevents a delayed SSH launch from starting afterward. An unverified local or remote drain
+refuses restoration. Cancellation remains nonzero; readiness and check
+failures still refuse the destructive phases. The wrapper then explicitly ends and reaps its own
 loaner SSH child. This also runs after post-deploy readiness refusal, restore failure and
 `--keep`. Restoration retains the reservation until it finishes or refuses. Sending an exit
 command before closing the lease pipe prevents inherited writers from keeping the child alive;
@@ -1287,7 +1325,12 @@ On a scenario failure, the harness captures fresh diagnostic snapshots (redacted
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
 failed missing-image `up` or dashboard data-dir carry, before cleanup can replace
-Tor's failing state. The Tor-probe fault saves redacted dashboard logs since fault injection
+Tor's failing state. Failed missing-image `up` and setup-after-uninstall commands
+save their complete redacted output to `results/lifecycle-up/up.log` and
+`results/lifecycle-setup/setup.log`, respectively, and print it in the harness transcript,
+including early pull errors. The redactor also masks the stratum-password announcement
+and rig connection instructions before writing either destination.
+The Tor-probe fault saves redacted dashboard logs since fault injection
 (up to 2000 lines, with a 30-second read deadline) to
 `results/tor-probe-fault/dashboard.log` before baseline re-apply can replace the dashboard.
 A failed read leaves an explicit marker and preserves the original test verdict.
@@ -1319,11 +1362,12 @@ asserted invocation. Before each doctor assertion, the check phase emits its exa
 These prefixes keep doctor diagnostics separate from harness verdict rows. The wrapper retains
 this transcript across phase cleanup. The same invocation is also saved under
 `results/check/doctor-asserted.*/output.txt` with `exit-code.txt`, in a separate directory per
-invocation. The e2e wrapper sends the check pregate to its collected
-`results/pregate-check/` directory, separate from the destructive harness's results.
-Its `check/doctor-asserted.*/output.txt` and `exit-code.txt` survive the destructive
-preflight. The wrapper clears prior check results at preflight in every mode and again before
-readiness, so a refused job or a read-only check cannot collect prior doctor evidence.
+invocation. The e2e wrapper sends readiness and check pregates to collected
+`results/pregate-readiness/` and `results/pregate-check/` directories, separate from the
+destructive harness's results. Both manifests and all pregate captures, including
+`check/doctor-asserted.*/output.txt` and `exit-code.txt`, survive subsequent preflights.
+The wrapper clears both pregate directories at preflight in every mode and again before
+readiness, so a refused job or a read-only check cannot collect prior-job evidence.
 Later diagnostic snapshots cannot replace an asserted invocation. Capture
 failures add a failed evidence row; the original doctor exit code is still asserted. This adds
 no retry or readiness wait and does not establish the cause of a transient failure. The pure regressions are

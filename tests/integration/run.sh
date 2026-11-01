@@ -118,6 +118,8 @@ source "$HERE/lib/run-scenario.sh" || exit $?
 source "$HERE/lib/run-source-image.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-wizard-defaults.sh
 source "$HERE/lib/run-wizard-defaults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-wizard-eof.sh
+source "$HERE/lib/run-wizard-eof.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-connection-announcements.sh
 source "$HERE/lib/run-connection-announcements.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-reset-restore.sh
@@ -138,6 +140,8 @@ source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
 source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-webhook-validation.sh
 source "$HERE/lib/run-webhook-validation.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-auth-probe.sh
+source "$HERE/lib/run-auth-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
 source "$HERE/lib/run-tari-off-preview.sh" || exit $?
@@ -278,11 +282,9 @@ main() {
     fi
     local lifecycle_ok=1 _gated
     LIFECYCLE_STACK_INTACT=0
-    # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
-    # name every requested one in the summary instead of dropping it silently (#2755).
     if [ "$rig_control_ok" != 1 ]; then
-        for _gated in LIFECYCLE:lifecycle ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
-            XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
+        for _gated in LIFECYCLE:lifecycle ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening ROTATE_ONION:rotate-onion \
+            XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit TARI_STRANDED:tari-stranded MONERO_STRANDED:monero-stranded \
             MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
             local _flag="RUN_${_gated%%:*}"
             [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
@@ -294,11 +296,14 @@ main() {
         run_lifecycle || lifecycle_ok=0
     fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
-        # Faults need the healthy stack a passing lifecycle leaves (#2501); a requested phase that
-        # does not run is named in the summary, never dropped silently (#2755).
-        # A lifecycle row that failed without disturbing the stack still leaves faults a healthy one.
         if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then
-            run_fault_injection
+            if ! run_fault_injection; then
+                SAFETY_RESTORE_FAILED=1
+                it_fail "fault phase storage verified before continuing" "ENOSPC cleanup unverified; retain the safety archive for operator recovery"
+                hugepages_finish
+                summary
+                return 1
+            fi
         else
             it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"
         fi

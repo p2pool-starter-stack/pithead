@@ -49,18 +49,8 @@ test "$(stat -c %a /data/pithead/data/control/.os1966-original-config.json)" = 6
     APPROVAL_RESTORE_SNAPSHOT=/data/pithead/data/control/.os1966-original-config.json
 }
 
-approval_restore_pending() {
-    [ -n "$APPROVAL_RESTORE_SNAPSHOT" ] || return 0
-    # Keep the harness restore at a quiet phase boundary; apply does not stop a running runner (#2363).
-    _control_requests_drained || return 1
-    _ssh 'set -euo pipefail
-install -m 600 /data/pithead/data/control/.os1966-original-config.json /data/pithead/config.json
-cd /data/pithead
-./pithead apply -y >/dev/null
-cmp -s /data/pithead/config.json /data/pithead/data/control/.os1966-original-config.json
-rm -f /data/pithead/data/control/.os1966-original-config.json' || return 1
-    APPROVAL_RESTORE_SNAPSHOT=""
-}
+# shellcheck source=tests/os/approval-restore.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/approval-restore.sh"
 
 approval_fixture_cleanup() {
     approval_restore_pending || {
@@ -115,10 +105,8 @@ assert_shipped_config_version_asset() {
     fi
 }
 
-# Commit a dashboard-password change and read its verdict from the host's result spool: the
-# dashboard's own result poll authenticates with the login this very commit replaces (#2367).
-password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current login) by dynamic scope
-    local live proposed rid result tries=0
+password_commit_via_host() {
+    local live proposed rid result="" tries=0
     live=$(sensitive_live_config) || {
         bad "dashboard-password repoint NOT exercised: /api/config unreadable before the commit"
         return 1
@@ -128,8 +116,6 @@ password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current
         bad "dashboard-password repoint NOT exercised: the preview never returned"
         return 1
     }
-    # The owner's #2367 ruling: the operator sees the cost before confirming. Refuse to commit
-    # unless the host preview is envelope-gated and names the lockout and console-login costs.
     if ! dashboard_password_preview_warns_verdict "$APPROVAL_PREVIEW"; then
         bad "dashboard-password preview did not warn before the commit (want previewed, approval_required, lockout + console-login text; got $(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status, approval_required, warns: ([.changes[]?.msg] | any(contains("locks this session out") and contains("console root login")))}' 2>/dev/null || printf 'unparseable preview'))"
         return 1
@@ -138,8 +124,8 @@ password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current
     dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY",approve:true,payout_suffixes:{}}')" 20 >/dev/null || true
     while [ "$tries" -lt 140 ]; do
         result=$(_ssh "cat /data/pithead/data/control/results/$rid.json" 2>/dev/null) &&
-            ! printf '%s' "$result" | jq -e '.status | IN("pending","accepted","running")' >/dev/null 2>&1 && break
-        result="" tries=$((tries + 1))
+            ! printf '%s' "$result" | jq -e '.status | IN("pending","accepted","running","previewed")' >/dev/null 2>&1 && break
+        tries=$((tries + 1))
         sleep 3
     done
     dashboard_password_repoint_applied_verdict "$result" && return 0
@@ -257,7 +243,7 @@ _config_version_asset_phase_self_test() (
 
 _password_commit_via_host_self_test() (
     local msg="Dashboard login password CHANGED — a mistyped password locks this session out, and on the appliance it is also the console root login."
-    local good preview committed
+    local good preview committed reads sleeps=0 failure="" preview_reads=3
     good=$(jq -nc --arg m "$msg" '{id:"r1",status:"previewed",approval_required:true,changes:[{msg:$m}]}')
     sensitive_live_config() { printf '{"dashboard":{"auth":{"password":"old"}}}'; }
     sensitive_preview() { APPROVAL_PREVIEW=$preview APPROVAL_REQUEST_ID=r1; }
@@ -265,11 +251,11 @@ _password_commit_via_host_self_test() (
         committed=1
         return 1
     }
-    bad() { :; }
+    bad() { failure=$1; }
+    sleep() { sleeps=$((sleeps + 1)); }
     _ssh() { printf '{"status":"applied"}'; }
     preview=$good committed=0
     password_commit_via_host new && [ "$committed" = 1 ] || exit 1
-    # A preview missing the status, the approval flag or either warning is refused BEFORE commit.
     for bad_preview in "$(jq -c 'del(.status)' <<<"$good")" "$(jq -c '.approval_required=false' <<<"$good")" \
         "$(jq -c '.changes[0].msg|=sub("locks this session out";"")' <<<"$good")" \
         "$(jq -c '.changes[0].msg|=sub("console root login";"")' <<<"$good")"; do
@@ -279,6 +265,25 @@ _password_commit_via_host_self_test() (
     preview=$good committed=0
     _ssh() { printf '{"status":"rejected","error":"type APPLY"}'; }
     ! password_commit_via_host new || exit 1
+    reads=$(mktemp)
+    trap 'rm -f "$reads"' EXIT
+    printf '0\n' >"$reads"
+    _ssh() {
+        local count status=previewed
+        count=$(($(cat "$reads") + 1))
+        printf '%s\n' "$count" >"$reads"
+        [ "$count" -le "$preview_reads" ] || status=applied
+        printf '{"id":"r1","status":"%s"}' "$status"
+    }
+    committed=0 failure="" sleeps=0
+    password_commit_via_host new && [ "$committed" = 1 ] || exit 1
+    [ "$(cat "$reads")" = 4 ] && [ "$sleeps" = 3 ] && [ -z "$failure" ] || exit 1
+    preview_reads=140
+    printf '0\n' >"$reads"
+    committed=0 failure="" sleeps=0
+    ! password_commit_via_host new && [ "$committed" = 1 ] || exit 1
+    [ "$(cat "$reads")" = 140 ] && [ "$sleeps" = 140 ] || exit 1
+    case "$failure" in *status=previewed*) ;; *) exit 1 ;; esac
 )
 
 _hostname_landed_fallback_self_test() (
@@ -306,21 +311,18 @@ _hostname_landed_fallback_self_test() (
     esac
 )
 
-# The restore keeps its own phase boundary quiet before `pithead apply` (#2363). Driving the real
-# function with one request stuck in requests/ forever must refuse, and must leave `pithead apply`
-# uncalled — removing the `_control_requests_drained` line makes both halves fail.
-# The real `_control_requests_drained` is driven by selftest-run-modules.sh; deleting this caller's
-# call to it fails both halves below.
 _restore_waits_for_control_drain_self_test() (
-    local applied=0 drained=1
+    local applied drained=1
+    applied=$(mktemp) || return 1
+    trap 'rm -f "$applied"' EXIT
     APPROVAL_RESTORE_SNAPSHOT=/data/pithead/data/control/.os1966-original-config.json
     _control_requests_drained() { [ "$drained" -eq 0 ]; }
-    _ssh() { case "$*" in *'pithead apply'*) applied=1 ;; esac }
+    _ssh() { case "$*" in *'pithead apply'*) printf 'applied' >"$applied" ;; esac }
     ! approval_restore_pending || return 1
-    [ "$applied" -eq 0 ] || return 1
+    [ ! -s "$applied" ] || return 1
     drained=0
     approval_restore_pending || return 1
-    [ "$applied" -eq 1 ]
+    [ "$(cat "$applied")" = applied ]
 )
 
 # #2333: a fresh-chain sync-gate-hold row must be checked before the reserved-node round trip

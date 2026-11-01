@@ -28,6 +28,7 @@ class TariClient:
         self._stub = None
         self._last_sync_status = None
         self._last_sync_ts = 0.0
+        self.sync_probe = {}
 
     def _ensure_channel(self):
         if self._channel is None:
@@ -70,29 +71,28 @@ class TariClient:
         return {"is_syncing": False, "reachable": False}
 
     async def _fetch_sync_status(self) -> dict | None:
-        """
-        Read sync progress from the node's gRPC. Returns the status dict, or None if the
-        node is unreachable (so the caller can fall back to the last known state).
-
-        `initial_sync_achieved` is the authoritative "fully synced" flag; while syncing,
-        GetSyncProgress.tip_height is the height the node is working toward. Using the
-        node's own state means there's no external block explorer to fail.
-        """
         stub = None
         try:
             stub = self._ensure_channel()
             tip = await stub.GetTipInfo(empty_pb2.Empty(), timeout=5)
         except Exception as e:
-            logger.error(f"Tari gRPC GetTipInfo error: {e}")
+            self.sync_probe = {"error": "GetTipInfo probe failed"}
+            logger.debug("Tari gRPC GetTipInfo probe failed (%s)", type(e).__name__)
             initializing = await self._fetch_initializing_status(stub) if stub is not None else None
             await self._reset_channel()
             if initializing is not None:
                 return initializing
             return None
 
+        self.sync_probe = {
+            "initial_sync_achieved": tip.initial_sync_achieved,
+            "base_node_state": base_node_pb2.BaseNodeState.Name(tip.base_node_state)
+            if type(tip.base_node_state) is int
+            and tip.base_node_state in base_node_pb2.BaseNodeState.values()
+            else None,
+        }
         local_height = tip.metadata.best_block_height
 
-        # The node reports initial sync complete — trust it over any height heuristic.
         if tip.initial_sync_achieved:
             return {
                 "is_syncing": False,
@@ -101,19 +101,23 @@ class TariClient:
                 "percent": 100,
             }
 
-        # Still syncing: ask the node what height it is syncing toward.
         target = 0
         try:
             progress = await stub.GetSyncProgress(empty_pb2.Empty(), timeout=5)
             if progress.local_height:
                 local_height = progress.local_height
             target = progress.tip_height
+            self.sync_probe["sync_state"] = (
+                base_node_pb2.SyncState.Name(progress.state)
+                if type(progress.state) is int
+                and progress.state in base_node_pb2.SyncState.values()
+                else None
+            )
         except Exception as e:
-            logger.error(f"Tari gRPC GetSyncProgress error: {e}")
+            self.sync_probe["error"] = "GetSyncProgress probe failed"
+            logger.debug("Tari gRPC GetSyncProgress probe failed (%s)", type(e).__name__)
             await self._reset_channel()
 
-        # No reliable target yet (early startup / between sync rounds): report syncing
-        # without a false 100%, so the UI shows a loading state, not a premature ✔.
         if target <= local_height:
             return {"is_syncing": True, "current": local_height, "target": 0, "percent": 0}
 
