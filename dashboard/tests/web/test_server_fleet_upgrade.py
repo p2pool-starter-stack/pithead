@@ -150,6 +150,57 @@ class TestFleetUpgradeStart:
         assert fleet_client.sent == []
         assert fleet_client.sm.get_worker_config_history("rig-a") == []
 
+    async def test_a_second_click_before_the_host_answers_is_a_conflict(self, fleet_client):
+        assert (await self._post(fleet_client)).status == 202
+        assert (await self._post(fleet_client)).status == 409
+        for t in list(fleet_client.app["_bg_tasks"]):
+            t.cancel()
+
+    async def test_a_rejected_run_sends_no_summary(self, fleet_client, monkeypatch):
+        rid = str(uuid.uuid4())
+        monkeypatch.setattr(control_service.uuid, "uuid4", lambda: uuid.UUID(rid))
+        _write_result(fleet_client.spool, rid, {"status": "rejected", "error": "cooldown"})
+        assert (await self._post(fleet_client)).status == 202
+        await asyncio.gather(*fleet_client.app["_bg_tasks"])
+        assert fleet_client.sent == []
+
+    async def test_one_rig_failing_to_record_does_not_stop_the_rest(
+        self, fleet_client, monkeypatch
+    ):
+        rid = str(uuid.uuid4())
+        monkeypatch.setattr(control_service.uuid, "uuid4", lambda: uuid.UUID(rid))
+        _write_result(
+            fleet_client.spool,
+            rid,
+            {
+                "action": "worker-upgrade-all",
+                "status": "completed",
+                "version": "v1.15.0",
+                "rigs": [
+                    {"name": "rig-a", "status": "applied"},
+                    {"name": "rig-b", "status": "failed"},
+                ],
+            },
+        )
+        real = fleet_client.sm.add_worker_config_version
+
+        def flaky(worker, *a, **k):
+            if worker == "rig-a":
+                raise RuntimeError("db")
+            return real(worker, *a, **k)
+
+        monkeypatch.setattr(fleet_client.sm, "add_worker_config_version", flaky)
+        assert (await self._post(fleet_client)).status == 202
+        await asyncio.gather(*fleet_client.app["_bg_tasks"])
+        assert len(fleet_client.sm.get_worker_config_history("rig-b")) == 1
+        assert len(fleet_client.sent) == 1
+
+    async def test_a_non_object_body_is_a_400(self, fleet_client):
+        resp = await fleet_client.post(
+            "/api/control/worker-upgrade-all", json=[1], headers=CONTROL_HEADERS
+        )
+        assert resp.status == 400
+
     async def test_a_failed_submit_is_a_500_without_detail(self, fleet_client, monkeypatch):
         def boom(*a, **k):
             raise OSError("spool dir gone")

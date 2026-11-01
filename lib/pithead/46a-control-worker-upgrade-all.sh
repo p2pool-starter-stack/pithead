@@ -1,4 +1,5 @@
 CONTROL_WUA_MAX_RIGS=20
+CONTROL_WUA_COOLDOWN_MIN=5
 
 control_worker_upgrade_all() { # <claimed-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
@@ -12,13 +13,19 @@ control_worker_upgrade_all() { # <claimed-file> <id> <actor> <control-dir>
         return 0
     fi
     if ! jq -e '(.workers | type == "array") and (.workers | length >= 1 and length <= 100) and
-        all(.workers[]; type == "string") and ((.workers | length) == (.workers | unique | length))' "$file" >/dev/null 2>&1; then
+        all(.workers[]; type == "string" and test("^[!-~]{1,128}$")) and ((.workers | length) == (.workers | unique | length))' "$file" >/dev/null 2>&1; then
         control_write_result "$results" "$id" "$(jq -n '{status:"rejected",error:"'"'"'workers'"'"' must be 1 to 100 distinct rig names.",ts:(now|floor)}')"
         control_audit "$auditf" "$id" "$actor" "worker-upgrade-all" "rejected"
         return 0
     fi
     if [ "${CONTROL_WU_BUDGET:-0}" -le 0 ]; then
         control_write_result "$results" "$id" "$(jq -n '{status:"rejected",error:"another worker upgrade is already in this cycle — retry in a moment.",ts:(now|floor)}')"
+        control_audit "$auditf" "$id" "$actor" "worker-upgrade-all" "rejected"
+        return 0
+    fi
+    local stampf="$cdir/staged/.worker-upgrade-all-stamp"
+    if [ -n "$(find "$stampf" -mmin -"$CONTROL_WUA_COOLDOWN_MIN" 2>/dev/null)" ]; then
+        control_write_result "$results" "$id" "$(jq -n --argjson m "$CONTROL_WUA_COOLDOWN_MIN" '{status:"rejected",error:"an Update all run finished less than \($m) minutes ago — retry shortly.",ts:(now|floor)}')"
         control_audit "$auditf" "$id" "$actor" "worker-upgrade-all" "rejected"
         return 0
     fi
@@ -48,6 +55,7 @@ control_worker_upgrade_all() { # <claimed-file> <id> <actor> <control-dir>
         i=$((i + 1))
     done
     CONTROL_WU_BUDGET=0
+    touch "$stampf"
     _wua_write completed
     control_audit "$auditf" "$id" "$actor" "worker-upgrade-all" "completed"
 }

@@ -458,13 +458,13 @@ seconds of the rebuild finishing rather than up to a full cycle later.
 
 `GET /api/control/worker-upgrade-all` lists what an update-all run would do, and `POST` starts it.
 The plan names the target version (the cached latest RigForge release), the managed rigs that are
-behind it, and the rigs that cannot take the upgrade with the reason: offline or stale telemetry, not
-adopted, or control API unreachable. A rig already on the latest release is not listed. The control
+behind it, and the rigs that cannot take the upgrade with the reason: offline or stale telemetry, an
+unrecognised version, not adopted, or control API unreachable. A rig already on the latest release is not listed. The control
 channel and its editor must be on, as for the single-rig upgrade.
 
 The start request carries only the version the operator reviewed. The dashboard derives the rig
 names itself and refuses with a conflict when the latest release changed, when no managed rig is
-behind, or when a run is already in progress. The host-side `worker-upgrade-all` action then runs
+behind, or when a run is already in progress (including one just started from another click). The host-side `worker-upgrade-all` action then runs
 the single-rig upgrade for each rig in turn, so every guard above applies per rig: the host
 re-derives the target, resolves each rig's address and bearer from `config.json`, and polls to a
 terminal outcome. One rig's failure never stops the others.
@@ -478,7 +478,7 @@ per-event toggle, so it is silent only when notifications are off.
 
 The runner handles one request at a time, so a run holds it for up to about two minutes per rig,
 and one run takes at most 20 rigs. Rigs beyond that report `not_started`; start another run for
-them. Other control requests wait behind a run. If the dashboard restarts mid-run, the host
+them once the five-minute cooldown after a run has passed. Other control requests wait behind a run. If the dashboard restarts mid-run, the host
 finishes the run, but the history rows and the summary are not written.
 
 ---

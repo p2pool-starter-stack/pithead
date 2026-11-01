@@ -5,7 +5,7 @@ import uuid
 from mining_dashboard.client.rigforge_freshness import feed_stale
 from mining_dashboard.config import config
 from mining_dashboard.service import request_spool
-from mining_dashboard.service.health.update_checker import compute_update
+from mining_dashboard.service.health.update_checker import compute_update, parse_semver
 
 _LATEST_SCAN = 25
 
@@ -24,7 +24,8 @@ SETTLED_WORDS = {
 
 def plan(workers, release):
     """Which rigs an Update all would touch: ``{version, eligible, skipped}``. A rig already on
-    the release, or one that reports no RigForge block, is left out of both lists."""
+    the release, or a plain-xmrig worker that reports no RigForge block, is left out of both
+    lists."""
     tag = (release or {}).get("tag")
     out = {"version": tag, "eligible": [], "skipped": []}
     if not tag:
@@ -32,23 +33,25 @@ def plan(workers, release):
     for w in sorted(workers, key=lambda x: x.get("name", "")):
         name = w.get("name")
         rigforge = w.get("rigforge")
-        if not name or not isinstance(rigforge, dict):
+        if not name or not (isinstance(rigforge, dict) or w.get("adopted")):
             continue
-        reason = None
-        if w.get("status") != "online" or feed_stale(rigforge):
+        version = None if feed_stale(rigforge) else (rigforge or {}).get("version")
+        if version and parse_semver(version) and not compute_update(version, tag, None):
+            continue
+        if not version:
             reason = "offline or telemetry unavailable — version unknown"
+        elif not parse_semver(version):
+            reason = "reports an unrecognised RigForge version"
+        elif w.get("status") != "online":
+            reason = "offline"
         elif not w.get("adopted"):
             reason = "not managed by this stack — adopt it first"
         elif w.get("api_ok") is False:
             reason = "control API unreachable"
-        elif not rigforge.get("version"):
-            reason = "reports no RigForge version"
-        elif not compute_update(rigforge["version"], tag, None):
-            continue
-        if reason:
-            out["skipped"].append({"name": name, "reason": reason})
         else:
-            out["eligible"].append({"name": name, "running": rigforge["version"]})
+            out["eligible"].append({"name": name, "running": version})
+            continue
+        out["skipped"].append({"name": name, "reason": reason})
     return out
 
 
@@ -85,15 +88,18 @@ def submit_worker_upgrade_all(workers, version, actor="", intent_id=None):
 def latest_result(action) -> dict | None:
     """The newest result whose ``action`` field is ``action``, or None. Scans the newest few
     results only: the host prunes the directory by age and count."""
+    stamped = []
     try:
-        entries = sorted(
-            (e for e in os.scandir(config.CONTROL_RESULTS_DIR) if e.name.endswith(".json")),
-            key=lambda e: e.stat().st_mtime,
-            reverse=True,
-        )
+        for entry in os.scandir(config.CONTROL_RESULTS_DIR):
+            try:
+                if entry.name.endswith(".json"):
+                    stamped.append((entry.stat().st_mtime, entry))
+            except OSError:
+                continue
     except OSError:
         return None
-    for entry in entries[:_LATEST_SCAN]:
+    stamped.sort(key=lambda item: item[0], reverse=True)
+    for _, entry in stamped[:_LATEST_SCAN]:
         try:
             with open(entry.path) as f:
                 res = json.load(f)

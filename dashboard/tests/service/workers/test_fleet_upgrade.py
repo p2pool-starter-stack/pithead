@@ -39,6 +39,20 @@ def test_plan_partitions_behind_rigs_and_names_the_reason_for_the_rest():
     assert "control API" in skipped["unreachable"]
 
 
+def test_plan_lists_adopted_rigs_it_cannot_read_and_hides_current_ones_even_when_offline():
+    workers = [
+        {"name": "no-block", "status": "offline", "adopted": True},
+        {"name": "weird", **rig("weird", "dev-build")},
+        {"name": "offline-current", **rig("offline-current", "1.15.0", status="offline")},
+        {"name": "plain", "status": "online", "adopted": False},
+    ]
+    out = fleet_upgrade.plan(workers, RELEASE)
+    skipped = {s["name"]: s["reason"] for s in out["skipped"]}
+    assert out["eligible"] == []
+    assert set(skipped) == {"no-block", "weird"}
+    assert "unrecognised" in skipped["weird"] and "version unknown" in skipped["no-block"]
+
+
 def test_plan_is_empty_without_a_known_release():
     assert fleet_upgrade.plan([rig("a")], None) == {"version": None, "eligible": [], "skipped": []}
 
@@ -68,3 +82,18 @@ def test_latest_result_skips_unreadable_files_and_a_missing_directory(tmp_path, 
     (tmp_path / "b.json").write_text("[1]")
     (tmp_path / "ignored.txt").write_text("{}")
     assert fleet_upgrade.latest_result("worker-upgrade-all") is None
+
+
+def test_latest_result_survives_a_result_removed_while_scanning(tmp_path, monkeypatch):
+    class Gone:
+        name = "gone.json"
+        path = "gone.json"
+
+        def stat(self):
+            raise FileNotFoundError
+
+    (tmp_path / "ok.json").write_text('{"action": "worker-upgrade-all", "status": "completed"}')
+    real = fleet_upgrade.os.scandir
+    monkeypatch.setattr(fleet_upgrade.config, "CONTROL_RESULTS_DIR", str(tmp_path))
+    monkeypatch.setattr(fleet_upgrade.os, "scandir", lambda p: [Gone(), *real(p)])
+    assert fleet_upgrade.latest_result("worker-upgrade-all")["status"] == "completed"

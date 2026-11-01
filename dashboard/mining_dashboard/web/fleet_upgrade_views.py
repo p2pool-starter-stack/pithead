@@ -10,7 +10,7 @@ from mining_dashboard.service.workers import fleet_upgrade, worker_refresh
 logger = logging.getLogger(__name__)
 
 CONTROL_HEADER = "X-Pithead-Control"
-RUN_WAIT_S = 4 * 3600
+RUN_WAIT_S = 3600
 
 
 def _require_control_header(request):
@@ -33,23 +33,26 @@ async def _finalize(app, rid, version):
     except Exception:
         logger.exception("Error waiting for worker-upgrade-all result (id=%s)", rid)
         return
-    if res is None:
+    if res is None or not res.get("rigs"):
         return
     state_mgr = app["state_manager"]
-    for rig in res.get("rigs") or []:
-        if rig.get("status") in ("not_started",):
+    for rig in res["rigs"]:
+        if rig.get("status") == "not_started":
             continue
-        state_mgr.add_worker_config_version(
-            rig["name"],
-            rig.get("change_id"),
-            rig["status"],
-            {"version": version},
-            rig.get("reason"),
-            change_type="upgrade",
-        )
-        await worker_refresh.maybe_refresh_after_upgrade(
-            app["latest_data"], rig["name"], version, rig
-        )
+        try:
+            state_mgr.add_worker_config_version(
+                rig["name"],
+                rig.get("change_id"),
+                rig["status"],
+                {"version": version},
+                rig.get("reason"),
+                change_type="upgrade",
+            )
+            await worker_refresh.maybe_refresh_after_upgrade(
+                app["latest_data"], rig["name"], version, rig
+            )
+        except Exception:
+            logger.exception("Error recording worker-upgrade-all rig (id=%s)", rid)
     notify = app.get("notify")
     if notify:
         await notify(fleet_upgrade.summary_text(res))
@@ -61,6 +64,8 @@ async def handle_fleet_upgrade_start(request):
         body = await request.json()
     except Exception:
         raise web.HTTPBadRequest(text="Body must be JSON.") from None
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="Body must be a JSON object.")
     data = request.app["latest_data"] or {}
     plan = fleet_upgrade.plan(data.get("workers", []), data.get("rigforge_release"))
     if body.get("version") != plan["version"] or not plan["version"]:
@@ -70,7 +75,8 @@ async def handle_fleet_upgrade_start(request):
     if not plan["eligible"]:
         raise web.HTTPConflict(text="No managed rig is behind the latest release.")
     last = await asyncio.to_thread(fleet_upgrade.latest_result, "worker-upgrade-all")
-    if (
+    pending = request.app["_fleet"].get("task")
+    if (pending and not pending.done()) or (
         last
         and last.get("status") == fleet_upgrade.RUNNING
         and time.time() - last.get("ts", 0) < RUN_WAIT_S
@@ -85,6 +91,7 @@ async def handle_fleet_upgrade_start(request):
         logger.exception("Error submitting worker-upgrade-all")
         return web.json_response({"error": "Failed to submit the fleet upgrade."}, status=500)
     task = asyncio.create_task(_finalize(request.app, rid, plan["version"]))
+    request.app["_fleet"]["task"] = task
     request.app["_bg_tasks"].add(task)
     task.add_done_callback(request.app["_bg_tasks"].discard)
     return web.json_response({"id": rid, "status": "pending", "rigs": names}, status=202)

@@ -70,10 +70,36 @@ assert_contains "a malformed version is rejected" "$(jq -r '.error' "$WUA/result
 wua4="78787878-7878-4787-9787-787878787878"
 wua_run "$wua4" "{\"id\":\"$wua4\",\"action\":\"worker-upgrade-all\",\"actor\":\"admin\",\"version\":\"v9.9.9\",\"workers\":[\"rig-a\",\"rig-a\"]}"
 assert_contains "duplicate rig names are rejected" "$(jq -r '.error' "$WUA/results/$wua4.json")" "distinct rig names"
-wua5="89898989-8989-4898-9898-898989898989"
+wua6="9a9a9a9a-9a9a-4a9a-9a9a-9a9a9a9a9a9a"
+wua_run "$wua6" "{\"id\":\"$wua6\",\"action\":\"worker-upgrade-all\",\"actor\":\"admin\",\"version\":\"v9.9.9\",\"workers\":[\"rig-a\"]}"
+assert_contains "a second run inside the cooldown is rejected" "$(jq -r '.error' "$WUA/results/$wua6.json")" "less than 5 minutes ago"
+wua7="abababab-abab-4bab-9bab-abababababab"
+wua_run "$wua7" "{\"id\":\"$wua7\",\"action\":\"worker-upgrade-all\",\"actor\":\"admin\",\"version\":\"v9.9.9\",\"workers\":[\"bad name\"]}"
+assert_contains "a rig name outside the printable charset is rejected" "$(jq -r '.error' "$WUA/results/$wua7.json")" "distinct rig names"
+rm -f "$WUA/staged/.worker-upgrade-all-stamp"
+jq -n '{workers: {list: [range(0;22) | {name: ("big-" + tostring), host: "10.0.1.1", control_port: 8082, token: "tok-big"}]}}' >"$WUA/config.json"
 : >"$WUA/dials.log"
-wua_names=$(jq -nc '[range(0;22) | "rig-a"] | to_entries | map("rig-a" + (.key|tostring))')
+wua5="89898989-8989-4898-9898-898989898989"
+wua_names=$(jq -nc '[range(0;22) | "big-" + tostring]')
 wua_run "$wua5" "{\"id\":\"$wua5\",\"action\":\"worker-upgrade-all\",\"actor\":\"admin\",\"version\":\"v9.9.9\",\"workers\":$wua_names}"
-assert_eq "a run past the per-run limit reports the rest as not started" \
-    "$(jq -r '[.counts.not_started, .counts.rejected] | join(",")' "$WUA/results/$wua5.json")" "2,20"
-assert_eq "the runner stops at the per-run limit" "$(wc -l <"$WUA/dials.log" | tr -d ' ')" "0"
+assert_eq "a run past the per-run limit upgrades 20 rigs and reports the rest as not started" \
+    "$(jq -r '[.counts.applied, .counts.not_started] | join(",")' "$WUA/results/$wua5.json")" "20,2"
+assert_eq "the runner dials no rig past the per-run limit" "$(grep -c '/upgrade$' "$WUA/dials.log")" "20"
+rm -f "$WUA/staged/.worker-upgrade-all-stamp"
+cat >"$WUA/bin/curl" <<EOF2
+#!/usr/bin/env bash
+cat >/dev/null
+out=""
+while [ \$# -gt 0 ]; do
+    case "\$1" in
+    -o) out="\$2"; shift 2 ;;
+    *) shift ;;
+    esac
+done
+printf 'not json' >"\$out"
+printf '202'
+EOF2
+wua8="bcbcbcbc-bcbc-4cbc-9cbc-bcbcbcbcbcbc"
+(export CONTROL_WU_POLL_CAP=1 && wua_run "$wua8" "{\"id\":\"$wua8\",\"action\":\"worker-upgrade-all\",\"actor\":\"admin\",\"version\":\"v9.9.9\",\"workers\":[\"big-0\",\"big-1\"]}")
+assert_eq "a rig answering 202 with a non-JSON body does not abort the run" \
+    "$(jq -r '.status + ":" + (.rigs | length | tostring)' "$WUA/results/$wua8.json")" "completed:2"

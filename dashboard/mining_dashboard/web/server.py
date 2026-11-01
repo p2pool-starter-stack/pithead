@@ -579,6 +579,7 @@ def create_app(state_manager, latest_data_ref, notify=None):
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
     app["notify"] = notify
+    app["_fleet"] = {}
     # Fire-and-forget recorder tasks (worker-upgrade, #1014) — tracked so they can't be
     # garbage-collected mid-flight and so shutdown can cancel any still in progress.
     app["_bg_tasks"] = set()
