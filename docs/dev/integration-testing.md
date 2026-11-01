@@ -1127,6 +1127,12 @@ The row is polled to a terminal status within a ninety-second observation budget
 and the dashboard's next poll consumes it
 ([#3819](https://github.com/p2pool-starter-stack/pithead/issues/3819)). A change that rolls back
 therefore fails as `expected [applied], got [rolled_back]` instead of timing out on `accepted`.
+Job 3290 showed the rest of the lag is ordinary: the rig reported `rolled_back` about 96 seconds
+after the dial, its feed carried it about eight seconds later, and the dashboard row followed on its
+next poll. Each `history_handoff` sample's `outcome.cause` classes the rig's reason as
+`miner_not_live` (the miner never returned to a live hashrate on the new config),
+`rollback_not_live` or `other`; the reason text itself is never logged, because pools carry
+credentials.
 The result is the last history status whose transport and JSON decoding succeeded within that
 budget; reads or decoding finishing later cannot pass. A nonzero transport exit discards even valid JSON
 and records `dashboard.poll=failed`. Decoding must succeed with one JSON object; trailing junk

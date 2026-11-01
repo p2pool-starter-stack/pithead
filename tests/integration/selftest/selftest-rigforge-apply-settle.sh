@@ -207,6 +207,8 @@ assert_eq "collector result is matched by worker and retains failed probe plus f
 assert_eq "snapshot and both feed generation times survive" \
     "$(printf '%s' "$sample" | jq -c '[.history_handoff.dashboard.snapshot_at,.history_handoff.dashboard.feed_at,.history_handoff.direct.feed_at]')" \
     '[1790760000.25,"2026-09-30T13:15:30Z","2026-09-30T13:16:00Z"]'
+assert_eq "an unrecognised reason is classed, never echoed" \
+    "$(printf '%s' "$sample" | jq -c '.history_handoff.outcome.cause')" '"other"'
 if grep -Eq 'changeme|example\.test|pass|reason' "$log"; then
     it_fail "samples exclude credentials, reasons, config and topology" "unsafe output"
 else
@@ -219,6 +221,16 @@ assert_eq "malicious reflected scalars are replaced" \
     "$(jq -c '[.history_handoff.dashboard.history,.history_handoff.dashboard.feed_at,.history_handoff.direct.history]' "$log")" \
     '["unrecognized","invalid_or_absent","unrecognized"]'
 if grep -q 'changeme' "$log"; then it_fail "no reflected credential" "unsafe output"; else it_pass "no reflected credential"; fi
+rx() {
+    cat >/dev/null
+    case "$1" in
+    *'/1/summary'*) printf '%s' '{}' ;;
+    *status*change_id*) printf '%s' '{"change_id":"0123456789abcdef","status":"rolled_back","reason":"miner did not return to a live hashrate; rolled back and live"}' ;;
+    esac
+}
+_history_handoff_sample 0123456789abcdef '{}' 2>"$log"
+assert_eq "a rollback for a miner that never went live is named by class" \
+    "$(jq -c '[.history_handoff.outcome.status,.history_handoff.outcome.cause]' "$log")" '["rolled_back","miner_not_live"]'
 rx() {
     cat >/dev/null
     return 1

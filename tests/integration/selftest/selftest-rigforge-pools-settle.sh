@@ -33,7 +33,6 @@ rig_key_mark() { echo mark >>"$MARK_LOG"; }
 rig_key_clear() { echo clear >>"$MARK_LOG"; }
 ledger() { paste -sd, "$MARK_LOG"; } # "mark" = kept for the EXIT unwind, "mark,clear" = retired
 
-# One-shot: run the predicate once and return its verdict — no polling, no timing.
 wait_for() {
     printf '%s\n' "$1" >>"$BOUND_LOG"
     shift 3

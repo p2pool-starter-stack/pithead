@@ -127,7 +127,11 @@ _history_handoff_sample() { # <change_id> <detail-json> [rig] [dashboard-poll]
          feed_at:(.rigforge.generated_at | stamp)}' 2>/dev/null)" || collector='{"poll":"invalid_or_failed"}'
     [ -n "$collector" ] || collector='{"poll":"invalid_or_failed"}'
     outcome="$(printf '%s' "$outcome" | jq -sc --arg id "$id" "$fields"'
-        {status:(if .change_id == $id then .status | status else "absent" end)}' 2>/dev/null)" || outcome='{"poll":"invalid_or_failed"}'
+        {status:(if .change_id == $id then .status | status else "absent" end),
+         cause:(if .change_id != $id or (.reason | type) != "string" then null
+                elif (.reason | test("^miner did not return to a live hashrate")) then "miner_not_live"
+                elif (.reason | test("re-apply also failed")) then "rollback_not_live"
+                else "other" end)}' 2>/dev/null)" || outcome='{"poll":"invalid_or_failed"}'
     [ -n "$detail" ] || detail='{"poll":"invalid_or_failed"}'
     [ -n "$feed" ] || feed='{"poll":"invalid_or_failed"}'
     [ -n "$outcome" ] || outcome='{"poll":"invalid_or_failed"}'
