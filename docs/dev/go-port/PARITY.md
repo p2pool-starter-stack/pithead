@@ -9,9 +9,9 @@ authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
 data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
 payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
-LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, container diagnostics at `975161c6`, Monero sync/peer/tip probes at `aa68ca87`, and remote RPC preflight at `56f5bcdd`.
-The operator commits later rounds because
-this sandbox cannot write shared Git metadata. No performance benefit is claimed.
+LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, container diagnostics at `975161c6`, Monero sync/peer/tip probes at `aa68ca87`, remote RPC preflight at `56f5bcdd`, and ZMTP validators at `6f34210a`.
+The operator commits later rounds because this sandbox cannot write shared Git
+metadata. No performance benefit is claimed.
 
 ## Scope and continuation criteria
 
@@ -87,6 +87,7 @@ selection is not implemented.
 | Monero sync, peer counts and tip age | Native probes with supplied RPC getters/time; Bash collector | 9 tagged groups and Go units |
 | Remote Monero RPC preflight | Native package with supplied endpoint/login/cap; Bash config readers and orchestration | 9 tagged groups, 87 scenarios and Go units |
 | ZMTP greeting, READY and exchange verdict | Native canonical-hex validators and supplied-result classifier; Bash network exchange | 8 tagged groups, 451 scenarios and Go units |
+| ZMTP stream exchange | Native over supplied connection/deadline; Bash dial and callers | 5 tagged groups, 435 scenarios and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -220,6 +221,11 @@ oracles:
   bytes/status without running the endpoint's TCP shell command. It compares
   predicate and reason bytes, retaining exposed arithmetic/NUL diagnostics.
 
+- `node_zmq_exchange_reference.sh` runs the unchanged endpoint function with its
+  sole TCP opener replaced by a guarded inherited-descriptor check. Local socket
+  pairs exercise actual Bash reads/writes and the five-second timeout without a
+  network connection; source-based suites cannot invoke the Go exchange.
+
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
@@ -231,7 +237,8 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-lan-parity`, `test-go-doctor-egress-parity` and
 `test-go-doctor-nft-parity`, `test-go-doctor-history-parity` and
 `test-go-doctor-containers-parity`, `test-go-doctor-monero-parity` and
-`test-go-node-monero-parity`, `test-go-node-zmq-parity`.
+`test-go-node-monero-parity`, `test-go-node-zmq-parity` and
+`test-go-node-zmq-exchange-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -314,29 +321,27 @@ Detailed paired commands, results and limits are preserved in
 [network and firewall results](results-network-probes.md), plus
 [remote-node probe results](results-node-probes.md).
 
-## ZMTP validation slice (2026-10-31)
+## ZMTP stream exchange slice (2026-10-31)
 
-`go/internal/nodeprobe/zmq.go` implements greeting/READY predicates and supplied
-handshake reply/status classification. It preserves ignored greeting fields,
-all flag-bit combinations, metadata bounds, the first `Socket-Type` verdict,
-newline handling and exact `protocol`/`timeout`/`refused` reasons. Header size
-and length checks precede full decoding, limiting it to 66 bytes. Noncanonical
-hex, locale-sensitive text and exposed NUL/arithmetic diagnostics can defer to
-Bash. Eight tagged groups cover 451 scenarios with synthetic bytes and a fake
-timeout; the endpoint's TCP shell command never runs.
-TCP reads/writes, deadline handling, endpoint orchestration and production
-callers remain Bash. No native network request is added by this slice.
-Private command/exit records use `.go-cache/logs/zmq-*`.
+`go/internal/nodeprobe/zmq_exchange.go` exchanges the exact greeting and SUB READY
+bytes over a supplied connection with one nonzero absolute deadline. It preserves
+rejection, partial/fragmented I/O, ignored write failures, and reading the declared
+body through 255 bytes before validation. The caller owns dialing, deadline
+selection and closing; production callers and tool-dependent launch behavior stay
+Bash. Tests use inherited AF_UNIX descriptors without network connections.
+Five tagged groups compare 435 scenarios, including stalls and early exits. The
+macOS oracle uses installed GNU `ghead` as `head`: BSD `head -c` discards read-ahead on
+sockets, unlike the deployed GNU utility. This is Linux utility semantics on a
+macOS host, not a Linux runtime verdict. Logs use `.go-cache/logs/zmq-stream-*`.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
 and `tests/go-parity/run.sh` for Go selection, with local caches.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-node-zmq-parity` | PASS, 8 groups / 451 scenarios | PASS, same scenarios |
-| `make test-go-node-monero-parity test-go-doctor-parity test-go-parity` | PASS, plus Go units | PASS, plus Go units |
-| `python3 tests/stack/doctor/test-json-contract.py` and `python3 tests/stack/doctor/check-ids.py .` | PASS, 2 contract tests and pinned IDs | PASS; original source contracts |
-| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | PASS, same counts; Python backend |
+| `make test-go-node-zmq-exchange-parity` | PASS, 5 groups / 435 scenarios | PASS, same scenarios |
+| `make test-go-node-zmq-parity test-go-node-monero-parity test-go-doctor-parity test-go-parity` | PASS, plus Go units | PASS, plus Go units |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
 | `make test-fakes` | PASS, 54 tests | PASS, 54 tests; Python backend |
 | `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no Python changes | Same result |
 | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
@@ -344,18 +349,16 @@ and `tests/go-parity/run.sh` for Go selection, with local caches.
 | `make test-stack` | macOS refusal, exit 2 | Same refusal |
 
 Native checks pass: `go -C go test -count=1 ./...`,
-`go -C go test -tags=parity -race -count=1 ./internal/nodeprobe`, `go -C go vet -tags=parity ./...`,
-`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` and
-`GOOS=linux GOARCH=amd64 go -C go test -c -o ../.go-cache/nodeprobe-linux.test ./internal/nodeprobe` (compilation only).
-`go -C go test -json -tags=parity -count=1 -run TestZMQParity ./internal/nodeprobe` confirms the 451-case count.
-The adapter passes `bash -n`, ShellCheck 0.11.0 and shfmt 3.13.1; independent source/security reviews found no remaining defect.
-
-Scoped Markdown passes in both modes with the local npm cache:
+`go -C go test -json -tags=parity -race -count=1 ./internal/nodeprobe` and
+`go -C go vet -tags=parity ./...`. Linux compilation passes (no runtime verdict):
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+and `GOOS=linux GOARCH=amd64 go -C go test -c -tags=parity -o ../.go-cache/nodeprobe-linux.test ./internal/nodeprobe`. The adapter passes
+`bash -n`, ShellCheck 0.11.0 and shfmt 3.13.1. Source/security reviews found no
+remaining defect. Scoped Markdown passes in both modes:
 
 ```bash
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
-  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-cli-probes.md \
-  docs/dev/go-port/results-network-probes.md docs/dev/go-port/results-node-probes.md
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-node-probes.md
 ```
 
 ## Unavailable and known host constraints
@@ -385,8 +388,8 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port the bounded ZMTP TCP exchange in `10-node-probe.sh`, then remote-node
-   orchestration and remaining dashboard/appliance diagnostics.
+1. Port remote-node address policy, resolution and dialing in `10-node-probe.sh`,
+   then orchestration and remaining dashboard/appliance diagnostics.
 2. Port Tor recovery mount, lock and persistence handling.
 3. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.

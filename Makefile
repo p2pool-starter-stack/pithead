@@ -19,6 +19,10 @@
 .PHONY: test-go-doctor-monero-parity
 .PHONY: test-go-node-monero-parity
 .PHONY: test-go-node-zmq-parity
+.PHONY: test-go-node-zmq-exchange-parity
+
+test-go-node-zmq-exchange-parity: go-build test-go ## Compare bounded ZMTP stream I/O with Bash using local descriptors
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestZMQExchangeParity ./internal/nodeprobe
 
 test-go-node-zmq-parity: go-build test-go ## Compare ZMTP greeting, READY and supplied handshake verdicts with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestZMQParity ./internal/nodeprobe

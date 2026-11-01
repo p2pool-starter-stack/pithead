@@ -124,8 +124,12 @@ reasons, arguments and stdin config bytes against Bash using fake tools;
 config readers, address policy and ZMTP orchestration remain Bash.
 `go/internal/nodeprobe/zmq.go` validates ZMTP greetings and publisher READY frames
 and classifies supplied handshake replies/statuses. `make test-go-node-zmq-parity`
-compares these with Bash through a fake timeout; TCP I/O and endpoint orchestration
-remain Bash.
+compares these with Bash through a fake timeout.
+`go/internal/nodeprobe/zmq_exchange.go` implements stream I/O over
+an already-open connection and supplied absolute deadline.
+`make test-go-node-zmq-exchange-parity` compares wire bytes, framing and timeout
+results with Bash over inherited local descriptors; on macOS it uses GNU head.
+Dialing, endpoint orchestration and production callers stay Bash.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
