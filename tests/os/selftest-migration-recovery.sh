@@ -287,4 +287,30 @@ for missing in none candidate commit hold claim stopped startup startup_monerod 
         grep -qx same-version "$calls" && grep -qx floor "$calls" || fail 'fallback coverage lost'
     )
 done
+for case in clean gate state hold; do
+    (
+        cd "$HERE/../.." || exit 1
+        : >"$T/bad"
+        ok() { :; }
+        bad() { echo "$1" >>"$T/bad"; }
+        _build_bundle() { echo "$T/fault"; }
+        _floor_stage() { :; }
+        _floor_os_update() { :; }
+        _floor_fallback_wait() { :; }
+        _floor_state() { if [ "$case" = state ]; then echo wrong; else echo "9||"; fi; }
+        _ssh() {
+            case "$1" in
+            'cat /data/pithead/.os-data-floor') echo 9 ;;
+            *'fallback stays armed'*) [ "$case" != gate ] ;;
+            *'holding chain services'*) [ "$case" = hold ] ;;
+            esac
+        }
+        if phase_provision_same_version_fallback; then rc=0; else rc=$?; fi
+        if [ "$case" = clean ]; then
+            [ "$rc" -eq 0 ] && [ ! -s "$T/bad" ] || fail 'clean fallback was reported unsettled'
+        else
+            [ "$rc" -ne 0 ] && [ -s "$T/bad" ] || fail "$case fallback failure returned success"
+        fi
+    )
+done
 echo 'selftest-migration-recovery: PASS'
