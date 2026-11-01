@@ -94,13 +94,13 @@ run_case() (
     never | flap)
         [ "$rc" = 1 ] && [ "$clock" = 10 ] || return 1
         grep -Fq 'differs: workers proxy-workers;' "$td/output" || return 1
-        grep -Fq "rollback worker set: expected=1 observed=0 missing=[$(printf miner | sha256sum | cut -c1-8) ] extra=[]" "$td/output" || return 1
+        grep -Fq "rollback worker set: expected=1 observed=0 missing=[8b133a38] extra=[]" "$td/output" || return 1
         [ "${SAFETY_RESTORE_FAILED:-0}" = 1 ] && [ "$_SAFETY_RESTORE_ARMED" = 0 ]
         ;;
     wrong)
         [ "$rc" = 1 ] && [ "$clock" = 10 ] || return 1
         grep -Fq 'differs: workers;' "$td/output" || return 1
-        grep -Fq "rollback worker set: expected=1 observed=1 missing=[$(printf miner | sha256sum | cut -c1-8) ] extra=[$(printf other | sha256sum | cut -c1-8) ]" "$td/output" || return 1
+        grep -Fq "rollback worker set: expected=1 observed=1 missing=[8b133a38] extra=[d9298a10]" "$td/output" || return 1
         ! grep 'rollback worker set' "$td/output" | grep -Eq 'miner|other'
         ;;
     esac

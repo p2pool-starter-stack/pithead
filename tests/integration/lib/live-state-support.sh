@@ -356,7 +356,7 @@ _pred_upgrade_workers_capture() {
 
 _worker_name_digests() {
     local name
-    while IFS= read -r name; do [ -z "$name" ] || printf '%s ' "$(printf %s "$name" | sha256sum | cut -c1-8)"; done
+    head -n 16 | while IFS= read -r name; do [ -z "$name" ] || printf '%s\n' "$(printf %s "$name" | sha256sum | cut -c1-8)"; done | paste -sd, -
 }
 
 upgrade_worker_set_diff() {
