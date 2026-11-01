@@ -589,10 +589,12 @@ deploy_branch() {
 
 # --- Phase 5: run the live harness (detached on the box) --------------------
 run_harness() {
-    local phases remote_args="" rearm_id rearm_request rearm_ack
+    local phases remote_args="" rearm_id rearm_request="" rearm_ack=""
     rearm_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-    rearm_request="$E2E_DIR/results/borrow-rearm.$rearm_id.request"
-    rearm_ack="$E2E_DIR/results/borrow-rearm.$rearm_id.ack"
+    if [ "$BORROW_MINER" = "1" ]; then
+        rearm_request="$E2E_DIR/results/borrow-rearm.$rearm_id.request"
+        rearm_ack="$E2E_DIR/results/borrow-rearm.$rearm_id.ack"
+    fi
     local target_dir="$E2E_DIR"
     # --check never deployed the branch, so it must assess the checkout the stack actually runs
     # from (#454) — pointing it at the undeployed e2e tree would grade the wrong stack.
