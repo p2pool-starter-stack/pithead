@@ -229,3 +229,39 @@ eight `.env` corpora and native/protocol/fallback checks. Review caught the empt
 Original config/approval suites remain unavailable under the Linux-only harness.
 Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice
 changes only CLI previews; their prior paired Python results remain archived.
+
+## Payout public-view-key derivation slice (2026-11-01)
+
+Go derives supported Monero Edwards and Tari Ristretto public view keys from
+canonical private scalars. Bash retains wallet-address decoding, ownership
+comparisons, spend-key assignment and diagnostics; Python remains the fallback.
+The compatibility hook still requires Python to be discoverable, preserving the
+reference failure when it is unavailable. Main verbs and parser orchestration
+remain Bash; the dashboard backend remains Python.
+
+Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
+Worktree caches and an absent Docker socket isolate the runs. Private records
+use `.go-cache/logs/payout-keys-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-payout-keys-parity` | PASS, 8 supplementary methods and Go units | Same result; native scalar derivation and fallback verified |
+| Affected config/render comparisons below | PASS, five targets including unchanged raw parser and render fixture/goldens | Same result; native derivation covered separately |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | PASS, structural/documentation gates and 891 frontend tests | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same failure and ShellCheck result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
+
+Affected config/render command: `make test-go-payout-settings-parity test-go-wallet-settings-parity test-go-config-document-parity test-go-env-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/payoutkeys ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff check/format PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
+Final source and security reviews found no defects or new critical, high or medium findings.
+
+The supplementary methods cover public vectors, deterministic random scalars,
+canonical-order bounds, Python hex syntax, both curve encodings, ownership
+diagnostics/spend-key state, strict helper frames and fallback. Native scalars
+travel on stdin; outputs contain public keys and verdicts. The port retains the
+reference arithmetic for validation only. The unchanged Linux payout-wallet-pairs
+and Docker-backed payout-pair startup suites remain unavailable locally.
+Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice
+changes only CLI key derivation; their prior paired Python results remain archived.

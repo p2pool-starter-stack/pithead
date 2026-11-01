@@ -227,3 +227,10 @@ compares curve vectors, invalid scalars, diagnostics, derived spend-key state an
 helper fallback. The original payout-wallet-pairs suite remains unchanged under
 its Linux-only harness; Docker-backed payout-pair startup checks are unavailable
 locally. These comparisons supplement those contracts.
+
+`env_read_reference.sh` calls the production dotenv decoder and getter with
+synthetic byte fixtures; `test_env_read.py` compares decoding, first-key lookup,
+diagnostics and helper fallback. `env_read_oracle_env.sh` supplies the Go hook
+through `BASH_ENV` so the unchanged directory line-break suite's sourced helpers
+reach native code. The original suite and its CLI/stub setup remain unchanged;
+the broader unit-helper suite retains its unavailable Linux harness.

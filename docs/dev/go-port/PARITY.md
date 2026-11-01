@@ -145,6 +145,7 @@ selection is not implemented.
 | Worker read-credential JSON | Native supported JSON stages; Bash validation, HMAC, warnings and file transactions with jq fallback | 13 supplementary tests, including 25 paired renders and native/protocol checks; original Linux worker-config suite unavailable |
 | Config change descriptions and `.env` diff | Native supported messages/flags and byte-order comparisons; callback/locale compatibility fallback | 12 supplementary methods and Go units; original Linux config/approval suites unavailable |
 | Payout public-view-key derivation | Native canonical-scalar curve arithmetic; Bash ownership comparisons/diagnostics and Python compatibility fallback | 8 supplementary methods and Go units; original Linux payout-wallet-pairs suite unavailable |
+| Shared dotenv decoding and file lookup | Native supported decoder and literal-key lookup; Bash file collection, regex matching and compatibility fallback | Unchanged directory line-break suite, 12 supplementary methods and Go units; broader Linux unit-helper suite unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
 | Dashboard routes, state, polling and Tor | Python reference | Baseline suites pass; Go backend not ported |
 | SQLite schema, migrations and recovery | Python reference | Baseline suites pass; Go backend not ported |
@@ -166,46 +167,43 @@ Detailed paired commands, results and limits are preserved in
 [configuration results](results-config.md), [render results](results-render.md) and
 [later render results](results-render-followup.md).
 
-## Payout public-view-key derivation slice (2026-11-01)
+## Shared dotenv-reader slice (2026-11-01)
 
-Go derives supported Monero Edwards and Tari Ristretto public view keys from
-canonical private scalars. Bash retains wallet-address decoding, ownership
-comparisons, spend-key assignment and diagnostics; Python remains the fallback.
-The compatibility hook still requires Python to be discoverable, preserving the
-reference failure when it is unavailable. Main verbs and parser orchestration
-remain Bash; the dashboard backend remains Python.
+Go decodes the supported quoted dotenv subset and reads the first assignment for
+literal keys. Bash retains regex-key matching, file collection and error callbacks;
+unsupported/binary input, missing `grep` and read failures retain compatibility fallback. Directory
+CR/LF rejection remains fail closed. Main verbs, config parser orchestration and
+render transactions remain Bash; the dashboard backend remains Python.
 
 Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
 Worktree caches and an absent Docker socket isolate the runs. Private records
-use `.go-cache/logs/payout-keys-*`.
+use `.go-cache/logs/env-read-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-payout-keys-parity` | PASS, 8 supplementary methods and Go units | Same result; native scalar derivation and fallback verified |
-| Affected config/render comparisons below | PASS, five targets including unchanged raw parser and render fixture/goldens | Same result; native derivation covered separately |
+| `make test-go-env-read-parity` including unchanged directory-linebreak suite | PASS, 12 supplementary methods, Go units and original directory safeguards | Same result; native readers and compatibility fallback verified |
+| Affected config/render comparisons below | PASS, five targets including unchanged raw parser and render fixture/goldens | Same result; native readers covered separately |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | PASS, structural/documentation gates and 891 frontend tests | Same result |
 | `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same failure and ShellCheck result |
 | `make test-stack` | macOS refusal, exit 2 | Same refusal |
 | `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
 
-Affected config/render command: `make test-go-payout-settings-parity test-go-wallet-settings-parity test-go-config-document-parity test-go-env-parity test-go-parity`.
-Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/payoutkeys ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Affected config/render command: `make test-go-dashboard-auth-parity test-go-config-preview-parity test-go-env-parity test-go-config-document-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
 Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff check/format PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
-Final source and security reviews found no defects or new critical, high or medium findings.
 
-The supplementary methods cover public vectors, deterministic random scalars,
-canonical-order bounds, Python hex syntax, both curve encodings, ownership
-diagnostics/spend-key state, strict helper frames and fallback. Native scalars
-travel on stdin; outputs contain public keys and verdicts. The port retains the
-reference arithmetic for validation only. The unchanged Linux payout-wallet-pairs
-and Docker-backed payout-pair startup suites remain unavailable locally.
+The supplementary methods cover raw/quoted values, escapes, UTF-8/raw bytes,
+first-match lookup, regex-key and binary fallback, missing tools/files, producer
+failures and strict helper frames. The original directory line-break suite runs
+unchanged through the new `BASH_ENV` adapter listed in the adapter ledger.
+Final source and security reviews pass after the missing-`grep` compatibility fix.
 Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice
-changes only CLI key derivation; their prior paired Python results remain archived.
+changes only CLI dotenv reads; their prior paired Python results remain archived.
 
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
-  The unchanged masking, worker-config and payout-wallet-pairs suites require that harness and remain unproven locally.
+  The unchanged unit-helper, masking, worker-config and payout-wallet-pairs suites require that harness and remain unproven locally.
 - `make test` stops at existing adapter formatting. Independent Markdown lint
   also finds third-party content in the required local uv cache. Changed project
   Markdown is checked separately; the original gates remain unchanged.

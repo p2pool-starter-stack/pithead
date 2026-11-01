@@ -21,6 +21,10 @@ dotenv_render_value() {
 
 # Decode the double-quoted subset emitted above. Unquoted values retain the historical raw read.
 dotenv_decode_value() {
+    if declare -F _dotenv_decode_value_go >/dev/null; then
+        if _dotenv_decode_value_go "$@"; then return 0; else local native_rc=$?; fi
+        [ "$native_rc" -eq 125 ] || return "$native_rc"
+    fi
     local value="$1" out="" char
     if [[ "$value" == \"*\" ]]; then
         value=${value:1:${#value}-2}
@@ -51,6 +55,10 @@ dotenv_decode_value() {
 # Read a single KEY=value from an env file (value may contain '=').
 # Tolerant of a missing key / missing file under `set -e` + `pipefail`.
 env_get_file() {
+    if declare -F _env_get_file_go >/dev/null; then
+        if _env_get_file_go "$@"; then return 0; else local native_rc=$?; fi
+        [ "$native_rc" -eq 125 ] || return "$native_rc"
+    fi
     local file="$1" key="$2" line
     [ -f "$file" ] || return 0
     line=$(grep -E "^$key=" "$file" 2>/dev/null) || true
