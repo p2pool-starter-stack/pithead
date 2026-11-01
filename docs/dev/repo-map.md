@@ -180,7 +180,10 @@ decisions, ordered file bytes and failure handling. Backups, callbacks and file 
 bytes, modes, provider calls and failures. Password generation and file transactions stay in Bash.
 `go/internal/config/masked.go` masks dashboard prefill JSON via
 `lib/pithead/30a-go-masked-config.sh`; `make test-go-config-masked-parity` compares
-bytes and fallback. Validation, file transactions and worker read credentials stay in Bash.
+bytes and fallback. Validation, file transactions and HMAC execution stay in Bash.
+`go/internal/config/worker_read.go` handles the read-credential map's JSON stages via
+`lib/pithead/30b-go-worker-read.sh`; `make test-go-worker-read-parity` compares
+bytes and failures. Validation, HMAC execution and file transactions stay in Bash.
 `go/internal/config/ssh_settings.go` and `node_credentials.go` validate SSH policy and plan RPC
 credentials through `lib/pithead/27k-go-config-access.sh`; `make test-go-config-access-parity`
 checks state, callback order and complete renders. Username reads, generation and persistence stay in Bash.

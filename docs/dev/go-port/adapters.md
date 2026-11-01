@@ -208,3 +208,8 @@ synthetic files and worker callbacks. `test_config_masked.py` compares ordered
 JSON, modes, warnings, cleanup and helper fallback. The original masking and
 worker-config suites retain their Linux-only harness and remain unavailable on
 macOS; these comparisons supplement them.
+
+`worker_read_reference.sh` invokes the production worker read-credential renderer
+with synthetic files and controlled host tools. `test_worker_read.py` compares
+JSON, validation/HMAC callbacks, permissions, ownership and failure cleanup;
+the unchanged worker-config suite remains unavailable under its Linux-only harness.

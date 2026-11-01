@@ -112,8 +112,35 @@ gh_release_fetch() { # <owner/repo>; sets GH_RELEASE_JSON on success, GH_RELEASE
     return 1
 }
 
+_config_worker_read_project_bash() {
+    jq -c '(.workers.api_port // 8080) as $default
+        | (.workers.list // [])[]
+        | {name: (.name // ""), host: (.host // ""), token: (.token | strings),
+           port: (.port // $default)}' "$1"
+}
+_config_worker_read_project() { _config_worker_read_project_bash "$1"; }
+
+_config_worker_read_values_bash() {
+    _config_worker_read_name=$(printf '%s' "$1" | jq -r '.name')
+    _config_worker_read_host=$(printf '%s' "$1" | jq -r '.host')
+    _config_worker_read_token=$(printf '%s' "$1" | jq -r '.token')
+    _config_worker_read_port=$(printf '%s' "$1" | jq -r '.port')
+}
+_config_worker_read_values() { _config_worker_read_values_bash "$1"; }
+
+_config_worker_read_record_bash() {
+    printf '%s\n%s\n%s\n%s\n' "$1" "$2" "$3" "$4" |
+        jq -Rn '{name: input, host: input, port: (input | tonumber), read_token: input}' >>"$5"
+}
+_config_worker_read_record() { _config_worker_read_record_bash "$@"; }
+
+_config_worker_read_slurp_bash() { jq -s . "$1" >"$2"; }
+_config_worker_read_slurp() { _config_worker_read_slurp_bash "$1" "$2"; }
+
 render_worker_read_tokens() { # <masked-dir>; dashboard-only RigForge credentials, never browser config
     local LC_ALL=C mdir="$1" final rows tmp
+    local _config_worker_read_name='' _config_worker_read_host='' _config_worker_read_token='' _config_worker_read_port=''
+    local _config_worker_read_values_fallback=0
     final="$mdir/worker-read-tokens.json"
     rows=$(mktemp "$mdir/.worker-read-rows.XXXXXX") || {
         rm -f "$final"
@@ -127,15 +154,13 @@ render_worker_read_tokens() { # <masked-dir>; dashboard-only RigForge credential
         rm -f "$rows" "$tmp" "$final"
         return 1
     }
-    if ! jq -c '(.workers.api_port // 8080) as $default
-        | (.workers.list // [])[]
-        | {name: (.name // ""), host: (.host // ""), token: (.token | strings),
-           port: (.port // $default)}' "$CONFIG_FILE" |
+    if ! _config_worker_read_project "$CONFIG_FILE" "$rows" |
         while IFS= read -r row; do
-            name=$(printf '%s' "$row" | jq -r '.name')
-            host=$(printf '%s' "$row" | jq -r '.host')
-            token=$(printf '%s' "$row" | jq -r '.token')
-            port=$(printf '%s' "$row" | jq -r '.port')
+            _config_worker_read_values "$row"
+            name="$_config_worker_read_name"
+            host="$_config_worker_read_host"
+            token="$_config_worker_read_token"
+            port="$_config_worker_read_port"
             [ -n "$name" ] && [ -n "$host" ] && [ -n "$token" ] || continue
             [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || continue
             if ! { [ "${#token}" -ge 32 ] && [[ "$token" != *[![:graph:]]* ]]; }; then
@@ -143,13 +168,12 @@ render_worker_read_tokens() { # <masked-dir>; dashboard-only RigForge credential
                 continue
             fi
             read=$(hmac_sha256_hex "$token" 'rigforge:api-read:v1') || exit 1
-            printf '%s\n%s\n%s\n%s\n' "$name" "$host" "$port" "$read" |
-                jq -Rn '{name: input, host: input, port: (input | tonumber), read_token: input}' >>"$rows" || exit 1
+            _config_worker_read_record "$name" "$host" "$port" "$read" "$rows" || exit 1
         done; then
         rm -f "$rows" "$tmp" "$final"
         return 1
     fi
-    jq -s . "$rows" >"$tmp" && chmod 600 "$tmp" && mv "$tmp" "$final"
+    _config_worker_read_slurp "$rows" "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$final"
     local rc=$?
     rm -f "$rows" "$tmp"
     if [ "$rc" -eq 0 ]; then

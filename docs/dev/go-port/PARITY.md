@@ -141,7 +141,8 @@ selection is not implemented.
 | Config version policy and stamping | Native supported validation/policy/ordered JSON transform; Bash file I/O, warnings and compatibility fallback | 16 supplementary comparison tests and Go units; original Linux version suite unavailable |
 | Config migrations | Native supported legacy-worker/XvB and Telegram-control plans/transforms; Bash file I/O, callbacks and compatibility fallback | 14 supplementary migration/static comparisons, 2 protocol tests and Go units; original Linux migration suites unavailable |
 | Config credential write-back and CLI appliance defaults | Native supported ordered JSON transforms; Bash generation, default-table reads, warnings and file I/O with jq fallback | 22 supplementary comparisons/static tests and Go units; original Linux suites unavailable |
-| Masked config prefill JSON | Native supported ordered transform; Bash validation, file I/O, warnings and worker read-token rendering with jq fallback | 9 supplementary methods, including 21 paired renders and native/protocol checks; original Linux masking/worker suites unavailable |
+| Masked config prefill JSON | Native supported ordered transform; Bash validation, file I/O, warnings and worker callbacks with jq fallback | 9 supplementary methods, including 21 paired renders and native/protocol checks; original Linux masking/worker suites unavailable |
+| Worker read-credential JSON | Native supported JSON stages; Bash validation, HMAC, warnings and file transactions with jq fallback | 13 supplementary tests, including 25 paired renders and native/protocol checks; original Linux worker-config suite unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
 | Dashboard routes, state, polling and Tor | Python reference | Baseline suites pass; Go backend not ported |
 | SQLite schema, migrations and recovery | Python reference | Baseline suites pass; Go backend not ported |
@@ -163,35 +164,33 @@ Detailed paired commands, results and limits are preserved in
 [configuration results](results-config.md), [render results](results-render.md) and
 [later render results](results-render-followup.md).
 
-## Masked-config render slice (2026-11-01)
+## Worker read-credential JSON slice (2026-11-01)
 
-Go masks supported secret values in the ordered dashboard prefill JSON, using the
-runtime secret-path table. Current and legacy worker tokens and webhook positions
-retain their sentinels. Bash keeps raw-document validation, file creation/modes,
-promotion, warnings and worker read-credential generation. Unsupported input and
-linked source/temp files use the unchanged jq fallback. Render/apply orchestration
-remains Bash; the dashboard backend remains Python.
+Go handles supported JSON projection, row decoding, record serialization and
+array serialization in the worker read-credential renderer. Bash retains port and
+token validation, warnings, HMAC execution and file transactions, including
+ownership fallback and failure cleanup. Unsupported cases use the original jq
+programs. Render/apply orchestration remains Bash; the backend remains Python.
 
-Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline and
-`tests/go-parity/run.sh` for Go, with worktree caches and an absent Docker socket.
-Final private records use `.go-cache/logs/config-masked-*`; earlier adapter-format
-and generated-note lint results remain in `.go-cache/logs/config-masked-initial/`.
+Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
+Worktree caches and an absent Docker socket isolate the runs. Private records
+use `.go-cache/logs/worker-read-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-config-masked-parity` | PASS, 9 supplementary methods, including 21 paired renders and Go units | Same result; supported native transforms verified without jq |
-| Additional config/render comparisons below | PASS, 25 targets including unchanged raw parser and render fixture/goldens | Same result; native helpers covered separately |
-| `make test-dashboard test-fakes test-patch-coverage` with `COMPARE=a73ffced33800de9435779a9cabef53864455acb` | PASS, 3716 dashboard/54 fake tests, 97.42% coverage; patch check not applicable | Same counts; Python backend |
-| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, structural/documentation gates and 891 frontend tests | Same result |
+| `make test-go-worker-read-parity` | PASS, 13 supplementary tests, including 25 paired renders and Go units | Same result; supported JSON stages verified without jq |
+| Affected config/render comparisons below | PASS, six targets including unchanged raw parser and render fixture/goldens | Same result; native JSON stages covered separately |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | PASS, structural/documentation gates and 891 frontend tests | Same result |
 | `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same failure and ShellCheck result |
 | `make test-stack` | macOS refusal, exit 2 | Same refusal |
 | `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
 
-Additional config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-wallet-settings-parity test-go-site-names-parity test-go-config-access-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
+Affected config/render command: `make test-go-config-masked-parity test-go-config-document-parity test-go-config-validation-parity test-go-env-dashboard-parity test-go-env-parity test-go-parity`.
 Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
-Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff checks PASS.
-Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
-Security review found no new critical, high or medium findings.
+Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff check/format PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
+Source and security reviews found no defects or new critical, high or medium findings.
+
+An ad hoc `GOCACHE="$PWD/.go-cache/build" GOMODCACHE="$PWD/.go-cache/mod" GOPATH="$PWD/.go-cache/gopath" go -C go test ./...` omitted `TMPDIR` and failed two existing macOS doctor path assertions. It had no saved log and is not parity evidence; canonical Make runs with the worktree `TMPDIR` pass. Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice changes only CLI JSON stages; their prior paired results remain archived.
 
 ## Unavailable and known host constraints
 
