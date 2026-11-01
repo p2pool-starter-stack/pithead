@@ -324,7 +324,7 @@ cryptographically random token of at least 32 ASCII characters; generate one wit
 read bearer, because the bearer would make guessing that token offline practical.
 
 Appliance rigs run stock XMRig, which ignores a `DONATION` below 1 and donates at least 1%. A
-RigForge-built rig has the same floor at the level it was compiled with; lowering it needs a rebuild.
+RigForge-built rig applies a lower `DONATION` without a rebuild, except builds older than 1.18.1, which need a RigForge upgrade first.
 Machines › rig shows the level the miner reports and, when it differs, the configured one with
 the reason ([XMRig developer donation](donation.md#xmrig-developer-donation)).
 

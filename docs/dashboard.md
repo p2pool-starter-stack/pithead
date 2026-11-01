@@ -633,8 +633,8 @@ doesn't come back to a live hashrate — rolls it back on its own. The panel sho
 path broke) and appends it to the history.
 
 > NOTE: `DONATION` below the rig's built-in minimum has no effect. Appliance rigs run stock XMRig,
-> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig has the same
-> floor at the level it was compiled with, and lowering it needs a rebuild. Worker Inspect shows the
+> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig applies a lower level
+> without a rebuild, except builds older than 1.18.1, which need an upgrade first. Worker Inspect shows the
 > value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
 > report XMRig's live donate level.
 
