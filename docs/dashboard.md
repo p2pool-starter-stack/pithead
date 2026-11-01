@@ -1696,6 +1696,8 @@ exceed it. Pruning runs host-side after every control request and on every boot;
 
 ## Upgrading from the dashboard
 
+An install made from the APT package has no in-app updater: the new Sovereign UI shows the apt command beside its update link, and the upgrade request answers 409. See [Operations › Updating an APT install](operations.md#updating-an-apt-install).
+
 With `dashboard.control.enabled: true` (the same flag as the Configuration view) and a newer
 release detected, an **Upgrade to vX.Y.Z** button appears next to the new-release badge. It runs
 the release install's documented update — download the new bundle, run `./pithead upgrade` — on

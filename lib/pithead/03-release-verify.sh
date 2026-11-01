@@ -171,6 +171,9 @@ stack_upgrade() {
     if is_appliance; then
         error "This is a Pithead OS appliance: the program tree is delivered by OS images and resynced from the system slot at every boot, so a tarball upgrade here would silently revert at the next reboot. Updates arrive as signed OS images — see the appliance guide."
     fi
+    if is_apt_install && [ "${PITHEAD_APT_POSTINST:-0}" != "1" ]; then
+        error "This install is owned by the pithead APT package: update it with '$APT_UPDATE_COMMAND'. The package moves the running stack to the new images itself."
+    fi
     mutation_lock_acquire upgrade
     log "Upgrading stack (rebuilding containers)..."
     # A release (git pull) may change config templates, add/rename .env vars, or restructure the

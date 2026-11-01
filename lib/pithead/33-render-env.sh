@@ -164,6 +164,8 @@ render_env() {
     # out entirely (see docs/privacy.md). Only an explicit `false` disables it.
     local check_for_updates
     check_for_updates=$(jq -r 'if .dashboard.check_for_updates == false then "false" else "true" end' "$CONFIG_FILE")
+    local install_route=""
+    ! is_apt_install || install_route=apt
 
     # Per-worker xmrig API probe (#171/#172). The dashboard enriches each proxy-reported worker by
     # reading that miner's own xmrig /1/summary for uptime + per-miner hashrate — ONE configured
@@ -369,6 +371,7 @@ XVB_DONATION_LEVEL=$(dotenv_render_value "$xvb_donation_level")
 TARI_REQUIRED=$(dotenv_render_value "$tari_required")
 DASHBOARD_FAIL_CLOSED=$(dotenv_render_value "$fail_closed")
 DASHBOARD_CHECK_UPDATES=$(dotenv_render_value "$check_for_updates")
+PITHEAD_INSTALL_ROUTE=$(dotenv_render_value "$install_route")
 TARI_MEM_LIMIT=$(dotenv_render_value "$tari_mem_limit")
 HEALTHCHECKS_PING_URL=$(dotenv_render_value "$hc_ping_url")
 XVB_STANDBY_SOURCE=$(dotenv_render_value "$xvb_standby_source")

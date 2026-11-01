@@ -1,0 +1,3 @@
+#!/bin/sh
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+exec "${PITHEAD_STATE_DIR:-/var/lib/pithead}/pithead" "$@"

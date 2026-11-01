@@ -170,6 +170,11 @@ is_appliance() {
     [ -f /etc/rauc/system.conf ] && [ -x /usr/local/sbin/pithead-install ]
 }
 
+readonly APT_UPDATE_COMMAND="sudo apt update && sudo apt upgrade"
+is_apt_install() {
+    [ -f "${PITHEAD_PACKAGE_MARKER:-$PWD/PITHEAD_PACKAGE}" ]
+}
+
 # Did this system boot from removable media (a USB stick)?
 boot_is_removable() {
     local root_src boot_dev

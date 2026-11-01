@@ -206,6 +206,11 @@ async def handle_control_upgrade(request):
     gets installed. Returns 202 immediately: the upgrade recreates this very container, so the
     client polls /api/control/result and rides out the restart."""
     _require_control_header(request)
+    if config.INSTALL_ROUTE == "apt":
+        return web.json_response(
+            {"error": f"This install is updated through apt: run '{config.APT_UPDATE_COMMAND}'."},
+            status=409,
+        )
     try:
         body = await request.json()
     except Exception:

@@ -1,0 +1,83 @@
+name: Publish APT feed
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag to deploy
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+
+concurrency:
+  group: apt-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || (!github.event.release.prerelease && !github.event.release.draft)
+    name: Verify the pre-signed feed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
+          persist-credentials: false
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y apt-utils
+      - name: Require a published stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease -q '.isDraft or .isPrerelease')" = false
+      - name: Download the feed and the release package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release public
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release \
+            --pattern pithead-apt-feed.tar.gz --pattern 'pithead_*_amd64.deb'
+          tar -xzf release/pithead-apt-feed.tar.gz -C public
+      - name: Verify the signatures against the pinned fingerprint
+        run: |
+          bash scripts/release/apt.sh verify public packaging/apt/pithead.asc "$(cat packaging/apt/fingerprint)"
+          cmp public/pithead_*_amd64.deb release/pithead_*_amd64.deb
+          test "$(dpkg-deb -f public/pithead_*_amd64.deb Version)" = "${RELEASE_TAG#v}"
+      - name: Update and download through apt
+        run: |
+          state=$(mktemp -d)
+          chmod 755 "$state"
+          mkdir -p "$state/lists/partial" "$state/download"
+          chmod -R a+rX public packaging/apt
+          printf 'deb [signed-by=%s/packaging/apt/pithead.asc] file:%s/public ./\n' "$PWD" "$PWD" >"$state/sources.list"
+          options=(-o "Dir::Etc::sourcelist=$state/sources.list" -o Dir::Etc::sourceparts=- -o "Dir::State::lists=$state/lists")
+          sudo apt-get "${options[@]}" update
+          cd "$state/download"
+          sudo apt-get "${options[@]}" download pithead
+          cmp ./pithead_*_amd64.deb "$GITHUB_WORKSPACE"/release/pithead_*_amd64.deb
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Deploy the signed APT feed
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

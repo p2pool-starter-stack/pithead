@@ -96,6 +96,42 @@ and edit it before setup. The minimal file uses the shared wizard defaults for a
 including Tari off; the reference file retains legacy absent-key values to preserve existing
 configs.
 
+### Alternative: install from the APT repository
+
+Ubuntu 24.04 on amd64 can install and update Pithead through apt. The repository holds the
+latest stable release only; release candidates and older versions stay on the
+[releases page](https://github.com/p2pool-starter-stack/pithead/releases).
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://p2pool-starter-stack.github.io/pithead/pithead.asc | sudo tee /etc/apt/keyrings/pithead.asc >/dev/null
+gpg --show-keys --with-fingerprint /etc/apt/keyrings/pithead.asc
+```
+
+Compare the printed fingerprint with
+[`packaging/apt/fingerprint`](https://github.com/p2pool-starter-stack/pithead/blob/main/packaging/apt/fingerprint)
+in the repository before you continue. Then add the source and install:
+
+```bash
+sudo tee /etc/apt/sources.list.d/pithead.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://p2pool-starter-stack.github.io/pithead/
+Suites: ./
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/pithead.asc
+EOF
+sudo apt update
+sudo apt install pithead
+sudo pithead setup
+```
+
+The package keeps its pristine program tree in `/usr/share/pithead` and copies it to
+`/var/lib/pithead`, where `config.json`, `.env` and the stack's data live. Run every `pithead`
+command through `/usr/bin/pithead`, which re-runs itself with `sudo` when needed. The same
+`.deb` is attached to each GitHub release if you prefer `sudo apt install ./pithead_X.Y.Z_amd64.deb`.
+An APT install has no in-app updater: see
+[Operations › Updating an APT install](operations.md#updating-an-apt-install).
+
 ### Alternative: build from source
 
 To build the images locally instead of pulling the published ones, e.g. to develop or modify the

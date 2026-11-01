@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+DST=${PITHEAD_STATE_DIR:-/var/lib/pithead}
+if [ "$1" = purge ] && [ -f "$DST/.pithead-package-files" ]; then
+    while IFS= read -r f; do
+        rm -f "$DST/$f"
+    done <"$DST/.pithead-package-files"
+    rm -f "$DST/.pithead-package-files"
+    find "$DST" -depth -type d -empty -delete 2>/dev/null || true
+fi
+exit 0

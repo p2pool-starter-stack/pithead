@@ -1,0 +1,32 @@
+name: Debian package
+
+on:
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "scripts/release/apt.sh"
+      - "tests/packaging/**"
+      - ".github/workflows/deb-package.yml"
+  push:
+    branches: [develop, develop-v2.1.0]
+    paths:
+      - "packaging/**"
+      - "scripts/release/apt.sh"
+      - "tests/packaging/**"
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    name: Install, upgrade, remove, purge and signed feed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y apt-utils
+      - name: Run the package lifecycle
+        run: sudo bash tests/packaging/deb-lifecycle.sh

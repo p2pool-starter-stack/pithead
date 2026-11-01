@@ -335,6 +335,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # routes 404 when off, so this is display gating only, not a security control. Read at
         # call time (module attribute, not from-import) so tests can flip the flag per-app.
         "control_enabled": config.DASHBOARD_CONTROL_ENABLED,
+        "apt_update_command": config.APT_UPDATE_COMMAND if config.INSTALL_ROUTE == "apt" else None,
         "os_update": read_os_update_state(),
         "last_update": format_time_abs(data.get("timestamp") or time.time()),
         "range": range_arg,
