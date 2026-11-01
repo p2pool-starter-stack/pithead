@@ -69,6 +69,10 @@ env_get_file() {
 env_get() { env_get_file "$ENV_FILE" "$1"; }
 
 compose_project_name() {
+    if declare -F _compose_project_name_go >/dev/null; then
+        if _compose_project_name_go; then return 0; else local native_rc=$?; fi
+        [ "$native_rc" -eq 125 ] || return "$native_rc"
+    fi
     local project="" assignment rc=0
     if [ "${COMPOSE_PROJECT_NAME+x}" = x ]; then
         project=$COMPOSE_PROJECT_NAME

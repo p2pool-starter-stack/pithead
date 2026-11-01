@@ -265,3 +265,36 @@ reference arithmetic for validation only. The unchanged Linux payout-wallet-pair
 and Docker-backed payout-pair startup suites remain unavailable locally.
 Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice
 changes only CLI key derivation; their prior paired Python results remain archived.
+
+## Shared dotenv-reader slice (2026-11-01)
+
+Go decodes the supported quoted dotenv subset and reads the first assignment for
+literal keys. Bash retains regex-key matching, file collection and error callbacks;
+unsupported/binary input, missing `grep` and read failures retain compatibility fallback. Directory
+CR/LF rejection remains fail closed. Main verbs, config parser orchestration and
+render transactions remain Bash; the dashboard backend remains Python.
+
+Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
+Worktree caches and an absent Docker socket isolate the runs. Private records
+use `.go-cache/logs/env-read-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-env-read-parity` including unchanged directory-linebreak suite | PASS, 12 supplementary methods, Go units and original directory safeguards | Same result; native readers and compatibility fallback verified |
+| Affected config/render comparisons below | PASS, five targets including unchanged raw parser and render fixture/goldens | Same result; native readers covered separately |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | PASS, structural/documentation gates and 891 frontend tests | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same failure and ShellCheck result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
+
+Affected config/render command: `make test-go-dashboard-auth-parity test-go-config-preview-parity test-go-env-parity test-go-config-document-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff check/format PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
+
+The supplementary methods cover raw/quoted values, escapes, UTF-8/raw bytes,
+first-match lookup, regex-key and binary fallback, missing tools/files, producer
+failures and strict helper frames. The original directory line-break suite runs
+unchanged through the new `BASH_ENV` adapter listed in the adapter ledger.
+Final source and security reviews pass after the missing-`grep` compatibility fix.
+Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice
+changes only CLI dotenv reads; their prior paired Python results remain archived.

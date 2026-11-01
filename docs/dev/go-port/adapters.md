@@ -234,3 +234,10 @@ diagnostics and helper fallback. `env_read_oracle_env.sh` supplies the Go hook
 through `BASH_ENV` so the unchanged directory line-break suite's sourced helpers
 reach native code. The original suite and its CLI/stub setup remain unchanged;
 the broader unit-helper suite retains its unavailable Linux harness.
+
+`compose_project_reference.sh` supplies environment/file fixtures to the production
+resolver; `test_compose_project.py` compares names, warnings, statuses and fallback.
+`compose_project_oracle_env.sh` loads the Go hook through `BASH_ENV` and fixes both
+arms to the supported C locale so the unchanged lifecycle ownership suite's sourced
+functions reach native code. Its engine remains the original function stub;
+no running containers are involved.

@@ -232,6 +232,9 @@ and writes. Remaining typed checks stay Bash.
 `go/internal/config/env_read.go` decodes dotenv values and reads literal keys via
 `lib/pithead/19b-go-env-read.sh`; `make test-go-env-read-parity` runs comparisons
 and the unchanged directory line-break suite. Regex keys retain Bash matching.
+`go/internal/config/compose_project.go` resolves project identity via
+`lib/pithead/19c-go-compose-project.sh`; `make test-go-compose-project-parity`
+runs comparisons and the unchanged ownership suite. Unsupported locales/options retain Bash.
 The owner's 2026-11-01 Go scope covers CLI/backend application code, followed by
 shipping documentation and release/dashboard/appliance build integration. Host
 scripts and container entrypoints retain their reference implementations.
