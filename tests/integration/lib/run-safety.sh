@@ -3,7 +3,7 @@
 validate_backup_only_args() {
     [ "$BACKUP_ONLY" = 1 ] || return 0
     local option
-    for option in ${!RUN_@} CHECK_ONLY READINESS KEEP_STATE ONLY_SCENARIO RIG_NAME RIG_HOST RIGFORGE_BOOTSTRAP_VERSION; do
+    for option in ${!RUN_@} CHECK_ONLY READINESS KEEP_STATE ONLY_SCENARIO RIG_NAME RIG_HOST; do
         if [ "${!option}" != 0 ] && [ -n "${!option}" ]; then
             it_err "--backup-only cannot be combined with scenarios, other phases, a rig, --check, --readiness or --keep."
             exit 2
@@ -39,7 +39,7 @@ safety_backup() {
     fi
     SAFETY_ARCHIVE="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
     case "${SAFETY_ARCHIVE##*/}" in pithead-backup-*.tar.gz) ;; *) SAFETY_ARCHIVE="" ;; esac
-    if [ -z "$SAFETY_ARCHIVE" ] || ! rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE") && test \"\$(cd -P -- $(quote_arg "${SAFETY_ARCHIVE%/*}") && pwd -P)\" = $(quote_arg "$stack_root/backups")"; then
+    if [ -z "$SAFETY_ARCHIVE" ] || ! rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE") && test \"\$(cd -P -- $(quote_arg "${SAFETY_ARCHIVE%/*}") && pwd -P)\" = \"\$(cd -P -- $(quote_arg "$stack_root/backups") && pwd -P)\""; then
         it_fail "safety backup archive located" "the successful backup did not name a regular archive in $stack_root/backups; nothing removed"
         SAFETY_ARCHIVE=""
         return 1
@@ -148,10 +148,9 @@ safety_abort_restore() {
         restore_failed=1
         it_warn "interrupted onion rotation could not restore its original identity"
     fi
-    # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
-    # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
-    # so the restore is attempted.
-    if [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
+    if [ "${BACKUP_ONLY:-0}" = 1 ]; then
+        safety_cleanup || restore_failed=1
+    elif [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
         safety_restore_exact || restore_failed=1
     elif [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then

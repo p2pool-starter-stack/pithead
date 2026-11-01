@@ -219,6 +219,7 @@ main() {
     fi
 
     # Optional rollback net for the destructive phases that follow.
+    [ "$BACKUP_ONLY" != 1 ] || arm_safety_abort_restore
     if ! safety_backup; then
         summary
         return
@@ -228,6 +229,7 @@ main() {
             summary
             return
         }
+        SAFETY_ARCHIVE=""
         it_pass "backup-only selection completed; scenarios and lifecycle operations excluded"
         summary
         return

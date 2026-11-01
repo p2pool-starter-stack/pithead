@@ -11,6 +11,7 @@ run_selection() {
     local name="$1" backup_rc="$2" health_rc="$3"
     shift 3
     (
+        trap - EXIT
         eval "$(sed -n '/^IT_MODE=/,/^INTEGRATION_RUN_SUITE=1/p' "$ROOT/run.sh")"
         source "$ROOT/lib/run-cli.sh"
         source "$ROOT/lib/run-safety.sh"
@@ -20,7 +21,12 @@ run_selection() {
         mkdir -p "$OUT_DIR/source"
         printf '{}' >"$OUT_DIR/source/config.json"
         printf 'fixture=true\n' >"$OUT_DIR/source/.env"
-        mkdir -p "$OUT_DIR/source/backups"
+        if [ "$name" = symlinked-backups ]; then
+            mkdir -p "$OUT_DIR/real-backups"
+            ln -s "$OUT_DIR/real-backups" "$OUT_DIR/source/backups"
+        else
+            mkdir -p "$OUT_DIR/source/backups"
+        fi
         archive="$OUT_DIR/source/backups/pithead-backup-1.tar.gz"
         : >"$OUT_DIR/victim"
         trace="$OUT_DIR/trace"
@@ -67,7 +73,10 @@ run_selection() {
                 tar -czf "$archive" -C / "${OUT_DIR#/}/source/config.json" "${OUT_DIR#/}/source/.env"
             fi
             case "$name" in
-            foreign-path) printf 'Backup written to: %s\n' "$OUT_DIR/victim" ;;
+            foreign-path)
+                cp "$archive" "$OUT_DIR/victim"
+                printf 'Backup written to: %s\n' "$OUT_DIR/victim"
+                ;;
             foreign-dir)
                 cp "$archive" "$OUT_DIR/pithead-backup-1.tar.gz"
                 printf 'Backup written to: %s\n' "$OUT_DIR/pithead-backup-1.tar.gz"
@@ -78,6 +87,7 @@ run_selection() {
         }
         wait_status_ok() {
             printf 'health\n' >>"$trace"
+            [ "$name" != interrupted ] || exit 143
             return "$health_rc"
         }
         safety_restore_exact() {
@@ -87,6 +97,7 @@ run_selection() {
         }
         for fn in hugepages_begin hugepages_finish arm_safety_abort_restore run_scenario run_lifecycle \
             run_fault_injection run_auth_fail_closed restore_baseline safety_rollback_if_failed; do
+            [ "$name:$fn" != interrupted:arm_safety_abort_restore ] || continue
             eval "$fn() { printf '%s\n' '$fn' >>\"\$trace\"; }"
         done
         scenario_matrix() { printf 'fixture\t{}\n'; }
@@ -98,7 +109,7 @@ echo "== exclusive backup-only selection, archive validation and recovery =="
 run_selection success 0 0 --backup-only
 assert_rc "backup-only succeeds" "$?" 0
 assert_eq "only reservation, preflight, backup and health run" \
-    "$(cat "$fixture/success/trace")" $'lock\npreflight\nbackup -y --no-encrypt\nhealth'
+    "$(cat "$fixture/success/trace")" $'lock\npreflight\narm_safety_abort_restore\nbackup -y --no-encrypt\nhealth'
 assert_contains "archive members are validated" "$(cat "$fixture/success.log")" 'backup archive contains config.json'
 assert_contains "env member is validated" "$(cat "$fixture/success.log")" 'backup archive contains .env'
 assert_contains "completion identifies the focused selection" "$(cat "$fixture/success.log")" 'backup-only selection completed'
@@ -107,7 +118,7 @@ assert_eq "successful backup archive is cleaned" "$(if [ -e "$fixture/success/so
 run_selection failed 7 0 --backup-only
 assert_rc "backup failure fails the selection" "$?" 1
 assert_eq "failed backup cannot reach scenarios or cleanup" \
-    "$(cat "$fixture/failed/trace")" $'lock\npreflight\nbackup -y --no-encrypt'
+    "$(cat "$fixture/failed/trace")" $'lock\npreflight\narm_safety_abort_restore\nbackup -y --no-encrypt'
 assert_eq "failed restart retains the archive" "$(if [ -f "$fixture/failed/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
 
 run_selection unhealthy 0 1 --backup-only
@@ -115,6 +126,10 @@ assert_rc "unhealthy post-backup stack fails" "$?" 1
 assert_contains "existing recovery is preserved" "$(cat "$fixture/unhealthy/trace")" recovery
 assert_eq "recovery diagnostics stay on the stubbed target" "$(cat "$fixture/unhealthy/trace.rx")" $'docker compose ps\n./pithead status'
 assert_eq "failed recovery retains the archive" "$(if [ -f "$fixture/unhealthy/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
+
+run_selection symlinked-backups 0 0 --backup-only
+assert_rc "a symlinked backups directory is accepted" "$?" 0
+assert_eq "the archive behind a symlinked backups directory is cleaned" "$(if [ -e "$fixture/symlinked-backups/real-backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" absent
 
 run_selection dot-prefix 0 0 --backup-only
 assert_rc "dot-prefixed archive members are accepted" "$?" 0
@@ -139,8 +154,17 @@ assert_eq "an archive outside the stack backups directory is left alone" \
 for name in pwd-failed pwd-relative; do
     run_selection "$name" 0 0 --backup-only
     assert_rc "$name stack root fails backup-only" "$?" 1
-    assert_eq "$name stops before taking a backup" "$(cat "$fixture/$name/trace")" $'lock\npreflight'
+    assert_eq "$name stops before taking a backup" "$(cat "$fixture/$name/trace")" $'lock\npreflight\narm_safety_abort_restore'
 done
+
+run_selection interrupted 0 0 --backup-only
+assert_rc "an interrupted backup-only run keeps its exit status" "$?" 143
+assert_eq "an interrupt removes the archive without a restore" \
+    "$(
+        cat "$fixture/interrupted/trace"
+        if [ -e "$fixture/interrupted/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi
+    )" \
+    $'lock\npreflight\nbackup -y --no-encrypt\nhealth\nabsent'
 
 for flag in --lifecycle --fault-injection --auth-fail-closed --hardening --rotate-onion --rigforge \
     --rigforge-control --subnet --rotate-secrets --xvb-routing-smoke --alert-egress \
@@ -150,7 +174,7 @@ for flag in --lifecycle --fault-injection --auth-fail-closed --hardening --rotat
     assert_rc "backup-only refuses $flag" "$?" 2
     assert_eq "refusal precedes target access for $flag" "$(cat "$fixture/$name/trace")" ''
 done
-for rig in '--rig-name rig-a' '--rig-host 192.0.2.10' '--rigforge-bootstrap-version v1.0.0'; do
+for rig in '--rig-name rig-a' '--rig-host 192.0.2.10'; do
     name="refused-${rig%% *}"
     # shellcheck disable=SC2086
     run_selection "$name" 0 0 --backup-only $rig
