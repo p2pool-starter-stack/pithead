@@ -1,0 +1,139 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { html } from "../../../mining_dashboard/web/static/app/preact.mjs";
+import { earningsWording } from "../../../mining_dashboard/web/static/sovereign/earnings-control.mjs";
+import { ConnectCard, MachinesPage } from "../../../mining_dashboard/web/static/sovereign/machines.mjs";
+import { RigInspector } from "../../../mining_dashboard/web/static/sovereign/machines-inspector.mjs";
+import { localMinerAvailable, rigHealth, rigRows, rigSettings, rigSummary, rigView } from "../../../mining_dashboard/web/static/sovereign/machines-model.mjs";
+import { rigFleet } from "../fixtures/rigs.mjs";
+import { render, renderToString } from "../helpers/render.mjs";
+
+const platforms = {
+  appliance: { control_enabled: true, os_update: {} },
+  "diy-login": { control_enabled: true, os_update: null },
+  "diy-readonly": { control_enabled: false, os_update: null },
+};
+
+test("offline and silent rigs never read as a healthy zero; unmanaged mining rigs are quiet", () => {
+  assert.deepEqual(
+    (({ status, note, attention, hashrate }) => ({ status, note, attention, hashrate }))(rigView({ name: "a", status: "offline", h60: 0, adopted: true })),
+    { status: "Offline", note: null, attention: true, hashrate: "Offline" },
+  );
+  const silent = rigView({ name: "b", status: "online", h60: 0, adopted: true });
+  assert.equal(silent.hashrate, "Unavailable");
+  assert.equal(silent.note, "Hashrate unavailable");
+  assert.equal(silent.attention, true);
+  assert.equal(rigView({ name: "c", status: "online", h60: "bad" }).hashrate, "Unavailable");
+  const unmanaged = rigView({ name: "d", status: "online", h60: 2500, adopted: false });
+  assert.deepEqual([unmanaged.status, unmanaged.note, unmanaged.attention, unmanaged.hashrate], ["Mining", "unmanaged", false, "2.50 kH/s"]);
+  const behind = rigView({ name: "e", status: "online", h60: 2500, adopted: true, rigforge: { version: "0.9.0" }, rigforge_update: { available: true, latest: "1.0.0" } });
+  assert.deepEqual([behind.status, behind.attention, behind.version, behind.latest], ["Behind", true, "0.9.0", "1.0.0"]);
+});
+
+test("rigs order attention first then name, stable for duplicate names, with find and sort", () => {
+  const workers = [
+    { name: "zeta", status: "online", h60: 10, adopted: true, marker: 0 },
+    { name: "dup", status: "online", h60: 30, adopted: true },
+    { name: "alpha", status: "offline", h60: 0 },
+    { name: "dup", status: "online", h60: 20, adopted: true },
+    { name: "beta", status: "online", h60: 5, adopted: true, rigforge_update: { available: true } },
+  ];
+  assert.deepEqual(rigRows(workers).map((row) => [row.name, row.index]), [["alpha", 2], ["beta", 4], ["dup", 1], ["dup", 3], ["zeta", 0]]);
+  assert.deepEqual(rigRows(workers, { sort: "hashrate" }).map((row) => row.index), [1, 3, 0, 4, 2]);
+  assert.deepEqual(rigRows(workers, { find: " DU " }).map((row) => row.index), [1, 3]);
+  assert.deepEqual(rigRows(null), []);
+  assert.equal(rigSummary(workers), "4 of 5 mining");
+});
+
+test("one copy carries the pool address and the password only when set", () => {
+  assert.equal(rigSettings({ url: "stratum+tcp://pool.test:3333", password_set: true, password: "pw" }), "Pool: stratum+tcp://pool.test:3333\nPassword: pw");
+  assert.equal(rigSettings({ url: "stratum+tcp://pool.test:3333", password_set: false, password: "" }), "Pool: stratum+tcp://pool.test:3333");
+  assert.equal(rigSettings(null), null);
+});
+
+class Loaded extends ConnectCard {
+  constructor(props) {
+    super(props);
+    this.state = { connection: props.connection, status: "" };
+  }
+}
+
+test("the connect card shows the password in clear, one copy and TLS whenever the listener reports it", () => {
+  const plain = render(Loaded, { connection: { url: "stratum+tcp://pool.test:3333", password_set: true, password: "pw" } });
+  assert.match(plain, /<code>pw<\/code>/);
+  assert.equal((plain.match(/<button/g) || []).length, 1);
+  assert.match(plain, /Copy rig settings/);
+  assert.doesNotMatch(plain, /Reveal|Hide|Copy password|fingerprint/);
+  const tls = render(Loaded, { connection: { url: "stratum+ssl://pool.test:3333", password_set: false, tls: true, fingerprint: "AB:CD" } });
+  assert.match(tls, /None set/);
+  assert.match(tls, /Certificate fingerprint/);
+  assert.match(tls, /AB:CD/);
+  assert.match(render(Loaded, { connection: { url: "u", tls: true } }), /Unavailable: apply the configuration again/);
+});
+
+test("platform fixtures: appliance offers Also mine on this box, DIY never, and no Update all slot", () => {
+  for (const [platform, extra] of Object.entries(platforms)) {
+    const out = render(MachinesPage, { state: { ...extra, workers: rigFleet(2) } });
+    assert.equal(/Also mine on this box/.test(out), platform === "appliance", platform);
+    assert.equal(localMinerAvailable(extra), platform === "appliance");
+    assert.doesNotMatch(out, /Update all/);
+  }
+  const disconnected = render(MachinesPage, { state: { ...platforms.appliance, workers: [] }, connected: false });
+  assert.doesNotMatch(disconnected, /Also mine on this box/);
+  assert.match(disconnected, /No rigs have connected yet/);
+  assert.match(render(MachinesPage, { state: null }), /Waiting for rig data/);
+});
+
+test("2, 50 and 100 rig fixtures keep find, sort and columns inside Advanced", () => {
+  for (const count of [2, 50, 100]) {
+    const out = render(MachinesPage, { state: { ...platforms["diy-login"], workers: rigFleet(count) } });
+    const [outside, rest] = out.split('<details class="list-advanced">');
+    assert.ok(rest, `${count} rigs render the list Advanced section`);
+    assert.doesNotMatch(outside, /<select|<input/);
+    assert.match(rest.split("</details>")[0], /Find a rig.*Sort by.*Show shares and version/s);
+    assert.equal((out.match(/class="rig-row/g) || []).length, count);
+    assert.doesNotMatch(out, /rig-rate">0(\.00)? H\/s/);
+  }
+});
+
+class Ready extends RigInspector {
+  constructor(props) {
+    super(props);
+    Object.assign(this.state, { phase: "ready", detail: props.detail, editText: "{}" });
+  }
+}
+const detail = (extra = {}) => ({
+  control_enabled: true, editable: true, ip: null, writable_keys: ["DONATION"], last_applied: {}, rig_config: { DONATION: 1 },
+  rigforge: { version: "0.9.0" }, rigforge_update: { available: true, latest: "1.0.0", url: "https://example.test/r" },
+  hashrate_history: { hashrate: [{ x: 1000, y: 100 }, { x: 2000, y: 300 }, { x: 3000, y: 0 }], markers: [{ x: 1500 }] },
+  history: [{ ts: 1 }], hashrate_by_config: [{ version: 1 }], ...extra,
+});
+const inspect = (extra, worker = { name: "rig", status: "online", h60: 100, adopted: true, accepted_str: "7", rejected_str: "1" }) =>
+  renderToString(html`<${Ready} name="rig" worker=${worker} detail=${detail(extra)} />`);
+
+test("the inspector shows health outside Advanced and no chart ranges or change history", () => {
+  assert.deepEqual(rigHealth(detail()), { average: "133.33 H/s", lastSeen: 2000 });
+  assert.deepEqual(rigHealth({}), { average: null, lastSeen: null });
+  const out = inspect();
+  const [health, advanced] = out.split('<details class="rig-advanced">');
+  for (const label of ["Status", "Last seen mining", "Software", "24 h hashrate", "Accepted shares", "Rejected shares"]) assert.match(health, new RegExp(label));
+  assert.match(health, /RigForge 0.9.0 · 1.0.0 available/);
+  assert.match(health, /133.33 H\/s average/);
+  assert.doesNotMatch(health, /<button(?![^>]*>Close)/);
+  assert.doesNotMatch(out, />24h<|>1w<|>All<|History|Hashrate by config/);
+  assert.match(advanced, /Update this rig.*Upgrade rig….*Table.*JSON.*Apply to rig/s);
+});
+
+test("the inspector offers only the controls the rig is authorized for", () => {
+  assert.match(inspect({ control_enabled: false }), /Rig control is off/);
+  const unmanaged = inspect({ editable: false });
+  assert.match(unmanaged, /Manage this rig/);
+  assert.doesNotMatch(unmanaged, /Apply to rig|Upgrade rig/);
+  assert.match(inspect({ rigforge_update: null }), /on the latest release it reports/);
+  assert.match(inspect({ rigforge: null, rigforge_update: null }), /Not reported: this rig does not publish a RigForge version/);
+  assert.match(inspect({ hashrate_history: { hashrate: [] } }), /Not recorded in the last 24 hours.*24 h hashrate<\/dt><dd>Unavailable/s);
+});
+
+test("the local miner switch reads in plain words in the host review", () => {
+  assert.equal(earningsWording("local_miner.enabled changed"), "Also mine on this box changed");
+});
