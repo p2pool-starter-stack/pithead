@@ -7,6 +7,8 @@ trap 'rm -rf "$scratch"' EXIT
 (
     cd "$scratch"
     source "$ROOT/lib/pithead/12-firstboot-wizard.sh"
+    # shellcheck source=lib/pithead/12a-wizard-page.sh
+    source "$ROOT/lib/pithead/12a-wizard-page.sh"
     PRESEED_DIR="$scratch/esp"
     PITHEAD_REGISTRY=example
     STACK_VERSION="test"
