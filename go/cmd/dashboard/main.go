@@ -9,6 +9,7 @@ import (
 
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/badges"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/charts"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/control"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/domain"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/fleet"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/infra"
@@ -17,12 +18,17 @@ import (
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/runtime"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/series"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/storage"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/wizard"
 )
 
 func main() {
 	if helper := os.Getenv("PITHEAD_DASHBOARD_HELPER"); helper != "" {
 		var err error
 		switch helper {
+		case "control":
+			err = control.Run(os.Stdin, os.Stdout)
+		case "wizard":
+			err = wizard.Run(os.Stdin, os.Stdout)
 		case "storage":
 			err = storage.Run(os.Stdin, os.Stdout)
 		case "chart":

@@ -19,6 +19,7 @@ import (
 const referenceProgram = `import socket
 from aiohttp import web
 storage_installed = False
+control_installed = False
 try:
     from mining_dashboard.service import storage_service
 except ModuleNotFoundError as error:
@@ -29,9 +30,21 @@ else:
     install_storage()
     storage_installed = True
 from mining_dashboard.main import SHUTDOWN_TIMEOUT, build_app
+try:
+    from mining_dashboard.go_control import install as install_control
+except ModuleNotFoundError as error:
+    if error.name != "mining_dashboard.go_control":
+        raise
+else:
+    install_control()
+    control_installed = True
+if storage_installed and not control_installed:
+    raise RuntimeError("native dashboard control unavailable")
 app = build_app()
 if not storage_installed and "state_manager" in app:
     raise RuntimeError("native dashboard storage unavailable")
+if not control_installed and "state_manager" in app:
+    raise RuntimeError("native dashboard control unavailable")
 if "state_manager" in app and "latest_data" in app:
     try:
         from mining_dashboard.go_bridge import install

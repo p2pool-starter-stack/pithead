@@ -661,5 +661,10 @@ def main() -> None:
     web.run_app(make_app(), host=host or "0.0.0.0", port=int(port))
 
 
+if os.environ.get("PITHEAD_IMPL") == "go":
+    from mining_dashboard.go_wizard import install
+
+    install(sys.modules[__name__])
+
 if __name__ == "__main__":
     main()

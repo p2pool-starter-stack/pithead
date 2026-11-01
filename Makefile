@@ -1,5 +1,6 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
+-include go/dashboard-parity.mk
 .PHONY: test-go-frozen-parity
 test-go-frozen-parity: go-build
 	bash tests/go-parity/frozen_reference.sh
@@ -180,7 +181,6 @@ test-go: go-cache ## Go unit tests
 test-go-parity: go-build test-go ## Compare Bash and Go CLI output, errors, and exit codes
 	python3 tests/go-parity/test_cli.py
 .PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
-
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	python3 scripts/build-config-defaults.py --check
 	bash scripts/build-pithead.sh

@@ -189,13 +189,14 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Header status badges | Native ordered badges with supplied metrics, thresholds and locality | Unchanged badge/wallet/header suites and native HTTP ownership guard; wallet KV reading remains Python |
 | Remaining state presentation, polling and Tor | Python reference behind Go HTTP routing | Earnings, base metadata, egress/topology derivation and polling remain Python; no complete state proof |
 | SQLite engine, open, schema, migrations and recovery | Native Go in the normal Go server child; Python memory state and business SQL construction remain | 343 unchanged focused tests with ported Python paths fatal, existing/legacy/corrupt startup comparisons, Go units and paired full 3719-test suites |
-| Wizard launch and control channel | Bash/Python reference | Not ported |
+| Control intent envelopes, worker writable keys, request publication and result reads | Native Go helpers in the Go dashboard child; Python HTTP guards, config masking and wait loop remain | 377 unchanged focused wizard/control tests plus supplementary byte, startup, concurrency and mutation cases; injected UUID/rename hooks listed separately |
+| Wizard stage, status and read-only spool views | Native Go helpers under Go selection; Python launch, auth, config shaping, submissions, cleanup and handoff writes remain | Same unchanged focused suites with original ported functions fatal; off-loop state/status coalescing and public reference-selection sentinels |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
 | Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
 
 ## Harness adapters
 
-The [adapter ledger](adapters.md) lists every supplementary adapter and its reason.
+The [adapter ledger](adapters.md) lists supplementary adapters and reasons, including [wizard/control hooks](results-channel.md#adapters-and-native-proof).
 Only new files under `tests/go-parity/` supply those hooks; existing suites remain unchanged.
 
 ## Earlier slice results
@@ -305,13 +306,34 @@ The [later review results](results-review-2035.md) record frozen-start commands,
 new versus original evidence, concurrent 86400-row state comparisons and gate
 results. In-process stack assertions remain Bash after the harness scrub; the
 new lifecycle option comparisons do not prove lifecycle operations in Go.
-Wizard/control and production shipping selection remain next.
+The next slice below adds native control protocol and read-only wizard views;
+wizard mutation/orchestration and production shipping selection remain pending.
 
 The frozen starting dashboard passed 3716 original tests. Current reference and
 Go runs each pass 3719 tests (94.46% / 85.44% Python coverage). Reference-only
 and Go-only patch coverage fail at 67% / 83%; Go plus A/B comparison append
 passes the unchanged gate at 94%. New versus original test counts are explicit
 in the later review results.
+
+## Wizard and control spool slice
+
+The [channel results](results-channel.md) separate native intent shaping, UUIDs,
+worker validation, atomic request files, result reads and wizard read-only views
+from Python route/auth/submission orchestration. The normal Go command requires
+the native control bridge. The existing wizard launch command selects native
+views only with `PITHEAD_IMPL=go`; reference modes ignore helper overrides.
+Status and state use one off-loop in-flight task per app, without a completed
+cache. State collection holds the existing submission lock.
+
+The focused original suites pass unchanged in reference and Go mode. The new
+adapter makes original ported functions fatal and records native calls; three
+injected rename cases and one injected UUID case are explicit compatibility
+interpositions. Two source mutations break the unchanged oracle. The additive
+target passes 403 tests (377 original and 26 new); the frozen starting reference
+passes those same 377 original tests. Full reference/Go runs each pass 3719
+(92.83% / 84.75% Python coverage). Reference-only/Go-only patch coverage fail at
+66% / 83%; appended A/B comparisons pass the unchanged gate at 94%. Full Make
+still stops at third-party cache Markdown in both modes; changed-file gates pass.
 
 ## Unavailable and known host constraints
 
@@ -349,7 +371,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Port wizard/control, then the production selection switch and release/dashboard/appliance shipping artifacts with reference fallback.
+1. Finish wizard auth/submission/restore/handoff and remaining control orchestration, then production selection and release/dashboard/appliance shipping artifacts with reference fallback.
 2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

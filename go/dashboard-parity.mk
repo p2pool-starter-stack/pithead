@@ -1,0 +1,3 @@
+.PHONY: test-go-dashboard-channel-parity
+test-go-dashboard-channel-parity: go-dashboard-build
+	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_channel_plugin tests/service/test_control_service.py tests/service/test_control_result_polling.py tests/service/test_request_spool.py tests/web/test_server_control_routes_enabled.py tests/web/test_server_control_routes_disabled.py tests/web/test_wizard*.py "$(CURDIR)/tests/go-parity/dashboard_channel_compare.py" "$(CURDIR)/tests/go-parity/dashboard_channel_startup.py" "$(CURDIR)/tests/go-parity/dashboard_channel_guards.py"
