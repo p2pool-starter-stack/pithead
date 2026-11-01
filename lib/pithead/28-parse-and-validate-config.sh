@@ -220,7 +220,6 @@ parse_and_validate_config() {
             error "proxy.donate_level must be an integer 0–99 (percent); default 0 (got \"$DONATE_LEVEL\")."
         fi
     fi
-
     MONERO_USER=$(jq -r '.monero.node_username // empty' "$CONFIG_FILE")
     MONERO_PASS=$(jq -r '.monero.node_password // empty' "$CONFIG_FILE")
     # A local node always needs working RPC creds. If they're missing — empty, or still the
@@ -243,43 +242,44 @@ parse_and_validate_config() {
             log "Auto-generated missing local Monero node RPC credentials (saved in $CONFIG_FILE)."
         fi
     fi
-
     # Resolve data directories ("auto"/empty/legacy DYNAMIC_DATA → the stack default under ./data)
-    MONERO_DIR=$(resolve_default "$(jq -r '.monero.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/monero")
-    TARI_DIR=$(resolve_default "$(jq -r '.tari.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/tari")
-    P2POOL_DIR=$(resolve_default "$(jq -r '.p2pool.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/p2pool")
-    TOR_DATA_DIR=$(resolve_default "$(jq -r '.tor.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/tor")
-    # Shared data root (#455): when monero/tari/p2pool/tor all resolve under ONE parent, that
-    # parent is the box's data root and the dashboard's DEFAULT joins it — before this, the
-    # dashboard DB was the only data living inside the (per-version) install dir, moving with the
-    # code on every versioned deploy. An all-default install (or scattered custom dirs) keeps the
-    # classic ./data default, so nothing changes unless the chain data was deliberately co-located.
     local _data_root _dash_cfg
-    _data_root=$(dirname "$MONERO_DIR")
-    { [ "$(dirname "$TARI_DIR")" == "$_data_root" ] &&
-        [ "$(dirname "$P2POOL_DIR")" == "$_data_root" ] &&
-        [ "$(dirname "$TOR_DATA_DIR")" == "$_data_root" ]; } || _data_root="$PWD/data"
-    _dash_cfg=$(jq -r '.dashboard.data_dir // empty' "$CONFIG_FILE")
-    DASHBOARD_DIR=$(resolve_default "$_dash_cfg" "$_data_root/dashboard")
-    # Global, read by migrate_dashboard_data: the #455 migration only ever moves a DEFAULT
-    # location — an operator-pinned dashboard.data_dir is theirs, never touched.
-    DASHBOARD_DIR_IS_DEFAULT=1
-    [ "$DASHBOARD_DIR" == "$_dash_cfg" ] && DASHBOARD_DIR_IS_DEFAULT=0
-    # Stratum TLS keypair home (#261): joins the shared data root when one exists — the cert's
-    # FINGERPRINT is what every rig pins, so it must survive versioned deploys like the chain
-    # data does, not move with the code. Internal (not config-driven), like CONTROL_DIR.
-    PROXY_TLS_DIR="$_data_root/proxy-tls"
-    # Internal shared state dir (#234): the dashboard (rw) drops a per-chain "clearnet sync complete"
-    # marker here and the monerod/tari entrypoints (ro) read it to decide Tor-vs-clearnet. Not a
-    # user-facing data dir, so it's fixed under ./data rather than config-driven.
-    CLEARNET_STATE_DIR="$PWD/data/clearnet-state"
-    # Control-channel spool (#33): requests/ (container rw) + staged/results/audit (host-only /
-    # container ro). Fixed under ./data like CLEARNET_STATE_DIR — not a user-facing data dir.
-    # Deliberately NOT inside DASHBOARD_DIR, which is mounted rw wholesale into the container.
-    CONTROL_DIR="$PWD/data/control"
-    # Caddy access log (#349): Caddy (rw) writes access.log here, the dashboard mounts it
-    # read-only. Fixed under ./data like the spool above — internal, not a user-facing data dir.
-    CADDY_LOG_DIR="$PWD/data/caddy-logs"
+    if ! command -v _parse_directories_go >/dev/null 2>&1 || ! _parse_directories_go; then
+        MONERO_DIR=$(resolve_default "$(jq -r '.monero.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/monero")
+        TARI_DIR=$(resolve_default "$(jq -r '.tari.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/tari")
+        P2POOL_DIR=$(resolve_default "$(jq -r '.p2pool.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/p2pool")
+        TOR_DATA_DIR=$(resolve_default "$(jq -r '.tor.data_dir // empty' "$CONFIG_FILE")" "$PWD/data/tor")
+        # Shared data root (#455): when monero/tari/p2pool/tor all resolve under ONE parent, that
+        # parent is the box's data root and the dashboard's DEFAULT joins it — before this, the
+        # dashboard DB was the only data living inside the (per-version) install dir, moving with the
+        # code on every versioned deploy. An all-default install (or scattered custom dirs) keeps the
+        # classic ./data default, so nothing changes unless the chain data was deliberately co-located.
+        _data_root=$(dirname "$MONERO_DIR")
+        { [ "$(dirname "$TARI_DIR")" == "$_data_root" ] &&
+            [ "$(dirname "$P2POOL_DIR")" == "$_data_root" ] &&
+            [ "$(dirname "$TOR_DATA_DIR")" == "$_data_root" ]; } || _data_root="$PWD/data"
+        _dash_cfg=$(jq -r '.dashboard.data_dir // empty' "$CONFIG_FILE")
+        DASHBOARD_DIR=$(resolve_default "$_dash_cfg" "$_data_root/dashboard")
+        # Global, read by migrate_dashboard_data: the #455 migration only ever moves a DEFAULT
+        # location — an operator-pinned dashboard.data_dir is theirs, never touched.
+        DASHBOARD_DIR_IS_DEFAULT=1
+        [ "$DASHBOARD_DIR" == "$_dash_cfg" ] && DASHBOARD_DIR_IS_DEFAULT=0
+        # Stratum TLS keypair home (#261): joins the shared data root when one exists — the cert's
+        # FINGERPRINT is what every rig pins, so it must survive versioned deploys like the chain
+        # data does, not move with the code. Internal (not config-driven), like CONTROL_DIR.
+        PROXY_TLS_DIR="$_data_root/proxy-tls"
+        # Internal shared state dir (#234): the dashboard (rw) drops a per-chain "clearnet sync complete"
+        # marker here and the monerod/tari entrypoints (ro) read it to decide Tor-vs-clearnet. Not a
+        # user-facing data dir, so it's fixed under ./data rather than config-driven.
+        CLEARNET_STATE_DIR="$PWD/data/clearnet-state"
+        # Control-channel spool (#33): requests/ (container rw) + staged/results/audit (host-only /
+        # container ro). Fixed under ./data like CLEARNET_STATE_DIR — not a user-facing data dir.
+        # Deliberately NOT inside DASHBOARD_DIR, which is mounted rw wholesale into the container.
+        CONTROL_DIR="$PWD/data/control"
+        # Caddy access log (#349): Caddy (rw) writes access.log here, the dashboard mounts it
+        # read-only. Fixed under ./data like the spool above — internal, not a user-facing data dir.
+        CADDY_LOG_DIR="$PWD/data/caddy-logs"
+    fi
     # Guard every data dir against catastrophic chown -R / rm -rf targets before we touch them.
     local d
     for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$CLEARNET_STATE_DIR" "$CONTROL_DIR" "$CADDY_LOG_DIR" "$PROXY_TLS_DIR"; do

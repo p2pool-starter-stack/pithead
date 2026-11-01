@@ -129,6 +129,7 @@ selection is not implemented.
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Memory render settings and auto ceiling | Native for supported settings/facts; Bash discovery and compatibility fallback | Unchanged render fixture/goldens and supplementary hardware-boundary comparisons |
+| Data-directory derivation | Native supported paths/shared-root/default flag; Bash safety checks and compatibility fallback | Supplementary path/state/guard/trap comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
 | Dashboard auth shape and onion/control policy | Native supported credentials/policy; Bash hash reconciliation, warnings and compatibility fallback | Supplementary byte/status/state/order comparisons and unchanged render fixture/goldens; full Linux/Docker auth oracle unavailable |
 | Dashboard access settings | Native supported host/port/flag/timezone parsing; Bash host-timezone discovery/default insertion and compatibility fallback | Supplementary byte/status/state/trap comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
 | Proxy password, TLS and donation settings | Native explicit/empty settings; auto and unsupported inputs use Bash fallback | Supplementary byte/status/state comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
@@ -251,6 +252,10 @@ oracles:
   state, proves native selection without jq and checks fallback beyond the
   standalone preflight cases. Full config cases still require the Linux stack harness.
 
+- `directories_reference.sh` extracts directory derivation plus the original safety loop,
+  recording globals and guard/trap calls. `test_directories.py` checks native plans/fallback;
+  `test_directories_render.py` adds layouts and rejections through the unchanged render fixture.
+
 - `dashboard_auth_reference.sh` extracts the original auth/policy blocks, supplying
   synthetic hash/previous-env results. `test_dashboard_auth.py` compares credentials,
   verdicts and operation order without logging plaintext; Linux auth tests remain unchanged.
@@ -305,25 +310,17 @@ oracles:
   deterministic RAM/HugePages for a second render and records hardware-read
   order. The original fixture has fixed explicit limits and cannot vary auto sizing.
 
-Sourcing Bash functions alone does not establish native behavior. Native slices
-use tagged comparisons or helper/wiring checks that prove Go execution. Current
-targets are `test-go-parity`, `test-go-status-parity`,
-`test-go-doctor-parity`, `test-go-doctor-memory-parity`,
-`test-go-doctor-host-parity`, `test-go-doctor-verification-parity`,
-`test-go-doctor-control-parity`, `test-go-doctor-disk-parity` and
-`test-go-doctor-data-parity`, `test-go-doctor-onion-parity` and
-`test-go-doctor-config-parity`, `test-go-doctor-network-parity` and
-`test-go-doctor-lan-parity`, `test-go-doctor-egress-parity` and
-`test-go-doctor-nft-parity`, `test-go-doctor-history-parity` and
-`test-go-doctor-containers-parity`, `test-go-doctor-monero-parity` and
-`test-go-node-monero-parity`, `test-go-node-zmq-parity` and
-`test-go-node-zmq-exchange-parity`, `test-go-config-document-parity` and
-`test-go-config-defaults-parity`, `test-go-config-validation-parity` and
-`test-go-caddy-parity`, `test-go-env-parity`, `test-go-env-network-parity` and
-`test-go-env-dashboard-parity`, `test-go-env-memory-parity` and
-`test-go-caddy-sites-parity`, `test-go-stratum-parity` and
-`test-go-network-settings-parity`, `test-go-proxy-settings-parity` and
-`test-go-caddy-auth-parity`, `test-go-dashboard-access-parity` and `test-go-dashboard-auth-parity`.
+Sourcing Bash functions alone does not establish native behavior. Native slices use tagged comparisons or helper/wiring checks that
+prove Go execution. Current targets are `test-go-parity`, `test-go-status-parity`, `test-go-doctor-parity`,
+`test-go-doctor-memory-parity`, `test-go-doctor-host-parity`, `test-go-doctor-verification-parity`, `test-go-doctor-control-parity`,
+`test-go-doctor-disk-parity` and `test-go-doctor-data-parity`, `test-go-doctor-onion-parity` and `test-go-doctor-config-parity`,
+`test-go-doctor-network-parity` and `test-go-doctor-lan-parity`, `test-go-doctor-egress-parity` and `test-go-doctor-nft-parity`,
+`test-go-doctor-history-parity` and `test-go-doctor-containers-parity`, `test-go-doctor-monero-parity` and
+`test-go-node-monero-parity`, `test-go-node-zmq-parity` and `test-go-node-zmq-exchange-parity`, `test-go-config-document-parity` and
+`test-go-config-defaults-parity`, `test-go-config-validation-parity` and `test-go-caddy-parity`, `test-go-env-parity`,
+`test-go-env-network-parity` and `test-go-env-dashboard-parity`, `test-go-env-memory-parity` and `test-go-caddy-sites-parity`,
+`test-go-stratum-parity` and `test-go-network-settings-parity`, `test-go-proxy-settings-parity` and `test-go-caddy-auth-parity`,
+`test-go-dashboard-access-parity` and `test-go-dashboard-auth-parity` and `test-go-directories-parity`.
 
 ## Earlier slice results
 
@@ -333,31 +330,32 @@ Detailed paired commands, results and limits are preserved in
 [remote-node probe results](results-node-probes.md) and
 [configuration results](results-config.md) and [render results](results-render.md).
 
-## Dashboard auth and control policy slice (2026-11-01)
+## Directory derivation slice (2026-11-01)
 
-Go reads dashboard credentials and validates supported username/password shapes before hashing. After Bash
-reconciles the hash and emits any HTTP warning, Go validates onion password strength
-and control-channel requirements, preserving exact errors and partial globals. Non-ASCII/unsupported
-inputs retain Bash fallback. SHA-256, cached-hash reuse, bcrypt, warning decisions and persistence remain Bash. The original blocks remain in the 412-line parser. New comparisons check secret handling, native
-jq avoidance, hash/warning/verdict order, boundary values and malformed-helper fallback.
+Go derives the four service paths, shared data root, dashboard location/default flag and internal state paths.
+It preserves lexical spellings, including trailing slashes, dot/traversal components and root concatenation.
+Relative paths, leading double slashes, unsupported encodings and complex JSON retain Bash fallback.
+The original safety loop remains outside the helper conditional, after the complete snapshot is validated
+and assigned. New comparisons check native jq/dirname avoidance, exact paths and guard failures, callback
+order, inherited traps and malformed-helper fallback. The parser slice remains 412 lines.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline and
 `tests/go-parity/run.sh` for Go, with worktree caches and an absent Docker socket.
-Private records use `.go-cache/logs/config-dashboard-auth-*`; Linux/Docker auth oracle remains unavailable.
+Private records use `.go-cache/logs/config-directories-*`; full Linux CLI proof remains unavailable.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-dashboard-auth-parity` | PASS, 7 comparison groups and 6 complete cached-auth render scenarios; Go units | Same result; native helpers verified |
-| Config/render comparisons below | PASS, including unchanged raw parser and render fixture/goldens | Same result; native helpers verified separately |
+| `make test-go-directories-parity` | PASS, 5 comparison groups and 18 complete render/rejection scenarios; Go units | Same result; native helper verified |
+| Additional config/render comparisons below | PASS, including unchanged raw parser and render fixture/goldens | Same result; native helpers verified separately |
 | `make test-dashboard test-fakes test-patch-coverage` with `COMPARE=a73ffced33800de9435779a9cabef53864455acb` | PASS, 3716 dashboard/54 fake tests, 97.42% coverage; patch check not applicable | Same counts; Python backend |
-| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, including 891 frontend tests | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, structural/documentation gates and 891 frontend tests | Same result |
 | `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same result |
 | `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
-| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+| `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
 
-Additional config/render command (auth target ran separately above): `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
-Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only). Generated CLI/new-adapter ShellCheck, changed-shell shfmt, Go formatting and source/security reviews pass.
-Scoped Markdown uses `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`.
+Additional config/render command (directory target ran separately above): `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`. Go formatting, new Python Ruff checks, generated CLI/new adapter ShellCheck and changed shell shfmt pass; source and security reviews found no issues.
 
 ## Unavailable and known host constraints
 

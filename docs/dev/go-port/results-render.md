@@ -251,3 +251,29 @@ Docker socket. Private records use `.go-cache/logs/config-dashboard-access-*`.
 Config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
 Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only). Generated CLI/new-adapter ShellCheck, changed-shell shfmt, Go formatting and source/security reviews pass.
 Scoped Markdown uses `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`.
+
+## Dashboard auth and control policy slice (2026-11-01)
+
+Go reads dashboard credentials and validates supported username/password shapes before hashing. After Bash
+reconciles the hash and emits any HTTP warning, Go validates onion password strength
+and control-channel requirements, preserving exact errors and partial globals. Non-ASCII/unsupported
+inputs retain Bash fallback. SHA-256, cached-hash reuse, bcrypt, warning decisions and persistence remain Bash. The original blocks remain in the 412-line parser. New comparisons check secret handling, native
+jq avoidance, hash/warning/verdict order, boundary values and malformed-helper fallback.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline and
+`tests/go-parity/run.sh` for Go, with worktree caches and an absent Docker socket.
+Private records use `.go-cache/logs/config-dashboard-auth-*`; Linux/Docker auth oracle remains unavailable.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-dashboard-auth-parity` | PASS, 7 comparison groups and 6 complete cached-auth render scenarios; Go units | Same result; native helpers verified |
+| Config/render comparisons below | PASS, including unchanged raw parser and render fixture/goldens | Same result; native helpers verified separately |
+| `make test-dashboard test-fakes test-patch-coverage` with `COMPARE=a73ffced33800de9435779a9cabef53864455acb` | PASS, 3716 dashboard/54 fake tests, 97.42% coverage; patch check not applicable | Same counts; Python backend |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, including 891 frontend tests | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+
+Additional config/render command (auth target ran separately above): `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only). Generated CLI/new-adapter ShellCheck, changed-shell shfmt, Go formatting and source/security reviews pass.
+Scoped Markdown uses `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`.

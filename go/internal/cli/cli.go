@@ -31,6 +31,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configDashboardAccess(args, os.Stdin, stdout)
 	case "config-dashboard-auth":
 		return configDashboardAuth(args, os.Stdin, stdout)
+	case "config-directories":
+		return configDirectories(args, os.Stdin, stdout)
 	case "config-caddy":
 		return configCaddy(args, os.Stdin, stdout)
 	case "config-caddy-auth":

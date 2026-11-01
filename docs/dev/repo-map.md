@@ -166,6 +166,9 @@ Host-timezone discovery/default insertion stays in the original Bash caller.
 policy through `lib/pithead/27g-go-dashboard-auth.sh`;
 `make test-go-dashboard-auth-parity` checks verdicts and hash/warning order.
 SHA-256, stable hash reconciliation, bcrypt and warning decisions stay in Bash.
+`go/internal/config/directories.go` derives data paths and the shared data root via
+`lib/pithead/27h-go-directories.sh`; `make test-go-directories-parity` compares
+layouts, preserved spellings and original caller-side safety checks.
 `go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
 statuses and preparation calls. `go/internal/config/caddy_sites.go` formats
