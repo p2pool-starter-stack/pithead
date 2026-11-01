@@ -38,7 +38,7 @@ Version: $version
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: Pithead <noreply@users.noreply.github.com>
+Maintainer: Pithead <pithead@example.invalid>
 Depends: bash, curl, jq, openssl, python3, sudo, docker.io | docker-ce, docker-compose-v2 | docker-compose-plugin
 Homepage: https://github.com/p2pool-starter-stack/pithead
 Description: Self-hosted Monero and Tari mining stack
