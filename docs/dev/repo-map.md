@@ -137,6 +137,13 @@ The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `tests/tools/prove-lmdb.py` and `tests/tools/lmdb-fixture.c` prove disposable
 concurrent-writer copies in CI. These tools do not change the runtime image.
 
+Native raw config parsing and duplicate/placeholder validation live in
+`go/internal/config/document.go`. `make test-go-config-document-parity` compares
+exact diagnostics and runs the unchanged raw-parser suite through the selected
+gate. The CLI's Bash fallback carries an internal Go-binary marker; unsupported
+JSON retains the embedded Python parser. Defaults, typed validation and rendering
+remain Bash.
+
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates
 in `dashboard/mining_dashboard/web/static/config/jsondocument.mjs`.

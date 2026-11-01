@@ -20,6 +20,12 @@
 .PHONY: test-go-node-monero-parity
 .PHONY: test-go-node-zmq-parity
 .PHONY: test-go-node-zmq-exchange-parity
+.PHONY: test-go-config-document-parity
+
+test-go-config-document-parity: go-build test-go ## Compare raw config parsing and validation with Bash/Python
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestDocumentParity ./internal/config
+	python3 tests/stack/lib/config-document-parser.py
+	python3 tests/go-parity/test_config_document.py
 
 test-go-node-zmq-exchange-parity: go-build test-go ## Compare bounded ZMTP stream I/O with Bash using local descriptors
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestZMQExchangeParity ./internal/nodeprobe

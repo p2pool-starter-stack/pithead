@@ -1,6 +1,17 @@
 # Check the raw document before jq can discard repeated members, or a config rewrite can
 # hide them. The distributed CLI is self-contained, so this parser is embedded here.
 config_document_error() { # <file> [request: check placeholders only in .config]
+    local native_binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_reason native_rc=0
+    if [ "${PITHEAD_IMPL:-}" = go ]; then native_binary="${PITHEAD_GO_BINARY:-$native_binary}"; fi
+    if [ -n "$native_binary" ] && [ -x "$native_binary" ] && command -v python3 >/dev/null 2>&1; then
+        native_reason=$(PITHEAD_GO_HELPER=config-document "$native_binary" "$1" "${2:-config}" 2>/dev/null) || native_rc=$?
+        case "$native_rc" in
+        0 | 1)
+            [ -z "$native_reason" ] || printf '%s\n' "$native_reason"
+            return "$native_rc"
+            ;;
+        esac
+    fi
     python3 - "$1" "${2:-config}" <<'PYDOC'
 import json
 

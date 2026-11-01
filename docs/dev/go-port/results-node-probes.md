@@ -96,4 +96,44 @@ npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --confi
   docs/dev/go-port/results-network-probes.md docs/dev/go-port/results-node-probes.md
 ```
 
+## ZMTP stream exchange slice (2026-10-31)
+
+`go/internal/nodeprobe/zmq_exchange.go` exchanges the exact greeting and SUB READY
+bytes over a supplied connection with one nonzero absolute deadline. It preserves
+rejection, partial/fragmented I/O, ignored write failures, and reading the declared
+body through 255 bytes before validation. The caller owns dialing, deadline
+selection and closing; production callers and tool-dependent launch behavior stay
+Bash. Tests use inherited AF_UNIX descriptors without network connections.
+Five tagged groups compare 435 scenarios, including stalls and early exits. The
+macOS oracle uses installed GNU `ghead` as `head`: BSD `head -c` discards read-ahead on
+sockets, unlike the deployed GNU utility. This is Linux utility semantics on a
+macOS host, not a Linux runtime verdict. Logs use `.go-cache/logs/zmq-stream-*`.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
+and `tests/go-parity/run.sh` for Go selection, with local caches.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-node-zmq-exchange-parity` | PASS, 5 groups / 435 scenarios | PASS, same scenarios |
+| `make test-go-node-zmq-parity test-go-node-monero-parity test-go-doctor-parity test-go-parity` | PASS, plus Go units | PASS, plus Go units |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
+| `make test-fakes` | PASS, 54 tests | PASS, 54 tests; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no Python changes | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
+| `make test` with absent Docker socket and local npm cache | FAIL, 22 third-party cache Markdown findings, exit 2 | Same result; shell/Python/JS/YAML lint pass |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal |
+
+Native checks pass: `go -C go test -count=1 ./...`,
+`go -C go test -json -tags=parity -race -count=1 ./internal/nodeprobe` and
+`go -C go vet -tags=parity ./...`. Linux compilation passes (no runtime verdict):
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+and `GOOS=linux GOARCH=amd64 go -C go test -c -tags=parity -o ../.go-cache/nodeprobe-linux.test ./internal/nodeprobe`. The adapter passes
+`bash -n`, ShellCheck 0.11.0 and shfmt 3.13.1. Source/security reviews found no
+remaining defect. Scoped Markdown passes in both modes:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-node-probes.md
+```
+
 [Back to the parity ledger](PARITY.md)

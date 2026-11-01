@@ -9,7 +9,7 @@ authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
 data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
 payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
-LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, container diagnostics at `975161c6`, Monero sync/peer/tip probes at `aa68ca87`, remote RPC preflight at `56f5bcdd`, and ZMTP validators at `6f34210a`.
+LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, container diagnostics at `975161c6`, Monero sync/peer/tip probes at `aa68ca87`, remote RPC preflight at `56f5bcdd`, ZMTP validators at `6f34210a`, and stream exchange at `cbfdfbcd`.
 The operator commits later rounds because this sandbox cannot write shared Git
 metadata. No performance benefit is claimed.
 
@@ -118,7 +118,8 @@ selection is not implemented.
 | `rotate-dashboard-onion` | Bash fallback | Not independently proven in Go mode |
 | `rotate-secrets` | Bash fallback | Not independently proven in Go mode |
 | `render-quadlet` | Bash fallback | Not independently proven in Go mode |
-| Config parse/validate/render, `.env`, Caddyfile | Bash fallback | Not ported |
+| Raw config document parse/validation | Native Go-selected gate, with Python compatibility fallback | 5 tagged groups / 134 scenarios, unchanged parser and wiring suites |
+| Typed config/defaults and `.env`/Caddyfile render | Bash fallback | Not ported |
 | Dashboard routes, state, polling and Tor | Python reference | Baseline suites pass; Go backend not ported |
 | SQLite schema, migrations and recovery | Python reference | Baseline suites pass; Go backend not ported |
 | Wizard launch and control channel | Bash/Python reference | Not ported |
@@ -226,6 +227,10 @@ oracles:
   pairs exercise actual Bash reads/writes and the five-second timeout without a
   network connection; source-based suites cannot invoke the Go exchange.
 
+- `config_document_reference.sh` calls the unchanged embedded Python parser in
+  Bash mode; `test_config_document.py` proves native selection through CLI fallback.
+  The unchanged parser suite also reaches Go.
+
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
@@ -238,7 +243,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-nft-parity`, `test-go-doctor-history-parity` and
 `test-go-doctor-containers-parity`, `test-go-doctor-monero-parity` and
 `test-go-node-monero-parity`, `test-go-node-zmq-parity` and
-`test-go-node-zmq-exchange-parity`.
+`test-go-node-zmq-exchange-parity` and `test-go-config-document-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -321,40 +326,39 @@ Detailed paired commands, results and limits are preserved in
 [network and firewall results](results-network-probes.md), plus
 [remote-node probe results](results-node-probes.md).
 
-## ZMTP stream exchange slice (2026-10-31)
+## Config document slice (2026-10-31)
 
-`go/internal/nodeprobe/zmq_exchange.go` exchanges the exact greeting and SUB READY
-bytes over a supplied connection with one nonzero absolute deadline. It preserves
-rejection, partial/fragmented I/O, ignored write failures, and reading the declared
-body through 255 bytes before validation. The caller owns dialing, deadline
-selection and closing; production callers and tool-dependent launch behavior stay
-Bash. Tests use inherited AF_UNIX descriptors without network connections.
-Five tagged groups compare 435 scenarios, including stalls and early exits. The
-macOS oracle uses installed GNU `ghead` as `head`: BSD `head -c` discards read-ahead on
-sockets, unlike the deployed GNU utility. This is Linux utility semantics on a
-macOS host, not a Linux runtime verdict. Logs use `.go-cache/logs/zmq-stream-*`.
+`go/internal/config/document.go` preserves ordered JSON, duplicate/placeholder
+reason bytes, ASCII-safe paths, request scope and syntax-before-duplicate ordering.
+Five tagged groups compare 134 scenarios. Invalid UTF-8, surrogate escapes,
+nonstandard numbers, integers over 4096 digits and nesting beyond 128 retain Python.
+Typed/default validation and `.env`/Caddyfile rendering remain Bash.
+
+Go-selected fallback carries an internal binary marker for the native gate;
+sourced tests use `PITHEAD_GO_BINARY`. Helper status 125 silently selects Python.
+Wiring tests prove native selection through CLI fallback; compatibility tests
+compare the selected fallback's exact bytes and status.
+Private logs/exit records use `.go-cache/logs/config-document-*`.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
 and `tests/go-parity/run.sh` for Go selection, with local caches.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-node-zmq-exchange-parity` | PASS, 5 groups / 435 scenarios | PASS, same scenarios |
-| `make test-go-node-zmq-parity test-go-node-monero-parity test-go-doctor-parity test-go-parity` | PASS, plus Go units | PASS, plus Go units |
+| `make test-go-config-document-parity` | PASS, 5 tagged groups / 134 scenarios, 7 unchanged parser tests, 5 wiring tests | PASS, same counts; parser tests reach Go |
+| `make test-go-parity` | PASS, 12 paired CLI groups plus Go units | Same result |
 | `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
-| `make test-fakes` | PASS, 54 tests | PASS, 54 tests; Python backend |
-| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no Python changes | Same result |
+| `make test-fakes` | PASS, 54 tests | Same result; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
 | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
 | `make test` with absent Docker socket and local npm cache | FAIL, 22 third-party cache Markdown findings, exit 2 | Same result; shell/Python/JS/YAML lint pass |
 | `make test-stack` | macOS refusal, exit 2 | Same refusal |
 
-Native checks pass: `go -C go test -count=1 ./...`,
-`go -C go test -json -tags=parity -race -count=1 ./internal/nodeprobe` and
-`go -C go vet -tags=parity ./...`. Linux compilation passes (no runtime verdict):
+After `make go-build`, native checks pass: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and
 `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
-and `GOOS=linux GOARCH=amd64 go -C go test -c -tags=parity -o ../.go-cache/nodeprobe-linux.test ./internal/nodeprobe`. The adapter passes
-`bash -n`, ShellCheck 0.11.0 and shfmt 3.13.1. Source/security reviews found no
-remaining defect. Scoped Markdown passes in both modes:
+(compilation only). Adapter syntax, pinned ShellCheck/shfmt, Ruff, Go formatting
+and `git diff --check` pass. Reviews are clean; scoped Markdown passes in both modes:
 
 ```bash
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
@@ -388,13 +392,10 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port remote-node address policy, resolution and dialing in `10-node-probe.sh`,
-   then orchestration and remaining dashboard/appliance diagnostics.
-2. Port Tor recovery mount, lock and persistence handling.
-3. Connect the native doctor collector and human output with Bash fallback for
-   unsupported inputs and the pinned check-ID contract.
-4. Port config parse, validate and render, including byte-identical `.env` and
-   Caddyfile output.
-5. Implement the dashboard Go command and container switch.
-6. Run unchanged Linux/Docker suites and the reserved-bench experiment on the
-   operator's infrastructure.
+The operator parked doctor and Tor/ZMTP probes on 2026-10-31. Next, in order:
+
+1. Port config defaults/getters, typed validation and byte-identical `.env`/Caddyfile rendering.
+2. Port `render`, `apply`, `up`, `down` and `restart` using that config layer.
+3. Implement dashboard routes, HTTP/JSON, state/polling, SQLite migrations/recovery and the container switch.
+4. Port `upgrade`, `backup` and `restore`.
+5. Run unchanged Linux/Docker suites and the reserved-bench experiment on the operator's infrastructure.

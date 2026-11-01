@@ -12,7 +12,12 @@ func fallback(reference string, args []string) error {
 	if err != nil {
 		return err
 	}
-	return replaceProcess(bash, append([]string{"bash", reference}, args...), fallbackEnv(os.Environ()))
+	binary, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	env := configDocumentFallbackEnv(fallbackEnv(os.Environ()), binary)
+	return replaceProcess(bash, append([]string{"bash", reference}, args...), env)
 }
 
 func replaceProcess(binary string, args, env []string) error {
