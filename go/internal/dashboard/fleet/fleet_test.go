@@ -67,9 +67,9 @@ func TestRigforgeDisplayCurrentAndStale(t *testing.T) {
 
 func TestBuildWorkersSortsFormatsAndUpdates(t *testing.T) {
 	workers := []any{
-		map[string]any{"name": "offline", "ip": "10.0.0.9", "status": "offline", "active_pool": "3344"},
+		map[string]any{"name": "offline", "ip": "172.28.0.9", "status": "offline", "active_pool": "3344"},
 		map[string]any{
-			"name": "online", "ip": "10.0.0.1", "status": "online", "active_pool": "3333",
+			"name": "online", "ip": "172.28.0.1", "status": "online", "active_pool": "3333",
 			"uptime": 3600, "h60": 5100, "h15": 5200, "accepted": 90, "rejected": 10, "invalid": 2,
 			"rigforge": map[string]any{"generated_at": "2026-10-01T20:00:00Z", "version": "1.11.1"},
 		},
@@ -123,8 +123,8 @@ func TestBuildEnergyMeasuredConfiguredAndLive(t *testing.T) {
 }
 
 func TestHelpersAndRunValidation(t *testing.T) {
-	value, err := Build(request(t, "_ip_to_sort_int", "10.0.0.1"))
-	if err != nil || value.(json.Number).String() != "167772161" {
+	value, err := Build(request(t, "_ip_to_sort_int", "1.2.3.4"))
+	if err != nil || value.(json.Number).String() != "16909060" {
 		t.Fatalf("unexpected IP result: %v %v", value, err)
 	}
 	value, err = Build(request(t, "_num", true))

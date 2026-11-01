@@ -17,7 +17,7 @@ use `.go-cache/logs/payout-ownership-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-payout-ownership-parity` including unchanged payout-key comparisons | Pass; 8 existing and 9 new methods | Same result |
+| `make test-go-payout-ownership-parity` including earlier supplementary payout-key comparisons | Pass; 8 existing and 9 new methods | Same result |
 | Affected config/render comparisons below | Pass; unchanged parser and render goldens included | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
@@ -225,7 +225,7 @@ selection preserves the first invalid argument, apply's partially parsed flags,
 porcelain's dry-run requirement and restart's ignored trailing arguments.
 No native render, apply or stack operation is claimed.
 
-The unchanged 12-group CLI contract suite remains the runnable original oracle.
+The new 12-group CLI comparisons supplement the unavailable original lifecycle oracle.
 New comparisons stop at the first operational callback and compare output bytes,
 exit status, callback order and caller state. A spy verifies native success at
 each of the five boundaries, zero helper argv and exact stdin framing. Missing,
@@ -239,7 +239,7 @@ worktree caches and an absent Docker socket. Private records are under
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-lifecycle-options-parity` | Pass; unchanged 12-group CLI suite, 10 new comparison methods and Go units | Same result |
+| `make test-go-lifecycle-options-parity` | Pass; new 12-group CLI comparisons, 10 new comparison methods and Go units | Same result |
 | Config/render command below | Pass; unchanged 7-test raw-parser suite and render fixture/goldens included | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
@@ -284,7 +284,7 @@ ownership repair through chown/sudo, command overrides and failure diagnostics.
 Directory destinations retain the reference mv behavior through fallback. As in
 Bash, a matching UID does not trigger a group change.
 
-The unchanged render fixture/goldens and CLI/config comparisons pass with Go
+The unchanged render fixture/goldens and supplementary CLI/config comparisons pass with Go
 selection; their mocked chown path intentionally uses compatibility fallback.
 New comparisons extract the production secret block and supply the current UID
 to prove actual native publication. They compare literal bytes, owner, mode,
@@ -300,7 +300,7 @@ worktree caches and an absent Docker socket. Private records are under
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-tari-secret-parity` | Pass; 10 new methods, unchanged env/payout render comparisons and 12-group CLI suite, plus Go units | Same result |
+| `make test-go-tari-secret-parity` | Pass; 10 new methods, unchanged render goldens and supplementary env/payout/CLI comparisons, plus Go units | Same result |
 | Other core comparisons below | Pass; unchanged 7-test raw-parser suite, Caddy and lifecycle comparisons included | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |

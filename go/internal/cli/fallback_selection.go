@@ -11,6 +11,7 @@ func selectedFallbackEnv(env []string, binary string) []string {
 		}
 		if strings.HasPrefix(entry, "PITHEAD_GO_REFERENCE=") ||
 			strings.HasPrefix(entry, "PITHEAD_GO_CONFIG_DOCUMENT_BINARY=") ||
+			strings.HasPrefix(entry, ignoredSignalsEnvironment) ||
 			strings.HasPrefix(entry, "_PITHEAD_GO_HYBRID=") ||
 			strings.HasPrefix(entry, "_pithead_go_hybrid_binary=") {
 			continue

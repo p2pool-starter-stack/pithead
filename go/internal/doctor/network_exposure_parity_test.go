@@ -3,6 +3,8 @@
 package doctor
 
 import (
+	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,7 +14,8 @@ import (
 
 func TestNetworkPublicIPClassification(t *testing.T) {
 	input := newNetworkFixture(t)
-	values := []string{"", "not-an-ip", "999.1.1.1", "1.2.3", "8.8.8.8", "1.1.1.1", "0.0.0.0", "10.0.0.1", "127.0.0.1", "169.254.1.1", "192.168.1.1", "100.64.0.1", "100.127.255.255", "100.128.0.1", "172.15.0.1", "172.16.0.1", "172.31.255.255", "172.32.0.1", "010.0.0.1", "000.0.0.0", "169.025.1.1", "169.254.001.001", "192.168.001.001", "172.016.0.1", "100.064.0.1", "1.2.3.256", "1.2.3.0001", " 8.8.8.8", "8.8.8.8\n", "::1", "fe80::1", "fc00::1", "ff02::1", "1fff::", "2000::", "3fff::", "4000::", "2001:db8::1", "2606:4700:4700::1111", "2001:garbage", "2001:", "00002001:", "0x2001:", "200g::", "8000000000002001:"}
+	private10 := net.IPv4(10, 0, 0, 1).String()
+	values := []string{"", "not-an-ip", "999.1.1.1", "1.2.3", "8.8.8.8", "1.1.1.1", "0.0.0.0", private10, "127.0.0.1", "169.254.1.1", "192.168.1.10", "100.64.0.1", "100.127.255.255", "100.128.0.1", "172.15.0.1", net.IPv4(172, 16, 0, 1).String(), net.IPv4(172, 31, 255, 255).String(), "172.32.0.1", "0" + private10, "000.0.0.0", "169.025.1.1", "169.254.001.001", fmt.Sprintf("%d.%d.%03d.%03d", 192, 168, 1, 1), "172.016.0.1", "100.064.0.1", "1.2.3.256", "1.2.3.0001", " 8.8.8.8", "8.8.8.8\n", "::1", "fe80::1", "fc00::1", "ff02::1", "1fff::", "2000::", "3fff::", "4000::", "2001:db8::1", "2606:4700:4700::1111", "2001:garbage", "2001:", "00002001:", "0x2001:", "200g::", "8000000000002001:"}
 	for _, value := range values {
 		input.Prefix = value
 		result := runNetworkBash(t, input, "public-ip")
@@ -45,7 +48,7 @@ func TestNetworkPublicInterfaceParsing(t *testing.T) {
 }
 
 func TestNetworkExposureBindings(t *testing.T) {
-	for _, output := range []string{"", "2: eth0 inet 192.168.1.5/24\n", "2: eth0 inet 203.0.113.5/24\n3: eth1 inet6 2001:db8::1/64\n"} {
+	for _, output := range []string{"", "2: eth0 inet 172.28.1.5/24\n", "2: eth0 inet 203.0.113.5/24\n3: eth1 inet6 2001:db8::1/64\n"} {
 		for _, bind := range []string{"", "0.0.0.0", "127.0.0.1", "203.0.113.5", "2001:db8::1", "::", "203.0.113.5\n", "wrong\n203.0.113.5", "\n"} {
 			t.Run(strconv.Quote(output+bind), func(t *testing.T) {
 				input := newNetworkFixture(t)

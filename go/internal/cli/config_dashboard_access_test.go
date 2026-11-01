@@ -15,7 +15,7 @@ func TestConfigDashboardAccessFrames(t *testing.T) {
 		raw, assigned, host, port, timezone, needs, reason string
 	}{
 		{`{}`, "5", "", "", "", "true", ""},
-		{`{"dashboard":{"host":"box.lan","port":8443,"timezone":"UTC"}}`, "5", "box.lan", "8443", "UTC", "false", ""},
+		{`{"dashboard":{"host":"box.example.com","port":8443,"timezone":"UTC"}}`, "5", "box.example.com", "8443", "UTC", "false", ""},
 		{`{"dashboard":{"host":"bad host","port":[]}}`, "1", "bad host", "", "", "false", "dashboard.host must be"},
 		{`{"dashboard":{"port":"080","secure":[]}}`, "2", "", "080", "", "false", "dashboard.port must be"},
 	} {

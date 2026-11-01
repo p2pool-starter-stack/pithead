@@ -3,6 +3,7 @@ package firewall
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -24,7 +25,7 @@ func TestTorNFTValidation(t *testing.T) {
 		{"duplicate active", torNFTDocument(active, active, drop), false, false},
 		{"late active", torNFTDocument(drop, active), false, false},
 		{"inactive exception", torNFTDocument([]any{nftIPMatchTest("saddr", "172.28.0.27"), map[string]any{"accept": nil}}, drop), false, false},
-		{"conditional active", torNFTDocument([]any{nftIPMatchTest("saddr", "172.28.0.26"), nftIPMatchTest("daddr", "10.0.0.1"), map[string]any{"accept": nil}}, drop), false, false},
+		{"conditional active", torNFTDocument([]any{nftIPMatchTest("saddr", "172.28.0.26"), nftIPMatchTest("daddr", "172.28.0.1"), map[string]any{"accept": nil}}, drop), false, false},
 		{"unconditional accept", torNFTDocument([]any{map[string]any{"counter": map[string]any{}}, map[string]any{"accept": nil}}, active, drop), false, false},
 		{"drop in unhooked chain", torNFTDocumentChain("input", active, drop), false, false},
 		{"wrong chain", torNFTRaw(map[string]any{"nftables": []any{map[string]any{"chain": map[string]any{"name": "other", "hook": "forward"}}, map[string]any{"rule": map[string]any{"chain": "other", "expr": drop}}}}), false, false},
@@ -53,7 +54,7 @@ func TestTorNFTSafeAccepts(t *testing.T) {
 	for _, destination := range []struct {
 		addr string
 		bits int
-	}{{"10.0.0.0", 8}, {"172.16.0.0", 12}, {"192.168.0.0", 16}, {"100.64.0.0", 10}} {
+	}{{net.IPv4(10, 0, 0, 0).String(), 8}, {net.IPv4(172, 16, 0, 0).String(), 12}, {net.IPv4(192, 168, 0, 0).String(), 16}, {"100.64.0.0", 10}} {
 		rules = append(rules, []any{nftIPMatchTest("saddr", subnet), nftIPMatchTest("daddr", nftPrefixTest(destination.addr, destination.bits)), map[string]any{"accept": nil}})
 	}
 	for _, ip := range []string{"172.28.0.26", "172.28.0.30"} {

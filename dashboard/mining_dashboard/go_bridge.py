@@ -11,15 +11,42 @@ from mining_dashboard.web.views import charts, header
 logger = logging.getLogger("GoBridge")
 
 
-def _state(request):
+def _compact_chart(history, data, query, now=None):
+    range_arg = query.get("range", "all")
+    window = charts.parse_window(query.get("from"), query.get("to"))
+    filtered_history, filtered_shares = charts._filter_range(
+        history, data.get("shares", []), range_arg, window, now
+    )
+    duration = charts._window_duration(filtered_history, range_arg, window)
+    return {
+        "history": charts._downsample_history(filtered_history, duration),
+        "shares": filtered_shares,
+        "duration": duration,
+    }
+
+
+def _state(request, compact=False):
     data = go_snapshot.freeze(request.app["latest_data"] or {})
-    history = go_snapshot.freeze(request.app["state_manager"].get_history())
+    history = request.app["state_manager"].get_history()
     snapshot = go_snapshot.collect(data, request.app["state_manager"])
     state = go_snapshot.FrozenState(snapshot)
-    return {
-        "domain": go_domain.collect(data, state, history=history, now=snapshot["settings"]["now"]),
+    result = {
+        "domain": go_domain.collect(
+            data,
+            state,
+            history=history,
+            now=snapshot["settings"]["now"],
+            compact=compact,
+        ),
         "snapshot": snapshot,
     }
+    if compact:
+        result["chart"] = go_snapshot.freeze(
+            _compact_chart(history, data, request.query, snapshot["settings"]["now"])
+        )
+    else:
+        result["domain"]["history"] = go_snapshot.freeze(result["domain"]["history"])
+    return result
 
 
 async def _finish_state(request):
@@ -34,8 +61,6 @@ async def _finish_state(request):
 
     def capture(history, shares, range_arg, window, avg_window, **markers):
         chart.update(
-            history=history,
-            shares=shares,
             range=range_arg,
             window=window,
             avg_window=avg_window,
@@ -43,6 +68,8 @@ async def _finish_state(request):
             update_interval=settings["update_interval"],
             **markers,
         )
+        if not prepared.get("compact_chart"):
+            chart.update(history=history, shares=shares)
 
     query = request.query
     state = server.build_state(
@@ -52,7 +79,7 @@ async def _finish_state(request):
         server.parse_window(query.get("from"), query.get("to")),
         server.canonical_window(query.get("avg")),
         chart_builder=capture,
-        history=prepared["history"],
+        history=prepared.get("history", []),
         metrics=go_domain.restore(prepared["metrics"]),
         section_builders={
             **go_views.builders(prepared.get("sections", {}), series, settings),
@@ -99,7 +126,7 @@ def _metrics(request):
     summary = data.get("proxy_summary", {}) or {}
     pool = (data.get("pool", {}) or {}).get("pool", {}) or {}
     return {
-        "domain": go_domain.collect(data, state),
+        "domain": go_domain.collect(data, state, compact=True),
         "DiskPercent": disk_percent,
         "DBHealthy": state.is_db_healthy(),
         "share_stats": state.get_share_stats(),
@@ -113,7 +140,7 @@ def _metrics(request):
 
 def install(app):
     for operation, reader in (
-        ("state", _state),
+        ("state", lambda request: _state(request, compact=True)),
         ("miner-connection", _miner_connection),
         ("xvb-standby", _xvb_standby),
         ("metrics", _metrics),

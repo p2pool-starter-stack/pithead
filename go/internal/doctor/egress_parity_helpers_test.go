@@ -19,7 +19,7 @@ var egressPaste, _ = exec.LookPath("paste")
 
 type egressFixture struct {
 	TorEgress
-	lan lanFixture
+	base lanFixture
 }
 
 func newEgressFixture(t *testing.T) egressFixture {
@@ -34,7 +34,7 @@ func newEgressFixture(t *testing.T) egressFixture {
 		}
 	}
 	writeHostTool(t, base.Bin, "sudo", egressToolLog+"[ \"$1\" = -n ] || exit 99\nshift\nexec \"$@\"\n")
-	return egressFixture{TorEgress: TorEgress{OS: "Linux"}, lan: base}
+	return egressFixture{TorEgress: TorEgress{OS: "Linux"}, base: base}
 }
 
 const egressToolLog = "printf '%s\\n' \"${0##*/}\" \"$@\" >>\"${0%/*}/egress.calls\"\n"
@@ -53,12 +53,12 @@ func egressTool(t *testing.T, fixture egressFixture, name string) {
 		t.Fatal("unsupported egress fixture: " + name)
 	}
 	body += "esac\nif [ -f \"$0.$key.output\" ]; then /bin/cat \"$0.$key.output\"; fi\ncode=1\nif [ -f \"$0.$key.code\" ]; then IFS= read -r code <\"$0.$key.code\"; fi\nexit \"$code\"\n"
-	writeHostTool(t, fixture.lan.Bin, name, body)
+	writeHostTool(t, fixture.base.Bin, name, body)
 }
 
 func egressResponse(t *testing.T, fixture egressFixture, tool, key, output string, code int) {
 	t.Helper()
-	lanResponse(t, fixture.lan, tool, key, output, code)
+	lanResponse(t, fixture.base, tool, key, output, code)
 }
 
 func egressReadback(t *testing.T, fixture egressFixture, user, forward string) {
@@ -71,7 +71,7 @@ func egressReadback(t *testing.T, fixture egressFixture, user, forward string) {
 
 func egressCalls(t *testing.T, fixture egressFixture, clear bool) string {
 	t.Helper()
-	path := filepath.Join(fixture.lan.Bin, "egress.calls")
+	path := filepath.Join(fixture.base.Bin, "egress.calls")
 	value, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)

@@ -25,17 +25,17 @@ func TestBuildMinerConnection(t *testing.T) {
 
 func TestBuildMinerConnectionPythonHostRules(t *testing.T) {
 	tests := []struct {
-		name  string
-		input MinerConnectionInput
-		url   string
-		local bool
+		name      string
+		input     MinerConnectionInput
+		url       string
+		localOnly bool
 	}{
 		{"literal host", MinerConnectionInput{HostIP: "192.0.2.8", Bind: "0.0.0.0", DetectedHostIPv4: "192.0.2.9"}, "stratum+tcp://192.0.2.8:3333", false},
 		{"empty bind", MinerConnectionInput{HostIP: "192.0.2.8"}, "stratum+tcp://:3333", false},
 		{"explicit bind", MinerConnectionInput{HostIP: "192.0.2.8", Bind: "192.0.2.9"}, "stratum+tcp://192.0.2.9:3333", false},
 		{"loopback", MinerConnectionInput{HostIP: "192.0.2.8", Bind: "127.0.0.1"}, "stratum+tcp://127.0.0.1:3333", true},
 		{"ipv6", MinerConnectionInput{HostIP: "2001:db8::1", Bind: "0.0.0.0"}, "stratum+tcp://[2001:db8::1]:3333", false},
-		{"duplicate detection", MinerConnectionInput{HostIP: "pithead.local", Bind: "0.0.0.0", DetectedHostIPv4: "pithead.local"}, "stratum+tcp://pithead.local:3333", false},
+		{"duplicate detection", MinerConnectionInput{HostIP: "example.com", Bind: "0.0.0.0", DetectedHostIPv4: "example.com"}, "stratum+tcp://example.com:3333", false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -43,7 +43,7 @@ func TestBuildMinerConnectionPythonHostRules(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got["url"] != test.url || got["local_only"] != test.local {
+			if got["url"] != test.url || got["local_only"] != test.localOnly {
 				t.Fatalf("got %#v", got)
 			}
 			if got["fingerprint"] != "" || got["tls"] != false {

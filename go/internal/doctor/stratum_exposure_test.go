@@ -58,7 +58,7 @@ func TestStratumExposureBindingAndHostState(t *testing.T) {
 			t.Fatalf("Findings(%q) = %#v, %v", test.bind, findings, err)
 		}
 	}
-	writeExposureIP(t, dir, "#!/bin/sh\nprintf '%s\\n' '1: eth0 inet 10.0.0.2/24 scope global'")
+	writeExposureIP(t, dir, "#!/bin/sh\nprintf '%s\\n' '1: eth0 inet 172.28.0.2/24 scope global'")
 	findings, err := (StratumExposure{}).Findings()
 	if err != nil || len(findings) != 1 || findings[0].Status != "ok" || !strings.Contains(findings[0].Message, "No public IP") {
 		t.Fatalf("Findings() = %#v, %v", findings, err)

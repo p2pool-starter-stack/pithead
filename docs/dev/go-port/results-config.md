@@ -70,7 +70,7 @@ and `tests/go-parity/run.sh` for Go selection, with local caches.
 |---|---|---|
 | `make test-go-config-defaults-parity` | PASS, 5 groups / 744 scenarios and Go units | Same result |
 | `python3 tests/go-parity/test_config_defaults.py` | PASS, 6 wiring/render-fixture tests | Same result |
-| `make test-go-config-document-parity test-go-parity` | PASS, unchanged parser and CLI suites plus Go units | Same result |
+| `make test-go-config-document-parity test-go-parity` | PASS, unchanged seven-test parser oracle, new CLI comparisons and Go units | Same result |
 | `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
 | `make test-fakes` | PASS, 54 tests | Same result; Python backend |
 | `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |

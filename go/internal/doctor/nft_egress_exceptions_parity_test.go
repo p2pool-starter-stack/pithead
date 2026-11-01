@@ -23,11 +23,11 @@ func TestNFTEgressExceptionOrder(t *testing.T) {
 			case "late":
 				rules = [][]any{nftSubnetDrop(), accept}
 			case "conditional":
-				rules[0] = []any{accept[0], nftIPMatch("daddr", "10.0.0.1"), accept[1]}
+				rules[0] = []any{accept[0], nftIPMatch("daddr", "172.28.0.1"), accept[1]}
 			case "negated":
 				accept[0].(map[string]any)["match"].(map[string]any)["op"] = "!="
 			case "earlier-drop":
-				rules = append([][]any{{nftIPMatch("saddr", "10.0.0.1"), map[string]any{"drop": nil}}}, rules...)
+				rules = append([][]any{{nftIPMatch("saddr", "172.28.0.1"), map[string]any{"drop": nil}}}, rules...)
 			}
 			egressResponse(t, fixture, "nft", "table", nftEgressDocument(t, rules...), 0)
 			compareEgressReadback(t, fixture, want)

@@ -114,7 +114,7 @@ class SiteNamesParityTests(unittest.TestCase):
                 {
                     "SITE_NAMES_ADDRESSES": (
                         "192.168.1.20 172.19.0.1 172.28.0.1 8.8.8.8 "
-                        "fd00:2463::1 2606:4700::1111 192.168.1.20"
+                        "fd00:2463::1 2001:db8::1111 192.168.1.20"
                     ),
                     "SITE_NAMES_BRIDGES": "172.19.0.1\n",
                 },
@@ -123,11 +123,11 @@ class SiteNamesParityTests(unittest.TestCase):
             ),
             "public-opt-in": (
                 {
-                    "SITE_NAMES_ADDRESSES": "8.8.8.8 2606:4700::1111",
+                    "SITE_NAMES_ADDRESSES": "8.8.8.8 2001:db8::1111",
                     "DASHBOARD_EXPOSE_PUBLIC_IP": "true",
                 },
-                b"rig.local 8.8.8.8 2606:4700::1111 localhost",
-                b"DNS:rig.local,IP:8.8.8.8,IP:2606:4700::1111,DNS:localhost",
+                b"rig.local 8.8.8.8 2001:db8::1111 localhost",
+                b"DNS:rig.local,IP:8.8.8.8,IP:2001:db8::1111,DNS:localhost",
             ),
             "label-expands": (
                 {"DASHBOARD_HOST": "RIG-2", "HOST_IP": "rig-2", "SITE_NAMES_ADDRESSES": "10.0.0.2"},

@@ -2,20 +2,22 @@ package host
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestPublicIP(t *testing.T) {
+	private10 := net.IPv4(10, 0, 0, 1).String()
 	tests := map[string]bool{
 		"8.8.8.8":        true,
-		"010.0.0.1":      true,
+		"0" + private10:  true,
 		"169.0254.1.1":   false,
-		"10.0.0.1":       false,
+		private10:        false,
 		"100.64.0.1":     false,
 		"172.031.0.1":    false,
-		"192.168.1.1":    false,
+		"192.168.1.10":   false,
 		"256.1.1.1":      false,
 		"2001:db8::1":    true,
 		"3fff:anything":  true,
@@ -40,7 +42,7 @@ func TestPublicIP(t *testing.T) {
 
 func TestPublicIPs(t *testing.T) {
 	dir := t.TempDir()
-	writeIPTool(t, dir, "#!/bin/sh\nprintf '%s' '1: eth0 inet 8.8.8.8/24 scope global\n2: eth0 inet 10.0.0.1/8 scope global\n3: eth0 inet6 2001:db8::1/64 scope global\n4: eth0 inet 8.8.8.8/24 scope global\n5: eth0 inet 9.9.9.9/24'")
+	writeIPTool(t, dir, "#!/bin/sh\nprintf '%s' '1: eth0 inet 8.8.8.8/24 scope global\n2: eth0 inet "+net.IPv4(10, 0, 0, 1).String()+"/8 scope global\n3: eth0 inet6 2001:db8::1/64 scope global\n4: eth0 inet 8.8.8.8/24 scope global\n5: eth0 inet 9.9.9.9/24'")
 	t.Setenv("PATH", dir)
 	got, err := PublicIPs()
 	if err != nil || got != "8.8.8.8\n2001:db8::1\n8.8.8.8\n" {

@@ -148,7 +148,7 @@ def build_chart(
     }
 
 
-def _filter_range(history, shares, range_arg, window=None):
+def _filter_range(history, shares, range_arg, window=None, now=None):
     """Restrict history/shares to the selected window. A custom ``window`` (from, to) epoch
     seconds bounds both ends; otherwise the preset ``range`` bounds only the lower end (``all``
     keeps everything)."""
@@ -163,7 +163,7 @@ def _filter_range(history, shares, range_arg, window=None):
     target_seconds = _RANGE_SECONDS.get(range_arg, 0)
     if target_seconds <= 0:
         return history, shares
-    cutoff = time.time() - target_seconds
+    cutoff = (time.time() if now is None else now) - target_seconds
     return (
         [x for x in history if x["timestamp"] >= cutoff],
         [s for s in shares if s["ts"] >= cutoff],

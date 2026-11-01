@@ -116,14 +116,14 @@ func TestRenderCaddyOnionFragments(t *testing.T) {
 	input := CaddyInput{
 		BindAddresses: "127.0.0.1 ::1",
 		Auth:          "    basic_auth {\n        operator $2a$14$hash\n    }",
-		NetworkPrefix: "172.30.0",
+		NetworkPrefix: "172.28.30",
 		Onion:         "exampleexampleexampleexampleexampleexampleexampleexample.onion",
 	}
 	http, err := RenderCaddyFragment("onion-http", input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(http), "\nhttp://172.30.0.1 {\n    bind 172.30.0.1\n    basic_auth {") || !strings.Contains(string(http), caddyLogBlock) || !strings.HasSuffix(string(http), "    }\n}\n") {
+	if !strings.HasPrefix(string(http), "\nhttp://172.28.30.1 {\n    bind 172.28.30.1\n    basic_auth {") || !strings.Contains(string(http), caddyLogBlock) || !strings.HasSuffix(string(http), "    }\n}\n") {
 		t.Fatalf("HTTP onion fragment has wrong shape: %q", http)
 	}
 
@@ -131,7 +131,7 @@ func TestRenderCaddyOnionFragments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(string(https), "\nhttps://"+input.Onion+" {\n    tls internal\n    bind 172.30.0.1\n") || !strings.Contains(string(https), input.Auth) || !strings.HasSuffix(string(https), "    }\n}\n") {
+	if !strings.HasPrefix(string(https), "\nhttps://"+input.Onion+" {\n    tls internal\n    bind 172.28.30.1\n") || !strings.Contains(string(https), input.Auth) || !strings.HasSuffix(string(https), "    }\n}\n") {
 		t.Fatalf("HTTPS onion fragment has wrong shape: %q", https)
 	}
 }

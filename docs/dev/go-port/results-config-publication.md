@@ -27,7 +27,7 @@ worktree caches and an absent Docker socket. Private records are under
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-env-write-parity` | Pass; 11 new methods, unchanged env/render comparisons and 12-group CLI suite, plus Go units | Same result |
+| `make test-go-env-write-parity` | Pass; 11 new methods, unchanged render goldens and supplementary env/CLI comparisons, plus Go units | Same result |
 | Other core comparisons below | Pass; unchanged 7-test raw-parser suite, Caddy and Tari publication comparisons included | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
@@ -77,7 +77,7 @@ publication, owned-helper selection with zero argv, protocol refusals, sentinel
 refusals, failed foreign-UID cleanup and the unchanged sudo fallback. The sudo
 fixture is a local failure stub. Privilege-dependent tests are conditional: successful
 foreign-UID chown, its verification and final publication are not proven locally.
-The unchanged render fixture/goldens, parser and CLI suites remain the oracle;
+The unchanged render fixture/goldens and parser remain the oracle; new CLI comparisons supplement them;
 mocked ownership commands in the render fixture select compatibility fallback.
 Original Linux ownership/lifecycle suites are still unavailable. Main verb
 operations remain Bash and the dashboard remains Python.
@@ -137,7 +137,7 @@ operations remain Bash.
 
 The existing `config-version` helper accepts publication frames with zero argv;
 its named scalar/document operations retain their existing contracts. The
-unchanged 16-method version suite passes with the new writer reachable through
+new 16-method version comparison suite passes with the new writer reachable through
 its existing sourced hook. Supplementary comparisons prove actual native
 success, exact bytes, mode/owner, inode replacement, symlink replacement,
 hard-link separation, protocol/tool fallback and no-op behavior. A local
@@ -159,7 +159,7 @@ worktree caches and an absent Docker socket. Private records are under
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-config-version-publish-parity` | Pass; unchanged 16-method version suite, 7 new methods, prior env/render comparisons and 12-group CLI suite, plus Go units | Same result |
+| `make test-go-config-version-publish-parity` | Pass; new 16-method version comparison suite, 7 new methods, prior supplementary env/CLI comparisons and unchanged render goldens, plus Go units | Same result |
 | `make test-go-config-input-parity test-go-caddy-parity` | Pass; unchanged 7-test raw-parser suite and supplementary parser/Caddy comparisons | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
@@ -212,7 +212,7 @@ Unsupported JSON, interposed tools and pre-publication failures keep fallback.
 Other config transactions and main verb operations remain Bash; the dashboard
 remains Python.
 
-The unchanged persistence suite passes through its original sourced hook,
+The new persistence comparison suite passes through its sourced reference hook,
 including its exact native-helper trace and existing-temp/error assertions.
 The new helper operation is `config-persistence credentials publish`; its argv
 contains only these operation words, with JSON, path and credentials on stdin.
@@ -232,7 +232,7 @@ worktree caches and an absent Docker socket. Private records are under
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-credentials-publish-parity` | Pass; unchanged 16-method persistence suite and 6 existing alias comparisons, 8 new methods, prior env/render comparisons and 12-group CLI suite, plus Go units | Same result |
+| `make test-go-credentials-publish-parity` | Pass; new 16-method persistence comparison suite and 6 existing alias comparisons, 8 new methods, prior supplementary env/CLI comparisons and unchanged render goldens, plus Go units | Same result |
 | `make test-go-config-input-parity test-go-caddy-parity` | Pass; unchanged 7-test raw-parser suite and supplementary parser/Caddy comparisons | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |

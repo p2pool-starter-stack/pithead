@@ -12,10 +12,10 @@ import (
 func TestTorSyncIPs(t *testing.T) {
 	dir := t.TempDir()
 	state := TorSyncState{
-		Prefix: "10.40.2\n\n", StateDir: dir + "\n", Monero: "true\n", Tari: "true",
+		Prefix: "172.28.40\n\n", StateDir: dir + "\n", Monero: "true\n", Tari: "true",
 		P2Pool: "true", XVBEnabled: "true", XVBTor: "false\n",
 	}
-	want := []string{"10.40.2.26", "10.40.2.27", "10.40.2.28", "10.40.2.29"}
+	want := []string{"172.28.40.26", "172.28.40.27", "172.28.40.28", "172.28.40.29"}
 	got, err := state.IPs()
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("IPs() = %v, %v; want %v", got, err, want)
@@ -27,7 +27,7 @@ func TestTorSyncIPs(t *testing.T) {
 	if err := os.Symlink("missing", filepath.Join(dir, "tari.synced")); err != nil {
 		t.Fatal(err)
 	}
-	want = []string{"10.40.2.28", "10.40.2.29"}
+	want = []string{"172.28.40.28", "172.28.40.29"}
 	got, err = state.IPs()
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("IPs() with markers = %v, %v; want %v", got, err, want)

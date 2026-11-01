@@ -26,23 +26,7 @@ func Build(input Input) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	p2pool1H, err := average(input.History, 3600, input.Now, "v_p2pool", true)
-	if err != nil {
-		return nil, err
-	}
-	p2pool24H, err := average(input.History, 86400, input.Now, "v_p2pool", true)
-	if err != nil {
-		return nil, err
-	}
-	p2pool30D, err := average(input.History, 30*86400, input.Now, "v_p2pool", true)
-	if err != nil {
-		return nil, err
-	}
-	xvbRouted1H, err := average(input.History, 3600, input.Now, "v_xvb", false)
-	if err != nil {
-		return nil, err
-	}
-	xvbRouted24H, err := average(input.History, 86400, input.Now, "v_xvb", false)
+	p2pool1H, p2pool24H, p2pool30D, xvbRouted1H, xvbRouted24H, err := input.averages()
 	if err != nil {
 		return nil, err
 	}

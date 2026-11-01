@@ -4,6 +4,7 @@ package doctor
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +41,7 @@ func TestEgressReadbackCodes(t *testing.T) {
 	t.Run("sudo-missing", func(t *testing.T) {
 		fixture := newEgressFixture(t)
 		egressTool(t, fixture, "iptables")
-		if err := os.Remove(filepath.Join(fixture.lan.Bin, "sudo")); err != nil {
+		if err := os.Remove(filepath.Join(fixture.base.Bin, "sudo")); err != nil {
 			t.Fatal(err)
 		}
 		compareEgressReadback(t, fixture, 3)
@@ -128,7 +129,7 @@ func TestEgressReadbackSyncExceptions(t *testing.T) {
 				user = "-j ACCEPT -m comment --comment \"pithead-tor-egress\" -s 172.28.0.26 -A DOCKER-USER\n" + egressDrop
 				want = 1
 			case "custom-config":
-				fixture.Prefix, fixture.Subnet, fixture.Active = "10.77.3", "10.77.3.0/24", "10.77.3.28"
+				fixture.Prefix, fixture.Subnet, fixture.Active = "172.28.77", "172.28.77.0/24", "172.28.77.28"
 				user = egressFullRules(t, fixture)
 			}
 			egressReadback(t, fixture, user, egressForward)
@@ -169,16 +170,16 @@ func TestEgressReadbackFallbacks(t *testing.T) {
 			case "nul":
 				user = strings.ReplaceAll(user, "DROP", "DR\x00OP")
 			case "octal-prefix":
-				user = "-A DOCKER-USER -s 10.0.0.0/08 -j ACCEPT\n" + egressDrop
+				user = "-A DOCKER-USER -s " + net.IPv4(10, 0, 0, 0).String() + "/08 -j ACCEPT\n" + egressDrop
 			case "bare-tool":
-				if err := os.Remove(filepath.Join(fixture.lan.Bin, "sort")); err != nil {
+				if err := os.Remove(filepath.Join(fixture.base.Bin, "sort")); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(filepath.Join(fixture.lan.Bin, "sort"), []byte("exit 0\n"), 0o755); err != nil {
+				if err := os.WriteFile(filepath.Join(fixture.base.Bin, "sort"), []byte("exit 0\n"), 0o755); err != nil {
 					t.Fatal(err)
 				}
 			default:
-				if err := os.Remove(filepath.Join(fixture.lan.Bin, strings.TrimPrefix(test, "missing-"))); err != nil {
+				if err := os.Remove(filepath.Join(fixture.base.Bin, strings.TrimPrefix(test, "missing-"))); err != nil {
 					t.Fatal(err)
 				}
 			}

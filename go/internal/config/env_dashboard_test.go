@@ -49,10 +49,10 @@ func TestDeriveDashboardConfiguredValues(t *testing.T) {
 		"dashboard":{"tari_required":true,"fail_closed":1,"check_for_updates":"false","hashrate_drop_threshold":33,"hashrate_drop_minutes":"7"},
 		"healthchecks":{"ping_url":"https://health.example/ping"},
 		"workers":{"api_port":9000,"api_auth":"name","api_token":"fleet-token","list":[
-			{"name":"rig-a","host":"rig-a.local","api_token":"first-token"},
-			{"name":"rig-a","host":"ignored.local","port":9999,"api_token":"ignored-token"},
-			{"name":"rig-b","host":"rig-b.local","port":9001,"api_token":"second-token"},
-			{"name":"","host":"skip.local","api_token":"skip-token"}
+			{"name":"rig-a","host":"rig-a.example.com","api_token":"first-token"},
+			{"name":"rig-a","host":"ignored.example.com","port":9999,"api_token":"ignored-token"},
+			{"name":"rig-b","host":"rig-b.example.com","port":9001,"api_token":"second-token"},
+			{"name":"","host":"skip.example.com","api_token":"skip-token"}
 		]},
 		"telegram":{"enabled":true,"bot_token":"bot-token","chat_id":"-1001","commands":{"enabled":0},"events":{"node_down":false,"node_recovered":"custom"},"daily_summary_time":"21:30"},
 		"notifications":{"webhooks":["https://one.example",null,true,false,2],"ntfy":{"url":"https://ntfy.example/topic","token":"ntfy-token"},"tor":false}
@@ -70,7 +70,7 @@ func TestDeriveDashboardConfiguredValues(t *testing.T) {
 		"false", "true", "eu.example:4247", "donor", "whale",
 		"false", "true", "https://health.example/ping", "https://standby.example/api", "true",
 		"9000", "name", "fleet-token",
-		`{"rig-a":{"host":"rig-a.local","port":9000,"token":"first-token"},"rig-b":{"host":"rig-b.local","port":9001,"token":"second-token"}}`,
+		`{"rig-a":{"host":"rig-a.example.com","port":9000,"token":"first-token"},"rig-b":{"host":"rig-b.example.com","port":9001,"token":"second-token"}}`,
 		"true", "bot-token", "-1001", "0", "false", "custom",
 	}
 	if !reflect.DeepEqual(values[:len(wantPrefix)], wantPrefix) {

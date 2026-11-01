@@ -2,6 +2,12 @@
 
 Historical suite evidence retained from the initial port rounds.
 
+The historical baseline/reference columns compare the then-current Bash/Python
+snapshot with Go selection, including supplementary cases added by this port.
+They are not independent checkouts of the starting commit. The
+[20:35Z review results](results-review-2035.md) add frozen-source comparisons
+against `a73ffced33800de9435779a9cabef53864455acb` and correct that limitation.
+
 ## Consolidated results (2026-10-31)
 
 Commands used worktree-local caches. Raw logs and status records remain ignored

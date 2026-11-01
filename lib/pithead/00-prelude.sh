@@ -15,6 +15,17 @@ set -Eeuo pipefail
 
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${PITHEAD_IMPL:-}" = go ]; then
     if [ "${1:-}" != status ] || [ -e /dev/fd/1 ] || [ -e /proc/self/fd/1 ]; then
+        _PITHEAD_GO_IGNORED_SIGNALS=""
+        while IFS= read -r _pithead_go_trap; do
+            case "$_pithead_go_trap" in
+            "trap -- '' SIG"*)
+                _pithead_go_signal="${_pithead_go_trap##* }"
+                _pithead_go_signal="$(kill -l "$_pithead_go_signal")"
+                _PITHEAD_GO_IGNORED_SIGNALS="${_PITHEAD_GO_IGNORED_SIGNALS:+$_PITHEAD_GO_IGNORED_SIGNALS,}$_pithead_go_signal"
+                ;;
+            esac
+        done < <(trap -p)
+        export _PITHEAD_GO_IGNORED_SIGNALS
         _pithead_go_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
         PITHEAD_GO_REFERENCE="$0" exec "${PITHEAD_GO_BINARY:-$_pithead_go_dir/go/bin/pithead}" "$@"
     fi

@@ -8,23 +8,23 @@ import (
 )
 
 func TestConfigSiteNamesExpand(t *testing.T) {
-	frame := "box.local\x00 172.17.0.1 \x00192.168.50\x00false\x004\x00box.local\x00172.17.0.1\x00192.168.50.2\x00localhost\x000\x00"
+	frame := strings.Join([]string{"pithead.local", " 172.28.17.1 ", "172.28.50", "false", "4", "pithead.local", "172.28.17.1", "172.28.50.2", "localhost", "0", ""}, "\x00")
 	var output bytes.Buffer
 	if err := configSiteNames([]string{"expand"}, strings.NewReader(frame), &output); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := output.String(), "box.local 192.168.50.2 localhost\x00"; got != want {
+	if got, want := output.String(), "pithead.local 172.28.50.2 localhost\x00"; got != want {
 		t.Fatalf("got %q; want %q", got, want)
 	}
 }
 
 func TestConfigSiteNamesSAN(t *testing.T) {
-	frame := "3\x00box.local\x00192.168.1.2\x002001:db8::1\x000\x00"
+	frame := strings.Join([]string{"3", "pithead.local", "172.28.1.2", "2001:db8::1", "0", ""}, "\x00")
 	var output bytes.Buffer
 	if err := configSiteNames([]string{"san"}, strings.NewReader(frame), &output); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := output.String(), "DNS:box.local,IP:192.168.1.2,IP:2001:db8::1\x00"; got != want {
+	if got, want := output.String(), "DNS:pithead.local,IP:172.28.1.2,IP:2001:db8::1\x00"; got != want {
 		t.Fatalf("got %q; want %q", got, want)
 	}
 }

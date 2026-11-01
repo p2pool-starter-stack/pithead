@@ -53,7 +53,7 @@ class SiteNamesRenderParityTests(unittest.TestCase):
                     **appliance,
                     "DASHBOARD_SECURE": "true",
                     "CADDY_HOSTNAME_ADDRESSES": (
-                        "192.168.2.50 172.19.0.1 172.28.0.1 8.8.8.8 fd00:2463::1 2606:4700::1111"
+                        "192.168.2.50 172.19.0.1 172.28.0.1 8.8.8.8 fd00:2463::1 2001:db8::1111"
                     ),
                     "CADDY_BRIDGE_ADDRESSES": "172.19.0.1",
                 },
@@ -65,9 +65,9 @@ class SiteNamesRenderParityTests(unittest.TestCase):
                     **appliance,
                     "DASHBOARD_SECURE": "true",
                     "DASHBOARD_EXPOSE_PUBLIC_IP": "true",
-                    "CADDY_HOSTNAME_ADDRESSES": "8.8.8.8 2606:4700::1111",
+                    "CADDY_HOSTNAME_ADDRESSES": "8.8.8.8 2001:db8::1111",
                 },
-                b"https://rig.local, https://8.8.8.8, https://2606:4700::1111, https://localhost {",
+                b"https://rig.local, https://8.8.8.8, https://2001:db8::1111, https://localhost {",
                 True,
             ),
             "pinned-https": (

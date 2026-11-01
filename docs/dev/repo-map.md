@@ -82,6 +82,9 @@ suites and their native-state ownership comparison.
 `make test-go-dashboard-overview-parity` adds unchanged pool, raffle, update and
 badge suites with a native-state ownership comparison; earnings and polling remain Python.
 `make test-go-dashboard-storage-parity` runs unchanged storage/worker suites with Python lifecycle paths fatal and checks existing/corrupt startup through the normal Go command.
+The production bridge prepares bounded history rows and five averages in Python;
+Go completes the chart and coalesces overlapping state polls with bounded concurrency.
+`make test-go-frozen-parity` compares original redaction/parser guards and CLI behavior with the starting source.
 
 Regular-file dotenv publication lives in `go/internal/config/env_write.go`,
 with the stdin adapter in `go/internal/cli/config_env_write.go` and Bash hook in

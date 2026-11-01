@@ -13,7 +13,7 @@ func newNFTEgressFixture(t *testing.T) egressFixture {
 	t.Helper()
 	fixture := newEgressFixture(t)
 	t.Setenv("PITHEAD_ENGINE", "podman")
-	writeHostTool(t, fixture.lan.Bin, "nft", egressToolLog+"case \"$*\" in\n'list tables') key=all ;; '-j list table inet pithead_egress') key=table ;; *) exit 99 ;;\nesac\nif [ -f \"$0.$key.output\" ]; then /bin/cat \"$0.$key.output\"; fi\ncode=1\nif [ -f \"$0.$key.code\" ]; then IFS= read -r code <\"$0.$key.code\"; fi\nexit \"$code\"\n")
+	writeHostTool(t, fixture.base.Bin, "nft", egressToolLog+"case \"$*\" in\n'list tables') key=all ;; '-j list table inet pithead_egress') key=table ;; *) exit 99 ;;\nesac\nif [ -f \"$0.$key.output\" ]; then /bin/cat \"$0.$key.output\"; fi\ncode=1\nif [ -f \"$0.$key.code\" ]; then IFS= read -r code <\"$0.$key.code\"; fi\nexit \"$code\"\n")
 	egressResponse(t, fixture, "nft", "all", "", 0)
 	egressResponse(t, fixture, "nft", "table", nftEgressDocument(t, nftSubnetDrop()), 0)
 	return fixture
@@ -74,7 +74,7 @@ func nftIPv6LocalAccept(destination string, length int) []any {
 
 func removeNFTTool(t *testing.T, fixture egressFixture, name string) {
 	t.Helper()
-	if err := os.Remove(filepath.Join(fixture.lan.Bin, name)); err != nil {
+	if err := os.Remove(filepath.Join(fixture.base.Bin, name)); err != nil {
 		t.Fatal(err)
 	}
 }

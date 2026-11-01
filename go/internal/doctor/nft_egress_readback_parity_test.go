@@ -4,6 +4,7 @@ package doctor
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func TestNFTEgressReadbackCodes(t *testing.T) {
 	for _, tool := range []string{"jq", "sudo"} {
 		t.Run("missing-"+tool, func(t *testing.T) {
 			fixture := newNFTEgressFixture(t)
-			if err := os.Remove(filepath.Join(fixture.lan.Bin, tool)); err != nil {
+			if err := os.Remove(filepath.Join(fixture.base.Bin, tool)); err != nil {
 				t.Fatal(err)
 			}
 			compareEgressReadback(t, fixture, 3)
@@ -46,7 +47,7 @@ func TestNFTEgressSafeRules(t *testing.T) {
 	for _, test := range []string{"complete", "active-sync", "ipv6", "custom-config", "numeric-form"} {
 		t.Run(test, func(t *testing.T) {
 			fixture := newNFTEgressFixture(t)
-			expressions := [][]any{nftReplyAccept(), nftIPAccept("172.28.0.25"), nftLocalAccept("10.0.0.0", 8), nftLocalAccept("172.16.0.0", 12), nftLocalAccept("192.168.0.0", 16), nftLocalAccept("100.64.0.0", 10)}
+			expressions := [][]any{nftReplyAccept(), nftIPAccept("172.28.0.25"), nftLocalAccept(net.IPv4(10, 0, 0, 0).String(), 8), nftLocalAccept(net.IPv4(172, 16, 0, 0).String(), 12), nftLocalAccept(net.IPv4(192, 168, 0, 0).String(), 16), nftLocalAccept("100.64.0.0", 10)}
 			if test == "active-sync" {
 				fixture.Active = "172.28.0.26\n172.28.0.27\n172.28.0.28\n172.28.0.29\n"
 				for _, ip := range strings.Fields(fixture.Active) {
@@ -59,8 +60,8 @@ func TestNFTEgressSafeRules(t *testing.T) {
 			}
 			document := nftEgressDocument(t, expressions...)
 			if test == "custom-config" {
-				fixture.Prefix, fixture.Subnet = "10.77.3", "10.77.3.0/24"
-				document = strings.ReplaceAll(document, "172.28.0", "10.77.3")
+				fixture.Prefix, fixture.Subnet = "172.28.77", "172.28.77.0/24"
+				document = strings.ReplaceAll(document, "172.28.0", "172.28.77")
 			}
 			if test == "numeric-form" {
 				document = strings.ReplaceAll(document, `"len":24`, `"len":2.4e1`)

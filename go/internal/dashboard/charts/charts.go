@@ -27,16 +27,17 @@ var downsampleColumns = []string{
 }
 
 type Input struct {
-	History        []map[string]any `json:"history"`
-	Shares         []map[string]any `json:"shares"`
-	Range          string           `json:"range"`
-	Window         *[2]float64      `json:"window"`
-	AvgWindow      string           `json:"avg_window"`
-	Events         []map[string]any `json:"events"`
-	RaffleWins     []map[string]any `json:"raffle_wins"`
-	Payouts        []map[string]any `json:"payouts"`
-	Now            float64          `json:"now"`
-	UpdateInterval float64          `json:"update_interval"`
+	History          []map[string]any `json:"history"`
+	Shares           []map[string]any `json:"shares"`
+	Range            string           `json:"range"`
+	Window           *[2]float64      `json:"window"`
+	AvgWindow        string           `json:"avg_window"`
+	Events           []map[string]any `json:"events"`
+	RaffleWins       []map[string]any `json:"raffle_wins"`
+	Payouts          []map[string]any `json:"payouts"`
+	Now              float64          `json:"now"`
+	UpdateInterval   float64          `json:"update_interval"`
+	PreparedDuration *float64         `json:"prepared_duration,omitempty"`
 }
 
 func CanonicalWindow(value string) string {
@@ -76,17 +77,27 @@ func Build(input Input) (map[string]any, error) {
 	if input.AvgWindow == "" {
 		input.AvgWindow = defaultWindow
 	}
-	history, shares, err := filterRange(input.History, input.Shares, input.Range, input.Window, input.Now)
-	if err != nil {
-		return nil, err
-	}
-	duration, err := windowDuration(history, input.Range, input.Window)
-	if err != nil {
-		return nil, err
-	}
-	history, err = downsample(history, duration)
-	if err != nil {
-		return nil, err
+	history, shares := input.History, input.Shares
+	var duration float64
+	var err error
+	if input.PreparedDuration == nil {
+		history, shares, err = filterRange(history, shares, input.Range, input.Window, input.Now)
+		if err != nil {
+			return nil, err
+		}
+		duration, err = windowDuration(history, input.Range, input.Window)
+		if err != nil {
+			return nil, err
+		}
+		history, err = downsample(history, duration)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		duration = *input.PreparedDuration
+		if duration < 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+			return nil, errors.New("invalid prepared chart duration")
+		}
 	}
 	timestamps, err := timestamps(history)
 	if err != nil {

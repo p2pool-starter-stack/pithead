@@ -271,8 +271,14 @@ def _avg_p2pool_over_window(history, window_seconds):
     """
     if not history:
         return 0.0
+    return _avg_p2pool_at(history, window_seconds, time.time())
 
-    cutoff = time.time() - window_seconds
+
+def _avg_p2pool_at(history, window_seconds, now):
+    if not history:
+        return 0.0
+
+    cutoff = now - window_seconds
     total = 0.0
     count = 0
     for x in history:
@@ -299,8 +305,14 @@ def _avg_xvb_over_window(history, window_seconds):
     """
     if not history:
         return 0.0
+    return _avg_xvb_at(history, window_seconds, time.time())
 
-    cutoff = time.time() - window_seconds
+
+def _avg_xvb_at(history, window_seconds, now):
+    if not history:
+        return 0.0
+
+    cutoff = now - window_seconds
     total = 0.0
     count = 0
     for x in history:

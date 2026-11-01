@@ -21,6 +21,8 @@ The operator's 15:30Z ruling moves the dashboard ahead of further CLI refinement
 until Go serves its contracts on existing and corrupt databases. The later 19:45Z
 review order places the six review fixes first, then native SQLite, wizard/control
 and shipping selection/artifacts. G7 escape-byte and G8 privileged Linux proof follow.
+The 20:35Z review adds the redaction/topology merge blockers first, then bounded
+history transport, inherited ignored signals and corrections to parity evidence.
 Fleet tests may target pushed heads through the normal bench API, following its
 contracts with `submitted_by=gpt-6.1-sol/developer`, a #3811 note and an idempotency
 key. Keep topology private. A separate session owns performance work: leave its
@@ -75,9 +77,14 @@ selection is not implemented.
 
 ## Components and verbs
 
+Numbered comparison groups under `tests/go-parity/` and Go tests were added by
+this port; they are supplementary evidence. Original suites are identified
+separately. Historical reference arms used the then-current Bash/Python snapshot,
+not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
+
 | Component / verb | Go status | Parity evidence |
 |---|---|---|
-| CLI dispatcher and fallback | Implemented | 12-group paired CLI suite and Go units |
+| CLI dispatcher and fallback | Implemented | New 12-group paired CLI comparisons and Go units; frozen-start comparisons below |
 | `help`, `-h`, `--help` | Native, except logs passthrough | Paired CLI suite and Go units |
 | `version`, `-V`, `--version` | Native | Paired CLI suite and Go units |
 | `status` | Native bare command; flags, chains, missing Docker and already-closed stdout fall back | 9-group paired status suite and Go units |
@@ -104,13 +111,13 @@ selection is not implemented.
 | ZMTP greeting, READY and exchange verdict | Native canonical-hex validators and supplied-result classifier; Bash network exchange | 8 tagged groups, 451 scenarios and Go units |
 | ZMTP stream exchange | Native over supplied connection/deadline; Bash dial and callers | 5 tagged groups, 435 scenarios and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
-| Lifecycle option parser | Native for five verbs; Bash callbacks and compatibility fallback | 10 supplementary methods, Go units and unchanged 12-group CLI suite; full Linux lifecycle oracle unavailable |
+| Lifecycle option parser | Native for five verbs; Bash callbacks and compatibility fallback | 10 supplementary methods, Go units and new 12-group CLI comparisons; full Linux lifecycle oracle unavailable |
 | `setup` | Bash fallback | Not independently proven in Go mode |
-| `apply` | Native option validation; Bash operations | Unchanged CLI suite and supplementary boundary comparisons; full Linux lifecycle suite unavailable |
-| `render` | Native option validation; Bash operations | Unchanged CLI suite and supplementary boundary comparisons; full Linux lifecycle suite unavailable |
-| `up` | Native option validation; Bash operations | Unchanged CLI suite and supplementary boundary comparisons; full Linux lifecycle suite unavailable |
-| `down` | Native option validation; Bash operations | Unchanged CLI suite and supplementary boundary comparisons; full Linux lifecycle suite unavailable |
-| `restart` | Native option validation; Bash operations | Unchanged CLI suite and supplementary boundary comparisons; full Linux lifecycle suite unavailable |
+| `apply` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
+| `render` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
+| `up` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
+| `down` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
+| `restart` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
 | `tor-recover` | Bash fallback | Not independently proven in Go mode |
 | `upgrade` | Bash fallback | Not independently proven in Go mode |
 | `logs` | Bash fallback | Refusal fallback covered by paired CLI suite |
@@ -145,7 +152,7 @@ selection is not implemented.
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Memory render settings and auto ceiling | Native for supported settings/facts; Bash discovery and compatibility fallback | Unchanged render fixture/goldens and supplementary hardware-boundary comparisons |
-| CPU render plan and outbound-peer bounds | Native supported core facts and peer validation; Bash config/hardware collection, callbacks and arithmetic compatibility fallback | Unchanged memory/network comparisons and render goldens, 8 new methods and Go units; full Linux CLI oracle unavailable |
+| CPU render plan and outbound-peer bounds | Native supported core facts and peer validation; Bash config/hardware collection, callbacks and arithmetic compatibility fallback | Supplementary memory/network comparisons and unchanged render goldens, 8 new methods and Go units; full Linux CLI oracle unavailable |
 | Data-directory derivation | Native supported paths/shared-root/default flag; Bash safety checks and compatibility fallback | Supplementary path/state/guard/trap comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
 | Dashboard auth shape and onion/control policy | Native supported credentials/policy; Bash hash reconciliation, warnings and compatibility fallback | Supplementary byte/status/state/order comparisons and unchanged render fixture/goldens; full Linux/Docker auth oracle unavailable |
 | Dashboard access settings | Native supported host/port/flag/timezone parsing; Bash host-timezone discovery/default insertion and compatibility fallback | Supplementary byte/status/state/trap comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
@@ -156,24 +163,24 @@ selection is not implemented.
 | Required wallet fields and Tari mode | Native supported scalar/required/whitespace gates; Bash mode getter, classifiers and compatibility fallback | Supplementary partial-state/callback comparisons and unchanged render fixtures; full Linux CLI oracle unavailable |
 | CLI wallet checksum classification | Native supported ordinary verdicts through existing Go decoders; Bash parser diagnostics, Python readiness probe and compatibility fallback | 9 supplementary classifier/gate methods and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
 | Payout-confirmation scalar config and restore bounds | Native supported settings; Bash time read, address decoding and compatibility fallback | Supplementary comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
-| Config version policy and stamping | Native supported validation/transform and atomic publication with source ownership; Bash warnings/gates, interposed tools, restrictive umasks and compatibility fallback | Unchanged 16-method version suite and 7 new publication methods, native success spy and Go units; original Linux version suite unavailable |
+| Config version policy and stamping | Native supported validation/transform and atomic publication with source ownership; Bash warnings/gates, interposed tools, restrictive umasks and compatibility fallback | New 16-method version comparison suite and 7 new publication methods, native success spy and Go units; original Linux version suite unavailable |
 | Config migrations | Native supported legacy-worker/XvB and Telegram-control plans/transforms; Bash file I/O, callbacks and compatibility fallback | 14 supplementary migration/static comparisons, 2 protocol tests and Go units; original Linux migration suites unavailable |
 | Config credential and CLI appliance-default JSON transforms | Native supported ordered JSON transforms; Bash generation, default-table reads, warnings and appliance-default file I/O with jq fallback | 22 supplementary comparisons/static tests and Go units; original Linux suites unavailable |
-| Node RPC credential publication | Native for a fresh fixed stage and standard tools; Bash final chmod, existing-stage handling and compatibility fallback | Unchanged persistence suite and 8 new publication methods, native success spy and Go units; Linux secrets/control oracle unavailable |
+| Node RPC credential publication | Native for a fresh fixed stage and standard tools; Bash final chmod, existing-stage handling and compatibility fallback | Supplementary persistence comparisons and 8 new publication methods, native success spy and Go units; Linux secrets/control oracle unavailable |
 | Masked config prefill JSON | Native supported ordered transform; Bash validation, file I/O, warnings and worker callbacks with jq fallback | 9 supplementary methods, including 21 paired renders and native/protocol checks; original Linux masking/worker suites unavailable |
 | Worker read-credential JSON | Native supported JSON stages; Bash validation, HMAC, warnings and file transactions with jq fallback | 13 supplementary tests, including 25 paired renders and native/protocol checks; original Linux worker-config suite unavailable |
 | Config change descriptions and `.env` diff | Native supported messages/flags and byte-order comparisons; callback/locale compatibility fallback | 12 supplementary methods and Go units; original Linux config/approval suites unavailable |
 | Payout public-view-key derivation | Native canonical-scalar curve arithmetic; Bash address collection/diagnostics and Python compatibility fallback | 8 supplementary methods and Go units; original Linux payout-wallet-pairs suite unavailable |
-| Payout ownership validation | Native supported verdicts with supplied decoded identities; Bash address readers, callbacks and compatibility fallback | Unchanged 8-method payout-key comparison, 9 new methods and Go units; original Linux wallet-pair suite unavailable |
+| Payout ownership validation | Native supported verdicts with supplied decoded identities; Bash address readers, callbacks and compatibility fallback | New 8-method payout-key comparison, 9 new methods and Go units; original Linux wallet-pair suite unavailable |
 | Shared dotenv decoding and file lookup | Native supported decoder and literal-key lookup; Bash file collection, regex matching and compatibility fallback | Unchanged directory line-break suite, 12 supplementary methods and Go units; broader Linux unit-helper suite unavailable |
 | Compose project identity | Native supported C/POSIX resolver; Bash file collection, warning callbacks and compatibility fallback | Unchanged 14-assertion ownership suite, supplementary comparisons and Go units; broader Linux/Docker oracle unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
 | Dashboard child readiness | Bounded readiness and early-exit detection for the Python child | Delayed/failed startup Go units and unchanged HTTP suites |
 | State response generation | One frozen input envelope across hybrid request phases | Forced-interleaving and single-clock regressions, Go transport unit and unchanged state/view suites |
-| Dashboard route/method table, security headers and shell/static/preview transport | Native Go server with explicit Python data/control fallback | 19 unchanged HTTP tests, 7 new comparisons and Go units; full unchanged 3716-test suite passes through adapter |
+| Dashboard route/method table, security headers and shell/static/preview transport | Native Go server with explicit Python data/control fallback | 19 original HTTP tests plus 15 supplementary comparisons; full 3719-test runs include all 3716 frozen original tests |
 | Miner connection, XvB standby and Prometheus routes | Native payload/exposition with Go domain computation and Python config/storage inputs; compatibility fallback | Unchanged route suites and new native-ownership comparisons; full backend remains hybrid |
-| `/api/state` history chart | Native filtering, downsampling, gaps and markers; Python query construction and other state sections, native SQLite | Unchanged chart/state suites through new adapter, supplementary oracle comparisons and Go units |
-| Dashboard domain metrics | Native for state and Prometheus requests; Python supplies config/locality and stored/raw snapshots | All 55 unchanged metrics/average tests through the Go adapter, native-ownership guard and Go units |
+| `/api/state` history chart | Go projection, gaps and markers; Python filters/downsamples before bounded transport, with native SQLite | Unchanged chart/state suites through adapters, new 86400-row comparisons and Go units |
+| Dashboard domain metrics | Go computes state/Prometheus metrics from Python inputs, including five exact history averages; standalone Go averages retained | All 55 unchanged metrics/average tests through the Go adapter, native-ownership guard, compact-path comparisons and Go units |
 | History series and headline cards | Native filtering/buckets, payouts, hashrate and cadence; Python business/config inputs, native SQLite | Unchanged series/state suites through the views adapter, comparisons and Go units |
 | System/proxy/Tari/sync/Monero presentation | Native five builders; Python raw snapshots and remaining state assembly | Unchanged infrastructure/Monero/location suites, HTTP ownership guard and Go units |
 | Worker rows, RigForge display and energy | Native supported snapshots/config inputs in state; Python supplies descriptors | Unchanged view/worker suites through the new fleet adapter, comparisons and Go units; final results below |
@@ -273,10 +280,47 @@ Python StateManager caches and business methods remain in use; this is not a
 complete native storage service or a performance result. Production container
 selection, wizard/control and shipping artifacts remain unimplemented.
 
+## Operator 20:35Z review follow-up
+
+The first `.env` heredoc is again the original key list: Go publication fallback
+uses a cat here-string, preserving interposed-tool behavior. The unchanged redaction selftests pass with selection unset:
+39 and 175 assertions, matching the independently materialized starting commit.
+GNU topology lint now passes after repairing 111 hits in 23 port-added test files.
+No lint exemption or pre-port fixture changed; private-range classifier boundary
+cases use semantic address construction rather than losing their input classes.
+
+The production bridge sends filtered/downsampled chart rows and five history
+averages; it does not send the complete hashrate history in GET or POST. Go retains the
+prepared rows locally during POST and builds the final chart. Direct legacy
+fixtures retain their old input protocol, explicitly separate from this path.
+Identical overlapping state polls share one collection, with four distinct
+collections allowed at once. The last departing caller cancels its collection;
+completed results are not cached. Raw query forwarding stays byte-compatible.
+
+The CLI captures inherited ignored signals before Go launch, restores them before
+Bash fallback and removes its private marker. Paired SIGPIPE/SIGTERM cases and
+an isolated source mutation verify the behavior.
+
+The [later review results](results-review-2035.md) record frozen-start commands,
+new versus original evidence, concurrent 86400-row state comparisons and gate
+results. In-process stack assertions remain Bash after the harness scrub; the
+new lifecycle option comparisons do not prove lifecycle operations in Go.
+Wizard/control and production shipping selection remain next.
+
+The frozen starting dashboard passed 3716 original tests. Current reference and
+Go runs each pass 3719 tests (94.46% / 85.44% Python coverage). Reference-only
+and Go-only patch coverage fail at 67% / 83%; Go plus A/B comparison append
+passes the unchanged gate at 94%. New versus original test counts are explicit
+in the later review results.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
   The unchanged unit-helper, masking, worker-config and payout-wallet-pairs suites require that harness and remain unproven locally.
+  Independently of the host refusal, `tests/stack/lib.sh` scrubs `PITHEAD_IMPL`
+  and `PITHEAD_GO_BINARY`. `run.sh`/`env.sh` startup selection does not survive
+  that scrub for sourced, in-process assertions. No native Go proof or
+  per-fragment call count is claimed from `make test-stack` under Go selection.
 - `make test` now passes shell lint and stops at Markdown lint on third-party
   files in the required local uv cache, in both modes. Changed project Markdown
   is checked separately; the original gates remain unchanged.
@@ -286,9 +330,9 @@ selection, wizard/control and shipping artifacts remain unimplemented.
   budget entry changed. Both `PITHEAD_IMPL=bash make lint-file-budget
   lint-pithead-build` and `tests/go-parity/run.sh make lint-file-budget
   lint-pithead-build` report that same default-base failure.
-- Integration auth-fail-closed assumes GNU `stat`/`chown`; topology selftests also
-  fail on the BSD host. Both failures are identical in the two modes, with the
-  checks unchanged.
+- Integration auth-fail-closed assumes GNU `stat`/`chown`; BSD grep also fails
+  topology scanner selftests. GNU-first topology checks pass at the frozen start
+  and repaired head; the earlier BSD failure did not establish repository parity.
 - Local Compose/Caddy parsing, container/image tests and live matrices require
   Docker/Linux or reserved hardware. Fleet contracts were read over authorized
   SSH; its API has no per-job Go selection option, so no job was submitted for

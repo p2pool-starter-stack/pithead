@@ -129,7 +129,7 @@ func TestEgressCIDRParity(t *testing.T) {
 		{"172.28.0.0/24", "172.28.0.25"},
 		{"172.28.0.0/25", "172.28.0.128/25"},
 		{"0.0.0.0/0", "203.0.113.9/32"},
-		{"10.0.0.8/32", "10.0.0.0/24"},
+		{"172.28.8.8/32", "172.28.8.0/24"},
 	}
 	for _, pair := range pairs {
 		name := pair.first + "/" + pair.second
@@ -151,13 +151,13 @@ func TestEgressRuleShadowsParity(t *testing.T) {
 	lines := []string{
 		"-A DOCKER-USER -j ACCEPT",
 		"-A DOCKER-USER -s 172.28.0.0/25 -j ACCEPT",
-		"-A DOCKER-USER -s 172.29.0.0/24 -j ACCEPT",
+		"-A DOCKER-USER -s 192.0.2.0/24 -j ACCEPT",
 		"-A DOCKER-USER ! -s 172.28.0.0/16 -j ACCEPT",
 		"-A DOCKER-USER ! -s 10.0.0.0/8 -j ACCEPT",
 		"-A DOCKER-USER -s 172.28.0.0/24 -j DROP",
-		`-A DOCKER-USER -m string --string "! -s 0.0.0.0/0 x" -s 172.29.0.0/24 -j ACCEPT`,
-		`-A DOCKER-USER --comment "-s 172.28.0.0/24" -s 172.29.0.0/24 -j ACCEPT`,
-		"-A DOCKER-USER -s 172.29.0.0/24 -s 172.28.0.0/24 -j ACCEPT",
+		`-A DOCKER-USER -m string --string "! -s 0.0.0.0/0 x" -s 192.0.2.0/24 -j ACCEPT`,
+		`-A DOCKER-USER --comment "-s 172.28.0.0/24" -s 192.0.2.0/24 -j ACCEPT`,
+		"-A DOCKER-USER -s 192.0.2.0/24 -s 172.28.0.0/24 -j ACCEPT",
 		`-A DOCKER-USER "unterminated`,
 		"-A DOCKER-USER -s",
 		"-A DOCKER-USER -s invalid -j ACCEPT",

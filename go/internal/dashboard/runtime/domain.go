@@ -34,14 +34,25 @@ func buildDomainInputs(ctx context.Context, client *http.Client, target *url.URL
 		if err != nil {
 			return nil, dashboardweb.ErrInputsUnavailable
 		}
-		payload, err := json.Marshal(map[string]any{
-			"latest_data": input.LatestData, "history": input.History, "metrics": metrics,
+		payloadFields := map[string]any{
+			"latest_data": input.LatestData, "metrics": metrics,
 			"sections": sections, "snapshot": fields["snapshot"],
-		})
+		}
+		compact := input.Averages != nil && fields["chart"] != nil
+		if compact {
+			payloadFields["compact_chart"] = true
+		} else {
+			payloadFields["history"] = input.History
+		}
+		payload, err := json.Marshal(payloadFields)
 		if err != nil || len(payload) > 64<<20 {
 			return nil, dashboardweb.ErrInputsUnavailable
 		}
-		return requestInputs(ctx, client, target, operation, query, payload)
+		result, err := requestInputs(ctx, client, target, operation, query, payload)
+		if err != nil || !compact {
+			return result, err
+		}
+		return attachPreparedChart(result, fields["chart"])
 	}
 	var shares []map[string]any
 	decoder = json.NewDecoder(bytes.NewReader(fields["share_stats"]))
@@ -64,4 +75,26 @@ func buildDomainInputs(ctx context.Context, client *http.Client, target *url.URL
 	delete(fields, "domain")
 	delete(fields, "share_stats")
 	return json.Marshal(fields)
+}
+
+func attachPreparedChart(raw, prepared json.RawMessage) (json.RawMessage, error) {
+	var result map[string]json.RawMessage
+	var chart map[string]json.RawMessage
+	var compact struct {
+		History  json.RawMessage `json:"history"`
+		Shares   json.RawMessage `json:"shares"`
+		Duration json.RawMessage `json:"duration"`
+	}
+	if json.Unmarshal(raw, &result) != nil || json.Unmarshal(result["chart"], &chart) != nil || json.Unmarshal(prepared, &compact) != nil || compact.History == nil || compact.Shares == nil || compact.Duration == nil {
+		return nil, dashboardweb.ErrInputsUnavailable
+	}
+	chart["history"] = compact.History
+	chart["shares"] = compact.Shares
+	chart["prepared_duration"] = compact.Duration
+	var err error
+	result["chart"], err = json.Marshal(chart)
+	if err != nil {
+		return nil, dashboardweb.ErrInputsUnavailable
+	}
+	return json.Marshal(result)
 }

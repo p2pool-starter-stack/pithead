@@ -333,9 +333,7 @@ render_env() {
         env_tls_dir=$(printf '%s' "$(appliance_tls_dir)")
         if native_env=$(_render_env_go "$target" 2>/dev/null); then
             if ! declare -F _write_env_go >/dev/null || ! _write_env_go "$target" "${native_env%$'\n'.}"; then
-                cat <<EOF >"$target"
-${native_env%$'\n'.}
-EOF
+                cat <<<"${native_env%$'\n'.}" >"$target"
             fi
         else
             cat <<EOF >"$target"

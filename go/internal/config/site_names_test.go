@@ -9,11 +9,11 @@ import (
 
 func TestApplianceSiteNames(t *testing.T) {
 	candidates := []string{
-		"box.local", "172.17.0.1", "8.8.8.8", "192.168.50.1", "192.168.50.2",
+		"pithead.local", "172.28.17.1", "8.8.8.8", "172.28.50.1", "172.28.50.2",
 		"2001:db8::1", "fc00::1", "localhost", "localhost",
 	}
-	got, err := ApplianceSiteNames("box.local", " 172.17.0.1 ", "192.168.50", "false", candidates)
-	want := "box.local 192.168.50.2 fc00::1 localhost"
+	got, err := ApplianceSiteNames("pithead.local", " 172.28.17.1 ", "172.28.50", "false", candidates)
+	want := "pithead.local 172.28.50.2 fc00::1 localhost"
 	if err != nil || got != want {
 		t.Fatalf("ApplianceSiteNames() = %q, %v; want %q, nil", got, err, want)
 	}
@@ -41,8 +41,8 @@ func TestApplianceSiteNamesRejectsUnsupportedClassification(t *testing.T) {
 }
 
 func TestApplianceCertAltString(t *testing.T) {
-	names := []string{"box.local", "192.168.1.2", "2001:db8::1", "123", "münchen.local"}
-	want := "DNS:box.local,IP:192.168.1.2,IP:2001:db8::1,IP:123,DNS:münchen.local"
+	names := []string{"pithead.local", "172.28.1.2", "2001:db8::1", "123", "münchen.example.com"}
+	want := "DNS:pithead.local,IP:172.28.1.2,IP:2001:db8::1,IP:123,DNS:münchen.example.com"
 	if got := ApplianceCertAltString(names); got != want {
 		t.Fatalf("ApplianceCertAltString() = %q; want %q", got, want)
 	}

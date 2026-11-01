@@ -16,15 +16,15 @@ func TestConfigCaddyBindProtocol(t *testing.T) {
 		want string
 		code int
 	}{
-		{"success", nil, " 172.17.0.1 \x00172.28.0\x003\x00192.168.1.2\x00172.17.0.1\x00fd00::2\x000\x00", "192.168.1.2 fd00::2 127.0.0.1 ::1\x00", 0},
+		{"success", nil, " 172.28.17.1 \x00172.28.0\x003\x00172.28.1.2\x00172.28.17.1\x00fd00::2\x000\x00", "172.28.1.2 fd00::2 127.0.0.1 ::1\x00", 0},
 		{"zero", nil, " \x00\x000\x000\x00", "127.0.0.1 ::1\x00", 0},
 		{"argument", []string{"extra"}, " \x00\x000\x000\x00", "", 125},
 		{"empty", nil, "", "", 125},
 		{"missing-terminator", nil, " \x00\x000\x000", "", 125},
 		{"bad-count", nil, " \x00\x0000\x000\x00", "", 125},
 		{"negative-count", nil, " \x00\x00-1\x000\x00", "", 125},
-		{"short-candidates", nil, " \x00\x002\x0010.0.0.2\x000\x00", "", 125},
-		{"extra-candidate", nil, " \x00\x000\x0010.0.0.2\x000\x00", "", 125},
+		{"short-candidates", nil, " \x00\x002\x00172.28.0.2\x000\x00", "", 125},
+		{"extra-candidate", nil, " \x00\x000\x00172.28.0.2\x000\x00", "", 125},
 		{"producer-failure", nil, " \x00\x000\x001\x00", "", 125},
 		{"bad-status", nil, " \x00\x000\x0000\x00", "", 125},
 		{"extra-field", nil, " \x00\x000\x000\x00extra\x00", "", 125},

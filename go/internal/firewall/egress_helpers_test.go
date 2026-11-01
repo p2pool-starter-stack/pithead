@@ -57,7 +57,7 @@ func TestEgressCIDR(t *testing.T) {
 	}{
 		{"172.28.0.0/24", "172.28.0.9", true},
 		{"172.28.0.9", "172.28.0.0/24", true},
-		{"172.28.0.0/24", "172.29.0.0/24", false},
+		{"172.28.0.0/24", "192.0.2.0/24", false},
 		{"1.2.3.4", "1.2.3.4/32", true},
 		{"1.2.3.4/0", "255.255.255.255", true},
 	}
@@ -73,7 +73,7 @@ func TestEgressCIDR(t *testing.T) {
 	}{
 		{"172.28.0.0/16", "172.28.3.0/24", true},
 		{"172.28.3.0/24", "172.28.0.0/16", false},
-		{"172.28.0.0/16", "172.29.0.0/24", false},
+		{"172.28.0.0/16", "192.0.2.0/24", false},
 		{"0.0.0.0/0", "255.255.255.255", true},
 	}
 	for _, test := range contains {
@@ -100,18 +100,18 @@ func TestEgressRuleShadows(t *testing.T) {
 		{"unscoped accept", "-A DOCKER-USER -j ACCEPT", true},
 		{"overlap", "-A DOCKER-USER -s 172.28.0.9 -j ACCEPT", true},
 		{"supernet", "-A DOCKER-USER --source 172.28.0.0/16 -j ACCEPT", true},
-		{"disjoint", "-A DOCKER-USER --src 172.29.0.0/24 -j ACCEPT", false},
+		{"disjoint", "-A DOCKER-USER --src 192.0.2.0/24 -j ACCEPT", false},
 		{"negated contains", "-A DOCKER-USER ! -s 172.28.0.0/16 -j ACCEPT", false},
 		{"negated disjoint", "-A DOCKER-USER ! -s 10.0.0.0/8 -j ACCEPT", true},
-		{"separated bang", "-A DOCKER-USER ! -p tcp -s 172.29.0.0/24 -j ACCEPT", false},
+		{"separated bang", "-A DOCKER-USER ! -p tcp -s 192.0.2.0/24 -j ACCEPT", false},
 		{"deny target", "-A DOCKER-USER -s nonsense -j REJECT", false},
-		{"unknown target", "-A DOCKER-USER -s 172.29.0.0/24 -j OTHER", false},
-		{"duplicate source", "-s 172.29.0.0/24 -s 10.0.0.0/8 -j ACCEPT", true},
-		{"quoted flag", `--comment "-s 0.0.0.0/0" -s 172.29.0.0/24 -j ACCEPT`, false},
-		{"quoted target flag", `-s 172.29.0.0/24 "-j" ACCEPT`, false},
+		{"unknown target", "-A DOCKER-USER -s 192.0.2.0/24 -j OTHER", false},
+		{"duplicate source", "-s 192.0.2.0/24 -s 10.0.0.0/8 -j ACCEPT", true},
+		{"quoted flag", `--comment "-s 0.0.0.0/0" -s 192.0.2.0/24 -j ACCEPT`, false},
+		{"quoted target flag", `-s 192.0.2.0/24 "-j" ACCEPT`, false},
 		{"quoted source value", `-s "172.28.0.0/24" -j ACCEPT`, true},
 		{"missing value", "-A DOCKER-USER -s", true},
-		{"unterminated", `-s 172.29.0.0/24 "broken`, true},
+		{"unterminated", `-s 192.0.2.0/24 "broken`, true},
 		{"invalid source", "-s 172.28.0.999 -j ACCEPT", true},
 	}
 	for _, test := range tests {

@@ -48,7 +48,7 @@ jobs:
         run: >-
           make test-go-parity test-go-status-parity test-go-config-document-parity
           test-go-env-parity test-go-legacy-helper-parity
-          test-go-native-guards
+          test-go-native-guards test-go-frozen-parity
       - name: Dashboard parity
         run: >-
           make test-go-dashboard-http-parity test-go-dashboard-state-parity
