@@ -12,25 +12,27 @@ parse_and_validate_config() {
         esac
     fi
     TARI_MODE=$(config_get .tari.mode)
-    case "$TARI_MODE" in
-    local | remote | off) ;;
-    *) error "tari.mode must be \"local\", \"remote\" or \"off\" (got \"$TARI_MODE\")." ;;
-    esac
-    # Required fields. "off" needs no Tari address: nothing merge-mines, so nothing is paid (#1855).
-    MONERO_WALLET=$(jq -r '.monero.wallet_address // empty' "$CONFIG_FILE")
-    TARI_WALLET=$(jq -r '.tari.wallet_address // empty' "$CONFIG_FILE")
-    if [ -z "$MONERO_WALLET" ] || { [ -z "$TARI_WALLET" ] && [ "$TARI_MODE" != "off" ]; }; then
-        error "Missing required wallet addresses in $CONFIG_FILE."
+    if ! command -v _parse_wallet_settings_go >/dev/null 2>&1 || ! _parse_wallet_settings_go; then
+        case "$TARI_MODE" in
+        local | remote | off) ;;
+        *) error "tari.mode must be \"local\", \"remote\" or \"off\" (got \"$TARI_MODE\")." ;;
+        esac
+        # Required fields. "off" needs no Tari address: nothing merge-mines, so nothing is paid (#1855).
+        MONERO_WALLET=$(jq -r '.monero.wallet_address // empty' "$CONFIG_FILE")
+        TARI_WALLET=$(jq -r '.tari.wallet_address // empty' "$CONFIG_FILE")
+        if [ -z "$MONERO_WALLET" ] || { [ -z "$TARI_WALLET" ] && [ "$TARI_MODE" != "off" ]; }; then
+            error "Missing required wallet addresses in $CONFIG_FILE."
+        fi
+        # tari.wallet_address gets no shape regex: Tari addresses come in base58 AND emoji forms,
+        # single/dual, with optional payment IDs — length and charset both vary (RFC-0155), so a
+        # regex would false-reject valid addresses. Instead the real gate is tari_address_type below
+        # (full decode + DammSum checksum, #845). Whitespace still gets its own message here — it's
+        # the likeliest paste error, a space isn't a control char so the central guard above misses
+        # it, and "invalid" alone wouldn't say where to look.
+        case "$TARI_WALLET" in
+        *[[:space:]]*) error "tari.wallet_address contains whitespace — a Tari address (base58 or emoji) has none. Check for a stray space or line break in $CONFIG_FILE." ;;
+        esac
     fi
-    # tari.wallet_address gets no shape regex: Tari addresses come in base58 AND emoji forms,
-    # single/dual, with optional payment IDs — length and charset both vary (RFC-0155), so a
-    # regex would false-reject valid addresses. Instead the real gate is tari_address_type below
-    # (full decode + DammSum checksum, #845). Whitespace still gets its own message here — it's
-    # the likeliest paste error, a space isn't a control char so the central guard above misses
-    # it, and "invalid" alone wouldn't say where to look.
-    case "$TARI_WALLET" in
-    *[[:space:]]*) error "tari.wallet_address contains whitespace — a Tari address (base58 or emoji) has none. Check for a stray space or line break in $CONFIG_FILE." ;;
-    esac
     # p2pool pays out via coinbase, which CANNOT go to a subaddress or integrated address — it requires a
     # PRIMARY/standard address (XvB credits by the same address too). A wrong type mines but is NEVER
     # paid, silently — so hard-fail here rather than let someone lose rewards (#250).

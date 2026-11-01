@@ -169,6 +169,9 @@ SHA-256, stable hash reconciliation, bcrypt and warning decisions stay in Bash.
 `go/internal/config/directories.go` derives data paths and the shared data root via
 `lib/pithead/27h-go-directories.sh`; `make test-go-directories-parity` compares
 layouts, preserved spellings and original caller-side safety checks.
+`go/internal/config/wallet_settings.go` validates the required-wallet gate through
+`lib/pithead/27j-go-wallet-settings.sh`; `make test-go-wallet-settings-parity` checks
+state, error order and full renders. Mode getters and checksum classifiers stay in Bash.
 `go/internal/config/payout_settings.go` parses payout-confirmation scalars via
 `lib/pithead/27i-go-payout-settings.sh`; `make test-go-payout-settings-parity` checks
 validation and partial state. Time and wallet-ownership/curve checks stay in Bash.

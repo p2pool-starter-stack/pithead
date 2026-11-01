@@ -20,11 +20,7 @@
 .PHONY: test-go-node-monero-parity
 .PHONY: test-go-node-zmq-parity
 .PHONY: test-go-node-zmq-exchange-parity
-.PHONY: test-go-config-document-parity
-.PHONY: test-go-config-defaults-parity
-.PHONY: test-go-config-validation-parity
-.PHONY: test-go-caddy-parity
-.PHONY: test-go-caddy-sites-parity
+.PHONY: test-go-config-document-parity test-go-config-defaults-parity test-go-config-validation-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-wallet-settings-parity
 .PHONY: test-go-env-parity
 .PHONY: test-go-env-network-parity
 .PHONY: test-go-env-dashboard-parity
@@ -36,6 +32,10 @@
 .PHONY: test-go-dashboard-auth-parity
 .PHONY: test-go-directories-parity
 .PHONY: test-go-caddy-bind-parity test-go-payout-settings-parity
+
+test-go-wallet-settings-parity: go-build test-go ## Compare required-wallet config gates and render contracts
+	python3 tests/go-parity/test_wallet_settings.py
+	python3 tests/go-parity/test_wallet_settings_render.py
 
 test-go-payout-settings-parity: go-build test-go ## Compare payout config validation and render contracts
 	python3 tests/go-parity/test_payout_settings.py

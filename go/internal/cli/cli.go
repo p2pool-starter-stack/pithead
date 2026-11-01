@@ -29,6 +29,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configProxySettings(args, stdout)
 	case "config-payout-settings":
 		return configPayoutSettings(args, os.Stdin, stdout)
+	case "config-wallet-settings":
+		return configWalletSettings(args, os.Stdin, stdout)
 	case "config-dashboard-access":
 		return configDashboardAccess(args, os.Stdin, stdout)
 	case "config-dashboard-auth":

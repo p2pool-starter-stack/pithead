@@ -330,3 +330,27 @@ Private records use `.go-cache/logs/caddy-bind-*`; Linux/Docker runtime proof re
 Additional config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
 Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
 Source/security reviews, Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff checks PASS. Caddy regression PASS: `PITHEAD_IMPL=go make test-go-caddy-parity test-go-caddy-auth-parity test-go-caddy-sites-parity`. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`.
+
+## Payout settings slice (2026-11-01)
+
+Go parses supported Monero mode/view-key/scan-height and Tari view-key/spend-key/birthday scalars,
+validating local-node gates, lowercase-hex syntax and restore bounds. Bash retains the exact date read,
+wallet-ownership/curve checks and compatibility fallback; callbacks remain outside helper conditionals.
+New comparisons cover partial assignments, errors, callback order, secret handling and complete renders.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline and `tests/go-parity/run.sh` for Go, with worktree caches and an absent Docker socket.
+Private records use `.go-cache/logs/payout-settings-*`; full Linux CLI proof remains unavailable.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-payout-settings-parity` | PASS, 7 paired groups and 3 unchanged complete-render scenarios; Go units | Same result; native helpers verified |
+| Additional config/render comparisons below | PASS, including unchanged raw parser and render fixture/goldens | Same result; native helpers verified separately |
+| `make test-dashboard test-fakes test-patch-coverage` with `COMPARE=a73ffced33800de9435779a9cabef53864455acb` | PASS, 3716 dashboard/54 fake tests, 97.42% coverage; patch check not applicable | Same counts; Python backend |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, structural/documentation gates and 891 frontend tests | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
+| `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
+
+Additional config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Source/security reviews, Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff checks PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`.
