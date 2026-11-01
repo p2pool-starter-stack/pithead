@@ -631,12 +631,12 @@ The wrapper still takes its canonical rollback backup,
 deploys the candidate, checks readiness and restores the baseline. The candidate harness
 runs only its safety backup, archive-content checks and a bounded health check.
 If the stack does not recover, the existing safety recovery restores the archive
-(down, restore, up). It does not apply scenarios, run lifecycle, uninstall, set up or
+(down, restore, up). An interrupt during that recovery keeps the archive and fails the run. It does not apply scenarios, run lifecycle, uninstall, set up or
 inject faults.
 The selection refuses other harness arguments, a scenario, a rig name or host, or `--keep`.
 The harness uses the archive path the CLI reports, never the newest file, so a concurrent
-run's archive is never used. It removes only a `pithead-backup-*.tar.gz` regular file in the
-stack's `backups/` directory. If the reported path is anything else, the run fails and removes
+run's archive is never used. It removes only an absolute `.../backups/pithead-backup-*.tar.gz`
+regular file whose directory resolves to the stack's `backups/` directory. If the reported path is anything else, the run fails and removes
 nothing, so check `backups/` for a leftover plaintext archive. Every failure fails the run.
 An archive that fails the content checks is removed. An interrupt after the CLI reports the
 archive also removes it; an interrupt while `pithead backup` is still writing leaves the file

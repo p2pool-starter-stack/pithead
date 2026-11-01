@@ -21,13 +21,16 @@ run_selection() {
         mkdir -p "$OUT_DIR/source"
         printf '{}' >"$OUT_DIR/source/config.json"
         printf 'fixture=true\n' >"$OUT_DIR/source/.env"
+        archive="$OUT_DIR/source/backups/pithead-backup-1.tar.gz"
         if [ "$name" = symlinked-backups ]; then
             mkdir -p "$OUT_DIR/real-backups"
             ln -s "$OUT_DIR/real-backups" "$OUT_DIR/source/backups"
+        elif [ "$name" = relative-path ]; then
+            archive="$OUT_DIR/source/pithead-backup-1.tar.gz"
         else
             mkdir -p "$OUT_DIR/source/backups"
         fi
-        archive="$OUT_DIR/source/backups/pithead-backup-1.tar.gz"
+        cd "$OUT_DIR/source" || exit 99
         : >"$OUT_DIR/victim"
         trace="$OUT_DIR/trace"
         : >"$trace"
@@ -37,6 +40,7 @@ run_selection() {
         rx() {
             case "$name:$1" in
             cleanup-failed:rm*) return 1 ;;
+            interrupted-validation:'test -f'*) exit 143 ;;
             corrupt:tar*)
                 printf 'config.json\n.env\n'
                 return 2
@@ -80,6 +84,7 @@ run_selection() {
                 tar -czf "$archive" -C / "${OUT_DIR#/}/source/config.json" "${OUT_DIR#/}/source/.env"
             fi
             case "$name" in
+            relative-path) printf 'Backup written to: pithead-backup-1.tar.gz\n' ;;
             failed-nonregular)
                 ln -s missing "$OUT_DIR/source/backups/pithead-backup-2.tar.gz"
                 printf 'Backup written to: %s\n' "$OUT_DIR/source/backups/pithead-backup-2.tar.gz"
@@ -103,12 +108,13 @@ run_selection() {
         }
         safety_restore_exact() {
             printf 'recovery\n' >>"$trace"
+            [ "$name" != interrupted-recovery ] || exit 143
             SAFETY_RESTORE_FAILED=1
             return 1
         }
         for fn in hugepages_begin hugepages_finish arm_safety_abort_restore run_scenario run_lifecycle \
             run_fault_injection run_auth_fail_closed restore_baseline safety_rollback_if_failed; do
-            case "$name:$fn" in interrupted:arm_safety_abort_restore | failed-nonregular:arm_safety_abort_restore) continue ;; esac
+            case "$name:$fn" in interrupted*:arm_safety_abort_restore | failed-nonregular:arm_safety_abort_restore) continue ;; esac
             eval "$fn() { printf '%s\n' '$fn' >>\"\$trace\"; }"
         done
         scenario_matrix() { printf 'fixture\t{}\n'; }
@@ -135,6 +141,18 @@ assert_eq "failed restart retains the archive" "$(if [ -f "$fixture/failed/sourc
 run_selection failed-nonregular 7 0 --backup-only
 assert_rc "a failed backup naming a non-regular path fails" "$?" 1
 assert_eq "a failed backup never removes a non-regular reported path" "$(if [ -L "$fixture/failed-nonregular/source/backups/pithead-backup-2.tar.gz" ]; then echo present; else echo absent; fi)" present
+
+run_selection interrupted-recovery 0 1 --backup-only
+assert_rc "an interrupted recovery fails the run" "$?" 1
+assert_eq "an interrupted recovery keeps its restore archive" "$(if [ -f "$fixture/interrupted-recovery/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
+
+run_selection interrupted-validation 0 0 --backup-only
+assert_rc "an interrupt during archive validation keeps its exit status" "$?" 143
+assert_eq "an interrupt during archive validation removes nothing" "$(if [ -f "$fixture/interrupted-validation/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
+
+run_selection relative-path 0 0 --backup-only
+assert_rc "a relative reported archive path fails" "$?" 1
+assert_eq "a relative reported archive path is never removed" "$(if [ -f "$fixture/relative-path/source/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
 
 run_selection unhealthy 0 1 --backup-only
 assert_rc "unhealthy post-backup stack fails" "$?" 1

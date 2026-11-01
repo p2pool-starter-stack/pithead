@@ -18,7 +18,7 @@ safety_backup() {
     fi
     [ "$RUN_IMAGE_UPGRADE" != "1" ] || UPGRADE_TELEMETRY_EPOCH="$(rx 'date +%s')"
     it_log "Taking a safety backup before destructive scenarios (pithead backup -y)…"
-    local listing member stack_dir stack_root
+    local listing member stack_dir stack_root candidate
     stack_dir="$(rx 'pwd')" && stack_root="$(rx 'pwd -P')" || {
         it_fail "safety backup source directory resolved" "cannot verify archive destinations"
         return 1
@@ -29,23 +29,22 @@ safety_backup() {
         ;;
     esac
     if ! pithead backup -y --no-encrypt >"$OUT_DIR/backup.log" 2>&1; then
-        SAFETY_ARCHIVE="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
+        candidate="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
         it_fail "safety backup created" "see $OUT_DIR/backup.log"
-        if [ -n "$SAFETY_ARCHIVE" ] && rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")"; then
+        if [ -n "$candidate" ] && rx "test -f $(quote_arg "$candidate") && test ! -L $(quote_arg "$candidate")"; then
             SAFETY_RESTORE_FAILED=1
+            SAFETY_ARCHIVE="$candidate"
             it_warn "backup is valid but stack restart failed; retaining $SAFETY_ARCHIVE"
-        else
-            SAFETY_ARCHIVE=""
         fi
         return 1
     fi
-    SAFETY_ARCHIVE="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
-    case "${SAFETY_ARCHIVE##*/}" in pithead-backup-*.tar.gz) ;; *) SAFETY_ARCHIVE="" ;; esac
-    if [ -z "$SAFETY_ARCHIVE" ] || ! rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE") && test \"\$(cd -P -- $(quote_arg "${SAFETY_ARCHIVE%/*}") && pwd -P)\" = \"\$(cd -P -- $(quote_arg "$stack_root/backups") && pwd -P)\""; then
+    candidate="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
+    case "$candidate" in /*/backups/pithead-backup-*.tar.gz) ;; *) candidate="" ;; esac
+    if [ -z "$candidate" ] || ! rx "test -f $(quote_arg "$candidate") && test ! -L $(quote_arg "$candidate") && archive_dir=\$(cd -P -- $(quote_arg "${candidate%/*}") && pwd -P) && backups_dir=\$(cd -P -- $(quote_arg "$stack_root/backups") && pwd -P) && test -n \"\$archive_dir\" && test \"\$archive_dir\" = \"\$backups_dir\""; then
         it_fail "safety backup archive located" "the successful backup did not name a regular archive in $stack_root/backups; nothing removed"
-        SAFETY_ARCHIVE=""
         return 1
     fi
+    SAFETY_ARCHIVE="$candidate"
     it_log "Safety backup: $SAFETY_ARCHIVE"
     if ! listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"; then
         it_fail "safety backup archive readable" "tar could not read the complete archive"
@@ -64,14 +63,14 @@ safety_backup() {
     done
     wait_status_ok 240 || {
         it_fail "stack recovered after safety backup" "pithead status did not become healthy"
-        # This gate fails before any scenario can capture its usual diagnostics. Capture before the
-        # recovery changes the state, but never let diagnostic I/O alter that recovery or its verdict.
         local recovery_dir="$OUT_DIR/safety-backup-recovery"
         if mkdir -p "$recovery_dir"; then
             rx "docker compose ps" 2>&1 | redact >"$recovery_dir/compose-ps.txt" || true
             rx "$IT_PITHEAD status" 2>&1 | redact >"$recovery_dir/health-check.txt" || true
         fi
+        _SAFETY_RECOVERING=1
         safety_restore_exact && safety_cleanup || true
+        _SAFETY_RECOVERING=0
         return 1
     }
     if [ "$RUN_IMAGE_UPGRADE" = "1" ]; then
@@ -151,7 +150,10 @@ safety_abort_restore() {
         restore_failed=1
         it_warn "interrupted onion rotation could not restore its original identity"
     fi
-    if [ "${BACKUP_ONLY:-0}" = 1 ]; then
+    if [ "${BACKUP_ONLY:-0}" = 1 ] && [ "${_SAFETY_RECOVERING:-0}" = 1 ]; then
+        restore_failed=1
+        it_warn "interrupted safety recovery; archive retained at ${SAFETY_ARCHIVE:-<none>}"
+    elif [ "${BACKUP_ONLY:-0}" = 1 ]; then
         safety_cleanup || restore_failed=1
     elif [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
