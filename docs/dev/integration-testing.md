@@ -883,6 +883,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
+- The wizard-defaults probe saves the configuration active on entry and restores it after both successful and failed trials. Restore push, apply, or health failure fails the probe. Malformed payout retries must preserve the valid addresses; mismatch diagnostics report only boolean results and omit both expected and generated payout values. This preserves the preceding scenario's selected pool for the sidechain-change assertion. The outer lifecycle still restores and verifies the original pre-run baseline and secrets exactly.
 - Encrypted reset recovery saves the original configuration bytes in owner-only scratch storage before making a separate candidate-schema fixture. It copies only supported keys already present in the baseline, leaves missing keys absent, and refuses to drop any wallet or payout field, including a field set to null or false. Candidate apply stamps the synthetic configuration before its new encrypted backup is created; no original backup is relabelled. Interruptions continue through the existing destructive-phase safety backup and runner restoration. Every normal return, including a failed recovery, applies the saved baseline, reinstalls its exact bytes after apply has stamped any legacy configuration, then starts the stack and requires matching bytes and secret fingerprints plus consecutive healthy status reads within 240 seconds. Unverified cleanup fails the row and retains the private recovery copy outside artifacts. `reset-restore.fixture.json` records validated numeric candidate and applied fixture version stamps, plus the original baseline stamp or null when it is absent or invalid, and refuses an unstamped fixture before backup. Fixture apply and cleanup output are retained in `reset-restore.fixture-apply.log` and `reset-restore.cleanup.log`; restore and startup keep their separate logs. The newer-backup refusal remains covered by `tests/stack/config/version.sh` and the retained failing lifecycle job 2889.
 - Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census for up to 60 seconds until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels. A census timeout includes the last remaining container IDs in the failure detail, or `unreadable` when the last census returned no output after an engine error.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
@@ -895,7 +896,7 @@ For one representative config:
   auth. Appliances always require 401. A setup page or failed request fails the row; failures
   print listener state and the last 40 Caddy log lines.
   `lifecycle-gate.log` samples the reset marker, persisted `miner_released` boolean and running
-  mining services before the wizard-defaults workload, after its startup and around its baseline
+  mining services before the wizard-defaults workload, after its startup and around its entry-config
   restore apply, before/after restart, around setup/up/apply connection probes, around the
   missing-image down/up and before the source-image fixture. Each target command has a
   10-second TERM deadline plus a 2-second forced-kill grace; unreadable state is explicitly
@@ -906,10 +907,16 @@ For one representative config:
   recreation, immutable image/Compose-owner assertions and cleanup remain binding.
   The restore must also return every wallet, proxy, dashboard, RPC, and onion secret category
   exactly, the same per-category comparison a safety rollback makes.
-- An `apply` that changes the sidechain recreates only the affected containers and preserves
-  secrets; the dashboard reflects the new pool; then it's reverted. An omitted
-  `p2pool.pool` means mini, so the alternate is main. Explicit main and nano baselines
-  switch to mini; an explicit mini baseline switches to main.
+- Before the missing-image and source-image fixtures, an `apply` changes the sidechain,
+  recreates only the affected containers and preserves every wallet, proxy, dashboard, RPC,
+  and onion secret category; unreadable or changed fingerprints fail the transition. The dashboard reflects the new pool; then it's reverted. The starting pool
+  comes from the deployed config after the preceding scenario and lifecycle probes,
+  checked against its rendered flags. An omitted `p2pool.pool` means mini, so the
+  alternate is main. Active main and nano pools switch to mini; active mini switches
+  to main. The apply must return healthy and render the alternate flags before the
+  transition passes; dashboard classification retains its bounded peer-lag verdict.
+  The local-node fault and bounded recovery run next. A failed recovery stops the phase before
+  either image fixture can mutate the stack; remote-node scenarios retain their by-design skip.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
   stop `monerod` → `status` returns non-zero (node down) and the dashboard rejects workers
   (stops `xmrig-proxy`) → start `monerod` → workers readmitted → `status` → `0`.
@@ -926,11 +933,14 @@ For one representative config:
   with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
 
-A source checkout first reuses `assert_mining_probe_ready`: both P2Pool and xmrig-proxy
+After the pool-change and node-recovery proof, the missing pinned-image fixture requires the
+socket-proxy declaration and existing image before stopping the stack. Its `up`, fetched image,
+proxy state and bounded healthy status assertions remain binding. The following source-image
+fixture reuses `assert_mining_probe_ready`: both P2Pool and xmrig-proxy
 must be running for two consecutive samples, five seconds apart, with a 1500-second
 readiness deadline. Each Docker probe has a 10-second TERM deadline and two-second
 forced-kill grace.
-The wizard-defaults baseline apply can legitimately reset the gate when it changes the
+The wizard-defaults entry-config restore apply can legitimately reset the gate when it changes the
 required Tari mode; healthy status alone does not establish mining-service readiness.
 A failed prerequisite records a binding failure and still executes every image assertion.
 The fixture retains the original image under a temporary tag, builds a label-only

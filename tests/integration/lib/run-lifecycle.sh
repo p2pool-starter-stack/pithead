@@ -4,6 +4,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
+# shellcheck source=tests/integration/lib/lifecycle-pool.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lifecycle-pool.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
 run_lifecycle() {
@@ -24,7 +26,57 @@ run_lifecycle() {
     assert_rc "status OK after restart" "$?" "0"
     lifecycle_gate_sample after-restart
     run_connection_announcements || return 1
-    # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
+    local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before
+    cur_pool="$(lifecycle_pool_start)" || {
+        it_fail "pool change starting sidechain established" "config or rendered flags unreadable or inconsistent"
+        return 1
+    }
+    [ "$cur_pool" = "mini" ] && other="main" || other="mini"
+    if ! fp_before="$(upgrade_secret_fingerprints)" || [ -z "$fp_before" ]; then
+        it_fail "pool change starting secrets readable" "cannot fingerprint wallet and credential categories"
+        return 1
+    fi
+    local own_dir own_probe=""
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
+        own_dir="$(env_on_box DASHBOARD_DATA_DIR)"
+        if [ -n "$own_dir" ]; then
+            own_probe="$own_dir/.itest-owner-probe"
+            it_step "planting a root-owned file under $own_dir to exercise ensure_owner (#255)…"
+            rx "sudo touch $(quote_arg "$own_probe") && sudo chown 0:0 $(quote_arg "$own_probe")" >/dev/null 2>&1
+        fi
+    fi
+    it_step "apply pool $cur_pool -> ${other}…"
+    lifecycle_pool_apply "$other" || pool_apply_ok=0
+    if ! pool_fp_after="$(upgrade_secret_fingerprints)" || [ -z "$pool_fp_after" ] || [ "$pool_fp_after" != "$fp_before" ]; then
+        it_fail "secrets preserved across pool change" "wallet or credential categories changed or unreadable"
+        pool_apply_ok=0
+    else
+        it_pass "secrets preserved across pool change"
+    fi
+    if [ -n "$own_probe" ]; then
+        assert_eq "apply migrates root-owned CONTENTS to the container uid (#255)" \
+            "$(rx "stat -c %u $(quote_arg "$own_probe") 2>/dev/null")" "1000"
+        rx "sudo rm -f $(quote_arg "$own_probe")" >/dev/null 2>&1 || true
+    fi
+    [ "$pool_apply_ok" = 1 ] || return 1
+    it_pass "effective pool changed ($cur_pool -> $other)"
+    assert_pool_switched "pool actually changed" "$(pool_label "$other")"
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
+        it_step "stopping monerod to exercise node-down failover…"
+        rx "docker compose stop monerod" >/dev/null 2>&1
+        wait_for 120 5 "status to report node down" _pred_status_down || true
+        pithead status >/dev/null 2>&1
+        assert_rc "status non-zero when node down" "$?" "1"
+        it_step "starting monerod and waiting for readmit…"
+        rx "docker compose start monerod" >/dev/null 2>&1
+        wait_status_ok 240 || true
+        pithead status >/dev/null 2>&1
+        local node_recovery_rc=$?
+        assert_rc "status OK after node recovery" "$node_recovery_rc" "0"
+        [ "$node_recovery_rc" = 0 ] || return 1
+    else
+        it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
+    fi
     if rx 'test -f dashboard/Dockerfile'; then
         local proxy_ref proxy_id proxy_fails="$IT_FAIL"
         proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
@@ -62,50 +114,6 @@ run_lifecycle() {
     fi
     run_source_image_reconcile || return 1
     run_tari_background_sync || return 1
-    local cur_pool fp_before other restore_tls_before
-    cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
-    cur_pool="${cur_pool:-mini}"
-    [ "$cur_pool" = "mini" ] && other="main" || other="mini"
-    fp_before="$(secret_fingerprint)"
-    local own_dir own_probe=""
-    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
-        own_dir="$(env_on_box DASHBOARD_DATA_DIR)"
-        if [ -n "$own_dir" ]; then
-            own_probe="$own_dir/.itest-owner-probe"
-            it_step "planting a root-owned file under $own_dir to exercise ensure_owner (#255)…"
-            rx "sudo touch $(quote_arg "$own_probe") && sudo chown 0:0 $(quote_arg "$own_probe")" >/dev/null 2>&1
-        fi
-    fi
-    push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")"
-    it_step "apply pool $cur_pool -> ${other}…"
-    pithead apply -y >/dev/null 2>&1
-    wait_status_ok 180 || true
-    assert_eq "secrets preserved across pool change" "$(secret_fingerprint)" "$fp_before"
-    # APP_UID is 1000 in pithead; the migrated contents must now be owned by it, not root.
-    if [ -n "$own_probe" ]; then
-        assert_eq "apply migrates root-owned CONTENTS to the container uid (#255)" \
-            "$(rx "stat -c %u $(quote_arg "$own_probe") 2>/dev/null")" "1000"
-        rx "sudo rm -f $(quote_arg "$own_probe")" >/dev/null 2>&1 || true
-    fi
-    # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
-    # verdict, don't assert cold on a peer-timing state (#54, #687).
-    assert_pool_switched "pool actually changed" "$(pool_label "$other")"
-    # Node-down failover (#31): stop monerod -> status non-zero (node down), dashboard rejects
-    # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
-    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
-        it_step "stopping monerod to exercise node-down failover…"
-        rx "docker compose stop monerod" >/dev/null 2>&1
-        wait_for 120 5 "status to report node down" _pred_status_down || true
-        pithead status >/dev/null 2>&1
-        assert_rc "status non-zero when node down" "$?" "1"
-        it_step "starting monerod and waiting for readmit…"
-        rx "docker compose start monerod" >/dev/null 2>&1
-        wait_status_ok 240 || true
-        pithead status >/dev/null 2>&1
-        assert_rc "status OK after node recovery" "$?" "0"
-    else
-        it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
-    fi
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then
@@ -122,7 +130,6 @@ run_lifecycle() {
             elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
                 it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
                 lifecycle_ok=0
-            # Diverge from the backed-up state, then restore it back.
             elif push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
                 pithead apply -y >/dev/null 2>&1 &&
                 pithead down >/dev/null 2>&1 &&
@@ -149,8 +156,6 @@ run_lifecycle() {
                         "p2pool still not running 60s after restore+up"
                     lifecycle_ok=0
                 fi
-                # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
-                # cold on a peer-timing state (#54, #687).
                 local failures_before="$IT_FAIL"
                 assert_pool_switched "restore reverts the pool to the backed-up value" "$backed_pool"
                 if fp_after="$(upgrade_secret_fingerprints)" && [ -n "$fp_after" ]; then
