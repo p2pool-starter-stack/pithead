@@ -105,6 +105,19 @@ roundtrip_confirm "P2POOL_DATA_DIR" '.p2pool.data_dir="'"$C"'/data/p2pool2"' '.p
 roundtrip_confirm "TOR_DATA_DIR" '.tor.data_dir="'"$C"'/data/tor2"' '.tor.data_dir' "$C/data/tor2"
 roundtrip_confirm "DASHBOARD_DATA_DIR" '.dashboard.data_dir="'"$C"'/data/dashboard2"' '.dashboard.data_dir' "$C/data/dashboard2"
 roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
+STRATUM_HOLD_PORT_FILE="$C/stratum-hold.port"
+python3 -c 'import socket,sys,time
+s=socket.socket(); s.bind(("0.0.0.0",0)); s.listen(1)
+open(sys.argv[1],"w").write(str(s.getsockname()[1])); time.sleep(60)' "$STRATUM_HOLD_PORT_FILE" &
+STRATUM_HOLD_PID=$!
+for _ in $(seq 50); do [ -s "$STRATUM_HOLD_PORT_FILE" ] && break; sleep 0.1; done
+STRATUM_HELD=$(cat "$STRATUM_HOLD_PORT_FILE")
+jq --argjson p "$STRATUM_HELD" '.p2pool.stratum_port=$p' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_eq "the stack harness never probes the real host for the stratum port" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+kill "$STRATUM_HOLD_PID" 2>/dev/null || true
+wait "$STRATUM_HOLD_PID" 2>/dev/null || true
+roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
 # PRUNE STARTS OFF IN THE BASELINE ABOVE, and that is not tidiness. monero_prune_flag defaults to
 # TRUE (19-small-utilities.sh), so on a config with no monero.prune key the rendered MONERO_PRUNE is
 # already 1 — setting it to true renders the SAME value, emits no porcelain row, and the commit then
