@@ -18,12 +18,12 @@ safety_backup() {
     fi
     [ "$RUN_IMAGE_UPGRADE" != "1" ] || UPGRADE_TELEMETRY_EPOCH="$(rx 'date +%s')"
     it_log "Taking a safety backup before destructive scenarios (pithead backup -y)…"
-    local listing member stack_root
-    stack_root="$(rx 'pwd -P')" || {
+    local listing member stack_dir stack_root
+    stack_dir="$(rx 'pwd')" && stack_root="$(rx 'pwd -P')" || {
         it_fail "safety backup source directory resolved" "cannot verify archive destinations"
         return 1
     }
-    case "$stack_root" in /*) ;; *)
+    case "$stack_dir:$stack_root" in /*:/*) ;; *)
         it_fail "safety backup source directory resolved" "expected an absolute directory"
         return 1
         ;;
@@ -34,6 +34,8 @@ safety_backup() {
         if [ -n "$SAFETY_ARCHIVE" ] && rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")"; then
             SAFETY_RESTORE_FAILED=1
             it_warn "backup is valid but stack restart failed; retaining $SAFETY_ARCHIVE"
+        else
+            SAFETY_ARCHIVE=""
         fi
         return 1
     fi
@@ -51,7 +53,8 @@ safety_backup() {
         return 1
     fi
     for member in config.json .env; do
-        if printf '%s\n' "$listing" | grep -Fx -e "${stack_root#/}/$member" -e "./${stack_root#/}/$member" >/dev/null; then
+        if printf '%s\n' "$listing" | grep -Fx -e "${stack_root#/}/$member" -e "./${stack_root#/}/$member" \
+            -e "${stack_dir#/}/$member" -e "./${stack_dir#/}/$member" >/dev/null; then
             it_pass "backup archive contains $member"
         else
             it_fail "backup archive contains $member" "required member missing"

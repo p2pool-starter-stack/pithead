@@ -629,14 +629,19 @@ The equivalent wrapper selection is
 `--mode targeted --no-miner --harness-arg --backup-only`.
 The wrapper still takes its canonical rollback backup,
 deploys the candidate, checks readiness and restores the baseline. The candidate harness
-runs only its safety backup, archive-content checks and bounded health/recovery checks;
-it does not apply scenarios, restart through lifecycle, uninstall, set up or inject faults.
+runs only its safety backup, archive-content checks and a bounded health check.
+If the stack does not recover, the existing safety recovery restores the archive
+(down, restore, up). It does not apply scenarios, run lifecycle, uninstall, set up or
+inject faults.
 The selection refuses other harness arguments, a scenario, a rig name or host, or `--keep`.
 The harness uses the archive path the CLI reports, never the newest file, so a concurrent
-run's archive is never used. It accepts only a `pithead-backup-*.tar.gz` file in the stack's
-`backups/` directory and never removes any other path. Every failure fails the run. An archive
-that fails the content checks is removed, and so is the archive of an interrupted run. The
-archive is kept when the backup's own restart failed or the recovery restore did not verify.
+run's archive is never used. It removes only a `pithead-backup-*.tar.gz` regular file in the
+stack's `backups/` directory. If the reported path is anything else, the run fails and removes
+nothing, so check `backups/` for a leftover plaintext archive. Every failure fails the run.
+An archive that fails the content checks is removed. An interrupt after the CLI reports the
+archive also removes it; an interrupt while `pithead backup` is still writing leaves the file
+for manual removal. The archive is kept when the backup's own restart failed or the recovery
+restore did not verify.
 
 `--safety-backup` is a prerequisite modifier, not a selectable bench-ci phase or a
 backup-only invocation. It adds a rollback archive before the chosen scenarios and phases;

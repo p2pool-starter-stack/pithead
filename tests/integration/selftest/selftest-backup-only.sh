@@ -46,7 +46,11 @@ run_selection() {
                 printf 'source\n'
                 return 0
                 ;;
-            *:'pwd -P')
+            linked-stack:pwd)
+                printf '%s/link\n' "$OUT_DIR"
+                return 0
+                ;;
+            *:pwd | *:'pwd -P')
                 printf '%s/source\n' "$OUT_DIR"
                 return 0
                 ;;
@@ -63,6 +67,9 @@ run_selection() {
             [ "$*" = 'backup -y --no-encrypt' ] || return 99
             if [ "$name" = wrong-root ]; then
                 tar -czf "$archive" -C "$OUT_DIR" source/config.json source/.env
+            elif [ "$name" = linked-stack ]; then
+                ln -s source "$OUT_DIR/link"
+                tar -czf "$archive" -C / "${OUT_DIR#/}/link/config.json" "${OUT_DIR#/}/link/.env"
             elif [ "$name" = dot-prefix ]; then
                 tar -czf "$archive" -C / "./${OUT_DIR#/}/source/config.json" "./${OUT_DIR#/}/source/.env"
             elif [ "$name" = misleading ]; then
@@ -73,6 +80,10 @@ run_selection() {
                 tar -czf "$archive" -C / "${OUT_DIR#/}/source/config.json" "${OUT_DIR#/}/source/.env"
             fi
             case "$name" in
+            failed-nonregular)
+                ln -s missing "$OUT_DIR/source/backups/pithead-backup-2.tar.gz"
+                printf 'Backup written to: %s\n' "$OUT_DIR/source/backups/pithead-backup-2.tar.gz"
+                ;;
             foreign-path)
                 cp "$archive" "$OUT_DIR/victim"
                 printf 'Backup written to: %s\n' "$OUT_DIR/victim"
@@ -97,7 +108,7 @@ run_selection() {
         }
         for fn in hugepages_begin hugepages_finish arm_safety_abort_restore run_scenario run_lifecycle \
             run_fault_injection run_auth_fail_closed restore_baseline safety_rollback_if_failed; do
-            [ "$name:$fn" != interrupted:arm_safety_abort_restore ] || continue
+            case "$name:$fn" in interrupted:arm_safety_abort_restore | failed-nonregular:arm_safety_abort_restore) continue ;; esac
             eval "$fn() { printf '%s\n' '$fn' >>\"\$trace\"; }"
         done
         scenario_matrix() { printf 'fixture\t{}\n'; }
@@ -121,6 +132,10 @@ assert_eq "failed backup cannot reach scenarios or cleanup" \
     "$(cat "$fixture/failed/trace")" $'lock\npreflight\narm_safety_abort_restore\nbackup -y --no-encrypt'
 assert_eq "failed restart retains the archive" "$(if [ -f "$fixture/failed/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
 
+run_selection failed-nonregular 7 0 --backup-only
+assert_rc "a failed backup naming a non-regular path fails" "$?" 1
+assert_eq "a failed backup never removes a non-regular reported path" "$(if [ -L "$fixture/failed-nonregular/source/backups/pithead-backup-2.tar.gz" ]; then echo present; else echo absent; fi)" present
+
 run_selection unhealthy 0 1 --backup-only
 assert_rc "unhealthy post-backup stack fails" "$?" 1
 assert_contains "existing recovery is preserved" "$(cat "$fixture/unhealthy/trace")" recovery
@@ -130,6 +145,9 @@ assert_eq "failed recovery retains the archive" "$(if [ -f "$fixture/unhealthy/s
 run_selection symlinked-backups 0 0 --backup-only
 assert_rc "a symlinked backups directory is accepted" "$?" 0
 assert_eq "the archive behind a symlinked backups directory is cleaned" "$(if [ -e "$fixture/symlinked-backups/real-backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" absent
+
+run_selection linked-stack 0 0 --backup-only
+assert_rc "members written through a symlinked stack directory are accepted" "$?" 0
 
 run_selection dot-prefix 0 0 --backup-only
 assert_rc "dot-prefixed archive members are accepted" "$?" 0
@@ -146,6 +164,7 @@ done
 for name in foreign-path foreign-dir; do
     run_selection "$name" 0 0 --backup-only
     assert_rc "$name is not accepted as the safety archive" "$?" 1
+    assert_eq "$name leaves the run's own archive in place" "$(grep -c 'nothing removed' "$fixture/$name.log")" 1
     assert_eq "$name is never removed" "$(if [ -f "$fixture/$name/victim" ] && [ -f "$fixture/$name/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
 done
 assert_eq "an archive outside the stack backups directory is left alone" \
