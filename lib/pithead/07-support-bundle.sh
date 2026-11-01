@@ -154,6 +154,7 @@ stack_support_bundle() {
     ts=$(date -u +%Y%m%dT%H%M%SZ)
     out="$PWD/support-bundle-$ts.tar.gz"
     tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"; exit 130' INT TERM HUP
     mkdir -p "$tmp/bundle/logs"
 
     log "Collecting diagnostics (read-only)..."
@@ -194,12 +195,11 @@ stack_support_bundle() {
         echo "container engine not reachable — no container state collected" >"$tmp/bundle/compose-ps.txt"
     fi
 
-    (
-        umask 077
-        tar -czf "$out" -C "$tmp" bundle
-    ) || { rm -rf "$tmp" "$out"; return 1; }
-    chmod 600 "$out"
+    tar -czf "$tmp/bundle.tar.gz" -C "$tmp" bundle || { rm -rf "$tmp"; trap - INT TERM HUP; return 1; }
+    chmod 600 "$tmp/bundle.tar.gz"
+    mv -f "$tmp/bundle.tar.gz" "$out" || { rm -rf "$tmp"; trap - INT TERM HUP; return 1; }
     rm -rf "$tmp"
+    trap - INT TERM HUP
     log "Support bundle written: $out"
     log "Secrets are redacted at collection, but REVIEW the contents before sharing: tar -tzf $(basename "$out")"
 }
