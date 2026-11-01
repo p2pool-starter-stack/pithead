@@ -1,6 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-
 fault_node_down() {
     if wait_for 180 5 "dashboard to observe monerod before failover fault" _pred_failover_armed; then
         it_pass "node-down failover armed from a live monerod observation"
