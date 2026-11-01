@@ -193,6 +193,8 @@ wait_for() {
 }
 out="$(_settle_history_row r 0123456789abcdef 2>"$log")"
 assert_eq "history assertion retains its 90-second bound" "$(cat "$bound_log")" 90
+_settle_history_row r 0123456789abcdef 300 2>/dev/null >/dev/null
+assert_eq "a caller-supplied budget reaches the wait bound" "$(cat "$bound_log")" 300
 assert_eq "samples never promote accepted to applied" "$out" accepted
 assert_eq "diagnostics retain at most 20 samples per wait" "$(grep -c '^{' "$log")" 20
 sample="$(grep '^{' "$log" | tail -1)"

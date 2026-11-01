@@ -1121,7 +1121,12 @@ keeps the original value on the cleanup ledger. If the revert row is still `acce
 at the deadline, the control phase captures artifacts, restores the stack baseline and stops
 before sending another key or control edit. The abort-safe unwind retains the rig cleanup duty.
 
-The row is polled to a terminal status within a ninety-second observation budget.
+The row is polled to a terminal status within a ninety-second observation budget, except the
+`pools` leg, which waits up to 300 seconds: its full-path apply restarts the miner and waits up to
+60 seconds for it to go live, and a rollback repeats that before the rig publishes `rolled_back`
+and the dashboard's next poll consumes it
+([#3819](https://github.com/p2pool-starter-stack/pithead/issues/3819)). A change that rolls back
+therefore fails as `expected applied, got rolled_back` instead of timing out on `accepted`.
 The result is the last history status whose transport and JSON decoding succeeded within that
 budget; reads or decoding finishing later cannot pass. A nonzero transport exit discards even valid JSON
 and records `dashboard.poll=failed`. Decoding must succeed with one JSON object; trailing junk

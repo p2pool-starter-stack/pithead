@@ -240,6 +240,7 @@ _pred_rig_pool_urls() { # <rig> <want-urls-json>
 # no credential-bearing reading of the rig's real prior value to restore instead, so the rig is left
 # on the probe. With the restore value equal to the probe, a second "revert" apply would only
 # restart the miner to the same config, so one confirmed apply is the round trip.
+POOLS_HISTORY_BUDGET_S=300
 run_rigforge_pools() { # <rig>
     local rig="$1" probe res status ckeys change_id row
     if [ -z "${IT_RIG_POOLS_PROBE:-}" ]; then
@@ -286,7 +287,7 @@ run_rigforge_pools() { # <rig>
     assert_contains "the rig's own config reports the probe's pools (#1002b)" "$ckeys" "pools"
     # The readback is blind once a run has left the rig on the probe (every run after the first), so
     # the change's own #185 history row is the verdict that it landed, and the ledger retires on it.
-    row="$(_settle_history_row "$rig" "$change_id")"
+    row="$(_settle_history_row "$rig" "$change_id" "$POOLS_HISTORY_BUDGET_S")"
     assert_eq "pools worker-apply recorded in the per-worker history (#185/#1471/#2407)" "$row" "applied"
     case "$status|$row" in applied\|applied | rejected\|* | rolled_back\|* | *\|rejected | *\|rolled_back)
         rig_key_clear dash "$rig" pools
