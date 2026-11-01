@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Dependency-free test suite for pithead (no bats required).
-# Mixes unit tests (sourcing pithead and calling its functions) with black-box CLI tests
-# (running a sandboxed copy of pithead with docker/sudo stubbed out).
 #
 # Usage: tests/stack/run.sh [BLOCK]
 #   (none)  every block in turn, each in its own bash process, then the summed verdict
@@ -306,6 +304,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-defaults.sh" && domain_ran test-appliance-defaults.sh "$_d0" "$?" || domain_ran test-appliance-defaults.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-install.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && domain_ran test-appliance-install.sh "$_d0" "$?" || domain_ran test-appliance-install.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-headless-install.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-headless-install.sh" && domain_ran test-appliance-headless-install.sh "$_d0" "$?" || domain_ran test-appliance-headless-install.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-config-merge.sh disable=SC2015

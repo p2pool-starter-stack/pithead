@@ -18,15 +18,21 @@ mount() {
     [ "$mode" != mount-error ] && cp -R "$work/esp/." "${!#}/"
 }
 umount() {
-    rm -f "$work/esp/pithead-token.txt" "$work/esp/pithead-config.json"
+    rm -f "$work/esp/pithead-token.txt" "$work/esp/pithead-config.json" "$work/esp/pithead-target-serial.txt"
     cp -R "$1/." "$work/esp/"
-    rm -f "$1/pithead-token.txt" "$1/pithead-config.json"
+    rm -f "$1/pithead-token.txt" "$1/pithead-config.json" "$1/pithead-target-serial.txt"
 }
 mode=ready
 headless_install_stage '{"fixture":true}'
 test "$(cat "$work/esp/pithead-token.txt")" = PiT-K7m2Qx
 jq -e '.fixture == true' "$work/esp/pithead-config.json" >/dev/null
+headless_install_stage '{"fixture":true}' PHTARGET01
+test "$(cat "$work/esp/pithead-target-serial.txt")" = PHTARGET01
+headless_install_stage '{"fixture":true}'
+test ! -e "$work/esp/pithead-target-serial.txt"
+headless_install_stage '{"fixture":true}' PHTARGET01
 headless_install_stage
+test ! -e "$work/esp/pithead-target-serial.txt"
 test ! -e "$work/esp/pithead-token.txt"
 test ! -e "$work/esp/pithead-config.json"
 rm -f "${loop_fixture}p1" "$work/mount-called"

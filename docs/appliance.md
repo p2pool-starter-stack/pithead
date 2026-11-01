@@ -169,16 +169,28 @@ Windows, macOS or Linux machine, so plug it into your laptop and drop a file on 
   [configuration](configuration.md), or build one in
   [the configuration builder](tools/recovery-config-builder.html).
 
+- **`pithead-target-serial.txt`** — opt-in headless install. One disk serial per line (letters,
+  digits, `.`, `_` and `-`), as `lsblk -dno NAME,SERIAL` shows it on the machine or on the
+  label of the drive. With this file **and** a valid `pithead-config.json`, the machine installs
+  onto the one attached disk whose serial is listed, keeps any existing data area, and switches
+  itself off; remove the stick and power it on to finish provisioning. List several serials to
+  walk one stick across a rack: each machine installs onto whichever listed disk it has.
+  The file never names a `/dev` path and never chooses a wipe mode.
+
 A rejected file never blocks you: the machine says so on its console and opens the normal
-setup page instead.
+setup page instead. That includes a serial file when no attached disk has a listed serial,
+when more than one does (or two disks share a serial), when a listed serial is empty,
+`unknown` or holds other characters, when it belongs to the stick itself or to a disk in use,
+and when the configuration is missing or rejected. Nothing is erased in any of those cases.
 
 Two cautions. A configuration file holds your payout addresses in plain text on a volume
 anyone who picks up the stick can read — fine for a stick that stays in your hand, worth
 thinking about otherwise. (The installed machine deletes its own copy the moment the
 configuration is applied; the stick keeps yours for the next machine.) And installing to a
-disk still needs someone to choose that disk: on the installation medium a pre-seeded file
-opens the page with every answer already filled in, but the disk choice — the erase — is
-always yours to confirm.
+disk is a person's decision unless you opt in with `pithead-target-serial.txt`: on the
+installation medium a pre-seeded file alone opens the page with every answer already filled
+in, and the disk choice — the erase — is yours to confirm. Writing a serial on the stick is
+that decision made ahead of time, for that disk only.
 
 ## 3. Install and configure it — one page
 
