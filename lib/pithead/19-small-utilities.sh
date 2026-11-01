@@ -122,6 +122,10 @@ p2pool_outbound_flags() {
 
 # Keys whose value differs between two env files (added, removed, or changed), one per line.
 env_changed_keys() {
+    if declare -F _env_changed_keys_go >/dev/null; then
+        if _env_changed_keys_go "$@"; then return 0; else local native_rc=$?; fi
+        [ "$native_rc" -eq 125 ] || return "$native_rc"
+    fi
     comm -3 <(sort "$1") <(sort "$2") 2>/dev/null |
         sed -E 's/^[[:space:]]+//; s/=.*$//' |
         sort -u

@@ -213,3 +213,10 @@ macOS; these comparisons supplement them.
 with synthetic files and controlled host tools. `test_worker_read.py` compares
 JSON, validation/HMAC callbacks, permissions, ownership and failure cleanup;
 the unchanged worker-config suite remains unavailable under its Linux-only harness.
+
+`preview_reference.sh` sources the production change-description and `.env` diff
+functions with controlled config/host callbacks. `test_config_preview.py` compares
+exact flags, messages, key lists, statuses and native/fallback selection;
+`preview_contract_tests.py` supplies its protocol, locale and producer-failure
+cases. Original config/approval suites retain their Linux-only harness and remain
+unavailable on macOS; these new comparisons supplement them.

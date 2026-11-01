@@ -184,6 +184,9 @@ bytes and fallback. Validation, file transactions and HMAC execution stay in Bas
 `go/internal/config/worker_read.go` handles the read-credential map's JSON stages via
 `lib/pithead/30b-go-worker-read.sh`; `make test-go-worker-read-parity` compares
 bytes and failures. Validation, HMAC execution and file transactions stay in Bash.
+`go/internal/preview/` formats supported change descriptions and compares `.env`
+keys through `lib/pithead/39c-go-preview.sh`; `make test-go-config-preview-parity`
+compares output and compatibility fallback. Host/config callbacks and prompts stay in Bash.
 `go/internal/config/ssh_settings.go` and `node_credentials.go` validate SSH policy and plan RPC
 credentials through `lib/pithead/27k-go-config-access.sh`; `make test-go-config-access-parity`
 checks state, callback order and complete renders. Username reads, generation and persistence stay in Bash.

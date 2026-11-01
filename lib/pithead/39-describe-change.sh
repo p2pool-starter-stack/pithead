@@ -1,4 +1,8 @@
 describe_change() {
+    if declare -F _preview_describe_change_go >/dev/null; then
+        if _preview_describe_change_go "$@"; then return 0; else local native_rc=$?; fi
+        [ "$native_rc" -eq 125 ] || return "$native_rc"
+    fi
     local key="$1" old="$2" new="$3" flag="INFO" msg
     if [ "${TARI_MODE:-}" = off ]; then
         case "$key" in

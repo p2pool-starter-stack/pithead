@@ -167,3 +167,31 @@ Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/
 Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff checks PASS.
 Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
 Security review found no new critical, high or medium findings.
+
+## Worker read-credential JSON slice (2026-11-01)
+
+Go handles supported JSON projection, row decoding, record serialization and
+array serialization in the worker read-credential renderer. Bash retains port and
+token validation, warnings, HMAC execution and file transactions, including
+ownership fallback and failure cleanup. Unsupported cases use the original jq
+programs. Render/apply orchestration remains Bash; the backend remains Python.
+
+Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
+Worktree caches and an absent Docker socket isolate the runs. Private records
+use `.go-cache/logs/worker-read-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-worker-read-parity` | PASS, 13 supplementary tests, including 25 paired renders and Go units | Same result; supported JSON stages verified without jq |
+| Affected config/render comparisons below | PASS, six targets including unchanged raw parser and render fixture/goldens | Same result; native JSON stages covered separately |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | PASS, structural/documentation gates and 891 frontend tests | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same failure and ShellCheck result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
+
+Affected config/render command: `make test-go-config-masked-parity test-go-config-document-parity test-go-config-validation-parity test-go-env-dashboard-parity test-go-env-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff check/format PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
+Source and security reviews found no defects or new critical, high or medium findings.
+
+An ad hoc `GOCACHE="$PWD/.go-cache/build" GOMODCACHE="$PWD/.go-cache/mod" GOPATH="$PWD/.go-cache/gopath" go -C go test ./...` omitted `TMPDIR` and failed two existing macOS doctor path assertions. It had no saved log and is not parity evidence; canonical Make runs with the worktree `TMPDIR` pass. Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice changes only CLI JSON stages; their prior paired results remain archived.
