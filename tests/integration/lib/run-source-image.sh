@@ -124,6 +124,7 @@ run_source_image_reconcile() {
     rc=$?
     printf '%s\n' "$out" | redact >"$OUT_DIR/source-image-reconcile.log"
     assert_rc "source upgrade image reconciliation and cleanup (#2934)" "$rc" 0
+    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | redact | tail -n 40 | sed 's/^/source-image-log: /'
     assert_contains "source upgrade fixture starts with a real stale live image (#2934)" "$out" \
         'source-image: live old image differs from built declaration'
     assert_contains "source upgrade recreates through the guarded path (#2934)" "$out" \
@@ -140,6 +141,8 @@ run_source_image_reconcile() {
         it_fail "status OK after source image fixture restoration (#2934)" "stack did not recover"
     fi
     capture_artifacts "source-image-reconcile" "$OUT_DIR"
+    mkdir -p "$OUT_DIR/source-image-reconcile"
+    cp "$OUT_DIR/source-image-reconcile.log" "$OUT_DIR/source-image-reconcile/"
     return 1
 }
 
