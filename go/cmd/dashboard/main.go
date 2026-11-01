@@ -29,6 +29,8 @@ func main() {
 			err = control.Run(os.Stdin, os.Stdout)
 		case "wizard":
 			err = wizard.Run(os.Stdin, os.Stdout)
+		case "wizard-write":
+			err = wizard.RunWrite(os.Stdin, os.Stdout)
 		case "storage":
 			err = storage.Run(os.Stdin, os.Stdout)
 		case "chart":

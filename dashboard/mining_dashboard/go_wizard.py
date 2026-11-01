@@ -149,3 +149,6 @@ def install(server=None):
         setattr(server, name, globals()[name])
     server.make_app = make_app
     server.wizard_state = wizard_state
+    from mining_dashboard import go_wizard_transaction
+
+    go_wizard_transaction.install(server)

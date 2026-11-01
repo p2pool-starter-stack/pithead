@@ -55,3 +55,4 @@ jobs:
           test-go-dashboard-domain-parity test-go-dashboard-views-parity
           test-go-dashboard-fleet-parity test-go-dashboard-overview-parity
           test-go-dashboard-storage-parity test-go-dashboard-channel-parity
+          test-go-dashboard-wizard-transaction-parity

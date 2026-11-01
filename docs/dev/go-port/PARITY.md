@@ -190,13 +190,14 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Remaining state presentation, polling and Tor | Python reference behind Go HTTP routing | Earnings, base metadata, egress/topology derivation and polling remain Python; no complete state proof |
 | SQLite engine, open, schema, migrations and recovery | Native Go in the normal Go server child; Python memory state and business SQL construction remain | 343 unchanged focused tests with ported Python paths fatal, existing/legacy/corrupt startup comparisons, Go units and paired full 3719-test suites |
 | Control intent envelopes, worker writable keys, request publication and result reads | Native Go helpers in the Go dashboard child; Python HTTP guards, config masking and wait loop remain | 377 unchanged focused wizard/control tests plus supplementary byte, startup, concurrency and mutation cases; injected UUID/rename hooks listed separately |
-| Wizard stage, status and read-only spool views | Native Go helpers under Go selection; Python launch, auth, config shaping, submissions, cleanup and handoff writes remain | Same unchanged focused suites with original ported functions fatal; off-loop state/status coalescing and public reference-selection sentinels |
+| Wizard stage, status and read-only spool views | Native Go helpers under Go selection; Python launch, auth and HTTP orchestration remain | Same unchanged focused suites with original ported functions fatal; off-loop state/status coalescing and public reference-selection sentinels |
+| Wizard atomic writes, conflict checks, rollback and temporary cleanup | Native Go helpers, including raw archive streaming; Python form/upload decisions, recovery handler and submission orchestration remain | 282 unchanged wizard tests through the transaction adapter; injected replace/unlink cases are explicit I/O interpositions; supplementary comparisons and source mutations |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
 | Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
 
 ## Harness adapters
 
-The [adapter ledger](adapters.md) lists supplementary adapters and reasons, including [wizard/control hooks](results-channel.md#adapters-and-native-proof).
+The [adapter ledger](adapters.md) lists supplementary adapters and reasons, including [wizard/control hooks](results-channel.md#adapters-and-native-proof) and [transaction hooks](results-wizard-transactions.md#adapters-and-native-proof).
 Only new files under `tests/go-parity/` supply those hooks; existing suites remain unchanged.
 
 ## Earlier slice results
@@ -279,7 +280,7 @@ quarantine on an immediate recovery retry in the same second. Go preserves that
 behavior for parity; a correction must change both implementations together.
 Python StateManager caches and business methods remain in use; this is not a
 complete native storage service or a performance result. Production container
-selection, wizard/control and shipping artifacts remain unimplemented.
+selection and shipping remain unimplemented; later sections record wizard/control slices.
 
 ## Operator 20:35Z review follow-up
 
@@ -306,8 +307,8 @@ The [later review results](results-review-2035.md) record frozen-start commands,
 new versus original evidence, concurrent 86400-row state comparisons and gate
 results. In-process stack assertions remain Bash after the harness scrub; the
 new lifecycle option comparisons do not prove lifecycle operations in Go.
-The next slice below adds native control protocol and read-only wizard views;
-wizard mutation/orchestration and production shipping selection remain pending.
+The following slices add native control protocol, wizard views and transaction files;
+wizard auth/HTTP orchestration and production shipping selection remain pending.
 
 The frozen starting dashboard passed 3716 original tests. Current reference and
 Go runs each pass 3719 tests (94.46% / 85.44% Python coverage). Reference-only
@@ -321,7 +322,7 @@ The [channel results](results-channel.md) separate native intent shaping, UUIDs,
 worker validation, atomic request files, result reads and wizard read-only views
 from Python route/auth/submission orchestration. The normal Go command requires
 the native control bridge. The existing wizard launch command selects native
-views only with `PITHEAD_IMPL=go`; reference modes ignore helper overrides.
+helpers only with `PITHEAD_IMPL=go`; reference modes ignore helper overrides.
 Status and state use one off-loop in-flight task per app, without a completed
 cache. State collection holds the existing submission lock.
 
@@ -334,6 +335,23 @@ passes those same 377 original tests. Full reference/Go runs each pass 3719
 (92.83% / 84.75% Python coverage). Reference-only/Go-only patch coverage fail at
 66% / 83%; appended A/B comparisons pass the unchanged gate at 94%. Full Make
 still stops at third-party cache Markdown in both modes; changed-file gates pass.
+
+## Wizard transaction slice
+
+The [transaction results](results-wizard-transactions.md) record native atomic
+writes, raw archive streaming, conflicts, rollback and temporary cleanup.
+The final focused target passes 295 tests: 282 unchanged wizard tests and 13 new
+comparisons, failure cases and mutation controls. Current and frozen-start
+reference runs each pass those same 282 original tests. The earlier channel
+target still passes 403 tests through the new additive transaction adapter.
+
+Full reference/Go dashboard runs each pass 3719 tests (92.34% / 84.14% Python
+coverage). The original suites and fixtures remain unchanged. Private I/O hooks
+preserve injected rename/unlink tests; production operations execute Go syscalls.
+Auth, form/upload decisions, recovery-handler removal and HTTP submission
+orchestration remain Python. Production shipping selection is still pending.
+Reference-only/Go-only patch coverage fail at 55% / 84%; appended A/B comparisons
+pass the unchanged gate at 95%. Full Make still stops at cache Markdown in both modes.
 
 ## Unavailable and known host constraints
 

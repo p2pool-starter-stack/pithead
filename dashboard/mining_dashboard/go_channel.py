@@ -55,15 +55,19 @@ def call(helper, payload):
         raise RuntimeError(f"native {helper} helper unavailable") from error
     if result.returncode != 0:
         raise RuntimeError(f"native {helper} helper failed")
+    return _unpack(response(helper, result.stdout), marker)
+
+
+def response(helper, output):
     try:
-        response = json.loads(result.stdout)
-        ok = response["ok"]
+        reply = json.loads(output)
+        ok = reply["ok"]
         if ok:
-            value = response["value"]
+            value = reply["value"]
     except (ValueError, KeyError, TypeError) as error:
         raise RuntimeError(f"native {helper} helper returned invalid data") from error
     if not ok:
-        detail = response.get("error") or {}
+        detail = reply.get("error") or {}
         kind = detail.get("kind")
         message = detail.get("message", "native operation failed")
         if kind == "UnicodeDecodeError":
@@ -74,4 +78,4 @@ def call(helper, payload):
         if exception not in (OSError, ValueError, KeyError):
             exception = RuntimeError
         raise exception(message)
-    return _unpack(value, marker)
+    return value

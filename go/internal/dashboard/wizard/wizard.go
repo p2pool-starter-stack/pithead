@@ -13,11 +13,15 @@ import (
 )
 
 type Request struct {
-	Operation string `json:"operation"`
-	Spool     string `json:"spool"`
-	Handoff   string `json:"handoff"`
-	Name      string `json:"name"`
-	Directory string `json:"directory"`
+	Operation string          `json:"operation"`
+	Spool     string          `json:"spool"`
+	Restore   string          `json:"restore"`
+	Handoff   string          `json:"handoff"`
+	Name      string          `json:"name"`
+	Directory string          `json:"directory"`
+	Data      []byte          `json:"data"`
+	Length    int64           `json:"length"`
+	IOHooks   map[string]bool `json:"io_hooks"`
 }
 
 type Error struct {
@@ -47,6 +51,10 @@ func (r Response) MarshalJSON() ([]byte, error) {
 }
 
 func Handle(request Request) Response {
+	return handle(request, systemTransactionIO{})
+}
+
+func handle(request Request, transactionIO transactionIO) Response {
 	view := View{Spool: request.Spool, Handoff: request.Handoff}
 	if view.Handoff == "" {
 		view.Handoff = view.Spool
@@ -74,7 +82,7 @@ func Handle(request Request) Response {
 	case "read":
 		value, err = view.Read(request.Name, request.Directory)
 	default:
-		err = fmt.Errorf("unsupported wizard operation: %s", request.Operation)
+		value, err = handleTransaction(request, transactionIO)
 	}
 	if err != nil {
 		return Response{Error: wireError(err)}
@@ -336,9 +344,12 @@ func wireError(err error) *Error {
 		kind = "ValueError"
 	}
 	var errno any
+	var number syscall.Errno
+	if errors.As(err, &number) {
+		errno = int(number)
+	}
 	var pathError *os.PathError
 	if errors.As(err, &pathError) {
-		var number syscall.Errno
 		if errors.As(pathError.Err, &number) {
 			errno = int(number)
 		}
