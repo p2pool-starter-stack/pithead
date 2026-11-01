@@ -51,6 +51,7 @@ caddy_hash_password_b64() {
 
 generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
+    local native_caddy
     # Every vhost forwards the authenticated basic_auth username as X-Auth-User (#33) — the audit
     # `actor` for control-channel requests. header_up SETS the header, so a client-supplied
     # X-Auth-User can never spoof it; with auth off the placeholder renders empty.
@@ -261,8 +262,12 @@ $(_bind_line)
     fi
 
     : >"$target"
-    [ -n "$global_block" ] && printf '%s' "$global_block" >>"$target"
-    [ -n "$redirect_block" ] && printf '%s' "$redirect_block" >>"$target"
+    if native_caddy=$(_caddy_render_go prefix 2>/dev/null); then
+        printf '%s' "${native_caddy%.}" >>"$target"
+    else
+        [ -n "$global_block" ] && printf '%s' "$global_block" >>"$target"
+        [ -n "$redirect_block" ] && printf '%s' "$redirect_block" >>"$target"
+    fi
     # The appliance hands its ONE certificate to Caddy — the same file the setup page served, so
     # the operator's trust decision survives the handoff. Without this the wizard's cert is
     # replaced by Caddy's own at the exact moment provisioning succeeds, and the browser that
@@ -302,7 +307,12 @@ $(_bind_line)
     local scheme=http
     [ "$DASHBOARD_SECURE" != "true" ] || scheme=https
     log "Generating Caddyfile for $scheme ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
-    cat <<EOF >>"$target"
+    if native_caddy=$(_caddy_render_go main 2>/dev/null); then
+        cat <<EOF >>"$target"
+${native_caddy%$'\n'.}
+EOF
+    else
+        cat <<EOF >>"$target"
 $(_site_addresses "$scheme") {
 $([ "$scheme" != https ] || printf '%s' "$tls_line")
 $(_bind_line)
@@ -325,6 +335,7 @@ $auth
     }
 }
 EOF
+    fi
 
     # Onion vhost (#343): a second site reachable ONLY from the tor container, via the bridge gateway
     # (NETWORK_PREFIX.1 — the /24's first host, where host-networked Caddy binds and bridge containers
@@ -336,7 +347,12 @@ EOF
             error "Refusing to render the dashboard onion vhost without a login: dashboard.onion.enabled is on but no auth hash is set."
         fi
         log "Adding onion vhost for the dashboard (${NETWORK_PREFIX}.1, login required)..."
-        cat <<EOF >>"$target"
+        if native_caddy=$(_caddy_render_go onion-http 2>/dev/null); then
+            cat <<EOF >>"$target"
+${native_caddy%$'\n'.}
+EOF
+        else
+            cat <<EOF >>"$target"
 
 http://${NETWORK_PREFIX}.1 {
 $(_onion_bind_line)
@@ -348,6 +364,7 @@ $logblk
     }
 }
 EOF
+        fi
         # Also serve HTTPS on the .onion name so Tor Browser's default http->https upgrade lands on a
         # working :443 instead of a refused connection (#343). The cert is self-signed (Caddy's internal
         # CA) for the .onion — a .onion can't get a browser-trusted cert without a manual CA process, and
@@ -358,7 +375,12 @@ EOF
         # the capture step lands the real address, so HTTPS appears in that same run (#546).
         if [ -n "${DASHBOARD_ONION:-}" ] && [ "${DASHBOARD_ONION:-}" != "placeholder" ]; then
             log "Adding HTTPS onion vhost (self-signed cert for the .onion)..."
-            cat <<EOF >>"$target"
+            if native_caddy=$(_caddy_render_go onion-https 2>/dev/null); then
+                cat <<EOF >>"$target"
+${native_caddy%$'\n'.}
+EOF
+            else
+                cat <<EOF >>"$target"
 
 https://${DASHBOARD_ONION} {
     tls internal
@@ -371,6 +393,7 @@ $logblk
     }
 }
 EOF
+            fi
         fi
     fi
 }

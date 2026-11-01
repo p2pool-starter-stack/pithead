@@ -21,6 +21,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configDefaults(args, os.Stdin, stdout)
 	case "config-validation":
 		return configValidation(args, stdout)
+	case "config-caddy":
+		return configCaddy(args, os.Stdin, stdout)
 	}
 	switch nativeCommand(args) {
 	case "help":

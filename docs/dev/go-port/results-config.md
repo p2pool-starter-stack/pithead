@@ -91,3 +91,56 @@ npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --confi
   docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md \
   docs/dev/go-port/results-baseline.md
 ```
+
+## Typed config validation slice (2026-10-31)
+
+Native validators cover worker endpoint descriptors and duplicate-name warnings,
+energy settings, webhook member types and recursive control-character checks.
+The Bash callers preserve validation order and diagnostic formatting. The private
+helper returns pass, error, warning or unsupported; unsupported documents and
+jq-specific cases retain the original validator. Normal native cases do not
+launch jq. Config migrations, the remaining typed checks and the
+`.env`/Caddyfile renderers remain Bash.
+
+The new 11-test suite compares 227 generated cases, 14 compatibility cases,
+native jq-bypass checks for all four sections and CLI fallback-marker wiring.
+Direct helper checks cover error/warning statuses and silent unsupported results.
+C0/DEL/C1 values, control-bearing keys, numeric precision/underflow and
+version-sensitive fleet-port literals are included. Existing tests and fixtures
+remain unchanged. Private records use `.go-cache/logs/config-validation-*`.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
+and `tests/go-parity/run.sh` for Go selection, with the local cache variables
+listed above and an absent Docker socket.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-config-validation-parity` | PASS, 11 tests and Go units | Same result |
+| `make test-go-config-defaults-parity test-go-config-document-parity test-go-parity` | PASS, defaults/raw-parser/CLI comparisons, unchanged parser and render fixtures, Go units | Same result |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
+| `make test-fakes` | PASS, 54 tests | Same result; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
+| `make test` | FAIL, existing `config_defaults_reference.sh` case indentation, pinned shfmt, exit 2 | Same failure; ShellCheck passes |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+| `make test-stack`; `bash tests/stack/standalone/test_config_defaults.sh` | macOS refusal, exit 2 / 1 | Same refusal; no bypass |
+
+The previous adapter is now tracked and included in the existing shfmt gate;
+its case indentation was not included while it was untracked in the preceding
+round. It remains unchanged under the test-preservation rule. The new adapter
+passes pinned ShellCheck and shfmt checks explicitly.
+
+After `make go-build`, native checks pass with worktree cache/temp paths:
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+(compilation only). Go formatting, Ruff and `git diff --check` pass.
+An initial `go test ./...` with an unnormalized `go/../.go-cache/tmp`
+`TMPDIR` hit existing Darwin symlink assertions; canonical cache/temp paths pass.
+Source/security reviews found no remaining issues. Scoped Markdown is checked
+with the existing configuration:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
+```

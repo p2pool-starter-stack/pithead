@@ -23,6 +23,10 @@
 .PHONY: test-go-config-document-parity
 .PHONY: test-go-config-defaults-parity
 .PHONY: test-go-config-validation-parity
+.PHONY: test-go-caddy-parity
+
+test-go-caddy-parity: go-build test-go ## Compare Caddyfile bytes and render lifecycle with Bash
+	python3 tests/go-parity/test_caddy.py
 
 test-go-config-validation-parity: go-build test-go ## Compare typed config validation and diagnostics with Bash/jq
 	python3 tests/go-parity/test_config_validation.py

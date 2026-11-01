@@ -149,7 +149,11 @@ compatibility fallback and the unchanged v2.0.0 render fixture/goldens.
 control-character validation through the same internal binary marker.
 `make test-go-config-validation-parity` compares diagnostic bytes/status and
 proves native selection without jq. Unsupported inputs keep the original
-validators. Remaining typed checks and the `.env`/Caddyfile renderers stay Bash.
+validators. `go/internal/config/caddy.go` serializes all Caddyfile sections from
+prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
+statuses and preparation calls. The protocol hook is the adjacent
+`lib/pithead/35a-caddy-go-render.sh` slice. Bash retains address/certificate
+preparation and file writes. Remaining typed checks and the `.env` renderer stay Bash.
 
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates
