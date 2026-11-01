@@ -7,16 +7,25 @@
 # working while Healthchecks, Telegram and XvB all go dark at once. Production once sat that way
 # for six hours. The heal is probe-driven, rate-limited and bounded, so the risk it guards
 # against does not apply the way it does interactively.
-apply_appliance_defaults() { # [config, default $CONFIG_FILE]
-    local config="${1:-$CONFIG_FILE}" tmp
-    [ -f "$config" ] || return 0
-    tmp=$(mktemp) || return 1
-    if jq --argjson defaults "$(config_defaults new appliance)" '
+_render_appliance_defaults() {
+    local config="$1" tmp="$2" defaults="$3"
+    if command -v _config_appliance_write_go >/dev/null 2>&1 &&
+        _config_appliance_write_go "$config" "$defaults" "$tmp"; then
+        return 0
+    fi
+    jq --argjson defaults "$defaults" '
         if .tor.auto_heal == null then (.tor //= {}) | .tor.auto_heal = $defaults.tor.auto_heal else . end
         | if .dashboard.control.enabled == null and ((.dashboard.auth.password // "") != "")
           then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = $defaults.dashboard.control.enabled
           else . end' \
-        "$config" >"$tmp" && mv "$tmp" "$config"; then
+        "$config" >"$tmp"
+}
+
+apply_appliance_defaults() { # [config, default $CONFIG_FILE]
+    local config="${1:-$CONFIG_FILE}" tmp
+    [ -f "$config" ] || return 0
+    tmp=$(mktemp) || return 1
+    if _render_appliance_defaults "$config" "$tmp" "$(config_defaults new appliance)" && mv "$tmp" "$config"; then
         return 0
     fi
     rm -f "$tmp"

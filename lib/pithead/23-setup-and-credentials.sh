@@ -189,9 +189,12 @@ persist_node_credentials() {
     # from creation — mv preserves its mode onto config.json.
     if (
         umask 077
-        jq --arg u "$user" --arg p "$pass" \
-            '.monero.node_username = $u | .monero.node_password = $p' \
-            "$CONFIG_FILE" >"$tmp" 2>/dev/null
+        if command -v _config_credentials_write_go >/dev/null 2>&1 &&
+            _config_credentials_write_go "$CONFIG_FILE" "$user" "$pass" "$tmp"; then :; else
+            jq --arg u "$user" --arg p "$pass" \
+                '.monero.node_username = $u | .monero.node_password = $p' \
+                "$CONFIG_FILE" >"$tmp" 2>/dev/null
+        fi
     ); then
         mv "$tmp" "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"

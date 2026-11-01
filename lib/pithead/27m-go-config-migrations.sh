@@ -31,6 +31,7 @@ _config_workers_plan_go() {
 _config_workers_write_go() {
     local binary rendered native_rc extra
     [ -n "$1" ] || return 125
+    if [ "$CONFIG_FILE" -ef "$1" ]; then return 125; fi
     binary=$(_config_migration_binary) || return 125
     command -v cat >/dev/null 2>&1 || return 125
     case "$CONFIG_FILE" in -*) return 125 ;; esac
@@ -74,6 +75,7 @@ _config_telegram_plan_go() {
 _config_telegram_write_go() {
     local binary rendered native_rc extra
     [ -n "$1" ] || return 125
+    if [ "$CONFIG_FILE" -ef "$1" ]; then return 125; fi
     binary=$(_config_migration_binary) || return 125
     command -v cat >/dev/null 2>&1 || return 125
     case "$CONFIG_FILE" in -*) return 125 ;; esac

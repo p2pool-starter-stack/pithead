@@ -3,6 +3,14 @@
 Only new files under `tests/go-parity/` adapt unchanged suites or supply parity
 oracles:
 
+- `config_persistence_reference.sh` sources the original credential and CLI appliance-default writers
+  with controlled providers and file operations; `test_config_persistence.py` compares JSON/file bytes,
+  modes, failures, strict helper framing and the unchanged config-read extractor.
+  `test_config_persistence_aliases.py` compares hardlink/symlink targets with the original writer.
+  `config_write_aliases_reference.sh` and `test_config_write_aliases.py` cover that boundary for
+  the existing version, worker and Telegram writers without changing their suites.
+  Full first-boot and secret-file oracle suites need Linux.
+
 - `config_migrations_reference.sh` sources the original worker/XvB and Telegram migration functions
   with controlled file failures; `test_config_migrations.py` compares decisions, exact file/backup bytes,
   permissions, callback order and the unchanged config-read extractor.

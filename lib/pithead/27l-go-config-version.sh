@@ -73,6 +73,7 @@ _config_version_plan_go() {
 _config_version_write_go() {
     local binary rendered native_rc extra
     [ -n "$2" ] || return 125
+    if [ "$CONFIG_FILE" -ef "$2" ]; then return 125; fi
     binary=$(_config_version_binary) || return 125
     command -v cat >/dev/null 2>&1 || return 125
     case "$CONFIG_FILE" in -*) return 125 ;; esac

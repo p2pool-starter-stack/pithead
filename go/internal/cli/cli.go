@@ -21,6 +21,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configVersion(args, os.Stdin, stdout)
 	case "config-migrations":
 		return configMigrations(args, os.Stdin, stdout)
+	case "config-persistence":
+		return configPersistence(args, os.Stdin, stdout)
 	case "config-document":
 		return configDocument(args, stdout)
 	case "config-defaults":

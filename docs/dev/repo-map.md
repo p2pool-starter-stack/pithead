@@ -175,6 +175,9 @@ policy and files. VERSION reads, warnings and file transactions stay in Bash.
 `go/internal/config/migrations.go` plans legacy worker/XvB and Telegram-control migrations through
 `lib/pithead/27m-go-config-migrations.sh`; `make test-go-config-migrations-parity` compares
 decisions, ordered file bytes and failure handling. Backups, callbacks and file transactions stay in Bash.
+`go/internal/config/persistence.go` renders credential write-back and CLI appliance-default JSON via
+`lib/pithead/27n-go-config-persistence.sh`; `make test-go-config-persistence-parity` compares
+bytes, modes, provider calls and failures. Password generation and file transactions stay in Bash.
 `go/internal/config/ssh_settings.go` and `node_credentials.go` validate SSH policy and plan RPC
 credentials through `lib/pithead/27k-go-config-access.sh`; `make test-go-config-access-parity`
 checks state, callback order and complete renders. Username reads, generation and persistence stay in Bash.
