@@ -1,21 +1,9 @@
-// Click-to-adopt (#893): the form shown in Worker Inspect for a rig that isn't yet a write
-// target. Prefilled with the worker's OBSERVED IP (proxy-reported — a #122 miner-advertised value,
-// so it's a PREFILL only; the operator confirms or edits it before anything is sent), a default
-// control port, and a token the operator must type. Submitting rides the SAME control-channel
-// config path (GET /api/config -> POST preview -> POST commit) the Configuration view uses for any
-// other edit — no new write endpoint. The host (pithead's control_worker_append) is what actually
-// authorizes the write: an append-only change past its SSRF floor, previewed with a warning and
-// committed only with the typed APPLY (#2641). This builds the proposal, shows the host's warning,
-// and sends the operator's confirmation.
-//
-// The worker reader reopens the directory-mounted config and credential map on every probe, so an
-// applied append becomes visible on the next worker poll without restarting the dashboard.
-
 import { Component, html } from "../app/preact.mjs";
 import { pollResult } from "../config/configview.mjs";
 import { controlCommitResult } from "../config/controlclient.mjs";
 import {
   buildAdoptedConfig,
+  buildRemovedConfig,
   DEFAULT_API_PORT,
   DEFAULT_CONTROL_PORT,
   hostIsInternal,
@@ -28,20 +16,52 @@ export class AdoptRigForm extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      host: props.ip || "",
+      host: props.existing ? "" : props.ip || "",
       apiPort: DEFAULT_API_PORT,
       controlPort: DEFAULT_CONTROL_PORT,
       token: "",
       busy: false,
       result: null,
-      preview: null, // the host's previewed verdict, awaiting the typed APPLY
+      preview: null,
       confirmText: "",
     };
   }
 
-  async adopt() {
+  async componentDidMount() {
+    if (!this.props.existing) return;
+    try {
+      const res = await fetch("/api/config");
+      if (!res.ok) return;
+      const entry = ((await res.json())?.workers?.list || []).find(
+        (w) => w?.name === this.props.name,
+      );
+      if (entry)
+        this.setState({
+          host: entry.host || "",
+          apiPort: String(entry.port ?? DEFAULT_API_PORT),
+          controlPort: String(entry.control_port ?? DEFAULT_CONTROL_PORT),
+        });
+    } catch {
+      this.setState({
+        result: { status: "error", error: "The current address could not be loaded." },
+      });
+    }
+  }
+
+  adopt() {
     const { host, apiPort, controlPort, token } = this.state;
-    const validation = validateAdoptFields(host, apiPort, controlPort, token);
+    return this.propose(
+      validateAdoptFields(host, apiPort, controlPort, token, this.props.existing),
+      (live) => buildAdoptedConfig(live, this.props.name, host, apiPort, controlPort, token),
+      host,
+    );
+  }
+
+  remove() {
+    return this.propose("", (live) => buildRemovedConfig(live, this.props.name), "");
+  }
+
+  async propose(validation, build, host) {
     if (validation) {
       this.setState({ result: { status: "error", error: validation } });
       return;
@@ -51,7 +71,7 @@ export class AdoptRigForm extends Component {
       const cfgRes = await fetch("/api/config");
       if (!cfgRes.ok) throw new Error(`HTTP ${cfgRes.status}`);
       const liveConfig = await cfgRes.json();
-      if (hostIsInternal(host, liveConfig?.network?.subnet)) {
+      if (host && hostIsInternal(host, liveConfig?.network?.subnet)) {
         this.setState({
           busy: false,
           result: {
@@ -62,14 +82,7 @@ export class AdoptRigForm extends Component {
         });
         return;
       }
-      const proposed = buildAdoptedConfig(
-        liveConfig,
-        this.props.name,
-        host,
-        apiPort,
-        controlPort,
-        token,
-      );
+      const proposed = build(liveConfig);
       const res = await fetch("/api/control/preview", {
         method: "POST",
         headers: CONTROL_HEADERS,
@@ -82,9 +95,6 @@ export class AdoptRigForm extends Component {
         this.setState({ busy: false, result: out });
         return;
       }
-      // The adopt row is the only change the operator reviews here. Anything else flagged
-      // disruptive means the proposal carried more than the new descriptor: refuse rather than
-      // asking for APPLY on a change no one sees.
       const reviewed = (out.changes || []).filter((c) => c.flag === "DEST" || c.flag === "CONFIRM");
       if (reviewed.some((c) => c.key !== "workers.list")) {
         this.setState({
@@ -103,8 +113,6 @@ export class AdoptRigForm extends Component {
     const { preview, confirmText } = this.state;
     this.setState({ busy: true });
     try {
-      // The host gate re-checks the typed word; it is friction against a mistaken address, not a
-      // second identity (the #1959 ruling).
       const res = await fetch("/api/control/commit", {
         method: "POST",
         headers: CONTROL_HEADERS,
@@ -121,13 +129,15 @@ export class AdoptRigForm extends Component {
 
   render() {
     const { host, apiPort, controlPort, token, busy, result, preview, confirmText } = this.state;
+    const { existing } = this.props;
     return html`
       <div class="adopt-rig">
         <p class="text-muted text-xs">
-          Set up remote control for this rig: confirm its control address (prefilled from what the
-          proxy observed — verify it before sending), then add its control token. This writes
-          workers.list[] through the same control channel the Configuration view uses; you confirm
-          it by typing APPLY.
+          ${
+            existing
+              ? "Change where the dashboard reaches this rig. Leave the token blank to keep it; a new address needs the token entered again. You confirm by typing APPLY."
+              : "Set up remote control for this rig: confirm its control address (prefilled from what the proxy observed — verify it before sending), then add its control token. You confirm by typing APPLY."
+          }
         </p>
         <label class="config-field">
           <span class="config-field-name">host</span>
@@ -146,7 +156,7 @@ export class AdoptRigForm extends Component {
         </label>
         <label class="config-field">
           <span class="config-field-name">token</span>
-          <input type="password" disabled=${busy || !!preview} value=${token} placeholder="the rig's control token"
+          <input type="password" disabled=${busy || !!preview} value=${token} placeholder=${existing ? "blank keeps the current token" : "the rig's control token"}
               onInput=${(e) => this.setState({ token: e.target.value })} />
         </label>
         ${
@@ -157,8 +167,13 @@ export class AdoptRigForm extends Component {
                   onCancel=${() => this.setState({ preview: null, confirmText: "" })} />`
             : html`<div class="mt-1">
                 <button class="btn-toggle" disabled=${busy} onClick=${() => this.adopt()}>${
-                  busy ? "Adopting…" : "Adopt this rig"
+                  busy ? "Checking…" : existing ? "Save address" : "Adopt this rig"
                 }</button>
+                ${
+                  existing
+                    ? html`<button class="btn-toggle" disabled=${busy} onClick=${() => this.remove()}>Remove this rig</button>`
+                    : null
+                }
               </div>`
         }
         ${result ? html`<${AdoptStatus} result=${result} />` : null}
@@ -166,17 +181,15 @@ export class AdoptRigForm extends Component {
   }
 }
 
-// The host's own warning for the adopt row (what the dashboard will trust, and what it cannot undo
-// from here), then the typed APPLY the gate requires.
 function AdoptConfirm({ preview, confirmText, busy, onConfirmText, onConfirm, onCancel }) {
   return html`<div class="mt-1">
     ${(preview.changes || []).map((c) => html`<p class="text-small status-bad">${c.msg}</p>`)}
-    <label class="config-confirm-type">Type <code>APPLY</code> to adopt this rig:
+    <label class="config-confirm-type">Type <code>APPLY</code> to confirm:
         <input type="text" disabled=${busy} value=${confirmText}
             onInput=${(e) => onConfirmText(e.target.value)} /></label>
     <div class="mt-1">
       <button class="btn-toggle active" disabled=${busy || confirmText !== "APPLY"} onClick=${onConfirm}>${
-        busy ? "Adopting…" : "Confirm"
+        busy ? "Applying…" : "Confirm"
       }</button>
       <button class="btn-toggle" disabled=${busy} onClick=${onCancel}>Cancel</button>
     </div>
@@ -186,7 +199,7 @@ function AdoptConfirm({ preview, confirmText, busy, onConfirmText, onConfirm, on
 function AdoptStatus({ result }) {
   if (result.status === "applied") {
     return html`<p class="text-small mt-1 status-ok">
-      Saved to config.json. The dashboard will use the adopted rig on its next worker poll.
+      Saved to config.json. The dashboard uses the change on its next worker poll.
     </p>`;
   }
   return html`<p class="text-small mt-1 status-bad">${result.error || result.status}</p>`;

@@ -6,9 +6,8 @@ mechanics ``ConfigView`` uses for any other edit (no new write endpoint, ``web/s
 ``handle_control_preview``/``handle_control_commit``). This module only builds the one guard that
 path needs to carry a ``workers.list[]`` write at all: ``pithead``'s ``control_worker_append``
 (``lib/pithead/42-control-approval-helpers.sh``), called by both the preview and the commit gate,
-refuses a repoint or removal of a per-worker descriptor — they hold per-rig hosts and bearer tokens
-(the #122 SSRF class) — and lets a strictly ADD-ONLY append through (a brand-new descriptor; every
-already-live entry must reappear byte-for-byte) behind its SSRF floor and the typed APPLY (#2641).
+lets an add, repoint, edit or removal of a per-worker descriptor through behind the typed APPLY and
+its SSRF floor (#2641, #912), and refuses a repoint that keeps the stored token.
 That host-side check is the actual security authority.
 
 What lives here is the *dashboard-side* mirror of the same shape/charset validation pithead's own
@@ -145,29 +144,28 @@ def host_is_internal(host, live_cfg):
 
 
 def new_worker_entries(live_cfg, staged_cfg):
-    """The entries a staged config would ADD to ``workers.list[]``, or ``[]`` if the staged list
-    isn't a pure append of the live one (a non-append change is left for the host's own add-only
-    gate to refuse, with its own message — this only identifies the genuinely-new tail to
-    pre-validate)."""
     live_list = ((live_cfg or {}).get("workers") or {}).get("list")
     staged_list = ((staged_cfg or {}).get("workers") or {}).get("list")
     live_list = live_list if isinstance(live_list, list) else []
     if not isinstance(staged_list, list):
         return []
 
-    # The live editor copy masks credentials, while a submitted prefix may contain a newly
-    # typed string. Compare existing entries by their public fields; the host's add-only gate
-    # remains responsible for refusing an actual credential edit.
-    def public_entry(entry):
-        if not isinstance(entry, dict):
-            return entry
-        return {k: v for k, v in entry.items() if k not in ("token", "api_token")}
+    def endpoint(entry):
+        return tuple(entry.get(k) for k in ("host", "port", "control_port"))
 
-    if [public_entry(e) for e in staged_list[: len(live_list)]] != [
-        public_entry(e) for e in live_list
-    ]:
-        return []
-    return staged_list[len(live_list) :]
+    live_by_name = {}
+    for entry in live_list:
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+            live_by_name.setdefault(entry["name"], entry)
+    changed = []
+    for entry in staged_list:
+        if not isinstance(entry, dict):
+            changed.append(entry)
+            continue
+        live = live_by_name.get(entry.get("name"))
+        if live is None or endpoint(live) != endpoint(entry):
+            changed.append(entry)
+    return changed
 
 
 def validate_new_worker_entries(live_cfg, staged_cfg):

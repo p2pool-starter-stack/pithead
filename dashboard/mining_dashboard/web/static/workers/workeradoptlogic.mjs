@@ -24,7 +24,7 @@ export const DEFAULT_CONTROL_PORT = "8082";
  * no port, path, or userinfo can ride into a probe URL. Returns an error string, or "" when every
  * field is well-formed.
  */
-export function validateAdoptFields(host, apiPort, controlPort, token) {
+export function validateAdoptFields(host, apiPort, controlPort, token, tokenOptional = false) {
   const h = (host || "").trim();
   if (!h) return "Enter the rig's control address (a hostname or IP).";
   if (!HOST_RE.test(h)) {
@@ -39,6 +39,7 @@ export function validateAdoptFields(host, apiPort, controlPort, token) {
     return "Control port must be an integer between 1 and 65535.";
   }
   const t = (token || "").trim();
+  if (!t && tokenOptional) return "";
   if (!t || !TOKEN_RE.test(t)) {
     return "Enter the rig's control token — its control API is bearer-mandatory.";
   }
@@ -114,23 +115,31 @@ export function hostIsInternal(host, subnet) {
   return !!bridge && `${a}.${b}.${c}` === bridge.slice(1, 4).join(".");
 }
 
-/**
- * The proposed config a successful adopt submits: ``liveConfig`` (as fetched from /api/config)
- * with one new descriptor appended to ``workers.list[]``. Every other key rides through untouched
- * — the host's append-only check requires every already-live entry to reappear byte-for-byte, so this
- * never touches an existing element, only pushes a new one onto the end.
- */
 export function buildAdoptedConfig(liveConfig, workerName, host, apiPort, controlPort, token) {
   const cfg = editableCandidate(liveConfig || {});
   const workers = cfg.workers && typeof cfg.workers === "object" ? cfg.workers : {};
   const list = Array.isArray(workers.list) ? workers.list.slice() : [];
-  list.push({
+  const at = list.findIndex((w) => w && w.name === workerName);
+  const entry = {
+    ...(at >= 0 ? list[at] : {}),
     name: workerName,
     host: host.trim(),
     port: Number(apiPort),
     control_port: Number(controlPort),
-    token: token.trim(),
-  });
+  };
+  if (token.trim()) entry.token = token.trim();
+  if (at >= 0) list[at] = entry;
+  else list.push(entry);
+  cfg.workers = { ...workers, list };
+  return cfg;
+}
+
+export function buildRemovedConfig(liveConfig, workerName) {
+  const cfg = editableCandidate(liveConfig || {});
+  const workers = cfg.workers && typeof cfg.workers === "object" ? cfg.workers : {};
+  const list = (Array.isArray(workers.list) ? workers.list : []).filter(
+    (w) => !(w && w.name === workerName),
+  );
   cfg.workers = { ...workers, list };
   return cfg;
 }

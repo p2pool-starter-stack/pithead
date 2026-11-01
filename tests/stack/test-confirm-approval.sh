@@ -109,17 +109,15 @@ jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",a
 run_pending >/dev/null
 assert_eq "confirmed auth username applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
 
-# Worker descriptors (#2641): a repoint is refused at preview and at commit, even with a
-# self-written envelope; adopting a new rig previews as a typed-APPLY change and then applies.
 jq '.workers={api_port:8080,api_auth:"none",api_token:"",list:[{name:"rig-1",host:"192.168.1.50",control_port:8082,token:"rig-token"}]}' "$C/config.json" >"$C/config.worker" && mv "$C/config.worker" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list[0].host="192.168.1.51")}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "worker repoint preview is rejected, not previewed" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_contains "worker repoint refusal names workers.list" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "workers.list"
-jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
+assert_eq "worker repoint previews as a destructive, typed-APPLY change" "$(jq -c '[.status, .destructive, (.changes[] | select(.key == "workers.list") | .flag)]' "$RESULTS/$UUID3.json")" '["previewed",true,"CONFIRM"]'
+assert_contains "worker repoint warning names the host delta" "$(jq -r '.changes[].msg' "$RESULTS/$UUID3.json")" "repointed: rig-1 from 192.168.1.50 to 192.168.1.51"
+jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "APPLY and a self-written envelope do not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_eq "a worker repoint without APPLY is not committed" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_eq "config.json keeps the original worker host" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.50"
 APPEND_UUID="44444444-4444-4444-8444-444444444444"
 jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token",api_token:"read-only-token"}])}' >"$REQS/$APPEND_UUID.json" && run_pending >/dev/null

@@ -17,9 +17,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # 2, bar dashboard.energy.price_feed). A NEW one MUST add its own line.
     #
     # workers.list[] (#506) carries per-rig hosts and API tokens; the removed dashboard.workers[]
-    # alias (#1832) is refused by the closed-schema check below. control_worker_append (42-) allows
-    # only an adopt (append) behind the typed APPLY and the #122 SSRF floor; a repoint, reorder or
-    # removal is refused (#912 owns descriptor editing; #1959's confirm tier does not widen it).
     local worker_new
     if ! worker_new=$(control_worker_append "$staged"); then
         printf '%s' "$worker_new"
@@ -93,7 +90,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     if [ "$needs_confirm" -eq 1 ]; then
         if [ "$confirm" != "APPLY" ]; then
             hit=$(printf '%s\n' "$porcelain" | grep -m1 -E $'^CONFIRM\t' | cut -f3-)
-            [ -n "$hit" ] || [ -z "$worker_new" ] || hit="adopting a rig: $(printf '%s' "$worker_new" | paste -sd, -)"
+            [ -n "$hit" ] || [ -z "$worker_new" ] || hit="changing rigs: $(printf '%s' "$worker_new" | paste -sd, -)"
             printf 'this change is disruptive (%s) — type APPLY in the dashboard to confirm.' "${hit:-disruptive change}"
             return 1
         fi
@@ -159,7 +156,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               and ($live_workers[.name] | type) == "object"
               and endpoint($candidate_api_port) == ($live_workers[.name] | endpoint($live_api_port))
             else true end)' "$file" >/dev/null 2>&1; then
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"a masked worker token can only stay with its own unchanged descriptor — adopt a new rig with its real token; change an existing rig address on the host (workers.list)",ts:(now|floor)}')"
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"a masked worker token can only stay with its own unchanged descriptor — enter the rig'"'"'s token again to repoint it",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
@@ -234,9 +231,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     local carried_ssh=0
     control_carried_ssh "$staged" && carried_ssh=1
     if out=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>"$errf"); then
-        # Unlisted reference values confirm (#1959). Worker descriptors use the gate's classifier: an
-        # adopt previews as a CONFIRM row below; a repoint, reorder, removal or SSRF-floor host
-        # refuses here, before the operator is asked to type anything.
         local approval_required=false committable_re approval_re bad worker_new worker_err="" config_paths
         committable_re=$(control_committable_re)
         # Classify worker changes before treating unlisted rows as confirmable.
@@ -320,10 +314,8 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         if control_changed_config_paths "$staged" | grep -qx 'dashboard.energy.price_feed'; then
             result=$(printf '%s' "$result" | jq '.changes += [{flag:"APPROVAL",key:"dashboard.energy.price_feed",msg:"Electricity price feed endpoint changed — the host will contact this remote source for operating-cost data."}] | .approval_required = true')
         fi
-        # An adopted rig (#2641): a CONFIRM row, so the preview is destructive and the commit needs
-        # the typed APPLY. The warning names what is trusted; never the token.
         if [ -n "$worker_new" ]; then
-            result=$(printf '%s' "$result" | jq --arg rigs "$(printf '%s' "$worker_new" | paste -sd, - | sed 's/,/, /g')" '.changes += [{flag:"CONFIRM",key:"workers.list",msg:"Adopting a rig: \($rigs). The dashboard will send this rig'"'"'s control token to that address and can change its pools and its thermal limits from then on, so check the address is the rig itself. Changing or removing an adopted rig is not possible from the dashboard."}] | .destructive = true')
+            result=$(printf '%s' "$result" | jq --arg rigs "$(printf '%s' "$worker_new" | paste -sd, - | sed 's/,/, /g')" '.changes += [{flag:"CONFIRM",key:"workers.list",msg:"Changing rigs: \($rigs). The dashboard sends each rig'"'"'s control token to its address and can change its pools and thermal limits, so check every address is the rig itself. A removed rig stops being managed from the dashboard; its miner keeps running."}] | .destructive = true')
         fi
         if ! jq -e --argjson fallback "$(default_of local_miner.enabled legacy)" --slurpfile live "$CONFIG_FILE" '
             (if .local_miner.enabled == null then $fallback else .local_miner.enabled end)

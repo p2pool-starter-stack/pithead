@@ -116,6 +116,8 @@ export class RigInspector extends WorkerInspect {
             canEdit=${!blocked} busy=${busy} onDone=${() => this.load()} />`
             : html`<p>This rig is on the latest release it reports.</p>`
       }
+      <h3>Connection</h3>
+      <${AdoptRigForm} existing=${true} name=${this.props.name} onAdopted=${() => this.load()} />
       <h3>Configuration</h3>
       <div role="group" aria-label="Configuration view">
         <button type="button" aria-pressed=${mode === "table"} onClick=${() => this.setMode("table")}>Table</button>
