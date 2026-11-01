@@ -8,6 +8,12 @@ power_shutdown_verdict() {
     printf '%s' "$1" | grep -Eq 'pithead-boot.service: Deactivated successfully|Stopped Pithead stack at boot'
 }
 
+power_shutdown_journal() {
+    local boot=${1//-/}
+    [[ "$boot" =~ ^[[:xdigit:]]{32}$ ]] || return 1
+    _ssh "journalctl -b '$boot' -u pithead-boot.service --no-pager -o cat"
+}
+
 power_wait_stack() {
     local attempt=0
     while [ "$attempt" -lt "${1:-60}" ]; do
@@ -96,7 +102,7 @@ phase_provision_power_regressions() {
         bad "the boot service never became active after the power-button restart"
         return 1
     fi
-    journal=$(_ssh "journalctl -b '$shutdown_boot' -u pithead-boot.service --no-pager -o cat" 2>/dev/null) || {
+    journal=$(power_shutdown_journal "$shutdown_boot" 2>/dev/null) || {
         bad "could not read the previous boot's stack shutdown journal"
         return 1
     }
@@ -132,6 +138,14 @@ phase_provision_power_regressions() {
 
 _power_self_test() {
     local f=0
+    (
+        _ssh() {
+            [ "$1" = "journalctl -b '0123456789abcdef0123456789abcdef' -u pithead-boot.service --no-pager -o cat" ]
+        }
+        power_shutdown_journal 01234567-89ab-cdef-0123-456789abcdef &&
+            power_shutdown_journal 0123456789abcdef0123456789abcdef &&
+            ! power_shutdown_journal invalid
+    ) || f=$((f + 1))
     (
         local trace
         trace=$(mktemp) || exit 1
