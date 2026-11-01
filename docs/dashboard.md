@@ -93,14 +93,17 @@ Clicking or activating a rig is the only way into its inspector. Outside Advance
 shows health only: status, the last time the rig recorded hashrate in the past 24 hours, its
 RigForge version against the latest release, the 24-hour average hashrate, and accepted and
 rejected shares. Each snapshot poll refreshes the inspector, except while an edit or apply is in
-progress. Duplicate-named rigs open the row that was clicked, but the host addresses rigs by name.
+progress; a failed refresh says the details may be out of date. The host addresses rigs by name,
+so when several rigs report one name the inspector says so, shows status and shares for the row
+opened, and offers no change until each rig has its own name.
 Its **Advanced** section offers only what the rig supports. With rig control off, or while the
 session is disconnected or expired, it says so and offers no change. An unadopted rig gets the
 existing adopt form (host, ports, token, typed APPLY), which confirms the saved entry; managed
-telemetry follows the next poll of the rig. An adopted rig gets **Update this rig** when it is
-behind and its release page is reported, and the configuration editor as a Table or JSON with the
-existing writable keys, validation, Load from file and apply polling. Close is disabled while an
-apply runs. Closing the inspector returns focus to the rig and keeps the list's scroll position.
+telemetry follows the next poll of the rig. For an adopted rig, **Update this rig** offers the
+upgrade when the rig is behind and its release page is reported, and otherwise says why not. The
+configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
+from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
+upgrade is not held. An unsaved edit stays visible if the session drops, with Apply disabled. Closing the inspector returns focus to the rig and keeps the list's scroll position.
 The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
 no rig restart verb exists yet ([#3825](https://github.com/p2pool-starter-stack/pithead/issues/3825)).
 

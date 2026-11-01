@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { html } from "../../../mining_dashboard/web/static/app/preact.mjs";
+import { detailSnapshot } from "../../../mining_dashboard/web/static/workers/workerlogic.mjs";
 import { earningsWording } from "../../../mining_dashboard/web/static/sovereign/earnings-control.mjs";
 import { ConnectCard, MachinesPage } from "../../../mining_dashboard/web/static/sovereign/machines.mjs";
 import { RigInspector } from "../../../mining_dashboard/web/static/sovereign/machines-inspector.mjs";
@@ -128,7 +129,7 @@ test("2, 50 and 100 rig fixtures keep find, sort and columns inside Advanced", (
 class Ready extends RigInspector {
   constructor(props) {
     super(props);
-    Object.assign(this.state, { phase: "ready", detail: props.detail, editText: "{}" });
+    Object.assign(this.state, { phase: "ready", detail: props.detail, editText: JSON.stringify(detailSnapshot(props.detail), null, 2) });
   }
 }
 const detail = (extra = {}) => ({
@@ -138,7 +139,7 @@ const detail = (extra = {}) => ({
   history: [{ ts: 1 }], hashrate_by_config: [{ version: 1 }], ...extra,
 });
 const inspect = (extra = {}, worker = { name: "rig", status: "online", h60: 100, adopted: true, accepted_str: "7", rejected_str: "1" }) =>
-  renderToString(html`<${Ready} name="rig" writable=${extra.writable ?? true} worker=${worker} detail=${detail(extra)} />`);
+  renderToString(html`<${Ready} name="rig" writable=${extra.writable ?? true} shared=${extra.shared ?? 1} worker=${worker} detail=${detail(extra)} />`);
 
 test("the inspector shows health outside Advanced and no chart ranges or change history", () => {
   assert.deepEqual(rigHealth(detail()), { average: "133.33 H/s", lastSeen: 2000 });
@@ -161,6 +162,11 @@ test("the inspector offers only the controls the rig is authorized for", () => {
   assert.match(unmanaged, /Manage this rig/);
   assert.doesNotMatch(unmanaged, /Apply to rig|Upgrade rig/);
   assert.match(inspect({ rigforge_update: null }), /on the latest release it reports/);
+  const shared = inspect({ shared: 2 });
+  assert.match(shared, /2 rigs report the name rig/);
+  assert.doesNotMatch(shared, /Apply to rig|Upgrade rig|Manage this rig/);
+  const dirtyOffline = renderToString(html`<${class extends Ready { constructor(props) { super(props); this.state.tableEdits = { DONATION: "2" }; } }} name="rig" writable=${false} shared=${1} worker=${{ name: "rig" }} detail=${detail()} />`);
+  assert.match(dirtyOffline, /<button type="button" disabled>Apply to rig<\/button>.*Unsaved.*Apply is unavailable while disconnected/s);
   const offline = inspect({ writable: false });
   assert.match(offline, /unavailable while disconnected or signed out/);
   assert.doesNotMatch(offline, /Apply to rig|Upgrade rig|Manage this rig/);
@@ -192,6 +198,12 @@ test("a poll refreshes the inspector quietly, never over an edit, and an adopt k
     assert.deepEqual(inspector.state.tableEdits, { DONATION: "2" });
     await inspector.load();
     assert.deepEqual(inspector.state.tableEdits, {});
+    globalThis.fetch = async () => ({ ok: false, status: 502 });
+    await inspector.load(true);
+    assert.equal(inspector.state.stale, false);
+    await inspector.load();
+    assert.equal(inspector.state.stale, true);
+    assert.match(renderToString(inspector.render()), /could not be refreshed/);
   } finally {
     globalThis.fetch = original;
   }

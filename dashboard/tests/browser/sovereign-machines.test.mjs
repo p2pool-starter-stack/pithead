@@ -41,6 +41,7 @@ for (const theme of ["light", "dark"]) {
         hashrate_history: { hashrate: [{ x: 1735689600000, y: 1370 }], markers: [] },
       }),
     );
+    await page.clock.install();
     await page.setViewportSize({ width: 375, height: 800 });
     const started = Date.now();
     await ui.openPreview("?page=machines");
@@ -85,6 +86,12 @@ for (const theme of ["light", "dark"]) {
     await expect(dialog.getByRole("button", { name: "Apply to rig" })).toBeHidden();
     await dialog.getByText("Advanced", { exact: true }).click();
     await expect(dialog.getByRole("button", { name: "Apply to rig" })).toBeVisible();
+    ui.state.workers = [
+      { name: "aaa-new", status: "online", h60: 5000, adopted: true },
+      ...ui.state.workers,
+    ];
+    await page.clock.fastForward(30000);
+    await expect(rows).toHaveCount(101);
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await expect(rig).toBeFocused();
@@ -92,6 +99,6 @@ for (const theme of ["light", "dark"]) {
     await main.locator(".list-advanced summary").click();
     await main.getByRole("searchbox", { name: "Find a rig" }).fill("rig-dup");
     await expect(rows).toHaveCount(10);
-    await expect(main.getByText("10 of 100 rigs match.")).toBeVisible();
+    await expect(main.getByText("10 of 101 rigs match.")).toBeVisible();
   });
 }

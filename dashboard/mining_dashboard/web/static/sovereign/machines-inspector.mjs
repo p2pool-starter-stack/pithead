@@ -27,16 +27,19 @@ export class RigInspector extends WorkerInspect {
       const response = await fetch(
         `/api/worker?name=${encodeURIComponent(this.props.name)}&range=24h`,
       );
-      if (!response.ok) return;
+      if (!response.ok) throw new Error();
       const detail = await response.json();
       if (passive && (this.state.busy || this.isDirty())) return;
       this.setState({
+        stale: false,
         detail,
         editText: JSON.stringify(detailSnapshot(detail), null, 2),
         tableEdits: {},
         jsonError: null,
       });
-    } catch {}
+    } catch {
+      if (!passive) this.setState({ stale: true });
+    }
   }
 
   render() {
@@ -60,7 +63,14 @@ export class RigInspector extends WorkerInspect {
     const health = rigHealth(detail);
     const version = detail.rigforge?.version;
     const latest = detail.rigforge_update?.latest;
-    return html`<dl class="rig-health">
+    const shared = this.props.shared > 1;
+    return html`${
+      shared
+        ? html`<p role="note">${this.props.shared} rigs report the name ${this.props.name}. Status and shares are for the rig you opened; the rest is for the first rig the host lists with that name, so changes are off until each rig has its own name.</p>`
+        : null
+    }
+      ${this.state.stale ? html`<p role="alert">This rig could not be refreshed, so the details below may be out of date.</p>` : null}
+      <dl class="rig-health">
         <div><dt>Status</dt><dd>${row.status}${row.note ? ` · ${row.note}` : ""}</dd></div>
         <div><dt>Last seen mining</dt><dd>${health.lastSeen ? new Date(health.lastSeen).toLocaleString() : "Not recorded in the last 24 hours"}</dd></div>
         <div><dt>Software</dt><dd>${
@@ -81,7 +91,9 @@ export class RigInspector extends WorkerInspect {
   renderAdvanced(detail) {
     if (!detail.control_enabled)
       return html`<p>Rig control is off. Turn on the editor in Settings to update, adopt or configure rigs.</p>`;
-    if (!this.props.writable)
+    if (this.props.shared > 1)
+      return html`<p>Give each rig its own name to update, adopt or configure it from here.</p>`;
+    if (!this.props.writable && !this.isDirty())
       return html`<p>Rig changes are unavailable while disconnected or signed out.</p>`;
     if (!detail.editable)
       return html`<h3>Manage this rig</h3>
@@ -115,8 +127,9 @@ export class RigInspector extends WorkerInspect {
             <label>Load from file <input type="file" accept="application/json,.json" disabled=${busy}
               onChange=${(event) => this.onFilePick(event)} /></label>`
       }
-      <button type="button" disabled=${busy} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
+      <button type="button" disabled=${busy || !this.props.writable} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
       ${!busy && this.isDirty() ? html`<p>Unsaved: apply before closing, or the change is lost.</p>` : null}
+      ${!this.props.writable ? html`<p role="alert">Apply is unavailable while disconnected or signed out.</p>` : null}
       <${StatusLine} result=${result} />`;
   }
 }

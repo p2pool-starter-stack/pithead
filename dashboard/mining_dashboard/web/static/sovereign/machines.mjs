@@ -97,7 +97,7 @@ export class MachinesPage extends Component {
         <ul class="rig-list">${rows.map(
           (
             row,
-          ) => html`<li key=${`${row.index}:${row.name}`}><button type="button" class=${`rig-row${row.attention ? " rig-attention" : ""}`}
+          ) => html`<li key=${row.key}><button type="button" class=${`rig-row${row.attention ? " rig-attention" : ""}`}
             onClick=${(event) => {
               this.opener = event.currentTarget;
               this.setState({ inspect: { ...row, worker: workers[row.index] } });
@@ -114,6 +114,7 @@ export class MachinesPage extends Component {
       ${
         inspect
           ? html`<${RigInspector} name=${inspect.name} writable=${writable}
+            shared=${workers.filter((worker) => worker?.name === inspect.name).length}
             worker=${findRig(workers, inspect.name, inspect.occurrence) || inspect.worker} onClose=${() => this.close()} />`
           : null
       }
