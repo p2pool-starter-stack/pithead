@@ -9,7 +9,9 @@ import (
 
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/charts"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/domain"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/infra"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/runtime"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/series"
 )
 
 func main() {
@@ -22,6 +24,12 @@ func main() {
 			err = domain.Run(os.Stdin, os.Stdout)
 		case "average":
 			err = domain.RunAverage(os.Stdin, os.Stdout)
+		case "average-stream":
+			err = domain.RunAverageStream(os.Stdin, os.Stdout)
+		case "infra":
+			err = infra.Run(os.Stdin, os.Stdout)
+		case "series":
+			err = series.Run(os.Stdin, os.Stdout)
 		default:
 			os.Exit(125)
 		}

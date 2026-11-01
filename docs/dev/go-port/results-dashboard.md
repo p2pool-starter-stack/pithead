@@ -148,3 +148,70 @@ confirm the final tested implementation and new comparisons remain unchanged.
 Existing tests, fixtures and Make behavior remain unchanged. The new Make target
 adds the state/JSON slice; the prior transport target still passes unchanged.
 Earlier HTTP-foundation evidence is preserved in the linked dashboard ledger.
+
+## Native dashboard domain slice (2026-11-01)
+
+Go now computes domain metrics for `/api/state` and `/metrics`: P2Pool and XvB
+routed averages, credited tiers, sustainable donation thresholds, worker counts,
+PPLNS shares/weight, cadence/luck, sync and stale-state values. Prometheus reject
+percentages also use Go. Raw numeric values and Python float types are preserved
+across the private protocol. Config helpers still supply each node's locality.
+
+For state requests, Python collects one history/snapshot input, Go calculates
+metrics, and a private POST returns those metrics and that history to Python for
+the remaining presentation sections. Go then computes the chart and writes the
+public JSON. Production handlers do not spawn helper processes per request.
+Private calls retain the existing literal-loopback transport, no redirects or
+browser headers, and 64 MiB bounds. Public `/_go/*` routes remain unavailable.
+Unsupported inputs retain Python fallback; collection failures stay sanitized.
+Share-weight and sync-height integer overflow refuses native processing.
+
+This remains a hybrid backend. Python owns all polling, SQLite, the remaining
+state presentation, wizard/control services and config collection. Normal
+container launch remains Python. Startup on existing/corrupt databases is still
+Python behavior; there is no native storage or full Go backend verdict yet.
+No performance claim is made; the separate performance work is untouched.
+
+The new metrics plugin layers over the unchanged state/HTTP adapters. It sends
+direct metrics and average calls to Go, reconstructing the existing dataclasses;
+all existing tests and fixtures stay unchanged. New comparisons retain the real
+Python average functions for the expected result. A guard makes all Python
+`build_metrics` aliases raise while both public routes still succeed, proving
+native computation through the production bridge.
+
+Baseline is `PITHEAD_IMPL=python make test-dashboard`. Go runs the same target
+with `PITHEAD_IMPL=go`, `PYTEST_PLUGINS=dashboard_metrics_plugin` and `PYTHONPATH`
+containing the absolute `tests/go-parity` and `dashboard` directories. Logs and
+command/exit records are private under `.go-cache/logs/dashboard-state-domain-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-dashboard` | Pass; 3716 unchanged tests, 96.80% Python coverage | Pass; same 3716 tests, 89.59% Python coverage through the metrics adapter |
+| `pytest -q dashboard/tests/service/test_metrics.py dashboard/tests/web/test_server_state_api.py dashboard/tests/web/test_server_metrics_endpoint.py` using the locked interpreter | Pass; 65 tests | Included unchanged in the full Go suite and focused target |
+| `make test-go-dashboard-domain-parity` | Original Python compared in the new cases; selected modules included above | Pass; 121 unchanged metrics/chart/route tests plus 34 comparisons, 155 total |
+| `make test-go-dashboard-state-parity test-go-dashboard-http-parity` | Prior baseline retained in the dashboard ledger | Pass; prior 92 and 26 cases unchanged |
+| `make test-patch-coverage` after the Go suite | Not separately rerun | Pass; 90% over the tracked branch diff; untracked new files are outside this pre-commit diff |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend test-fakes` with the starting-SHA budget override | Pass; 891 frontend tests and 54 fake-daemon contracts | Same result; fakes exercise Python clients |
+| `make test` | Exit 2 at unchanged `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 third-party cache Markdown findings | Same result |
+
+The full Go suite caught the separate config-helper locality contract; the
+implementation now honors it without changing that test. Review also found null
+timestamps silently treated as zero; Go now refuses those rows and new HTTP
+regressions prove the reference 500 behavior. Protocol decoding also refuses
+null scalar config/clock values while preserving nullable Tari locality. The helper lookup and a new
+comparison's expected display string were corrected too.
+
+Native checks pass: `go -C go test -race -count=1 ./internal/dashboard/...`,
+`go -C go test ./...`, `go -C go vet ./...` and `GOOS=linux GOARCH=amd64
+go -C go build -o ../.go-cache/dashboard-domain-linux-amd64 ./cmd/dashboard`
+(compile only). All 645 Python files pass locked Ruff lint/formatting; changed
+Markdown passes the pinned linter. Python coverage measures the reference and
+bridge, not Go; the new input module has 100% measured Python line coverage.
+The locked environment is restored with both dev/test extras.
+
+Independent security and adversarial reviews pass after the failure-path fixes.
+Source checksums and the final audit verify unchanged existing tests, fixtures,
+bench-owned paths and prior Make behavior; only the new target is added. Every
+new file stays below 400 lines. Earlier chart/JSON and transport results remain
+in the [dashboard ledger](results-dashboard.md).

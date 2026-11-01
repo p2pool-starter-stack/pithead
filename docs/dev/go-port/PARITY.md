@@ -162,7 +162,9 @@ selection is not implemented.
 | Miner connection, XvB standby and Prometheus routes | Native payload/exposition with Go domain computation and Python config/storage inputs; compatibility fallback | Unchanged route suites and new native-ownership comparisons; full backend remains hybrid |
 | `/api/state` history chart | Native filtering, downsampling, gaps and markers; Python storage and other state sections | Unchanged chart/state suites through new adapter, supplementary oracle comparisons and Go units |
 | Dashboard domain metrics | Native for state and Prometheus requests; Python supplies config/locality and stored/raw snapshots | All 55 unchanged metrics/average tests through the Go adapter, native-ownership guard and Go units |
-| Remaining state presentation, polling and Tor | Python reference behind Go HTTP routing | Reference tests retained; no native polling or complete state proof |
+| History series and headline cards | Native filtering/buckets, payouts, hashrate and cadence; Python storage/config inputs | Unchanged series/state suites through the views adapter, comparisons and Go units |
+| System/proxy/Tari/sync/Monero presentation | Native five builders; Python raw snapshots and remaining state assembly | Unchanged infrastructure/Monero/location suites, HTTP ownership guard and Go units |
+| Remaining state presentation, polling and Tor | Python reference behind Go HTTP routing | Workers/energy/earnings and other metadata remain Python; no native polling or complete state proof |
 | SQLite schema, migrations and recovery | Python reference, including Go server child | Full unchanged suite passes in hybrid mode; native storage not ported |
 | Wizard launch and control channel | Bash/Python reference | Not ported |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
@@ -185,72 +187,93 @@ Detailed paired commands, results and limits are preserved in
 [configuration publication results](results-config-publication.md) and
 [dashboard HTTP results](results-dashboard.md).
 
-## Native dashboard domain slice (2026-11-01)
+## Native dashboard presentation slice (2026-11-01)
 
-Go now computes domain metrics for `/api/state` and `/metrics`: P2Pool and XvB
-routed averages, credited tiers, sustainable donation thresholds, worker counts,
-PPLNS shares/weight, cadence/luck, sync and stale-state values. Prometheus reject
-percentages also use Go. Raw numeric values and Python float types are preserved
-across the private protocol. Config helpers still supply each node's locality.
+Go now formats system, proxy summary, Tari, sync and Monero sections. It also
+builds share/reject series, blocks, payouts, disk growth, XvB history, hashrate
+and cadence. Series filtering, summed delta buckets and averaged gauge buckets
+retain Python's window bounds, ordering, null/default values and rounding.
+Both payout confirmation flags still gate the original storage reads.
 
-For state requests, Python collects one history/snapshot input, Go calculates
-metrics, and a private POST returns those metrics and that history to Python for
-the remaining presentation sections. Go then computes the chart and writes the
-public JSON. Production handlers do not spawn helper processes per request.
-Private calls retain the existing literal-loopback transport, no redirects or
-browser headers, and 64 MiB bounds. Public `/_go/*` routes remain unavailable.
-Unsupported inputs retain Python fallback; collection failures stay sanitized.
-Share-weight and sync-height integer overflow refuses native processing.
+Infrastructure sections are computed beside native domain metrics, then handed
+to the Python state assembler. Python captures raw series inputs; Go builds the
+final fields and chart before writing public JSON. There is no per-request
+helper subprocess. The Monero result also supplies the sync card's database
+size, so the two sections share the same native value. Private series fields
+and operations are explicitly paired; malformed inputs retain Python fallback.
 
-This remains a hybrid backend. Python owns all polling, SQLite, the remaining
-state presentation, wizard/control services and config collection. Normal
-container launch remains Python. Startup on existing/corrupt databases is still
-Python behavior; there is no native storage or full Go backend verdict yet.
-No performance claim is made; the separate performance work is untouched.
+This remains a hybrid backend. Workers, RigForge, energy, host resources,
+earnings/badges, pool/network formatting and other state metadata remain Python.
+The production mode palette still supplies tokens from Python; its Go helper is
+covered by unchanged direct tests. Polling, SQLite, wizard/control and normal
+container launch remain Python. Native startup on existing/corrupt databases,
+container selection and a full Go backend are not yet proved. No performance
+claim is made; the separate performance work is untouched.
 
-The new metrics plugin layers over the unchanged state/HTTP adapters. It sends
-direct metrics and average calls to Go, reconstructing the existing dataclasses;
-all existing tests and fixtures stay unchanged. New comparisons retain the real
-Python average functions for the expected result. A guard makes all Python
-`build_metrics` aliases raise while both public routes still succeed, proving
-native computation through the production bridge.
+The new views adapter layers over prior metrics/state/HTTP adapters and invokes
+Go for the existing direct builders and private series helpers, preserving their
+signatures and existing dataclasses/namespaces. New comparisons restore the
+original Python call graph for expected results. An HTTP ownership guard makes
+Python metrics, infrastructure and final series builders raise while native
+`/api/state` still succeeds. Existing tests, fixtures and browser assets stay
+unchanged. Go units cover handoff consistency and malformed-field fallback.
+The adapter initializes the views facade under pytest-cov before collection,
+then restores its Go bindings; the coverage gates remain unchanged.
+This fixes an initial 87% patch-coverage failure caused by facade imports before
+coverage started; the reference aliases and native dispatch remain the same.
 
-Baseline is `PITHEAD_IMPL=python make test-dashboard`. Go runs the same target
-with `PITHEAD_IMPL=go`, `PYTEST_PLUGINS=dashboard_metrics_plugin` and `PYTHONPATH`
-containing the absolute `tests/go-parity` and `dashboard` directories. Logs and
-command/exit records are private under `.go-cache/logs/dashboard-state-domain-*`.
+Baseline uses `PITHEAD_IMPL=python make test-dashboard`. Go uses the same target
+with `PITHEAD_IMPL=go`, `PYTEST_PLUGINS=dashboard_views_plugin` and `PYTHONPATH`
+containing the absolute `tests/go-parity` and `dashboard` directories. Commands,
+exits and private logs are under `.go-cache/logs/dashboard-state-views-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-dashboard` | Pass; 3716 unchanged tests, 96.80% Python coverage | Pass; same 3716 tests, 89.59% Python coverage through the metrics adapter |
-| `pytest -q dashboard/tests/service/test_metrics.py dashboard/tests/web/test_server_state_api.py dashboard/tests/web/test_server_metrics_endpoint.py` using the locked interpreter | Pass; 65 tests | Included unchanged in the full Go suite and focused target |
-| `make test-go-dashboard-domain-parity` | Original Python compared in the new cases; selected modules included above | Pass; 121 unchanged metrics/chart/route tests plus 34 comparisons, 155 total |
-| `make test-go-dashboard-state-parity test-go-dashboard-http-parity` | Prior baseline retained in the dashboard ledger | Pass; prior 92 and 26 cases unchanged |
-| `make test-patch-coverage` after the Go suite | Not separately rerun | Pass; 90% over the tracked branch diff; untracked new files are outside this pre-commit diff |
-| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend test-fakes` with the starting-SHA budget override | Pass; 891 frontend tests and 54 fake-daemon contracts | Same result; fakes exercise Python clients |
-| `make test` | Exit 2 at unchanged `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
-| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 third-party cache Markdown findings | Same result |
+| `make test-dashboard` | Pass; 3716 unchanged tests, 96.58% Python coverage | Pass; same 3716 tests, 88.82% Python coverage through the views adapter |
+| `make test-go-dashboard-views-parity` | Original Python compared in new cases; selected modules included above | Pass; 157 unchanged tests and 27 comparisons |
+| `make test-go-dashboard-domain-parity test-go-dashboard-state-parity test-go-dashboard-http-parity` | Prior baselines retained in the dashboard ledger | Pass; 155, 92 and 26 tests respectively |
+| `uv run --locked --project dashboard --extra test python -m pytest -p dashboard_views_plugin dashboard/tests/service/xvb/test_numeric_properties.py` | Pass; 10 unchanged property tests | Pass; same 10 tests through the persistent Go average helper |
+| `make test-patch-coverage` after the Go suite | Not separately rerun | Pass; 91% over the tracked branch diff; new untracked files are outside this pre-commit diff |
 
-The full Go suite caught the separate config-helper locality contract; the
-implementation now honors it without changing that test. Review also found null
-timestamps silently treated as zero; Go now refuses those rows and new HTTP
-regressions prove the reference 500 behavior. Protocol decoding also refuses
-null scalar config/clock values while preserving nullable Tari locality. The helper lookup and a new
-comparison's expected display string were corrected too.
+The unchanged cadence tests caught zero timestamps incorrectly formatted as an
+epoch time; they now remain `Never`. A new proxy comparison caught division
+rounded after multiplying by 100 instead of before it: 19,993 accepted and seven
+rejected must display `0.03%`. Both implementations now agree on that boundary.
+New cases cover falsy timestamps, large durations, millisecond timestamps beyond
+64 bits, exact integer buckets and cancellation above float precision. Invalid
+storage rows and numeric strings preserve the reference failure/fallback paths.
+The first Make invocation named a test in the wrong folder; the new target was
+corrected without changing the original suite.
 
-Native checks pass: `go -C go test -race -count=1 ./internal/dashboard/...`,
-`go -C go test ./...`, `go -C go vet ./...` and `GOOS=linux GOARCH=amd64
-go -C go build -o ../.go-cache/dashboard-domain-linux-amd64 ./cmd/dashboard`
-(compile only). All 645 Python files pass locked Ruff lint/formatting; changed
-Markdown passes the pinned linter. Python coverage measures the reference and
-bridge, not Go; the new input module has 100% measured Python line coverage.
-The locked environment is restored with both dev/test extras.
+Automatic-worker Go runs also hit 200 ms Hypothesis deadlines in the two average
+property tests; the failures reported elapsed time, not a value mismatch. With
+two workers, baseline passed 3716 and Go passed 3715; the unchanged Python
+trickled-read test took 4.6 seconds against its four-second bound. One worker
+still hit a 281 ms average-helper startup spike, replaying at 52 ms. The new
+adapter therefore keeps one Go average process per worker and sends every
+input to the unchanged native calculation, without memoization. Its stream
+protocol has new Go tests; the original one-shot helper and adapter stay intact.
+The final paired full runs use `PYTEST_XDIST_AUTO_NUM_WORKERS=1` in both modes.
+Assertions, examples, deadlines, coverage thresholds and Make recipes are unchanged.
 
-Independent security and adversarial reviews pass after the failure-path fixes.
-Source checksums and the final audit verify unchanged existing tests, fixtures,
-bench-owned paths and prior Make behavior; only the new target is added. Every
-new file stays below 400 lines. Earlier chart/JSON and transport results remain
-in the [dashboard ledger](results-dashboard.md).
+`go -C go test ./...`, `go -C go vet ./...` and
+`go -C go test -race -count=1 ./internal/dashboard/...` pass with local caches.
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/dashboard-views-linux-amd64
+./cmd/dashboard` also passes. Paired project
+checks pass for file budgets, CLI generation, documentation voice, paths,
+operator strings, 891 frontend tests and 54 fake-daemon tests. The file-budget
+check uses `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb`.
+Both selections ran `make lint-file-budget lint-pithead-build lint-docs-voice
+lint-path-references lint-operator-strings test-frontend test-fakes`.
+
+`make test` stops in unchanged `config_defaults_reference.sh` formatting in both
+modes. Separate Python, JavaScript and YAML lint passes in both modes; Markdown
+lint reports the same 22 third-party cache findings. The four changed Markdown
+files pass those same pinned rules separately; final scoped Ruff checks pass.
+No check was weakened.
+Independent security and correctness reviews passed. Python coverage measures
+the reference and bridge, not Go. Earlier transport, chart/JSON and domain results remain in the
+[dashboard ledger](results-dashboard.md).
 
 ## Unavailable and known host constraints
 
@@ -284,7 +307,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Port remaining state presentation sections and polling after native charts/domain computation.
+1. Port workers/energy, remaining state presentation and polling after native infrastructure/series.
 2. Port SQLite schema, migrations and corrupt-database recovery; prove startup on existing/corrupt databases.
 3. Port wizard/control, then implement the container selection switch with Python fallback.
 4. Return to remaining config/render/lifecycle operations, then CLI verbs starting with `upgrade`, `backup` and `restore`.

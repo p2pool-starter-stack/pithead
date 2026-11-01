@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/api"
-	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/charts"
 )
 
 type InputProvider func(context.Context, string, string) (json.RawMessage, error)
@@ -45,20 +44,7 @@ func (h *handler) serveData(w http.ResponseWriter, r *http.Request) {
 	var result any
 	switch operation {
 	case "state":
-		var input struct {
-			State map[string]json.RawMessage `json:"state"`
-			Chart charts.Input               `json:"chart"`
-		}
-		if err = json.Unmarshal(raw, &input); err == nil && input.State != nil {
-			var chart map[string]any
-			chart, err = charts.Build(input.Chart)
-			if err == nil {
-				input.State["chart"], err = json.Marshal(chart)
-				result = input.State
-			}
-		} else {
-			err = ErrInputsUnavailable
-		}
+		result, err = buildState(raw)
 	case "miner-connection":
 		var input api.MinerConnectionInput
 		if err = json.Unmarshal(raw, &input); err == nil {

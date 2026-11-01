@@ -373,3 +373,26 @@ comparisons and unchanged metrics/chart/JSON suites. Native runtime unit cases
 check the private GET/POST handoff, raw query/history preservation, reject
 percentages and failure boundaries. Polling, SQLite and remaining presentation
 still use Python and are not proved native by these adapters.
+
+## Native infrastructure and series presentation
+
+`dashboard_views_plugin.py` layers over the metrics/state/HTTP adapters, routing
+infrastructure builders and series helpers to Go. Signatures, fixtures,
+dataclasses/namespaces and gated payout reads stay intact. Comparisons restore
+the full Python builder graph for expected values.
+
+`dashboard_average_session.py` keeps one Go average helper per worker to remove
+process startup from property-test timing. Every input executes the unchanged
+native calculation; no answers are cached. Its JSON stream has timeouts, child
+cleanup and new Go tests. Existing helpers and adapters stay unchanged.
+
+Under pytest-cov, the adapter reloads the views facade after tracing starts and
+reapplies Go bindings before collection, recording previously untraced imports.
+Coverage data, thresholds and the original suites stay unchanged.
+
+`dashboard_views_compare.py` covers filtering, buckets, rounding, large numbers,
+falsy timestamps, payout gates, node health, cards and malformed input. An HTTP
+guard disables Python metrics, infrastructure and final series builders while
+state succeeds. `make test-go-dashboard-views-parity` includes unchanged views,
+location, metrics and JSON suites. Workers, energy, earnings, polling and storage
+remain Python; this does not prove a complete native backend.

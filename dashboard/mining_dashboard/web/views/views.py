@@ -16,16 +16,8 @@ import os
 import time
 
 from mining_dashboard.config import config
-from mining_dashboard.config.config import (
-    DEFAULT_HASHRATE_WINDOW,
-    HASHRATE_WINDOWS,
-    HOST_IP,
-)
-from mining_dashboard.helper.utils import (
-    format_duration,
-    format_hashrate,
-    format_time_abs,
-)
+from mining_dashboard.config.config import DEFAULT_HASHRATE_WINDOW, HASHRATE_WINDOWS, HOST_IP
+from mining_dashboard.helper.utils import format_duration, format_hashrate, format_time_abs
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.host_resources import build_host_resources
 from mining_dashboard.service.metrics import build_metrics
@@ -36,6 +28,8 @@ from mining_dashboard.version import resolve_version
 # The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two
 # are re-exported unused so `server.py`'s existing `from ...web.views import` keeps resolving.
 from mining_dashboard.web.miner_connection import stratum_state
+from mining_dashboard.web.views import infra_views as _infra_views
+from mining_dashboard.web.views import series_views as _series_views
 from mining_dashboard.web.views.charts import (
     _filter_events,  # noqa: F401 — re-export for worker_detail.py
     build_chart,
@@ -50,10 +44,6 @@ from mining_dashboard.web.views.infra_views import (
     _rigforge_display,  # noqa: F401 — re-export for worker_detail.py
     _shorten,
     build_energy,
-    build_proxy_summary,
-    build_sync,
-    build_system,
-    build_tari,
     build_workers,
     rigforge_update_for,  # noqa: F401 — re-export for worker_detail.py
 )
@@ -69,14 +59,6 @@ from mining_dashboard.web.views.monero_view import build_monero
 from mining_dashboard.web.views.series_views import (
     _gauge_series,  # noqa: F401 — re-export for worker_detail.py
     _mode_palette,
-    _window_reject_pct,
-    build_blocks,
-    build_cadence,
-    build_disk_growth,
-    build_hashrate,
-    build_payouts,
-    build_share_stats,
-    build_xvb_history,
 )
 
 # The XvB/earnings/badges cluster lives in web/views/xvb_views.py (#1105). views.py stays the facade:
@@ -94,6 +76,19 @@ from mining_dashboard.web.views.xvb_views import (
     xvb_realization,
     xvb_tempered_day,
 )
+
+build_proxy_summary = _infra_views.build_proxy_summary
+build_sync = _infra_views.build_sync
+build_system = _infra_views.build_system
+build_tari = _infra_views.build_tari
+_window_reject_pct = _series_views._window_reject_pct
+build_blocks = _series_views.build_blocks
+build_cadence = _series_views.build_cadence
+build_disk_growth = _series_views.build_disk_growth
+build_hashrate = _series_views.build_hashrate
+build_payouts = _series_views.build_payouts
+build_share_stats = _series_views.build_share_stats
+build_xvb_history = _series_views.build_xvb_history
 
 logger = logging.getLogger("WebViews")
 
@@ -138,7 +133,7 @@ def build_raffle_eligibility(metrics):
     return {"applies": True, "eligible": eligible, "label": "Yes" if eligible else "No"}
 
 
-def build_pool_network(data, metrics):
+def build_pool_network(data, metrics, monero_builder=None):
     """P2Pool / Stratum / Monero-network display values (computed bits come from Metrics)."""
     stratum = data.get("stratum", {})
     local_pool = data.get("pool", {}).get("pool", {})
@@ -187,7 +182,7 @@ def build_pool_network(data, metrics):
             "hash": _shorten(str(network.get("hash", "N/A")), threshold=20),
             "ts": format_time_abs(network.get("timestamp", 0)),
         },
-        "monero": build_monero(data, metrics),
+        "monero": (build_monero if monero_builder is None else monero_builder)(data, metrics),
         "shares_window": {"count": metrics.shares_in_window, "ok": metrics.shares_in_window > 0},
     }
 
@@ -250,6 +245,7 @@ def build_state(
     chart_builder=None,
     history=None,
     metrics=None,
+    section_builders=None,
 ):
     """Assemble the full ``/api/state`` payload — the contract the client renders against.
 
@@ -258,6 +254,10 @@ def build_state(
     window the chart plots. Computes domain values once (``build_metrics``), then
     formats each section. Every value is a JSON-serializable primitive, list or dict. May raise
     (e.g. ``state_mgr.get_history`` failing); the caller turns that into a sanitized 500."""
+
+    def section(name, *args):
+        return (section_builders or {}).get(name, globals()[name])(*args)
+
     data = data or {}
     history = state_mgr.get_history() if history is None else history
     share_stats = state_mgr.get_share_stats()  # per-poll share-health deltas (#116)
@@ -269,7 +269,7 @@ def build_state(
     metrics = build_metrics(data, state_mgr, history) if metrics is None else metrics
     db_healthy = state_mgr.is_db_healthy()
     mode_tok, p2p_tok, xvb_tok = _mode_palette(metrics.mode)
-    pool_net = build_pool_network(data, metrics)
+    pool_net = build_pool_network(data, metrics, (section_builders or {}).get("build_monero"))
     # Built once, consumed twice: the Earnings card reads the full payload, the expected-vs-actual
     # summary (#808) rolls the same figures up — one build, so the two can't disagree.
     earnings = build_earnings(
@@ -297,7 +297,6 @@ def build_state(
             xvb_wins_day,
             p2pool_day=earnings["coeff_day"] * metrics.p2pool_30d,
         )
-
     # Expected vs actual (#808) reads the published FACE value — it tempers its own XvB leg by
     # the measured factor and labels the untempered fallback face value in the tooltip — so it
     # is built before the calculator's copy is tempered below.
@@ -350,19 +349,19 @@ def build_state(
         "avg_windows": HASHRATE_WINDOWS,
         "badges": badges,
         "db_healthy": db_healthy,
-        "hashrate": build_hashrate(metrics, mode_tok, p2p_tok, xvb_tok),
-        "system": build_system(data),
+        "hashrate": section("build_hashrate", metrics, mode_tok, p2p_tok, xvb_tok),
+        "system": section("build_system", data),
         "host_resources": build_host_resources(
             data.get("system", {}).get("host_resources", {}), disk_growth
         ),
-        "sync": build_sync(metrics, pool_net["monero"]["db_size"]),
+        "sync": section("build_sync", metrics, pool_net["monero"]["db_size"]),
         "sync_status": data.get("sync_status"),
         "stratum": pool_net["stratum"],
         "pool": pool_net["pool"],
         "network": pool_net["network"],
         "monero": pool_net["monero"],
         "shares_window": pool_net["shares_window"],
-        "cadence": build_cadence(metrics),
+        "cadence": section("build_cadence", metrics),
         "raffle_eligible": build_raffle_eligibility(metrics),
         "raffle_wins": build_raffle_log(raffle_wins),
         "proxy_workers": metrics.workers_online,
@@ -377,16 +376,16 @@ def build_state(
         # standby, adopted only at failover. None on a single stack (nothing pulls). Inspectable so
         # an operator can confirm the backup is warm before it takes over.
         "xvb_standby": state_mgr.get_xvb_standby(),
-        "tari": build_tari(data),
+        "tari": section("build_tari", data),
         "workers": build_workers(data.get("workers", []), data.get("rigforge_release")),
         "energy": build_energy(data.get("workers", []), data.get("prices")),
-        "proxy_summary": build_proxy_summary(data),
-        "share_stats": build_share_stats(share_stats, range_arg, window),
-        "reject_pct_24h": _window_reject_pct(share_stats, 24 * 3600),
-        "blocks": build_blocks(state_mgr.get_blocks(), range_arg, window),
-        "payouts": build_payouts(state_mgr, range_arg, window),
-        "disk_growth": build_disk_growth(disk_growth, range_arg, window),
-        "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
+        "proxy_summary": section("build_proxy_summary", data),
+        "share_stats": section("build_share_stats", share_stats, range_arg, window),
+        "reject_pct_24h": section("_window_reject_pct", share_stats, 24 * 3600),
+        "blocks": section("build_blocks", state_mgr.get_blocks(), range_arg, window),
+        "payouts": section("build_payouts", state_mgr, range_arg, window),
+        "disk_growth": section("build_disk_growth", disk_growth, range_arg, window),
+        "xvb_history": section("build_xvb_history", state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,
         "chart": (build_chart if chart_builder is None else chart_builder)(
