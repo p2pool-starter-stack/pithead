@@ -87,6 +87,7 @@ run_reset_restore_fixture() {
     local before_config before_secrets archive out rc after_config after_secrets
     local failures_before="$IT_FAIL"
     it_step "encrypted backup → config-reset → restore without rendered configuration…"
+    post_op_begin
     before_config=$(rx 'sha256sum config.json') && before_secrets=$(upgrade_secret_fingerprints) || {
         it_fail "reset recovery captures configuration and secrets" "snapshot unreadable"
         return 1
@@ -210,6 +211,7 @@ run_reset_restore_fixture() {
     rr_web_ports_owned_by_dashboard "reset recovery" || return 1
     if wait_status_ok 600; then
         it_pass "stack healthy after encrypted restore following config-reset"
+        post_op_invariants "after reset recovery"
     else
         it_fail "stack healthy after encrypted restore following config-reset" "status did not recover"
         return 1

@@ -68,6 +68,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
+        post_op_begin() { :; }
+        post_op_invariants() { :; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
         dashboard_tls_identity() { printf identity; }

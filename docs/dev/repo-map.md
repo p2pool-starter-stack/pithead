@@ -123,6 +123,13 @@ original-byte cleanup and private recovery retention are exercised by
 `tests/integration/lib/reset-restore-web.sh`; consecutive status censuses are in
 `tests/integration/lib/readiness-churn.sh`.
 
+`post_op_invariants` in `tests/integration/lib/post-op-invariants.sh` runs after the lifecycle restart,
+backup restore and reset recovery steps. It asserts what a user sees, not only process health: every
+worker online before the step is online again, `failures_24h` is unchanged, the dashboard and not the
+setup page serves the web port with no wizard container, every running container keeps its Id,
+`StartedAt` and restart count for 60 seconds and is healthy, and on the appliance no pithead or xmrig
+unit has failed. A fault case per check is in `tests/integration/selftest/selftest-post-op-invariants.sh`.
+
 Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
 configuration removal, including suppressed RC4 diagnostics. `tests/os/selftest-reset-config-probe.sh`
