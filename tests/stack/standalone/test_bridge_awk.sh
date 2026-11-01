@@ -36,4 +36,4 @@ for bridge_awk in mawk gawk busybox; do
     source "$ROOT/tests/stack/dashboard/test-dashboard-bridge-bind.sh"
 done
 printf 'Bridge awk: %s passed, %s failed\n' "$PASS" "$FAIL"
-[ "$PASS" -eq 44 ] && [ "$FAIL" -eq 0 ]
+[ "$PASS" -eq 45 ] && [ "$FAIL" -eq 0 ]
