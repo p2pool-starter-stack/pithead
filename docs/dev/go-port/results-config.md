@@ -263,3 +263,54 @@ Scoped Markdown uses the original configuration:
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
   docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
 ```
+
+## Daemon network render plan slice (2026-11-01)
+
+Go derives the daemon addresses, Compose profiles, LAN bind addresses, pruning,
+clearnet flags, thread setting, peer target and P2Pool flags/ports in one plan.
+`lib/pithead/33b-go-env-network.sh` sends the config snapshot and validated remote
+globals over stdin; Go does not re-read the remote endpoints from the document.
+The Tor profile snapshot precedes payout profiles, matching Bash. This is config
+value derivation; it adds no network probe.
+
+Bash retains CPU discovery and its thread clamp, peer-count diagnostics, all
+remaining value derivation, secret-file preparation and writes. Unsupported JSON,
+compound values, ambiguous numeric formatting, failed producers and unavailable
+helpers use the original block. The fixed output fields are read into local
+variables without evaluating shell text. Existing tests and fixtures are unchanged.
+
+The unchanged raw-parser suite and v2.0.0 render fixture/goldens pass in both
+modes. The complete Linux CLI and Docker parser verdicts remain unavailable.
+Seven new Python tests supplement that oracle with whole-render, CPU-clamp,
+peer-error and private-frame cases. Supported fixtures require a successful native
+plan; poisoned complete plans with trailing bytes or fields must fall back.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
+and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
+Docker socket. Private command/status records use `.go-cache/logs/config-network-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-env-network-parity test-go-config-defaults-parity test-go-env-parity` | PASS, including unchanged render fixture/goldens and 7 new network tests | Same result; native plan separately verified |
+| `make test-go-config-defaults-parity test-go-config-document-parity test-go-config-validation-parity test-go-env-parity test-go-caddy-parity test-go-parity` | PASS, including unchanged raw parser suite | Same result |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
+| `make test-fakes` | PASS, 54 tests | Same result; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
+| `make test` | FAIL, existing `config_defaults_reference.sh` case indentation, pinned shfmt, exit 2 | Same failure; ShellCheck passes |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
+
+Native checks pass with canonical worktree cache/temp paths:
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+(compilation only). Generated-CLI and new-adapter ShellCheck/shfmt, Go formatting,
+locked Ruff and `git diff --check` pass. Source/security reviews pass after the
+helper reader was tightened to reject every trailing field or byte. The CPU and
+peer checks remain shared Bash code. Scoped Markdown uses the original rules:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
+```

@@ -26,6 +26,10 @@
 .PHONY: test-go-caddy-parity
 .PHONY: test-go-env-parity
 .PHONY: test-go-env-network-parity
+.PHONY: test-go-env-dashboard-parity
+
+test-go-env-dashboard-parity: go-build test-go ## Compare dashboard render values and unchanged render fixtures
+	python3 tests/go-parity/test_env_dashboard.py
 
 test-go-env-network-parity: go-build test-go ## Compare network render values and unchanged render fixtures
 	python3 tests/go-parity/test_env_network.py

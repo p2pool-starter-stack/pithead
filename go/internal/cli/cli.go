@@ -27,6 +27,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configEnv(args, os.Stdin, stdout)
 	case "config-env-network":
 		return configEnvNetwork(args, os.Stdin, stdout)
+	case "config-env-dashboard":
+		return configEnvDashboard(args, os.Stdin, stdout)
 	}
 	switch nativeCommand(args) {
 	case "help":

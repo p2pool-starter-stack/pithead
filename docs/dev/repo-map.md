@@ -159,8 +159,11 @@ ordered `.env` batch via `lib/pithead/33a-go-env-render.sh`.
 render fixture and goldens remain the oracle. `go/internal/config/env_network.go`
 derives daemon routing, profiles, binds and P2Pool settings via
 `lib/pithead/33b-go-env-network.sh`; `make test-go-env-network-parity` compares
-complete renders. Bash retains hardware discovery, remaining derived values,
-secret-file preparation and writes. Remaining typed checks stay Bash.
+complete renders. `env_dashboard.go`, `env_alerts.go` and `env_workers.go` derive
+the dashboard-facing CLI values and ordered worker token JSON through
+`lib/pithead/33c-go-env-dashboard.sh`; `make test-go-env-dashboard-parity` compares
+those settings with complete reference renders. Bash retains hardware discovery,
+memory calculation, secret-file preparation and writes. Remaining typed checks stay Bash.
 The owner's 2026-11-01 Go scope covers the CLI and dashboard backend only;
 appliance host scripts and container entrypoint ports are excluded.
 
