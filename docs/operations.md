@@ -466,17 +466,19 @@ sudo apt update && sudo apt upgrade
 ```
 
 This is the whole update. dpkg replaces the program tree in `/usr/share/pithead`, then the
-package's `postinst` copies it to `/var/lib/pithead`, verifies the new images' signatures and moves a
-set-up stack to them. A host that was never set up has no stack to move. If an image fails
-verification, no container is recreated and the stack keeps running; apt reports `pithead` as not
-fully configured, and `sudo dpkg --configure -a` (or the next `sudo apt upgrade`) retries the move.
+package's `postinst` copies it to `/var/lib/pithead`, verifies the new images' signatures first and
+then moves the running stack to them. A host that was never set up, or whose stack is stopped, has no
+running stack to move, and the upgrade leaves it stopped. If an image fails verification, nothing is
+changed and the stack keeps running; apt reports `pithead` as not fully configured, and
+`sudo dpkg --configure -a` retries the move.
 
 An APT install has no in-app updater. The dashboard and `pithead status` name the apt command when a
 newer release exists, `pithead upgrade` refuses and names it, and the dashboard's upgrade request
 answers 409. `pithead status` reads apt's local package lists, so it knows about a release only after
 `sudo apt update`.
 
-`sudo apt remove pithead` stops the stack and deletes the program tree and the `pithead` command.
+`sudo apt remove pithead` stops the stack (if it cannot, it says so and the removal continues) and
+deletes the program tree and the `pithead` command.
 Configuration, backups and chain data in `/var/lib/pithead` and your data directories stay.
 `sudo apt purge pithead` additionally removes the program files the package copied to
 `/var/lib/pithead`, never `config.json`, `.env`, backups, or chain, Tor, wallet or dashboard data.

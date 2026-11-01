@@ -174,6 +174,7 @@ stack_upgrade() {
     if is_apt_install && [ "${PITHEAD_APT_POSTINST:-0}" != "1" ]; then
         error "This install is owned by the pithead APT package: update it with '$APT_UPDATE_COMMAND'. The package moves the running stack to the new images itself."
     fi
+    ! is_apt_install || verify_release_images
     mutation_lock_acquire upgrade
     log "Upgrading stack (rebuilding containers)..."
     # A release (git pull) may change config templates, add/rename .env vars, or restructure the

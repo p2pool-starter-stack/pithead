@@ -16,12 +16,12 @@ bad() {
     FAIL=$((FAIL + 1))
     printf '  FAIL %s\n' "$1"
 }
-check() { # <label> <command...>
+check() {
     local label=$1
     shift
     if "$@" >/dev/null 2>&1; then ok "$label"; else bad "$label"; fi
 }
-refuse() { # <label> <command...>
+refuse() {
     local label=$1
     shift
     if "$@" >/dev/null 2>&1; then bad "$label"; else ok "$label"; fi
@@ -46,7 +46,7 @@ WORK=$(mktemp -d)
 chmod 755 "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 
-make_bundle() { # <version> <extra-file> <fail-flag-aware 0|1>
+make_bundle() {
     local version=$1 extra=$2 dir="$WORK/b$1/pithead"
     mkdir -p "$dir/build/tor" "$dir/docs"
     printf '%s\n' "$version" >"$dir/VERSION"
@@ -85,6 +85,8 @@ check "the program tree is synced" test -f "$STATE/build/tor/torrc.template"
 [ ! -s "$LOG" ] && ok "a host that was never set up gets no stack move" || bad "a host that was never set up gets no stack move"
 
 echo "== upgrade =="
+printf '#!/bin/sh\necho running\n' >/usr/local/bin/docker
+chmod 755 /usr/local/bin/docker
 printf 'DEPLOYMENT_COMPLETED=true\n' >"$STATE/.env"
 printf '{}\n' >"$STATE/config.json"
 mkdir -p "$STATE/data/chain"
@@ -104,12 +106,22 @@ rm -f "$STATE/.fail-upgrade"
 check "dpkg --configure -a retries the move" dpkg --configure -a
 dpkg -s pithead 2>/dev/null | grep -q '^Status: install ok installed' && ok "the package is configured after the retry" || bad "the package is configured after the retry"
 
+echo "== reconfigure =="
+: >"$LOG"
+DEBIAN_FRONTEND=noninteractive dpkg-reconfigure pithead >/dev/null 2>&1
+grep -qx "upgrade|1|$STATE" "$LOG" && ok "dpkg-reconfigure moves the stack again" || bad "dpkg-reconfigure moves the stack again"
+printf '#!/bin/sh\n' >/usr/local/bin/docker
+: >"$LOG"
+check "dpkg-reconfigure succeeds when no stack is running" env DEBIAN_FRONTEND=noninteractive dpkg-reconfigure pithead
+[ ! -s "$LOG" ] && ok "a stopped stack is not started by the package" || bad "a stopped stack is not started by the package"
+
 echo "== remove =="
 : >"$LOG"
 check "apt removes the package" apt-get remove -y pithead
 grep -q '^down|' "$LOG" && ok "remove stops the stack" || bad "remove stops the stack"
 refuse "the program tree is gone" test -e /usr/share/pithead
 refuse "the wrapper is gone" test -e /usr/bin/pithead
+rm -f /usr/local/bin/docker
 check "configuration survives remove" test -f "$STATE/config.json"
 check "chain data survives remove" test -f "$STATE/data/chain/blk"
 
@@ -119,6 +131,19 @@ refuse "the synced program is removed" test -e "$STATE/pithead"
 check "configuration survives purge" test -f "$STATE/config.json"
 check "the environment file survives purge" test -f "$STATE/.env"
 check "chain data survives purge" test -f "$STATE/data/chain/blk"
+
+echo "== real CLI =="
+[ -x "$ROOT/pithead" ] || bash "$ROOT/scripts/build-pithead.sh" >/dev/null 2>&1
+make_bundle 1.0.3 real.md
+cp "$ROOT/pithead" "$WORK/b1.0.3/pithead/pithead"
+tar -czf "$WORK/bundle-1.0.3.tar.gz" -C "$WORK/b1.0.3" pithead
+bash "$APT" deb "$WORK/bundle-1.0.3.tar.gz" 1.0.3 "$WORK/real_1.0.3_amd64.deb"
+check "the real CLI installs" apt-get install -y "$WORK/real_1.0.3_amd64.deb"
+printf 'DEPLOYMENT_COMPLETED=true\n' >"$STATE/.env"
+out=$(/usr/bin/pithead upgrade 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] && grep -q "sudo apt update && sudo apt upgrade" <<<"$out" && ok "pithead upgrade refuses and names the apt command" || bad "pithead upgrade refuses and names the apt command"
+check "the real CLI is purged" apt-get purge -y pithead
 
 echo "== signed feed =="
 export GNUPGHOME="$WORK/gnupg"
@@ -130,7 +155,7 @@ bash "$APT" feed "$V3" "$WORK/feed" "$FPR"
 check "the feed verifies against the pinned key" bash "$APT" verify "$WORK/feed" "$WORK/pinned.asc" "$FPR"
 refuse "a different pinned fingerprint is refused" bash "$APT" verify "$WORK/feed" "$WORK/pinned.asc" 0000000000000000000000000000000000000000
 
-apt_probe() { # <feed-dir> <key> <download-dir>
+apt_probe() {
     local feed=$1 key=$2 dl=$3 state="$WORK/aptstate"
     rm -rf "$state" "$dl"
     mkdir -p "$state/lists/partial" "$dl"

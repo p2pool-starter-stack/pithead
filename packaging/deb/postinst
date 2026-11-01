@@ -13,7 +13,9 @@ if [ -f "$manifest" ]; then
 fi
 cp -a "$SRC/." "$DST/"
 mv "$manifest.new" "$manifest"
-if [ -f "$DST/.env" ] && grep -q '^DEPLOYMENT_COMPLETED=.\{0,1\}true' "$DST/.env"; then
+if [ -f "$DST/.env" ] && grep -qx 'DEPLOYMENT_COMPLETED=true' "$DST/.env" &&
+    command -v docker >/dev/null 2>&1 &&
+    [ -n "$(docker ps -q --filter label=com.docker.compose.project=pithead 2>/dev/null)" ]; then
     (cd "$DST" && PITHEAD_APT_POSTINST=1 ./pithead upgrade)
 fi
 exit 0

@@ -122,11 +122,6 @@ dashboard_sync_progress() {
     done <<<"$rows"
 }
 
-# Show the compose table, then health-check every service we expect to be running and warn
-# about anything that isn't. Returns non-zero if any service needs attention (handy for cron).
-# Profile-aware (the bundled monerod only counts in local-node mode), and aware that a stopped
-# p2pool/xmrig-proxy can be intentional: reject-workers (#31) stops xmrig-proxy when a node is
-# down, and the sync hold (#35) stops both until the required chains finish their initial sync.
 apt_update_notice() {
     is_apt_install || return 0
     local policy installed candidate
@@ -138,6 +133,11 @@ apt_update_notice() {
     warn "Pithead $candidate is available (installed: $installed). Update with: $APT_UPDATE_COMMAND"
 }
 
+# Show the compose table, then health-check every service we expect to be running and warn
+# about anything that isn't. Returns non-zero if any service needs attention (handy for cron).
+# Profile-aware (the bundled monerod only counts in local-node mode), and aware that a stopped
+# p2pool/xmrig-proxy can be intentional: reject-workers (#31) stops xmrig-proxy when a node is
+# down, and the sync hold (#35) stops both until the required chains finish their initial sync.
 stack_status() {
     apt_update_notice
     docker compose ps || true

@@ -42,3 +42,39 @@ assert_rc "pithead upgrade on an APT install is refused" "$?" "1"
 assert_contains "the CLI refusal names the apt command" "$out" "sudo apt update && sudo apt upgrade"
 out="$(cd "$APTI" && PATH="$APTI/bin:$PATH" PITHEAD_APT_POSTINST=1 ./pithead upgrade 2>&1)"
 assert_not_contains "the package's own stack move is not refused" "$out" "owned by the pithead APT package"
+
+apti_order() {
+    (
+        cd "$APTI" || exit
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        export PITHEAD_APT_POSTINST=1
+        require_env() { echo render; }
+        mutation_lock_acquire() { echo lock; }
+        verify_release_images() {
+            echo verify
+            error "gate refused"
+        }
+        stack_upgrade
+    ) 2>&1 | grep -xE 'verify|render|lock' | tr '\n' ','
+}
+assert_eq "the package's stack move verifies the images before it takes the lock or renders anything" "$(apti_order)" "verify,"
+
+mkdir -p "$APTI/aptbin"
+printf '#!/bin/sh\nprintf "pithead:\\n  Installed: 2.0.0\\n  Candidate: %%s\\n" "$APT_CAND"\n' >"$APTI/aptbin/apt-cache"
+printf '#!/bin/sh\n[ "$2" != "$4" ]\n' >"$APTI/aptbin/dpkg"
+chmod +x "$APTI/aptbin/apt-cache" "$APTI/aptbin/dpkg"
+apti_notice() { # <candidate>
+    (
+        cd "$APTI" || exit
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        PATH="$APTI/aptbin:$PATH" APT_CAND="$1" apt_update_notice
+    ) 2>&1
+}
+assert_contains "status names the apt command when the candidate is newer" "$(apti_notice 2.1.0)" "sudo apt update && sudo apt upgrade"
+assert_eq "status says nothing when the candidate is the installed version" "$(apti_notice 2.0.0)" ""
+rm -f "$APTI/PITHEAD_PACKAGE"
+assert_eq "status says nothing on an install that is not APT-owned" "$(apti_notice 2.1.0)" ""

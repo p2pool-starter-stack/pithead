@@ -18,7 +18,7 @@ apt_die() {
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGING="$HERE/../../packaging"
 
-apt_deb() { # <bundle> <version> <out>
+apt_deb() {
     local bundle=$1 version=$2 out=$3 root
     [ -f "$bundle" ] || apt_die "no bundle at $bundle"
     [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || apt_die "package version must be a stable X.Y.Z, got '$version'"
@@ -50,7 +50,7 @@ CONTROL
     dpkg-deb --root-owner-group --build "$root" "$out" >/dev/null
 }
 
-apt_feed() { # <deb> <out-dir> <fingerprint>
+apt_feed() {
     local deb=$1 out=$2 fpr=$3
     [ -f "$deb" ] || apt_die "no package at $deb"
     gpg --batch --list-secret-keys "$fpr" >/dev/null 2>&1 || apt_die "the secret key $fpr is not available"
@@ -69,7 +69,7 @@ apt_feed() { # <deb> <out-dir> <fingerprint>
     )
 }
 
-apt_verify() { # <feed-dir> <pinned.asc> <fingerprint>
+apt_verify() {
     local feed=$1 pinned=$2 want status home fpr
     want=$(printf '%s' "$3" | tr -d ' ' | tr '[:lower:]' '[:upper:]')
     [[ "$want" =~ ^[0-9A-F]{40}$ ]] || apt_die "the pinned fingerprint must be 40 hex digits"

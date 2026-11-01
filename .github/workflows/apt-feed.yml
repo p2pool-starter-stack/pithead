@@ -32,12 +32,13 @@ jobs:
           persist-credentials: false
       - name: Install packaging tools
         run: sudo apt-get update && sudo apt-get install -y apt-utils
-      - name: Require a published stable release
+      - name: Require the latest published stable release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease -q '.isDraft or .isPrerelease')" = false
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" -q .tag_name)" = "$RELEASE_TAG"
       - name: Download the feed and the release package
         env:
           GH_TOKEN: ${{ github.token }}
