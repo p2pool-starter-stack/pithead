@@ -64,12 +64,12 @@ safety_backup() {
     done
     wait_status_ok 240 || {
         it_fail "stack recovered after safety backup" "pithead status did not become healthy"
+        _SAFETY_RECOVERING=1
         local recovery_dir="$OUT_DIR/safety-backup-recovery"
         if mkdir -p "$recovery_dir"; then
             rx "docker compose ps" 2>&1 | redact >"$recovery_dir/compose-ps.txt" || true
             rx "$IT_PITHEAD status" 2>&1 | redact >"$recovery_dir/health-check.txt" || true
         fi
-        _SAFETY_RECOVERING=1
         safety_restore_exact && safety_cleanup || true
         _SAFETY_RECOVERING=0
         return 1

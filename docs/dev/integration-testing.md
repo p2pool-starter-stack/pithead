@@ -631,7 +631,8 @@ The wrapper still takes its canonical rollback backup,
 deploys the candidate, checks readiness and restores the baseline. The candidate harness
 runs only its safety backup, archive-content checks and a bounded health check.
 If the stack does not recover, the existing safety recovery restores the archive
-(down, restore, up). An interrupt during that recovery keeps the archive and fails the run. It does not apply scenarios, run lifecycle, uninstall, set up or
+(down, restore, up). An interrupt during that recovery keeps the archive, fails the run and
+can leave the stack stopped; restore it with `pithead restore` and start it with `pithead up`. It does not apply scenarios, run lifecycle, uninstall, set up or
 inject faults.
 The selection refuses other harness arguments, a scenario, a rig name or host, or `--keep`.
 The harness uses the archive path the CLI reports, never the newest file, so a concurrent

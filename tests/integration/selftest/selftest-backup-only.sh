@@ -123,6 +123,9 @@ run_selection() {
             eval "$fn() { printf '%s\n' '$fn' >>\"\$trace\"; }"
         done
         scenario_matrix() { printf 'fixture\t{}\n'; }
+        if [ "$name" = interrupted-diagnostics ]; then
+            mkdir() { exit 143; }
+        fi
         main --local "$@"
     ) >"$fixture/$name.log" 2>&1
 }
@@ -150,6 +153,10 @@ assert_eq "a failed backup never removes a non-regular reported path" "$(if [ -L
 run_selection interrupted-recovery 0 1 --backup-only
 assert_rc "an interrupted recovery fails the run" "$?" 1
 assert_eq "an interrupted recovery keeps its restore archive" "$(if [ -f "$fixture/interrupted-recovery/source/backups/pithead-backup-20260101-000000.tar.gz" ]; then echo present; else echo absent; fi)" present
+
+run_selection interrupted-diagnostics 0 1 --backup-only
+assert_rc "an interrupt during recovery diagnostics fails the run" "$?" 1
+assert_eq "an interrupt during recovery diagnostics keeps the archive" "$(if [ -f "$fixture/interrupted-diagnostics/source/backups/pithead-backup-20260101-000000.tar.gz" ]; then echo present; else echo absent; fi)" present
 
 run_selection interrupted-validation 0 0 --backup-only
 assert_rc "an interrupt during archive validation keeps its exit status" "$?" 143
