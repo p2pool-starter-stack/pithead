@@ -96,14 +96,15 @@ rejected shares. Each snapshot poll refreshes the inspector, except while an edi
 progress; a failed refresh says the details may be out of date. The host addresses rigs by name,
 so when several rigs report one name the inspector says so, shows status and shares for the row
 opened, and offers no change until each rig has its own name.
-Its **Advanced** section offers only what the rig supports. With rig control off, or while the
-session is disconnected or expired, it says so and offers no change. An unadopted rig gets the
+Its **Advanced** section offers only what the rig supports. With rig control off, while the
+session is disconnected or expired, or while several rigs share the name, it says so and offers no
+change; an unsaved edit stays visible with Apply disabled. An unadopted rig gets the
 existing adopt form (host, ports, token, typed APPLY), which confirms the saved entry; managed
 telemetry follows the next poll of the rig. For an adopted rig, **Update this rig** offers the
 upgrade when the rig is behind and its release page is reported, and otherwise says why not. The
 configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
 from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
-upgrade is not held. An unsaved edit stays visible if the session drops, with Apply disabled. Closing the inspector returns focus to the rig and keeps the list's scroll position.
+upgrade is not held. Closing the inspector returns focus to the rig and keeps the list's scroll position.
 The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
 no rig restart verb exists yet ([#3825](https://github.com/p2pool-starter-stack/pithead/issues/3825)).
 

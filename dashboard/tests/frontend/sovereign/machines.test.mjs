@@ -166,7 +166,11 @@ test("the inspector offers only the controls the rig is authorized for", () => {
   assert.match(shared, /2 rigs report the name rig/);
   assert.doesNotMatch(shared, /Apply to rig|Upgrade rig|Manage this rig/);
   const dirtyOffline = renderToString(html`<${class extends Ready { constructor(props) { super(props); this.state.tableEdits = { DONATION: "2" }; } }} name="rig" writable=${false} shared=${1} worker=${{ name: "rig" }} detail=${detail()} />`);
-  assert.match(dirtyOffline, /<button type="button" disabled>Apply to rig<\/button>.*Unsaved.*Apply is unavailable while disconnected/s);
+  assert.match(dirtyOffline, /Rig changes are unavailable while disconnected or signed out.*<button type="button" disabled>Apply to rig<\/button>.*Unsaved/s);
+  assert.doesNotMatch(dirtyOffline, /Upgrade rig/);
+  const dirtyShared = renderToString(html`<${class extends Ready { constructor(props) { super(props); this.state.tableEdits = { DONATION: "2" }; } }} name="rig" writable=${true} shared=${2} worker=${{ name: "rig" }} detail=${detail()} />`);
+  assert.match(dirtyShared, /<button type="button" disabled>Apply to rig<\/button>.*Unsaved.*Give each rig its own name/s);
+  assert.doesNotMatch(dirtyShared, /Upgrade rig/);
   const offline = inspect({ writable: false });
   assert.match(offline, /unavailable while disconnected or signed out/);
   assert.doesNotMatch(offline, /Apply to rig|Upgrade rig|Manage this rig/);
@@ -199,9 +203,8 @@ test("a poll refreshes the inspector quietly, never over an edit, and an adopt k
     await inspector.load();
     assert.deepEqual(inspector.state.tableEdits, {});
     globalThis.fetch = async () => ({ ok: false, status: 502 });
+    inspector.state.tableEdits = {};
     await inspector.load(true);
-    assert.equal(inspector.state.stale, false);
-    await inspector.load();
     assert.equal(inspector.state.stale, true);
     assert.match(renderToString(inspector.render()), /could not be refreshed/);
   } finally {

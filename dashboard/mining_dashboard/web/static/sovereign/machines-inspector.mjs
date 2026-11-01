@@ -38,7 +38,7 @@ export class RigInspector extends WorkerInspect {
         jsonError: null,
       });
     } catch {
-      if (!passive) this.setState({ stale: true });
+      this.setState({ stale: true });
     }
   }
 
@@ -91,10 +91,13 @@ export class RigInspector extends WorkerInspect {
   renderAdvanced(detail) {
     if (!detail.control_enabled)
       return html`<p>Rig control is off. Turn on the editor in Settings to update, adopt or configure rigs.</p>`;
-    if (this.props.shared > 1)
-      return html`<p>Give each rig its own name to update, adopt or configure it from here.</p>`;
-    if (!this.props.writable && !this.isDirty())
-      return html`<p>Rig changes are unavailable while disconnected or signed out.</p>`;
+    const blocked =
+      this.props.shared > 1
+        ? "Give each rig its own name to update, adopt or configure it from here."
+        : !this.props.writable
+          ? "Rig changes are unavailable while disconnected or signed out."
+          : null;
+    if (blocked && !this.isDirty()) return html`<p>${blocked}</p>`;
     if (!detail.editable)
       return html`<h3>Manage this rig</h3>
         <p>Managing is separate from mining: this rig keeps mining either way. After you apply, the form confirms the saved entry; managed telemetry appears after the next poll of the rig.</p>
@@ -104,10 +107,10 @@ export class RigInspector extends WorkerInspect {
       ${
         detail.rigforge_update?.available && !detail.rigforge_update.url
           ? html`<p>RigForge ${detail.rigforge_update.latest} is available, but its release page is not reported, so it cannot be offered here.</p>`
-          : detail.rigforge_update?.available
+          : detail.rigforge_update?.available && !blocked
             ? html`<${RigUpgrade} name=${this.props.name} update=${detail.rigforge_update}
             canEdit=${true} busy=${busy} onDone=${() => this.load()} />`
-            : html`<p>This rig is on the latest release it reports.</p>`
+            : html`<p>${blocked || "This rig is on the latest release it reports."}</p>`
       }
       <h3>Configuration</h3>
       <div role="group" aria-label="Configuration view">
@@ -127,9 +130,9 @@ export class RigInspector extends WorkerInspect {
             <label>Load from file <input type="file" accept="application/json,.json" disabled=${busy}
               onChange=${(event) => this.onFilePick(event)} /></label>`
       }
-      <button type="button" disabled=${busy || !this.props.writable} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
+      <button type="button" disabled=${busy || !!blocked} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
       ${!busy && this.isDirty() ? html`<p>Unsaved: apply before closing, or the change is lost.</p>` : null}
-      ${!this.props.writable ? html`<p role="alert">Apply is unavailable while disconnected or signed out.</p>` : null}
+      ${blocked ? html`<p role="alert">${blocked}</p>` : null}
       <${StatusLine} result=${result} />`;
   }
 }
