@@ -57,6 +57,12 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; `broken-configs.tsv` and `tests/stack/test-manual-qa-oracle.sh` replay the documented dry-run refusals in shell block 5. The start page holds the run sheet, result rules and glossary. |
 
+Regular-file dotenv publication lives in `go/internal/config/env_write.go`,
+with the stdin adapter in `go/internal/cli/config_env_write.go` and Bash hook in
+`lib/pithead/33f-go-env-write.sh`. `make test-go-env-write-parity` checks native
+in-place writes and unchanged render/CLI contracts. Symlinks and interposed
+writers retain the heredoc path; final chmod remains Bash.
+
 Tari wallet secret publication lives in `go/internal/config/tari_secret.go`,
 with the stdin adapter in `go/internal/cli/config_tari_secret.go` and Bash hook in
 `lib/pithead/33e-go-tari-secret.sh`. `make test-go-tari-secret-parity` compares

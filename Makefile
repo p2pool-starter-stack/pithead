@@ -1,8 +1,10 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity
+.PHONY: go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity
 .PHONY: test-go-doctor-history-parity test-go-doctor-containers-parity test-go-doctor-monero-parity test-go-node-monero-parity test-go-node-zmq-parity test-go-node-zmq-exchange-parity test-go-config-masked-parity test-go-config-document-parity test-go-config-defaults-parity test-go-config-validation-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-wallet-settings-parity
 .PHONY: test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-site-names-parity test-go-stratum-parity test-go-network-settings-parity test-go-proxy-settings-parity test-go-caddy-auth-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-worker-read-parity
+test-go-env-write-parity: test-go-env-parity test-go-parity ## Compare native env publication and unchanged render contracts
+	python3 tests/go-parity/test_env_write.py
 test-go-tari-secret-parity: test-go-env-parity test-go-payout-settings-parity test-go-parity ## Compare Tari secret publication and unchanged render contracts
 	python3 tests/go-parity/test_tari_secret.py
 test-go-lifecycle-options-parity: test-go-parity ## Compare lifecycle option handling and callback order with Bash
@@ -80,10 +82,8 @@ test-go-env-parity: go-build test-go ## Compare bulk dotenv bytes with Bash and 
 	python3 tests/go-parity/test_env_getters.py
 test-go-caddy-parity: go-build test-go ## Compare Caddyfile bytes and render lifecycle with Bash
 	python3 tests/go-parity/test_caddy.py
-
 test-go-caddy-sites-parity: go-build test-go ## Compare native Caddy site and port preparation with Bash
 	python3 tests/go-parity/test_caddy_sites.py
-
 test-go-config-validation-parity: go-build test-go ## Compare typed config validation and diagnostics with Bash/jq
 	python3 tests/go-parity/test_config_validation.py
 

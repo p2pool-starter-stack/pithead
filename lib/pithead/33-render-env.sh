@@ -300,14 +300,12 @@ render_env() {
             ;;
         esac
     fi
-
     # monerod memory ceiling (#132): a generous default so heavy initial-sync verification never trips
     # it (monerod's LMDB is reclaimable page cache, so its capped RSS stays low). Tunable for low-RAM
     # hosts that OOM during IBD, or to give a big host more LMDB-cache headroom.
     [ "$native_memory" = true ] || monero_mem_limit=$(jq -r '.monero.mem_limit // "auto"' "$CONFIG_FILE")
     case "$monero_mem_limit" in "" | auto) monero_mem_limit="6g" ;; esac
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
-
     # Tari view-only wallet secret delivery (#462): the view key, spend key and wallet password ride an
     # owner-only data/ file bind-mounted at /run/secrets (never `environment:`, which `docker inspect`
     # shows). The mount keeps its owner, so it must be the container's APP_UID (#2731). Built as a temp
@@ -334,9 +332,11 @@ render_env() {
         env_fingerprint=$(printf '%s' "$(stratum_tls_fingerprint)")
         env_tls_dir=$(printf '%s' "$(appliance_tls_dir)")
         if native_env=$(_render_env_go "$target" 2>/dev/null); then
-            cat <<EOF >"$target"
+            if ! declare -F _write_env_go >/dev/null || ! _write_env_go "$target" "${native_env%$'\n'.}"; then
+                cat <<EOF >"$target"
 ${native_env%$'\n'.}
 EOF
+            fi
         else
             cat <<EOF >"$target"
 MONERO_DATA_DIR=$(dotenv_render_value "$MONERO_DIR")

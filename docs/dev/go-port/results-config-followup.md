@@ -272,3 +272,71 @@ implementation and new comparisons are unchanged after validation. Earlier
 wallet-classifier results are preserved in the linked configuration ledger.
 Dashboard, fake-daemon and patch-coverage suites are not rerun for this CLI-only
 change; earlier paired results remain in the linked ledgers.
+
+## Tari wallet secret publication slice (2026-11-01)
+
+Go publishes the Tari wallet's three-line secret file when the requested UID
+matches the effective UID and the filesystem tools have their standard paths.
+The temporary file has mode 0600 before writing, is checked for the requested
+owner and replaces the destination by rename. File symlinks are replaced without
+touching their targets. Bash retains directory creation, dry-run exclusion,
+ownership repair through chown/sudo, command overrides and failure diagnostics.
+Directory destinations retain the reference mv behavior through fallback. As in
+Bash, a matching UID does not trigger a group change.
+
+The unchanged render fixture/goldens and CLI/config comparisons pass with Go
+selection; their mocked chown path intentionally uses compatibility fallback.
+New comparisons extract the production secret block and supply the current UID
+to prove actual native publication. They compare literal bytes, owner, mode,
+link targets, dry-run behavior, umask, failure cleanup and callback order, and
+verify zero helper argv and exact stdin framing. These supplemental cases do not
+replace the original Linux ownership and payout-wallet suites, which remain
+unavailable locally. Other render/apply operations still use Bash; the dashboard
+remains Python.
+
+Baseline uses `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`. Runs use
+worktree caches and an absent Docker socket. Private records are under
+`.go-cache/logs/tari-secret-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-tari-secret-parity` | Pass; 10 new methods, unchanged env/payout render comparisons and 12-group CLI suite, plus Go units | Same result |
+| Other core comparisons below | Pass; unchanged 7-test raw-parser suite, Caddy and lifecycle comparisons included | Same result |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
+| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make test-stack` | Exit 2: macOS refusal | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same result |
+
+The combined core command was `make test-go-tari-secret-parity
+test-go-lifecycle-options-parity test-go-config-input-parity test-go-caddy-parity`.
+Final records are `baseline-core-confirmed` and `go-core-confirmed`. Initial core
+attempts stopped at the new test's system-Python-incompatible hardlink method;
+using `os.link` corrected the adapter before both full commands were repeated.
+The native command-path guard was also corrected to admit macOS's standard
+chown location before the positive native cases passed. No existing test changed.
+
+Native checks pass: `go -C go test -json -tags=parity -race -count=1
+./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
+./cmd/pithead` (compile only).
+Changed Go files pass `gofmt -l`; changed shell files pass `shfmt -i 4 -d`.
+Final `shellcheck -x --severity=warning pithead
+tests/go-parity/tari_secret_reference.sh` passes. The new adapter declares its
+dynamically sourced variables to ShellCheck through its local SC2034 pragma.
+Locked Ruff checks/formatting pass for all 631 Python files through `make lint-py`;
+dashboard extras are restored with `uv sync --locked --project dashboard
+--extra dev --extra test`.
+
+Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
+.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths;
+`make lint-file-budget lint-docs-voice` passes after the final ledger update with
+the starting-SHA budget override above. Independent security and adversarial
+reviews found no remaining defect. A frozen-source checksum audit confirms the
+tested implementation and new comparisons are unchanged after final validation.
+
+Existing tests, fixtures and Make target behavior remain unchanged; the new
+target adds only supplementary coverage and existing dependencies. Earlier
+lifecycle results are preserved in the linked configuration ledger. Original
+Linux Tari ownership/payout suites remain unavailable locally. Dashboard,
+fake-daemon and patch-coverage suites are not rerun for this CLI-only change;
+earlier paired results remain in the linked ledgers.
