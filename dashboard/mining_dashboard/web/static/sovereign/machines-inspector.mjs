@@ -3,6 +3,8 @@ import { AdoptRigForm } from "../workers/workeradopt.mjs";
 import { buildFields, detailSnapshot } from "../workers/workerlogic.mjs";
 import { RigUpgrade, StatusLine } from "../workers/workerupgrade.mjs";
 import { WorkerField, WorkerInspect } from "../workers/workerview.mjs";
+import { rigDonation } from "./donation-model.mjs";
+import { DonationControl } from "./machines-donation.mjs";
 import { rigHealth, rigView } from "./machines-model.mjs";
 
 export class RigInspector extends WorkerInspect {
@@ -68,6 +70,7 @@ export class RigInspector extends WorkerInspect {
     const version = detail.rigforge?.version;
     const latest = detail.rigforge_update?.latest;
     const shared = this.props.shared > 1;
+    const donation = rigDonation(this.props.worker, shared ? null : detail.rig_config);
     return html`${
       shared
         ? html`<p role="note">${this.props.shared} rigs report the name ${this.props.name}. Status and shares are for the rig you opened; the rest is for the first rig the host lists with that name, so changes are off until each rig has its own name.</p>`
@@ -85,6 +88,7 @@ export class RigInspector extends WorkerInspect {
         <div><dt>24 h hashrate</dt><dd>${health.average ? `${health.average} average` : "Unavailable"}</dd></div>
         <div><dt>Accepted shares</dt><dd>${row.accepted ?? "Unavailable"}</dd></div>
         <div><dt>Rejected shares</dt><dd>${row.rejected ?? "Unavailable"}</dd></div>
+        <div><dt>XMRig developers</dt><dd>${donation.text}${donation.mismatch ? ` · ${donation.mismatch}` : ""}</dd></div>
       </dl>
       <details class="rig-advanced">
         <summary>Advanced</summary>
@@ -115,6 +119,12 @@ export class RigInspector extends WorkerInspect {
             ? html`<${RigUpgrade} name=${this.props.name} update=${detail.rigforge_update}
             canEdit=${!blocked} busy=${busy} onDone=${() => this.load()} />`
             : html`<p>This rig is on the latest release it reports.</p>`
+      }
+      ${
+        detail.writable_keys?.includes("DONATION")
+          ? html`<${DonationControl} name=${this.props.name} worker=${this.props.worker} rigConfig=${detail.rig_config}
+        earnings=${this.props.earnings} canEdit=${!blocked && !busy} onDone=${() => this.load()} />`
+          : null
       }
       <h3>Configuration</h3>
       <div role="group" aria-label="Configuration view">

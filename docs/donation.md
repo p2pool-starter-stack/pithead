@@ -2,6 +2,34 @@
 
 The project donation sends an opt-in time slice of your hashrate to a stratum endpoint run for Pithead.
 
+## XMRig developer donation
+
+XMRig, the miner your rigs run, donates a share of its time to the XMRig developers. Each
+rig has its own level. The proxy has none: `proxy.donate_level` stays 0 and is not shown in
+the dashboard. A rig that mines through Pithead's proxy sends its donation through that proxy,
+so the level adds no direct internet connection from the rig.
+
+- **Set it per rig.** Machines › rig › Advanced › Support the XMRig developers offers Off, 1 %,
+  2 % and 5 % (XMRig donates whole percents only). Review shows the share, the time (for 1 %:
+  1 minute in every 100 minutes, roughly 15 minutes a day) and the estimated cost at the rig's
+  current hashrate. Typing `APPLY` writes the rig's `DONATION` through the control path.
+- **Default is Off** for rigs RigForge builds (rigforge#603). Pithead never changes a rig's level except by that explicit action;
+  adopting a rig shows its current level.
+- **The shown level is the miner's own report** (`donate_level` in its summary), not only the
+  configured one. When they differ the panel says so. A running level above the configured one
+  needs a RigForge update to lower; a lower one applies after the miner restarts.
+- **Unmanaged rigs** (no control path) and stock XMRig rigs show the level read-only, or
+  "Own donation: unknown". Stock XMRig donates at least 1 %. They have no control.
+- **Fleet view.** Earnings shows the hashrate-weighted share and how many rigs donate. It
+  reports "unavailable" when any hashing rig does not report a level, never 0 %. The expected
+  earnings figures (still unavailable on that page) are to subtract this share; the Overview
+  strip reads the same `xmrig_donation` figure.
+- **To stop**, set the rig to Off and wait for the miner to report 0 %.
+
+The same figure is published as `/api/state.xmrig_donation`:
+`{"available", "percent", "rigs", "donating", "unknown"}`; `percent` is present only when
+`available` is true.
+
 ## Availability and destination
 
 The feature ships off by default, with empty destination constants. The setting appears only
