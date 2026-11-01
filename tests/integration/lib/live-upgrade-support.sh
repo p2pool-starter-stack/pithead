@@ -349,7 +349,7 @@ restore_upgrade_baseline() {
     [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed+=" mounts"
     wait_for "${BOUND_RECONNECT:-480}" 5 "restored baseline workers" _pred_upgrade_workers_capture || true
     upgrade_miner_observation_finish "$miner_observation"
-    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed+=" workers"
+    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed+=" workers$(it_log "rollback worker set: $(upgrade_worker_set_diff "$UPGRADE_BEFORE_WORKERS" "$restored_workers")" >&2)"
     [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null || failed+=" proxy-workers"
     [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null || failed+=" hashes"
     restored_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH" --baseline-schema)"

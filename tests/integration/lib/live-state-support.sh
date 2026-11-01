@@ -354,6 +354,19 @@ _pred_upgrade_workers_capture() {
         [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null
 }
 
+_worker_name_digests() {
+    local name
+    head -n 16 | while IFS= read -r name; do [ -z "$name" ] || printf '%s\n' "$(printf %s "$name" | sha256sum | cut -c1-8)"; done | paste -sd, -
+}
+
+upgrade_worker_set_diff() {
+    local expected=$1 observed=$2
+    printf 'expected=%s observed=%s missing=[%s] extra=[%s]' \
+        "$(grep -c . <<<"$expected" || true)" "$(grep -c . <<<"$observed" || true)" \
+        "$(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$observed") | _worker_name_digests)" \
+        "$(comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$observed") | _worker_name_digests)"
+}
+
 upgrade_miner_observation_start() {
     rx 'printf "%s %s\n" "$(date +%s)" "$(systemctl show xmrig.service -p MainPID --value 2>/dev/null)"' 2>/dev/null || true
 }
