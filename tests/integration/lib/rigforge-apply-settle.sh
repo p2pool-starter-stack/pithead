@@ -166,20 +166,7 @@ _pred_history_row_terminal() { # <rig> <change_id>
     esac
 }
 
-# Wait that row to terminal, then report it (#1471). Waiting for TERMINAL rather than for
-# "applied" is what keeps the caller's assertion honest in both directions: a rig that genuinely
-# rejected or failed the change publishes a terminal row at once, so this returns that status and
-# the caller reds immediately instead of burning the bound on a verdict already known; a row that
-# never settles stays "accepted" and reds too. The one answer it must never invent is "applied"
-# for a row nobody has confirmed — which is what reading the row unwaited did, across a window of
-# the rig apply and the next dashboard poll. The assertion stays a bounded check;
-# exact-ID samples correlate publication/consumption delays from an unfinished rig apply.
-#
-# The `>&2` is this module's #1454 discipline, for the same reason: stdout is the return value and
-# wait_for opens with an it_step banner on stdout. Cache the history observation before the
-# diagnostic reads: those may finish after the deadline, but cannot change the verdict. Never
-# perform a fresh result read after timeout, which could falsely pass a later convergence.
-_settle_history_row() { # <rig> <change_id> [budget-s=90] -> the last status observed within the budget
+_settle_history_row() {
     local _HISTORY_SAMPLE_COUNT=0 _HISTORY_ROW_STATUS="" _HISTORY_DEADLINE budget="${3:-90}"
     _HISTORY_DEADLINE=$(($(now_s) + budget))
     wait_for "$budget" 5 "the #185 history row for $2 to reach a terminal status (#1471)" \
