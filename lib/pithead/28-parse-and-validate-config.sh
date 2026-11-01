@@ -119,69 +119,69 @@ parse_and_validate_config() {
     fi
 
     validate_payout_keys
-
     # Bridge network subnet (#180): configurable so the stack can avoid colliding with a 172.28.0.0/24
     # already in use on the host (Docker else errors "Pool overlaps with other one on this address
     # space" and the install fails). The structured fixed-IP layout is preserved — services keep their
     # .25–.31 host octets, the host-networked dashboard reaches them by IP, and the #122 SSRF guard
     # keys off the CIDR — only the /24 base moves. Everything derives from NETWORK_PREFIX (the first
     # three octets). Must be an X.Y.Z.0/24 block.
-    NETWORK_SUBNET=$(jq -r '.network.subnet // "172.28.0.0/24"' "$CONFIG_FILE")
-    case "$NETWORK_SUBNET" in
-    *.0/24) NETWORK_PREFIX="${NETWORK_SUBNET%.0/24}" ;;
-    *) error "network.subnet must be an X.Y.Z.0/24 block (got \"$NETWORK_SUBNET\")." ;;
-    esac
-    is_ipv4 "${NETWORK_PREFIX}.0" || error "network.subnet is not a valid IPv4 /24 (got \"$NETWORK_SUBNET\")."
-    # Fail-closed Tor-only egress firewall (#270); default on. Renders to .env so `up` can read it.
-    # config_bool (not a plain `// true`) so an explicit false actually disables it — see #294.
-    TOR_EGRESS_FIREWALL=$(normalize_bool "$(config_bool '.network.tor_egress_firewall' true)")
-    # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits, so the
-    # stack never restarts its privacy boundary unbidden. Renders to .env for the dashboard,
-    # which owns the probe/restart loop (dashboard .../service/tor_heal.py).
-    TOR_AUTO_HEAL=$(normalize_bool "$(config_bool '.tor.auto_heal' false)")
-    TARI_EXPLORER_URL=$(jq -r '.tari.explorer_url // "https://textexplore.tari.com/?json"' "$CONFIG_FILE")
-    # Surfaced for the dashboard's egress-posture panel (#170); mirrors what p2pool_outbound_flags reads.
-    P2POOL_CLEARNET=$(normalize_bool "$(config_bool '.p2pool.clearnet' false)")
-    # Remote-node host/port validation (#103). The central control-char guard above already stops a
-    # newline forging an .env line, but a remote.host also flows into shell/URL sinks it doesn't
-    # cover: monero's into the p2pool `--host` arg, tari's into `--merge-mine tari://…` AND the socat
-    # bridge command `TCP:$_mmhost:$_mmport` (build/p2pool/entrypoint.sh), where a comma is read as a
-    # socat address-option separator (`TCP:host,fork,…`). So charset-guard both with the same
-    # is_valid_host/is_valid_port used for dashboard.host/.port — no comma/space/`{` reaches a sink.
-    # These resolve once here and are reused verbatim by render_env (globals, like MONERO_MODE above),
-    # so the value that passes validation is exactly the value rendered — no second jq read, no drift.
-    # Cleared to empty first (defensive): each real `apply` is a fresh process so these start unset,
-    # but clearing them keeps the invariant "globals reflect only the current config" true even if a
-    # future caller ever parses twice in one process — a stale remote host must never survive into a
-    # later local-mode render.
-    MONERO_REMOTE_HOST="" MONERO_REMOTE_RPC_PORT="" MONERO_REMOTE_ZMQ_PORT=""
-    TARI_REMOTE_HOST="" TARI_REMOTE_GRPC_PORT=""
-    if [ "$MONERO_MODE" == "remote" ]; then
-        MONERO_REMOTE_HOST=$(jq -r '.monero.remote.host // empty' "$CONFIG_FILE")
-        [ -n "$MONERO_REMOTE_HOST" ] || error "monero.mode is \"remote\" but monero.remote.host is not set in $CONFIG_FILE."
-        is_valid_host "$MONERO_REMOTE_HOST" || error "monero.remote.host must be a hostname or IP literal (letters, digits, and . : _ - only, ≤253 chars). Got \"$MONERO_REMOTE_HOST\"."
-        MONERO_REMOTE_RPC_PORT=$(jq -r '.monero.remote.rpc_port // 18081' "$CONFIG_FILE")
-        is_valid_port "$MONERO_REMOTE_RPC_PORT" || error "monero.remote.rpc_port must be a TCP port 1–65535. Got \"$MONERO_REMOTE_RPC_PORT\"."
-        MONERO_REMOTE_ZMQ_PORT=$(jq -r '.monero.remote.zmq_port // 18083' "$CONFIG_FILE")
-        is_valid_port "$MONERO_REMOTE_ZMQ_PORT" || error "monero.remote.zmq_port must be a TCP port 1–65535. Got \"$MONERO_REMOTE_ZMQ_PORT\"."
-    fi
-    # tari.mode remote (#103), mirroring monero.mode above: a third-party (or fleet-shared) Tari
-    # base node needs a host — an empty one would render an empty TARI_GRPC_ADDRESS and mining can't
-    # merge-mine, so abort at validation rather than let that reach the containers silently.
-    if [ "$TARI_MODE" == "remote" ]; then
-        TARI_REMOTE_HOST=$(jq -r '.tari.remote.host // empty' "$CONFIG_FILE")
-        [ -n "$TARI_REMOTE_HOST" ] || error "tari.mode is \"remote\" but tari.remote.host is not set in $CONFIG_FILE."
-        is_valid_host "$TARI_REMOTE_HOST" || error "tari.remote.host must be a hostname or IP literal (letters, digits, and . : _ - only, ≤253 chars). Got \"$TARI_REMOTE_HOST\"."
-        TARI_REMOTE_GRPC_PORT=$(jq -r '.tari.remote.grpc_port // 18142' "$CONFIG_FILE")
-        is_valid_port "$TARI_REMOTE_GRPC_PORT" || error "tari.remote.grpc_port must be a TCP port 1–65535. Got \"$TARI_REMOTE_GRPC_PORT\"."
-    fi
+    if ! command -v _parse_network_config_go >/dev/null 2>&1 || ! _parse_network_config_go; then
+        NETWORK_SUBNET=$(jq -r '.network.subnet // "172.28.0.0/24"' "$CONFIG_FILE")
+        case "$NETWORK_SUBNET" in
+        *.0/24) NETWORK_PREFIX="${NETWORK_SUBNET%.0/24}" ;;
+        *) error "network.subnet must be an X.Y.Z.0/24 block (got \"$NETWORK_SUBNET\")." ;;
+        esac
+        is_ipv4 "${NETWORK_PREFIX}.0" || error "network.subnet is not a valid IPv4 /24 (got \"$NETWORK_SUBNET\")."
+        # Fail-closed Tor-only egress firewall (#270); default on. Renders to .env so `up` can read it.
+        # config_bool (not a plain `// true`) so an explicit false actually disables it — see #294.
+        TOR_EGRESS_FIREWALL=$(normalize_bool "$(config_bool '.network.tor_egress_firewall' true)")
+        # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits, so the
+        # stack never restarts its privacy boundary unbidden. Renders to .env for the dashboard,
+        # which owns the probe/restart loop (dashboard .../service/tor_heal.py).
+        TOR_AUTO_HEAL=$(normalize_bool "$(config_bool '.tor.auto_heal' false)")
+        TARI_EXPLORER_URL=$(jq -r '.tari.explorer_url // "https://textexplore.tari.com/?json"' "$CONFIG_FILE")
+        # Surfaced for the dashboard's egress-posture panel (#170); mirrors what p2pool_outbound_flags reads.
+        P2POOL_CLEARNET=$(normalize_bool "$(config_bool '.p2pool.clearnet' false)")
+        # Remote-node host/port validation (#103). The central control-char guard above already stops a
+        # newline forging an .env line, but a remote.host also flows into shell/URL sinks it doesn't
+        # cover: monero's into the p2pool `--host` arg, tari's into `--merge-mine tari://…` AND the socat
+        # bridge command `TCP:$_mmhost:$_mmport` (build/p2pool/entrypoint.sh), where a comma is read as a
+        # socat address-option separator (`TCP:host,fork,…`). So charset-guard both with the same
+        # is_valid_host/is_valid_port used for dashboard.host/.port — no comma/space/`{` reaches a sink.
+        # These resolve once here and are reused verbatim by render_env (globals, like MONERO_MODE above),
+        # so the value that passes validation is exactly the value rendered — no second jq read, no drift.
+        # Cleared to empty first (defensive): each real `apply` is a fresh process so these start unset,
+        # but clearing them keeps the invariant "globals reflect only the current config" true even if a
+        # future caller ever parses twice in one process — a stale remote host must never survive into a
+        # later local-mode render.
+        MONERO_REMOTE_HOST="" MONERO_REMOTE_RPC_PORT="" MONERO_REMOTE_ZMQ_PORT=""
+        TARI_REMOTE_HOST="" TARI_REMOTE_GRPC_PORT=""
+        if [ "$MONERO_MODE" == "remote" ]; then
+            MONERO_REMOTE_HOST=$(jq -r '.monero.remote.host // empty' "$CONFIG_FILE")
+            [ -n "$MONERO_REMOTE_HOST" ] || error "monero.mode is \"remote\" but monero.remote.host is not set in $CONFIG_FILE."
+            is_valid_host "$MONERO_REMOTE_HOST" || error "monero.remote.host must be a hostname or IP literal (letters, digits, and . : _ - only, ≤253 chars). Got \"$MONERO_REMOTE_HOST\"."
+            MONERO_REMOTE_RPC_PORT=$(jq -r '.monero.remote.rpc_port // 18081' "$CONFIG_FILE")
+            is_valid_port "$MONERO_REMOTE_RPC_PORT" || error "monero.remote.rpc_port must be a TCP port 1–65535. Got \"$MONERO_REMOTE_RPC_PORT\"."
+            MONERO_REMOTE_ZMQ_PORT=$(jq -r '.monero.remote.zmq_port // 18083' "$CONFIG_FILE")
+            is_valid_port "$MONERO_REMOTE_ZMQ_PORT" || error "monero.remote.zmq_port must be a TCP port 1–65535. Got \"$MONERO_REMOTE_ZMQ_PORT\"."
+        fi
+        # tari.mode remote (#103), mirroring monero.mode above: a third-party (or fleet-shared) Tari
+        # base node needs a host — an empty one would render an empty TARI_GRPC_ADDRESS and mining can't
+        # merge-mine, so abort at validation rather than let that reach the containers silently.
+        if [ "$TARI_MODE" == "remote" ]; then
+            TARI_REMOTE_HOST=$(jq -r '.tari.remote.host // empty' "$CONFIG_FILE")
+            [ -n "$TARI_REMOTE_HOST" ] || error "tari.mode is \"remote\" but tari.remote.host is not set in $CONFIG_FILE."
+            is_valid_host "$TARI_REMOTE_HOST" || error "tari.remote.host must be a hostname or IP literal (letters, digits, and . : _ - only, ≤253 chars). Got \"$TARI_REMOTE_HOST\"."
+            TARI_REMOTE_GRPC_PORT=$(jq -r '.tari.remote.grpc_port // 18142' "$CONFIG_FILE")
+            is_valid_port "$TARI_REMOTE_GRPC_PORT" || error "tari.remote.grpc_port must be a TCP port 1–65535. Got \"$TARI_REMOTE_GRPC_PORT\"."
+        fi
 
-    POOL_TYPE=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
-    case "$POOL_TYPE" in
-    main | mini | nano) ;;
-    *) error "p2pool.pool must be \"main\", \"mini\", or \"nano\" (got \"$POOL_TYPE\")." ;;
-    esac
-
+        POOL_TYPE=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
+        case "$POOL_TYPE" in
+        main | mini | nano) ;;
+        *) error "p2pool.pool must be \"main\", \"mini\", or \"nano\" (got \"$POOL_TYPE\")." ;;
+        esac
+    fi
     parse_stratum_endpoint
 
     migrate_legacy_workers

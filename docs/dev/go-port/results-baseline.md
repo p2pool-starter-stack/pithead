@@ -77,3 +77,37 @@ locked grpcio 1.84.0/Pygments 2.20.0. The current dashboard and fake-daemon
 results above supersede that blocker.
 
 [Back to the parity ledger](PARITY.md)
+
+## Implementation chronology
+
+Incremental port for issue #3811, based on
+`a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`. The owner
+authorized implementation on 2026-10-31. Rounds 1–4 are committed at
+`4565297a`, host probes at `d9c9d1ff`, verifier/daemon probes at `82d34cfd`,
+control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
+data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
+payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
+LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, container diagnostics at `975161c6`, Monero sync/peer/tip probes at `aa68ca87`, remote RPC preflight at `56f5bcdd`, ZMTP validators at `6f34210a`, stream exchange at `cbfdfbcd`, and raw config validation at `a45c6bb6`.
+The operator commits later rounds; Git metadata is read-only. No performance benefit is claimed.
+
+## Doctor compatibility notes
+
+The native doctor packages retain check IDs, severities, messages and surface
+wording. Unsupported arithmetic, NUL output, marker read failures and unusual tool launches return
+`ErrUnsupportedProbeInput` so the future collector can fall back safely. Darwin
+CPU detection preserves the original pipefail/SIGPIPE pipeline behavior. Executable
+text without a shebang returns unsupported rather than a boot verdict, preserving
+the future Bash fallback boundary. Doctor
+JSON preserves order, nullable malformed TSV fields, jq string encoding, summary
+counts, abrupt-exit refusal, signal forwarding and temporary-file cleanup.
+
+## Bench measurement contract
+
+The bench experiment measures CLI first-output latency,
+apply/upgrade wall time, serial and parallel suite CPU/wall time, module size,
+tested functions, mutable globals and lint findings. Measure dashboard idle CPU,
+working and peak memory, cold/warm state latency by range/client count, poll
+stalls, start/stop time, image size and scan findings at 2/50/100 rigs. Compare
+Bash/Go and Python/current, Python/identical algorithm fix, Go/identical algorithm
+on one reserved bench with restored state and interleaved repetitions. The
+operator must set a performance threshold after measuring the noise floor.

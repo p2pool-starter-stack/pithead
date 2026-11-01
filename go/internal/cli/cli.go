@@ -23,6 +23,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configValidation(args, stdout)
 	case "config-stratum":
 		return configStratum(args, stdout)
+	case "config-network-settings":
+		return configNetworkSettings(args, stdout)
 	case "config-caddy":
 		return configCaddy(args, os.Stdin, stdout)
 	case "config-env":

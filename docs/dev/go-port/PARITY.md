@@ -3,23 +3,24 @@ STATUS: IN PROGRESS
 # Go port parity
 
 Incremental port for issue #3811, based on
-`a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`. The owner
-authorized implementation on 2026-10-31. Rounds 1–4 are committed at
-`4565297a`, host probes at `d9c9d1ff`, verifier/daemon probes at `82d34cfd`,
-control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
-data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
-payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
-LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, container diagnostics at `975161c6`, Monero sync/peer/tip probes at `aa68ca87`, remote RPC preflight at `56f5bcdd`, ZMTP validators at `6f34210a`, stream exchange at `cbfdfbcd`, and raw config validation at `a45c6bb6`.
-The operator commits later rounds; Git metadata is read-only. No performance benefit is claimed.
+`a73ffced33800de9435779a9cabef53864455acb` on branch `go-port/3811`.
+The operator commits and pushes each round; Git metadata is read-only. No performance benefit is claimed.
 
 ## Scope and continuation criteria
 
-The owner's 2026-11-01 ruling supersedes the original brief: port only the CLI
+The owner's 2026-11-01 ruling limits application reimplementation to the CLI
 and dashboard backend, including the wizard and control channel. Appliance host
-scripts and container entrypoints are out of scope. The dashboard
-implementation selection switch remains part of its launch contract. Preserve
-Bash/Python as the reference and fallback, upstream daemons, browser assets,
-runtime filenames, database migrations and wire formats.
+scripts and container entrypoints are not being reimplemented. After those ports,
+shipping documentation and integration for the release bundle, dashboard image
+and appliance image build are in scope, retaining Bash/Python fallback. The
+dashboard selection switch remains part of its launch contract. Preserve upstream
+daemons, browser assets, runtime filenames, database migrations and wire formats.
+
+The operator loop stops around 2026-11-02 22:00Z; access ends 2026-11-03.
+Fleet tests may target pushed heads through the normal bench API, following its
+contracts with `submitted_by=gpt-6.1-sol/developer`, a #3811 note and an idempotency
+key. Keep topology private. A separate session owns performance work: leave its
+`BENCHMARK.md` document and the `tests/go-parity/bench/` tree untouched.
 
 The existing Bash and Python suites are the parity oracle. Do not port, rewrite,
 replace or weaken them, their fixtures or their checks. Every slice requires
@@ -33,14 +34,9 @@ corrupt databases with the same migration and recovery behavior. A fallback pass
 does not prove native Go behavior. `STATUS: COMPLETE` requires every existing
 suite runnable locally to pass unchanged under Go selection.
 
-The bench experiment remains outstanding. Measure CLI first-output latency,
-apply/upgrade wall time, serial and parallel suite CPU/wall time, module size,
-tested functions, mutable globals and lint findings. Measure dashboard idle CPU,
-working and peak memory, cold/warm state latency by range/client count, poll
-stalls, start/stop time, image size and scan findings at 2/50/100 rigs. Compare
-Bash/Go and Python/current, Python/identical algorithm fix, Go/identical algorithm
-on one reserved bench with restored state and interleaved repetitions. The
-operator must set a performance threshold after measuring the noise floor.
+Bench measurement requirements are retained with the
+[baseline contract](results-baseline.md#bench-measurement-contract); performance
+evidence is maintained by its separate owner.
 
 ## Build and selection
 
@@ -133,20 +129,13 @@ selection is not implemented.
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Memory render settings and auto ceiling | Native for supported settings/facts; Bash discovery and compatibility fallback | Unchanged render fixture/goldens and supplementary hardware-boundary comparisons |
+| Network settings, remote endpoints and pool validation | Native for supported settings; Bash compatibility fallback | Supplementary byte/status/state comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
 | Dashboard routes, state, polling and Tor | Python reference | Baseline suites pass; Go backend not ported |
 | SQLite schema, migrations and recovery | Python reference | Baseline suites pass; Go backend not ported |
 | Wizard launch and control channel | Bash/Python reference | Not ported |
-| Appliance host scripts and container entrypoints | Out of scope, owner ruling 2026-11-01 | Reference scripts retained |
-
-The native doctor packages retain check IDs, severities, messages and surface
-wording. Unsupported arithmetic, NUL output, marker read failures and unusual tool launches return
-`ErrUnsupportedProbeInput` so the future collector can fall back safely. Darwin
-CPU detection preserves the original pipefail/SIGPIPE pipeline behavior. Executable
-text without a shebang returns unsupported rather than a boot verdict, preserving
-the future Bash fallback boundary. Doctor
-JSON preserves order, nullable malformed TSV fields, jq string encoding, summary
-counts, abrupt-exit refusal, signal forwarding and temporary-file cleanup.
+| Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
+| Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
 
 ## Harness adapters
 
@@ -259,6 +248,11 @@ oracles:
   state, proves native selection without jq and checks fallback beyond the
   standalone preflight cases. Full config cases still require the Linux stack harness.
 
+- `network_settings_reference.sh` extracts the unchanged network/remotes/pool block
+  and records globals on exit. `test_network_settings.py` compares verdict bytes,
+  partial state, mode changes, native jq avoidance and helper fallback because
+  full invalid-config cases require the Linux stack harness.
+
 - `caddy_reference.sh` loads both Caddy slices and supplies synthetic addresses,
   certificate files and mint outcomes to the production renderer. `test_caddy.py` compares complete files,
   logs, statuses and preparation calls, including partial-file failures. A binary
@@ -308,7 +302,8 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-config-defaults-parity`, `test-go-config-validation-parity` and
 `test-go-caddy-parity`, `test-go-env-parity`, `test-go-env-network-parity` and
 `test-go-env-dashboard-parity`, `test-go-env-memory-parity` and
-`test-go-caddy-sites-parity` and `test-go-stratum-parity`.
+`test-go-caddy-sites-parity`, `test-go-stratum-parity` and
+`test-go-network-settings-parity`.
 
 ## Earlier slice results
 
@@ -318,29 +313,29 @@ Detailed paired commands, results and limits are preserved in
 [remote-node probe results](results-node-probes.md) and
 [configuration results](results-config.md) and [render results](results-render.md).
 
-## Stratum endpoint slice (2026-11-01)
+## Network settings slice (2026-11-01)
 
-Go parses the stratum bind and port for supported scalar settings with the same
-jq defaults, IPv4 shape, decimal bounds and leading-zero acceptance as Bash.
-Bind validation precedes the port read. A bad bind updates only `STRATUM_BIND`;
-a bad port updates both globals before the original error function runs.
+Go derives and validates subnet, egress flags, explorer URL, remote endpoints and
+pool settings. It preserves defaults, leading-zero IPv4 octets, strict remote
+ports, exact diagnostics and error order. The snapshot records how many globals
+changed before a verdict, including clearing all five remote fields before reads.
 
-The hook in `lib/pithead/27b-stratum-endpoint.sh` accepts complete NUL frames,
-helper success, a recognized stage and EOF before changing globals. Unsupported
-JSON, scalar formats or helpers retain the original Bash path. No existing test
-or fixture changed. Six supplementary tests compare exact bytes/status, partial
-state, repeated parses, native execution without jq and malformed-helper fallback.
-The unchanged standalone stratum preflight suite passes in both modes. Render
-fixture/goldens exercise the full parser; the full Linux stack suite remains unavailable.
+The new `27d-go-network-settings.sh` hook checks fixed NUL fields, assignment
+count, helper exit and EOF before applying that snapshot. Missing hooks and
+unsupported inputs retain Bash fallback. The original block remains in place
+inside `28-parse-and-validate-config.sh`, still 412 lines. Six new comparisons
+cover native execution, partial state, mode changes and malformed-helper fallback.
+Existing suites and fixtures are unchanged; full Linux invalid-config proof is unavailable.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
 and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
-Docker socket. Private command/status records use `.go-cache/logs/config-stratum-*`.
+Docker socket. Private records use `.go-cache/logs/config-network-settings-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-stratum-parity test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity` | PASS, including unchanged raw parser and render fixture/goldens | Same result, 6 supplementary stratum tests verify native execution |
-| `python3 tests/stack/standalone/test_stratum_port.py` | PASS, 14 tests | Same result |
+| `make test-go-network-settings-parity test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-stratum-parity test-go-parity` | PASS, including unchanged raw parser and render fixture/goldens | Same result; native execution verified separately |
+| `make test-go-network-settings-parity` (final missing-hook guard) | PASS, 6 supplementary comparisons and Go units | Same result; native execution verified |
+| `python3 tests/stack/standalone/test_stratum_port.py` | PASS, 14 tests | Same result; stratum regression coverage |
 | `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
 | `make test-fakes` | PASS, 54 tests | Same result; Python backend |
 | `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
@@ -358,7 +353,7 @@ Scoped Markdown uses the original rules:
 
 ```bash
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
-  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-baseline.md docs/dev/go-port/results-render.md
 ```
 
 ## Unavailable and known host constraints
@@ -376,11 +371,12 @@ npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --confi
 - Integration auth-fail-closed assumes GNU `stat`/`chown`; topology selftests also
   fail on the BSD host. Both failures are identical in the two modes, with the
   checks unchanged.
-- Compose/Caddy parsing, container/image tests, mini-stack, KVM and live matrices
-  require Docker, Linux, a reserved bench or hardware. No Docker daemon, bench or
-  LAN host was contacted.
-- Bench measurements, image scans/sizes and acceptance ADRs remain outstanding;
-  local test duration is not benchmark evidence.
+- Local Compose/Caddy parsing, container/image tests and live matrices require
+  Docker/Linux or reserved hardware. Fleet contracts were read over authorized
+  SSH; its API has no per-job Go selection option, so no job was submitted for
+  this unpushed slice. No live stack or bench was changed.
+- Bench measurements and decisions have a separate owner; local test duration
+  is not benchmark evidence. Shipping image validation remains pending.
 
 The local CLI-only graph used for navigation covers 96 files, 825 nodes and 1099
 edges. Its 14 collapsed relation pairs and tool/skill version mismatch make it a
@@ -389,11 +385,12 @@ partial navigation aid, not parity evidence.
 ## Next
 
 Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
-and dashboard on 2026-11-01; appliance host scripts and container entrypoint ports
-are excluded. Next, in order:
+and dashboard application code on 2026-11-01; shipping integration follows those
+ports. Next, in order:
 
-1. Finish typed validation (network/remotes, pool and proxy settings) and remaining Caddy preparation. Obtain unchanged Linux CLI and Docker parser verdicts.
+1. Finish proxy settings and remaining Caddy preparation. Obtain unchanged Linux CLI and Docker parser verdicts.
 2. Port `render`, `apply`, `up`, `down` and `restart` using that config layer.
 3. Implement dashboard routes, HTTP/JSON, state/polling, wizard/control, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
-5. Run unchanged Linux/Docker suites and the reserved-bench experiment on the operator's infrastructure.
+5. Update shipping documentation, release bundles, dashboard images and appliance image builds with reference fallback.
+6. Obtain Go-enabled fleet proof on pushed heads; keep performance work with its separate owner.

@@ -152,6 +152,9 @@ proves native selection without jq. Unsupported inputs keep the original
 validators. `go/internal/config/stratum.go` parses and validates stratum bind/port
 settings through `lib/pithead/27b-stratum-endpoint.sh`, retaining Bash fallback.
 `make test-go-stratum-parity` compares diagnostics, partial state and helper frames.
+`go/internal/config/network_settings.go` derives/validates network, remote and pool
+settings through `lib/pithead/27d-go-network-settings.sh`;
+`make test-go-network-settings-parity` checks verdict order and partial globals.
 `go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
 statuses and preparation calls. `go/internal/config/caddy_sites.go` formats
@@ -173,8 +176,9 @@ derives memory settings and the Tari auto ceiling through
 `lib/pithead/33d-go-env-memory.sh`; `make test-go-env-memory-parity` checks limits
 and hardware boundaries. Bash retains hardware discovery, secret-file preparation
 and writes. Remaining typed checks stay Bash.
-The owner's 2026-11-01 Go scope covers the CLI and dashboard backend only;
-appliance host scripts and container entrypoint ports are excluded.
+The owner's 2026-11-01 Go scope covers CLI/backend application code, followed by
+shipping documentation and release/dashboard/appliance build integration. Host
+scripts and container entrypoints retain their reference implementations.
 
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates

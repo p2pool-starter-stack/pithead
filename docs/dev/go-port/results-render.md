@@ -97,3 +97,46 @@ are clean. Scoped Markdown uses the original rules:
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
   docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md
 ```
+
+## Stratum endpoint slice (2026-11-01)
+
+Go parses the stratum bind and port for supported scalar settings with the same
+jq defaults, IPv4 shape, decimal bounds and leading-zero acceptance as Bash.
+Bind validation precedes the port read. A bad bind updates only `STRATUM_BIND`;
+a bad port updates both globals before the original error function runs.
+
+The hook in `lib/pithead/27b-stratum-endpoint.sh` accepts complete NUL frames,
+helper success, a recognized stage and EOF before changing globals. Unsupported
+JSON, scalar formats or helpers retain the original Bash path. No existing test
+or fixture changed. Six supplementary tests compare exact bytes/status, partial
+state, repeated parses, native execution without jq and malformed-helper fallback.
+The unchanged standalone stratum preflight suite passes in both modes. Render
+fixture/goldens exercise the full parser; the full Linux stack suite remains unavailable.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
+and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
+Docker socket. Private command/status records use `.go-cache/logs/config-stratum-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-stratum-parity test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity` | PASS, including unchanged raw parser and render fixture/goldens | Same result, 6 supplementary stratum tests verify native execution |
+| `python3 tests/stack/standalone/test_stratum_port.py` | PASS, 14 tests | Same result |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
+| `make test-fakes` | PASS, 54 tests | Same result; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
+| `make test` | FAIL, existing `config_defaults_reference.sh` case indentation, pinned shfmt, exit 2 | Same failure; ShellCheck passes |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
+
+Native checks pass: `make go-build test-go`, `go -C go vet -tags=parity ./...`,
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compilation only).
+Generated CLI/new-adapter ShellCheck and shfmt, Go formatting, locked Ruff,
+scoped Markdown and `git diff --check` pass. Source/security reviews are clean.
+Scoped Markdown uses the original rules:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md
+```
