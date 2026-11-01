@@ -34,6 +34,16 @@ stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their out
 failure handling, teardown order and caller routing without a guest; the tier-1
 `make test-integration-selftest` target discovers it. Libvirt remains the only backend;
 the battery still requires the Linux bench and does not run on macOS.
+`selftest-eventual-core.sh` drives the real control-drain, SSH, new-boot, reboot,
+dashboard-marker, DHCP, setup-page and serial waits with delayed, never-ready and
+flapping responses. `selftest-eventual-approval.sh` exercises password commit
+polling through `pending`, `accepted`, `running` and `previewed`, including the
+140-poll timeout and its final-status diagnostic. Both use the integration
+harness's file-backed `fake_eventual` and run through the same selftest glob.
+`selftest-eventual-guest-waits.sh` extracts the XVB proxy, Tor and gate-release waits, the
+p2pool sync-gate hold, the wizard-state poll, the migration mining wait, the reset-slot wait,
+the unit-condition wait, the rig-adopt state wait and the rig-share window, and checks each passes on a late response and fails at its bound
+on a response that never arrives.
 
 After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
 with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and

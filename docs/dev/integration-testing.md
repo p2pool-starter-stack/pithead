@@ -1543,8 +1543,42 @@ rendering and value typing, expectation derivation (profile gating), secret reda
 SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on every PR (the
 `shell-standalone` job in `.github/workflows/shell.yml`) and via `make test-integration-selftest`,
 so the harness itself is held to the same lint/test standard as the rest of the stack.
+The target executes every integration and appliance selftest before returning failure.
+Each file receives a fresh `env -i` environment with only
+`PATH=/usr/local/bin:/usr/bin:/bin`; fixtures create their own scratch directories
+instead of requiring the caller's `TMPDIR` or `RUNNER_TEMP`.
+`tests/integration/test_selftest_runner.py`, registered in `make test-tools`,
+executes the Makefile recipe against passing and failing fixtures. It checks both
+globs, later-file execution, each reported exit code and environment isolation.
+
+Use `fake_eventual COUNTER MODE DELAY PENDING READY` from
+`tests/integration/lib/selftest/fake-eventual.sh` for changing command responses.
+`after` returns `PENDING` for `DELAY` reads, then `READY`; `never` always returns
+`PENDING`; `flapping` returns pending on odd reads and ready on even reads, so it
+refuses waits that need two consecutive ready samples but does not model a
+ready-then-pending regression for first-success waits. The counter is a
+file so reads inside command substitutions advance the same sequence. Each test
+owns and removes its counter. The fake returns response text; the real predicate
+and wait decide whether it is ready.
+
+`selftest-eventual-waits.sh` drives the actual integration wait wrappers with a
+fake clock through delayed, never-ready and flapping responses. The status wait
+still requires two consecutive matching container censuses; single-observation
+waits retain their existing first-success contract. The rollback worker selftest
+uses the same fake while executing the complete rollback function.
+`selftest-eventual-lifecycle-waits.sh` extracts the onion-retirement, worker-apply settle,
+history-row, borrowed-pool re-arm, control-result, wallet-recovery, upgrade-result, egress-state,
+reset-restore and rig-control waits from their modules and runs each once with a late response
+and once with a response that never arrives. Boolean waits must pass late and fail after their
+bound; the result-status polls (`_wait_control_status`, `_poll_upgrade_result`) must also skip
+the in-flight statuses and print the last status they read when they time out.
+`selftest-eventual-predicates.sh` runs the dashboard-feed, worker-set, rig-pool, Tari-readiness
+and Caddy-stability predicates through the real `wait_for`, plus a Caddy restart inside the window.
+Fixed-count retries (`_xvb_real_tor_fetch_retry`, `tari_live_config`) and polling loops written
+inline in a leg or phase body are not separate waits and are not covered. `wait_db` is covered in `selftest-eventual-waits.sh`.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
+Each shell selftest prints a literal `== section ==` header for `tests/inventory.sh`.
 `selftest-inventory-scenarios.sh` requires the real inventory to exit zero with empty stderr,
 then checks that its scenario count and list include literal-tab rows and exclude plain `t`
 and backslash-`t` decoys. The fixture retains the inventory's other suites and drift gates.

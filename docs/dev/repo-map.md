@@ -146,8 +146,10 @@ original-byte cleanup and private recovery retention are exercised by
 `tests/integration/lib/reset-restore-web.sh`. The startup-window restore fixture is
 `tests/integration/lib/reset-restore-startup.sh`, with the guest-only pause in
 `tests/os/wizard-startup-guest.sh` and pure controls in `tests/os/selftest-wizard-startup.sh`.
-Consecutive status censuses are in
-`tests/integration/lib/readiness-churn.sh`.
+Consecutive status censuses are in `tests/integration/lib/readiness-churn.sh`. Deterministic
+changing responses for integration and appliance selftests live in
+`tests/integration/lib/selftest/fake-eventual.sh`; `tests/integration/test_selftest_runner.py`
+guards their isolated Makefile discovery.
 
 Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
