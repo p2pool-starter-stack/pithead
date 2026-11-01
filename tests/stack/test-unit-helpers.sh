@@ -153,3 +153,42 @@ mkdir -p "$NOVER"
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 ver="$(cd "$NOVER" && source "$STACK" && set +e && export_build_provenance && printf '%s' "$PITHEAD_VERSION")"
 assert_eq "export_build_provenance empty when no VERSION" "$ver" ""
+
+echo "== unit: support-bundle archive is owner-only from creation and a failed tar leaves nothing (#3757) =="
+
+bundle_case() { # <tar: ok | fail>
+    local tar_mode="$1" work
+    work="$(mktemp -d)"
+    (
+        cd "$work" || exit
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        umask 022
+        log() { :; }
+        doctor_json() { echo '{}'; }
+        docker() { return 1; }
+        tar() {
+            command tar "$@" || return
+            local out="" a
+            for a in "$@"; do case "$a" in *.tar.gz) out="$a" ;; esac; done
+            printf 'MODE:%s\n' "$(ls -l "$out" | cut -c1-10)"
+            [ "$tar_mode" = ok ] || return 1
+        }
+        render_masked_config() { return 1; }
+        stack_support_bundle
+        echo "RC:$?"
+    ) 2>&1
+    echo "FILES:$(find "$work" -maxdepth 1 -name 'support-bundle-*.tar.gz' | wc -l | tr -d ' ')"
+    rm -rf "$work"
+}
+
+ok_out="$(bundle_case ok)"
+assert_contains "archive is -rw------- when tar closes it under umask 022" "$ok_out" "MODE:-rw-------"
+assert_contains "successful bundle returns 0" "$ok_out" "RC:0"
+assert_contains "successful bundle leaves its archive" "$ok_out" "FILES:1"
+
+fail_out="$(bundle_case fail)"
+assert_contains "the partial archive was already owner-only" "$fail_out" "MODE:-rw-------"
+assert_contains "a failed tar fails the verb" "$fail_out" "RC:1"
+assert_contains "a failed tar leaves no partial archive" "$fail_out" "FILES:0"
