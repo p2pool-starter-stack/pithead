@@ -143,7 +143,7 @@ drive_reset_restore() (
                 ;;
             esac
             ;;
-        *"printf 'config-reset"*)
+        *' config-reset -y')
             [ "$fault" != reset ] || return 1
             touch "$OUT_DIR/reset"
             case "$fault" in
@@ -172,11 +172,17 @@ drive_reset_restore() (
             ;;
         esac
     }
-    pithead() { [ "$fault:$1" != down:down ] && [ "$fault:$1" != up:up ]; }
+    pithead() {
+        [ "$fault:$1" != down:down ] && [ "$fault:$1" != up:up ] || return 1
+        [ "$1" != up ] || touch "$OUT_DIR/up"
+    }
     upgrade_secret_fingerprints() {
         if [ "$fault" = secrets ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
     }
     wait_status_ok() { [ "$fault" != health ]; }
+    rr_miner_prepare() { touch "$OUT_DIR/miner-prepared"; }
+    rr_miner_state() { [ -e "$OUT_DIR/restored" ] && touch "$OUT_DIR/miner-state"; }
+    rr_miner_recovered() { [ -e "$OUT_DIR/miner-prepared" ] && [ -e "$OUT_DIR/miner-state" ] && [ -e "$OUT_DIR/up" ]; }
     run_reset_restore >"$OUT_DIR/output" 2>&1
     local rc=$?
     [ ! -e "$OUT_DIR/unhandled" ] || rc=127

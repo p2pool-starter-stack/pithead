@@ -1,12 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# LAN-only sources on the node ports the *_lan_access switches publish (#2616), proved on the wire:
-# each published port is dialled from a throwaway network namespace wired to the host by a veth,
-# once from a non-private source (198.51.100.0/30, TEST-NET-2) that must be dropped, and once from a
-# private one (10.254.254.0/30) that must connect. The private dial is the control: without it a
-# broken probe or a dead daemon would read as "refused". The target is the host end of the veth, a
-# local address, so the packet takes the same DNAT -> FORWARD path as a dial from another machine.
-
+# shellcheck source=tests/integration/lib/lan-crash-evidence.sh
+source "${BASH_SOURCE[0]%/*}/lan-crash-evidence.sh" || return $?
 # Prints open or closed for a dial from <a.b.c>.2 to <a.b.c>.1:<port>; prints nothing if the
 # namespace could not be built.
 _lan_probe() { # <a.b.c> <port>
@@ -148,19 +143,32 @@ _lan_exit_code() { # <container>
     echo running
 }
 
-# A crashed LAN node comes back (#3290). Docker's restart policy is "no" so the LAN guard holds the
-# first start; the timer check starts a node that exited non-zero, but only with the rule live.
-# Part one: rule live, kill each LAN node with SIGSEGV (exit 139; a PID 1 with no handler ignores it,
-# so SIGKILL, 137, is the fallback) and require it running again within the timer interval.
-# Part two: kill it with the timer paused, flush the rule, run the timer: it must stay down.
-assert_lan_guard_crash_restart() { # <port>...
-    local p c containers="" code since deadline up rc=0
+assert_lan_guard_crash_restart() {
+    local p c containers="" code since deadline up rc=0 LAN_CRASH_EVIDENCE negative_node="" negative_evidence=""
     [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
     for p in "$@"; do
         c=$(rx "bash -c 'source ./pithead && lan_guard_container $p'")
         [[ " $containers " == *" $c "* ]] || containers="$containers $c"
     done
     for c in $containers; do
+        case "$c" in
+        monerod | tari) ;;
+        *)
+            it_fail "LAN crash target is a known node" "container lookup unavailable"
+            return 0
+            ;;
+        esac
+        if LAN_CRASH_EVIDENCE=$(mktemp -d "$OUT_DIR/lan-crash-$c.XXXXXX" 2>/dev/null); then
+            LAN_CRASH_EVIDENCE="$LAN_CRASH_EVIDENCE/observations.log"
+        else
+            it_fail "LAN crash diagnostic storage available" "allocation unavailable; controls continue"
+            LAN_CRASH_EVIDENCE=/dev/null
+        fi
+        if [ -z "$negative_node" ]; then
+            negative_node=$c
+            negative_evidence=$LAN_CRASH_EVIDENCE
+        fi
+        _lan_crash_capture "$c" before-crash unknown "$(($(date +%s) + 4))"
         rx "docker kill --signal SEGV $c" >/dev/null 2>&1 || true
         code=$(_lan_exit_code "$c")
         if [ "$code" = running ]; then
@@ -171,22 +179,26 @@ assert_lan_guard_crash_restart() { # <port>...
         assert_ne "...and it was not a clean exit (#3290)" "$code" "0"
         since=$(date +%s)
         deadline=$((since + 180))
+        _lan_crash_capture "$c" after-exit "$code" "$deadline"
         up=false
         while [ "$(date +%s)" -lt "$deadline" ]; do
             up=$(rx "docker inspect -f '{{.State.Running}}' $c" 2>/dev/null)
+            case "$up" in true | false) ;; *) up=unavailable ;; esac
+            _lan_crash_capture "$c" recovery "$up" "$deadline"
             [ "$up" = true ] && break
             sleep 5
         done
         assert_eq "$c is running again within the timer interval, rule live (#3290)" "$up" true
     done
+    c=$negative_node
+    LAN_CRASH_EVIDENCE=$negative_evidence
+    _lan_crash_capture "$c" before-negative unknown "$(($(date +%s) + 4))"
     assert_eq "the rule is still live after the restart (#3290)" \
         "$(rx "bash -c 'source ./pithead && lan_guard_enforced $*' && echo live")" live
     if ! _lan_timer_pause; then
         it_fail "LAN check service finished before the no-rule crash (#3290)" "still running after 30s; negative case skipped"
         return 0
     fi
-    c=${containers# }
-    c=${c%% *}
     rx "docker kill --signal KILL $c" >/dev/null 2>&1 || true
     assert_ne "$c is down before the rule is flushed (#3290)" "$(_lan_exit_code "$c")" running
     _lan_flush_rules

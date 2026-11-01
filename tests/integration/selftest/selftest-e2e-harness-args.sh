@@ -304,6 +304,13 @@ else
     it_fail "fixture cleanup removes Tor data and marker after phase recovery copies are gone"
 fi
 
+echo "== #2000: the SSH fault token gets our own BENCH_HOST appended as its dest, and only it does =="
+OFF="$(phase_list_of "$(launch_of " --fault-injection")")"
+ON="$(phase_list_of "$(launch_of " --fault-injection-ssh")")"
+assert_eq "the plain fault phase gets no destination" "$(has_phase "$OFF" --fault-ssh-dest)" "no"
+assert_eq "the SSH fault phase does" "$(has_phase "$ON" --fault-ssh-dest)" "yes"
+assert_contains "and it is our own BENCH_HOST (the box dials itself), not a second box" "$ON" "--fault-ssh-dest bench"
+
 echo ""
 echo "selftest-e2e-harness-args: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
