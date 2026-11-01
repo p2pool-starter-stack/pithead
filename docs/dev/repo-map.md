@@ -169,6 +169,9 @@ SHA-256, stable hash reconciliation, bcrypt and warning decisions stay in Bash.
 `go/internal/config/directories.go` derives data paths and the shared data root via
 `lib/pithead/27h-go-directories.sh`; `make test-go-directories-parity` compares
 layouts, preserved spellings and original caller-side safety checks.
+`go/internal/config/caddy_bind.go` filters supplied bind candidates through
+`lib/pithead/35c-caddy-go-bind.sh`; `make test-go-caddy-bind-parity` checks complete
+renders and callback order. Discovery and public-IP classification stay in Bash.
 `go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
 statuses and preparation calls. `go/internal/config/caddy_sites.go` formats
@@ -178,8 +181,8 @@ hook supplies Bash-expanded hosts through the tagged `sites-v1` protocol,
 retaining the legacy frame. `go/internal/config/caddy_auth.go` prepares auth blocks
 and the boot digest through `lib/pithead/35b-caddy-go-auth.sh`;
 `make test-go-caddy-auth-parity` checks complete renders and preparation fallback.
-Bash keeps host expansion, bind/bcrypt/certificate preparation, reference port
-preparation and file writes. `go/internal/config/env.go`
+Bash keeps host expansion, address discovery/classification, bcrypt/certificate
+preparation, reference port preparation and file writes. `go/internal/config/env.go`
 serializes the complete ordered `.env` batch via `lib/pithead/33a-go-env-render.sh`.
 `make test-go-env-parity` adds byte/protocol comparisons; the unchanged sparse
 render fixture and goldens remain the oracle. `go/internal/config/env_network.go`

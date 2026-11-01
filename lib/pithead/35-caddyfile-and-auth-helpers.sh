@@ -48,7 +48,7 @@ caddy_hash_password_b64() {
 }
 generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
-    local native_caddy
+    local native_caddy native_caddy_tail=$'\n.'
     # Every vhost forwards the authenticated basic_auth username as X-Auth-User (#33) — the audit
     # `actor` for control-channel requests. header_up SETS the header, so a client-supplied
     # X-Auth-User can never spoof it; with auth off the placeholder renders empty.
@@ -158,7 +158,7 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     # dashboard.host — a documented, supported choice — got a single-host site list and NO bind at
     # all, which is the wildcard listener and the whole exposure, back again for exactly the
     # operators who configured the box most deliberately.
-    local bind_addrs="" _bh _bridge_addrs
+    local bind_addrs="" _bh _bridge_addrs _bind_candidates=()
     if is_appliance && [ "${DASHBOARD_EXPOSE_PUBLIC_IP:-false}" != "true" ]; then
         # Container-bridge gateways are not bound: they belong to the engine, not the box. A stale
         # one (wizard bridge, previous boot) is in `hostname -I` now and gone when `up` starts
@@ -168,21 +168,24 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
         _bridge_addrs=" $(container_bridge_addrs | tr '\n' ' ') "
         for _bh in $(hostname -I 2>/dev/null); do
             is_public_ip "$_bh" && continue
-            case "$_bridge_addrs" in *" $_bh "*) continue ;; esac
-            if [ -n "${NETWORK_PREFIX:-}" ] && [ "$_bh" = "${NETWORK_PREFIX}.1" ]; then
-                continue
-            fi
-            case "$_bh" in
-            *:*) ;;
-            *[!0-9.]*) continue ;;
-            esac
-            bind_addrs="${bind_addrs:+$bind_addrs }$_bh"
+            _bind_candidates+=("$_bh")
         done
-        # Loopback unconditionally, appended OUTSIDE the loop so it survives a box that reports no
-        # usable non-public address at render time: the host-networked dashboard and Caddy's own
-        # admin healthcheck both arrive this way, and a bind that dropped them would be worse than
-        # no bind at all.
-        bind_addrs="${bind_addrs:+$bind_addrs }127.0.0.1 ::1"
+        if ! command -v _caddy_bind_go >/dev/null 2>&1 || ! bind_addrs=$(_caddy_bind_go "$_bridge_addrs" "${NETWORK_PREFIX:-}" ${_bind_candidates[@]+"${_bind_candidates[@]}"}); then
+            for _bh in ${_bind_candidates[@]+"${_bind_candidates[@]}"}; do
+                case "$_bridge_addrs" in *" $_bh "*) continue ;; esac
+                if [ -n "${NETWORK_PREFIX:-}" ] && [ "$_bh" = "${NETWORK_PREFIX}.1" ]; then continue; fi
+                case "$_bh" in
+                *:*) ;;
+                *[!0-9.]*) continue ;;
+                esac
+                bind_addrs="${bind_addrs:+$bind_addrs }$_bh"
+            done
+            # Loopback unconditionally, appended OUTSIDE the loop so it survives a box that reports no
+            # usable non-public address at render time: the host-networked dashboard and Caddy's own
+            # admin healthcheck both arrive this way, and a bind that dropped them would be worse than
+            # no bind at all.
+            bind_addrs="${bind_addrs:+$bind_addrs }127.0.0.1 ::1"
+        fi
     fi
     # NO trailing newline: consumed as $(_bind_line) on its own heredoc line, and command
     # substitution strips trailing newlines anyway — emitting one here produced
@@ -211,7 +214,6 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
         [ -n "$bind_addrs" ] || return 0
         printf '    bind %s' "${NETWORK_PREFIX}.1"
     }
-
     # The :80 and :443 catch-alls that replace Caddy's own defaults for an unmatched Host. Built
     # here because both need everything that is only settled by now ($site_hosts, the bind list).
     #
@@ -258,7 +260,6 @@ $(_bind_line)
 
 "
     fi
-
     : >"$target"
     if native_caddy=$(_caddy_render_go prefix 2>/dev/null); then
         printf '%s' "${native_caddy%.}" >>"$target"
@@ -309,7 +310,7 @@ $(_bind_line)
     log "Generating Caddyfile for $scheme ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
     if native_caddy=$(_caddy_render_go main 2>/dev/null); then
         cat <<EOF >>"$target"
-${native_caddy%$'\n'.}
+${native_caddy%"$native_caddy_tail"}
 EOF
     else
         cat <<EOF >>"$target"
@@ -336,7 +337,6 @@ $auth
 }
 EOF
     fi
-
     # Onion vhost (#343): a second site reachable ONLY from the tor container, via the bridge gateway
     # (NETWORK_PREFIX.1 — the /24's first host, where host-networked Caddy binds and bridge containers
     # route out). It is never on the LAN. Plain HTTP: Tor provides the transport encryption inside the
@@ -349,7 +349,7 @@ EOF
         log "Adding onion vhost for the dashboard (${NETWORK_PREFIX}.1, login required)..."
         if native_caddy=$(_caddy_render_go onion-http 2>/dev/null); then
             cat <<EOF >>"$target"
-${native_caddy%$'\n'.}
+${native_caddy%"$native_caddy_tail"}
 EOF
         else
             cat <<EOF >>"$target"
@@ -377,7 +377,7 @@ EOF
             log "Adding HTTPS onion vhost (self-signed cert for the .onion)..."
             if native_caddy=$(_caddy_render_go onion-https 2>/dev/null); then
                 cat <<EOF >>"$target"
-${native_caddy%$'\n'.}
+${native_caddy%"$native_caddy_tail"}
 EOF
             else
                 cat <<EOF >>"$target"

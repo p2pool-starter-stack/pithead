@@ -35,6 +35,10 @@
 .PHONY: test-go-dashboard-access-parity
 .PHONY: test-go-dashboard-auth-parity
 .PHONY: test-go-directories-parity
+.PHONY: test-go-caddy-bind-parity
+
+test-go-caddy-bind-parity: go-build test-go ## Compare Caddy bind planning and unchanged render contracts
+	python3 tests/go-parity/test_caddy_bind.py
 
 test-go-directories-parity: go-build test-go ## Compare data directory derivation and safety gates with Bash
 	python3 tests/go-parity/test_directories.py
