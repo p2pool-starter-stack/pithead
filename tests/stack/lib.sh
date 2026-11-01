@@ -224,7 +224,6 @@ EOF
     printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/iptables"
     printf '#!/usr/bin/env bash\ncat >/dev/null\n' >"$bin/iptables-restore"
     chmod +x "$bin/docker" "$bin/sudo" "$bin/iptables" "$bin/iptables-restore"
-    ! command -v python3 >/dev/null 2>&1 || install -m 755 "$ROOT/tests/stack/fixtures/python3-shim" "$bin/python3"
 }
 
 # --- shared test fixtures hoisted from run.sh (#1105 Phase 1, module 1b), verbatim ---------
