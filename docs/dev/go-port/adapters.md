@@ -355,3 +355,21 @@ native state, connection, standby and metrics responses, one history read and
 sanitized failures. `make test-go-dashboard-state-parity` also runs unchanged
 chart and JSON route modules. Polling, storage, domain metrics and remaining
 state sections still execute Python; these checks do not prove a full Go backend.
+
+## Native dashboard domain metrics
+
+`dashboard_metrics_plugin.py` layers over the unchanged state/HTTP adapters and
+routes direct `build_metrics` and both history-average functions through Go
+stdin helpers. It reconstructs the existing frozen dataclasses and reads the
+same patched config/helper values, preserving the original fixture contracts.
+HTTP requests use the production Go calculation directly. The plugin is selected
+explicitly for the unchanged full dashboard suite.
+
+`dashboard_metrics_compare.py` compares native results with the original Python
+metrics and average functions, checks malformed-helper refusal, and makes every
+Python `build_metrics` alias raise while `/api/state` and `/metrics` still
+succeed. `make test-go-dashboard-domain-parity` runs these new cases, prior
+comparisons and unchanged metrics/chart/JSON suites. Native runtime unit cases
+check the private GET/POST handoff, raw query/history preservation, reject
+percentages and failure boundaries. Polling, SQLite and remaining presentation
+still use Python and are not proved native by these adapters.

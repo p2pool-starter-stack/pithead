@@ -78,3 +78,73 @@ confirm the final tested implementation and new comparisons remain unchanged.
 Existing tests, fixtures and Make behavior are unchanged; two additive targets
 build and test the dashboard. The aggregate Make gate and unavailable
 Linux/Docker/fleet checks retain the limits below.
+
+## Native chart and JSON slice (2026-11-01)
+
+Go now computes the history chart within `/api/state`: range filtering, all five
+averaging windows, adaptive bucket averages, outage gaps, nearest-share markers,
+events, raffle wins and capped payout markers. It also assembles miner connection
+and XvB standby JSON and renders the Prometheus exposition. Private inputs contain
+raw config/domain/storage values rather than those three rendered responses.
+
+This is still a hybrid backend. Python supplies storage reads and config,
+computes domain metrics, assembles every other state section, and runs all polling
+and control services. A private bridge replaces only the chart builder with an
+input capture, so each normal state request reads history once; Go computes the
+chart and assembles the final JSON response. Supported chart inputs stay native;
+unavailable/malformed/oversized private inputs retain the public Python handler.
+Collection errors yield sanitized public failures. No performance claim is made.
+
+The bridge is installed only in the Go-launched Python child or explicit parity
+adapter. It uses the existing private loopback listener; its paths are absent
+from the public Go route table. Credentials and browser headers are not forwarded
+to other hosts, redirects are refused, input reads are bounded and connection
+credentials retain no-store. The default Python launch and existing public
+handlers stay unchanged. The container selection switch remains pending.
+
+The new pytest plugin layers over the unchanged HTTP plugin, adds private inputs
+to the original app, and routes direct `build_chart` calls through the Go helper.
+It materializes marker iterables as the Python algorithm does, so existing mock
+fixtures remain unchanged. Native HTTP state handling calls Go directly without
+spawning a helper. New comparisons force all four original public handlers to
+fail, proving native route ownership; they compare charts against Python across
+ranges, windows, downsampling and marker cases and check one history read and
+sanitized failures. Existing tests, fixtures and browser assets stay unchanged.
+
+Baseline uses `PITHEAD_IMPL=python make test-dashboard`. Go uses the same command
+with `PITHEAD_IMPL=go`, `PYTEST_PLUGINS=dashboard_state_plugin` and `PYTHONPATH`
+containing the absolute `tests/go-parity` and `dashboard` directories. Worktree
+caches and an absent Docker socket are used. Private records are under
+`.go-cache/logs/dashboard-state-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-dashboard` | Pass; 3716 unchanged tests, 96.99% Python coverage | Pass; same 3716 tests, 90.40% Python coverage through the state adapter |
+| `make test-go-dashboard-state-parity` | Original Python chart compared within the new cases; selected modules included in the baseline suite | Pass; 66 unchanged chart/route tests and 26 new cases |
+| `make test-go-dashboard-http-parity` | Earlier baseline retained in the HTTP ledger | Pass; all 26 prior transport tests unchanged |
+| `make test-patch-coverage` after the Go-selected suite | Not separately rerun | Pass; 90% over the branch diff |
+| `make test-fakes` | Pass; 54 tests | Pass; same 54 tests; Python client contracts |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
+| `make test` | Exit 2 at unchanged `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 third-party cache Markdown findings | Same result |
+
+Native checks pass: `go -C go test -json -race -count=1
+./internal/dashboard/...`, `go -C go test ./...`, `go -C go vet ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/dashboard-linux-amd64
+./cmd/dashboard` (compile only). Python coverage is reference/bridge coverage,
+not Go coverage. Go storage migration/recovery, polling, remaining state/domain
+computation and control are not yet implemented. Original Linux/container and
+Go-enabled fleet verdicts remain unavailable for this unpushed slice.
+
+All 642 Python files pass locked Ruff lint/formatting. Dashboard extras are
+restored with `uv sync --locked --project dashboard --extra dev --extra test`.
+Changed Go files pass `gofmt -l`. Changed Markdown passes `npx --yes
+markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs`
+with the four changed document paths. Paired `make lint-file-budget
+lint-docs-voice` passes after the ledger update with the starting-SHA override.
+
+Independent security and adversarial reviews pass. Frozen-source checksums
+confirm the final tested implementation and new comparisons remain unchanged.
+Existing tests, fixtures and Make behavior remain unchanged. The new Make target
+adds the state/JSON slice; the prior transport target still passes unchanged.
+Earlier HTTP-foundation evidence is preserved in the linked dashboard ledger.

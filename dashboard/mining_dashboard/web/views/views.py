@@ -248,6 +248,8 @@ def build_state(
     avg_window=DEFAULT_HASHRATE_WINDOW,
     *,
     chart_builder=None,
+    history=None,
+    metrics=None,
 ):
     """Assemble the full ``/api/state`` payload — the contract the client renders against.
 
@@ -257,18 +259,17 @@ def build_state(
     formats each section. Every value is a JSON-serializable primitive, list or dict. May raise
     (e.g. ``state_mgr.get_history`` failing); the caller turns that into a sanitized 500."""
     data = data or {}
-    history = state_mgr.get_history()
+    history = state_mgr.get_history() if history is None else history
     share_stats = state_mgr.get_share_stats()  # per-poll share-health deltas (#116)
     raffle_wins = state_mgr.get_raffle_wins()  # rounds this wallet won, from XvB's winners file
     # Confirmed on-chain payouts (#381): fetched once when the view-only wallet feature is on (else
     # None), fed to both the earnings totals and the chart markers. config read at call time so
     # tests can flip the flag per-app.
     monero_payouts = state_mgr.get_payouts("monero") if config.PAYOUT_CONFIRM_ENABLED else None
-    metrics = build_metrics(data, state_mgr, history)
+    metrics = build_metrics(data, state_mgr, history) if metrics is None else metrics
     db_healthy = state_mgr.is_db_healthy()
     mode_tok, p2p_tok, xvb_tok = _mode_palette(metrics.mode)
     pool_net = build_pool_network(data, metrics)
-
     # Built once, consumed twice: the Earnings card reads the full payload, the expected-vs-actual
     # summary (#808) rolls the same figures up — one build, so the two can't disagree.
     earnings = build_earnings(
@@ -280,7 +281,6 @@ def build_state(
         ),
         xvb_day=xvb_current_tier_reward_day(metrics, state_mgr),
     )
-
     # XvB honesty figures (#866/#872), computed once and shared by the earnings summary and the
     # tier calculator so the two can never disagree: the forecast win rate from XvB's own winners
     # file, and the measured fraction of the published reward this wallet's wins actually paid.

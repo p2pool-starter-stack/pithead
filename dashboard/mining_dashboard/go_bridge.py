@@ -1,9 +1,9 @@
 import logging
 import os
-from dataclasses import asdict
 
 from aiohttp import web
 
+from mining_dashboard import go_domain
 from mining_dashboard.config import config
 from mining_dashboard.web import server
 from mining_dashboard.web.views import charts, header
@@ -12,6 +12,11 @@ logger = logging.getLogger("GoBridge")
 
 
 def _state(request):
+    return {"domain": go_domain.collect(request.app["latest_data"], request.app["state_manager"])}
+
+
+async def _finish_state(request):
+    prepared = await request.clone(client_max_size=64 << 20).json()
     chart = {}
 
     def capture(history, shares, range_arg, window, avg_window, **markers):
@@ -28,12 +33,14 @@ def _state(request):
 
     query = request.query
     state = server.build_state(
-        request.app["latest_data"],
+        prepared["latest_data"],
         request.app["state_manager"],
         query.get("range", "all"),
         server.parse_window(query.get("from"), query.get("to")),
         server.canonical_window(query.get("avg")),
         chart_builder=capture,
+        history=prepared["history"],
+        metrics=go_domain.restore(prepared["metrics"]),
     )
     return {"state": state, "chart": chart}
 
@@ -63,15 +70,14 @@ def _xvb_standby(request):
 def _metrics(request):
     data = request.app["latest_data"] or {}
     state = request.app["state_manager"]
-    metrics = server.build_metrics(data, state)
     disk_percent = (data.get("system", {}).get("disk", {}) or {}).get("percent", 0) or 0
     summary = data.get("proxy_summary", {}) or {}
     pool = (data.get("pool", {}) or {}).get("pool", {}) or {}
     return {
-        "Metrics": asdict(metrics),
+        "domain": go_domain.collect(data, state),
         "DiskPercent": disk_percent,
         "DBHealthy": state.is_db_healthy(),
-        "RejectPct1H": server.share_reject_pct(state.get_share_stats(), 3600),
+        "share_stats": state.get_share_stats(),
         "SharesAccepted": summary.get("accepted", 0) or 0,
         "SharesRejected": summary.get("rejected", 0) or 0,
         "PoolBlocksFound": pool.get("blocks_found", 0) or 0,
@@ -100,3 +106,17 @@ def install(app):
                 )
 
         app.router.add_get(f"/_go/{operation}", handle)
+
+    async def finish(request):
+        try:
+            return web.json_response(
+                {"ok": True, "input": await _finish_state(request)},
+                headers={"Cache-Control": "no-store"},
+            )
+        except Exception:
+            logger.exception("Error building Go dashboard state")
+            return web.json_response(
+                {"ok": False}, status=500, headers={"Cache-Control": "no-store"}
+            )
+
+    app.router.add_post("/_go/state", finish)

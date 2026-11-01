@@ -8,12 +8,24 @@ import (
 	"syscall"
 
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/charts"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/domain"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/runtime"
 )
 
 func main() {
 	if helper := os.Getenv("PITHEAD_DASHBOARD_HELPER"); helper != "" {
-		if helper != "chart" || charts.Run(os.Stdin, os.Stdout) != nil {
+		var err error
+		switch helper {
+		case "chart":
+			err = charts.Run(os.Stdin, os.Stdout)
+		case "domain":
+			err = domain.Run(os.Stdin, os.Stdout)
+		case "average":
+			err = domain.RunAverage(os.Stdin, os.Stdout)
+		default:
+			os.Exit(125)
+		}
+		if err != nil {
 			os.Exit(125)
 		}
 		return
