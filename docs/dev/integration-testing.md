@@ -1506,6 +1506,27 @@ rendering and value typing, expectation derivation (profile gating), secret reda
 SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on every PR (the
 `shell-standalone` job in `.github/workflows/shell.yml`) and via `make test-integration-selftest`,
 so the harness itself is held to the same lint/test standard as the rest of the stack.
+The target executes every integration and appliance selftest before returning failure.
+Each file receives a fresh `env -i` environment with only
+`PATH=/usr/local/bin:/usr/bin:/bin`; fixtures create their own scratch directories
+instead of requiring the caller's `TMPDIR` or `RUNNER_TEMP`.
+`tests/integration/test_selftest_runner.py`, registered in `make test-tools`,
+executes the Makefile recipe against passing and failing fixtures. It checks both
+globs, later-file execution, each reported exit code and environment isolation.
+
+Use `fake_eventual COUNTER MODE DELAY PENDING READY` from
+`tests/integration/lib/fake-eventual.sh` for changing command responses.
+`after` returns `PENDING` for `DELAY` reads, then `READY`; `never` always returns
+`PENDING`; `flapping` alternates pending and ready responses. The counter is a
+file so reads inside command substitutions advance the same sequence. Each test
+owns and removes its counter. The fake returns response text; the real predicate
+and wait decide whether it is ready.
+
+`selftest-eventual-waits.sh` drives the actual integration wait wrappers with a
+fake clock through delayed, never-ready and flapping responses. The status wait
+still requires two consecutive matching container censuses; single-observation
+waits retain their existing first-success contract. The rollback worker selftest
+uses the same fake while executing the complete rollback function.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
 `selftest-inventory-scenarios.sh` requires the real inventory to exit zero with empty stderr,

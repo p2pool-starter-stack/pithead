@@ -5,11 +5,11 @@ echo "== Image-upgrade rollback worker reconnection =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/lib.sh"
+source "$HERE/lib/fake-eventual.sh"
 # shellcheck source=tests/integration/lib/live-state-support.sh
 source "$HERE/lib/live-state-support.sh"
-# Extract only rollback so unrelated trust/transport setup cannot affect the fixture.
 eval "$(sed -n '/^restore_upgrade_baseline() {/,/^}/p' "$HERE/lib/live-upgrade-support.sh")"
-td="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/restore-workers.XXXXXX")"
+td="$(mktemp -d)"
 trap 'rm -rf "$td"' EXIT
 
 run_case() (
@@ -65,25 +65,16 @@ run_case() (
     telemetry_rows_continue() { [ "$1" = "$2" ]; }
     worker_names() { api_state | jq -r '.workers[]?.name' | sort -u; }
     api_state() {
-        n=$(($(cat "$td/reads") + 1))
-        printf '%s\n' "$n" >"$td/reads"
-        name=miner count=1
+        local ready='{"workers":[{"name":"miner"}],"proxy_workers":1,"sync":{"monero":{"state":"done"},"tari":{"state":"done","current":10}},"stratum":{"total_hashes":1}}'
+        local empty='{"workers":[],"proxy_workers":0,"sync":{"monero":{"state":"done"},"tari":{"state":"done","current":10}},"stratum":{"total_hashes":1}}'
         case "$scenario" in
-        converges) [ "$n" -ge 4 ] || {
-            name=""
-            count=0
-        } ;;
-        never) name="" count=0 ;;
-        wrong) name=other ;;
-        flap) [ "$n" = 1 ] || {
-            name=""
-            count=0
-        } ;;
+        converges) fake_eventual "$td/reads" after 3 "$empty" "$ready" ;;
+        never) fake_eventual "$td/reads" never 0 "$empty" "$ready" ;;
+        wrong) fake_eventual "$td/reads" after 0 "$empty" "${ready/miner/other}" ;;
+        flap) fake_eventual "$td/reads" after 1 "$ready" "$empty" ;;
         esac
-        jq -n --arg name "$name" --argjson count "$count" \
-            '{workers: (if $name == "" then [] else [{name:$name}] end), proxy_workers:$count,
-              sync:{monero:{state:"done"},tari:{state:"done",current:10}},stratum:{total_hashes:1}}'
     }
+
     rc=0
     restore_upgrade_baseline >"$td/output" 2>&1 || rc=$?
     case "$scenario" in

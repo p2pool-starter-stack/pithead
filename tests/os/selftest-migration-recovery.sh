@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?set TMPDIR or RUNNER_TEMP}}"
 HERE=$(cd "$(dirname "$0")" && pwd)
 python3 "$HERE/selftest-migration-recovery.py"
 # shellcheck source=tests/os/migration-recovery.sh
 source "$HERE/migration-recovery.sh"
 SCRIPT_DIR=$HERE
-T=$(mktemp -d "${TMPDIR:?}/migration-recovery.XXXXXX")
+T=$(mktemp -d)
+export TMPDIR="$T"
 trap 'rm -rf "$T"' EXIT
 fail() {
     echo "FAIL: $*" >&2
     exit 1
 }
-# Use actual Git ancestry, including a side branch and the candidate's own commits.
 (
     mkdir "$T/repo"
     cd "$T/repo"

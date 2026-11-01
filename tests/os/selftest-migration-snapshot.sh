@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?set TMPDIR or RUNNER_TEMP}}"
 HERE=$(cd "$(dirname "$0")" && pwd)
 python3 "$HERE/selftest-migration-snapshot.py"
 
-# A later same-version health-fault build must not overwrite the good recovery input.
 # shellcheck source=tests/os/migration-same-version-fallback.sh
 source "$HERE/migration-same-version-fallback.sh"
-T=$(mktemp -d "${TMPDIR:?}/migration-bundles.XXXXXX")
+T=$(mktemp -d)
+export TMPDIR="$T"
 trap 'rm -rf "$T"' EXIT
 mkdir "$T/scratch"
 for temporary_dir in configured unset empty; do
