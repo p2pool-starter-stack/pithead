@@ -8,10 +8,10 @@ onion_probe_classify() { # <exit> <output> -> "<stage> [http status]"
     local http=""
     case "$2" in *"HTTP "[0-9][0-9][0-9]*) http="${2##*HTTP }" http="${http:0:3}" ;; esac
     case "$1:$2" in
-    0:*PROBE-OK*) echo "ok $http" ;;
-    1:*PROBE-FAIL*"HTTP 000"*) echo "http-reachability 000" ;;
-    1:*PROBE-FAIL*) echo "http-status $http" ;;
-    2:*PROBE-FAIL*) echo "client-bootstrap" ;;
+    0:*PROBE-OK:*) echo "ok $http" ;;
+    1:*PROBE-FAIL:*"HTTP 000"*) echo "http-reachability 000" ;;
+    1:*PROBE-FAIL:*) echo "http-status $http" ;;
+    2:*PROBE-FAIL:*) echo "client-bootstrap" ;;
     4:*) echo "authorization" ;;
     *) echo "error" ;;
     esac

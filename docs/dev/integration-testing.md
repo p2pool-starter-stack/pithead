@@ -1261,8 +1261,8 @@ No request, retry or wait is added; the original assertion and failure count are
 A failed `rotate-onion` external baseline probe saves `results/onion-baseline-probe.failure.json`
 before the row fails and the phase returns. It holds a fixed stage (`input`, `build`,
 `authorization`, `client-bootstrap`, `http-reachability`, `http-status` or `error`), the probe
-exit status, the numeric HTTP status (0 for no response) and elapsed seconds; unknown values are
-`null`. It omits onion addresses, authorization keys, topology and probe output. The harness
+exit status, the numeric HTTP status (0 for no response) and elapsed seconds; unknown numbers are
+`null` and an unknown stage is `error`. It omits onion addresses, authorization keys, topology and probe output. The harness
 collects `results/`, so a worker reads the file from the job's bench-ci artifacts
 (`bench-ci artifacts <id>@<sha>`). `selftest-onion-baseline-diagnostics.sh` covers each stage.
 The shared Tor-egress control also records each SOCKS request in
