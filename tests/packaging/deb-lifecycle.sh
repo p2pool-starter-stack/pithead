@@ -44,7 +44,17 @@ done
 
 WORK=$(mktemp -d)
 chmod 755 "$WORK"
-trap 'rm -rf "$WORK"' EXIT
+DOCKER_PATH=$(command -v docker || echo /usr/bin/docker)
+stub_docker() {
+    if [ -e "$DOCKER_PATH" ] && [ ! -e "$DOCKER_PATH.real" ]; then mv "$DOCKER_PATH" "$DOCKER_PATH.real"; fi
+    printf '#!/bin/sh\n%s\n' "$1" >"$DOCKER_PATH"
+    chmod 755 "$DOCKER_PATH"
+}
+restore_docker() {
+    rm -f "$DOCKER_PATH"
+    if [ -e "$DOCKER_PATH.real" ]; then mv "$DOCKER_PATH.real" "$DOCKER_PATH"; fi
+}
+trap 'restore_docker; rm -rf "$WORK"' EXIT
 
 make_bundle() {
     local version=$1 extra=$2 dir="$WORK/b$1/pithead"
@@ -85,8 +95,7 @@ check "the program tree is synced" test -f "$STATE/build/tor/torrc.template"
 [ ! -s "$LOG" ] && ok "a host that was never set up gets no stack move" || bad "a host that was never set up gets no stack move"
 
 echo "== upgrade =="
-printf '#!/bin/sh\necho running\n' >/usr/local/bin/docker
-chmod 755 /usr/local/bin/docker
+stub_docker 'echo running'
 printf 'DEPLOYMENT_COMPLETED=true\n' >"$STATE/.env"
 printf '{}\n' >"$STATE/config.json"
 mkdir -p "$STATE/data/chain"
@@ -110,7 +119,7 @@ echo "== reconfigure =="
 : >"$LOG"
 DEBIAN_FRONTEND=noninteractive dpkg-reconfigure pithead >/dev/null 2>&1
 grep -qx "upgrade|1|$STATE" "$LOG" && ok "dpkg-reconfigure moves the stack again" || bad "dpkg-reconfigure moves the stack again"
-printf '#!/bin/sh\n' >/usr/local/bin/docker
+stub_docker ':'
 : >"$LOG"
 check "dpkg-reconfigure succeeds when no stack is running" env DEBIAN_FRONTEND=noninteractive dpkg-reconfigure pithead
 [ ! -s "$LOG" ] && ok "a stopped stack is not started by the package" || bad "a stopped stack is not started by the package"
@@ -121,7 +130,7 @@ check "apt removes the package" apt-get remove -y pithead
 grep -q '^down|' "$LOG" && ok "remove stops the stack" || bad "remove stops the stack"
 refuse "the program tree is gone" test -e /usr/share/pithead
 refuse "the wrapper is gone" test -e /usr/bin/pithead
-rm -f /usr/local/bin/docker
+restore_docker
 check "configuration survives remove" test -f "$STATE/config.json"
 check "chain data survives remove" test -f "$STATE/data/chain/blk"
 

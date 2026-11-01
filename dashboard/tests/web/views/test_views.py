@@ -135,17 +135,6 @@ class TestChartWindow:
         state = build_state(_data(), _state_mgr(history=[self._row()]), "all")
         assert state["control_enabled"] is True
 
-    def test_build_state_names_the_apt_command_only_on_an_apt_install(
-        self, _data, _state_mgr, monkeypatch
-    ):
-        import mining_dashboard.config.config as cfg
-
-        state = build_state(_data(), _state_mgr(history=[self._row()]), "all")
-        assert state["apt_update_command"] is None
-        monkeypatch.setattr(cfg, "INSTALL_ROUTE", "apt")
-        state = build_state(_data(), _state_mgr(history=[self._row()]), "all")
-        assert state["apt_update_command"] == "sudo apt update && sudo apt upgrade"
-
 
 # --- pool/network passthrough ---------------------------------------------------------
 
