@@ -1574,7 +1574,12 @@ loop after one healthy instance, a reused pid, an absent daemon, an unreadable o
 artifact's page arithmetic and the row's place in `run.sh`, drives the reduced-tier pool bound
 against fixture pin files (fitting exactly, missing by one page, unreadable, empty, absent, and
 against the checked-out repo's own `os/overlay/pithead-hugepages`), and reads a live stand-in
-process through the sample snippet so the `/proc` parsing is exercised on the CI host.
+Python 3 process through the sample snippet so the `/proc` parsing is exercised on the Linux
+CI host. The stand-in writes its daemon name without a newline to `/proc/self/comm`, lives for at most
+60 seconds, and is stopped and reaped by the EXIT-only cleanup trap on completion or
+interruption, following the harness abort-trap contract. The selftest waits
+up to five seconds for that identity, checks its exact bytes, then reads PID, start time, hugetlb usage and
+thread count; absent-process and wrong-command controls remain binding.
 `selftest-zmq-probe.sh` drives the ZMTP verdicts from captured and hand-built wire fixtures,
 so every failure class — a silent peer, a non-ZMQ listener, a ZMTP peer that is not a publisher, a
 READY frame carrying a decoy `Socket-Type` value — is reachable with no socket and no stack. It
