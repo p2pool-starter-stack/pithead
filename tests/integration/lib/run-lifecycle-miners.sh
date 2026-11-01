@@ -47,6 +47,16 @@ lifecycle_mining_save() {
         return 1
     fi
 }
+lifecycle_mining_diagnostics() {
+    [ -n "${LIFECYCLE_MINER_DIAGNOSTICS:-}" ] || return 0
+    {
+        printf 'lifecycle mining diagnostic: %s\n' "$1"
+        rx "timeout --kill-after=2 10 docker inspect --format 'proxy status={{.State.Status}} networks={{json .NetworkSettings.Networks}}' xmrig-proxy
+            timeout --kill-after=2 10 docker network inspect --format '{{json .IPAM.Config}}' mining_net
+            timeout --kill-after=2 10 docker compose exec -T dashboard python3 -c 'import os; print(\"proxy endpoint=\" + os.environ.get(\"PROXY_HOST\", \"\") + \":\" + os.environ.get(\"PROXY_API_PORT\", \"\"))'
+            timeout --kill-after=2 10 systemctl show xmrig.service -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus" 2>&1 | tail -n 20
+    } >>"$LIFECYCLE_MINER_DIAGNOSTICS" || true
+}
 lifecycle_mining_step() {
     local label=$1 before after names end rc=0
     shift
@@ -62,6 +72,7 @@ lifecycle_mining_step() {
     else
         before=$(lifecycle_proxy_started) && names=$(lifecycle_worker_set) || {
             it_fail "$label mining precondition" "proxy inspection or live worker set unreadable"
+            lifecycle_mining_diagnostics "$label precondition"
             return 1
         }
     fi
@@ -90,6 +101,7 @@ lifecycle_mining_step() {
     if [ "${LIFECYCLE_MINER_STOPPED:-0}" = 1 ] && [ "$label" = restore ]; then return 0; fi
     after=$(lifecycle_proxy_started) || {
         it_fail "$label proxy restarts" "proxy inspection failed after a live-returning step"
+        lifecycle_mining_diagnostics "$label proxy inspection"
         return 1
     }
     LIFECYCLE_MINER_STOPPED=0
@@ -99,6 +111,7 @@ lifecycle_mining_step() {
     until lifecycle_miners_returned "$names" false; do
         [ "$SECONDS" -lt "$end" ] || {
             it_fail "$label workers reconnect" "worker set did not return within BOUND_RECONNECT"
+            lifecycle_mining_diagnostics "$label reconnect timeout"
             return 1
         }
         sleep 5
@@ -107,6 +120,7 @@ lifecycle_mining_step() {
     until lifecycle_miners_returned "$names" true; do
         [ "$SECONDS" -lt "$end" ] || {
             it_fail "$label workers accept shares" "a worker did not accept a post-restart share within 600 seconds"
+            lifecycle_mining_diagnostics "$label share timeout"
             return 1
         }
         sleep 5
@@ -127,8 +141,11 @@ pithead() {
 run_lifecycle() {
     local LIFECYCLE_MINING_ACTIVE=1 LIFECYCLE_MINER_STOPPED=0 LIFECYCLE_MINER_NAMES directory rc
     directory=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?temporary directory required}}/lifecycle-mining.XXXXXX") || return 1
-    local LIFECYCLE_MINER_STATE="$directory/state.json"
+    local LIFECYCLE_MINER_STATE="$directory/state.json" LIFECYCLE_MINER_DIAGNOSTICS="$directory/diagnostics.log"
     if _run_lifecycle; then rc=0; else rc=$?; fi
+    if [ -s "$LIFECYCLE_MINER_DIAGNOSTICS" ]; then
+        redact <"$LIFECYCLE_MINER_DIAGNOSTICS" || rc=1
+    fi
     rm -rf "$directory" || return 1
     return "$rc"
 }

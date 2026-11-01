@@ -192,3 +192,52 @@ SH
     done
 )
 printf '%s\n' 'PASS: real local/SSH probe parsing, fresh rows and strict response refusals'
+
+(
+    source "$ROOT/tests/integration/lib/run-lifecycle-miners.sh"
+    lifecycle_proxy_started() { printf old; }
+    lifecycle_worker_set() { return 1; }
+    mkdir -p "$work/diagnostic-bin"
+    cat >"$work/diagnostic-bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+case "$1" in
+inspect | network) printf 'fixture-private proxy snapshot\n' ;;
+compose)
+    [ "$1 $2 $3 $4" = 'compose exec -T dashboard' ] || exit 99
+    shift 4
+    exec "$@"
+    ;;
+*) exit 99 ;;
+esac
+DOCKER
+    printf '#!/usr/bin/env bash\nprintf "ActiveState=fixture\\n"\n' >"$work/diagnostic-bin/systemctl"
+    chmod +x "$work/diagnostic-bin/"*
+    export PATH="$work/diagnostic-bin:$PATH" PROXY_HOST=fixture-endpoint PROXY_API_PORT=3344 PROXY_AUTH_TOKEN=fixture-never-print
+    rx() {
+        [ "$#" = 1 ] || return 99
+        printf '%s\n' "$1" >>"$work/diagnostic-commands"
+        bash -c "$1"
+    }
+    redact() { sed 's/fixture-private/redacted/g'; }
+    mutation() { touch "$work/unexpected-mutation"; }
+    _run_lifecycle() {
+        phase_state=$LIFECYCLE_MINER_STATE
+        if lifecycle_mining_step apply mutation >/dev/null 2>&1; then return 99; fi
+        return 7
+    }
+    if run_lifecycle >"$work/diagnostic-output"; then rc=0; else rc=$?; fi
+    [ "$rc" = 7 ] && [ ! -e "$work/unexpected-mutation" ]
+    grep -Fq 'lifecycle mining diagnostic: apply precondition' "$work/diagnostic-output"
+    grep -Fq 'redacted proxy snapshot' "$work/diagnostic-output"
+    ! grep -Fq fixture-private "$work/diagnostic-output"
+    grep -Fq 'proxy endpoint=fixture-endpoint:3344' "$work/diagnostic-output"
+    grep -Fq 'ActiveState=fixture' "$work/diagnostic-output"
+    ! grep -Fq fixture-never-print "$work/diagnostic-output"
+    grep -Fq 'timeout --kill-after=2 10 docker inspect' "$work/diagnostic-commands"
+    grep -Fq 'timeout --kill-after=2 10 docker network inspect' "$work/diagnostic-commands"
+    grep -Fq 'timeout --kill-after=2 10 docker compose exec' "$work/diagnostic-commands"
+    grep -Fq 'timeout --kill-after=2 10 systemctl show' "$work/diagnostic-commands"
+    ! grep -Fq PROXY_AUTH_TOKEN "$work/diagnostic-commands"
+    [ ! -e "${phase_state%/*}" ]
+)
+printf '%s\n' 'PASS: redirected mining failures retain bounded redacted diagnostics and preserve verdict/cleanup'
