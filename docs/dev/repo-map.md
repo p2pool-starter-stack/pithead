@@ -59,10 +59,15 @@ Host-resource availability and the existing disk-history capacity estimate are c
 
 The incremental dashboard server lives in `go/internal/dashboard/web/` and
 `go/internal/dashboard/runtime/`, launched by `go/cmd/dashboard/`. Go owns the
-route/method table, security headers and shell/static/preview transport; data,
-control, polling and SQLite still use the Python application. The normal
-container command remains Python. `make test-go-dashboard-http-parity` runs
-unchanged HTTP tests through the new pytest adapter and direct wire comparisons.
+route/method table, security headers, shell/static/preview transport, history
+charts and connection/standby/Prometheus formatting. Native chart processing
+lives in `go/internal/dashboard/charts/`; JSON and exposition builders live in
+`go/internal/dashboard/api/`. Python's `dashboard/mining_dashboard/go_bridge.py`
+supplies config/storage/domain inputs and remaining state sections; polling,
+control and SQLite remain Python. The normal container command remains Python.
+`make test-go-dashboard-http-parity` retains the transport comparisons;
+`make test-go-dashboard-state-parity` runs unchanged chart/JSON suites through
+the new adapter and compares native handlers with Python.
 
 Regular-file dotenv publication lives in `go/internal/config/env_write.go`,
 with the stdin adapter in `go/internal/cli/config_env_write.go` and Bash hook in

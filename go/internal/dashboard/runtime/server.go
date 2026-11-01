@@ -34,6 +34,7 @@ func Run(ctx context.Context, stderr io.Writer) error {
 	server := &http.Server{
 		Handler: dashboardweb.New(dashboardweb.Options{
 			WebRoot: root, Reference: reference.handler,
+			Inputs:         reference.inputs,
 			ControlEnabled: strings.EqualFold(strings.TrimSpace(os.Getenv("DASHBOARD_CONTROL_ENABLED")), "true"),
 			PreviewEnabled: os.Getenv("DASHBOARD_UI_PREVIEW") == "1",
 		}),

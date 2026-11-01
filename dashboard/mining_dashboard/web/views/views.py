@@ -240,7 +240,15 @@ def read_os_update_state() -> dict | None:
         return None
 
 
-def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASHRATE_WINDOW):
+def build_state(
+    data,
+    state_mgr,
+    range_arg,
+    window=None,
+    avg_window=DEFAULT_HASHRATE_WINDOW,
+    *,
+    chart_builder=None,
+):
     """Assemble the full ``/api/state`` payload — the contract the client renders against.
 
     ``window`` is an optional ``(from, to)`` epoch-second manual-zoom window (Issue #47) that
@@ -258,7 +266,6 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     monero_payouts = state_mgr.get_payouts("monero") if config.PAYOUT_CONFIRM_ENABLED else None
     metrics = build_metrics(data, state_mgr, history)
     db_healthy = state_mgr.is_db_healthy()
-
     mode_tok, p2p_tok, xvb_tok = _mode_palette(metrics.mode)
     pool_net = build_pool_network(data, metrics)
 
@@ -382,7 +389,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,
-        "chart": build_chart(
+        "chart": (build_chart if chart_builder is None else chart_builder)(
             history,
             data.get("shares", []),
             range_arg,

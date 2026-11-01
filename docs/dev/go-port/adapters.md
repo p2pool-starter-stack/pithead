@@ -336,3 +336,22 @@ builds Go and runs these cases with the unchanged HTTP modules. The full
 `make test-dashboard` can use the same plugin through `PYTEST_PLUGINS` and
 `PYTHONPATH`; most service/view/JSON assertions still prove Python fallback,
 not native Go state, polling or storage.
+
+## Native chart and JSON handlers
+
+`dashboard_state_plugin.py` layers on the unchanged HTTP plugin and installs
+private raw inputs on the original Python app. Direct public `build_chart` calls
+use the Go stdin helper so unchanged view tests exercise Go; marker iterables
+are materialized exactly as the Python algorithm consumes them. HTTP state
+requests capture chart inputs inside Python and call Go directly, preserving
+one normal history read without launching a subprocess per request.
+
+`dashboard_state_compare.py` compares native charts with the original Python
+function across ranges, averaging windows, bucket rounding, gaps, shares and
+other markers. It checks malformed helper refusal, empty mock iterables,
+zero-based direct windows, private-route exclusion and raw query preservation.
+For HTTP ownership it disables all four public Python handlers, then verifies
+native state, connection, standby and metrics responses, one history read and
+sanitized failures. `make test-go-dashboard-state-parity` also runs unchanged
+chart and JSON route modules. Polling, storage, domain metrics and remaining
+state sections still execute Python; these checks do not prove a full Go backend.

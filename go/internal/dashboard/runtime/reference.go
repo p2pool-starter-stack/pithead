@@ -12,18 +12,30 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	dashboardweb "github.com/p2pool-starter-stack/pithead/go/internal/dashboard/web"
 )
 
 const referenceProgram = `import socket
 from aiohttp import web
 from mining_dashboard.main import SHUTDOWN_TIMEOUT, build_app
-web.run_app(build_app(), sock=socket.socket(fileno=3), print=None, shutdown_timeout=SHUTDOWN_TIMEOUT)
+app = build_app()
+if "state_manager" in app and "latest_data" in app:
+    try:
+        from mining_dashboard.go_bridge import install
+    except ModuleNotFoundError as error:
+        if error.name != "mining_dashboard.go_bridge":
+            raise
+    else:
+        install(app)
+web.run_app(app, sock=socket.socket(fileno=3), print=None, shutdown_timeout=SHUTDOWN_TIMEOUT)
 `
 
 type referenceBackend struct {
 	handler http.Handler
 	command *exec.Cmd
 	done    chan struct{}
+	inputs  dashboardweb.InputProvider
 }
 
 func startReference(webRoot string, stderr io.Writer) (*referenceBackend, error) {
@@ -83,7 +95,7 @@ func referenceProxy(raw string, command *exec.Cmd) (*referenceBackend, error) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = io.WriteString(w, "502: Bad Gateway")
 	}
-	return &referenceBackend{handler: proxy, command: command, done: make(chan struct{})}, nil
+	return &referenceBackend{handler: proxy, command: command, done: make(chan struct{}), inputs: inputProvider(target)}, nil
 }
 
 func (backend *referenceBackend) close() {

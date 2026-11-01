@@ -20,6 +20,7 @@ type Options struct {
 	ControlEnabled bool
 	PreviewEnabled bool
 	Reference      http.Handler
+	Inputs         InputProvider
 }
 
 type handler struct {
@@ -66,6 +67,8 @@ func (h *handler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveFile(w, r, filepath.Join(h.options.WebRoot, "templates", "sovereign.html"), "text/html", "no-store")
 	case r.URL.Path == "/static" || strings.HasPrefix(r.URL.Path, "/static/"):
 		h.serveStatic(w, r)
+	case h.options.Inputs != nil && isDataRoute(r.URL.Path):
+		h.serveData(w, r)
 	case h.options.Reference == nil:
 		writeError(w, http.StatusServiceUnavailable)
 	default:

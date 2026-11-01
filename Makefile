@@ -1,10 +1,12 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity test-go-tari-ownership-parity test-go-config-version-publish-parity test-go-credentials-publish-parity go-dashboard-build test-go-dashboard-http-parity
+.PHONY: go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity test-go-tari-ownership-parity test-go-config-version-publish-parity test-go-credentials-publish-parity go-dashboard-build test-go-dashboard-http-parity test-go-dashboard-state-parity
 .PHONY: test-go-doctor-history-parity test-go-doctor-containers-parity test-go-doctor-monero-parity test-go-node-monero-parity test-go-node-zmq-parity test-go-node-zmq-exchange-parity test-go-config-masked-parity test-go-config-document-parity test-go-config-defaults-parity test-go-config-validation-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-wallet-settings-parity
 .PHONY: test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-site-names-parity test-go-stratum-parity test-go-network-settings-parity test-go-proxy-settings-parity test-go-caddy-auth-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-worker-read-parity
 go-dashboard-build: go-cache ## Build the incremental Go dashboard with Python fallback
 	cd go && $(GO_ENV) go build -o bin/dashboard ./cmd/dashboard
+test-go-dashboard-state-parity: go-dashboard-build ## Compare native chart and JSON contracts with unchanged Python suites
+	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_state_plugin tests/web/views/test_charts.py tests/web/test_server_state_api.py tests/web/test_server_xvb_standby_api.py tests/web/test_miner_connection.py tests/web/test_server_metrics_endpoint.py "$(CURDIR)/tests/go-parity/dashboard_state_compare.py"
 test-go-dashboard-http-parity: go-dashboard-build ## Run unchanged dashboard HTTP tests through Go and supplementary comparisons
 	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_http_plugin tests/web/test_server_shell_route.py tests/web/test_server_static_assets.py tests/web/test_server_security_headers.py tests/web/test_server_control_routes_disabled.py tests/web/test_server_responsive_layout.py tests/web/views/test_sovereign_views.py "$(CURDIR)/tests/go-parity/dashboard_http_compare.py"
 test-go-credentials-publish-parity: test-go-config-persistence-parity test-go-env-write-parity ## Compare credential publication and unchanged render contracts
@@ -369,13 +371,11 @@ lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, o
 
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards
 	bash scripts/build-pithead.sh --self-test
-
 lint-trivy-parity: ## Fail if a gate workflow's install-trivy version: (the one line that decides the engine) drifts from the version scripts/watch/trivyignore-watch.sh scans with (#1290), or if the cached-installer shape that makes it the only pin breaks (#2214)
 	bash scripts/watch/trivyignore-watch.sh --self-test
 	bash scripts/watch/trivyignore-watch.sh --check-parity
 	bash scripts/lint/lint-trivy-installer-cache.sh --self-test
 	bash scripts/lint/lint-trivy-installer-cache.sh
-
 lint-proto: ## buf lint + build on the vendored Tari protos (config: .../tari/proto/buf.yaml)
 	cd dashboard/mining_dashboard/client/tari/proto && \
 		docker run --rm -v "$$PWD":/workspace --workdir /workspace bufbuild/buf:1.71.0 lint && \
