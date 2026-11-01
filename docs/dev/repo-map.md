@@ -162,8 +162,11 @@ derives daemon routing, profiles, binds and P2Pool settings via
 complete renders. `env_dashboard.go`, `env_alerts.go` and `env_workers.go` derive
 the dashboard-facing CLI values and ordered worker token JSON through
 `lib/pithead/33c-go-env-dashboard.sh`; `make test-go-env-dashboard-parity` compares
-those settings with complete reference renders. Bash retains hardware discovery,
-memory calculation, secret-file preparation and writes. Remaining typed checks stay Bash.
+those settings with complete reference renders. `go/internal/config/env_memory.go`
+derives memory settings and the Tari auto ceiling through
+`lib/pithead/33d-go-env-memory.sh`; `make test-go-env-memory-parity` checks limits
+and hardware boundaries. Bash retains hardware discovery, secret-file preparation
+and writes. Remaining typed checks stay Bash.
 The owner's 2026-11-01 Go scope covers the CLI and dashboard backend only;
 appliance host scripts and container entrypoint ports are excluded.
 

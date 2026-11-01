@@ -131,6 +131,7 @@ selection is not implemented.
 | `.env` serialization | Native bulk formatter with Bash derivation/writes and compatibility fallback | Unchanged render fixture/goldens pass in Go mode; full Linux suite unavailable |
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
+| Memory render settings and auto ceiling | Native for supported settings/facts; Bash discovery and compatibility fallback | Unchanged render fixture/goldens and supplementary hardware-boundary comparisons |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
 | Dashboard routes, state, polling and Tor | Python reference | Baseline suites pass; Go backend not ported |
 | SQLite schema, migrations and recovery | Python reference | Baseline suites pass; Go backend not ported |
@@ -277,6 +278,11 @@ oracles:
   `env_dashboard_reference.sh` only supplies the canonical Bash defaults table
   for private-protocol cases; it does not replace a reference suite.
 
+- `test_env_memory.py` compares complete renders and helper failure cases.
+  `env_memory_reference.sh` sources the unchanged render fixture, then supplies
+  deterministic RAM/HugePages for a second render and records hardware-read
+  order. The original fixture has fixed explicit limits and cannot vary auto sizing.
+
 Sourcing Bash functions alone does not establish native behavior. Native slices
 use tagged comparisons or helper/wiring checks that prove Go execution. Current
 targets are `test-go-parity`, `test-go-status-parity`,
@@ -292,7 +298,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-node-zmq-exchange-parity`, `test-go-config-document-parity` and
 `test-go-config-defaults-parity`, `test-go-config-validation-parity` and
 `test-go-caddy-parity`, `test-go-env-parity`, `test-go-env-network-parity` and
-`test-go-env-dashboard-parity`.
+`test-go-env-dashboard-parity` and `test-go-env-memory-parity`.
 
 ## Earlier slice results
 
@@ -302,36 +308,33 @@ Detailed paired commands, results and limits are preserved in
 [remote-node probe results](results-node-probes.md) and
 [configuration results](results-config.md).
 
-## Dashboard configuration render plan slice (2026-11-01)
+## Memory render settings slice (2026-11-01)
 
-Go now derives the 52 dashboard-facing CLI render values: XvB settings, Tari
-requirement and fail-closed flags, Healthchecks/standby/update settings, worker API
-configuration and ordered token JSON, Telegram/event settings and webhook/ntfy
-settings. `lib/pithead/33c-go-env-dashboard.sh` supplies the runtime defaults table,
-platform, validated wallet/Tari mode and config snapshot over stdin. Legacy absent
-values use the same defaults implementation as existing getters; explicit false
-and null retain their different meanings. The dashboard backend remains Python.
+Go reads the Tari/Monero memory settings with the original jq fallback semantics.
+Nonlocal Tari modes retain the inert `0m` placeholder and skip the Tari memory
+lookup. The native auto calculation subtracts HugePages, reserves one quarter
+with a 2 GiB minimum, then floors the Tari ceiling at 2 GiB. Unknown RAM uses
+16 GiB, matching the reference. Explicit configured limits keep their bytes.
 
-The worker token object retains first-eligible-entry selection, insertion order,
-JSON types and jq-compatible string escapes. Go emits a complete NUL-delimited
-plan only after successful derivation; Bash requires all fields, success status
-and EOF. Unsupported values and failed/malformed helpers use the original block.
-Bash retains host memory discovery/calculation, remaining config validation,
-secret-file preparation, permissions and writes. No existing test or fixture changed.
+`lib/pithead/33d-go-env-memory.sh` supplies config and memory facts over stdin.
+The settings producer reports its status; both operations require complete NUL
+fields, successful helper exit and EOF before committing values. Unsupported
+JSON/numeric formats and malformed helpers retain the original Bash path.
+Bash keeps hardware discovery, fact normalization, secret-file transactions and
+all writes. This slice adds no host or network probe and changes no existing test.
 
-The unchanged v2.0.0 render fixture/goldens and raw-parser suite pass in both
-modes. Seven supplementary Python tests cover complete renders, all 27 event
-mappings with distinct values, ordered worker tokens, defaults, numeric fallback
-and poisoned plans. Native success is checked separately from fallback.
+The unchanged render fixture/goldens and raw-parser suite pass in both modes.
+Seven supplementary Python tests compare full output, `.env`/secret bytes and
+0600 modes, hardware-read order, explicit and nonlocal modes, memory boundaries,
+unsupported settings and poisoned helper plans. Native success is verified.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
 and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
-Docker socket. Private command/status records use `.go-cache/logs/config-dashboard-env-*`.
+Docker socket. Private command/status records use `.go-cache/logs/config-memory-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-env-dashboard-parity` | PASS, 7 new tests plus Go units | Same result, native plan verified |
-| `make test-go-env-dashboard-parity test-go-config-defaults-parity test-go-env-parity test-go-env-network-parity test-go-config-document-parity test-go-config-validation-parity test-go-caddy-parity test-go-parity` | PASS, including unchanged render fixture/goldens and raw parser suite | Same result |
+| `make test-go-env-memory-parity test-go-config-defaults-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-config-document-parity test-go-config-validation-parity test-go-caddy-parity test-go-parity` | PASS, including unchanged render fixture/goldens, raw parser suite and 7 new memory tests | Same result, native memory settings/formula verified |
 | `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
 | `make test-fakes` | PASS, 54 tests | Same result; Python backend |
 | `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
@@ -384,7 +387,7 @@ Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
 and dashboard on 2026-11-01; appliance host scripts and container entrypoint ports
 are excluded. Next, in order:
 
-1. Finish typed validation and host-memory render derivation; move Caddy preparation into Go. Obtain the unchanged Linux CLI and Docker parser verdicts.
+1. Finish typed validation and move Caddy preparation into Go. Obtain the unchanged Linux CLI and Docker parser verdicts.
 2. Port `render`, `apply`, `up`, `down` and `restart` using that config layer.
 3. Implement dashboard routes, HTTP/JSON, state/polling, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.

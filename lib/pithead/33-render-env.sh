@@ -264,7 +264,8 @@ render_env() {
     #     just that container instead of letting the host OOM-killer reach monerod.
     # Net: with HugePages on, ~7.5 GB on a 16 GB host, ~19 GB on 32 GB; with HugePages off
     # (--skip-optimize) it's ~75% of RAM. Override with tari.mem_limit (any Docker value, e.g. "8g").
-    local tari_mem_limit ram_mb huge_mb avail_mb reserve_mb monero_mem_limit
+    local tari_mem_limit ram_mb huge_mb avail_mb reserve_mb monero_mem_limit native_memory=false
+    if _render_env_memory_go 2>/dev/null; then native_memory=true; fi
     if [ "$TARI_MODE" != "local" ]; then
         # No local Tari container to cap in remote or off mode (#103/#1855) — the auto-calc below is
         # about THIS host's memory, irrelevant to a third-party node, so skip it entirely. Render a
@@ -272,7 +273,7 @@ render_env() {
         # resolves; it is never applied to a running container.
         tari_mem_limit="0m"
     else
-        tari_mem_limit=$(jq -r '.tari.mem_limit // "auto"' "$CONFIG_FILE")
+        [ "$native_memory" = true ] || tari_mem_limit=$(jq -r '.tari.mem_limit // "auto"' "$CONFIG_FILE")
         case "$tari_mem_limit" in
         "" | auto) # the Darwin sysctl arm below is DEPRECATED and untested (#2041)
             huge_mb=0
@@ -285,13 +286,15 @@ render_env() {
             fi
             [ "${ram_mb:-0}" -gt 0 ] 2>/dev/null || ram_mb=16384 # unknown host => assume 16 GB
             [ "${huge_mb:-0}" -ge 0 ] 2>/dev/null || huge_mb=0
-            avail_mb=$((ram_mb - huge_mb)) # RAM left after HugePages
-            [ "$avail_mb" -lt 2048 ] && avail_mb=2048
-            reserve_mb=$((avail_mb / 4)) # rest of the stack + OS + cache
-            [ "$reserve_mb" -lt 2048 ] && reserve_mb=2048
-            tari_mem_limit=$((avail_mb - reserve_mb))
-            [ "$tari_mem_limit" -lt 2048 ] && tari_mem_limit=2048 # never starve Tari below 2 GB
-            tari_mem_limit="${tari_mem_limit}m"
+            if ! _render_env_memory_limit_go 2>/dev/null; then
+                avail_mb=$((ram_mb - huge_mb)) # RAM left after HugePages
+                [ "$avail_mb" -lt 2048 ] && avail_mb=2048
+                reserve_mb=$((avail_mb / 4)) # rest of the stack + OS + cache
+                [ "$reserve_mb" -lt 2048 ] && reserve_mb=2048
+                tari_mem_limit=$((avail_mb - reserve_mb))
+                [ "$tari_mem_limit" -lt 2048 ] && tari_mem_limit=2048 # never starve Tari below 2 GB
+                tari_mem_limit="${tari_mem_limit}m"
+            fi
             ;;
         esac
     fi
@@ -299,7 +302,7 @@ render_env() {
     # monerod memory ceiling (#132): a generous default so heavy initial-sync verification never trips
     # it (monerod's LMDB is reclaimable page cache, so its capped RSS stays low). Tunable for low-RAM
     # hosts that OOM during IBD, or to give a big host more LMDB-cache headroom.
-    monero_mem_limit=$(jq -r '.monero.mem_limit // "auto"' "$CONFIG_FILE")
+    [ "$native_memory" = true ] || monero_mem_limit=$(jq -r '.monero.mem_limit // "auto"' "$CONFIG_FILE")
     case "$monero_mem_limit" in "" | auto) monero_mem_limit="6g" ;; esac
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
