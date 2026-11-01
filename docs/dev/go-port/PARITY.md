@@ -129,6 +129,7 @@ selection is not implemented.
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Memory render settings and auto ceiling | Native for supported settings/facts; Bash discovery and compatibility fallback | Unchanged render fixture/goldens and supplementary hardware-boundary comparisons |
+| Dashboard auth shape and onion/control policy | Native supported credentials/policy; Bash hash reconciliation, warnings and compatibility fallback | Supplementary byte/status/state/order comparisons and unchanged render fixture/goldens; full Linux/Docker auth oracle unavailable |
 | Dashboard access settings | Native supported host/port/flag/timezone parsing; Bash host-timezone discovery/default insertion and compatibility fallback | Supplementary byte/status/state/trap comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
 | Proxy password, TLS and donation settings | Native explicit/empty settings; auto and unsupported inputs use Bash fallback | Supplementary byte/status/state comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
 | Network settings, remote endpoints and pool validation | Native for supported settings; Bash compatibility fallback | Supplementary byte/status/state comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
@@ -250,6 +251,11 @@ oracles:
   state, proves native selection without jq and checks fallback beyond the
   standalone preflight cases. Full config cases still require the Linux stack harness.
 
+- `dashboard_auth_reference.sh` extracts the original auth/policy blocks, supplying
+  synthetic hash/previous-env results. `test_dashboard_auth.py` compares credentials,
+  verdicts and operation order without logging plaintext; Linux auth tests remain unchanged.
+  `test_dashboard_auth_render.py` pre-seeds cached hashes for unchanged-fixture renders; a Docker stub prevents daemon use.
+
 - `dashboard_access_reference.sh` extracts the original access-settings block and
   records globals, discovery calls and inherited traps. `test_dashboard_access.py`
   compares native/fallback behavior because invalid-config tests require Linux.
@@ -317,7 +323,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-env-dashboard-parity`, `test-go-env-memory-parity` and
 `test-go-caddy-sites-parity`, `test-go-stratum-parity` and
 `test-go-network-settings-parity`, `test-go-proxy-settings-parity` and
-`test-go-caddy-auth-parity` and `test-go-dashboard-access-parity`.
+`test-go-caddy-auth-parity`, `test-go-dashboard-access-parity` and `test-go-dashboard-auth-parity`.
 
 ## Earlier slice results
 
@@ -327,27 +333,21 @@ Detailed paired commands, results and limits are preserved in
 [remote-node probe results](results-node-probes.md) and
 [configuration results](results-config.md) and [render results](results-render.md).
 
-## Dashboard access settings slice (2026-11-01)
+## Dashboard auth and control policy slice (2026-11-01)
 
-Go parses dashboard host, port, secure/public-exposure flags and timezone values with the runtime defaults table.
-It preserves legacy appliance defaults, explicit false values, permissive flag strings, sentinel defaults, exact
-validation errors and partial globals. Unsupported values retain the original Bash block.
-
-The framed `27f-go-dashboard-access.sh` hook applies globals only after validating
-producer/helper status and EOF. Host-timezone discovery and default insertion
-remain in the original caller, after host/port validation, including for explicit
-timezones. Keeping discovery outside the conditional helper preserves inherited
-`ERR` traps. The parser slice remains 412 lines. New comparisons check native jq
-avoidance, boundary values, partial state, discovery order/traps and fallback.
-The original invalid-config oracle still requires the Linux stack harness.
+Go reads dashboard credentials and validates supported username/password shapes before hashing. After Bash
+reconciles the hash and emits any HTTP warning, Go validates onion password strength
+and control-channel requirements, preserving exact errors and partial globals. Non-ASCII/unsupported
+inputs retain Bash fallback. SHA-256, cached-hash reuse, bcrypt, warning decisions and persistence remain Bash. The original blocks remain in the 412-line parser. New comparisons check secret handling, native
+jq avoidance, hash/warning/verdict order, boundary values and malformed-helper fallback.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline and
-`tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
-Docker socket. Private records use `.go-cache/logs/config-dashboard-access-*`.
+`tests/go-parity/run.sh` for Go, with worktree caches and an absent Docker socket.
+Private records use `.go-cache/logs/config-dashboard-auth-*`; Linux/Docker auth oracle remains unavailable.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-dashboard-access-parity` | PASS, 7 comparison groups and 6 complete render-fixture scenarios; Go units | Same result; native execution verified |
+| `make test-go-dashboard-auth-parity` | PASS, 7 comparison groups and 6 complete cached-auth render scenarios; Go units | Same result; native helpers verified |
 | Config/render comparisons below | PASS, including unchanged raw parser and render fixture/goldens | Same result; native helpers verified separately |
 | `make test-dashboard test-fakes test-patch-coverage` with `COMPARE=a73ffced33800de9435779a9cabef53864455acb` | PASS, 3716 dashboard/54 fake tests, 97.42% coverage; patch check not applicable | Same counts; Python backend |
 | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, including 891 frontend tests | Same result |
@@ -355,7 +355,7 @@ Docker socket. Private records use `.go-cache/logs/config-dashboard-access-*`.
 | `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
 | `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
 
-Config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
+Additional config/render command (auth target ran separately above): `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
 Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only). Generated CLI/new-adapter ShellCheck, changed-shell shfmt, Go formatting and source/security reviews pass.
 Scoped Markdown uses `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`.
 
@@ -391,7 +391,7 @@ Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
 and dashboard application code on 2026-11-01; shipping integration follows those
 ports. Next, in order:
 
-1. Finish dashboard authentication/onion/control validation, remaining config derivation and Caddy bind planning. Obtain unchanged Linux CLI and Docker parser verdicts.
+1. Finish remaining config derivation and Caddy bind planning. Obtain unchanged Linux CLI and Docker parser verdicts.
 2. Port `render`, `apply`, `up`, `down` and `restart` using that config layer.
 3. Implement dashboard routes, HTTP/JSON, state/polling, wizard/control, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.

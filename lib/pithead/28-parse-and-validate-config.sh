@@ -41,7 +41,6 @@ parse_and_validate_config() {
     checksum) error "monero.wallet_address ('${MONERO_WALLET:0:6}…') fails its checksum — at least one character is mistyped, and p2pool crashes on a mistyped address instead of mining. Re-copy the address from your wallet and try again." ;;
     *) error "monero.wallet_address ('${MONERO_WALLET:0:6}…', ${#MONERO_WALLET} chars) is not a valid Monero primary address (expected 95 chars starting with 4)." ;;
     esac
-
     # The Tari sibling of the gate above (#845): full decode + DammSum verdict, both address
     # forms. "unchecked" (no usable python3) passes — never a false reject. "off" merge-mines
     # nothing, so an absent or stale payout address is inert and must not block apply (#1855).
@@ -51,13 +50,11 @@ parse_and_validate_config() {
     *:network) error "tari.wallet_address is for a different Tari network (a testnet). This stack mines MAINNET Tari — use your mainnet address." ;;
     *) error "tari.wallet_address (${#TARI_WALLET} chars) is not a valid Tari address in either the base58 or the emoji form. Copy it from your Tari wallet." ;;
     esac
-
     MONERO_MODE=$(jq -r '.monero.mode // "local"' "$CONFIG_FILE")
     case "$MONERO_MODE" in
     local | remote) ;;
     *) error "monero.mode must be \"local\" or \"remote\" (got \"$MONERO_MODE\")." ;;
     esac
-
     # On-chain payout confirmation (#381). The operator supplies the PRIVATE VIEW KEY for
     # monero.wallet_address; the stack runs a view-only monero-wallet-rpc against the LOCAL node to
     # confirm payouts actually landed. The view key is a SECRET (it reveals all incoming amounts and
@@ -83,7 +80,6 @@ parse_and_validate_config() {
         esac
         PAYOUT_CONFIRM_ENABLED=true
     fi
-
     # Tari on-chain payout confirmation (#462), the sibling of #381 for the merge-mine half. The
     # operator supplies the PRIVATE VIEW KEY plus the PUBLIC SPEND KEY for the Tari payout address;
     # the stack runs a view-only minotari_console_wallet against the LOCAL Tari node to confirm a
@@ -115,7 +111,6 @@ parse_and_validate_config() {
         esac
         TARI_PAYOUT_CONFIRM_ENABLED=true
     fi
-
     validate_payout_keys
     # Bridge network subnet (#180): configurable so the stack can avoid colliding with a 172.28.0.0/24
     # already in use on the host (Docker else errors "Pool overlaps with other one on this address
@@ -173,7 +168,6 @@ parse_and_validate_config() {
             TARI_REMOTE_GRPC_PORT=$(jq -r '.tari.remote.grpc_port // 18142' "$CONFIG_FILE")
             is_valid_port "$TARI_REMOTE_GRPC_PORT" || error "tari.remote.grpc_port must be a TCP port 1–65535. Got \"$TARI_REMOTE_GRPC_PORT\"."
         fi
-
         POOL_TYPE=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
         case "$POOL_TYPE" in
         main | mini | nano) ;;
@@ -206,7 +200,6 @@ parse_and_validate_config() {
         if [ -n "$STRATUM_PASSWORD" ] && ! printf '%s' "$STRATUM_PASSWORD" | grep -qE '^[A-Za-z0-9._:@-]{1,128}$'; then
             error "p2pool.stratum_password must be \"auto\", empty, or 1–128 chars of letters, digits, and . _ : @ - (no spaces or quotes)."
         fi
-
         # Stratum-over-TLS (#261): confidentiality on the miner↔stack leg, on top of the access
         # control above — orthogonal, usable together. Single-port model: with a cert configured,
         # xmrig-proxy AUTODETECTS TLS on the same stratum bind (verified against the pinned 6.26.0
@@ -216,7 +209,6 @@ parse_and_validate_config() {
         # and long-lived, and enforcing TLS-only is deliberately NOT a v1.9 knob (rigs first, posture
         # flip later — the same discipline as the #208 default).
         STRATUM_TLS=$(normalize_bool "$(config_bool '.p2pool.stratum_tls' false)")
-
         # xmrig-proxy dev-fee donation level (#173). xmrig-proxy's own compiled default is 0% (no
         # donation) — which the stack inherited silently; expose it so operators can both SEE it and
         # opt in. Default 0 (off); set N to donate N% of submitted hashrate to the xmrig developers
@@ -329,17 +321,23 @@ parse_and_validate_config() {
     # base64-encoded in .env (raw bcrypt's '$' spams compose interpolation warnings). A sha256
     # fingerprint of the plaintext keeps the hash STABLE across applies — re-hash only when the
     # password actually changes (bcrypt is salted, so re-hashing every apply would churn the Caddyfile).
-    DASHBOARD_AUTH_USER=$(jq -r '.dashboard.auth.username // "admin"' "$CONFIG_FILE")
-    DASHBOARD_AUTH_HASH_B64=""
-    DASHBOARD_AUTH_PW_FP=""
-    local dash_pw
-    dash_pw=$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")
+    local dash_pw dashboard_auth_native=0
+    if command -v _parse_dashboard_auth_go >/dev/null 2>&1 && _parse_dashboard_auth_go; then
+        dashboard_auth_native=1
+    else
+        DASHBOARD_AUTH_USER=$(jq -r '.dashboard.auth.username // "admin"' "$CONFIG_FILE")
+        DASHBOARD_AUTH_HASH_B64=""
+        DASHBOARD_AUTH_PW_FP=""
+        dash_pw=$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")
+    fi
     if [ -n "$dash_pw" ]; then
-        if ! printf '%s' "$DASHBOARD_AUTH_USER" | grep -qE '^[A-Za-z0-9._@-]{1,64}$'; then
-            error "dashboard.auth.username must be 1–64 chars of letters, digits, and . _ @ - (got \"$DASHBOARD_AUTH_USER\")."
-        fi
-        if ! printf '%s' "$dash_pw" | grep -qE '^[[:print:]]{8,128}$' || printf '%s' "$dash_pw" | grep -q '"'; then
-            error "dashboard.auth.password must be 8–128 printable characters with no double-quotes."
+        if [ "$dashboard_auth_native" != 1 ]; then
+            if ! printf '%s' "$DASHBOARD_AUTH_USER" | grep -qE '^[A-Za-z0-9._@-]{1,64}$'; then
+                error "dashboard.auth.username must be 1–64 chars of letters, digits, and . _ @ - (got \"$DASHBOARD_AUTH_USER\")."
+            fi
+            if ! printf '%s' "$dash_pw" | grep -qE '^[[:print:]]{8,128}$' || printf '%s' "$dash_pw" | grep -q '"'; then
+                error "dashboard.auth.password must be 8–128 printable characters with no double-quotes."
+            fi
         fi
         DASHBOARD_AUTH_PW_FP=$(printf '%s' "$dash_pw" | sha256_hex)
         local prev_fp prev_hash
@@ -365,48 +363,50 @@ parse_and_validate_config() {
     # a login, and demand a stronger password than the LAN 8-char floor — a published .onion is
     # online-brute-forceable (per-IP throttling is meaningless over Tor; every request arrives from
     # the local tor daemon, so there is no source IP to rate-limit against).
-    DASHBOARD_ONION_ENABLED=$(normalize_bool "$(config_bool '.dashboard.onion.enabled' false)")
-    # Tor v3 client authorization (#343): the strong PRIMARY gate. Default ON whenever the onion is
-    # on — a client-auth'd onion does not respond at all without the operator's client key, which
-    # defeats address-scanning and brute force entirely (the password becomes a second factor behind
-    # it). Set dashboard.onion.client_auth:false only for a deliberately password-only onion.
-    DASHBOARD_ONION_CLIENT_AUTH=false
-    if [ "$DASHBOARD_ONION_ENABLED" == "true" ]; then
-        DASHBOARD_ONION_CLIENT_AUTH=$(normalize_bool "$(config_bool '.dashboard.onion.client_auth' true)")
-        if [ -z "$dash_pw" ]; then
-            error "dashboard.onion.enabled is true but dashboard.auth.password is empty. Publishing the dashboard as a Tor onion exposes a control panel at a stable address — it must sit behind a login. Set a strong dashboard.auth.password (16+ characters) and re-run."
+    if ! command -v _parse_dashboard_policy_go >/dev/null 2>&1 || ! _parse_dashboard_policy_go; then
+        DASHBOARD_ONION_ENABLED=$(normalize_bool "$(config_bool '.dashboard.onion.enabled' false)")
+        # Tor v3 client authorization (#343): the strong PRIMARY gate. Default ON whenever the onion is
+        # on — a client-auth'd onion does not respond at all without the operator's client key, which
+        # defeats address-scanning and brute force entirely (the password becomes a second factor behind
+        # it). Set dashboard.onion.client_auth:false only for a deliberately password-only onion.
+        DASHBOARD_ONION_CLIENT_AUTH=false
+        if [ "$DASHBOARD_ONION_ENABLED" == "true" ]; then
+            DASHBOARD_ONION_CLIENT_AUTH=$(normalize_bool "$(config_bool '.dashboard.onion.client_auth' true)")
+            if [ -z "$dash_pw" ]; then
+                error "dashboard.onion.enabled is true but dashboard.auth.password is empty. Publishing the dashboard as a Tor onion exposes a control panel at a stable address — it must sit behind a login. Set a strong dashboard.auth.password (16+ characters) and re-run."
+            fi
+            if [ "$(printf '%s' "$dash_pw" | wc -c)" -lt 16 ]; then
+                error "dashboard.auth.password must be at least 16 characters when dashboard.onion.enabled is true (a published .onion is online-brute-forceable and per-IP throttling is meaningless over Tor). Use a passphrase."
+            fi
+            # Reject obviously weak 16+ char choices the length floor alone would pass: a single repeated
+            # character, or a well-known weak pattern. Not a full dictionary — the floor handles the rest.
+            if [ "$(printf '%s' "$dash_pw" | fold -w1 | sort -u | wc -l | tr -d ' ')" -eq 1 ]; then
+                error "dashboard.auth.password is a single repeated character — choose a real passphrase."
+            fi
+            case "$(printf '%s' "$dash_pw" | tr 'A-Z' 'a-z')" in
+            *passwordpassword* | *0123456789* | *qwertyuiop* | *changeme* | *letmein*)
+                error "dashboard.auth.password contains a well-known weak pattern — choose a real passphrase (16+ characters)."
+                ;;
+            esac
         fi
-        if [ "$(printf '%s' "$dash_pw" | wc -c)" -lt 16 ]; then
-            error "dashboard.auth.password must be at least 16 characters when dashboard.onion.enabled is true (a published .onion is online-brute-forceable and per-IP throttling is meaningless over Tor). Use a passphrase."
-        fi
-        # Reject obviously weak 16+ char choices the length floor alone would pass: a single repeated
-        # character, or a well-known weak pattern. Not a full dictionary — the floor handles the rest.
-        if [ "$(printf '%s' "$dash_pw" | fold -w1 | sort -u | wc -l | tr -d ' ')" -eq 1 ]; then
-            error "dashboard.auth.password is a single repeated character — choose a real passphrase."
-        fi
-        case "$(printf '%s' "$dash_pw" | tr 'A-Z' 'a-z')" in
-        *passwordpassword* | *0123456789* | *qwertyuiop* | *changeme* | *letmein*)
-            error "dashboard.auth.password contains a well-known weak pattern — choose a real passphrase (16+ characters)."
-            ;;
-        esac
-    fi
 
-    # Dashboard control channel (#33). Opt-in, default off. When on, the dashboard's Configuration
-    # view can stage config changes that the host-side runner (control-run-pending) validates and
-    # applies. That is a host-mutation channel that can change the payout wallet, so FAIL CLOSED:
-    # refuse to enable it on a dashboard with no login (mirrors the onion-without-password refusal).
-    DASHBOARD_CONTROL_ENABLED=$(normalize_bool "$(config_bool '.dashboard.control.enabled' false)")
-    if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ -z "$dash_pw" ]; then
-        error "dashboard.control.enabled is true but dashboard.auth.password is empty. Config editing from the dashboard can change the payout wallet and run '$0 apply' — it must sit behind a login. Set dashboard.auth.password and re-run."
-    fi
-    # And on a PUBLISHED onion, refuse the control channel unless Tor v3 client authorization is on
-    # (mirrors the onion-without-password refusal above). The control channel is a root-capable,
-    # funds-redirecting mutation surface; a password alone on an anonymously-reachable .onion is
-    # online-brute-forceable (per-IP throttling is meaningless over Tor). Client-auth means the onion
-    # does not respond at all without the operator's key — the real primary gate. Set it before
-    # exposing config editing to the internet.
-    if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_CLIENT_AUTH" != "true" ]; then
-        error "dashboard.control.enabled is true on a published onion (dashboard.onion.enabled) but dashboard.onion.client_auth is false. A root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable .onion. Set dashboard.onion.client_auth: true (the default) and re-run."
+        # Dashboard control channel (#33). Opt-in, default off. When on, the dashboard's Configuration
+        # view can stage config changes that the host-side runner (control-run-pending) validates and
+        # applies. That is a host-mutation channel that can change the payout wallet, so FAIL CLOSED:
+        # refuse to enable it on a dashboard with no login (mirrors the onion-without-password refusal).
+        DASHBOARD_CONTROL_ENABLED=$(normalize_bool "$(config_bool '.dashboard.control.enabled' false)")
+        if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ -z "$dash_pw" ]; then
+            error "dashboard.control.enabled is true but dashboard.auth.password is empty. Config editing from the dashboard can change the payout wallet and run '$0 apply' — it must sit behind a login. Set dashboard.auth.password and re-run."
+        fi
+        # And on a PUBLISHED onion, refuse the control channel unless Tor v3 client authorization is on
+        # (mirrors the onion-without-password refusal above). The control channel is a root-capable,
+        # funds-redirecting mutation surface; a password alone on an anonymously-reachable .onion is
+        # online-brute-forceable (per-IP throttling is meaningless over Tor). Client-auth means the onion
+        # does not respond at all without the operator's key — the real primary gate. Set it before
+        # exposing config editing to the internet.
+        if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_CLIENT_AUTH" != "true" ]; then
+            error "dashboard.control.enabled is true on a published onion (dashboard.onion.enabled) but dashboard.onion.client_auth is false. A root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable .onion. Set dashboard.onion.client_auth: true (the default) and re-run."
+        fi
     fi
     stamp_config_version
 }

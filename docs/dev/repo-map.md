@@ -162,6 +162,10 @@ donation settings through `lib/pithead/27e-go-proxy-settings.sh`;
 timezone through `lib/pithead/27f-go-dashboard-access.sh`;
 `make test-go-dashboard-access-parity` checks state, discovery order and traps.
 Host-timezone discovery/default insertion stays in the original Bash caller.
+`go/internal/config/dashboard_auth.go` parses credentials and validates auth/onion/control
+policy through `lib/pithead/27g-go-dashboard-auth.sh`;
+`make test-go-dashboard-auth-parity` checks verdicts and hash/warning order.
+SHA-256, stable hash reconciliation, bcrypt and warning decisions stay in Bash.
 `go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
 statuses and preparation calls. `go/internal/config/caddy_sites.go` formats

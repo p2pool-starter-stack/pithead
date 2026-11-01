@@ -33,6 +33,11 @@
 .PHONY: test-go-network-settings-parity
 .PHONY: test-go-proxy-settings-parity test-go-caddy-auth-parity
 .PHONY: test-go-dashboard-access-parity
+.PHONY: test-go-dashboard-auth-parity
+
+test-go-dashboard-auth-parity: go-build test-go ## Compare dashboard authentication and control policy with Bash
+	python3 tests/go-parity/test_dashboard_auth.py
+	python3 tests/go-parity/test_dashboard_auth_render.py
 
 test-go-dashboard-access-parity: go-build test-go ## Compare dashboard access settings and timezone ordering with Bash
 	python3 tests/go-parity/test_dashboard_access.py
