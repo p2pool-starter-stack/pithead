@@ -39,8 +39,29 @@ def new_install_defaults(platform: str = "diy") -> dict:
     for path in TABLE["materialize"]:
         block, key = path.split(".")
         result.setdefault(block, {})[key] = default_of(path, platform)
-    for chain in ("monero", "tari"):
-        result.setdefault(chain, {})["clearnet_initial_sync"] = default_of(
-            f"{chain}.clearnet_initial_sync", platform
-        )
+    result.setdefault("monero", {})
+    result["profile"] = "balance"
+    return result
+
+
+def profile_config(config: dict) -> dict:
+    result = deepcopy(config)
+    name = config.get("profile")
+    name = "balance" if name is None else name
+    if not isinstance(name, str) or name not in TABLE["profiles"]:
+        return result
+    for path, value in TABLE["profiles"][name].items():
+        block, key = path.split(".")
+        if isinstance(result.setdefault(block, {}), dict) and result[block].get(key) is None:
+            result[block][key] = deepcopy(value)
+    return result
+
+
+def select_profile(config: dict, profile: str) -> dict:
+    result = deepcopy(config)
+    for path in TABLE["profiles"][profile]:
+        block, key = path.split(".")
+        if isinstance(result.get(block), dict):
+            result[block].pop(key, None)
+    result["profile"] = profile
     return result

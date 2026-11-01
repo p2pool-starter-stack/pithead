@@ -30,28 +30,20 @@ CLEARNET_MARKER="${CLEARNET_MARKER:-/clearnet-state/monero.synced}"
 apply_clearnet_initial_sync() {
     local cfg="$1" tmp="$1.tmp"
     sed -e '/^proxy=/d' -e 's/^out-peers=.*/out-peers=32/' "$cfg" >"$tmp" && mv "$tmp" "$cfg"
+    if [ "${PITHEAD_PROFILE:-balance}" = performance ]; then
+        sed '/^tx-proxy=/d' "$cfg" >"$tmp" && mv "$tmp" "$cfg"
+    fi
     cat >>"$cfg" <<'PRIONODES'
 
-# P2Pool v4.18 recommended priority nodes (clearnet sync window only — removed when flipped to Tor).
 add-priority-node=p2pmd.xmrvsbeast.com:18080
 add-priority-node=nodes.hashvault.pro:18080
 PRIONODES
 }
 
-# True when monerod should sync over clearnet NOW: the flag is on AND the auto-transition marker is
-# absent (#234). Once the dashboard marks the clearnet sync complete, this is false and monerod
-# comes back up Tor-only — and stays there across restarts/`apply`, so a node is never silently
-# re-exposed. Kept as a function for direct unit testing.
 clearnet_sync_active() {
-    [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]
+    [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && { [ "${PITHEAD_PROFILE:-balance}" = performance ] || { [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]; }; }
 }
 
-# LAN-only sources (#2749). A bind other than 127.0.0.1 publishes this port on every host interface,
-# and only pithead's LAN-only source rule limits who can reach it. While that rule is live, pithead
-# keeps the host's boot id in the marker; it deletes the marker when it removes the rule, and a
-# reboot changes the boot id. Without a current marker this start exits before anything listens,
-# however the container was started: `docker start`, `docker compose up` or `start` outside pithead,
-# a restart policy.
 lan_guard_gate() { # <bind>...
     local bind boot
     for bind in "$@"; do
@@ -81,12 +73,12 @@ mkdir -p "$(dirname "$CONFIG_PATH")"
 
 echo "Initializing Monero configuration from template..."
 
-# Inject environment variables into the configuration template
-# We explicitly list variables to avoid accidental substitution of system environment variables
 envsubst '${MONERO_NODE_USERNAME}${MONERO_NODE_PASSWORD}${MONERO_ONION_ADDRESS}${MONERO_PRUNE}${MONERO_PREP_THREADS}${MONERO_OUT_PEERS}${NETWORK_PREFIX}' <"$TEMPLATE_PATH" >"$CONFIG_PATH"
 
-# Apply the optional clearnet initial-sync transform (#183) and warn loudly while it's active.
-if clearnet_sync_active; then
+if clearnet_sync_active && [ "${PITHEAD_PROFILE:-balance}" = performance ]; then
+    echo "Performance: Monero uses clearnet for sync and ongoing operation; its IP is visible."
+    apply_clearnet_initial_sync "$CONFIG_PATH"
+elif clearnet_sync_active; then
     echo "=========================================================================="
     echo "WARNING: MONERO CLEARNET INITIAL SYNC IS ACTIVE (#183)"
     echo "  monerod P2P is running over CLEARNET to sync faster — this host's IP is"

@@ -439,12 +439,23 @@ through `tests/integration/lib/run-wizard-eof.sh` and `run-wizard-defaults.sh`, 
 deploys the valid wizard configuration and checks service health.
 
 `tests/os/phases/setup-defaults.sh` proves a fresh appliance with the wizard defaults,
-without the explicit Tari opt-in used by the general provision phase.
+without the explicit Tari opt-in used by the general provision phase. It requires an explicit
+Balance profile and omitted governed sync overrides in the saved configuration.
 
 Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugepages.sh`;
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+Privacy profiles are resolved from `dashboard/mining_dashboard/config/defaults.json` by
+`lib/pithead/19b-config-profile.sh` and `dashboard/mining_dashboard/config/defaults.py`.
+`tests/stack/config/profile.sh` checks rendering and overrides; `tests/integration/profile-peering.py`
+checks the Privacy relay and real onion peers in the `profile-privacy` matrix scenario.
+The independent peer writes its data API below the image working directory, which already exists;
+P2Pool requires that parent directory before startup.
+On a handshake deadline it retains container exit state, peer counts, target-match booleans and
+bounded SOCKS failure classifications and fixed independent-Tor notice categories without
+addresses or credentials. Safety rollback retains the final 64 KiB of redacted restore output in `safety-restore.log`, preserving the command verdict independently of diagnostic I/O.
 
 The ENOSPC fault lifecycle is `tests/integration/lib/disk-enospc-target.sh`, transmitted
 through the shared target wrapper by `run-faults.sh`. Its mount ownership and interruption

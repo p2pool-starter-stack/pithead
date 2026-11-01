@@ -71,10 +71,15 @@ safety_secret_drift_categories() { # <baseline category=hash lines> <actual cate
 }
 
 safety_restore_exact() {
-    local restored_secrets
+    local restored_secrets restore_output restore_rc=0
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
-    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
+    restore_output="$(pithead restore -y "$SAFETY_ARCHIVE" 2>&1)" || restore_rc=$?
+    restore_output="${restore_output//"$SAFETY_ARCHIVE"/<safety-archive>}"
+    if [ -n "${OUT_DIR:-}" ]; then
+        printf '%s\n' "$restore_output" | redact | tail -c 65536 >"$OUT_DIR/safety-restore.log" || true
+    fi
+    if [ "$restore_rc" -ne 0 ]; then
         SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
     elif ! baseline_up >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="stack did not come back up"

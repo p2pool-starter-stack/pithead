@@ -32,6 +32,10 @@ run_fixture() {
         appliance*)
             BASELINE_CONFIG='{"local_miner":{"enabled":true},"p2pool":{"pool":"mini"},"dashboard":{"tari_required":false}}'
             scenario="remote-main-stratum-tls"
+            if [ "$mode" = appliance-privacy ]; then
+                scenario=profile-privacy
+                BASELINE_CONFIG=$(jq '.profile="privacy"' <<<"$BASELINE_CONFIG")
+            fi
             overrides=$(scenario_overrides "$scenario")
             CI_RIG_RECOVERY_HOLD=0
             IT_BORROW_REARM_REQUEST="" IT_BORROW_REARM_ACK="" IT_BORROW_REARM_TOKEN=""
@@ -42,13 +46,29 @@ run_fixture() {
             [ "$mode" != appliance-borrowed-host ] || RIG_HOST=rig.example
             ;;
         esac
+        case "$mode" in
+        privacy | privacy-no-controller)
+            scenario=profile-privacy
+            BASELINE_CONFIG='{"profile":"privacy","p2pool":{"pool":"mini"},"dashboard":{"tari_required":false}}'
+            [ "$mode" != privacy-no-controller ] || IT_BORROW_REARM_REQUEST=""
+            ;;
+        esac
         active_password=baseline
         resolve_overrides() { RESOLVED="$1"; }
         rx() {
+            if [ "$1" = 'timeout 1000 python3 tests/integration/profile-peering.py' ]; then
+                printf 'peering\n' >>"$d/events"
+                return 0
+            fi
+            [ "$mode" != privacy ] || return 0
             [ "$mode" != appliance-transport-fails ] || return 255
             (cd "$d/target" && bash -c "$1")
         }
         push_config() {
+            if [ "$scenario" = profile-privacy ]; then
+                [ "$(jq '.p2pool | has("stratum_password")' <<<"$1")" = false ] && printf 'sparse-profile\n' >>"$d/events"
+                [ "$mode" != appliance-privacy ] || active_password=scenario
+            fi
             if [ "$scenario" = remote-main-stratum-tls ]; then
                 jq -e '.monero.mode == "remote" and .p2pool.stratum_password == "auto" and .p2pool.stratum_tls == true' <<<"$1" >/dev/null || exit 1
                 active_password=scenario
@@ -107,6 +127,8 @@ check_fixture() {
 check_fixture no-controller 1 'next:baseline'
 check_fixture no-hold 1 'next:baseline'
 check_fixture authenticated 0 $'apply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\nrestore-stratum\nnext:baseline'
+check_fixture privacy 0 $'sparse-profile\napply\nscenario-stratum\nminer-wait:scenario\nassert:0:scenario\npeering\nrestore-stratum\nnext:baseline'
+check_fixture privacy-no-controller 1 'next:baseline'
 check_fixture no-rig 0 $'apply\nassert:1:baseline\nnext:baseline'
 check_fixture open 0 $'apply\nminer-wait:baseline\nassert:0:baseline\nnext:baseline'
 check_fixture transfer-fails 1 $'apply\nscenario-stratum'
@@ -116,6 +138,7 @@ check_fixture assertion-fails 1 $'apply\nscenario-stratum\nminer-wait:scenario\n
 mkdir "$d/target"
 printf 'is_appliance() { return 0; }\n' >"$d/target/pithead"
 check_fixture appliance 0 $'apply\nminer-wait:scenario\nassert:0:scenario\nnext:scenario'
+check_fixture appliance-privacy 0 $'sparse-profile\napply\nminer-wait:scenario\nassert:0:scenario\npeering\nnext:scenario'
 for mode in appliance-no-miner appliance-disabled appliance-string appliance-borrowed-name appliance-borrowed-host appliance-transport-fails; do
     check_fixture "$mode" 1 'next:baseline'
 done

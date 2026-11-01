@@ -3,7 +3,7 @@ import os
 
 import requests
 
-from mining_dashboard.config.config import TOR_SOCKS_PROXY
+from mining_dashboard.config.config import NOTIFICATION_PROXY as TOR_SOCKS_PROXY
 from mining_dashboard.helper.http import raise_for_success, request_failure_class
 
 logger = logging.getLogger("TelegramNotifier")

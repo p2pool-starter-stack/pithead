@@ -3,22 +3,18 @@
 This doc lists every connection the stack makes off your box: where it goes, whether it's routed
 over Tor, whether it's on by default, and how to lock it down.
 
-The rule: nothing should leave the host to the internet except through Tor. Where that isn't
-possible (or trades away yield), the connection must be off or Tor-routed by default, have a
-documented toggle, and be listed here.
+The selected profile controls which documented connections use Tor. Explicit governed settings
+override the profile, and remote node modes do not enable local sync flags.
 
-As of v1.1 the stack is Tor-by-default for all runtime egress. Monero and Tari (including the DNS
-lookups they used to leak), P2Pool's outbound sidechain peers (#165), and XvB donation mining (#166)
-are all Tor-routed by default, each with a documented opt-out for operators who trade privacy for
-yield. What's left is inherent: the one-time install/build reveals your IP to the download host, and
-remote-node mode (`monero.mode: remote` and `tari.mode: remote`, both off by default) talks to the
-node you choose. Both are called out below. The optional [project donation](donation.md) also
-defaults to Tor when available; it ships off and hidden until a destination is published.
+`balance` is the default when `profile` is absent. `performance` keeps local node operation and the
+listed performance-sensitive outbound services on clearnet; `balance` uses Tor for governed privacy
+paths; `privacy` adds onion-only P2Pool peering and generated worker API authentication. What's left
+is inherent: the one-time install/build reveals your IP to the download host, and remote-node mode
+(`monero.mode: remote` and `tari.mode: remote`) talks to the node you choose. The optional [project donation](donation.md) has its own routing
+choice and defaults to Tor; it ships off and hidden until a destination is published.
 
-One opt-in deliberately moves a node onto clearnet: an
-[optional clearnet initial sync](#optional-clearnet-initial-sync-off-by-default) that lets Monero
-and/or Tari download their chains over clearnet (much faster than over Tor) for the one-time initial
-sync, then returns to Tor. It is off by default, loudly warned, and covered in full below.
+The [profile-controlled initial sync](#profile-controlled-initial-sync) section describes how
+Monero and Tari use clearnet or Tor for local operation. Remote modes force their sync flags false.
 
 ---
 
@@ -154,13 +150,13 @@ two sources on one rule — is reported as shadowing, never as harmless.
 ## Inbound — no port forwarding
 
 Your home IP is never advertised to an inbound peer, and you never touch your router's port-forward
-settings. Every service that accepts inbound connections does so through a Tor hidden service (onion
-address): monerod, Tari, and P2Pool each get one from the built-in Tor daemon. A node you run
+settings. Monerod and Tari accept inbound peers through Tor hidden services. P2Pool inbound peering
+uses a source-restricted Tor service bridge on its existing P2Pool peer port; the bridge has no host
+or LAN publish and never forwards RPC or stratum. A node you run
 elsewhere (`monero.mode` / `tari.mode: remote`) accepts its own peers, so Tor publishes no onion for
 it — only services that actually run here get an address. Tor reaches the bundled Monero node on
 its bridge-bound anonymous P2P listener at `:18084`; that port is not published on the host.
-P2Pool's onion forwards to the selected sidechain's P2P port (`37889` main, `37888` mini,
-`37890` nano). So:
+P2Pool's onion reaches only the selected sidechain's P2P listener. So:
 
 - No public IPv4 port forwarding is required, and your IP is not advertised to inbound peers.
 - Two things face the LAN by default: the dashboard, served by the host-networked Caddy on `:443`
@@ -184,31 +180,31 @@ What the running stack sends to the internet, connection by connection.
 
 | Connection | Destination | What it could reveal | Tor? | Default | How to control |
 |---|---|---|---|---|---|
-| **monerod** P2P + tx broadcast | Monero network | — | ✅ Tor (`proxy=` / `tx-proxy=`) | on | Tor by default; **P2P** can opt into clearnet for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) — tx broadcast stays on Tor regardless |
+| **monerod** P2P + tx broadcast | Monero network | — | `performance`: direct P2P; `balance`/`privacy`: Tor (`proxy=` / `tx-proxy=`) | on | profile and explicit sync flags govern local nodes; remote mode forces sync false |
 | **monerod** DNS (checkpoints, blocklist, update check, priority-node hostnames) | DNS resolvers | "this IP runs Monero" | ✅ **closed** — `disable-dns-checkpoints`, `check-updates=disabled`, `enable-dns-blocklist=0`, hostname priority-nodes dropped (#161) | n/a | — |
 | **monerod RPC to a remote node** (only if `monero.mode: remote`) | the node you configured | **your real home IP**, to that node's operator | ❌ clearnet | **off** — the bundled local node is the default and has no remote-RPC egress | use a node you run on your LAN or reachable over WireGuard; a `.onion` remote isn't supported — with Tor on, p2pool's socat bridge moves this leg off the SOCKS5 proxy before it could reach Tor |
-| **Tari** P2P | Tari network | — | ✅ Tor SOCKS (`type = "socks5"`): onion and `/ip4` peers alike are dialled through the `tor` container, and `use_libtor = false` keeps the node's own in-process Tor off ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)) | on | Tor by default; can opt into clearnet (TCP) for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) |
-| **Tari** DNS seeds + Pulse (`seeds.tari.com`, `checkpoints.tari.com`) | DNS resolvers | "this IP runs Tari" | ✅ **closed** — `dns_seeds = []` and onion `peer_seeds` prevent seed lookups; Pulse's advisory lookup fails at the isolated loopback resolver, so no DNS packet leaves the host (#162) | n/a | clearnet sync ([#183](#optional-clearnet-initial-sync-off-by-default)) re-enables the `seeds.tari.com` DNS seed for the sync window |
+| **Tari** P2P | Tari network | — | `performance`: direct TCP; `balance`/`privacy`: Tor SOCKS (`type = "socks5"`) | on | profile and explicit sync flags govern local nodes; remote or off mode forces sync false |
+| **Tari** DNS seeds + Pulse (`seeds.tari.com`, `checkpoints.tari.com`) | DNS resolvers | "this IP runs Tari" | ✅ **closed** — `dns_seeds = []` and onion `peer_seeds` prevent seed lookups; Pulse's advisory lookup fails at the isolated loopback resolver, so no DNS packet leaves the host (#162) | n/a | `performance` or an explicit clearnet sync override re-enables the `seeds.tari.com` DNS seed |
 | **P2Pool** merge-mine gRPC to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — same posture as monerod's own remote-node RPC above | **off** — the bundled local Tari node is the default and this leg only exists in remote mode | use a node on your LAN or reachable over WireGuard; a `.onion` remote isn't supported yet (see [Configuration › Remote Tari node](configuration.md#remote-tari-node)) |
 | **Dashboard** sync poll to a remote Monero node (only if `monero.mode: remote`) | the configured RPC | **your real IP**, to that node's operator | ❌ direct HTTP with configured RPC digest auth | **off** — local Monero is the default | use a node on your LAN or reachable over WireGuard; polling detects outages so workers fail over |
 | **Dashboard** sync poll to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — a plaintext gRPC dial, and the host-networked dashboard sits outside the Tor-egress firewall | **off** — only exists in remote mode | same as the p2pool leg above: LAN or WireGuard |
 | **P2Pool** inbound peers | reach you via onion | — | ✅ onion hidden service | on | — |
-| **P2Pool** outbound sidechain peers | P2Pool sidechain peers, via Tor | — | ✅ **Tor** (`--socks5`, proxy-type `tor`) by default (#165) | on | opt out with `p2pool.clearnet: true` (exposes your IP for max yield) → [below](#p2pool-outbound-peers-165---tor-by-default) |
+| **P2Pool** outbound sidechain peers | P2Pool sidechain peers | — | `balance`/`privacy`: ✅ Tor; `performance`: ❌ direct clearnet | profile-dependent | `privacy` adds `--no-clearnet-p2p`; an explicit `p2pool.clearnet` value wins. Inbound onion peering is separate and remains on the source-restricted bridge |
 | **P2Pool** DNS seeds (`seeds-mini.p2pool.io`, `mini.p2poolpeers.net`, or the `main`/`nano` equivalents) | DNS resolvers | "this IP runs P2Pool" | ✅ **closed** — `--no-dns` with the Tor default, so peers come from the saved peer list and the onion seed nodes (#2496) | n/a | `p2pool.clearnet: true` re-enables the DNS seeds along with clearnet peering |
-| Dashboard **XvB stats** fetch | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, #163) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
-| Dashboard **XvB raffle registration** (#263) | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled; fires once you have a PPLNS share | `XVB_ENABLED=false`, or set `XVB_SUBMIT_URL` to a disable sentinel (`off`), to stop it |
-| Dashboard **XvB winners fetch** (raffle-wins display) | `xmrvsbeast.com` | nothing — the winners file is public and the request carries no wallet | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
-| **XvB donation mining** (only while donating) | `na.xmrvsbeast.com:4247` via Tor | — | ✅ **Tor** (per-pool `socks5`, DNS proxy-side) by default (#166) | on while donating | opt out with `xvb.tor: false` (exposes IP for max yield); `xvb.enabled: false` stops it entirely |
+| Dashboard **XvB stats** fetch | `xmrvsbeast.com` | your Monero **wallet** | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`, #163) | on, only if XvB enabled | `XVB_ENABLED=false` stops it; profile governs routing |
+| Dashboard **XvB raffle registration** (#263) | `xmrvsbeast.com` | your Monero **wallet** | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | on, only if XvB enabled; fires once you have a PPLNS share | `XVB_ENABLED=false`, or set `XVB_SUBMIT_URL` to `off`, to stop it |
+| Dashboard **XvB winners fetch** (raffle-wins display) | `xmrvsbeast.com` | nothing — the winners file is public | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
+| **XvB donation mining** (only while donating) | `na.xmrvsbeast.com:4247` | — | `performance`: direct; `balance`/`privacy`: ✅ Tor (per-pool `socks5`) | on while donating | explicit `xvb.tor` wins; `xvb.enabled: false` stops it entirely |
 | **Project donation mining** (only while donating) | Project stratum endpoint; destination pending publication | Connection timing, shares and hashrate; public IP only when direct clearnet routing is chosen; no donor payout address, worker names or per-donor label | Tor by default; onion uses no exit, clearnet uses an exit | **off**, hidden while destination constants are empty | `donation.enabled: false` stops slices within one 10-minute cycle; `donation.tor: false` chooses direct routing for clearnet only → [disclosure](#project-donation-mining) |
 | Dashboard **XvB warm-standby pull** (#249) | the primary stack you named | nothing about you — the primary sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) for an onion or any source not provably private; only a private, loopback or link-local IP *literal* dials direct as a LAN hop (a hostname can't be proven private without DNS, so it rides Tor) | opt-in (`xvb.standby.source`; off until set) | unset `xvb.standby.source` to stop it |
-| Dashboard **update check** (#224, plus the per-worker RigForge badge #596) | `api.github.com` | nothing about you — GitHub sees a **Tor exit**, not your IP; the RigForge check sends no rig versions, it only reads the latest release | ✅ Tor (`socks5h`) | **on** | `dashboard.check_for_updates: false` opts out of both; cached, fails silently offline |
+| Dashboard **update check** (#224, plus the per-worker RigForge badge #596) | `api.github.com` | nothing about you | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | **on** | `dashboard.check_for_updates: false` opts out of both; cached, fails silently offline |
 | **Caddy** TLS (dashboard HTTPS) | local only | — | n/a — `tls internal`, **no ACME / no external CA** | on | clean (no egress) |
-| **Telegram** bot (#121) | `api.telegram.org` | nothing about you — Telegram sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`, #340) | **off** | opt-in; both the alert sends and the command poll ride Tor |
-| Dashboard **Healthchecks** ping (#79) | `hc-ping.com` (or self-hosted) | nothing about you — the endpoint sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | opt-in (set `healthchecks.ping_url`; off until set) | the ping URL must be Tor-reachable (hosted, public, or an onion self-hosted instance) — there is no clearnet mode |
-| Dashboard **price feed** (#520) | `api.coingecko.com` | nothing about you — CoinGecko sees a **Tor exit**, not your IP | ✅ **always** Tor (`socks5h`) | **off** | opt-in (`dashboard.energy.price_feed: true`); fetches the XMR + XTM spot prices every 15 min; fails silently, static config prices are the fallback |
-| Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` and `www.cloudflare.com/cdn-cgi/trace` | No account identifier; each endpoint sees a distinct Tor exit circuit, not your IP | ✅ **always** Tor (`socks5h` with a fresh SOCKS username) | **off** | Opt-in (`tor.auto_heal: true`); failed egress is corroborated on a second circuit and target. Bounded NEWNYM requests precede one possible Tor restart. For saturated history, the final action instead invokes host-gated state recovery: it backs up state and resets guards only with the exact signature, corroborating evidence, onion identity checks, the mutation lock and a six-hour cooldown. DIY stays opt-in; appliances enable auto-heal when absent. |
-| Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you — the explorer sees a **Tor exit**, not your IP, and the request carries no address or height | ✅ **always** Tor (`socks5h`) | **on** while Tari is local or remote | once an hour; the explorer's tip is the one height that is not your node's own opinion, so it is what catches a node on a dead fork. A blank `tari.explorer_url` turns it off; a failed fetch contributes nothing to the verdict |
-| **Webhook / ntfy** alert sinks (#380) | your configured URLs | alert texts; the endpoint sees a **Tor exit**, not your IP | ✅ Tor (`socks5h`) by default | opt-in (set `notifications.webhooks` / `notifications.ntfy.url`; off until set) | `notifications.tor: false` is the LAN carve-out (Tor exits can't reach private addresses) — with it, a **clearnet** endpoint sees your host IP on every alert |
+| **Telegram** bot (#121) | `api.telegram.org` | nothing about you | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | **off** | opt-in; both the alert sends and the command poll follow the profile |
+| Dashboard **Healthchecks** ping (#79) | `hc-ping.com` (or self-hosted) | nothing about you | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | opt-in (set `healthchecks.ping_url`; off until set) | profile routing applies; an explicit `notifications.tor` value wins |
+| Dashboard **price feed** (#520) | `api.coingecko.com` | nothing about you | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | **off** | opt-in (`dashboard.energy.price_feed: true`); fetches the XMR + XTM spot prices every 15 min; fails silently, static config prices are the fallback |
+| Dashboard **Tor egress probe** (#424) | `www.google.com/generate_204` and `www.cloudflare.com/cdn-cgi/trace` | No account identifier | Tor when auto-heal is enabled | **on** (Balance) | `performance` disables auto-heal; `balance`/`privacy` enable it. The restricted host healing channel works without dashboard login or general dashboard control. |
+| Dashboard **Tari explorer reference** (#2464) | `textexplore.tari.com` (or `tari.explorer_url`) | nothing about you | profile-controlled outbound request | **on** while Tari is local or remote | once an hour; a blank URL turns it off and a failed fetch contributes nothing to the verdict |
+| **Webhook / ntfy** alert sinks (#380) | your configured URLs | alert texts | `performance`: direct; `balance`/`privacy`: Tor (`socks5h`) | opt-in (set `notifications.webhooks` / `notifications.ntfy.url`; off until set) | an explicit `notifications.tor` value overrides the profile |
 
 `socks5h` (used for the XvB stats fetch) routes DNS resolution through Tor too, so the hostname isn't
 resolved on the clearnet either. The host-networked dashboard reaches the bridge's Tor SOCKS at
@@ -266,13 +262,38 @@ risk is the one-time IP disclosure, not tampering.
 
 ---
 
-## The Tor-by-default yield paths (and their opt-outs)
+## Profile-controlled routing
 
-As of v1.1 both former clearnet yield paths, P2Pool outbound peers (#165) and XvB donation mining
-(#166), route over Tor by default. Each has an opt-out for operators who'd trade the IP exposure for
-maximum yield (Tor latency can raise stale/uncle shares and rejects). The optional project
-donation also uses Tor by default once a destination is published; its direct-routing choice
-applies only to clearnet endpoints. The sections below document these routes and opt-outs.
+The `performance`, `balance`, and `privacy` profiles coordinate node sync, P2Pool peering, and
+dashboard outbound services. An absent profile means `balance`. Explicit governed settings win over
+the profile, and selecting a profile clears its governed overrides. Inbound onion peering remains
+separate from outbound routing.
+
+### Performance
+
+Local Monero and Tari nodes keep using clearnet after initial sync, including Monero transaction
+broadcasts. P2Pool, XvB, notifications, release checks and price feeds dial directly. Peers and
+service providers see the host IP. The egress firewall and Tor auto-heal are off by default.
+Inbound onion services remain available independently of outbound routing.
+
+### Balance
+
+Local node sync and ongoing outbound traffic use Tor. P2Pool may reach clearnet peers through
+Tor exits. The egress firewall is on. Rigs need neither a stratum password nor worker API token.
+Tor auto-heal defaults on and uses a restricted host healing channel when general dashboard control is disabled. This permits Tor recovery without enabling dashboard configuration or other control actions.
+
+### Privacy
+
+Balance applies, with P2Pool restricted to onion peers. A source-restricted relay accepts only
+connections from the Tor service and forwards only the P2Pool peering port to its loopback
+listener. No bridge port is published to the host or LAN; neither RPC nor stratum is forwarded.
+An explicit clearnet P2Pool override removes onion-only mode and its relay.
+
+A stratum password and worker API token are generated and retained in the owner-only environment
+file. Update every rig to match. Stratum TLS is available on the same port and remains optional
+per connection. [Configuration](configuration.md#profiles) lists the governed defaults and overrides.
+
+Project donation keeps its separate `donation.tor` choice; profiles do not enable it.
 
 What Tor costs you (measured): a 5-day interleaved benchmark on `mini` (#256, full
 [methodology + data](benchmarks/tor-vs-clearnet.md)) puts the price of routing P2Pool over Tor at
@@ -283,45 +304,43 @@ Tor the default anyway, because not leaking your home IP to the P2Pool network i
 is a modest, opt-out-able price. The cost is largest on the smaller/faster sidechains (where your
 share of the chain is biggest) and negligible on `main`.
 
-### P2Pool outbound peers (#165) — ✅ Tor by default
+### P2Pool outbound peers (#165)
 
-P2Pool advertises its onion for inbound peers but, without a SOCKS proxy, would dial outbound
-sidechain peers over clearnet, exposing your IP to the P2Pool network. As of v1.1 `pithead` injects
-`--socks5 <tor-ip>:9050 --socks5-proxy-type tor` into P2Pool's `command:` by default, so outbound
-dials go through Tor. No action needed.
+P2Pool advertises its onion for inbound peers through a source-restricted Tor service bridge on the
+existing P2Pool peer port. The bridge does not publish a host or LAN port and never forwards RPC or
+stratum. `balance` and `privacy` route outbound sidechain peers through Tor; `performance` keeps
+clearnet peering for yield.
 
-The same default adds `--no-dns` (#2496). The SOCKS proxy does not cover P2Pool's seed-node lookup:
+The Tor-routed profiles add `--no-dns` (#2496). The SOCKS proxy does not cover P2Pool's seed-node lookup:
 without the flag it looks up `seeds-mini.p2pool.io` (or the `main`/`nano` equivalent) in DNS
 on every peer-list load, which tells your ISP or resolver that the address runs P2Pool.
 With it, P2Pool makes no DNS queries and builds its peer list from its saved `p2pool_peers.txt`, its
 built-in onion seed nodes and any `--addpeers`. `p2pool.clearnet: true` drops `--no-dns` along with
 the SOCKS flags, so a clearnet node still bootstraps from the DNS seeds.
 
-Opt out for maximum yield (lower stale/uncle rate plus a larger peer set, at the cost of exposing
-your IP, worse on `--mini`/`--nano`): set `p2pool.clearnet: true` in `config.json` and re-run
-`./pithead apply`. The default-on egress firewall then exempts only P2Pool's container from its
+For a governed override, set `p2pool.clearnet: true` in `config.json` and re-run `./pithead apply`.
+The default-on egress firewall then exempts only P2Pool's container from its
 IPv4 public-dial block; turning the flag off and applying removes that exemption. P2Pool peers see
-your home IP. For the strictest posture, refuse clearnet peers entirely (onion-only): P2Pool also
-has a `--no-clearnet-p2p` flag, not yet wired to its own config knob.
+your home IP. The `privacy` profile passes `--no-clearnet-p2p` for onion-only outbound peers. An
+explicit `p2pool.clearnet: true` override wins and restores clearnet peers; inbound onion peering is
+unchanged.
 
 Trade-off (measured): Tor adds latency to share propagation, costing ~10 % of yield on `mini` (#256,
 the loss is uncles/late shares, not rejects; see the box above), and `--no-clearnet-p2p` shrinks your
 peer set to onion-only. The Tor-by-default flip was gated on that benchmark, which is why it's a v1.1
 change (#165), not a v1.0 default. The opt-out works with the default egress firewall on (#2790).
 
-### XvB donation mining (#166) — ✅ Tor by default
+### XvB donation mining (#166)
 
-When the optimizer donates to XMRvsBeast (XvB), it points the proxy at `na.xmrvsbeast.com:4247`. As
-of v1.1 that connection routes through Tor by default: `algo_service` sets a per-pool `socks5` on the
-XvB pool object it pushes to xmrig-proxy (the pool's DNS is resolved proxy-side, like the stats fetch
-in #163), so donation mining no longer exposes your home IP. No action needed.
+When the optimizer donates to XMRvsBeast (XvB), it points the proxy at `na.xmrvsbeast.com:4247`.
+`balance` and `privacy` route that connection through Tor; `performance` uses direct egress. XvB
+stats, raffle registration, and winners requests follow the same profile routing.
 
-Opt out for maximum yield (stratum-over-Tor adds latency that can raise rejected shares, scaling with
-hashrate): set `xvb.tor: false` and re-run `./pithead apply`; the donation connection then dials
-direct. The firewall exempts only xmrig-proxy while XvB is enabled and this choice is active;
+An explicit `xvb.tor` value overrides the profile. With `xvb.tor: false`, the donation connection
+dials direct. The firewall exempts only xmrig-proxy while XvB is enabled and this choice is active;
 switching Tor back on or disabling XvB removes the exemption at apply. The XvB pool sees your
 home IP while donating. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
-stops the (already Tor-routed, #163) stats fetch.
+stops the profile-routed stats fetch.
 
 > NOTE: the xmrig-proxy dev-fee `--donate-level` is pinned to `0` by default (`proxy.donate_level`,
 > rendered explicitly per #173) and does not ride the XvB pool's `socks5`, so if you set it above 0,
@@ -347,13 +366,11 @@ and the [FAQ](faq.md#is-the-project-donation-mandatory); miner fees and XvB rema
 
 ---
 
-## Optional clearnet initial sync (off by default)
+## Profile-controlled initial sync
 
-Routing everything over Tor is correct for ongoing operation, but it makes the one-time initial
-block download (IBD) slow: Tor circuits are bandwidth-capped, so a full Monero sync can drop to
-near-zero blocks/sec and stall for long stretches, and Tari's chain is no faster. The standard
-pattern for Tor-based nodes is to sync once over clearnet, then return to Tor. The stack supports this
-as an explicit, default-off opt-in (#183).
+Tor is the default for `balance` and `privacy`. The `performance` profile keeps local Monero and
+Tari nodes on clearnet for initial sync and ongoing operation, avoiding Tor's bandwidth and latency
+cost. Set either flag explicitly to override the profile for a local node.
 
 Per-component flags in `config.json`, both `false` by default:
 
@@ -363,18 +380,19 @@ Per-component flags in `config.json`, both `false` by default:
 ```
 
 Set the one(s) you want to `true` and run `./pithead apply`. Keep the egress firewall on. Monero and
-Tari sync independently, so you can enable either, both, or neither.
+Tari sync independently, so you can enable either, both, or neither. With `monero.mode: remote` or
+`tari.mode: remote`/`off`, the corresponding sync flag is forced to `false` because there is no local
+daemon to sync.
 
 NOTE: both flags act on the bundled daemons only. With `monero.mode` or `tari.mode: remote` there is
-no local daemon here to sync, so the matching flag does nothing — set it back to `false` when you
-switch, or the exposure banner keeps warning about a sync that isn't happening.
+no local daemon here to sync, so the matching rendered flag is false.
 
 ### What it changes
 
-| | Tor-only (default) | Clearnet initial sync (opt-in) |
+| | `balance`/`privacy` | `performance` or explicit clearnet override |
 |---|---|---|
 | **Monero** P2P | over Tor (`proxy=172.28.0.25:9050`) | **direct to clearnet seed nodes** (proxy line dropped), `out-peers` 48 → **32** + P2Pool v4.18's recommended **priority nodes** (`p2pmd.xmrvsbeast.com`, `nodes.hashvault.pro`) for fast, reliable sync |
-| **Monero** tx broadcast | over Tor (`tx-proxy=`) | **still over Tor** — unchanged |
+| **Monero** tx broadcast | over Tor (`tx-proxy=`) | direct under Performance; still Tor for an explicit first-sync override |
 | **Tari** transport | Tor SOCKS (`type = "socks5"`) | **TCP** (`type = "tcp"`) |
 | **Tari** seeds | onion `peer_seeds`, `dns_seeds = []` | **`dns_seeds = ["seeds.tari.com"]`** (onion seeds are unreachable without Tor), onion `public_addresses` dropped |
 
@@ -390,8 +408,8 @@ node, which is exactly what this window temporarily is.
 What is *not* exposed:
 
 - Your wallet addresses / payouts: there is no wallet activity during a sync.
-- Monero transaction origin: `tx-proxy=tor` is left in place, so any tx broadcast still goes over
-  Tor. (And there's no broadcasting during IBD anyway.)
+- Under Balance or Privacy with an explicit first-sync override, Monero transaction broadcasts
+  retain `tx-proxy=tor`. Performance removes that proxy for ongoing operation.
 - Nothing about *what* you mine, only that an IP runs a node.
 
 That's the same exposure as running any ordinary (non-Tor) full node, scoped to the sync window. For
@@ -410,46 +428,20 @@ The host checks that the node's live `ACCEPT` is scoped to its address and prece
 blocking `DROP`; a broad or later exception does not count as active. The chosen node gets
 clearnet peers without opening the entire stack's egress.
 
-### It switches back to Tor automatically (#234)
+### Profile persistence
 
-The dashboard tracks each chain's sync state. When a clearnet node reports fully synced, it writes
-that chain's persistent marker and asks the host to remove its firewall exception. The host claims
-the marker so the dashboard cannot delete or rewrite it to reopen clearnet, then verifies
-the live rules before the dashboard restarts the node on Tor. It then verifies that the running
-daemon's P2P proxy points to this stack's Tor SOCKS endpoint, checks the firewall rules, and writes
-a host-owned completion result for that transition.
-The dashboard and CLI keep the warning until that result matches the current marker's random UUID,
-inode and ctime, and the marker is root-owned with no group or other write permission. Matching
-text and filesystem timestamps alone cannot attest a dashboard-writable replay. This boundary
-protects against dashboard writes; privileged rewrites of an otherwise identical claimed marker
-are outside it. A failed refresh or
-verification leaves the transition pending and retries; it never clears the marker to reopen
-clearnet. A malformed marker path cannot block status or host removal of that chain's exemption. The
-transition stays pending until the host can claim a valid marker, restart the daemon on Tor, and
-verify it. After that, the node stays on Tor across restarts, `apply`, and reboots. Monero and Tari
-transition independently.
+The selected profile persists across restarts and `apply`. An explicit sync flag persists as an
+override until the operator selects a profile or changes the flag again. Remote modes force the
+corresponding sync flag false because they have no local daemon.
 
-You can leave `clearnet_initial_sync: true` in `config.json`; it's effectively spent once the sync
-completes. (To deliberately re-sync over clearnet later, e.g. after wiping a chain, toggle the flag
-off and on again with `./pithead apply`, which re-arms it.)
-
-### It is loud and always-visible
+### Exposure is loud and always-visible
 
 The active state is surfaced in four places, so it can't be enabled by accident or missed:
 
 - `./pithead apply` prints a `⚠`-flagged, disruptive-change confirmation describing exactly what
   becomes exposed before it recreates the daemon.
-- `./pithead status` and `./pithead up` print a prominent **"CLEARNET INITIAL SYNC OR TOR TRANSITION
-  PENDING"** banner until the host attests the live Tor configuration and closed exception.
-- `./pithead doctor` raises a `⚠ WARN` while a node is exposed and flips back to a green
-  `✓ OK "all node P2P is Tor-only"` once it's switched back.
-- The dashboard keeps a warning badge for the chosen clearnet sync or pending Tor transition,
-  and the daemon container logs a matching warning on every start until it completes.
-
-If the automatic switch ever fails (e.g. the dashboard couldn't restart the container), it is
-fail-safe: the marker is written before the restart, so any later restart still comes up Tor-only,
-and the supervisor keeps retrying. A node is never silently stranded on clearnet. The banners and
-`doctor` warning stay up until it's genuinely back on Tor.
+- `./pithead status` names the profile, or Custom when an explicit governed value differs.
+- Apply previews name the profile changes and the exposure they introduce before recreating a daemon.
 
 ---
 
@@ -485,15 +477,14 @@ single-purpose appliance. One consequence is worth recording explicitly:
 
 - [ ] Keep `:3333` off the public internet: firewall it to your LAN, set `p2pool.stratum_bind`,
   and/or require a `p2pool.stratum_password` (`pithead doctor` flags public-IP exposure).
-- [ ] Leave `p2pool.clearnet` off (the default) to keep P2Pool outbound peers on Tor (#165).
+- [ ] Select the `privacy` profile, or leave `p2pool.clearnet` explicitly false, to keep P2Pool
+  outbound peers onion-only. Inbound onion peering uses its separate source-restricted bridge.
 - [ ] Set `xvb.enabled: false` if you don't want any XvB egress.
-- [ ] Leave `monero.clearnet_initial_sync` / `tari.clearnet_initial_sync` off (the default) to keep
-  all node P2P on Tor. If you use clearnet sync, the host removes and verifies that chain's
-  exception before the dashboard restarts it on Tor. `pithead doctor` keeps the warning until the
-  host verifies the live Tor daemon and firewall rules.
+- [ ] Use `balance` or `privacy` to keep local node P2P on Tor; use `performance` when persistent
+  clearnet node operation is intentional.
 - [ ] Run the initial install/build behind a VPN or `torsocks`.
-- [ ] Telegram (#121) and Healthchecks (#79) both always run over Tor (Telegram sees only a Tor exit, #340), so either is safe to enable — for Healthchecks, make sure its ping URL is Tor-reachable (hosted `hc-ping.com`, or an onion/public self-hosted instance).
-- [ ] Webhook/ntfy alert sinks (#380) ride Tor by default too; leave `notifications.tor` on unless every configured endpoint is on your own network — with it off, clearnet endpoints see your host IP on every alert.
+- [ ] Use `balance` or `privacy` for Tor-routed Telegram, Healthchecks, webhook, and ntfy delivery;
+  explicit `notifications.tor` overrides the profile.
 - [ ] Run `./pithead doctor`; it surfaces the public-IP exposure check among its diagnostics.
 
 ---

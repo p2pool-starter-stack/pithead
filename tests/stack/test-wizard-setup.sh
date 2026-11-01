@@ -29,12 +29,12 @@ assert_eq "defaults path: p2pool.pool Enter-through is mini (the global default)
 assert_eq "defaults path: local node RPC creds auto-generated (non-empty)" \
     "$([ -n "$(jq -r '.monero.node_username' <<<"$w1_cfg")" ] && [ -n "$(jq -r '.monero.node_password' <<<"$w1_cfg")" ] && echo yes)" "yes"
 assert_eq "defaults path: top-level keys are exactly monero/tari/p2pool/dashboard, nothing else" \
-    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","local_miner","monero","p2pool","tari","xvb"]'
+    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","local_miner","monero","p2pool","profile","tari","xvb"]'
 assert_eq "defaults path: dashboard has secure, a generated login and — the Tari yes of this fixture — tari_required false (#3333)" \
     "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["auth","host","secure","tari_required"]'
 assert_eq "defaults path: no telegram block written" "$(jq -r 'has("telegram")' <<<"$w1_cfg")" "false"
-assert_eq "defaults path: private sync written explicitly" \
-    "$(jq -r '.monero.clearnet_initial_sync' <<<"$w1_cfg")" "false"
+assert_eq "defaults path: private sync inherits Balance" \
+    "$(jq -r '.monero | has("clearnet_initial_sync")' <<<"$w1_cfg")" "false"
 assert_eq "defaults path: DIY local miner is explicitly off" \
     "$(jq -r '.local_miner.enabled' <<<"$w1_cfg")" "false"
 
@@ -96,9 +96,7 @@ printf '%s\n\n2\n%s\nmain\nopuser\nsuperSecret1\ny\ny\ny\nmybottoken123\n9876543
 w2_cfg="$(cat "$W2/config.json" 2>/dev/null)"
 assert_eq "full path: monero.mode local (Enter-through)" "$(jq -r '.monero.mode' <<<"$w2_cfg")" "local"
 assert_eq "full path: p2pool.pool honors an explicit main" "$(jq -r '.p2pool.pool' <<<"$w2_cfg")" "main"
-assert_eq "full path: stratum password remains off without opt-in" "$(jq -r '.p2pool.stratum_password' <<<"$w2_cfg")" ""
-# The other new-install path — `cp config.minimal.json config.json` (the bundle quick-start,
-# which bypasses the wizard) — must carry the same default, or only wizard users get auth.
+assert_eq "full path: stratum password remains off without opt-in" "$(jq -r '.p2pool.stratum_password // ""' <<<"$w2_cfg")" ""
 assert_eq "config.minimal.json ships no stratum password" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" ""
 assert_eq "full path: dashboard.auth.username set" "$(jq -r '.dashboard.auth.username' <<<"$w2_cfg")" "opuser"
 assert_eq "full path: dashboard.auth.password set" "$(jq -r '.dashboard.auth.password' <<<"$w2_cfg")" "superSecret1"
@@ -175,15 +173,20 @@ mkdir -p "$RT/build/tari" "$RT/dashboard" "$RT/data/tor" "$RT/data/dashboard"
 cp "$STACK" "$RT/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$RT/build/tari/"
 make_stubs "$RT/bin"
-# make_stubs's sudo is a bare no-op — fine for setup's conditional sudo calls (writable test dirs
-# skip them), but stack_backup shells to `sudo tar`/`sudo du` UNCONDITIONALLY. Same passthrough
-# override the firstboot_consume_restore fixture above uses, for the same reason.
 cat >"$RT/bin/sudo" <<'SUDOEOF'
 #!/usr/bin/env bash
-[ "$1" = "chown" ] && exit 0
-exec "$@"
+[ "$1" != -n ] || shift
+case "$1" in
+    tar | du) exec "$@" ;;
+    tee) cat >/dev/null ;;
+esac
+exit 0
 SUDOEOF
 chmod +x "$RT/bin/sudo"
+"$RT/bin/sudo" touch "$RT/host-command-ran"
+assert_eq "restore fixture never executes unrelated host commands" "$([ -e "$RT/host-command-ran" ] && echo yes || echo no)" "no"
+printf 'unit fixture\n' | "$RT/bin/sudo" tee "$RT/host-unit"
+assert_eq "restore fixture drains unit output without writing host units" "$([ -e "$RT/host-unit" ] && echo yes || echo no)" "no"
 cat >"$RT/.env" <<EOF
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion

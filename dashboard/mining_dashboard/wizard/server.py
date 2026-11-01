@@ -443,11 +443,11 @@ async def _submit_locked(request: web.Request) -> web.Response:
         _spool_write_text("last-attempt.json", json.dumps(cfg))
         spool_remove("install-request")
         return web.json_response({"error": first_failure(report), "node_probe": report}, status=400)
-    # Keep the full attempt for a retry, write only what differs from the defaults.
+    previous_profile = _last_attempt().get("profile", "balance")
     _spool_write_text("submission-staging", "1")
     remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
     _spool_write_text("last-attempt.json", json.dumps(cfg))
-    _spool_write_config(explicit_wizard_config(cfg, ref))
+    _spool_write_config(explicit_wizard_config(cfg, ref, previous_profile=previous_profile))
     if install:
         _publish_install_request(install)
     _spool_write_text("submission-active", "1")
