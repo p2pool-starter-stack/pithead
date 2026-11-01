@@ -195,10 +195,13 @@ checks state, callback order and complete renders. Username reads, generation an
 state, error order and full renders. Mode getters and checksum classifiers stay in Bash.
 `go/internal/config/payout_settings.go` parses payout-confirmation scalars via
 `lib/pithead/27i-go-payout-settings.sh`; `make test-go-payout-settings-parity` checks
-validation and partial state. Time reads and wallet-ownership comparisons stay in Bash.
+validation and partial state. Time reads and address decoding stay in Bash.
 `go/internal/payoutkeys/` derives public view keys from canonical private scalars
 via `lib/pithead/25c-go-payout-keys.sh`; `make test-go-payout-keys-parity` compares
 curve encodings and callback failures. Python remains the compatibility fallback.
+`go/internal/config/payout_ownership.go` validates decoded identities against view keys
+through the same hook; `make test-go-payout-ownership-parity` checks diagnostics and
+spend-key state. Address decoding and error callbacks stay in Bash.
 `go/internal/config/site_names.go` expands the shared Caddy/certificate names and formats SANs
 through `lib/pithead/26a-go-site-names.sh`; `make test-go-site-names-parity` checks
 filters, ordering and complete Caddy renders. Discovery and shell expansion stay in Bash.

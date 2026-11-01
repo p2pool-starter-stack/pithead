@@ -137,14 +137,15 @@ selection is not implemented.
 | Shared Caddy/certificate site names and SANs | Native supported auto-expansion/filtering and SAN formatting; Bash selection/discovery/shell expansion and compatibility fallback | Supplementary comparisons and complete Caddy renders; full Linux/Docker oracle unavailable |
 | SSH policy and Monero RPC credential parsing | Native supported SSH validation, password projection and generation plan; Bash username projection, discovery, generation/persistence/log callbacks and compatibility fallback | Supplementary comparisons and unchanged render fixture; original Linux appliance/control oracle unavailable |
 | Required wallet fields and Tari mode | Native supported scalar/required/whitespace gates; Bash mode getter, classifiers and compatibility fallback | Supplementary partial-state/callback comparisons and unchanged render fixtures; full Linux CLI oracle unavailable |
-| Payout-confirmation scalar config and restore bounds | Native supported settings; Bash time read, wallet-ownership comparisons and compatibility fallback | Supplementary comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
+| Payout-confirmation scalar config and restore bounds | Native supported settings; Bash time read, address decoding and compatibility fallback | Supplementary comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
 | Config version policy and stamping | Native supported validation/policy/ordered JSON transform; Bash file I/O, warnings and compatibility fallback | 16 supplementary comparison tests and Go units; original Linux version suite unavailable |
 | Config migrations | Native supported legacy-worker/XvB and Telegram-control plans/transforms; Bash file I/O, callbacks and compatibility fallback | 14 supplementary migration/static comparisons, 2 protocol tests and Go units; original Linux migration suites unavailable |
 | Config credential write-back and CLI appliance defaults | Native supported ordered JSON transforms; Bash generation, default-table reads, warnings and file I/O with jq fallback | 22 supplementary comparisons/static tests and Go units; original Linux suites unavailable |
 | Masked config prefill JSON | Native supported ordered transform; Bash validation, file I/O, warnings and worker callbacks with jq fallback | 9 supplementary methods, including 21 paired renders and native/protocol checks; original Linux masking/worker suites unavailable |
 | Worker read-credential JSON | Native supported JSON stages; Bash validation, HMAC, warnings and file transactions with jq fallback | 13 supplementary tests, including 25 paired renders and native/protocol checks; original Linux worker-config suite unavailable |
 | Config change descriptions and `.env` diff | Native supported messages/flags and byte-order comparisons; callback/locale compatibility fallback | 12 supplementary methods and Go units; original Linux config/approval suites unavailable |
-| Payout public-view-key derivation | Native canonical-scalar curve arithmetic; Bash ownership comparisons/diagnostics and Python compatibility fallback | 8 supplementary methods and Go units; original Linux payout-wallet-pairs suite unavailable |
+| Payout public-view-key derivation | Native canonical-scalar curve arithmetic; Bash address collection/diagnostics and Python compatibility fallback | 8 supplementary methods and Go units; original Linux payout-wallet-pairs suite unavailable |
+| Payout ownership validation | Native supported verdicts with supplied decoded identities; Bash address readers, callbacks and compatibility fallback | Unchanged 8-method payout-key comparison, 9 new methods and Go units; original Linux wallet-pair suite unavailable |
 | Shared dotenv decoding and file lookup | Native supported decoder and literal-key lookup; Bash file collection, regex matching and compatibility fallback | Unchanged directory line-break suite, 12 supplementary methods and Go units; broader Linux unit-helper suite unavailable |
 | Compose project identity | Native supported C/POSIX resolver; Bash file collection, warning callbacks and compatibility fallback | Unchanged 14-assertion ownership suite, supplementary comparisons and Go units; broader Linux/Docker oracle unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
@@ -168,51 +169,54 @@ Detailed paired commands, results and limits are preserved in
 [configuration results](results-config.md), [render results](results-render.md) and
 [later render results](results-render-followup.md).
 
-## Compose project identity slice (2026-11-01)
+## Payout ownership validation slice (2026-11-01)
 
-Go resolves supported Compose project names in C/POSIX locales, preserving
-explicit-environment precedence, literal assignment checks and diagnostics.
-Bash retains file collection, warnings and compatibility fallback for unsupported
-locales, shell options, input and tool/file failures. Custom tool functions,
-PATH executables and hashed command overrides retain the reference path. Main verbs, config parser
-orchestration and render transactions remain Bash; the dashboard remains Python.
+Go validates supplied decoded payout identities against the configured private
+view keys, preserving the diagnostic order and Tari spend-key assignment before
+an explicit-key mismatch. Bash retains address decoding, callbacks and
+compatibility fallback. Missing Python, non-ASCII decoded identities and helper
+failures retain the reference path. Main verbs, parser orchestration and render transactions
+remain Bash; the dashboard remains Python.
 
 Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
 Worktree caches and an absent Docker socket isolate the runs. Private records
-use `.go-cache/logs/compose-project-*`.
+use `.go-cache/logs/payout-ownership-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-compose-project-parity` including unchanged ownership suite | Pass | Pass |
-| Affected config/render comparisons below | Pass | Pass |
-| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Pass; 891 frontend tests |
-| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding | Same exit and finding |
-| `make test-stack` | Exit 2: macOS refusal | Same exit and refusal |
-| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same results |
+| `make test-go-payout-ownership-parity` including unchanged payout-key comparisons | Pass; 8 existing and 9 new methods | Same result |
+| Affected config/render comparisons below | Pass; unchanged parser and render goldens included | Same result |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
+| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make test-stack` | Exit 2: macOS refusal | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same result |
 
-Affected config/render command: `make test-go-env-read-parity test-go-env-parity test-go-caddy-parity test-go-config-document-parity test-go-parity`.
+Affected config/render command: `make test-go-payout-settings-parity test-go-wallet-settings-parity test-go-env-parity test-go-caddy-parity test-go-config-document-parity test-go-parity`.
 Native checks pass: `go -C go test -json -tags=parity -race -count=1
-./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
+./internal/config ./internal/cli ./internal/payoutkeys`,
+`go -C go vet -tags=parity ./...` and
 `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
-./cmd/pithead`. The Linux binary was compiled, not executed.
+./cmd/pithead` (compile only).
 
 Changed Go files pass `gofmt -l`. Changed shell files pass `shfmt -i 4 -d`;
-`shellcheck -x --severity=warning pithead tests/go-parity/compose_project_reference.sh
-tests/go-parity/compose_project_oracle_env.sh` passes. The new Python comparison
-passes locked `ruff check` and `ruff format --check` through
-`uv run --locked --project dashboard --extra dev`; dashboard test extras were
-restored with `uv sync --locked --project dashboard --extra dev --extra test`.
+`shellcheck -x --severity=warning pithead tests/go-parity/payout_ownership_reference.sh`
+passes. The new Python comparison passes locked `ruff check` and
+`ruff format --check` through `uv run --locked --project dashboard --extra dev`.
+Dashboard test extras are restored with
+`uv sync --locked --project dashboard --extra dev --extra test`.
 Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
 .config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths;
-`make lint-docs-voice` passes after the final ledger update.
+`make lint-file-budget lint-docs-voice` passes after the final ledger update with
+the starting-SHA budget override above.
 
-The original ownership suite uses its own engine stub and remains unchanged.
-The adapter selects C locale in both arms and loads the native hook for sourced
-Go-selected calls. The 12 comparison methods cover override precedence, literal file parsing,
-diagnostics, command resolution and protocol failures. The directory line-break
-suite, parser tests and render goldens also remain unchanged and pass through the
-affected targets. Dashboard, fake-daemon and patch-coverage suites were not rerun
-for this CLI-only change; earlier paired results remain in the linked ledger.
+The native helper receives private scalars on stdin and emits only public spend
+keys and fixed diagnostics. Independent implementation and comparison reviews
+found no remaining correctness or security defect after the non-ASCII fallback fix.
+
+The existing tests and fixtures remain unchanged. The full original
+payout-wallet-pairs suite requires the Linux harness and remains unavailable
+locally. Dashboard, fake-daemon and patch-coverage suites are not rerun for this
+CLI-only change; earlier paired results remain in the linked ledger.
 
 ## Unavailable and known host constraints
 

@@ -298,3 +298,49 @@ unchanged through the new `BASH_ENV` adapter listed in the adapter ledger.
 Final source and security reviews pass after the missing-`grep` compatibility fix.
 Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice
 changes only CLI dotenv reads; their prior paired Python results remain archived.
+
+## Compose project identity slice (2026-11-01)
+
+Go resolves supported Compose project names in C/POSIX locales, preserving
+explicit-environment precedence, literal assignment checks and diagnostics.
+Bash retains file collection, warnings and compatibility fallback for unsupported
+locales, shell options, input and tool/file failures. Custom tool functions,
+PATH executables and hashed command overrides retain the reference path. Main verbs, config parser
+orchestration and render transactions remain Bash; the dashboard remains Python.
+
+Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
+Worktree caches and an absent Docker socket isolate the runs. Private records
+use `.go-cache/logs/compose-project-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-compose-project-parity` including unchanged ownership suite | Pass | Pass |
+| Affected config/render comparisons below | Pass | Pass |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Pass; 891 frontend tests |
+| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding | Same exit and finding |
+| `make test-stack` | Exit 2: macOS refusal | Same exit and refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same results |
+
+Affected config/render command: `make test-go-env-read-parity test-go-env-parity test-go-caddy-parity test-go-config-document-parity test-go-parity`.
+Native checks pass: `go -C go test -json -tags=parity -race -count=1
+./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
+./cmd/pithead`. The Linux binary was compiled, not executed.
+
+Changed Go files pass `gofmt -l`. Changed shell files pass `shfmt -i 4 -d`;
+`shellcheck -x --severity=warning pithead tests/go-parity/compose_project_reference.sh
+tests/go-parity/compose_project_oracle_env.sh` passes. The new Python comparison
+passes locked `ruff check` and `ruff format --check` through
+`uv run --locked --project dashboard --extra dev`; dashboard test extras were
+restored with `uv sync --locked --project dashboard --extra dev --extra test`.
+Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
+.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths;
+`make lint-docs-voice` passes after the final ledger update.
+
+The original ownership suite uses its own engine stub and remains unchanged.
+The adapter selects C locale in both arms and loads the native hook for sourced
+Go-selected calls. The 12 comparison methods cover override precedence, literal file parsing,
+diagnostics, command resolution and protocol failures. The directory line-break
+suite, parser tests and render goldens also remain unchanged and pass through the
+affected targets. Dashboard, fake-daemon and patch-coverage suites were not rerun
+for this CLI-only change; earlier paired results remain in the linked ledger.

@@ -78,26 +78,42 @@ PYEOF
 }
 
 validate_payout_keys() {
-    local address_keys derived explicit
+    local address_keys derived explicit native_rc
     if [ -n "$MONERO_VIEW_KEY" ]; then
         address_keys=$(MONERO_ADDRESS_KEY_ONLY=1 monero_address_type "$MONERO_WALLET")
-        derived=$(payout_public_view_key monero "$MONERO_VIEW_KEY") ||
-            error "Cannot validate monero.view_key: python3 must be available and the key must be a nonzero canonical private scalar."
-        [ "$derived" = "$address_keys" ] || error "monero.view_key does not belong to monero.wallet_address: the public view key differs. Use the secret (not public) view key of the wallet that owns this address; see $DOCS_URL/docs/dashboard.md#getting-your-view-keys."
+        native_rc=125
+        if declare -F _validate_payout_ownership_go >/dev/null; then
+            if _validate_payout_ownership_go monero "$address_keys" "$MONERO_VIEW_KEY" '' "$DOCS_URL"; then native_rc=0; else native_rc=$?; fi
+        fi
+        if [ "$native_rc" -eq 125 ]; then
+            derived=$(payout_public_view_key monero "$MONERO_VIEW_KEY") ||
+                error "Cannot validate monero.view_key: python3 must be available and the key must be a nonzero canonical private scalar."
+            [ "$derived" = "$address_keys" ] || error "monero.view_key does not belong to monero.wallet_address: the public view key differs. Use the secret (not public) view key of the wallet that owns this address; see $DOCS_URL/docs/dashboard.md#getting-your-view-keys."
+        elif [ "$native_rc" -ne 0 ]; then
+            return "$native_rc"
+        fi
     fi
     if [ -n "$TARI_VIEW_KEY" ]; then
         address_keys=$(TARI_ADDRESS_KEY_ONLY=1 tari_address_type "$TARI_WALLET")
-        case "${#address_keys}" in
-        66) error "Tari payout confirmation needs a dual-key address, which Tari Universe gives by default. A single-key address carries no public view key to check tari.view_key against. Mining payouts to single-key addresses remain supported." ;;
-        130) ;;
-        *) error "Cannot decode tari.wallet_address for payout confirmation; python3 must be available." ;;
-        esac
-        derived=$(payout_public_view_key tari "$TARI_VIEW_KEY") ||
-            error "Cannot validate tari.view_key: python3 must be available and the key must be a nonzero canonical private scalar."
-        [ "$derived" = "${address_keys:2:64}" ] || error "tari.view_key does not belong to tari.wallet_address: the public view key differs. Use the private view key of the wallet that owns this address; see $DOCS_URL/docs/dashboard.md#getting-your-view-keys."
-        explicit="$TARI_SPEND_PUBLIC_KEY"
-        TARI_SPEND_PUBLIC_KEY="${address_keys:66:64}"
-        [ -z "$explicit" ] || [ "$explicit" = "$TARI_SPEND_PUBLIC_KEY" ] ||
-            error "tari.spend_public_key disagrees with tari.wallet_address. Leave it empty to derive the public spend key from the address."
+        native_rc=125
+        if declare -F _validate_payout_ownership_go >/dev/null; then
+            if _validate_payout_ownership_go tari "$address_keys" "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$DOCS_URL"; then native_rc=0; else native_rc=$?; fi
+        fi
+        if [ "$native_rc" -eq 125 ]; then
+            case "${#address_keys}" in
+            66) error "Tari payout confirmation needs a dual-key address, which Tari Universe gives by default. A single-key address carries no public view key to check tari.view_key against. Mining payouts to single-key addresses remain supported." ;;
+            130) ;;
+            *) error "Cannot decode tari.wallet_address for payout confirmation; python3 must be available." ;;
+            esac
+            derived=$(payout_public_view_key tari "$TARI_VIEW_KEY") ||
+                error "Cannot validate tari.view_key: python3 must be available and the key must be a nonzero canonical private scalar."
+            [ "$derived" = "${address_keys:2:64}" ] || error "tari.view_key does not belong to tari.wallet_address: the public view key differs. Use the private view key of the wallet that owns this address; see $DOCS_URL/docs/dashboard.md#getting-your-view-keys."
+            explicit="$TARI_SPEND_PUBLIC_KEY"
+            TARI_SPEND_PUBLIC_KEY="${address_keys:66:64}"
+            [ -z "$explicit" ] || [ "$explicit" = "$TARI_SPEND_PUBLIC_KEY" ] ||
+                error "tari.spend_public_key disagrees with tari.wallet_address. Leave it empty to derive the public spend key from the address."
+        elif [ "$native_rc" -ne 0 ]; then
+            return "$native_rc"
+        fi
     fi
 }

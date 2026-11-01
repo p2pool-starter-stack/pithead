@@ -241,3 +241,9 @@ resolver; `test_compose_project.py` compares names, warnings, statuses and fallb
 arms to the supported C locale so the unchanged lifecycle ownership suite's sourced
 functions reach native code. Its engine remains the original function stub;
 no running containers are involved.
+
+`payout_ownership_reference.sh` supplies decoded-key fixtures and real public
+addresses to `validate_payout_keys`; `test_payout_ownership.py`
+compares verdicts, diagnostics, callbacks and retained spend-key state. The
+existing payout-key comparison adapter already loads the extended production Go
+hook and runs unchanged. The full wallet-pair suite retains its Linux harness.
