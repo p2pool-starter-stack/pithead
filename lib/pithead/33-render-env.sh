@@ -74,9 +74,11 @@ render_env() {
     fi
     if ! [[ "$prep_threads" =~ ^[0-9]+$ ]]; then
         cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-        prep_threads=$((cores - 2))
-        [ "$prep_threads" -lt 4 ] && prep_threads=4
-        [ "$prep_threads" -gt 8 ] && prep_threads=8
+        if ! _render_env_prep_threads_go 2>/dev/null; then
+            prep_threads=$((cores - 2))
+            [ "$prep_threads" -lt 4 ] && prep_threads=4
+            [ "$prep_threads" -gt 8 ] && prep_threads=8
+        fi
     fi
 
     # Outbound peer target (#595): over Tor, each outbound peer is roughly one long-lived circuit,
@@ -87,7 +89,7 @@ render_env() {
     if [ "$native_network" != true ]; then
         out_peers=$(jq -r '.monero.out_peers // 48' "$CONFIG_FILE")
     fi
-    if ! [[ "$out_peers" =~ ^[0-9]+$ ]] || [ "$out_peers" -lt 8 ] || [ "$out_peers" -gt 1024 ]; then
+    if { ! declare -F _render_env_out_peers_go >/dev/null || ! _render_env_out_peers_go; } && { ! [[ "$out_peers" =~ ^[0-9]+$ ]] || [ "$out_peers" -lt 8 ] || [ "$out_peers" -gt 1024 ]; }; then
         error "monero.out_peers must be an integer between 8 and 1024 (got \"$out_peers\")."
     fi
 

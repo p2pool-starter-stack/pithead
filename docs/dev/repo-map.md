@@ -230,8 +230,10 @@ the dashboard-facing CLI values and ordered worker token JSON through
 those settings with complete reference renders. `go/internal/config/env_memory.go`
 derives memory settings and the Tari auto ceiling through
 `lib/pithead/33d-go-env-memory.sh`; `make test-go-env-memory-parity` checks limits
-and hardware boundaries. Bash retains hardware discovery, secret-file preparation
-and writes. Remaining typed checks stay Bash.
+and hardware boundaries. `go/internal/config/env_resources.go` handles supported
+CPU thread planning and outbound-peer bounds through the same shell hook;
+`make test-go-env-resources-parity` checks full renders and arithmetic fallback.
+Bash retains hardware discovery, secret-file preparation and writes.
 `go/internal/config/env_read.go` decodes dotenv values and reads literal keys via
 `lib/pithead/19b-go-env-read.sh`; `make test-go-env-read-parity` runs comparisons
 and the unchanged directory line-break suite. Regex keys retain Bash matching.

@@ -247,3 +247,9 @@ addresses to `validate_payout_keys`; `test_payout_ownership.py`
 compares verdicts, diagnostics, callbacks and retained spend-key state. The
 existing payout-key comparison adapter already loads the extended production Go
 hook and runs unchanged. The full wallet-pair suite retains its Linux harness.
+
+`env_resources_reference.sh` reuses the original config JSON fixtures and supplies
+synthetic core facts and peer settings. `test_env_resources.py` compares complete
+environment bytes, diagnostics, callback order and helper fallback. Existing
+memory/network comparisons and render goldens run unchanged; no hardware or
+running containers are used.
