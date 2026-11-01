@@ -210,6 +210,7 @@ run_rotate_onion() {
 
     it_step "external Tor client: reach the dashboard onion before rotating (baseline)…"
     if ! _onion_reachable_external; then
+        capture_onion_baseline_failure || true
         it_fail "isolated dashboard onion fixture is externally reachable before rotation" "the explicit phase cannot prove rotation from an unreachable baseline"
         return 1
     fi

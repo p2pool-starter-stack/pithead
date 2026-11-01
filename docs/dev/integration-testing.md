@@ -1258,6 +1258,13 @@ version records `version_withheld_as_stale`; unavailable staleness stays unknown
 projection omits names, addresses, credentials, configs and free text, stays below 2048 bytes,
 and has a five-second computation bound. Invalid JSON and capture failures are explicit.
 No request, retry or wait is added; the original assertion and failure count are unchanged.
+A failed `rotate-onion` external baseline probe saves `results/onion-baseline-probe.failure.json`
+before the row fails and the phase returns. It holds a fixed stage (`input`, `build`,
+`authorization`, `client-bootstrap`, `http-reachability`, `http-status` or `error`), the probe
+exit status, the numeric HTTP status (0 for no response) and elapsed seconds; unknown values are
+`null`. It omits onion addresses, authorization keys, topology and probe output. The harness
+collects `results/`, so a worker reads the file from the job's bench-ci artifacts
+(`bench-ci artifacts <id>@<sha>`). `selftest-onion-baseline-diagnostics.sh` covers each stage.
 The shared Tor-egress control also records each SOCKS request in
 `results/tor-egress-probes/probe-<sequence>.txt` and the harness transcript, before the
 caller reports its verdict or restores the stack. Each record contains the per-run
