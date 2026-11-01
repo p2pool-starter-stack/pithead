@@ -16,7 +16,7 @@ The operator commits later rounds; Git metadata is read-only. No performance ben
 
 The owner's 2026-11-01 ruling supersedes the original brief: port only the CLI
 and dashboard backend, including the wizard and control channel. Appliance host
-scripts and container entrypoint ports are out of scope. The dashboard
+scripts and container entrypoints are out of scope. The dashboard
 implementation selection switch remains part of its launch contract. Preserve
 Bash/Python as the reference and fallback, upstream daemons, browser assets,
 runtime filenames, database migrations and wire formats.
@@ -127,6 +127,7 @@ selection is not implemented.
 | Raw config document parse/validation | Native Go-selected gate, with Python compatibility fallback | 5 tagged groups / 134 scenarios, unchanged parser and wiring suites |
 | Config defaults, materialization and getters | Native with runtime table; jq compatibility fallback | 5 tagged groups / 744 scenarios and wiring/render-fixture tests |
 | Worker, energy, webhook and control-character validation | Native Go-selected validators; jq compatibility fallback | Paired validator corpus and wiring checks; Go units |
+| Stratum bind and port parsing | Native for supported settings; Bash compatibility fallback | Unchanged 14-test stratum preflight and render fixture; supplementary byte/status/state comparisons and Go units; full Linux suite unavailable |
 | Caddyfile serialization and site URLs | Native fragments and site/port formatting; Bash host expansion/preparation/writes and compatibility fallback | Supplementary Caddy/host/port comparisons and Go units; Linux/Docker oracle unavailable |
 | `.env` serialization | Native bulk formatter with Bash derivation/writes and compatibility fallback | Unchanged render fixture/goldens pass in Go mode; full Linux suite unavailable |
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
@@ -253,6 +254,11 @@ oracles:
   statuses, proves native selection without jq and checks compatibility fallback.
   Existing source-based suites and their fixtures remain unchanged.
 
+- `stratum_reference.sh` sources the original parser and error function, recording
+  globals on exit. `test_stratum.py` compares exact outputs, status and partial
+  state, proves native selection without jq and checks fallback beyond the
+  standalone preflight cases. Full config cases still require the Linux stack harness.
+
 - `caddy_reference.sh` loads both Caddy slices and supplies synthetic addresses,
   certificate files and mint outcomes to the production renderer. `test_caddy.py` compares complete files,
   logs, statuses and preparation calls, including partial-file failures. A binary
@@ -302,7 +308,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-config-defaults-parity`, `test-go-config-validation-parity` and
 `test-go-caddy-parity`, `test-go-env-parity`, `test-go-env-network-parity` and
 `test-go-env-dashboard-parity`, `test-go-env-memory-parity` and
-`test-go-caddy-sites-parity`.
+`test-go-caddy-sites-parity` and `test-go-stratum-parity`.
 
 ## Earlier slice results
 
@@ -312,31 +318,29 @@ Detailed paired commands, results and limits are preserved in
 [remote-node probe results](results-node-probes.md) and
 [configuration results](results-config.md) and [render results](results-render.md).
 
-## Caddy site preparation slice (2026-11-01)
+## Stratum endpoint slice (2026-11-01)
 
-Go now formats the HTTP/HTTPS site lists and normalizes scheme-default ports
-inside the existing Caddy fragment calls. Bash supplies its expanded host tokens,
-preserving IFS, globbing, order and duplicates. The tagged `sites-v1` frame checks
-host count, producer status and EOF before rendering; the legacy frame remains
-supported. This adds no helper processes. Unsupported helpers retain Bash fallback.
+Go parses the stratum bind and port for supported scalar settings with the same
+jq defaults, IPv4 shape, decimal bounds and leading-zero acceptance as Bash.
+Bind validation precedes the port read. A bad bind updates only `STRATUM_BIND`;
+a bad port updates both globals before the original error function runs.
 
-Bash keeps bind discovery, auth decoding, certificate preparation, reference port
-preparation, logs and file writes. The original Caddy source slice is unchanged,
-so standalone source consumers retain their existing dependencies and behavior.
-The existing supplementary Caddy comparisons pass unchanged, including partial-file
-failures. Bash command-substitution newline trimming is retained at the Go
-protocol boundary. Three new supplementary tests cover whole-file bytes, call
-order, host/port/IFS cases, native execution and malformed frames. The original
-Linux CLI and Docker Caddy parsing suites remain unproven locally.
+The hook in `lib/pithead/27b-stratum-endpoint.sh` accepts complete NUL frames,
+helper success, a recognized stage and EOF before changing globals. Unsupported
+JSON, scalar formats or helpers retain the original Bash path. No existing test
+or fixture changed. Six supplementary tests compare exact bytes/status, partial
+state, repeated parses, native execution without jq and malformed-helper fallback.
+The unchanged standalone stratum preflight suite passes in both modes. Render
+fixture/goldens exercise the full parser; the full Linux stack suite remains unavailable.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
 and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
-Docker socket. Private command/status records use `.go-cache/logs/config-caddy-sites-*`.
+Docker socket. Private command/status records use `.go-cache/logs/config-stratum-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-caddy-sites-parity test-go-caddy-parity test-go-config-defaults-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-config-document-parity test-go-config-validation-parity test-go-parity` | PASS, including unchanged render fixture/goldens and raw parser suite | Same result |
-| `make test-go-caddy-sites-parity test-go-caddy-parity` (final newline fix) | PASS, 3 new and 5 unchanged supplementary tests; Go units | Same result; native sections verified |
+| `make test-go-stratum-parity test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity` | PASS, including unchanged raw parser and render fixture/goldens | Same result, 6 supplementary stratum tests verify native execution |
+| `python3 tests/stack/standalone/test_stratum_port.py` | PASS, 14 tests | Same result |
 | `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
 | `make test-fakes` | PASS, 54 tests | Same result; Python backend |
 | `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
@@ -345,13 +349,12 @@ Docker socket. Private command/status records use `.go-cache/logs/config-caddy-s
 | `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
 | `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
 
-Native checks pass: `make go-build test-go`,
-`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
-`go -C go vet -tags=parity ./...` and
-`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
-(compilation only). Generated CLI/new-adapter ShellCheck and shfmt, Go formatting,
-locked Ruff, scoped Markdown and `git diff --check` pass. Source/security reviews
-are clean. Scoped Markdown uses the original rules:
+Native checks pass: `make go-build test-go`, `go -C go vet -tags=parity ./...`,
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compilation only).
+Generated CLI/new-adapter ShellCheck and shfmt, Go formatting, locked Ruff,
+scoped Markdown and `git diff --check` pass. Source/security reviews are clean.
+Scoped Markdown uses the original rules:
 
 ```bash
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
@@ -389,8 +392,8 @@ Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
 and dashboard on 2026-11-01; appliance host scripts and container entrypoint ports
 are excluded. Next, in order:
 
-1. Finish typed validation and remaining Caddy preparation. Obtain unchanged Linux CLI and Docker parser verdicts.
+1. Finish typed validation (network/remotes, pool and proxy settings) and remaining Caddy preparation. Obtain unchanged Linux CLI and Docker parser verdicts.
 2. Port `render`, `apply`, `up`, `down` and `restart` using that config layer.
-3. Implement dashboard routes, HTTP/JSON, state/polling, SQLite migrations/recovery and the container switch.
+3. Implement dashboard routes, HTTP/JSON, state/polling, wizard/control, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 5. Run unchanged Linux/Docker suites and the reserved-bench experiment on the operator's infrastructure.

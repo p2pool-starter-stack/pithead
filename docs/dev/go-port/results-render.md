@@ -51,3 +51,49 @@ Scoped Markdown uses the original rules:
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
   docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
 ```
+
+## Caddy site preparation slice (2026-11-01)
+
+Go now formats the HTTP/HTTPS site lists and normalizes scheme-default ports
+inside the existing Caddy fragment calls. Bash supplies its expanded host tokens,
+preserving IFS, globbing, order and duplicates. The tagged `sites-v1` frame checks
+host count, producer status and EOF before rendering; the legacy frame remains
+supported. This adds no helper processes. Unsupported helpers retain Bash fallback.
+
+Bash keeps bind discovery, auth decoding, certificate preparation, reference port
+preparation, logs and file writes. The original Caddy source slice is unchanged,
+so standalone source consumers retain their existing dependencies and behavior.
+The existing supplementary Caddy comparisons pass unchanged, including partial-file
+failures. Bash command-substitution newline trimming is retained at the Go
+protocol boundary. Three new supplementary tests cover whole-file bytes, call
+order, host/port/IFS cases, native execution and malformed frames. The original
+Linux CLI and Docker Caddy parsing suites remain unproven locally.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
+and `tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
+Docker socket. Private command/status records use `.go-cache/logs/config-caddy-sites-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-caddy-sites-parity test-go-caddy-parity test-go-config-defaults-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-config-document-parity test-go-config-validation-parity test-go-parity` | PASS, including unchanged render fixture/goldens and raw parser suite | Same result |
+| `make test-go-caddy-sites-parity test-go-caddy-parity` (final newline fix) | PASS, 3 new and 5 unchanged supplementary tests; Go units | Same result; native sections verified |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
+| `make test-fakes` | PASS, 54 tests | Same result; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
+| `make test` | FAIL, existing `config_defaults_reference.sh` case indentation, pinned shfmt, exit 2 | Same failure; ShellCheck passes |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
+
+Native checks pass: `make go-build test-go`,
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+(compilation only). Generated CLI/new-adapter ShellCheck and shfmt, Go formatting,
+locked Ruff, scoped Markdown and `git diff --check` pass. Source/security reviews
+are clean. Scoped Markdown uses the original rules:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md
+```

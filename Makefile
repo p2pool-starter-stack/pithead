@@ -29,6 +29,10 @@
 .PHONY: test-go-env-network-parity
 .PHONY: test-go-env-dashboard-parity
 .PHONY: test-go-env-memory-parity
+.PHONY: test-go-stratum-parity
+
+test-go-stratum-parity: go-build test-go ## Compare stratum endpoint values and validation with Bash
+	python3 tests/go-parity/test_stratum.py
 
 test-go-env-memory-parity: go-build test-go ## Compare memory render values and unchanged render fixtures
 	python3 tests/go-parity/test_env_memory.py

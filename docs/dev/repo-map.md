@@ -149,7 +149,10 @@ compatibility fallback and the unchanged v2.0.0 render fixture/goldens.
 control-character validation through the same internal binary marker.
 `make test-go-config-validation-parity` compares diagnostic bytes/status and
 proves native selection without jq. Unsupported inputs keep the original
-validators. `go/internal/config/caddy.go` serializes all Caddyfile sections from
+validators. `go/internal/config/stratum.go` parses and validates stratum bind/port
+settings through `lib/pithead/27b-stratum-endpoint.sh`, retaining Bash fallback.
+`make test-go-stratum-parity` compares diagnostics, partial state and helper frames.
+`go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
 statuses and preparation calls. `go/internal/config/caddy_sites.go` formats
 site URLs and scheme-default ports; `make test-go-caddy-sites-parity` checks host
