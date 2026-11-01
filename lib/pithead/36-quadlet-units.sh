@@ -1,14 +1,7 @@
-# Appliance unit rendering (#77 phase 1). Emits Podman Quadlet units from a rendered .env — the
-# second render target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime
-# architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
-# drift needs a bench re-proof. Spike-proven rules baked in: Notify=healthy services carry
-# TimeoutStartSec=infinity (a finite timeout KILLS a not-yet-healthy service — compose's
-# start_period never does); plain depends_on maps to After=+Wants= (Requires= would stop-couple);
-# tmpfs options use mode= (podman rejects uid=/gid=).
+# Fixture parity preserves the unit sets previously proven on the bench; drift needs a live re-proof.
 render_quadlet_units() {
     local envf="$1" outdir="$2"
     [ -f "$envf" ] || error "render-quadlet: env file not found: $envf"
-    mkdir -p "$outdir"
     _qenv() { env_get_file "$envf" "$1"; }
     # systemd.exec space-splits Environment=, so a value holding a space silently loses its tail
     # (#2040). Every .env value goes through here, not a per-key "looks token-shaped" list, which
@@ -33,8 +26,12 @@ render_quadlet_units() {
     tor_profiles=$(_qenv TOR_COMPOSE_PROFILES)
     reg=$(_qenv PITHEAD_REGISTRY)
     ver=$(_qenv STACK_VERSION)
+    reg="${reg:-${PITHEAD_REGISTRY:-}}"
+    ver="${ver:-${STACK_VERSION:-}}"
+    [ -n "$reg" ] && [ -n "$ver" ] || error "render-quadlet: PITHEAD_REGISTRY and STACK_VERSION need build provenance or nonempty env-file values."
     prefix=$(_qenv NETWORK_PREFIX)
     subnet=$(_qenv NETWORK_SUBNET)
+    mkdir -p "$outdir"
     cat >"$outdir/mining.network" <<EOF
 [Network]
 NetworkName=mining_net

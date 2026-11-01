@@ -139,6 +139,8 @@ jobs:
         run: python3 tests/stack/standalone/test_clearnet_attestation.py
       - name: Run stratum port preflight contract
         run: python3 tests/stack/standalone/test_stratum_port.py
+      - name: Run Quadlet image provenance contract
+        run: python3 tests/stack/standalone/test_quadlet_provenance.py
       - name: Test-inventory drift check
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
