@@ -1,5 +1,5 @@
 firstboot_wizard() {
-    local arg setup_rc preseed_restore_rc=0 spool="$PWD/data/firstboot" restore_spool
+    local arg setup_rc preseed_restore_rc=0 had_config=0 round=0 spool="$PWD/data/firstboot" restore_spool
     restore_spool=$(restore_submission_dir)
     clear_legacy_wizard_snapshots "$spool" || error "Could not clear legacy private wizard snapshots."
     clear_legacy_wizard_snapshots "$restore_spool" || error "Could not clear temporary restore snapshots safely."
@@ -25,10 +25,6 @@ firstboot_wizard() {
         *) error "Unknown option for firstboot-wizard: $arg. Run '$0 help'." ;;
         esac
     done
-    # A rig install staged its answers on this ESP (the disk-install leg below): land them on
-    # /data, the same one-move consumption as the config pre-seed — never on the installation
-    # medium, where staged files are cleaned up by the installer itself. Then fall through to
-    # the rig leg below, exactly as a pre-seeded coordinator falls through to setup.
     if [ -f "$PRESEED_DIR/pithead-rig.json" ] && ! installer_mode_available && [ ! -f "$PWD/rig.json" ]; then
         if jq -e 'type == "object" and ((.pool // "") | length > 0) and ((.access_token // "") | test("^[0-9a-f]{32}$"))' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
             install -m 600 "$PRESEED_DIR/pithead-rig.json" "$PWD/rig.json" 2>/dev/null; then
@@ -74,9 +70,9 @@ firstboot_wizard() {
                     warn "Could not remove the consumed pre-seed from $PRESEED_DIR — it holds credentials; delete it."
             fi
         fi
-        if [ -f "$PWD/config.json" ] && ! setup_again_mode; then
+        [ ! -f "$PWD/config.json" ] || had_config=1
+        if [ "$had_config" -eq 1 ] && ! setup_again_mode; then
             log "config.json already present (pre-seeded) — skipping the wizard and running setup."
-            # A pre-seeded config that names no password still gets a login.
             ensure_appliance_dashboard_password || error "Could not prepare the dashboard login — provisioning stopped."
             apply_appliance_defaults || true
             record_machine_role "$(machine_role_from_config "$PWD/config.json")"
@@ -89,11 +85,8 @@ firstboot_wizard() {
     _console "" "Pithead is starting up — preparing the setup page." \
         "This takes a minute or two on first boot. Nothing to do yet."
 
-    local engine image token host_addresses had_config
+    local engine image token
     engine=$(container_engine)
-    # STACK_VERSION is the ONE place the registry tag is derived (a release is v<VERSION>, a
-    # source checkout is dev) — deriving it here instead cost a boot: the archive holds
-    # :vX.Y.Z while a hand-rolled ":$VERSION" looks for a tag that was never published.
     export_build_provenance
     image="${PITHEAD_REGISTRY}/pithead-dashboard:${STACK_VERSION}"
     stage_wizard_spool "$spool" >/dev/null || error "Could not prepare the setup page files."
@@ -156,51 +149,21 @@ firstboot_wizard() {
         wizard_clear_submission_transaction "$spool" || error "Could not clear the previous setup transaction."
         clear_restore_submission "$spool" "$restore_spool" || error "Could not clear the previous restore submission."
         clear_setup_candidate "$restore_spool/config.json" "$restore_spool/handoff.json" || error "Could not clear private setup credentials."
-        # Keep an operator's pre-seeded token; otherwise mint a fresh one every round.
         token=$(preseed_token) || token=$(wizard_mint_token)
-        # Whether a configuration already stood when this round opened: a failed provisioning
-        # keeps its config.json under the reopened page (#1059), so only one that APPEARS while
-        # the page is open came from somewhere else.
-        had_config=0
-        [ ! -f "$PWD/config.json" ] || had_config=1
-        "$engine" rm -f pithead-wizard >/dev/null 2>&1 || true
-        host_addresses=$(wizard_host_addresses) || host_addresses=""
-        "$engine" run -d --name pithead-wizard --entrypoint python3 \
-            -p 80:8000 -p 443:8443 -e WIZARD_TOKEN="$token" \
-            -e WIZARD_TLS_CERT="${cert_fp:+/wizard-spool/wizard.crt}" \
-            -e WIZARD_TLS_KEY="${cert_fp:+/wizard-spool/wizard.key}" \
-            -e WIZARD_HOST_ADDRESSES="$host_addresses" \
-            -e WIZARD_RESTORE=/wizard-restore \
-            -e TMPDIR=/wizard-restore \
-            -e WIZARD_HANDOFF="$card_mount" \
-            -v "$spool":/wizard-spool -v "$restore_spool":/wizard-restore \
-            "$image" -m mining_dashboard.wizard >/dev/null || {
-            # `error` writes to stderr = /dev/console, ONE device (whichever the cmdline named
-            # LAST); on a box whose monitor is the other one the failure is invisible and a STOPPED
-            # box reads as a slow one — a three-minute failure was once taken for an hour of
-            # progress. _console reaches every physical console, which is the whole point here.
-            _console "" "Setup has STOPPED — this box is no longer preparing a page." \
-                "The container engine could not start the setup page." \
-                "Diagnose with: journalctl -u pithead-firstboot -b"
-            error "Could not start the wizard container ($engine, $image). Pre-seed config.json or run '$0 firstboot-wizard --cli'."
-        }
-        [ "$installer" -eq 1 ] || reset_slot_restore_good "$engine" || warn "Could not restore the reset slot's good state; reboot may fall back."
-        wizard_announce_setup "$host_addresses" "$token" "$cert_fp"
+        if [ "$round" -gt 0 ]; then
+            had_config=0
+            [ ! -f "$PWD/config.json" ] || had_config=1
+        fi
+        round=$((round + 1))
+        wizard_start_page "$engine" "$image" "$spool" "$restore_spool" "$card_mount" "$installer" "$token" "$cert_fp"
         while :; do
-            # #1318 "Keep it": the page wrote keep-role — nothing on /data was touched; return.
             wizard_keep_requested "$spool" && return 0
-            # A keep-everything reinstall arrives as a bare install-request with no config
-            # candidate: the preserved /data keeps config, login and chains, so there is
-            # nothing to validate and no credentials to hand off — install and switch off.
-            # BARE means bare: a staged restore archive (#909) rides the same install-request
-            # with keep as its erase policy (restore the config, keep the synced chains), and
-            # this shortcut once swallowed it — the machine "keep"-installed a blank disk and
-            # the operator's backup never reached it. The archive must be consumed first, and
-            # the checks cover the volatile restore spool as well as the persistent one.
             if [ "$installer" -eq 1 ] && wizard_submission_ready "$spool" &&
                 wizard_spool_has "$spool" install-request &&
                 [ "$(wizard_spool_read "$spool" install-request 2>/dev/null | cut -f2)" = "keep" ] &&
                 [ ! -e "$spool/config.json" ] && [ ! -L "$spool/config.json" ] &&
+                [ ! -e "$spool/role" ] && [ ! -L "$spool/role" ] &&
+                [ ! -e "$spool/rig-request.json" ] && [ ! -L "$spool/rig-request.json" ] &&
                 [ ! -e "$restore_spool/restore-passphrase" ] && [ ! -L "$restore_spool/restore-passphrase" ] &&
                 [ ! -e "$restore_spool/restore-archive" ] && [ ! -L "$restore_spool/restore-archive" ] &&
                 [ ! -e "$spool/restore-archive" ] && [ ! -L "$spool/restore-archive" ]; then
@@ -447,20 +410,9 @@ firstboot_wizard() {
                 sleep 2
                 "$engine" rm -f pithead-wizard >/dev/null 2>&1 || true
                 rm -rf "$spool"
-                # Subshell on purpose: error() exits. Without this, config.json exists, the wizard's condition
-                # never re-arms, and a box with no shell has no recovery path at all. Output is
-                # teed: the console keeps its live narration, and the tail becomes the reopened
-                # page's error — a refusal that lives only in console scrollback cost a bench
-                # session an hour of believing the machine had crashed.
                 local setup_log setup_rc=0
                 setup_log=$(mktemp)
-                # The STATUS is captured, not just its truthiness: `if (setup) | tee` collapses
-                # every failure to one, and a lock timeout (PITHEAD_EX_LOCK_TIMEOUT) has to be
-                # told apart from a bad configuration — see wizard_setup_failed. PIPESTATUS is not
-                # needed here because `pipefail` is set, so the pipeline carries setup's own
-                # non-zero status; `|| setup_rc=$?` is what keeps `set -e` from taking the branch
-                # away before it can be read.
-                { (setup) 2>&1 | tee "$setup_log"; } || setup_rc=$?
+                { (setup_confirmed) 2>&1 | tee "$setup_log"; } || setup_rc=$?
                 if [ "$setup_rc" -eq 0 ]; then
                     if control_audit_provisioned "$PWD/data/control"; then
                         rm -f "$setup_log"
