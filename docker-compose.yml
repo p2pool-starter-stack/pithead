@@ -995,7 +995,7 @@ services:
   # Bridges the local 127.0.0.1 application binding to the LAN
   # Serves HTTPS or HTTP depending on configuration
   caddy:
-    image: caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772
+    image: caddy:2.11.7@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e
     container_name: caddy
     # Memory ceiling (#132 — see monerod). Reverse proxy + local TLS only (~13 MiB observed).
     mem_limit: 128m
