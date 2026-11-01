@@ -1517,7 +1517,9 @@ globs, later-file execution, each reported exit code and environment isolation.
 Use `fake_eventual COUNTER MODE DELAY PENDING READY` from
 `tests/integration/lib/selftest/fake-eventual.sh` for changing command responses.
 `after` returns `PENDING` for `DELAY` reads, then `READY`; `never` always returns
-`PENDING`; `flapping` alternates pending and ready responses. The counter is a
+`PENDING`; `flapping` returns pending on odd reads and ready on even reads, so it
+refuses waits that need two consecutive ready samples but does not model a
+ready-then-pending regression for first-success waits. The counter is a
 file so reads inside command substitutions advance the same sequence. Each test
 owns and removes its counter. The fake returns response text; the real predicate
 and wait decide whether it is ready.
@@ -1531,10 +1533,12 @@ uses the same fake while executing the complete rollback function.
 history-row, borrowed-pool re-arm, control-result, wallet-recovery, upgrade-result, egress-state,
 reset-restore and rig-control waits from their modules and runs each once with a late response
 and once with a response that never arrives. Boolean waits must pass late and fail after their
-bound; the result-status polls must also skip the in-flight statuses. Timeouts print the last
-observation only where the wait already does: `_wait_control_status` and
-`_poll_upgrade_result` return without one, and adding it changes a live leg that needs its own
-tier-4 proof. `wait_db` is covered in `selftest-eventual-waits.sh`.
+bound; the result-status polls (`_wait_control_status`, `_poll_upgrade_result`) must also skip
+the in-flight statuses and print the last status they read when they time out.
+`selftest-eventual-predicates.sh` runs the dashboard-feed, worker-set, rig-pool, Tari-readiness
+and Caddy-stability predicates through the real `wait_for`, plus a Caddy restart inside the window.
+Fixed-count retries (`_xvb_real_tor_fetch_retry`, `tari_live_config`) and polling loops written
+inline in a leg or phase body are not separate waits and are not covered. `wait_db` is covered in `selftest-eventual-waits.sh`.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
 Each shell selftest prints a literal `== section ==` header for `tests/inventory.sh`.

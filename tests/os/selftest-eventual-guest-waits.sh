@@ -17,6 +17,8 @@ extract wizard_state_poll provision-browser-submit.sh
 extract migration_wait_for_mining migration-recovery.sh
 extract _reset_slot_wait phases/reset-slot.sh
 extract wait_unit_condition_evaluated provisioning-settled.sh
+extract _rig_adopt_state rig-adopt-leg.sh
+extract _rig_share_window rig-share-leg.sh
 export SCRIPT_DIR=$HERE
 sha=0123456789abcdef
 ready_snapshot="B|marker|$sha"$'\nA_OK=1\nA_TRY=0\nORDER=B A\nB_TRY=0\n{"booted":"B","boot_primary":"rootfs.1","slots":[{"rootfs.1":{"boot_status":"good"}}]}'
@@ -55,6 +57,24 @@ drive() (
         _ssh() { fake_eventual "$work/runs" "$mode" 2 false true; }
     fi
     case "$waiter" in
+    _rig_adopt_state)
+        _rig_share_state() {
+            if [ "$(fake_eventual "$work/reads" "$mode" 2 no yes)" = yes ]; then
+                echo '{"workers":[{"name":"kvm-rig-share","adopted":true,"api_ok":true}]}'
+            else
+                echo '{"workers":[{"name":"kvm-rig-share","adopted":false}]}'
+            fi
+        }
+        ;;
+    _rig_share_window)
+        export RIG_SHARE_WINDOW_SEC=60
+        info() { :; }
+        ok() { :; }
+        bad() { printf 'BAD %s\n' "$1"; }
+        _rig_share_state() { echo '{}'; }
+        _rig_share_observation() { echo observed; }
+        _rig_share_counters() { fake_eventual "$work/reads" "$mode" 2 $'0\t0\t0\t1\t1' $'9\t0\t0\t1\t1'; }
+        ;;
     migration_wait_for_mining)
         _ssh() { fake_eventual "$work/reads" "$mode" 2 '' "ready 1 $(($(cat "$work/reads") * 10))"; }
         ;;
@@ -65,6 +85,8 @@ drive() (
     esac
     case "$waiter" in
     wait_unit_condition_evaluated) "$waiter" fixture.service >"$work/output" 2>&1 || rc=$? ;;
+    _rig_adopt_state) "$waiter" true >"$work/output" 2>&1 || rc=$? ;;
+    _rig_share_window) "$waiter" arm 5 >"$work/output" 2>&1 || rc=$? ;;
     migration_wait_for_mining) "$waiter" 0 >"$work/output" 2>&1 || rc=$? ;;
     _reset_slot_wait) "$waiter" B marker no 30 >"$work/output" 2>&1 || rc=$? ;;
     wizard_state_poll) "$waiter" fixture-address fixture-jar .state >"$work/output" 2>&1 || rc=$? ;;
@@ -77,6 +99,8 @@ drive() (
         wait_for_p2pool_held_by_sync_gate) [ "$clock" = 120 ] || return 1 ;;
         wizard_state_poll) [ "$clock" = 30 ] || return 1 ;;
         migration_wait_for_mining) [ "$clock" -ge 1800 ] || return 1 ;;
+        _rig_adopt_state) [ "$clock" -ge 120 ] || return 1 ;;
+        _rig_share_window) [ "$clock" -ge 60 ] && grep -Fq 'BAD share leg arm: no fresh accepted shares' "$work/output" || return 1 ;;
         _reset_slot_wait) [ "$clock" -ge 30 ] || return 1 ;;
         wait_unit_condition_evaluated) [ "$clock" = 10 ] || return 1 ;;
         esac
@@ -86,13 +110,13 @@ drive() (
         wizard_state_poll) printf '%s\n' "$WIZ_STATE_WHY" >"$work/output" && grep -Fq 'after 6x5s' "$work/output" || return 1 ;;
         esac
     else
-        [ "$rc" = 0 ] && [ "$clock" -gt 0 ] && [ "$clock" -lt 30 ] || return 1
+        [ "$rc" = 0 ] && [ "$clock" -gt 0 ] && [ "$clock" -lt 60 ] || return 1
     fi
 )
 
 for waiter in _xvb_wait_for_proxy_api _xvb_wait_for_tor _xvb_wait_for_gate_release \
     wait_for_p2pool_held_by_sync_gate wizard_state_poll migration_wait_for_mining _reset_slot_wait \
-    wait_unit_condition_evaluated; do
+    wait_unit_condition_evaluated _rig_adopt_state _rig_share_window; do
     for mode in after never; do
         if drive "$waiter" "$mode"; then
             printf 'PASS: %s %s\n' "$waiter" "$mode"

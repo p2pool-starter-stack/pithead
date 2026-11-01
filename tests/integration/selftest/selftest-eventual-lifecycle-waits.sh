@@ -114,10 +114,10 @@ drive() (
             ;;
         _settle_history_row) [ "$(cat "$work/output")" = accepted ] && grep -Fq 'timed out after 90s' "$work/err" || return 1 ;;
         wait_borrow_rearm) [ "$rc" = 1 ] && grep -Fq 'did not acknowledge this request' "$work/output" || return 1 ;;
-        _wait_control_status) [ "$rc" = 1 ] && [ "$clock" = 90 ] || return 1 ;;
+        _wait_control_status) [ "$rc" = 1 ] && [ "$clock" = 90 ] && grep -Fq "last status: previewed" "$work/output" || return 1 ;;
         recovery_wait_synced) [ "$rc" = 1 ] && grep -Fq "sync panels still 'loading/loading' after 60s" "$work/output" || return 1 ;;
         recovery_wait_healthy) [ "$rc" = 1 ] && [ "$clock" -ge 60 ] || return 1 ;;
-        _poll_upgrade_result) [ "$rc" = 0 ] && [ ! -s "$work/output" ] && [ "$clock" -ge 60 ] || return 1 ;;
+        _poll_upgrade_result) [ "$rc" = 1 ] && grep -Fq "last status: running" "$work/output" && [ "$clock" -ge 60 ] || return 1 ;;
         _await_egress_state) [ "$(cat "$work/output")" = enforced ] && [ "$clock" -ge 210 ] || return 1 ;;
         reset_restore_wait_empty) [ "$rc" = 1 ] && grep -Fxq residue-id "$work/output" && [ "$clock" -ge 60 ] || return 1 ;;
         _rig_control_await) [ "$rc" = 1 ] && [ "$clock" -ge 30 ] || return 1 ;;
