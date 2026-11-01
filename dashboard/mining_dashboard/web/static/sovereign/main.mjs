@@ -1,5 +1,6 @@
 import { html, render } from "../app/preact.mjs";
 import { EarningsPage } from "./earnings.mjs";
+import { MachinesPage } from "./machines.mjs";
 import { createNavigation, PAGES, readRoute, routeUrl } from "./navigation.mjs";
 import { createPolling } from "./polling.mjs";
 import { PowerControl } from "./power.mjs";
@@ -50,15 +51,19 @@ export function initSovereign({
     sessionExpired: false,
   };
   const dirtyEarnings = new Set();
+  const onDirtyChange = (key, dirty) => {
+    if (dirty) dirtyEarnings.add(key);
+    else dirtyEarnings.delete(key);
+  };
   const pageRenderer = (page, state) =>
     renderPage?.(page, state) ||
     (page === "earnings"
       ? html`<${EarningsPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
-        url=${win.location.href} onDirtyChange=${(key, dirty) => {
-          if (dirty) dirtyEarnings.add(key);
-          else dirtyEarnings.delete(key);
-        }} />`
-      : null);
+        url=${win.location.href} onDirtyChange=${onDirtyChange} />`
+      : page === "machines"
+        ? html`<${MachinesPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
+        onDirtyChange=${onDirtyChange} />`
+        : null);
   const paint = () => {
     doc.title = `Pithead — ${PAGES[route.page][0]}`;
     render(

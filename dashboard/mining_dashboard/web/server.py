@@ -14,6 +14,7 @@ from mining_dashboard.service import audit_service, control_service
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
+from mining_dashboard.web import fleet_upgrade_views
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import (
@@ -577,11 +578,13 @@ async def _cancel_bg_tasks(app):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def create_app(state_manager, latest_data_ref):
+def create_app(state_manager, latest_data_ref, notify=None):
     """Factory to create the web app instance."""
     app = web.Application(middlewares=[security_headers_middleware])
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
+    app["notify"] = notify
+    app["_fleet"] = {}
     # Fire-and-forget recorder tasks (worker-upgrade, #1014) — tracked so they can't be
     # garbage-collected mid-flight and so shutdown can cancel any still in progress.
     app["_bg_tasks"] = set()
@@ -611,6 +614,7 @@ def create_app(state_manager, latest_data_ref):
                 web.get("/api/worker", handle_worker_detail),
                 web.post("/api/control/worker-apply", handle_worker_apply),
                 web.post("/api/control/worker-upgrade", handle_worker_upgrade),
+                *fleet_upgrade_views.routes(),
                 web.post("/api/control/backup", handle_control_backup),
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
                 web.post("/api/control/os-update", handle_control_os_update),
