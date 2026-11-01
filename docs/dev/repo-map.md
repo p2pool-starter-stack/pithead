@@ -158,6 +158,10 @@ settings through `lib/pithead/27d-go-network-settings.sh`;
 `go/internal/config/proxy_settings.go` parses explicit stratum passwords, TLS and
 donation settings through `lib/pithead/27e-go-proxy-settings.sh`;
 `make test-go-proxy-settings-parity` checks state, errors and auto-password fallback.
+`go/internal/config/dashboard_access.go` parses dashboard host, port, flags and
+timezone through `lib/pithead/27f-go-dashboard-access.sh`;
+`make test-go-dashboard-access-parity` checks state, discovery order and traps.
+Host-timezone discovery/default insertion stays in the original Bash caller.
 `go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
 statuses and preparation calls. `go/internal/config/caddy_sites.go` formats

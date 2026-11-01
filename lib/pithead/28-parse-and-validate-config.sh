@@ -3,7 +3,6 @@ parse_and_validate_config() {
     validate_config_document
     validate_webhook_config
     validate_config_control_characters
-
     if is_appliance && [ "$(appliance_variant)" = release ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
         [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || [ "${PITHEAD_CONFIG_CARRIED_SSH:-0}" = 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
     elif [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
@@ -182,12 +181,10 @@ parse_and_validate_config() {
         esac
     fi
     parse_stratum_endpoint
-
     migrate_legacy_workers
     migrate_removed_telegram_control
     validate_worker_endpoints
     validate_energy_config
-
     # Optional miner authentication on the stratum port (#152). xmrig-proxy's --access-password
     # rejects rigs whose stratum 'pass' doesn't match, so only devices that know the secret can
     # mine through the proxy (this also shrinks the #122 SSRF surface). Three modes:
@@ -234,7 +231,6 @@ parse_and_validate_config() {
 
     MONERO_USER=$(jq -r '.monero.node_username // empty' "$CONFIG_FILE")
     MONERO_PASS=$(jq -r '.monero.node_password // empty' "$CONFIG_FILE")
-
     # A local node always needs working RPC creds. If they're missing — empty, or still the
     # template placeholder — generate them and persist back to config.json, so an unedited/partial
     # config never produces a broken "rpc-login=:" and the creds stay stable across `apply`.
@@ -292,35 +288,39 @@ parse_and_validate_config() {
     # Caddy access log (#349): Caddy (rw) writes access.log here, the dashboard mounts it
     # read-only. Fixed under ./data like the spool above — internal, not a user-facing data dir.
     CADDY_LOG_DIR="$PWD/data/caddy-logs"
-
     # Guard every data dir against catastrophic chown -R / rm -rf targets before we touch them.
     local d
     for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$CLEARNET_STATE_DIR" "$CONTROL_DIR" "$CADDY_LOG_DIR" "$PROXY_TLS_DIR"; do
         assert_safe_dir "$d"
     done
 
-    DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host)" "")
-    if [ -n "$DASHBOARD_HOST" ] && ! is_valid_host "$DASHBOARD_HOST"; then
-        error "dashboard.host must be a hostname or IP address — only letters, digits, dots, hyphens, and colons (got \"$DASHBOARD_HOST\")."
+    local dashboard_access_timezone
+    if command -v _parse_dashboard_access_go >/dev/null 2>&1 && _parse_dashboard_access_go; then
+        DASHBOARD_TZ=$(resolve_default "$dashboard_access_timezone" "$(detect_host_timezone)")
+    else
+        DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host)" "")
+        if [ -n "$DASHBOARD_HOST" ] && ! is_valid_host "$DASHBOARD_HOST"; then
+            error "dashboard.host must be a hostname or IP address — only letters, digits, dots, hyphens, and colons (got \"$DASHBOARD_HOST\")."
+        fi
+        # Caddy LAN listen port (#740). "auto"/empty keeps the scheme default (443 secure / 80 plain) —
+        # today's behavior. An explicit port moves the LAN vhost so an existing reverse proxy on the host
+        # can keep 80/443 (co-hosting, #181). Rendered into the Caddyfile site address (generate_caddyfile),
+        # so validate it is a bare 1–65535 port before it lands there.
+        HOST_PORT=$(resolve_default "$(jq -r '.dashboard.port // empty' "$CONFIG_FILE")" "")
+        if [ -n "$HOST_PORT" ] && ! is_valid_port "$HOST_PORT"; then
+            error "dashboard.port must be a whole number between 1 and 65535, or \"auto\" (got \"$HOST_PORT\")."
+        fi
+        # Ensure a strict true/false string is returned, defaulting to true
+        DASHBOARD_SECURE=$(jq -r 'if .dashboard.secure != null then .dashboard.secure | tostring else "true" end' "$CONFIG_FILE")
+        # Deliberate opt-in to serving the dashboard on a globally-routable address. Default false:
+        # the appliance auto-publishes every address it holds, and on any network passing IPv6 through
+        # that silently included a public one. The supported off-LAN route is the onion service.
+        DASHBOARD_EXPOSE_PUBLIC_IP=$(config_bool '.dashboard.expose_public_ip' false)
+        # Timezone for the dashboard's timestamps/charts. "auto"/empty -> the host's timezone
+        # (auto-detected; falls back to Etc/UTC). Set an IANA name (e.g. America/Chicago) to
+        # override. Rendered into .env as DASHBOARD_TZ.
+        DASHBOARD_TZ=$(resolve_default "$(jq -r '.dashboard.timezone // empty' "$CONFIG_FILE")" "$(detect_host_timezone)")
     fi
-    # Caddy LAN listen port (#740). "auto"/empty keeps the scheme default (443 secure / 80 plain) —
-    # today's behavior. An explicit port moves the LAN vhost so an existing reverse proxy on the host
-    # can keep 80/443 (co-hosting, #181). Rendered into the Caddyfile site address (generate_caddyfile),
-    # so validate it is a bare 1–65535 port before it lands there.
-    HOST_PORT=$(resolve_default "$(jq -r '.dashboard.port // empty' "$CONFIG_FILE")" "")
-    if [ -n "$HOST_PORT" ] && ! is_valid_port "$HOST_PORT"; then
-        error "dashboard.port must be a whole number between 1 and 65535, or \"auto\" (got \"$HOST_PORT\")."
-    fi
-    # Ensure a strict true/false string is returned, defaulting to true
-    DASHBOARD_SECURE=$(jq -r 'if .dashboard.secure != null then .dashboard.secure | tostring else "true" end' "$CONFIG_FILE")
-    # Deliberate opt-in to serving the dashboard on a globally-routable address. Default false:
-    # the appliance auto-publishes every address it holds, and on any network passing IPv6 through
-    # that silently included a public one. The supported off-LAN route is the onion service.
-    DASHBOARD_EXPOSE_PUBLIC_IP=$(config_bool '.dashboard.expose_public_ip' false)
-    # Timezone for the dashboard's timestamps/charts. "auto"/empty -> the host's timezone
-    # (auto-detected; falls back to Etc/UTC). Set an IANA name (e.g. America/Chicago) to
-    # override. Rendered into .env as DASHBOARD_TZ.
-    DASHBOARD_TZ=$(resolve_default "$(jq -r '.dashboard.timezone // empty' "$CONFIG_FILE")" "$(detect_host_timezone)")
 
     # Optional dashboard login (#8): Caddy basic_auth in front of the dashboard. OPT-IN — an empty
     # password (the default) leaves it open, today's behavior, which is fine for the LAN appliance;

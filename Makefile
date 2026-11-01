@@ -32,6 +32,11 @@
 .PHONY: test-go-stratum-parity
 .PHONY: test-go-network-settings-parity
 .PHONY: test-go-proxy-settings-parity test-go-caddy-auth-parity
+.PHONY: test-go-dashboard-access-parity
+
+test-go-dashboard-access-parity: go-build test-go ## Compare dashboard access settings and timezone ordering with Bash
+	python3 tests/go-parity/test_dashboard_access.py
+	python3 tests/go-parity/test_dashboard_access_render.py
 
 test-go-proxy-settings-parity: go-build test-go ## Compare proxy setting validation and partial state with Bash
 	python3 tests/go-parity/test_proxy_settings.py

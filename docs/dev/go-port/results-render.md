@@ -183,3 +183,39 @@ Scoped Markdown uses the original rules:
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
   docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-baseline.md docs/dev/go-port/results-render.md
 ```
+
+## Proxy settings and Caddy auth slice (2026-11-01)
+
+Go parses explicit/empty stratum passwords, normalizes stratum TLS and validates
+proxy donation levels, preserving rejection text and partial globals. `auto`
+passwords, compound/control inputs and unsupported numbers use Bash fallback,
+including existing-secret reuse and random-generation order. Five supplementary
+comparison groups verify native jq avoidance, failures, state and malformed frames.
+
+Caddy auth blocks and boot-capability SHA-256 are native through a stdin-only
+NUL protocol. Noncanonical base64, decoded NUL and missing required shell state
+retain Bash fallback. Host/interface discovery, bcrypt, TLS minting and writes
+remain Bash. Six new comparison groups check complete files, side-effect order
+and native execution. Existing suites and fixtures remain unchanged; the original
+proxy and Caddy auth cases require the unavailable Linux/Docker stack harness.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline and
+`tests/go-parity/run.sh` for Go selection, with worktree caches and an absent
+Docker socket. Private records use `.go-cache/logs/config-proxy-caddy-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| Config/render comparisons below | PASS, including unchanged raw parser/render fixture/goldens and 5 proxy comparison groups | Same result; native execution verified separately |
+| Caddy comparisons below | PASS, 6 auth, 5 renderer and 3 site comparison groups; Go units | Same result; native preparation verified |
+| `make test-dashboard test-fakes test-patch-coverage` with `COMPARE=a73ffced33800de9435779a9cabef53864455acb` | PASS, 3716 dashboard/54 fake tests, 97.42% coverage; patch check not applicable | Same counts; Python backend |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, including 891 frontend tests | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+
+Config/render command: `make test-go-proxy-settings-parity test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-parity`.
+Caddy command: `make test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity`.
+Native race checks pass: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+plus `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Generated CLI/new-adapter ShellCheck, changed-shell shfmt, Go formatting and source/security reviews pass.
+Scoped Markdown uses `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`.

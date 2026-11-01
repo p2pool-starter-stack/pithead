@@ -27,6 +27,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configNetworkSettings(args, stdout)
 	case "config-proxy-settings":
 		return configProxySettings(args, stdout)
+	case "config-dashboard-access":
+		return configDashboardAccess(args, os.Stdin, stdout)
 	case "config-caddy":
 		return configCaddy(args, os.Stdin, stdout)
 	case "config-caddy-auth":
