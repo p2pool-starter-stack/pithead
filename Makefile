@@ -22,6 +22,10 @@
 .PHONY: test-go-node-zmq-exchange-parity
 .PHONY: test-go-config-document-parity
 .PHONY: test-go-config-defaults-parity
+.PHONY: test-go-config-validation-parity
+
+test-go-config-validation-parity: go-build test-go ## Compare typed config validation and diagnostics with Bash/jq
+	python3 tests/go-parity/test_config_validation.py
 
 test-go-config-defaults-parity: go-build test-go ## Compare defaults, legacy values and config getters with Bash/jq
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestDefaultsParity ./internal/config

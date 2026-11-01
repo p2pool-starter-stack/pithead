@@ -144,8 +144,12 @@ gate. The CLI's Bash fallback carries an internal Go-binary marker; unsupported
 JSON retains the embedded Python parser. `go/internal/config/defaults.go` and
 `jq_json.go` implement defaults, materialization and getters with ordered jq-style
 output. `make test-go-config-defaults-parity` checks runtime tables, exact bytes,
-compatibility fallback and the unchanged v2.0.0 render fixture/goldens. Typed
-validation and the `.env`/Caddyfile renderers remain Bash.
+compatibility fallback and the unchanged v2.0.0 render fixture/goldens.
+`go/internal/config/validation.go` implements worker, energy, webhook and
+control-character validation through the same internal binary marker.
+`make test-go-config-validation-parity` compares diagnostic bytes/status and
+proves native selection without jq. Unsupported inputs keep the original
+validators. Remaining typed checks and the `.env`/Caddyfile renderers stay Bash.
 
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates

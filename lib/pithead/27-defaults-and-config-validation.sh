@@ -41,6 +41,16 @@ readonly WORKER_LIST_JQ='def worker_list: ((.workers // {}) | .list // []);'
 # Validating first would pass an empty list and only then move unvalidated entries in.
 validate_worker_endpoints() {
     local dw_err dw_dups
+    local native_reason native_rc=0
+    native_reason=$(_config_validation_go workers 2>/dev/null) || native_rc=$?
+    case "$native_rc" in
+    0) return 0 ;;
+    1) error "$native_reason" ;;
+    2)
+        warn "$native_reason"
+        return 0
+        ;;
+    esac
     dw_err=$(jq -r "$WORKER_LIST_JQ"'
         worker_list as $w
         | if (.workers // {}) | type == "object" and has("api_port") and (.api_port != null)
@@ -208,6 +218,12 @@ migrate_removed_telegram_control() {
 # prices live from CoinGecko over Tor instead (the static numbers stay as the fallback).
 validate_energy_config() {
     local en_err
+    local native_reason native_rc=0
+    native_reason=$(_config_validation_go energy 2>/dev/null) || native_rc=$?
+    case "$native_rc" in
+    0) return 0 ;;
+    1) error "$native_reason" ;;
+    esac
     en_err=$(jq -r '
         (.dashboard.energy // {}) as $e
         | if ($e | type) != "object" then "dashboard.energy must be an object {cost_per_kwh, currency?, xmr_price?, tari_price?, price_feed?}."
@@ -229,6 +245,12 @@ validate_energy_config() {
 
 validate_webhook_config() {
     local hook_error
+    local native_reason native_rc=0
+    native_reason=$(_config_validation_go webhooks 2>/dev/null) || native_rc=$?
+    case "$native_rc" in
+    0) return 0 ;;
+    1) error "$native_reason" ;;
+    esac
     if ! hook_error=$(jq -r '
         .notifications.webhooks as $hooks
         | if $hooks == null then empty

@@ -89,7 +89,17 @@ validate_config_document() {
 }
 
 validate_config_control_characters() {
-    if jq -e 'any(.. | strings; test("[[:cntrl:]]"))' "$CONFIG_FILE" >/dev/null 2>&1; then
+    local native_rc=0
+    _config_validation_go controls >/dev/null 2>&1 || native_rc=$?
+    [ "$native_rc" -ne 0 ] || return 0
+    if [ "$native_rc" -eq 1 ] || jq -e 'any(.. | strings; test("[[:cntrl:]]"))' "$CONFIG_FILE" >/dev/null 2>&1; then
         error "$CONFIG_FILE has a config value containing a control character or newline. That is not allowed — it could inject an extra line into the stack's .env. Remove the newline/control character (check secrets like node_password, bot_token, api_token)."
     fi
+}
+
+_config_validation_go() {
+    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    [ -n "$binary" ] && [ -x "$binary" ] && command -v jq >/dev/null 2>&1 || return 125
+    PITHEAD_GO_HELPER=config-validation "$binary" "$1" "$CONFIG_FILE"
 }
