@@ -655,8 +655,12 @@ main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"
     preflight
     provision
-    # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
     if [ "$MODE" != "check" ]; then
+        if ! on_bench "cd $(quote_arg "$E2E_DIR") && python3 - config.json $(quote_arg "$CANONICAL_DIR/config.json")" <"$HERE/tools/check-restore-version.py"; then
+            RESTORED=1
+            die "Candidate cannot restore the baseline configuration; refused before backup or deployment."
+        fi
+        ok "candidate can restore the baseline configuration version"
         backup_stack
         wallet_fixture_capture
         borrow_miner
