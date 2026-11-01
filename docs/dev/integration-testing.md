@@ -1309,7 +1309,12 @@ On a scenario failure, the harness captures fresh diagnostic snapshots (redacted
 `api-state.json`, `logs.txt` (last 200 lines per service), `tor-health.json` (recent
 probe results), and `tor.log` (last 200 lines). Lifecycle saves these at the first
 failed missing-image `up` or dashboard data-dir carry, before cleanup can replace
-Tor's failing state. The Tor-probe fault saves redacted dashboard logs since fault injection
+Tor's failing state. Failed missing-image `up` and setup-after-uninstall commands
+save their complete redacted output to `results/lifecycle-up/up.log` and
+`results/lifecycle-setup/setup.log`, respectively, and print it in the harness transcript,
+including early pull errors. The redactor also masks the stratum-password announcement
+and rig connection instructions before writing either destination.
+The Tor-probe fault saves redacted dashboard logs since fault injection
 (up to 2000 lines, with a 30-second read deadline) to
 `results/tor-probe-fault/dashboard.log` before baseline re-apply can replace the dashboard.
 A failed read leaves an explicit marker and preserves the original test verdict.
