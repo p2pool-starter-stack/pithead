@@ -72,10 +72,20 @@ the card hides a set password and its Copy until you sign in again.
 
 On the appliance, with the settings editor on and the session connected, **Also mine on this box**
 opens the host's `local_miner.enabled` setting through the same preview, typed confirmation and
-apply-result contract as the Earnings controls. DIY hosts do not show it. **Update all rigs** is not
-built yet: the rolling upgrade belongs to
-[#3823](https://github.com/p2pool-starter-stack/pithead/issues/3823), and until then the per-rig
-upgrade sits in the inspector's Advanced section.
+apply-result contract as the Earnings controls. DIY hosts do not show it.
+
+**Update all rigs to <version>** sits above the rig list. It shows only when the settings editor is
+on, the session is connected, and at least one managed rig is behind the latest RigForge release; it
+names that release. It opens one review dialog that lists each rig with the version it runs, and
+lists the rigs that cannot take the upgrade with the reason (offline, not managed, control API
+unreachable) instead of skipping them. **Start update** sends only the reviewed version to
+`POST /api/control/worker-upgrade-all`; a changed release, no rig behind, or a run already in
+progress is refused with the reason shown. While a run is going the control is hidden and a
+progress list shows each rig's outcome as the host settles it: **Upgraded**, **Already current**,
+**Retry later**, **Rolled back**, **Rejected** or **Failed**. An accepted request that the rig is
+still rebuilding reads **Requested, not confirmed done**, never done. The list is read from the
+newest run on the host, so it survives navigation and a reload, and a finished run stays visible
+for a day. The per-rig upgrade stays in the inspector's Advanced section.
 
 The rig list shows each rig's name, status and 1-minute hashrate. The statuses are **Mining**,
 **Offline** and **Behind**, where Behind means a newer RigForge release is available. A rig the

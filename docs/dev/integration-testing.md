@@ -1241,27 +1241,35 @@ Drives the one-click RigForge upgrade the Worker Inspect button submits, and whi
 is decided by the dashboard's own `rigforge_update` verdict for that rig — the same `{available,
 latest, url}` the button renders, so the leg selects the way a click would.
 
-**When the dashboard offers the rig a newer release**, the leg POSTs that release to
-`/api/control/worker-upgrade` and asserts a real upgrade, in four steps that are four separate
+**When the dashboard offers the rig a newer release**, the leg starts the upgrade through update-all
+(#3823): it POSTs only that release to `/api/control/worker-upgrade-all`, which runs the single-rig
+upgrade for the rig on the host, and asserts a real upgrade in four steps that are four separate
 claims rather than one restated:
 
 1. The answer is a `202` carrying a pollable `id`. Because the rig is behind the proposed version,
-   `handle_worker_upgrade`'s already-on-this-version shortcut cannot fire, so a pending answer is
-   itself the evidence that the intent left the dashboard process for the host runner.
-2. The polled result reaches an `applied` terminal. A rig-side `throttled` (its own 6h anti-beacon
-   window) is a classified skip rather than a failure — it is rig state, and no input to the
-   harness changes it. An `accepted` is the host's 90s poll cap expiring with the upgrade still
-   running, so the leg settles it against the rig's own report instead of reading the cap as red.
-3. The rig comes back reporting the new version, read from its summary poll — what the rig now
+   the dashboard plan lists it, so a pending answer is itself the evidence that the intent left the
+   dashboard process for the host runner.
+2. The newest run from `GET /api/control/worker-upgrade-all`, matched on that `id`, settles and the
+   rig's own outcome in it is `applied`. A run with another `id` is never read as this run's
+   outcome. A rig-side `throttled` (its own 6h anti-beacon window) is a classified skip rather than
+   a failure: it is rig state, and no input to the harness changes it. An `accepted` is the host's
+   90s poll cap expiring with the upgrade still running, so the leg settles it against the rig's
+   own report instead of reading the cap as red.
+3. The rig comes back reporting the new version, read from its summary poll: what the rig now
    *is*, not what the host said it did.
 4. Only then, on a precondition this run established rather than assumed, the repeat-click `noop`
-   is asserted: a synchronous `noop` carrying **no** `id`, which is what says the dashboard's
-   shortcut answered it without dialing the rig and spending its throttle.
-5. Last, update-all (#3823) is asked about the same rig: `GET /api/control/worker-upgrade-all`
-   lists no eligible rig, and a `POST` of the same version is refused with `409`. This checks the
-   plan against the rig's real feed. The host's rolling loop over several rigs is proved at tier 1
-   with stub rigs (`tests/stack/control/test-control-worker-upgrade-all.sh`), because the harness
-   has one borrowed rig and the rig's six-hour throttle allows one real upgrade per run.
+   on `/api/control/worker-upgrade` is asserted: a synchronous `noop` carrying **no** `id`, which
+   is what says the dashboard's shortcut answered it without dialing the rig and spending its
+   throttle.
+5. Last, update-all is asked about the same rig again: `GET` lists no eligible rig, and a `POST` of
+   the same version is refused with `409`. The host's rolling loop over several rigs is proved at
+   tier 1 with stub rigs (`tests/stack/control/test-control-worker-upgrade-all.sh`), because the
+   harness has one borrowed rig and the rig's six-hour throttle allows one real upgrade per run.
+   The single-rig `/api/control/worker-upgrade` path is still the one `--rigforge-bootstrap-version`
+   drives, and the dashboard's handler for it is covered by the dashboard tests.
+
+The leg runs update-all only when the borrowed rig is behind the latest release; a rig already on
+the latest release gets the classified skip below, and no update-all run happens.
 
 **Otherwise the leg skips, loudly and classified.** `compute_update` returns `None` for "already on
 latest", "ahead of latest" and "no release cached over Tor" alike, and nothing else in `/api/state`
