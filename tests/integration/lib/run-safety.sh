@@ -25,8 +25,7 @@ safety_backup() {
         return 1
     fi
     it_log "Safety backup: $SAFETY_ARCHIVE"
-    # Exercise backup as an assertion: the archive must list the core files we'd roll back to.
-    # An archive missing either one is not a rollback net, so refuse to run the destructive phases.
+    backup_prune rx backups "$SAFETY_ARCHIVE"
     local listing
     listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"
     assert_contains "backup archive contains config.json" "$listing" "config.json"
@@ -162,7 +161,7 @@ safety_cleanup() {
     elif [ "$KEEP_STATE" = "1" ]; then
         it_warn "--keep: leaving the safety backup at $SAFETY_ARCHIVE"
     else
-        rx "rm -f $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1 || true
+        rx "rm -f $(quote_arg "$SAFETY_ARCHIVE") $(quote_arg "$(dirname "$SAFETY_ARCHIVE")/.pithead-e2e-safety/$(basename "$SAFETY_ARCHIVE")")" >/dev/null 2>&1 || true
         it_step "removed the safety backup archive"
     fi
 }

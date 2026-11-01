@@ -27,9 +27,9 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         it_step() { :; }
         it_pass() { :; }
         it_skip_leg() { :; }
-        # Treat any unexpected phase failure as a failed driver, not a hidden diagnostic.
         it_fail() { printf 'failure:%s\n' "$1" >>"$TRACE"; }
-        pithead() { :; }
+        pithead() { if [ "$1" = backup ]; then printf 'Backup written to: backups/test.tar.gz\n'; fi; }
+        backup_prune() { :; }
         wait_status_ok() { :; }
         wait_monero_synced() { :; }
         secret_fingerprint() { printf 'test-fingerprint'; }

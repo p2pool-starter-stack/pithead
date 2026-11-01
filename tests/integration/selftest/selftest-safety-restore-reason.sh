@@ -74,6 +74,7 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
         SAFETY_BACKUP=1 RUN_IMAGE_UPGRADE=0 OUT_DIR="$td/results" IT_PITHEAD=pithead
         SAFETY_ARCHIVE="$td/archive" SAFETY_RESTORE_FAILED=0
         command mkdir -p "$OUT_DIR"
+        backup_prune() { :; }
         pithead() { [ "$1" = backup ] && printf 'Backup written to: %s\n' "$SAFETY_ARCHIVE"; }
         mkdir() {
             capture_started=1
