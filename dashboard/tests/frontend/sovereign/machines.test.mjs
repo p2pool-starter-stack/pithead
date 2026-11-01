@@ -166,10 +166,12 @@ test("the inspector offers only the controls the rig is authorized for", () => {
   assert.match(shared, /2 rigs report the name rig/);
   assert.doesNotMatch(shared, /Apply to rig|Upgrade rig|Manage this rig/);
   const dirtyOffline = renderToString(html`<${class extends Ready { constructor(props) { super(props); this.state.tableEdits = { DONATION: "2" }; } }} name="rig" writable=${false} shared=${1} worker=${{ name: "rig" }} detail=${detail()} />`);
-  assert.match(dirtyOffline, /Rig changes are unavailable while disconnected or signed out.*<button type="button" disabled>Apply to rig<\/button>.*Unsaved/s);
+  assert.match(dirtyOffline, /<button type="button" disabled>Apply to rig<\/button>.*Rig changes are unavailable while disconnected or signed out/s);
+  assert.match(dirtyOffline, /New RigForge release 1.0.0 available/);
+  assert.doesNotMatch(dirtyOffline, /Unsaved/);
   assert.doesNotMatch(dirtyOffline, /Upgrade rig/);
   const dirtyShared = renderToString(html`<${class extends Ready { constructor(props) { super(props); this.state.tableEdits = { DONATION: "2" }; } }} name="rig" writable=${true} shared=${2} worker=${{ name: "rig" }} detail=${detail()} />`);
-  assert.match(dirtyShared, /<button type="button" disabled>Apply to rig<\/button>.*Unsaved.*Give each rig its own name/s);
+  assert.match(dirtyShared, /<button type="button" disabled>Apply to rig<\/button>.*Give each rig its own name/s);
   assert.doesNotMatch(dirtyShared, /Upgrade rig/);
   const offline = inspect({ writable: false });
   assert.match(offline, /unavailable while disconnected or signed out/);
@@ -206,7 +208,20 @@ test("a poll refreshes the inspector quietly, never over an edit, and an adopt k
     inspector.state.tableEdits = {};
     await inspector.load(true);
     assert.equal(inspector.state.stale, true);
+    inspector.state.stale = false;
+    await inspector.load();
+    assert.equal(inspector.state.stale, true);
     assert.match(renderToString(inspector.render()), /could not be refreshed/);
+    globalThis.fetch = async (url) => {
+      fetched.push(url);
+      return { ok: true, json: async () => detail() };
+    };
+    inspector.state.tableEdits = { DONATION: "9" };
+    inspector.props = { ...inspector.props, shared: 1 };
+    inspector.componentDidUpdate({ worker: inspector.props.worker, shared: 2 });
+    await new Promise((resolve) => setTimeout(resolve));
+    assert.deepEqual(inspector.state.tableEdits, {});
+    assert.doesNotMatch(renderToString(inspector.render()), /could not be refreshed/);
   } finally {
     globalThis.fetch = original;
   }

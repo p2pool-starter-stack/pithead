@@ -12,6 +12,10 @@ export class RigInspector extends WorkerInspect {
   }
 
   componentDidUpdate(previous) {
+    if (previous.shared > 1 && !(this.props.shared > 1) && this.state.phase === "ready") {
+      this.load();
+      return;
+    }
     if (
       previous.worker !== this.props.worker &&
       this.state.phase === "ready" &&
@@ -107,10 +111,10 @@ export class RigInspector extends WorkerInspect {
       ${
         detail.rigforge_update?.available && !detail.rigforge_update.url
           ? html`<p>RigForge ${detail.rigforge_update.latest} is available, but its release page is not reported, so it cannot be offered here.</p>`
-          : detail.rigforge_update?.available && !blocked
+          : detail.rigforge_update?.available
             ? html`<${RigUpgrade} name=${this.props.name} update=${detail.rigforge_update}
-            canEdit=${true} busy=${busy} onDone=${() => this.load()} />`
-            : html`<p>${blocked || "This rig is on the latest release it reports."}</p>`
+            canEdit=${!blocked} busy=${busy} onDone=${() => this.load()} />`
+            : html`<p>This rig is on the latest release it reports.</p>`
       }
       <h3>Configuration</h3>
       <div role="group" aria-label="Configuration view">
@@ -131,7 +135,7 @@ export class RigInspector extends WorkerInspect {
               onChange=${(event) => this.onFilePick(event)} /></label>`
       }
       <button type="button" disabled=${busy || !!blocked} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
-      ${!busy && this.isDirty() ? html`<p>Unsaved: apply before closing, or the change is lost.</p>` : null}
+      ${!busy && !blocked && this.isDirty() ? html`<p>Unsaved: apply before closing, or the change is lost.</p>` : null}
       ${blocked ? html`<p role="alert">${blocked}</p>` : null}
       <${StatusLine} result=${result} />`;
   }

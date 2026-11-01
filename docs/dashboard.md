@@ -97,8 +97,9 @@ progress; a failed refresh says the details may be out of date. The host address
 so when several rigs report one name the inspector says so, shows status and shares for the row
 opened, and offers no change until each rig has its own name.
 Its **Advanced** section offers only what the rig supports. With rig control off, while the
-session is disconnected or expired, or while several rigs share the name, it says so and offers no
-change; an unsaved edit stays visible with Apply disabled. An unadopted rig gets the
+session is disconnected or expired, or while several rigs share the name, it says so and withholds
+Apply and the upgrade; an unsaved edit stays in the editor. When a shared name becomes unique, the
+inspector reloads the rig and drops an edit typed against the other rig's values. An unadopted rig gets the
 existing adopt form (host, ports, token, typed APPLY), which confirms the saved entry; managed
 telemetry follows the next poll of the rig. For an adopted rig, **Update this rig** offers the
 upgrade when the rig is behind and its release page is reported, and otherwise says why not. The
