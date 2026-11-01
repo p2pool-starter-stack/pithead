@@ -88,39 +88,42 @@ appliance_site_names() {
     base=$(appliance_base_name)
     local names="$base"
     if is_appliance && { [ -z "${DASHBOARD_HOST:-}" ] || [ -n "$(appliance_hostname_label)" ]; }; then
-        local extra bridge_addrs
+        local extra bridge_addrs extras=()
         # Container-bridge gateways are engine plumbing that appears when `up` creates a network
         # and goes when it is removed. Naming them here made the rendered Caddyfile and the
         # certificate differ before and after `up`, so pithead-address-watch re-rendered and
         # restarted a healthy Caddy mid-recovery (#3406).
         bridge_addrs=" $(container_bridge_addrs | tr '\n' ' ') "
-        for extra in $(hostname -I 2>/dev/null) localhost; do
-            case " $names " in *" $extra "*) continue ;; esac
-            case "$bridge_addrs" in *" $extra "*) continue ;; esac
-            # `hostname -I` lists EVERY address on every interface, so on any network whose router
-            # passes IPv6 through, a SLAAC/DHCPv6 global unicast address lands here exactly like a
-            # LAN one — and this list is rebuilt every render. That published the control panel on
-            # a globally-routable address, with nothing but the operator's router between it and
-            # the internet; the product must not depend on that. The documented way to reach the
-            # dashboard off-LAN is the onion service, never a routable address, so nothing
-            # supported regresses. Opt back in with dashboard.expose_public_ip if a deployment
-            # really does want it.
-            if [ "${DASHBOARD_EXPOSE_PUBLIC_IP:-false}" != "true" ] && is_public_ip "$extra"; then
-                continue
-            fi
-            # mining_net's gateway belongs to the ONION vhost, which serves on exactly that
-            # address, and never to the LAN list — two site blocks naming the same scheme://address
-            # make Caddy refuse the whole file with "ambiguous site definition" (see
-            # generate_caddyfile). Excluding it here keeps the certificate honest too: it was never
-            # reachable at the bridge gateway by anything except the tor container. proxy_net's
-            # gateway is the SAME kind of plumbing address but has no fixed literal to exclude it
-            # by — see this function's header for why that exclusion lives in check_appliance_cert
-            # instead of here.
-            if [ -n "${NETWORK_PREFIX:-}" ] && [ "$extra" = "${NETWORK_PREFIX}.1" ]; then
-                continue
-            fi
-            names="$names $extra"
-        done
+        for extra in $(hostname -I 2>/dev/null) localhost; do extras+=("$extra"); done
+        if ! command -v _appliance_site_names_go >/dev/null 2>&1 || ! _appliance_site_names_go "$base" "$bridge_addrs" "${NETWORK_PREFIX:-}" "${DASHBOARD_EXPOSE_PUBLIC_IP:-false}" ${extras[@]+"${extras[@]}"}; then
+            for extra in ${extras[@]+"${extras[@]}"}; do
+                case " $names " in *" $extra "*) continue ;; esac
+                case "$bridge_addrs" in *" $extra "*) continue ;; esac
+                # `hostname -I` lists EVERY address on every interface, so on any network whose router
+                # passes IPv6 through, a SLAAC/DHCPv6 global unicast address lands here exactly like a
+                # LAN one — and this list is rebuilt every render. That published the control panel on
+                # a globally-routable address, with nothing but the operator's router between it and
+                # the internet; the product must not depend on that. The documented way to reach the
+                # dashboard off-LAN is the onion service, never a routable address, so nothing
+                # supported regresses. Opt back in with dashboard.expose_public_ip if a deployment
+                # really does want it.
+                if [ "${DASHBOARD_EXPOSE_PUBLIC_IP:-false}" != "true" ] && is_public_ip "$extra"; then
+                    continue
+                fi
+                # mining_net's gateway belongs to the ONION vhost, which serves on exactly that
+                # address, and never to the LAN list — two site blocks naming the same scheme://address
+                # make Caddy refuse the whole file with "ambiguous site definition" (see
+                # generate_caddyfile). Excluding it here keeps the certificate honest too: it was never
+                # reachable at the bridge gateway by anything except the tor container. proxy_net's
+                # gateway is the SAME kind of plumbing address but has no fixed literal to exclude it
+                # by — see this function's header for why that exclusion lives in check_appliance_cert
+                # instead of here.
+                if [ -n "${NETWORK_PREFIX:-}" ] && [ "$extra" = "${NETWORK_PREFIX}.1" ]; then
+                    continue
+                fi
+                names="$names $extra"
+            done
+        fi
     fi
     printf '%s' "$names"
 }
@@ -130,14 +133,17 @@ appliance_site_names() {
 # non-digit/non-dot character makes it a name, otherwise it's a dotted-quad IPv4 literal. Always
 # succeeds (appliance_site_names never fails) — safe to use in a bare assignment under `set -e`.
 appliance_cert_alt_string() {
-    local h out=""
-    for h in $(appliance_site_names); do
-        case "$h" in
-        *:*) out="${out:+$out,}IP:$h" ;;
-        *[!0-9.]*) out="${out:+$out,}DNS:$h" ;;
-        *) out="${out:+$out,}IP:$h" ;;
-        esac
-    done
+    local h out="" _san_candidates=()
+    for h in $(appliance_site_names); do _san_candidates+=("$h"); done
+    if ! command -v _appliance_cert_alt_string_go >/dev/null 2>&1 || ! _appliance_cert_alt_string_go ${_san_candidates[@]+"${_san_candidates[@]}"}; then
+        for h in ${_san_candidates[@]+"${_san_candidates[@]}"}; do
+            case "$h" in
+            *:*) out="${out:+$out,}IP:$h" ;;
+            *[!0-9.]*) out="${out:+$out,}DNS:$h" ;;
+            *) out="${out:+$out,}IP:$h" ;;
+            esac
+        done
+    fi
     printf '%s' "$out"
 }
 

@@ -124,7 +124,7 @@ selection is not implemented.
 | Config defaults, materialization and getters | Native with runtime table; jq compatibility fallback | 5 tagged groups / 744 scenarios and wiring/render-fixture tests |
 | Worker, energy, webhook and control-character validation | Native Go-selected validators; jq compatibility fallback | Paired validator corpus and wiring checks; Go units |
 | Stratum bind and port parsing | Native for supported settings; Bash compatibility fallback | Unchanged 14-test stratum preflight and render fixture; supplementary byte/status/state comparisons and Go units; full Linux suite unavailable |
-| Caddyfile serialization, site URLs, bind plan and auth preparation | Native fragments, site/port formatting, supported bind filter, auth blocks and boot digest; Bash discovery/classification/bcrypt/certificate/writes and compatibility fallback | Supplementary Caddy/host/port comparisons and Go units; Linux/Docker oracle unavailable |
+| Caddyfile serialization, site URLs, bind plan and auth preparation | Native fragments, site/port formatting, bind filter, auth blocks and boot digest; Bash bind-candidate public-IP checks, discovery, bcrypt, certificate minting and writes; compatibility fallback | Supplementary Caddy/host/port comparisons and Go units; Linux/Docker oracle unavailable |
 | `.env` serialization | Native bulk formatter with Bash derivation/writes and compatibility fallback | Unchanged render fixture/goldens pass in Go mode; full Linux suite unavailable |
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
@@ -134,6 +134,7 @@ selection is not implemented.
 | Dashboard access settings | Native supported host/port/flag/timezone parsing; Bash host-timezone discovery/default insertion and compatibility fallback | Supplementary byte/status/state/trap comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
 | Proxy password, TLS and donation settings | Native explicit/empty settings; auto and unsupported inputs use Bash fallback | Supplementary byte/status/state comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
 | Network settings, remote endpoints and pool validation | Native for supported settings; Bash compatibility fallback | Supplementary byte/status/state comparisons and unchanged render fixture/goldens; full Linux suite unavailable |
+| Shared Caddy/certificate site names and SANs | Native supported auto-expansion/filtering and SAN formatting; Bash selection/discovery/shell expansion and compatibility fallback | Supplementary comparisons and complete Caddy renders; full Linux/Docker oracle unavailable |
 | Required wallet fields and Tari mode | Native supported scalar/required/whitespace gates; Bash mode getter, classifiers and compatibility fallback | Supplementary partial-state/callback comparisons and unchanged render fixtures; full Linux CLI oracle unavailable |
 | Payout-confirmation scalar config and restore bounds | Native supported settings; Bash time read, wallet-ownership/curve checks and compatibility fallback | Supplementary comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
@@ -254,6 +255,9 @@ oracles:
   state, proves native selection without jq and checks fallback beyond the
   standalone preflight cases. Full config cases still require the Linux stack harness.
 
+- `site_names_reference.sh` supplies synthetic discovery to the original site/SAN functions;
+  `test_site_names.py` compares names, SANs and fallback. `site_names_caddy_reference.sh` loads the
+  unchanged Caddy fixture around production site functions; `test_site_names_render.py` compares complete files.
 - `wallet_settings_reference.sh` extracts the original wallet gate/classifier cases; new wallet tests
   compare native/fallback state and unchanged complete-render fixtures.
 - `payout_settings_reference.sh` extracts the original payout-setting blocks and records
@@ -330,19 +334,18 @@ Detailed paired commands, results and limits are preserved in
 [remote-node probe results](results-node-probes.md) and
 [configuration results](results-config.md) and [render results](results-render.md).
 
-## Required-wallet settings slice (2026-11-01)
+## Shared site-name and SAN slice (2026-11-01)
 
-Go validates supported Tari mode and required wallet scalars, preserving the missing-wallet and Tari
-whitespace gates and command-substitution line-feed trimming. Bash retains the mode getter, checksum/network
-classifiers, diagnostic cases and compatibility fallback. Locale-sensitive Unicode whitespace falls back.
-New comparisons cover partial state, callback order, malformed frames and full renders.
+Go filters Bash-collected tokens into supported auto-expanded Caddy/certificate host lists and formats
+certificate SANs. Bash retains base selection, discovery, shell expansion and compatibility fallback.
+New comparisons cover ordering, filtering, framing and rendered Caddyfiles; original Linux proof remains unavailable.
 
 Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline and `tests/go-parity/run.sh` for Go, with worktree caches and an absent Docker socket.
-Private records use `.go-cache/logs/wallet-settings-*`; full Linux CLI proof remains unavailable.
+Private records use `.go-cache/logs/site-names-*`; full Linux CLI proof remains unavailable.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-wallet-settings-parity` | PASS, 8 paired gate groups and 2 unchanged complete-render groups; Go units | Same result; native helper verified |
+| `make test-go-site-names-parity` | PASS, 10 paired groups and 7 complete-Caddy scenarios; Go units | Same result; native expansion/SAN helpers verified |
 | Additional config/render comparisons below | PASS, including unchanged raw parser and render fixture/goldens | Same result; native helpers verified separately |
 | `make test-dashboard test-fakes test-patch-coverage` with `COMPARE=a73ffced33800de9435779a9cabef53864455acb` | PASS, 3716 dashboard/54 fake tests, 97.42% coverage; patch check not applicable | Same counts; Python backend |
 | `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, structural/documentation gates and 891 frontend tests | Same result |
@@ -350,7 +353,7 @@ Private records use `.go-cache/logs/wallet-settings-*`; full Linux CLI proof rem
 | `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
 | `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
 
-Additional config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
+Additional config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-wallet-settings-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
 Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
 Source/security reviews, Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff checks PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-render.md`.
 
@@ -386,7 +389,7 @@ Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
 and dashboard application code on 2026-11-01; shipping integration follows those
 ports. Next, in order:
 
-1. Finish remaining config derivation and Caddy host expansion. Obtain unchanged Linux CLI and Docker parser verdicts.
+1. Finish SSH/credential parsing and remaining config derivation. Obtain unchanged Linux CLI and Docker parser verdicts.
 2. Port `render`, `apply`, `up`, `down` and `restart` using that config layer.
 3. Implement dashboard routes, HTTP/JSON, state/polling, wizard/control, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.

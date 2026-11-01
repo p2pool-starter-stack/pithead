@@ -175,6 +175,9 @@ state, error order and full renders. Mode getters and checksum classifiers stay 
 `go/internal/config/payout_settings.go` parses payout-confirmation scalars via
 `lib/pithead/27i-go-payout-settings.sh`; `make test-go-payout-settings-parity` checks
 validation and partial state. Time and wallet-ownership/curve checks stay in Bash.
+`go/internal/config/site_names.go` expands the shared Caddy/certificate names and formats SANs
+through `lib/pithead/26a-go-site-names.sh`; `make test-go-site-names-parity` checks
+filters, ordering and complete Caddy renders. Discovery and shell expansion stay in Bash.
 `go/internal/config/caddy_bind.go` filters supplied bind candidates through
 `lib/pithead/35c-caddy-go-bind.sh`; `make test-go-caddy-bind-parity` checks complete
 renders and callback order. Discovery and public-IP classification stay in Bash.

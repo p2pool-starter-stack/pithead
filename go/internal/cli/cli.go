@@ -25,6 +25,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configStratum(args, stdout)
 	case "config-network-settings":
 		return configNetworkSettings(args, stdout)
+	case "config-site-names":
+		return configSiteNames(args, os.Stdin, stdout)
 	case "config-proxy-settings":
 		return configProxySettings(args, stdout)
 	case "config-payout-settings":

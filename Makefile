@@ -21,17 +21,17 @@
 .PHONY: test-go-node-zmq-parity
 .PHONY: test-go-node-zmq-exchange-parity
 .PHONY: test-go-config-document-parity test-go-config-defaults-parity test-go-config-validation-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-wallet-settings-parity
-.PHONY: test-go-env-parity
-.PHONY: test-go-env-network-parity
-.PHONY: test-go-env-dashboard-parity
-.PHONY: test-go-env-memory-parity
+.PHONY: test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-site-names-parity
 .PHONY: test-go-stratum-parity
 .PHONY: test-go-network-settings-parity
 .PHONY: test-go-proxy-settings-parity test-go-caddy-auth-parity
-.PHONY: test-go-dashboard-access-parity
-.PHONY: test-go-dashboard-auth-parity
+.PHONY: test-go-dashboard-access-parity test-go-dashboard-auth-parity
 .PHONY: test-go-directories-parity
 .PHONY: test-go-caddy-bind-parity test-go-payout-settings-parity
+
+test-go-site-names-parity: go-build test-go ## Compare shared Caddy host names and certificate SANs
+	python3 tests/go-parity/test_site_names.py
+	python3 tests/go-parity/test_site_names_render.py
 
 test-go-wallet-settings-parity: go-build test-go ## Compare required-wallet config gates and render contracts
 	python3 tests/go-parity/test_wallet_settings.py
