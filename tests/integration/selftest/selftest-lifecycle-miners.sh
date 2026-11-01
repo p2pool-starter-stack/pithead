@@ -241,3 +241,69 @@ DOCKER
     [ ! -e "${phase_state%/*}" ]
 )
 printf '%s\n' 'PASS: redirected mining failures retain bounded redacted diagnostics and preserve verdict/cleanup'
+
+(
+    source "$ROOT/tests/integration/lib/run-lifecycle-miners.sh"
+    source "$ROOT/tests/integration/lib/reset-restore-startup.sh"
+    OUT_DIR="$work/startup-restore"
+    mkdir -p "$OUT_DIR"
+    IT_PITHEAD=fixture LIFECYCLE_MINING_ACTIVE=1
+    LIFECYCLE_MINER_STATE="$OUT_DIR/miner-state"
+    lifecycle_proxy_started() {
+        [ ! -e "$OUT_DIR/absent" ] || return 1
+        if [ -e "$OUT_DIR/up" ]; then printf new; else printf old; fi
+    }
+    lifecycle_proxy_workers() {
+        [ ! -e "$OUT_DIR/absent" ] || return 1
+        if [ -e "$OUT_DIR/up" ] && [ "$recovery" = missing ]; then
+            printf '[["rig","fixture",1,1]]\n'
+        elif [ -e "$OUT_DIR/up" ] && [ "$recovery" = shares ]; then
+            printf '[["local","fixture",1,0],["rig","fixture",1,1]]\n'
+        else
+            printf '[["local","fixture",1,1],["rig","fixture",1,1]]\n'
+        fi
+    }
+    rx() {
+        case "$1" in
+        'cat /proc/sys/kernel/random/boot_id') printf before ;;
+        *config-reset*)
+            touch "$OUT_DIR/absent"
+            printf 'Rebooting into first-boot\n'
+            return "$reset_rc"
+            ;;
+        'fixture up')
+            rm "$OUT_DIR/absent"
+            touch "$OUT_DIR/up"
+            ;;
+        'systemctl show pithead-firstboot.service -p ActiveState -p Result -p ExecMainStatus')
+            printf 'ActiveState=inactive\nResult=success\nExecMainStatus=0\n'
+            ;;
+        *) : ;;
+        esac
+    }
+    reset_restore_wait_reboot() { return 0; }
+    rr_wizard_absent() { return 0; }
+    rr_web_ports_owned_by_dashboard() { return 0; }
+    wait_status_ok() { return 0; }
+    wait_for() {
+        shift 3
+        "$@"
+    }
+    redact() { cat; }
+    for reset_rc in 0 255; do
+        for recovery in good missing shares; do
+            rm -f "$OUT_DIR/absent" "$OUT_DIR/up" "$LIFECYCLE_MINER_STATE"
+            LIFECYCLE_MINER_STOPPED=0
+            if rr_restore_during_wizard_startup fixture.enc >"$OUT_DIR/output" 2>&1; then rc=0; else rc=$?; fi
+            [ -e "$OUT_DIR/up" ]
+            if [ "$recovery" = good ]; then
+                [ "$rc" = 0 ]
+                [ "$(jq -c .names "$LIFECYCLE_MINER_STATE")" = '["local","rig"]' ]
+                [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
+            else
+                [ "$rc" != 0 ]
+            fi
+        done
+    done
+)
+printf '%s\n' 'PASS: real startup-restore sequence preserves worker binding through absent-proxy span'

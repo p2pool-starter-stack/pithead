@@ -76,6 +76,11 @@ lifecycle_mining_step() {
             return 1
         }
     fi
+    if [ "$label" = config-reset ]; then
+        LIFECYCLE_MINER_NAMES=$names
+        LIFECYCLE_MINER_STOPPED=1
+        lifecycle_mining_save || return 1
+    fi
     if [ "$names" = '[]' ]; then
         it_skip_leg "$label workers reconnect and accept post-restart shares (#3375)" "no online workers before lifecycle mutation" "by-design"
         "$@" || return $?
