@@ -14,8 +14,6 @@
 
 # shellcheck source=tests/integration/lib/restore-chain-sync.sh
 source "$(dirname "${BASH_SOURCE[0]}")/restore-chain-sync.sh" || return $?
-# shellcheck source=tests/integration/lib/restore-unit-state.sh
-source "$(dirname "${BASH_SOURCE[0]}")/restore-unit-state.sh" || return $?
 
 # What the live stack was RUNNING, by service, before this run touched anything. Image IDs, not
 # tags: the defect this catches is a tag that MOVED. Empty is never a restore pass.
@@ -28,7 +26,8 @@ EGRESS_UNIT_BEFORE=""
 EGRESS_CHECK_BEFORE=""
 LAN_CHECK_BEFORE=""
 
-# The egress check pair (#2599), restored on the same rule as the boot unit below.
+source "$(dirname "${BASH_SOURCE[0]}")/restore-unit-state.sh" || return $?
+
 restore_egress_check_units() {
     case "$EGRESS_CHECK_BEFORE" in
     present) return 0 ;;
@@ -263,9 +262,9 @@ census_get() { # <census> <service>
 #      recreated or restarted a node that the deploy kept and the harness left as the baseline's.
 # Returns 0 when all five and independent authenticated daemon sync hold.
 RESTORE_PROOF_VAR="MONERO_NODE_PASSWORD"
-# shellcheck disable=SC2034  # CONTROL_PROOF_FAILED is declared and read by e2e.sh, which sources
-# this file; it is set here because this is where the control-channel verdict is graded.
+# shellcheck disable=SC2034
 verify_restore_proof() {
+    verify_restore_unit_capture || return 1
     local prc=0 disk cid baked="" verdict
     disk="$(on_bench "grep -E '^${RESTORE_PROOF_VAR}=' '$RESTORE_DIR/.env' 2>/dev/null | head -n1" || true)"
     cid="$(on_bench "docker ps -q --filter label=com.docker.compose.project=pithead --filter label=com.docker.compose.service=dashboard 2>/dev/null | head -n1" || true)"

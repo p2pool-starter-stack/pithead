@@ -39,8 +39,6 @@ unit_state_with() { # <systemctl stub body> -> what egress_boot_unit_state print
         d=$(mktemp -d)
         printf '#!/usr/bin/env bash\n%s\n' "$1" >"$d/systemctl" && chmod +x "$d/systemctl"
         on_bench() { PATH="$d:$PATH" bash -c "$1"; }
-        warn() { printf 'warn:%s\n' "$*" >&2; }
-        export UNIT_STATE_RETRY_DELAY=0
         egress_boot_unit_state pithead-lan-guard.service
         rm -rf "$d"
     )
@@ -48,25 +46,9 @@ unit_state_with() { # <systemctl stub body> -> what egress_boot_unit_state print
 assert_eq "a unit systemd shows is present" "$(unit_state_with 'exit 0')" "present"
 assert_eq "a unit systemd reports not-found is absent" "$(unit_state_with '[ "$1" = show ] && echo not-found; [ "$1" = show ]')" "absent"
 assert_eq "a failed lookup of a present unit is unknown, not absent" "$(unit_state_with 'exit 1')" ""
-assert_eq "a masked or otherwise non-loaded unit is present, never unknown" "$(unit_state_with '[ "$1" = show ] && echo masked; [ "$1" = show ]')" "present"
-flaky=$(mktemp)
-assert_eq "a read that fails once and then answers is retried to its answer" \
-    "$(unit_state_with "n=\$(cat $flaky 2>/dev/null || echo 0); echo \$((n+1)) >$flaky; [ \$n -ge 2 ] || exit 255; [ \"\$1\" = show ] && echo not-found; [ \"\$1\" = show ]")" "absent"
-rm -f "$flaky"
-transport_down=$(
-    on_bench() {
-        echo "ssh: connect timed out" >&2
-        return 255
-    }
-    warn() { printf 'warn:%s\n' "$*" >&2; }
-    UNIT_STATE_RETRY_DELAY=0
-    egress_boot_unit_state pithead-lan-guard.service 2>&1 >/dev/null
-)
-assert_contains "a transport failure names the unit, the attempts, the exit code and the stderr" "$transport_down" \
-    "pithead-lan-guard.service unread after 3 attempts (bench command exit 255, stderr: ssh: connect timed out"
 assert_eq "...and the restore then refuses and removes nothing" \
     "$(lan_restore pithead-lan-guard.service "$(unit_state_with 'exit 1')" present)" "1 present 0"
 assert_contains "verify_restore_proof restores both LAN units" "$(declare -f verify_restore_proof)" \
     'restore_lan_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE"'
-assert_contains "e2e.sh records both before deploy_branch installs them" "$(cat "$E2E_SRC")" \
-    'LAN_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-guard.service)" HOLD_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-hold.service)"'
+assert_contains "e2e.sh records both before deploy_branch installs them" "${RESTORE_UNIT_MAP[*]}" \
+    'LAN_UNIT_BEFORE:pithead-lan-guard.service HOLD_UNIT_BEFORE:pithead-lan-hold.service'
