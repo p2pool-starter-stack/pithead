@@ -91,6 +91,23 @@ list_disks() {
         done
 }
 
+resolve_target_serial() { # <serial> -> /dev path of the one installable disk carrying it
+    local serial="$1" inventory matches count
+    case "$serial" in
+    '' | unknown) die "--target-serial needs a real serial (an empty or 'unknown' serial identifies nothing)" ;;
+    esac
+    [[ "$serial" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "--target-serial contains characters outside A-Z a-z 0-9 . _ -"
+    inventory=$(list_disks)
+    matches=$(printf '%s\n' "$inventory" | awk -F'\t' -v s="$serial" 's != "" && ($4 "") == s {print $1}')
+    count=$(printf '%s' "$matches" | grep -c . || true)
+    if [ "$count" -ne 1 ]; then
+        echo "pithead-install: $count installable disks carry serial $serial; candidates (name, size, model, serial):" >&2
+        printf '%s\n' "$inventory" | cut -f1-4 >&2
+        exit 1
+    fi
+    printf '/dev/%s' "$matches"
+}
+
 # Does the target already carry a pithead layout? Decides destructive-vs-reinstall, and a
 # reinstall must preserve /data — a synced chain is not re-downloadable in an afternoon.
 layout_state() { # $1 disk
@@ -169,7 +186,7 @@ wipe_data_partition() { # $1 disk, $2 mode (data|all)
 }
 
 main() {
-    local target="" assume_yes=0 action="install" wipe="keep" copy_preseeds=1
+    local target="" target_serial="" assume_yes=0 action="install" wipe="keep" copy_preseeds=1
     while [ $# -gt 0 ]; do
         case "$1" in
         --list)
@@ -178,6 +195,11 @@ main() {
             ;;
         --target)
             target="$2"
+            shift 2
+            ;;
+        --target-serial)
+            [ $# -ge 2 ] || die "--target-serial needs a value"
+            target_serial="$2"
             shift 2
             ;;
         --wipe)
@@ -204,7 +226,11 @@ main() {
         return 0
     fi
 
-    [ -n "$target" ] || die "--target is required"
+    if [ -n "$target_serial" ]; then
+        [ -z "$target" ] || die "--target and --target-serial are exclusive"
+        target=$(resolve_target_serial "$target_serial")
+    fi
+    [ -n "$target" ] || die "--target or --target-serial is required"
     [ -b "$target" ] || die "$target is not a block device"
     local boot
     boot=$(boot_disk || true)

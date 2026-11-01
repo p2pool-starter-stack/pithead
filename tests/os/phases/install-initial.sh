@@ -224,6 +224,7 @@ _phase_install_initial() {
         bad "machine never powered off after the ack"
         return 1
     fi
+    headless_serial_leg "$install_config" "$target_disk" "$target_serial" "$foreign_disk" "$foreign_serial" || return 1
     headless_install_stage || {
         bad "could not clear the installer preseed fixture before the reinstall legs (#3071)"
         return 1
