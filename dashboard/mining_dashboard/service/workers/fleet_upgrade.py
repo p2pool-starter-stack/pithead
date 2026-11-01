@@ -23,9 +23,6 @@ SETTLED_WORDS = {
 
 
 def plan(workers, release):
-    """Which rigs an Update all would touch: ``{version, eligible, skipped}``. A rig already on
-    the release, or a plain-xmrig worker that reports no RigForge block, is left out of both
-    lists."""
     tag = (release or {}).get("tag")
     out = {"version": tag, "eligible": [], "skipped": []}
     if not tag:
@@ -56,7 +53,6 @@ def plan(workers, release):
 
 
 def summary_text(res):
-    """The one Telegram line for a settled run."""
     rigs = res.get("rigs") or []
     counts = {}
     for rig in rigs:
@@ -86,8 +82,6 @@ def submit_worker_upgrade_all(workers, version, actor="", intent_id=None):
 
 
 def latest_result(action) -> dict | None:
-    """The newest result whose ``action`` field is ``action``, or None. Scans the newest few
-    results only: the host prunes the directory by age and count."""
     stamped = []
     try:
         for entry in os.scandir(config.CONTROL_RESULTS_DIR):
