@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # globals are consumed by sourced functions
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
@@ -12,7 +13,6 @@ ONION="$(printf 'a%.0s' $(seq 56)).onion"
 TOR_DIR=/srv/tor-fixture
 IT_MODE=local
 IT_ROTATE_ONION_FIXTURE_ATTESTATION="$TOR_DIR"
-MODE=ok
 BUILD_RC=0
 PROBE_RC=0
 PROBE_OUT=""
@@ -44,6 +44,9 @@ probe() { # <build rc> <probe rc> <probe output>
     local delta=$((IT_FAIL - before))
     IT_FAIL="$before"
     assert_eq "baseline failure keeps its non-passing verdict" "$delta" 1
+    assert_eq "baseline failure leaves nothing armed to restore" "$ROTATE_ONION_RESTORE_ARMED" 0
+    rotate_onion_restore
+    assert_rc "restore after a baseline failure is a no-op success" "$?" 0
 }
 stage_of() { jq -r '[.stage, (.probe_exit | tostring), (.http_status | tostring)] | join(" ")' "$OUT_DIR/onion-baseline-probe.failure.json"; }
 
@@ -61,6 +64,12 @@ probe 0 4 ""
 assert_eq "authorization input failure" "$(stage_of)" "authorization 4 null"
 probe 0 9 "garbage secret-marker"
 assert_eq "unclassified exit" "$(stage_of)" "error 9 null"
+_onion_reachable_external "not-an-onion"
+assert_eq "malformed input stage" "$ONION_PROBE_STAGE:$?" "input:3"
+rm -f "$OUT_DIR/onion-baseline-probe.failure.json"
+capture_onion_baseline_failure
+assert_eq "input stage retained" "$(stage_of)" "input null null"
+probe 0 9 "garbage secret-marker"
 assert_eq "no onion address or raw output is retained" "$(grep -Ec "$ONION|secret-marker|aaaa" "$OUT_DIR/onion-baseline-probe.failure.json" || true)" 0
 assert_num_ge "record stays below 512 bytes" 512 "$(wc -c <"$OUT_DIR/onion-baseline-probe.failure.json" | tr -d ' ')"
 
