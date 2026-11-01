@@ -32,6 +32,12 @@ the `Makefile` pins, as a non-root user. It needs Docker on the host and nothing
 verdict is the one CI reaches. Tier 4's appliance battery stays out — it needs KVM and libvirt on
 the machine itself, which no container supplies on macOS or Windows.
 
+The standalone Quadlet provenance regression also runs on macOS with Bash 5 or
+newer on `PATH` and Python 3.9 or newer. Run `make`, then
+`python3 tests/stack/standalone/test_quadlet_provenance.py`. It checks image
+selection and all three fixture sets without starting containers; it does not
+replace the Linux shell suite or the required live rendering proof.
+
 ```bash
 make test-container       # all of the below in the pinned Linux image (any host with Docker)
 make test-container ARGS="make test-mini-stack"   # tier 3 in the image (host daemon via the socket)
