@@ -85,7 +85,7 @@ firstboot_wizard() {
                 warn "Provisioning succeeded, but its setup-wizard history marker could not be recorded; it was kept for retry."
             return
         fi
-    elif headless_install "$spool"; then
+    elif ! setup_again_mode && headless_install "$spool"; then
         return
     fi
     _console "" "Pithead is starting up — preparing the setup page." \

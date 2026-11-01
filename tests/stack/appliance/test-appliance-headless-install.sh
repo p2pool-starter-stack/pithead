@@ -33,7 +33,7 @@ hsi_out=$(hsi_resolve "$(two_disks vda AAA111 vdb BBB222)" CCC333)
 assert_contains "no match refuses and lists the candidates" "$hsi_out" "0 installable disks carry serial CCC333"
 assert_contains "no match output names the offered serials" "$hsi_out" "BBB222"
 hsi_out=$(hsi_resolve "$(two_disks vda DUP9 vdb DUP9)" DUP9)
-assert_contains "a serial on two disks refuses" "$hsi_out" "2 installable disks carry serial DUP9"
+assert_contains "a serial on two disks refuses" "$hsi_out" "2 attached disks"
 hsi_out=$(hsi_resolve "$(two_disks vda AAA111 vdb unknown)" unknown)
 assert_contains "'unknown' is refused" "$hsi_out" "real serial"
 hsi_out=$(hsi_resolve "$(two_disks vda AAA111 vdb BBB222)" '')
@@ -42,6 +42,8 @@ hsi_out=$(hsi_resolve "$(two_disks vda AAA111 vdb BBB222)" 'AAA;rm')
 assert_contains "characters outside the serial alphabet are refused" "$hsi_out" "outside"
 hsi_out=$(hsi_resolve "$(two_disks vda AAA111 vdb BBB222)" BOOT1)
 assert_contains "the booted medium's serial is never offered" "$hsi_out" "0 installable disks carry serial BOOT1"
+hsi_out=$(hsi_resolve "$(two_disks vda AAA111 vdb BOOT1)" BOOT1)
+assert_contains "a serial shared with the booted medium refuses instead of picking the other disk" "$hsi_out" "2 attached disks"
 hsi_out=$(hsi_resolve "$(two_disks vda AAA111 vdb BBB222)" BBB222 vdb)
 assert_contains "a disk with mounted filesystems is never offered" "$hsi_out" "0 installable disks carry serial BBB222"
 hsi_out=$(hsi_resolve '{"blockdevices":[{"name":"sda","size":"16G","model":"S","serial":"BOOT1","type":"disk"},{"name":"vda","size":"1T","model":"M","serial":"0123","type":"disk"}]}' 123)
@@ -100,7 +102,8 @@ assert_eq "...and installs nothing" "$(cat "$HSP/install.log")" ""
 printf '{"monero":{"wallet_address":"%s"},"tari":{"wallet_address":"'"$VALID_TARI"'"},"p2pool":{"pool":"mini","stratum_password":"auto"}}' \
     "$VALID_PRIMARY" >"$HSP/pithead-config.json"
 assert_eq "one match installs" "$(hsp_run)" "0"
-assert_eq "the install is by serial, keeps data, and is confirmed" "$(cat "$HSP/install.log")" "--target-serial BBB222 --wipe keep --yes"
+assert_eq "the install is by serial, keeps data, and is confirmed" "$(cat "$HSP/install.log")" "--target-serial BBB222 --wipe keep --yes
+FINISH Headless install complete — switching off now."
 printf 'ZZZ999\n' >"$HSP/pithead-target-serial.txt"
 assert_eq "no matching disk opens the page" "$(hsp_run)" "1"
 assert_eq "...and installs nothing" "$(cat "$HSP/install.log")" ""

@@ -97,6 +97,8 @@ resolve_target_serial() { # <serial> -> /dev path of the one installable disk ca
     '' | unknown) die "--target-serial needs a real serial (an empty or 'unknown' serial identifies nothing)" ;;
     esac
     [[ "$serial" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "--target-serial contains characters outside A-Z a-z 0-9 . _ -"
+    count=$(lsblk -Jdno NAME,SERIAL,TYPE | jq -r --arg s "$serial" '[.blockdevices[] | select(.type == "disk" and (.serial // "") == $s)] | length')
+    [ "$count" -le 1 ] || die "refusing: $count attached disks (the booted medium and disks in use included) carry serial $serial"
     inventory=$(list_disks)
     matches=$(printf '%s\n' "$inventory" | awk -F'\t' -v s="$serial" 's != "" && ($4 "") == s {print $1}')
     count=$(printf '%s' "$matches" | grep -c . || true)
