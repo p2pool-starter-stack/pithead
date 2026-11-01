@@ -199,7 +199,8 @@ render_masked_config() { # <control-dir>
     # but not yet applied would otherwise put a raw per-rig token into the editor prefill and into a
     # support bundle — the artifact operators hand to strangers. Masking a key nothing reads costs
     # one no-op jq branch; not masking one that is still on disk is a credential leak.
-    if jq --argjson paths "$CONTROL_SECRET_PATHS" '
+    if { command -v _config_masked_write_go >/dev/null 2>&1 &&
+        _config_masked_write_go "$CONFIG_FILE" "$tmp"; } || jq --argjson paths "$CONTROL_SECRET_PATHS" '
         reduce $paths[] as $p (.;
             if ((try getpath($p) catch null) // "") == "" then .
             else setpath($p; {"__secret__": true}) end)

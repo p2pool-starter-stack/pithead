@@ -15,6 +15,8 @@ const commands = "setup apply render up down restart tor-recover upgrade logs st
 
 func Run(reference string, args []string, stdout io.Writer) error {
 	switch os.Getenv("PITHEAD_GO_HELPER") {
+	case "config-masked":
+		return configMasked(args, os.Stdin, stdout)
 	case "config-access-settings":
 		return configAccessSettings(args, os.Stdin, stdout)
 	case "config-version":

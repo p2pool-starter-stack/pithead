@@ -100,3 +100,40 @@ Private records use `.go-cache/logs/config-migrations-*`.
 Additional config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-wallet-settings-parity test-go-site-names-parity test-go-config-access-parity test-go-config-version-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
 Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
 Source and security reviews, Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff checks PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
+
+## Config persistence slice (2026-11-01)
+
+Go renders supported RPC credential write-back and CLI appliance-default JSON.
+Bash retains password generation, dry-run decisions, default-table reads, warnings,
+file creation, permissions and promotion. Unsupported JSON uses the original jq
+fallback. Credential write-back skips dry-run value 1; appliance-default writes
+retain their original behavior under that flag. Source/target aliases use jq
+fallback to preserve its truncation-before-read behavior, including the existing
+version, worker and Telegram writers. The appliance-default function
+remains CLI code; host scripts stay excluded.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline and
+`tests/go-parity/run.sh` for Go, with worktree caches and an absent Docker socket.
+Final records use `.go-cache/logs/config-persistence-final-*`. Earlier runs remain
+under `.go-cache/logs/config-persistence-*` and `.go-cache/logs/config-persistence-initial/`;
+final reruns below include the shared linked-target guards.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-config-persistence-parity` | PASS, 22 supplementary comparison/static tests and Go units | Same result; supported native transforms verified without jq |
+| Additional config/render comparisons below | PASS, including unchanged raw parser and render fixture/goldens | Same result; native helpers covered separately |
+| `make test-dashboard test-fakes test-patch-coverage` with `COMPARE=a73ffced33800de9435779a9cabef53864455acb` | PASS, 3716 dashboard/54 fake tests, 97.42% coverage; patch check not applicable | Same counts; Python backend |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` | PASS, structural/documentation gates and 891 frontend tests | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same failure and ShellCheck result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
+
+Additional config/render command: `make test-go-config-validation-parity test-go-config-defaults-parity test-go-config-document-parity test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-network-settings-parity test-go-stratum-parity test-go-proxy-settings-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-wallet-settings-parity test-go-site-names-parity test-go-config-access-parity test-go-config-version-parity test-go-config-migrations-parity test-go-caddy-auth-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Source review, Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff checks PASS.
+Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
+
+Security review found no new critical, high or medium findings. The reference credential
+writer reuses `${CONFIG_FILE}.tmp`: a pre-existing permissive file keeps its mode
+during the rewrite, until the final chmod. That inherited risk of exposing credentials
+is retained for parity; the normal newly created temp remains owner-only.

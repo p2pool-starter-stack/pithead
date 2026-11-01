@@ -202,3 +202,9 @@ oracles:
 Sourcing Bash functions alone does not establish native behavior. Supplementary comparisons prove Go
 execution through native helper or wiring checks. Their targets are defined in the [Makefile](../../../Makefile);
 exact commands and results are recorded here and in the archived slice results.
+
+`config_masked_reference.sh` invokes the production masked-config renderer with
+synthetic files and worker callbacks. `test_config_masked.py` compares ordered
+JSON, modes, warnings, cleanup and helper fallback. The original masking and
+worker-config suites retain their Linux-only harness and remain unavailable on
+macOS; these comparisons supplement them.
