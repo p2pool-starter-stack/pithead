@@ -9,9 +9,10 @@ import (
 
 func buildState(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	var input struct {
-		State  map[string]json.RawMessage `json:"state"`
-		Chart  charts.Input               `json:"chart"`
-		Series map[string]series.Request  `json:"series"`
+		State        map[string]json.RawMessage `json:"state"`
+		Chart        charts.Input               `json:"chart"`
+		Series       map[string]series.Request  `json:"series"`
+		Presentation map[string]json.RawMessage `json:"presentation"`
 	}
 	if json.Unmarshal(raw, &input) != nil || input.State == nil {
 		return nil, ErrInputsUnavailable
@@ -29,6 +30,16 @@ func buildState(raw json.RawMessage) (map[string]json.RawMessage, error) {
 			return nil, ErrInputsUnavailable
 		}
 		value, err := series.Build(request)
+		if err != nil {
+			return nil, err
+		}
+		input.State[field], err = json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+	}
+	for field, request := range input.Presentation {
+		value, err := buildPresentation(field, request)
 		if err != nil {
 			return nil, err
 		}

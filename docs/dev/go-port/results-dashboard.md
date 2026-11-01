@@ -215,3 +215,93 @@ Source checksums and the final audit verify unchanged existing tests, fixtures,
 bench-owned paths and prior Make behavior; only the new target is added. Every
 new file stays below 400 lines. Earlier chart/JSON and transport results remain
 in the [dashboard ledger](results-dashboard.md).
+
+## Native dashboard presentation slice before fleet/resources (2026-11-01)
+
+Go now formats system, proxy summary, Tari, sync and Monero sections. It also
+builds share/reject series, blocks, payouts, disk growth, XvB history, hashrate
+and cadence. Series filtering, summed delta buckets and averaged gauge buckets
+retain Python's window bounds, ordering, null/default values and rounding.
+Both payout confirmation flags still gate the original storage reads.
+
+Infrastructure sections are computed beside native domain metrics, then handed
+to the Python state assembler. Python captures raw series inputs; Go builds the
+final fields and chart before writing public JSON. There is no per-request
+helper subprocess. The Monero result also supplies the sync card's database
+size, so the two sections share the same native value. Private series fields
+and operations are explicitly paired; malformed inputs retain Python fallback.
+
+At this slice's completion, workers, RigForge, energy, host resources,
+earnings/badges, pool/network formatting and other state metadata remained Python.
+The later fleet/resource slice in [PARITY.md](PARITY.md#native-dashboard-fleet-and-resources-slice-2026-11-01)
+supersedes the worker, RigForge, energy and host-resource status below.
+The production mode palette still supplies tokens from Python; its Go helper is
+covered by unchanged direct tests. Polling, SQLite, wizard/control and normal
+container launch remain Python. Native startup on existing/corrupt databases,
+container selection and a full Go backend are not yet proved. No performance
+claim is made; the separate performance work is untouched.
+
+The new views adapter layers over prior metrics/state/HTTP adapters and invokes
+Go for the existing direct builders and private series helpers, preserving their
+signatures and existing dataclasses/namespaces. New comparisons restore the
+original Python call graph for expected results. An HTTP ownership guard makes
+Python metrics, infrastructure and final series builders raise while native
+`/api/state` still succeeds. Existing tests, fixtures and browser assets stay
+unchanged. Go units cover handoff consistency and malformed-field fallback.
+The adapter initializes the views facade under pytest-cov before collection,
+then restores its Go bindings; the coverage gates remain unchanged.
+This fixes an initial 87% patch-coverage failure caused by facade imports before
+coverage started; the reference aliases and native dispatch remain the same.
+
+Baseline uses `PITHEAD_IMPL=python make test-dashboard`. Go uses the same target
+with `PITHEAD_IMPL=go`, `PYTEST_PLUGINS=dashboard_views_plugin` and `PYTHONPATH`
+containing the absolute `tests/go-parity` and `dashboard` directories. Commands,
+exits and private logs are under `.go-cache/logs/dashboard-state-views-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-dashboard` | Pass; 3716 unchanged tests, 96.58% Python coverage | Pass; same 3716 tests, 88.82% Python coverage through the views adapter |
+| `make test-go-dashboard-views-parity` | Original Python compared in new cases; selected modules included above | Pass; 157 unchanged tests and 27 comparisons |
+| `make test-go-dashboard-domain-parity test-go-dashboard-state-parity test-go-dashboard-http-parity` | Prior baselines retained in the dashboard ledger | Pass; 155, 92 and 26 tests respectively |
+| `uv run --locked --project dashboard --extra test python -m pytest -p dashboard_views_plugin dashboard/tests/service/xvb/test_numeric_properties.py` | Pass; 10 unchanged property tests | Pass; same 10 tests through the persistent Go average helper |
+| `make test-patch-coverage` after the Go suite | Not separately rerun | Pass; 91% over the tracked branch diff; new untracked files are outside this pre-commit diff |
+
+The unchanged cadence tests caught zero timestamps incorrectly formatted as an
+epoch time; they now remain `Never`. A new proxy comparison caught division
+rounded after multiplying by 100 instead of before it: 19,993 accepted and seven
+rejected must display `0.03%`. Both implementations now agree on that boundary.
+New cases cover falsy timestamps, large durations, millisecond timestamps beyond
+64 bits, exact integer buckets and cancellation above float precision. Invalid
+storage rows and numeric strings preserve the reference failure/fallback paths.
+The first Make invocation named a test in the wrong folder; the new target was
+corrected without changing the original suite.
+
+Automatic-worker Go runs also hit 200 ms Hypothesis deadlines in the two average
+property tests; the failures reported elapsed time, not a value mismatch. With
+two workers, baseline passed 3716 and Go passed 3715; the unchanged Python
+trickled-read test took 4.6 seconds against its four-second bound. One worker
+still hit a 281 ms average-helper startup spike, replaying at 52 ms. The new
+adapter therefore keeps one Go average process per worker and sends every
+input to the unchanged native calculation, without memoization. Its stream
+protocol has new Go tests; the original one-shot helper and adapter stay intact.
+The final paired full runs use `PYTEST_XDIST_AUTO_NUM_WORKERS=1` in both modes.
+Assertions, examples, deadlines, coverage thresholds and Make recipes are unchanged.
+
+`go -C go test ./...`, `go -C go vet ./...` and
+`go -C go test -race -count=1 ./internal/dashboard/...` pass with local caches.
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/dashboard-views-linux-amd64
+./cmd/dashboard` also passes. Paired project
+checks pass for file budgets, CLI generation, documentation voice, paths,
+operator strings, 891 frontend tests and 54 fake-daemon tests. The file-budget
+check uses `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb`.
+Both selections ran `make lint-file-budget lint-pithead-build lint-docs-voice
+lint-path-references lint-operator-strings test-frontend test-fakes`.
+
+`make test` stops in unchanged `config_defaults_reference.sh` formatting in both
+modes. Separate Python, JavaScript and YAML lint passes in both modes; Markdown
+lint reports the same 22 third-party cache findings. The four changed Markdown
+files pass those same pinned rules separately; final scoped Ruff checks pass.
+No check was weakened.
+Independent security and correctness reviews passed. Python coverage measures
+the reference and bridge, not Go. Earlier transport, chart/JSON and domain results remain in the
+[dashboard ledger](results-dashboard.md).

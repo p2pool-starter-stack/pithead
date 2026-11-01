@@ -18,8 +18,8 @@ import time
 from mining_dashboard.config import config
 from mining_dashboard.config.config import DEFAULT_HASHRATE_WINDOW, HASHRATE_WINDOWS, HOST_IP
 from mining_dashboard.helper.utils import format_duration, format_hashrate, format_time_abs
+from mining_dashboard.service import host_resources as _host_resources
 from mining_dashboard.service.health.update_checker import parse_semver
-from mining_dashboard.service.host_resources import build_host_resources
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
@@ -43,8 +43,6 @@ from mining_dashboard.web.views.header import dashboard_onion, host_display_addr
 from mining_dashboard.web.views.infra_views import (
     _rigforge_display,  # noqa: F401 — re-export for worker_detail.py
     _shorten,
-    build_energy,
-    build_workers,
     rigforge_update_for,  # noqa: F401 — re-export for worker_detail.py
 )
 
@@ -81,6 +79,9 @@ build_proxy_summary = _infra_views.build_proxy_summary
 build_sync = _infra_views.build_sync
 build_system = _infra_views.build_system
 build_tari = _infra_views.build_tari
+build_energy = _infra_views.build_energy
+build_workers = _infra_views.build_workers
+build_host_resources = _host_resources.build_host_resources
 _window_reject_pct = _series_views._window_reject_pct
 build_blocks = _series_views.build_blocks
 build_cadence = _series_views.build_cadence
@@ -351,8 +352,8 @@ def build_state(
         "db_healthy": db_healthy,
         "hashrate": section("build_hashrate", metrics, mode_tok, p2p_tok, xvb_tok),
         "system": section("build_system", data),
-        "host_resources": build_host_resources(
-            data.get("system", {}).get("host_resources", {}), disk_growth
+        "host_resources": section(
+            "build_host_resources", data.get("system", {}).get("host_resources", {}), disk_growth
         ),
         "sync": section("build_sync", metrics, pool_net["monero"]["db_size"]),
         "sync_status": data.get("sync_status"),
@@ -377,8 +378,8 @@ def build_state(
         # an operator can confirm the backup is warm before it takes over.
         "xvb_standby": state_mgr.get_xvb_standby(),
         "tari": section("build_tari", data),
-        "workers": build_workers(data.get("workers", []), data.get("rigforge_release")),
-        "energy": build_energy(data.get("workers", []), data.get("prices")),
+        "workers": section("build_workers", data.get("workers", []), data.get("rigforge_release")),
+        "energy": section("build_energy", data.get("workers", []), data.get("prices")),
         "proxy_summary": section("build_proxy_summary", data),
         "share_stats": section("build_share_stats", share_stats, range_arg, window),
         "reject_pct_24h": section("_window_reject_pct", share_stats, 24 * 3600),
