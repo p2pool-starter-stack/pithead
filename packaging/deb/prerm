@@ -1,6 +1,6 @@
 #!/bin/sh
 set -e
-DST=${PITHEAD_STATE_DIR:-/var/lib/pithead}
+DST=/var/lib/pithead
 case "$1" in
 remove | deconfigure)
     if [ -x "$DST/pithead" ] && [ -f "$DST/.env" ]; then

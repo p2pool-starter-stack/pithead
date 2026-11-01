@@ -174,7 +174,11 @@ stack_upgrade() {
     if is_apt_install && [ "${PITHEAD_APT_POSTINST:-0}" != "1" ]; then
         error "This install is owned by the pithead APT package: update it with '$APT_UPDATE_COMMAND'. The package moves the running stack to the new images itself."
     fi
-    ! is_apt_install || verify_release_images
+    local images_verified=0
+    if is_apt_install; then
+        verify_release_images
+        images_verified=1
+    fi
     mutation_lock_acquire upgrade
     log "Upgrading stack (rebuilding containers)..."
     # A release (git pull) may change config templates, add/rename .env vars, or restructure the
@@ -226,7 +230,7 @@ stack_upgrade() {
         compose_up_checked -d --build || error "Upgrade failed during 'docker compose up' — see the error above."
         reconcile_source_upgrade_images || error "Upgrade failed to recreate a container on its rebuilt image."
     else
-        verify_release_images # #376: fail closed BEFORE the pull when a release key is on disk
+        [ "$images_verified" = 1 ] || verify_release_images # #376: fail closed BEFORE the pull when a release key is on disk
         PITHEAD_PULL=always compose_up_checked -d || error "Upgrade failed during 'docker compose up' — see the error above."
     fi
     # #356: if the dashboard onion (#343) was just turned on, the recreated tor generated its hostname —

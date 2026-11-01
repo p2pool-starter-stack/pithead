@@ -172,7 +172,7 @@ is_appliance() {
 
 readonly APT_UPDATE_COMMAND="sudo apt update && sudo apt upgrade"
 is_apt_install() {
-    [ -f "${PITHEAD_PACKAGE_MARKER:-$PWD/PITHEAD_PACKAGE}" ]
+    [ -f "$PWD/PITHEAD_PACKAGE" ]
 }
 
 # Did this system boot from removable media (a USB stick)?

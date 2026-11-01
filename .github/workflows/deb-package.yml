@@ -5,6 +5,8 @@ on:
     paths:
       - "packaging/**"
       - "scripts/release/apt.sh"
+      - "scripts/build-pithead.sh"
+      - "lib/pithead/**"
       - "tests/packaging/**"
       - ".github/workflows/deb-package.yml"
   push:
@@ -12,6 +14,8 @@ on:
     paths:
       - "packaging/**"
       - "scripts/release/apt.sh"
+      - "scripts/build-pithead.sh"
+      - "lib/pithead/**"
       - "tests/packaging/**"
 
 permissions:
