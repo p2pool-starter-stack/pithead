@@ -23,6 +23,7 @@ from mining_dashboard.config.config import (
 from mining_dashboard.helper.http import bounded_get
 from mining_dashboard.service import control_service
 from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
+from mining_dashboard.service.health.tor_lifecycle import TorLifecycleMixin
 
 logger = logging.getLogger("TorHeal")
 
@@ -54,9 +55,7 @@ TOR_SETTLE_SEC = 30
 TOR_SETTLE_POLL_SEC = 5
 
 
-class TorEgressHealer(TorHistoryMixin):
-    """Probe and recover Tor egress under a fixed cadence, cooldown and attempt cap."""
-
+class TorEgressHealer(TorHistoryMixin, TorLifecycleMixin):
     HISTORY_TIMEOUT_SEC = PROBE_INTERVAL_SEC
     CONTAINER = "tor"
     MONEROD = "monerod"
@@ -220,7 +219,7 @@ class TorEgressHealer(TorHistoryMixin):
         for attempt in range(TOR_START_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(TOR_START_RETRY_DELAY_SEC)
-            if await self._docker.start(self.CONTAINER, request_timeout=60):
+            if await self._tor_call("start", request_timeout=60):
                 return True
         return False
 
@@ -293,6 +292,7 @@ class TorEgressHealer(TorHistoryMixin):
                     self._pending_since = now
                     return
                 if self.saturated_history:
+                    self._host_receipt = await self._tor_begin("recover")
                     try:
                         self._pending_recovery = control_service.submit(
                             "tor-recover", actor="tor-heal"
@@ -300,6 +300,7 @@ class TorEgressHealer(TorHistoryMixin):
                         self._recovery_requested_at = now
                         self._own_restart = True
                     except OSError:
+                        self._tor_recovery_result("unconfirmed")
                         self._recovery_notice = (
                             "Tor state recovery could not be submitted; no restart was attempted."
                         )
@@ -312,8 +313,8 @@ class TorEgressHealer(TorHistoryMixin):
                     evidence,
                 )
                 self._own_restart = True
-                stopped = await self._docker.stop(
-                    self.CONTAINER,
+                stopped = await self._tor_call(
+                    "stop",
                     stop_timeout=TOR_STOP_GRACE_SEC,
                     request_timeout=TOR_STOP_REQUEST_TIMEOUT_SEC,
                 )

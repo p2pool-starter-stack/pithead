@@ -76,6 +76,11 @@ class TorHistoryMixin:
             if result is None and now - self._recovery_requested_at < 15 * 60:
                 return True
             self._pending_recovery = None
+            self._tor_recovery_result(
+                "confirmed"
+                if result is not None and result.get("status") == "applied"
+                else "unconfirmed"
+            )
             if result is not None and result.get("status") == "applied":
                 self._recovery_step = "host-gated Tor state recovery"
                 self._recovery_notice = (
