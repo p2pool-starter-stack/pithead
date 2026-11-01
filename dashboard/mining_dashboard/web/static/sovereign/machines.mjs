@@ -14,7 +14,7 @@ export class ConnectCard extends Component {
   state = { connection: null, status: "" };
   async componentDidMount() {
     try {
-      const response = await (this.props.fetchFn || fetch)("/api/miner-connection", {
+      const response = await fetch("/api/miner-connection", {
         cache: "no-store",
       });
       if (!response.ok) throw new Error();
@@ -66,7 +66,7 @@ export class MachinesPage extends Component {
     opener?.focus();
   }
   render(
-    { state, connected = true, sessionExpired = false, onDirtyChange, fetchFn },
+    { state, connected = true, sessionExpired = false, onDirtyChange },
     { find, sort, shares, inspect },
   ) {
     if (!state) return html`<p class="panel" role="status">Waiting for rig data…</p>`;
@@ -74,7 +74,7 @@ export class MachinesPage extends Component {
     const rows = rigRows(workers, { find, sort });
     const writable = connected && !sessionExpired;
     return html`<div class="machines-page">
-      <${ConnectCard} fetchFn=${fetchFn} writable=${!sessionExpired} />
+      <${ConnectCard} writable=${!sessionExpired} />
       ${
         localMinerAvailable(state) && writable
           ? html`<section class="panel" aria-labelledby="local-miner-title"><h2 id="local-miner-title">This box</h2>
