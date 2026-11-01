@@ -9,7 +9,7 @@ authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
 data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
 payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
-LAN guard probes at `e1792854`.
+LAN guard probes at `e1792854`, and Docker egress probes at `7a43aa30`.
 The operator commits later rounds because
 this sandbox cannot write shared Git metadata. No performance benefit is claimed.
 
@@ -78,7 +78,9 @@ selection is not implemented.
 | Monero/Tari address classifiers and config diagnostics | Native packages; Bash config readers and doctor collector | 11 tagged comparison groups and Go units |
 | Public-IP classification, stratum exposure/listening and Tor runtime | Native packages; Bash doctor collector | 16 tagged comparison groups and Go units |
 | LAN firewall readback, boot holds and access diagnostics | Native packages; Bash doctor collector | 20 tagged groups and Go units |
-| Docker Tor egress readback and doctor report | Native packages with supplied config/sync state; Bash collector and nft fallback | 18 tagged groups and Go units |
+| Docker Tor egress readback and doctor report | Native packages with supplied config/sync state; Bash collector | 18 tagged groups and Go units |
+| nft Tor egress readback and doctor report | Native when nft is present; missing-nft compatibility fallback; Bash collector | 7 tagged groups and Go units |
+| Tor sync-IP selection and markers | Native with supplied getter/state-dir values; Bash readers | 11 marker/selection scenarios and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -183,6 +185,10 @@ oracles:
   because the source-based suites cannot reach Go packages. Its formatter-only
   operation substitutes a readback status to compare both backend/surface message
   mappings; separate readback tests use the unchanged Bash verifier and fake tools.
+- `tor_sync_reference.sh` invokes the unchanged sync-IP selector with supplied
+  config/state-dir getters and disposable markers. Existing suites source Bash;
+  this adapter compares native selection without changing those suites or reading
+  live stack state.
 
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
@@ -192,7 +198,8 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-control-parity`, `test-go-doctor-disk-parity` and
 `test-go-doctor-data-parity`, `test-go-doctor-onion-parity` and
 `test-go-doctor-config-parity`, `test-go-doctor-network-parity` and
-`test-go-doctor-lan-parity` and `test-go-doctor-egress-parity`.
+`test-go-doctor-lan-parity`, `test-go-doctor-egress-parity` and
+`test-go-doctor-nft-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -613,6 +620,56 @@ checks remain unchanged. No shared Git metadata write, dependency download,
 external network request, live firewall, container, systemd, bench or daemon
 probe occurred.
 
+## nft Tor egress and sync-state slice (2026-10-31)
+
+This slice starts at `7a43aa3046ab9545ac0db5229831c34f0a68a3d4`.
+
+The native nft verifier checks hooked-chain drop reachability, preceding
+unconditional accepts, rule structure, the exact subnet drop, safe accept forms
+and active exception counts/order. It preserves the IPv6 clause's subset-field
+comparisons and the original probe order. The public API retains Bash fallback
+when nft is absent, as pinned by existing Go tests. Unsupported JSON shapes,
+duplicate keys, unsafe numbers, tool launches and diagnostics also decline a
+native verdict. The original Bash policy remains the parity oracle.
+
+`TorSyncState.IPs` preserves getter gates, exact booleans, raw close-chain values,
+output order, newline stripping and marker checks, including directories and
+dangling symlinks. Config/state-dir getter values are supplied. Collection of
+those values, caller wiring, transitions and mutations remain Bash.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| nft and sync-state probes | `PITHEAD_IMPL=bash make test-go-doctor-nft-parity`: PASS, 7 nft groups, 11 sync-state scenarios and Go units | `tests/go-parity/run.sh make test-go-doctor-nft-parity`: PASS |
+| Existing egress/LAN, JSON and CLI comparisons | `PITHEAD_IMPL=bash make test-go-doctor-nft-parity test-go-doctor-egress-parity test-go-doctor-lan-parity test-go-doctor-parity test-go-parity`: PASS, plus 18 egress, 20 LAN, 13 JSON and 12 CLI groups | Same targets through `tests/go-parity/run.sh`: PASS |
+| Existing doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; still sources Bash |
+| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests/97.42% | `tests/go-parity/run.sh make test-dashboard`: PASS, same count/coverage; Python backend |
+| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
+| Patch coverage | Baseline command and compare base recorded above: PASS, not applicable; no Python changes | Same Go command/base: PASS, not applicable |
+| File budget, build, docs voice, paths and operator strings | Baseline commands/base in the control slice: PASS | Same Go commands/base: PASS |
+| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS, then 22 cached Markdown findings; exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+| Existing CLI/firewall suite | `PITHEAD_IMPL=bash make test-stack`: unavailable, macOS refusal; exit 2 | `tests/go-parity/run.sh make test-stack`: same result |
+
+`go -C go test -tags=parity -race -count=1 -run 'TestNFTEgress|TestTorSync'
+./internal/firewall ./internal/doctor`, `go -C go test -count=1 ./...`,
+`go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build
+-o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` pass. Cross-compilation
+provides no Linux runtime verdict.
+The new adapter passes `bash -n tests/go-parity/tor_sync_reference.sh`,
+`shellcheck --severity=warning tests/go-parity/tor_sync_reference.sh` and
+`shfmt -i 4 -d tests/go-parity/tor_sync_reference.sh`, using the pinned versions.
+Independent static and security reviews pass with no remaining findings.
+Changed Markdown passes in both modes with `npm_config_cache="$PWD/.go-cache/npm"
+PITHEAD_IMPL=bash npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md
+docs/dev/repo-map.md` and the same command through `tests/go-parity/run.sh`.
+
+Early source comparison corrected the IPv6 matcher to retain the same extra
+fields Bash ignores. Initial scoped lint attempts omitted the local npm cache
+and stopped offline with ENOTCACHED; the corrected commands pass. Private
+command/exit records use `.go-cache/logs/nft-*`.
+Existing tests, fixtures, goldens, lint rules and Make checks remain unchanged.
+No Git metadata write, dependency download, external network request, live
+firewall, container, systemd, bench or daemon probe occurred.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
@@ -640,8 +697,8 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port nft Tor egress readback and sync-state collection, Tor transition/history,
-   remaining container checks and appliance-state checks.
+1. Port Tor transition/history, remaining container checks and appliance-state
+   checks.
 2. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
 3. Port config parse, validate and render, including byte-identical `.env` and

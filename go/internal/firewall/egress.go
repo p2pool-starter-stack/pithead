@@ -17,7 +17,14 @@ func TorEnforced(config TorConfig) (int, error) {
 		return 0, err
 	}
 	if engine == "podman" {
-		return 0, ErrUnsupportedInput
+		nft, err := tool("nft")
+		if err != nil {
+			return 0, err
+		}
+		if nft == "" {
+			return 0, ErrUnsupportedInput
+		}
+		return torNFTEnforced(config)
 	}
 	iptables, err := tool("iptables")
 	if err != nil {
