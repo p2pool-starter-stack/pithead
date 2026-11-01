@@ -144,10 +144,6 @@ def host_is_internal(host, live_cfg):
 
 
 def new_worker_entries(live_cfg, staged_cfg):
-    """The staged ``workers.list[]`` entries the host will treat as new or repointed: a name with
-    no live entry, or one whose host, API port or control port differs from the live entry of that
-    name. Removals, reorders and credential-only edits yield nothing here; the host gate classifies
-    those."""
     live_list = ((live_cfg or {}).get("workers") or {}).get("list")
     staged_list = ((staged_cfg or {}).get("workers") or {}).get("list")
     live_list = live_list if isinstance(live_list, list) else []

@@ -109,8 +109,6 @@ jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",a
 run_pending >/dev/null
 assert_eq "confirmed auth username applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
 
-# Worker descriptors (#2641, #912): a repoint previews as a typed-APPLY change that names the host
-# delta and does not commit without it; adopting a new rig previews and then applies.
 jq '.workers={api_port:8080,api_auth:"none",api_token:"",list:[{name:"rig-1",host:"192.168.1.50",control_port:8082,token:"rig-token"}]}' "$C/config.json" >"$C/config.worker" && mv "$C/config.worker" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list[0].host="192.168.1.51")}' >"$REQS/$UUID3.json"

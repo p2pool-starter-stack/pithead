@@ -115,11 +115,6 @@ export function hostIsInternal(host, subnet) {
   return !!bridge && `${a}.${b}.${c}` === bridge.slice(1, 4).join(".");
 }
 
-/**
- * The proposed config an adopt or edit submits: ``liveConfig`` with ``workerName``'s descriptor
- * appended, or replaced in place when it already has one. A blank token keeps the live entry's
- * masked credential, which the host only restores while the rig's address is unchanged.
- */
 export function buildAdoptedConfig(liveConfig, workerName, host, apiPort, controlPort, token) {
   const cfg = editableCandidate(liveConfig || {});
   const workers = cfg.workers && typeof cfg.workers === "object" ? cfg.workers : {};
@@ -139,7 +134,6 @@ export function buildAdoptedConfig(liveConfig, workerName, host, apiPort, contro
   return cfg;
 }
 
-/** ``liveConfig`` without ``workerName``'s descriptor. */
 export function buildRemovedConfig(liveConfig, workerName) {
   const cfg = editableCandidate(liveConfig || {});
   const workers = cfg.workers && typeof cfg.workers === "object" ? cfg.workers : {};
