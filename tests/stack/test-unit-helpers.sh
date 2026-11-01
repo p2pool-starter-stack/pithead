@@ -153,3 +153,68 @@ mkdir -p "$NOVER"
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 ver="$(cd "$NOVER" && source "$STACK" && set +e && export_build_provenance && printf '%s' "$PITHEAD_VERSION")"
 assert_eq "export_build_provenance empty when no VERSION" "$ver" ""
+
+echo "== unit: support-bundle archive is never exposed while it is written (#3757) =="
+
+bundle_case() {
+    local tar_mode="$1" preexisting="${2:-}" work
+    work="$(mktemp -d)"
+    if [ -n "$preexisting" ]; then
+        printf old >"$work/$preexisting"
+        chmod 644 "$work/$preexisting"
+    fi
+    (
+        cd "$work" || exit
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        umask 022
+        log() { :; }
+        doctor_json() { echo '{}'; }
+        docker() { return 1; }
+        date() { printf 'FIXED'; }
+        tar() {
+            local out="" a
+            for a in "$@"; do case "$a" in *.tar.gz) out="$a" ;; esac; done
+            command tar "$@" || return
+            printf 'DIR:%s\n' "$(ls -ld "${out%/*}" | cut -c1-10)"
+            printf 'TMP:%s\n' "${out%/*}"
+            printf 'FILE:%s\n' "$(ls -l "$out" | cut -c1-10)"
+            printf 'VISIBLE:%s\n' "$(find "$work" -maxdepth 1 -name 'support-bundle-*.tar.gz' | wc -l | tr -d ' ')"
+            case "$tar_mode" in
+            fail) return 1 ;;
+            term) kill -TERM "$BASHPID" ;;
+            esac
+        }
+        render_masked_config() { return 1; }
+        stack_support_bundle
+        echo "RC:$?"
+    ) 2>&1
+    echo "FILES:$(find "$work" -maxdepth 1 -name 'support-bundle-*.tar.gz' | wc -l | tr -d ' ')"
+    if [ -n "$preexisting" ]; then
+        echo "FINAL:$(ls -l "$work/$preexisting" | cut -c1-10)"
+    fi
+    rm -rf "$work"
+}
+
+bundle_tmp_gone() { [ ! -e "$(printf '%s\n' "$1" | sed -n 's/^TMP://p')" ]; }
+
+ok_out="$(bundle_case ok)"
+assert_contains "the archive is built in a private directory" "$ok_out" "DIR:drwx------"
+assert_contains "no archive is visible in the output directory while tar writes" "$ok_out" "VISIBLE:0"
+assert_contains "the verb succeeds" "$ok_out" "RC:0"
+assert_contains "the finished archive is published" "$ok_out" "FILES:1"
+bundle_tmp_gone "$ok_out" && ok "the scratch directory is removed after success" || bad "the scratch directory is removed after success" "$ok_out"
+
+pre_out="$(bundle_case ok support-bundle-FIXED.tar.gz)"
+assert_contains "a permissive archive already at the output path is replaced owner-only" "$pre_out" "FINAL:-rw-------"
+
+fail_out="$(bundle_case fail)"
+assert_contains "a failed tar fails the verb" "$fail_out" "RC:1"
+assert_contains "a failed tar leaves no archive" "$fail_out" "FILES:0"
+bundle_tmp_gone "$fail_out" && ok "a failed tar removes the scratch directory" || bad "a failed tar removes the scratch directory" "$fail_out"
+
+term_out="$(bundle_case term)"
+assert_contains "an interrupted run leaves no archive" "$term_out" "FILES:0"
+assert_not_contains "an interrupted run never reaches the end of the verb" "$term_out" "RC:"
+bundle_tmp_gone "$term_out" && ok "an interrupted run removes the scratch directory" || bad "an interrupted run removes the scratch directory" "$term_out"
