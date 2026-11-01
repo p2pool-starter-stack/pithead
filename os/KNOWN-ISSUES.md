@@ -410,20 +410,16 @@ not proven.
   adopt, or a stick-root boot (its share leg, #2063, does now prove an accepted share, against a
   second guest the battery itself boots as a coordinator); converting what it can is #1886's
   first gap.)
-- **The appliance does not boot with Secure Boot on, and nothing signs the chain (#2187).** The
-  KVM battery now measures this rather than leaving it an unread flag: every other guest in
-  `tests/os/run.sh` pins `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
-  (`_secure_boot_guest_leg`, #2055 G2) boots one with it ON and records whether userspace is
-  reached. It is not: **that measured deferred limitation does not fail the boot phase.** The image
-  installs `shim-signed`, which is Microsoft-signed, but plain `grub-efi-amd64` and an unsigned
-  kernel, and the repo carries no `sbsign`, no `mokutil` and no enrolled keys — so shim refuses to
-  chainload the bootloader and the boot stops there. The blocker is therefore signing, not the
-  harness. #2187 defers signing past 2.0.0 to `v2.x - post-GA`; `secure_boot_boot_verdict` states
-  the measured outcome plainly for 2.0.0, while later versions fail a non-boot. A guest that
-  cannot even be DEFINED — no OVMF
-  secure-boot firmware on the host — is reported as unmeasured rather than as a product defect, so a bench firmware gap cannot
-  read as this one. This is the KVM half only: hardware-enforced Secure Boot with real platform
-  keys is still the manual battery's M-row above (#2044).
+- **Secure Boot is unsupported by design (#2187).** [Disable Secure Boot before booting
+  the appliance](../docs/appliance.md#2-boot-the-machine-from-the-stick). The KVM battery keeps
+  measuring the result: every other guest in `tests/os/run.sh` pins
+  `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
+  (`_secure_boot_guest_leg`, #2055 G2) starts with it ON and records whether userspace is
+  reached. A measured non-boot passes for every image version with the instruction to turn
+  Secure Boot off. A guest that cannot be defined fails as unmeasured; an unexpected boot
+  passes with the note to cross-check the guest's SecureBoot EFI variable before trusting
+  enforcement. The KVM result does not establish hardware-enforced Secure Boot behavior
+  with real platform keys; the physical hardware battery remains separate (#2044).
 - **The faulted-setup leg armed the wrong seam, and a real dead page sat behind it (#2050).**
   Measured on the KVM bench 2026-09-10 at pithead#2002's head, with the registry override in place
   so image refs were NOT a factor (the zero-container dump's `comm -23 want have` was empty). The
