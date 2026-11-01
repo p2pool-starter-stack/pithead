@@ -122,6 +122,10 @@ the collector and config/time readers remain Bash.
 supplied endpoint/login/cap values. `make test-go-node-monero-parity` compares
 reasons, arguments and stdin config bytes against Bash using fake tools;
 config readers, address policy and ZMTP orchestration remain Bash.
+`go/internal/nodeprobe/zmq.go` validates ZMTP greetings and publisher READY frames
+and classifies supplied handshake replies/statuses. `make test-go-node-zmq-parity`
+compares these with Bash through a fake timeout; TCP I/O and endpoint orchestration
+remain Bash.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
