@@ -333,10 +333,12 @@ stack_restart() { # [tor|monerod]
     # Reject a bad argument BEFORE taking the lock (#1342). Validating inside the window makes a
     # typo wait out someone else's backup — up to PITHEAD_LOCK_TIMEOUT — only to be told it was a
     # typo all along. Nothing here mutates, so there is nothing to serialise yet.
-    case "${1:-}" in
-    "" | tor | monerod) ;;
-    *) error "restart takes no argument, 'tor' (fresh Tor circuits when clearnet egress is stuck), or 'monerod' (re-dial peers after a Tor restart left the node out of sync). Got: '$1'." ;;
-    esac
+    if ! declare -F _parse_lifecycle_options_go >/dev/null || ! _parse_lifecycle_options_go restart "$@"; then
+        case "${1:-}" in
+        "" | tor | monerod) ;;
+        *) error "restart takes no argument, 'tor' (fresh Tor circuits when clearnet egress is stuck), or 'monerod' (re-dial peers after a Tor restart left the node out of sync). Got: '$1'." ;;
+        esac
+    fi
     mutation_lock_acquire restart
     # `compose restart` also starts a stopped node, on its existing 0.0.0.0 publish, without
     # compose_up's rule install: refuse while a published LAN port has no live rule (#2749). Checked

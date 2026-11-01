@@ -57,6 +57,12 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; `broken-configs.tsv` and `tests/stack/test-manual-qa-oracle.sh` replay the documented dry-run refusals in shell block 5. The start page holds the run sheet, result rules and glossary. |
 
+Lifecycle option parsing lives in `go/internal/lifecycle/options.go`, with the
+stdin adapter in `go/internal/cli/lifecycle_options.go` and Bash hook in
+`lib/pithead/39d-go-lifecycle-options.sh`. `make test-go-lifecycle-options-parity`
+compares all five option boundaries and runs the unchanged CLI contract suite.
+The render, apply and stack operations still execute their Bash bodies.
+
 The native Go status path lives in `go/internal/status/`.
 `make test-go-status-parity` compares it with the Bash reference using the
 synthetic executables in `tests/go-parity/`.

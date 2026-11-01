@@ -266,3 +266,11 @@ extracts the parser's unchanged diagnostic cases for paired gate comparisons.
 and checks native selection, fallback, callback order and stdin-only helper input.
 The original Monero/Tari domain and config-application suites retain their Linux
 harness; the existing render fixture/goldens run unchanged.
+
+`lifecycle_options_reference.sh` sources the generated CLI and replaces the first
+operational callbacks with deterministic stops. `test_lifecycle_options.py`
+compares argument handling, bytes, exit status, callback order and local state
+with Bash, checks actual native success through a spy and exercises missing or
+malformed helper fallback. `make test-go-lifecycle-options-parity` also runs the
+unchanged CLI contract suite. The original lifecycle lock suite remains unchanged
+and requires the Linux CLI harness; these comparisons do not prove operations.

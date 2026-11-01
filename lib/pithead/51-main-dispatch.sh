@@ -17,6 +17,11 @@ _help_requested() { # "$@" — return 0 if any argument is -h/--help
 _reject_options() { # <verb> "$@" — this verb takes no options; error on any leftover argument
     local verb="$1"
     shift
+    case "$verb" in
+    render | up | down)
+        if declare -F _parse_lifecycle_options_go >/dev/null && _parse_lifecycle_options_go "$verb" "$@"; then return; fi
+        ;;
+    esac
     [ "$#" -eq 0 ] || error "Unknown option for $verb: '$1'. This command takes no options. Run '$0 $verb -h' or '$0 help'."
 }
 

@@ -132,15 +132,17 @@ apply() {
     # zero and the lock would outlive the verb inside a single process.
     local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_target=""
     local assume_yes=0 dry_run=0 porcelain=0 arg
-    for arg in "$@"; do
-        case "$arg" in
-        -y | --yes) assume_yes=1 ;;
-        --dry-run) dry_run=1 ;;
-        --porcelain) porcelain=1 ;;
-        *) error "Unknown option for apply: $arg. Run '$0 help'." ;;
-        esac
-    done
-    [ "$porcelain" -eq 1 ] && [ "$dry_run" -eq 0 ] && error "--porcelain only makes sense with --dry-run."
+    if ! declare -F _parse_lifecycle_options_go >/dev/null || ! _parse_lifecycle_options_go apply "$@"; then
+        for arg in "$@"; do
+            case "$arg" in
+            -y | --yes) assume_yes=1 ;;
+            --dry-run) dry_run=1 ;;
+            --porcelain) porcelain=1 ;;
+            *) error "Unknown option for apply: $arg. Run '$0 help'." ;;
+            esac
+        done
+        [ "$porcelain" -eq 1 ] && [ "$dry_run" -eq 0 ] && error "--porcelain only makes sense with --dry-run."
+    fi
 
     require_env
     if [ "$dry_run" -eq 1 ]; then

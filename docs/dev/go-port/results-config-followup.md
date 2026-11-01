@@ -157,3 +157,61 @@ Existing tests and fixtures remain unchanged. Full Linux CLI and Docker-backed
 parser checks remain unavailable locally; Go's Linux build is compile-only.
 Dashboard, fake-daemon and patch-coverage suites are not rerun for this CLI-only
 change; earlier paired results remain in the linked ledger.
+
+## CLI wallet classification slice (2026-11-01)
+
+Go-selected CLI wallet classifiers use the existing native Monero and Tari
+address decoders. Bash retains the parser's diagnostic cases and callback order.
+The wrapper requires an exact successful Python readiness probe to preserve the
+reference behavior when Python exists but cannot execute. No Python dependency
+removal or performance benefit is claimed. Key-only requests, non-ASCII Monero,
+invalid UTF-8 or over-4096-byte Tari inputs and helper/protocol failures retain
+the original classifiers.
+Main verbs and later parser orchestration remain Bash; the dashboard remains Python.
+
+Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
+Worktree caches and an absent Docker socket isolate the runs. Private records
+use `.go-cache/logs/wallet-classifiers-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-wallet-classifiers-parity` including unchanged wallet-settings/render comparisons | Pass; 9 new methods and original render fixture/goldens | Same result |
+| Affected config/render comparisons below | Pass; 7 unchanged raw-parser tests included | Same result |
+| Final `python3 tests/go-parity/test_wallet_classifiers.py` | Pass; 9 methods, including actual OS argument-limit fallback | Same result |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
+| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make test-stack` | Exit 2: macOS refusal | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same result |
+
+Affected config/render command: `make test-go-config-input-parity test-go-payout-ownership-parity test-go-caddy-parity test-go-parity`.
+The final core records are `baseline-core-confirmed` and `go-core-confirmed`;
+final adapter records are `baseline-adapter-confirmed` and `go-adapter-confirmed`.
+Native checks pass: `go -C go test -json -tags=parity -race -count=1
+./internal/cli ./internal/address ./internal/config`,
+`go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
+./cmd/pithead` (compile only).
+
+Changed Go files pass `gofmt -l`. Changed shell files pass `shfmt -i 4 -d`;
+`shellcheck -x --severity=warning pithead tests/go-parity/wallet_classifiers_reference.sh`
+passes after the new adapter's dynamic fixture loading was made visible to the
+linter. The final Python comparison passes locked `ruff check` and
+`ruff format --check` through `uv run --locked --project dashboard --extra dev
+--extra test`. Dashboard test extras are retained/restored with
+`uv sync --locked --project dashboard --extra dev --extra test`.
+Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
+.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths;
+`make lint-file-budget lint-docs-voice` passes after the final ledger update with
+the starting-SHA budget override above.
+
+Helper values travel only on stdin with a producer-status footer. Malformed,
+truncated, trailing or failed responses fall back before publishing a verdict.
+The readiness probe preserves trailing newlines so noisy Python retains its
+reference output. Oversized Tari values preserve Python's argument-execution
+fallback, rather than acquiring a different verdict through stdin. Independent
+source, protocol and comparison reviews found no remaining defect.
+
+Existing tests and fixtures remain unchanged. The original Monero/Tari domain
+and config-application suites require the Linux CLI harness and remain unavailable
+locally. Dashboard, fake-daemon and patch-coverage suites are not rerun for this
+CLI-only change; earlier paired results remain in the linked ledger.
