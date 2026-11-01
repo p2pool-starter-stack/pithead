@@ -117,7 +117,7 @@ done
 STRATUM_HELD=$(cat "$STRATUM_HOLD_PORT_FILE")
 jq --argjson p "$STRATUM_HELD" '.p2pool.stratum_port=$p' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
-assert_eq "a stratum port held by another process does not refuse the stack apply" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "the stack harness stubs the stratum bind probe, so a held port does not refuse apply" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 kill "$STRATUM_HOLD_PID" 2>/dev/null || true
 wait "$STRATUM_HOLD_PID" 2>/dev/null || true
 roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"

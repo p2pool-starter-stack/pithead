@@ -44,8 +44,9 @@ jobs:
         run: make pithead
       - name: Hold the default stratum port
         run: |
-          nohup python3 -c 'import socket,time; s=socket.socket(); s.bind(("0.0.0.0",3333)); s.listen(1); time.sleep(3600)' >/dev/null 2>&1 &
+          nohup python3 -c 'import socket,time; s=socket.socket(); s.bind(("0.0.0.0",3333)); s.listen(1); time.sleep(3600)' >"$RUNNER_TEMP/hold-3333.log" 2>&1 &
           for _ in $(seq 50); do (exec 3<>/dev/tcp/127.0.0.1/3333) 2>/dev/null && exit 0; sleep 0.1; done
+          cat "$RUNNER_TEMP/hold-3333.log" >&2
           echo "nothing listens on 3333" >&2
           exit 1
       - name: Run pithead test suite block
@@ -78,8 +79,9 @@ jobs:
         run: make pithead
       - name: Hold the default stratum port
         run: |
-          nohup python3 -c 'import socket,time; s=socket.socket(); s.bind(("0.0.0.0",3333)); s.listen(1); time.sleep(3600)' >/dev/null 2>&1 &
+          nohup python3 -c 'import socket,time; s=socket.socket(); s.bind(("0.0.0.0",3333)); s.listen(1); time.sleep(3600)' >"$RUNNER_TEMP/hold-3333.log" 2>&1 &
           for _ in $(seq 50); do (exec 3<>/dev/tcp/127.0.0.1/3333) 2>/dev/null && exit 0; sleep 0.1; done
+          cat "$RUNNER_TEMP/hold-3333.log" >&2
           echo "nothing listens on 3333" >&2
           exit 1
       - name: Run prerequisite fragment in a fresh process
