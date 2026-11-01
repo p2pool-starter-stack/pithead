@@ -17,6 +17,8 @@ dashboard selection switch remains part of its launch contract. Preserve upstrea
 daemons, browser assets, runtime filenames, database migrations and wire formats.
 
 The operator loop stops around 2026-11-02 22:00Z; access ends 2026-11-03.
+The operator's 15:30Z ruling moves the dashboard ahead of further CLI refinement,
+until Go serves its contracts on existing and corrupt databases.
 Fleet tests may target pushed heads through the normal bench API, following its
 contracts with `submitted_by=gpt-6.1-sol/developer`, a #3811 note and an idempotency
 key. Keep topology private. A separate session owns performance work: leave its
@@ -42,6 +44,7 @@ evidence is maintained by its separate owner.
 
 ```bash
 make go-build
+make go-dashboard-build
 PITHEAD_IMPL=go ./pithead --help
 PITHEAD_IMPL=bash ./pithead --help
 make test-go-parity
@@ -155,8 +158,9 @@ selection is not implemented.
 | Shared dotenv decoding and file lookup | Native supported decoder and literal-key lookup; Bash file collection, regex matching and compatibility fallback | Unchanged directory line-break suite, 12 supplementary methods and Go units; broader Linux unit-helper suite unavailable |
 | Compose project identity | Native supported C/POSIX resolver; Bash file collection, warning callbacks and compatibility fallback | Unchanged 14-assertion ownership suite, supplementary comparisons and Go units; broader Linux/Docker oracle unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
-| Dashboard routes, state, polling and Tor | Python reference | Baseline suites pass; Go backend not ported |
-| SQLite schema, migrations and recovery | Python reference | Baseline suites pass; Go backend not ported |
+| Dashboard route/method table, security headers and shell/static/preview transport | Native Go server with explicit Python data/control fallback | 19 unchanged HTTP tests, 7 new comparisons and Go units; full unchanged 3716-test suite passes through adapter |
+| Dashboard JSON handlers, state, polling and Tor | Python reference behind Go HTTP routing | Full unchanged suite passes in hybrid mode; native data backend not ported |
+| SQLite schema, migrations and recovery | Python reference, including Go server child | Full unchanged suite passes in hybrid mode; native storage not ported |
 | Wizard launch and control channel | Bash/Python reference | Not ported |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
 | Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
@@ -177,75 +181,84 @@ Detailed paired commands, results and limits are preserved in
 [later configuration results](results-config-followup.md), plus
 [configuration publication results](results-config-publication.md).
 
-## Node credential publication slice (2026-11-01)
+## Dashboard HTTP foundation slice (2026-11-01)
 
-Go now publishes supported node RPC credentials when the fixed sibling staging
-path is absent. The existing ordered JSON transform runs before filesystem
-work. Exclusive creation and explicit mode 0600 precede credential bytes, even
-under a restrictive caller umask. The file is closed before rename; rename is
-the final fallible Go operation. Replacement ownership comes from the new file,
-as with Bash, rather than being copied from the old config.
+The operator's 15:30Z priority change moves the dashboard ahead of further CLI
+refinement. The credential publication slice is finished and archived above.
+The immediate target is a dashboard that serves its contracts on existing and
+corrupt databases; the current HTTP foundation is partial.
 
-Bash keeps the dry-run gate, final mandatory chmod and its error/ERR-trap
-semantics. A native success followed by a chmod failure never retries the
-transaction. Existing staging files, links and other entries retain the entire
-reference transaction, including its existing-temp mode at the first move.
-Unsupported JSON, interposed tools and pre-publication failures keep fallback.
-Other config transactions and main verb operations remain Bash; the dashboard
-remains Python.
+`make go-dashboard-build` builds `go/bin/dashboard`. It binds to the same
+loopback endpoint and serves the complete application route/method table,
+conditional control-route registration, security headers, HTML shell, preview
+and static assets in Go. Unknown routes return 404; wrong methods return 405
+with the reference Allow header. Shell caching, JavaScript MIME, file metadata,
+HEAD, ranges, conditional responses and missing-file behavior have direct
+Python comparisons. Preview retains its opt-in gate and no-store policy.
 
-The unchanged persistence suite passes through its original sourced hook,
-including its exact native-helper trace and existing-temp/error assertions.
-The new helper operation is `config-persistence credentials publish`; its argv
-contains only these operation words, with JSON, path and credentials on stdin.
-The original one-word JSON operations keep their existing contracts. Eight new
-comparison methods prove native success, regular/symlink/hardlink behavior,
-private bytes/mode, existing-stage fallback, dry-run, caller umasks, helper/tool
-failures, and post-publication chmod errors in normal and conditional callers.
-The new adapter sources production functions and supplies caller contexts and
-local failure fixtures; it does not replace any existing suite. Diagnostic
-comparisons normalize private paths and Bash line numbers. Foreign-UID source
-replacement is conditional in Go tests and remains unproven locally; original
-Linux secrets/control/lifecycle suites remain unavailable.
+Every registered data/control handler still delegates to Python. A normal Go
+launch starts the unchanged Python application with an inherited private
+listener; it still owns state, polling, services and SQLite. An optional
+reference override accepts only literal loopback HTTP addresses. Go drains
+requests and terminates/reaps its own reference child. This is a hybrid server,
+not a native state or storage implementation, and no performance claim is made.
+The normal dashboard container command remains Python; selection is not wired.
 
-Baseline uses `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`. Runs use
+The new pytest plugin puts Go in front of each unchanged Python app fixture and
+shares its state references. It forwards fallback requests to that original
+app, fails if the Go child is absent, and reaps the exact child. A test-only
+restart reflects preview environment changes made after app creation. Original
+Python service/view unit tests still exercise Python; a full-suite pass must
+not be interpreted as native backend proof. Seven new comparisons use a sentinel
+reference to prove native transport ownership and compare actual Python/Go
+responses and exercise the actual Python-child bootstrap against an isolated
+aiohttp stub, including signal shutdown and exact child-PID reaping. No existing
+test, fixture or browser asset changes.
+
+Baseline uses `PITHEAD_IMPL=python make test-dashboard`. Go uses the same command
+with `PITHEAD_IMPL=go`, `PYTEST_PLUGINS=dashboard_http_plugin` and `PYTHONPATH`
+containing the absolute `tests/go-parity` and `dashboard` directories. Runs use
 worktree caches and an absent Docker socket. Private records are under
-`.go-cache/logs/credentials-publish-*`.
+`.go-cache/logs/dashboard-http-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-credentials-publish-parity` | Pass; unchanged 16-method persistence suite and 6 existing alias comparisons, 8 new methods, prior env/render comparisons and 12-group CLI suite, plus Go units | Same result |
-| `make test-go-config-input-parity test-go-caddy-parity` | Pass; unchanged 7-test raw-parser suite and supplementary parser/Caddy comparisons | Same result |
+| `make test-dashboard` | Pass; 3716 tests, 97.42% Python coverage | Pass; same 3716 tests unchanged, 97.38% Python coverage; hybrid adapter required |
+| Six unchanged shell/static/security/disabled-control/layout/preview modules named in the new Make target | Pass; 19 tests | Pass; same 19 tests unchanged |
+| `make test-go-dashboard-http-parity` | Python responses compared within the supplementary cases | Pass; 19 unchanged tests and 7 new cases |
+| `make test-patch-coverage` after the Go-selected dashboard suite | Not separately rerun | Pass; 97% over the branch diff; Python coverage is not Go coverage |
+| `make test-fakes` | Pass; 54 tests | Pass; same 54 tests, Python client contracts |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
-| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
-| `make test-stack` | Exit 2: macOS refusal | Same refusal |
+| `make test` | Exit 2 at unchanged `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
 | `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 third-party cache Markdown findings | Same result |
 
-The paired core command was `make test-go-credentials-publish-parity
-test-go-config-input-parity test-go-caddy-parity`. Native checks pass:
-`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
-`go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build
--o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Native checks pass: `go -C go test -json -race -count=1
+./internal/dashboard/...`, `go -C go test ./...`, `go -C go vet ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/dashboard-linux-amd64
+./cmd/dashboard` (compile only).
+The original Linux stack/container oracle remains unavailable. Actual reference
+child bootstrap is tested with an inherited listener and an isolated aiohttp
+application; no live stack or real collector is started. Successful migration
+and corrupt-database recovery by Go remain unproven. Rare static
+conditional/range combinations and precompressed sibling negotiation are not
+yet covered; no precompressed assets are shipped today.
 
-Changed Go files pass `gofmt -l`; changed shell files pass `shfmt -i 4 -d`.
-`shellcheck -x --severity=warning pithead
-tests/go-parity/credentials_publish_reference.sh` passes. Locked Ruff lint and
-formatting pass for all 636 Python files through `make lint-py`; dashboard extras
-are restored with `uv sync --locked --project dashboard --extra dev --extra test`.
+All 638 Python files pass locked Ruff lint/formatting. Dashboard extras are
+restored with `uv sync --locked --project dashboard --extra dev --extra test`.
+Changed Go files pass `gofmt -l`. Changed Markdown passes `npx --yes
+markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs`
+with the four changed document paths. Paired `make lint-file-budget
+lint-docs-voice` passes after the ledger update, using the starting-SHA budget
+override above.
 
-Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
-.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths.
-Paired `make lint-file-budget lint-docs-voice` passes after the ledger update
-with the starting-SHA budget override above.
-
-Independent security and adversarial reviews found no remaining defect.
-Frozen-source checksums confirm the tested implementation and new comparisons
-remain unchanged after validation. Existing tests, fixtures and Make behavior
-remain unchanged; the new target adds supplementary coverage and existing
-dependencies. Earlier version publication results are preserved in the linked
-publication ledger. Dashboard, fake-daemon and patch-coverage suites are not
-rerun for this CLI-only change; earlier paired results remain in the linked
-ledgers.
+Independent security and adversarial reviews pass after static normalization,
+special-file handling and loopback-only reference checks. A real Go launch
+against an isolated Python fixture proves listener inheritance, native shell,
+delegated JSON, graceful parent exit and child reaping. Frozen-source checksums
+confirm the final tested implementation and new comparisons remain unchanged.
+Existing tests, fixtures and Make behavior are unchanged; two additive targets
+build and test the dashboard. The aggregate Make gate and unavailable
+Linux/Docker/fleet checks retain the limits below.
 
 ## Unavailable and known host constraints
 
@@ -276,13 +289,12 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
-and dashboard application code on 2026-11-01; shipping integration follows those
-ports. Next, in order:
+Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
+backend work ahead of further CLI refinement. Next, in order:
 
-1. Consolidate remaining config/parser orchestration and other JSON publication transactions. Obtain privileged Tari ownership proof and unchanged Linux CLI/Docker verdicts. Preserve Caddyfile staged writes and partial-file failures.
-2. Port `render_derived`, then the operational bodies of `apply`, `up`, `down` and `restart`; their option parsing is native. Preserve operation order and select unsupported-case fallback before any mutation.
-3. Implement dashboard routes, HTTP/JSON, state/polling, wizard/control, SQLite migrations/recovery and the container switch.
-4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
+1. Port dashboard JSON handlers and state/polling after this route foundation.
+2. Port SQLite schema, migrations and corrupt-database recovery; prove startup on existing/corrupt databases.
+3. Port wizard/control, then implement the container selection switch with Python fallback.
+4. Return to remaining config/render/lifecycle operations, then CLI verbs starting with `upgrade`, `backup` and `restore`.
 5. Update shipping documentation, release bundles, dashboard images and appliance image builds with reference fallback.
 6. Obtain Go-enabled fleet proof on pushed heads; keep performance work with its separate owner.

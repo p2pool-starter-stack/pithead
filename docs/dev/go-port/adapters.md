@@ -316,3 +316,23 @@ private paths and Bash diagnostic line numbers are normalized.
 `make test-go-credentials-publish-parity` also runs the unchanged persistence suite
 and existing env/render and CLI comparisons. Linux secrets/control suites stay
 unchanged and unavailable locally.
+
+## Dashboard HTTP foundation
+
+`dashboard_http_plugin.py` is loaded explicitly for Go-selected pytest runs.
+It wraps each original `create_app` fixture with a Go HTTP child and forwards
+registered unported routes to the same Python app, preserving its state and
+monkeypatches. It uses private inherited listeners, refuses absent/dead Go
+binaries and reaps its exact child. Preview environment changes made inside a
+Python test trigger a test-only child restart. Existing suites stay unchanged.
+
+`dashboard_http_compare.py` supplements the oracle with full route/method and
+control-registration cases, a sentinel reference proving native shell/static
+ownership, and direct Python/Go byte/header comparisons for HEAD, ranges,
+revalidation, normalized raw paths, missing paths and preview. An isolated
+aiohttp stub proves actual Python-child bootstrap and exact-PID shutdown without
+starting collectors or a database. `make test-go-dashboard-http-parity`
+builds Go and runs these cases with the unchanged HTTP modules. The full
+`make test-dashboard` can use the same plugin through `PYTEST_PLUGINS` and
+`PYTHONPATH`; most service/view/JSON assertions still prove Python fallback,
+not native Go state, polling or storage.

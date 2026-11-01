@@ -48,7 +48,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Area | Start here | Change and verify |
 |---|---|---|
 | CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. |
-| Go port | `go/cmd/pithead/`, `go/internal/`, [parity ledger](go-port/PARITY.md) | `make go-build`, `make test-go-parity`; `tests/go-parity/` holds adapters for unchanged reference suites. |
+| Go port | `go/cmd/pithead/`, `go/cmd/dashboard/`, `go/internal/`, [parity ledger](go-port/PARITY.md) | `make go-build`, `make go-dashboard-build`, `make test-go-parity`; `tests/go-parity/` holds adapters for unchanged reference suites. |
 | Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
@@ -56,6 +56,13 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. Quadlet golden units share `os/quadlet/common/`; `tests/stack/test-render-quadlet.sh` checks complete profile inventories and byte parity. `os/rootfs/fetch-go-source.sh` bounds pinned Go-source fetches; `tests/os/selftest-go-source-fetch.sh` runs its local Git transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; `broken-configs.tsv` and `tests/stack/test-manual-qa-oracle.sh` replay the documented dry-run refusals in shell block 5. The start page holds the run sheet, result rules and glossary. |
+
+The incremental dashboard server lives in `go/internal/dashboard/web/` and
+`go/internal/dashboard/runtime/`, launched by `go/cmd/dashboard/`. Go owns the
+route/method table, security headers and shell/static/preview transport; data,
+control, polling and SQLite still use the Python application. The normal
+container command remains Python. `make test-go-dashboard-http-parity` runs
+unchanged HTTP tests through the new pytest adapter and direct wire comparisons.
 
 Regular-file dotenv publication lives in `go/internal/config/env_write.go`,
 with the stdin adapter in `go/internal/cli/config_env_write.go` and Bash hook in

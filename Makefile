@@ -1,8 +1,12 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity test-go-tari-ownership-parity test-go-config-version-publish-parity test-go-credentials-publish-parity
+.PHONY: go-build test-go test-go-parity go-cache test-go-status-parity test-go-doctor-parity test-go-doctor-memory-parity test-go-doctor-host-parity test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity test-go-config-migrations-parity test-go-config-persistence-parity test-go-config-preview-parity test-go-payout-keys-parity test-go-env-read-parity test-go-compose-project-parity test-go-payout-ownership-parity test-go-env-resources-parity test-go-config-input-parity test-go-wallet-classifiers-parity test-go-lifecycle-options-parity test-go-tari-secret-parity test-go-env-write-parity test-go-tari-ownership-parity test-go-config-version-publish-parity test-go-credentials-publish-parity go-dashboard-build test-go-dashboard-http-parity
 .PHONY: test-go-doctor-history-parity test-go-doctor-containers-parity test-go-doctor-monero-parity test-go-node-monero-parity test-go-node-zmq-parity test-go-node-zmq-exchange-parity test-go-config-masked-parity test-go-config-document-parity test-go-config-defaults-parity test-go-config-validation-parity test-go-caddy-parity test-go-caddy-sites-parity test-go-wallet-settings-parity
 .PHONY: test-go-env-parity test-go-env-network-parity test-go-env-dashboard-parity test-go-env-memory-parity test-go-site-names-parity test-go-stratum-parity test-go-network-settings-parity test-go-proxy-settings-parity test-go-caddy-auth-parity test-go-dashboard-access-parity test-go-dashboard-auth-parity test-go-directories-parity test-go-caddy-bind-parity test-go-payout-settings-parity test-go-worker-read-parity
+go-dashboard-build: go-cache ## Build the incremental Go dashboard with Python fallback
+	cd go && $(GO_ENV) go build -o bin/dashboard ./cmd/dashboard
+test-go-dashboard-http-parity: go-dashboard-build ## Run unchanged dashboard HTTP tests through Go and supplementary comparisons
+	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_http_plugin tests/web/test_server_shell_route.py tests/web/test_server_static_assets.py tests/web/test_server_security_headers.py tests/web/test_server_control_routes_disabled.py tests/web/test_server_responsive_layout.py tests/web/views/test_sovereign_views.py "$(CURDIR)/tests/go-parity/dashboard_http_compare.py"
 test-go-credentials-publish-parity: test-go-config-persistence-parity test-go-env-write-parity ## Compare credential publication and unchanged render contracts
 	python3 tests/go-parity/test_credentials_publish.py
 test-go-config-version-publish-parity: test-go-config-version-parity test-go-env-write-parity ## Compare config version publication and unchanged render contracts
@@ -158,7 +162,6 @@ test-go-doctor-memory-parity: go-build test-go ## Compare native doctor memory a
 
 test-go-doctor-parity: go-build test-go ## Compare Go doctor JSON reports with Bash using synthetic probes
 	python3 tests/go-parity/test_doctor.py
-
 test-go-status-parity: go-build test-go ## Compare native status with Bash against synthetic services
 	python3 tests/go-parity/test_status.py
 GO_ENV = env GOCACHE="$(CURDIR)/.go-cache/build" GOMODCACHE="$(CURDIR)/.go-cache/mod" GOPATH="$(CURDIR)/.go-cache/gopath" TMPDIR="$(CURDIR)/.go-cache/tmp"
@@ -377,20 +380,17 @@ lint-proto: ## buf lint + build on the vendored Tari protos (config: .../tari/pr
 	cd dashboard/mining_dashboard/client/tari/proto && \
 		docker run --rm -v "$$PWD":/workspace --workdir /workspace bufbuild/buf:1.71.0 lint && \
 		docker run --rm -v "$$PWD":/workspace --workdir /workspace bufbuild/buf:1.71.0 build
-
 lint-toml: ## taplo TOML format check (config: .config/taplo.toml)
 	@# Tracked files only, never a filesystem walk: taplo's walker panics on any unreadable
 	@# dir (EACCES scandir — e.g. root-owned artifacts under .claude/ agent worktrees).
 	@test -n "$$(git ls-files '*.toml')" || { echo "lint-toml: zero tracked TOML files — refusing a vacuous pass"; exit 1; }
 	git ls-files -z '*.toml' | xargs -0 npx --yes @taplo/cli@0.7.0 fmt --check --config .config/taplo.toml
-
 # Cut a release from the private build/test server — GHCR publish, gated on the test suite +
 # the #54 integration matrix (issue #44). Pass options through ARGS, e.g. a safe plan-only preview:
 #   make release ARGS="--dry-run"
 # See docs/dev/releasing.md.
 release: ## Cut a versioned release (build -> stage -> smoke -> promote -> publish). Pass ARGS=...
 	bash scripts/release/release.sh $(ARGS)
-
 # Post-publish smoke test (#459) — run ONCE, right after `make release` publishes vX.Y.Z. Real
 # cosign verify of the published bundle + images, and (with ARGS="--upgrade DIR") the real #59
 # one-click upgrade against a previous-release install. See docs/dev/releasing.md § Post-publish smoke.
