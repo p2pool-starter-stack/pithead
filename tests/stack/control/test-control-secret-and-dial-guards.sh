@@ -126,7 +126,7 @@ run_pending >/dev/null
 assert_eq "worker repoint cannot reuse a masked bearer" \
     "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
 assert_contains "masked-token repoint names the host route, not a token retry" \
-    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "on the host"
+    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "token again"
 
 jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0]

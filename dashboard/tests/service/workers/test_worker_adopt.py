@@ -160,6 +160,10 @@ class TestNewWorkerEntries:
         staged = {"workers": {"list": [{**VALID_ENTRY, "token": "other-token"}]}}
         assert new_worker_entries(live, staged) == []
 
+    def test_non_object_staged_entry_is_returned_for_validation(self):
+        live = {"workers": {"list": [VALID_ENTRY]}}
+        assert new_worker_entries(live, {"workers": {"list": ["junk"]}}) == ["junk"]
+
     def test_removed_entry_is_not_new(self):
         rig2 = {"name": "rig2", "host": "10.0.0.10", "token": "tok-456"}
         live = {"workers": {"list": [VALID_ENTRY, rig2]}}

@@ -315,7 +315,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             result=$(printf '%s' "$result" | jq '.changes += [{flag:"APPROVAL",key:"dashboard.energy.price_feed",msg:"Electricity price feed endpoint changed — the host will contact this remote source for operating-cost data."}] | .approval_required = true')
         fi
         if [ -n "$worker_new" ]; then
-            result=$(printf '%s' "$result" | jq --arg rigs "$(printf '%s' "$worker_new" | paste -sd, - | sed 's/,/, /g')" '.changes += [{flag:"CONFIRM",key:"workers.list",msg:"Changing rigs: \($rigs). The dashboard sends each rig'"'"'s control token to its address and can change its pools and thermal limits, so check every address is the rig itself. A removed rig stops being managed from the dashboard; its miner keeps running.}] | .destructive = true')
+            result=$(printf '%s' "$result" | jq --arg rigs "$(printf '%s' "$worker_new" | paste -sd, - | sed 's/,/, /g')" '.changes += [{flag:"CONFIRM",key:"workers.list",msg:"Changing rigs: \($rigs). The dashboard sends each rig'"'"'s control token to its address and can change its pools and thermal limits, so check every address is the rig itself. A removed rig stops being managed from the dashboard; its miner keeps running."}] | .destructive = true')
         fi
         if ! jq -e --argjson fallback "$(default_of local_miner.enabled legacy)" --slurpfile live "$CONFIG_FILE" '
             (if .local_miner.enabled == null then $fallback else .local_miner.enabled end)

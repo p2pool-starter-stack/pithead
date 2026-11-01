@@ -32,7 +32,9 @@ export class AdoptRigForm extends Component {
     try {
       const res = await fetch("/api/config");
       if (!res.ok) return;
-      const entry = ((await res.json())?.workers?.list || []).find((w) => w?.name === this.props.name);
+      const entry = ((await res.json())?.workers?.list || []).find(
+        (w) => w?.name === this.props.name,
+      );
       if (entry)
         this.setState({
           host: entry.host || "",
@@ -40,7 +42,9 @@ export class AdoptRigForm extends Component {
           controlPort: String(entry.control_port ?? DEFAULT_CONTROL_PORT),
         });
     } catch {
-      this.setState({ result: { status: "error", error: "The current address could not be loaded." } });
+      this.setState({
+        result: { status: "error", error: "The current address could not be loaded." },
+      });
     }
   }
 
