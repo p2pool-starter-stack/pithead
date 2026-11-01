@@ -207,13 +207,13 @@ source "$HERE/phases/provision-migration.sh"
 monero_container=$(awk '$0 == "  monerod:" {service=1} service && /container_name:/ {print $2; exit}' "$HERE/../../docker-compose.yml")
 tari_container=$(awk '$0 == "  tari:" {service=1} service && /container_name:/ {print $2; exit}' "$HERE/../../docker-compose.yml")
 [ -n "$monero_container" ] && [ -n "$tari_container" ] || fail 'chain container names missing from Compose'
-for missing in none candidate commit hold claim stopped startup startup_monerod startup_tari marker; do
+for missing in none candidate commit hold claim stopped startup startup_monerod startup_tari marker fallback_fail; do
     (
         pv_user=user pv_pass=pass marker=""
         calls="$T/calls"
         : >"$calls"
         ok() { :; }
-        bad() { :; }
+        bad() { echo "$1" >>"$T/bad"; }
         info() { :; }
         sleep() { :; }
         migration_prepare_old() { :; }
@@ -265,9 +265,20 @@ for missing in none candidate commit hold claim stopped startup startup_monerod 
         migration_wait_for_mining() { grep -qx remote "$calls" || fail 'recovery without configuration'; }
         approval_restore_pending() { echo restore >>"$calls"; }
         phase_provision_chain_fault_after_release() { grep -qx restore "$calls" || fail 'fault before restore'; }
-        phase_provision_same_version_fallback() { echo same-version >>"$calls"; }
+        phase_provision_same_version_fallback() {
+            echo same-version >>"$calls"
+            [ "$missing" != fallback_fail ]
+        }
         phase_provision_floor_fallback_leg() { echo floor >>"$calls"; }
-        _phase_provision_migration
+        rm -f "$T/bad"
+        if _phase_provision_migration; then rc=0; else rc=$?; fi
+        if [ "$missing" = fallback_fail ]; then
+            [ "$rc" -ne 0 ] || fail 'failed same-version fallback did not fail the phase'
+            grep -qx same-version "$calls" || fail 'same-version leg did not run'
+            ! grep -qx floor "$calls" || fail 'floor install started on an unverified guest'
+            grep -q 'data-floor fallback leg was not exercised' "$T/bad" || fail 'unexercised floor leg not reported'
+            exit 0
+        fi
         if [ "$missing" = none ]; then
             grep -qx remote "$calls" || fail 'complete commit proof did not recover'
         elif grep -qx remote "$calls"; then
