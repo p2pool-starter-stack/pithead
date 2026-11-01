@@ -194,7 +194,10 @@ stack_support_bundle() {
         echo "container engine not reachable — no container state collected" >"$tmp/bundle/compose-ps.txt"
     fi
 
-    tar -czf "$out" -C "$tmp" bundle
+    (
+        umask 077
+        tar -czf "$out" -C "$tmp" bundle
+    ) || { rm -rf "$tmp" "$out"; return 1; }
     chmod 600 "$out"
     rm -rf "$tmp"
     log "Support bundle written: $out"
