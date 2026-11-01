@@ -149,7 +149,11 @@ compatibility fallback and the unchanged v2.0.0 render fixture/goldens.
 control-character validation through the same internal binary marker.
 `make test-go-config-validation-parity` compares diagnostic bytes/status and
 proves native selection without jq. Unsupported inputs keep the original
-validators. `go/internal/config/stratum.go` parses and validates stratum bind/port
+validators. `go/internal/config/input_validation.go` batches document, webhook
+and control-character gates through `lib/pithead/27o-go-config-input.sh`;
+`make test-go-config-input-parity` checks error precedence, native selection and
+fallback while running the unchanged parser suite.
+`go/internal/config/stratum.go` parses and validates stratum bind/port
 settings through `lib/pithead/27b-stratum-endpoint.sh`, retaining Bash fallback.
 `make test-go-stratum-parity` compares diagnostics, partial state and helper frames.
 `go/internal/config/network_settings.go` derives/validates network, remote and pool

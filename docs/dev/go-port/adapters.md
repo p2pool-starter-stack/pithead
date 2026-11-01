@@ -253,3 +253,9 @@ synthetic core facts and peer settings. `test_env_resources.py` compares complet
 environment bytes, diagnostics, callback order and helper fallback. Existing
 memory/network comparisons and render goldens run unchanged; no hardware or
 running containers are used.
+
+`config_input_reference.sh` reaches the real parser entry point and stops after
+its opening validation gates, before hardware or credential generation.
+`test_config_input.py` compares diagnostics, error precedence, native selection
+and fallback with disposable documents and helper stubs. Existing parser and
+render suites remain unchanged.

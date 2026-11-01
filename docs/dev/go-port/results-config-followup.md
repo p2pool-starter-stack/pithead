@@ -50,3 +50,54 @@ The existing tests and fixtures remain unchanged. The full original
 payout-wallet-pairs suite requires the Linux harness and remains unavailable
 locally. Dashboard, fake-daemon and patch-coverage suites are not rerun for this
 CLI-only change; earlier paired results remain in the linked ledger.
+
+## CPU and peer resource render slice (2026-11-01)
+
+Go computes supported automatic block-preparation thread counts from supplied
+core facts and validates outbound-peer bounds. Bash retains config/hardware
+reads, callback order, `.env` publication and compatibility fallback for
+unsupported arithmetic and integer-overflow behavior. Fingerprint and TLS-path
+reads remain Bash. Main verbs and parser orchestration remain Bash; the dashboard
+remains Python.
+
+Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
+Worktree caches and an absent Docker socket isolate the runs. Private records
+use `.go-cache/logs/env-resources-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-env-resources-parity` including unchanged memory comparisons | Pass; 7 existing and 8 new methods | Same result |
+| Affected config/render comparisons below | Pass; unchanged parser and render goldens included | Same result |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
+| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make test-stack` | Exit 2: macOS refusal | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same result |
+
+Affected config/render command: `make test-go-env-network-parity test-go-env-parity test-go-config-document-parity test-go-parity`.
+Native checks pass: `go -C go test -json -tags=parity -race -count=1
+./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
+./cmd/pithead` (compile only).
+
+Changed Go files pass `gofmt -l`. Changed shell files pass `shfmt -i 4 -d`;
+`shellcheck -x --severity=warning pithead tests/go-parity/env_resources_reference.sh`
+passes. The new Python comparison passes locked `ruff check` and
+`ruff format --check` through `uv run --locked --project dashboard --extra dev`.
+Dashboard test extras are restored with
+`uv sync --locked --project dashboard --extra dev --extra test`.
+Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
+.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths;
+`make lint-file-budget lint-docs-voice` passes after the final ledger update with
+the starting-SHA budget override above.
+
+Native core facts use canonical signed integers whose subtraction is supported;
+other arithmetic forms and integer overflow retain Bash behavior. Configured
+numeric prep-thread values bypass hardware discovery, and leading-zero peer
+strings remain byte-identical in `.env`. Helper inputs include a producer-status
+footer; malformed input, output or helper failures fall back before assigning
+thread state. Independent source and comparison reviews found no remaining defect.
+
+Existing tests and fixtures remain unchanged. The original Linux CLI harness and
+Docker-backed parser checks remain unavailable locally. Dashboard, fake-daemon
+and patch-coverage suites are not rerun for this CLI-only change; earlier paired
+results remain in the linked ledger.

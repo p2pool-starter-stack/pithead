@@ -121,6 +121,7 @@ selection is not implemented.
 | `rotate-secrets` | Bash fallback | Not independently proven in Go mode |
 | `render-quadlet` | Bash fallback | Not independently proven in Go mode |
 | Raw config document parse/validation | Native Go-selected gate, with Python compatibility fallback | 5 tagged groups / 134 scenarios, unchanged parser and wiring suites |
+| Parser document, webhook and control-character sequence | Native supported single-read validation; Bash callbacks and full-sequence compatibility fallback | Unchanged 7-test raw-parser suite and render fixture/goldens; 9 supplementary methods and Go units; full Linux CLI oracle unavailable |
 | Config defaults, materialization and getters | Native with runtime table; jq compatibility fallback | 5 tagged groups / 744 scenarios and wiring/render-fixture tests |
 | Worker, energy, webhook and control-character validation | Native Go-selected validators; jq compatibility fallback | Paired validator corpus and wiring checks; Go units |
 | Stratum bind and port parsing | Native for supported settings; Bash compatibility fallback | Unchanged 14-test stratum preflight and render fixture; supplementary byte/status/state comparisons and Go units; full Linux suite unavailable |
@@ -171,38 +172,45 @@ Detailed paired commands, results and limits are preserved in
 [later render results](results-render-followup.md) and
 [later configuration results](results-config-followup.md).
 
-## CPU and peer resource render slice (2026-11-01)
+## Parser input validation slice (2026-11-01)
 
-Go computes supported automatic block-preparation thread counts from supplied
-core facts and validates outbound-peer bounds. Bash retains config/hardware
-reads, callback order, `.env` publication and compatibility fallback for
-unsupported arithmetic and integer-overflow behavior. Fingerprint and TLS-path
-reads remain Bash. Main verbs and parser orchestration remain Bash; the dashboard
-remains Python.
+Go performs the parser's opening document, webhook and control-character checks
+from one supported JSON read, preserving the first reported error. Bash retains
+callbacks and later parser orchestration. Missing dependencies, unsupported JSON,
+nonregular or leading-dash paths, producer failures and malformed helper responses
+retain the full original Python/jq sequence. Those fallback calls temporarily
+disable native helpers so they cannot re-enter and alter reference diagnostics.
+Main verbs remain Bash; the dashboard remains Python.
 
 Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
 Worktree caches and an absent Docker socket isolate the runs. Private records
-use `.go-cache/logs/env-resources-*`.
+use `.go-cache/logs/config-input-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-env-resources-parity` including unchanged memory comparisons | Pass; 7 existing and 8 new methods | Same result |
-| Affected config/render comparisons below | Pass; unchanged parser and render goldens included | Same result |
+| `make test-go-config-input-parity` including unchanged validation/document suites | Pass; 9 new methods and 7 original parser tests | Same result |
+| Affected config/render comparisons below | Pass; unchanged render fixture/goldens included | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
 | `make test-stack` | Exit 2: macOS refusal | Same refusal |
 | `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same result |
 
-Affected config/render command: `make test-go-env-network-parity test-go-env-parity test-go-config-document-parity test-go-parity`.
+Affected config/render command: `make test-go-wallet-settings-parity test-go-payout-ownership-parity test-go-env-parity test-go-caddy-parity test-go-parity`.
+Both final core runs passed: private records use `baseline-core-final` and
+`go-core-final`. The initial Go run found inherited `BASH_ENV` overriding fake
+helper selection in the new comparison harness. Removing that inherited hook
+from its child environments fixed isolation; assertions and existing tests were
+unchanged, and the complete paired core command was rerun.
+
 Native checks pass: `go -C go test -json -tags=parity -race -count=1
 ./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
 `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
 ./cmd/pithead` (compile only).
 
 Changed Go files pass `gofmt -l`. Changed shell files pass `shfmt -i 4 -d`;
-`shellcheck -x --severity=warning pithead tests/go-parity/env_resources_reference.sh`
-passes. The new Python comparison passes locked `ruff check` and
-`ruff format --check` through `uv run --locked --project dashboard --extra dev`.
+`shellcheck -x --severity=warning pithead tests/go-parity/config_input_reference.sh`
+passes. The final Python comparison passes locked `ruff check` and
+`ruff format --check` through the unchanged global Python lint target.
 Dashboard test extras are restored with
 `uv sync --locked --project dashboard --extra dev --extra test`.
 Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
@@ -210,17 +218,15 @@ Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
 `make lint-file-budget lint-docs-voice` passes after the final ledger update with
 the starting-SHA budget override above.
 
-Native core facts use canonical signed integers whose subtraction is supported;
-other arithmetic forms and integer overflow retain Bash behavior. Configured
-numeric prep-thread values bypass hardware discovery, and leading-zero peer
-strings remain byte-identical in `.env`. Helper inputs include a producer-status
-footer; malformed input, output or helper failures fall back before assigning
-thread state. Independent source and comparison reviews found no remaining defect.
+The new helper accepts configuration only on stdin with a producer-status footer.
+It emits a fixed validation stage and the existing diagnostic reason; secret
+values remain absent from argv and diagnostics. Independent source, security and
+comparison reviews found no remaining defect.
 
-Existing tests and fixtures remain unchanged. The original Linux CLI harness and
-Docker-backed parser checks remain unavailable locally. Dashboard, fake-daemon
-and patch-coverage suites are not rerun for this CLI-only change; earlier paired
-results remain in the linked ledger.
+Existing tests and fixtures remain unchanged. Full Linux CLI and Docker-backed
+parser checks remain unavailable locally; Go's Linux build is compile-only.
+Dashboard, fake-daemon and patch-coverage suites are not rerun for this CLI-only
+change; earlier paired results remain in the linked ledger.
 
 ## Unavailable and known host constraints
 

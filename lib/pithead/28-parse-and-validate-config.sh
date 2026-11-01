@@ -1,9 +1,17 @@
 parse_and_validate_config() {
     local _ssh_release=false _node_generate_user='' _node_generate_pass=''
     log "Parsing configuration..."
-    validate_config_document
-    validate_webhook_config
-    validate_config_control_characters
+    if declare -F _parse_config_input_go >/dev/null; then
+        if ! _parse_config_input_go; then
+            PITHEAD_IMPL=bash PITHEAD_GO_CONFIG_DOCUMENT_BINARY='' validate_config_document
+            PITHEAD_IMPL=bash PITHEAD_GO_CONFIG_DOCUMENT_BINARY='' validate_webhook_config
+            PITHEAD_IMPL=bash PITHEAD_GO_CONFIG_DOCUMENT_BINARY='' validate_config_control_characters
+        fi
+    else
+        validate_config_document
+        validate_webhook_config
+        validate_config_control_characters
+    fi
     if is_appliance && [ "$(appliance_variant)" = release ]; then _ssh_release=true; fi
     if ! command -v _parse_config_access_ssh_go >/dev/null 2>&1 || ! _parse_config_access_ssh_go; then
         if [ "$_ssh_release" = true ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
