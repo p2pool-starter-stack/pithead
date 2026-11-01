@@ -14,6 +14,7 @@ drive() ( # <fault> -> failing row labels, one per line
     POI_STABLE_S=0
     it_pass() { :; }
     it_fail() { printf '%s\n' "$1"; }
+    it_skip_leg() { printf 'skip: %s\n' "$1"; }
     sleep() { :; }
     wait_for() {
         shift 3
@@ -35,8 +36,11 @@ drive() ( # <fault> -> failing row labels, one per line
             : >"$OUT/second"
             printf '%s\n' "$snap"
             ;;
-        *'is_appliance'*) printf appliance ;;
-        *'systemctl --failed'*) [ "$fault" = unit ] && printf 'pithead-wizard.service loaded failed failed Setup\n' ;;
+        *'is_appliance'*) [ "$fault" = channel ] && return 1 || printf appliance ;;
+        *'systemctl --failed'*)
+            [ "$fault" != units-unreadable ] || return 1
+            if [ "$fault" = unit ]; then printf 'pithead-wizard.service loaded failed failed Setup\n'; fi
+            ;;
         esac
     }
     api_state() {
@@ -51,6 +55,7 @@ drive() ( # <fault> -> failing row labels, one per line
     OUT=$(mktemp -d)
     trap 'rm -rf "$OUT"' EXIT
     POI_WORKERS=$(printf 'rig-a\nrig-b') POI_FAILURES=0
+    [ "$fault" != no-baseline ] || POI_WORKERS=""
     post_op_invariants "case"
 )
 
@@ -63,10 +68,14 @@ assert_contains "a container restart fails" "$(drive restart)" "steady Id, Start
 assert_contains "a recreated container fails" "$(drive recreate)" "steady Id"
 assert_contains "an unhealthy container fails" "$(drive unhealthy)" "steady Id"
 assert_contains "a vanished container fails" "$(drive gone)" "steady Id"
+assert_contains "an unreadable systemctl fails" "$(drive units-unreadable)" "no failed pithead or xmrig unit"
+assert_contains "an unreadable channel probe fails" "$(drive channel)" "no failed pithead or xmrig unit"
+assert_contains "no baseline worker is a visible skip" "$(drive no-baseline)" "skip: case: workers reconnect"
 assert_contains "a failed pithead unit fails on the appliance" "$(drive unit)" "no failed pithead or xmrig unit"
 
-assert_eq "restarting-then-healthy Caddy is not drift" "$(poi_containers_drift "$SNAP_OK" "$SNAP_OK")" ""
-assert_eq "an unreadable failures_24h is a failure" "$(poi_failures_unchanged 0 "" && echo same || echo differ)" "differ"
+assert_eq "an identical snapshot is not drift" "$(poi_containers_drift "$SNAP_OK" "$SNAP_OK")" ""
+assert_eq "an unreadable after-value is a failure" "$(poi_failures_unchanged 0 "" && echo same || echo differ)" "differ"
+assert_eq "two unreadable values are a failure" "$(poi_failures_unchanged "" "" && echo same || echo differ)" "differ"
 assert_eq "an xmrig unit is matched" "$(poi_failed_units 'xmrig-proxy.service loaded failed' | wc -l | tr -d ' ')" "1"
 assert_eq "an unrelated unit is ignored" "$(poi_failed_units 'chronyd.service loaded failed' | wc -l | tr -d ' ')" "0"
 

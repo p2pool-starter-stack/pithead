@@ -47,7 +47,9 @@ post_op_begin() {
 
 post_op_invariants() {
     local label="$1" bound="${POI_RECONNECT_S:-300}" missing after_failures before after drift units channel
-    if [ -n "$POI_WORKERS" ]; then
+    if [ -z "$POI_WORKERS" ]; then
+        it_skip_leg "$label: workers reconnect" "no worker was online before the step" "by-design"
+    else
         if wait_for "$bound" 10 "$label: workers reconnect" poi_workers_reconnected; then
             it_pass "$label: every worker online before the step is online again"
         else
@@ -80,14 +82,21 @@ post_op_invariants() {
     else
         it_fail "$label: every running container healthy with a steady Id, StartedAt and restart count" "${drift:-no running containers}"
     fi
-    channel=$(rx 'source ./pithead || exit; if is_appliance; then printf appliance; fi') || channel=""
-    if [ "$channel" = appliance ]; then
-        units=$(poi_failed_units "$(rx 'systemctl --failed --plain --no-legend' 2>/dev/null)")
-        if [ -z "$units" ]; then
-            it_pass "$label: no failed pithead or xmrig unit"
-        else
-            it_fail "$label: no failed pithead or xmrig unit" "$units"
+    if channel=$(rx 'source ./pithead || exit; if is_appliance; then printf appliance; else printf diy; fi'); then
+        if [ "$channel" = appliance ]; then
+            if units=$(rx 'systemctl --failed --plain --no-legend'); then
+                units=$(poi_failed_units "$units")
+                if [ -z "$units" ]; then
+                    it_pass "$label: no failed pithead or xmrig unit"
+                else
+                    it_fail "$label: no failed pithead or xmrig unit" "$units"
+                fi
+            else
+                it_fail "$label: no failed pithead or xmrig unit" "systemctl --failed unreadable"
+            fi
         fi
+    else
+        it_fail "$label: no failed pithead or xmrig unit" "channel probe unreadable"
     fi
     post_op_begin
 }
