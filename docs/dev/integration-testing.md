@@ -387,6 +387,10 @@ via an `EXIT` trap):
    With `--no-miner` nothing is borrowed, and the harness runs with `--no-mining-asserts`: the
    workers-online and stratum-hashes assertions skip with a logged notice while every other
    assertion stays binding ([#905](https://github.com/p2pool-starter-stack/pithead/issues/905)).
+   No borrowed-pool rearm handshake is configured, so a selected `--rigforge-control` phase
+   that skips for lack of an enriched worker feed does not request or wait for rearm.
+   Borrowing runs still require controller acknowledgement after successful RigForge control
+   and exact miner configuration restoration at teardown.
 
    Before it takes that backup, the borrow undoes a previous run that died without restoring —
    SIGKILL, an OOM kill, `--keep`, a failed teardown. Such a run leaves the rig pointed at the bench
