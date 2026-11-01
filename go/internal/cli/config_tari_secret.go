@@ -9,6 +9,14 @@ import (
 )
 
 func configTariSecret(args []string, input io.Reader) error {
+	return configTariSecretPublish(args, input, config.PublishTariSecret)
+}
+
+func configTariSecretOwned(args []string, input io.Reader) error {
+	return configTariSecretPublish(args, input, config.PublishTariSecretWithOwnership)
+}
+
+func configTariSecretPublish(args []string, input io.Reader, publish func(string, uint32, uint32, string, string, string) error) error {
 	unsupported := &ExitError{Code: 125}
 	if len(args) != 0 {
 		return unsupported
@@ -29,7 +37,7 @@ func configTariSecret(args []string, input io.Reader) error {
 	if err != nil {
 		return unsupported
 	}
-	if err := config.PublishTariSecret(string(fields[0]), uid, gid, string(fields[3]), string(fields[4]), string(fields[5])); err != nil {
+	if err := publish(string(fields[0]), uid, gid, string(fields[3]), string(fields[4]), string(fields[5])); err != nil {
 		return unsupported
 	}
 	return nil

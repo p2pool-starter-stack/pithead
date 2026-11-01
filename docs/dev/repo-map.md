@@ -65,9 +65,11 @@ writers retain the heredoc path; final chmod remains Bash.
 
 Tari wallet secret publication lives in `go/internal/config/tari_secret.go`,
 with the stdin adapter in `go/internal/cli/config_tari_secret.go` and Bash hook in
-`lib/pithead/33e-go-tari-secret.sh`. `make test-go-tari-secret-parity` compares
-native current-owner publication and runs unchanged render and CLI comparisons.
-Ownership repair and unsupported publication paths retain Bash fallback.
+`lib/pithead/33e-go-tari-secret.sh`. `make test-go-tari-ownership-parity` compares
+current-owner publication, direct ownership repair when permitted and failure
+fallback, and runs unchanged render and CLI comparisons. Sudo and unsupported
+publication paths retain Bash fallback. Privileged repair is unproven locally;
+the [publication ledger](go-port/results-config-publication.md) preserves earlier results.
 
 Lifecycle option parsing lives in `go/internal/lifecycle/options.go`, with the
 stdin adapter in `go/internal/cli/lifecycle_options.go` and Bash hook in

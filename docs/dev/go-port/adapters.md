@@ -283,6 +283,14 @@ callbacks, and checks the private stdin protocol and tool/helper fallback.
 comparisons. Original Linux Tari ownership/payout suites remain unchanged and
 unavailable locally; the new comparisons supplement their future verdicts.
 
+`test_tari_secret_ownership.py` reuses that adapter and extracted production block
+with supplied UID/GID values and a failing sudo stub. It compares matching-owner
+and foreign-owner paths, checks owned-helper selection, strict-helper retention,
+framing and sentinel refusals, and checks temporary-file cleanup. Unprivileged
+runs prove failed repair and Bash fallback; successful native chown requires a
+privileged verdict. `make test-go-tari-ownership-parity` includes unchanged render
+and CLI comparisons. No original suite or fixture changes.
+
 `env_write_reference.sh` runs the native-publication branch extracted from
 `render_env` by `test_env_write.py`, followed by the same mandatory chmod. It
 compares bytes, inodes, links, owner/mode, umask, callback/error-trap behavior and

@@ -15,6 +15,8 @@ const commands = "setup apply render up down restart tor-recover upgrade logs st
 
 func Run(reference string, args []string, stdout io.Writer) error {
 	switch os.Getenv("PITHEAD_GO_HELPER") {
+	case "config-tari-secret-owned":
+		return configTariSecretOwned(args, os.Stdin)
 	case "config-env-write":
 		return configEnvWrite(args, os.Stdin)
 	case "config-tari-secret":

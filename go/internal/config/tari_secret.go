@@ -14,6 +14,14 @@ func PublishTariSecret(path string, targetUID, targetGID uint32, view, spend, pa
 	if uint32(os.Geteuid()) != targetUID {
 		return ErrUnsupportedTariSecret
 	}
+	return publishTariSecret(path, targetUID, targetGID, view, spend, password, false)
+}
+
+func PublishTariSecretWithOwnership(path string, targetUID, targetGID uint32, view, spend, password string) error {
+	return publishTariSecret(path, targetUID, targetGID, view, spend, password, true)
+}
+
+func publishTariSecret(path string, targetUID, targetGID uint32, view, spend, password string, repair bool) error {
 	if info, err := os.Stat(path); err == nil {
 		if info.IsDir() {
 			return ErrUnsupportedTariSecret
@@ -46,8 +54,24 @@ func PublishTariSecret(path string, targetUID, targetGID uint32, view, spend, pa
 		return err
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != targetUID {
+	if !ok {
 		return ErrUnsupportedTariSecret
+	}
+	if stat.Uid != targetUID {
+		if !repair || targetUID == ^uint32(0) || targetGID == ^uint32(0) {
+			return ErrUnsupportedTariSecret
+		}
+		if err := file.Chown(int(targetUID), int(targetGID)); err != nil {
+			return err
+		}
+		info, err = file.Stat()
+		if err != nil {
+			return err
+		}
+		stat, ok = info.Sys().(*syscall.Stat_t)
+		if !ok || stat.Uid != targetUID || stat.Gid != targetGID {
+			return ErrUnsupportedTariSecret
+		}
 	}
 	if err := file.Close(); err != nil {
 		return err

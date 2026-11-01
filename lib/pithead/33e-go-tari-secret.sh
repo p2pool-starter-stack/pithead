@@ -24,7 +24,7 @@ _render_tari_secret_go() {
         {
             printf '%s\0%s\0%s\0%s\0%s\0%s\0' "$path" "$uid" "$gid" "$view" "$spend" "$password" || producer_rc=$?
             printf '%d\0' "$producer_rc"
-        } | PITHEAD_GO_HELPER=config-tari-secret "$binary" 2>/dev/null || helper_rc=$?
+        } | PITHEAD_GO_HELPER=config-tari-secret-owned "$binary" 2>/dev/null || helper_rc=$?
         printf '%d\0' "$helper_rc"
     ) || return 125
 }

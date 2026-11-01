@@ -127,7 +127,7 @@ selection is not implemented.
 | Worker, energy, webhook and control-character validation | Native Go-selected validators; jq compatibility fallback | Paired validator corpus and wiring checks; Go units |
 | Stratum bind and port parsing | Native for supported settings; Bash compatibility fallback | Unchanged 14-test stratum preflight and render fixture; supplementary byte/status/state comparisons and Go units; full Linux suite unavailable |
 | Caddyfile serialization, site URLs, bind plan and auth preparation | Native fragments, site/port formatting, bind filter, auth blocks and boot digest; Bash bind-candidate public-IP checks, discovery, bcrypt, certificate minting and writes; compatibility fallback | Supplementary Caddy/host/port comparisons and Go units; Linux/Docker oracle unavailable |
-| Tari wallet secret publication | Native for current effective UID and standard tools; Bash directory creation, dry-run guard, ownership repair and compatibility fallback | Supplementary native publication/protocol comparisons and Go units; unchanged render fixtures pass via tool compatibility fallback; full Linux ownership oracle unavailable |
+| Tari wallet secret publication | Native current-owner publication and direct ownership repair when permitted; Bash directories, dry-run, sudo and compatibility fallback | Matching-UID native success, unprivileged cleanup/fallback, protocol comparisons and Go units; unchanged render fixtures use tool fallback; privileged repair and Linux oracle unproven locally |
 | `.env` serialization and regular-file publication | Native bulk formatter and in-place writer; Bash derivation, final chmod, symlink/tool and compatibility fallback | Unchanged render fixture/goldens and native-writer spy pass; supplementary byte/inode/trap/protocol comparisons and Go units; full Linux suite unavailable |
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
@@ -173,66 +173,70 @@ Detailed paired commands, results and limits are preserved in
 [remote-node probe results](results-node-probes.md) and
 [configuration results](results-config.md), [render results](results-render.md) and
 [later render results](results-render-followup.md) and
-[later configuration results](results-config-followup.md).
+[later configuration results](results-config-followup.md), plus
+[configuration publication results](results-config-publication.md).
 
-## Environment file publication slice (2026-11-01)
+## Tari secret ownership repair slice (2026-11-01)
 
-Go writes the native dotenv body plus exactly one final newline to supported
-regular targets. It truncates in place, retaining existing inodes, owners and
-hard links. New files are created with mode 0600 under the existing subshell's
-umask. Bash retains the final mandatory chmod, serialization compatibility
-fallback and file-write diagnostics. Symlinks, special files, absent parents and
-interposed cat commands keep the reference heredoc path.
+The new `config-tari-secret-owned` helper can repair the temporary file's UID and GID with
+an fd-based chown when permitted. It verifies both before publishing by rename.
+Matching UID still ignores GID, including its sentinel value, as Bash does.
+Ownership failure or unsupported IDs remove the temporary file with mode 0600 and
+leave the prior destination intact before Bash retries its original chown/sudo
+path. Tool interposition, dry-run and directory guards retain their reference
+behavior. The existing strict Go API and private helper remain same-UID-only.
 
-The unchanged render fixture/goldens pass with Go selection. A new spy case
-proves that fixture invokes the native formatter and writer successfully, each
-with zero argv. Supplementary
-comparisons cover literal bytes, final-newline handling, inode and hard-link
-identity, symlink following through fallback, umask, error traps, mandatory chmod
-and helper/tool failure. Existing CLI and parser suites remain the oracle;
-original Linux lifecycle/config suites are still unavailable locally. Render/apply
-orchestration otherwise stays Bash and the dashboard remains Python.
+On this unprivileged host, supplementary comparisons prove matching-UID native
+publication, owned-helper selection with zero argv, protocol refusals, sentinel
+refusals, failed foreign-UID cleanup and the unchanged sudo fallback. The sudo
+fixture is a local failure stub. Privilege-dependent tests are conditional: successful
+foreign-UID chown, its verification and final publication are not proven locally.
+The unchanged render fixture/goldens, parser and CLI suites remain the oracle;
+mocked ownership commands in the render fixture select compatibility fallback.
+Original Linux ownership/lifecycle suites are still unavailable. Main verb
+operations remain Bash and the dashboard remains Python.
 
 Baseline uses `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`. Runs use
 worktree caches and an absent Docker socket. Private records are under
-`.go-cache/logs/env-write-*`.
+`.go-cache/logs/tari-owner-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-env-write-parity` | Pass; 11 new methods, unchanged env/render comparisons and 12-group CLI suite, plus Go units | Same result |
-| Other core comparisons below | Pass; unchanged 7-test raw-parser suite, Caddy and Tari publication comparisons included | Same result |
+| `make test-go-tari-ownership-parity` | Pass; 6 new methods, prior Tari/env comparisons, render fixture/goldens and 12-group CLI suite, plus Go units | Same result |
+| `make test-go` repeated after portable ownership assertions | Pass; portable ownership assertions included | Same result |
+| `make test-go-config-input-parity test-go-caddy-parity` | Pass; unchanged 7-test raw-parser suite and supplementary parser/Caddy comparisons | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
 | `make test-stack` | Exit 2: macOS refusal | Same refusal |
-| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same result |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at cache Markdown findings | Same result |
 
-The combined core command was `make test-go-env-write-parity
-test-go-config-input-parity test-go-caddy-parity test-go-tari-secret-parity`.
-Private records are `baseline-core` and `go-core`; paired gate, aggregate, stack
-and lint records use the corresponding suffixes.
-Native checks pass: `go -C go test -json -tags=parity -race -count=1
-./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
-`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
-./cmd/pithead` (compile only).
+The paired core command combined all three targets above. Native checks pass:
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build
+-o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
 
-Changed Go files pass `gofmt -l`; changed shell files pass `shfmt -i 4 -d`.
-`shellcheck -x --severity=warning pithead tests/go-parity/env_write_reference.sh`
-passes. Locked Ruff checks and formatting pass for all 632 Python files through
-`make lint-py`; dashboard extras are restored with `uv sync --locked --project
-dashboard --extra dev --extra test`.
+Changed Go files pass `gofmt -l`; the changed shell hook passes `shfmt -i 4 -d`.
+`shellcheck -x --severity=warning pithead` passes. Security review found no
+remaining defect; adversarial review identified the unexecuted privileged
+success path as the proof limit recorded above.
+
+The final paired lint run reports 22 third-party cache Markdown findings. Its
+initial run also read a private Markdown audit copy; that copy now has a text
+extension, and the unchanged lint command was repeated. Locked Ruff lint and
+formatting pass for all 634 Python files. Dashboard extras are restored with
+`uv sync --locked --project dashboard --extra dev --extra test`.
+
 Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
-.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths;
-`make lint-file-budget lint-docs-voice` passes after the final ledger update with
-the starting-SHA budget override above.
+.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths.
+Paired `make lint-file-budget lint-docs-voice` passes after the ledger update
+with the starting-SHA budget override above.
 
-Independent security and adversarial reviews found no remaining defect. A
-frozen-source checksum audit confirms the tested implementation and comparisons
-are unchanged after validation. Existing tests, fixtures and Make behavior remain
-unchanged; the new target adds supplementary coverage and existing dependencies.
-Earlier Tari publication results are preserved in the linked configuration ledger.
-Original Linux lifecycle/config suites remain unavailable locally. Dashboard,
-fake-daemon and patch-coverage suites are not rerun for this CLI-only change;
-earlier paired results remain in the linked ledgers.
+Existing tests, fixtures and Make behavior remain unchanged. The new target
+adds supplementary coverage and existing dependencies; implementation and new
+test checksums remain frozen after validation. Earlier env publication results
+are preserved in the linked publication ledger. Dashboard, fake-daemon and
+patch-coverage suites are not rerun for this CLI-only change; earlier paired
+results remain in the linked ledgers.
 
 ## Unavailable and known host constraints
 
@@ -267,8 +271,8 @@ Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
 and dashboard application code on 2026-11-01; shipping integration follows those
 ports. Next, in order:
 
-1. Finish config rendering and parser orchestration, including remaining config writes and secret ownership repair. Preserve Caddyfile staged writes and partial-file failures. Obtain unchanged Linux CLI and Docker parser verdicts.
-2. Port the operational bodies of `render`, `apply`, `up`, `down` and `restart`; their option parsing is native.
+1. Consolidate remaining config/parser orchestration and writes. Obtain privileged Tari ownership proof and unchanged Linux CLI/Docker verdicts. Preserve Caddyfile staged writes and partial-file failures.
+2. Port `render_derived`, then the operational bodies of `apply`, `up`, `down` and `restart`; their option parsing is native. Preserve operation order and select unsupported-case fallback before any mutation.
 3. Implement dashboard routes, HTTP/JSON, state/polling, wizard/control, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 5. Update shipping documentation, release bundles, dashboard images and appliance image builds with reference fallback.
