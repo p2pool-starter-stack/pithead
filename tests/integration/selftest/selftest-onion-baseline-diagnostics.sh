@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034 # globals are consumed by sourced functions
+# shellcheck disable=SC2034
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
@@ -36,7 +36,7 @@ rx() {
     esac
 }
 
-probe() { # <build rc> <probe rc> <probe output>
+probe() {
     BUILD_RC="$1" PROBE_RC="$2" PROBE_OUT="$3"
     rm -f "$OUT_DIR/onion-baseline-probe.failure.json"
     local before="$IT_FAIL"

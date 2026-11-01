@@ -1,10 +1,10 @@
 # shellcheck shell=bash
-onion_probe_note() { # <stage> <probe exit> <http status>
+onion_probe_note() {
     ONION_PROBE_STAGE="$1" ONION_PROBE_EXIT="$2" ONION_PROBE_HTTP="$3"
     ONION_PROBE_ELAPSED=$(($(now_s) - ${ONION_PROBE_STARTED:-$(now_s)}))
 }
 
-onion_probe_classify() { # <exit> <output> -> "<stage> [http status]"
+onion_probe_classify() {
     local http=""
     case "$2" in *"HTTP "[0-9][0-9][0-9]*) http="${2##*HTTP }" http="${http:0:3}" ;; esac
     case "$1:$2" in
