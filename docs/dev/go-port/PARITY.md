@@ -127,6 +127,7 @@ selection is not implemented.
 | Worker, energy, webhook and control-character validation | Native Go-selected validators; jq compatibility fallback | Paired validator corpus and wiring checks; Go units |
 | Stratum bind and port parsing | Native for supported settings; Bash compatibility fallback | Unchanged 14-test stratum preflight and render fixture; supplementary byte/status/state comparisons and Go units; full Linux suite unavailable |
 | Caddyfile serialization, site URLs, bind plan and auth preparation | Native fragments, site/port formatting, bind filter, auth blocks and boot digest; Bash bind-candidate public-IP checks, discovery, bcrypt, certificate minting and writes; compatibility fallback | Supplementary Caddy/host/port comparisons and Go units; Linux/Docker oracle unavailable |
+| Tari wallet secret publication | Native for current effective UID and standard tools; Bash directory creation, dry-run guard, ownership repair and compatibility fallback | Supplementary native publication/protocol comparisons and Go units; unchanged render fixtures pass via tool compatibility fallback; full Linux ownership oracle unavailable |
 | `.env` serialization | Native bulk formatter with Bash derivation/writes and compatibility fallback | Unchanged render fixture/goldens pass in Go mode; full Linux suite unavailable |
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
 | Dashboard-facing CLI render values | Native supported scalar/default/worker-token plan; Bash compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
@@ -174,62 +175,73 @@ Detailed paired commands, results and limits are preserved in
 [later render results](results-render-followup.md) and
 [later configuration results](results-config-followup.md).
 
-## Lifecycle option validation slice (2026-11-01)
+## Tari wallet secret publication slice (2026-11-01)
 
-Go now parses the options for `render`, `apply`, `up`, `down` and `restart`
-through a private stdin protocol. Bash retains error formatting, early help and
-command-chain handling, deployment checks and all operational bodies. Native
-selection preserves the first invalid argument, apply's partially parsed flags,
-porcelain's dry-run requirement and restart's ignored trailing arguments.
-No native render, apply or stack operation is claimed.
+Go publishes the Tari wallet's three-line secret file when the requested UID
+matches the effective UID and the filesystem tools have their standard paths.
+The temporary file has mode 0600 before writing, is checked for the requested
+owner and replaces the destination by rename. File symlinks are replaced without
+touching their targets. Bash retains directory creation, dry-run exclusion,
+ownership repair through chown/sudo, command overrides and failure diagnostics.
+Directory destinations retain the reference mv behavior through fallback. As in
+Bash, a matching UID does not trigger a group change.
 
-The unchanged 12-group CLI contract suite remains the runnable original oracle.
-New comparisons stop at the first operational callback and compare output bytes,
-exit status, callback order and caller state. A spy verifies native success at
-each of the five boundaries, zero helper argv and exact stdin framing. Missing,
-truncated, trailing, malformed or failed helpers retain Bash validation before
-publishing state. Original Linux lifecycle tests remain unavailable on macOS;
-the supplementary cases do not establish full lifecycle parity.
+The unchanged render fixture/goldens and CLI/config comparisons pass with Go
+selection; their mocked chown path intentionally uses compatibility fallback.
+New comparisons extract the production secret block and supply the current UID
+to prove actual native publication. They compare literal bytes, owner, mode,
+link targets, dry-run behavior, umask, failure cleanup and callback order, and
+verify zero helper argv and exact stdin framing. These supplemental cases do not
+replace the original Linux ownership and payout-wallet suites, which remain
+unavailable locally. Other render/apply operations still use Bash; the dashboard
+remains Python.
 
 Baseline uses `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`. Runs use
 worktree caches and an absent Docker socket. Private records are under
-`.go-cache/logs/lifecycle-options-*`.
+`.go-cache/logs/tari-secret-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-lifecycle-options-parity` | Pass; unchanged 12-group CLI suite, 10 new comparison methods and Go units | Same result |
-| Config/render command below | Pass; unchanged 7-test raw-parser suite and render fixture/goldens included | Same result |
+| `make test-go-tari-secret-parity` | Pass; 10 new methods, unchanged env/payout render comparisons and 12-group CLI suite, plus Go units | Same result |
+| Other core comparisons below | Pass; unchanged 7-test raw-parser suite, Caddy and lifecycle comparisons included | Same result |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
 | `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
 | `make test-stack` | Exit 2: macOS refusal | Same refusal |
 | `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same result |
 
-The combined core command was `make test-go-lifecycle-options-parity
-test-go-config-input-parity test-go-wallet-classifiers-parity test-go-caddy-parity`.
-Its private records are `baseline-core` and `go-core`; paired gate, aggregate,
-stack and lint records use the corresponding suffixes.
+The combined core command was `make test-go-tari-secret-parity
+test-go-lifecycle-options-parity test-go-config-input-parity test-go-caddy-parity`.
+Final records are `baseline-core-confirmed` and `go-core-confirmed`. Initial core
+attempts stopped at the new test's system-Python-incompatible hardlink method;
+using `os.link` corrected the adapter before both full commands were repeated.
+The native command-path guard was also corrected to admit macOS's standard
+chown location before the positive native cases passed. No existing test changed.
+
 Native checks pass: `go -C go test -json -tags=parity -race -count=1
-./internal/lifecycle ./internal/cli`, `go -C go vet -tags=parity ./...` and
+./internal/config ./internal/cli`, `go -C go vet -tags=parity ./...` and
 `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
 ./cmd/pithead` (compile only).
+Changed Go files pass `gofmt -l`; changed shell files pass `shfmt -i 4 -d`.
+Final `shellcheck -x --severity=warning pithead
+tests/go-parity/tari_secret_reference.sh` passes. The new adapter declares its
+dynamically sourced variables to ShellCheck through its local SC2034 pragma.
+Locked Ruff checks/formatting pass for all 631 Python files through `make lint-py`;
+dashboard extras are restored with `uv sync --locked --project dashboard
+--extra dev --extra test`.
 
-Changed Go files pass `gofmt -l`. Changed shell files pass `shfmt -i 4 -d`;
-`shellcheck -x --severity=warning pithead tests/go-parity/lifecycle_options_reference.sh`
-passes. Locked Ruff checks and formatting pass for all 630 Python files through
-`make lint-py`. Dashboard extras are restored with
-`uv sync --locked --project dashboard --extra dev --extra test`.
 Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
 .config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths;
 `make lint-file-budget lint-docs-voice` passes after the final ledger update with
-the starting-SHA budget override above.
+the starting-SHA budget override above. Independent security and adversarial
+reviews found no remaining defect. A frozen-source checksum audit confirms the
+tested implementation and new comparisons are unchanged after final validation.
 
-Independent implementation and comparison reviews found no remaining defect.
-All pre-existing tests, fixtures and Make target behavior remain unchanged;
-only the new target is added. A frozen-source checksum audit confirms the tested
-implementation and new comparisons are unchanged after validation. Earlier
-wallet-classifier results are preserved in the linked configuration ledger.
-Dashboard, fake-daemon and patch-coverage suites are not rerun for this CLI-only
-change; earlier paired results remain in the linked ledgers.
+Existing tests, fixtures and Make target behavior remain unchanged; the new
+target adds only supplementary coverage and existing dependencies. Earlier
+lifecycle results are preserved in the linked configuration ledger. Original
+Linux Tari ownership/payout suites remain unavailable locally. Dashboard,
+fake-daemon and patch-coverage suites are not rerun for this CLI-only change;
+earlier paired results remain in the linked ledgers.
 
 ## Unavailable and known host constraints
 
@@ -264,7 +276,7 @@ Doctor and Tor/ZMTP probes remain parked. The owner narrowed scope to the CLI
 and dashboard application code on 2026-11-01; shipping integration follows those
 ports. Next, in order:
 
-1. Finish config rendering and parser orchestration. Obtain unchanged Linux CLI and Docker parser verdicts.
+1. Finish config rendering and parser orchestration, including secret ownership repair and file publication. Obtain unchanged Linux CLI and Docker parser verdicts.
 2. Port the operational bodies of `render`, `apply`, `up`, `down` and `restart`; their option parsing is native.
 3. Implement dashboard routes, HTTP/JSON, state/polling, wizard/control, SQLite migrations/recovery and the container switch.
 4. Port the remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.

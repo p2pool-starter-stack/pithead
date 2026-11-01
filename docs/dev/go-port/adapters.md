@@ -274,3 +274,11 @@ with Bash, checks actual native success through a spy and exercises missing or
 malformed helper fallback. `make test-go-lifecycle-options-parity` also runs the
 unchanged CLI contract suite. The original lifecycle lock suite remains unchanged
 and requires the Linux CLI harness; these comparisons do not prove operations.
+
+`tari_secret_reference.sh` runs the production secret-publication block extracted
+by `test_tari_secret.py`, with the current effective UID supplied for native
+coverage. It compares file bytes, owner, mode, links, umask, dry-run and failure
+callbacks, and checks the private stdin protocol and tool/helper fallback.
+`make test-go-tari-secret-parity` also runs unchanged render/payout and CLI
+comparisons. Original Linux Tari ownership/payout suites remain unchanged and
+unavailable locally; the new comparisons supplement their future verdicts.

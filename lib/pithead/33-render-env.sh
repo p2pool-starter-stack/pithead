@@ -306,7 +306,6 @@ render_env() {
     # hosts that OOM during IBD, or to give a big host more LMDB-cache headroom.
     [ "$native_memory" = true ] || monero_mem_limit=$(jq -r '.monero.mem_limit // "auto"' "$CONFIG_FILE")
     case "$monero_mem_limit" in "" | auto) monero_mem_limit="6g" ;; esac
-
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
     # Tari view-only wallet secret delivery (#462): the view key, spend key and wallet password ride an
@@ -316,17 +315,18 @@ render_env() {
     local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
     if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
-        tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
-        printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
-            "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp" &&
-            tari_foreign=$(find "$tari_secret_tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
-            { [ -z "$tari_foreign" ] || chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp"; } &&
-            mv -f "$tari_secret_tmp" "$tari_secret_file" && tari_secret_ok=true
-        # An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
-        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
-            error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
+        if declare -F _render_tari_secret_go >/dev/null && _render_tari_secret_go "$tari_secret_file" "$APP_UID" "$APP_GID" "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD"; then tari_secret_ok=true; else
+            tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
+            printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
+                "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp" &&
+                tari_foreign=$(find "$tari_secret_tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
+                { [ -z "$tari_foreign" ] || chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp"; } &&
+                mv -f "$tari_secret_tmp" "$tari_secret_file" && tari_secret_ok=true
+            # An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
+            [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
+                error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
+        fi
     fi
-
     # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
     # before the heredoc so embedded line breaks become quoted escapes, not dotenv assignments.
     (

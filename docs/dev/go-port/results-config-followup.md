@@ -215,3 +215,60 @@ Existing tests and fixtures remain unchanged. The original Monero/Tari domain
 and config-application suites require the Linux CLI harness and remain unavailable
 locally. Dashboard, fake-daemon and patch-coverage suites are not rerun for this
 CLI-only change; earlier paired results remain in the linked ledger.
+
+## Lifecycle option validation slice (2026-11-01)
+
+Go now parses the options for `render`, `apply`, `up`, `down` and `restart`
+through a private stdin protocol. Bash retains error formatting, early help and
+command-chain handling, deployment checks and all operational bodies. Native
+selection preserves the first invalid argument, apply's partially parsed flags,
+porcelain's dry-run requirement and restart's ignored trailing arguments.
+No native render, apply or stack operation is claimed.
+
+The unchanged 12-group CLI contract suite remains the runnable original oracle.
+New comparisons stop at the first operational callback and compare output bytes,
+exit status, callback order and caller state. A spy verifies native success at
+each of the five boundaries, zero helper argv and exact stdin framing. Missing,
+truncated, trailing, malformed or failed helpers retain Bash validation before
+publishing state. Original Linux lifecycle tests remain unavailable on macOS;
+the supplementary cases do not establish full lifecycle parity.
+
+Baseline uses `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`. Runs use
+worktree caches and an absent Docker socket. Private records are under
+`.go-cache/logs/lifecycle-options-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-lifecycle-options-parity` | Pass; unchanged 12-group CLI suite, 10 new comparison methods and Go units | Same result |
+| Config/render command below | Pass; unchanged 7-test raw-parser suite and render fixture/goldens included | Same result |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | Pass; 891 frontend tests | Same result |
+| `make test` | Exit 2: existing `config_defaults_reference.sh` shfmt finding; ShellCheck passes | Same result |
+| `make test-stack` | Exit 2: macOS refusal | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML pass; exit 2 at 22 cache Markdown findings | Same result |
+
+The combined core command was `make test-go-lifecycle-options-parity
+test-go-config-input-parity test-go-wallet-classifiers-parity test-go-caddy-parity`.
+Its private records are `baseline-core` and `go-core`; paired gate, aggregate,
+stack and lint records use the corresponding suffixes.
+Native checks pass: `go -C go test -json -tags=parity -race -count=1
+./internal/lifecycle ./internal/cli`, `go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64
+./cmd/pithead` (compile only).
+
+Changed Go files pass `gofmt -l`. Changed shell files pass `shfmt -i 4 -d`;
+`shellcheck -x --severity=warning pithead tests/go-parity/lifecycle_options_reference.sh`
+passes. Locked Ruff checks and formatting pass for all 630 Python files through
+`make lint-py`. Dashboard extras are restored with
+`uv sync --locked --project dashboard --extra dev --extra test`.
+Changed Markdown passes `npx --yes markdownlint-cli2@0.18.1 --config
+.config/.markdownlint-cli2.jsonc --no-globs` with the four changed document paths;
+`make lint-file-budget lint-docs-voice` passes after the final ledger update with
+the starting-SHA budget override above.
+
+Independent implementation and comparison reviews found no remaining defect.
+All pre-existing tests, fixtures and Make target behavior remain unchanged;
+only the new target is added. A frozen-source checksum audit confirms the tested
+implementation and new comparisons are unchanged after validation. Earlier
+wallet-classifier results are preserved in the linked configuration ledger.
+Dashboard, fake-daemon and patch-coverage suites are not rerun for this CLI-only
+change; earlier paired results remain in the linked ledgers.
