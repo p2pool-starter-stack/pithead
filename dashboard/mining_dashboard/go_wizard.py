@@ -152,3 +152,6 @@ def install(server=None):
     from mining_dashboard import go_wizard_transaction
 
     go_wizard_transaction.install(server)
+    from mining_dashboard import go_wizard_policy
+
+    go_wizard_policy.install(server)

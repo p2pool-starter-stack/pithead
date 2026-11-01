@@ -75,7 +75,7 @@ def response(helper, output):
         exception = getattr(builtins, kind, RuntimeError) if isinstance(kind, str) else RuntimeError
         if exception is OSError and detail.get("errno"):
             raise OSError(detail["errno"], message)
-        if exception not in (OSError, ValueError, KeyError):
+        if exception not in (OSError, ValueError, KeyError, TypeError):
             exception = RuntimeError
         raise exception(message)
     return value

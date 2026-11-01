@@ -190,14 +190,15 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Remaining state presentation, polling and Tor | Python reference behind Go HTTP routing | Earnings, base metadata, egress/topology derivation and polling remain Python; no complete state proof |
 | SQLite engine, open, schema, migrations and recovery | Native Go in the normal Go server child; Python memory state and business SQL construction remain | 343 unchanged focused tests with ported Python paths fatal, existing/legacy/corrupt startup comparisons, Go units and paired full 3719-test suites |
 | Control intent envelopes, worker writable keys, request publication and result reads | Native Go helpers in the Go dashboard child; Python HTTP guards, config masking and wait loop remain | 377 unchanged focused wizard/control tests plus supplementary byte, startup, concurrency and mutation cases; injected UUID/rename hooks listed separately |
-| Wizard stage, status and read-only spool views | Native Go helpers under Go selection; Python launch, auth and HTTP orchestration remain | Same unchanged focused suites with original ported functions fatal; off-loop state/status coalescing and public reference-selection sentinels |
-| Wizard atomic writes, conflict checks, rollback and temporary cleanup | Native Go helpers, including raw archive streaming; Python form/upload decisions, recovery handler and submission orchestration remain | 282 unchanged wizard tests through the transaction adapter; injected replace/unlink cases are explicit I/O interpositions; supplementary comparisons and source mutations |
+| Wizard stage, status and read-only spool views | Native Go helpers under Go selection; Python launch and HTTP orchestration remain | Same unchanged focused suites with original ported functions fatal; off-loop state/status coalescing and public reference-selection sentinels |
+| Wizard atomic writes, conflict checks, rollback and temporary cleanup | Native Go helpers, including raw archive streaming; Python upload decisions, recovery handler and submission orchestration remain | 282 unchanged wizard tests through the transaction adapter; injected replace/unlink cases are explicit I/O interpositions; supplementary comparisons and source mutations |
+| Wizard token gate, form assembly and install validation | Native Go policy and ordered mutation plans; Python HTTP/cookie transport, input normalization and defaults table | 322 unchanged wizard/defaults tests with original policy bodies fatal; byte/order comparisons, Unicode vector and two source mutations |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
 | Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
 
 ## Harness adapters
 
-The [adapter ledger](adapters.md) lists supplementary adapters and reasons, including [wizard/control hooks](results-channel.md#adapters-and-native-proof) and [transaction hooks](results-wizard-transactions.md#adapters-and-native-proof).
+The [adapter ledger](adapters.md) lists supplementary adapters and reasons, including [wizard/control hooks](results-channel.md#adapters-and-native-proof) [transaction hooks](results-wizard-transactions.md#adapters-and-native-proof) and [policy hooks](results-wizard-policy.md#adapters-and-native-proof).
 Only new files under `tests/go-parity/` supply those hooks; existing suites remain unchanged.
 
 ## Earlier slice results
@@ -316,42 +317,33 @@ and Go-only patch coverage fail at 67% / 83%; Go plus A/B comparison append
 passes the unchanged gate at 94%. New versus original test counts are explicit
 in the later review results.
 
-## Wizard and control spool slice
+## Wizard views and transactions
 
-The [channel results](results-channel.md) separate native intent shaping, UUIDs,
-worker validation, atomic request files, result reads and wizard read-only views
-from Python route/auth/submission orchestration. The normal Go command requires
-the native control bridge. The existing wizard launch command selects native
-helpers only with `PITHEAD_IMPL=go`; reference modes ignore helper overrides.
-Status and state use one off-loop in-flight task per app, without a completed
-cache. State collection holds the existing submission lock.
+The [channel results](results-channel.md) preserve the views/control slice:
+377 unchanged focused tests, 403 with new cases, 3719 in both full arms and a
+94% appended patch-coverage pass. Native state/status collection runs off-loop,
+shares one in-flight task per app and holds the submission lock for state.
 
-The focused original suites pass unchanged in reference and Go mode. The new
-adapter makes original ported functions fatal and records native calls; three
-injected rename cases and one injected UUID case are explicit compatibility
-interpositions. Two source mutations break the unchanged oracle. The additive
-target passes 403 tests (377 original and 26 new); the frozen starting reference
-passes those same 377 original tests. Full reference/Go runs each pass 3719
-(92.83% / 84.75% Python coverage). Reference-only/Go-only patch coverage fail at
-66% / 83%; appended A/B comparisons pass the unchanged gate at 94%. Full Make
-still stops at third-party cache Markdown in both modes; changed-file gates pass.
+The [transaction results](results-wizard-transactions.md) preserve native atomic
+writes, raw archive streaming, conflicts, rollback and temporary cleanup:
+282 unchanged wizard tests, 295 with new cases, full 3719-test arms and a 95%
+appended patch-coverage pass. Explicit replace/unlink hooks preserve fault tests;
+production uses Go syscalls. Auth/form policy is added by the next slice.
 
-## Wizard transaction slice
+## Wizard auth and form policy
 
-The [transaction results](results-wizard-transactions.md) record native atomic
-writes, raw archive streaming, conflicts, rollback and temporary cleanup.
-The final focused target passes 295 tests: 282 unchanged wizard tests and 13 new
-comparisons, failure cases and mutation controls. Current and frozen-start
-reference runs each pass those same 282 original tests. The earlier channel
-target still passes 403 tests through the new additive transaction adapter.
-
-Full reference/Go dashboard runs each pass 3719 tests (92.34% / 84.14% Python
-coverage). The original suites and fixtures remain unchanged. Private I/O hooks
-preserve injected rename/unlink tests; production operations execute Go syscalls.
-Auth, form/upload decisions, recovery-handler removal and HTTP submission
-orchestration remain Python. Production shipping selection is still pending.
-Reference-only/Go-only patch coverage fail at 55% / 84%; appended A/B comparisons
-pass the unchanged gate at 95%. Full Make still stops at cache Markdown in both modes.
+The [policy results](results-wizard-policy.md) separate native token normalization,
+constant-time comparison, lockout decisions, ordered form plans and install
+validation from Python HTTP/cookie/flush handling, value normalization and
+runtime defaults. Config/document migration, upload policy, recovery and
+submission/handoff orchestration remain Python; production shipping selection
+is still pending. Current and frozen-start reference arms pass 322 unchanged
+wizard/defaults tests. The Go target passes those same tests with original ported
+bodies fatal, plus six new comparison/mutation cases (328 total).
+Full reference/Go dashboard runs each pass 3719 tests. The original suites and
+fixtures remain unchanged. See the policy results for coverage and gate limits.
+Reference-only/Go-only patch coverage fail at 53% / 84%; the appended A/B run
+passes at 94%. Full Make still stops at dependency-cache Markdown in both modes.
 
 ## Unavailable and known host constraints
 
@@ -389,7 +381,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Finish wizard auth/submission/restore/handoff and remaining control orchestration, then production selection and release/dashboard/appliance shipping artifacts with reference fallback.
+1. Finish wizard config/submission/restore/handoff and remaining control orchestration, then production selection and release/dashboard/appliance shipping artifacts with reference fallback.
 2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.
