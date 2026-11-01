@@ -456,6 +456,8 @@ seconds of the rebuild finishing rather than up to a full cycle later.
 
 #### Update all rigs
 
+The Machines page offers it as **Update all rigs to <version>** with a review dialog and a progress list; see [Machines in the lean preview](dashboard.md#machines-in-the-lean-preview).
+
 `GET /api/control/worker-upgrade-all` lists what an update-all run would do, and `POST` starts it.
 The plan names the target version (the cached latest RigForge release), the managed rigs that are
 behind it, and the rigs that cannot take the upgrade with the reason: offline or stale telemetry, an

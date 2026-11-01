@@ -220,7 +220,8 @@ with its template at `web/templates/sovereign.html`; its frontend tests are in
 The Earnings page, payout presentation and scoped host-control adapter are in
 `web/static/sovereign/earnings.mjs`, `earnings-model.mjs` and `earnings-control.mjs`.
 The Machines page, its rig list model and its inspector are in `web/static/sovereign/machines.mjs`,
-`machines-model.mjs` and `machines-inspector.mjs`; `tests/frontend/fixtures/rigs.mjs` builds the
+`machines-model.mjs` and `machines-inspector.mjs`; Update all rigs is `machines-fleet.mjs` and
+`machines-fleet-model.mjs`; `tests/frontend/fixtures/rigs.mjs` builds the
 2-, 50- and 100-rig fleets both test tiers use.
 The browser workflow retains sanitized shell, drawer, Earnings and Machines screenshots as
 `sovereign-visual-proof`, including passing runs.

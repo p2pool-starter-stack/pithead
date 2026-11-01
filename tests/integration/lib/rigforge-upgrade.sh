@@ -149,19 +149,34 @@ _rigforge_fleet_nothing_behind_leg() { # <rig> <version-tag>
     assert_eq "update-all refuses to start with nothing behind (#3823)" "$code" "409"
 }
 
-# The real upgrade leg (#1237): drive an actual version change through the product path.
-_rigforge_upgrade_real_leg() { # <rig> <latest-tag>
-    local rig="$1" tag="$2" body status id
-    it_step "   #1237: driving a REAL upgrade to $tag through /api/control/worker-upgrade…"
-    body="$(_post_worker_upgrade "$rig" "$tag")"
+_post_fleet_upgrade() { # <version> -> response body
+    rx "curl -sS --max-time 15 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' \
+        --data $(quote_arg "$(jq -nc --arg v "$1" '{version:$v}')") \
+        http://127.0.0.1:8000/api/control/worker-upgrade-all" 2>/dev/null
+}
+
+_poll_fleet_result() { # <run-id> <rig> <timeout-s> -> the rig's settled outcome in that run (empty on timeout)
+    local deadline=$((SECONDS + $3)) body status
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        sleep 5
+        body="$(rx "curl -fsS --max-time 10 http://127.0.0.1:8000/api/control/worker-upgrade-all" 2>/dev/null)"
+        status="$(printf '%s' "$body" | jq -r --arg id "$1" --arg n "$2" '
+            .run | select(.id == $id and .status != "running")
+            | ((.rigs[]? | select(.name == $n) | .status) // .status)' 2>/dev/null)"
+        case "$status" in "" | pending | running) continue ;; esac
+        printf '%s' "$status"
+        return 0
+    done
+    return 0
+}
+
+_rigforge_upgrade_real_leg() { # <rig> <latest-tag> [single|fleet]
+    local rig="$1" tag="$2" via="${3:-single}" body status id
+    it_step "   #1237: driving a REAL upgrade to $tag through the $via upgrade route…"
+    if [ "$via" = fleet ]; then body="$(_post_fleet_upgrade "$tag")"; else body="$(_post_worker_upgrade "$rig" "$tag")"; fi
     status="$(printf '%s' "$body" | jq -r '.status // empty' 2>/dev/null)"
     id="$(printf '%s' "$body" | jq -r '.id // empty' 2>/dev/null)"
 
-    # THE assertion the old leg could not make. The rig is behind $tag, so handle_worker_upgrade's
-    # already-on-this-version shortcut cannot fire; a pending status with a pollable id is proof
-    # the intent left the dashboard process for the host runner. A noop here would mean the
-    # shortcut fired anyway — i.e. the dashboard believes the rig is already on $tag while
-    # rigforge_update says it is not — and that is a contradiction worth failing on, not skipping.
     if [ "$status" != "pending" ] || [ -z "$id" ]; then
         it_fail "a real upgrade leaves the dashboard for the host runner (#1237)" \
             "expected a 202 pending with a pollable id, got status [$status] id [$id] from [$body]"
@@ -169,11 +184,12 @@ _rigforge_upgrade_real_leg() { # <rig> <latest-tag>
     fi
     it_pass "a real upgrade leaves the dashboard for the host runner (#1237)"
 
-    status="$(_poll_upgrade_result "$id" "$IT_UPGRADE_SETTLE_TIMEOUT")"
+    if [ "$via" = fleet ]; then
+        status="$(_poll_fleet_result "$id" "$rig" "$IT_UPGRADE_SETTLE_TIMEOUT")"
+    else
+        status="$(_poll_upgrade_result "$id" "$IT_UPGRADE_SETTLE_TIMEOUT")"
+    fi
 
-    # The rig's own 6h anti-beacon window (rigforge#320) is rig STATE, not a product fault: a
-    # recent upgrade attempt on this rig makes the real path structurally unavailable for this
-    # run, and no input to this harness changes that. by-design, and loud.
     if [ "$status" = "throttled" ]; then
         it_skip_leg "real rig upgrade (#1237)" \
             "the rig refused with its own 6h anti-beacon throttle (rigforge#320) — a recent upgrade attempt on this rig makes the real path unavailable this run" \
@@ -181,10 +197,6 @@ _rigforge_upgrade_real_leg() { # <rig> <latest-tag>
         return 0
     fi
 
-    # "accepted" is the host's poll cap (90s) expiring, NOT a failure — pithead says so where it
-    # writes it. The rig is still working and the confirmation of record is its next summary, so
-    # settle against the rig itself rather than reading the cap as a red. Same promotion shape as
-    # _settle_worker_apply uses for worker-apply (#1309).
     if [ "$status" = "accepted" ]; then
         it_step "   host poll cap expired with the upgrade still running — settling against the rig's own report…"
         if wait_for "$IT_UPGRADE_SETTLE_TIMEOUT" 10 "the rig to come back reporting $tag" \
@@ -196,16 +208,10 @@ _rigforge_upgrade_real_leg() { # <rig> <latest-tag>
     if [ "$status" != "applied" ]; then
         it_fail "the one-click upgrade reaches a real applied terminal (#1237)" \
             "expected applied, got [${status:-<no terminal inside ${IT_UPGRADE_SETTLE_TIMEOUT}s>}]"
-        # Deliberately the end of the leg. The readback below would red too — the rig cannot be on
-        # a version the upgrade did not reach — and that second red is the SAME evidence counted
-        # twice. One cause, one failure; the reader needs the count to mean something.
         return 0
     fi
     it_pass "the one-click upgrade reaches a real applied terminal (#1237)"
 
-    # Version is a separate claim from the terminal, not a restatement of it. #1237 exists because
-    # the path was never proven to bring the rig BACK: `applied` is the host's report of what the
-    # rig said, while this reads what the rig now IS, on the dashboard's own summary poll.
     if wait_for "$IT_UPGRADE_SETTLE_TIMEOUT" 10 "the rig to report $tag after the upgrade" \
         _pred_rig_version_is "$rig" "$tag"; then
         it_pass "the rig comes back reporting the upgraded version $tag (#1237)"
@@ -269,7 +275,7 @@ run_rigforge_upgrade() { # <rig-name>
         return 0
     fi
 
-    _rigforge_upgrade_real_leg "$rig" "$latest"
+    _rigforge_upgrade_real_leg "$rig" "$latest" fleet
     _pred_rig_version_is "$rig" "$latest" || return 0
     _rigforge_upgrade_noop_leg "$rig" "$latest"
     _rigforge_fleet_nothing_behind_leg "$rig" "$latest"
