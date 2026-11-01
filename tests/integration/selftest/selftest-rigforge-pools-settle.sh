@@ -26,14 +26,15 @@ source "$HERE/../lib/rigforge-writable-keys.sh"
 # to that subshell (selftest-rigforge-writable-keys.sh explains the first run this cost).
 APPLY_LOG="$(mktemp)"
 MARK_LOG="$(mktemp)" # the #1379 ledger calls the leg makes; the ledger itself has its own selftest
-trap 'rm -f "$APPLY_LOG" "$MARK_LOG"' EXIT
+BOUND_LOG="$(mktemp)"
+trap 'rm -f "$APPLY_LOG" "$MARK_LOG" "$BOUND_LOG"' EXIT
 applies() { cat "$APPLY_LOG"; }
 rig_key_mark() { echo mark >>"$MARK_LOG"; }
 rig_key_clear() { echo clear >>"$MARK_LOG"; }
 ledger() { paste -sd, "$MARK_LOG"; } # "mark" = kept for the EXIT unwind, "mark,clear" = retired
 
-# One-shot: run the predicate once and return its verdict — no polling, no timing.
 wait_for() {
+    printf '%s\n' "$1" >>"$BOUND_LOG"
     shift 3
     "$@"
 }
@@ -71,6 +72,7 @@ echo "== run_rigforge_pools: a dial-time 'accepted' is settled, never read as th
 assert_eq "an async rig that reports the probe and settles its row passes all three" \
     "$(drive '["probe:1"]' applied)" "3,0"
 assert_eq "the leg wrote the probe once (#2470: the probe is its own restore)" "$(applies | grep -c .)" "1"
+assert_eq "the history wait gets the 300-second full-path rollback budget (#3819)" "$(tail -1 "$BOUND_LOG")" "300"
 
 # The readback is consulted: a rig still running other pools is NOT promoted to applied, even with
 # its history row already applied. Kills a settle predicate stubbed to `true`.
