@@ -19,12 +19,13 @@ if wizard_miner_connection_card_valid "$(jq 'del(.stratum_password)' <<<"$card")
     printf 'FAIL: missing password field is not an explicit off choice\n' >&2
     exit 1
 fi
+# Exercise the full post-install comparison without running SSH or contacting a dashboard.
 # shellcheck disable=SC2034 # the sourced phase reads the runner's ip dynamically.
 ip=fixture PASS=0 FAIL=0
 ok() { PASS=$((PASS + 1)); }
 bad() { FAIL=$((FAIL + 1)); }
 FIXTURE_CERT_DIGEST=$(printf 'a%.0s' {1..64})
-FIXTURE_ROOT=$(mktemp -d)
+FIXTURE_ROOT=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/miner-connection-card.XXXXXX")
 trap 'rm -rf "$FIXTURE_ROOT"' EXIT
 printf 'PROXY_STRATUM_PASSWORD=%s\n' "$seed" >"$FIXTURE_ROOT/.env"
 printf '{"p2pool":{"stratum_password":"auto"}}\n' >"$FIXTURE_ROOT/config.json"

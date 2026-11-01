@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+# Exercise the target probe with fake Docker/API, including failure and signal cleanup.
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-pool-sync-fault.sh
 source "$HERE/../lib/run-pool-sync-fault.sh"
-td=$(mktemp -d)
+td=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/selftest-p2pool-sync.XXXXXX")
 trap 'rm -rf -- "$td"' EXIT
 mkdir "$td/bin"
 p2pool_sidechain_sync_snippet >"$td/probe.sh"

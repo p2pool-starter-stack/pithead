@@ -10,7 +10,7 @@ boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason"
 }
 boot_status() {
     install -m 600 /dev/null "$BOOT_STATUS_LOG" || return 1
-    ./pithead status >"$BOOT_STATUS_LOG" 2>&1
+    PITHEAD_BOOT_GATE=1 ./pithead status >"$BOOT_STATUS_LOG" 2>&1
 }
 boot_status_ready() { boot_status && ! grep -q 'health check pending' "$BOOT_STATUS_LOG"; }
 
@@ -29,7 +29,7 @@ gate_ready() { # <http_code> <size_download>
     gate_answer_is_dashboard "$1" "$2" || return 1
     # shellcheck disable=SC2034 # read by pithead-boot's sourced main loop
     gate_doctor_ran=1
-    ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || return 1
+    PITHEAD_BOOT_GATE=1 ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || return 1
     boot_status_ready
 }
 

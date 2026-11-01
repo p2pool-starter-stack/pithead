@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+# Pure-file migration ownership and same-version fallback regressions.
 set -euo pipefail
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-T=$(mktemp -d)
-export TMPDIR="$T"
+T=$(mktemp -d "${TMPDIR:?}/migration-hold.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 # shellcheck source=lib/pithead/15-os-update.sh
 source "$ROOT/lib/pithead/15-os-update.sh"

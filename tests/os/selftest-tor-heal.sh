@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+# Pure harness controls: no containers, guests or network service.
 set -euo pipefail
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-work=$(mktemp -d)
-export TMPDIR="$work"
+work=$(mktemp -d "${TMPDIR:?}/tor-heal-selftest.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 # shellcheck disable=SC2034 # sourced phase reads both globals.
 OS_RUN_SUITE=1 SCRIPT_DIR="$ROOT/tests/os"
