@@ -12,18 +12,17 @@ export function rigView(worker) {
   const reporting = online && Number.isFinite(hashrate) && hashrate > 0;
   const behind = worker?.rigforge_update?.available === true;
   const status = !online ? "Offline" : behind ? "Behind" : "Mining";
-  const note = !online
-    ? null
-    : !reporting
-      ? "Hashrate unavailable"
-      : worker.adopted !== true
-        ? "unmanaged"
-        : null;
+  const note = online
+    ? [!reporting && "Hashrate unavailable", worker.adopted !== true && "unmanaged"]
+        .filter(Boolean)
+        .join(" · ") || null
+    : null;
   return {
     name: String(worker?.name ?? ""),
     status,
     note,
     attention: !online || behind || !reporting,
+    reporting,
     hashrate: reporting ? fmtHashrate(hashrate) : online ? "Unavailable" : "Offline",
     rate: reporting ? hashrate : -1,
     version: worker?.rigforge?.version || null,
@@ -35,8 +34,14 @@ export function rigView(worker) {
 
 export function rigRows(workers, { find = "", sort = "attention" } = {}) {
   const query = find.trim().toLowerCase();
+  const seen = new Map();
   const rows = (Array.isArray(workers) ? workers : [])
-    .map((worker, index) => ({ ...rigView(worker), index }))
+    .map((worker, index) => {
+      const row = rigView(worker);
+      const occurrence = seen.get(row.name) || 0;
+      seen.set(row.name, occurrence + 1);
+      return { ...row, index, occurrence, key: `${occurrence}:${row.name}` };
+    })
     .filter((row) => !query || row.name.toLowerCase().includes(query));
   const byName = (a, b) => a.name.localeCompare(b.name) || a.index - b.index;
   const order = {
@@ -49,8 +54,14 @@ export function rigRows(workers, { find = "", sort = "attention" } = {}) {
 
 export function rigSummary(workers) {
   const rows = rigRows(workers);
-  const mining = rows.filter((row) => row.status !== "Offline").length;
+  const mining = rows.filter((row) => row.reporting).length;
   return `${mining} of ${rows.length} mining`;
+}
+
+export function findRig(workers, name, occurrence) {
+  return (Array.isArray(workers) ? workers : []).filter((worker) => worker?.name === name)[
+    occurrence
+  ];
 }
 
 export function rigSettings(connection) {

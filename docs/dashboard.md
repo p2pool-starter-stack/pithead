@@ -67,7 +67,8 @@ Machines answers whether the rigs are mining and how to add one. **Connect a min
 pool address the stratum listener serves and the rig password in clear when one is set. Whenever
 the listener reports TLS, it also shows that TLS is on and the certificate fingerprint rigs pin,
 with or without a Privacy profile. **Copy rig settings** copies the pool address, plus the password
-when one is set. There is no Reveal, Hide or separate password copy.
+when one is set. There is no Reveal, Hide or separate password copy. After the session expires,
+the card hides a set password and its Copy until you sign in again.
 
 On the appliance, with the settings editor on and the session connected, **Also mine on this box**
 opens the host's `local_miner.enabled` setting through the same preview, typed confirmation and
@@ -81,20 +82,27 @@ The rig list shows each rig's name, status and 1-minute hashrate. The statuses a
 stack does not manage still reads Mining, with a quiet **unmanaged** tag. An offline rig, or an
 online rig that reports no hashrate, says so instead of showing zero. Rigs that need attention
 (offline, behind or not reporting) come first, then the rest by name. Duplicate names keep their
-host order. On a phone each rig is a single-column card. The list renders every rig without
-paging. The 100-rig browser fixture measures the render and fits 375 px without horizontal scroll.
+host order. The headline counts only rigs reporting hashrate as mining. On a phone each rig is a
+single-column card. The list renders every rig without paging. The 100-rig browser fixture asserts
+that it fits 375 px without horizontal scroll and records the time from opening the page to the
+last rig appearing.
 The list's **Advanced** section holds find, sort (attention first, name or hashrate), and a
 shares-and-version column; no list control appears outside it.
 
 Clicking or activating a rig is the only way into its inspector. Outside Advanced the inspector
 shows health only: status, the last time the rig recorded hashrate in the past 24 hours, its
 RigForge version against the latest release, the 24-hour average hashrate, and accepted and
-rejected shares. Its **Advanced** section offers only what the rig supports. With rig control
-off it says so. An unadopted rig gets the existing adopt form (host, ports, token, typed APPLY).
-An adopted rig gets **Update this rig** when it is behind, and the configuration editor as a
-Table or JSON with the existing writable keys, validation and apply polling. Closing the
-inspector returns focus to the rig and keeps the list's scroll position. The inspector shows no
-chart ranges and no per-rig change history.
+rejected shares. Each snapshot poll refreshes the inspector, except while an edit or apply is in
+progress. Duplicate-named rigs open the row that was clicked, but the host addresses rigs by name.
+Its **Advanced** section offers only what the rig supports. With rig control off, or while the
+session is disconnected or expired, it says so and offers no change. An unadopted rig gets the
+existing adopt form (host, ports, token, typed APPLY), which confirms the saved entry; managed
+telemetry follows the next poll of the rig. An adopted rig gets **Update this rig** when it is
+behind and its release page is reported, and the configuration editor as a Table or JSON with the
+existing writable keys, validation, Load from file and apply polling. Close is disabled while an
+apply runs. Closing the inspector returns focus to the rig and keeps the list's scroll position.
+The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
+no rig restart verb exists yet ([#3825](https://github.com/p2pool-starter-stack/pithead/issues/3825)).
 
 ---
 

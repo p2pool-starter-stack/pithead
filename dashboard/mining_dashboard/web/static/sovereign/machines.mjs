@@ -1,7 +1,14 @@
 import { Component, html } from "../app/preact.mjs";
 import { EarningsControl } from "./earnings-control.mjs";
 import { RigInspector } from "./machines-inspector.mjs";
-import { localMinerAvailable, rigRows, rigSettings, rigSummary, SORTS } from "./machines-model.mjs";
+import {
+  findRig,
+  localMinerAvailable,
+  rigRows,
+  rigSettings,
+  rigSummary,
+  SORTS,
+} from "./machines-model.mjs";
 
 export class ConnectCard extends Component {
   state = { connection: null, status: "" };
@@ -26,13 +33,13 @@ export class ConnectCard extends Component {
       });
     }
   }
-  render(_, { connection, status }) {
+  render({ writable = true }, { connection, status }) {
     return html`<section class="panel" aria-labelledby="connect-title"><h2 id="connect-title">Connect a miner</h2>
       ${
         connection?.url
           ? html`<dl class="connect-facts">
           <div><dt>Pool address</dt><dd><code>${connection.url}</code></dd></div>
-          <div><dt>Rig password</dt><dd>${connection.password_set && connection.password ? html`<code>${connection.password}</code>` : "None set"}</dd></div>
+          <div><dt>Rig password</dt><dd>${!connection.password_set ? "None set" : writable && connection.password ? html`<code>${connection.password}</code>` : "Hidden until you sign in again"}</dd></div>
           ${
             connection.tls
               ? html`<div><dt>TLS</dt><dd>On: turn on TLS in the miner and pin this certificate fingerprint</dd></div>
@@ -41,7 +48,7 @@ export class ConnectCard extends Component {
           }
         </dl>
         ${connection.local_only ? html`<p>The pool listens on this machine only, so rigs on other machines cannot connect.</p>` : null}
-        <button type="button" onClick=${() => this.copy()}>Copy rig settings</button>`
+        ${writable || !connection.password_set ? html`<button type="button" onClick=${() => this.copy()}>Copy rig settings</button>` : null}`
           : status
             ? null
             : html`<p role="status">Loading connection details…</p>`
@@ -67,7 +74,7 @@ export class MachinesPage extends Component {
     const rows = rigRows(workers, { find, sort });
     const writable = connected && !sessionExpired;
     return html`<div class="machines-page">
-      <${ConnectCard} fetchFn=${fetchFn} />
+      <${ConnectCard} fetchFn=${fetchFn} writable=${!sessionExpired} />
       ${
         localMinerAvailable(state) && writable
           ? html`<section class="panel" aria-labelledby="local-miner-title"><h2 id="local-miner-title">This box</h2>
@@ -93,7 +100,7 @@ export class MachinesPage extends Component {
           ) => html`<li key=${`${row.index}:${row.name}`}><button type="button" class=${`rig-row${row.attention ? " rig-attention" : ""}`}
             onClick=${(event) => {
               this.opener = event.currentTarget;
-              this.setState({ inspect: workers[row.index] });
+              this.setState({ inspect: { ...row, worker: workers[row.index] } });
             }}>
             <span class="rig-name">${row.name}</span>
             <span class="rig-status">${row.status}${row.note ? html` <span class="rig-note">${row.note}</span>` : null}</span>
@@ -106,7 +113,8 @@ export class MachinesPage extends Component {
       </section>
       ${
         inspect
-          ? html`<${RigInspector} name=${inspect.name} worker=${workers.find((worker) => worker.name === inspect.name) || inspect} onClose=${() => this.close()} />`
+          ? html`<${RigInspector} name=${inspect.name} writable=${writable}
+            worker=${findRig(workers, inspect.name, inspect.occurrence) || inspect.worker} onClose=${() => this.close()} />`
           : null
       }
     </div>`;

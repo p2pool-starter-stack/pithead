@@ -1,6 +1,6 @@
 import { html } from "../app/preact.mjs";
 import { AdoptRigForm } from "../workers/workeradopt.mjs";
-import { buildFields } from "../workers/workerlogic.mjs";
+import { buildFields, detailSnapshot } from "../workers/workerlogic.mjs";
 import { RigUpgrade, StatusLine } from "../workers/workerupgrade.mjs";
 import { WorkerField, WorkerInspect } from "../workers/workerview.mjs";
 import { rigHealth, rigView } from "./machines-model.mjs";
@@ -11,15 +11,43 @@ export class RigInspector extends WorkerInspect {
     this.state.chartRange = "24h";
   }
 
+  componentDidUpdate(previous) {
+    if (
+      previous.worker !== this.props.worker &&
+      this.state.phase === "ready" &&
+      !this.state.busy &&
+      !this.isDirty()
+    )
+      this.load(true);
+  }
+
+  async load(passive = false) {
+    if (this.state.phase !== "ready") return super.load();
+    try {
+      const response = await fetch(
+        `/api/worker?name=${encodeURIComponent(this.props.name)}&range=24h`,
+      );
+      if (!response.ok) return;
+      const detail = await response.json();
+      if (passive && (this.state.busy || this.isDirty())) return;
+      this.setState({
+        detail,
+        editText: JSON.stringify(detailSnapshot(detail), null, 2),
+        tableEdits: {},
+        jsonError: null,
+      });
+    } catch {}
+  }
+
   render() {
     const { phase, detail, error } = this.state;
     const { name, onClose } = this.props;
     const close = () => this.dialogRef.current?.close();
     return html`<dialog class="rig-inspector" ref=${this.dialogRef} aria-labelledby="rig-inspector-title"
-      onClose=${onClose} onCancel=${(event) => this.isDirty() && event.preventDefault()}>
+      onClose=${onClose} onCancel=${(event) => (this.state.busy || this.isDirty()) && event.preventDefault()}>
       <div class="rig-inspector-header">
         <h2 id="rig-inspector-title" ref=${this.titleRef} tabindex="-1">${name}</h2>
-        <button type="button" onClick=${close}>Close</button>
+        <button type="button" disabled=${this.state.busy} onClick=${close}>Close</button>
       </div>
       ${phase === "loading" ? html`<p role="status">Loading this rig…</p>` : null}
       ${phase === "error" ? html`<p role="alert">This rig could not be loaded: ${error}</p>` : null}
@@ -53,17 +81,21 @@ export class RigInspector extends WorkerInspect {
   renderAdvanced(detail) {
     if (!detail.control_enabled)
       return html`<p>Rig control is off. Turn on the editor in Settings to update, adopt or configure rigs.</p>`;
+    if (!this.props.writable)
+      return html`<p>Rig changes are unavailable while disconnected or signed out.</p>`;
     if (!detail.editable)
       return html`<h3>Manage this rig</h3>
-        <p>Managing is separate from mining: this rig keeps mining either way. After you apply, the rig shows as saved, then waits for the next poll before fresh telemetry appears.</p>
+        <p>Managing is separate from mining: this rig keeps mining either way. After you apply, the form confirms the saved entry; managed telemetry appears after the next poll of the rig.</p>
         <${AdoptRigForm} name=${this.props.name} ip=${detail.ip} onAdopted=${() => this.load()} />`;
     const { mode, tableEdits, editText, jsonError, busy, result } = this.state;
     return html`<h3>Update this rig</h3>
       ${
-        detail.rigforge_update?.available
-          ? html`<${RigUpgrade} name=${this.props.name} update=${detail.rigforge_update}
+        detail.rigforge_update?.available && !detail.rigforge_update.url
+          ? html`<p>RigForge ${detail.rigforge_update.latest} is available, but its release page is not reported, so it cannot be offered here.</p>`
+          : detail.rigforge_update?.available
+            ? html`<${RigUpgrade} name=${this.props.name} update=${detail.rigforge_update}
             canEdit=${true} busy=${busy} onDone=${() => this.load()} />`
-          : html`<p>This rig is on the latest release it reports.</p>`
+            : html`<p>This rig is on the latest release it reports.</p>`
       }
       <h3>Configuration</h3>
       <div role="group" aria-label="Configuration view">
@@ -79,7 +111,9 @@ export class RigInspector extends WorkerInspect {
           : html`<label>Rig configuration JSON
             <textarea class="rig-json" spellcheck="false" rows="10" disabled=${busy}
               value=${editText} onInput=${(event) => this.onJsonInput(event.target.value)}></textarea></label>
-            ${jsonError ? html`<p role="alert">${jsonError}</p>` : null}`
+            ${jsonError ? html`<p role="alert">${jsonError}</p>` : null}
+            <label>Load from file <input type="file" accept="application/json,.json" disabled=${busy}
+              onChange=${(event) => this.onFilePick(event)} /></label>`
       }
       <button type="button" disabled=${busy} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
       ${!busy && this.isDirty() ? html`<p>Unsaved: apply before closing, or the change is lost.</p>` : null}
