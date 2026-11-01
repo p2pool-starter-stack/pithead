@@ -114,6 +114,10 @@ compares these with Bash; mount discovery, locks, writes and recovery stay Bash.
 crash loops; `revenue.go` reports chain/miner readiness with a supplied migration
 hold. `make test-go-doctor-containers-parity` compares findings and command order
 with Bash using fake engines and sleep. Collector and hold discovery remain Bash.
+`go/internal/doctor/monero.go` implements Monero sync, peer-count and tip-age
+findings with supplied RPC getters and time. `make test-go-doctor-monero-parity`
+compares findings, authentication arguments and probe order with fake tools;
+the collector and config/time readers remain Bash.
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.

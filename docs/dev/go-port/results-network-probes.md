@@ -262,4 +262,53 @@ use `.go-cache/logs/history-*`. No Git metadata write, dependency download,
 external network request, live firewall, container, systemd, bench or daemon
 probe occurred.
 
+## Container diagnostics slice (2026-10-31)
+
+This slice starts at `b6ee409351f1b9504328b7d861a9ce9967402069`.
+
+Native restart observation preserves both snapshots, duplicate/ordered reports,
+name normalization, first-start and replacement exemptions, read failures and
+quiet sleep failure behavior. Shell-sensitive IDs, unsafe counts, empty reported
+names, unexpected diagnostics and unsupported launches decline to Bash. Revenue
+checks retain tab-IFS parsing, literal list membership, health states and
+migration-hold ordering. Hold discovery and collector wiring remain Bash; status stays unchanged.
+
+Older detailed result sections were preserved verbatim in the linked reports to
+keep this ledger below 400 lines; the consolidated results remain here.
+
+| Suite | Baseline command and result | Go command and result |
+|---|---|---|
+| Container probes | `PITHEAD_IMPL=bash make test-go-doctor-containers-parity`: PASS, 8 tagged groups plus Go units after the final fixes | `tests/go-parity/run.sh make test-go-doctor-containers-parity`: PASS |
+| CLI, status and doctor comparisons | `PITHEAD_IMPL=bash make test-go-doctor-containers-parity test-go-status-parity test-go-doctor-history-parity test-go-doctor-parity test-go-parity`: PASS, including 9 status, 13 JSON and 12 CLI groups | Same targets through `tests/go-parity/run.sh`: PASS |
+| Existing restart selftest | `PITHEAD_IMPL=bash bash tests/os/selftest-container-restarts.sh`: PASS | Same command through `tests/go-parity/run.sh`: PASS; sources Bash |
+| Doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; sources Bash |
+| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests/97.42% | `tests/go-parity/run.sh make test-dashboard`: PASS, same count/coverage; Python backend |
+| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
+| Patch coverage | Consolidated command and compare base: PASS, not applicable; no Python changes | Same Go command/base: PASS, not applicable |
+| Budget/build/docs/path/operator guards | Consolidated and control-slice commands/base: PASS | Same Go commands/base: PASS on unchanged rerun; initial exit 2/141 |
+| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS; 24 Markdown errors, exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
+| Markdown after report EOF fix | `PITHEAD_IMPL=bash make lint-md` with the local npm cache: 22 cache errors, exit 2 | Same command/cache through `tests/go-parity/run.sh`: same result |
+| Existing CLI suite | `PITHEAD_IMPL=bash make test-stack`: unavailable, macOS refusal; exit 2 | `tests/go-parity/run.sh make test-stack`: same result |
+
+`go -C go test -tags=parity -race -count=1 -run
+'TestContainerParity|TestContainerRestart|TestRestart|TestRevenue'
+./internal/doctor`, `go -C go test -count=1 ./...`, `go -C go vet -tags=parity
+./...` and the consolidated Linux CLI build command pass; no Linux runtime
+verdict is claimed. The adapter passes `bash -n`, pinned ShellCheck and shfmt.
+Scoped Markdown passes in both modes with `npm_config_cache="$PWD/.go-cache/npm"
+PITHEAD_IMPL=bash npx --yes markdownlint-cli2@0.18.1 --config
+.config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md
+docs/dev/repo-map.md docs/dev/go-port/results-cli-probes.md
+docs/dev/go-port/results-network-probes.md` and the Go wrapper equivalent.
+Independent source review passes. Security review found no Go-specific regressions. The
+source policies remain: only present rows are judged, stopped miners are accepted,
+and unreadable tables are skipped. Early guard execution returned 141 within the
+file-budget check; the identical unchanged rerun passes. Early review corrected an unsupported-input
+sentinel mapped to ordinary failure; a failing oracle witness also corrected
+literal multi-name membership. A second witness added fallback for NUL warnings
+even when the revenue-table command exits nonzero. Two report EOF blank-line
+findings were corrected; the Markdown rerun contains only cache errors. Existing tests,
+fixtures, goldens, lint rules and Make checks remain unchanged. Private command
+and exit records use `.go-cache/logs/container-*`.
+
 [Back to the parity ledger](PARITY.md)

@@ -16,6 +16,10 @@
 .PHONY: test-go-doctor-nft-parity
 .PHONY: test-go-doctor-history-parity
 .PHONY: test-go-doctor-containers-parity
+.PHONY: test-go-doctor-monero-parity
+
+test-go-doctor-monero-parity: go-build test-go ## Compare Monero sync, peer and tip diagnostics with Bash
+	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestMoneroParity ./internal/doctor
 
 test-go-doctor-containers-parity: go-build test-go ## Compare container restart and revenue-readiness findings with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run TestContainerParity ./internal/doctor

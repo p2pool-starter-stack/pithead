@@ -9,7 +9,7 @@ authorized implementation on 2026-10-31. Rounds 1–4 are committed at
 control/miner probes at `22374d87`, grouped disk checks at `eec3afce`,
 data/deployment probes at `a84818dd`, Tor address probes at `af91d3d8`, and
 payout-address/config probes at `f74043ae`, network probes at `fef0e656`, and
-LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, and Tor history at `b6ee4093`.
+LAN guard probes at `e1792854`, Docker egress probes at `7a43aa30`, nft/sync-state at `525a359b`, Tor history at `b6ee4093`, and container diagnostics at `975161c6`.
 The operator commits later rounds because
 this sandbox cannot write shared Git metadata. No performance benefit is claimed.
 
@@ -84,6 +84,7 @@ selection is not implemented.
 | Tor history saturation, current egress and doctor report | Native probes with supplied mount/config values; Bash collector | 6 tagged comparison groups and Go units |
 | Tor heal outage transitions and validity | Native canonical-record planner/validator; Bash locks and persistence | 2 tagged groups, 28 scenarios and Go units |
 | Container restart observation and revenue readiness | Native probes with supplied migration hold; Bash collector | 8 tagged groups and Go units |
+| Monero sync, peer counts and tip age | Native probes with supplied RPC getters/time; Bash collector | 9 tagged groups and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Bash fallback | Not independently proven in Go mode |
@@ -202,6 +203,11 @@ oracles:
   using fake engines/sleep and a supplied migration hold. Source-based suites
   cannot invoke native packages; this compares findings and exact tool arguments.
 
+- `doctor_monero_reference.sh` calls unchanged sync/peer/tip functions with
+  supplied RPC getters/time, synthetic credentials and fake engines/curl. Existing
+  source-based tests cannot invoke Go packages; this compares exact findings,
+  authentication arguments and call order without an RPC server or container.
+
 The adapters do not establish native behavior for sourced Bash functions. Every
 native package slice therefore has a separate tagged comparison suite. Current
 targets are `test-go-parity`, `test-go-status-parity`,
@@ -212,7 +218,7 @@ targets are `test-go-parity`, `test-go-status-parity`,
 `test-go-doctor-config-parity`, `test-go-doctor-network-parity` and
 `test-go-doctor-lan-parity`, `test-go-doctor-egress-parity` and
 `test-go-doctor-nft-parity`, `test-go-doctor-history-parity` and
-`test-go-doctor-containers-parity`.
+`test-go-doctor-containers-parity`, `test-go-doctor-monero-parity`.
 
 ## Consolidated results (2026-10-31)
 
@@ -288,60 +294,65 @@ environment, `PITHEAD_IMPL=bash make test` and
 locked grpcio 1.84.0/Pygments 2.20.0. The current dashboard and fake-daemon
 results above supersede that blocker.
 
-## Container diagnostics slice (2026-10-31)
-
-This slice starts at `b6ee409351f1b9504328b7d861a9ce9967402069`.
-
-Native restart observation preserves both snapshots, duplicate/ordered reports,
-name normalization, first-start and replacement exemptions, read failures and
-quiet sleep failure behavior. Shell-sensitive IDs, unsafe counts, empty reported
-names, unexpected diagnostics and unsupported launches decline to Bash. Revenue
-checks retain tab-IFS parsing, literal list membership, health states and
-migration-hold ordering. Hold discovery and collector wiring remain Bash; status stays unchanged.
-
-Older detailed result sections were preserved verbatim in the linked reports to
-keep this ledger below 400 lines; the consolidated results remain here.
-
-| Suite | Baseline command and result | Go command and result |
-|---|---|---|
-| Container probes | `PITHEAD_IMPL=bash make test-go-doctor-containers-parity`: PASS, 8 tagged groups plus Go units after the final fixes | `tests/go-parity/run.sh make test-go-doctor-containers-parity`: PASS |
-| CLI, status and doctor comparisons | `PITHEAD_IMPL=bash make test-go-doctor-containers-parity test-go-status-parity test-go-doctor-history-parity test-go-doctor-parity test-go-parity`: PASS, including 9 status, 13 JSON and 12 CLI groups | Same targets through `tests/go-parity/run.sh`: PASS |
-| Existing restart selftest | `PITHEAD_IMPL=bash bash tests/os/selftest-container-restarts.sh`: PASS | Same command through `tests/go-parity/run.sh`: PASS; sources Bash |
-| Doctor contract/catalog | Baseline Python commands in consolidated results: PASS, 2 tests and catalog | Same commands through `tests/go-parity/run.sh`: PASS; sources Bash |
-| Dashboard | `PITHEAD_IMPL=python make test-dashboard`: PASS, 3716 tests/97.42% | `tests/go-parity/run.sh make test-dashboard`: PASS, same count/coverage; Python backend |
-| Fake daemons | `PITHEAD_IMPL=python make test-fakes`: PASS, 54 tests | `tests/go-parity/run.sh make test-fakes`: PASS, 54 tests |
-| Patch coverage | Consolidated command and compare base: PASS, not applicable; no Python changes | Same Go command/base: PASS, not applicable |
-| Budget/build/docs/path/operator guards | Consolidated and control-slice commands/base: PASS | Same Go commands/base: PASS on unchanged rerun; initial exit 2/141 |
-| Full gate | `PITHEAD_IMPL=bash make test`: shell/Python/JS/YAML lint PASS; 24 Markdown errors, exit 2 | `tests/go-parity/run.sh make test`: same result; no Docker target reached |
-| Markdown after report EOF fix | `PITHEAD_IMPL=bash make lint-md` with the local npm cache: 22 cache errors, exit 2 | Same command/cache through `tests/go-parity/run.sh`: same result |
-| Existing CLI suite | `PITHEAD_IMPL=bash make test-stack`: unavailable, macOS refusal; exit 2 | `tests/go-parity/run.sh make test-stack`: same result |
-
-`go -C go test -tags=parity -race -count=1 -run
-'TestContainerParity|TestContainerRestart|TestRestart|TestRevenue'
-./internal/doctor`, `go -C go test -count=1 ./...`, `go -C go vet -tags=parity
-./...` and the consolidated Linux CLI build command pass; no Linux runtime
-verdict is claimed. The adapter passes `bash -n`, pinned ShellCheck and shfmt.
-Scoped Markdown passes in both modes with `npm_config_cache="$PWD/.go-cache/npm"
-PITHEAD_IMPL=bash npx --yes markdownlint-cli2@0.18.1 --config
-.config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md
-docs/dev/repo-map.md docs/dev/go-port/results-cli-probes.md
-docs/dev/go-port/results-network-probes.md` and the Go wrapper equivalent.
-Independent source review passes. Security review found no Go-specific regressions. The
-source policies remain: only present rows are judged, stopped miners are accepted,
-and unreadable tables are skipped. Early guard execution returned 141 within the
-file-budget check; the identical unchanged rerun passes. Early review corrected an unsupported-input
-sentinel mapped to ordinary failure; a failing oracle witness also corrected
-literal multi-name membership. A second witness added fallback for NUL warnings
-even when the revenue-table command exits nonzero. Two report EOF blank-line
-findings were corrected; the Markdown rerun contains only cache errors. Existing tests,
-fixtures, goldens, lint rules and Make checks remain unchanged. Private command
-and exit records use `.go-cache/logs/container-*`.
-
 ## Earlier slice results
 
 Detailed paired commands, results and limits are preserved in
 [CLI probe results](results-cli-probes.md) and
 [network and firewall results](results-network-probes.md).
+
+## Monero RPC diagnostics slice (2026-10-31)
+
+`go/internal/doctor/monero.go` implements sync, peer-count and tip-age findings.
+The container/tool gates, digest-auth arguments, RPC request order, exact TSV
+and human wording, appliance messages and stale-tip boundary match Bash.
+Peer counts come only from the in-container helper; restricted RPC counters do
+not substitute for it. A failed helper gives no reading, while nonempty partial
+curl output is still classified, matching the dispatcher's conditional context.
+The collector, config getters and clock reader remain Bash.
+
+Nine tagged groups cover 80 scenarios using fake tools and synthetic credentials.
+Peer counts or positive timestamps in decimal/exponent notation, counts above
+the safe integer range, malformed or multiple JSON documents, Unicode escapes, invalid
+UTF-8, NUL diagnostics and unsupported tool launches return
+`ErrUnsupportedProbeInput`; jq-specific parsing and exposed shell diagnostics
+remain the fallback's responsibility. No real RPC, engine or network call runs.
+Independent correctness and security reviews found no remaining new defect.
+
+Commands below use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) for the
+baseline and `tests/go-parity/run.sh` for Go selection, with the local caches above.
+Private command/exit records use `.go-cache/logs/rpc-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-doctor-monero-parity` | PASS, 9 groups / 80 scenarios | PASS, same scenarios |
+| `make test-go-doctor-containers-parity test-go-doctor-history-parity test-go-doctor-parity test-go-parity` | PASS, plus Go units | PASS, plus Go units |
+| `python3 tests/stack/doctor/test-json-contract.py` and `python3 tests/stack/doctor/check-ids.py .` | PASS, 2 contract tests and pinned IDs | PASS; original source contracts |
+| `make test-dashboard` | PASS on unchanged rerun, 3716 tests, 97.42% coverage | PASS, 3716 tests, 97.42%; Python backend |
+| `make test-fakes` | PASS, 54 tests | PASS, 54 tests; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no Python changes | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS | PASS |
+| `make test` with absent Docker socket and local npm cache | FAIL, 22 third-party cache Markdown findings, exit 2 | Same result; shell/Python/JS/YAML lint pass |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal |
+
+`go -C go test -count=1 ./...`,
+`go -C go test -tags=parity -race -count=1 -run TestMonero ./internal/doctor`,
+`go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+pass. The Linux result proves compilation only.
+The new adapter passes `bash -n`, ShellCheck 0.11.0 and shfmt 3.13.1.
+
+The first baseline dashboard run had 3715 passes and one failure in
+`TestBoundedRead.test_a_trickled_body_does_not_cost_quadratic_time` (4.6s).
+The full baseline suite passed unchanged after the concurrent checks finished;
+the initial failure remains recorded in `rpc-dashboard-baseline`.
+
+Scoped Markdown passes in both modes with the worktree-local npm cache:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md \
+  docs/dev/go-port/results-cli-probes.md docs/dev/go-port/results-network-probes.md
+```
 
 ## Unavailable and known host constraints
 
@@ -370,12 +381,13 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-1. Port remaining RPC/appliance diagnostics and Tor recovery mount, lock and
-   persistence handling.
-2. Connect the native doctor collector and human output with Bash fallback for
+1. Port `monero_rpc_speaks` remote-node preflight in `10-node-probe.sh`, then the
+   separate ZMTP greeting/publisher checks and remaining dashboard/appliance checks.
+2. Port Tor recovery mount, lock and persistence handling.
+3. Connect the native doctor collector and human output with Bash fallback for
    unsupported inputs and the pinned check-ID contract.
-3. Port config parse, validate and render, including byte-identical `.env` and
+4. Port config parse, validate and render, including byte-identical `.env` and
    Caddyfile output.
-4. Implement the dashboard Go command and container switch.
-5. Run unchanged Linux/Docker suites and the reserved-bench experiment on the
+5. Implement the dashboard Go command and container switch.
+6. Run unchanged Linux/Docker suites and the reserved-bench experiment on the
    operator's infrastructure.
