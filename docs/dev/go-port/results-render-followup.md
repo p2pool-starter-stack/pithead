@@ -195,3 +195,37 @@ Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new
 Source and security reviews found no defects or new critical, high or medium findings.
 
 An ad hoc `GOCACHE="$PWD/.go-cache/build" GOMODCACHE="$PWD/.go-cache/mod" GOPATH="$PWD/.go-cache/gopath" go -C go test ./...` omitted `TMPDIR` and failed two existing macOS doctor path assertions. It had no saved log and is not parity evidence; canonical Make runs with the worktree `TMPDIR` pass. Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice changes only CLI JSON stages; their prior paired results remain archived.
+
+## Config change-preview slice (2026-11-01)
+
+Go formats supported change descriptions and severity flags, including secret
+redaction and silent fields. Callback-dependent branches retain Bash. Go compares
+supported regular `.env` files in C/POSIX locales; other locales and unsupported
+input use the original pipeline. Bash retains prompts, config/host callbacks, rendering,
+mutation and control-channel orchestration. Main verbs still use their reference paths.
+
+Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
+Worktree caches and an absent Docker socket isolate the runs. Private records
+use `.go-cache/logs/config-preview-*`.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-config-preview-parity` | PASS, 12 supplementary methods and Go units | Same result; native messages/diffs and compatibility fallback verified |
+| Affected config/render comparisons below | PASS, five targets including unchanged raw parser and render fixture/goldens | Same result; native previews covered separately |
+| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | PASS, structural/documentation gates and 891 frontend tests | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same failure and ShellCheck result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal |
+| `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
+
+Affected config/render command: `make test-go-config-document-parity test-go-config-validation-parity test-go-env-parity test-go-env-dashboard-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/preview ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff check/format PASS.
+Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`. Final source and security reviews pass after correcting the prefix case below.
+
+The 12 supplementary preview methods cover 99 main-description cases, 28
+notification/exposure cases, five callback-dependent branches, 18 secret keys,
+eight `.env` corpora and native/protocol/fallback checks. Review caught the empty
+`TELEGRAM_EVENT_*` suffix case; the corrected matcher has Go and comparison regressions.
+Original config/approval suites remain unavailable under the Linux-only harness.
+Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice
+changes only CLI previews; their prior paired Python results remain archived.

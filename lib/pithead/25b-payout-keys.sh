@@ -3,6 +3,10 @@
 # The secret travels in the child environment, never argv or output. This is validation,
 # not signing; the arithmetic is variable-time and must not be used to spend funds.
 payout_public_view_key() { # <monero|tari> <private-view-key>
+    if declare -F _payout_public_view_key_go >/dev/null; then
+        if _payout_public_view_key_go "$@"; then return 0; else local native_rc=$?; fi
+        [ "$native_rc" -eq 125 ] || return "$native_rc"
+    fi
     PITHEAD_VIEW_SCALAR="$2" python3 - "$1" <<'PYEOF' 2>/dev/null
 import os
 import sys

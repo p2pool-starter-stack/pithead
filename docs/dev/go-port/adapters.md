@@ -220,3 +220,10 @@ exact flags, messages, key lists, statuses and native/fallback selection;
 `preview_contract_tests.py` supplies its protocol, locale and producer-failure
 cases. Original config/approval suites retain their Linux-only harness and remain
 unavailable on macOS; these new comparisons supplement them.
+
+`payout_keys_reference.sh` sources the production public-view-key function and
+ownership validator with supplied address-key results. `test_payout_keys.py`
+compares curve vectors, invalid scalars, diagnostics, derived spend-key state and
+helper fallback. The original payout-wallet-pairs suite remains unchanged under
+its Linux-only harness; Docker-backed payout-pair startup checks are unavailable
+locally. These comparisons supplement those contracts.

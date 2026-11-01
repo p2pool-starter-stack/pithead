@@ -137,13 +137,14 @@ selection is not implemented.
 | Shared Caddy/certificate site names and SANs | Native supported auto-expansion/filtering and SAN formatting; Bash selection/discovery/shell expansion and compatibility fallback | Supplementary comparisons and complete Caddy renders; full Linux/Docker oracle unavailable |
 | SSH policy and Monero RPC credential parsing | Native supported SSH validation, password projection and generation plan; Bash username projection, discovery, generation/persistence/log callbacks and compatibility fallback | Supplementary comparisons and unchanged render fixture; original Linux appliance/control oracle unavailable |
 | Required wallet fields and Tari mode | Native supported scalar/required/whitespace gates; Bash mode getter, classifiers and compatibility fallback | Supplementary partial-state/callback comparisons and unchanged render fixtures; full Linux CLI oracle unavailable |
-| Payout-confirmation scalar config and restore bounds | Native supported settings; Bash time read, wallet-ownership/curve checks and compatibility fallback | Supplementary comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
+| Payout-confirmation scalar config and restore bounds | Native supported settings; Bash time read, wallet-ownership comparisons and compatibility fallback | Supplementary comparisons and unchanged render fixture/goldens; full Linux CLI oracle unavailable |
 | Config version policy and stamping | Native supported validation/policy/ordered JSON transform; Bash file I/O, warnings and compatibility fallback | 16 supplementary comparison tests and Go units; original Linux version suite unavailable |
 | Config migrations | Native supported legacy-worker/XvB and Telegram-control plans/transforms; Bash file I/O, callbacks and compatibility fallback | 14 supplementary migration/static comparisons, 2 protocol tests and Go units; original Linux migration suites unavailable |
 | Config credential write-back and CLI appliance defaults | Native supported ordered JSON transforms; Bash generation, default-table reads, warnings and file I/O with jq fallback | 22 supplementary comparisons/static tests and Go units; original Linux suites unavailable |
 | Masked config prefill JSON | Native supported ordered transform; Bash validation, file I/O, warnings and worker callbacks with jq fallback | 9 supplementary methods, including 21 paired renders and native/protocol checks; original Linux masking/worker suites unavailable |
 | Worker read-credential JSON | Native supported JSON stages; Bash validation, HMAC, warnings and file transactions with jq fallback | 13 supplementary tests, including 25 paired renders and native/protocol checks; original Linux worker-config suite unavailable |
 | Config change descriptions and `.env` diff | Native supported messages/flags and byte-order comparisons; callback/locale compatibility fallback | 12 supplementary methods and Go units; original Linux config/approval suites unavailable |
+| Payout public-view-key derivation | Native canonical-scalar curve arithmetic; Bash ownership comparisons/diagnostics and Python compatibility fallback | 8 supplementary methods and Go units; original Linux payout-wallet-pairs suite unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
 | Dashboard routes, state, polling and Tor | Python reference | Baseline suites pass; Go backend not ported |
 | SQLite schema, migrations and recovery | Python reference | Baseline suites pass; Go backend not ported |
@@ -165,44 +166,46 @@ Detailed paired commands, results and limits are preserved in
 [configuration results](results-config.md), [render results](results-render.md) and
 [later render results](results-render-followup.md).
 
-## Config change-preview slice (2026-11-01)
+## Payout public-view-key derivation slice (2026-11-01)
 
-Go formats supported change descriptions and severity flags, including secret
-redaction and silent fields. Callback-dependent branches retain Bash. Go compares
-supported regular `.env` files in C/POSIX locales; other locales and unsupported
-input use the original pipeline. Bash retains prompts, config/host callbacks, rendering,
-mutation and control-channel orchestration. Main verbs still use their reference paths.
+Go derives supported Monero Edwards and Tari Ristretto public view keys from
+canonical private scalars. Bash retains wallet-address decoding, ownership
+comparisons, spend-key assignment and diagnostics; Python remains the fallback.
+The compatibility hook still requires Python to be discoverable, preserving the
+reference failure when it is unavailable. Main verbs and parser orchestration
+remain Bash; the dashboard backend remains Python.
 
 Baseline commands use `PITHEAD_IMPL=bash`; Go uses `tests/go-parity/run.sh`.
 Worktree caches and an absent Docker socket isolate the runs. Private records
-use `.go-cache/logs/config-preview-*`.
+use `.go-cache/logs/payout-keys-*`.
 
 | Current command | Baseline | Go selection |
 |---|---|---|
-| `make test-go-config-preview-parity` | PASS, 12 supplementary methods and Go units | Same result; native messages/diffs and compatibility fallback verified |
-| Affected config/render comparisons below | PASS, five targets including unchanged raw parser and render fixture/goldens | Same result; native previews covered separately |
+| `make test-go-payout-keys-parity` | PASS, 8 supplementary methods and Go units | Same result; native scalar derivation and fallback verified |
+| Affected config/render comparisons below | PASS, five targets including unchanged raw parser and render fixture/goldens | Same result; native derivation covered separately |
 | `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend` with `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb` | PASS, structural/documentation gates and 891 frontend tests | Same result |
 | `make test` | FAIL, existing `config_defaults_reference.sh` indentation, pinned shfmt, exit 2; ShellCheck PASS | Same failure and ShellCheck result |
 | `make test-stack` | macOS refusal, exit 2 | Same refusal |
 | `make lint-py lint-js lint-yaml lint-md` | Python, JS and YAML pass; Markdown fails on 22 findings in third-party uv-cache files, exit 2 | Same result |
 
-Affected config/render command: `make test-go-config-document-parity test-go-config-validation-parity test-go-env-parity test-go-env-dashboard-parity test-go-parity`.
-Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/preview ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
-Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff check/format PASS.
-Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`. Final source and security reviews pass after correcting the prefix case below.
+Affected config/render command: `make test-go-payout-settings-parity test-go-wallet-settings-parity test-go-config-document-parity test-go-env-parity test-go-parity`.
+Native checks PASS: `go -C go test -json -tags=parity -race -count=1 ./internal/payoutkeys ./internal/cli`, `go -C go vet -tags=parity ./...` and `GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead` (compile only).
+Go formatting, changed-shell shfmt, generated CLI/new-adapter ShellCheck and new Python Ruff check/format PASS. Scoped Markdown PASS: `npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/adapters.md docs/dev/go-port/results-render-followup.md`.
+Final source and security reviews found no defects or new critical, high or medium findings.
 
-The 12 supplementary preview methods cover 99 main-description cases, 28
-notification/exposure cases, five callback-dependent branches, 18 secret keys,
-eight `.env` corpora and native/protocol/fallback checks. Review caught the empty
-`TELEGRAM_EVENT_*` suffix case; the corrected matcher has Go and comparison regressions.
-Original config/approval suites remain unavailable under the Linux-only harness.
+The supplementary methods cover public vectors, deterministic random scalars,
+canonical-order bounds, Python hex syntax, both curve encodings, ownership
+diagnostics/spend-key state, strict helper frames and fallback. Native scalars
+travel on stdin; outputs contain public keys and verdicts. The port retains the
+reference arithmetic for validation only. The unchanged Linux payout-wallet-pairs
+and Docker-backed payout-pair startup suites remain unavailable locally.
 Dashboard, fake-daemon and patch-coverage suites were not rerun because this slice
-changes only CLI previews; their prior paired Python results remain archived.
+changes only CLI key derivation; their prior paired Python results remain archived.
 
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
-  The unchanged masking and worker-config suites require that harness and remain unproven locally.
+  The unchanged masking, worker-config and payout-wallet-pairs suites require that harness and remain unproven locally.
 - `make test` stops at existing adapter formatting. Independent Markdown lint
   also finds third-party content in the required local uv cache. Changed project
   Markdown is checked separately; the original gates remain unchanged.
