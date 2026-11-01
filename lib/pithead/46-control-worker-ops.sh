@@ -229,9 +229,6 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
         _wu_reject "malformed or missing 'version' in the upgrade request."
         return 0
     fi
-    # Per-drain budget: an upgrade blocks the single-threaded root runner on the rig's build
-    # (minutes, vs seconds for worker-apply), so exactly ONE dials per drain. v1 is per-worker
-    # only — no "upgrade all" — and a real fleet upgrade is one rig at a time by design.
     if [ "${CONTROL_WU_BUDGET:-0}" -le 0 ]; then
         _wu_reject "another worker upgrade is already in this cycle — retry in a moment."
         return 0
@@ -296,7 +293,7 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
         return 0
     fi
     local change_id
-    change_id=$(jq -r '.change_id // ""' "$bodyf" 2>/dev/null | head -c 64)
+    change_id=$(jq -r '.change_id // ""' "$bodyf" 2>/dev/null | head -c 64) || change_id=""
     rm -f "$bodyf"
     # Poll the rig's /status for THIS change_id's terminal outcome. The cap is a deliberate
     # trade: a no-rebuild upgrade (the common case — git checkout + restart) reaches terminal in

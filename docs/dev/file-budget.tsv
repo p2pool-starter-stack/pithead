@@ -77,6 +77,7 @@ tests/stack/dashboard/test-dashboard.sh	591
 tests/stack/doctor/test-doctor.sh	470
 tests/stack/standalone/test_compose.sh	462
 tests/stack/firewall/tor-egress-enforcement.sh	444
+tests/stack/run.sh	402
 tests/stack/test-backup.sh	476
 tests/stack/test-cli.sh	410
 tests/stack/test-config.sh	705
