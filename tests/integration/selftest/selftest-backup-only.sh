@@ -4,7 +4,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${BACKUP_ONLY_TEST_ROOT:-$HERE/..}"
 source "$HERE/../lib.sh"
-fixture="$(mktemp -d)"
+fixture="$(cd "$(mktemp -d)" && pwd -P)"
 trap 'rm -rf "$fixture"' EXIT
 
 run_selection() {
@@ -20,7 +20,9 @@ run_selection() {
         mkdir -p "$OUT_DIR/source"
         printf '{}' >"$OUT_DIR/source/config.json"
         printf 'fixture=true\n' >"$OUT_DIR/source/.env"
-        archive="$OUT_DIR/backup.tar.gz"
+        mkdir -p "$OUT_DIR/source/backups"
+        archive="$OUT_DIR/source/backups/pithead-backup-1.tar.gz"
+        : >"$OUT_DIR/victim"
         trace="$OUT_DIR/trace"
         : >"$trace"
         preflight() { printf 'preflight\n' >>"$trace"; }
@@ -33,8 +35,18 @@ run_selection() {
                 printf 'config.json\n.env\n'
                 return 2
                 ;;
+            pwd-failed:'pwd -P') return 1 ;;
+            pwd-relative:'pwd -P')
+                printf 'source\n'
+                return 0
+                ;;
             *:'pwd -P')
                 printf '%s/source\n' "$OUT_DIR"
+                return 0
+                ;;
+            *:'docker compose ps' | *' status')
+                printf '%s\n' "$1" >>"$trace.rx"
+                printf 'stub\n'
                 return 0
                 ;;
             esac
@@ -45,6 +57,8 @@ run_selection() {
             [ "$*" = 'backup -y --no-encrypt' ] || return 99
             if [ "$name" = wrong-root ]; then
                 tar -czf "$archive" -C "$OUT_DIR" source/config.json source/.env
+            elif [ "$name" = dot-prefix ]; then
+                tar -czf "$archive" -C / "./${OUT_DIR#/}/source/config.json" "./${OUT_DIR#/}/source/.env"
             elif [ "$name" = misleading ]; then
                 mv "$OUT_DIR/source/config.json" "$OUT_DIR/source/config.json.bad"
                 mv "$OUT_DIR/source/.env" "$OUT_DIR/source/.env.bad"
@@ -52,7 +66,14 @@ run_selection() {
             else
                 tar -czf "$archive" -C / "${OUT_DIR#/}/source/config.json" "${OUT_DIR#/}/source/.env"
             fi
-            printf 'Backup written to: %s\n' "$archive"
+            case "$name" in
+            foreign-path) printf 'Backup written to: %s\n' "$OUT_DIR/victim" ;;
+            foreign-dir)
+                cp "$archive" "$OUT_DIR/pithead-backup-1.tar.gz"
+                printf 'Backup written to: %s\n' "$OUT_DIR/pithead-backup-1.tar.gz"
+                ;;
+            *) printf 'Backup written to: %s\n' "$archive" ;;
+            esac
             return "$backup_rc"
         }
         wait_status_ok() {
@@ -81,24 +102,44 @@ assert_eq "only reservation, preflight, backup and health run" \
 assert_contains "archive members are validated" "$(cat "$fixture/success.log")" 'backup archive contains config.json'
 assert_contains "env member is validated" "$(cat "$fixture/success.log")" 'backup archive contains .env'
 assert_contains "completion identifies the focused selection" "$(cat "$fixture/success.log")" 'backup-only selection completed'
-assert_eq "successful backup archive is cleaned" "$(if [ -e "$fixture/success/backup.tar.gz" ]; then echo present; else echo absent; fi)" absent
+assert_eq "successful backup archive is cleaned" "$(if [ -e "$fixture/success/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" absent
 
 run_selection failed 7 0 --backup-only
 assert_rc "backup failure fails the selection" "$?" 1
 assert_eq "failed backup cannot reach scenarios or cleanup" \
     "$(cat "$fixture/failed/trace")" $'lock\npreflight\nbackup -y --no-encrypt'
-assert_eq "failed restart retains the archive" "$(if [ -f "$fixture/failed/backup.tar.gz" ]; then echo present; else echo absent; fi)" present
+assert_eq "failed restart retains the archive" "$(if [ -f "$fixture/failed/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
 
 run_selection unhealthy 0 1 --backup-only
 assert_rc "unhealthy post-backup stack fails" "$?" 1
 assert_contains "existing recovery is preserved" "$(cat "$fixture/unhealthy/trace")" recovery
-assert_eq "failed recovery retains the archive" "$(if [ -f "$fixture/unhealthy/backup.tar.gz" ]; then echo present; else echo absent; fi)" present
+assert_eq "recovery diagnostics stay on the stubbed target" "$(cat "$fixture/unhealthy/trace.rx")" $'docker compose ps\n./pithead status'
+assert_eq "failed recovery retains the archive" "$(if [ -f "$fixture/unhealthy/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
 
-for name in cleanup-failed corrupt misleading wrong-root; do
+run_selection dot-prefix 0 0 --backup-only
+assert_rc "dot-prefixed archive members are accepted" "$?" 0
+assert_eq "dot-prefixed archive is cleaned" "$(if [ -e "$fixture/dot-prefix/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" absent
+
+for case in cleanup-failed:present corrupt:absent misleading:absent wrong-root:absent; do
+    name="${case%%:*}"
     run_selection "$name" 0 0 --backup-only
     assert_rc "$name cannot pass backup-only" "$?" 1
-    assert_eq "$name retains the archive" "$(if [ -f "$fixture/$name/backup.tar.gz" ]; then echo present; else echo absent; fi)" present
+    assert_eq "$name archive is ${case#*:}" "$(if [ -f "$fixture/$name/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" "${case#*:}"
     assert_eq "$name cannot claim completion" "$(grep -c 'backup-only selection completed' "$fixture/$name.log")" 0
+done
+
+for name in foreign-path foreign-dir; do
+    run_selection "$name" 0 0 --backup-only
+    assert_rc "$name is not accepted as the safety archive" "$?" 1
+    assert_eq "$name is never removed" "$(if [ -f "$fixture/$name/victim" ] && [ -f "$fixture/$name/source/backups/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
+done
+assert_eq "an archive outside the stack backups directory is left alone" \
+    "$(if [ -f "$fixture/foreign-dir/pithead-backup-1.tar.gz" ]; then echo present; else echo absent; fi)" present
+
+for name in pwd-failed pwd-relative; do
+    run_selection "$name" 0 0 --backup-only
+    assert_rc "$name stack root fails backup-only" "$?" 1
+    assert_eq "$name stops before taking a backup" "$(cat "$fixture/$name/trace")" $'lock\npreflight'
 done
 
 for flag in --lifecycle --fault-injection --auth-fail-closed --hardening --rotate-onion --rigforge \
@@ -108,6 +149,13 @@ for flag in --lifecycle --fault-injection --auth-fail-closed --hardening --rotat
     run_selection "$name" 0 0 --backup-only "$flag"
     assert_rc "backup-only refuses $flag" "$?" 2
     assert_eq "refusal precedes target access for $flag" "$(cat "$fixture/$name/trace")" ''
+done
+for rig in '--rig-name rig-a' '--rig-host 192.0.2.10' '--rigforge-bootstrap-version v1.0.0'; do
+    name="refused-${rig%% *}"
+    # shellcheck disable=SC2086
+    run_selection "$name" 0 0 --backup-only $rig
+    assert_rc "backup-only refuses ${rig%% *}" "$?" 2
+    assert_eq "rig refusal precedes target access for ${rig%% *}" "$(cat "$fixture/$name/trace")" ''
 done
 run_selection scenario 0 0 --backup-only --scenario local-pruned-main-secure-tari
 assert_rc "backup-only refuses an explicit scenario" "$?" 2
@@ -139,6 +187,8 @@ validate_wrapper matrix 0 0 local-pruned-main-secure-tari --backup-only >/dev/nu
 assert_rc "wrapper refuses a scenario" "$?" 2
 validate_wrapper targeted 0 0 '' --backup-only --lifecycle >/dev/null
 assert_rc "wrapper refuses a lifecycle phase" "$?" 2
+validate_wrapper targeted 0 0 '' --backup-only --scenario local-pruned-main-secure-tari >/dev/null
+assert_rc "wrapper refuses a harness-arg scenario" "$?" 2
 validate_wrapper targeted 0 0 '' --backup-only --sweep >/dev/null
 assert_rc "wrapper refuses a sweep" "$?" 2
 

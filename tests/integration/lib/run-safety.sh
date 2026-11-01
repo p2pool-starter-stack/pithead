@@ -3,9 +3,9 @@
 validate_backup_only_args() {
     [ "$BACKUP_ONLY" = 1 ] || return 0
     local option
-    for option in ${!RUN_@} CHECK_ONLY READINESS KEEP_STATE ONLY_SCENARIO; do
+    for option in ${!RUN_@} CHECK_ONLY READINESS KEEP_STATE ONLY_SCENARIO RIG_NAME RIG_HOST RIGFORGE_BOOTSTRAP_VERSION; do
         if [ "${!option}" != 0 ] && [ -n "${!option}" ]; then
-            it_err "--backup-only cannot be combined with scenarios, other phases, --check, --readiness or --keep."
+            it_err "--backup-only cannot be combined with scenarios, other phases, a rig, --check, --readiness or --keep."
             exit 2
         fi
     done
@@ -18,8 +18,16 @@ safety_backup() {
     fi
     [ "$RUN_IMAGE_UPGRADE" != "1" ] || UPGRADE_TELEMETRY_EPOCH="$(rx 'date +%s')"
     it_log "Taking a safety backup before destructive scenarios (pithead backup -y)…"
-    # Read the archive path the CLI itself reports, not `ls -t backups/*` — a concurrent bench
-    # run's archive can win that race, and rolling back onto a foreign archive is unrecoverable.
+    local listing member stack_root
+    stack_root="$(rx 'pwd -P')" || {
+        it_fail "safety backup source directory resolved" "cannot verify archive destinations"
+        return 1
+    }
+    case "$stack_root" in /*) ;; *)
+        it_fail "safety backup source directory resolved" "expected an absolute directory"
+        return 1
+        ;;
+    esac
     if ! pithead backup -y --no-encrypt >"$OUT_DIR/backup.log" 2>&1; then
         SAFETY_ARCHIVE="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
         it_fail "safety backup created" "see $OUT_DIR/backup.log"
@@ -30,33 +38,24 @@ safety_backup() {
         return 1
     fi
     SAFETY_ARCHIVE="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
-    if [ -z "$SAFETY_ARCHIVE" ] || ! rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")"; then
-        it_fail "safety backup archive located" "the successful backup did not name a regular archive"
-        safety_cleanup
+    case "${SAFETY_ARCHIVE##*/}" in pithead-backup-*.tar.gz) ;; *) SAFETY_ARCHIVE="" ;; esac
+    if [ -z "$SAFETY_ARCHIVE" ] || ! rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE") && test \"\$(cd -P -- $(quote_arg "${SAFETY_ARCHIVE%/*}") && pwd -P)\" = $(quote_arg "$stack_root/backups")"; then
+        it_fail "safety backup archive located" "the successful backup did not name a regular archive in $stack_root/backups; nothing removed"
+        SAFETY_ARCHIVE=""
         return 1
     fi
     it_log "Safety backup: $SAFETY_ARCHIVE"
-    # Exercise backup as an assertion: the archive must list the core files we'd roll back to.
-    # An archive missing either one is not a rollback net, so refuse to run the destructive phases.
-    local listing member stack_root
-    stack_root="$(rx 'pwd -P')" || {
-        it_fail "safety backup source directory resolved" "cannot verify archive destinations; archive retained"
-        return 1
-    }
-    case "$stack_root" in /*) ;; *)
-        it_fail "safety backup source directory resolved" "expected an absolute directory; archive retained"
-        return 1
-        ;;
-    esac
     if ! listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"; then
-        it_fail "safety backup archive readable" "tar could not read the complete archive; archive retained"
+        it_fail "safety backup archive readable" "tar could not read the complete archive"
+        safety_cleanup
         return 1
     fi
     for member in config.json .env; do
         if printf '%s\n' "$listing" | grep -Fx -e "${stack_root#/}/$member" -e "./${stack_root#/}/$member" >/dev/null; then
             it_pass "backup archive contains $member"
         else
-            it_fail "backup archive contains $member" "required member missing; archive retained"
+            it_fail "backup archive contains $member" "required member missing"
+            safety_cleanup
             return 1
         fi
     done
