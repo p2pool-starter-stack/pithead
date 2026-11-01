@@ -370,7 +370,7 @@ CS_VI="$(cat "$ROOT/tests/os/verify-image.sh")"
 assert_contains "build-image stages into os/build/stage from STACK_VERSION" "$CS_BI" 'COMPOSE_SOURCE="$(stage_compose "$STACK_VERSION" os/build/stage)" || exit 1'
 assert_contains "an immutable wizard source is pulled by digest" "$CS_BI" 'docker pull -q "$WIZARD_SOURCE"'
 assert_contains "the pulled wizard digest is tagged with the runtime name" "$CS_BI" 'docker tag "$WIZARD_SOURCE" "$WIZARD_IMAGE"'
-assert_contains "the marker layer inherits from the immutable wizard source" "$CS_BI" '"$WIZARD_SOURCE" "$PITHEAD_TEST_MARKER"'
+assert_contains "the signed marker reference is pinned before archiving" "$CS_BI" '"${PITHEAD_PIN_TAG:-$STACK_VERSION}" "${MARKER_DASHBOARD_IMAGE:-}"'
 assert_contains "the runtime-tagged wizard image is saved" "$CS_BI" 'docker save "$WIZARD_IMAGE"'
 assert_contains "the Dockerfile copies the STAGED compose file" "$CS_DF" 'os/build/stage/docker-compose.yml'
 assert_contains "the Dockerfile copies the stamp beside it" "$CS_DF" 'os/build/stage/COMPOSE_SOURCE'
