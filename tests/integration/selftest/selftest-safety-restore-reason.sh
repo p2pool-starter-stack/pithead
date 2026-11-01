@@ -72,7 +72,7 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
         local mode="$1" td wait_calls=0 restore_calls=0 cleanup_calls=0 capture_started=0
         td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
         SAFETY_BACKUP=1 RUN_IMAGE_UPGRADE=0 OUT_DIR="$td/results" IT_PITHEAD=pithead
-        SAFETY_ARCHIVE=/stack/backups/pithead-backup-1.tar.gz SAFETY_RESTORE_FAILED=0
+        SAFETY_ARCHIVE=/stack/backups/pithead-backup-20260101-000000.tar.gz SAFETY_RESTORE_FAILED=0
         command mkdir -p "$OUT_DIR"
         pithead() { [ "$1" = backup ] && printf 'Backup written to: %s\n' "$SAFETY_ARCHIVE"; }
         mkdir() {

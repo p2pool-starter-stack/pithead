@@ -635,12 +635,13 @@ If the stack does not recover, the existing safety recovery restores the archive
 inject faults.
 The selection refuses other harness arguments, a scenario, a rig name or host, or `--keep`.
 The harness uses the archive path the CLI reports, never the newest file, so a concurrent
-run's archive is never used. It removes only an absolute `.../backups/pithead-backup-*.tar.gz`
-regular file whose directory resolves to the stack's `backups/` directory. If the reported path is anything else, the run fails and removes
+run's archive is never used. It removes only a regular file named
+`pithead-backup-YYYYmmdd-HHMMSS.tar.gz` directly in the stack's `backups/` directory. If the reported path is anything else, the run fails and removes
 nothing, so check `backups/` for a leftover plaintext archive. Every failure fails the run.
-An archive that fails the content checks is removed. An interrupt after the CLI reports the
-archive also removes it; an interrupt while `pithead backup` is still writing leaves the file
-for manual removal. The archive is kept when the backup's own restart failed or the recovery
+An archive that fails the content checks is removed, and so is a validated archive when the
+run is interrupted. An interrupt before validation completes leaves the file in `backups/` for
+manual removal. An interrupt while `pithead backup` runs can also leave the stack stopped,
+because the CLI stops services while it writes the archive; run `pithead up` afterwards. The archive is kept when the backup's own restart failed or the recovery
 restore did not verify.
 
 `--safety-backup` is a prerequisite modifier, not a selectable bench-ci phase or a

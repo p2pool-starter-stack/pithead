@@ -39,7 +39,8 @@ safety_backup() {
         return 1
     fi
     candidate="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
-    case "$candidate" in /*/backups/pithead-backup-*.tar.gz) ;; *) candidate="" ;; esac
+    case "${candidate%/*}" in "$stack_dir/backups" | "$stack_root/backups") ;; *) candidate="" ;; esac
+    [[ "${candidate##*/}" =~ ^pithead-backup-[0-9]{8}-[0-9]{6}\.tar\.gz$ ]] || candidate=""
     if [ -z "$candidate" ] || ! rx "test -f $(quote_arg "$candidate") && test ! -L $(quote_arg "$candidate") && archive_dir=\$(cd -P -- $(quote_arg "${candidate%/*}") && pwd -P) && backups_dir=\$(cd -P -- $(quote_arg "$stack_root/backups") && pwd -P) && test -n \"\$archive_dir\" && test \"\$archive_dir\" = \"\$backups_dir\""; then
         it_fail "safety backup archive located" "the successful backup did not name a regular archive in $stack_root/backups; nothing removed"
         return 1
