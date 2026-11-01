@@ -3,6 +3,10 @@
 Only new files under `tests/go-parity/` adapt unchanged suites or supply parity
 oracles:
 
+- `config_version_reference.sh` sources the original version functions with controlled file operations;
+  `test_config_version.py` compares policy, file bytes, metadata, cleanup and failure paths.
+  The original version suite needs Linux; unchanged render fixtures run through the existing adapters.
+
 - `config_access_reference.sh` extracts the original SSH and node-credential blocks, with
   synthetic discovery and generation/persistence callbacks; `test_config_access.py` checks
   verdicts, partial state, order and fallback without logging plaintext credentials.

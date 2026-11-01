@@ -5,11 +5,7 @@
 .PHONY: test-go-doctor-memory-parity
 .PHONY: test-go-doctor-host-parity
 .PHONY: test-go-doctor-verification-parity test-go-doctor-control-parity test-go-doctor-disk-parity test-go-doctor-data-parity test-go-doctor-onion-parity test-go-config-access-parity
-.PHONY: test-go-doctor-config-parity
-.PHONY: test-go-doctor-network-parity
-.PHONY: test-go-doctor-lan-parity
-.PHONY: test-go-doctor-egress-parity
-.PHONY: test-go-doctor-nft-parity
+.PHONY: test-go-doctor-config-parity test-go-doctor-network-parity test-go-doctor-lan-parity test-go-doctor-egress-parity test-go-doctor-nft-parity test-go-config-version-parity
 .PHONY: test-go-doctor-history-parity
 .PHONY: test-go-doctor-containers-parity
 .PHONY: test-go-doctor-monero-parity
@@ -24,6 +20,9 @@
 .PHONY: test-go-dashboard-access-parity test-go-dashboard-auth-parity
 .PHONY: test-go-directories-parity
 .PHONY: test-go-caddy-bind-parity test-go-payout-settings-parity
+
+test-go-config-version-parity: go-build test-go ## Compare config version policy and stamped JSON with Bash
+	python3 tests/go-parity/test_config_version.py
 
 test-go-config-access-parity: go-build test-go ## Compare SSH policy and node credential parsing with Bash
 	python3 tests/go-parity/test_config_access.py
