@@ -15,7 +15,6 @@ source "$HERE/../lib/run-state.sh"
 
 echo "== required Tari uses a fresh bounded observation (#3059) =="
 
-# Drives the real required-Tari block so a stale cached `st` cannot pass unnoticed.
 RUN_STATE="$HERE/../lib/run-state.sh"
 TARI_BLOCK="$(sed -n '/^    # 7\. Tari sync-gate posture/,/^    # 7b\./p' "$RUN_STATE" | sed '$d')"
 assert_contains "required-Tari block extraction retains its env binding" \

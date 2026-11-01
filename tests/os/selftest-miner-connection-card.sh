@@ -19,7 +19,6 @@ if wizard_miner_connection_card_valid "$(jq 'del(.stratum_password)' <<<"$card")
     printf 'FAIL: missing password field is not an explicit off choice\n' >&2
     exit 1
 fi
-# Exercise the full post-install comparison without running SSH or contacting a dashboard.
 # shellcheck disable=SC2034 # the sourced phase reads the runner's ip dynamically.
 ip=fixture PASS=0 FAIL=0
 ok() { PASS=$((PASS + 1)); }

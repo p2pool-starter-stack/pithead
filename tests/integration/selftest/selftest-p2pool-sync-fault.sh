@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Exercise the target probe with fake Docker/API, including failure and signal cleanup.
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INTEGRATION_RUN_SUITE=1
