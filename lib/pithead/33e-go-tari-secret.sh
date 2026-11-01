@@ -12,9 +12,9 @@ _tari_secret_native_commands() {
 
 _render_tari_secret_go() {
     local path="$1" uid="$2" gid="$3" view="$4" spend="$5" password="$6"
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_rc extra
+    local binary="${_pithead_go_hybrid_binary:-}" native_rc extra
     _tari_secret_native_commands || return 125
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' native_rc && [ "$native_rc" = 0 ] &&

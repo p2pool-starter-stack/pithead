@@ -16,15 +16,25 @@ SERIES_FIELDS = {
 }
 
 
-def _args(name, args):
+def _args(name, args, settings):
     args = list(args)
     if name == "build_payouts":
         state = args[0]
         args[0] = {
             chain: list(state.get_payouts(chain)) if state is not None and enabled else []
             for chain, enabled in (
-                ("monero", config.PAYOUT_CONFIRM_ENABLED),
-                ("tari", config.TARI_PAYOUT_CONFIRM_ENABLED),
+                (
+                    "monero",
+                    settings["payout_confirm_enabled"]
+                    if "payout_confirm_enabled" in settings
+                    else config.PAYOUT_CONFIRM_ENABLED,
+                ),
+                (
+                    "tari",
+                    settings["tari_payout_confirm_enabled"]
+                    if "tari_payout_confirm_enabled" in settings
+                    else config.TARI_PAYOUT_CONFIRM_ENABLED,
+                ),
             )
         }
     elif name in ("build_hashrate", "build_cadence"):
@@ -34,16 +44,17 @@ def _args(name, args):
     return args
 
 
-def builders(sections, captured):
+def builders(sections, captured, settings=None):
+    settings = settings or {}
     result = {name: (lambda *_args, value=value: value) for name, value in sections.items()}
     for name, field in SERIES_FIELDS.items():
 
         def capture(*args, operation=name, target=field):
             captured[target] = {
                 "operation": operation,
-                "args": _args(operation, args),
-                "now": time.time(),
-                "zone": os.environ.get("TZ", ""),
+                "args": _args(operation, args, settings),
+                "now": settings["now"] if "now" in settings else time.time(),
+                "zone": settings["zone"] if "zone" in settings else os.environ.get("TZ", ""),
             }
 
         result[name] = capture

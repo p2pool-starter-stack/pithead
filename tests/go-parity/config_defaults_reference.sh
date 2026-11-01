@@ -15,9 +15,9 @@ source "$root/lib/pithead/19a-config-defaults.sh"
 config_platform() { printf '%s' "$fixture_platform"; }
 config_defaults_json() { /bin/cat "$fixture_table"; }
 case "$operation" in
-    defaults) config_defaults "$mode" "$fixture_platform" ;;
-    default) default_of "$path" "$mode" ;;
-    install) new_install_defaults ;;
-    get) config_get "$path" "$CONFIG_FILE" ;;
-    *) exit 64 ;;
+defaults) config_defaults "$mode" "$fixture_platform" ;;
+default) default_of "$path" "$mode" ;;
+install) new_install_defaults ;;
+get) config_get "$path" "$CONFIG_FILE" ;;
+*) exit 64 ;;
 esac

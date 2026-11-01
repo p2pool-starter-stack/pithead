@@ -11,7 +11,7 @@ from mining_dashboard.web.views.xvb_views import (
 )
 
 
-def build_xvb_calc(metrics, state_mgr, realization=None):
+def build_xvb_calc(metrics, state_mgr, realization=None, now=None):
     """XvB tier/raffle calculator inputs for the Advanced view (Issue #118).
 
     Same pattern as ``build_earnings``'s ``coeff_day``: the server publishes the tier table and
@@ -51,7 +51,7 @@ def build_xvb_calc(metrics, state_mgr, realization=None):
     round_state = state_mgr.get_xvb_round_stats()
     round_types = (
         {}
-        if xvb_stats_are_stale(round_state)
+        if xvb_stats_are_stale(round_state, now)
         else ((round_state.get("stats") or {}).get("types") or {})
     )
     span_days = ((round_state.get("stats") or {}).get("span_days") or 0.0) if round_types else 0.0
@@ -69,7 +69,7 @@ def build_xvb_calc(metrics, state_mgr, realization=None):
     # — ``_face_value`` below then tries the vendored fallback before giving up.
     est_state = state_mgr.get_xvb_reward_estimates()
     estimates = (est_state or {}).get("estimates") or {}
-    estimates_stale = xvb_stats_are_stale(est_state)
+    estimates_stale = xvb_stats_are_stale(est_state, now)
     estimates_available = bool(estimates) and not estimates_stale
     # #1214: one static fallback figure per tier, tried only when the box is DISABLED (never
     # enabled, or turned off after its cache aged out) — an enabled box with a merely-stale or

@@ -1,6 +1,6 @@
 _render_env_memory_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_rc native_extra candidate_tari candidate_monero
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" native_rc native_extra candidate_tari candidate_monero
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v cat >/dev/null 2>&1 || return 125
     {
         IFS= read -r -d '' candidate_tari && IFS= read -r -d '' candidate_monero &&
@@ -19,8 +19,8 @@ _render_env_memory_go() {
 }
 
 _render_env_memory_limit_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_rc native_extra candidate
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" native_rc native_extra candidate
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' candidate && IFS= read -r -d '' native_rc && [ "$native_rc" = 0 ] &&
@@ -35,8 +35,8 @@ _render_env_memory_limit_go() {
 }
 
 _render_env_prep_threads_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_rc native_extra candidate
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" native_rc native_extra candidate
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' candidate && IFS= read -r -d '' native_rc && [ "$native_rc" = 0 ] &&
@@ -55,8 +55,8 @@ _render_env_prep_threads_go() {
 }
 
 _render_env_out_peers_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_rc native_extra candidate
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" native_rc native_extra candidate
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' candidate && IFS= read -r -d '' native_rc && [ "$native_rc" = 0 ] &&

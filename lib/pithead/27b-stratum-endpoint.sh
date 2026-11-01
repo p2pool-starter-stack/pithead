@@ -12,8 +12,8 @@ parse_stratum_endpoint() {
 }
 
 _parse_stratum_endpoint_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" stage bind port reason native_rc extra
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" stage bind port reason native_rc extra
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' stage &&

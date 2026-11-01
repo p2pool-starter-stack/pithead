@@ -1,6 +1,6 @@
 _parse_config_access_ssh_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" reason native_rc extra
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" reason native_rc extra
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v cat >/dev/null 2>&1 || return 125
     case "$CONFIG_FILE" in -*) return 125 ;; esac
     {
@@ -20,8 +20,8 @@ _parse_config_access_ssh_go() {
 }
 
 _parse_config_access_node_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" user pass generate_user generate_pass native_rc extra
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" user pass generate_user generate_pass native_rc extra
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v cat >/dev/null 2>&1 || return 125
     case "$CONFIG_FILE" in -*) return 125 ;; esac
     {

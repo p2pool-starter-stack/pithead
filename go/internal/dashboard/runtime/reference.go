@@ -31,6 +31,8 @@ if "state_manager" in app and "latest_data" in app:
 web.run_app(app, sock=socket.socket(fileno=3), print=None, shutdown_timeout=SHUTDOWN_TIMEOUT)
 `
 
+const referenceReadyTimeout = 30 * time.Second
+
 type referenceBackend struct {
 	handler http.Handler
 	command *exec.Cmd
@@ -78,7 +80,43 @@ func startReference(webRoot string, stderr io.Writer) (*referenceBackend, error)
 		_ = command.Wait()
 		close(backend.done)
 	}()
+	if err := waitReferenceReady("http://"+listener.Addr().String(), backend.done); err != nil {
+		backend.close()
+		return nil, err
+	}
 	return backend, nil
+}
+
+func waitReferenceReady(raw string, done <-chan struct{}) error {
+	client := &http.Client{
+		Timeout: 250 * time.Millisecond,
+		Transport: &http.Transport{
+			Proxy:             nil,
+			DisableKeepAlives: true,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	defer client.CloseIdleConnections()
+	deadline := time.NewTimer(referenceReadyTimeout)
+	defer deadline.Stop()
+	for {
+		request, err := http.NewRequest(http.MethodGet, raw, nil)
+		if err != nil {
+			return err
+		}
+		response, err := client.Do(request)
+		if err == nil {
+			_ = response.Body.Close()
+			return nil
+		}
+		select {
+		case <-done:
+			return errors.New("dashboard reference backend exited before becoming ready")
+		case <-deadline.C:
+			return errors.New("dashboard reference backend did not become ready")
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
 }
 
 func referenceProxy(raw string, command *exec.Cmd) (*referenceBackend, error) {

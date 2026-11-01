@@ -1,8 +1,8 @@
 # Check the raw document before jq can discard repeated members, or a config rewrite can
 # hide them. The distributed CLI is self-contained, so this parser is embedded here.
 config_document_error() { # <file> [request: check placeholders only in .config]
-    local native_binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_reason native_rc=0
-    if [ "${PITHEAD_IMPL:-}" = go ]; then native_binary="${PITHEAD_GO_BINARY:-$native_binary}"; fi
+    local native_binary="${_pithead_go_hybrid_binary:-}" native_reason native_rc=0
+    if [ "${PITHEAD_IMPL:-}" = go ]; then native_binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then native_binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     if [ -n "$native_binary" ] && [ -x "$native_binary" ] && command -v python3 >/dev/null 2>&1; then
         native_reason=$(PITHEAD_GO_HELPER=config-document "$native_binary" "$1" "${2:-config}" 2>/dev/null) || native_rc=$?
         case "$native_rc" in
@@ -98,8 +98,8 @@ validate_config_control_characters() {
 }
 
 _config_validation_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}"
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v jq >/dev/null 2>&1 || return 125
     PITHEAD_GO_HELPER=config-validation "$binary" "$1" "$CONFIG_FILE"
 }

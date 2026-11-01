@@ -18,7 +18,9 @@ daemons, browser assets, runtime filenames, database migrations and wire formats
 
 The operator loop stops around 2026-11-02 22:00Z; access ends 2026-11-03.
 The operator's 15:30Z ruling moves the dashboard ahead of further CLI refinement,
-until Go serves its contracts on existing and corrupt databases.
+until Go serves its contracts on existing and corrupt databases. The later 19:45Z
+review order places the six review fixes first, then native SQLite, wizard/control
+and shipping selection/artifacts. G7 escape-byte and G8 privileged Linux proof follow.
 Fleet tests may target pushed heads through the normal bench API, following its
 contracts with `submitted_by=gpt-6.1-sol/developer`, a #3811 note and an idempotency
 key. Keep topology private. A separate session owns performance work: leave its
@@ -58,7 +60,13 @@ ignored.
 Executing the generated CLI with `PITHEAD_IMPL=go` selects `go/bin/pithead`.
 Sourcing it still defines Bash functions. Unported commands exec Bash with the
 same argv, streams, exit status and inherited descriptors, setting
-`PITHEAD_IMPL=bash` to prevent recursion. `PITHEAD_GO_BINARY` supports copied
+`PITHEAD_IMPL=bash` to prevent recursion. Only Go-selected fallback exports the
+private hybrid marker; the launcher consumes it into non-exported shell state.
+Standalone helper adapters also recognize that private marker. The
+[legacy fixture adapter](results-review.md#additive-adapters-and-compatibility)
+supplies it only to five existing internal-marker test methods. Public reference
+selection ignores native helper paths, including `PITHEAD_GO_CONFIG_DOCUMENT_BINARY`.
+`PITHEAD_GO_BINARY` supports copied
 fixtures and `PITHEAD_GO_REFERENCE` carries the original invocation path. Unset,
 `bash` and `python` keep the reference implementation. Dashboard container
 selection is not implemented.
@@ -70,7 +78,7 @@ selection is not implemented.
 | CLI dispatcher and fallback | Implemented | 12-group paired CLI suite and Go units |
 | `help`, `-h`, `--help` | Native, except logs passthrough | Paired CLI suite and Go units |
 | `version`, `-V`, `--version` | Native | Paired CLI suite and Go units |
-| `status` | Native bare command; flags, chains and missing Docker fall back | 9-group paired status suite and Go units |
+| `status` | Native bare command; flags, chains, missing Docker and already-closed stdout fall back | 9-group paired status suite and Go units |
 | `doctor` | Go JSON formatting with Bash collection; human, terminal JSON and unsupported cases fall back | 13-group paired JSON suite and Go units |
 | Doctor memory and clock probes | Native packages; Bash collector | 11 tagged comparison groups and Go units |
 | Doctor engine, boot, CPU and dependencies | Native packages; Bash collector | 9 tagged host groups and Go units |
@@ -158,6 +166,8 @@ selection is not implemented.
 | Shared dotenv decoding and file lookup | Native supported decoder and literal-key lookup; Bash file collection, regex matching and compatibility fallback | Unchanged directory line-break suite, 12 supplementary methods and Go units; broader Linux unit-helper suite unavailable |
 | Compose project identity | Native supported C/POSIX resolver; Bash file collection, warning callbacks and compatibility fallback | Unchanged 14-assertion ownership suite, supplementary comparisons and Go units; broader Linux/Docker oracle unavailable |
 | Remaining typed validation and config-derived values | Bash fallback | Existing sparse-config fixtures pass with Go helpers |
+| Dashboard child readiness | Bounded readiness and early-exit detection for the Python child | Delayed/failed startup Go units and unchanged HTTP suites |
+| State response generation | One frozen input envelope across hybrid request phases | Forced-interleaving and single-clock regressions, Go transport unit and unchanged state/view suites |
 | Dashboard route/method table, security headers and shell/static/preview transport | Native Go server with explicit Python data/control fallback | 19 unchanged HTTP tests, 7 new comparisons and Go units; full unchanged 3716-test suite passes through adapter |
 | Miner connection, XvB standby and Prometheus routes | Native payload/exposition with Go domain computation and Python config/storage inputs; compatibility fallback | Unchanged route suites and new native-ownership comparisons; full backend remains hybrid |
 | `/api/state` history chart | Native filtering, downsampling, gaps and markers; Python storage and other state sections | Unchanged chart/state suites through new adapter, supplementary oracle comparisons and Go units |
@@ -191,155 +201,54 @@ Detailed paired commands, results and limits are preserved in
 [configuration publication results](results-config-publication.md) and
 [dashboard HTTP results](results-dashboard.md).
 
-## Native dashboard fleet and resources slice (2026-11-01)
+## Dashboard presentation results (2026-11-01)
 
-Go now builds worker rows, RigForge chips/inspect rows and release hints, energy
-inputs, and host-resource availability/capacity outlook. Worker sorting, skipped
-rows, share formatting, power precedence, feed freshness, prices, original sample
-times and bounded history resets follow the reference builders. Python supplies
-raw snapshots, config descriptors and the existing disk query. State requests
-capture those inputs and Go assembles the final three fields without subprocesses.
+The fleet/resource and overview/badge slices are preserved in the
+[presentation results](results-dashboard-presentation.md). Their full 3716-test
+reference and Go runs passed; storage, polling, earnings and launch selection
+remained Python. The review follow-up below supersedes their gate status.
 
-The resource helper preserves invalid nonfinite samples as invalid numeric inputs
-instead of converting them to null. Exact integer conservation avoids rounding
-large byte counts into a false valid sample. Native capacity calculations refuse
-integer operands beyond exact float range and malformed composites, retaining
-Python fallback. Fleet integer formatting and durations retain arbitrary integers;
-RigForge timestamp parsing matches Python's accepted forms and rejects fractions.
+## Independent review follow-up (2026-11-01)
 
-At this slice's completion, economics, badges, pool/network and base metadata,
-polling, SQLite, wizard/control and container selection remained Python. The later
-overview slice below supersedes the badge and pool/network display status. The worker
-inspect route still uses Python in production; its shared display builders are
-also tested directly through Go. Startup on existing/corrupt databases is still
-provided by the Python child, not native storage. No performance claim is made.
+The operator's 19:45Z ruling moves G9, G1, G4, G5, G6 and G10 ahead of further
+backend work. These six fixes are implemented; exact commands, results, adapters
+and intentional compatibility cases are in the [review results](results-review.md).
 
-The new fleet adapter layers over the existing views/metrics/state/HTTP adapters.
-Persistent helpers remove process startup from the unchanged 1000-cycle resource
-cost test; every call executes Go with fresh inputs and no cached answers.
-The HTTP ownership comparison makes Python workers/energy/resources builders
-raise while native state still succeeds. Existing suites and fixtures are unchanged.
-Under coverage, the adapter reloads the resource module after tracing starts,
-then reinstalls native bindings before collection. This records module setup;
-the selected resource calculations still execute Go.
+- G9: fixed branch-added adapter indentation and added a 25-minute reusable Go
+  CI job for builds, race units, vet and focused parity. Existing jobs/checks remain.
+- G1: the unchanged seven-test parser oracle runs in both modes with recorded
+  native statuses; the miner-connection group records native versus reference
+  ownership. Isolated source mutants leave the original oracle green and fail
+  the new ownership assertions. `make test-go-native-guards` runs these proofs.
+- G4: unset, Bash and Python selection ignore native-helper overrides. Native
+  fallback carries private hybrid state while preserving the established Bash
+  selector contract. Three-mode sentinels and the existing CLI suites pass.
+- G5: status retains the first stdout write error and returns 1. Closed stdout
+  uses an explicit Bash compatibility path; unwritable open stdout remains Go.
+  Closed stderr and read/write `/dev/null` retain their reference behavior.
+- G6: Go waits for bounded child readiness and detects early exit before serving.
+  Delayed and failed startup cases use a single caller request, without retries.
+- G10: state GET captures the complete input envelope, including storage, settings,
+  history, metadata and one clock. POST uses that frozen envelope. Forced poll and
+  config interleaving, fatal live storage reads and the clock boundary are covered.
 
-Both full runs use `PYTEST_XDIST_AUTO_NUM_WORKERS=1`. Baseline sets
-`PITHEAD_IMPL=python`; Go sets `PITHEAD_IMPL=go`,
-`PYTEST_PLUGINS=dashboard_fleet_plugin` and `PYTHONPATH` containing absolute
-`tests/go-parity` and `dashboard` directories. Local caches are as documented above.
-Commands, exits and private logs use `.go-cache/logs/dashboard-state-fleet-*`.
-File-budget checks use `FILE_BUDGET_BASE_REF` at the documented starting SHA.
+The frozen full suites pass in both modes: 3716 unchanged tests plus three new
+snapshot tests (3719 total). Python coverage is 97.07% for reference and 86.40%
+for Go selection. The patch gate passes at 93% for reference; Go-only patch
+coverage fails at 83%, while Go plus overview/fleet A/B append passes at 93%.
 
-| Command | Baseline | Go selection |
-|---|---|---|
-| `make test-dashboard` | Pass; 3716 unchanged tests, 96.30% Python coverage | Pass; 3716 unchanged tests, 86.86% Python coverage |
-| `make test-go-dashboard-fleet-parity` | Original graph supplies expected values; unchanged modules included in full baseline | Pass; 151 tests: 117 unchanged and 34 new comparisons |
-| `make test-patch-coverage` | Fails at 80%; reference mode does not execute Go bridge modules | Initial full-suite-only run fails at 76%; current full suite plus A/B append passes at 92% |
-| `go -C go test -race -count=1 ./...`; `go -C go vet ./...` | Additive Go checks | Pass after final numeric fixes |
-| `GOOS=linux GOARCH=amd64 go -C go build -o "$PWD/.go-cache/dashboard-linux-amd64" ./cmd/dashboard`; `make go-dashboard-build` | Additive Go builds | Pass after final numeric fixes |
-| `make test` | Blocked by unchanged shfmt failure in `tests/go-parity/config_defaults_reference.sh` | Same failure |
-| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend test-fakes` | Pass; 891 frontend tests, 54 fake-daemon tests | Pass; same 891 frontend and 54 fake-daemon tests |
-
-Python coverage does not measure Go code. The patch gate is also run after the
-full Go-selected suite followed by the new A/B cases with
-`PYTEST_ADDOPTS="--cov=mining_dashboard --cov-append --cov-report=xml --cov-report=term" make test-go-dashboard-fleet-parity`.
-Those cases execute the original Python graph to obtain their expected values
-and execute Go independently for the comparison. This combined coverage is
-reported separately from the Go-selected full suite alone; untracked new files
-are not included in the pre-commit patch diff.
-Ruff check and format check pass for the six changed Python files with
-`dashboard/pyproject.toml`. Pinned Markdown lint passes for the five changed
-Markdown files, using the existing rules with scoped file globs in
-`.go-cache/fleet.markdownlint-cli2.jsonc`. The original aggregate gates are unchanged.
-
-The first focused comparison caught the unsupported swap resource losing its
-`bytes` unit. That is corrected. Initial Go build ran during an in-progress Go
-edit and failed; the subsequent native/race checks passed. Review also caught
-large-integer conversion, malformed-capacity fallback and timestamp grammar
-differences before final verification. New comparisons cover those boundaries.
-Final review found float share grouping, negative-zero formatting and whitespace
-in IP octets differing from Python. These are fixed with Go and A/B regressions.
-Security review found full endpoint descriptors entering the internal energy
-handoff. It now projects only worker names and watts; a regression excludes
-credential and connection fields. Security re-review passes.
-Legacy RigForge ages and JSON integer `-0` also have regressions; final
-adversarial review passes. Existing Make target behavior is unchanged.
-
-Earlier transport, charts, domain metrics and presentation results are retained
-in the [dashboard ledger](results-dashboard.md). Adapter details are in the
-[fleet adapter note](adapters-dashboard-fleet.md).
-
-## Native dashboard overview and badges slice (2026-11-01)
-
-Go now formats the pool/network fields, raffle history and eligibility, update
-visibility, and ordered header badges. Python supplies raw snapshots, metrics,
-scalar locality/threshold settings, the running version and the existing native
-Monero result. Final state completion accepts only the six named overview
-operations, flattens the five pool fields and appends the native egress badge
-last. No per-request helper process is added.
-
-The badge reads the existing egress summary; egress/topology derivation and Tor
-probes remain Python. Wallet-change KV reading/parsing remains Python; the new
-Go recent-change helper is unit-tested with supplied KV snapshots only. Earnings,
-XvB forecasts/realization, base metadata, polling, SQLite, wizard/control and
-container selection remain unported. Existing/corrupt database startup still
-uses the Python child. No performance or native-storage claim is made.
-
-The new adapter layers over all earlier adapters. Direct builders execute fresh
-Go requests through persistent helpers; A/B expected values restore the original
-Python graph. It converts wallet-prefix mock inputs to strings before JSON,
-matching Python's display conversion without replacing a test fixture. Under
-coverage it reloads the badge module after tracing starts, then reinstalls native
-bindings. An HTTP ownership guard disables all six Python builders while native
-state still succeeds. Existing tests, fixtures and checks stay unchanged.
-
-Both full suites use one worker. Baseline uses `PITHEAD_IMPL=python`; Go uses
-`PITHEAD_IMPL=go`, `PYTEST_PLUGINS=dashboard_overview_plugin` and absolute
-`tests/go-parity` and `dashboard` entries in `PYTHONPATH`. Commands and exits are
-retained under `.go-cache/logs/dashboard-state-overview-*`.
-
-| Command | Baseline | Go selection |
-|---|---|---|
-| `make test-dashboard` | Pass; 3716 unchanged tests, 95.90% Python coverage on the frozen source | Pass; 3716 unchanged tests, 86.31% Python coverage |
-| `make test-go-dashboard-overview-parity` | Original graph supplies A/B expected values; focused modules included in full baseline | Pass; 202 tests: 171 unchanged and 31 new |
-| `make test-patch-coverage` | Frozen reference run fails at 76% | Full Go-selected suite alone fails at 82%; after A/B append passes at 93% |
-| `go -C go test -race -count=1 ./...`; `go -C go vet ./...` | Additive Go checks | Pass |
-| `make go-dashboard-build`; `GOOS=linux GOARCH=amd64 go -C go build -o "$PWD/.go-cache/overview-dashboard-linux-amd64" ./cmd/dashboard` | Additive Go builds | Pass |
-| `make test` | Existing unchanged adapter shfmt failure | Same failure |
-| `make test-go-dashboard-fleet-parity` with coverage append | Original graph supplies A/B expected values | Pass; 151 unchanged prior parity cases |
-| `make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings test-frontend test-fakes` | Pass; 891 frontend tests, 54 fake-daemon tests | Pass; same counts |
-
-Python coverage cannot measure native Go code. The patch gate is checked first
-on the full Go-selected suite, then after A/B cases append original-Python
-expected calculations using `PYTEST_ADDOPTS="--cov=mining_dashboard --cov-append --cov-report=xml --cov-report=term"`
-with `make test-go-dashboard-overview-parity test-go-dashboard-fleet-parity`.
-These are separate results; new untracked files are outside the pre-commit diff.
-The initial reference snapshot passed 3716 tests at 95.72% and its patch gate
-failed at 75%; it was rerun on the frozen runtime source for the paired table.
-That baseline uses a separate `COVERAGE_FILE` under `.go-cache/`; the combined
-Go/A-B coverage XML is restored afterward. Five changed Python files pass Ruff
-check/format with `dashboard/pyproject.toml`; four changed Markdown files pass
-pinned Markdown lint with existing rules and scoped globs. A final re-export
-annotation is runtime-equivalent; no existing lint rule or check changed.
-
-Initial focused failures exposed numeric defaults, null tier comparisons and a
-mock wallet-prefix serialization cycle. Go defaults and comparison rules now
-match Python, and the additive adapter preserves the mock's string input. New
-regressions cover these cases; adversarial and security review pass. One early
-worker Go run used system temporary paths and hit existing macOS path assertions;
-the documented worktree cache/TMPDIR environment passes those assertions.
-
-Adapter details are in the [overview note](adapters-dashboard-overview.md).
-The backend remains in progress; the next state slice is the earnings/XvB chain,
-followed by polling and native storage.
+This is still a hybrid dashboard. Python owns polling, SQLite, earnings/XvB,
+wizard/control and remaining handlers. Native SQLite startup on existing/corrupt
+files has not been proved. The next slice is storage, following the operator's
+review order; Go ownership guards will make Python storage fatal in that adapter.
 
 ## Unavailable and known host constraints
 
 - `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
   The unchanged unit-helper, masking, worker-config and payout-wallet-pairs suites require that harness and remain unproven locally.
-- `make test` stops at existing adapter formatting. Independent Markdown lint
-  also finds third-party content in the required local uv cache. Changed project
-  Markdown is checked separately; the original gates remain unchanged.
+- `make test` now passes shell lint and stops at Markdown lint on third-party
+  files in the required local uv cache, in both modes. Changed project Markdown
+  is checked separately; the original gates remain unchanged.
 - The default file-budget comparison against `develop` finds two pre-existing
   version-branch differences: the firstboot wizard ceiling and a
   provision-browser-submit row. The documented starting-SHA override passes; no
@@ -365,9 +274,8 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Port the earnings/XvB dependency chain and remaining base metadata, then polling; pool/raffle/update display and badges now have native builders.
-2. Port SQLite schema, migrations and corrupt-database recovery; prove startup on existing/corrupt databases.
-3. Port wizard/control, then implement the container selection switch with Python fallback.
-4. Return to remaining config/render/lifecycle operations, then CLI verbs starting with `upgrade`, `backup` and `restore`.
-5. Update shipping documentation, release bundles, dashboard images and appliance image builds with reference fallback.
-6. Obtain Go-enabled fleet proof on pushed heads; keep performance work with its separate owner.
+1. Port SQLite open/schema/migrations/corrupt-database recovery together; require native ownership and make Python storage fatal in the adapter.
+2. Port wizard/control, then the production selection switch and release/dashboard/appliance shipping artifacts with reference fallback.
+3. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
+4. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
+5. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

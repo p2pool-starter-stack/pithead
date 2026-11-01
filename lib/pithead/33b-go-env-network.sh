@@ -1,6 +1,6 @@
 _render_env_network_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_rc native_extra
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" native_rc native_extra
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v cat >/dev/null 2>&1 || return 125
     {
         IFS= read -r -d '' mono_host &&

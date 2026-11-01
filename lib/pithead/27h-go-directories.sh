@@ -1,10 +1,10 @@
 _parse_directories_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" native_rc extra index
+    local binary="${_pithead_go_hybrid_binary:-}" native_rc extra index
     local -a values=() names=(
         MONERO_DIR TARI_DIR P2POOL_DIR TOR_DATA_DIR DASHBOARD_DIR DASHBOARD_DIR_IS_DEFAULT
         PROXY_TLS_DIR CLEARNET_STATE_DIR CONTROL_DIR CADDY_LOG_DIR _data_root _dash_cfg
     )
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v cat >/dev/null 2>&1 || return 125
     case "$CONFIG_FILE" in -*) return 125 ;; esac
     {

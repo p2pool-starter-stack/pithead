@@ -1,6 +1,6 @@
 _parse_payout_monero_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" assigned mode view_key scan_height enabled reason native_rc extra
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" assigned mode view_key scan_height enabled reason native_rc extra
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v cat >/dev/null 2>&1 || return 125
     case "$CONFIG_FILE" in -*) return 125 ;; esac
     {
@@ -32,8 +32,8 @@ _parse_payout_monero_go() {
 }
 
 _parse_payout_tari_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" view_key spend_key birthday enabled reason native_rc extra
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" view_key spend_key birthday enabled reason native_rc extra
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v cat >/dev/null 2>&1 || return 125
     case "$CONFIG_FILE" in -*) return 125 ;; esac
     {
@@ -57,8 +57,8 @@ _parse_payout_tari_go() {
 }
 
 _validate_payout_birthday_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" reason native_rc extra helper_rc=0
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" reason native_rc extra helper_rc=0
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' reason && IFS= read -r -d '' native_rc && [ "$native_rc" = 0 ] &&

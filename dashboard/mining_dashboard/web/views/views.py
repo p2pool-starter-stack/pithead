@@ -246,6 +246,7 @@ def build_state(
     history=None,
     metrics=None,
     section_builders=None,
+    view_snapshot=None,
 ):
     """Assemble the full ``/api/state`` payload — the contract the client renders against.
 
@@ -258,92 +259,93 @@ def build_state(
     def section(name, *args):
         return (section_builders or {}).get(name, globals()[name])(*args)
 
+    def view_value(name, default):
+        return view_snapshot[name] if view_snapshot and name in view_snapshot else default()
+
+    def timestamped(function, *args, **kwargs):
+        if view_snapshot:
+            kwargs["now"] = now
+        return function(*args, **kwargs)
+
     data = data or {}
+    now = view_snapshot["now"] if view_snapshot else None
     history = state_mgr.get_history() if history is None else history
     share_stats = state_mgr.get_share_stats()  # per-poll share-health deltas (#116)
     raffle_wins = state_mgr.get_raffle_wins()  # rounds this wallet won, from XvB's winners file
-    # Confirmed on-chain payouts (#381): fetched once when the view-only wallet feature is on (else
-    # None), fed to both the earnings totals and the chart markers. config read at call time so
-    # tests can flip the flag per-app.
-    monero_payouts = state_mgr.get_payouts("monero") if config.PAYOUT_CONFIRM_ENABLED else None
+    payout_confirm = view_value("payout_confirm_enabled", lambda: config.PAYOUT_CONFIRM_ENABLED)
+    tari_payout_confirm = view_value(
+        "tari_payout_confirm_enabled", lambda: config.TARI_PAYOUT_CONFIRM_ENABLED
+    )
+    monero_payouts = state_mgr.get_payouts("monero") if payout_confirm else None
     metrics = build_metrics(data, state_mgr, history) if metrics is None else metrics
     db_healthy = state_mgr.is_db_healthy()
     mode_tok, p2p_tok, xvb_tok = _mode_palette(metrics.mode)
     monero = (section_builders or {}).get("build_monero")
     pool_net = section("build_pool_network", data, metrics, monero)
-    # Built once, consumed twice: the Earnings card reads the full payload, the expected-vs-actual
-    # summary (#808) rolls the same figures up — one build, so the two can't disagree.
     earnings = build_earnings(
         data,
         metrics,
         payouts=monero_payouts,
-        tari_payouts=(
-            state_mgr.get_payouts("tari") if config.TARI_PAYOUT_CONFIRM_ENABLED else None
-        ),
-        xvb_day=xvb_current_tier_reward_day(metrics, state_mgr),
+        tari_payouts=state_mgr.get_payouts("tari") if tari_payout_confirm else None,
+        xvb_day=timestamped(xvb_current_tier_reward_day, metrics, state_mgr),
     )
-    # XvB honesty figures (#866/#872), computed once and shared by the earnings summary and the
-    # tier calculator so the two can never disagree: the forecast win rate from XvB's own winners
-    # file, and the measured fraction of the published reward this wallet's wins actually paid.
     xvb_wins_day = xvb_realized = None
     if metrics.xvb_enabled:
         xvb_tiers = state_mgr.get_tiers()
-        xvb_wins_day = xvb_expected_wins_day(
-            state_mgr.get_xvb_round_stats(), xvb_forecast_tier_key(metrics, xvb_tiers), xvb_tiers
+        xvb_wins_day = timestamped(
+            xvb_expected_wins_day,
+            state_mgr.get_xvb_round_stats(),
+            xvb_forecast_tier_key(metrics, xvb_tiers),
+            xvb_tiers,
         )
-        xvb_realized = xvb_realization(
+        xvb_realized = timestamped(
+            xvb_realization,
             monero_payouts,
             raffle_wins,
             earnings["xvb_day"],
             xvb_wins_day,
             p2pool_day=earnings["coeff_day"] * metrics.p2pool_30d,
         )
-    # Expected vs actual (#808) reads the published FACE value — it tempers its own XvB leg by
-    # the measured factor and labels the untempered fallback face value in the tooltip — so it
-    # is built before the calculator's copy is tempered below.
-    earnings_summary = build_earnings_vs_actual(
+    earnings_summary = timestamped(
+        build_earnings_vs_actual,
         metrics,
         earnings,
         raffle_wins,
         expected_wins_day=xvb_wins_day,
         realization=xvb_realized,
     )
-    # The calculator/energy copy (est.xvbDay) ships TEMPERED (#902): measured realization when
     # this wallet has one, else the delivery prior's midpoint — the raw published figure was the
     # last untempered money surface (a donating box's fiat net read ~3x high on the XvB addend).
     earnings["xvb_day"] = xvb_tempered_day(earnings["xvb_day"], xvb_realized)
 
-    egress = egress_posture_from_config()  # per-component egress route + privacy roll-up (#170)
-    topology = topology_from_config()  # full stack wiring for the panel (#170); shares summary
+    egress = view_value("egress", egress_posture_from_config)
+    topology = view_value("topology", topology_from_config)
     badges = section(
-        "build_badges", data, metrics, mode_tok, db_healthy, recent_wallet_change(state_mgr)
+        "build_badges", data, metrics, mode_tok, db_healthy, recent_wallet_change(state_mgr, now)
     )
     badges.append(section("_egress_badge", egress["summary"]))
 
     disk_growth = state_mgr.get_disk_growth()
     return {
         "syncing": metrics.global_syncing,
-        "tari_gates_sync": bool(config.TARI_REQUIRED and not data.get("sync_gate_monero_only")),
+        "tari_gates_sync": bool(
+            view_value("tari_required", lambda: config.TARI_REQUIRED)
+            and not data.get("sync_gate_monero_only")
+        ),
         "page_title": "Pithead Dashboard - Syncing"
         if metrics.global_syncing
         else "Pithead Dashboard",
-        "host_ip": HOST_IP,
-        "host_addr": host_display_addr(HOST_IP),
-        # {url, client_auth} | None — the dashboard's Tor way in (#1853), shown under the host
-        # line. None whenever the onion is off or not yet provisioned, so the header renders
-        # nothing rather than an empty row. Never carries client-auth key material.
-        "dashboard_onion": dashboard_onion(),
-        **stratum_state(),
-        "version": resolve_version(),
-        # {available, latest, url} | None — new-release badge (#224), self-consistency-guarded:
-        # never advertise the version already running (#664).
+        "host_ip": view_value("host_ip", lambda: HOST_IP),
+        "host_addr": view_value("host_addr", lambda: host_display_addr(HOST_IP)),
+        "dashboard_onion": view_value("dashboard_onion", dashboard_onion),
+        **view_value("stratum", stratum_state),
+        "version": view_value("version", resolve_version),
         "update": section("visible_update", data.get("update")),
-        # Whether the control channel is on (#33) — gates the header Upgrade button (#59). The
-        # routes 404 when off, so this is display gating only, not a security control. Read at
-        # call time (module attribute, not from-import) so tests can flip the flag per-app.
-        "control_enabled": config.DASHBOARD_CONTROL_ENABLED,
-        "os_update": read_os_update_state(),
-        "last_update": format_time_abs(data.get("timestamp") or time.time()),
+        "control_enabled": view_value("control_enabled", lambda: config.DASHBOARD_CONTROL_ENABLED),
+        "os_update": view_value("os_update", read_os_update_state),
+        "last_update": view_value(
+            "last_update", lambda: format_time_abs(data.get("timestamp") or time.time())
+        ),
         "range": range_arg,
         "window": {"from": window[0], "to": window[1]} if window else None,
         "avg_window": avg_window,
@@ -366,13 +368,9 @@ def build_state(
         "raffle_eligible": section("build_raffle_eligibility", metrics),
         "raffle_wins": section("build_raffle_log", raffle_wins),
         "proxy_workers": metrics.workers_online,
-        # Confirmed payouts (#381): the stored list rides in when the feature is on, else None
-        # (feature off → earnings shows only the estimate). Built above, before the payload.
         "earnings": earnings,
-        # Expected vs actual, one row per stream (#808) — the Simple view's earnings figure.
-        # Built above, from the face-value earnings dict, before the #902 tempering.
         "earnings_summary": earnings_summary,
-        "xvb_calc": build_xvb_calc(metrics, state_mgr, realization=xvb_realized),
+        "xvb_calc": timestamped(build_xvb_calc, metrics, state_mgr, realization=xvb_realized),
         # On a backup stack, the XvB controller state last pulled from the primary (#249) — held as
         # standby, adopted only at failover. None on a single stack (nothing pulls). Inspectable so
         # an operator can confirm the backup is warm before it takes over.

@@ -1,7 +1,7 @@
 _payout_public_view_key_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" verdict derived native_rc extra
+    local binary="${_pithead_go_hybrid_binary:-}" verdict derived native_rc extra
     [ "$#" -ge 2 ] && command -v python3 >/dev/null 2>&1 || return 125
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' verdict && IFS= read -r -d '' derived &&
@@ -27,7 +27,7 @@ _payout_public_view_key_go() {
 }
 
 _validate_payout_ownership_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" assigned spend reason native_rc extra
+    local binary="${_pithead_go_hybrid_binary:-}" assigned spend reason native_rc extra
     local chain address_keys private_view explicit_spend docs_url
     local cannot_validate mismatch single decode spend_mismatch
     [ "$#" -eq 5 ] || return 125
@@ -37,7 +37,7 @@ _validate_payout_ownership_go() {
     explicit_spend="$4"
     docs_url="$5"
     command -v python3 >/dev/null 2>&1 || return 125
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' assigned && IFS= read -r -d '' spend &&

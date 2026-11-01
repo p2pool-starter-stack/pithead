@@ -16,7 +16,7 @@ func fallback(reference string, args []string) error {
 	if err != nil {
 		return err
 	}
-	env := configDocumentFallbackEnv(fallbackEnv(os.Environ()), binary)
+	env := selectedFallbackEnv(os.Environ(), binary)
 	return replaceProcess(bash, append([]string{"bash", reference}, args...), env)
 }
 

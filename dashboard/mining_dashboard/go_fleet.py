@@ -21,7 +21,8 @@ def _resource_json(value):
     return value
 
 
-def builders(captured):
+def builders(captured, settings=None):
+    settings = settings or {}
     result = {}
     for operation, (field, helper) in FIELDS.items():
 
@@ -33,17 +34,28 @@ def builders(captured):
             else:
                 values[0] = list(values[0])
             if operation == "build_energy":
-                endpoints = [
-                    {"name": entry["name"], "watts": entry.get("watts")}
-                    for entry in config.current_worker_endpoints()
-                ]
-                values += [config.DASHBOARD_ENERGY, endpoints]
+                endpoints = settings.get("worker_endpoints")
+                if endpoints is None:
+                    endpoints = [
+                        {"name": entry["name"], "watts": entry.get("watts")}
+                        for entry in config.current_worker_endpoints()
+                    ]
+                energy = (
+                    settings["energy_config"]
+                    if "energy_config" in settings
+                    else config.DASHBOARD_ENERGY
+                )
+                values += [energy, endpoints]
             captured[field] = {
                 "helper": helper,
                 "operation": operation,
                 "args": values,
-                "now": time.time(),
-                "max_age": host_resources._MAX_AGE,
+                "now": settings["now"] if "now" in settings else time.time(),
+                "max_age": (
+                    settings["resource_max_age"]
+                    if "resource_max_age" in settings
+                    else host_resources._MAX_AGE
+                ),
             }
 
         result[operation] = capture

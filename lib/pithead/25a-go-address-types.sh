@@ -1,5 +1,5 @@
 _config_address_type_go() {
-    local chain address binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"
+    local chain address binary="${_pithead_go_hybrid_binary:-}"
     local probe verdict native_rc extra
     [ "$#" -eq 2 ] || return 125
     chain="$1"
@@ -9,7 +9,7 @@ _config_address_type_go() {
     tari) [ "${TARI_ADDRESS_KEY_ONLY:-}" != 1 ] || return 125 ;;
     *) return 125 ;;
     esac
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v python3 >/dev/null 2>&1 || return 125
     probe=$(python3 -c 'print("ready")' 2>/dev/null && printf '.') && [ "$probe" = $'ready\n.' ] || return 125
     {

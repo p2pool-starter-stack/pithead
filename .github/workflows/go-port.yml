@@ -1,0 +1,56 @@
+name: Go parity
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    name: Go build, units, vet and focused parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GOTOOLCHAIN: go1.27.1
+      GOCACHE: ${{ github.workspace }}/.go-cache/build
+      GOMODCACHE: ${{ github.workspace }}/.go-cache/mod
+      GOPATH: ${{ github.workspace }}/.go-cache/gopath
+      TMPDIR: ${{ github.workspace }}/.go-cache/tmp
+      UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
+      UV_PYTHON_DOWNLOADS: never
+      PYTEST_XDIST_AUTO_NUM_WORKERS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd
+          enable-cache: false
+      - name: Build commands
+        run: |
+          mkdir -p "$TMPDIR"
+          go version
+          make go-build go-dashboard-build
+      - name: Go unit tests and vet
+        run: |
+          go -C go test -race -count=1 ./...
+          go -C go vet ./...
+      - name: CLI parity
+        env:
+          PITHEAD_IMPL: go
+        run: >-
+          make test-go-parity test-go-status-parity test-go-config-document-parity
+          test-go-env-parity test-go-legacy-helper-parity
+          test-go-native-guards
+      - name: Dashboard parity
+        run: >-
+          make test-go-dashboard-http-parity test-go-dashboard-state-parity
+          test-go-dashboard-domain-parity test-go-dashboard-views-parity
+          test-go-dashboard-fleet-parity test-go-dashboard-overview-parity

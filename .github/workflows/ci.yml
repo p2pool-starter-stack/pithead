@@ -27,6 +27,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  go-port:
+    if: github.event_name != 'schedule'
+    uses: ./.github/workflows/go-port.yml
   dashboard:
     name: Dashboard tests (pytest + coverage)
     if: github.event_name != 'schedule' # scheduled runs are the CVE sweep — build-images only (#833)
@@ -385,7 +388,6 @@ jobs:
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             git /repo --no-banner --redact --config /repo/.config/gitleaks.toml --gitleaks-ignore-path /repo/.config/gitleaksignore --log-opts=HEAD
           bash scripts/lint/selftest-gitleaks-history.sh
-
   zizmor:
     name: Workflow audit (zizmor)
     if: github.event_name != 'schedule' # scheduled runs are the CVE sweep — build-images only (#833)
@@ -407,7 +409,6 @@ jobs:
           enable-cache: false
       - name: Audit workflows (injection, token scope, self-hosted-runner risks)
         run: uvx zizmor@1.25.2 --offline .github/workflows/
-
   compose:
     name: Compose config + security hardening
     if: github.event_name != 'schedule' # scheduled runs are the CVE sweep — build-images only (#833)
@@ -420,7 +421,6 @@ jobs:
       - uses: ./.github/actions/docker-registry-mirror
       - name: Validate Compose hardening and generated Caddyfiles (#90/#1037)
         run: make test-compose
-
   lint-surfaces:
     name: Lint per-surface (biome, yaml, markdown, proto, toml)
     if: github.event_name != 'schedule' # scheduled runs are the CVE sweep — build-images only (#833)

@@ -30,25 +30,36 @@ def badge_settings():
     }
 
 
-def request(operation, args):
+def request(operation, args, settings=None):
+    settings = settings or {}
     return {
         "operation": operation,
         "args": json_value(args),
-        "now": time.time(),
-        "zone": os.environ.get("TZ", ""),
+        "now": settings["now"] if "now" in settings else time.time(),
+        "zone": settings["zone"] if "zone" in settings else os.environ.get("TZ", ""),
     }
 
 
-def builders(captured):
+def builders(captured, settings=None):
+    settings = settings or {}
+
     def pool(data, metrics, monero_builder=None):
         monero = (views.build_monero if monero_builder is None else monero_builder)(data, metrics)
-        captured["pool_network"] = request("build_pool_network", [data, metrics, monero])
+        captured["pool_network"] = request("build_pool_network", [data, metrics, monero], settings)
         return {**dict.fromkeys(("stratum", "pool", "network", "shares_window")), "monero": monero}
 
     def badges(data, metrics, mode_variant, db_healthy=True, wallet_change=None):
         captured["badges"] = request(
             "build_badges",
-            [data, metrics, mode_variant, db_healthy, wallet_change, badge_settings()],
+            [
+                data,
+                metrics,
+                mode_variant,
+                db_healthy,
+                wallet_change,
+                settings["badge_settings"] if "badge_settings" in settings else badge_settings(),
+            ],
+            settings,
         )
         return []
 
@@ -62,9 +73,10 @@ def builders(captured):
 
         def capture(*args, operation=operation, field=field):
             if operation == "visible_update":
-                running = (views.resolve_version() or {}).get("text") if args[0] else None
+                version = settings["version"] if "version" in settings else views.resolve_version()
+                running = (version or {}).get("text") if args[0] else None
                 args = (*args, running)
-            captured[field] = request(operation, args)
+            captured[field] = request(operation, args, settings)
 
         result[operation] = capture
     return result

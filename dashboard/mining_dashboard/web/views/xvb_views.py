@@ -302,7 +302,7 @@ _EARNINGS_DISCLAIMER = (
 )
 
 
-def xvb_current_tier_reward_day(metrics, state_mgr):
+def xvb_current_tier_reward_day(metrics, state_mgr, now=None):
     """XvB's published expected reward for the tier the fleet is CURRENTLY holding, as XMR/day (#712).
 
     Feeds the net-profit calculator (``est.xvbDay``): the whole net is already probabilistic, so
@@ -324,7 +324,7 @@ def xvb_current_tier_reward_day(metrics, state_mgr):
         return None
     est_state = state_mgr.get_xvb_reward_estimates()
     estimates = (est_state or {}).get("estimates") or {}
-    if xvb_stats_are_stale(est_state) or key not in estimates:
+    if xvb_stats_are_stale(est_state, now) or key not in estimates:
         return None
     reward_year = estimates[key]
     # 365-day year, matching logic.mjs DAYS_PER_YEAR. Guard non-positive so a zero/garbage estimate
@@ -414,7 +414,7 @@ def xvb_forecast_tier_key(metrics, tiers):
     return key
 
 
-def xvb_expected_wins_day(round_stats_state, tier_key, tiers):
+def xvb_expected_wins_day(round_stats_state, tier_key, tiers, now=None):
     """Expected raffle wins per day for the held tier (#866), from XvB's own winners file.
 
     The file's players column is the qualifier count per round, so the honest forecast is
@@ -427,7 +427,7 @@ def xvb_expected_wins_day(round_stats_state, tier_key, tiers):
     stats = (round_stats_state or {}).get("stats") or {}
     types = stats.get("types") or {}
     span_days = stats.get("span_days") or 0.0
-    if xvb_stats_are_stale(round_stats_state) or not types or span_days <= 0:
+    if xvb_stats_are_stale(round_stats_state, now) or not types or span_days <= 0:
         return None
     held = tiers.get(tier_key, 0.0)
     total = 0.0

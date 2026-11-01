@@ -9,9 +9,10 @@ import (
 
 func (r *Runner) services() int {
 	ps := exec.Command("docker", "compose", "ps")
-	ps.Dir, ps.Stdout, ps.Stderr = r.Dir, r.Out, r.Err
-	_ = ps.Run()
-	fmt.Fprintln(r.Out)
+	ps.Dir, ps.Stderr = r.Dir, r.Err
+	table, _ := ps.Output()
+	r.printOut(string(table))
+	r.printOut("\n")
 	r.log("Service health check:")
 	expected, _ := r.output("docker", "compose", "config", "--services")
 	profiles := r.get("COMPOSE_PROFILES")
@@ -106,7 +107,7 @@ func (r *Runner) services() int {
 		r.row(r.yellow, "⚠", held[0], held[1]+" — likely intentional: "+why)
 	}
 	r.syncProgress()
-	fmt.Fprintln(r.Out)
+	r.printOut("\n")
 	r.clearnetBanner()
 	if onion := r.onionStatus(); onion != "" {
 		r.log("Dashboard onion (remote access): " + onion)
@@ -118,6 +119,9 @@ func (r *Runner) services() int {
 		return 1
 	}
 	r.log("All expected services are up.")
+	if r.writeErr != nil {
+		return 1
+	}
 	return 0
 }
 

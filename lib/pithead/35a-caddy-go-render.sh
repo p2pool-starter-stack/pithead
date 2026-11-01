@@ -1,7 +1,7 @@
 _caddy_render_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" site host_count=0 index producer_rc=0
+    local binary="${_pithead_go_hybrid_binary:-}" site host_count=0 index producer_rc=0
     local -a site_tokens=()
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] && command -v cat >/dev/null 2>&1 || return 125
     for site in $site_hosts; do
         site_tokens[host_count]="$site"

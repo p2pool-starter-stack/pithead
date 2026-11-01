@@ -1,5 +1,8 @@
 # Go port parity adapters
 
+Review ownership, selection and descriptor adapters are listed in
+[the review results](results-review.md#additive-adapters-and-compatibility).
+
 Only new files under `tests/go-parity/` adapt unchanged suites or supply parity
 oracles:
 
@@ -10,12 +13,10 @@ oracles:
   `config_write_aliases_reference.sh` and `test_config_write_aliases.py` cover that boundary for
   the existing version, worker and Telegram writers without changing their suites.
   Full first-boot and secret-file oracle suites need Linux.
-
 - `config_migrations_reference.sh` sources the original worker/XvB and Telegram migration functions
   with controlled file failures; `test_config_migrations.py` compares decisions, exact file/backup bytes,
   permissions, callback order and the unchanged config-read extractor.
   `test_config_migrations_protocol.py` checks helper framing. The original migration suites need Linux.
-
 - `config_version_reference.sh` sources the original version functions with controlled file operations;
   `test_config_version.py` compares policy, file bytes, metadata, cleanup and failure paths.
   The original version suite needs Linux; unchanged render fixtures run through the existing adapters.
@@ -193,7 +194,6 @@ oracles:
   worker and alert settings, proving native selection and compatibility fallback.
   `env_dashboard_reference.sh` only supplies the canonical Bash defaults table
   for private-protocol cases; it does not replace a reference suite.
-
 - `test_env_memory.py` compares complete renders and helper failure cases.
   `env_memory_reference.sh` sources the unchanged render fixture, then supplies
   deterministic RAM/HugePages for a second render and records hardware-read

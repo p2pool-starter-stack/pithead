@@ -173,7 +173,7 @@ def format_time_abs(timestamp):
         return "Invalid Time"
 
 
-def xvb_stats_are_stale(xvb_stats):
+def xvb_stats_are_stale(xvb_stats, now=None):
     """True when the XvB stats fetch has gone quiet long enough that ``avg_1h`` /
     ``avg_24h`` are no longer trustworthy live readings (#311).
 
@@ -183,7 +183,10 @@ def xvb_stats_are_stale(xvb_stats):
     steering off a frozen number) and the dashboard (which greys the credited figures)
     so the two never disagree about what "stale" means."""
     last_update = (xvb_stats or {}).get("last_update", 0) or 0
-    return last_update > 0 and (time.time() - last_update) > XVB_STATS_STALE_AFTER_S
+    return (
+        last_update > 0
+        and ((time.time() if now is None else now) - last_update) > XVB_STATS_STALE_AFTER_S
+    )
 
 
 # PPLNS window math, shared by metrics (display), the donation controller (routing

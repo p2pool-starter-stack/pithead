@@ -1,8 +1,8 @@
 _caddy_bind_go() {
-    local bridge_addrs="$1" prefix="$2" binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"
+    local bridge_addrs="$1" prefix="$2" binary="${_pithead_go_hybrid_binary:-}"
     local candidate native_rc native_extra producer_rc helper_rc
     shift 2
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' candidate &&

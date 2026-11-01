@@ -48,7 +48,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Area | Start here | Change and verify |
 |---|---|---|
 | CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. |
-| Go port | `go/cmd/pithead/`, `go/cmd/dashboard/`, `go/internal/`, [parity ledger](go-port/PARITY.md) | `make go-build`, `make go-dashboard-build`, `make test-go-parity`; `tests/go-parity/` holds adapters for unchanged reference suites. |
+| Go port | `go/cmd/pithead/`, `go/cmd/dashboard/`, `go/internal/`, [parity ledger](go-port/PARITY.md) | `make go-build`, `make go-dashboard-build`, `make test-go-parity`, `make test-go-native-guards`; `tests/go-parity/` holds adapters for unchanged reference suites. |
 | Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
@@ -66,7 +66,7 @@ lives in `go/internal/dashboard/charts/`; JSON and exposition builders live in
 `go/internal/dashboard/api/`; domain calculations live in
 `go/internal/dashboard/domain/`; state display builders live in
 `go/internal/dashboard/infra/`, `series/`, `fleet/`, `resources/`, `overview/` and `badges/`. Python's
-`dashboard/mining_dashboard/go_bridge.py`, `go_domain.py`, `go_views.py`, `go_fleet.py` and `go_overview.py` supply
+`dashboard/mining_dashboard/go_bridge.py`, `go_domain.py`, `go_snapshot.py`, `go_views.py`, `go_fleet.py` and `go_overview.py` supply
 config/storage inputs and remaining state presentation; polling,
 control and SQLite remain Python. The normal container command remains Python.
 `make test-go-dashboard-http-parity` retains the transport comparisons;

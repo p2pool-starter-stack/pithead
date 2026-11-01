@@ -1,8 +1,8 @@
 _appliance_site_names_go() {
-    local base="$1" bridges="$2" prefix="$3" expose="$4" binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"
+    local base="$1" bridges="$2" prefix="$3" expose="$4" binary="${_pithead_go_hybrid_binary:-}"
     local candidate native_names native_rc extra producer_rc helper_rc
     shift 4
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' native_names &&
@@ -22,8 +22,8 @@ _appliance_site_names_go() {
 }
 
 _appliance_cert_alt_string_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" h native_out native_rc extra producer_rc helper_rc
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    local binary="${_pithead_go_hybrid_binary:-}" h native_out native_rc extra producer_rc helper_rc
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' native_out &&

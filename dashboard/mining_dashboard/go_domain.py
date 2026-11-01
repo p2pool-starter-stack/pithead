@@ -3,7 +3,7 @@ from mining_dashboard.helper import utils
 from mining_dashboard.service import metrics
 
 
-def collect(data, state, history=None):
+def collect(data, state, history=None, now=None):
     if history is None:
         history = state.get_history()
     return {
@@ -25,7 +25,7 @@ def collect(data, state, history=None):
             "monero_local": metrics.monero_is_local(),
             "tari_local": metrics.tari_is_local(),
         },
-        "now": metrics.time.time(),
+        "now": metrics.time.time() if now is None else now,
     }
 
 

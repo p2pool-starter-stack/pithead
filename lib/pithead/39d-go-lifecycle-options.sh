@@ -1,9 +1,9 @@
 _parse_lifecycle_options_go() {
-    local verb="$1" binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"
+    local verb="$1" binary="${_pithead_go_hybrid_binary:-}"
     local kind argument native_yes native_dry_run native_porcelain native_rc extra
     shift
     case "$verb" in render | apply | up | down | restart) ;; *) return 125 ;; esac
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' kind && IFS= read -r -d '' argument &&

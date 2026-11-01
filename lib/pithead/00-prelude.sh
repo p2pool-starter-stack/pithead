@@ -14,9 +14,16 @@
 set -Eeuo pipefail
 
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${PITHEAD_IMPL:-}" = go ]; then
-    _pithead_go_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-    PITHEAD_GO_REFERENCE="$0" exec "${PITHEAD_GO_BINARY:-$_pithead_go_dir/go/bin/pithead}" "$@"
+    if [ "${1:-}" != status ] || [ -e /dev/fd/1 ] || [ -e /proc/self/fd/1 ]; then
+        _pithead_go_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+        PITHEAD_GO_REFERENCE="$0" exec "${PITHEAD_GO_BINARY:-$_pithead_go_dir/go/bin/pithead}" "$@"
+    fi
 fi
+unset _pithead_go_hybrid_binary
+if [ "${PITHEAD_IMPL:-}" = bash ] && [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then
+    _pithead_go_hybrid_binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"
+fi
+unset _PITHEAD_GO_HYBRID
 
 # --- Logging Utilities ---
 # Colour only when stdout is a terminal and NO_COLOR is unset (https://no-color.org).

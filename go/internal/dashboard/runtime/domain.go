@@ -35,7 +35,8 @@ func buildDomainInputs(ctx context.Context, client *http.Client, target *url.URL
 			return nil, dashboardweb.ErrInputsUnavailable
 		}
 		payload, err := json.Marshal(map[string]any{
-			"latest_data": input.LatestData, "history": input.History, "metrics": metrics, "sections": sections,
+			"latest_data": input.LatestData, "history": input.History, "metrics": metrics,
+			"sections": sections, "snapshot": fields["snapshot"],
 		})
 		if err != nil || len(payload) > 64<<20 {
 			return nil, dashboardweb.ErrInputsUnavailable

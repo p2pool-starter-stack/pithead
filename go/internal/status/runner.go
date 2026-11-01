@@ -15,6 +15,7 @@ type Runner struct {
 	Dir, Program, EnvFile     string
 	Out, Err                  io.Writer
 	red, green, yellow, reset string
+	writeErr                  error
 }
 
 func (r *Runner) Run() int {
@@ -26,7 +27,7 @@ func (r *Runner) Run() int {
 		}
 	}
 	if info, err := os.Stat(r.path(r.EnvFile)); err != nil || !info.Mode().IsRegular() {
-		fmt.Fprint(r.Err, echoEscapes(fmt.Sprintf("%s[ERROR]%s No %s found. Run '%s setup' first.\n", r.red, r.reset, r.EnvFile, r.Program)))
+		r.printErr(echoEscapes(fmt.Sprintf("%s[ERROR]%s No %s found. Run '%s setup' first.\n", r.red, r.reset, r.EnvFile, r.Program)))
 		return 1
 	}
 	return r.services()
@@ -59,13 +60,24 @@ func (r *Runner) filter(input string, args ...string) (string, error) {
 }
 
 func (r *Runner) row(color, glyph, name, detail string) {
-	fmt.Fprintf(r.Out, "  %s%s%s %-13s %s\n", color, glyph, r.reset, name, detail)
+	r.printOut(fmt.Sprintf("  %s%s%s %-13s %s\n", color, glyph, r.reset, name, detail))
 }
 
 func (r *Runner) log(message string) {
-	fmt.Fprint(r.Out, echoEscapes(r.green+"[pithead]"+r.reset+" "+message+"\n"))
+	r.printOut(echoEscapes(r.green + "[pithead]" + r.reset + " " + message + "\n"))
 }
 
 func (r *Runner) warn(message string) {
-	fmt.Fprint(r.Err, echoEscapes(r.yellow+"[WARNING]"+r.reset+" "+message+"\n"))
+	r.printErr(echoEscapes(r.yellow + "[WARNING]" + r.reset + " " + message + "\n"))
+}
+
+func (r *Runner) printOut(value string) {
+	if r.writeErr != nil {
+		return
+	}
+	_, r.writeErr = io.WriteString(r.Out, value)
+}
+
+func (r *Runner) printErr(value string) {
+	_, _ = io.WriteString(r.Err, value)
 }

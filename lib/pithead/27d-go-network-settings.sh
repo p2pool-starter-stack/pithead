@@ -1,11 +1,11 @@
 _parse_network_config_go() {
-    local binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}" assigned reason native_rc extra index
+    local binary="${_pithead_go_hybrid_binary:-}" assigned reason native_rc extra index
     local -a values=() names=(
         NETWORK_SUBNET NETWORK_PREFIX TOR_EGRESS_FIREWALL TOR_AUTO_HEAL
         TARI_EXPLORER_URL P2POOL_CLEARNET MONERO_REMOTE_HOST MONERO_REMOTE_RPC_PORT
         MONERO_REMOTE_ZMQ_PORT TARI_REMOTE_HOST TARI_REMOTE_GRPC_PORT POOL_TYPE
     )
-    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-$binary}"; fi
+    if [ "${PITHEAD_IMPL:-}" = go ]; then binary="${PITHEAD_GO_BINARY:-${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}}"; elif [ "${_PITHEAD_GO_HYBRID:-}" = 1 ]; then binary="${PITHEAD_GO_CONFIG_DOCUMENT_BINARY:-}"; fi
     [ -n "$binary" ] && [ -x "$binary" ] || return 125
     {
         IFS= read -r -d '' assigned &&

@@ -3,7 +3,7 @@ import os
 
 from aiohttp import web
 
-from mining_dashboard import go_domain, go_fleet, go_overview, go_views
+from mining_dashboard import go_domain, go_fleet, go_overview, go_snapshot, go_views
 from mining_dashboard.config import config
 from mining_dashboard.web import server
 from mining_dashboard.web.views import charts, header
@@ -12,11 +12,21 @@ logger = logging.getLogger("GoBridge")
 
 
 def _state(request):
-    return {"domain": go_domain.collect(request.app["latest_data"], request.app["state_manager"])}
+    data = go_snapshot.freeze(request.app["latest_data"] or {})
+    history = go_snapshot.freeze(request.app["state_manager"].get_history())
+    snapshot = go_snapshot.collect(data, request.app["state_manager"])
+    state = go_snapshot.FrozenState(snapshot)
+    return {
+        "domain": go_domain.collect(data, state, history=history, now=snapshot["settings"]["now"]),
+        "snapshot": snapshot,
+    }
 
 
 async def _finish_state(request):
     prepared = await request.clone(client_max_size=64 << 20).json()
+    snapshot = prepared["snapshot"]
+    settings = snapshot["settings"]
+    state_manager = go_snapshot.FrozenState(snapshot)
     chart = {}
     series = {}
     presentation = {}
@@ -29,15 +39,15 @@ async def _finish_state(request):
             range=range_arg,
             window=window,
             avg_window=avg_window,
-            now=charts.time.time(),
-            update_interval=charts.UPDATE_INTERVAL,
+            now=settings["now"],
+            update_interval=settings["update_interval"],
             **markers,
         )
 
     query = request.query
     state = server.build_state(
         prepared["latest_data"],
-        request.app["state_manager"],
+        state_manager,
         query.get("range", "all"),
         server.parse_window(query.get("from"), query.get("to")),
         server.canonical_window(query.get("avg")),
@@ -45,10 +55,11 @@ async def _finish_state(request):
         history=prepared["history"],
         metrics=go_domain.restore(prepared["metrics"]),
         section_builders={
-            **go_views.builders(prepared.get("sections", {}), series),
-            **go_fleet.builders(presentation),
-            **go_overview.builders(overview),
+            **go_views.builders(prepared.get("sections", {}), series, settings),
+            **go_fleet.builders(presentation, settings),
+            **go_overview.builders(overview, settings),
         },
+        view_snapshot=settings,
     )
     return {
         "state": state,
