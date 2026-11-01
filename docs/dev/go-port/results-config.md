@@ -144,3 +144,62 @@ with the existing configuration:
 npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
   docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
 ```
+
+## Caddyfile serialization slice (2026-10-31)
+
+Native Go serialization covers the global/redirect prefix, the main dashboard
+vhost and both onion vhosts. The Bash renderer supplies prepared address lists,
+bind addresses, auth/TLS text and the boot capability through NUL-delimited stdin.
+A terminal marker preserves trailing newlines across shell capture. Bash retains
+address discovery/filtering, auth decoding, certificate minting, log/error order
+and file writes. Unsupported helper requests keep the original render blocks.
+
+The `.env` renderer and remaining typed validation still use Bash. No runtime
+performance claim is made for this intermediate serializer boundary.
+Private records use `.go-cache/logs/config-caddy-*`.
+
+Five tests compare 32 complete render cases, including the scheme/port/auth
+matrix, IPv6, appliance bind filtering and certificate reuse/mint failures,
+onion auth refusal, partial files and write failures. A shim records only
+section names and actual Go status, requiring success for all four sections.
+The adapter isolates its fixture binary from inherited `BASH_ENV`; the initial
+Go-selected run exposed that collision before the corrected paired runs passed.
+Existing tests, fixtures, budgets and checks remain unchanged.
+
+Commands use `PITHEAD_IMPL=bash` (or `python` for dashboard/fakes) as baseline
+and `tests/go-parity/run.sh` for Go selection, with local caches and an absent
+Docker socket. Private command/exit records are under the prefix above.
+
+| Current command | Baseline | Go selection |
+|---|---|---|
+| `make test-go-caddy-parity` | PASS, 5 tests / 32 render cases and Go units | Same result; all four native sections proven |
+| `make test-go-config-defaults-parity test-go-config-document-parity test-go-config-validation-parity test-go-parity` | PASS, config/CLI comparisons, unchanged parser and render goldens, Go units | Same result |
+| `make test-dashboard` | PASS, 3716 tests, 97.42% coverage | Same counts; Python backend |
+| `make test-fakes` | PASS, 54 tests | Same result; Python backend |
+| `COMPARE=a73ffced33800de9435779a9cabef53864455acb make test-patch-coverage` | PASS, not applicable: no application Python changes | Same result |
+| `FILE_BUDGET_BASE_REF=a73ffced33800de9435779a9cabef53864455acb make lint-file-budget lint-pithead-build lint-docs-voice lint-path-references lint-operator-strings` | PASS after splitting the new helper | Same result |
+| `make test` | FAIL, existing `config_defaults_reference.sh` case indentation, pinned shfmt, exit 2 | Same failure; ShellCheck passes |
+| `make lint-py lint-js lint-yaml lint-md` | Python/JS/YAML PASS; Markdown FAIL, 22 third-party cache findings, exit 2 | Same result |
+| `make test-stack` | macOS refusal, exit 2 | Same refusal; no bypass |
+
+The new protocol hook lives in `lib/pithead/35a-caddy-go-render.sh`, ordered after
+the original renderer; this keeps its file at 399 lines without a budget change.
+Initial budget and Python-format findings on this slice were corrected before
+the final checks. The previous adapter's formatting remains unchanged.
+The Docker-backed `tests/stack/standalone/test_caddyfile.sh` parser was not run;
+no daemon/parser acceptance or bench performance is claimed.
+
+Native checks pass with canonical worktree cache/temp paths:
+`go -C go test -json -tags=parity -race -count=1 ./internal/config ./internal/cli`,
+`go -C go vet -tags=parity ./...` and
+`GOOS=linux GOARCH=amd64 go -C go build -o ../.go-cache/pithead-linux-amd64 ./cmd/pithead`
+(compilation only). A preliminary `go test ./...` used a `go/../.go-cache/tmp`
+`TMPDIR` and hit existing Darwin path assertions; canonical paths pass.
+Go formatting, pinned Ruff, adapter syntax, ShellCheck/shfmt and
+`git diff --check` pass. Source/security reviews found no remaining issues.
+Scoped Markdown is checked with the original configuration:
+
+```bash
+npm_config_cache="$PWD/.go-cache/npm" npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc --no-globs \
+  docs/dev/go-port/PARITY.md docs/dev/repo-map.md docs/dev/go-port/results-config.md
+```

@@ -1,5 +1,5 @@
 render_env() {
-    local target="${1:-$ENV_FILE}" project
+    local target="${1:-$ENV_FILE}" project native_env env_fingerprint env_tls_dir
     project=$(compose_project_name) || return 1
     log "Rendering environment configuration ($target)..."
 
@@ -324,7 +324,14 @@ render_env() {
     # before the heredoc so embedded line breaks become quoted escapes, not dotenv assignments.
     (
         umask 077
-        cat <<EOF >"$target"
+        env_fingerprint=$(printf '%s' "$(stratum_tls_fingerprint)")
+        env_tls_dir=$(printf '%s' "$(appliance_tls_dir)")
+        if native_env=$(_render_env_go "$target" 2>/dev/null); then
+            cat <<EOF >"$target"
+${native_env%$'\n'.}
+EOF
+        else
+            cat <<EOF >"$target"
 MONERO_DATA_DIR=$(dotenv_render_value "$MONERO_DIR")
 TARI_DATA_DIR=$(dotenv_render_value "$TARI_DIR")
 P2POOL_DATA_DIR=$(dotenv_render_value "$P2POOL_DIR")
@@ -359,7 +366,7 @@ STRATUM_BIND=$(dotenv_render_value "$STRATUM_BIND")
 STRATUM_PORT=$(dotenv_render_value "$STRATUM_PORT")
 PROXY_STRATUM_PASSWORD=$(dotenv_render_value "$STRATUM_PASSWORD")
 PROXY_STRATUM_TLS=$(dotenv_render_value "$STRATUM_TLS")
-STRATUM_TLS_FINGERPRINT=$(dotenv_render_value "$(stratum_tls_fingerprint)")
+STRATUM_TLS_FINGERPRINT=$(dotenv_render_value "$env_fingerprint")
 PROXY_TLS_DIR=$(dotenv_render_value "$PROXY_TLS_DIR")
 XVB_POOL_URL=$(dotenv_render_value "$xvb_url")
 XVB_DONOR_ID=$(dotenv_render_value "$xvb_donor")
@@ -455,10 +462,11 @@ DASHBOARD_CONTROL_ENABLED=$(dotenv_render_value "$DASHBOARD_CONTROL_ENABLED")
 CONTROL_DIR=$(dotenv_render_value "$CONTROL_DIR")
 CADDY_LOG_DIR=$(dotenv_render_value "$CADDY_LOG_DIR")
 HOST_IP=$(dotenv_render_value "$HOST_IP")
-PITHEAD_TLS_DIR=$(dotenv_render_value "$(appliance_tls_dir)")
+PITHEAD_TLS_DIR=$(dotenv_render_value "$env_tls_dir")
 HOST_PORT=$(dotenv_render_value "$HOST_PORT")
 DEPLOYMENT_COMPLETED=$(dotenv_render_value "${DEPLOYMENT_COMPLETED:-false}")
 EOF
+        fi
     )
     # Contains the node RPC password; keep it owner-only (belt-and-braces — the umask above
     # already created it 600; a chmod failure now aborts loudly instead of passing silently).

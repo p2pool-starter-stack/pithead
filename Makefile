@@ -24,6 +24,11 @@
 .PHONY: test-go-config-defaults-parity
 .PHONY: test-go-config-validation-parity
 .PHONY: test-go-caddy-parity
+.PHONY: test-go-env-parity
+
+test-go-env-parity: go-build test-go ## Compare bulk dotenv bytes with Bash and unchanged render fixtures
+	python3 tests/go-parity/test_env_render.py
+	python3 tests/go-parity/test_env_getters.py
 
 test-go-caddy-parity: go-build test-go ## Compare Caddyfile bytes and render lifecycle with Bash
 	python3 tests/go-parity/test_caddy.py

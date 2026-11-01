@@ -153,7 +153,13 @@ validators. `go/internal/config/caddy.go` serializes all Caddyfile sections from
 prepared state; `make test-go-caddy-parity` compares full file bytes, logs,
 statuses and preparation calls. The protocol hook is the adjacent
 `lib/pithead/35a-caddy-go-render.sh` slice. Bash retains address/certificate
-preparation and file writes. Remaining typed checks and the `.env` renderer stay Bash.
+preparation and file writes. `go/internal/config/env.go` serializes the complete
+ordered `.env` batch via `lib/pithead/33a-go-env-render.sh`.
+`make test-go-env-parity` adds byte/protocol comparisons; the unchanged sparse
+render fixture and goldens remain the oracle. Bash retains config-derived values,
+secret-file preparation and writes. Remaining typed checks stay Bash.
+The owner's 2026-11-01 Go scope covers the CLI and dashboard backend only;
+appliance host scripts and container entrypoint ports are excluded.
 
 Raw config checks live in `lib/pithead/22a-config-document.sh` and
 `dashboard/mining_dashboard/config/documents.py`; the browser JSON editor checks duplicates
