@@ -45,7 +45,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 
 if ! bash -c 'trap "exit 0" INT; kill -INT $$; sleep 2; exit 1'; then
-    echo "selftest-abort-traps: SIGINT is ignored at startup, so the signal trials cannot run (#3829); relaunch with default signals, e.g. env --default-signal=INT,QUIT bash $0" >&2
+    echo "selftest-abort-traps: SIGINT is ignored at startup, so the signal trials cannot run (#3829); relaunch with default signals (GNU env --default-signal=INT,QUIT, or without a backgrounding wrapper)" >&2
     exit 1
 fi
 
@@ -106,7 +106,7 @@ abort_trial() { # <trap-spec, "" for none> <signal>
     while kill -0 "$pid" 2>/dev/null; do
         sleep 0.1
         spun=$((spun + 1))
-        if [ "$spun" -gt 300 ]; then
+        if [ "$spun" -gt "${TRIAL_POLLS:-300}" ]; then
             reap_trial
             it_fail "trial SIG$sig ended the victim" "victim outlived the signal for 30 s"
             return 1
@@ -185,6 +185,14 @@ ignored_out="$(bash -c "trap '' INT; exec bash \"\$0\"" "${BASH_SOURCE[0]}" 2>&1
 ignored_rc=$?
 assert_eq "an ignored SIGINT makes the selftest exit non-zero" "$ignored_rc" "1"
 assert_contains "the failure says SIGINT was ignored at startup" "$ignored_out" "SIGINT is ignored at startup"
+
+echo "== a victim that outlives its signal fails the trial instead of hanging (#3829) =="
+fail_before=$IT_FAIL fail_names="$IT_FAILED_NAMES"
+TRIAL_POLLS=3 abort_trial "INT; trap '' INT" INT >"$TRIAL_DIR/outlived.log" 2>&1
+outlived_status=$?
+IT_FAIL=$fail_before IT_FAILED_NAMES="$fail_names"
+assert_eq "an ignored signal ends the trial with a failure" "$outlived_status" "1"
+assert_contains "the failure names the outlived bound" "$(cat "$TRIAL_DIR/outlived.log")" "outlived the signal"
 
 echo "== trial readiness and parent scheduling =="
 grep() {
