@@ -18,6 +18,7 @@ from mining_dashboard.client.xmrig_client import parse_rigforge
 from mining_dashboard.config import config
 from mining_dashboard.helper.utils import effective_hashrate, get_tier_info
 from mining_dashboard.service.control_service import SECRET_SENTINEL, mask_secrets
+from mining_dashboard.service.workers.donation import reported_level
 
 # xmrig-proxy 6.x /workers rows are positional arrays; name the fields we read so the
 # normalization below isn't a wall of magic indices. A row has >= _PX_MIN_FIELDS entries.
@@ -224,6 +225,9 @@ def _merge_direct_stats(workers, results, active_pool_port):
 
             is_proxy = extra_stats.get("kind") == "proxy"
             hr_scale = _KHS_TO_HS if is_proxy else 1
+            level = None if is_proxy else reported_level(extra_stats)
+            if level is not None:
+                w["donate_level"] = level
 
             hr_total = extra_stats.get("hashrate", {}).get("total", [])
             if isinstance(hr_total, list) and len(hr_total) >= 3:

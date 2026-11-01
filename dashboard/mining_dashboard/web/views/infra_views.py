@@ -184,6 +184,7 @@ def build_workers(workers, rigforge_release=None):
                     "adopted": worker.get("adopted"),
                     # RigForge enriched feed (#235): version badge + health/power/tune/watchdog
                     # chips, or None for a plain-xmrig worker (renders nothing extra).
+                    "donate_level": worker.get("donate_level"),
                     "rigforge": _rigforge_display(
                         worker.get("rigforge"), worker.get("status") == "online"
                     ),

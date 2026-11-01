@@ -325,7 +325,8 @@ read bearer, because the bearer would make guessing that token offline practical
 
 Appliance rigs run stock XMRig, which ignores a `DONATION` below 1 and donates at least 1%. A
 RigForge-built rig has the same floor at the level it was compiled with; lowering it needs a rebuild.
-Worker Inspect shows the configured value, not the rate the miner runs.
+Machines › rig shows the level the miner reports and, when it differs, the configured one with
+the reason ([XMRig developer donation](donation.md#xmrig-developer-donation)).
 
 ! The control token is **write-capable** and travels in **cleartext HTTP** over the LAN (like the
 stratum password): a change can alter a rig's pools or its thermal `watchdog`/`max_temp_c`, so anyone

@@ -860,6 +860,7 @@
       "accepted_str": "1,200",
       "adopted": null,
       "api_ok": null,
+      "donate_level": null,
       "h15": 0,
       "h15_str": "0.00 H/s",
       "h60": 5100,
@@ -903,6 +904,7 @@
       "accepted_str": "800",
       "adopted": null,
       "api_ok": null,
+      "donate_level": null,
       "h15": 0,
       "h15_str": "0.00 H/s",
       "h60": 4800,
@@ -942,6 +944,12 @@
       "uptime_str": "0m 0s"
     }
   ],
+  "xmrig_donation": {
+    "available": false,
+    "donating": 0,
+    "rigs": 1,
+    "unknown": 1
+  },
   "xvb_calc": {
     "current_tier": "None",
     "enabled": true,

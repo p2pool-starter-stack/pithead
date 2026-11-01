@@ -131,3 +131,11 @@ test("scoped edits reuse host preview, preserve masked secrets and unknown keys,
     assert.equal(requests.length, 3);
   } finally { globalThis.fetch = original; }
 });
+
+test("the fleet donation line links to Machines and never reads unknown as off", () => {
+  const state = { ...fixture(), xmrig_donation: { available: true, percent: 1, rigs: 3, donating: 2, unknown: 0 } };
+  const out = page(state);
+  assert.match(out, /XMRig developers: 1 % of hashrate on 2 of 3 rigs\. <a href="[^"]*page=machines[^"]*">Machines<\/a>/);
+  assert.doesNotMatch(out, /page=machines[^"]*advanced/);
+  assert.match(page({ ...fixture(), xmrig_donation: { available: false, rigs: 2, donating: 0, unknown: 2 } }), /combined share unavailable/);
+});

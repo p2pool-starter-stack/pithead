@@ -1,4 +1,5 @@
 import { html } from "../app/preact.mjs";
+import { fleetLine } from "./donation-model.mjs";
 import { EarningsControl } from "./earnings-control.mjs";
 import { ESTIMATES_PENDING, payoutRows, trackingNotice, xvbLine } from "./earnings-model.mjs";
 
@@ -13,6 +14,9 @@ export function EarningsPage({
   const link = new URL(url);
   link.searchParams.set("page", "earnings");
   link.searchParams.set("advanced", "payout");
+  const machinesLink = new URL(url);
+  machinesLink.searchParams.set("page", "machines");
+  machinesLink.searchParams.delete("advanced");
   const rows = payoutRows(state);
   const summary = state.earnings?.confirmed;
   const notice = trackingNotice(summary);
@@ -56,6 +60,7 @@ export function EarningsPage({
     </section>
     <section class="panel" aria-labelledby="bonus-title"><h2 id="bonus-title">XvB bonus and power</h2>
       <p>${xvbLine(state, connected)}</p>
+      <p>${fleetLine(state.xmrig_donation)} <a href=${machinesLink.href}>Machines</a></p>
       ${
         writable
           ? html`<div class="earnings-controls">
