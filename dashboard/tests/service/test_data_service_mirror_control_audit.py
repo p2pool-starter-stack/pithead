@@ -76,3 +76,34 @@ class TestMirrorControlAudit:
             assert sm.get_audit_events() == []
         finally:
             sm.close()
+
+    async def test_fleet_update_all_children_stay_distinct_after_reopen(
+        self, tmp_path, monkeypatch
+    ):
+        from mining_dashboard.service.storage_service import StateManager
+        from mining_dashboard.web.server import _merged_audit_entries
+
+        parent = "22222222-2222-4222-8222-222222222222"
+        outcomes = ["applied", "failed", "rolled-back"] * 4
+        lines = [
+            self._log_line(id=f"{parent}-{i}", action="worker-upgrade-all", status=s)
+            for i, s in enumerate(outcomes)
+        ]
+        lines.append(self._log_line(id=parent, action="worker-upgrade-all", status="completed"))
+        log = tmp_path / "control.log"
+        log.write_text("\n".join(lines) + "\n")
+        monkeypatch.setattr(ds_mod.config, "DASHBOARD_CONTROL_ENABLED", True)
+        monkeypatch.setattr(ds_mod.audit_service.config, "CONTROL_AUDIT_LOG", str(log))
+        db = str(tmp_path / "state.db")
+        sm = StateManager(db_path=db)
+        await DataService(sm, MagicMock(), MagicMock())._mirror_control_audit()
+        sm.close()
+        sm = StateManager(db_path=db)
+        try:
+            by_id = {e["id"]: e for e in _merged_audit_entries(sm)}
+            assert len(by_id) == len(outcomes) + 1
+            assert by_id[parent]["status"] == "completed"
+            assert {e["action"] for e in by_id.values()} == {"worker-upgrade-all"}
+            assert [by_id[f"{parent}-{i}"]["status"] for i in range(len(outcomes))] == outcomes
+        finally:
+            sm.close()
