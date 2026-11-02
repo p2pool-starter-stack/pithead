@@ -52,11 +52,11 @@ async def _finalize(app, rid, version) -> None:
             recorded.append(rig)
         except Exception:
             logger.exception("Error recording worker-upgrade-all rig (id=%s)", rid)
+    if recorded:
+        _track(app, asyncio.create_task(_refresh_rigs(app, rid, version, recorded)))
     notify = app.get("notify")
     if notify:
         await notify(fleet_upgrade.summary_text(res))
-    if recorded:
-        _track(app, asyncio.create_task(_refresh_rigs(app, rid, version, recorded)))
 
 
 def _track(app, task) -> None:

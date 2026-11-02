@@ -189,7 +189,8 @@ class TestFleetUpgradeStart:
         assert len(fleet_client.sent) == 1 and probed == ["rig-a"]
         assert (await self._post(fleet_client)).status == 202
         release.set()
-        await asyncio.gather(*fleet_client.app["_bg_tasks"])
+        while fleet_client.app["_bg_tasks"]:
+            await asyncio.gather(*list(fleet_client.app["_bg_tasks"]))
         assert probed.count("rig-a") == 2 and "rig-b" in probed and peak == 1
 
     async def test_an_unanswered_or_broken_wait_records_and_sends_nothing(
@@ -221,6 +222,36 @@ class TestFleetUpgradeStart:
         assert (await self._post(fleet_client)).status == 202
         await asyncio.gather(*fleet_client.app["_bg_tasks"])
         assert fleet_client.sent == []
+
+    async def test_a_failing_summary_sink_still_refreshes_telemetry(
+        self, fleet_client, monkeypatch
+    ):
+        rid = str(uuid.uuid4())
+        monkeypatch.setattr(fleet_upgrade.uuid, "uuid4", lambda: uuid.UUID(rid))
+        _write_result(
+            fleet_client.spool,
+            rid,
+            {
+                "action": "worker-upgrade-all",
+                "status": "completed",
+                "version": "v1.15.0",
+                "rigs": [{"name": "rig-a", "status": "accepted", "change_id": "c1"}],
+            },
+        )
+        probed = []
+
+        async def refresh(latest_data, name, version, res):
+            probed.append(name)
+
+        async def boom(text):
+            raise OSError("sink down")
+
+        monkeypatch.setattr(worker_refresh, "maybe_refresh_after_upgrade", refresh)
+        fleet_client.app["notify"] = boom
+        assert (await self._post(fleet_client)).status == 202
+        while fleet_client.app["_bg_tasks"]:
+            await asyncio.gather(*list(fleet_client.app["_bg_tasks"]), return_exceptions=True)
+        assert probed == ["rig-a"]
 
     async def test_one_rig_failing_to_record_does_not_stop_the_rest(
         self, fleet_client, monkeypatch
