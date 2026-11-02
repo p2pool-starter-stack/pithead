@@ -105,23 +105,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - service: monero
-            context: build/monero
-          - service: p2pool
-            context: build/p2pool
-          - service: tor
-            context: build/tor
-          - service: xmrig-proxy
-            context: build/xmrig-proxy
-          - service: dashboard
-            context: dashboard
+          - {service: monero, context: build/monero}
+          - {service: p2pool, context: build/p2pool}
+          - {service: tor, context: build/tor}
+          - {service: xmrig-proxy, context: build/xmrig-proxy}
+          - {service: dashboard, context: dashboard}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/docker-registry-mirror
       - name: docker build ./${{ matrix.context }}
-        run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
+        run: docker build -t "pithead-${{ matrix.service }}:ci" ${{ matrix.service == 'dashboard' && '--target go-production --build-context pithead-go=go' || '' }} "./${{ matrix.context }}"
+      - name: Prove Go dashboard selection, storage and fallback
+        if: matrix.service == 'dashboard'
+        run: python3 tests/go-parity/test_go_image.py pithead-dashboard:ci
       - name: Prove offline Tor saturated-state recovery
         if: matrix.service == 'tor'
         env: {TMPDIR: "${{ runner.temp }}"}
@@ -343,7 +341,7 @@ jobs:
           echo "56de6d5e5ec427e17b74fa48d51271c7fc0d61244bf5c90e828aab8362d55010  /tmp/hadolint" | sha256sum -c -
           sudo install -m 0755 /tmp/hadolint /usr/local/bin/hadolint
       - name: Lint all build/* and dashboard/ Dockerfiles (config in .config/hadolint.yaml)
-        run: hadolint --config .config/hadolint.yaml build/*/Dockerfile dashboard/Dockerfile
+        run: hadolint --config .config/hadolint.yaml build/*/Dockerfile dashboard/Dockerfile go/Dockerfile
 
   python-lint:
     name: Python lint + format (ruff)

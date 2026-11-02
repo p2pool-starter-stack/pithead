@@ -291,7 +291,7 @@ else
     # Development path, and the default until a release ships the wizard: mining_dashboard.wizard
     # only exists in this working tree, so a pulled image would start and immediately exit with
     # "No module named mining_dashboard.wizard". Build the image the appliance will actually run.
-    docker build -q -t "$WIZARD_IMAGE" dashboard >/dev/null
+    docker build -q -t "$WIZARD_IMAGE" --target go-production --build-context "pithead-go=${PITHEAD_GO_SOURCE_CONTEXT:-go}" dashboard >/dev/null
 fi
 # Harness builds only: stamp the marker INTO the dashboard image, at a path the wizard serves
 # (/static/os-test-marker.txt). The tag is identical across builds, so this is the only way a
@@ -326,6 +326,7 @@ apt_index_stamp=0
 build_log="$(mktemp)"
 trap 'rm -f "$build_log"' EXIT
 if ! docker build -f os/rootfs/Dockerfile -t "$ROOTFS_TAG" \
+    --build-context "pithead-go=${PITHEAD_GO_SOURCE_CONTEXT:-go}" \
     --label "org.opencontainers.image.title=Pithead OS rootfs" \
     --label "org.opencontainers.image.version=${STACK_VERSION#v}" \
     --label "org.opencontainers.image.revision=$BUILD_COMMIT" \

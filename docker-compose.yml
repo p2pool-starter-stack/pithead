@@ -609,6 +609,9 @@ services:
     image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-dashboard:${STACK_VERSION:-dev}
     build:
       context: ./dashboard
+      additional_contexts:
+        pithead-go: ./go
+      target: go-production
       # Stack version baked into the image so the dashboard header can show it (Issue #58).
       # pithead exports these for the build (PITHEAD_VERSION from the top-level VERSION file;
       # git branch/commit for dev builds — see export_build_provenance); empty defaults keep a
@@ -690,6 +693,7 @@ services:
         bind:
           create_host_path: false
     environment:
+      - PITHEAD_IMPL=${PITHEAD_DASHBOARD_IMPL:-python}
       - PROXY_STRATUM_PASSWORD=${PROXY_STRATUM_PASSWORD:-}
       - PROXY_STRATUM_TLS=${PROXY_STRATUM_TLS:-false}
       - STRATUM_TLS_FINGERPRINT=${STRATUM_TLS_FINGERPRINT:-}

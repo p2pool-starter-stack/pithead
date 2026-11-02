@@ -9,6 +9,11 @@ ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.g
 ENV CGO_ENABLED=0
 
 COPY os/rootfs/fetch-go-source.sh /usr/local/bin/fetch-go-source
+RUN --mount=type=bind,from=pithead-go,target=/src/pithead-go \
+    go -C /src/pithead-go mod download \
+    && go -C /src/pithead-go mod verify \
+    && go build -C /src/pithead-go -trimpath -o /out/pithead ./cmd/pithead \
+    && go build -C /src/pithead-go -trimpath -o /out/dashboard ./cmd/dashboard
 
 RUN sh /usr/local/bin/fetch-go-source https://github.com/docker/compose /src/compose "${COMPOSE_COMMIT}" "${COMPOSE_VERSION}" \
     && go -C /src/compose get ${COMPOSE_GO_RAISES} \
@@ -80,7 +85,8 @@ COPY config.minimal.appliance.json /opt/pithead/config.minimal.json
 COPY build/monero/bitmonero.conf.template /opt/pithead/build/monero/bitmonero.conf.template
 COPY build/tari/ /opt/pithead/build/tari/
 COPY build/tari-wallet/ /opt/pithead/build/tari-wallet/
-RUN chmod +x /opt/pithead/pithead
+COPY --from=gobuild /out/pithead /out/dashboard /opt/pithead/go/bin/
+RUN chmod +x /opt/pithead/pithead /opt/pithead/go/bin/pithead /opt/pithead/go/bin/dashboard
 
 # The engine bridge, and the reason the appliance can provision at all: pithead drives the stack
 # with `docker compose`, podman-docker maps `docker` onto podman, and podman's compose command

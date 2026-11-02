@@ -47,3 +47,7 @@ test-go-dashboard-wizard-state-parity: go-dashboard-build
 .PHONY: test-go-dashboard-worker-http-parity
 test-go-dashboard-worker-http-parity: go-dashboard-build
 	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_worker_http_plugin tests/web/test_server_worker*.py tests/web/test_worker_upgrade*.py tests/web/test_worker_detail_ip.py tests/service/test_control_service.py tests/service/test_request_spool.py tests/service/test_worker_config_credentials.py tests/service/workers/test_worker_refresh.py tests/client/test_rigforge_config.py "$(CURDIR)/tests/go-parity/dashboard_worker_http_compare.py" "$(CURDIR)/tests/go-parity/dashboard_worker_http_guards.py" "$(CURDIR)/tests/go-parity/dashboard_worker_http_failures.py"
+
+.PHONY: test-go-shipping-parity
+test-go-shipping-parity: go-build go-dashboard-build pithead
+	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest "$(CURDIR)/tests/go-parity/test_go_shipping.py" "$(CURDIR)/tests/go-parity/test_go_shipping_builds.py"

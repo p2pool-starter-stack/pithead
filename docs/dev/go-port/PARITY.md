@@ -10,8 +10,8 @@ The operator commits and pushes each round; Git metadata is read-only. No perfor
 
 The owner's 2026-11-01 ruling limits application reimplementation to the CLI
 and dashboard backend, including the wizard and control channel. Appliance host
-scripts and container entrypoints are not being reimplemented. After those ports,
-shipping documentation and integration for the release bundle, dashboard image
+scripts and container entrypoints retain their reference implementations. Shipping
+documentation and selection/build wiring for the release bundle, dashboard image
 and appliance image build are in scope, retaining Bash/Python fallback. The
 dashboard selection switch remains part of its launch contract. Preserve upstream
 daemons, browser assets, runtime filenames, database migrations and wire formats.
@@ -72,8 +72,8 @@ supplies it only to five existing internal-marker test methods. Public reference
 selection ignores native helper paths, including `PITHEAD_GO_CONFIG_DOCUMENT_BINARY`.
 `PITHEAD_GO_BINARY` supports copied
 fixtures and `PITHEAD_GO_REFERENCE` carries the original invocation path. Unset,
-`bash` and `python` keep the reference implementation. Dashboard container
-selection is not implemented.
+`bash` and `python` keep the reference implementation. `PITHEAD_DASHBOARD_IMPL`
+selects the Compose backend independently; see [shipping results](results-shipping.md).
 
 ## Components and verbs
 
@@ -204,7 +204,7 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Dashboard raw configuration documents | Native duplicates, placeholders, paths/diagnostics, alias placement and host-error-record refusal; Python standard-library JSON decoder and exception transport | 530 unchanged focused tests through fatal reference guards plus five new A/B cases and two source mutations; [results](results-documents.md) |
 | Wizard token gate, form assembly and install validation | Native Go policy and ordered mutation plans; Python HTTP/cookie transport, input normalization and defaults table | 322 unchanged wizard/defaults tests with original policy bodies fatal; byte/order comparisons, Unicode vector and two source mutations |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
-| Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
+| Go shipping docs, release bundle and image builds | Opt-in dashboard selection, immutable native release inputs and both packaged commands; Bash/Python retained | New shipping cases, ARM64 image contracts/Trivy and AMD64 artifact export; complete appliance/fleet/published-image proof pending; [results](results-shipping.md) |
 
 ## Harness adapters
 
@@ -356,16 +356,16 @@ The [worker HTTP results](results-worker-http.md) replace five original bodies w
 native policies and Python callback execution. All 3737 full dashboard assertions
 pass under Go selection, but Python coverage of 79.62% fails the unchanged 80% gate.
 Combined reference/comparison patch coverage passes at 92%, not a Go-only pass.
-Production selection and shipping remain pending.
+[Shipping results](results-shipping.md) add selection, packaging and local image proof; appliance/fleet validation remains pending.
 
 ## Unavailable and known host constraints
 
-- `make test-stack` deliberately refuses macOS; no Linux suite verdict is claimed.
-  The unchanged unit-helper, masking, worker-config and payout-wallet-pairs suites require that harness and remain unproven locally.
-  Independently of the host refusal, `tests/stack/lib.sh` scrubs `PITHEAD_IMPL`
-  and `PITHEAD_GO_BINARY`. `run.sh`/`env.sh` startup selection does not survive
-  that scrub for sourced, in-process assertions. No native Go proof or
-  per-fragment call count is claimed from `make test-stack` under Go selection.
+- `make test-stack` refuses macOS. Three unchanged release/appliance fragments
+  pass 187 assertions in the Linux ARM64 runner; see [shipping results](results-shipping.md).
+  The full Linux attempt lacked `RUNNER_TEMP` and was stopped; no full verdict is claimed.
+  `tests/stack/lib.sh` scrubs `PITHEAD_IMPL` and `PITHEAD_GO_BINARY`, so startup
+  selection does not survive for sourced assertions. No native Go proof or call count
+  is claimed; full unit-helper/masking/worker/payout suites remain unproven locally.
 - `make test` now passes shell lint and stops at Markdown lint on third-party
   files in the required local uv cache, in both modes. Changed project Markdown
   is checked separately; the original gates remain unchanged.
@@ -378,12 +378,12 @@ Production selection and shipping remain pending.
 - Integration auth-fail-closed assumes GNU `stat`/`chown`; BSD grep also fails
   topology scanner selftests. GNU-first topology checks pass at the frozen start
   and repaired head; the earlier BSD failure did not establish repository parity.
-- Local Compose/Caddy parsing, container/image tests and live matrices require
-  Docker/Linux or reserved hardware. Fleet contracts were read over authorized
-  SSH; its API has no per-job Go selection option, so no job was submitted for
-  this unpushed slice. No live stack or bench was changed.
+- Local Compose selection and four disposable runtime-image cases pass on Linux ARM64.
+  Complete appliance, AMD64 execution and live matrices still need reserved hardware.
+  Fleet contracts have no per-job Go selector; no job was submitted for this unpushed
+  slice. No live stack or bench was changed.
 - Bench measurements and decisions have a separate owner; local test duration
-  is not benchmark evidence. Shipping image validation remains pending.
+  is not benchmark evidence. Complete appliance/fleet/published-image validation remains pending.
 
 The local CLI-only graph used for navigation covers 96 files, 825 nodes and 1099
 edges. Its 14 collapsed relation pairs and tool/skill version mismatch make it a
@@ -394,7 +394,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Add production selection and release/dashboard/appliance shipping artifacts with reference fallback; worker detail builders and refresh I/O remain Python.
-2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
+1. Finish remaining state/earnings, worker builders and polling contracts; keep native and fallback claims separate.
+2. Validate shipped-image/appliance artifacts and production archive builds on the next committed/pushed head.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

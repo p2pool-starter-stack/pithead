@@ -8,8 +8,16 @@ set -e
 # Fallback to localhost if the variable is somehow missing
 export HOST_IP="${HOST_IP:-127.0.0.1}"
 
-# Launch the application as an installed package module from /app.
-# 'exec' replaces the shell process so SIGTERM is handled correctly;
-# '-u' forces unbuffered stdout/stderr for real-time Docker logging.
 cd /app
-exec python3 -u -m mining_dashboard.main
+case "${PITHEAD_IMPL:-python}" in
+bash | python)
+    exec python3 -u -m mining_dashboard.main
+    ;;
+go)
+    exec "${PITHEAD_DASHBOARD_GO_BINARY:-/app/go/bin/dashboard}"
+    ;;
+*)
+    echo "Unsupported PITHEAD_IMPL: ${PITHEAD_IMPL}" >&2
+    exit 2
+    ;;
+esac

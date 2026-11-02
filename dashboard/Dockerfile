@@ -61,9 +61,9 @@ COPY tests/ ./tests/
 RUN python -m pytest --cov=mining_dashboard --cov-report=term-missing --cov-fail-under=80
 
 # ==========================================================================
-# Production stage: copy ONLY the resolved venv from `build` (no uv binary) and run it.
+# Runtime stage: copy ONLY the resolved venv from `build` (no uv binary) and run it.
 # ==========================================================================
-FROM base AS production
+FROM base AS runtime
 COPY --from=build /app/.venv /app/.venv
 # entrypoint runs the app; healthcheck.sh (#904) HEADs /api/state with the venv's own python3
 # (the slim image ships no curl/wget).
@@ -100,3 +100,14 @@ RUN groupadd -g 1000 pithead && useradd -u 1000 -g 1000 -m -s /usr/sbin/nologin 
 USER pithead
 
 ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
+
+FROM golang:1.26.10-trixie@sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4 AS go-build
+WORKDIR /src
+RUN --mount=type=bind,from=pithead-go,target=/src \
+    mkdir -p /out && CGO_ENABLED=0 go build -trimpath -o /out/dashboard ./cmd/dashboard
+
+FROM runtime AS go-production
+COPY --from=go-build /out/dashboard /app/go/bin/dashboard
+ENV PITHEAD_DASHBOARD_GO_BINARY=/app/go/bin/dashboard
+
+FROM runtime AS production

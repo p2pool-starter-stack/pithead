@@ -1,11 +1,10 @@
 # The Dashboard
 
-A single web page that monitors every service, charts hashrate, and shows the XvB switching engine's
-decisions. Caddy serves it over HTTPS at `https://<hostname>` (the URL is printed when the stack
-starts); with `dashboard.secure: false` it serves plain HTTP.
+A single web page that monitors every service, charts hashrate, and shows the XvB switching engine's decisions. Caddy serves it over HTTPS at `https://<hostname>` (the URL is printed when the stack starts); with `dashboard.secure: false` it serves plain HTTP.
 
 The dashboard has two states. While the nodes catch up to the network it shows Sync Mode. Once both
-chains are synced it switches to the operational view.
+chains are synced it switches to the operational view. Use `PITHEAD_DASHBOARD_IMPL=go ./pithead apply` for the hybrid Go backend; `PITHEAD_DASHBOARD_IMPL=python ./pithead apply` selects the default Python reference.
+The selected image must include Go; Python remains required. [Backend selection](dashboard-backends.md) lists the build and fallback contracts.
 
 ## Current dashboard and lean preview
 
