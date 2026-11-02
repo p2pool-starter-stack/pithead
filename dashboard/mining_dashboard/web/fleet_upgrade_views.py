@@ -36,6 +36,7 @@ async def _finalize(app, rid, version) -> None:
     if res is None or not res.get("rigs"):
         return
     state_mgr = app["state_manager"]
+    recorded = []
     for rig in res["rigs"]:
         if rig.get("status") == "not_started":
             continue
@@ -48,14 +49,30 @@ async def _finalize(app, rid, version) -> None:
                 rig.get("reason"),
                 change_type="upgrade",
             )
-            await worker_refresh.maybe_refresh_after_upgrade(
-                app["latest_data"], rig["name"], version, rig
-            )
+            recorded.append(rig)
         except Exception:
             logger.exception("Error recording worker-upgrade-all rig (id=%s)", rid)
     notify = app.get("notify")
     if notify:
         await notify(fleet_upgrade.summary_text(res))
+    if recorded:
+        _track(app, asyncio.create_task(_refresh_rigs(app, rid, version, recorded)))
+
+
+def _track(app, task) -> None:
+    app["_bg_tasks"].add(task)
+    task.add_done_callback(app["_bg_tasks"].discard)
+
+
+async def _refresh_rigs(app, rid, version, rigs) -> None:
+    async with app["_fleet"].setdefault("refresh_lock", asyncio.Lock()):
+        for rig in rigs:
+            try:
+                await worker_refresh.maybe_refresh_after_upgrade(
+                    app["latest_data"], rig["name"], version, rig
+                )
+            except Exception:
+                logger.exception("Error refreshing worker-upgrade-all rig (id=%s)", rid)
 
 
 async def handle_fleet_upgrade_start(request):
@@ -92,8 +109,7 @@ async def handle_fleet_upgrade_start(request):
         return web.json_response({"error": "Failed to submit the fleet upgrade."}, status=500)
     task = asyncio.create_task(_finalize(request.app, rid, plan["version"]))
     request.app["_fleet"]["task"] = task
-    request.app["_bg_tasks"].add(task)
-    task.add_done_callback(request.app["_bg_tasks"].discard)
+    _track(request.app, task)
     return web.json_response({"id": rid, "status": "pending", "rigs": names}, status=202)
 
 

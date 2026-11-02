@@ -474,7 +474,9 @@ The run's result file lists every rig with its settled outcome (`applied`, `noop
 `GET` returns the newest run, including a run the host rejected whole (for example inside the cooldown), so progress and refusals survive navigation and reload. An accepted request is not
 reported as done. Each outcome is also recorded in the rig's change history, and one Telegram (and
 webhook or ntfy) summary is sent when the run settles. It goes to every enabled sink, with no
-per-event toggle, so it is silent only when notifications are off.
+per-event toggle, so it is silent only when notifications are off. After the summary the dashboard
+refreshes each accepted rig's telemetry one rig at a time in the background; that refresh never delays
+the summary and does not block the next run once the host cooldown has passed.
 
 The runner handles one request at a time, so a run holds it for up to about two minutes per rig,
 and one run takes at most 20 rigs. Rigs beyond that report `not_started`; start another run for
