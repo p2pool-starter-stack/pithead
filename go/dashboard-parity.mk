@@ -23,3 +23,7 @@ test-go-dashboard-wizard-submission-parity: go-dashboard-build
 .PHONY: test-go-dashboard-wizard-typed-parity
 test-go-dashboard-wizard-typed-parity: go-dashboard-build
 	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_wizard_typed_plugin tests/web/test_wizard*.py tests/web/test_config_defaults.py tests/service/test_config_version.py "$(CURDIR)/tests/go-parity/dashboard_wizard_typed_compare.py" "$(CURDIR)/tests/go-parity/dashboard_wizard_typed_guards.py"
+
+.PHONY: test-go-dashboard-wizard-values-parity
+test-go-dashboard-wizard-values-parity: go-dashboard-build
+	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_wizard_values_plugin tests/web/test_wizard*.py tests/web/test_config_defaults.py tests/service/test_config_version.py "$(CURDIR)/tests/go-parity/dashboard_wizard_values_compare.py" "$(CURDIR)/tests/go-parity/dashboard_wizard_values_guards.py"
