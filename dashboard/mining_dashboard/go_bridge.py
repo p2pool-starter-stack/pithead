@@ -3,7 +3,7 @@ import os
 
 from aiohttp import web
 
-from mining_dashboard import go_domain, go_fleet, go_overview, go_snapshot, go_views
+from mining_dashboard import go_domain, go_earnings, go_fleet, go_overview, go_snapshot, go_views
 from mining_dashboard.config import config
 from mining_dashboard.web import server
 from mining_dashboard.web.views import charts, header
@@ -39,6 +39,7 @@ def _state(request, compact=False):
             compact=compact,
         ),
         "snapshot": snapshot,
+        "earnings": True,
     }
     if compact:
         result["chart"] = go_snapshot.freeze(
@@ -58,6 +59,13 @@ async def _finish_state(request):
     series = {}
     presentation = {}
     overview = {}
+    earnings_builders = {}
+    if "earnings" in prepared:
+        if prepared["earnings"] is not True:
+            raise RuntimeError("invalid native earnings marker")
+        earnings_builders = go_earnings.builders(
+            prepared["sections"]["build_earnings"], overview, settings
+        )
 
     def capture(history, shares, range_arg, window, avg_window, **markers):
         chart.update(
@@ -85,6 +93,7 @@ async def _finish_state(request):
             **go_views.builders(prepared.get("sections", {}), series, settings),
             **go_fleet.builders(presentation, settings),
             **go_overview.builders(overview, settings),
+            **earnings_builders,
         },
         view_snapshot=settings,
     )

@@ -12,6 +12,7 @@ func completeOverview(state map[string]json.RawMessage, requests map[string]json
 		"pool_network": "build_pool_network", "badges": "build_badges",
 		"egress_badge": "_egress_badge", "raffle_eligible": "build_raffle_eligibility",
 		"raffle_wins": "build_raffle_log", "update": "visible_update",
+		"earnings_summary": "build_earnings_vs_actual",
 	}
 	values := map[string]any{}
 	for field, raw := range requests {

@@ -64,7 +64,7 @@ from mining_dashboard.web.views.series_views import (
 # service/notify/telegram_commands.py imports build_badges from here.
 from mining_dashboard.web.views.xvb_views import (
     build_badges,  # noqa: F401
-    build_earnings,
+    build_earnings,  # noqa: F401
     build_earnings_vs_actual,
     build_xvb_calc,
     recent_wallet_change,
@@ -256,8 +256,8 @@ def build_state(
     formats each section. Every value is a JSON-serializable primitive, list or dict. May raise
     (e.g. ``state_mgr.get_history`` failing); the caller turns that into a sanitized 500."""
 
-    def section(name, *args):
-        return (section_builders or {}).get(name, globals()[name])(*args)
+    def section(name, *args, **kwargs):
+        return (section_builders or {}).get(name, globals()[name])(*args, **kwargs)
 
     def view_value(name, default):
         return view_snapshot[name] if view_snapshot and name in view_snapshot else default()
@@ -282,7 +282,8 @@ def build_state(
     mode_tok, p2p_tok, xvb_tok = _mode_palette(metrics.mode)
     monero = (section_builders or {}).get("build_monero")
     pool_net = section("build_pool_network", data, metrics, monero)
-    earnings = build_earnings(
+    earnings = section(
+        "build_earnings",
         data,
         metrics,
         payouts=monero_payouts,
@@ -307,7 +308,7 @@ def build_state(
             p2pool_day=earnings["coeff_day"] * metrics.p2pool_30d,
         )
     earnings_summary = timestamped(
-        build_earnings_vs_actual,
+        (section_builders or {}).get("build_earnings_vs_actual", build_earnings_vs_actual),
         metrics,
         earnings,
         raffle_wins,

@@ -34,9 +34,21 @@ func buildDomainInputs(ctx context.Context, client *http.Client, target *url.URL
 		if err != nil {
 			return nil, dashboardweb.ErrInputsUnavailable
 		}
+		if raw := fields["earnings"]; raw != nil {
+			if string(raw) != "true" {
+				return nil, dashboardweb.ErrInputsUnavailable
+			}
+			sections["build_earnings"], err = earningsSection(input.LatestData, metrics, fields["snapshot"])
+			if err != nil {
+				return nil, dashboardweb.ErrInputsUnavailable
+			}
+		}
 		payloadFields := map[string]any{
 			"latest_data": input.LatestData, "metrics": metrics,
 			"sections": sections, "snapshot": fields["snapshot"],
+		}
+		if fields["earnings"] != nil {
+			payloadFields["earnings"] = true
 		}
 		compact := input.Averages != nil && fields["chart"] != nil
 		if compact {
