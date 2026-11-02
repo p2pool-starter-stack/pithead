@@ -168,12 +168,7 @@ def _tail_json_lines(path) -> list | None:
     return out
 
 
-def recent_changes(limit=500):
-    """The newest config-change audit entries, sanitized, newest first.
-
-    Explicit field whitelist — ts/id/actor/action/status/keys — so a foreign key smuggled into
-    the log never reaches the browser. ``keys`` names WHAT changed (env-key names only; the
-    writer never records values)."""
+def recent_changes(limit=50):
     raw = _tail_json_lines(config.CONTROL_AUDIT_LOG)
     if raw is None:
         return []

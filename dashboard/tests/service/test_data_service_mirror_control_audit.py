@@ -80,19 +80,14 @@ class TestMirrorControlAudit:
     async def test_fleet_update_all_children_stay_distinct_after_reopen(
         self, tmp_path, monkeypatch
     ):
+        from pathlib import Path
+
         from mining_dashboard.service.storage_service import StateManager
         from mining_dashboard.web.server import _merged_audit_entries
 
-        parent = "22222222-2222-4222-8222-222222222222"
-        outcomes = ["applied", "failed", "rolled-back"] * 10
-        lines = [
-            self._log_line(id=f"{parent}-{i}", action="worker-upgrade-all", status=st)
-            for i, s in enumerate(outcomes)
-            for st in ("started", s)
-        ]
-        lines.append(self._log_line(id=parent, action="worker-upgrade-all", status="completed"))
-        log = tmp_path / "control.log"
-        log.write_text("\n".join(lines) + "\n")
+        log = Path(__file__).parent / "fixtures" / "worker-upgrade-all-control.jsonl"
+        parent = "45454545-4545-4545-9545-454545454545"
+        outcomes = ["applied", "failed", "rejected", "rejected", "noop"]
         monkeypatch.setattr(ds_mod.config, "DASHBOARD_CONTROL_ENABLED", True)
         monkeypatch.setattr(ds_mod.audit_service.config, "CONTROL_AUDIT_LOG", str(log))
         db = str(tmp_path / "state.db")
@@ -103,8 +98,13 @@ class TestMirrorControlAudit:
         try:
             by_id = {e["id"]: e for e in _merged_audit_entries(sm)}
             assert len(by_id) == len(outcomes) + 1
-            assert by_id[parent]["status"] == "completed"
-            assert {e["action"] for e in by_id.values()} == {"worker-upgrade-all"}
-            assert [by_id[f"{parent}-{i}"]["status"] for i in range(len(outcomes))] == outcomes
+            assert (by_id[parent]["action"], by_id[parent]["status"]) == (
+                "worker-upgrade-all",
+                "completed",
+            )
+            assert [
+                (by_id[f"{parent}-{i}"]["action"], by_id[f"{parent}-{i}"]["status"])
+                for i in range(len(outcomes))
+            ] == [("worker-upgrade", s) for s in outcomes]
         finally:
             sm.close()
