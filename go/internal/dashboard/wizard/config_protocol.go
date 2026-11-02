@@ -97,6 +97,12 @@ func handleConfigRequest(request ConfigRequest) (any, error) {
 		return auditRecent(request.Config)
 	case "audit-mirror":
 		return auditMirror(request.Config)
+	case "audit-filter":
+		return auditFilter(request.Config)
+	case "audit-merge":
+		return auditMerge(request.Config)
+	case "audit-query":
+		return auditQuery(request.Config)
 	default:
 		return nil, ValidationError{fmt.Sprintf("unsupported wizard config operation: %s", request.Operation)}
 	}

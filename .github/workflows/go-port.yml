@@ -77,4 +77,5 @@ jobs:
           test-go-dashboard-telemetry-parity
           test-go-dashboard-host-audit-parity
           test-go-dashboard-audit-log-parity
+          test-go-dashboard-audit-query-parity
           test-go-shipping-parity
