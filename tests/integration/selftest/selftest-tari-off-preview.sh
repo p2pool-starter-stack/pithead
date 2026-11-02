@@ -11,9 +11,12 @@ source "$ROOT/lib/run-tari-off-preview.sh"
 echo "== selftest: Tari-off preview reports the remote status and redacted stderr =="
 
 fails=0
-check() { if [ "$2" = ok ]; then echo "  ok   $1"; else echo "  FAIL $1"; fails=$((fails + 1)); fi; }
-has() { case "$1" in *"$2"*) echo ok ;; *) echo no ;; esac; }
-lacks() { case "$1" in *"$2"*) echo no ;; *) echo ok ;; esac; }
+check() { if [ "$2" = ok ]; then echo "  ok   $1"; else
+    echo "  FAIL $1"
+    fails=$((fails + 1))
+fi; }
+has() { case "$1" in *"$2"*) echo ok ;; *) echo no ;; esac }
+lacks() { case "$1" in *"$2"*) echo no ;; *) echo ok ;; esac }
 
 IT_PITHEAD=./pithead
 assert_rc() { :; }
@@ -21,7 +24,10 @@ assert_contains() { :; }
 it_pass() { :; }
 it_fail() { :; }
 
-rx() { printf 'boom: ADMIN_PASSWORD=hunter2\n' >&2; return 7; }
+rx() {
+    printf 'boom: ADMIN_PASSWORD=hunter2\n' >&2
+    return 7
+}
 out="$(run_tari_off_preview)"
 check "failure reports the remote exit status" "$(has "$out" 'remote exit status 7')"
 check "failure reports the remote stderr" "$(has "$out" 'boom: ADMIN_PASSWORD=<redacted>')"
