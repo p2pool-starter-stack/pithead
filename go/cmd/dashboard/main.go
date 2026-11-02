@@ -35,6 +35,8 @@ func main() {
 			err = wizard.RunAuth(os.Stdin, os.Stdout)
 		case "wizard-form":
 			err = wizard.RunForm(os.Stdin, os.Stdout)
+		case "wizard-config":
+			err = wizard.RunConfig(os.Stdin, os.Stdout)
 		case "storage":
 			err = storage.Run(os.Stdin, os.Stdout)
 		case "chart":

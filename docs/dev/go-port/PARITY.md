@@ -191,7 +191,8 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | SQLite engine, open, schema, migrations and recovery | Native Go in the normal Go server child; Python memory state and business SQL construction remain | 343 unchanged focused tests with ported Python paths fatal, existing/legacy/corrupt startup comparisons, Go units and paired full 3719-test suites |
 | Control intent envelopes, worker writable keys, request publication and result reads | Native Go helpers in the Go dashboard child; Python HTTP guards, config masking and wait loop remain | 377 unchanged focused wizard/control tests plus supplementary byte, startup, concurrency and mutation cases; injected UUID/rename hooks listed separately |
 | Wizard stage, status and read-only spool views | Native Go helpers under Go selection; Python launch and HTTP orchestration remain | Same unchanged focused suites with original ported functions fatal; off-loop state/status coalescing and public reference-selection sentinels |
-| Wizard atomic writes, conflict checks, rollback and temporary cleanup | Native Go helpers, including raw archive streaming; Python upload decisions, recovery handler and submission orchestration remain | 282 unchanged wizard tests through the transaction adapter; injected replace/unlink cases are explicit I/O interpositions; supplementary comparisons and source mutations |
+| Wizard atomic writes, conflict checks, rollback and temporary cleanup | Native Go helpers, including raw archive streaming; Python upload decisions, retry handler and submission orchestration remain | 282 unchanged wizard tests through the transaction adapter; injected replace/unlink cases are explicit I/O interpositions; supplementary comparisons and source mutations |
+| Wizard config preparation, merge/default stripping, machine names and recovery policy | Native ordered Go transforms; Python supplies runtime schema/defaults and spool reads, retaining retry/publication/HTTP sequencing | 334 unchanged focused tests plus 12 new comparison/mutation cases; results below |
 | Wizard token gate, form assembly and install validation | Native Go policy and ordered mutation plans; Python HTTP/cookie transport, input normalization and defaults table | 322 unchanged wizard/defaults tests with original policy bodies fatal; byte/order comparisons, Unicode vector and two source mutations |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
 | Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
@@ -330,20 +331,24 @@ writes, raw archive streaming, conflicts, rollback and temporary cleanup:
 appended patch-coverage pass. Explicit replace/unlink hooks preserve fault tests;
 production uses Go syscalls. Auth/form policy is added by the next slice.
 
-## Wizard auth and form policy
+## Wizard policy and config
 
-The [policy results](results-wizard-policy.md) separate native token normalization,
-constant-time comparison, lockout decisions, ordered form plans and install
-validation from Python HTTP/cookie/flush handling, value normalization and
-runtime defaults. Config/document migration, upload policy, recovery and
-submission/handoff orchestration remain Python; production shipping selection
-is still pending. Current and frozen-start reference arms pass 322 unchanged
-wizard/defaults tests. The Go target passes those same tests with original ported
-bodies fatal, plus six new comparison/mutation cases (328 total).
-Full reference/Go dashboard runs each pass 3719 tests. The original suites and
-fixtures remain unchanged. See the policy results for coverage and gate limits.
-Reference-only/Go-only patch coverage fail at 53% / 84%; the appended A/B run
-passes at 94%. Full Make still stops at dependency-cache Markdown in both modes.
+The [auth/form policy results](results-wizard-policy.md) preserve the previous
+slice's 322 unchanged focused and 3719 full-suite A/B passes. Its appended
+patch-coverage gate passes at 94%; the original-only arms remain separately graded.
+
+The [config and recovery results](results-wizard-config.md) describe native
+legacy migration, ordered filtering/merge/default removal, machine-name
+validation and recovery-state decisions. Python retains input normalization, defaults,
+JSON serialization, spool callbacks and submission/retry/HTTP orchestration.
+The frozen-start and current reference arms each pass 334 original focused tests.
+The Go target passes those same tests with original bodies fatal, plus 12 new
+comparison/mutation cases (346 total). Native calls and errors are counted.
+Fresh reference/Go runs each pass 3719 tests, at 90.66% / 82.52% Python coverage.
+Reference-only/Go-only patch gates fail at 50% / 84%; the appended gate passes
+at 94%. The new bridge is measured separately at 93/114 lines. Full Make stops
+at dependency-cache Markdown in both modes; details are in the report.
+Production container selection and shipping integration remain pending.
 
 ## Unavailable and known host constraints
 
@@ -381,7 +386,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Finish wizard config/submission/restore/handoff and remaining control orchestration, then production selection and release/dashboard/appliance shipping artifacts with reference fallback.
+1. Port wizard handoff/ack and retry, then submission/upload/restore and remaining control HTTP orchestration; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
 2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.
