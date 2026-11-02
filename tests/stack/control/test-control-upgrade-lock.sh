@@ -238,6 +238,44 @@ apti_order() {
 }
 assert_eq "the package's stack move verifies the images before it takes the lock or renders anything" "$(apti_order)" "verify,"
 
+apti_verified_once() {
+    (
+        cd "$APTI" || exit
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        export PITHEAD_APT_POSTINST=1
+        mutation_lock_acquire() { :; }
+        mutation_lock_release() { :; }
+        require_env() { :; }
+        ensure_onion_password() { :; }
+        parse_and_validate_config() { :; }
+        load_preserved_state() { :; }
+        ensure_directories() { :; }
+        resolve_dashboard_host() { :; }
+        render_env() { [ -n "${1:-}" ] && : >"$1"; }
+        tari_upgrade_space_precheck() { :; }
+        provision_node_onions() { :; }
+        inject_service_configs() { :; }
+        generate_caddyfile() { :; }
+        provision_ssh_access() { :; }
+        provision_console_login() { :; }
+        migrate_compose_project() { :; }
+        apply_tor_egress_firewall() { :; }
+        migrate_dashboard_data() { :; }
+        is_source_checkout() { return 1; }
+        log() { :; }
+        verify_release_images() { echo verify; }
+        compose_up_checked() { echo compose; }
+        update_current_symlink() { :; }
+        provision_control_runner() { :; }
+        provision_egress_check_units() { :; }
+        provision_lan_guard_check_units() { :; }
+        stack_upgrade
+    ) 2>&1 | grep -xE 'verify|compose' | tr '\n' ','
+}
+assert_eq "a verified package stack move checks the images once, then recreates" "$(apti_verified_once)" "verify,compose,"
+
 mkdir -p "$APTI/aptbin"
 printf '#!/bin/sh\nprintf "pithead:\\n  Installed: 2.0.0\\n  Candidate: %%s\\n" "$APT_CAND"\n' >"$APTI/aptbin/apt-cache"
 printf '#!/bin/sh\n[ "$2" != "$4" ]\n' >"$APTI/aptbin/dpkg"
