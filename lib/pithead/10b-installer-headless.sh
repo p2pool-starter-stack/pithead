@@ -18,7 +18,7 @@ preseed_target_serials() {
     return 1
 }
 
-headless_install() { # <spool-dir>
+headless_install() {
     local spool="$1" serials serial found="" inventory matches="" hit n tmp rc=0 err
     serials=$(preseed_target_serials) || rc=$?
     [ "$rc" = 2 ] && return 2

@@ -81,7 +81,7 @@ headless_install_rejection() {
     fi
 }
 
-headless_serial_boot() { # <stick-config> <serial> <target-disk> <target-serial> <foreign-disk> <foreign-serial> <fresh-disk> <fresh-serial>
+headless_serial_boot() {
     local err
     headless_install_stage "$1" "$2" || return 1
     : >"$SERIAL"
@@ -116,7 +116,7 @@ headless_serial_hashes() {
     for d in "$@"; do sha256sum "$d" | cut -d' ' -f1; done
 }
 
-headless_serial_leg() { # <stick-config> <target-disk> <target-serial> <foreign-disk> <foreign-serial>
+headless_serial_leg() {
     local config="$1" target_disk="$2" target_serial="$3" foreign_disk="$4" foreign_serial="$5"
     local fresh_disk="${foreign_disk%/*}/pithead-headless.img" fresh_serial="PHHEADLESS01" before after
     rm -f "$fresh_disk"

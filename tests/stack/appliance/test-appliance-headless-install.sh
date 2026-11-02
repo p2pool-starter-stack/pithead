@@ -4,7 +4,7 @@
 echo "== unit: pithead-install --target-serial resolves exactly one installable disk =="
 mk_tmpdir HSI
 sed '$d' "$ROOT/os/installer/pithead-install" >"$HSI/installer-lib.sh"
-hsi_resolve() { # <lsblk-json> <serial> [mounted-disk]
+hsi_resolve() {
     (
         # shellcheck disable=SC1091
         source "$HSI/installer-lib.sh"
@@ -24,7 +24,7 @@ hsi_resolve() { # <lsblk-json> <serial> [mounted-disk]
         resolve_target_serial "$2"
     ) 2>&1
 }
-two_disks() { # <first-name> <first-serial> <second-name> <second-serial>
+two_disks() {
     printf '{"blockdevices":[{"name":"sda","size":"16G","model":"Stick","serial":"BOOT1","type":"disk"},{"name":"%s","size":"1T","model":"M","serial":"%s","type":"disk"},{"name":"%s","size":"1T","model":"M","serial":"%s","type":"disk"}]}' "$1" "$2" "$3" "$4"
 }
 assert_eq "named serial resolves to its /dev path" "$(hsi_resolve "$(two_disks vda AAA111 vdb BBB222)" BBB222)" "/dev/vdb"
@@ -125,5 +125,26 @@ unset HS_FAIL
 rm -f "$HSP/pithead-target-serial.txt"
 assert_eq "no serial file is not a headless request" "$(hsp_run)" "2"
 assert_eq "...and installs nothing" "$(cat "$HSP/install.log")" ""
+
+echo "== unit: firstboot_wizard runs the headless install only on a first installer boot =="
+mkdir -p "$HSP/fw"
+printf 'BBB222\n' >"$HSP/pithead-target-serial.txt"
+HSW_STUBS='machine_role() { echo pithead; }; installer_mode_available() { return 0; }
+headless_install() { touch headless-ran; return 0; }; _console() { :; }; container_engine() { echo true; }
+export_build_provenance() { PITHEAD_REGISTRY=fixture; STACK_VERSION=dev; }
+stage_wizard_spool() { touch page-staged; exit 9; }'
+hsw_run() {
+    rm -f "$HSP/fw/headless-ran" "$HSP/fw/page-staged"
+    run_sourced "$HSP/fw" eval "$HSW_STUBS; $1 firstboot_wizard" >/dev/null 2>&1
+}
+hsw_run ""
+assert_rc "an installer boot with a matching serial finishes headless" "$?" 0
+assert_eq "...after running the headless install" "$([ -e "$HSP/fw/headless-ran" ] && echo ran)" ran
+assert_eq "...and never stages the setup page" "$([ -e "$HSP/fw/page-staged" ] || echo absent)" absent
+PITHEAD_SETUP_AGAIN=1 hsw_run ""
+assert_rc "a Set up again boot with a serial file opens the setup page" "$?" 9
+assert_eq "...and never attempts the headless install" "$([ -e "$HSP/fw/headless-ran" ] || echo absent)" absent
+hsw_run "headless_install() { touch headless-ran; return 1; };"
+assert_rc "a refused headless install falls through to the setup page" "$?" 9
 rm -rf "$HSP"
-unset HSP hsp_bad PITHEAD_PRESEED_DIR
+unset HSP hsp_bad HSW_STUBS PITHEAD_PRESEED_DIR

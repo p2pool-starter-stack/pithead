@@ -51,7 +51,7 @@ finishes either path headlessly, with no second wizard. A missing ack installs n
 waits for a human, and a timeout hands the form back intact.
 
 The one exception is the opt-in serial file (#979). On the installation medium,
-`headless_install` (`lib/pithead/10-installer-preseed.sh`) runs before the page is staged when
+`headless_install` (`lib/pithead/10b-installer-headless.sh`) runs before the page is staged when
 `pithead-target-serial.txt` exists: it validates the pre-seeded config, requires exactly one offered
 disk across the listed serials, and calls `pithead-install --target-serial <serial> --wipe keep --yes`,
 which resolves the serial through the same `list_disks` inventory as `--target` so the booted-medium
