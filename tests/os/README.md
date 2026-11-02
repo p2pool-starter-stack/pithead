@@ -31,7 +31,8 @@ The stable `run.sh` entry point loads shared helpers from `lib/` and phase imple
 `kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_lease_ip`,
 `vm_list_running` and `vm_destroy`. Shared SSH diagnostics, DHCP polling and the
 stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
-failure handling, teardown order and caller routing without a guest; the tier-1
+failure handling, teardown order and caller routing using a temporary `virsh` executable
+without a guest; the tier-1
 `make test-integration-selftest` target discovers it. Libvirt remains the only backend;
 the battery still requires the Linux bench and does not run on macOS.
 
@@ -126,6 +127,13 @@ timeout to the root-run battery even when the guest is healthy.
 Every guest boot is preceded by a host pre-flight (`tests/os/kvm-preflight.sh`): under 20 GiB of
 `MemAvailable` the battery refuses to boot the 16 GiB guest rather than risk hanging the host that
 runs it (`PITHEAD_KVM_MIN_AVAIL_MB` sets the bar; the reading is printed at every boot either way).
+Guest teardown runs `virsh destroy`, `virsh undefine` and `virsh list` through the same timed
+wrapper: `timeout -k 10` with `PITHEAD_VM_TEARDOWN_TIMEOUT` seconds per call (default 60).
+All three hung calls take at most 3 × (bound + 10) seconds of timeout allowance: 210 seconds
+with the default settings, within the 300-second teardown ceiling. Each call logs its duration
+and return code to stderr, leaving list output available for the surviving-domain check.
+Both timeout exits, 124 (terminated) and 137 (killed after ignoring TERM), print the guest's qemu
+processes and the runner's remaining children. A surviving domain or failed list fails the run.
 
 The harness builds its own update bundles from the same tarball (`os/rauc/mkbundle.sh --dev`),
 signed with a throwaway development key. A release build names its key instead — see the custody
