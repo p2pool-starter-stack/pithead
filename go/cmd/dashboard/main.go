@@ -14,6 +14,7 @@ import (
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/domain"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/fleet"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/infra"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/network"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/overview"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/resources"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/runtime"
@@ -67,6 +68,10 @@ func main() {
 			err = domain.RunAverageStream(os.Stdin, os.Stdout)
 		case "infra":
 			err = infra.Run(os.Stdin, os.Stdout)
+		case "network":
+			err = network.Run(os.Stdin, os.Stdout)
+		case "network-stream":
+			err = network.RunStream(os.Stdin, os.Stdout)
 		case "series":
 			err = series.Run(os.Stdin, os.Stdout)
 		case "fleet":

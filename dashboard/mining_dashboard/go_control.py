@@ -72,6 +72,7 @@ def install():
         go_control_http,
         go_documents,
         go_editor,
+        go_network,
         go_polling,
         go_preserve,
         go_rigforge,
@@ -83,6 +84,7 @@ def install():
     go_polling.install()
     go_audit_query.install()
     go_access_log.install()
+    go_network.install()
     go_rigforge.install()
     go_preserve.install()
     go_editor.install()
