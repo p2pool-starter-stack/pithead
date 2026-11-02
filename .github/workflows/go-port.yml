@@ -38,6 +38,13 @@ jobs:
           mkdir -p "$TMPDIR"
           go version
           make go-build go-dashboard-build
+      - name: Go-selected dashboard and patch coverage
+        env:
+          PITHEAD_IMPL: go
+        run: |
+          make test-dashboard
+          git fetch --no-tags origin develop "${GITHUB_BASE_REF:-develop}"
+          make test-patch-coverage
       - name: Go unit tests and vet
         run: |
           go -C go test -race -count=1 ./...

@@ -7,6 +7,10 @@ platform proofs are still required.
 
 ## Unchanged dashboard gates
 
+This section retains the initial round's pre-commit working-tree measurements.
+The [committed-head continuation](results-native-ci-gates.md) supersedes its
+patch totals with fresh results at `717ae23b`; the datasets and diffs are separate.
+
 Both arms used `env -u PITHEAD_IMPL make test-dashboard` or
 `PITHEAD_IMPL=go make test-dashboard`, respectively, with the unchanged 80%
 threshold and normal test discovery. Neither arm loaded a parity plugin. The
@@ -90,16 +94,18 @@ of 476. Its parsed Bash function is byte-identical before and after. The
 `provision-browser-submit.sh` budget now records its actual 406 lines; that test
 file is unchanged. The default file-budget comparison passes without an override.
 
-## Workflow gates
+## Workflow gates before native coverage enforcement
 
 `make lint` passes with GNU grep/coreutils/sed first on PATH and the default
 file-budget base. A separate final documentation pass checks Markdown, prose
 style and path references. Go 1.27.1 command builds, race units, vet and all eight
-CLI parity targets and all 40 dashboard workflow targets pass in the disposable
+CLI parity targets, all 39 dashboard targets and the shipping target pass in the disposable
 Linux ARM64 runner. Build/race/vet take 55 seconds, CLI targets 390 seconds and
 dashboard targets 467 seconds: 928 seconds total, within the existing 25-minute
 job limit. These are local executions of the workflow commands, not a published
-GitHub Actions status or AMD64 execution proof.
+GitHub Actions status or AMD64 execution proof. This timing predates the added
+Go-selected dashboard and patch-coverage step; it is not the updated workflow's
+total. The [current continuation](results-native-ci-gates.md) records that step.
 
 The source snapshot is SHA256
 `d2ca3e1dd3691fd96712c25ee20231ac2c999fe4fffe159df968a4d4c0232b04`.
@@ -155,7 +161,7 @@ Independent verification passes the encoder, eligibility, selector and stream
 boundaries. Final Linux ARM64 Go 1.27.1 builds, affected status/CLI race tests
 and vet, and the exact eight CLI targets pass in 201 seconds. The new script
 reports three passes and one explicit non-UTF-8-locale skip on Linux; all four
-pass locally. The preceding forty-target dashboard proof covers unchanged
+pass locally. The preceding forty-target parity proof covers unchanged
 dashboard code. These added comparisons do not replace or prove the full
 original Linux stack/status matrix.
 

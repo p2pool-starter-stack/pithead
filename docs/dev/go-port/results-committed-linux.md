@@ -211,7 +211,8 @@ overlay identified above. Its Git bundle SHA-256 is
 The runner uses non-root UID 1000, Go 1.27.1, Python 3.11.2, uv 0.12.13 and real
 `jq` 1.6. Its script and source snapshot stay inside the disposable filesystem.
 
-The exact command set from `.github/workflows/go-port.yml` passes:
+The then-current command set from `.github/workflows/go-port.yml` passes, before
+the later addition of the Go-selected dashboard and patch-coverage step:
 
 | Phase | Exit | Command seconds |
 |---|---|---|
@@ -219,7 +220,7 @@ The exact command set from `.github/workflows/go-port.yml` passes:
 | `go test -race -count=1 ./...` | 0 | 6 |
 | `go vet ./...` | 0 | 0 |
 | All eight CLI parity targets | 0 | 180 |
-| All forty dashboard parity targets | 0 | 306 |
+| All 39 dashboard parity targets and the shipping target | 0 | 306 |
 
 The phase total is 493 seconds (8m13s), excluding disposable-runner preparation.
 The workflow's 25-minute limit is unchanged. The CLI native-guard group passes
