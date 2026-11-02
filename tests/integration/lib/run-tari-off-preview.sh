@@ -13,7 +13,7 @@ run_tari_off_preview() {
     out=$(rx "cli=$(quote_arg "$IT_PITHEAD")"$'\n'"$(
         cat <<'REMOTE'
         set -eu
-        scratch=$(mktemp -d "${TMPDIR:?}/tari-preview.XXXXXX")
+        scratch=$(mktemp -d "${TMPDIR:-/tmp}/tari-preview.XXXXXX")
         trap 'rm -rf "$scratch"' EXIT
         cp .env "$scratch/baseline.env"
         jq '.tari.mode="remote" | .tari.remote.host="baseline-tari.example" | .tari.remote.grpc_port=18142 | .tari.clearnet_initial_sync=false' config.json >"$scratch/baseline.json"

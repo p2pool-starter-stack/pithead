@@ -31,4 +31,10 @@ rx() { printf 'Tari merge-mining OFF\nchain data on disk is KEPT\n'; }
 out="$(run_tari_off_preview)"
 check "success prints no diagnostic" "$(lacks "$out" 'remote exit status')"
 
+# shellcheck disable=SC2016
+scratch_line="$(grep -m1 'scratch=\$(mktemp' "$ROOT/lib/run-tari-off-preview.sh")"
+# shellcheck disable=SC2016
+made="$(env -u TMPDIR bash -c "set -eu; $scratch_line"'; printf %s "$scratch"; rm -rf "$scratch"' 2>&1)"
+check "remote scratch dir is created without TMPDIR in the SSH environment" "$(has "$made" /tmp/tari-preview.)"
+
 [ "$fails" -eq 0 ]
