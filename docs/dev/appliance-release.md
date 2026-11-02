@@ -38,10 +38,11 @@ in both binaries' standard library.
 
 `COMPOSE_GO_RAISES` and `COSIGN_GO_RAISES` raise x/mod to v0.41.0, x/net to
 v0.60.0 and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
-for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585).
+for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585)
+and go-jose/v4 to v4.1.6 for CVE-2026-116587.
 Compose already selects compress v1.19.2 from its pinned upstream source.
 The build asserts the compiled Go version of both binaries and Cosign's
-compiled compress version before copying them into the rootfs.
+compiled compress and go-jose versions before copying them into the rootfs.
 
 Module raises modify upstream's module graph, including transitive dependencies
 selected by Go's minimum-version selection. Upstream `go.sum` authenticates its
