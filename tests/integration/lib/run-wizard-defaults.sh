@@ -70,7 +70,7 @@ cli_wizard_defaults_trial() {
     rc=$?
     if [ "$rc" != 0 ]; then
         mkdir -p "$OUT_DIR/cli-defaults"
-        printf '%s\n' "$out" | redact >"$OUT_DIR/cli-defaults/setup.log"
+        printf '%s\n' "$out" | redact | sed -E 's/(Generated dashboard password: ).*/\1<redacted>/' >"$OUT_DIR/cli-defaults/setup.log"
         tail -n 60 "$OUT_DIR/cli-defaults/setup.log" | sed 's/^/        /'
     fi
     assert_rc "fresh CLI defaults complete real setup" "$rc" 0
