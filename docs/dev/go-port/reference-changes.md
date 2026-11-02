@@ -161,7 +161,20 @@ source/test discovery alongside the shipping paths above. Existing checks are
 retained. New tests under `tests/go-parity/` and `dashboard/tests/bridges/` are
 supplementary; they are not relabeled as unchanged suites.
 
-This round adds typed-wizard counter compatibility in a new `dashboard/conftest.py`,
+The 2026-11-02 pinned-runner continuation changes `scripts/test-container.sh` to
+provide `RUNNER_TEMP` and run its supplied command with the dashboard's locked
+Python dependencies. Its virtualenv lives inside the disposable container;
+the host's `dashboard/.venv` is not modified. Review this launcher change
+separately from application parity and appliance behavior.
+The launcher also uses `--init` to reap orphaned test children.
+An additive tools-image layer supplies real Go, systemd, C build tools and envsubst;
+its Go source uses the existing appliance-builder image digest. The original
+runner Dockerfile remains frozen; review `scripts/test-runner-tools.Dockerfile`
+and its signed, dated package snapshot. `container_bridge_addrs` in
+`lib/pithead/19-small-utilities.sh` replaces an awk interval with an equivalent
+length and character check because the pinned runner's older mawk rejects it.
+
+Earlier port rounds add typed-wizard counter compatibility in `dashboard/conftest.py`,
 active only with the existing Go channel parity plugin. A separate new
 `tests/go-parity/conftest.py` isolates the minimal child package. Neither changes
 production JSON or the normal dashboard application bindings. `.config/.markdownlint-cli2.jsonc` excludes

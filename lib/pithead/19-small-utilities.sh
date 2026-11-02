@@ -294,7 +294,7 @@ is_ipv4() {
 # appliance_site_names).
 container_bridge_addrs() {
     command -v ip >/dev/null 2>&1 || return 0
-    ip -o addr show 2>/dev/null | awk '$2 ~ /^(podman[0-9]+|docker[0-9]+|br-[0-9a-f]{12}|veth[0-9a-f]*|cni-podman[0-9]+|cni[0-9]+)$/ { split($4, a, "/"); print a[1] }'
+    ip -o addr show 2>/dev/null | awk '$2 ~ /^(podman[0-9]+|docker[0-9]+|veth[0-9a-f]*|cni-podman[0-9]+|cni[0-9]+)$/ || (length($2) == 15 && $2 ~ /^br-[0-9a-f]+$/) { split($4, a, "/"); print a[1] }'
 }
 
 # True if $1 is a globally-routable (public) IP literal — i.e. NOT loopback/private/link-local/

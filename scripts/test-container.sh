@@ -14,7 +14,8 @@
 # NOT a CI change. Every GitHub-hosted job is already ubuntu-latest; this is the local loop.
 set -uo pipefail
 
-IMAGE=pithead-test-runner:local
+BASE_IMAGE=pithead-test-runner:local
+IMAGE=pithead-test-runner-tools:local
 # A named volume so uv and npx download once per machine rather than once per run. It PERSISTS
 # across runs, which is the point and also the caveat: anything a compromised test dependency
 # writes to $HOME (an .npmrc, a poisoned cache) outlives the run that wrote it. `docker volume rm
@@ -105,15 +106,28 @@ done
 
 # Build when asked, or when the image is not there yet. Not on every run: the layers are stable and
 # a rebuild on each invocation is the difference between a 20-second loop and a 4-minute one.
-if [ "$BUILD" -eq 1 ] || ! "$ENGINE" image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "test-container: building $IMAGE (first run pulls the toolchain; later runs reuse it)"
+if [ "$BUILD" -eq 1 ] || ! "$ENGINE" image inspect "$BASE_IMAGE" >/dev/null 2>&1; then
+    echo "test-container: building $BASE_IMAGE (first run pulls the toolchain; later runs reuse it)"
     # The Makefile is the single source for both pins (#1679, #1688) — read them, never retype them.
     "$ENGINE" build \
         --build-arg "SHELLCHECK_VERSION=$(make -s -C "$ROOT" print-shellcheck-version)" \
         --build-arg "SHFMT_VERSION=$(make -s -C "$ROOT" print-shfmt-version)" \
         --build-arg "PITHEAD_UID=$(id -u)" \
         --build-arg "PITHEAD_GID=$(id -g)" \
-        -t "$IMAGE" "$ROOT/tests/runner" || exit 1
+        -t "$BASE_IMAGE" "$ROOT/tests/runner" || exit 1
+fi
+
+GO_IMAGE="$(sed -n 's/^FROM \(golang:[^ ]*@sha256:[0-9a-f]\{64\}\) AS gobuild$/\1/p' "$ROOT/os/rootfs/Dockerfile")"
+[ -n "$GO_IMAGE" ] || {
+    echo "test-container: cannot read the pinned Go toolchain image." >&2
+    exit 1
+}
+BASE_ID="$("$ENGINE" image inspect --format '{{.Id}}' "$BASE_IMAGE")" || exit 1
+TOOLS_REVISION="go-systemd-1:$BASE_ID:$GO_IMAGE:$(cksum <"$ROOT/scripts/test-runner-tools.Dockerfile")"
+if [ "$("$ENGINE" image inspect --format '{{index .Config.Labels "io.pithead.test-runner.tools"}}' "$IMAGE" 2>/dev/null)" != "$TOOLS_REVISION" ]; then
+    "$ENGINE" build --build-arg "RUNNER_IMAGE=$BASE_IMAGE" --build-arg "GO_IMAGE=$GO_IMAGE" \
+        --build-arg "TOOLS_REVISION=$TOOLS_REVISION" -f "$ROOT/scripts/test-runner-tools.Dockerfile" \
+        -t "$IMAGE" "$ROOT/scripts" || exit 1
 fi
 
 # The repo is mounted at its OWN absolute path, not at /workspace. Several targets shell out to
@@ -161,13 +175,15 @@ fi
 # Desktop and synthesised by --add-host on Linux, so one spelling covers every host. Tier 3's
 # fakes are the case in tree today; the same knob points a suite at a daemon on another machine.
 HOST_ALIAS="${PITHEAD_TEST_HOST:-host.docker.internal}"
-RUN=(--rm --user "$(id -u):$(id -g)"
+RUN=(--init --rm --user "$(id -u):$(id -g)"
 --add-host "host.docker.internal:host-gateway"
 -e "PITHEAD_TEST_HOST=$HOST_ALIAS"
+-e RUNNER_TEMP=/tmp
+-e UV_PROJECT_ENVIRONMENT=/tmp/pithead-dashboard-venv
 -v "$HOME_VOLUME:/home/pithead"
 "${MOUNTS[@]}")
 for g in ${SOCK_GIDS[@]+"${SOCK_GIDS[@]}"}; do RUN+=(--group-add "$g"); done
 [ -t 0 ] && [ -t 1 ] && RUN+=(-it)
 
 [ "$#" -eq 0 ] && set -- make test
-exec "$ENGINE" run "${RUN[@]}" "$IMAGE" "$@"
+exec "$ENGINE" run "${RUN[@]}" "$IMAGE" uv run --project "$ROOT/dashboard" --locked -- "$@"
