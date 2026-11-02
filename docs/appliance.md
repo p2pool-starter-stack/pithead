@@ -649,6 +649,11 @@ nothing could mount it. When that does happen the setup page itself says so, dat
 shell. If you have a backup, restore it instead of setting up as a fresh machine — a
 factory reset you asked for never shows this notice.
 
+If recovery cannot allocate a temporary mount directory, it stops and reports the
+failure in the `pithead-data-reset` service journal. An unavailable read-only probe
+does not authorize further repairs or erasure. A reformat also requires its mount
+directory to be allocated before formatting starts.
+
 ## Recovering from a backup
 
 Fresh flash, restore, done — if the machine is gone (dead disk, stolen, dropped), a backup
