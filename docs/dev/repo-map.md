@@ -410,3 +410,8 @@ Persistent DIY HugePages boot configuration lives in `lib/pithead/37a-grub-hugep
 `lib/pithead/37-kernel-tuning-and-preflight.sh` calls it during setup.
 `tests/stack/test-grub-hugepages.sh`, loaded alongside the wizard setup suite, covers cloud
 drop-in precedence, ISO defaults, idempotency and generated-entry failures.
+
+The e2e wrapper captures required pre-run systemd unit states through
+`tests/integration/lib/restore-unit-state.sh`. Restoration checks their capture records before
+unit removal; `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads
+and state lost between preflight and restoration.
