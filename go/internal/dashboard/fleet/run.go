@@ -35,6 +35,14 @@ func Build(request Request) (any, error) {
 		return pollMergeRigforgeStats(request)
 	case "poll_preserve_reports":
 		return pollPreserveReports(request)
+	case "poll_telemetry_hourly":
+		return pollTelemetryHourly(request)
+	case "poll_telemetry_network":
+		return pollTelemetryNetwork(request)
+	case "poll_telemetry_worker_due":
+		return pollTelemetryWorkerDue(request)
+	case "poll_telemetry_workers":
+		return pollTelemetryWorkers(request)
 	case "poll_aggregate_hashrate":
 		return pollAggregateHashrate(request)
 	case "poll_aggregate_window_hashrates":

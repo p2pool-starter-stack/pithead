@@ -52,7 +52,7 @@ from mining_dashboard.helper.utils import (
     pplns_block_time,
     shares_in_pplns_window,
 )
-from mining_dashboard.service import audit_service, payout_sync
+from mining_dashboard.service import audit_service, payout_sync, telemetry_capture
 from mining_dashboard.service.data_audit import (
     _RIG_EDIT_CAP_PER_HOUR,
     _RIG_EDIT_WINDOW_SEC,
@@ -91,6 +91,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
     """Aggregate mining statistics and maintain the application state."""
 
     _last_monero_sync = None  # last real {percent,current,target} — held across RPC blips
+    _telemetry_plan = telemetry_capture.plan
+    _capture_telemetry = telemetry_capture.capture
 
     async def _sync_prices(self):
         """Refresh the live XMR/XTM prices (#520) into ``latest_data["prices"]`` — a no-op with the
@@ -521,49 +523,10 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     snapshot_data.pop("shares", None)
                     await asyncio.to_thread(self.state_manager.save_snapshot, snapshot_data)
 
-                    # 6a2. v1.7 telemetry backbone (#196 Wave-0), hourly wall-clock gate: monerod
-                    # DB size + host disk usage (disk_growth, permanent) and Monero
-                    # difficulty/height/reward + pool hashrate (network_history, 90-day
-                    # retention). Both DB-only — nothing reads either per-cycle.
                     now_ts = time.time()
-                    if now_ts - self._last_hourly_capture >= _HOURLY_CAPTURE_SEC:
-                        await asyncio.to_thread(
-                            self.state_manager.add_disk_growth,
-                            now_ts,
-                            monero_db_bytes=monero_sync.get("db_size", 0) or 0,
-                            disk_used_gb=(disk_usage or {}).get("used_gb", 0) or 0,
-                            disk_total_gb=(disk_usage or {}).get("total_gb", 0) or 0,
-                        )
-                        await asyncio.to_thread(
-                            self.state_manager.add_network_history,
-                            now_ts,
-                            difficulty=network_stats.get("difficulty", 0) or 0,
-                            height=network_stats.get("height", 0) or 0,
-                            reward=network_stats.get("reward", 0) or 0,
-                            pool_hashrate=pool_local.get("hashrate", 0) or 0,
-                        )
-                        self._last_hourly_capture = now_ts
-
-                    # 6a3. v1.7 telemetry backbone (#196 Wave-0), ~5 min wall-clock gate:
-                    # per-worker hashrate/share history, batched into ONE executemany call rather
-                    # than N inserts per cycle. 30-day retention.
-                    if now_ts - self._last_worker_capture >= _WORKER_HISTORY_CAPTURE_SEC:
-                        worker_rows = [
-                            {
-                                "ts": now_ts,
-                                "name": w.get("name", ""),
-                                "h15": w.get("h15", 0) or 0,
-                                "accepted": w.get("accepted", 0) or 0,
-                                "rejected": w.get("rejected", 0) or 0,
-                            }
-                            for w in final_workers
-                            if w.get("status") == "online"
-                        ]
-                        if worker_rows:
-                            await asyncio.to_thread(
-                                self.state_manager.add_worker_history, worker_rows
-                            )
-                        self._last_worker_capture = now_ts
+                    await self._capture_telemetry(
+                        now_ts, monero_sync, disk_usage, network_stats, pool_local, final_workers
+                    )
 
                     # 6b. Healthchecks.io dead-man's switch (Issue #79). Ping each cycle so the
                     # external monitor alerts on the *absence* of a ping if the host ever dies

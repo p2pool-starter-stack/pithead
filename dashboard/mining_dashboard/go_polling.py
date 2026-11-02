@@ -121,6 +121,10 @@ def _shares_to_record(last_known_total, current_total):
     return tuple(_run("shares_to_record", [last_known_total, current_total]))
 
 
+def telemetry_plan(self, phase, args):
+    return _run("telemetry_" + phase, args)
+
+
 def lifecycle_update(self, workers, now):
     workers = list(workers)
     reply = _run("lifecycle", [workers, list(self._state.items()), self.falloff_sec], now=now)
@@ -211,5 +215,7 @@ def install():
             setattr(data_service, name, globals()[name])
     REFERENCE_FUNCTIONS.setdefault("WorkerLifecycle.update", data_helpers.WorkerLifecycle.update)
     REFERENCE_FUNCTIONS.setdefault("WorkerProber.probe", worker_probe.WorkerProber.probe)
+    REFERENCE_FUNCTIONS.setdefault("telemetry_plan", data_service.DataService._telemetry_plan)
     data_helpers.WorkerLifecycle.update = lifecycle_update
     worker_probe.WorkerProber.probe = probe
+    data_service.DataService._telemetry_plan = telemetry_plan
