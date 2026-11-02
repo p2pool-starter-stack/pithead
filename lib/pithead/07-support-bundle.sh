@@ -195,9 +195,17 @@ stack_support_bundle() {
         echo "container engine not reachable — no container state collected" >"$tmp/bundle/compose-ps.txt"
     fi
 
-    tar -czf "$tmp/bundle.tar.gz" -C "$tmp" bundle || { rm -rf "$tmp"; trap - INT TERM HUP; return 1; }
+    tar -czf "$tmp/bundle.tar.gz" -C "$tmp" bundle || {
+        rm -rf "$tmp"
+        trap - INT TERM HUP
+        return 1
+    }
     chmod 600 "$tmp/bundle.tar.gz"
-    mv -f "$tmp/bundle.tar.gz" "$out" || { rm -rf "$tmp"; trap - INT TERM HUP; return 1; }
+    mv -f "$tmp/bundle.tar.gz" "$out" || {
+        rm -rf "$tmp"
+        trap - INT TERM HUP
+        return 1
+    }
     rm -rf "$tmp"
     trap - INT TERM HUP
     log "Support bundle written: $out"

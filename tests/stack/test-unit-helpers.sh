@@ -158,7 +158,7 @@ echo "== unit: support-bundle archive is never exposed while it is written (#375
 
 bundle_case() {
     local tar_mode="$1" preexisting="${2:-}" work
-    work="$(mktemp -d)"
+    mk_tmpdir work
     if [ -n "$preexisting" ]; then
         printf old >"$work/$preexisting"
         chmod 644 "$work/$preexisting"
@@ -175,7 +175,7 @@ bundle_case() {
         date() { printf 'FIXED'; }
         tar() {
             local out="" a
-            for a in "$@"; do case "$a" in *.tar.gz) out="$a" ;; esac; done
+            for a in "$@"; do case "$a" in *.tar.gz) out="$a" ;; esac done
             command tar "$@" || return
             printf 'DIR:%s\n' "$(ls -ld "${out%/*}" | cut -c1-10)"
             printf 'TMP:%s\n' "${out%/*}"
