@@ -137,7 +137,12 @@ class TestFleetUpgradeStart:
                 "version": "v1.15.0",
                 "rigs": [
                     {"name": "rig-a", "status": "applied", "change_id": "c1", "reason": None},
-                    {"name": "rig-b", "status": "failed", "change_id": "c2", "reason": "boom"},
+                    {
+                        "name": "rig-b",
+                        "status": "failed",
+                        "change_id": "c2",
+                        "reason": "Bearer s3cret-token",
+                    },
                     {"name": "rig-z", "status": "not_started", "reason": "over the limit"},
                 ],
             },
@@ -149,7 +154,8 @@ class TestFleetUpgradeStart:
         assert [(h["status"], h["type"]) for h in a] == [("applied", "upgrade")]
         assert [(h["status"], h["change_id"]) for h in b] == [("failed", "c2")]
         assert fleet_client.sm.get_worker_config_history("rig-z") == []
-        assert len(fleet_client.sent) == 1 and "rig-b: failed (boom)" in fleet_client.sent[0]
+        assert len(fleet_client.sent) == 1 and "rig-b: failed" in fleet_client.sent[0]
+        assert "s3cret" not in fleet_client.sent[0]
 
     async def test_an_unanswered_or_broken_wait_records_and_sends_nothing(
         self, fleet_client, monkeypatch
