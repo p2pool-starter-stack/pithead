@@ -272,8 +272,9 @@ NOTE: Do not power the restore PC on next to the upgrade box again until it is r
 
 **What you do:**
 
-1. On the laptop, put `pithead-token.txt`, holding a token you choose, on the stick's `PITHEAD`
-   volume.
+1. On the laptop, put `pithead-token.txt` on the stick's `PITHEAD` volume. Use only letters,
+   digits and dashes, with at least 16 characters after an optional case-insensitive `pit-`
+   prefix.
 2. Boot the stick without a monitor.
 3. Open the setup page with your token.
 4. On the laptop, add `pithead-config.json` holding Config A

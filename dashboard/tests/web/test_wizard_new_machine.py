@@ -30,7 +30,7 @@ def spool(tmp_path, monkeypatch):
 
 @pytest.fixture
 async def client(spool):
-    c = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    c = TestClient(TestServer(wizard.make_app()))
     await c.start_server()
     yield c
     await c.close()

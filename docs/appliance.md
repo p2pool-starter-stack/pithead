@@ -161,9 +161,10 @@ The steps above need a display once, to read the token. You can skip that by wri
 USB stick **after flashing it** — the stick's small `PITHEAD` volume is readable on any
 Windows, macOS or Linux machine, so plug it into your laptop and drop a file on it:
 
-- **`pithead-token.txt`** — one line with a token you choose (letters, digits and dashes).
-  The machine uses that instead of printing its own, so you can open the setup page without
-  ever seeing its console.
+- **`pithead-token.txt`** — one line with a token you choose (letters, digits and dashes),
+  with at least 16 characters after an optional case-insensitive `pit-` prefix. The machine
+  sanitizes it to that alphabet, keeps at most 32 characters, and uses it instead of printing
+  its own, so you can open the setup page without ever seeing its console.
 - **`pithead-config.json`** — a complete configuration. First boot applies it and provisions
   itself; no setup page at all. Copy `config.json` from a machine you already set up, see
   [configuration](configuration.md), or build one in
@@ -758,8 +759,11 @@ try the IP the console prints as well as <https://pithead.local>; some networks 
 password. A release image does not provide SSH. Reinstall from the USB media to recover a broken
 appliance; a manually deployed debug image carries its own SSH key for development diagnostics.
 
-**"Wrong token."** The token changes each time the setup service restarts — read the
-current one from the console. After five wrong attempts it mints a new one on purpose.
+**"Wrong token."** A generated token changes each time the setup service restarts; a valid
+preseed token is reused. Read the current token from the console or your preseed file.
+Five wrong attempts from the same network peer start a 60-second
+cooldown. Wait for the time shown on the page, then retry the same token; the wizard stays open
+and other authenticated operators keep their sessions.
 
 **The address was rejected.** For Monero you most likely pasted a subaddress (starts with
 `8`) or an integrated address. Use your primary address, which starts with `4` and is 95
