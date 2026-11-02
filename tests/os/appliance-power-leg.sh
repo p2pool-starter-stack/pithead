@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-power_verdict() { # <result-json> <status-string> — true if the result names exactly this status
+power_verdict() {
     printf '%s' "$1" | jq -e --arg s "$2" '.status == $s' >/dev/null
 }
 

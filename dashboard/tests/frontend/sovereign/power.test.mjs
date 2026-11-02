@@ -74,3 +74,31 @@ test("accepted reboot reconnects; accepted poweroff never does", async () => {
     if (action === "poweroff") assert.match(renderToString(component.render({ snapshot })), /will not reconnect/);
   }
 });
+
+test("reconnect polls through failures, reloads on the first answer, and errors when exhausted", async () => {
+  const originalWindow = globalThis.window;
+  let reloads = 0;
+  globalThis.window = { location: { reload: () => reloads++ } };
+  try {
+    const component = control();
+    let calls = 0;
+    await requests(async () => {
+      calls++;
+      if (calls === 1) throw new Error("down");
+      return response(calls === 2 ? 503 : 200, {});
+    }, () => component.reconnect());
+    assert.equal(calls, 3);
+    assert.equal(reloads, 1);
+    assert.equal(component.state.phase, "idle");
+
+    const exhausted = control();
+    calls = 0;
+    await requests(async () => { calls++; throw new Error("down"); }, () => exhausted.reconnect());
+    assert.equal(calls, 300);
+    assert.equal(reloads, 1);
+    assert.equal(exhausted.state.phase, "error");
+    assert.match(exhausted.state.error, /has not returned/);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});

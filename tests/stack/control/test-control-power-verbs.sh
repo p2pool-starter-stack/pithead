@@ -44,12 +44,12 @@ fi
 exec /bin/mv "$@"
 EOF
 chmod +x "$PWC/bin/mv"
-pwrun() { # [env pairs...] — drain the spool inside the appliance sandbox
+pwrun() {
     (cd "$PWC" && PATH="$PWC/bin:$PATH" SYSCTL_LOG="$PWC/sysctl.log" PITHEAD_APPLIANCE=1 \
         POWER_RESULT="$PWRES/$PW1.json" POWER_AUDIT="$PWC/data/control/audit/control.log" \
         env "$@" ./pithead control-run-pending 2>&1)
 }
-pw_intent() { # <id> <action>
+pw_intent() {
     printf '{"id":"%s","action":"%s","actor":"admin"}\n' "$1" "$2" >"$PWREQS/$1.json"
 }
 PW1="66666666-6666-4666-8666-666666666666"
@@ -142,9 +142,9 @@ assert_contains "the audit line names sys-poweroff" "$(tail -1 "$PWC/data/contro
 rm -f "$PWRES/$PW1.json"
 : >"$PWC/sysctl.log"
 
-touch -t 202001010000 "$PWC/data/control/.power-stamp.sys-reboot" # the BUDGET is what must refuse here
+touch -t 202001010000 "$PWC/data/control/.power-stamp.sys-reboot"
 pw_intent "$PW1" sys-reboot
-sleep 1 # distinct mtimes so the drain order is deterministic (oldest first)
+sleep 1
 pw_intent "$PW2" sys-poweroff
 pwrun >/dev/null
 assert_eq "the first power verb in a drain runs" "$(jq -r '.status' "$PWRES/$PW1.json" 2>/dev/null)" "rebooting"

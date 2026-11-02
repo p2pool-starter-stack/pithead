@@ -1,4 +1,5 @@
 import { Component, html } from "../app/preact.mjs";
+import { waitForDashboard } from "../system/osreboot.mjs";
 import { pollOsResult } from "../system/osupdate.mjs";
 
 export async function powerAction(action) {
@@ -51,18 +52,8 @@ export class PowerControl extends Component {
   }
 
   async reconnect() {
-    for (let attempt = 0; attempt < 300 && !this.stopped; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      if (this.stopped) return;
-      try {
-        const response = await fetch("/api/state", { cache: "no-store" });
-        if (response.ok) {
-          window.location.reload();
-          return;
-        }
-      } catch {}
-    }
-    if (!this.stopped)
+    const returned = await waitForDashboard(() => !this.stopped, 2000, 300);
+    if (!returned && !this.stopped)
       this.setState({
         phase: "error",
         error: "The dashboard has not returned. Check the appliance before trying again.",

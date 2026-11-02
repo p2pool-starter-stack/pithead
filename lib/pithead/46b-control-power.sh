@@ -1,4 +1,4 @@
-control_power_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget + cooldown claimed)
+control_power_gate() {
     if ! is_appliance; then
         control_os_refuse "$1" "$2" "$3" "$4" rejected "power control applies only to a Pithead OS appliance — a Compose install has a host shell and does not need this. Nothing was changed."
         return 1
@@ -20,7 +20,7 @@ control_power_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget
     return 0
 }
 
-control_sys_reboot() { # <claimed-file> <id> <actor> <control-dir>
+control_sys_reboot() {
     local file="$1" id="$2" actor="$3" cdir="$4"
     control_power_gate "$cdir" "$id" "$actor" "sys-reboot" || return 0
     control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rebooting",ts:(now|floor)}')" || return 0
@@ -28,7 +28,7 @@ control_sys_reboot() { # <claimed-file> <id> <actor> <control-dir>
     ${PITHEAD_REBOOT_CMD:-systemctl reboot} 2>/dev/null || true
 }
 
-control_sys_poweroff() { # <claimed-file> <id> <actor> <control-dir>
+control_sys_poweroff() {
     local file="$1" id="$2" actor="$3" cdir="$4"
     control_power_gate "$cdir" "$id" "$actor" "sys-poweroff" || return 0
     control_write_result "$cdir/results" "$id" "$(jq -n '{status:"shutting-down",ts:(now|floor)}')" || return 0
