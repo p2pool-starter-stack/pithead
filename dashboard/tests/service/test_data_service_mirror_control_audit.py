@@ -84,10 +84,11 @@ class TestMirrorControlAudit:
         from mining_dashboard.web.server import _merged_audit_entries
 
         parent = "22222222-2222-4222-8222-222222222222"
-        outcomes = ["applied", "failed", "rolled-back"] * 4
+        outcomes = ["applied", "failed", "rolled-back"] * 10
         lines = [
-            self._log_line(id=f"{parent}-{i}", action="worker-upgrade-all", status=s)
+            self._log_line(id=f"{parent}-{i}", action="worker-upgrade-all", status=st)
             for i, s in enumerate(outcomes)
+            for st in ("started", s)
         ]
         lines.append(self._log_line(id=parent, action="worker-upgrade-all", status="completed"))
         log = tmp_path / "control.log"

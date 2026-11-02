@@ -168,7 +168,7 @@ def _tail_json_lines(path) -> list | None:
     return out
 
 
-def recent_changes(limit=50):
+def recent_changes(limit=500):
     """The newest config-change audit entries, sanitized, newest first.
 
     Explicit field whitelist — ts/id/actor/action/status/keys — so a foreign key smuggled into
