@@ -22,7 +22,7 @@ so the level adds no direct internet connection from the rig.
   "Own donation: unknown". Stock XMRig donates at least 1 %. They have no control.
 - **Fleet view.** Earnings shows the hashrate-weighted share and how many rigs donate. It
   reports "unavailable" when any hashing rig does not report a level, never 0 %. The expected
-  earnings figures (still unavailable on that page) are to subtract this share; the Overview
+  earnings figures (still unavailable on that page) are to subtract this share (#3840); the Overview
   strip reads the same `xmrig_donation` figure.
 - **To stop**, set the rig to Off and wait for the miner to report 0 %.
 
