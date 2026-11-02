@@ -34,6 +34,8 @@ def _plan(operation, *, route="", error="", **values):
 
 def _validate_plan(operation, plan):
     if "status" in plan:
+        if plan.get("next") not in (None, ""):
+            raise _NativeFailure("native control HTTP response cannot continue")
         if type(plan["status"]) is not int or plan["status"] not in (200, 202, 400, 403, 500):
             raise _NativeFailure("invalid native control HTTP status")
         if ("text" in plan) == ("body" in plan):
@@ -62,7 +64,7 @@ def _validate_plan(operation, plan):
         expected = "submit" if operation == "request" else "ready"
         if plan.get("next") != expected or not isinstance(plan.get("action"), str):
             raise _NativeFailure("invalid native control HTTP action")
-    elif operation == "done":
+    elif operation in ("done", "worker-done"):
         if type(plan.get("done")) is not bool:
             raise _NativeFailure("invalid native control HTTP result predicate")
     elif not isinstance(plan.get("next"), str):
@@ -283,3 +285,6 @@ def install(server=None):
         REFERENCE_FUNCTIONS.setdefault(name, getattr(config_commit, name))
         setattr(config_commit, name, globals()[name])
         setattr(server, name, globals()[name])
+    from mining_dashboard import go_worker_http
+
+    go_worker_http.install(server)

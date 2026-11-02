@@ -7,7 +7,9 @@ type Request struct {
 	Route     string              `json:"route"`
 	Value     *wizard.ConfigValue `json:"value"`
 	ID        *wizard.ConfigValue `json:"id"`
+	Worker    *wizard.ConfigValue `json:"worker"`
 	Version   *wizard.ConfigValue `json:"version"`
+	MaxDigits *wizard.ConfigValue `json:"max_digits"`
 	Error     string              `json:"error"`
 }
 
@@ -64,6 +66,20 @@ func Handle(request Request) (Result, error) {
 		return Result{Done: !isString(request.Value, "previewed")}, nil
 	case "error":
 		return errorResult(request.Error, request.Route, request.Value), nil
+	case "worker-name":
+		return workerName(request.Value), nil
+	case "worker-detail-name":
+		return workerDetailName(request.Value), nil
+	case "worker-live":
+		return workerLive(request.Value, request.Worker)
+	case "worker-noop":
+		return workerNoop(request.Value, request.Worker, request.Version, request.MaxDigits)
+	case "worker-done":
+		return Result{Done: !isString(request.Value, "running")}, nil
+	case "worker-record":
+		return workerRecord(request.Value)
+	case "worker-strip":
+		return Result{Value: stripWorkerCredentials(request.Value, 0), Next: "ready"}, nil
 	default:
 		return Result{}, valueError("unsupported control HTTP operation: " + request.Operation)
 	}
@@ -145,13 +161,13 @@ func complete(route string, result, id *wizard.ConfigValue) (Result, error) {
 		}
 		return Result{Status: 200, Body: result.Clone()}, nil
 	}
-	if route == "config" {
+	if route == "config" || route == "worker-detail" {
 		return Result{Status: 200, Body: result.Clone()}, nil
 	}
-	if route == "upgrade" || route == "backup" || route == "os-update" {
+	if route == "upgrade" || route == "backup" || route == "os-update" || route == "worker-upgrade" {
 		return Result{Status: 202, Body: pendingBody(id)}, nil
 	}
-	if route == "preview" || route == "commit" {
+	if route == "preview" || route == "commit" || route == "worker-apply" {
 		if result == nil || result.Kind == "null" {
 			return Result{Status: 202, Body: pendingBody(id)}, nil
 		}
@@ -181,12 +197,16 @@ func errorResult(kind, route string, message *wizard.ConfigValue) Result {
 		return Result{Status: 500, Body: errorBody("Invalid configuration: " + valueText(message))}
 	case "config-read":
 		return Result{Status: 500, Body: errorBody("Failed to read the stack config.")}
+	case "worker-detail":
+		return Result{Status: 500, Body: errorBody("Failed to build worker detail.")}
 	case "submit":
 		messages := map[string]string{
-			"preview":   "Failed to submit the preview request.",
-			"upgrade":   "Failed to submit the upgrade request.",
-			"os-update": "Failed to submit the OS-update request.",
-			"backup":    "Failed to submit the backup request.",
+			"preview":        "Failed to submit the preview request.",
+			"upgrade":        "Failed to submit the upgrade request.",
+			"os-update":      "Failed to submit the OS-update request.",
+			"backup":         "Failed to submit the backup request.",
+			"worker-apply":   "Failed to submit the worker config change.",
+			"worker-upgrade": "Failed to submit the worker upgrade.",
 		}
 		return Result{Status: 500, Body: errorBody(messages[route])}
 	default:
