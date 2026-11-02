@@ -77,7 +77,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "workers" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -138,6 +138,7 @@ control_process_request() { # <claimed-file> <control-dir>
     upgrade) control_upgrade "$file" "$id" "$actor" "$cdir" ;;
     worker-apply) control_worker_apply "$file" "$id" "$actor" "$cdir" ;;
     worker-upgrade) control_worker_upgrade "$file" "$id" "$actor" "$cdir" ;;
+    worker-upgrade-all) control_worker_upgrade_all "$file" "$id" "$actor" "$cdir" ;;
     restart | apply) control_lifecycle "$action" "$id" "$actor" "$cdir" ;;
     backup) control_backup "$id" "$actor" "$cdir" ;;
     # Appliance OS update, one verb per step so every network move stays separate from every

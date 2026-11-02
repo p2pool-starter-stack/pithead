@@ -1,15 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-_set_env_token() { # _set_env_token <value>
-    rx "(
-        umask 077
-        tmp=\$(mktemp .env.itest.XXXXXX) || exit 1
-        trap 'rm -f \"\$tmp\"' EXIT
-        awk -v t=$(quote_arg "$1") '/^PROXY_AUTH_TOKEN=/{print \"PROXY_AUTH_TOKEN=\" t; next} {print}' .env > \"\$tmp\" &&
-            chown --reference=.env \"\$tmp\" && mv -f \"\$tmp\" .env
-    )"
-}
-
 # Drop a file into the control spool on the box (mirrors push_config's stdin-over-ssh transfer so
 # no JSON quoting has to survive the remote shell string). <abs-path> is on the box.
 _spool_write() { # _spool_write <abs-path-on-box> <content>
@@ -356,21 +346,20 @@ run_auth_fail_closed() {
     fi
 
     local fails_before="$IT_FAIL"
-    # 1. Empty the token; `pithead up` must refuse to start AND name the documented fix.
     it_step "emptying PROXY_AUTH_TOKEN in .env and running 'pithead up'…"
-    if ! _set_env_token ""; then
-        it_fail "empty PROXY_AUTH_TOKEN for fail-closed probe" "environment replacement failed"
+    local out rc
+    out="$(_empty_token_probe "$orig" 2>&1)"
+    rc=$?
+    it_log "$(grep '^auth-probe:' <<<"$out")"
+    if ! grep -q '^auth-probe: admitted after' <<<"$out" || grep -q '^auth-probe: token replacement failed' <<<"$out"; then
+        it_fail "empty-token probe admitted to the mutation window with the token emptied" "$out"
         return 1
     fi
-    local out rc
-    out="$(pithead up 2>&1)"
-    rc=$?
+    assert_contains "token was empty when pithead up evaluated it" "$out" "auth-probe: token empty at evaluation"
     assert_ne "pithead up fails closed (non-zero exit) on an empty PROXY_AUTH_TOKEN" "$rc" "0"
     assert_contains "compose guard refuses the unauthenticated proxy API (#153)" \
         "$out" "refusing to start an unauthenticated xmrig-proxy control API"
-    # 2. Restore the EXACT original token (apply would mint a new one) and recover.
-    it_step "restoring the original PROXY_AUTH_TOKEN and recovering…"
-    _set_env_token "$orig" || it_fail "restore PROXY_AUTH_TOKEN" "environment replacement failed"
+    it_step "verifying the original PROXY_AUTH_TOKEN and recovering…"
     if [ "$(env_on_box PROXY_AUTH_TOKEN)" = "$orig" ]; then
         it_pass "original PROXY_AUTH_TOKEN restored verbatim"
     else

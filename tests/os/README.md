@@ -31,7 +31,8 @@ The stable `run.sh` entry point loads shared helpers from `lib/` and phase imple
 `kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_lease_ip`,
 `vm_list_running` and `vm_destroy`. Shared SSH diagnostics, DHCP polling and the
 stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
-failure handling, teardown order and caller routing without a guest; the tier-1
+failure handling, teardown order and caller routing using a temporary `virsh` executable
+without a guest; the tier-1
 `make test-integration-selftest` target discovers it. Libvirt remains the only backend;
 the battery still requires the Linux bench and does not run on macOS.
 
@@ -126,10 +127,26 @@ timeout to the root-run battery even when the guest is healthy.
 Every guest boot is preceded by a host pre-flight (`tests/os/kvm-preflight.sh`): under 20 GiB of
 `MemAvailable` the battery refuses to boot the 16 GiB guest rather than risk hanging the host that
 runs it (`PITHEAD_KVM_MIN_AVAIL_MB` sets the bar; the reading is printed at every boot either way).
+Guest teardown runs `virsh destroy`, `virsh undefine` and `virsh list` through the same timed
+wrapper: `timeout -k 10` with `PITHEAD_VM_TEARDOWN_TIMEOUT` seconds per call (default 60).
+All three hung calls take at most 3 × (bound + 10) seconds of timeout allowance: 210 seconds
+with the default settings, within the 300-second teardown ceiling. Each call logs its duration
+and return code to stderr, leaving list output available for the surviving-domain check.
+Both timeout exits, 124 (terminated) and 137 (killed after ignoring TERM), print the guest's qemu
+processes and the runner's remaining children. A surviving domain or failed list fails the run.
 
 The harness builds its own update bundles from the same tarball (`os/rauc/mkbundle.sh --dev`),
 signed with a throwaway development key. A release build names its key instead — see the custody
 runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
+
+Harness builds declare dashboard markers as a JSON array in `tests/os/dashboard-markers.json`. The runner publishes
+and signs each final marker image before invoking the appliance builder, then forwards
+`PITHEAD_TEST_MARKER_IMAGES` as version-1 JSON text bound to the candidate commit, never a file path.
+`PITHEAD_TEST_IMAGE_COMMIT` carries that source identity into exported fixture trees without Git metadata.
+The builder uses the selected immutable reference for both Compose pinning and the baked archive;
+it adds no image layer after signing. Missing markers, another commit or a reference outside
+the configured test registry fail before the image build. Release builds do not use this mapping.
+`selftest-marker-images.sh` checks selection, rejection and the pinned/archive source contract.
 
 ## Phases
 
@@ -154,7 +171,14 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Also asserts `/data` grew to fill the disk, and that host identity (SSH host-key fingerprint,
   machine-id) survives the A/B swap (#894/#895) — both live on `/data`, untouched by the slot
   swap.
-- **install** — stage a chosen token and valid config on the ESP before the first removable-media
+- **install** — first submit RigForge with a blank internal disk, acknowledge its card and boot
+  from that disk alone. Poll for the same token in the installed rig and miner configurations,
+  an active XMRig process, no coordinator configuration or containers, and a scrubbed seed on the target’s mounted FAT ESP.
+  The host must consume a pending rig submission before considering a bare keep reinstall;
+  `selftest-install-rig-dispatch.sh` checks card-before-erase, acknowledgement and bare-keep controls.
+  Keep the console capture mode 0600 and send the setup token to authentication through stdin.
+  This checks miner startup against the guest’s SSH listener, not an accepted share. Then
+  stage a chosen token and valid config on the ESP before the first removable-media
   boot, authenticate case and prefix variants, and check prefilled answers with no disk selected.
   Reboot with malformed JSON and require serial rejection with a blank form carrying the reference
   wallet placeholders. A rejected operator file skips previous-install prefilling; an absent file
@@ -185,7 +209,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   served, generated login authenticating, firstboot and system journals free of bcrypt credentials,
   built-in miner up. Journal reads must succeed and contain entries; the check never prints matched hashes. The Tor-only egress enforcement backstop — a real clearnet dial from a
   mining container, which must be DROPPED while the same container still reaches clearnet through
-  Tor's SOCKS — runs on EVERY path through this phase, including the aborting ones, and reports RED
+  Tor's SOCKS (up to three attempts, with retries isolated by SOCKS username, [#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)) — runs on EVERY path through this phase, including the aborting ones, and reports RED
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
@@ -292,7 +316,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
   failed-update premise. The power-cut leg (M10, #2067) then cuts power three times WHILE the
   provisioned stack is live — every earlier power cut in the battery landed on a bare guest
-  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
+  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. Before each cut,
+  poll the monerod height up to 18 times, 10 seconds apart. An empty result fails the row and
+  returns before flushing or cutting power. A non-empty result that is not a non-negative
+  integer also fails before flushing or cutting power. After EVERY cut, the leg
   asserts every container returns and provisioning settles within 900 seconds without failed setup
   before recovery checks or the next cut, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
@@ -383,8 +410,25 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
-- **reset** — the shell-less box's last resort, never before run against a real disk. Leg 0 runs
-  the cheap tier first, on the same provisioned guest: `pithead config-reset -y` must clear
+- **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
+  with local chains and the non-default nano pool. The authenticated wizard must name the saved
+  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  require the original dashboard login, unchanged configuration and host identity, both chain
+  sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
+  the served config; require the credentials card's login and the same chains and identity.
+  Both returns poll for successful setup completion, HTTP 200 with the dashboard's
+  `sync.monero` state object, and resumed height. A timeout reports the stage, height verdict,
+  HTTP status, curl exit and setup verdict without response bodies or credentials.
+  `coordinator-setup-again-leg.sh` implements this leg; `selftest-coordinator-setup-again.sh`
+  uses the generated dashboard response fixture and drives failure controls without a guest.
+  `selftest-confirmed-setup.sh` drives the real installed wizard and setup functions with host
+  effects stubbed: accepted forms re-provision, Keep it and rejected forms do not, provisioning
+  errors reach the retry path, restored browser submissions skip the new-node preflight,
+  and direct headless setup still refuses a deployed machine.
+  Saved-answer comparisons exclude the read-only `config_version` host stamp, which the wizard
+  omits. The selftest runs the sanitizing query against a stamped config with populated secrets;
+  a prefill failure reports only fixed shape verdicts and a changed-answer count.
+  Leg 0 then runs the cheap reset tier on the same provisioned guest: `pithead config-reset -y` must clear
   `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
   while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every
   data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
@@ -566,6 +610,15 @@ On a failed current-startup Tari round trip, the row first searches the full cur
 runtime predicate as a bounded reason, and allowlisted Monero/Tari RPC and sync fields from the
 guest's existing authenticated dashboard clients. Those readiness fields are diagnostic only: the
 current-process `uses chain_id` handshake remains the pass assertion.
+
+The `stack` phase's lifecycle reset-restore leg also restores while firstboot is starting.
+After the ordinary open-page restore, it resets again and restarts the guest's firstboot
+service with a temporary test wrapper. The wrapper pauses console announcement after the
+entry check and before round opening; the real encrypted CLI restore lands configuration
+before startup resumes. The leg requires successful firstboot exit, removal of the wizard,
+free HTTP/HTTPS ports before `up`, a stable Caddy and a dashboard response. It removes the
+runtime service override afterwards. `selftest-wizard-startup.sh` covers startup, round
+preparation, retained retry configuration and installer behavior without a guest.
 
 ## Static verification
 

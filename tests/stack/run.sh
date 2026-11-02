@@ -80,6 +80,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-upgrade-lock.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-lock.sh" && domain_ran test-control-upgrade-lock.sh "$_d0" "$?" || domain_ran test-control-upgrade-lock.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-worker-upgrade-all.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-worker-upgrade-all.sh" && domain_ran test-control-worker-upgrade-all.sh "$_d0" "$?" || domain_ran test-control-worker-upgrade-all.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-verify.sh" && domain_ran test-release-verify.sh "$_d0" "$?" || domain_ran test-release-verify.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-signing.sh disable=SC2015
@@ -262,7 +264,6 @@ if in_block 4; then
     *LEAK-*) bad "masked copy holds no notification secret" "a notification secret leaked into $MASKED" ;;
     *) ok "masked copy holds no notification secret" ;;
     esac
-
     # shellcheck source=tests/stack/test-spool-audit.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 fi
@@ -287,6 +288,8 @@ if in_block 5; then
     assert_rc "setup build interruption regression" "$?" 0
     # shellcheck source=tests/stack/test-wizard-setup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-manual-qa-oracle.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-manual-qa-oracle.sh" && domain_ran test-manual-qa-oracle.sh "$_d0" "$?" || domain_ran test-manual-qa-oracle.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-tari.sh" && domain_ran test-wizard-tari.sh "$_d0" "$?" || domain_ran test-wizard-tari.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-addresses.sh disable=SC2015
@@ -391,10 +394,9 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-surface.sh" && domain_ran test-doctor-surface.sh "$_d0" "$?" || domain_ran test-doctor-surface.sh "$_d0" "$?"
     # shellcheck source=tests/stack/doctor/test-doctor-memory.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-memory.sh" && domain_ran test-doctor-memory.sh "$_d0" "$?" || domain_ran test-doctor-memory.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"
 fi
-
+host_fence_final_check
 [ -z "$_tally" ] || printf '%s %s %s\n' "$STACK_BLOCK" "$PASS" "$FAIL" >>"$_tally"
 stack_verdict "pithead tests, block $STACK_BLOCK of $STACK_BLOCKS"

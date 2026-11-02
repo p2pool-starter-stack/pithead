@@ -2,7 +2,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 modules=(lib/core.sh wizard-redirect-leg.sh wizard-identity-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
-function_files=(lib/core.sh wizard-redirect-leg.sh wizard-identity-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset-slot.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
+function_files=(lib/core.sh wizard-redirect-leg.sh wizard-identity-leg.sh phases/boot.sh phases/update-spare-slot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-rig.sh phases/install-reinstall.sh phases/install-fresh-start.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/setup-defaults.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset-slot.sh phases/reset.sh phases/image-upgrade.sh phases/crossupdate.sh phases/stack.sh phases/tor-heal.sh)
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "${modules[*]}" ] || {
     echo "os module order mismatch: $actual_modules" >&2
@@ -419,11 +419,7 @@ grep -qF 'refusal=$(fault_serial_since "$SERIAL" "$serial_before") || break' "$H
 grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
 ! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
-# Only a flushed height is owed back after a cut: monerod does not fsync each block (batched
-# flushes) (#2557). So inside the three-cut loop the height read must precede the guest sync, and
-# the sync must precede the cut; a sync hoisted above the read or out of the loop owes back a
-# height that never reached the disk.
-m10_flush_before_cut() { # <phase file>
+m10_flush_before_cut() {
     sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | awk '
         index($0, "height_before=$(_monerod_height)") && !poll { poll = NR }
         index($0, "_ssh sync || {") && !flush { flush = NR }
@@ -431,18 +427,13 @@ m10_flush_before_cut() { # <phase file>
         END { exit !(poll && flush && cut && poll < flush && flush < cut) }'
 }
 m10_flush_before_cut "$HERE/phases/provision-power-cut.sh" || exit 1
+bash "$HERE/selftest-m10-pre-cut.sh" || exit $?
 grep -qF 'verdict=$(m10_height_verdict "$height_before" "$height_after")' "$HERE/phases/provision-power-cut.sh" || exit 1
-# The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
 grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
-# And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking
-# the call string anywhere in the file passes just as happily with it hoisted out of the loop,
-# where the invariants would be proven once instead of before every next cut (#2067a).
-m10_call_in_cut_loop() { # <phase file>
+m10_call_in_cut_loop() {
     sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | grep -qF 'm10_recovered "$i" || return 1'
 }
 m10_call_in_cut_loop "$HERE/phases/provision-power-cut.sh" || exit 1
-# Reality check: the same guard must go RED with the call moved past the loop's `done`. The mutant
-# still CONTAINS the call, so a guard that stays green here is asserting a string, not the property.
 m10_mutant="$SERIAL.m10"
 awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
      { print }

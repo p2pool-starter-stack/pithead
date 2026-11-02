@@ -47,10 +47,12 @@ in both binaries' standard library.
 
 `COMPOSE_GO_RAISES` and `COSIGN_GO_RAISES` raise x/mod to v0.41.0, x/net to
 v0.60.0 and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
-for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585).
+for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585),
+and go-jose/v4 to v4.1.6 for
+[CVE-2026-116587](https://github.com/p2pool-starter-stack/pithead/issues/3761).
 Compose already selects compress v1.19.2 from its pinned upstream source.
 The build asserts the compiled Go version of both binaries and Cosign's
-compiled compress version before copying them into the rootfs.
+compiled compress and go-jose versions before copying them into the rootfs.
 
 Module raises modify upstream's module graph, including transitive dependencies
 selected by Go's minimum-version selection. Upstream `go.sum` authenticates its
@@ -386,8 +388,9 @@ Hardware: one x86-64 machine with UEFI, ≥ 16 GiB RAM, an internal SSD/NVMe, wi
 ethernet, and a USB stick. A second disk makes M4 and M5 meaningful.
 
 **M1 — flash and boot.** Write the image to the USB stick. Disable Secure Boot in firmware,
-then boot the target from it. Expected: reaches userspace. Secure Boot support is deferred past
-2.0.0 to `v2.x - post-GA` (#2187); the KVM boot row records the current failure.
+then boot the target from it. Expected: reaches userspace. Secure Boot is unsupported by design
+(#2187); follow the [install guide's firmware instructions](../appliance.md#2-boot-the-machine-from-the-stick).
+The KVM boot row records a measured non-boot as the expected state for every image version.
 
 **M2 — discovery.** Read the token from the console, then find the box from another machine
 at `http://pithead.local` and at the IP it printed. Expected: both load the token gate, and
@@ -549,12 +552,12 @@ channels share the final cut commit, one version and one GitHub Release.
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
-   submit two independent bench-ci `tier4-kvm` jobs on this exact SHA, with
-   `timeout_minutes=240` each: `boot,update,install,provision` and
-   `rig,rigmedia,media,fault,reset,image-upgrade,stack`. Record both job IDs in the release issue.
-   Follow [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not)
-   for wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel
-   either KVM group. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
+   submit the four bench-ci `tier4-kvm` jobs on this exact SHA from
+   [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not):
+   the boot and rig groups, the provision job against the seeded baseline and the crossupdate job
+   from the previous release. Record every job ID in the release issue. Follow the same section for
+   wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel any KVM
+   job. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for

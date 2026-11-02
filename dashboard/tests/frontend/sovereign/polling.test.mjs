@@ -49,3 +49,19 @@ test("a hung poll is aborted and does not overlap or publish after shutdown", as
   await second;
   assert.equal(observations.length, 1);
 });
+
+
+test("a failed first poll after reload keeps the restored snapshot until a fresh response", async () => {
+  const saved = { sync_status: { sampled_at: 100, chains: { tari: { node: "node.example", error: "probe failed" } } } };
+  let response = { ok: false, status: 503 };
+  const updates = [];
+  const polling = createPolling({ initialSnapshot: saved, fetchFn: async () => response, publish: (value) => updates.push(value), schedule: () => 1, cancel: () => {} });
+  await polling.tick();
+  assert.equal(updates.at(-1).snapshot, saved);
+  assert.equal(updates.at(-1).connected, false);
+  response = { ok: true, json: async () => ({ sync_status: { sampled_at: 200 } }) };
+  await polling.tick();
+  assert.equal(updates.at(-1).snapshot.sync_status.sampled_at, 200);
+  assert.equal(updates.at(-1).connected, true);
+  polling.close();
+});

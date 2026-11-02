@@ -620,10 +620,8 @@ run_harness() {
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     harness_install_runner || die "Failed to install the detached harness runner."
-    # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
-    # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        harness_pregate "$WORKERS" "$remote_args $no_mining" > >(redact_remote_output) 2> >(redact_remote_output >&2) || return 1
+        run_inline_pregate "$WORKERS" "$remote_args $no_mining" || return 1
     fi
     harness_launch_records
     harness_prepare "$rearm_id" || die "Failed to record harness launch intent."

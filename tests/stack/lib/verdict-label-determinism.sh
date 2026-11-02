@@ -151,6 +151,7 @@ test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-grub-hugepages.sh|mode
 test-grub-hugepages.sh|param
+test-manual-qa-oracle.sh|id
 test-payout-wallet-pairs.sh|chain
 test-payout-wallet-pairs.sh|field
 test-payout-wallet-pairs.sh|k

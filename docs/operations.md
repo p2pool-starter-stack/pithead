@@ -19,7 +19,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead test-alert` | Send one marked test message through every configured Telegram, webhook, and ntfy sink. Prints one result per sink without exposing URLs or tokens and exits non-zero if any configured sink fails. Healthchecks is reported as excluded because a ping would move the dead-man switch. |
 | `./pithead doctor` | `--json` returns `checks[]` rows with `id`, `status` and `message`. Ids are lowercase kebab-case slugs; a released id is never renamed. Repeated rows for containers, mounts or ports share their check's id. This is additive for consumers reading `status` and `message`; exit codes and the report envelope are unchanged. Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk, `.env`/onion state, and container status — plus runtime checks: the Tor container is actually running while the mining stack runs (a loud FAIL when it's down — the privacy backbone is dead), the Tor-egress firewall rules are actually installed (a reboot silently drops them while the containers auto-restart), something is listening on the stratum port (`p2pool.stratum_port`, default `3333`, and whether that port sits on a public IP), the dashboard app answers behind its container, a clearnet request through Tor's SOCKS succeeds (a failing Tor guard breaks Healthchecks/Telegram/XvB while mining still works — fix with `./pithead restart tor`, or set `tor.auto_heal: true` to automate it), a local monerod reports `synchronized` from its own RPC (a node stranded at 0 peers by a Tor restart keeps a green healthcheck while mining sits on a stale tip — fix with `./pithead restart monerod`, #972), and, on the appliance, Caddy has no wildcard or public-address dashboard listener and the served certificate covers every name Caddy answers on without expiring within 30 days (fix either with `./pithead apply`; an unreadable certificate file warns instead of failing, so a read hiccup can't reboot-loop the box). A paste-able health report. |
 | `./pithead backup` | Save `config.json`, `.env`, `Caddyfile`, the Tor onion keys, and the dashboard's database (your hashrate history & settings) to a timestamped, passphrase-encrypted archive under `backups/` (checks free space first; stops a running stack, except caddy, for a clean copy, then restarts everything). If startup fails with unhealthy Tor and its circuit history has the saturated signature, backup discards only Tor's `state` file before retrying; onion keys remain. Other startup failures retain their original error and diagnostics. `--with-chains` also includes the blockchain data; `--no-encrypt` writes a plaintext `tar.gz`; `-y` / `--yes` skips the prompts (low free space and stopping the stack). |
-| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
+| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env`, `Caddyfile`, and the masked dashboard configuration from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
 | `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. With the config editor on, the dashboard header's **Show client key** button gets the same line without a shell, which is how an appliance operator gets it. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
@@ -200,6 +200,9 @@ A miner deliberately created/exited/stopped by the sync gate or node failover is
 exception during normal operation. A pending appliance data migration also withholds its chain
 services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero;
 `doctor` applies the same observed-restart check to every Compose service, including Caddy.
+The appliance boot health gate runs both commands with the internal `PITHEAD_BOOT_GATE=1`, which
+skips the three-second restart window so its 10-second poll keeps the 2.0.0 pace. Like 2.0.0, the
+gate does not look for restart loops between reads; do not set the variable in a shell.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image
@@ -321,8 +324,8 @@ takeover.
 The runner dispatches a fixed set of actions and rejects everything else: `apply --dry-run
 --porcelain` (preview), `apply -y` (commit), a release upgrade — the dashboard's
 [Upgrade button](dashboard.md#upgrading-from-the-dashboard), for which the runner re-derives the
-target from the GitHub release API itself and refuses any other version — the two worker actions
-(`worker-apply`, `worker-upgrade`), which forward a config change or an upgrade to a rig's own
+target from the GitHub release API itself and refuses any other version — the worker actions
+(`worker-apply`, `worker-upgrade`, and `worker-upgrade-all`, which runs `worker-upgrade` over up to 20 rigs in turn), which forward a config change or an upgrade to a rig's own
 control API rather than touching this host, and the `restart` / `apply` lifecycle pair. An
 unrecognized action is rejected and audited, never run.
 
@@ -715,9 +718,11 @@ starts, firstboot restores that same slot's good state on each configless boot, 
 reboot while setup is still open. The record remains until a provisioned boot passes its health
 gate, so reset, CLI restore and setup followed by a normal reboot keep the intended slot. An
 unverified slot keeps its normal fallback; the next provisioned boot still requires the stack
-health gate. If you restore from the shell instead of the wizard page, the wizard closes its
-page within seconds of `config.json` returning, which frees ports 80 and 443 for Caddy; run
-`./pithead up` after that.
+health gate. If you restore from the shell instead of the wizard page, firstboot detects a
+configuration that appears after its entry check, including while it prepares the page.
+It closes the page and frees ports 80 and 443 for Caddy; run `./pithead up` after that.
+A retry round that opened with a retained configuration does not automatically detect its
+replacement by a CLI restore.
 
 Copy the archive back and run:
 
@@ -737,7 +742,9 @@ volumes. Networks remain until a configured Compose shutdown. The pinned `pithea
 this directory's legacy project are checked; legacy containers must also carry this directory's
 working-directory label. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
-before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
+before committing them. `.env`, `Caddyfile`, and the masked dashboard configuration are regenerated
+from validated `config.json`. The next `up` serves the restored configuration and energy cost
+without an intervening `apply` or another restart;
 the validated proxy token, wallet RPC and database passwords, and Tor identities are retained
 exactly from the archived environment. The dashboard login hash and fingerprint are retained with
 them while the fingerprint matches `dashboard.auth.password` and the hash is well-formed bcrypt;

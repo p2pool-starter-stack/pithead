@@ -1,10 +1,11 @@
 export function createPolling({
   fetchFn,
   publish,
+  initialSnapshot = null,
   schedule = setInterval,
   cancel = clearInterval,
 }) {
-  let snapshot = null;
+  let snapshot = initialSnapshot;
   let inflight = false;
   let stopped = false;
   let controller;

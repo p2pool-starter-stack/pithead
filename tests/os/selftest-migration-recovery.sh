@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?set TMPDIR or RUNNER_TEMP}}"
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
 HERE=$(cd "$(dirname "$0")" && pwd)
 python3 "$HERE/selftest-migration-recovery.py"
 # shellcheck source=tests/os/migration-recovery.sh
