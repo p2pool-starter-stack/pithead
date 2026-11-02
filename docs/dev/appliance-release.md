@@ -333,7 +333,7 @@ The update phase also packages its built v1 `system.img` and dev-signed v2 bundl
 asset sizes and checksums, and compares the decompressed image with the original.
 Its phase log retains the sizes and hashes; harness cleanup removes the packaged copies.
 This checks the release packaging path with test signing, not the final release-key artifacts.
-`--phase all` runs all eight — boot, update, install, provision, rig, media, fault and reset.
+Standalone `--phase all` runs the whole battery except crossupdate and tor-heal; bench-ci refuses it as a capped job, so the release cut submits phase groups instead.
 Expect roughly 25 minutes per phase, most of it image builds, so budget an evening rather
 than a coffee break. It ran five of the eight until #1064, which meant a cut that followed
 this page ran none of the destructive phases: the power cuts, the corrupt-bundle refusal, the
