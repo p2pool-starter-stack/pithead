@@ -32,8 +32,10 @@ migration_prepare_old() {
         return 1
     }
     old_version=$(_ssh 'cat /opt/pithead/VERSION' | tr -d '[:space:]') || return 1
-    [ "$old_version" = "$(tr -d '[:space:]' <VERSION)" ] || {
-        bad "the selected old image cannot exercise the equal-version upgrade"
+    local candidate_version
+    candidate_version=$(tr -d '[:space:]' <VERSION)
+    [ "$old_version" = "$candidate_version" ] || {
+        bad "the selected old image cannot exercise the equal-version upgrade: old=$old_version candidate=$candidate_version"
         return 1
     }
     ok "selected old BUILD_COMMIT $old_commit is an ancestor of base $MIGRATION_BASE_REF $MIGRATION_BASE_COMMIT, outside candidate PR $(git rev-parse HEAD); shared VERSION $old_version"
