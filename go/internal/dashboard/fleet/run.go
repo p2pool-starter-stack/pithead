@@ -17,6 +17,32 @@ type Request struct {
 
 func Build(request Request) (any, error) {
 	switch request.Operation {
+	case "poll_parse_proxy_list_worker":
+		return pollParseProxyListWorker(request)
+	case "poll_parse_legacy_dict_worker":
+		return pollParseLegacyDictWorker(request)
+	case "poll_normalize_proxy_workers":
+		return pollNormalizeProxyWorkers(request)
+	case "poll_parse_proxy_summary":
+		return pollParseProxySummary(request)
+	case "poll_merge_proxy_summary":
+		return pollMergeProxySummary(request)
+	case "poll_merge_direct_stats":
+		return pollMergeDirectStats(request)
+	case "poll_aggregate_hashrate":
+		return pollAggregateHashrate(request)
+	case "poll_aggregate_window_hashrates":
+		return pollAggregateWindowHashrates(request)
+	case "poll_summary_deltas":
+		return pollSummaryDeltas(request)
+	case "poll_shares_to_record":
+		return pollSharesToRecord(request)
+	case "poll_lifecycle":
+		return pollLifecycle(request)
+	case "poll_probe_plan":
+		return pollProbePlan(request)
+	case "poll_probe_complete":
+		return pollProbeComplete(request)
 	case "build_workers":
 		return buildWorkers(request.Args, request.Now)
 	case "build_energy":
@@ -64,6 +90,17 @@ func Run(input io.Reader, output io.Writer) error {
 	}
 	result, err := Build(request)
 	if err != nil {
+		var pollErr *PollError
+		if request.Envelope && errors.As(err, &pollErr) {
+			result = map[string]any{
+				"ok":    false,
+				"error": map[string]any{"kind": pollErr.Kind, "message": pollErr.Message},
+			}
+			if request.NonfiniteMarker != "" {
+				result = packDetailValue(result, request.NonfiniteMarker)
+			}
+			return json.NewEncoder(output).Encode(result)
+		}
 		return err
 	}
 	if request.Envelope {

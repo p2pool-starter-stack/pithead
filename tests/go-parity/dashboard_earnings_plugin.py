@@ -146,11 +146,16 @@ def _fatal(*args, **kwargs):
 
 
 def _set_operations(values):
+    from mining_dashboard.service.notify import telegram_commands, telegram_formatters
+
     earnings, xvb_views, views = _modules()
     for name in MODEL_OPERATIONS:
         setattr(earnings, name, values[name])
         if hasattr(xvb_views, name):
             setattr(xvb_views, name, values[name])
+        for aliases in (telegram_commands, telegram_formatters):
+            if hasattr(aliases, name):
+                setattr(aliases, name, values[name])
     for name in VIEW_OPERATIONS:
         setattr(xvb_views, name, values[name])
         setattr(views, name, values[name])

@@ -187,7 +187,8 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Pool/network, raffle history/eligibility and update filtering | Native supported display inputs; Python supplies the existing native Monero result and running version | 171 unchanged focused tests and new A/B cases; full results below |
 | Header status badges | Native ordered badges with supplied metrics, thresholds and locality | Unchanged badge/wallet/header suites and native HTTP ownership guard; wallet KV reading remains Python |
 | Earnings, confirmed payouts, summary and XvB forecast | Native rates, rollups, summary, tier/reward/odds, realization, tempering and calculator over frozen inputs; Python supplies tier display strings and settings | Unchanged earnings/property/state/view/formatter/XvB suites with fatal reference guards, supplementary comparisons and source mutations; [earnings](results-earnings.md), [forecast](results-forecast.md) |
-| Remaining state presentation, polling and Tor | Python reference behind Go HTTP routing | Base metadata, egress/topology derivation and polling remain Python; no complete state proof |
+| Worker poll transformations and probe eligibility | Native thirteen operations; Python async requests, RigForge parsing and cache/scheduling | 272 unchanged data-helper/probe/DataService originals with twelve bodies fatal, 64 new paired/runtime/mutation cases; [polling](results-polling.md) |
+| Remaining state presentation, orchestration and Tor | Python reference behind Go HTTP routing | Base metadata, egress/topology derivation, network scheduling and provider I/O remain Python; no complete state proof |
 | SQLite engine, open, schema, migrations and recovery | Native Go in the normal Go server child; Python memory state and business SQL construction remain | 343 unchanged focused tests with ported Python paths fatal, existing/legacy/corrupt startup comparisons, Go units and paired full 3719-test suites |
 | Control intent envelopes, worker writable keys, request publication and result reads | Native Go helpers in the Go dashboard child; Python config masking and wait I/O remain; HTTP policies below | 377 unchanged focused wizard/control tests plus supplementary byte, startup, concurrency and mutation cases; injected UUID/rename hooks listed separately |
 | Control HTTP config, preview, commit, upgrade, OS-update, backup and result | Native header/body/approval/version/action policies, pending/completed/error responses and commit predicate; Python async transport, validators and service callbacks | 157 unchanged focused originals with ten original bodies fatal; six new A/B cases, two source mutations and seven failure-path cases; [results](results-control-http.md) |
@@ -356,7 +357,7 @@ The [worker HTTP results](results-worker-http.md) replace five original bodies w
 native policies and Python callback execution. All 3737 full dashboard assertions
 pass under Go selection, but Python coverage of 79.62% fails the unchanged 80% gate.
 Combined reference/comparison patch coverage passes at 92%, not a Go-only pass.
-[Shipping results](results-shipping.md) add selection, packaging and local image proof; appliance/fleet validation remains pending. [Earnings](results-earnings.md) and [forecast](results-forecast.md) results preserve their evidence. [Worker-detail results](results-worker-detail.md) add 196 unchanged focused originals and 78 new cases, mutations and off-loop proof: full reference/Go matrices pass 3719/3784 assertions, but Go-only Python coverage is 78.57% and the default patch gate is 87%, both red; separate union coverage is 96.52%. Required full gates stop at dependency-cache Markdown lint.
+[Shipping results](results-shipping.md) add selection, packaging and local image proof; appliance/fleet validation remains pending. [Earnings](results-earnings.md), [forecast](results-forecast.md) and [worker-detail](results-worker-detail.md) preserve their proof. [Polling results](results-polling.md) add 272 unchanged originals and 64 new cases, twelve fatal bodies, mutations and immutable/off-loop probe proof: full reference/Go matrices pass 3719/3801 assertions at 82.36%/78.28% Python coverage; Go-only total coverage and the default 88% patch gate remain red. Separate union coverage is 96.53%. Required full gates stop at dependency-cache Markdown lint.
 
 ## Unavailable and known host constraints
 
@@ -385,8 +386,7 @@ Combined reference/comparison patch coverage passes at 92%, not a Go-only pass.
 - Bench measurements and decisions have a separate owner; local test duration
   is not benchmark evidence. Complete appliance/fleet/published-image validation remains pending.
 
-The local CLI-only graph used for navigation covers 96 files, 825 nodes and 1099
-edges. Its 14 collapsed relation pairs and tool/skill version mismatch make it a
+The local CLI-only graph used for navigation covers 96 files, 825 nodes and 1099 edges. Its 14 collapsed relation pairs and tool/skill version mismatch make it a
 partial navigation aid, not parity evidence.
 
 ## Next
@@ -394,7 +394,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Finish remaining state metadata and worker polling contracts; keep native and fallback claims separate.
+1. Finish remaining state metadata and poll orchestration contracts; keep native and fallback claims separate.
 2. Validate shipped-image/appliance artifacts and production archive builds on the next committed/pushed head.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.
