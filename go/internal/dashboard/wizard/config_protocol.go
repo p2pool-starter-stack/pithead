@@ -89,6 +89,10 @@ func handleConfigRequest(request ConfigRequest) (any, error) {
 		return editorVersionFromArguments(request.Config)
 	case "editor-metadata":
 		return EditorMetadata(request.Config)
+	case "audit-diff":
+		return auditDiff(request.Config)
+	case "audit-unexplained":
+		return auditUnexplained(request.Config)
 	default:
 		return nil, ValidationError{fmt.Sprintf("unsupported wizard config operation: %s", request.Operation)}
 	}

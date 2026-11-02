@@ -51,6 +51,14 @@ def _terminal_control_history(extra_stats):
             yield change_id, status, entry.get("reason")
 
 
+def _unexplained_config_keys(changed, explained):
+    return [
+        key
+        for key in changed
+        if not any(key == path or key.startswith(path + ".") for path in explained)
+    ]
+
+
 class DataAuditMixin:
     async def _record_audit_event(self, source, actor, action, status, keys, event_id=None):
         """Write one out-of-band audit row (#530), through the SAME sanitizer #33's own audit
@@ -132,11 +140,7 @@ class DataAuditMixin:
             # p2pool.pool + p2pool.clearnet) explains ALL its paths, so a commit touching one could
             # still suppress a concurrent hand-edit of its sibling. Inherent to a name-only audit
             # log; fix only if per-path audit keys ever land.
-            unexplained = [
-                k
-                for k in changed_keys
-                if not any(k == p or k.startswith(p + ".") for p in explained_paths)
-            ]
+            unexplained = _unexplained_config_keys(changed_keys, explained_paths)
             if unexplained:
                 await self._record_audit_event(
                     "host-edit", "", "host-edit", "detected", " ".join(unexplained)

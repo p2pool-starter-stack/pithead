@@ -121,6 +121,37 @@ def _shares_to_record(last_known_total, current_total):
     return tuple(_run("shares_to_record", [last_known_total, current_total]))
 
 
+def _audit_keys(operation, **values):
+    from mining_dashboard.go_wizard_config import _call, _value
+
+    result, identities = _call("audit-" + operation, config=values)
+    try:
+        paths = _value(result, identities)
+    except (KeyError, TypeError, ValueError, RuntimeError) as error:
+        raise RuntimeError("native host audit returned invalid paths") from error
+    if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
+        raise RuntimeError("native host audit returned invalid paths")
+    return paths
+
+
+def _diff_config_keys(old, new):
+    paths = _audit_keys("diff", old=old, new=new)
+    if paths != sorted(set(paths)) or any(
+        path.split(".", 1)[0] == "config_version" for path in paths
+    ):
+        raise RuntimeError("native host audit returned invalid diff")
+    return paths
+
+
+def _unexplained_config_keys(changed, explained):
+    changed = list(changed)
+    paths = _audit_keys("unexplained", changed=changed, explained=list(explained))
+    positions = iter(changed)
+    if any(not any(candidate == path for candidate in positions) for path in paths):
+        raise RuntimeError("native host audit returned invalid selection")
+    return paths
+
+
 def telemetry_plan(self, phase, args):
     return _run("telemetry_" + phase, args)
 
@@ -206,7 +237,7 @@ async def probe(self, client, workers):
 
 
 def install():
-    from mining_dashboard.service import data_helpers, data_service, worker_probe
+    from mining_dashboard.service import data_audit, data_helpers, data_service, worker_probe
 
     for name in HELPERS:
         REFERENCE_FUNCTIONS.setdefault(name, getattr(data_helpers, name))
@@ -219,3 +250,8 @@ def install():
     data_helpers.WorkerLifecycle.update = lifecycle_update
     worker_probe.WorkerProber.probe = probe
     data_service.DataService._telemetry_plan = telemetry_plan
+    REFERENCE_FUNCTIONS.setdefault("_diff_config_keys", data_helpers._diff_config_keys)
+    REFERENCE_FUNCTIONS.setdefault("_unexplained_config_keys", data_audit._unexplained_config_keys)
+    data_helpers._diff_config_keys = _diff_config_keys
+    data_audit._diff_config_keys = _diff_config_keys
+    data_audit._unexplained_config_keys = _unexplained_config_keys
