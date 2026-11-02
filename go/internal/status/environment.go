@@ -1,8 +1,10 @@
 package status
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -119,7 +121,7 @@ func echoEscapes(value string) string {
 			}
 			n, _ := strconv.ParseUint(value[start:end], base, 32)
 			if limit > 3 {
-				result.WriteRune(rune(n))
+				writeBashUnicode(&result, n, value[i], value[start:end])
 			} else {
 				result.WriteByte(byte(n))
 			}
@@ -130,4 +132,74 @@ func echoEscapes(value string) string {
 		}
 	}
 	return result.String()
+}
+
+func writeBashUnicode(result *strings.Builder, value uint64, prefix byte, digits string) {
+	if value >= 1<<31 {
+		return
+	}
+	if value > 0x7f && !bashUTF8Locale() {
+		result.WriteByte('\\')
+		result.WriteByte(prefix)
+		result.WriteString(digits)
+		return
+	}
+	for _, part := range bashUTF8Bytes(uint32(value)) {
+		result.WriteByte(part)
+	}
+}
+
+func bashUTF8Locale() bool {
+	locale := effectiveLocale()
+	return locale != "" && locale != "C" && locale != "POSIX"
+}
+
+func LocaleSupported() bool {
+	locale := effectiveLocale()
+	if locale == "" || locale == "C" || locale == "POSIX" {
+		return true
+	}
+	command := exec.Command("locale", "charmap")
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil || stderr.Len() != 0 {
+		return false
+	}
+	charmap := strings.NewReplacer("-", "", "_", "").Replace(strings.TrimSpace(string(output)))
+	return strings.EqualFold(charmap, "UTF8")
+}
+
+func effectiveLocale() string {
+	for _, key := range []string{"LC_ALL", "LC_CTYPE", "LANG"} {
+		if locale := os.Getenv(key); locale != "" {
+			return locale
+		}
+	}
+	return ""
+}
+
+func bashUTF8Bytes(value uint32) []byte {
+	size, prefix := 1, byte(0)
+	switch {
+	case value <= 0x7f:
+		return []byte{byte(value)}
+	case value <= 0x7ff:
+		size, prefix = 2, 0xc0
+	case value <= 0xffff:
+		size, prefix = 3, 0xe0
+	case value <= 0x1fffff:
+		size, prefix = 4, 0xf0
+	case value <= 0x3ffffff:
+		size, prefix = 5, 0xf8
+	default:
+		size, prefix = 6, 0xfc
+	}
+	encoded := make([]byte, size)
+	for index := size - 1; index > 0; index-- {
+		encoded[index] = 0x80 | byte(value&0x3f)
+		value >>= 6
+	}
+	encoded[0] = prefix | byte(value)
+	return encoded
 }

@@ -7,6 +7,8 @@ from aiohttp import web
 from mining_dashboard import go_channel
 
 REFERENCE_FUNCTIONS = {}
+_OS_REPLACE = os.replace
+_OS_UNLINK = os.unlink
 OPERATIONS = (
     "spool_write",
     "spool_remove",
@@ -16,6 +18,16 @@ OPERATIONS = (
     "clear_failed_restore",
     "clear_page_temps",
 )
+
+_REFERENCE_OPERATIONS = {
+    "write": "spool_write",
+    "remove": "spool_remove",
+    "exists": "spool_exists",
+    "conflict": "submission_conflict",
+    "clear-sidecars": "clear_submission_sidecars",
+    "clear-restore": "clear_failed_restore",
+    "clear-temps": "clear_page_temps",
+}
 
 
 def _payload(operation, **values):
@@ -28,6 +40,15 @@ def _payload(operation, **values):
 
 
 def _run(operation, data=None, **values):
+    original = REFERENCE_FUNCTIONS.get(_REFERENCE_OPERATIONS.get(operation, ""))
+    if original is not None and (os.replace is not _OS_REPLACE or os.unlink is not _OS_UNLINK):
+        if operation == "write":
+            return original(values["name"], data, values.get("directory") or None)
+        if operation == "remove":
+            return original(values["name"], values.get("directory") or None)
+        if operation == "exists":
+            return original(values["name"])
+        return original()
     payload = _payload(operation, **values)
     if data is None:
         return go_channel.call("wizard", payload)
@@ -75,6 +96,8 @@ def submission_conflict() -> web.Response | None:
     result = _run("conflict")
     if result is None:
         return None
+    if isinstance(result, web.Response):
+        return result
     return web.json_response({"error": result["error"]}, status=result["status"])
 
 

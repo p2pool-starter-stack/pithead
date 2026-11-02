@@ -15,6 +15,8 @@
   "ignores": [
     "**/node_modules/**",
     "**/.venv/**",
+    ".go-cache/**",
+    ".uv-cache/**",
     "dashboard/tests/browser/test-results/**",
     "dashboard/tests/browser/playwright-report/**",
     "dashboard/mining_dashboard/client/tari/generated/**",

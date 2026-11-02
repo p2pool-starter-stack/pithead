@@ -14,7 +14,20 @@
 set -Eeuo pipefail
 
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${PITHEAD_IMPL:-}" = go ]; then
-    if [ "${1:-}" != status ] || [ -e /dev/fd/1 ] || [ -e /proc/self/fd/1 ]; then
+    if [ "$#" -eq 1 ] && [ "${1:-}" = status ]; then
+        _pithead_go_locale="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"
+        case "$_pithead_go_locale" in
+        "" | C | POSIX) ;;
+        *)
+            _pithead_go_charmap="$(locale charmap 2>&1)" || _pithead_go_charmap=""
+            case "$_pithead_go_charmap" in
+            "" | US-ASCII | ANSI_X3.4-1968 | *$'\n'* | *$'\r'* | *$'\t'* | *" "*) PITHEAD_IMPL=bash ;;
+            esac
+            ;;
+        esac
+        unset _pithead_go_locale _pithead_go_charmap
+    fi
+    if [ "${PITHEAD_IMPL:-}" = go ] && { [ "${1:-}" != status ] || [ -e /dev/fd/1 ] || [ -e /proc/self/fd/1 ]; }; then
         _PITHEAD_GO_IGNORED_SIGNALS=""
         while IFS= read -r _pithead_go_trap; do
             case "$_pithead_go_trap" in

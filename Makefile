@@ -166,11 +166,11 @@ test-go-doctor-host-parity: go-build test-go ## Compare native doctor host and d
 
 test-go-doctor-memory-parity: go-build test-go ## Compare native doctor memory and clock probes with Bash
 	cd go && $(GO_ENV) go test -tags=parity -count=1 -run Parity ./internal/doctor
-
 test-go-doctor-parity: go-build test-go ## Compare Go doctor JSON reports with Bash using synthetic probes
 	python3 tests/go-parity/test_doctor.py
 test-go-status-parity: go-build test-go ## Compare native status with Bash against synthetic services
 	python3 tests/go-parity/test_status.py
+	python3 tests/go-parity/test_status_escapes.py
 GO_ENV = env GOCACHE="$(CURDIR)/.go-cache/build" GOMODCACHE="$(CURDIR)/.go-cache/mod" GOPATH="$(CURDIR)/.go-cache/gopath" TMPDIR="$(CURDIR)/.go-cache/tmp"
 go-cache:
 	mkdir -p "$(CURDIR)/.go-cache/tmp"

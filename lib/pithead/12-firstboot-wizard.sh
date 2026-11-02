@@ -25,10 +25,6 @@ firstboot_wizard() {
         *) error "Unknown option for firstboot-wizard: $arg. Run '$0 help'." ;;
         esac
     done
-    # A rig install staged its answers on this ESP (the disk-install leg below): land them on
-    # /data, the same one-move consumption as the config pre-seed — never on the installation
-    # medium, where staged files are cleaned up by the installer itself. Then fall through to
-    # the rig leg below, exactly as a pre-seeded coordinator falls through to setup.
     if [ -f "$PRESEED_DIR/pithead-rig.json" ] && ! installer_mode_available && [ ! -f "$PWD/rig.json" ]; then
         if jq -e 'type == "object" and ((.pool // "") | length > 0) and ((.access_token // "") | test("^[0-9a-f]{32}$"))' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
             install -m 600 "$PRESEED_DIR/pithead-rig.json" "$PWD/rig.json" 2>/dev/null; then
@@ -40,34 +36,15 @@ firstboot_wizard() {
             scrub_staged_rig unusable # refused is still readable: same password, same bare ESP
         fi
     fi
-    # A machine already carrying the rig role mines, and asks nothing — not even on a stick that
-    # could offer the installer: a run-from-USB rig's stick IS that rig's system, not a fleet tool.
-    # Reached only on the boot that ACCEPTS the role (a disk install's first boot, just above); a
-    # boot from the menu's "Set up again" entry (#1318) skips this and opens the page beside the role.
-    # The miner is best-effort, as in pithead-boot: a pool that moved must not brick the boot.
     if [ "$(machine_role)" = "rig" ] && ! setup_again_mode; then
         _console "This machine is a RigForge rig ($(jq -r '.worker // "unnamed"' "$PWD/rig.json" 2>/dev/null) -> $(jq -r '.pool // "no pool recorded"' "$PWD/rig.json" 2>/dev/null))."
         provision_rig_miner || true
         return 0
     fi
-    # A configuration dropped on the medium beats opening a browser at all — but never on the
-    # INSTALLATION medium: pre-seeding covers configuration, not the erase decision (the docs'
-    # exact promise), and a fleet stick that provisioned ITSELF instead of offering the
-    # installer would burn out running a chain it can never hold. There, the pre-seed becomes
-    # the pre-filled combined page instead (below).
     if ! installer_mode_available; then
-        # The carried restore first: it holds MORE than a config (keys, database), and once it
-        # lands the config pre-seed guard below sees config.json and stands down. Unconditional —
-        # gating on config.json's own absence let a `wipe=keep` target's PRIOR config.json skip
-        # the carried restore entirely (#2195); consume_preseed_restore itself no-ops (rc 2 idle).
-        # rc 3 means its temporary secrets could not be cleared: stop rather than run on beside them.
         consume_preseed_restore || preseed_restore_rc=$?
         [ "$preseed_restore_rc" -ne 3 ] || error "Could not clear temporary restore files safely — reboot before continuing."
         if [ ! -f "$PWD/config.json" ] && consume_preseed_config "$PWD/config.json"; then
-            # Spent: config.json lives on /data now, and a plaintext wallet + password must not
-            # sit on this machine's unencrypted ESP forever. Only on an INSTALLED machine —
-            # running from removable media this is the operator's own stick, theirs to keep
-            # for the next machine in the fleet.
             if ! boot_is_removable; then
                 mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
                 rm -f "$PRESEED_DIR/pithead-config.json" 2>/dev/null ||
@@ -91,9 +68,6 @@ firstboot_wizard() {
 
     local engine image token host_addresses had_config
     engine=$(container_engine)
-    # STACK_VERSION is the ONE place the registry tag is derived (a release is v<VERSION>, a
-    # source checkout is dev) — deriving it here instead cost a boot: the archive holds
-    # :vX.Y.Z while a hand-rolled ":$VERSION" looks for a tag that was never published.
     export_build_provenance
     image="${PITHEAD_REGISTRY}/pithead-dashboard:${STACK_VERSION}"
     stage_wizard_spool "$spool" >/dev/null || error "Could not prepare the setup page files."
@@ -118,23 +92,13 @@ firstboot_wizard() {
             log "Found the previous installation's settings on the target disk — the page opens with them filled in (secrets left out)."
         fi
     elif boot_is_removable; then
-        # Setup will proceed, but the operator should know what they are standing on: a USB stick
-        # cannot hold a 250+ GB chain and wears out under constant writes.
         warn "Booted from removable media with no internal disk to install onto."
         warn "Running the stack from a USB stick is unsupported — it is too slow for the chain and the stick will wear out."
     fi
-    # Offline first boot: the appliance carries the wizard image as an archive (os/rootfs/images),
-    # because at this point the operator may have no working network yet — that is what they are
-    # here to configure. The loader is the boot path's own (see load_baked_images): naming the
-    # image forces a load when the tag is missing entirely, whatever the digest record says.
     load_baked_images "$image"
-    # Double quotes on purpose: $engine expands NOW, at trap definition. It is a local, and the
-    # trap also fires after this function's locals are gone — where set -u would turn the trap
-    # itself into the crash that masks whatever actually failed. The spool paths expand now for
-    # the same reason, so the trap can still clear this session's restore and setup secrets.
     local cert_fp=""
 
-    # shellcheck disable=SC2064  # expand-now is the point (see above)
+    # shellcheck disable=SC2064
     trap "'$engine' rm -f pithead-wizard >/dev/null 2>&1 || true; clear_restore_submission '$spool' '$restore_spool' || true; clear_setup_candidate '$restore_spool/config.json' '$restore_spool/handoff.json' || true; clear_restore_carry || true" EXIT
     while :; do
         # Re-stage per session, and re-derive the fingerprint with it: the accept path removes the

@@ -137,6 +137,9 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		}
 		return nil
 	case "status":
+		if !status.LocaleSupported() {
+			return fallback(reference, args)
+		}
 		if _, err := exec.LookPath("docker"); err != nil {
 			return fallback(reference, args)
 		}
