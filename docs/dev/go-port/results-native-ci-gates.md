@@ -132,19 +132,21 @@ then passes all 329 assertions in 195 seconds, exit 0. This follow-up does not
 replace the failed full attempt or establish a Go-selected block result.
 
 Block two's three failures observe an extra Docker network-list call in the
-node-onion fixture. The relevant call and expectations exist at the frozen
-starting commit as well. The frozen `a73ffced` runtime control stops at the
-agreed time limit with exit 130 before reaching those three assertions. Their
-runtime non-regression remains unproven; static identity is not a passing
-baseline control. An earlier extracted-fragment attempt times out after 45
-seconds with exit 124 after two preliminary assertions; it also does not reach
-the three target assertions.
+node-onion fixture. The first frozen `a73ffced` runtime control stops at its
+agreed time limit with exit 130 before reaching those assertions. An earlier
+extracted-fragment attempt times out after 45 seconds with exit 124 after two
+preliminary assertions. The later [paired runtime control](results-final-preflight.md#paired-frozen-stack-control)
+reaches all target assertions at `a73ffced` and `258de1644`: both runs report
+five passes and the same three failures, with byte-identical logs. This
+establishes the narrow failure's presence at the frozen baseline; it does not
+turn the full stack gate green.
 
 The selected compiler and built CLI identify Go 1.27.1, and the CLI's VCS revision
 matches the clean UID-1000 checkout. The privileged runner is stopped and
 preserved for inspection. No original test, fixture or reference implementation
 is edited to hide these results. Full Go-selected stack, privileged host
-behavior and the Linux ext4 replay gate remain unproven.
+behavior remain unproven. The later [ext4 replay result](results-final-preflight.md#original-ext4-replay-target)
+passes the original target in both selections but establishes no Go ownership.
 
 ## AMD64 runner boundary
 

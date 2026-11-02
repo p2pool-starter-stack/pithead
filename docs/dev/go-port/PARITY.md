@@ -8,19 +8,21 @@ STATUS: IN PROGRESS
 - Bash fallback includes `setup`, `upgrade`, `backup`, `restore` and the other verbs listed below. Status flags/chains, missing Docker, closed stdout, other character sets and unsupported locale providers also fall back; invalid locales stay in the original Bash launcher.
 - Fully native HTTP handlers: `/`, `/static/*`, optional `/ui-preview`, route/method errors and security headers.
 - Hybrid HTTP: `/api/state`, `/api/miner-connection`, `/api/xvb-standby` and `/metrics` combine Go response policy with Python input/service providers; unsupported native inputs can forward to Python.
-- `/api/access`, `/api/config`, `/api/audit`, `/api/worker` and `/api/control/*` use Python transport with installed Go policy/storage/control adapters; remaining requests are proxied.
+- `/api/access`, `/api/config`, `/api/audit`, `/api/worker` and `/api/control/*` use Python transport with installed Go policy/storage/control adapters; remaining registered requests are proxied.
 - SQLite open/schema/migrations/corrupt recovery and supported control publication are native. Python remains required for async providers, clocks, locks, polling and orchestration; the backend is hybrid.
 - The unchanged dashboard command runs 3716 frozen original tests plus 386 port additions: 4102 passed per selection; unset 95.56%, Go 92.60% statement coverage. The new bridge cases supplement the original oracle.
 - Unchanged default patch gate: unset 91%, Go 92%; tracked application modules, separate datasets, no coverage omissions or threshold changes. Both selections repeat successfully at committed head `717ae23b`; the Go workflow now includes its total and patch coverage gates. [Current continuation](results-native-ci-gates.md).
 - Focused native/fatal-source/mutation oracles prove the detailed boundaries below; Python bridge coverage alone does not prove native ownership. Stack helpers normally scrub Go selection; the latest CI runs skip two optional keep-running mutant controls whose supplied binaries are absent.
 - Scoped Linux ARM64 evidence covers 309 lifecycle assertions with four native keep-running successes, 187 shipping assertions and 104 wizard-spool assertions per selection. The new wizard guard requires 63 status-0 helper results and rejects a real wallet source mutation that otherwise passes via fallback. This does not prove full lifecycle execution.
-- The latest full reference Linux `make test-stack` attempt fails: 8050 passed, nine failed, exit 2; standalone commands are unrun. Scoped follow-ups pass pull-policy 13/0 and control block 329/0 after supplying real runner prerequisites; they do not replace the failed gate.
-- Unproven: full Linux stack, privileged host behavior, Linux ext4 replay, appliance builds/boot, AMD64 execution, fleet and published artifacts. Cross-builds and local timings do not establish those results or performance gains.
+- The latest full reference Linux `make test-stack` attempt fails: 8050 passed, nine failed, exit 2; standalone commands are unrun. Scoped follow-ups pass pull-policy 13/0 and control block 329/0 after supplying real runner prerequisites. The remaining three assertions fail identically at frozen `a73ffced` and current `258de1644`; none of these follow-ups replaces the failed full gate.
+- The original Linux ext4 replay target passes 100 cases per selection at `258de1644`, with networking disabled and normal locked dependency invocation. It directly exercises Python, so it proves no Go ownership. [Final preflight](results-final-preflight.md).
+- Unproven: full Linux stack, privileged host behavior, native ext4 replay ownership, appliance builds/boot, AMD64 execution, fleet and published artifacts. Cross-builds and local timings do not establish those results or performance gains.
 - Review every reference-path change: CLI launch/private markers/signals; config/env/Caddy delegation; lifecycle option/scope wiring; Python provider/storage/control/view/wizard seams and extracted helpers; shipping selection/build lists. [Complete path inventory](reference-changes.md).
 - Merge-readiness changes restore interposed wizard I/O compatibility, remove firstboot comments without changing its parsed function, correct a file-budget row, add bridge tests/parity setup and exclude generated caches from Markdown lint.
 - GNU-first lint and the updated Go 1.27.1 Linux ARM64 CI command set pass: native dashboard/default patch coverage, builds/race/vet, eight CLI targets, 39 dashboard targets and one shipping target, in 10m53s excluding runner preparation. This is local execution of CI commands, not a GitHub Actions status.
 - The current 18-test native guard group has no skips; the locale and two optional keep-running mutant skips remain explicit elsewhere. The exact dashboard Docker test stage also passes at 95.56% with 4092 passed and ten image-context skips. Earlier `make test` runs retain the explicit macOS stack refusal.
 - Commit `32d11cd4`: local ARM64 image smoke passes Python/existing and Go/existing, legacy and corrupt cases; that image passes pinned Trivy, and both AMD64 artifacts export. [Committed-head results](results-committed-linux.md) retain identities and limits.
+- Fleet admission rejects pushed `258de1644` before job creation because of base conflicts. The configured upstream is `develop-v2.1.0`; its isolated candidate preserves frozen tests and passes both 4,163-test dashboard selections, with native route-fallback checks and independent security review. The real branch remains unmerged; no fleet pass is claimed.
 - New native slices remain stopped. G7 escape-byte compatibility is implemented and its affected checks pass; original full Linux status/stack, G8 privileged and artifact proofs remain pending.
 
 # Go port parity
@@ -273,8 +275,10 @@ The [worker HTTP results](results-worker-http.md) describe an earlier snapshot's
 The [committed-head report](results-committed-linux.md) records a clean `32d11cd4`
 production-image build, four passing runtime cases, three Compose selection cases,
 the pinned fresh-database Trivy gate and both AMD64 artifact hashes. These are supplementary local results, not fleet,
-AMD64 execution, complete bundle or appliance-boot proof. The branch advertised by
-origin remains at `b59724b3`; the normal bench API cannot test an unpushed commit.
+AMD64 execution, complete bundle or appliance-boot proof. At that snapshot, origin
+advertised `b59724b3`; the normal bench API could not test the then-unpushed
+commit. Origin now advertises `258de1644`; the [final preflight](results-final-preflight.md)
+records admission refusals before job creation.
 The unchanged wizard-spool fragment passes 104 assertions in each selection when
 its original wallet prerequisite is initialized. Reference records zero Go calls;
 Go records 63 helper dispatches. A separate instrumented run measures all 63 at
@@ -305,8 +309,9 @@ the complete stack and privileged limitations are unchanged.
   and repaired head; the earlier BSD failure did not establish repository parity.
 - Local Compose selection and four disposable runtime-image cases pass on Linux ARM64.
   Complete appliance, AMD64 execution and live matrices still need reserved hardware.
-  Fleet contracts have no per-job Go selector; no job was submitted for this unpushed
-  slice. No live stack or bench was changed.
+  Fleet contracts have no per-job Go selector. Admission attempts at pushed
+  `258de1644` fail before job creation because of base conflicts; no fleet test
+  executes. No live stack or bench was changed.
 - Bench measurements and decisions have a separate owner; local test duration
   is not benchmark evidence. Complete appliance/fleet/published-image validation remains pending.
 
@@ -314,8 +319,10 @@ The local CLI-only graph used for navigation covers 96 files, 825 nodes and 1099
 
 ## Next
 
-The requested merge-gate repairs and G7 escape-byte fix are complete; new native
-slices remain stopped. The operator reviews, commits and pushes this coherent
-tree. Full original Linux stack/status, G8 privileged, appliance, AMD64, fleet
-and published-artifact validation remain unproven. Preserve those limits on the
-pushed head; performance work remains with its separate owner.
+The requested local merge-gate repairs and G7 escape-byte fix are complete; new
+native slices remain stopped. The operator must resolve the integration-base
+merge, preserve frozen tests, commit and push before fleet admission can retry.
+The isolated candidate is preparation, not a merge of this branch. Full original
+Linux stack/status, G8 privileged, appliance, AMD64, fleet and published-artifact
+validation remain unproven. Preserve those limits on the pushed head;
+performance work remains with its separate owner.
