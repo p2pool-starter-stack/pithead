@@ -8,6 +8,49 @@ INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-reset-restore.sh"
 echo "== encrypted config-reset recovery failure controls =="
 
+drive_dashboard_probe() (
+    local fault="$1" rc
+    IT_FAIL=0 IT_PASS=0
+    OUT_DIR=$(mktemp -d) || exit 1
+    trap 'rm -f "$OUT_DIR/probe-ran" "$OUT_DIR/restore-dashboard.log"; rmdir "$OUT_DIR"' EXIT
+    rx() {
+        case "$1" in
+        'sha256sum config.json')
+            [ "$fault" != read-config ] || return 1
+            if [[ "$fault" = config || "$fault" = probe-and-config ]] && [ -e "$OUT_DIR/probe-ran" ]; then printf changed; else printf original; fi
+            ;;
+        'bash -s')
+            [ "${2:-}" = --stdin ] || return 1
+            cat >/dev/null
+            : >"$OUT_DIR/probe-ran"
+            case "$fault" in probe | probe-and-config) return 1 ;; esac
+            ;;
+        *) return 127 ;;
+        esac
+    }
+    upgrade_secret_fingerprints() {
+        [ "$fault" != read-secrets ] || return 1
+        if [ "$fault" = secrets ] && [ -e "$OUT_DIR/probe-ran" ]; then printf changed; else printf original; fi
+    }
+    env_on_box() {
+        [ "$1" = TARI_MODE ] && [ "$fault" != read-tari ] || return 1
+        if [ "$fault" = tari ] && [ -e "$OUT_DIR/probe-ran" ]; then printf off; else printf local; fi
+    }
+    wait_status_ok() { [ "$fault" != health ]; }
+    run_restore_dashboard_probe >/dev/null 2>&1
+    rc=$?
+    printf '%s|%s|%s' "$rc" "$IT_FAIL" "$IT_PASS"
+)
+assert_eq "dashboard restore probe verifies the original healthy Tari baseline" "$(drive_dashboard_probe none)" '0|0|2'
+for fault in read-config read-secrets read-tari; do
+    assert_eq "dashboard restore probe refuses $fault before the Tari trial" "$(drive_dashboard_probe "$fault")" '1|1|0'
+done
+assert_eq "a failed dashboard probe still verifies the original baseline" "$(drive_dashboard_probe probe)" '1|1|1'
+assert_eq "a failed dashboard probe also rejects failed cleanup" "$(drive_dashboard_probe probe-and-config)" '1|2|0'
+for fault in config secrets tari health; do
+    assert_eq "dashboard restore probe refuses changed or unhealthy $fault state" "$(drive_dashboard_probe "$fault")" '1|1|1'
+done
+
 drive_reset_restore() (
     local fault="$1" channel="${2:-diy}"
     # shellcheck disable=SC2034 # read by the shared web helper
@@ -31,7 +74,8 @@ drive_reset_restore() (
         return 0
     }
     curl() { [ "$fault" != page ] && printf 'Pithead setup'; }
-    reset_restore_wait_reboot() { :; } # reboot transport has its own controls below
+    rr_restore_during_wizard_startup() { :; }
+    reset_restore_wait_reboot() { :; }
 
     rx() {
         case "$1" in

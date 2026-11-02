@@ -113,6 +113,7 @@ run_lifecycle() {
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
     run_source_image_reconcile || return 1
+    run_restore_dashboard_probe || return 1
     run_tari_background_sync || return 1
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_step "backup → restore round-trip…"
@@ -228,16 +229,7 @@ run_lifecycle() {
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
     [ "$lifecycle_ok$reset_failed" = 10 ]
 }
-
-# A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
-# every regular file up to 64 MiB, and for a larger one (the chains' LMDB files, hundreds of GiB
-# on a synced box, an hour per hashing pass) its inode, size, mtime and ctime to the nanosecond.
-# Any write to a file moves its mtime and ctime, and ctime cannot be set back from userspace, so
-# an unchanged line proves no byte of that file was written. Directories and links print their
-# type, so a removed or added entry shows too. pipefail makes an unreadable path a failed probe,
-# never an empty snapshot that equals another empty one. -H descends a kept dir that is itself a
-# symlink (a chain on another disk). KEPT_SNAPSHOT_SUDO is the selftest seam.
-kept_data_snapshot_snippet() { # <path>...
+kept_data_snapshot_snippet() {
     local p paths=""
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
     printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"

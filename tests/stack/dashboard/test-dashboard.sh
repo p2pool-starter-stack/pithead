@@ -123,7 +123,7 @@ _caddy_appliance() { # $1 = value for DASHBOARD_EXPOSE_PUBLIC_IP
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '192.168.1.10 10.89.0.1 172.28.0.1 2001:db8::1 fd00::1\n'; }
+    stub_host_addrs '192.168.1.10 10.89.0.1 172.28.0.1 2001:db8::1 fd00::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local DASHBOARD_AUTH_HASH_B64="" \
         DASHBOARD_EXPOSE_PUBLIC_IP="$1" generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
@@ -174,7 +174,7 @@ caddy_pinned="$(
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '192.168.1.10 2001:db8::1 fd00::1\n'; }
+    stub_host_addrs '192.168.1.10 2001:db8::1 fd00::1'
     # Pinned to a NAME (the documented appliance case, #1089), not an IP literal: an
     # IP-literal pin puts the box's own address INTO the site list too, so a bind built
     # from the site list and a bind built from the box's addresses render identically —
@@ -205,7 +205,7 @@ caddy_noaddr="$(
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '2001:db8::1\n'; } # ONLY a public address
+    stub_host_addrs '2001:db8::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local DASHBOARD_AUTH_HASH_B64="" \
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
@@ -225,7 +225,7 @@ caddy_onion="$(
     set +e
     is_appliance() { return 0; }
     appliance_mint_cert() { return 1; } # site blocks/binds are under test, not cert minting
-    hostname() { printf '192.168.1.10 2001:db8::1\n'; }
+    stub_host_addrs '192.168.1.10 2001:db8::1'
     DASHBOARD_SECURE=false HOST_IP=pithead.local NETWORK_PREFIX=172.28.0 \
         DASHBOARD_ONION_ENABLED=true DASHBOARD_AUTH_USER=admin \
         DASHBOARD_AUTH_HASH_B64="$(printf 'x' | openssl base64 -A)" \
@@ -251,7 +251,7 @@ caddy_onion_https="$(
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '192.168.1.10 2001:db8::1\n'; }
+    stub_host_addrs '192.168.1.10 2001:db8::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local NETWORK_PREFIX=172.28.0 \
         DASHBOARD_ONION_ENABLED=true DASHBOARD_ONION=abcdefghij234567.onion \
         DASHBOARD_AUTH_USER=admin \
@@ -316,7 +316,7 @@ caddy_insecure_onion_gw="$(
     is_appliance() { return 0; }
     appliance_mint_cert() { return 1; } # site blocks/dupes are under test, not cert minting
     # The physical appliance set: LAN address plus BOTH podman bridge gateways, as documented above.
-    hostname() { printf '192.168.1.10 10.89.0.1 172.28.0.1\n'; }
+    stub_host_addrs '192.168.1.10 10.89.0.1 172.28.0.1'
     DASHBOARD_SECURE=false HOST_IP=pithead.local NETWORK_PREFIX=172.28.0 \
         DASHBOARD_ONION_ENABLED=true DASHBOARD_AUTH_USER=admin \
         DASHBOARD_AUTH_HASH_B64="$(printf 'x' | openssl base64 -A)" \
@@ -411,7 +411,7 @@ caddy_redir="$(
     set +e
     is_appliance() { return 0; }
     appliance_mint_cert() { return 1; } # the :80 redirect shape is under test, not cert minting
-    hostname() { printf '192.168.1.10 172.28.0.1 fd00::1\n'; }
+    stub_host_addrs '192.168.1.10 172.28.0.1 fd00::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local NETWORK_PREFIX=172.28.0 DASHBOARD_AUTH_HASH_B64="" \
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
