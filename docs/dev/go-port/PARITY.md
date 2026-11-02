@@ -189,7 +189,8 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Header status badges | Native ordered badges with supplied metrics, thresholds and locality | Unchanged badge/wallet/header suites and native HTTP ownership guard; wallet KV reading remains Python |
 | Remaining state presentation, polling and Tor | Python reference behind Go HTTP routing | Earnings, base metadata, egress/topology derivation and polling remain Python; no complete state proof |
 | SQLite engine, open, schema, migrations and recovery | Native Go in the normal Go server child; Python memory state and business SQL construction remain | 343 unchanged focused tests with ported Python paths fatal, existing/legacy/corrupt startup comparisons, Go units and paired full 3719-test suites |
-| Control intent envelopes, worker writable keys, request publication and result reads | Native Go helpers in the Go dashboard child; Python HTTP guards, config masking and wait loop remain | 377 unchanged focused wizard/control tests plus supplementary byte, startup, concurrency and mutation cases; injected UUID/rename hooks listed separately |
+| Control intent envelopes, worker writable keys, request publication and result reads | Native Go helpers in the Go dashboard child; Python config masking, wait I/O and worker HTTP remain; public control policies below | 377 unchanged focused wizard/control tests plus supplementary byte, startup, concurrency and mutation cases; injected UUID/rename hooks listed separately |
+| Control HTTP config, preview, commit, upgrade, OS-update, backup and result | Native header/body/approval/version/action policies, pending/completed/error responses and commit predicate; Python async transport, validators and service callbacks | 157 unchanged focused originals with ten original bodies fatal; six new A/B cases, two source mutations and seven failure-path cases; [results](results-control-http.md) |
 | Wizard stage, status and read-only spool views | Native Go helpers under Go selection; Python launch and HTTP orchestration remain | Same unchanged focused suites with original ported functions fatal; off-loop state/status coalescing and public reference-selection sentinels |
 | Wizard atomic writes, conflict checks, rollback and temporary cleanup | Native Go helpers, including raw archive streaming; Python transport and typed config orchestration remain; rig/restore plans below | 282 unchanged wizard tests through the transaction adapter; injected replace/unlink cases are explicit I/O interpositions; supplementary comparisons and source mutations |
 | Wizard config preparation, merge/default stripping, machine names and recovery policy | Native ordered Go transforms; Python supplies runtime schema/defaults and spool reads, retaining input normalization and HTTP sequencing | 334 unchanged focused tests plus 12 new comparison/mutation cases; results below |
@@ -339,23 +340,22 @@ production uses Go syscalls. Auth/form policy is added by the next slice.
 ## Wizard policy, config and terminal actions
 
 Earlier [auth/form](results-wizard-policy.md), [config/recovery](results-wizard-config.md),
-[terminal action](results-wizard-terminal.md), [rig/restore](results-wizard-submission.md)
-and [typed submission](results-wizard-typed.md) reports preserve native boundaries,
+[terminal action](results-wizard-terminal.md), [rig/restore](results-wizard-submission.md),
+[typed submission](results-wizard-typed.md), [defaults/metadata](results-wizard-values.md)
+and [raw-document](results-documents.md) reports preserve native boundaries,
 original-suite A/B passes, mutation controls and separately graded coverage.
-The [defaults and metadata results](results-wizard-values.md) preserve disk
-defaults, materialization, inventory, deduplication and spool-deletion proofs:
-334 originals plus seven new cases, six fatal reference bodies and two mutations.
 
-The [raw-document results](results-documents.md) add native duplicate/placeholder
-checks, escaped paths/diagnostics, alias placement and host-error-record refusal.
-Frozen/current references pass 530 originals; Go runs the same originals plus
-seven new cases with seven original functions/methods fatal and two source mutations.
-The Python standard-library JSON decoder retains syntax/number behavior; runtime
-providers, preparation sequencing, probes and callback execution remain Python.
-Production selection and shipping remain pending; full and coverage results are
-recorded in that report.
-Final full A/B runs each pass 3719 tests; isolated patch gates fail at 36% / 86%.
-Combined A/B patch coverage passes at 93%; the new bridge measures 80/84 lines.
+The [control HTTP results](results-control-http.md) add native request and response
+policies for config, preview, commit, upgrade, OS-update, backup and result routes.
+Frozen/current references pass 157 originals; Go runs those originals with ten
+original functions fatal, plus six A/B cases, two source mutations and seven
+native-failure regressions. Python retains async transport, external validators,
+masked-config reads and service callbacks; worker-specific HTTP remains Python.
+Helper failures and malformed native plans fail as backend errors rather than
+client input errors. Preparation sequencing, remaining state/polling, production
+selection and shipping remain pending; full and coverage results are in that report.
+Both full dashboard arms pass 3719 tests: reference coverage 85.58%, Go 80.11%.
+Separate patch coverage is 35%/86%; combined plus focused cases passes at 93%, with the new bridge separately measured at 191/204 lines.
 
 ## Unavailable and known host constraints
 
@@ -393,7 +393,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Finish wizard preparation sequencing and remaining control HTTP orchestration; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
+1. Finish wizard preparation sequencing and worker-specific control HTTP/I/O; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
 2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

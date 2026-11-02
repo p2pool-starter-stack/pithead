@@ -10,6 +10,7 @@ import (
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/badges"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/charts"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/control"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/controlhttp"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/domain"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/fleet"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/infra"
@@ -27,6 +28,8 @@ func main() {
 		switch helper {
 		case "control":
 			err = control.Run(os.Stdin, os.Stdout)
+		case "control-http":
+			err = controlhttp.Run(os.Stdin, os.Stdout)
 		case "wizard":
 			err = wizard.Run(os.Stdin, os.Stdout)
 		case "wizard-write":

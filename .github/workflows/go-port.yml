@@ -63,3 +63,4 @@ jobs:
           test-go-dashboard-wizard-typed-parity
           test-go-dashboard-wizard-values-parity
           test-go-dashboard-documents-parity
+          test-go-dashboard-control-http-parity
