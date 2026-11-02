@@ -156,6 +156,85 @@ the immutable runner SHA-256 is
 `e0c37376cb400228ff9f7774d613a1e371300f8b6f4629e4cfb2381692595198`.
 No existing test or fixture differs from the frozen starting commit.
 
+## Repeatable native-ownership guard
+
+The test-only continuation starts at
+`614715668e179a85439e1f13575b9387227f5bab`, whose production code is unchanged
+from `32d11cd4`. Two cases added to the porter's existing
+`tests/go-parity/test_native_ownership_guards.py` make the fragment proof
+repeatable through `make test-go-native-guards`; the existing bounded Go CI job
+already invokes that target. Its original parser and HTTP ownership cases stay
+intact. No original suite, fixture, runtime code, threshold or workflow changes.
+
+The first case starts fresh reference and Go processes, initializes
+`build_val_sandbox`, and uses the original runner's `set -uo pipefail` without
+`-e`. Each original fragment must execute exactly 104 passing assertions. A
+temporary `BASH_ENV` adapter restores Go selection in child shells after the
+original harness scrubs `PITHEAD_*`. An instrumented wrapper forwards the helper
+arguments, stdin, stdout, stderr and exit code while supervising a child; it
+records helper/status/reason rows using variables that survive that cleanup.
+This instrumentation measures helper ownership, not PID or signal inheritance.
+
+The reference trace must be empty. The Go trace must contain 63 status-0 results,
+including two wallet and two defaults calls. The supported fixture has no
+compatibility fallbacks: status 125 is recorded as `unsupported` and rejected,
+and missing calls or any other nonzero result also fail the guard.
+
+The second case builds an isolated copy of the Go CLI with `ParseWalletSettings`
+changed to return `ErrUnsupportedValidation`. The unchanged fragment still
+passes all 104 assertions through the Bash compatibility path. The ownership
+guard must reject the mutant's unsupported result. This control demonstrates
+that a green original oracle alone cannot satisfy the new native guard.
+
+Both new cases pass on non-root Linux ARM64 in 10.87 seconds. They explicitly
+skip outside Linux because the original harness refuses macOS. Missing Linux
+prerequisites, root/page failures and failed original assertions are not skipped.
+The host Make target passes sixteen tests and skips these two Linux cases;
+reference-selection, closed-descriptor and inherited-signal checks also pass.
+The final guard source SHA-256 is
+`b82ff1a9d757ff427965332af1ba131a19f10a1aad3e1218fde9bd12ebdf6cf8`.
+GNU-first `make lint` exits 0 in 190.99 seconds, including topology, shfmt and
+file-budget checks. Independent correctness and security reviews clear the test
+adapter and mutation isolation.
+
+A direct full-file attempt in the older stack container fails two HTTP ownership
+cases because that container lacks the Go dashboard binary and its module cache.
+That attempt is not accepted as a product verdict. The Make target builds both
+commands before testing; its host run and the focused Linux wizard run above
+retain separate results.
+
+## Full Go CI continuation
+
+An isolated Linux ARM64 clone at `6147156` receives only the final guard-file
+overlay identified above. Its Git bundle SHA-256 is
+`ee02c040e288dc30f479ca7007f4163ae95353c55a35be6cbc2e5cd458d1c906`.
+The runner uses non-root UID 1000, Go 1.27.1, Python 3.11.2, uv 0.12.13 and real
+`jq` 1.6. Its script and source snapshot stay inside the disposable filesystem.
+
+The exact command set from `.github/workflows/go-port.yml` passes:
+
+| Phase | Exit | Command seconds |
+|---|---|---|
+| Both command builds | 0 | 1 |
+| `go test -race -count=1 ./...` | 0 | 6 |
+| `go vet ./...` | 0 | 0 |
+| All eight CLI parity targets | 0 | 180 |
+| All forty dashboard parity targets | 0 | 306 |
+
+The phase total is 493 seconds (8m13s), excluding disposable-runner preparation.
+The workflow's 25-minute limit is unchanged. The CLI native-guard group passes
+eighteen tests in 31.34 seconds without skips, including both new cases.
+Elsewhere, the existing status-escape test skips its non-UTF-8/Latin-1 case
+because that locale is unavailable. Two existing keep-running controls skip
+because `PITHEAD_SCOPE_UNSUPPORTED_BINARY` and `PITHEAD_SCOPE_EMPTY_BINARY` are
+absent. Those controls are not claimed as newly executed mutation proof.
+
+The first pass is retained separately: builds/vet/dashboard exit 0, race units
+exit 1 and CLI parity exits 2 because the runner lacks `jq`. Installing the real
+tool and repeating the entire command set produces the green result above.
+The full Go job does not replace `make test-stack`, appliance, AMD64 execution,
+fleet or published-artifact proof.
+
 ## Private evidence
 
 Raw logs and exit records remain under the ignored `.go-cache/logs/` directory.
@@ -177,6 +256,24 @@ They are retained locally, not published artifacts.
 | `wizard-spool-go-final-calls.log` | `1fa69b5b02d2a6784bd7650179f04c8f6ba987dc28b9e73f9b0cb3cbfe9ad11f` |
 | `stack-linux-arm64-pull-policy-base.log` | `e19a85a04aea8dee37a9c5c5031ed94a3971822a2d5fd8e0ef196cd6ef44ff36` |
 | `stack-linux-arm64-pull-policy-base.meta` | `87e398b77d58ca3ffc6eb51fb069e1b7d2c9d6caaa628857bc61655bdd4cab67` |
+| `wizard-native-guard-linux-final.log` | `879e28576d0335466b76d9c6ef6cb44ed31b3cece0a028cbee1499878483b852` |
+| `native-ownership-guards-host.log` | `d6662a65c905d90974b2aa88057813a5df42bd8ebe2268eda760cda44986f8a0` |
+| `go-merge-wizard-ownership-lint.log` | `43e1c6f36f279f432ede7665dcc7acd406ee356449850aea6ce57aaf32c45715` |
+| `go-merge-wizard-ownership-lint.json` | `b7caa66e7577881dbb32e14ad4cd04f06a2d898eed34629ef02ab04a3129dcb6` |
+
+The full Go CI continuation is retained separately:
+
+| Evidence path under `.go-cache/` | SHA-256 |
+|---|---|
+| `go-ci-final-614-metadata.txt` | `83fd8adc66a5f434017b9cbfce2e3f6b4b7d19a44f418944ba52d4fe4134c820` |
+| `go-ci-final-614-logs/build.log` | `2ba86a551a4130054794a4b5ede332fee60d1e9afdfa412de9d125171cb3c22f` |
+| `go-ci-final-614-logs/unit.log` | `29cd90afa6730f3673a87d8d5f4f7d7e1ae47003ea4e96995725916a89a6a543` |
+| `go-ci-final-614-logs/vet.log` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `go-ci-final-614-logs/cli.log` | `ce4c8cc79233d0a32e36bdd1048798b3850972308919e8c55146599c725e018a` |
+| `go-ci-final-614-logs/dashboard.log` | `bd0401e44312c76fe3873e4c5b96089d11190ae392a6d3ea1d2784a7e937be78` |
+| `go-ci-final-614-logs/phase-status.tsv` | `f1b23968ede90d9abe17b25d37b56f033bb52d3c2f1d3e5c9b950ac1960a1c29` |
+| `go-ci-firstpass-614-logs/unit.log` | `d93b8b2f700a29a1c3ee3855332f6ed03432591631c47b6a4352d50a2cf547fb` |
+| `go-ci-firstpass-614-logs/cli.log` | `7374a4f93c012b6fef6f62b838a9c23c0d87d648178e6dead2bd3d711606e1d8` |
 
 ## Fleet admission boundary
 

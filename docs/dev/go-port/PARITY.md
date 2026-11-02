@@ -13,11 +13,12 @@ STATUS: IN PROGRESS
 - The unchanged dashboard command runs 3716 frozen original tests plus 386 port additions: 4102 passed per selection; unset 95.56%, Go 92.60% statement coverage. The new bridge cases supplement the original oracle.
 - Unchanged default patch gate: unset 91%, Go 92%; tracked application modules, separate datasets, no coverage omissions or threshold changes. [Exact commands and evidence](results-merge-readiness.md).
 - Focused native/fatal-source/mutation oracles prove the detailed boundaries below; Python bridge coverage alone does not prove native ownership. Stack helpers normally scrub Go selection; the latest CI runs skip two optional keep-running mutant controls whose supplied binaries are absent.
-- Scoped Linux ARM64 evidence covers 309 lifecycle assertions with four native keep-running successes, 187 shipping assertions and 104 wizard-spool assertions per selection with 63 Go helper dispatches; the latter's exit distribution is unmeasured. This does not prove full lifecycle execution.
+- Scoped Linux ARM64 evidence covers 309 lifecycle assertions with four native keep-running successes, 187 shipping assertions and 104 wizard-spool assertions per selection. The new wizard guard requires 63 status-0 helper results and rejects a real wallet source mutation that otherwise passes via fallback. This does not prove full lifecycle execution.
 - Unproven: full Linux stack, privileged behavior, appliance builds/boot, AMD64 execution, fleet and published artifacts. Cross-builds and local timings do not establish those results or performance gains.
 - Review every reference-path change: CLI launch/private markers/signals; config/env/Caddy delegation; lifecycle option/scope wiring; Python provider/storage/control/view/wizard seams and extracted helpers; shipping selection/build lists. [Complete path inventory](reference-changes.md).
 - Merge-readiness changes restore interposed wizard I/O compatibility, remove firstboot comments without changing its parsed function, correct a file-budget row, add bridge tests/parity setup and exclude generated caches from Markdown lint.
 - GNU-first `make lint` and the complete Go 1.27.1 Linux ARM64 CI command set pass: builds/race/vet, eight CLI targets and forty dashboard targets, in 15m28s. `make test` passes dashboard/frontend gates in both modes, then retains the explicit macOS stack refusal.
+- The test-only ownership continuation repeats GNU-first lint and all Go CI commands successfully on Linux ARM64; the command phases total 8m13s excluding runner preparation. Its 18-test native guard group has no skips; the locale and two optional keep-running mutant skips remain explicit.
 - Commit `32d11cd4`: local ARM64 image smoke passes Python/existing and Go/existing, legacy and corrupt cases; that image passes pinned Trivy, and both AMD64 artifacts export. [Committed-head results](results-committed-linux.md) retain identities and limits.
 - New native slices remain stopped. G7 escape-byte compatibility is implemented and its affected checks pass; original full Linux status/stack, G8 privileged and artifact proofs remain pending.
 
@@ -275,10 +276,17 @@ AMD64 execution, complete bundle or appliance-boot proof. The branch advertised 
 origin remains at `b59724b3`; the normal bench API cannot test an unpushed commit.
 The unchanged wizard-spool fragment passes 104 assertions in each selection when
 its original wallet prerequisite is initialized. Reference records zero Go calls;
-Go records 63 helper dispatches, without a measured success/fallback distribution.
+Go records 63 helper dispatches. A separate instrumented run measures all 63 at
+status 0; the two new Linux-only ownership tests require that result and catch
+unsupported wallet parsing in a source-mutant binary. They run through the
+existing `test-go-native-guards` target without changing the original fragment.
 The apparent restore failure was reproduced by an empty-wallet setup control and
 requires no production or test change. Full-stack attempts remain red in this
 nonprivileged runner; frozen base reproduces its three pull-policy failures.
+The test-only continuation passes GNU-first lint and the full Go CI command set
+on Linux ARM64, including eighteen guard-group tests with no skips. It retains
+one unavailable-locale skip and two absent optional keep-running mutant binaries;
+the complete stack and privileged limitations are unchanged.
 
 ## Unavailable and known host constraints
 

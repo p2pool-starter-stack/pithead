@@ -272,3 +272,107 @@ async def test_miner_connection_mutation_control_catches_hidden_fallback():
             _assert_miner_native(trace)
     finally:
         shutil.rmtree(scratch)
+
+
+WIZARD_FRAGMENT = ROOT / "tests/stack/appliance/test-appliance-wizard-spool.sh"
+
+
+def _wizard_wrapper(directory, binary):
+    trace = directory / "native.tsv"
+    wrapper = directory / "pithead-helper"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        '"$NATIVE_BINARY" "$@"\n'
+        "native_status=$?\n"
+        "native_reason=native-result\n"
+        '[ "$native_status" -ne 125 ] || native_reason=unsupported\n'
+        'printf "%s\\t%s\\t%s\\n" "${PITHEAD_GO_HELPER:-command}" '
+        '"$native_status" "$native_reason" >>"$NATIVE_TRACE"\n'
+        'exit "$native_status"\n'
+    )
+    wrapper.chmod(0o755)
+    adapter = directory / "env.sh"
+    adapter.write_text(
+        "#!/usr/bin/env bash\n"
+        "export PITHEAD_IMPL=go\n"
+        'export PITHEAD_GO_BINARY="$NATIVE_WRAPPER"\n'
+        "unset _PITHEAD_GO_HYBRID _pithead_go_hybrid_binary\n"
+    )
+    return wrapper, adapter, trace, binary
+
+
+def _run_wizard_fragment(binary=None):
+    with tempfile.TemporaryDirectory(dir=ROOT / ".go-cache" / "tmp") as raw_directory:
+        directory = Path(raw_directory)
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("PITHEAD_", "_PITHEAD_", "_pithead_")) and key != "BASH_ENV"
+        }
+        trace = directory / "native.tsv"
+        if binary is not None:
+            wrapper, adapter, trace, native = _wizard_wrapper(directory, binary)
+            env.update(
+                BASH_ENV=str(adapter),
+                NATIVE_BINARY=str(native),
+                NATIVE_TRACE=str(trace),
+                NATIVE_WRAPPER=str(wrapper),
+            )
+        script = (
+            'set -uo pipefail; cd "$1"; source tests/stack/lib.sh; build_val_sandbox; '
+            f'source "{WIZARD_FRAGMENT}"; '
+            'printf "WIZARD_FINAL pass=%s fail=%s\\n" "$PASS" "$FAIL"; '
+            '[ "$PASS" -eq 104 ] && [ "$FAIL" -eq 0 ]'
+        )
+        result = subprocess.run(
+            ["bash", "-c", script, "wizard-guard", str(ROOT)],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        entries = []
+        if trace.exists():
+            entries = [tuple(line.split("\t")) for line in trace.read_text().splitlines()]
+        return result, entries
+
+
+def _assert_wizard_native(entries):
+    unexpected = [entry for entry in entries if entry[1:] != ("0", "native-result")]
+    assert not unexpected, f"unexpected native fallback: {unexpected}"
+    counts = Counter(entry[0] for entry in entries)
+    assert sum(counts.values()) == 63
+    assert counts["config-wallet-settings"] == 2
+    assert counts["config-defaults"] == 2
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-only stack oracle")
+def test_wizard_spool_unchanged_oracle_requires_native_ownership():
+    baseline, baseline_entries = _run_wizard_fragment()
+    selected, selected_entries = _run_wizard_fragment(CLI_BINARY)
+    assert baseline.returncode == 0, baseline.stdout + baseline.stderr
+    assert selected.returncode == 0, selected.stdout + selected.stderr
+    assert baseline_entries == []
+    _assert_wizard_native(selected_entries)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-only stack oracle")
+def test_wizard_spool_wallet_mutation_catches_hidden_fallback():
+    scratch, binary = _copy_and_build(
+        "pithead",
+        Path("internal/config/wallet_settings.go"),
+        (
+            "func ParseWalletSettings(raw []byte, mode, configFile string) (WalletSettings, error) {\n",
+            "func ParseWalletSettings(raw []byte, mode, configFile string) (WalletSettings, error) {\n"
+            "\treturn WalletSettings{}, ErrUnsupportedValidation\n",
+        ),
+    )
+    try:
+        result, entries = _run_wizard_fragment(binary)
+        assert result.returncode == 0, result.stdout + result.stderr
+        with pytest.raises(AssertionError, match="unexpected native fallback"):
+            _assert_wizard_native(entries)
+    finally:
+        shutil.rmtree(scratch)
