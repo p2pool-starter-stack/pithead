@@ -799,8 +799,8 @@ them (a brief restart; chain data and dashboard history are untouched):
   the stack, no follow-up needed. With `monero.mode: "remote"` the credential belongs to the
   remote node and is skipped.
 - **Stratum access-password** (`PROXY_STRATUM_PASSWORD`) — rotated only when
-  `p2pool.stratum_password` is `"auto"`. The new value is printed at the end. Every rig is
-  rejected until its stratum `pass` is updated to it — see
+  `p2pool.stratum_password` is `"auto"`. Get the new value from the dashboard's **Connect a miner**
+  block. Every rig is rejected until its stratum `pass` is updated to it — see
   [Workers › Authentication](workers.md#authentication). A literal password lives in
   `config.json`: change it there and run `./pithead apply`. When stratum auth is off there is
   nothing to rotate.
