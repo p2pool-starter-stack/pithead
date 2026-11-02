@@ -672,6 +672,11 @@ can refuse before the running stack is stopped for an archive that would fail an
 source checkout, `backups/` is git-ignored — the archive carries `.env` and the onion private keys,
 and secret scanners can't see inside a tarball.
 
+Backup refuses when the resolved data directories in `config.json` disagree with the applied
+paths recorded in `.env`, even when blockchains are excluded. Revert an unapplied data-path edit
+to take a safety backup, or complete the intended apply before retrying. Backup checks again and
+rebuilds its file list under the mutation lock, before stopping services or creating an archive.
+
 Encryption is `openssl enc -aes-256-cbc -pbkdf2` with 600,000 PBKDF2 iterations (`openssl` is
 already a stack dependency; AEAD modes like GCM are not available through `openssl enc`, so CBC is
 the portable choice). The tar stream pipes straight into `openssl` — no plaintext archive ever

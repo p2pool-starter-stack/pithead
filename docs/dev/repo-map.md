@@ -227,6 +227,9 @@ Keep local code out of `vendor/`.
 
 ## Shell suites and tools
 
+`tests/stack/test-backup-data-paths.sh` checks desired/applied backup path consistency,
+lock-time changes, and the database contents and metadata of real archives.
+
 | Directory | How it runs |
 |---|---|
 | `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites, cut into five blocks that CI runs as parallel jobs. Missing or failed sources fail the run. The Tor section includes `test-tor-port-validation.sh` for entrypoint rejection before rendering or launch. |
