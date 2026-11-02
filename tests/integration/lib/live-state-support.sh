@@ -360,9 +360,9 @@ _worker_name_digests() {
 }
 
 upgrade_worker_set_diff() {
-    local expected=$1 observed=$2
-    printf 'expected=%s observed=%s missing=[%s] extra=[%s]' \
-        "$(grep -c . <<<"$expected" || true)" "$(grep -c . <<<"$observed" || true)" \
+    local expected=$1 observed=$2 proxy=${3:-}
+    printf 'expected=%s observed=%s proxy_workers=%s missing=[%s] extra=[%s]' \
+        "$(grep -c . <<<"$expected" || true)" "$(grep -c . <<<"$observed" || true)" "$proxy" \
         "$(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$observed") | _worker_name_digests)" \
         "$(comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$observed") | _worker_name_digests)"
 }
