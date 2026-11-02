@@ -16,8 +16,8 @@ dashboard selection switch remains part of its launch contract. Preserve upstrea
 daemons, browser assets, runtime filenames, database migrations and wire formats.
 
 The operator loop stops around 2026-11-02 22:00Z; access ends 2026-11-03.
-The operator's 15:30Z ruling moves the dashboard ahead of further CLI refinement,
-until Go serves its contracts on existing and corrupt databases. The later 19:45Z
+The operator's 15:30Z ruling moved the dashboard ahead of further CLI refinement;
+its existing/corrupt startup and served-contract condition is met, so lifecycle work resumes. The later 19:45Z
 review order places the six review fixes first, then native SQLite, wizard/control
 and shipping selection/artifacts. G7 escape-byte and G8 privileged Linux proof follow.
 The 20:35Z review adds the redaction/topology merge blockers first, then bounded
@@ -110,11 +110,11 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | ZMTP greeting, READY and exchange verdict | Native canonical-hex validators and supplied-result classifier; Bash network exchange | 8 tagged groups, 451 scenarios and Go units |
 | ZMTP stream exchange | Native over supplied connection/deadline; Bash dial and callers | 5 tagged groups, 435 scenarios and Go units |
 | Shared container-engine selection | Native `host.Engine`, used by native status and doctor packages | Go units and tagged Bash comparison |
-| Lifecycle option parser | Native for five verbs; Bash callbacks and compatibility fallback | 10 supplementary methods, Go units and new 12-group CLI comparisons; full Linux lifecycle oracle unavailable |
+| Lifecycle option parser and keep-running scope | Native options and ordered Compose scope policy; Bash providers, callbacks and compatibility fallback | Option comparisons and [unchanged Linux scope/lock/firewall fragments](results-keep-running.md); full lifecycle matrix pending |
 | `setup` | Bash fallback | Not independently proven in Go mode |
 | `apply` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
 | `render` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
-| `up` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
+| `up` | Native option validation and keep-running scope; Bash operations | New option comparisons and Go units; unchanged focused Linux lifecycle fragments, full matrix pending |
 | `down` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
 | `restart` | Native option validation; Bash operations | New option-boundary comparisons and Go units; full Linux lifecycle suite unavailable |
 | `tor-recover` | Bash fallback | Not independently proven in Go mode |
@@ -317,8 +317,8 @@ an isolated source mutation verify the behavior.
 
 The [later review results](results-review-2035.md) record frozen-start commands,
 new versus original evidence, concurrent 86400-row state comparisons and gate
-results. In-process stack assertions remain Bash after the harness scrub; the
-new lifecycle option comparisons do not prove lifecycle operations in Go.
+results. The general stack harness still scrubs Go selection; the later
+[scope adapter](results-keep-running.md) restores it for unchanged focused fragments and records native calls.
 The following slices add native control protocol, wizard views and transaction files;
 wizard auth/HTTP orchestration and production shipping selection remain pending.
 
@@ -365,10 +365,10 @@ was supplementary; the current audit-query matrix and coverage figures follow.
   pass 187 assertions in the Linux ARM64 runner; see [shipping results](results-shipping.md).
   The full Linux attempt lacked `RUNNER_TEMP` and was stopped; no full verdict is claimed.
   `tests/stack/lib.sh` scrubs `PITHEAD_IMPL` and `PITHEAD_GO_BINARY`, so startup
-  selection does not survive for sourced assertions. No native Go proof or call count
-  is claimed; full unit-helper/masking/worker/payout suites remain unproven locally.
-- `make test` now passes shell/Python lint and stops at Markdown lint on third-party
-  files in local dependency caches, in both modes. Changed project Markdown
+  selection does not survive for normal sourced assertions. The [scope adapter](results-keep-running.md)
+  restores it for 309 unchanged assertions and records four native successes; full unit-helper/masking/worker/payout suites remain unproven locally.
+- `make test` passes shell/Python lint and stops at Markdown lint on dependency
+  and frozen-source files in ignored local caches, in both modes. Changed project Markdown
   is checked separately; the original gates remain unchanged.
 - The default file-budget comparison against `develop` finds two pre-existing
   version-branch differences: the firstboot wizard ceiling and a
@@ -391,10 +391,10 @@ partial navigation aid, not parity evidence.
 
 ## Next
 
-Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
-backend work ahead of further CLI refinement. Next, in order:
+Doctor and Tor/ZMTP probes remain parked. Dashboard existing/corrupt startup and
+served contracts permit the return to lifecycle work. Next, in order:
 
-1. Continue worker revision-drift and audit orchestration after native revision storage/persistence/currency policy, preserving interleaved callbacks and mutations; the [revision-storage report](results-revision-store.md) records this round's SQL boundary and proof.
-2. Validate shipped-image/appliance artifacts and production archive builds on the next committed/pushed head.
-3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
+1. Continue native lifecycle execution after the [keep-running scope planner](results-keep-running.md); locks, firewall setup, Compose calls and recovery still execute in Bash.
+2. Complete remaining CLI verbs, starting with `upgrade`, `backup` and `restore`; option and scope policy alone do not port their operations.
+3. Finish remaining dashboard orchestration and validate shipped-image/appliance artifacts and production archive builds on committed/pushed heads.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

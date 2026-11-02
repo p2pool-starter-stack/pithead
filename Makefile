@@ -41,7 +41,7 @@ test-go-env-write-parity: test-go-env-parity test-go-parity ## Compare native en
 test-go-tari-secret-parity: test-go-env-parity test-go-payout-settings-parity test-go-parity ## Compare Tari secret publication and unchanged render contracts
 	python3 tests/go-parity/test_tari_secret.py
 test-go-lifecycle-options-parity: test-go-parity ## Compare lifecycle option handling and callback order with Bash
-	python3 tests/go-parity/test_lifecycle_options.py
+	python3 tests/go-parity/run_lifecycle_options_fixture.py
 test-go-wallet-classifiers-parity: test-go-wallet-settings-parity test-go-env-parity ## Compare wallet classifier verdicts and unchanged render contracts
 	python3 tests/go-parity/test_wallet_classifiers.py
 test-go-config-input-parity: test-go-config-validation-parity test-go-config-document-parity ## Compare the parser input validation sequence with Bash

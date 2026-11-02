@@ -272,8 +272,8 @@ operational callbacks with deterministic stops. `test_lifecycle_options.py`
 compares argument handling, bytes, exit status, callback order and local state
 with Bash, checks actual native success through a spy and exercises missing or
 malformed helper fallback. `make test-go-lifecycle-options-parity` also runs the
-unchanged CLI contract suite. The original lifecycle lock suite remains unchanged
-and requires the Linux CLI harness; these comparisons do not prove operations.
+unchanged CLI contract suite. The later [keep-running adapter](results-keep-running.md)
+restores Go selection for unchanged scope/lock/firewall fragments and records native ownership; operations remain Bash.
 
 `tari_secret_reference.sh` runs the production secret-publication block extracted
 by `test_tari_secret.py`, with the current effective UID supplied for native

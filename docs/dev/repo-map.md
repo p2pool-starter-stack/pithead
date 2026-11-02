@@ -119,6 +119,9 @@ Lifecycle option parsing lives in `go/internal/lifecycle/options.go`, with the
 stdin adapter in `go/internal/cli/lifecycle_options.go` and Bash hook in
 `lib/pithead/39d-go-lifecycle-options.sh`. `make test-go-lifecycle-options-parity`
 compares all five option boundaries and runs the unchanged CLI contract suite.
+`go/internal/lifecycle/keep_running.go`, its CLI adapter and
+`lib/pithead/01a-go-keep-running.sh` own the ordered keep-running scope plan.
+`make test-go-keep-running-scope-parity` restores Go selection in unchanged scope/lock/firewall fragments and checks native ownership; see [results](go-port/results-keep-running.md).
 The render, apply and stack operations still execute their Bash bodies.
 
 The native Go status path lives in `go/internal/status/`.

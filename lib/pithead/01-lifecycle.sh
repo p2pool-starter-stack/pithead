@@ -155,14 +155,19 @@ scope_keep_running() { # <compose up flags and services...>
             return 1
         }
     done
-    KEEP_SCOPED_ARGS=()
-    for svc in "${services[@]}"; do
-        case " $PITHEAD_KEEP_RUNNING " in *" $svc "*) ;; *) KEEP_SCOPED_ARGS+=("$svc") ;; esac
-    done
+    if declare -F _scope_keep_running_go >/dev/null &&
+        _scope_keep_running_go "${#services[@]}" "${services[@]}" "$@"; then
+        :
+    else
+        KEEP_SCOPED_ARGS=()
+        for svc in "${services[@]}"; do
+            case " $PITHEAD_KEEP_RUNNING " in *" $svc "*) ;; *) KEEP_SCOPED_ARGS+=("$svc") ;; esac
+        done
+        [ "${#KEEP_SCOPED_ARGS[@]}" -eq 0 ] || KEEP_SCOPED_ARGS=("${opts[@]}" --no-deps "${KEEP_SCOPED_ARGS[@]}")
+    fi
     log "Keeping $PITHEAD_KEEP_RUNNING running as is (PITHEAD_KEEP_RUNNING)."
     # Every named service kept: an up with no service list would be the whole stack, never that.
     [ "${#KEEP_SCOPED_ARGS[@]}" -gt 0 ] || return 0
-    KEEP_SCOPED_ARGS=("${opts[@]}" --no-deps "${KEEP_SCOPED_ARGS[@]}")
 }
 
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if

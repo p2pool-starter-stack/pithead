@@ -23,6 +23,8 @@ func Run(reference string, args []string, stdout io.Writer) error {
 		return configTariSecret(args, os.Stdin)
 	case "lifecycle-options":
 		return lifecycleOptions(args, os.Stdin, stdout)
+	case "keep-running-scope":
+		return keepRunningScope(args, os.Stdin, stdout)
 	case "config-address":
 		return configAddress(args, os.Stdin, stdout)
 	case "config-input-validation":

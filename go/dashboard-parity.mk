@@ -171,3 +171,8 @@ test-go-dashboard-revision-store-parity: go-dashboard-build
 		tests/service/workers/test_worker_change_audit.py tests/service/workers/test_worker_config_surrogates.py \
 		tests/service/test_storage_schema.py tests/web/test_worker_config_drift.py \
 		"$(CURDIR)/tests/go-parity/dashboard_revision_store_compare.py" "$(CURDIR)/tests/go-parity/dashboard_revision_store_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_revision_store_controls.py"
+
+.PHONY: test-go-keep-running-scope-parity
+test-go-keep-running-scope-parity: go-build
+	PITHEAD_UNTRUSTED_MACOS_RUN=1 python3 tests/go-parity/keep_running_scope_controls.py
+	PITHEAD_UNTRUSTED_MACOS_RUN=1 uv run --locked --project dashboard --extra test python -m pytest -q tests/go-parity/test_keep_running_scope.py
