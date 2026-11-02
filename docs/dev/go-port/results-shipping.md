@@ -3,6 +3,11 @@
 The existing launchers and build pipeline now package and select the incremental
 Go commands while retaining the Bash CLI and Python dashboard reference.
 
+The build and gate measurements below describe the earlier shipping snapshot.
+The [committed-head verification](results-committed-linux.md) records the newer
+`32d11cd4` image and artifact identities; [merge-readiness results](results-merge-readiness.md)
+supersede the historical red coverage and local-cache lint verdicts.
+
 ## Runtime and artifact boundaries
 
 Compose passes `PITHEAD_DASHBOARD_IMPL` into the dashboard container as

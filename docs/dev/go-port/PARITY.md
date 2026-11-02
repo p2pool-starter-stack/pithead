@@ -10,14 +10,15 @@ STATUS: IN PROGRESS
 - Hybrid HTTP: `/api/state`, `/api/miner-connection`, `/api/xvb-standby` and `/metrics` combine Go response policy with Python input/service providers; unsupported native inputs can forward to Python.
 - `/api/access`, `/api/config`, `/api/audit`, `/api/worker` and `/api/control/*` use Python transport with installed Go policy/storage/control adapters; remaining requests are proxied.
 - SQLite open/schema/migrations/corrupt recovery and supported control publication are native. Python remains required for async providers, clocks, locks, polling and orchestration; the backend is hybrid.
-- Ordinary unchanged dashboard gates: 4102 passed in each selection; unset 95.56%, Go 92.60% statement coverage. This includes 383 new bridge cases, identified separately from the original oracle.
+- The unchanged dashboard command runs 3716 frozen original tests plus 386 port additions: 4102 passed per selection; unset 95.56%, Go 92.60% statement coverage. The new bridge cases supplement the original oracle.
 - Unchanged default patch gate: unset 91%, Go 92%; tracked application modules, separate datasets, no coverage omissions or threshold changes. [Exact commands and evidence](results-merge-readiness.md).
 - Focused native/fatal-source/mutation oracles prove the detailed boundaries below; Python bridge coverage alone does not prove native ownership. Stack helpers normally scrub Go selection; the latest CI runs skip two optional keep-running mutant controls whose supplied binaries are absent.
-- Scoped Linux ARM64 evidence covers 309 lifecycle assertions with four native keep-running calls and 187 shipping assertions; it does not prove full lifecycle execution.
+- Scoped Linux ARM64 evidence covers 309 lifecycle assertions with four native keep-running successes, 187 shipping assertions and 104 wizard-spool assertions per selection with 63 Go helper dispatches; the latter's exit distribution is unmeasured. This does not prove full lifecycle execution.
 - Unproven: full Linux stack, privileged behavior, appliance builds/boot, AMD64 execution, fleet and published artifacts. Cross-builds and local timings do not establish those results or performance gains.
 - Review every reference-path change: CLI launch/private markers/signals; config/env/Caddy delegation; lifecycle option/scope wiring; Python provider/storage/control/view/wizard seams and extracted helpers; shipping selection/build lists. [Complete path inventory](reference-changes.md).
-- This round also restores interposed wizard I/O compatibility, removes firstboot comments without changing its parsed function, corrects a file-budget row, adds bridge tests/parity setup and excludes generated caches from Markdown lint.
+- Merge-readiness changes restore interposed wizard I/O compatibility, remove firstboot comments without changing its parsed function, correct a file-budget row, add bridge tests/parity setup and exclude generated caches from Markdown lint.
 - GNU-first `make lint` and the complete Go 1.27.1 Linux ARM64 CI command set pass: builds/race/vet, eight CLI targets and forty dashboard targets, in 15m28s. `make test` passes dashboard/frontend gates in both modes, then retains the explicit macOS stack refusal.
+- Commit `32d11cd4`: local ARM64 image smoke passes Python/existing and Go/existing, legacy and corrupt cases; that image passes pinned Trivy, and both AMD64 artifacts export. [Committed-head results](results-committed-linux.md) retain identities and limits.
 - New native slices remain stopped. G7 escape-byte compatibility is implemented and its affected checks pass; original full Linux status/stack, G8 privileged and artifact proofs remain pending.
 
 # Go port parity
@@ -265,11 +266,27 @@ The [wizard-state results](results-wizard-state.md) preserve native phases, 351 
 
 The [worker HTTP results](results-worker-http.md) describe an earlier snapshot's native policies and Python callbacks: 3737 Go-selected assertions passed, while 79.62% Python coverage failed the unchanged 80% gate. Its 92% combined patch result was supplementary; the current audit-query matrix and coverage figures follow. [Shipping results](results-shipping.md) retain selection, packaging and local image proof; appliance/fleet validation remains pending. [Earnings](results-earnings.md), [forecast](results-forecast.md), [worker-detail](results-worker-detail.md), [polling](results-polling.md), [assembly](results-assembly.md), [RigForge](results-rigforge.md), [preservation](results-preserve.md), [editor](results-editor.md), [telemetry](results-telemetry.md) and [host-audit](results-host-audit.md) retain their native ownership evidence. [Audit-log results](results-audit-log.md) add 34 unchanged originals, 37 supplementary cases and native normalization/mirror plans, retaining bounded reads, text conversion, sequential writes and replaced-reader compatibility. [Audit-query results](results-audit-query.md) add native merge, filter and query policies over captured inputs. [Access-log results](results-access-log.md) add native normalization, counts, ordering and limits, with reasoned provider/row-budget compatibility. [Network results](results-network.md) add native posture, edge and node-list policy with Python URL/IP/live-state providers and explicit compatibility. [Firewall-state results](results-firewall-state.md) add native type/epoch validation, freshness and warning plans while preserving Python reads, clocks, arithmetic, callback order and explicit compatibility. [Control-outcome results](results-control-outcomes.md) add native terminal selection and lazy-history filtering with bounded metadata plans and live-provider compatibility. [Audit-cap results](results-audit-cap.md) add native admission/count comparisons through bounded immutable policy tables. [Revision metadata results](results-config-meta.md) add native standalone validation, bounded cached acceptance flags and Python 3.11 Unicode-digit parity. [Revision-storage results](results-revision-store.md) add native table-specific SQL, drift persistence and currency checks. Expiry arithmetic, window mutations, transaction orchestration and audit callbacks remain Python. At that snapshot, reference/Go matrices passed 3719/4085 assertions; coverage was 72.84%/78.48%, below the 80% total gate. The new storage adapter covers 97/108 executable statements (89.81%) in the Go dataset. The then-current default native patch result was 88% (red); frozen native patch coverage passed at 90%, including two then-untracked application modules. Separate union coverage was 96.04%. Those historical measurements remain in the revision-storage report; current independent default gates pass as recorded above.
 
+## Committed-head verification (2026-11-02)
+
+The [committed-head report](results-committed-linux.md) records a clean `32d11cd4`
+production-image build, four passing runtime cases, three Compose selection cases,
+the pinned fresh-database Trivy gate and both AMD64 artifact hashes. These are supplementary local results, not fleet,
+AMD64 execution, complete bundle or appliance-boot proof. The branch advertised by
+origin remains at `b59724b3`; the normal bench API cannot test an unpushed commit.
+The unchanged wizard-spool fragment passes 104 assertions in each selection when
+its original wallet prerequisite is initialized. Reference records zero Go calls;
+Go records 63 helper dispatches, without a measured success/fallback distribution.
+The apparent restore failure was reproduced by an empty-wallet setup control and
+requires no production or test change. Full-stack attempts remain red in this
+nonprivileged runner; frozen base reproduces its three pull-policy failures.
+
 ## Unavailable and known host constraints
 
 - `make test-stack` refuses macOS. Three unchanged release/appliance fragments
   pass 187 assertions in the Linux ARM64 runner; see [shipping results](results-shipping.md).
-  The full Linux attempt lacked `RUNNER_TEMP` and was stopped; no full verdict is claimed.
+  An earlier full Linux attempt lacked `RUNNER_TEMP` and was stopped. Newer non-root
+  attempts expose missing runner tools and incompatible `awk`; their failures are
+  retained in the [committed-head report](results-committed-linux.md). No full green verdict is claimed.
   `tests/stack/lib.sh` scrubs `PITHEAD_IMPL` and `PITHEAD_GO_BINARY`, so startup
   selection does not survive for normal sourced assertions. The [scope adapter](results-keep-running.md)
   restores it for 309 unchanged assertions and records four native successes; full unit-helper/masking/worker/payout suites remain unproven locally.

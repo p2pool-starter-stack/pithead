@@ -48,7 +48,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Area | Start here | Change and verify |
 |---|---|---|
 | CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. |
-| Go port | `go/cmd/pithead/`, `go/cmd/dashboard/`, `go/internal/`, [parity ledger](go-port/PARITY.md) | `make go-build`, `make go-dashboard-build`, `make test-go-parity`, `make test-go-native-guards`; `tests/go-parity/` holds adapters for unchanged reference suites; [merge gates](go-port/results-merge-readiness.md) and [reference-path inventory](go-port/reference-changes.md) summarize review evidence. |
+| Go port | `go/cmd/pithead/`, `go/cmd/dashboard/`, `go/internal/`, [parity ledger](go-port/PARITY.md) | `make go-build`, `make go-dashboard-build`, `make test-go-parity`, `make test-go-native-guards`; `tests/go-parity/` holds adapters for unchanged reference suites; [merge gates](go-port/results-merge-readiness.md), [committed-head verification](go-port/results-committed-linux.md) and [reference-path inventory](go-port/reference-changes.md) summarize review evidence. |
 | Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
