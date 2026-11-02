@@ -82,3 +82,9 @@ test-go-dashboard-rigforge-parity: go-dashboard-build
 		"$(CURDIR)/tests/integration/fakes/test_contract.py::test_worker_auth_none_open_api_reads_and_parses" "$(CURDIR)/tests/integration/fakes/test_contract.py::test_worker_miner_down_body_parses_as_up_but_miner_down" \
 		"$(CURDIR)/tests/integration/fakes/test_contract.py::test_worker_config_prefill_parses_over_the_wire" "$(CURDIR)/tests/integration/fakes/test_contract.py::test_worker_config_provenance_parses_over_the_wire" "$(CURDIR)/tests/integration/fakes/test_contract.py::test_a_rig_mid_change_or_fresh_reconciles_nothing" \
 		"$(CURDIR)/tests/go-parity/dashboard_polling_compare.py::test_direct_stats_keeps_python_rigforge_parse" "$(CURDIR)/tests/go-parity/dashboard_rigforge_compare.py" "$(CURDIR)/tests/go-parity/dashboard_rigforge_guards.py" "$(CURDIR)/tests/go-parity/dashboard_rigforge_runtime.py"
+
+.PHONY: test-go-dashboard-preserve-parity
+test-go-dashboard-preserve-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_preserve_plugin \
+		tests/service/workers/test_worker_refresh.py tests/service/test_data_service_aggregation_and_sync.py \
+		"$(CURDIR)/tests/go-parity/dashboard_preserve_compare.py" "$(CURDIR)/tests/go-parity/dashboard_preserve_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_preserve_controls.py"

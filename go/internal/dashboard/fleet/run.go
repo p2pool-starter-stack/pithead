@@ -33,6 +33,8 @@ func Build(request Request) (any, error) {
 		return pollMergeDirectStats(request)
 	case "poll_merge_rigforge_stats":
 		return pollMergeRigforgeStats(request)
+	case "poll_preserve_reports":
+		return pollPreserveReports(request)
 	case "poll_aggregate_hashrate":
 		return pollAggregateHashrate(request)
 	case "poll_aggregate_window_hashrates":
