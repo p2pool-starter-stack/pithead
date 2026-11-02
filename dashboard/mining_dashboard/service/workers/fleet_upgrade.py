@@ -62,7 +62,6 @@ def summary_text(res):
     lines = [head + ", ".join(parts) + "."]
     lines += [
         f"• {r['name']}: {SETTLED_WORDS.get(r['status'], r['status'])}"
-        + (f" ({r['reason']})" if r.get("reason") else "")
         for r in rigs
         if r.get("status") not in ("applied", "noop")
     ]
