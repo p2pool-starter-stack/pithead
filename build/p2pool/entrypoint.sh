@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# tari.mode "off" (#1855, #1903): the host half (#1905) renders TARI_MODE=off and starts no Tari
-# node, but this argv still carried `--merge-mine <url> <address>`, so P2Pool merge-mined against a
-# node that was not there. Drop the triple, in either spelling (`--merge-mine URL ADDR`,
-# `--merge-mine=URL ADDR`), BEFORE the Tor block below reads argv, so its merge-mine bridge cannot
-# fire on it either. Only the literal "off" strips: unset (a 1.x .env that predates the key) or any
-# other value leaves argv exactly as it arrived. A token starting with `-` in a value position is
-# kept, the same rule _redact_argv applies: a malformed argv must not swallow the next flag NAME.
-# Until #1905 lands nothing renders TARI_MODE, so at that tip this block strips nothing.
+if [ -n "${P2POOL_BACKUP_ARGS_B64:-}" ]; then
+    read -r -a _encoded_args <<<"$P2POOL_BACKUP_ARGS_B64"
+    for _encoded in "${_encoded_args[@]}"; do
+        _decoded=$(printf '%s' "$_encoded" | base64 --decode)
+        set -- "$@" "$_decoded"
+    done
+fi
+
 if [ "${TARI_MODE:-}" = off ]; then
     _args=() _drop=0 _dropped=0
     for _a in "$@"; do
@@ -33,51 +33,33 @@ if [ "${TARI_MODE:-}" = off ]; then
     [ "$_dropped" -eq 0 ] || echo "[p2pool-entrypoint] tari.mode off (#1903): not merge-mining, --merge-mine dropped from the launch."
 fi
 
-# P2Pool launcher. (mDNS/.local resolution was removed — point p2pool at an IP or a
-# DNS-resolvable hostname; on a home LAN, use a DHCP reservation or static IP.)
-#
-# Extra flags arrive via $P2POOL_FLAGS (rendered by pithead: the pool-type flag + the #165 Tor SOCKS
-# routing — e.g. "--mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns"). We word-split it HERE
-# because Docker Compose passes a `- ${VAR}` command item as ONE argument (no word-splitting), which
-# would hand p2pool a single mangled flag. An empty value expands to nothing (no stray empty arg).
-# #278: p2pool's --socks5 (#165 Tor sidechain routing) ALSO proxies the monerod RPC/ZMQ connection
-# unless the node address is exempt. Up to v4.16 only LOOPBACK was exempt (json_rpc_request.cpp /
-# util.cpp is_localhost), so a private Docker node IP (e.g. 172.28.0.26) got dialled THROUGH Tor —
-# which can't reach a private IP → "get_info ... empty response", no block template, no mining.
-# v4.18 widened the RPC-leg exemption to any private address (json_rpc_request.cpp:250
-# is_private_address, verified vs p2pool v4.18), which makes this bridge belt-and-braces for the
-# node RPC/ZMQ — kept because the merge-mine leg below still needs its twin, and loopback stays
-# exempt in every version, so the bridge costs nothing and survives an upstream narrowing. When the
-# Tor proxy is on, bridge 127.0.0.1 -> the real node with socat and repoint --host at loopback: the
-# node RPC/ZMQ then stay DIRECT (socat is a plain TCP forward, not p2pool's proxy) while the
-# sidechain P2P still rides --socks5 over Tor. The socat hops (loopback -> node) are intra-stack,
-# allowed by the #270 firewall (subnet -> 172.16/12).
 if printf '%s' "${P2POOL_FLAGS:-}" | grep -q -- '--socks5'; then
-    _node="" _rpc="18081" _zmq="18083" _prev=""
-    for _a in "$@"; do
-        case "$_prev" in --host) _node="$_a" ;; --rpc-port) _rpc="$_a" ;; --zmq-port) _zmq="$_a" ;; esac
-        _prev="$_a"
-    done
-    case "$_node" in
-    "" | 127.0.0.1 | ::1 | localhost) : ;; # already loopback (or p2pool's 127.0.0.1 default) — nothing to bridge
-    *)
-        echo "[p2pool-entrypoint] Tor on (#278): bridging 127.0.0.1 -> $_node for monerod RPC($_rpc)/ZMQ($_zmq) so the node stays DIRECT (p2pool only exempts loopback from --socks5)."
-        socat "TCP-LISTEN:$_rpc,bind=127.0.0.1,fork,reuseaddr" "TCP:$_node:$_rpc" &
-        socat "TCP-LISTEN:$_zmq,bind=127.0.0.1,fork,reuseaddr" "TCP:$_node:$_zmq" &
-        _args=()
-        _skip=0
-        for _a in "$@"; do
-            if [ "$_skip" = 1 ]; then
-                _args+=("127.0.0.1")
-                _skip=0
-                continue
-            fi
-            _args+=("$_a")
-            [ "$_a" = "--host" ] && _skip=1
+    _args=("$@")
+    _group=0
+    for ((_i = 0; _i < ${#_args[@]}; _i++)); do
+        [ "${_args[_i]}" = --host ] || continue
+        _host_index=$((_i + 1))
+        _node="${_args[_host_index]}"
+        _rpc=18081 _zmq=18083
+        for ((_j = _host_index + 1; _j < ${#_args[@]}; _j++)); do
+            case "${_args[_j]}" in
+            --host) break ;;
+            --rpc-port) _rpc="${_args[_j + 1]}" ;;
+            --zmq-port) _zmq="${_args[_j + 1]}" ;;
+            esac
         done
-        set -- "${_args[@]}"
-        ;;
-    esac
+        _group=$((_group + 1))
+        case "$_node" in
+        "" | 127.0.0.1 | ::1 | localhost) continue ;;
+        esac
+        _loopback="127.$((_group >> 16 & 255)).$((_group >> 8 & 255)).$((_group & 255))"
+        case "$_node" in *:*) _node="[$_node]" ;; esac
+        echo "[p2pool-entrypoint] Tor on: bridging Monero host group $_group RPC($_rpc)/ZMQ($_zmq)."
+        socat "TCP-LISTEN:$_rpc,bind=$_loopback,fork,reuseaddr" "TCP:$_node:$_rpc" &
+        socat "TCP-LISTEN:$_zmq,bind=$_loopback,fork,reuseaddr" "TCP:$_node:$_zmq" &
+        _args[_host_index]="$_loopback"
+    done
+    set -- "${_args[@]}"
 
     # Same trap, one leg further (#278 covered monerod only): p2pool's MergeMiningClientTari reaches
     # the Tari base node via TCPServer::connect_to_peer, which only skips the SOCKS5 proxy for a
@@ -132,6 +114,11 @@ _redact_argv() {
     local a out="" next=none
     for a in "$@"; do
         case "$next" in
+        secret)
+            out="$out [redacted]"
+            next=none
+            continue
+            ;;
         mask)
             next=none
             case "$a" in -*) : ;; *)
@@ -147,7 +134,11 @@ _redact_argv() {
             ;;
         esac
         case "$a" in
-        --rpc-login | --wallet | --onion-address | --merge-mine=*)
+        --rpc-login)
+            out="$out $a"
+            next=secret
+            ;;
+        --wallet | --onion-address | --merge-mine=*)
             out="$out $a"
             next=mask
             ;;

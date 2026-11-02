@@ -27,6 +27,8 @@ TARI_MEM_LIMIT=2048m
 MONERO_MEM_LIMIT=3g
 P2POOL_ONION_ADDRESS=c.onion
 P2POOL_FLAGS=
+P2POOL_BACKUP_ARGS_B64=LS1ob3N0
+MONERO_BACKUP_NODES='[{"host":"backup.example","rpc_port":28081,"zmq_port":28083,"rpc_login":"user:pass with spaces"}]'
 P2POOL_PORT=37889
 STRATUM_BIND=0.0.0.0
 XVB_POOL_URL=na.xmrvsbeast.com:4247
@@ -271,6 +273,8 @@ jq_assert "control staged/ dir never enters the container (#33)" \
     '.services.dashboard.volumes | any(.target | contains("staged")) | not'
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
+jq_assert "Compose preserves backup arguments and per-node monitor credentials" \
+    '.services.p2pool.environment.P2POOL_BACKUP_ARGS_B64 == "LS1ob3N0" and (.services.dashboard.environment.MONERO_BACKUP_NODES | fromjson | .[0]) == {host:"backup.example",rpc_port:28081,zmq_port:28083,rpc_login:"user:pass with spaces"}'
 jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
 jq_assert "Tor receives the same P2Pool port as the daemon (#2936)" \
     '.services.tor.environment.P2POOL_PORT == "37889" and (.services.p2pool.command | tostring | contains("37889"))'

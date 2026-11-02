@@ -241,11 +241,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
                     monero_synced = chain_synced(monero_sync)
                     tari_synced = chain_synced(tari_sync)
+                    worker_monero_down = await self._worker_monero_down(monero_sync, False)
 
-                    # Auto-transition a clearnet initial-sync node back to Tor once it's synced
-                    # (#234). Reuses the synced signals above; the supervisor writes a persistent
-                    # marker + restarts the daemon (which then comes up Tor-only). Returns whether
-                    # each chain is still EXPOSED on clearnet, for the UI banner.
                     monero_clearnet_exposed = await self.clearnet_supervisor.maybe_transition(
                         "monero", "monerod", MONERO_CLEARNET_SYNC, monero_synced
                     )
@@ -325,7 +322,10 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         and (tari_synced or not TARI_REQUIRED or self.sync_gate_monero_only)
                     )
                     if self.miner_released:
-                        await self._apply_worker_rejection(monero_down, tari_down)
+                        await self._apply_worker_rejection(
+                            worker_monero_down if self.monero_backups.nodes else monero_down,
+                            tari_down,
+                        )
 
                     disk_usage = get_disk_usage()
                     hugepages = get_hugepages_status()
