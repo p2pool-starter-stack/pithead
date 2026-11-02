@@ -711,8 +711,8 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   chain id without a successful call to the node. The other two, `event loop started` and
   `worker thread ready`, are local — they prove the object was constructed and its threads spun.
   On the live stack they landed about 175 milliseconds before the chain-id read, so a row keyed on
-  either would pass with Tari unreachable. That case is its own verdict, `local-only`, and it
-  fails rather than passing quietly: it means the client is up and Tari is not answering. Nothing
+  either would pass with Tari unreachable. That case is its own verdict, `local-only`, and with
+  complete startup evidence it fails: the client is up and Tari is not answering. Nothing
   else at any tier watches this leg — `fakes/test_contract.py` looks like it does and does not,
   since it drives the dashboard's Tari client while merge-mining is a third-party binary's own
   gRPC. Two properties of the signal shape the read. It is startup-only: the three lines landed
@@ -722,7 +722,14 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   chain-id signal. Reads start at that container epoch, without a first-lines cap that could
   hide delayed client creation after Monero RPC retries. The epoch is checked across the
   capture and again before a pass; a restart discards the stale observation without extending
-  the deadline. Log-read errors fail separately from an exhausted readiness window. The log is
+  the deadline. Log-read errors fail separately from an exhausted readiness window.
+  If no round-trip is found, the oldest retained timestamp is compared with the same container's
+  start time. A gap greater than 60 seconds is a conservative heuristic for lost startup evidence,
+  not proof of rotation; ordinary delayed startup and the exact 60-second boundary still fail.
+  When evidence may be lost, a fresh chain-id line from the last 60 seconds can pass the row.
+  Without that proof, including when the fresh read fails or contains only local client lines,
+  the row counts as `missing` with the evidence-loss reason. Both fallback observations are
+  checked against the original container epoch. Log retention is unchanged. The log is
   ANSI-coloured with the escapes mid-line, between the client name and the endpoint, so a pattern
   written against the rendered text matches nothing at all, silently — a probe that always reports
   an absence looks exactly like a working one until the day it matters. The escapes are stripped
@@ -742,7 +749,8 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   hole for as long as a credential stayed broken — a state this repo has recorded lasting a day.
   Any `MergeMiningClientTari` line is itself proof that monerod caught up, since p2pool builds no
   client until the header download succeeds, so the log settles what the RPC could not. The leg
-  skips only when the window was read and held no such line: p2pool then built no client, the
+  takes the prerequisite skip only when startup evidence is not classified as lost and the
+  window was read and held no such line: p2pool then built no client, the
   download did not complete, and no input to this harness would create the signal, which is what
   earns the counted `by-design` class rather than the predicate's bit. Every case the order moves,
   it moves out of the skip ledger into a pass or a fail, never the other way. Only the matching
