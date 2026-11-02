@@ -246,6 +246,7 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null || bad "post-provision approved-setting cleanup failed"
 
     phase_provision_diagnostics_regressions "$DASH_USER" "$DASH_PASS"
+    phase_provision_power_regressions || return 1
 
     result=$(dashboard_control_request backup '{}' 360)
     rid=$(printf '%s' "$result" | jq -r '.id // ""')
