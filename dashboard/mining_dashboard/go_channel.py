@@ -64,6 +64,8 @@ def response(helper, output):
     try:
         reply = json.loads(output)
         ok = reply["ok"]
+        if type(ok) is not bool:
+            raise TypeError("invalid success marker")
         if ok:
             value = reply["value"]
     except (ValueError, KeyError, TypeError) as error:

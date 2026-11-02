@@ -10,6 +10,8 @@ from mining_dashboard import (
     go_forecast,
     go_overview,
     go_snapshot,
+    go_state,
+    go_state_executor,
     go_views,
 )
 from mining_dashboard.config import config
@@ -94,24 +96,32 @@ async def _finish_state(request):
             chart.update(history=history, shares=shares)
 
     query = request.query
-    state = server.build_state(
+    arguments = (
         prepared["latest_data"],
         state_manager,
         query.get("range", "all"),
         server.parse_window(query.get("from"), query.get("to")),
         server.canonical_window(query.get("avg")),
-        chart_builder=capture,
-        history=prepared.get("history", []),
-        metrics=go_domain.restore(prepared["metrics"]),
-        section_builders={
+    )
+    options = {
+        "chart_builder": capture,
+        "history": prepared.get("history", []),
+        "metrics": go_domain.restore(prepared["metrics"]),
+        "section_builders": {
             **go_views.builders(prepared.get("sections", {}), series, settings),
             **go_fleet.builders(presentation, settings),
             **go_overview.builders(overview, settings),
             **earnings_builders,
             **forecast_builders,
         },
-        view_snapshot=settings,
-    )
+        "view_snapshot": settings,
+    }
+    if server.build_state is go_state.build_state:
+        state = await request.app["go_state_executor"].run(
+            server.build_state, *arguments, **options
+        )
+    else:
+        state = server.build_state(*arguments, **options)
     return {
         "state": state,
         "chart": chart,
@@ -163,6 +173,13 @@ def _metrics(request):
 
 
 def install(app):
+    executor = go_state_executor.StateExecutor()
+    app["go_state_executor"] = executor
+
+    async def close_executor(_app):
+        await executor.close()
+
+    app.on_cleanup.append(close_executor)
     for operation, reader in (
         ("state", lambda request: _state(request, compact=True)),
         ("miner-connection", _miner_connection),

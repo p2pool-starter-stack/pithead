@@ -67,3 +67,7 @@ test-go-dashboard-worker-detail-parity: go-dashboard-build
 .PHONY: test-go-dashboard-polling-parity
 test-go-dashboard-polling-parity: go-dashboard-build
 	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_polling_plugin tests/service/test_data_helpers.py tests/service/test_worker_probe.py tests/service/test_worker_proxy_liveness.py tests/service/test_data_service_*.py "$(CURDIR)/tests/go-parity/dashboard_polling_compare.py" "$(CURDIR)/tests/go-parity/dashboard_polling_guards.py" "$(CURDIR)/tests/go-parity/dashboard_polling_runtime.py"
+
+.PHONY: test-go-dashboard-assembly-parity
+test-go-dashboard-assembly-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_assembly_plugin tests/web/views/test_*.py tests/web/test_server_state_api.py "$(CURDIR)/tests/go-parity/dashboard_assembly_compare.py" "$(CURDIR)/tests/go-parity/dashboard_assembly_guards.py" "$(CURDIR)/tests/go-parity/dashboard_assembly_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_history_concurrent.py"

@@ -18,6 +18,7 @@ import (
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/resources"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/runtime"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/series"
+	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/stateview"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/storage"
 	"github.com/p2pool-starter-stack/pithead/go/internal/dashboard/wizard"
 )
@@ -84,6 +85,8 @@ func main() {
 			err = badges.Run(os.Stdin, os.Stdout)
 		case "badges-stream":
 			err = streamHelper(badges.Run, os.Stdin, os.Stdout)
+		case "state":
+			err = stateview.Run(os.Stdin, os.Stdout)
 		default:
 			os.Exit(125)
 		}
