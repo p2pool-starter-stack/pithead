@@ -67,4 +67,5 @@ jobs:
           test-go-dashboard-wizard-preparation-parity
           test-go-dashboard-wizard-state-parity
           test-go-dashboard-worker-http-parity test-go-dashboard-earnings-parity
+          test-go-dashboard-forecast-parity
           test-go-shipping-parity

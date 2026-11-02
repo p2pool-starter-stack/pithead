@@ -2,6 +2,7 @@ import copy
 import os
 import time
 
+from mining_dashboard import go_forecast
 from mining_dashboard.config import config
 from mining_dashboard.service import host_resources
 from mining_dashboard.service.network.egress import egress_posture_from_config
@@ -47,7 +48,7 @@ def collect(data, state):
         {"name": entry["name"], "watts": entry.get("watts")}
         for entry in config.current_worker_endpoints()
     ]
-    return _copy(
+    snapshot = _copy(
         {
             "storage": {
                 "share_stats": state.get_share_stats(),
@@ -96,6 +97,9 @@ def collect(data, state):
             },
         }
     )
+    snapshot["settings"]["forecast"] = _copy(go_forecast.settings())
+    snapshot["settings"]["forecast_tiers"] = go_forecast.tiers(snapshot["storage"]["tiers"])
+    return snapshot
 
 
 class FrozenState:

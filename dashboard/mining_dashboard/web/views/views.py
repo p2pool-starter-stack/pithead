@@ -70,9 +70,9 @@ from mining_dashboard.web.views.xvb_views import (
     recent_wallet_change,
     xvb_current_tier_reward_day,
     xvb_expected_wins_day,
-    xvb_forecast_tier_key,
+    xvb_forecast_tier_key,  # noqa: F401
     xvb_realization,
-    xvb_tempered_day,
+    xvb_tempered_day,  # noqa: F401
 )
 
 build_proxy_summary = _infra_views.build_proxy_summary
@@ -263,6 +263,8 @@ def build_state(
         return view_snapshot[name] if view_snapshot and name in view_snapshot else default()
 
     def timestamped(function, *args, **kwargs):
+        if section_builders:
+            function = section_builders.get(getattr(function, "__name__", ""), function)
         if view_snapshot:
             kwargs["now"] = now
         return function(*args, **kwargs)
@@ -296,7 +298,7 @@ def build_state(
         xvb_wins_day = timestamped(
             xvb_expected_wins_day,
             state_mgr.get_xvb_round_stats(),
-            xvb_forecast_tier_key(metrics, xvb_tiers),
+            section("xvb_forecast_tier_key", metrics, xvb_tiers),
             xvb_tiers,
         )
         xvb_realized = timestamped(
@@ -315,9 +317,7 @@ def build_state(
         expected_wins_day=xvb_wins_day,
         realization=xvb_realized,
     )
-    # this wallet has one, else the delivery prior's midpoint — the raw published figure was the
-    # last untempered money surface (a donating box's fiat net read ~3x high on the XvB addend).
-    earnings["xvb_day"] = xvb_tempered_day(earnings["xvb_day"], xvb_realized)
+    earnings["xvb_day"] = section("xvb_tempered_day", earnings["xvb_day"], xvb_realized)
 
     egress = view_value("egress", egress_posture_from_config)
     topology = view_value("topology", topology_from_config)

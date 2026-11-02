@@ -41,6 +41,22 @@ func Build(request Request) (any, error) {
 		return buildEarnings(request)
 	case "build_earnings_vs_actual":
 		return buildEarningsVsActual(request)
+	case "xvb_current_tier_key":
+		return buildXVBCurrentTierKey(request)
+	case "xvb_forecast_tier_key":
+		return buildXVBForecastTierKey(request)
+	case "xvb_current_tier_reward_day":
+		return buildXVBCurrentTierRewardDay(request)
+	case "xvb_expected_wins_day":
+		return buildXVBExpectedWinsDay(request)
+	case "xvb_realization":
+		return buildXVBRealization(request)
+	case "xvb_tempered_day":
+		return buildXVBTemperedDay(request)
+	case "build_xvb_calc":
+		return buildXVBCalc(request)
+	case "xvb_state":
+		return buildXVBState(request)
 	default:
 		return nil, errors.New("unsupported overview operation")
 	}
