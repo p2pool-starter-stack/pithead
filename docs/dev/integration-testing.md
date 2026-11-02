@@ -315,8 +315,11 @@ deploy, borrow a real miner, run the matrix, and put everything back.
 tests/integration/e2e.sh <branch> [--mode targeted|check|matrix] [--workers N] [--miner HOST]
 tests/integration/e2e.sh claude/my-feature                 # default: LEAN — dashboard + sync logic
 tests/integration/e2e.sh claude/my-feature --mode check    # non-destructive smoke (pure reads)
-tests/integration/e2e.sh claude/my-feature --mode matrix   # full config sweep (opt-in, pre-release)
+tests/integration/e2e.sh claude/my-feature --mode matrix   # unbounded sweep + destructive phases
 ```
+
+For bench-ci, use the [split matrix proof](#split-matrix-proof-on-bench-ci) instead of the
+unbounded `--mode matrix` preset.
 
 `--mode check` is the exception to that mutation workflow: it provisions only the disposable branch
 checkout so its harness code is available, then runs those reads against the currently active install
@@ -597,9 +600,10 @@ borrowed. No full config sweep, and never a re-sync. Container restarts reload t
 monerod re-confirms the tip in seconds, but a recreated tari also has to rebuild its Tor circuits
 first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-starter-stack/pithead/issues/2455)) —
 `deploy_branch` waits on that before running the harness, since the harness reads the Tari panel
-once. `check` is pure reads only. `matrix` is the opt-in full destructive
-config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
-two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
+once. `check` is pure reads only. `matrix` is the unbounded config sweep plus destructive
+phases (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
+two rig phases, all under `--safety-backup` auto-rollback). Use the
+[split matrix proof](#split-matrix-proof-on-bench-ci) for full coverage on bench-ci.
 The harness runs `--subnet` before lifecycle: lifecycle's uninstall removes `wallet_data` by design, so a later
 subnet phase would assert the Monero payout wallet mid-rescan ([#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026)).
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates
@@ -662,6 +666,56 @@ phases from the allowlist arm in `tests/integration/lib/harness-args.sh`, so `sw
 commit that carries it.
 
 ---
+
+## Split matrix proof on bench-ci
+
+The unbounded `mode: matrix` preset is not a supported single-job proof within bench-ci's
+240-minute cap: the scenario sweep can consume the budget before the destructive phases start.
+Submit two `tier4-e2e` jobs at the same full 40-hex Pithead commit SHA, using the request fields
+below. For release evidence, use the frozen SHA. Each job needs `timeout_minutes: 240`; a
+180-minute sweep has timed out inside its last scenario. The timeout is a budget, not a
+guaranteed duration.
+
+Run the sweep alone. It supplies its safety backup and runs every scenario without the
+destructive phases:
+
+```json
+{
+  "repo": "pithead",
+  "commit": "<full-40-hex-sha>",
+  "tier": "tier4-e2e",
+  "timeout_minutes": 240,
+  "options": {"phases": ["sweep"]}
+}
+```
+
+Run the destructive phases separately, using the same phase list as
+[bench-ci's tier description](https://github.com/p2pool-starter-stack/bench-ci/blob/main/docs/tiers.md#split-pithead-matrix-proof):
+
+```json
+{
+  "repo": "pithead",
+  "commit": "<full-40-hex-sha>",
+  "tier": "tier4-e2e",
+  "timeout_minutes": 240,
+  "options": {"phases": ["safety-backup", "lifecycle", "fault-injection", "auth-fail-closed", "hardening", "subnet", "rigforge", "rigforge-control"]}
+}
+```
+
+Explicit phases replace the preset's phase list, including its automatic rig phases. Select
+both `rigforge` and `rigforge-control` for that coverage. Borrow a real miner and omit `no_rig`:
+the mining-continuity trials in `lifecycle` and `hardening` require one. The destructive-phase
+job retains the wrapper's targeted scenario instead of repeating the sweep. For a narrower PR,
+select only its affected phases.
+
+Do not combine `mode` with `phases` or `scenario`; bench-ci refuses that combination. The
+candidate must advertise `sweep` and every selected phase in
+[`harness-args.sh`](../../tests/integration/lib/harness-args.sh).
+
+Neither job alone proves the full matrix. Retain both evidence blocks on the same SHA: job IDs,
+conclusions, assertion rows, phase headers, skips with reasons, artifacts and restoration
+evidence for the stack and borrowed miner. Require both jobs to succeed and inspect their
+coverage; a timeout, failed restoration or missing phase is not a completed matrix proof.
 
 ## The config matrix
 
