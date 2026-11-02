@@ -126,11 +126,7 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
 }
 
 apply() {
-    # apply reaches its mutating window down two different paths (a normal change, and the retry
-    # after a previous apply committed the config but did not finish recreating containers), so it
-    # tracks its own hold rather than acquiring twice — the depth counter would then never reach
-    # zero and the lock would outlive the verb inside a single process.
-    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_target=""
+    local dashboard_carry_recovery=0 dashboard_carry_target=""
     local assume_yes=0 dry_run=0 porcelain=0 arg
     for arg in "$@"; do
         case "$arg" in
@@ -147,6 +143,7 @@ apply() {
         apply_dry_run "$porcelain"
         return 0
     fi
+    mutation_lock_acquire apply
     validate_stratum_port_change
     ensure_onion_password
     PITHEAD_CONFIG_SET=1 parse_and_validate_config
@@ -180,6 +177,10 @@ apply() {
     [ -f "$caddy_marker" ] && caddy_pending=1
     grep -qx rearm-tari-only "$apply_marker" 2>/dev/null && rearm_sync_gate=2
     grep -qx rearm-sync-gate "$apply_marker" 2>/dev/null && rearm_sync_gate=1
+
+    local render_revision current_revision
+    render_revision=$(sha256sum "$CONFIG_FILE" "$ENV_FILE") || error "Could not read the configuration revision for apply."
+    mutation_lock_release
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
     local dashboard_data_dir_old=""
@@ -246,12 +247,17 @@ apply() {
                 return 0
             fi
         fi
+    fi
 
-        # After every confirm above (the typed wallet redirect, the disruptive-change y/N):
-        # carry the DB before the rendered .env switches its mount. A refusal therefore leaves
-        # the active path unchanged, rather than stranding the stopped dashboard on a new path.
-        mutation_lock_acquire apply
-        lock_held=1
+    mutation_lock_acquire apply
+    if ! current_revision=$(sha256sum "$CONFIG_FILE" "$ENV_FILE") || [ "$render_revision" != "$current_revision" ]; then
+        rm -f "$newenv"
+        mutation_lock_release
+        error "The configuration changed after apply rendered its preview. Re-run '$0 apply' to review and confirm the current configuration."
+    fi
+
+    if [ "${#changed[@]}" -gt 0 ]; then
+        # Carry the DB before publication so a refusal preserves its active path.
         if { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; }; then
             if [ -n "$dashboard_data_dir_old" ] && [ -n "${DASHBOARD_DIR:-}" ] &&
                 [ "$dashboard_data_dir_old" != "$DASHBOARD_DIR" ] && [ -f "$dashboard_data_dir_old/mining_data.db" ]; then
@@ -294,7 +300,6 @@ apply() {
         rm -f "$newenv"
         if [ "$incomplete" -eq 0 ]; then
             # Host state may change without an .env diff: converge units and local_miner (#3090).
-            mutation_lock_acquire apply
             if [ "$caddy_pending" -eq 1 ]; then
                 generate_caddyfile
                 docker compose restart caddy
@@ -316,11 +321,6 @@ apply() {
         [ "$caddy_pending" -eq 0 ] || generate_caddyfile
     fi
 
-    # The retry branch reaches here without a hold; the changed branch already has one.
-    if [ "$lock_held" -eq 0 ]; then
-        mutation_lock_acquire apply
-        lock_held=1
-    fi
     # Client-auth keys must be written before tor is recreated below, so an onion just turned on (or a
     # client-auth toggle) takes effect on this apply rather than the next (#343).
     provision_onion_client_auth
