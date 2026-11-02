@@ -42,6 +42,8 @@ func main() {
 			err = wizard.RunConfig(os.Stdin, os.Stdout)
 		case "wizard-preparation":
 			err = wizard.RunPreparation(os.Stdin, os.Stdout)
+		case "wizard-state":
+			err = wizard.RunState(os.Stdin, os.Stdout)
 		case "wizard-values":
 			err = wizard.RunValues(os.Stdin, os.Stdout)
 		case "documents":

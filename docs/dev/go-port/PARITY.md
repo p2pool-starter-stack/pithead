@@ -192,6 +192,7 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Control intent envelopes, worker writable keys, request publication and result reads | Native Go helpers in the Go dashboard child; Python config masking, wait I/O and worker HTTP remain; public control policies below | 377 unchanged focused wizard/control tests plus supplementary byte, startup, concurrency and mutation cases; injected UUID/rename hooks listed separately |
 | Control HTTP config, preview, commit, upgrade, OS-update, backup and result | Native header/body/approval/version/action policies, pending/completed/error responses and commit predicate; Python async transport, validators and service callbacks | 157 unchanged focused originals with ten original bodies fatal; six new A/B cases, two source mutations and seven failure-path cases; [results](results-control-http.md) |
 | Wizard stage, status and read-only spool views | Native Go helpers under Go selection; Python launch and HTTP orchestration remain | Same unchanged focused suites with original ported functions fatal; off-loop state/status coalescing and public reference-selection sentinels |
+| Wizard-state assembly | Native preparation, lazy defaults/handoff decisions, mode/config merge, change deduplication and ordered 17-field body; Python provider I/O, JSON and probe-report filtering | 334 unchanged focused originals, existing coalescing case and sixteen new comparisons/boundary/mutation cases; [results](results-wizard-state.md) |
 | Wizard atomic writes, conflict checks, rollback and temporary cleanup | Native Go helpers, including raw archive streaming; Python transport and typed config orchestration remain; rig/restore plans below | 282 unchanged wizard tests through the transaction adapter; injected replace/unlink cases are explicit I/O interpositions; supplementary comparisons and source mutations |
 | Wizard config preparation, merge/default stripping, machine names and recovery policy | Native ordered Go transforms; Python supplies runtime schema/defaults and spool reads, retaining input normalization and HTTP sequencing | 334 unchanged focused tests plus 12 new comparison/mutation cases; results below |
 | Wizard handoff, acknowledgement, keep-role and retry | Authenticated readiness/status decisions, handoff reads, atomic markers and ordered cleanup native; Python authentication transport, JSON and callback sequencing | 334 unchanged focused tests plus 16 new comparison, mutation and concurrency cases; results below |
@@ -327,16 +328,9 @@ in the later review results.
 
 ## Wizard views and transactions
 
-The [channel results](results-channel.md) preserve the views/control slice:
-377 unchanged focused tests, 403 with new cases, 3719 in both full arms and a
-94% appended patch-coverage pass. Native state/status collection runs off-loop,
-shares one in-flight task per app and holds the submission lock for state.
-
-The [transaction results](results-wizard-transactions.md) preserve native atomic
-writes, raw archive streaming, conflicts, rollback and temporary cleanup:
-282 unchanged wizard tests, 295 with new cases, full 3719-test arms and a 95%
-appended patch-coverage pass. Explicit replace/unlink hooks preserve fault tests;
-production uses Go syscalls. Auth/form policy is added by the next slice.
+The [channel](results-channel.md) and [transaction](results-wizard-transactions.md)
+reports preserve original-suite counts, full arms, coverage and native ownership
+for views/control, coalescing/locking, atomic writes, archives, conflicts and cleanup.
 
 ## Wizard policy, config and terminal actions
 
@@ -351,11 +345,16 @@ The [control HTTP results](results-control-http.md) preserve native policies,
 boundaries and separate/combined coverage. Python retains async I/O, external
 validators, masked-config reads, service callbacks and worker-specific HTTP.
 
-The [preparation results](results-wizard-preparation.md) add native typed-config
-source/default/name phases, preserving ordered providers and both prior-attempt
-reads. Python retains decoding, normalization, callbacks and wizard-state assembly.
-Both full arms pass 3719 tests: reference coverage 85.13%, Go 80.02%; the focused target passes 345.
-Separate patch coverage is 31%/86%; combined plus focused cases passes at 92%, with the new bridge separately measured at 53/58 executable lines.
+The [preparation results](results-wizard-preparation.md) preserve typed-config
+source/default/name phases, ordered providers, two prior-attempt reads and the
+345-test focused target, full arms and separately graded coverage.
+
+The [wizard-state results](results-wizard-state.md) replace the captured Python
+state builder with native phases and an ordered response. The focused target
+passes 351 tests with the original builder fatal; Python retains provider I/O,
+JSON parsing and saved-probe filtering. Locking, coalescing and no-store remain.
+All 3719 full-suite assertions pass per arm; Go alone measures 79.98% coverage despite a rounded successful exit. The Go-only full suite plus six native-boundary cases passes at 80.03%.
+Reference/comparison data passes patch coverage at 92%; the new state bridge measures 61/64 executable lines. Separate coverage and proof boundaries are in the report.
 
 ## Unavailable and known host constraints
 
@@ -393,7 +392,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Finish wizard-state assembly and worker-specific control HTTP/I/O; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
+1. Finish worker-specific control HTTP/I/O; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
 2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

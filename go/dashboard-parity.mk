@@ -39,3 +39,7 @@ test-go-dashboard-control-http-parity: go-dashboard-build
 .PHONY: test-go-dashboard-wizard-preparation-parity
 test-go-dashboard-wizard-preparation-parity: go-dashboard-build
 	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_wizard_preparation_plugin tests/web/test_wizard*.py tests/web/test_config_defaults.py tests/service/test_config_version.py "$(CURDIR)/tests/go-parity/dashboard_wizard_preparation_compare.py" "$(CURDIR)/tests/go-parity/dashboard_wizard_preparation_guards.py"
+
+.PHONY: test-go-dashboard-wizard-state-parity
+test-go-dashboard-wizard-state-parity: go-dashboard-build
+	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_wizard_state_plugin tests/web/test_wizard*.py tests/web/test_config_defaults.py tests/service/test_config_version.py "$(CURDIR)/tests/go-parity/dashboard_channel_compare.py::test_wizard_state_coalesces_and_keeps_auth_responsive" "$(CURDIR)/tests/go-parity/dashboard_wizard_state_compare.py" "$(CURDIR)/tests/go-parity/dashboard_wizard_state_guards.py"

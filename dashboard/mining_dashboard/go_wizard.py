@@ -107,7 +107,9 @@ async def status(request):
 
 
 def state_builder(request):
-    return asyncio.run(_REFERENCE_STATE(request))
+    from mining_dashboard import go_wizard_state
+
+    return go_wizard_state.build(request)
 
 
 async def wizard_state(request):
@@ -173,3 +175,6 @@ def install(server=None):
     from mining_dashboard import go_documents
 
     go_documents.install()
+    from mining_dashboard import go_wizard_state
+
+    go_wizard_state.install(server)
