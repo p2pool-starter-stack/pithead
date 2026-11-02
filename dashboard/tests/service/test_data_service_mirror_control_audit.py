@@ -85,26 +85,29 @@ class TestMirrorControlAudit:
         from mining_dashboard.service.storage_service import StateManager
         from mining_dashboard.web.server import _merged_audit_entries
 
-        log = Path(__file__).parent / "fixtures" / "worker-upgrade-all-control.jsonl"
+        fixture = Path(__file__).parent / "fixtures" / "worker-upgrade-all-control.jsonl"
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        log = tmp_path / "control.log"
+        log.write_text(fixture.read_text().replace("2026-01-01T00:00:00Z", now))
         parent = "45454545-4545-4545-9545-454545454545"
         outcomes = ["applied", "failed", "rejected", "rejected", "noop"]
+        expected = {parent: ("worker-upgrade-all", "completed")} | {
+            f"{parent}-{i}": ("worker-upgrade", s) for i, s in enumerate(outcomes)
+        }
         monkeypatch.setattr(ds_mod.config, "DASHBOARD_CONTROL_ENABLED", True)
         monkeypatch.setattr(ds_mod.audit_service.config, "CONTROL_AUDIT_LOG", str(log))
         db = str(tmp_path / "state.db")
         sm = StateManager(db_path=db)
         await DataService(sm, MagicMock(), MagicMock())._mirror_control_audit()
         sm.close()
+        monkeypatch.setattr(
+            ds_mod.audit_service.config, "CONTROL_AUDIT_LOG", str(tmp_path / "rotated.log")
+        )
         sm = StateManager(db_path=db)
         try:
-            by_id = {e["id"]: e for e in _merged_audit_entries(sm)}
-            assert len(by_id) == len(outcomes) + 1
-            assert (by_id[parent]["action"], by_id[parent]["status"]) == (
-                "worker-upgrade-all",
-                "completed",
-            )
-            assert [
-                (by_id[f"{parent}-{i}"]["action"], by_id[f"{parent}-{i}"]["status"])
-                for i in range(len(outcomes))
-            ] == [("worker-upgrade", s) for s in outcomes]
+            durable = {e["id"]: (e["action"], e["status"]) for e in sm.get_audit_events()}
+            merged = {e["id"]: (e["action"], e["status"]) for e in _merged_audit_entries(sm)}
+            assert durable == expected
+            assert merged == expected
         finally:
             sm.close()
