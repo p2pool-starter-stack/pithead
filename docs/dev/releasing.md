@@ -398,7 +398,8 @@ reports the pin held, and confirm the image cache still lists the commit right b
 provision. The cut cannot seed itself: `old_image` needs a strictly older build.
 
 Submit four KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
-cap, and so does the boot group with provision.
+cap, and so does the boot group with provision; bench-ci refuses an `all` submission before job
+creation. Standalone `tests/os/run.sh --phase all` is unaffected.
 
 - Boot group: boot, update, install.
 - Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases.
