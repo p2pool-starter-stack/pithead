@@ -1,5 +1,4 @@
 # ruff: noqa: F403, F405
-"""Plain power control route (#2384): POST /api/control/power, modelled on the os-update route."""
 
 from tests.web._server_support import *  # noqa: F403
 
@@ -17,7 +16,6 @@ class TestControlPowerRoute:
         body = await resp.json()
         assert body["status"] == "pending"
         req = json.loads((control_spool / "requests" / f"{body['id']}.json").read_text())
-        # Closed shape: exactly these keys — no free-form target for the host runner.
         assert req == {"id": body["id"], "action": "sys-reboot", "actor": "admin"}
 
     async def test_poweroff_submits_typed_intent(self, control_client, control_spool):
