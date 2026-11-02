@@ -159,6 +159,7 @@ echo "== unit: support-bundle archive is never exposed while it is written (#375
 bundle_case() {
     local tar_mode="$1" preexisting="${2:-}" work
     mk_tmpdir work
+    chmod 755 "$work"
     if [ -n "$preexisting" ]; then
         printf old >"$work/$preexisting"
         chmod 644 "$work/$preexisting"
