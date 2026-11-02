@@ -74,8 +74,6 @@ export async function waitForDashboard(waiting, pollMs, max) {
         window.location.reload();
         return true;
       }
-    } catch {
-      /* still rebooting */
-    }
+    } catch {}
   }
 }
