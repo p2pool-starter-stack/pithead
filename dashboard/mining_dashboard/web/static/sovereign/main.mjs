@@ -3,6 +3,7 @@ import { EarningsPage } from "./earnings.mjs";
 import { MachinesPage } from "./machines.mjs";
 import { createNavigation, PAGES, readRoute, routeUrl } from "./navigation.mjs";
 import { createPolling } from "./polling.mjs";
+import { PowerControl } from "./power.mjs";
 import { Shell } from "./shell.mjs";
 import { createSyncHistory } from "./sync-model.mjs";
 import { overviewContent } from "./sync-view.mjs";
@@ -74,7 +75,12 @@ export function initSovereign({
         doc.documentElement.dataset.theme = theme;
         paint();
       }} onNavigate=${(page, section) => navigation.go(page, section)}
-      onRetry=${() => polling.tick()} renderPage=${(page, state) => overviewContent({ page, state, history: syncHistory, connected: data.connected, renderPage: pageRenderer })} renderSection=${renderSection} />`,
+      onRetry=${() => polling.tick()} renderPage=${(page, state) => overviewContent({ page, state, history: syncHistory, connected: data.connected, renderPage: pageRenderer })} renderSection=${(
+        section,
+      ) =>
+        section === "maintenance" && data.snapshot?.os_update && data.snapshot?.control_enabled
+          ? html`${renderSection?.(section, data.snapshot)}<${PowerControl} snapshot=${data.snapshot} />`
+          : renderSection?.(section, data.snapshot)} />`,
       root,
     );
   };

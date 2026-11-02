@@ -19,6 +19,7 @@ from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import diagnostics_views, download_views, sovereign_views
 from mining_dashboard.web.views.charts import canonical_window, parse_window
+from mining_dashboard.web.views.power_views import handle_control_power
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
 from mining_dashboard.web.views.prometheus import render_prometheus
 from mining_dashboard.web.views.views import build_state, get_shell_html
@@ -613,6 +614,7 @@ def create_app(state_manager, latest_data_ref, notify=None):
                 web.post("/api/control/backup", handle_control_backup),
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
                 web.post("/api/control/os-update", handle_control_os_update),
+                web.post("/api/control/power", handle_control_power),
                 web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
                 web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),
                 web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_key),

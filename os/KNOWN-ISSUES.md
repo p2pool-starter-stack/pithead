@@ -394,7 +394,9 @@ not proven.
   dashboard never exposes, so "changing these later means reinstalling" no longer holds.
   The CLI remainder is on the dashboard too now — support bundle, doctor detail, rotations
   (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
-  (#911) and fleet descriptor editing (#912).
+  (#911) and fleet descriptor editing (#912). Appliance reboot and clean power-off are available
+  in the lean UI preview's Advanced > Maintenance section (#2384). KVM covers shutdown and a
+  simulated button restart; real firmware's physical power button still needs the manual M17 check.
 - **The manual hardware battery has run once, on a dev image, and is incomplete (#2044).** The
   operator ran it on one physical box on 2026-09-18 and 2026-09-19 against a debug image built
   from `develop` at `1b0da07016`; the per-step results are in the manual release checklist's
