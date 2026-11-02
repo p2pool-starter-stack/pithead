@@ -360,9 +360,7 @@ up_sig_order=$(
 assert_eq "first-install up verifies release-image signatures before 'compose up' (#452)" \
     "$(printf '%s\n' "$up_sig_order" | grep -xE 'verify|compose' | tr '\n' ',')" "verify,compose,"
 
-# apply had the same after-compose ordering bug as #272's stack_upgrade — fixed alongside #291. Take
-# the no-change-but-incomplete-marker retry path so apply recreates containers without the interactive
-# diff (env_changed_keys returns nothing; a pre-seeded .apply-incomplete marker forces the retry).
+# An incomplete marker forces the retry path so the test can observe firewall ordering without a prompt.
 apply_order=$(
     cd "$SANDBOX" || exit
     # shellcheck disable=SC1090
@@ -388,6 +386,8 @@ apply_order=$(
     docker() { :; }
     apply_tor_egress_firewall() { echo firewall; }
     compose_up_checked() { echo compose; }
+    printf '{}\n' >config.json
+    : >.env
     : >".env.apply-incomplete" # force the retry path
     apply
 )

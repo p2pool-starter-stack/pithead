@@ -7,11 +7,9 @@
 #   (none)  every block in turn, each in its own bash process, then the summed verdict
 #   BLOCK   one block, 1..STACK_BLOCKS: what each leg of the Shell workflow's matrix runs
 #
-# The source order below is cut into STACK_BLOCKS contiguous blocks that CI runs in parallel
-# (#2631). Each block starts with lib.sh in a fresh process. Shared fixture builders also let the
-# nine #2048 prerequisite fragments run individually; CI proves those runs separately. The
-# no-argument run keeps the same process boundaries. stack_blocks_audit refuses missing or duplicate
-# stanzas, missing domain accounting, and a workflow matrix that does not list every block.
+# CI runs contiguous blocks in fresh processes so fixtures cannot leak across blocks.
+# Shared fixture builders also let prerequisite fragments run independently.
+# stack_blocks_audit checks registrations, domain accounting, and the workflow matrix.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_BLOCKS=5
@@ -157,6 +155,8 @@ fi
 if in_block 2; then
     # shellcheck source=tests/stack/secrets/test-secrets.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets.sh" && domain_ran test-secrets.sh "$_d0" "$?" || domain_ran test-secrets.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/secrets/test-apply-sidecar.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-apply-sidecar.sh" && domain_ran test-apply-sidecar.sh "$_d0" "$?" || domain_ran test-apply-sidecar.sh "$_d0" "$?"
 
     # shellcheck source=tests/stack/test-rig-worker.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig-worker.sh "$_d0" "$?" || domain_ran test-rig-worker.sh "$_d0" "$?"

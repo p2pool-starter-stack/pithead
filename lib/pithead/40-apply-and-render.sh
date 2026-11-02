@@ -125,11 +125,32 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
         warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
 }
 
+apply_lock_revision() {
+    mutation_lock_acquire apply
+    local revision
+    revision=$(sha256sum "$CONFIG_FILE" "$ENV_FILE") || error "Could not check the configuration revision."
+    [ "$revision" = "$1" ] || error "Configuration changed while preparing apply. Re-run '$0 apply' to preview it again."
+}
+
+apply_publish_tari_secret() {
+    if [ -f "${PITHEAD_ENV_STAGE}.tari-wallet-secret" ]; then
+        mv -fT -- "${PITHEAD_ENV_STAGE}.tari-wallet-secret" "$PWD/data/tari-wallet-secret.env" ||
+            error "Could not publish the Tari payout wallet secret."
+    fi
+}
+
+apply_publish_env() {
+    local previous="${PITHEAD_ENV_STAGE}.previous"
+    ln -- "$ENV_FILE" "$previous" || error "Could not preserve the previous environment."
+    PITHEAD_ENV_PREVIOUS="$previous"
+    mv -fT -- "$PITHEAD_ENV_STAGE" "$ENV_FILE"
+    apply_publish_tari_secret
+    rm -f -- "$previous"
+    PITHEAD_ENV_PREVIOUS=""
+}
+
 apply() {
-    # apply reaches its mutating window down two different paths (a normal change, and the retry
-    # after a previous apply committed the config but did not finish recreating containers), so it
-    # tracks its own hold rather than acquiring twice — the depth counter would then never reach
-    # zero and the lock would outlive the verb inside a single process.
+    # The changed and retry paths share one lock hold so the depth counter balances.
     local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_target=""
     local assume_yes=0 dry_run=0 porcelain=0 arg
     for arg in "$@"; do
@@ -150,6 +171,8 @@ apply() {
     validate_stratum_port_change
     ensure_onion_password
     PITHEAD_CONFIG_SET=1 parse_and_validate_config
+    local revision
+    revision=$(sha256sum "$CONFIG_FILE" "$ENV_FILE") || error "Could not read the configuration revision."
     load_preserved_state
     if onion_missing "$P2POOL_ONION" || ! is_deployed; then
         error "Stack is not fully provisioned. Run '$0 setup' first."
@@ -159,10 +182,9 @@ apply() {
     resolve_dashboard_host # non-interactive
     DEPLOYMENT_COMPLETED=true
 
-    # Render the new config to a staging file and diff it against the live .env, so we can
-    # preview the changes and confirm anything disruptive before touching running containers.
+    # Stage both files so confirmation cannot change live wallet inputs.
     local newenv="$PITHEAD_ENV_STAGE"
-    render_env "$newenv"
+    render_env "$newenv" "${newenv}.tari-wallet-secret"
 
     local changed=() key
     while IFS= read -r key; do
@@ -189,9 +211,7 @@ apply() {
         for key in "${changed[@]}"; do
             old=$(env_get_file "$ENV_FILE" "$key")
             new=$(env_get_file "$newenv" "$key")
-            # Payout-wallet change (#375): remember WHICH wallet keys change for the typed
-            # confirmation below — one prompt per key, so a Monero+Tari double change can't
-            # ride through on a single typed suffix.
+            # Each changed payout wallet requires its own typed confirmation.
             case "$key" in MONERO_WALLET_ADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
@@ -217,12 +237,7 @@ apply() {
         echo ""
 
         if [ "${#wallet_keys[@]}" -gt 0 ] && [ "$assume_yes" -eq 0 ]; then
-            # A payout-wallet change upgrades the generic y/N to a typed confirmation (#375):
-            # every future reward goes to the new address, so the operator must type its last
-            # 8 characters — once PER changed wallet key (a Monero and a Tari change are two
-            # separate redirects; each needs its own typed confirm). This is the strongest
-            # confirm, so it stands in for the y/N even when other disruptive changes ride
-            # along. --yes keeps working for automation.
+            # Typed wallet confirmation also covers other disruptive changes in this apply.
             local wkey wnew wallet_new8 wlabel
             for wkey in "${wallet_keys[@]}"; do
                 wnew=$(env_get_file "$newenv" "$wkey")
@@ -232,7 +247,7 @@ apply() {
                 warn "Confirm by typing the last 8 characters of the new address ($wallet_new8)."
                 read -r -p "Confirm: " CONFIRM || true
                 if [ "$CONFIRM" != "$wallet_new8" ]; then
-                    rm -f "$newenv"
+                    rm -f "$newenv" "${newenv}.tari-wallet-secret"
                     log "Apply cancelled. No changes were made."
                     return 0
                 fi
@@ -241,47 +256,34 @@ apply() {
             warn "Some of the changes above (⚠) are disruptive."
             read -r -p "Proceed with applying these changes? (y/N): " CONFIRM || true
             if [[ ! "$CONFIRM" =~ ^[Yy] ]]; then
-                rm -f "$newenv"
+                rm -f "$newenv" "${newenv}.tari-wallet-secret"
                 log "Apply cancelled. No changes were made."
                 return 0
             fi
         fi
 
-        # After every confirm above (the typed wallet redirect, the disruptive-change y/N):
-        # carry the DB before the rendered .env switches its mount. A refusal therefore leaves
-        # the active path unchanged, rather than stranding the stopped dashboard on a new path.
-        mutation_lock_acquire apply
+        # Carry the database only after confirmation and before publishing its new mount.
+        apply_lock_revision "$revision"
         lock_held=1
         if { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; }; then
             if [ -n "$dashboard_data_dir_old" ] && [ -n "${DASHBOARD_DIR:-}" ] &&
                 [ "$dashboard_data_dir_old" != "$DASHBOARD_DIR" ] && [ -f "$dashboard_data_dir_old/mining_data.db" ]; then
-                # Arm recovery before carry_dashboard_data_move stops the dashboard. A later error
-                # either removes the unpublished copy and retries the change, or keeps the committed
-                # copy plus this marker so an unchanged re-apply still recreates the container.
+                # Arm recovery before the carry stops the dashboard so failed publication can restore it.
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 : >"$apply_marker"
                 dashboard_carry_recovery=1
                 PITHEAD_DASHBOARD_CARRY_RECOVERY=("$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" 0 "$incomplete") # #2785: EXIT outlives apply's locals after errexit.
-                trap 'recover_dashboard_data_carry "${PITHEAD_DASHBOARD_CARRY_RECOVERY[@]}"; rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
+                trap 'cleanup_env_staging; recover_dashboard_data_carry "${PITHEAD_DASHBOARD_CARRY_RECOVERY[@]}"' EXIT
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || PITHEAD_DASHBOARD_CARRY_RECOVERY[4]=1
         fi
         lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
         : >"$caddy_marker"
-        mv "$newenv" "$ENV_FILE"
+        apply_publish_env
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
-        # Whether caddy needs a restart is decided by COMPARING the rendered file, never by a list
-        # of keys someone has to remember to extend (#1052). The list had drifted:
-        # dashboard.expose_public_ip was missing from it, so turning OFF the opt-in that serves the
-        # dashboard on a globally-routable address re-rendered the Caddyfile without its bind lines
-        # and left caddy holding the wildcard listener — the operator sees the setting saved, sees
-        # the file change, and the box stays exposed.
-        #
-        # An absent previous file is a fresh install: compose starts caddy on the new one below, so
-        # there is no old configuration to displace. Emptiness is not absence — a zero-byte file
-        # left by a crashed render is a box whose caddy serves nothing, and that wants the restart.
+        # Compare rendered content so every Caddy configuration change triggers a restart.
         if [ -f "Caddyfile" ]; then
             caddy_had=1
             caddy_before=$(cat "Caddyfile")
@@ -294,7 +296,8 @@ apply() {
         rm -f "$newenv"
         if [ "$incomplete" -eq 0 ]; then
             # Host state may change without an .env diff: converge units and local_miner (#3090).
-            mutation_lock_acquire apply
+            apply_lock_revision "$revision"
+            apply_publish_tari_secret
             if [ "$caddy_pending" -eq 1 ]; then
                 generate_caddyfile
                 docker compose restart caddy
@@ -318,7 +321,8 @@ apply() {
 
     # The retry branch reaches here without a hold; the changed branch already has one.
     if [ "$lock_held" -eq 0 ]; then
-        mutation_lock_acquire apply
+        apply_lock_revision "$revision"
+        apply_publish_tari_secret
         lock_held=1
     fi
     # Client-auth keys must be written before tor is recreated below, so an onion just turned on (or a
@@ -366,7 +370,7 @@ apply() {
         exit 1 # leave $apply_marker in place so the retry re-attempts the recreate
     fi
     if [ "$dashboard_carry_recovery" -eq 1 ]; then
-        trap 'rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
+        trap cleanup_env_staging EXIT
         unset PITHEAD_DASHBOARD_CARRY_RECOVERY
     fi
     reconcile_appliance_hostname

@@ -248,7 +248,13 @@ nothing is written or recreated. `--porcelain` makes the output machine-readable
 **Changing the payout wallet:** `apply` asks you to type the last 8 characters of the new address
 (a bare `y` is not enough for the one change that redirects every future reward; `apply -y` skips
 the prompt for automation). Changing both the Monero and Tari addresses in one `apply` prompts
-once per address. The dashboard also watches the wallet p2pool actually mines to: any
+once per address. Cancelling keeps the live environment and Tari wallet secret file unchanged;
+unpublished staged files are removed. After confirmation, apply checks that the configuration
+and live environment still match the preview, then publishes under the mutation lock.
+If either changed while waiting, re-run `apply` to review the current changes.
+If sidecar publication fails, apply restores the previous environment; a failed restoration
+reports the saved environment file to use for recovery.
+The dashboard also watches the wallet p2pool actually mines to: any
 change raises a `wallet_changed` [Telegram alert](telegram.md) and a 72-hour top-bar banner —
 including a change you made yourself. Treat that pair as confirmation; if you didn't change it,
 your rewards are being redirected — check `config.json` and re-apply the correct address.
