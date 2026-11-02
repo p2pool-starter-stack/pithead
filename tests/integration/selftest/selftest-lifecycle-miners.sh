@@ -322,3 +322,30 @@ printf '%s\n' 'PASS: redirected mining failures retain bounded redacted diagnost
     done
 )
 printf '%s\n' 'PASS: real startup-restore sequence preserves worker binding through absent-proxy span'
+
+(
+    source "$ROOT/tests/integration/lib.sh"
+    source "$ROOT/tests/integration/lib/run-lifecycle-miners.sh"
+    lifecycle_proxy_started() { printf '%s' "$started"; }
+    lifecycle_worker_set() { printf '["local"]'; }
+    lifecycle_miners_returned() { [ "$returned" = 1 ]; }
+    lifecycle_mining_diagnostics() { :; }
+    mutation() { started=new; }
+    BOUND_RECONNECT=0
+    _run_lifecycle() {
+        started=old returned=0
+        lifecycle_mining_step up mutation 2>&1 | cat >"$work/redirected-fail.log" || true
+        started=old returned=1
+        lifecycle_mining_step restart mutation 2>&1 | cat >"$work/redirected-pass.log" || true
+    }
+    IT_PASS=0 IT_FAIL=0
+    run_lifecycle >"$work/row-output"
+    [ "$IT_FAIL" = 1 ]
+    [ "$IT_PASS" = 1 ]
+    grep -Fq 'up workers reconnect' "$work/row-output"
+    grep -Fq 'worker set did not return within BOUND_RECONNECT' "$work/row-output"
+    grep -Fq 'restart workers reconnect and accept post-restart shares (#3375)' "$work/row-output"
+    [[ "$IT_FAILED_NAMES" == *'up workers reconnect'* ]]
+    ! grep -Fq 'workers reconnect' "$work/redirected-fail.log" "$work/redirected-pass.log"
+)
+printf '%s\n' 'PASS: wrapper rows reach the harness results through a redirected caller pipeline'

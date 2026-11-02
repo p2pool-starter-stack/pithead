@@ -57,11 +57,32 @@ lifecycle_mining_diagnostics() {
             timeout --kill-after=2 10 systemctl show xmrig.service -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus" 2>&1 | tail -n 20
     } >>"$LIFECYCLE_MINER_DIAGNOSTICS" || true
 }
+lifecycle_mining_row() {
+    if [ -n "${LIFECYCLE_MINER_ROWS:-}" ] && [ "$BASH_SUBSHELL" -gt "${LIFECYCLE_MINER_SHELL:-0}" ]; then
+        printf '%s\t%s\t%s\t%s\n' "$1" "$2" "${3:-}" "${4:-}" >>"$LIFECYCLE_MINER_ROWS"
+        return 0
+    fi
+    case "$1" in
+    pass) it_pass "$2" ;;
+    fail) it_fail "$2" "$3" ;;
+    skip) it_skip_leg "$2" "$3" "$4" ;;
+    esac
+}
+lifecycle_mining_flush() {
+    [ -n "${LIFECYCLE_MINER_ROWS:-}" ] && [ -s "$LIFECYCLE_MINER_ROWS" ] || return 0
+    [ "$BASH_SUBSHELL" -le "${LIFECYCLE_MINER_SHELL:-0}" ] || return 0
+    local verdict name detail class
+    while IFS=$'\t' read -r verdict name detail class; do
+        LIFECYCLE_MINER_ROWS='' lifecycle_mining_row "$verdict" "$name" "$detail" "$class"
+    done <"$LIFECYCLE_MINER_ROWS"
+    : >"$LIFECYCLE_MINER_ROWS"
+}
 lifecycle_mining_step() {
     local label=$1 before after names end rc=0
     shift
+    lifecycle_mining_flush
     if [ "${SKIP_MINING_ASSERTS:-0}" = 1 ]; then
-        it_skip_leg "$label workers reconnect and accept post-restart shares (#3375)" "SKIP_MINING_ASSERTS=1" "by-design"
+        lifecycle_mining_row skip "$label workers reconnect and accept post-restart shares (#3375)" "SKIP_MINING_ASSERTS=1" by-design
         "$@"
         return $?
     fi
@@ -71,7 +92,7 @@ lifecycle_mining_step() {
         names=${LIFECYCLE_MINER_NAMES:-'[]'}
     else
         before=$(lifecycle_proxy_started) && names=$(lifecycle_worker_set) || {
-            it_fail "$label mining precondition" "proxy inspection or live worker set unreadable"
+            lifecycle_mining_row fail "$label mining precondition" "proxy inspection or live worker set unreadable"
             lifecycle_mining_diagnostics "$label precondition"
             return 1
         }
@@ -82,7 +103,7 @@ lifecycle_mining_step() {
         lifecycle_mining_save || return 1
     fi
     if [ "$names" = '[]' ]; then
-        it_skip_leg "$label workers reconnect and accept post-restart shares (#3375)" "no online workers before lifecycle mutation" "by-design"
+        lifecycle_mining_row skip "$label workers reconnect and accept post-restart shares (#3375)" "no online workers before lifecycle mutation" by-design
         "$@" || return $?
         LIFECYCLE_MINER_NAMES=$names
         case "$label" in
@@ -105,7 +126,7 @@ lifecycle_mining_step() {
     esac
     if [ "${LIFECYCLE_MINER_STOPPED:-0}" = 1 ] && [ "$label" = restore ]; then return 0; fi
     after=$(lifecycle_proxy_started) || {
-        it_fail "$label proxy restarts" "proxy inspection failed after a live-returning step"
+        lifecycle_mining_row fail "$label proxy restarts" "proxy inspection failed after a live-returning step"
         lifecycle_mining_diagnostics "$label proxy inspection"
         return 1
     }
@@ -115,7 +136,7 @@ lifecycle_mining_step() {
     end=$((SECONDS + ${BOUND_RECONNECT:-480}))
     until lifecycle_miners_returned "$names" false; do
         [ "$SECONDS" -lt "$end" ] || {
-            it_fail "$label workers reconnect" "worker set did not return within BOUND_RECONNECT"
+            lifecycle_mining_row fail "$label workers reconnect" "worker set did not return within BOUND_RECONNECT"
             lifecycle_mining_diagnostics "$label reconnect timeout"
             return 1
         }
@@ -124,13 +145,13 @@ lifecycle_mining_step() {
     end=$((SECONDS + 600))
     until lifecycle_miners_returned "$names" true; do
         [ "$SECONDS" -lt "$end" ] || {
-            it_fail "$label workers accept shares" "a worker did not accept a post-restart share within 600 seconds"
+            lifecycle_mining_row fail "$label workers accept shares" "a worker did not accept a post-restart share within 600 seconds"
             lifecycle_mining_diagnostics "$label share timeout"
             return 1
         }
         sleep 5
     done
-    it_pass "$label workers reconnect and accept post-restart shares (#3375)"
+    lifecycle_mining_row pass "$label workers reconnect and accept post-restart shares (#3375)"
 }
 
 lifecycle_raw_pithead() { rx "$IT_PITHEAD $*"; }
@@ -147,7 +168,9 @@ run_lifecycle() {
     local LIFECYCLE_MINING_ACTIVE=1 LIFECYCLE_MINER_STOPPED=0 LIFECYCLE_MINER_NAMES directory rc
     directory=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/lifecycle-mining.XXXXXX") || return 1
     local LIFECYCLE_MINER_STATE="$directory/state.json" LIFECYCLE_MINER_DIAGNOSTICS="$directory/diagnostics.log"
+    local LIFECYCLE_MINER_ROWS="$directory/rows.tsv" LIFECYCLE_MINER_SHELL=$BASH_SUBSHELL
     if _run_lifecycle; then rc=0; else rc=$?; fi
+    lifecycle_mining_flush
     if [ -s "$LIFECYCLE_MINER_DIAGNOSTICS" ]; then
         redact <"$LIFECYCLE_MINER_DIAGNOSTICS" || rc=1
     fi
