@@ -171,6 +171,7 @@ run_reset_restore() {
         it_fail "reset recovery removes its encrypted fixture archive" "cleanup failed"
         return 1
     }
+    lifecycle_mining_flush
     [ "$IT_FAIL" -le "$failures_before" ]
 }
 

@@ -59,7 +59,7 @@ lifecycle_mining_diagnostics() {
 }
 lifecycle_mining_row() {
     if [ -n "${LIFECYCLE_MINER_ROWS:-}" ] && [ "$BASH_SUBSHELL" -gt "${LIFECYCLE_MINER_SHELL:-0}" ]; then
-        printf '%s\t%s\t%s\t%s\n' "$1" "$2" "${3:-}" "${4:-}" >>"$LIFECYCLE_MINER_ROWS"
+        printf '%s\037%s\037%s\037%s\n' "$1" "$2" "${3:-}" "${4:-}" >>"$LIFECYCLE_MINER_ROWS"
         return 0
     fi
     case "$1" in
@@ -72,7 +72,7 @@ lifecycle_mining_flush() {
     [ -n "${LIFECYCLE_MINER_ROWS:-}" ] && [ -s "$LIFECYCLE_MINER_ROWS" ] || return 0
     [ "$BASH_SUBSHELL" -le "${LIFECYCLE_MINER_SHELL:-0}" ] || return 0
     local verdict name detail class
-    while IFS=$'\t' read -r verdict name detail class; do
+    while IFS=$'\037' read -r verdict name detail class; do
         LIFECYCLE_MINER_ROWS='' lifecycle_mining_row "$verdict" "$name" "$detail" "$class"
     done <"$LIFECYCLE_MINER_ROWS"
     : >"$LIFECYCLE_MINER_ROWS"
@@ -82,7 +82,7 @@ lifecycle_mining_step() {
     shift
     lifecycle_mining_flush
     if [ "${SKIP_MINING_ASSERTS:-0}" = 1 ]; then
-        lifecycle_mining_row skip "$label workers reconnect and accept post-restart shares (#3375)" "SKIP_MINING_ASSERTS=1" by-design
+        lifecycle_mining_row skip "$label workers reconnect and accept post-restart shares (#3375)" "SKIP_MINING_ASSERTS=1" "by-design"
         "$@"
         return $?
     fi
@@ -103,7 +103,7 @@ lifecycle_mining_step() {
         lifecycle_mining_save || return 1
     fi
     if [ "$names" = '[]' ]; then
-        lifecycle_mining_row skip "$label workers reconnect and accept post-restart shares (#3375)" "no online workers before lifecycle mutation" by-design
+        lifecycle_mining_row skip "$label workers reconnect and accept post-restart shares (#3375)" "no online workers before lifecycle mutation" "by-design"
         "$@" || return $?
         LIFECYCLE_MINER_NAMES=$names
         case "$label" in

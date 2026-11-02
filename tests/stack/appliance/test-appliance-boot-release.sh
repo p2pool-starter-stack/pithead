@@ -98,6 +98,8 @@ assert_eq "the hold-chain commit block calls release_held_chain_services and tol
     "$(grep -cE '^\s*\[ "\$hold_chain" = 1 \] && \{ release_held_chain_services \|\| true; \}' "$BOOTSCRIPT" || true)" "1"
 assert_eq "no bare, un-retried up remains on the release path" \
     "$(grep -cE '^\s*\./pithead up \|\| true' "$BOOTSCRIPT" || true)" "0"
+assert_eq "pithead-boot gates its three up calls" \
+    "$(grep -cE '^\s*PITHEAD_BOOT_GATE=1 ([A-Z_]+=[^ ]+ )*\./pithead up\b' "$BOOTSCRIPT" || true)" "3"
 assert_eq "every boot up leaves the miner to the post-commit leg" \
     "$(grep -E '^\s*([A-Z_]+=[^ ]+ )*\./pithead up\b' "$BOOTSCRIPT" | grep -vc 'PITHEAD_BOOT_GATE=1 ' || true)" "0"
 unset -f rl_stub rl_run
@@ -141,6 +143,7 @@ assert_eq "boot-gate up leaves the miner to the post-commit leg" "$(cat "$UPM/ca
 : >"$UPM/calls"
 upm_run RF_RC=1
 assert_rc "a failed miner setup does not fail up" "$?" "0"
+assert_contains "the failed setup did run" "$(cat "$UPM/calls")" "rigforge:setup"
 unset -f upm_up upm_run
 rm -rf "$UPM"
 unset UPM

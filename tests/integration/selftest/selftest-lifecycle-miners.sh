@@ -337,9 +337,12 @@ printf '%s\n' 'PASS: real startup-restore sequence preserves worker binding thro
         lifecycle_mining_step up mutation 2>&1 | cat >"$work/redirected-fail.log" || true
         started=old returned=1
         lifecycle_mining_step restart mutation 2>&1 | cat >"$work/redirected-pass.log" || true
+        SKIP_MINING_ASSERTS=1 lifecycle_mining_step backup mutation 2>&1 | cat >/dev/null
     }
     IT_PASS=0 IT_FAIL=0
+    skipped=$IT_SKIPPED_BY_DESIGN
     run_lifecycle >"$work/row-output"
+    [ "$IT_SKIPPED_BY_DESIGN" = "$((skipped + 1))" ]
     [ "$IT_FAIL" = 1 ]
     [ "$IT_PASS" = 1 ]
     grep -Fq 'up workers reconnect' "$work/row-output"
