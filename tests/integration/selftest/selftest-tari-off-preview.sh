@@ -37,6 +37,11 @@ rx() { printf 'Tari merge-mining OFF\nchain data on disk is KEPT\n'; }
 out="$(run_tari_off_preview)"
 check "success prints no diagnostic" "$(lacks "$out" 'remote exit status')"
 
+failed_rows=""
+it_fail() { failed_rows+="$1;"; }
+TMPDIR=/nonexistent-tari-preview-dir run_tari_off_preview >/dev/null 2>&1
+check "an uncreatable capture file records a failed row" "$(has "$failed_rows" 'preview succeeds')"
+
 # shellcheck disable=SC2016
 scratch_line="$(grep -m1 'scratch=\$(mktemp' "$ROOT/lib/run-tari-off-preview.sh")"
 # shellcheck disable=SC2016

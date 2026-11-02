@@ -9,7 +9,10 @@ tari_preview_diagnostic() {
 
 run_tari_off_preview() {
     local out rc err
-    err="$(mktemp "${TMPDIR:-/tmp}/tari-preview-err.XXXXXX")" || return 1
+    err="$(mktemp "${TMPDIR:-/tmp}/tari-preview-err.XXXXXX")" || {
+        it_fail "Tari-off combined CLI preview succeeds (#3383)" "local stderr capture file could not be created"
+        return 1
+    }
     out=$(rx "cli=$(quote_arg "$IT_PITHEAD")"$'\n'"$(
         cat <<'REMOTE'
         set -eu
