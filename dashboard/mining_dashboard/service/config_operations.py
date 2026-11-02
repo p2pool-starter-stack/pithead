@@ -8,6 +8,10 @@ from .health.update_checker import parse_semver
 
 def config_version_metadata(cfg, host):
     """Compare the live stamp against the image VERSION, without inventing an absent stamp."""
+    return _version_with_provider(cfg, host)
+
+
+def _version_with_provider(cfg, host):
     stamp = host.get("config_version")
     if stamp is None:
         cfg.pop("config_version", None)
@@ -92,6 +96,10 @@ def confirmed_paths(reference, free_paths, confirm_paths, approval_paths):
 
 def missing_default_paths(reference, host, getter):
     """Return schema leaves, array defaults included, omitted by the sparse host config (#3355)."""
+    return _defaults_with_getter(reference, host, getter)
+
+
+def _defaults_with_getter(reference, host, getter):
     return [
         dotted
         for dotted in leaf_paths(reference, include_arrays=True)
@@ -107,6 +115,54 @@ def last_apply_state(entries):
         ) in ("applied", "failed"):
             return {"status": entry["status"], "id": entry.get("id", "")}
     return None
+
+
+def editor_metadata(
+    cfg,
+    host,
+    reference,
+    *,
+    core_loader,
+    editable_provider,
+    confirm_provider,
+    getter,
+    audit_provider,
+):
+    return _editor_with_providers(
+        cfg,
+        host,
+        reference,
+        core_loader=core_loader,
+        editable_provider=editable_provider,
+        confirm_provider=confirm_provider,
+        getter=getter,
+        audit_provider=audit_provider,
+    )
+
+
+def _editor_with_providers(
+    cfg,
+    host,
+    reference,
+    *,
+    core_loader,
+    editable_provider,
+    confirm_provider,
+    getter,
+    audit_provider,
+):
+    cfg["_core_keys"] = core_loader()
+    cfg["_editable_keys"] = editable_provider()
+    explicit_confirm = confirm_provider(cfg)
+    approval = approval_paths(reference, cfg, editable_provider(), explicit_confirm)
+    cfg["_confirm_keys"] = confirmed_paths(
+        reference, editable_provider(), explicit_confirm, approval
+    )
+    cfg["_confirm_keys"] = sorted(set(explicit_confirm + cfg["_confirm_keys"]))
+    cfg["_approval_keys"] = approval
+    cfg["_default_keys"] = missing_default_paths(reference, host, getter)
+    cfg["_last_apply"] = last_apply_state(audit_provider())
+    return config_version_metadata(cfg, host)
 
 
 def strip_editor_metadata(cfg):

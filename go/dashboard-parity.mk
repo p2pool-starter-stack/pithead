@@ -88,3 +88,9 @@ test-go-dashboard-preserve-parity: go-dashboard-build
 	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_preserve_plugin \
 		tests/service/workers/test_worker_refresh.py tests/service/test_data_service_aggregation_and_sync.py \
 		"$(CURDIR)/tests/go-parity/dashboard_preserve_compare.py" "$(CURDIR)/tests/go-parity/dashboard_preserve_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_preserve_controls.py"
+
+.PHONY: test-go-dashboard-editor-parity
+test-go-dashboard-editor-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_editor_plugin \
+		tests/service/test_config_operations.py tests/service/test_config_version.py tests/service/test_env_key_perimeter.py tests/service/test_control_service.py tests/web/test_config_defaults.py tests/web/test_config_documents.py \
+		"$(CURDIR)/tests/go-parity/dashboard_editor_compare.py" "$(CURDIR)/tests/go-parity/dashboard_editor_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_editor_controls.py"

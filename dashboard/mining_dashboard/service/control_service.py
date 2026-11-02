@@ -293,18 +293,16 @@ def read_config():
     except (OSError, ValueError):
         logger.warning("config.reference.json unavailable — serving the host config alone.")
     mask_secrets(cfg)
-    cfg["_core_keys"] = _load_core_keys()
-    cfg["_editable_keys"] = _editable_paths()
-    explicit_confirm = _confirm_paths(cfg)
-    approval = config_operations.approval_paths(reference, cfg, _editable_paths(), explicit_confirm)
-    cfg["_confirm_keys"] = config_operations.confirmed_paths(
-        reference, _editable_paths(), explicit_confirm, approval
+    return config_operations.editor_metadata(
+        cfg,
+        host,
+        reference,
+        core_loader=_load_core_keys,
+        editable_provider=_editable_paths,
+        confirm_provider=_confirm_paths,
+        getter=_get,
+        audit_provider=audit_service.recent_changes,
     )
-    cfg["_confirm_keys"] = sorted(set(explicit_confirm + cfg["_confirm_keys"]))
-    cfg["_approval_keys"] = approval
-    cfg["_default_keys"] = config_operations.missing_default_paths(reference, host, _get)
-    cfg["_last_apply"] = config_operations.last_apply_state(audit_service.recent_changes())
-    return config_operations.config_version_metadata(cfg, host)
 
 
 def submit(action, cfg=None, actor="", intent_id=None, version=None, confirm=None, approval=None):

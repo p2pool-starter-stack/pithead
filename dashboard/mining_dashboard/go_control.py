@@ -69,6 +69,7 @@ def install():
     from mining_dashboard import (
         go_control_http,
         go_documents,
+        go_editor,
         go_polling,
         go_preserve,
         go_rigforge,
@@ -80,6 +81,7 @@ def install():
     go_polling.install()
     go_rigforge.install()
     go_preserve.install()
+    go_editor.install()
     go_state.install()
     go_control_http.install()
     request_spool.write = write

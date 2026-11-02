@@ -75,6 +75,20 @@ func handleConfigRequest(request ConfigRequest) (any, error) {
 	case "recovery":
 		remembered, attempt, mode, err := RecoveryState(request.Changes, request.Attempt, request.Disks, request.Mode)
 		return recoveryResult{Remembered: configStrings(remembered), Attempt: attempt, Mode: mode}, err
+	case "editor-leaves":
+		return editorLeavesFromArguments(request.Config)
+	case "editor-approval":
+		return editorApprovalFromArguments(request.Config)
+	case "editor-confirmed":
+		return editorConfirmedFromArguments(request.Config)
+	case "editor-defaults":
+		return editorDefaultsFromArguments(request.Config)
+	case "editor-last-apply":
+		return editorLastApplyFromArguments(request.Config)
+	case "editor-version":
+		return editorVersionFromArguments(request.Config)
+	case "editor-metadata":
+		return EditorMetadata(request.Config)
 	default:
 		return nil, ValidationError{fmt.Sprintf("unsupported wizard config operation: %s", request.Operation)}
 	}
@@ -84,6 +98,7 @@ func configProtocolError(err error) *Error {
 	var validation ValidationError
 	var key configKeyError
 	var typeError configTypeError
+	var attributeError configAttributeError
 	switch {
 	case errors.As(err, &validation):
 		return &Error{Kind: "ValueError", Message: err.Error()}
@@ -91,6 +106,8 @@ func configProtocolError(err error) *Error {
 		return &Error{Kind: "KeyError", Message: key.key}
 	case errors.As(err, &typeError):
 		return &Error{Kind: "TypeError", Message: err.Error()}
+	case errors.As(err, &attributeError):
+		return &Error{Kind: "AttributeError", Message: err.Error()}
 	default:
 		return wireError(err)
 	}
