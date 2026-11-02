@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034 # Globals are read by the sourced harness.
+# shellcheck disable=SC2034
 set -euo pipefail
 echo "== Tor lifecycle receipt capture and bounds =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
