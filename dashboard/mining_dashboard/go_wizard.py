@@ -158,3 +158,6 @@ def install(server=None):
     from mining_dashboard import go_wizard_config
 
     go_wizard_config.install(server)
+    from mining_dashboard import go_wizard_terminal
+
+    go_wizard_terminal.install(server)
