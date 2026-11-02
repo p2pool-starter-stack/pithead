@@ -194,7 +194,8 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Wizard atomic writes, conflict checks, rollback and temporary cleanup | Native Go helpers, including raw archive streaming; Python transport and typed config orchestration remain; rig/restore plans below | 282 unchanged wizard tests through the transaction adapter; injected replace/unlink cases are explicit I/O interpositions; supplementary comparisons and source mutations |
 | Wizard config preparation, merge/default stripping, machine names and recovery policy | Native ordered Go transforms; Python supplies runtime schema/defaults and spool reads, retaining input normalization and HTTP sequencing | 334 unchanged focused tests plus 12 new comparison/mutation cases; results below |
 | Wizard handoff, acknowledgement, keep-role and retry | Authenticated readiness/status decisions, handoff reads, atomic markers and ordered cleanup native; Python authentication transport, JSON and callback sequencing | 334 unchanged focused tests plus 16 new comparison, mutation and concurrency cases; results below |
-| Wizard rig and restore submission | Native validation, ordered publication and archive-placement plans; Python multipart/auth/lock transport and action execution through native atomic writers; typed config submission remains Python | 334 unchanged focused tests with replaced original bodies fatal, three new A/B comparisons and two source mutations; results below |
+| Wizard rig and restore submission | Native validation, ordered publication and archive-placement plans; Python multipart/auth/lock transport and action execution through native atomic writers; typed plans below | 334 unchanged focused tests with replaced original bodies fatal, three new A/B comparisons and two source mutations; results below |
+| Wizard typed config submission and preserved-disk shortcut | Native routing, keep/auth/install gates, probe-verdict/publication plans and warnings; Python parse/default/preparation sequencing, probes and metadata/materialization callbacks remain | 334 unchanged focused tests with original typed handler fatal, ten new A/B comparisons and two source mutations; results below |
 | Wizard token gate, form assembly and install validation | Native Go policy and ordered mutation plans; Python HTTP/cookie transport, input normalization and defaults table | 322 unchanged wizard/defaults tests with original policy bodies fatal; byte/order comparisons, Unicode vector and two source mutations |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
 | Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
@@ -343,14 +344,18 @@ The config slice passes 334 unchanged focused tests plus 12 new cases.
 The [terminal action results](results-wizard-terminal.md) preserve readiness,
 marker, retry-serialization and cancellation proofs: 334 original focused tests
 plus 16 new cases, three mutation controls and separately graded coverage.
-The [rig/restore submission results](results-wizard-submission.md) identify native
-validation, publication-order and archive-placement plans, with Python retaining
-multipart/auth/locking transport and typed config submission. Frozen/current
-reference arms pass 334 original tests; Go passes those plus five new cases
-(339 total), with captured original bodies fatal and two source mutations.
-Full A/B runs each pass 3719 tests; isolated patch gates fail at 43% / 85%.
-The combined A/B gate passes at 92%; the new bridge measures 71/72 lines.
-Production container selection and shipping integration remain pending.
+The [rig/restore results](results-wizard-submission.md) preserve validation,
+publication-order and archive-placement proofs: 334 originals plus five new
+cases, two mutation controls and separately graded coverage.
+The [typed submission results](results-wizard-typed.md) identify native routing,
+preserved-disk/auth/install gates, probe-verdict/publication plans and warnings.
+Python retains parsing/default acquisition, preparation sequencing, probes and
+metadata/materialization callbacks. Frozen/current references pass 334 original
+tests; Go passes those plus twelve new cases (346 total), with the original
+typed handler fatal and two source mutations. Production selection and shipping
+remain pending.
+Full A/B runs each pass 3719 tests; isolated patch gates fail at 41% / 85%.
+The combined A/B gate passes at 92%; the new bridge measures 97/99 lines.
 
 ## Unavailable and known host constraints
 
@@ -388,7 +393,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Port typed config and keep-existing-install submission plus remaining control HTTP orchestration; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
+1. Finish wizard preparation/metadata callbacks and remaining control HTTP orchestration; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
 2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

@@ -41,6 +41,8 @@ func main() {
 			err = wizard.RunTerminal(os.Stdin, os.Stdout)
 		case "wizard-submission":
 			err = wizard.RunSubmission(os.Stdin, os.Stdout)
+		case "wizard-typed":
+			err = wizard.RunTypedSubmission(os.Stdin, os.Stdout)
 		case "storage":
 			err = storage.Run(os.Stdin, os.Stdout)
 		case "chart":
