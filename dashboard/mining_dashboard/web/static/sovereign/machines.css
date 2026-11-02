@@ -1,0 +1,80 @@
+.machines-page {
+  max-width: 72rem;
+  overflow-wrap: anywhere;
+}
+.connect-facts,
+.rig-health {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1rem;
+}
+.connect-facts dt,
+.rig-health dt,
+.rig-note,
+.rig-extra {
+  color: var(--muted);
+}
+.connect-facts dd,
+.rig-health dd {
+  margin: 0;
+}
+.list-advanced label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 1rem 0.5rem 0;
+}
+.rig-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.rig-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+  width: 100%;
+  margin-bottom: 0.5rem;
+  text-align: left;
+}
+.rig-attention {
+  border-left: 4px solid var(--warn);
+}
+.rig-name {
+  font-weight: 700;
+}
+.rig-rate {
+  text-align: right;
+}
+.rig-extra {
+  grid-column: 1 / -1;
+}
+.rig-inspector {
+  width: min(48rem, calc(100vw - 2rem));
+}
+.rig-inspector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.rig-advanced summary,
+.list-advanced summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.rig-json {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+}
+@media (max-width: 40rem) {
+  .rig-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rig-rate {
+    text-align: left;
+  }
+}

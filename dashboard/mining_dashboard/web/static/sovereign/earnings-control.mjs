@@ -4,7 +4,18 @@ import { pathGet } from "../config/configsync.mjs";
 import { ConfigView, PreviewModal } from "../config/configview.mjs";
 
 export const EARNINGS_FIELDS = {
-  xvb: { key: "xvb.enabled", label: "Join the XvB bonus", type: "boolean" },
+  xvb: {
+    key: "xvb.enabled",
+    label: "Join the XvB bonus",
+    type: "boolean",
+    note: "XvB routes part of your hashrate to its bonus raffle; wins and payouts are not guaranteed. This is the host's current setting.",
+  },
+  "local-miner": {
+    key: "local_miner.enabled",
+    label: "Also mine on this box",
+    type: "boolean",
+    note: "The built-in miner shares this machine's CPU and memory with the node and pool. This is the host's current setting.",
+  },
   electricity: {
     key: "dashboard.energy.cost_per_kwh",
     label: "Electricity price",
@@ -22,6 +33,7 @@ export function earningsWording(value) {
   return [
     ["dashboard.energy.cost_per_kwh", "Electricity price"],
     ["xvb.enabled", "Join the XvB bonus"],
+    ["local_miner.enabled", "Also mine on this box"],
     ["XVB_ENABLED", "Join the XvB bonus"],
     ["dashboard.energy", "Power and price settings"],
     ["DASHBOARD_ENERGY", "Power and price settings"],
@@ -115,12 +127,12 @@ export class EarningsControl extends ConfigView {
             <label>${
               field.type === "boolean"
                 ? html`<input type="checkbox" checked=${pathGet(candidate, field.key) === true}
-              disabled=${busy || !this.editable()} onChange=${(event) => onEdit(event.target.checked)} /> Join the XvB bonus`
+              disabled=${busy || !this.editable()} onChange=${(event) => onEdit(event.target.checked)} /> ${field.label}`
                 : html`Electricity price (${candidate.dashboard?.energy?.currency || "currency not reported"} per kWh)
                 <input type="text" inputmode="decimal" value=${raw} disabled=${busy || !this.editable()}
                 aria-invalid=${!!invalid} aria-describedby="electricity-validation" onInput=${(event) => onEdit(event.target.value)} />`
             }</label>
-            ${field.type === "boolean" ? html`<p>XvB routes part of your hashrate to its bonus raffle; wins and payouts are not guaranteed. This is the host's current setting.</p>` : html`<p id="electricity-validation" role=${invalid ? "alert" : null}>${invalid || "Zero leaves power cost unset. The host validates the price before saving."}</p>`}
+            ${field.type === "boolean" ? html`<p>${field.note}</p>` : html`<p id="electricity-validation" role=${invalid ? "alert" : null}>${invalid || "Zero leaves power cost unset. The host validates the price before saving."}</p>`}
             ${!this.editable() ? html`<p>The host does not permit this setting to be changed here.</p>` : null}
             <button type="button" disabled=${busy || !changed || !!invalid || !this.editable()} onClick=${() => this.save()}>${phase === "previewing" ? "Preparing review…" : "Review changes"}</button>`
               : null
