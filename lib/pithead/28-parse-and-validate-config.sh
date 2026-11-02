@@ -321,24 +321,49 @@ parse_and_validate_config() {
     # override. Rendered into .env as DASHBOARD_TZ.
     DASHBOARD_TZ=$(resolve_default "$(jq -r '.dashboard.timezone // empty' "$CONFIG_FILE")" "$(detect_host_timezone)")
 
-    # Optional dashboard login (#8): Caddy basic_auth in front of the dashboard. OPT-IN — an empty
-    # password (the default) leaves it open, today's behavior, which is fine for the LAN appliance;
-    # turn it on before exposing/co-hosting the dashboard. The plaintext lives only in config.json
-    # (owner-only); pithead bcrypt-hashes it with the pinned Caddy image and stores the hash
-    # base64-encoded in .env (raw bcrypt's '$' spams compose interpolation warnings). A sha256
-    # fingerprint of the plaintext keeps the hash STABLE across applies — re-hash only when the
-    # password actually changes (bcrypt is salted, so re-hashing every apply would churn the Caddyfile).
+    { set +x; } 2>/dev/null
+    # Keep the plaintext legacy credential for console recovery; the dashboard receives only bcrypt hashes.
     DASHBOARD_AUTH_USER=$(jq -r '.dashboard.auth.username // "admin"' "$CONFIG_FILE")
     DASHBOARD_AUTH_HASH_B64=""
     DASHBOARD_AUTH_PW_FP=""
+    DASHBOARD_LEGACY_AUTH_HASH=""
+    DASHBOARD_AUTH_USERS_JSON=$(jq -c '.dashboard.auth.users' "$CONFIG_FILE")
+    [ "$DASHBOARD_AUTH_USERS_JSON" != null ] || DASHBOARD_AUTH_USERS_JSON='[]'
+    DASHBOARD_METRICS_PASSWORD_HASH=$(jq -r '.dashboard.auth.metrics_password_hash // ""' "$CONFIG_FILE")
+    DASHBOARD_AUTH_ENABLED=false
     local dash_pw
     dash_pw=$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")
+    if [ "$(jq -r 'type' <<<"$DASHBOARD_AUTH_USERS_JSON")" != "array" ]; then
+        error "dashboard.auth.users must be an array."
+    fi
+    if ! [[ "$DASHBOARD_METRICS_PASSWORD_HASH" =~ ^$|^\$2[aby]\$(0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}$ ]]; then
+        error "dashboard.auth.metrics_password_hash must be empty or a bcrypt hash."
+    fi
+    if ! jq -e 'all(type == "object" and ((keys - ["name","password_hash","role"]) | length) == 0 and has("name") and has("role") and has("password_hash"))' <<<"$DASHBOARD_AUTH_USERS_JSON" >/dev/null; then
+        error "Each dashboard.auth.users entry must contain only name, role and password_hash."
+    fi
+    local auth_name auth_role auth_hash auth_admins=0
+    while IFS=$'\t' read -r auth_name auth_role auth_hash; do
+        if ! printf '%s' "$auth_name" | grep -qE '^[A-Za-z0-9._@-]{1,64}$'; then
+            error "dashboard.auth.users[].name must be 1–64 chars of letters, digits, and . _ @ -."
+        fi
+        [[ "$auth_role" =~ ^(admin|viewer)$ ]] || error "dashboard.auth.users[].role must be admin or viewer."
+        [[ "$auth_hash" =~ ^\$2[aby]\$(0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}$ ]] ||
+            error "dashboard.auth.users[].password_hash must be a bcrypt hash."
+        [ "$auth_role" != admin ] || auth_admins=$((auth_admins + 1))
+    done < <(jq -r '.[] | [.name,.role,.password_hash] | @tsv' <<<"$DASHBOARD_AUTH_USERS_JSON")
+    if [ "$(jq -r '[.[].name] | length == (unique | length)' <<<"$DASHBOARD_AUTH_USERS_JSON")" != true ]; then
+        error "dashboard.auth.users names must be unique."
+    fi
     if [ -n "$dash_pw" ]; then
         if ! printf '%s' "$DASHBOARD_AUTH_USER" | grep -qE '^[A-Za-z0-9._@-]{1,64}$'; then
             error "dashboard.auth.username must be 1–64 chars of letters, digits, and . _ @ - (got \"$DASHBOARD_AUTH_USER\")."
         fi
         if ! printf '%s' "$dash_pw" | grep -qE '^[[:print:]]{8,128}$' || printf '%s' "$dash_pw" | grep -q '"'; then
             error "dashboard.auth.password must be 8–128 printable characters with no double-quotes."
+        fi
+        if jq -e --arg name "$DASHBOARD_AUTH_USER" 'any(.name == $name)' <<<"$DASHBOARD_AUTH_USERS_JSON" >/dev/null; then
+            error "dashboard.auth.users cannot reuse dashboard.auth.username while the legacy password is set."
         fi
         DASHBOARD_AUTH_PW_FP=$(printf '%s' "$dash_pw" | sha256_hex)
         local prev_fp prev_hash
@@ -350,13 +375,23 @@ parse_and_validate_config() {
             DASHBOARD_AUTH_HASH_B64=$(caddy_hash_password_b64 "$dash_pw") ||
                 error "Could not hash dashboard.auth.password (is Docker running and the Caddy image pulled? Run '$0 setup' first)."
         fi
-        # basic_auth credentials are only safe over TLS; warn (don't fail) on plain HTTP. This is
-        # about the LAN vhost — the onion vhost (#343) serves plain HTTP by design (Tor is the
-        # transport), so it is exempt and does not trip this.
-        if [ "$DASHBOARD_SECURE" != "true" ] && [ "$(config_bool '.dashboard.onion.enabled' false)" != "true" ]; then
-            warn "dashboard.auth is set but dashboard.secure is false — login credentials would travel over plain HTTP. Set dashboard.secure: true for HTTPS."
-        fi
+        DASHBOARD_LEGACY_AUTH_HASH=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A) ||
+            error "Could not decode the dashboard password hash."
     fi
+    if [ -n "$dash_pw" ] || [ "$(jq 'length' <<<"$DASHBOARD_AUTH_USERS_JSON")" -gt 0 ]; then
+        DASHBOARD_AUTH_ENABLED=true
+    fi
+    if [ "$DASHBOARD_AUTH_ENABLED" == true ] && [ -z "$dash_pw" ] && [ "$auth_admins" -eq 0 ]; then
+        error "dashboard.auth.users must include at least one admin."
+    fi
+    if { [ "$DASHBOARD_AUTH_ENABLED" == true ] || [ -n "$DASHBOARD_METRICS_PASSWORD_HASH" ]; } && [ "$DASHBOARD_SECURE" != "true" ] && [ "$(config_bool '.dashboard.onion.enabled' false)" != "true" ]; then
+        warn "dashboard.auth is set but dashboard.secure is false — credentials would travel over plain HTTP. Set dashboard.secure: true for HTTPS."
+    fi
+    DASHBOARD_AUTH_CONFIG_FP=$(jq -cn --arg legacy_name "$DASHBOARD_AUTH_USER" \
+        --arg legacy_hash "$DASHBOARD_LEGACY_AUTH_HASH" --arg metrics_hash "$DASHBOARD_METRICS_PASSWORD_HASH" \
+        --argjson users "$DASHBOARD_AUTH_USERS_JSON" \
+        '{users:($users + (if $legacy_hash == "" then [] else [{name:$legacy_name,role:"admin",password_hash:$legacy_hash}] end)),metrics_password_hash:$metrics_hash}' |
+        sha256_hex)
 
     # Optional dashboard onion (#343). Opt-in, default off. When on, pithead publishes the dashboard
     # as a Tor v3 hidden service — reachable from anywhere over Tor, no exposed ports, no public IP.
@@ -372,22 +407,25 @@ parse_and_validate_config() {
     DASHBOARD_ONION_CLIENT_AUTH=false
     if [ "$DASHBOARD_ONION_ENABLED" == "true" ]; then
         DASHBOARD_ONION_CLIENT_AUTH=$(normalize_bool "$(config_bool '.dashboard.onion.client_auth' true)")
-        if [ -z "$dash_pw" ]; then
-            error "dashboard.onion.enabled is true but dashboard.auth.password is empty. Publishing the dashboard as a Tor onion exposes a control panel at a stable address — it must sit behind a login. Set a strong dashboard.auth.password (16+ characters) and re-run."
+        if [ "$DASHBOARD_AUTH_ENABLED" != true ]; then
+            error "dashboard.onion.enabled is true but dashboard authentication is empty. Publishing the dashboard as a Tor onion exposes a control panel at a stable address — configure an admin login and re-run."
         fi
-        if [ "$(printf '%s' "$dash_pw" | wc -c)" -lt 16 ]; then
-            error "dashboard.auth.password must be at least 16 characters when dashboard.onion.enabled is true (a published .onion is online-brute-forceable and per-IP throttling is meaningless over Tor). Use a passphrase."
+        if [ -n "$dash_pw" ]; then
+            if [ "$(printf '%s' "$dash_pw" | wc -c)" -lt 16 ]; then
+                error "dashboard.auth.password must be at least 16 characters when dashboard.onion.enabled is true (a published .onion is online-brute-forceable and per-IP throttling is meaningless over Tor). Use a passphrase."
+            fi
+            if [ "$(printf '%s' "$dash_pw" | fold -w1 | sort -u | wc -l | tr -d ' ')" -eq 1 ]; then
+                error "dashboard.auth.password is a single repeated character — choose a real passphrase."
+            fi
+            case "$(printf '%s' "$dash_pw" | tr 'A-Z' 'a-z')" in
+            *passwordpassword* | *0123456789* | *qwertyuiop* | *changeme* | *letmein*)
+                error "dashboard.auth.password contains a well-known weak pattern — choose a real passphrase (16+ characters)."
+                ;;
+            esac
         fi
-        # Reject obviously weak 16+ char choices the length floor alone would pass: a single repeated
-        # character, or a well-known weak pattern. Not a full dictionary — the floor handles the rest.
-        if [ "$(printf '%s' "$dash_pw" | fold -w1 | sort -u | wc -l | tr -d ' ')" -eq 1 ]; then
-            error "dashboard.auth.password is a single repeated character — choose a real passphrase."
+        if [ "$(jq 'length' <<<"$DASHBOARD_AUTH_USERS_JSON")" -gt 0 ] && [ "$DASHBOARD_ONION_CLIENT_AUTH" != true ]; then
+            error "dashboard.onion.client_auth must be true when dashboard.auth.users is non-empty because stored password hashes cannot prove the onion password-strength policy."
         fi
-        case "$(printf '%s' "$dash_pw" | tr 'A-Z' 'a-z')" in
-        *passwordpassword* | *0123456789* | *qwertyuiop* | *changeme* | *letmein*)
-            error "dashboard.auth.password contains a well-known weak pattern — choose a real passphrase (16+ characters)."
-            ;;
-        esac
     fi
 
     # Dashboard control channel (#33). Opt-in, default off. When on, the dashboard's Configuration
@@ -395,8 +433,8 @@ parse_and_validate_config() {
     # applies. That is a host-mutation channel that can change the payout wallet, so FAIL CLOSED:
     # refuse to enable it on a dashboard with no login (mirrors the onion-without-password refusal).
     DASHBOARD_CONTROL_ENABLED=$(normalize_bool "$(config_bool '.dashboard.control.enabled' false)")
-    if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ -z "$dash_pw" ]; then
-        error "dashboard.control.enabled is true but dashboard.auth.password is empty. Config editing from the dashboard can change the payout wallet and run '$0 apply' — it must sit behind a login. Set dashboard.auth.password and re-run."
+    if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && { [ "$DASHBOARD_AUTH_ENABLED" != true ] || { [ -z "$dash_pw" ] && [ "$auth_admins" -eq 0 ]; }; }; then
+        error "dashboard.control.enabled is true but dashboard authentication has no admin. Config editing can change the payout wallet and run '$0 apply' — configure an authenticated admin and re-run."
     fi
     # And on a PUBLISHED onion, refuse the control channel unless Tor v3 client authorization is on
     # (mirrors the onion-without-password refusal above). The control channel is a root-capable,

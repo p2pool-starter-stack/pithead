@@ -6,12 +6,15 @@ ensure_onion_password() {
     [ -f "$CONFIG_FILE" ] || return 0
     validate_config_document
     [ "$(config_bool '.dashboard.onion.enabled' false)" == "true" ] || return 0
+    set +x
     [ -z "$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")" ] || return 0
+    [ "$(jq -r '(.dashboard.auth.users // []) | length' "$CONFIG_FILE")" -eq 0 ] || return 0
     local gen tmp
     gen=$(generate_node_password) || return 1 # 32 alnum chars: clears the >=16 floor, no quotes, no weak pattern
     tmp=$(mktemp) || error "Could not create a temp file to save the generated dashboard password."
-    jq --arg p "$gen" '.dashboard.auth.password = $p' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE" ||
+    printf '%s' "$gen" | jq -Rs --slurpfile cfg "$CONFIG_FILE" '. as $p | $cfg[0] | .dashboard.auth.password = $p' >"$tmp" && mv "$tmp" "$CONFIG_FILE" ||
         error "Could not save the generated dashboard password to $CONFIG_FILE."
+    unset gen
     log "Dashboard onion is on but no password was set — generated one and saved it to config.json (login: admin; see dashboard.auth.password)."
 }
 
@@ -30,6 +33,16 @@ _console() { # $1... lines
     for dev in /dev/tty1 /dev/ttyS0; do
         [ -w "$dev" ] || continue
         printf '  %s\n' "$@" >"$dev" 2>/dev/null || true
+    done
+}
+
+_console_dashboard_password() { # $1 password
+    local dev devices=(/dev/tty1 /dev/ttyS0)
+    set +x
+    [ -z "${PITHEAD_CONSOLE_SECRET_DEVICE:-}" ] || devices=("$PITHEAD_CONSOLE_SECRET_DEVICE")
+    for dev in "${devices[@]}"; do
+        [ -w "$dev" ] || continue
+        printf '      password: %s\n' "$1" >"$dev" 2>/dev/null || true
     done
 }
 
@@ -235,14 +248,17 @@ provision_console_login() {
         return 0
     }
     local pass
+    set +x
     pass=$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE" 2>/dev/null)
     if [ -z "$pass" ]; then
+        unset pass
         sudo passwd -l root >/dev/null 2>&1 || true
         return 0
     fi
     printf 'root:%s\n' "$pass" | sudo chpasswd 2>/dev/null &&
         log "Console login set: root, with the dashboard password." ||
         warn "Could not set the console login."
+    unset pass
 }
 
 # SSH is a build-variant property: debug images carry their baked key; release images never
@@ -336,7 +352,9 @@ wizard_mint_cert() { # <spool-dir>  -> prints the fingerprint
 ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_FILE]
     local config="${2:-$CONFIG_FILE}"
     [ -f "$config" ] || return 0
+    set +x
     [ -z "$(jq -r '.dashboard.auth.password // ""' "$config")" ] || return 0
+    [ "$(jq -r '(.dashboard.auth.users // []) | length' "$config")" -eq 0 ] || return 0
     # The operator's explicit "no login" is honoured — an empty password is also what "not
     # chosen" looks like, so the choice cannot live in the config and rides beside it.
     if [ -n "${1:-}" ] && [ "$(wizard_spool_read "$1" auth-mode 2>/dev/null)" = "none" ]; then
@@ -347,11 +365,14 @@ ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_F
     gen=$(generate_node_password) || return 1 # 32 alnum: clears the >=16 floor, no quotes, no weak pattern
     user=$(jq -r '.dashboard.auth.username // "admin"' "$config")
     tmp=$(mktemp) || return 1
-    if jq --arg p "$gen" '.dashboard.auth.password = $p' "$config" >"$tmp" && mv "$tmp" "$config"; then
-        _console "" "Dashboard login for this machine:" "    user: $user" "    password: $gen" \
-            "Write this down — it is also in config.json on the machine."
+    if printf '%s' "$gen" | jq -Rs --slurpfile cfg "$config" '. as $p | $cfg[0] | .dashboard.auth.password = $p' >"$tmp" && mv "$tmp" "$config"; then
+        _console "" "Dashboard login for this machine:" "    user: $user"
+        _console_dashboard_password "$gen"
+        unset gen
+        _console "Write this down — it is also in config.json on the machine."
         return 0
     fi
+    unset gen
     rm -f "$tmp"
     warn "Could not save a generated dashboard password."
     return 1

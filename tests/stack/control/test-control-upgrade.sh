@@ -29,7 +29,6 @@ control_config main
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 REQS="$C/data/control/requests"
 RESULTS="$C/data/control/results"
-
 echo "== black-box: a failed upgrade never repoints the control-runner units (#1070) =="
 # The units are host-global and bake an absolute path. On a one-click deploy stack_upgrade runs from
 # the NEW version dir while `current ->` still names the old one, so provisioning them before the
@@ -50,6 +49,7 @@ upg_step_order() { # <verify_release_images body> — the step markers stack_upg
         parse_and_validate_config() { :; }
         load_preserved_state() { :; }
         ensure_directories() { :; }
+        render_dashboard_auth() { :; }
         resolve_dashboard_host() { :; }
         render_env() { [ -n "${1:-}" ] && : >"$1"; }
         provision_node_onions() { :; }
@@ -64,6 +64,7 @@ upg_step_order() { # <verify_release_images body> — the step markers stack_upg
         compose_up_checked() { echo compose; }
         update_current_symlink() { echo symlink; }
         provision_control_runner() { echo provision; }
+        export CONTROL_DIR="$PWD/data/control"
         stack_upgrade
     ) | grep -xE 'verify|compose|symlink|provision' | tr '\n' ','
 }
@@ -73,7 +74,6 @@ assert_eq "successful upgrade provisions the units only after 'current ->' moves
 # does. If provisioning ever migrates back above the pull, `provision` reappears here and this fails.
 assert_eq "an upgrade that aborts at the gate repoints no units and moves no symlink (#1070)" \
     "$(upg_step_order 'echo verify; error "gate refused";')" "verify,"
-
 echo "== unit: a spent GitHub rate limit is not a dead Tor circuit (#1081) =="
 # The one-click upgrade was rejected on a healthy box with "could not reach the GitHub release API
 # over Tor". Tor was fine and the dial succeeded; GitHub answered 403 because the unauthenticated

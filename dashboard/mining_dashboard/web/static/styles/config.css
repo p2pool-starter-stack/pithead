@@ -139,3 +139,41 @@
   word-break: break-all;
   margin: 8px 0;
 }
+.config-permissions {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.readonly-notice {
+  border-left: 3px solid var(--accent);
+}
+.auth-users {
+  display: grid;
+  gap: 1rem;
+}
+.auth-user {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  padding: 1rem;
+}
+.auth-user label {
+  display: grid;
+  gap: 0.35rem;
+}
+.auth-user-actions {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+@media (max-width: 700px) {
+  .auth-user {
+    grid-template-columns: 1fr;
+  }
+  .auth-user-actions {
+    align-items: stretch;
+  }
+}

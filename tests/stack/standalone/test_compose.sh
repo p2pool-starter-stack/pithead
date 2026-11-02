@@ -261,6 +261,8 @@ jq_assert "dashboard control audit/ mounted read-only (#33)" \
     '.services.dashboard.volumes | any((.target == "/control/audit") and (.read_only == true))'
 jq_assert "dashboard pre-masked config prefill mounted read-only (#440)" \
     '.services.dashboard.volumes | any((.target == "/control/masked") and (.read_only == true))'
+jq_assert "dashboard auth directory mounted read-only" \
+    '.services.dashboard.volumes | any((.target == "/control/auth") and (.read_only == true))'
 jq_assert "raw config.json never enters the dashboard container (#440)" \
     '.services.dashboard.volumes | any(.source | tostring | endswith("/config.json")) | not'
 jq_assert "dashboard config.reference.json prefill mounted read-only (#33)" \

@@ -4,7 +4,7 @@
 # means off (#3333). Unlike provision, this leg does not override Tari to exercise the rest of the
 # all-chain battery.
 phase_setup_defaults() {
-    local img token jar state cfg code handoff tries password names
+    local img token jar state cfg code handoff tries user password names auth_jar login_code
     img=$(_build_image v1) || {
         bad "setup defaults image build failed"
         return 1
@@ -41,8 +41,9 @@ phase_setup_defaults() {
     handoff=""
     for ((tries = 0; tries < 30; tries++)); do
         handoff=$(curl -sSk -b "$jar" -m 5 "https://$guest_ip/api/handoff")
+        user=$(jq -r '.username // ""' <<<"$handoff" 2>/dev/null)
         password=$(jq -r '.password // ""' <<<"$handoff" 2>/dev/null)
-        [[ "$password" =~ ^[A-Za-z0-9]{32}$ ]] && break
+        [[ -n "$user" && "$password" =~ ^[A-Za-z0-9]{32}$ ]] && break
         sleep 3
     done
     [[ "$password" =~ ^[A-Za-z0-9]{32}$ ]] || {
@@ -82,9 +83,22 @@ phase_setup_defaults() {
         bad "fresh appliance setup lost a new-install choice"
     fi
     code=$(curl -ksS -o /dev/null -w '%{http_code}' -m 8 "https://$guest_ip/")
-    [ "$code" = 401 ] && ok "fresh default dashboard requires its generated login" || bad "fresh default dashboard is not protected (HTTP $code)"
-    code=$(curl -ksS -u "admin:$password" -o /dev/null -w '%{http_code}' -m 8 "https://$guest_ip/")
-    [ "$code" = 200 ] && ok "fresh default dashboard accepts the generated login" || bad "fresh generated login does not open the dashboard (HTTP $code)"
+    if [ "$code" = 303 ]; then
+        ok "fresh default dashboard redirects to its generated login"
+    else
+        bad "fresh default dashboard is not protected (HTTP $code)"
+    fi
+    auth_jar=$(mktemp)
+    login_code=$(printf '%s\0%s' "$user" "$password" |
+        python3 -c 'import sys, urllib.parse; u, p = sys.stdin.buffer.read().split(b"\0", 1); print(urllib.parse.urlencode({"username": u.decode(), "password": p.decode()}), end="")' |
+        curl -ksS -c "$auth_jar" -H "Origin: https://$guest_ip" --data-binary @- -o /dev/null -w '%{http_code}' -m 8 "https://$guest_ip/login" 2>/dev/null || true)
+    code=$(curl -ksS -b "$auth_jar" -o /dev/null -w '%{http_code}' -m 8 "https://$guest_ip/" 2>/dev/null || true)
+    rm -f "$auth_jar"
+    if [ "$login_code:$code" = 303:200 ]; then
+        ok "fresh default dashboard accepts the generated login"
+    else
+        bad "fresh generated login does not open the dashboard (login HTTP $login_code, root HTTP $code)"
+    fi
     if SSH_TIMEOUT=60 _ssh 'bash -s' <"$SCRIPT_DIR/credential-journals.sh"; then
         ok "fresh default firstboot and system journals contain no bcrypt credential (#3131)"
     else

@@ -271,7 +271,7 @@ every two minutes, and alerts when the rules go missing while the stack runs. Se
 
 ## Editing config from the dashboard
 
-With `dashboard.control.enabled: true` (default off; needs a `dashboard.auth.password`), the
+With `dashboard.control.enabled: true` (default off; requires a named admin or the legacy admin password), the
 dashboard gains a [Configuration view](dashboard.md#configuration-view) that stages config changes
 for a host-side runner. `apply` (and `setup`/`upgrade`) install two systemd units when dashboard
 control or `tor.auto_heal` is on, and remove them when both are off. With only auto-heal on,
@@ -373,8 +373,10 @@ rate and pattern of failures, not identity.
 
 - **A burst of 401s** means someone who can already reach the dashboard — they have the onion
   address, and the client-auth key if `dashboard.onion.client_auth` is on (the default) — is
-  guessing the password. Rotate it: set a new `dashboard.auth.password` in `config.json` and run
-  `./pithead apply`. Check `control.log` for an `onion-client-key` entry you did not make: that is
+  guessing a password. Reset the affected named account in **Configuration → Dashboard accounts**,
+  or replace its `dashboard.auth.users` hash and run `./pithead apply`. For the legacy owner,
+  change `dashboard.auth.password` and apply it. Check `control.log` for an `onion-client-key`
+  entry you did not make: that is
   the one place a client key can be handed out while the stack is running.
 - **Unexplained traffic on a client-auth-off onion** means the address itself has leaked (it is
   online-guessable in that mode). Rotate the address: `./pithead rotate-dashboard-onion` mints a

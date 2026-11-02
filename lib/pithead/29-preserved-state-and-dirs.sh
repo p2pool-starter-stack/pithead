@@ -15,11 +15,13 @@ load_preserved_state() {
     DASHBOARD_ONION=$(env_get DASHBOARD_ONION_ADDRESS)
     DASHBOARD_ONION_CLIENT_PUBKEY=$(env_get DASHBOARD_ONION_CLIENT_PUBKEY)
     DASHBOARD_ONION_CLIENT_PRIVKEY=$(env_get DASHBOARD_ONION_CLIENT_PRIVKEY)
+    DASHBOARD_BOOT_PROBE_TOKEN=$(env_get DASHBOARD_BOOT_PROBE_TOKEN)
     PRESERVED_HOST_IP=$(env_get HOST_IP)
 
     [ -n "$PROXY_AUTH_TOKEN" ] || PROXY_AUTH_TOKEN=$(openssl rand -hex 12)
     [ -n "$WALLET_RPC_PASSWORD" ] || WALLET_RPC_PASSWORD=$(openssl rand -hex 12)
     [ -n "$TARI_WALLET_PASSWORD" ] || TARI_WALLET_PASSWORD=$(openssl rand -hex 16)
+    [ -n "$DASHBOARD_BOOT_PROBE_TOKEN" ] || DASHBOARD_BOOT_PROBE_TOKEN=$(openssl rand -hex 16)
     [ -n "$MONERO_ONION" ] || MONERO_ONION="placeholder"
     [ -n "$TARI_ONION" ] || TARI_ONION="placeholder"
     [ -n "$P2POOL_ONION" ] || P2POOL_ONION="placeholder"

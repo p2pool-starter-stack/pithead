@@ -1,18 +1,13 @@
 #!/bin/sh
 # Reach the stack's dashboard onion from an INDEPENDENT Tor client and report whether Caddy answered.
 #
-# A remote-user black-box probe: this container's tor builds its own circuits and reaches the onion
-# over the public Tor network — it uses none of the stack's SOCKS proxy or plumbing. Getting an HTTP
-# status back at all proves the full inbound path (hidden service -> Caddy) is live from outside; a
-# 401 (Caddy's basic-auth challenge) counts as reachable, since we deliberately don't hold the
-# dashboard login. Client auth is required to even establish the rendezvous when the onion is
-# client-auth'd, so a green result also proves the client key is accepted.
+# A login redirect counts as reachable because this independent Tor client has no dashboard credential.
 #
 # Env:
 #   ONION_ADDR    the .onion hostname, no scheme          (required)
 #   AUTH_FILE     path to a mounted client-auth line       (optional; enables client-auth)
 #                 "<onion>:descriptor:x25519:<privkey>"    — as `pithead onion-client-key` emits
-#   EXPECT_CODES  pipe-separated HTTP codes that count as reachable (default "200|401")
+#   EXPECT_CODES  pipe-separated HTTP codes that count as reachable (default "200|303|401")
 #   SCHEME        http|https                                (default https — the onion serves TLS, #360)
 #   BOOT_TIMEOUT  seconds to wait for tor bootstrap         (default 120)
 #   FETCH_TIMEOUT seconds to keep retrying the fetch        (default 120)
@@ -22,7 +17,7 @@
 set -eu
 
 : "${ONION_ADDR:?ONION_ADDR required}"
-EXPECT_CODES="${EXPECT_CODES:-200|401}"
+EXPECT_CODES="${EXPECT_CODES:-200|303|401}"
 SCHEME="${SCHEME:-https}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-120}"
 FETCH_TIMEOUT="${FETCH_TIMEOUT:-120}"

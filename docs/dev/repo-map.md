@@ -37,6 +37,20 @@ Configuration defaults live in `dashboard/mining_dashboard/config/defaults.json`
 DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.json`).
 `dashboard/mining_dashboard/config/defaults.py` reads the same table for the dashboard and wizards.
 
+Dashboard authentication lives in `dashboard/mining_dashboard/web/auth.py`, with bcrypt
+configuration and SQLite sessions in `service/dashboard_auth.py` and `service/auth_sessions.py`
+under the same package. The CLI renders the hashes-only authentication directory in
+`lib/pithead/30-release-fetch-and-masked-config.sh`; Compose and the appliance mount it read-only.
+The session middleware runs before every dashboard route and refuses every unsafe method for
+viewers. `dashboard/tests/web/test_dashboard_auth.py` enumerates the live route table;
+`dashboard/tests/web/test_wizard_dashboard_auth.py` separately checks the console-token wizard.
+
+The Go HTTP port must preserve this middleware order, the `/login`, `/logout`, `/api/auth/session`
+and `/api/auth/hash` contracts, the metrics-only credential, per-user session revisions, and the
+route-table refusal test. Caddy first calls `/api/auth/ready`, which succeeds only after a valid,
+explicit authentication file has loaded; older backends fail this check instead of serving an
+unprotected dashboard during an upgrade. Ordinary requests still pass through session middleware.
+
 Host-resource availability and the existing disk-history capacity estimate are computed in
 `dashboard/mining_dashboard/service/host_resources.py`; the collector metadata stays in
 `dashboard/mining_dashboard/collector/system.py`. Their unit tests live in the matching
@@ -297,7 +311,7 @@ the deployed CLI during the hardening phase.
 | `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `selftest-wizard-defaults.sh` runs the real CLI wizard with the runner baseline contract and stubbed deployment I/O. `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. `doctor-tip-time.sh` runs both doctor formats against the live stack with a zero-timestamp RPC response during the check phase. |
 | `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
-| `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. `mini-stack/telegram-command-wire.py` checks Telegram command replies, chat restriction, offsets and replay through the real dashboard loop; `mini-stack/telegram-network-stats.json` seeds its synced P2Pool state. `fakes/test_fake_sink.py` checks the HTTP queue and stats fixture. `fakes/test_masked_config_read.py` exercises raw host config through the CLI renderer and dashboard reader. |
+| `tests/integration/fakes/`, `mini-stack/`, `auth_proxy/` | Fake-daemon contracts and containerized end-to-end checks. `auth_proxy/run.sh` checks the real Caddy and dashboard session boundary plus readiness fail-closed behavior. `mini-stack/telegram-command-wire.py` checks Telegram command replies, chat restriction, offsets and replay through the real dashboard loop; `mini-stack/telegram-network-stats.json` seeds its synced P2Pool state. `fakes/test_fake_sink.py` checks the HTTP queue and stats fixture. `fakes/test_masked_config_read.py` exercises raw host config through the CLI renderer and dashboard reader. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. `rig-config-meta-wait.sh` waits for refreshed provenance before the rig reboot comparison; `selftest-rig-config-meta-wait.sh` covers stale, absent and invalid feeds without a guest. `rig-share-leg.sh` and `selftest-rig-share.sh` cover address/hostname/return share windows and their failure controls. |
 | `tests/os/rig-share-leg.sh` | Coordinator power-cut recovery after the address/hostname/return share windows; `selftest-rig-share-power-cut.sh` checks counter resets, worker identity, stale/error responses, real PASS/FAIL accounting, credential transport, cleanup and guest isolation without KVM. |
 | `tests/os/rig-adopt-leg.sh` | Dashboard control-route adoption and reversible rig config push after the share leg; `selftest-rig-adopt.sh` checks adoption, API reachability, refusal, unchanged pools, restoration and token non-disclosure without guests. |

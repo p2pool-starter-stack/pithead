@@ -33,6 +33,20 @@
 .update-link {
   order: 1;
 }
+.sidebar .account {
+  display: grid;
+  gap: 0.35rem;
+}
+.sidebar .account-user {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.sidebar .account form,
+.sidebar .account button {
+  width: 100%;
+  margin: 0;
+}
 nav a {
   display: flex;
   align-items: center;

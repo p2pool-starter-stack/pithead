@@ -14,7 +14,7 @@ from mining_dashboard.service import audit_service, control_service
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
-from mining_dashboard.web import fleet_upgrade_views
+from mining_dashboard.web import auth, fleet_upgrade_views
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import diagnostics_views, download_views, sovereign_views
@@ -54,7 +54,11 @@ async def handle_state(request):
     avg_window = canonical_window(request.query.get("avg"))
 
     try:
-        return web.json_response(build_state(data, state_mgr, range_arg, window, avg_window))
+        return web.json_response(
+            auth.decorate_state(
+                request, build_state(data, state_mgr, range_arg, window, avg_window)
+            )
+        )
     except Exception:
         # Log the full error server-side; never leak exception details to the browser.
         logger.exception("Error building dashboard state")
@@ -121,12 +125,6 @@ async def handle_metrics(request):
         logger.exception("Error rendering Prometheus metrics")
         return web.Response(text="Failed to render metrics.", status=500, content_type="text/plain")
 
-
-# --- Dashboard control channel (#33) ---------------------------------------------------------
-# Registered only when DASHBOARD_CONTROL_ENABLED (absent routes 404 when the feature is off).
-# Every mutating POST must carry this custom header: a cross-site header forces a CORS preflight,
-# which the self-only CSP origin never grants (a cheap CSRF guard, same spirit as the CSP below).
-# The actor is Caddy's authenticated X-Auth-User (header_up overwrites any client value).
 
 CONTROL_HEADER = "X-Pithead-Control"
 
@@ -323,7 +321,11 @@ async def handle_worker_detail(request):
     range_arg = request.query.get("range", "all")
     window = parse_window(request.query.get("from"), request.query.get("to"))
     try:
-        return web.json_response(build_worker_detail(name, data, state_mgr, range_arg, window))
+        return web.json_response(
+            auth.decorate_state(
+                request, build_worker_detail(name, data, state_mgr, range_arg, window)
+            )
+        )
     except Exception:
         logger.exception("Error building worker detail")
         return web.json_response({"error": "Failed to build worker detail."}, status=500)
@@ -443,7 +445,7 @@ async def handle_control_result(request):
         raise web.HTTPBadRequest(text="'id' must be a UUID.") from None
     if res is None:
         return web.json_response({"status": "pending"}, status=202)
-    return web.json_response(res)
+    return web.json_response(auth.viewer_result(request, res))
 
 
 # --- Security logs (#349) ---------------------------------------------------------------------
@@ -576,7 +578,8 @@ async def _cancel_bg_tasks(app):
 
 def create_app(state_manager, latest_data_ref, notify=None):
     """Factory to create the web app instance."""
-    app = web.Application(middlewares=[security_headers_middleware])
+    app = web.Application(middlewares=[security_headers_middleware, auth.middleware])
+    auth.setup(app)
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
     app["notify"] = notify

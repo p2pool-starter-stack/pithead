@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import json
 import os
 import sys
@@ -9,12 +8,18 @@ import urllib.request
 
 mode, host = sys.argv[1:]
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, newurl):
+        return None
+
+
+direct_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 GOOD_AUTH = "Basic " + base64.b64encode(b"admin:fixture-password").decode()
 BAD_AUTH = "Basic " + base64.b64encode(b"admin:wrong-password").decode()
 PROBE = "/.pithead-boot-health"
-CAPABILITY = hashlib.sha256(
-    ("pithead-boot-health-v1:" + os.environ["DASHBOARD_AUTH_HASH_B64"]).encode()
-).hexdigest()
+CAPABILITY = os.environ["DASHBOARD_BOOT_PROBE_TOKEN"]
 PORT = 8081 if mode == "proxy" else 8080
 
 
@@ -23,13 +28,13 @@ def require(condition, detail="wire assertion failed"):
         raise AssertionError(detail)
 
 
-def request(path, auth=None, method="GET", headers=None):
+def request(path, auth=None, method="GET", headers=None, follow=True):
     hdrs = {"Host": "panel.example:8080", **(headers or {})}
     if auth:
         hdrs["Authorization"] = auth
     req = urllib.request.Request(f"http://{host}:{PORT}{path}", headers=hdrs, method=method)
     try:
-        response = opener.open(req, timeout=5)
+        response = (opener if follow else direct_opener).open(req, timeout=5)
     except urllib.error.HTTPError as error:
         response = error
     with response:
@@ -61,21 +66,22 @@ if mode == "local":
     else:
         raise AssertionError("real dashboard did not serve through Caddy")
     for _ in range(53):
-        require(request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
+        require(request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 200)
     data = summary(0, False)
-    require(any(e["uri"] == PROBE and e["status"] == 401 for e in data["entries"]), data)
+    require(any(e["uri"] == PROBE and e["status"] == 200 for e in data["entries"]), data)
     require(request("/metrics")[0] == 401)
     require(request("/metrics", BAD_AUTH)[0] == 401)
     status, body = request("/metrics", GOOD_AUTH)
     require(status == 200 and b"pithead_shares_accepted_total" in body)
     for _ in range(2):
-        require(request("/", BAD_AUTH)[0] == 401)
+        require(request("/api/state")[0] == 401)
     summary(4, False)
-    require(request("/", BAD_AUTH)[0] == 401)
+    require(request("/api/state")[0] == 401)
     summary(5, True)
-    # Even local wrong credentials on the exact health path are ordinary failures.
-    require(request(PROBE, BAD_AUTH, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
-    summary(6, True)
+    require(
+        request(PROBE, BAD_AUTH, headers={"X-Pithead-Boot-Probe": CAPABILITY}, follow=False)[0]
+        == 303
+    )
 elif mode in {"external", "proxy"}:
     forged = {
         "Pithead-Probe": "boot-health-v1",
@@ -95,72 +101,46 @@ elif mode in {"external", "proxy"}:
         time.sleep(0.1)
     else:
         raise AssertionError("proxy not ready")
-    # Path, query, method and header controls, from a distinct socket peer.
-    for path, method in [("/", "GET"), (PROBE, "GET"), (PROBE + "?x=1", "GET"), (PROBE, "POST")]:
-        require(request(path, BAD_AUTH, method, forged)[0] == 401)
-    require(request(PROBE, headers=forged)[0] == 401)
+    for path, method in [
+        ("/api/state", "GET"),
+        ("/api/state?x=1", "GET"),
+        ("/api/state", "POST"),
+        ("/metrics", "GET"),
+    ]:
+        require(request(path, method=method, headers=forged)[0] == 401)
+    require(request(PROBE, headers=forged, follow=False)[0] == 303)
     if mode == "external":
-        # Even a test client holding the capability cannot use it from a remote socket.
-        require(request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
+        require(
+            request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY}, follow=False)[0] == 303
+        )
 elif mode == "final":
-    summary(17, True)
+    summary(13, True)
     # Loopback alone is not an exemption, nor is a near-match path/method.
     for path, method in [("/", "GET"), (PROBE + "?x=1", "GET"), (PROBE, "HEAD")]:
         require(
-            request(path, method=method, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401
+            request(
+                path,
+                method=method,
+                headers={"X-Pithead-Boot-Probe": CAPABILITY},
+                follow=False,
+            )[0]
+            == 303
         )
-    summary(20, True)
     for value in [None, "boot-health-v1", CAPABILITY[:-1]]:
         headers = {} if value is None else {"X-Pithead-Boot-Probe": value}
-        require(request(PROBE, headers=headers)[0] == 401)
-    summary(23, True)
-elif mode == "auth-wire":
-    from mining_dashboard.config import config
-    from mining_dashboard.service.audit_service import access_summary
-
+        require(request(PROBE, headers=headers, follow=False)[0] == 303)
+    summary(13, True)
+elif mode == "old-backend":
     for _ in range(60):
         try:
             status, body = request("/", GOOD_AUTH)
-            if status == 200:
+            if status == 404:
                 break
         except (urllib.error.URLError, TimeoutError):
             pass
         time.sleep(0.5)
     else:
-        raise AssertionError("authentication echo upstream not ready")
-    require(json.loads(body)["actor"] == "admin", "authenticated actor was not forwarded")
-    require(
-        request("/no-auth", headers={"X-Auth-User": "spoofed"})[0] == 401,
-        "missing credentials were accepted",
-    )
-    require(request("/wrong-auth", BAD_AUTH)[0] == 401, "wrong credentials were accepted")
-    status, body = request("/actor", GOOD_AUTH, headers={"X-Auth-User": "spoofed"})
-    require(status == 200, "correct credentials were rejected")
-    require(json.loads(body)["actor"] == "admin", "client-supplied actor survived Caddy")
-    config.ACCESS_LOG_PATH = "/access-log/access.log"
-    for _ in range(50):
-        data = access_summary()
-        entries = {entry["uri"]: entry for entry in data["entries"]}
-        if data["available"] and data["failures_24h"] == 2 and "/actor" in entries:
-            break
-        time.sleep(0.1)
-    else:
-        raise AssertionError("real Caddy log did not produce two audit login failures")
-    require(sum(entry["status"] == 401 for entry in data["entries"]) == 2)
-    for uri, status, user in [
-        ("/no-auth", 401, ""),
-        ("/wrong-auth", 401, ""),
-        ("/actor", 200, "admin"),
-    ]:
-        entry = entries[uri]
-        require(entry["status"] == status, "access status contract changed")
-        require(entry["user"] == user, "access username contract changed")
-        require(entry["method"] == "GET", "access method contract changed")
-        require(0 <= time.time() - entry["ts"] < 60, "access timestamp contract changed")
-    require(data["rotate_hint"] is False)
-    require(
-        data["last_failure_ts"] == max(entries[uri]["ts"] for uri in ["/no-auth", "/wrong-auth"])
-    )
+        raise AssertionError("old upstream was not rejected")
 elif mode == "unlocked":
     status, body = request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})
     require(status == 200 and b"<html" in body.lower(), (status, body[:200]))

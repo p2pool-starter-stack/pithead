@@ -52,6 +52,9 @@ make test-mini-stack      # tier-3 docker mini-stack (needs docker)
 make test-integration ARGS="--host user@box --dir pithead --check"   # tier-4 live, non-destructive
 ```
 
+The mini-stack target also checks the real Caddy and dashboard authentication boundary, including
+browser sessions, monitoring credentials, read-only accounts and the readiness fail-closed gate.
+
 Run the shell and appliance selftests as a non-root user on Linux; root bypasses
 permission-denied fixtures, and BSD utilities differ from their GNU counterparts.
 See [development setup](../../CONTRIBUTING.md#dev-environment) for prerequisites.

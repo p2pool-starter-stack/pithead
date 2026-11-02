@@ -314,16 +314,18 @@ firstboot_wizard() {
                 reconcile_appliance_hostname
                 stratum_addr="stratum+$(jq -r 'if .p2pool.stratum_tls == true then "ssl" else "tcp" end' "$candidate")://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$candidate")
+                { set +x; } 2>/dev/null
                 dash_pass=$(jq -r '.dashboard.auth.password // ""' "$candidate")
                 _console "" "Point your miners at this machine:" "    $stratum_addr"
                 # Publish over the setup TLS session and hold provisioning until they confirm
                 # they saved it (or 10 minutes pass — an unattended pre-seeded run must not
                 # hang forever), because the page goes DARK during provisioning and the
                 # credentials must not vanish with it.
-                jq -n --arg u "$dash_user" --arg p "$dash_pass" \
+                printf '%s' "$dash_pass" | jq -Rs --arg u "$dash_user" \
                     --arg d "https://$(hostname).local" --arg s "$stratum_addr" \
                     --argjson miner "$miner_connection" \
-                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner' | write_handoff_card "$card_spool"
+                    '. as $p | {username:$u,password:$p,dashboard:$d,stratum:$s} + $miner' | write_handoff_card "$card_spool"
+                unset dash_pass
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2

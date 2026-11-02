@@ -5,6 +5,7 @@ from mining_dashboard.config.config import (
     HASHRATE_WINDOW_COLUMNS,
     HISTORY_RETENTION_SEC,
 )
+from mining_dashboard.service import auth_sessions
 
 # The append-only telemetry series lives in telemetry_store.py (#1369) — a MIXIN, so StateManager
 # below keeps one DB handle, one lock and one transaction scope. Both retention constants are
@@ -137,6 +138,7 @@ class StorageSchemaMixin:
 
     def _create_tables(self):
         """Creates necessary tables if they don't exist."""
+        auth_sessions.create_schema(self._conn)
         # Per-window hashrate columns (#168) are appended so a fresh DB starts with them; existing
         # DBs get them via _migrate_db. Same source list (_WINDOW_EXTRA_COLUMNS) for both paths.
         extra = "".join(f", {c} REAL DEFAULT 0" for c in _WINDOW_EXTRA_COLUMNS)

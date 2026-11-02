@@ -114,6 +114,17 @@ test("platform fixtures: appliance offers Also mine on this box, DIY never, and 
   assert.match(render(MachinesPage, { state: null }), /Waiting for rig data/);
 });
 
+test("a viewer cannot change machine settings when a stale snapshot still enables control", () => {
+  const out = render(MachinesPage, {
+    state: {
+      ...platforms.appliance,
+      auth: { enabled: true, user: "viewer", role: "viewer" },
+      workers: rigFleet(2),
+    },
+  });
+  assert.doesNotMatch(out, /Also mine on this box/);
+});
+
 test("2, 50 and 100 rig fixtures keep find, sort and columns inside Advanced", () => {
   for (const count of [2, 50, 100]) {
     const out = render(MachinesPage, { state: { ...platforms["diy-login"], workers: rigFleet(count) } });

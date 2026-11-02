@@ -161,6 +161,7 @@ REF="$(cd "$HERE/../../.." && pwd)/config.reference.json"
 MUST_REDACT="monero.wallet_address monero.node_username monero.node_password monero.view_key
 tari.wallet_address tari.view_key tari.spend_public_key p2pool.stratum_password xvb.donor_id
 dashboard.auth.username dashboard.auth.password workers.api_token
+dashboard.auth.metrics_password_hash
 ssh.authorized_key healthchecks.ping_url telegram.bot_token notifications.ntfy.token
 xvb.standby.source tari.explorer_url"
 # Survivors, each for a stated reason — over-redaction is safe for secrets and not for anything
@@ -201,11 +202,10 @@ MUST_SURVIVE="xvb.url workers.api_auth telegram.chat_id"
 # same move unsafe for the bare word `url`. Moved to MUST_REDACT above.
 KNOWN_GAP="notifications.ntfy.url notifications.webhooks[]"
 # Arrays OF OBJECTS: not a gap in redact() but in what an EMPTY value document can say about a
-# schema. Their `.token` and `.api_token` entries are masked by render_masked_config and covered at tier 1
+# schema. Their `.token`, `.api_token` and `.password_hash` entries are masked by render_masked_config and covered at tier 1
 # in tests/stack/test-worker-config.sh; populate them and both names return to the name rule through
 # the screen above. The deprecated dashboard.workers[] twin went with the alias in 2.0.0 (#1832).
-ELEMENT_SHAPE_UNKNOWN="workers.list[]"
-
+ELEMENT_SHAPE_UNKNOWN="workers.list[] dashboard.auth.users[]"
 SENTINEL="S3nt1nelVALUE" # short, alphanumeric: reachable by the NAME rule and by no other
 SCREENED="$(
     python3 - "$REF" "$HERE/../lib.sh" <<'PY'
@@ -216,9 +216,8 @@ import json, re, sys
 # for exactly that reason — it is in redact() and is reachable by no other alternative.
 # `source` is here for xvb.standby.source, which CONTROL_SECRET_PATHS masks and no other
 # alternative reaches — found by cross-checking that list against this one (#1723).
-SCREEN = re.compile(r"(password|passwd|secret|token|login|username|user|key|wallet|address"
+SCREEN = re.compile(r"(password|password_hash|passwd|secret|token|login|username|user|key|wallet|address"
                     r"|seed|mnemonic|credential|urls?|hash_b64|pw_fp|auth|_id|source)$")
-
 
 # An ARRAY is classified on its own account, whatever its name and whether the reference
 # populates it (#1723). Two blind spots meet: an empty list yields no element to screen, and a
@@ -324,7 +323,7 @@ for field in $SCREENED; do
     if in_list "$field" "$ELEMENT_SHAPE_UNKNOWN"; then
         elems="$(printf '%s\n' "$ARRAY_LEN" | awk -v f="$field" '$1 == f { print $2; exit }')"
         if [ "$elems" = "0" ]; then
-            it_warn "NOT MEASURED (#1723): $field is an array of objects and the reference carries 0 elements, read from the schema — its .token and .api_token entries are covered by render_masked_config and by tier 1, not by this filter."
+            it_warn "NOT MEASURED (#1723): $field is an array of objects and the reference carries 0 elements, read from the schema — its sensitive entries are covered by render_masked_config and by populated fixtures, not by this empty reference."
         else
             it_fail "$field is in ELEMENT_SHAPE_UNKNOWN and the reference carries no element" \
                 "the reference carries ${elems:-no measured count} — this bucket asserts nothing BECAUSE there was no element to probe, so reclassify $field against what its element actually holds"
@@ -334,6 +333,8 @@ for field in $SCREENED; do
     assert_contains "$field survives redaction" "$out" "$SENTINEL"
 done
 it_warn "KNOWN GAPS (#1630, #848, #1723): $KNOWN_GAP are values render_masked_config masks that redact() cannot reach — nesting, list position and a name no suffix carries are all invisible to a line-wise filter. Captured bundles are covered by the path-keyed pass in capture_artifacts, not by this filter."
+OUT="$(printf '{"users":[{"name":"owner","role":"admin","password_hash":"%s"}]}\n' "$SENTINEL" | redact)"
+case "$OUT" in *"$SENTINEL"*) it_fail "named dashboard password hashes are redacted" "hash survived: $OUT" ;; *) it_pass "named dashboard password hashes are redacted" ;; esac
 
 # A value containing an escaped quote must be replaced WHOLE. A pattern stopping at the first
 # quote would leave the tail behind, which is the partial-redaction failure this file exists for.

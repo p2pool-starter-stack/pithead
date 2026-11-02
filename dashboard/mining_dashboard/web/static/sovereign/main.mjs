@@ -62,6 +62,7 @@ export function initSovereign({
         url=${win.location.href} onDirtyChange=${onDirtyChange} />`
       : page === "machines"
         ? html`<${MachinesPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
+        readOnly=${state?.auth?.enabled === true && state.auth.role !== "admin"}
         onDirtyChange=${onDirtyChange} />`
         : null);
   const paint = () => {
@@ -106,6 +107,10 @@ export function initSovereign({
       return fetchFn(`/api/state?${query}`, { signal, cache: "no-store" });
     },
     publish: (next) => {
+      if (next.sessionExpired) {
+        win.location.assign("/login");
+        return;
+      }
       if (next.connected) syncHistory.observe(next.snapshot);
       data = next;
       paint();

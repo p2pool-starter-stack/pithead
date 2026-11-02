@@ -331,8 +331,11 @@ not on the quick form. Today that means Monero pruning (the disk budget is curre
 either mode — only asked at all when this machine runs the node), the Healthchecks ping URL, and
 the time zone (detected from the machine unless set). They are still there to change, just not asked outright.
 
-The dashboard login is also the machine's **console login**: sit at the machine, log in as
-`root` with the dashboard password. It is set fresh at every boot and never stored on disk.
+The setup dashboard password is also the machine's **console login**: sit at the machine, log in as
+`root` with that password. It is set fresh at every boot and never stored in the system password file.
+Additional admin and viewer accounts open only the dashboard; they do not become console accounts.
+Keep `dashboard.auth.password` set if you need password-based console access. A configuration with
+only named accounts has no console password; the settings USB recovery path remains available.
 
 **Already know exactly what you want?** Open **Advanced** at the bottom. It shows the complete
 configuration — every key, with its default filled in — and it *is* what the machine will run:
@@ -623,8 +626,10 @@ setup form.
 ## Starting over: the two resets
 
 There are two ways to reset the machine, and the difference between them is days of your
-time. Both run from a shell — log in at the console as `root` with the dashboard password
+time. Both run from a shell — log in at the console as `root` with the legacy dashboard password
 (the appliance has no uninstall; these resets are its equivalents).
+Named dashboard accounts cannot log into the console. If only named accounts are configured,
+use [a settings USB stick](#changing-settings-with-a-usb-stick) to set a legacy recovery password first.
 
 **Config reset** starts over from a blank form; this machine's identity is kept. The synced
 chain, your wallet, the Tor onion keys and your dashboard history all stay on the machine, so the wizard opens on a box that is still fully synced — you re-enter
@@ -721,6 +726,10 @@ and power the machine off and on already has full authority over it — a shell 
 proves the same thing today — so this channel makes that authority usable instead of assuming
 you have a monitor and a working password. It is the recovery path when the dashboard password
 is lost.
+
+Setting `dashboard.auth.password` through the stick restores the legacy dashboard and console
+login while preserving named accounts. If its username conflicts with a named account, recovery
+chooses `recovery`, or the first unused `recovery-N`, and shows the changed username on the console.
 
 Prepare the stick with a normal FAT32 partition and a `pithead-config.json` at its root — copy
 `config.json` from a machine you already set up, or write just the settings you want to change

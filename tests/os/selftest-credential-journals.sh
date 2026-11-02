@@ -44,6 +44,8 @@ echo 'selftest-credential-journals: PASS (clean, six leaks, two errors, two empt
 # invocation must fail even when all setup/authentication rows still succeed.
 (
     OS_RUN_SUITE=1 SCRIPT_DIR="$HERE" SERIAL="$fixture_dir/serial" HARNESS_WALLET=fixture-wallet
+    fixture_user="fixture-${RANDOM}${RANDOM}"
+    fixture_password=$(printf '%s' "$RANDOM$RANDOM$RANDOM$RANDOM" | sha256sum | cut -c1-32)
     printf 'pit-FIXTUR\n' >"$SERIAL"
     # shellcheck source=tests/os/phases/setup-defaults.sh
     source "$HERE/phases/setup-defaults.sh"
@@ -67,10 +69,28 @@ echo 'selftest-credential-journals: PASS (clean, six leaks, two errors, two empt
         *'/api/wizard-state'*)
             printf '%s\n' '{"new_machine":true,"disk_budget":{"available_bytes":1,"local_need_bytes":2},"config":{"tari":{"mode":"off","clearnet_initial_sync":false},"xvb":{"enabled":false},"dashboard":{"tari_required":false,"host":"pithead"},"local_miner":{"enabled":true},"monero":{"clearnet_initial_sync":false}},"auth_mode":"auto"}'
             ;;
-        *'/api/handoff') printf '{"password":"%032d"}\n' 0 ;;
+        *'/api/handoff') jq -nc --arg username "$fixture_user" --arg password "$fixture_password" '{username: $username, password: $password}' ;;
         *'/submit'* | *'/handoff-ack'*) echo 200 ;;
-        *'admin:'*) echo 200 ;;
-        *'-w'*) echo 401 ;;
+        *'/login'*)
+            local arg body cookie="" previous=""
+            body=$(cat)
+            [ "$body" = "username=$fixture_user&password=$fixture_password" ] || return 1
+            for arg in "$@"; do
+                [ "$previous" != -c ] || cookie=$arg
+                previous=$arg
+            done
+            [ -n "$cookie" ] || return 1
+            printf session >"$cookie"
+            echo 303
+            ;;
+        *'-w'*)
+            local arg cookie="" previous=""
+            for arg in "$@"; do
+                [ "$previous" != -b ] || cookie=$arg
+                previous=$arg
+            done
+            if [ -n "$cookie" ] && [ "$(cat "$cookie" 2>/dev/null)" = session ]; then echo 200; else echo 303; fi
+            ;;
         *) return 0 ;;
         esac
     }

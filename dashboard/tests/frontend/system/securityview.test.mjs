@@ -76,6 +76,7 @@ test("401 burst: rotate nudge names the password and onion rotation commands", (
   });
   assert.match(out, /7 failed logins/);
   assert.match(out, /Repeated failed logins/);
+  assert.match(out, /Configuration › Dashboard accounts/);
   assert.match(out, /rotate-dashboard-onion/);
   assert.match(out, /dashboard.auth.password/);
   // The 401 row is styled as a warning.

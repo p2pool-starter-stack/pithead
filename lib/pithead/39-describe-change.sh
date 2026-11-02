@@ -230,10 +230,14 @@ describe_change() {
     DASHBOARD_AUTH_USER)
         msg="Dashboard login username: $old → $new."
         ;;
-    DASHBOARD_AUTH_PW_FP)
+    DASHBOARD_AUTH_PW_FP | DASHBOARD_BOOT_PROBE_TOKEN)
         # Internal fingerprint — always co-changes with DASHBOARD_AUTH_HASH_B64, which already
         # carries the user-facing message. Emit no message so the preview shows one line, not two.
         msg=""
+        ;;
+    DASHBOARD_AUTH_CONFIG_FP)
+        flag=DEST
+        msg="Dashboard users, roles, or metrics credential changed — active sessions for changed accounts are revoked and the dashboard container is recreated."
         ;;
     DASHBOARD_CONTROL_ENABLED)
         if [ "$new" == "true" ]; then

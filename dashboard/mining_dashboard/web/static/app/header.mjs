@@ -1,6 +1,7 @@
 import { UpgradeControl } from "../config/configview.mjs";
 import { OnionUrl } from "../network/onionurl.mjs";
 import { OsUpdateControl } from "../system/osupdate.mjs";
+import { Account } from "./account.mjs";
 import { html } from "./preact.mjs";
 import { Badges, cVar, HighUsage, ThemeSwitcher, UpdateBadge, VersionBadge } from "./ui.mjs";
 
@@ -62,6 +63,7 @@ function Header({ state, theme, onTheme }) {
             </div>
         </div>
         <div class="text-right">
+            <${Account} auth=${state.auth} />
             <div class="text-muted text-xs">Last Update: ${state.last_update}</div>
             <div class=${"text-xs mt-1 " + cVar(hr.p2p_variant)}>P2Pool (routed): ${hr.p2p_1h} (1h) / ${hr.p2p_24h} (24h)</div>
             ${

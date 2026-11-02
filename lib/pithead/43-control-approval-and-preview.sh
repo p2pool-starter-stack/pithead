@@ -47,7 +47,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     local unknown
     if ! unknown=$(jq -rn --argjson carried "$carried_ssh" --slurpfile ref "$REFERENCE_CONFIG" --slurpfile cfg "$staged" '
         def norm: [.[] | strings] | join(".");
-        ([$cfg[0] | paths | select(($carried != 1 or .[0] != "ssh") and .[0:2] != ["workers", "list"]) | norm]
+        ([$cfg[0] | paths | select(($carried != 1 or .[0] != "ssh") and .[0:2] != ["workers", "list"] and .[0:3] != ["dashboard", "auth", "users"]) | norm]
          - [$ref[0] | paths | norm])
         | unique | join(", ")' 2>/dev/null); then
         printf 'could not validate the staged config against the schema (%s) — refusing to commit' "$REFERENCE_CONFIG"
@@ -129,7 +129,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     } | sort -u | tr '\n' ' ' | sed 's/ $//'
     return 0
 }
-
 control_preview() { # <request-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
     local staged="$cdir/staged/$id.json" errf="$cdir/staged/.$id.err" out result
@@ -172,7 +171,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
-    # Restore masked secrets from live config host-side (#440); unset secrets become "".
     # Per-worker token sentinels (#172) get the same swap, but out of the fixed-path walk: they
     # live in the variable-length descriptor array at workers.list[] (#506) — so restore each from
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
@@ -183,7 +181,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     # MUST be: 30's masker still masks that shape after 2.0.0 removed the alias (#1832, see the note
     # there), and mask and restore are one mechanism. Keeping the mask without the restore would let
     # a sentinel be committed as a literal token.
-    # The LIVE lookup below therefore reads BOTH shapes, and that is the whole point: worker_list is
+    # The LIVE lookup below reads both shapes because worker_list is
     # workers.list[] alone since #1832, so resolving legacy sentinels against it would find nothing
     # and blank every per-rig token to "" — a restore branch that cannot restore. workers.list[]
     # wins a name present in both (it is the canonical key, and both-populated-and-different is
@@ -192,6 +190,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         (reduce (($live[0] | worker_list) + (($live[0].dashboard // {}) | .workers // []) | reverse | .[]) as $w ({};
             if ($w | type) == "object" and ($w.name | type) == "string"
             then .[$w.name] = {token: ($w.token // ""), api_token: ($w.api_token // "")} else . end)) as $livetok
+        | (reduce (($live[0].dashboard.auth.users // []) | reverse | .[]) as $u ({};
+            if ($u | type) == "object" and ($u.name | type) == "string"
+            then .[$u.name] = ($u.password_hash // "") else . end)) as $liveauth
         | if ((.config | has("ssh") | not) and ($live[0] | has("ssh"))) then .config.ssh = $live[0].ssh else . end
         | reduce $paths[] as $p (.config;
             (try getpath($p) catch null) as $v
@@ -213,6 +214,12 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               if (.value | type) == "object" and .value.__secret__ == true
               then ($live[0].notifications.webhooks[.key] // "")
               else .value end))
+          else . end
+        | if (.dashboard.auth.users | type) == "array"
+          then .dashboard.auth.users |= map(
+              if (.password_hash | type) == "object" and .password_hash.__secret__ == true
+              then .password_hash = (if (.name | type) == "string" then ($liveauth[.name] // "") else "" end)
+              else . end)
           else . end
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(
@@ -282,6 +289,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               any($secret_paths[]; . == $p)
               or ($p[0:2] == ["workers","list"] and ($p[-1] == "token" or $p[-1] == "api_token"))
               or ($p[0:2] == ["dashboard","workers"] and ($p[-1] == "token" or $p[-1] == "api_token"))
+              or ($p[0:3] == ["dashboard","auth","users"] and $p[-1] == "password_hash")
               or $p[0:2] == ["notifications","webhooks"];
             ($ref[0] * $live[0]) as $live_full
             | ($ref[0] * $staged[0]) as $staged_full

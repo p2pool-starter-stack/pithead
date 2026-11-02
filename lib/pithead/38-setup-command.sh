@@ -34,6 +34,7 @@ setup_confirmed() {
     provision_tor
     DEPLOYMENT_COMPLETED=true
     render_env
+    render_dashboard_auth "$CONTROL_DIR" || error "Could not render the dashboard authentication file."
     inject_service_configs
     optimize_kernel
     generate_caddyfile

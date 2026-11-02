@@ -1,0 +1,109 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 280px;
+  color: var(--text);
+  background:
+    radial-gradient(
+      circle at 10% 10%,
+      color-mix(in srgb, var(--accent) 16%, transparent),
+      transparent 32rem
+    ),
+    var(--bg);
+}
+.login-shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+.login-card {
+  width: min(100%, 28rem);
+  padding: clamp(1.5rem, 6vw, 2.5rem);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: 0.5rem;
+  background: var(--card);
+  box-shadow: 0 1.5rem 5rem #0002;
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.2rem;
+  font-weight: 850;
+}
+.login-brand img {
+  width: 3rem;
+  height: 3rem;
+}
+.login-kicker {
+  margin: 2rem 0 0.35rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.login-card h1 {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 3rem);
+}
+.login-copy,
+.login-note {
+  color: var(--muted);
+}
+.login-error {
+  padding: 0.75rem;
+  border-left: 3px solid var(--bad);
+  background: color-mix(in srgb, var(--bad) 10%, var(--card));
+}
+.login-card form {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+.login-card label {
+  margin-top: 0.4rem;
+  font-weight: 700;
+}
+.login-card input,
+.login-card button {
+  min-height: 3rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  color: var(--text);
+  background: var(--card);
+  font: inherit;
+}
+.login-card button {
+  margin-top: 0.75rem;
+  border-color: var(--accent);
+  color: white;
+  background: var(--accent);
+  cursor: pointer;
+  font-weight: 800;
+}
+.login-card :focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+.login-note {
+  margin: 1.5rem 0 0;
+  font-size: 0.85rem;
+}
+@media (max-width: 420px) {
+  .login-shell {
+    place-items: stretch;
+    padding: 0;
+  }
+  .login-card {
+    min-height: 100dvh;
+    border-width: 4px 0 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

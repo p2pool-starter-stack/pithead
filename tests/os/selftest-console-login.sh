@@ -75,6 +75,7 @@ resolve_dashboard_host() { :; }
 reconcile_appliance_hostname() { :; }
 prepare_directories() { :; }
 render_env() { :; }
+render_dashboard_auth() { :; }
 provision_tor() { :; }
 inject_service_configs() { :; }
 optimize_kernel() { :; }
@@ -87,6 +88,7 @@ update_current_symlink() { :; }
 announce_dashboard_url() { :; }
 prompt_start_stack() { :; }
 provision_local_miner() { :; }
+CONTROL_DIR="$work/control"
 ensure_etc_overlay() { printf 'etc\n' >>"$work/trace"; }
 log() { :; }
 sudo() {

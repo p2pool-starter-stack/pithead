@@ -371,6 +371,7 @@ stack_restore() {
     DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) render_env
     generate_caddyfile
     render_masked_config "$CONTROL_DIR"
+    render_dashboard_auth "$CONTROL_DIR" || error "Could not render the dashboard authentication file."
     log "Fixing Tor data ownership (100:101)..."
     sudo chown -R 100:101 "$TOR_DATA_DIR"
     ensure_owner "$MONERO_DIR" "$APP_UID" "$APP_GID"

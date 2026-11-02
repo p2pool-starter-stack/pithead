@@ -6,16 +6,21 @@ import { clone, renderApp, UI } from '../harness.mjs';
 
 // --- Worker Inspect (#185) ---------------------------------------------------------------
 
-test('worker names are inspect buttons only when the control channel is on (#185)', () => {
-    // Control off (base fixture): the name is plain text, no inspect affordance.
+test('worker names are plain text when authentication and the control channel are off (#185)', () => {
     const off = renderApp();
     assert.doesNotMatch(off, /worker-name-link/);
-    // Control on: each worker name becomes an inspect button.
     const s = clone();
     s.control_enabled = true;
     const on = renderApp({ state: s });
     assert.match(on, /worker-name-link/);
     assert.match(on, />rig-alpha</);
+});
+
+test('viewer worker names remain inspect buttons when the control channel is off', () => {
+    const state = clone();
+    state.auth = { enabled: true, user: 'viewer', role: 'viewer' };
+    state.control_enabled = false;
+    assert.match(renderApp({ state }), /worker-name-link/);
 });
 
 test('WorkerInspect dialog renders for the selected worker (#185, native <dialog> since #518)', () => {

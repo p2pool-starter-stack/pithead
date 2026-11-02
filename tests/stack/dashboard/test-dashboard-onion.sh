@@ -26,7 +26,7 @@ echo "== unit: generate_caddyfile onion vhost (#343) =="
 auth_hb64="$(printf '%s' '$2y$14$UNITTESTbcrypthashvalue000000000000000000000000000000' | openssl base64 -A)" # re-derivation (#1330), see header
 # With the dashboard onion enabled, generate_caddyfile appends a SECOND site bound to the bridge
 # gateway (NETWORK_PREFIX.1) — reachable only from the tor container, never the LAN — serving plain
-# HTTP (Tor is the transport) and carrying the SAME basic_auth block as the LAN site.
+# HTTP (Tor is the transport) and delegating login to the dashboard.
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_onion="$(
     cd "$SANDBOX" && source "$STACK" 2>/dev/null
@@ -36,7 +36,9 @@ caddy_onion="$(
     cat Caddyfile
 )"
 assert_contains "onion vhost bound to the bridge gateway" "$caddy_onion" "http://172.28.0.1 {"
-assert_contains "onion vhost carries basic_auth" "$caddy_onion" "basic_auth"
+assert_not_contains "onion vhost has no browser basic auth" "$caddy_onion" "basic_auth"
+assert_contains "onion vhost strips spoofed auth user" "$caddy_onion" "header_up -X-Auth-User"
+assert_contains "onion vhost fails closed until the backend loads auth" "$caddy_onion" "uri /api/auth/ready"
 # The onion site (everything after the gateway address) must not get a TLS directive.
 onion_site="${caddy_onion#*172.28.0.1}"
 case "$onion_site" in
@@ -80,7 +82,7 @@ case "$https_site" in
 *"tls internal"*) ok "onion HTTPS vhost uses a self-signed cert (tls internal)" ;;
 *) bad "onion HTTPS vhost uses tls internal" "no 'tls internal' on the https onion site" ;;
 esac
-assert_contains "onion HTTPS vhost carries the same basic_auth (#343)" "$https_site" "basic_auth"
+assert_not_contains "onion HTTPS vhost has no browser basic auth (#343)" "$https_site" "basic_auth"
 # Not yet provisioned (placeholder address) -> HTTP onion vhost only, no HTTPS one (a later apply adds it).
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_onion_ph="$(
@@ -198,6 +200,7 @@ printf '{"dashboard":{"onion":{"enabled":true}}}' >"$upg_autopw_dir/config.json"
     parse_and_validate_config() { :; }
     load_preserved_state() { :; }
     ensure_directories() { :; }
+    render_dashboard_auth() { :; }
     resolve_dashboard_host() { :; }
     render_env() { :; }
     # NB: mv is left REAL — ensure_onion_password uses it to commit the generated password. The only
@@ -261,6 +264,7 @@ upg_capture() { # <onion_enabled> <current_onion> -> "captured" when provision r
     parse_and_validate_config() { :; }
     load_preserved_state() { :; }
     ensure_directories() { :; }
+    render_dashboard_auth() { :; }
     resolve_dashboard_host() { :; }
     render_env() { :; }
     mv() { :; }
@@ -278,11 +282,11 @@ upg_capture() { # <onion_enabled> <current_onion> -> "captured" when provision r
     }
     export DASHBOARD_ONION_ENABLED="$1"
     export DASHBOARD_ONION="$2"
+    export CONTROL_DIR="$PWD/data/control"
     stack_upgrade
 }
 assert_contains "upgrade captures the onion address when enabled + uncaptured (#356)" "$(upg_capture true '')" "captured"
 assert_not_contains "upgrade skips capture when the onion is disabled (#356)" "$(upg_capture false '')" "captured"
-
 # #546: the upgrade-path capture must ALSO regenerate the Caddyfile — the render preamble ran while
 # the address was still the placeholder, so a capture without a re-render leaves the HTTPS onion
 # vhost missing forever (the next apply no-ops on an unchanged config). Count generate_caddyfile
@@ -297,7 +301,6 @@ case "$upg_regen_off" in
 1) ok "upgrade without onion renders the Caddyfile once (#546)" ;;
 *) bad "upgrade without onion renders the Caddyfile once (#546)" "generate_caddyfile ran $upg_regen_off time(s), want 1" ;;
 esac
-
 echo "== black-box: apply captures + renders the HTTPS onion vhost in the SAME run (#546) =="
 AOC="$SANDBOX/apply-onion-capture"
 mkdir -p "$AOC"
@@ -313,6 +316,7 @@ caddy_apply_capture=$(
     parse_and_validate_config() { :; }
     load_preserved_state() { :; }
     ensure_directories() { :; }
+    render_dashboard_auth() { :; }
     resolve_dashboard_host() { :; }
     render_env() { :; }
     mv() { :; }
@@ -331,6 +335,7 @@ caddy_apply_capture=$(
     # The shadowed capture: the address is unknown until the recreated tor container publishes it
     # post-up, exactly like the real provision_dashboard_onion.
     provision_dashboard_onion() { DASHBOARD_ONION="captured1234abcd.onion"; }
+    export CONTROL_DIR="$PWD/data/control"
     P2POOL_ONION=p2pa.onion HOST_IP=box.lan DASHBOARD_SECURE=true DASHBOARD_AUTH_USER=admin \
         DASHBOARD_AUTH_HASH_B64="$auth_hb64" NETWORK_PREFIX=172.28.0 DASHBOARD_ONION_ENABLED=true \
         DASHBOARD_ONION=placeholder apply -y >/dev/null 2>&1
@@ -338,7 +343,6 @@ caddy_apply_capture=$(
 )
 assert_contains "apply: HTTPS onion vhost appears in the SAME apply run (#546)" "$caddy_apply_capture" "https://captured1234abcd.onion {"
 assert_contains "apply: HTTP onion vhost (bridge gateway) still present" "$caddy_apply_capture" "http://172.28.0.1 {"
-
 echo "== black-box: rotate-dashboard-onion regenerates the Caddyfile (#546) =="
 # Before the fix, rotate restarted caddy WITHOUT regenerating the Caddyfile, so caddy kept serving
 # the retired onion's HTTPS vhost and the new address had none. Seed a Caddyfile as if a PRIOR
