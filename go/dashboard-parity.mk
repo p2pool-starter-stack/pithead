@@ -163,3 +163,11 @@ test-go-dashboard-config-meta-parity: go-dashboard-build
 		tests/client/test_rig_config_meta.py tests/service/workers/test_worker_change_audit.py \
 		tests/service/workers/test_worker_config_surrogates.py tests/service/test_worker_revision.py \
 		"$(CURDIR)/tests/go-parity/dashboard_config_meta_compare.py" "$(CURDIR)/tests/go-parity/dashboard_config_meta_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_config_meta_controls.py"
+
+.PHONY: test-go-dashboard-revision-store-parity
+test-go-dashboard-revision-store-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_revision_store_plugin \
+		tests/service/test_worker_revision.py tests/service/test_mixin_atomicity.py \
+		tests/service/workers/test_worker_change_audit.py tests/service/workers/test_worker_config_surrogates.py \
+		tests/service/test_storage_schema.py tests/web/test_worker_config_drift.py \
+		"$(CURDIR)/tests/go-parity/dashboard_revision_store_compare.py" "$(CURDIR)/tests/go-parity/dashboard_revision_store_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_revision_store_controls.py"

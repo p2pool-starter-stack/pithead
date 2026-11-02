@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"unicode/utf8"
 )
 
 type request struct {
@@ -36,10 +37,16 @@ func Run(input io.Reader, output io.Writer) error {
 	encoder := json.NewEncoder(output)
 	for scanner.Scan() {
 		var command request
+		var result any
+		var err error
+		if !utf8.Valid(scanner.Bytes()) {
+			err = &parameterError{"ProgrammingError", "request is not valid UTF-8"}
+		}
 		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
 		decoder.UseNumber()
-		var result any
-		err := decoder.Decode(&command)
+		if err == nil {
+			err = decoder.Decode(&command)
+		}
 		if err == nil {
 			result, err = s.run(command)
 		}
@@ -120,6 +127,14 @@ func (s *session) run(command request) (any, error) {
 		return nil, nil
 	case "execute":
 		return s.execute(ctx, command.SQL, command.Args)
+	case "worker-revision-prepare":
+		return s.workerRevisionPrepare(ctx, command.Args)
+	case "worker-revision-write":
+		return s.workerRevisionWrite(ctx, command.Args)
+	case "worker-revision-prune":
+		return s.workerRevisionPrune(ctx, command.Args)
+	case "worker-revision-drift":
+		return s.workerRevisionDrift(ctx, command.Args)
 	case "executemany":
 		batch := command.ArgsList
 		if batch == nil {

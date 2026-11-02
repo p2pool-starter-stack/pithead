@@ -79,6 +79,7 @@ def install():
         go_network,
         go_polling,
         go_preserve,
+        go_revision_store,
         go_rigforge,
         go_state,
     )
@@ -87,6 +88,7 @@ def install():
     go_documents.install()
     go_audit_cap.install()
     go_config_meta.install()
+    go_revision_store.install()
     go_polling.install()
     go_audit_query.install()
     go_access_log.install()

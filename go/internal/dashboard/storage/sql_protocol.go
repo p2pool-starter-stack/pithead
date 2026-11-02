@@ -151,6 +151,12 @@ func wireValue(value any) any {
 		return result
 	case sqlResult:
 		return map[string]any{"columns": value.Columns, "rows": wireValue(value.Rows), "rowcount": value.Rowcount, "lastrowid": value.Lastrowid}
+	case map[string]any:
+		result := make(map[string]any, len(value))
+		for key, item := range value {
+			result[key] = wireValue(item)
+		}
+		return result
 	}
 	return value
 }

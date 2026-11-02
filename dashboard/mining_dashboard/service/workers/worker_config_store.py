@@ -31,6 +31,7 @@ from typing import Any
 # feeds the SAME editor prefill that one defends (#1543).
 from mining_dashboard.client.xmrig_client import strip_credentials
 from mining_dashboard.config.config import HISTORY_RETENTION_SEC
+from mining_dashboard.service.workers import worker_revision_store
 
 # The full terminal vocabulary the rig's control mirror can report (#1009) — applied/rejected/
 # rolled_back/failed from a control-apply, plus noop (already on target)/throttled (retry-later)
@@ -116,6 +117,10 @@ def _next_drift_from(
         # current one. INSERT OR REPLACE rewrites every column, so carrying it is not a no-op.
         return row["drift_from"]
     return row["revision"] if row["last_change_id"] == last_change_id else None
+
+
+def _resolve_next_drift(row, revision, last_change_id):
+    return _next_drift_from(row, revision, last_change_id)
 
 
 class WorkerConfigStoreMixin:
@@ -347,24 +352,15 @@ class WorkerConfigStoreMixin:
                 if not self._conn:
                     return None
                 cursor = self._conn.cursor()
-                cursor.execute(
-                    "SELECT revision, last_change_id, drift_from FROM worker_config_revision "
-                    "WHERE worker = ?",
-                    (worker,),
+                row, drift_from = worker_revision_store.prepare(
+                    cursor, worker, revision, last_change_id, _resolve_next_drift
                 )
-                row = cursor.fetchone()
-                drift_from = _next_drift_from(row, revision, last_change_id)
                 now = time.time()
-                self._conn.execute(
-                    "INSERT OR REPLACE INTO worker_config_revision "
-                    "(worker, revision, last_change_id, ts, drift_from) VALUES (?, ?, ?, ?, ?)",
-                    (worker, revision, last_change_id, now, drift_from),
+                worker_revision_store.write(
+                    self._conn, worker, revision, last_change_id, now, drift_from
                 )
                 if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
-                    self._conn.execute(
-                        "DELETE FROM worker_config_revision WHERE ts < ?",
-                        (now - HISTORY_RETENTION_SEC,),
-                    )
+                    worker_revision_store.prune(self._conn, now - HISTORY_RETENTION_SEC)
                 self._conn.commit()
         except sqlite3.Error as e:
             self._db_error("Worker Revision Write Error", e)
@@ -419,15 +415,11 @@ class WorkerConfigStoreMixin:
                 if not self._conn:
                     return None
                 cursor = self._conn.cursor()
-                cursor.execute(
-                    "SELECT revision, drift_from FROM worker_config_revision WHERE worker = ?",
-                    (worker,),
-                )
-                row = cursor.fetchone()
+                row = worker_revision_store.drift(cursor, worker, revision)
         except sqlite3.Error as e:
             self._db_error("Worker Revision Read Error", e)
             return None
-        if row is None or not row["drift_from"] or row["revision"] != revision:
+        if not worker_revision_store.visible(row, revision):
             return None
         return {"worker": worker, "before": row["drift_from"], "after": revision}
 

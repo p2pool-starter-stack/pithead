@@ -84,4 +84,5 @@ jobs:
           test-go-dashboard-control-outcomes-parity
           test-go-dashboard-audit-cap-parity
           test-go-dashboard-config-meta-parity
+          test-go-dashboard-revision-store-parity
           test-go-shipping-parity
