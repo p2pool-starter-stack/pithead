@@ -130,3 +130,9 @@ test-go-dashboard-network-parity: go-dashboard-build
 	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_network_plugin \
 		tests/service/network/test_egress.py tests/service/network/test_topology_graph.py tests/web/views/test_views.py \
 		"$(CURDIR)/tests/go-parity/dashboard_network_compare.py" "$(CURDIR)/tests/go-parity/dashboard_network_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_network_controls.py"
+
+.PHONY: test-go-dashboard-egress-status-parity
+test-go-dashboard-egress-status-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_egress_status_plugin \
+		tests/service/network/test_egress_status.py \
+		"$(CURDIR)/tests/go-parity/dashboard_egress_status_compare.py" "$(CURDIR)/tests/go-parity/dashboard_egress_status_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_egress_status_controls.py"

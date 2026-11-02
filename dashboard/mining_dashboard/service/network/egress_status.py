@@ -43,6 +43,10 @@ def egress_firewall_state(path=None, now=None):
             status = json.load(f)
     except (OSError, ValueError, RecursionError):  # json recurses per nesting level
         return UNVERIFIED
+    return _firewall_status_loaded(status, now)
+
+
+def _firewall_status_loaded(status, now):
     rc = status.get("rc") if isinstance(status, dict) else None
     checked_at = status.get("checked_at") if isinstance(status, dict) else None
     if type(rc) is not int or type(checked_at) not in (int, float):
@@ -50,7 +54,11 @@ def egress_firewall_state(path=None, now=None):
     if not -_MAX_EPOCH_S <= checked_at <= _MAX_EPOCH_S:  # also False for NaN
         return UNVERIFIED
     now = time.time() if now is None else now
-    if abs(now - checked_at) > 3 * CHECK_INTERVAL_S:
+    return _firewall_status_result(rc, abs(now - checked_at))
+
+
+def _firewall_status_result(rc, age):
+    if age > 3 * CHECK_INTERVAL_S:
         return UNVERIFIED
     if rc == 0:
         return ENFORCED
@@ -70,6 +78,10 @@ def with_firewall_state(build, *, firewall, state=None, **knobs):
     if not firewall:
         return build(firewall=False, **knobs)
     state = state or egress_firewall_state()
+    return _with_firewall_state_resolved(build, state, **knobs)
+
+
+def _with_firewall_state_resolved(build, state, **knobs):
     result = build(firewall=state == ENFORCED, **knobs)
     summary = result["summary"]
     summary["firewall_state"] = state

@@ -47,6 +47,24 @@ type nodeRequest struct {
 	LocalMinerEnabled *bool   `json:"local_miner_enabled"`
 }
 
+type statusValidityRequest struct {
+	Operation string       `json:"operation"`
+	RC        numericValue `json:"rc"`
+	CheckedAt numericValue `json:"checked_at"`
+}
+
+type statusResultRequest struct {
+	Operation string       `json:"operation"`
+	RC        numericValue `json:"rc"`
+	Age       numericValue `json:"age"`
+}
+
+type firewallPlanRequest struct {
+	Operation  string  `json:"operation"`
+	Configured *bool   `json:"configured"`
+	State      *string `json:"state"`
+}
+
 type operationRequest struct {
 	Operation string `json:"operation"`
 }
@@ -137,6 +155,27 @@ func build(raw []byte) (any, error) {
 			}
 		}
 		return buildNodePlan(*request.Nodes, *request.MoneroRoute, *request.TariRoute, *request.TariEnabled, *request.LocalMinerEnabled), nil
+	case "firewall-status-valid":
+		var request statusValidityRequest
+		if err := decodeComplete(raw, &request, true); err != nil {
+			return nil, err
+		}
+		return statusFieldsValid(request.RC, request.CheckedAt)
+	case "firewall-status-result":
+		var request statusResultRequest
+		if err := decodeComplete(raw, &request, true); err != nil {
+			return nil, err
+		}
+		return firewallState(request.RC, request.Age)
+	case "firewall-plan":
+		var request firewallPlanRequest
+		if err := decodeComplete(raw, &request, true); err != nil {
+			return nil, err
+		}
+		if request.Configured == nil || request.State == nil {
+			return nil, errors.New("missing firewall plan input")
+		}
+		return buildFirewallPlan(*request.Configured, *request.State)
 	default:
 		return nil, fmt.Errorf("unsupported network operation: %s", operation.Operation)
 	}
