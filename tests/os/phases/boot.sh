@@ -13,12 +13,7 @@ phase_boot() {
     : >"$SERIAL"
     # UEFI (OVMF), serial to a file we tail, import the raw appliance disk as-is.
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
-    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
-        --osinfo debian12 \
-        --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
-        --import --disk "path=$DISK,format=raw,bus=virtio" \
-        --network network=default,model=virtio --graphics none \
-        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 ||
+    vm_create "$DISK" "$SERIAL" no >/dev/null 2>&1 ||
         {
             bad "virt-install failed to define the VM"
             return
@@ -202,12 +197,7 @@ _secure_boot_guest_leg() {
     : >"$SERIAL"
     kvm_preflight || exit 1
     local defined=0 booted=0 verdict
-    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
-        --osinfo debian12 \
-        --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes \
-        --import --disk "path=$DISK,format=raw,bus=virtio" \
-        --network network=default,model=virtio --graphics none \
-        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 && defined=1
+    vm_create "$DISK" "$SERIAL" yes >/dev/null 2>&1 && defined=1
     if [ "$defined" = 1 ] && wait_serial "login:|Debian GNU/Linux|Pithead setup wizard" 180; then
         booted=1
     fi
@@ -225,11 +215,6 @@ _vm_boot_disk() {
     qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
-    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
-        --osinfo debian12 \
-        --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
-        --import --disk "path=$DISK,format=raw,bus=virtio" \
-        --network network=default,model=virtio --graphics none \
-        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || return 1
+    vm_create "$DISK" "$SERIAL" no >/dev/null 2>&1 || return 1
     _wait_dhcp_ip 120
 }
