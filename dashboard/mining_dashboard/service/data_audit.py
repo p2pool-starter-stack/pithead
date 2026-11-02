@@ -59,6 +59,25 @@ def _unexplained_config_keys(changed, explained):
     ]
 
 
+def _control_audit_rows_with_entries(entries):
+    for entry in reversed(entries):
+        if not entry.get("id"):
+            continue
+        yield {
+            "id": entry["id"],
+            "ts": entry.get("ts", ""),
+            "source": "control",
+            "actor": entry.get("actor", ""),
+            "action": entry.get("action", ""),
+            "status": entry.get("status", ""),
+            "keys": entry.get("keys", ""),
+        }
+
+
+def _control_audit_rows(entries):
+    return _control_audit_rows_with_entries(entries)
+
+
 class DataAuditMixin:
     async def _record_audit_event(self, source, actor, action, status, keys, event_id=None):
         """Write one out-of-band audit row (#530), through the SAME sanitizer #33's own audit
@@ -160,19 +179,8 @@ class DataAuditMixin:
         # The log reader returns newest first, but preview and terminal commit share an id. Replay
         # oldest first so the terminal outcome is the row left in durable history, not the preview
         # that happened to be mirrored first.
-        for e in reversed(audit_service.recent_changes()):
-            if not e.get("id"):
-                continue
-            await asyncio.to_thread(
-                self.state_manager.add_audit_event,
-                id=e["id"],
-                ts=e.get("ts", ""),
-                source="control",
-                actor=e.get("actor", ""),
-                action=e.get("action", ""),
-                status=e.get("status", ""),
-                keys=e.get("keys", ""),
-            )
+        for fields in _control_audit_rows(audit_service.recent_changes()):
+            await asyncio.to_thread(self.state_manager.add_audit_event, **fields)
 
     def _rig_edit_within_cap(self, worker, now):
         """Per-worker fixed-window cap on NEW rig-edit audit rows (#724). Counts this rig-edit

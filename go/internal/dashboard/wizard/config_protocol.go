@@ -93,6 +93,10 @@ func handleConfigRequest(request ConfigRequest) (any, error) {
 		return auditDiff(request.Config)
 	case "audit-unexplained":
 		return auditUnexplained(request.Config)
+	case "audit-recent":
+		return auditRecent(request.Config)
+	case "audit-mirror":
+		return auditMirror(request.Config)
 	default:
 		return nil, ValidationError{fmt.Sprintf("unsupported wizard config operation: %s", request.Operation)}
 	}

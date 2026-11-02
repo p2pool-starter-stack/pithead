@@ -152,6 +152,61 @@ def _unexplained_config_keys(changed, explained):
     return paths
 
 
+_AUDIT_FIELDS = ("ts", "id", "actor", "action", "status", "keys")
+_MIRROR_FIELDS = ("id", "ts", "source", "actor", "action", "status", "keys")
+
+
+def _audit_log_rows(operation, entries, **arguments):
+    from mining_dashboard.go_wizard_config import _call, _value
+
+    result, identities = _call("audit-" + operation, config={"entries": entries, **arguments})
+    try:
+        rows = _value(result, identities)
+    except (KeyError, TypeError, ValueError, RuntimeError) as error:
+        raise RuntimeError("native audit log returned invalid rows") from error
+    fields = _AUDIT_FIELDS if operation == "recent" else _MIRROR_FIELDS
+    if not isinstance(rows, list) or any(
+        not isinstance(row, dict)
+        or tuple(row) != fields
+        or any(not isinstance(value, str) for value in row.values())
+        or operation == "mirror"
+        and (row["source"] != "control" or not row["id"])
+        for row in rows
+    ):
+        raise RuntimeError("native audit log returned invalid rows")
+    if operation == "mirror" and len(rows) > len(entries):
+        raise RuntimeError("native audit log returned too many rows")
+    return rows
+
+
+def _audit_text(value):
+    return value if isinstance(value, str) else "" if value is None else str(value)
+
+
+def recent_audit_changes(limit=50):
+    from mining_dashboard.service import audit_service
+
+    raw = audit_service._tail_json_lines(audit_service.config.CONTROL_AUDIT_LOG)
+    if raw is None:
+        return []
+    entries = [{field: _audit_text(entry.get(field)) for field in _AUDIT_FIELDS} for entry in raw]
+    return _audit_log_rows("recent", entries, limit=limit)
+
+
+def _audit_mirror_with_reader(entries):
+    from mining_dashboard.service import data_audit
+
+    return data_audit._control_audit_rows_with_entries(entries)
+
+
+def control_audit_rows(entries):
+    from mining_dashboard.service import audit_service
+
+    if audit_service.recent_changes is not recent_audit_changes:
+        return _audit_mirror_with_reader(entries)
+    return _audit_log_rows("mirror", entries)
+
+
 def telemetry_plan(self, phase, args):
     return _run("telemetry_" + phase, args)
 
@@ -237,7 +292,14 @@ async def probe(self, client, workers):
 
 
 def install():
-    from mining_dashboard.service import data_audit, data_helpers, data_service, worker_probe
+    from mining_dashboard import go_editor
+    from mining_dashboard.service import (
+        audit_service,
+        data_audit,
+        data_helpers,
+        data_service,
+        worker_probe,
+    )
 
     for name in HELPERS:
         REFERENCE_FUNCTIONS.setdefault(name, getattr(data_helpers, name))
@@ -255,3 +317,9 @@ def install():
     data_helpers._diff_config_keys = _diff_config_keys
     data_audit._diff_config_keys = _diff_config_keys
     data_audit._unexplained_config_keys = _unexplained_config_keys
+    reader = REFERENCE_FUNCTIONS.setdefault("recent_changes", audit_service.recent_changes)
+    REFERENCE_FUNCTIONS.setdefault("_control_audit_rows", data_audit._control_audit_rows)
+    if go_editor.PROVIDERS.get("audit_provider") is reader:
+        go_editor.PROVIDERS["audit_provider"] = recent_audit_changes
+    audit_service.recent_changes = recent_audit_changes
+    data_audit._control_audit_rows = control_audit_rows
