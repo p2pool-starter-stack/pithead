@@ -59,3 +59,4 @@ jobs:
           test-go-dashboard-wizard-policy-parity
           test-go-dashboard-wizard-config-parity
           test-go-dashboard-wizard-terminal-parity
+          test-go-dashboard-wizard-submission-parity

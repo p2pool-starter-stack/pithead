@@ -1,0 +1,48 @@
+package wizard
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
+)
+
+func RunSubmission(input io.Reader, output io.Writer) error {
+	scanner := bufio.NewScanner(input)
+	scanner.Buffer(make([]byte, 4096), 64<<20)
+	for scanner.Scan() {
+		var request SubmissionRequest
+		response := Response{}
+		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder.UseNumber()
+		if err := decoder.Decode(&request); err != nil {
+			response.Error = wireError(err)
+		} else {
+			result, err := HandleSubmission(request)
+			if err != nil {
+				response.Error = submissionProtocolError(err)
+			} else if raw, marshalErr := json.Marshal(result); marshalErr != nil {
+				response.Error = wireError(marshalErr)
+			} else {
+				response = Response{OK: true, Value: raw}
+			}
+		}
+		if err := writeResponse(output, response); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
+}
+
+func submissionProtocolError(err error) *Error {
+	var validation ValidationError
+	var key formKeyError
+	if errors.As(err, &validation) {
+		return &Error{Kind: "ValueError", Message: err.Error()}
+	}
+	if errors.As(err, &key) {
+		return &Error{Kind: "KeyError", Message: err.Error()}
+	}
+	return wireError(err)
+}
