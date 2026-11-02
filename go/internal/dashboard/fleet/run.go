@@ -23,6 +23,8 @@ func Build(request Request) (any, error) {
 		return pollParseLegacyDictWorker(request)
 	case "poll_parse_rigforge":
 		return pollParseRigforge(request)
+	case "config_meta_policy":
+		return buildConfigMetaPolicy(request)
 	case "poll_normalize_proxy_workers":
 		return pollNormalizeProxyWorkers(request)
 	case "poll_parse_proxy_summary":

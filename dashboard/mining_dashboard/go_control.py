@@ -70,6 +70,7 @@ def install():
         go_access_log,
         go_audit_cap,
         go_audit_query,
+        go_config_meta,
         go_control_http,
         go_control_outcomes,
         go_documents,
@@ -85,6 +86,7 @@ def install():
 
     go_documents.install()
     go_audit_cap.install()
+    go_config_meta.install()
     go_polling.install()
     go_audit_query.install()
     go_access_log.install()

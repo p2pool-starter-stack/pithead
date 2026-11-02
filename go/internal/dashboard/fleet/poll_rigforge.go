@@ -287,7 +287,23 @@ func rigforgeTimestampMatches(value string) bool {
 		return false
 	}
 	for _, index := range []int{0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18} {
-		if !unicode.IsDigit(match[index]) {
+		if !rigforgePython311Digit(match[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func rigforgePython311Digit(value rune) bool {
+	if !unicode.IsDigit(value) {
+		return false
+	}
+	for _, interval := range [][2]rune{
+		{0x10D40, 0x10D49}, {0x116D0, 0x116E3}, {0x11BF0, 0x11BF9}, {0x11DE0, 0x11DE9},
+		{0x11F50, 0x11F59}, {0x16130, 0x16139}, {0x16D70, 0x16D79}, {0x1CCF0, 0x1CCF9},
+		{0x1E4F0, 0x1E4F9}, {0x1E5F1, 0x1E5FA},
+	} {
+		if interval[0] <= value && value <= interval[1] {
 			return false
 		}
 	}
