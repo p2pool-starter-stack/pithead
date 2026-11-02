@@ -39,6 +39,8 @@ func main() {
 			err = wizard.RunConfig(os.Stdin, os.Stdout)
 		case "wizard-values":
 			err = wizard.RunValues(os.Stdin, os.Stdout)
+		case "documents":
+			err = wizard.RunDocuments(os.Stdin, os.Stdout)
 		case "wizard-terminal":
 			err = wizard.RunTerminal(os.Stdin, os.Stdout)
 		case "wizard-submission":

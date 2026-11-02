@@ -66,8 +66,10 @@ def result(rid) -> dict | None:
 
 
 def install():
+    from mining_dashboard import go_documents
     from mining_dashboard.service import control_service, request_spool
 
+    go_documents.install()
     request_spool.write = write
     for name in (
         "submit",

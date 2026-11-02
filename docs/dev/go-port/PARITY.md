@@ -197,6 +197,7 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Wizard rig and restore submission | Native validation, ordered publication and archive-placement plans; Python multipart/auth/lock transport and action execution through native atomic writers; typed plans below | 334 unchanged focused tests with replaced original bodies fatal, three new A/B comparisons and two source mutations; results below |
 | Wizard typed config submission and preserved-disk shortcut | Native routing, keep/auth/install gates, probe-verdict/publication plans and warnings; Python parsing, runtime providers, preparation sequencing and probes remain | 334 unchanged focused tests with original typed handler fatal, ten new A/B comparisons and two source mutations; results below |
 | Wizard defaults, explicit config, inventory and change metadata | Native disk selection, answer merge, materialization, row policy, deduplication and spool deletion; Python lexical normalization, providers and callbacks | 334 unchanged focused tests with all six original bodies fatal, five new A/B cases and two source mutations; [results](results-wizard-values.md) |
+| Dashboard raw configuration documents | Native duplicates, placeholders, paths/diagnostics, alias placement and host-error-record refusal; Python standard-library JSON decoder and exception transport | 530 unchanged focused tests through fatal reference guards plus five new A/B cases and two source mutations; [results](results-documents.md) |
 | Wizard token gate, form assembly and install validation | Native Go policy and ordered mutation plans; Python HTTP/cookie transport, input normalization and defaults table | 322 unchanged wizard/defaults tests with original policy bodies fatal; byte/order comparisons, Unicode vector and two source mutations |
 | Appliance host scripts and container entrypoints | Application ports excluded, owner ruling 2026-11-01 | Reference scripts retained |
 | Go shipping docs, release bundle and image builds | Planned after CLI/backend ports; reference fallback required | Not implemented or validated |
@@ -337,24 +338,24 @@ production uses Go syscalls. Auth/form policy is added by the next slice.
 
 ## Wizard policy, config and terminal actions
 
-Earlier [auth/form](results-wizard-policy.md),
-[config/recovery](results-wizard-config.md),
-[terminal action](results-wizard-terminal.md) and
-[rig/restore](results-wizard-submission.md) reports preserve their native
-boundaries, original-suite A/B passes, mutation controls and coverage results.
-The [typed submission results](results-wizard-typed.md) identify native routing,
-preserved-disk/auth/install gates, probe-verdict/publication plans and warnings.
-Its 334 originals plus twelve new cases pass with the original typed body fatal.
+Earlier [auth/form](results-wizard-policy.md), [config/recovery](results-wizard-config.md),
+[terminal action](results-wizard-terminal.md), [rig/restore](results-wizard-submission.md)
+and [typed submission](results-wizard-typed.md) reports preserve native boundaries,
+original-suite A/B passes, mutation controls and separately graded coverage.
+The [defaults and metadata results](results-wizard-values.md) preserve disk
+defaults, materialization, inventory, deduplication and spool-deletion proofs:
+334 originals plus seven new cases, six fatal reference bodies and two mutations.
 
-The [defaults and metadata results](results-wizard-values.md) cover disk-aware
-Tari defaults, explicit config materialization, inventory rows, change
-deduplication and spool deletion. Frozen/current references pass 334 original
-tests; Go passes those plus seven new cases (341 total), with six original bodies
-fatal and two source mutations. Python retains runtime providers, lexical
-normalization, preparation sequencing, probes and callback execution. Production
-selection and shipping remain pending; full and coverage results are in that report.
-Full A/B runs each pass 3719 tests; isolated patch gates fail at 38% / 85%.
-Combined A/B patch coverage passes at 92%; the new bridge measures 81/84 lines.
+The [raw-document results](results-documents.md) add native duplicate/placeholder
+checks, escaped paths/diagnostics, alias placement and host-error-record refusal.
+Frozen/current references pass 530 originals; Go runs the same originals plus
+seven new cases with seven original functions/methods fatal and two source mutations.
+The Python standard-library JSON decoder retains syntax/number behavior; runtime
+providers, preparation sequencing, probes and callback execution remain Python.
+Production selection and shipping remain pending; full and coverage results are
+recorded in that report.
+Final full A/B runs each pass 3719 tests; isolated patch gates fail at 36% / 86%.
+Combined A/B patch coverage passes at 93%; the new bridge measures 80/84 lines.
 
 ## Unavailable and known host constraints
 

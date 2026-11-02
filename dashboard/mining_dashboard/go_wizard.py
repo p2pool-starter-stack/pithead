@@ -170,3 +170,6 @@ def install(server=None):
     from mining_dashboard import go_wizard_values
 
     go_wizard_values.install(server)
+    from mining_dashboard import go_documents
+
+    go_documents.install()
