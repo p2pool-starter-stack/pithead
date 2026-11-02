@@ -40,6 +40,7 @@ def _record_worker_result(state_mgr, worker, changes, res, change_type="apply"):
 
 
 async def handle_worker_detail(request):
+    from mining_dashboard import go_worker_detail
     from mining_dashboard.web import server
 
     name = request.query.get("name", "")
@@ -50,7 +51,19 @@ async def handle_worker_detail(request):
     range_arg = request.query.get("range", "all")
     window = server.parse_window(request.query.get("from"), request.query.get("to"))
     try:
-        result = server.build_worker_detail(name, data, state_mgr, range_arg, window)
+        if server.build_worker_detail is go_worker_detail.build_worker_detail:
+            frozen, now = go_worker_detail.capture(name, data)
+            result = await server.asyncio.to_thread(
+                go_worker_detail.build_captured,
+                name,
+                frozen,
+                state_mgr,
+                range_arg,
+                window,
+                now=now,
+            )
+        else:
+            result = server.build_worker_detail(name, data, state_mgr, range_arg, window)
         return _reply(_plan("complete", route="worker-detail", value=result))
     except _NativeFailure:
         raise
@@ -156,6 +169,9 @@ async def handle_worker_upgrade(request):
 
 
 def install(server):
+    from mining_dashboard import go_worker_detail
+
+    go_worker_detail.install()
     for name in (
         "handle_worker_detail",
         "handle_worker_apply",

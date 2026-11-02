@@ -204,10 +204,12 @@ func formatHashrate(value any) string {
 	var n float64
 	var err error
 	switch value := value.(type) {
+	case float64:
+		n = value
 	case json.Number:
 		n, err = value.Float64()
 	case string:
-		n, err = strconv.ParseFloat(value, 64)
+		n, err = parsePythonFloat(value)
 	case bool:
 		if value {
 			n = 1

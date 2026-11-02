@@ -38,6 +38,8 @@ def call(helper, payload):
     marker = secrets.token_hex(16)
     while marker in raw:
         marker = secrets.token_hex(16)
+    if helper == "fleet" and payload.get("envelope") is True:
+        payload = {**payload, "nonfinite_marker": marker}
     encoded = json.dumps(_pack(payload, marker), allow_nan=False)
     env = os.environ.copy()
     env["PITHEAD_DASHBOARD_HELPER"] = helper

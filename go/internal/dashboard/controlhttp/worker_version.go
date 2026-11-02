@@ -114,3 +114,5 @@ func pythonDecimalValue(value rune) (int, bool) {
 	}
 	return 0, false
 }
+
+func PythonDecimalValue(value rune) (int, bool) { return pythonDecimalValue(value) }

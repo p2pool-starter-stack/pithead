@@ -7,10 +7,12 @@ import (
 )
 
 type Request struct {
-	Operation string            `json:"operation"`
-	Args      []json.RawMessage `json:"args"`
-	Now       float64           `json:"now"`
-	Zone      string            `json:"zone"`
+	Operation       string            `json:"operation"`
+	Args            []json.RawMessage `json:"args"`
+	Now             float64           `json:"now"`
+	Zone            string            `json:"zone"`
+	Envelope        bool              `json:"envelope,omitempty"`
+	NonfiniteMarker string            `json:"nonfinite_marker,omitempty"`
 }
 
 func Build(request Request) (any, error) {
@@ -31,6 +33,16 @@ func Build(request Request) (any, error) {
 		return buildNum(request.Args)
 	case "_fmt":
 		return buildFmt(request.Args)
+	case "config_drift":
+		return buildConfigDrift(request)
+	case "_has_unsettled_apply":
+		return buildHasUnsettledApply(request)
+	case "config_origin":
+		return buildConfigOrigin(request)
+	case "build_worker_hashrate_history":
+		return buildWorkerHashrateHistory(request)
+	case "build_worker_detail":
+		return buildWorkerDetail(request)
 	default:
 		return nil, errors.New("unsupported fleet operation")
 	}
@@ -53,6 +65,12 @@ func Run(input io.Reader, output io.Writer) error {
 	result, err := Build(request)
 	if err != nil {
 		return err
+	}
+	if request.Envelope {
+		result = map[string]any{"ok": true, "value": result}
+	}
+	if request.NonfiniteMarker != "" {
+		result = packDetailValue(result, request.NonfiniteMarker)
 	}
 	return json.NewEncoder(output).Encode(result)
 }

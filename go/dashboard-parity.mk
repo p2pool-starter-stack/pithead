@@ -59,3 +59,7 @@ test-go-dashboard-earnings-parity: go-dashboard-build
 .PHONY: test-go-dashboard-forecast-parity
 test-go-dashboard-forecast-parity: go-dashboard-build
 	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_forecast_plugin tests/web/views/test_xvb_views_xvb*.py tests/web/test_server_state_api.py tests/web/views/test_views.py "$(CURDIR)/tests/go-parity/dashboard_forecast_compare.py" "$(CURDIR)/tests/go-parity/dashboard_forecast_guards.py" "$(CURDIR)/tests/go-parity/dashboard_forecast_bridge.py"
+
+.PHONY: test-go-dashboard-worker-detail-parity
+test-go-dashboard-worker-detail-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_worker_detail_plugin tests/client/test_rig_config_meta.py tests/web/test_server_worker_inspect.py tests/web/test_worker_detail*.py tests/web/test_worker_config_drift.py tests/web/test_worker_agent_freshness.py tests/web/views/test_views.py "$(CURDIR)/tests/go-parity/dashboard_worker_detail_compare.py" "$(CURDIR)/tests/go-parity/dashboard_worker_detail_guards.py" "$(CURDIR)/tests/go-parity/dashboard_worker_detail_bridge.py" "$(CURDIR)/tests/go-parity/dashboard_worker_detail_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_worker_detail_numeric.py"
