@@ -260,10 +260,10 @@ assert_eq "all four legs report an unjudgeable boot as such" \
 # Jobs 220 and 129: A1's console held not one byte after the cut, and a discarded `virsh start`
 # error could not be told from a brick. Legs A and B stop on a failed start; A, B and D name the
 # domain state on a BRICKED row.
-assert_eq "legs A and B stop when virsh start fails after the cut" \
-    "$(grep -cF 'start_out=$(virsh start "$VM" 2>&1) || {' "$ROOT/tests/os/phases/fault.sh")" "2"
+assert_eq "legs A and B stop when VM start fails after the cut" \
+    "$(grep -cF 'start_out=$(vm_start 2>&1) || {' "$ROOT/tests/os/phases/fault.sh")" "2"
 assert_eq "every power-cut BRICKED row names the domain state" \
-    "$(grep -cF -- '— domain: $(virsh domstate "$VM" --reason' "$ROOT/tests/os/phases/fault.sh")" "3"
+    "$(grep -cF -- '— domain: $(vm_state --reason' "$ROOT/tests/os/phases/fault.sh")" "3"
 # #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
 # Mutation run: drop the copy -> no .failed file.
 rm -f "$FBV/no-boot.failed"
@@ -279,6 +279,9 @@ assert_contains "a console that cannot be kept is named in the verdict" "$verdic
 # Mutation run: return after one destroy -> the "third try" row reads 1, not 0.
 pcut() { # <tries until the domain is off, 0 = never> -> "<rc> <destroy calls> <output>"
     (
+        # shellcheck source=tests/os/kvm-preflight.sh
+        source "$ROOT/tests/os/kvm-preflight.sh"
+        VM=fixture
         want="$1"
         echo 0 >"$FBV/destroys" # a file: fault_power_cut calls virsh inside $(...)
         virsh() {
@@ -295,7 +298,7 @@ pcut() { # <tries until the domain is off, 0 = never> -> "<rc> <destroy calls> <
             esac
         }
         sleep() { :; }
-        out=$(fault_power_cut vm)
+        out=$(fault_power_cut)
         rc=$?
         printf '%s %s %s' "$rc" "$(cat "$FBV/destroys")" "$out"
     )
@@ -305,7 +308,7 @@ assert_eq "a domain that takes three destroys is waited for" "$(pcut 3)" "0 3 "
 assert_eq "a domain that never goes off fails the cut with virsh's word" "$(pcut 0)" \
     "1 6 error: Failed to terminate process: Device or resource busy"
 assert_eq "all three power-cut legs cut through fault_power_cut and stop when it fails" \
-    "$(grep -cF 'verdict=$(fault_power_cut "$VM") || {' "$ROOT/tests/os/phases/fault.sh")" "3"
+    "$(grep -cF 'verdict=$(fault_power_cut) || {' "$ROOT/tests/os/phases/fault.sh")" "3"
 unset -f pcut
 unset -f fault_power_cut fault_serial_cut fault_serial_mark fault_serial_since
 unset -f fault_boot_verdict
