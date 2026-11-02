@@ -81,13 +81,21 @@ def _patches(reply, count, keys):
 
 
 def _merge_direct_stats(workers, results, active_pool_port):
+    from mining_dashboard import go_rigforge
     from mining_dashboard.service import data_helpers
 
     workers, results = list(workers), list(results)
     count = min(len(workers), len(results))
-    rigforge = [data_helpers.parse_rigforge(row) if row else None for row in results[:count]]
+    if data_helpers.parse_rigforge is go_rigforge.parse_rigforge:
+        from mining_dashboard.client import rigforge_freshness
+
+        operation = "merge_rigforge_stats"
+        rigforge = [rigforge_freshness.time.time() if row else None for row in results[:count]]
+    else:
+        operation = "merge_direct_stats"
+        rigforge = [data_helpers.parse_rigforge(row) if row else None for row in results[:count]]
     patches = _patches(
-        _run("merge_direct_stats", [workers, results, active_pool_port, rigforge]),
+        _run(operation, [workers, results, active_pool_port, rigforge]),
         count,
         {"api_ok", "adopted", "rigforge", "uptime", "h10", "h60", "h15", "active_pool"},
     )

@@ -71,3 +71,14 @@ test-go-dashboard-polling-parity: go-dashboard-build
 .PHONY: test-go-dashboard-assembly-parity
 test-go-dashboard-assembly-parity: go-dashboard-build
 	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_assembly_plugin tests/web/views/test_*.py tests/web/test_server_state_api.py "$(CURDIR)/tests/go-parity/dashboard_assembly_compare.py" "$(CURDIR)/tests/go-parity/dashboard_assembly_guards.py" "$(CURDIR)/tests/go-parity/dashboard_assembly_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_history_concurrent.py"
+
+.PHONY: test-go-dashboard-rigforge-parity
+test-go-dashboard-rigforge-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_rigforge_plugin \
+		tests/client/test_xmrig_client.py::test_parse_rigforge_full_block tests/client/test_rigforge_config.py::TestRigWritableConfig \
+		tests/client/test_rigforge_config.py::test_parse_rigforge_absent_is_none tests/client/test_rigforge_config.py::test_parse_rigforge_miner_down_has_no_xmrig_keys tests/client/test_rigforge_config.py::test_parse_rigforge_all_null_fields \
+		tests/client/test_rig_config_meta.py::test_parse_rigforge_carries_the_block_through tests/client/test_rig_config_meta.py::test_a_rig_without_the_block_carries_none tests/client/test_rigforge_freshness.py \
+		tests/service/test_data_helpers.py::TestMergeDirectStats::test_rigforge_block_carried_onto_worker tests/service/workers/test_worker_refresh.py::TestRefreshWorkerAfterUpgrade tests/service/workers/test_worker_refresh.py::test_main_poll_cannot_overwrite_newer_targeted_report \
+		"$(CURDIR)/tests/integration/fakes/test_contract.py::test_worker_auth_none_open_api_reads_and_parses" "$(CURDIR)/tests/integration/fakes/test_contract.py::test_worker_miner_down_body_parses_as_up_but_miner_down" \
+		"$(CURDIR)/tests/integration/fakes/test_contract.py::test_worker_config_prefill_parses_over_the_wire" "$(CURDIR)/tests/integration/fakes/test_contract.py::test_worker_config_provenance_parses_over_the_wire" "$(CURDIR)/tests/integration/fakes/test_contract.py::test_a_rig_mid_change_or_fresh_reconciles_nothing" \
+		"$(CURDIR)/tests/go-parity/dashboard_polling_compare.py::test_direct_stats_keeps_python_rigforge_parse" "$(CURDIR)/tests/go-parity/dashboard_rigforge_compare.py" "$(CURDIR)/tests/go-parity/dashboard_rigforge_guards.py" "$(CURDIR)/tests/go-parity/dashboard_rigforge_runtime.py"

@@ -71,4 +71,5 @@ jobs:
           test-go-dashboard-worker-detail-parity
           test-go-dashboard-polling-parity
           test-go-dashboard-assembly-parity
+          test-go-dashboard-rigforge-parity
           test-go-shipping-parity

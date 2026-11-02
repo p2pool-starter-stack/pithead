@@ -66,11 +66,12 @@ def result(rid) -> dict | None:
 
 
 def install():
-    from mining_dashboard import go_control_http, go_documents, go_polling, go_state
+    from mining_dashboard import go_control_http, go_documents, go_polling, go_rigforge, go_state
     from mining_dashboard.service import control_service, request_spool
 
     go_documents.install()
     go_polling.install()
+    go_rigforge.install()
     go_state.install()
     go_control_http.install()
     request_spool.write = write

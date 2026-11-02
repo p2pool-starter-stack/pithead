@@ -203,6 +203,18 @@ func optionalObject(parent map[string]any, key string) (map[string]any, error) {
 }
 
 func feedAge(value any, now float64) (float64, bool) {
+	generated, ok := feedGeneratedUnix(value)
+	if !ok {
+		return 0, false
+	}
+	age := now - float64(generated)
+	if age < -60 {
+		return 0, false
+	}
+	return mathRoundEvenMaximum(age), true
+}
+
+func feedGeneratedUnix(value any) (int64, bool) {
 	stamp, ok := value.(string)
 	if !ok {
 		return 0, false
@@ -215,11 +227,7 @@ func feedAge(value any, now float64) (float64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	age := now - float64(generated.Unix())
-	if age < -60 {
-		return 0, false
-	}
-	return mathRoundEvenMaximum(age), true
+	return generated.Unix(), true
 }
 
 func normalizeUTCStamp(value string) (string, bool) {

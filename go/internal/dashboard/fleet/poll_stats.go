@@ -69,6 +69,10 @@ func pollMergeDirectStats(request Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return mergeDirectStats(values)
+}
+
+func mergeDirectStats(values []any) (any, error) {
 	workers, err := array(values[0])
 	if err != nil {
 		return nil, err

@@ -21,6 +21,8 @@ func Build(request Request) (any, error) {
 		return pollParseProxyListWorker(request)
 	case "poll_parse_legacy_dict_worker":
 		return pollParseLegacyDictWorker(request)
+	case "poll_parse_rigforge":
+		return pollParseRigforge(request)
 	case "poll_normalize_proxy_workers":
 		return pollNormalizeProxyWorkers(request)
 	case "poll_parse_proxy_summary":
@@ -29,6 +31,8 @@ func Build(request Request) (any, error) {
 		return pollMergeProxySummary(request)
 	case "poll_merge_direct_stats":
 		return pollMergeDirectStats(request)
+	case "poll_merge_rigforge_stats":
+		return pollMergeRigforgeStats(request)
 	case "poll_aggregate_hashrate":
 		return pollAggregateHashrate(request)
 	case "poll_aggregate_window_hashrates":

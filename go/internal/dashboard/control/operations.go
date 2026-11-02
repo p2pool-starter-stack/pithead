@@ -28,6 +28,11 @@ var workerWritable = map[string]struct{}{
 	"watchdog_interval_min": {}, "max_temp_c": {},
 }
 
+func WorkerWritableKey(key string) bool {
+	_, ok := workerWritable[key]
+	return ok
+}
+
 type pair [2]any
 
 func submit(command Request) (any, error) {

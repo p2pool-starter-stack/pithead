@@ -276,6 +276,14 @@ func parsePythonFloat(value string) (float64, error) {
 }
 
 func stripCredentials(value any, depth int) any {
+	return walkCredentials(value, depth, false)
+}
+
+func maskCredentials(value any, depth int) any {
+	return walkCredentials(value, depth, true)
+}
+
+func walkCredentials(value any, depth int, mask bool) any {
 	if depth > 6 {
 		return nil
 	}
@@ -283,15 +291,23 @@ func stripCredentials(value any, depth int) any {
 	case map[string]any:
 		result := make(map[string]any, len(value))
 		for key, item := range value {
-			if key != "pass" && key != "tls-fingerprint" {
-				result[key] = stripCredentials(item, depth+1)
+			if key == "pass" || key == "tls-fingerprint" {
+				if mask {
+					if truthy(item) {
+						result[key] = map[string]any{"__secret__": true}
+					} else {
+						result[key] = item
+					}
+				}
+				continue
 			}
+			result[key] = walkCredentials(item, depth+1, mask)
 		}
 		return result
 	case []any:
 		result := make([]any, len(value))
 		for index, item := range value {
-			result[index] = stripCredentials(item, depth+1)
+			result[index] = walkCredentials(item, depth+1, mask)
 		}
 		return result
 	default:
