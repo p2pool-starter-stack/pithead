@@ -69,6 +69,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
+        post_op_begin() { [ -z "${POST_OP_TRACE_OUT:-}" ] || echo post-op-begin >>"$POST_OP_TRACE_OUT"; }
+        post_op_invariants() { [ -z "${POST_OP_TRACE_OUT:-}" ] || echo "post-op:$1" >>"$POST_OP_TRACE_OUT"; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
         lifecycle_pool_start() { printf main; }
@@ -229,6 +231,11 @@ assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)
 LIFECYCLE_OUT="$(mktemp)"
 LIFECYCLE_TRACE_OUT="$(mktemp)"
 LIFECYCLE_UP_LOG="$(mktemp)"
+POST_OP_TRACE_OUT="$(mktemp)"
+POST_OP_TRACE_OUT="$POST_OP_TRACE_OUT" drive_restore yes >/dev/null
+assert_eq "lifecycle baselines before each step and checks user-visible health after it (#3402)" "$(cat "$POST_OP_TRACE_OUT")" $'post-op-begin\npost-op:after restart\npost-op-begin\npost-op:after restore'
+rm -f "$POST_OP_TRACE_OUT"
+unset POST_OP_TRACE_OUT
 SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null || it_fail "missing-image diagnostic fixture executes"
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
 assert_contains "a failed missing-image up captures Tor's first unhealthy state (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"

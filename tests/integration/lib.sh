@@ -8,6 +8,7 @@
 # Target model: every command runs *on the box* — either over SSH or, with --local, directly.
 source "${BASH_SOURCE[0]%/*}/lib/reset-restore-web.sh"
 source "${BASH_SOURCE[0]%/*}/lib/readiness-churn.sh"
+source "${BASH_SOURCE[0]%/*}/lib/post-op-invariants.sh"
 # shellcheck source=tests/integration/lib/parent-lock.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
 source "${BASH_SOURCE[0]%/*}/lib/remote-endpoints.sh"

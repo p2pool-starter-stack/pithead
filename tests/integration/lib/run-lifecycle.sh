@@ -19,12 +19,14 @@ run_lifecycle() {
     prove_wallet_supersession
     prove_wallet_recovery || return 1
     lifecycle_gate_sample before-restart
+    post_op_begin
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
     lifecycle_gate_sample after-restart
+    post_op_invariants "after restart"
     run_connection_announcements || return 1
     local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before
     cur_pool="$(lifecycle_pool_start)" || {
@@ -117,6 +119,7 @@ run_lifecycle() {
     run_tari_background_sync || return 1
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_step "backup → restore round-trip…"
+    post_op_begin
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
@@ -138,6 +141,7 @@ run_lifecycle() {
                 pithead up >/dev/null 2>&1; then
                 if wait_status_ok 240; then
                     it_pass "status OK after restore"
+                    post_op_invariants "after restore"
                 else
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
