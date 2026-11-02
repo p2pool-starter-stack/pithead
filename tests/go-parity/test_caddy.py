@@ -26,6 +26,8 @@ class CaddyParityTests(unittest.TestCase):
     def environment(self, implementation, case, binary=None, extra_env=None):
         env = {key: value for key, value in os.environ.items() if not key.startswith("PITHEAD_")}
         env.pop("BASH_ENV", None)
+        env.pop("_PITHEAD_GO_HYBRID", None)
+        env.pop("_pithead_go_hybrid_binary", None)
         env.update(
             CADDY_PARITY_IMPL=implementation,
             PITHEAD_GO_BINARY=str(binary or GO_BINARY),
@@ -263,7 +265,7 @@ class CaddyParityTests(unittest.TestCase):
         )
         self.assertFalse(poison_log.exists())
 
-    def test_marker_enables_native_helper(self):
+    def test_marker_does_not_override_public_reference_selection(self):
         spy_log = self.directory / "marker.log"
         spy = self.make_spy(
             "marker-spy",
@@ -272,13 +274,39 @@ class CaddyParityTests(unittest.TestCase):
             '>>"$CADDY_SPY_LOG"\n'
             'exit "$rc"\n',
         )
-        baseline = self.invoke("bash", "marker-baseline", {})
+        for mode in ("", "bash", "python"):
+            with self.subTest(mode=mode or "unset"):
+                baseline = self.invoke(mode, f"marker-baseline-{mode}", {})
+                selected = self.invoke(
+                    mode,
+                    f"marker-{mode}",
+                    {},
+                    marker=spy,
+                    extra_env={
+                        "CADDY_SPY_LOG": str(spy_log),
+                        "CADDY_REAL_GO": str(GO_BINARY),
+                    },
+                )
+                self.assertEqual(selected, baseline)
+        self.assertFalse(spy_log.exists())
+
+    def test_marker_enables_native_helper(self):
+        spy_log = self.directory / "hybrid-marker.log"
+        spy = self.make_spy(
+            "hybrid-marker-spy",
+            'if "$CADDY_REAL_GO" "$@"; then rc=0; else rc=$?; fi\n'
+            'printf "%s:%s:%s\\n" "${PITHEAD_GO_HELPER:-}" "${1:-}" "$rc" '
+            '>>"$CADDY_SPY_LOG"\n'
+            'exit "$rc"\n',
+        )
+        baseline = self.invoke("bash", "hybrid-marker-baseline", {})
         selected = self.invoke(
             "bash",
-            "marker",
+            "hybrid-marker",
             {},
             marker=spy,
             extra_env={
+                "_PITHEAD_GO_HYBRID": "1",
                 "CADDY_SPY_LOG": str(spy_log),
                 "CADDY_REAL_GO": str(GO_BINARY),
             },

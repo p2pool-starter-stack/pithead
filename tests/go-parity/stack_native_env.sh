@@ -113,9 +113,11 @@ _stack_native_debug() {
     source[[:space:]]*) ;;
     *) return 0 ;;
     esac
-    [ "${STACK_NATIVE_FRAGMENT+x}" != x ] || return 0
     _stack_native_resolve_source "$command" "$here" "$root" "$@"
     [ -n "$_STACK_NATIVE_RESOLVED" ] || return 0
+    if [ "${STACK_NATIVE_FRAGMENT+x}" = x ] && [ "$_STACK_NATIVE_RESOLVED" != lib.sh ]; then
+        return 0
+    fi
     _STACK_NATIVE_ACTIVE=1
     _STACK_NATIVE_ACTIVE_FRAGMENT="$_STACK_NATIVE_RESOLVED"
     _STACK_NATIVE_HAD_FRAGMENT=0

@@ -1,6 +1,6 @@
 # Independent review follow-up
 
-This round addresses G9, G1, G4, G5, G6 and G10 from the operator's 2026-11-01
+The historical record below addresses G9, G1, G4, G5, G6 and G10 from the operator's 2026-11-01
 19:45Z review summary. The reference suites remain the oracle. Their only edit
 is the explicitly requested shfmt indentation fix in the branch-added
 `tests/go-parity/config_defaults_reference.sh`; `git diff -w` confirms no other
@@ -9,7 +9,7 @@ existing. It was introduced on this branch and is now fixed.
 
 ## Implementation and ownership
 
-The new reusable `.github/workflows/go-port.yml` has a 25-minute limit and runs
+The initial reusable `.github/workflows/go-port.yml` used a 25-minute limit and ran
 both builds, all Go race units, vet, focused CLI/dashboard parity and ownership
 guards. `ci.yml` adds that job; parsed comparison confirms every existing job is
 unchanged. The reusable job uses the existing pinned checkout/Python/uv actions,
@@ -142,7 +142,7 @@ receives the captured clock and the new sequence test proves the fix. A fresh
 adversarial review passes all six items; security review reports no exposure,
 credential, process-cleanup or supply-chain finding.
 
-## Remaining proof
+## Remaining proof at the 2026-11-01 review follow-up
 
 Native SQLite open, schema, migrations and corrupt-database recovery are next,
 with Python storage made fatal in the adapter. Existing database startup still
@@ -153,3 +153,31 @@ The offline zizmor workflow audit is unavailable because its pinned tool is not
 in the local cache; YAML lint passes. Changed-project Markdown is checked using
 the pinned tool with an ephemeral scoped config, leaving the repository rule intact.
 No fleet job was submitted for this uncommitted tree; no performance claim is made.
+
+## Caddy acceptance follow-up, 2026-11-02
+
+The 20:30Z review correctly identifies a false native-ownership pass: a native
+bind helper can return a bad value with status 0, the shell adapter can reject it
+with 125, and Bash can still produce the expected Caddyfile. Complete output
+equality alone does not prove use of the native result.
+
+The additive Caddy adapter now records the actual `_caddy_bind_go` return status
+and accepted value separately from the provider callback log. Eight supported
+bind cases, two system-Bash empty-candidate cases and the private-appliance gate
+require status 0, the exact expected value and that value in the final bind line.
+Bypass gates require no bind-helper invocation. Deliberate refusals and malformed
+frames retain their separate compatibility comparisons.
+
+A Go build overlay changes only `CaddyBindAddresses` to return `BROKEN_BIND`.
+The raw helper exits 0; the production shell guard correctly rejects it with
+125; the final file still matches Bash; and the new acceptance assertion fails.
+The real Go source and production guard remain unchanged.
+
+The port-added marker fixtures now explicitly supply private hybrid state for
+their intended internal-fallback cases. Unset, Bash and Python public selection
+with a helper override all stay on the reference path. Base Caddy comparisons
+pass six tests; bind comparisons pass fourteen, including the mutation control;
+the legacy hybrid runner passes 46. These are supplementary port tests, not
+unchanged-suite evidence. Both Caddy Make targets are added to Go CI. The current
+workflow's added full dashboard oracle and time limits are documented in
+[the native-oracle result](results-native-oracle.md).

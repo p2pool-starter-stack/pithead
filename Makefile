@@ -14,9 +14,7 @@ test-go-native-guards: go-build go-dashboard-build
 	python3 tests/go-parity/test_reference_selection.py
 	python3 tests/go-parity/test_status_closed_descriptors.py
 	python3 tests/go-parity/test_fallback_signals.py
-	uv run --project dashboard --locked --extra test python -m pytest -q tests/go-parity/test_stack_native_adapter.py
-test-go-dashboard-storage-parity: go-dashboard-build
-	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_storage_plugin -p dashboard_overview_plugin tests/service/test_storage*.py tests/service/workers/test_worker_*.py "$(CURDIR)/tests/go-parity/dashboard_storage_startup.py" "$(CURDIR)/tests/go-parity/dashboard_storage_bridge_compare.py"
+	uv run --project dashboard --locked --extra test python -m pytest -q tests/go-parity/test_stack_native_*.py
 go-dashboard-build: go-cache ## Build the incremental Go dashboard with Python fallback
 	cd go && $(GO_ENV) go build -o bin/dashboard ./cmd/dashboard
 test-go-dashboard-overview-parity: go-dashboard-build

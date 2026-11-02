@@ -2,22 +2,23 @@ STATUS: IN PROGRESS
 
 ## Summary for review
 
-- Fully native CLI: `help`/`-h`/`--help` except logs passthrough, `version`/`-V`/`--version`, and eligible bare `status` in C/POSIX or verified UTF-8 locales. Status flags/chains, missing Docker, closed stdout and unsupported encodings fall back; invalid locales stay in Bash.
+- Native CLI: `help`/`-h`/`--help` except logs passthrough, `version`/`-V`/`--version`, and eligible bare `status` in C/POSIX or verified UTF-8 locales. Help/version failed-write diagnostics differ from Bash. Status flags/chains, missing Docker, closed stdout and unsupported encodings fall back; invalid locales stay in Bash.
 - Hybrid CLI: supported config/env/Caddy and lifecycle options/scope use Go helpers; Bash retains providers, compatibility cases, locks, firewall and Compose execution. `doctor --json` has native formatting and Bash collection.
 - Bash fallback: `upgrade`, `backup`, `restore`, `setup` and the other table entries below. No full native lifecycle execution is claimed.
-- Fully native HTTP: `/`, `/static/*`, optional `/ui-preview`, method/route errors and security headers.
+- Go-owned HTTP: `/`, `/static/*`, optional `/ui-preview`, method/route errors and security headers. Static encoded-path, range and If-Match differences remain open; full native-oracle coverage is not established.
 - Hybrid HTTP: `/api/state`, `/api/miner-connection`, `/api/xvb-standby` and `/metrics` combine Go policy with Python providers. `/api/access`, `/api/config`, `/api/audit`, `/api/worker` and `/api/control/*` use Python transport with Go adapters; remaining registered requests proxy.
 - SQLite open/schema/migrations/corrupt recovery and supported control publication are native. Python still owns providers, clocks, locks, polling, scheduling and orchestration; a childless backend is unproven.
-- Unchanged dashboard command: 3716 frozen originals plus 386 port additions, 4102 passed per selection; unset 95.56%, Go 92.60% total coverage. Default patch gates pass at 91% and 92%; no omissions or lowered thresholds. [CI evidence](results-native-ci-gates.md).
-- Focused native, fatal-source and mutation checks prove the detailed boundaries below. New tests supplement the frozen oracle; a fallback pass or bridge coverage alone proves no native ownership.
+- Mixed dashboard coverage command: 3716 frozen originals plus 386 port additions, 4102 passed per selection; unset 95.56%, Go-selected 92.60% total coverage. Default patch gates pass at 91% and 92%. Go selection alone leaves many original tests on Python and does not prove native ownership. [CI evidence](results-native-ci-gates.md).
+- The [strict frozen dashboard oracle](results-native-oracle.md) passes all 3716 originals with 39 adapters loaded before collection, accepted native results or fatal reference bodies, and zero public Python fallback calls. This proves the listed hybrid boundaries; it does not establish a childless backend.
+- Focused native, fatal-source and mutation checks prove the detailed boundaries below. [Caddy acceptance guards](results-review.md#caddy-acceptance-follow-up-2026-11-02) reject a broken native bind even when Bash repairs the file; both Caddy targets join CI. New tests supplement the frozen oracle.
 - The earlier full Linux reference attempt is red: 8050 passed, nine failed. The new pinned-runner inventory finds missing prerequisites and an awk portability defect; repairs and focused controls are passing, but both full selections remain unproven. [Pinned continuation](results-pinned-stack.md).
-- Additive stack tracing restores selection after the unchanged harness scrubs it and records per-fragment successes, rejections and fallbacks, including zero-call fragments. Twenty-two adapter tests pass and run in the CI guard target; the full census is pending. Its wrapper adds a process layer, leaving targeted-signal/process identity behavior unproven.
+- Additive stack tracing restores selection after the unchanged harness scrubs it and records top-level fragment successes, rejections and fallbacks, including zero-call fragments; nested helper calls belong to their parent. Twenty-four adapter tests and 62 original release-verification assertions pass; the full census is pending. Targeted-signal/process identity behavior remains unproven through its process wrapper.
 - Scoped original Linux evidence includes 309 lifecycle assertions/four native scope decisions, 187 shipping assertions, 104 wizard-spool assertions and 100 ext4 replay cases per selection. The ext4 target directly invokes Python and proves no Go ownership.
 - Local ARM64 image smoke passes Python/existing and Go/existing, legacy and corrupt cases at `32d11cd4`; pinned Trivy passes and AMD64 artifacts export. [Image identities and limits](results-committed-linux.md).
 - Unproven: full Linux stack/status, privileged host behavior, native ext4 replay ownership, appliance build/boot, AMD64 execution, fleet and published artifacts. Cross-builds and local timings establish no performance gain.
 - Review reference-path launch/private markers/signals; config/env/Caddy delegation; lifecycle option/scope wiring; Python provider/storage/control/view/wizard seams; shipping selection/build lists; the locked Linux runner/tool layer and portable bridge regex. [Complete path inventory](reference-changes.md).
-- GNU-first lint and the Go 1.27.1 Linux ARM64 CI command set have passing earlier results; current source reruns are recorded separately. GitHub Browser regressions passed at `258de1644`; no full Go Actions status is inferred.
-- Fleet admission rejects pushed `258de1644` on base conflicts. The isolated integration candidate is preparation, not a branch merge or fleet pass. The 19:25Z ruling resumes native work beyond 22:00Z, starting with the still-unmet full Linux stack prerequisite; `STATUS: IN PROGRESS` remains.
+- Linux ARM64 build, race, vet, mixed coverage, default patch and native guards pass again. The exact CI native-oracle target passes nine controls and all 3716 originals. GNU-first full lint passes after formatter, synthetic-fixture path and file-budget repairs. No full Go Actions status is inferred.
+- Fleet admission rejects pushed `258de1644` on base conflicts. The isolated integration candidate is preparation, not a branch merge or fleet pass. With native-oracle ownership and Caddy guards proven, the 20:30Z queue continues with batch UTF-8, async helper calls, shipping callers and exact contracts, then complete runtime slices and artifact proof. `STATUS: IN PROGRESS` remains.
 
 # Go port parity
 
@@ -27,7 +28,7 @@ Incremental port for issue #3811, based on `a73ffced33800de9435779a9cabef5386445
 
 The owner's 2026-11-01 ruling limits application reimplementation to the CLI and dashboard backend, including the wizard and control channel. Appliance host scripts and container entrypoints retain their reference implementations. Shipping documentation and selection/build wiring for the release bundle, dashboard image and appliance image build are in scope, retaining Bash/Python fallback. The dashboard selection switch remains part of its launch contract. Preserve upstream daemons, browser assets, runtime filenames, database migrations and wire formats.
 
-Access ends 2026-11-03. The operator's 2026-11-02 19:25Z ruling supersedes the 22:00Z stop and the 15:15Z freeze on native slices. Every round must preserve green dashboard total and patch coverage in both selections, GNU-first lint, the Go CI command set and the unchanged Go-selected suites. First complete the pinned Linux `make test-stack` run in both selections, fixing its failures and recording per-fragment native calls. Then port CLI execution in order: `upgrade`, `backup`, `restore`, `setup`, lifecycle verbs, doctor collection and the remaining table entries. Do not add doctor, Tor or ZMTP probe slices. Then replace the remaining Python dashboard providers, polling, clocks/expiry, business SQL/transactions, async scheduling and wizard/control HTTP orchestration until supported configurations run without the Python child. Retain reference fallback and distinguish native ownership from a green fallback test.
+Access ends 2026-11-03. The 19:25Z ruling supersedes the 22:00Z stop and the 15:15Z freeze; the operator's 20:30Z review queue supersedes its work order. Keep dashboard total and patch coverage in both selections, GNU-first lint, the Go CI command set and unchanged Go-selected suites green. First establish a full dashboard native-oracle launcher before original-test imports, accepted native results or fatal reference bodies, and broken-native controls. Then enforce Caddy native acceptance and repair stale fixtures; preserve batch UTF-8 error/transaction ordering; offload synchronous poll helpers with frozen inputs and heartbeat proof; fix all shipping/scan callers; and match static HTTP and failed-write contracts. Next complete native config/render execution, dashboard polling/providers/state/storage orchestration, then wizard/control transport. Extend frozen-base failures and run the unchanged Linux suites with surviving selection and real artifact identities. CLI execution still includes `upgrade`, `backup`, `restore`, `setup`, lifecycle verbs, doctor collection and remaining verbs. Do not add doctor, Tor or ZMTP probe slices. Retain Bash/Python fallback and distinguish native ownership from a green fallback test.
 
 Fleet tests may target pushed heads through the normal bench API, following its contracts with `submitted_by=gpt-6.1-sol/developer`, a #3811 note and an idempotency key. Keep topology private. A separate session owns performance work: leave its `BENCHMARK.md` document and the `tests/go-parity/bench/` tree untouched.
 
@@ -119,7 +120,7 @@ Numbered comparison groups under `tests/go-parity/` and Go tests were added by t
 | Config defaults, materialization and getters | Native with runtime table; jq compatibility fallback | 5 tagged groups / 744 scenarios and wiring/render-fixture tests |
 | Worker, energy, webhook and control-character validation | Native Go-selected validators; jq compatibility fallback | Paired validator corpus and wiring checks; Go units |
 | Stratum bind and port parsing | Native for supported settings; Bash compatibility fallback | Unchanged 14-test stratum preflight and render fixture; supplementary byte/status/state comparisons and Go units; full Linux suite unavailable |
-| Caddyfile serialization, site URLs, bind plan and auth preparation | Native fragments, site/port formatting, bind filter, auth blocks and boot digest; Bash bind-candidate public-IP checks, discovery, bcrypt, certificate minting and writes; compatibility fallback | Supplementary Caddy/host/port comparisons and Go units; Linux/Docker oracle unavailable |
+| Caddyfile serialization, site URLs, bind plan and auth preparation | Native fragments, site/port formatting, bind filter, auth blocks and boot digest; Bash bind-candidate public-IP checks, discovery, bcrypt, certificate minting and writes; compatibility fallback | Supplementary byte comparisons, accepted bind-value guards and a Go-source mutant; six base and fourteen bind tests pass; full Linux stack oracle unproven |
 | Tari wallet secret publication | Native current-owner publication and direct ownership repair when permitted; Bash directories, dry-run, sudo and compatibility fallback | Matching-UID native success, unprivileged cleanup/fallback, protocol comparisons and Go units; unchanged render fixtures use tool fallback; privileged repair and Linux oracle unproven locally |
 | `.env` serialization and regular-file publication | Native bulk formatter and in-place writer; Bash derivation, final chmod, symlink/tool and compatibility fallback | Unchanged render fixture/goldens and native-writer spy pass; supplementary byte/inode/trap/protocol comparisons and Go units; full Linux suite unavailable |
 | Daemon network render plan | Native for supported config; Bash hardware/error handling and compatibility fallback | Unchanged render fixture/goldens and supplementary whole-render comparisons |
@@ -315,10 +316,15 @@ The local CLI-only graph used for navigation covers 96 files, 825 nodes and 1099
 
 ## Next
 
-Complete the original pinned Linux stack command in both selections, retaining
-per-fragment native dispatch and result evidence. Fix runner prerequisites and
-application regressions without changing frozen tests. Then implement native
-`upgrade`, `backup` and `restore` execution in that order, preserving all gates.
+The strict full dashboard native oracle and Caddy acceptance/fixture repairs
+pass their focused gates, and GNU-first full lint passes. Continue the 20:30Z
+queue with batch UTF-8 ordering, async polling helpers and heartbeat
+proof, shipping/scan caller coverage and exact static/write contracts. Then
+complete config/render execution and dashboard runtime slices. Preserve the
+partial Linux evidence and repeat both full stack selections using the repaired
+source-semantics adapter and per-fragment census. Full frozen-base
+failure coverage and real Linux artifacts remain required. Native CLI execution
+still starts with `upgrade`, `backup` and `restore` when reached in this queue.
 The integration-base candidate remains preparation, not a merge of this branch;
 the operator must commit, merge and push before fleet admission can retry.
 Full original Linux stack/status, G8 privileged, appliance, AMD64, fleet and

@@ -1,9 +1,9 @@
 # Pinned Linux stack continuation
 
 This continuation starts at `7a1d8ad1c5f6777afe73b1da5912b20c08e3cc18`
-on 2026-11-02. The 19:25Z ruling requires the original pinned Linux stack command
-to pass in both selections with native invocation evidence before further native
-application work. Neither full selection has a passing result yet.
+on 2026-11-02. The 20:30Z review queue now takes precedence over the 19:25Z
+stack-first order. The original pinned Linux stack command still requires both
+selections and native invocation evidence. Neither full selection has a passing result yet.
 The only application change is the portable bridge filter described below.
 
 ## Runner prerequisites
@@ -54,8 +54,11 @@ envsubst account for four, and the bridge filter accounts for two. It is stopped
 in block 3 with exit 143 and no full verdict. Its non-init PID 1 accumulates
 orphaned shell children, so the normal launcher now uses Docker's `--init`.
 Final full reference and Go runs use separate source and home directories,
-the same immutable tools image and Linux tmpfs temporary files. Their results
-are pending.
+the same immutable tools image and Linux tmpfs temporary files.
+The final reference attempt ends with container status 137, `OOMKilled=false`,
+in block 2 after 4,560 log lines and zero assertion-failure markers. There is no
+outer Make exit record. Its cause is undetermined, and this is incomplete evidence,
+not a passing run. The raw log and exit inspection remain in private evidence.
 
 The first final Go-selected attempt exposes an adapter defect: replacing
 `PITHEAD_GO_REFERENCE` with a tracing trampoline changes the directory used by
@@ -76,13 +79,17 @@ stopped after 63 failures, retaining its partial trace. Persistent private
 markers now preserve both actual Go fallback and explicit Bash/Python selection
 after the prelude consumes the hybrid marker or the harness scrubs selectors.
 The regression covers real prelude consumption, nested Bash, real CLI execution,
-ignored signals and exactly one fallback event. The third full Go run is pending.
+ignored signals and exactly one fallback event.
 The third run is also invalidated after 63 release-test failures: the adapter's
 `source` function supplies the source filename as positional argument 1 when
 the original caller passes no explicit source arguments. Its partial trace and
 raw log are retained before stopping, exit 143. Source instrumentation must
 preserve inherited and explicit arguments, including `set --` behavior, before
-the full Go command is repeated.
+the full Go command is repeated. The current repair observes source boundaries
+with a DEBUG trap while leaving Bash's source builtin intact. Paired tests cover
+zero, inherited and explicit arguments, source return status and sourced `set --`.
+The unchanged release-verification fragment now passes 62 assertions with zero
+failures. A new full Go run has not started.
 
 ## Portable bridge filtering
 
@@ -111,7 +118,9 @@ their completion is explicitly unobserved in the trace, and asserting a
 complete run requires the separately captured outer command status.
 Empty traces fail the completeness check. Failed trace writes return status 2;
 dispatch and fallback writes must succeed before executing their targets.
-Nested sourced and direct fragment paths have explicit regression coverage.
+Source paths in nested directories and direct fragment paths have explicit
+regression coverage. Source visits cover top-level harness fragments; helper
+files sourced inside them remain attributed to the owning fragment.
 
 Status 0 is native success, 1 is native rejection and 125 is compatibility
 fallback. Other helper failures remain errors. `--require-native NAME` requires
@@ -130,12 +139,14 @@ identity remain unproven through this adapter. The passive reference hook
 matches the focused original scope fragment's stdout, stderr and status; that
 comparison does not substitute for a full original stack verdict.
 
-The twenty-two new adapter tests pass and run in `make test-go-native-guards`.
+The twenty-four new adapter tests pass and run in `make test-go-native-guards`.
+A sourced visit completes at the next parent DEBUG command; a source used as the
+shell's final command stays unfinished and fails strict completeness reporting.
 A focused original keep-running run records
 132 native successes: 128 env reads and four scope decisions. This is scoped
 evidence, not a full stack pass or native lifecycle execution.
 
-## Current CI command set
+## Mixed CI command set before the native-oracle repair
 
 A private Linux ARM64 snapshot of this round runs the Go workflow's command
 set with Go 1.27.1. New adapters are staged only in that private snapshot;
@@ -148,7 +159,7 @@ module is untracked. The checks pass:
 | Go race tests and vet | Exit 0; 33 race-tested packages |
 | Eight focused CLI targets | Exit 0; one unavailable UTF-8 locale and two optional mutant-binary skips |
 | Thirty-nine dashboard/shipping targets | Exit 0; shipping comparison 29 passed |
-| Final native guard target | Exit 0, including all 22 stack adapter tests |
+| Final native guard target before DEBUG repair | Exit 0, including the then-current 22 stack adapter tests |
 | Reference dashboard and default patch gates | 4102 passed, 95.56% total, 91% changed-line coverage |
 | Go dashboard and default patch gates | 4102 passed, 92.60% total, 92% changed-line coverage |
 
@@ -161,3 +172,30 @@ as the CI tools image. The first bare Go-image race attempt lacks jq and fails
 doctor formatting tests; the corrected exact command passes. These checks
 establish Linux ARM64 results, not AMD64 execution, a full GitHub job or fleet
 approval.
+The Go-selected dashboard coverage command is mixed: it leaves many original
+HTTP tests on Python. These coverage numbers establish green coverage gates,
+not full native ownership. The new strict native-oracle launcher must establish
+that separately, with fatal reference bodies and broken-native controls.
+
+A fresh Linux ARM64 snapshot at `778cab2e` plus this round's ten-path adapter
+diff repeats both unchanged total and default patch gates successfully: 4102
+passed per selection, 95.56% reference and 92.60% Go-selected total coverage,
+91% and 92% changed-line coverage, and all 76 measured changed files present.
+Build, race, vet and the native guards pass again, including all 24 repaired
+stack adapter tests. The application Go and dashboard Python sources are
+unchanged. The 39 focused dashboard/shipping targets retain their preceding
+snapshot's result; they were not repeated by this run. Later strict-oracle
+accounting changes are validated separately. This is still mixed evidence,
+with no full pinned stack or childless-backend claim.
+
+The repaired adapter tests are split into hook, report and execution modules
+of 214, 181 and 308 lines, preserving all 24 cases. The existing Go dashboard
+make include now holds the native-oracle and storage recipes, leaving the root
+Makefile at 399 lines. This repairs the file-budget gate without exemptions or
+new budget allowances. A synthetic nested-path fixture also uses a temporary
+feature name so the repository-path lint does not mistake it for a missing
+dashboard source file.
+
+GNU-first full `make lint` passes after these repairs. This gate includes the
+unchanged shell, topology and file-budget checks; it does not replace the
+remaining full pinned stack runs.

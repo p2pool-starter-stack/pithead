@@ -1,4 +1,6 @@
+import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +10,9 @@ import test_caddy as caddy  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 ADAPTER = ROOT / "tests/go-parity/caddy_bind_reference.sh"
+GO = shutil.which("go")
+if GO is None:
+    raise RuntimeError("go is required")
 
 
 class CaddyBindParityTests(caddy.CaddyParityTests):
@@ -16,6 +21,43 @@ class CaddyBindParityTests(caddy.CaddyParityTests):
         original_adapter = caddy.ADAPTER
         caddy.ADAPTER = ADAPTER
         self.addCleanup(setattr, caddy, "ADAPTER", original_adapter)
+
+    def assert_native_accepted(self, trace, rendered, expected):
+        records = trace.read_text().splitlines()
+        self.assertEqual(len(records), 1)
+        status, candidate = records[0].split("\t", 1)
+        self.assertEqual(status, "0")
+        self.assertEqual(candidate, expected)
+        self.assertIn(f"    bind {candidate}\n".encode(), rendered)
+
+    def mutated_bind_binary(self):
+        source = ROOT / "go/internal/config/caddy_bind.go"
+        original = source.read_text()
+        seam = 'return strings.Join(filtered, " ")'
+        self.assertEqual(original.count(seam), 1)
+        altered = self.directory / "caddy_bind.go"
+        altered.write_text(original.replace(seam, 'return "BROKEN_BIND"'))
+        overlay = self.directory / "overlay.json"
+        overlay.write_text(json.dumps({"Replace": {str(source): str(altered)}}))
+        binary = self.directory / "pithead-mutated"
+        env = os.environ.copy()
+        env.update(
+            GOCACHE=str(ROOT / ".go-cache/build"),
+            GOMODCACHE=str(ROOT / ".go-cache/mod"),
+            GOPATH=str(ROOT / ".go-cache/gopath"),
+            GOTMPDIR=str(ROOT / ".go-cache/tmp"),
+            GOPROXY="off",
+        )
+        result = subprocess.run(  # noqa: S603
+            [GO, "build", "-overlay", str(overlay), "-o", str(binary), "./cmd/pithead"],
+            cwd=ROOT / "go",
+            env=env,
+            capture_output=True,
+            check=False,
+            timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return binary
 
     def cases(self):
         appliance = {
@@ -103,10 +145,17 @@ class CaddyBindParityTests(caddy.CaddyParityTests):
         for label, name in mapping.items():
             with self.subTest(case=label):
                 baseline = self.invoke("bash", f"native-{label}", cases[name])
-                selected = self.invoke("go", f"native-{label}", cases[name])
+                trace = self.directory / f"native-{label}.accept"
+                selected = self.invoke(
+                    "go",
+                    f"native-{label}",
+                    cases[name],
+                    extra_env={"CADDY_BIND_ACCEPT_LOG": str(trace)},
+                )
                 self.assertEqual(selected, baseline)
                 self.assertEqual(baseline[0], 0)
                 self.assertIn(f"    bind {expected[label]}\n".encode(), baseline[4])
+                self.assert_native_accepted(trace, selected[4], expected[label])
 
     def test_empty_candidates_with_system_bash(self):
         original_bash = caddy.BASH
@@ -116,10 +165,17 @@ class CaddyBindParityTests(caddy.CaddyParityTests):
             with self.subTest(case=name):
                 case = self.cases()[name]
                 baseline = self.invoke("bash", f"system-{name}", case)
-                selected = self.invoke("go", f"system-{name}", case)
+                trace = self.directory / f"system-{name}.accept"
+                selected = self.invoke(
+                    "go",
+                    f"system-{name}",
+                    case,
+                    extra_env={"CADDY_BIND_ACCEPT_LOG": str(trace)},
+                )
                 self.assertEqual(selected, baseline)
                 self.assertEqual(baseline[0], 0)
                 self.assertIn(b"    bind 127.0.0.1 ::1\n", baseline[4])
+                self.assert_native_accepted(trace, selected[4], "127.0.0.1 ::1")
 
     def test_helper_runs_only_for_private_appliance_bind(self):
         spy_log = self.directory / "bind-spy.log"
@@ -136,7 +192,8 @@ class CaddyBindParityTests(caddy.CaddyParityTests):
             "bind-diy-bypass",
             "bind-public-exposure-bypass",
         ):
-            self.invoke(
+            trace = self.directory / f"gate-{name}.accept"
+            result = self.invoke(
                 "go",
                 f"gate-{name}",
                 cases[name],
@@ -144,8 +201,13 @@ class CaddyBindParityTests(caddy.CaddyParityTests):
                 extra_env={
                     "CADDY_BIND_SPY_LOG": str(spy_log),
                     "CADDY_REAL_GO": str(caddy.GO_BINARY),
+                    "CADDY_BIND_ACCEPT_LOG": str(trace),
                 },
             )
+            if name == "bind-private":
+                self.assert_native_accepted(trace, result[4], "10.0.0.2 192.168.1.9 127.0.0.1 ::1")
+            else:
+                self.assertFalse(trace.exists())
         invocations = spy_log.read_text().splitlines()
         self.assertEqual(invocations.count("config-caddy-bind::0"), 1)
         self.assertEqual(invocations.count("config-caddy:prefix:0"), 3)
@@ -232,12 +294,40 @@ class CaddyBindParityTests(caddy.CaddyParityTests):
             case,
             marker=spy,
             extra_env={
+                "_PITHEAD_GO_HYBRID": "1",
                 "MARKER_LOG": str(spy_log),
                 "CADDY_REAL_GO": str(caddy.GO_BINARY),
             },
         )
         self.assertEqual(selected, baseline)
         self.assertIn("config-caddy-bind:0", spy_log.read_text().splitlines())
+
+    def test_mutated_native_result_cannot_hide_behind_reference_fallback(self):
+        binary = self.mutated_bind_binary()
+        frame = b" \x00172.28.0\x001\x0010.0.0.2\x000\x00"
+        direct = subprocess.run(  # noqa: S603
+            [str(binary)],
+            env={**os.environ, "PITHEAD_GO_HELPER": "config-caddy-bind"},
+            input=frame,
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertEqual((direct.returncode, direct.stdout), (0, b"BROKEN_BIND\x00"))
+        case = self.cases()["bind-private"]
+        baseline = self.invoke("bash", "mutated-baseline", case)
+        trace = self.directory / "mutated.accept"
+        selected = self.invoke(
+            "go",
+            "mutated",
+            case,
+            binary,
+            extra_env={"CADDY_BIND_ACCEPT_LOG": str(trace)},
+        )
+        self.assertEqual(selected, baseline)
+        self.assertEqual(trace.read_text().splitlines(), ["125\t"])
+        with self.assertRaises(AssertionError):
+            self.assert_native_accepted(trace, selected[4], "10.0.0.2 192.168.1.9 127.0.0.1 ::1")
 
     def test_helper_protocol_refuses_invalid_frames(self):
         valid = b" bridges \x00172.28.0\x001\x0010.0.0.2\x000\x00"

@@ -1,3 +1,10 @@
+.PHONY: test-go-dashboard-native-oracle
+test-go-dashboard-native-oracle: pithead go-dashboard-build
+	uv run --project dashboard --locked --extra test python -m pytest -q tests/go-parity/test_dashboard_native_oracle.py
+	uv run --project dashboard --locked --extra test python tests/go-parity/run_dashboard_native_oracle.py -o faulthandler_timeout=120
+test-go-dashboard-storage-parity: go-dashboard-build
+	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_storage_plugin -p dashboard_overview_plugin tests/service/test_storage*.py tests/service/workers/test_worker_*.py "$(CURDIR)/tests/go-parity/dashboard_storage_startup.py" "$(CURDIR)/tests/go-parity/dashboard_storage_bridge_compare.py"
+
 .PHONY: test-go-dashboard-wizard-policy-parity
 test-go-dashboard-wizard-policy-parity: go-dashboard-build
 	cd dashboard && PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_wizard_terminal_plugin tests/web/test_wizard*.py tests/web/test_config_defaults.py "$(CURDIR)/tests/go-parity/dashboard_wizard_policy_compare.py" "$(CURDIR)/tests/go-parity/dashboard_wizard_policy_guards.py"

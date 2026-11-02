@@ -10,7 +10,7 @@ jobs:
   parity:
     name: Go build, units, vet and focused parity
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
       GOTOOLCHAIN: go1.27.1
       GOCACHE: ${{ github.workspace }}/.go-cache/build
@@ -49,11 +49,15 @@ jobs:
         run: |
           go -C go test -race -count=1 ./...
           go -C go vet ./...
+      - name: Frozen dashboard native oracle and negative controls
+        timeout-minutes: 15
+        run: make test-go-dashboard-native-oracle
       - name: CLI parity
         env:
           PITHEAD_IMPL: go
         run: >-
           make test-go-parity test-go-status-parity test-go-config-document-parity
+          test-go-caddy-parity test-go-caddy-bind-parity
           test-go-env-parity test-go-legacy-helper-parity
           test-go-native-guards test-go-frozen-parity test-go-keep-running-scope-parity
       - name: Dashboard parity
