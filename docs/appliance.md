@@ -503,6 +503,18 @@ operation has finished. See
 step-by-step. The one-click tarball upgrade other installs offer refuses on the
 appliance on purpose — it would apply the wrong kind of update.
 
+For a chain data migration, installation first persists the previous data floor,
+the candidate version and A/B slot, and the new floor. The candidate holds chain
+services until RAUC successfully commits its slot. A failed or superseded install
+restores the previous floor only after confirming the running slot is committed
+and durably disabling the spare slot. If that cannot be confirmed, protection
+stays in place for boot recovery. A fallback boot keeps the candidate protected
+until its own slot commits, then disables the candidate and restores the previous
+floor. A committed candidate keeps the new floor. Rigs consume their migration
+intent after the miner starts and the slot commits. Another update cannot replace
+migration protection owned by the running slot before that boot finishes. Boot
+cleanup leaves a newer install's protection in place.
+
 Your data is never part of an update. Wallets, settings and the chain live on a separate
 partition that updates and rollbacks do not touch.
 
