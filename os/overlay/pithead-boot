@@ -239,7 +239,7 @@ release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 a
     echo "pithead-boot: slot committed — chain services released, the data migration runs now"
     local try
     for try in $(seq "$RELEASE_UP_TRIES"); do
-        ./pithead up && return 0
+        PITHEAD_BOOT_GATE=1 ./pithead up && return 0
         [ "$try" -lt "$RELEASE_UP_TRIES" ] || break
         echo "pithead-boot: the chain services did not all start (try $try of $RELEASE_UP_TRIES) — retrying in ${RELEASE_UP_PAUSE}s"
         sleep "$RELEASE_UP_PAUSE"
@@ -323,9 +323,9 @@ fi
 ./pithead render || fail_boot "the derived config could not be rendered"
 
 if [ "$hold_chain" = 1 ]; then
-    PITHEAD_HOLD_CHAIN=1 ./pithead up || boot_up_failed $?
+    PITHEAD_BOOT_GATE=1 PITHEAD_HOLD_CHAIN=1 ./pithead up || boot_up_failed $?
 else
-    ./pithead up || boot_up_failed $?
+    PITHEAD_BOOT_GATE=1 ./pithead up || boot_up_failed $?
 fi
 
 IFS='|' read -r gate_scheme gate_host gate_port <<<"$(gate_url)"

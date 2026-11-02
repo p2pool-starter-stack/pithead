@@ -98,5 +98,49 @@ assert_eq "the hold-chain commit block calls release_held_chain_services and tol
     "$(grep -cE '^\s*\[ "\$hold_chain" = 1 \] && \{ release_held_chain_services \|\| true; \}' "$BOOTSCRIPT" || true)" "1"
 assert_eq "no bare, un-retried up remains on the release path" \
     "$(grep -cE '^\s*\./pithead up \|\| true' "$BOOTSCRIPT" || true)" "0"
+assert_eq "every boot up leaves the miner to the post-commit leg" \
+    "$(grep -E '^\s*([A-Z_]+=[^ ]+ )*\./pithead up\b' "$BOOTSCRIPT" | grep -vc 'PITHEAD_BOOT_GATE=1 ' || true)" "0"
 unset -f rl_stub rl_run
 unset RL rl_out rl_defaults BOOTSCRIPT
+
+echo "== unit: up starts the enabled built-in miner outside the boot gate (#3375) =="
+mk_tmpdir UPM
+mkdir -p "$UPM/rigforge" "$UPM/bin"
+printf '#!/usr/bin/env bash\necho "rigforge:$1 appliance=${RIGFORGE_APPLIANCE:-unset}" >>"$RF_LOG"\nexit "${RF_RC:-0}"\n' >"$UPM/rigforge/rigforge.sh"
+printf '#!/usr/bin/env bash\necho "systemctl:$*" >>"$RF_LOG"\n' >"$UPM/bin/systemctl"
+chmod +x "$UPM/rigforge/rigforge.sh" "$UPM/bin/systemctl"
+printf '{"local_miner":{"enabled":true}}' >"$UPM/config.json"
+printf 'STRATUM_PORT=3333\n' >"$UPM/.env"
+upm_up() {
+    local stub
+    for stub in mutation_lock_acquire mutation_lock_release require_deployed validate_config_document \
+        warn_missing_data_dirs migrate_compose_project apply_tor_egress_firewall provision_egress_check_units \
+        provision_lan_guard_check_units verify_release_images reconcile_compose_images print_clearnet_banner \
+        announce_dashboard_url print_first_run_epilogue; do
+        eval "$stub() { :; }"
+    done
+    compose_up_checked() { echo "compose:up $*" >>"$RF_LOG"; }
+    main up
+}
+upm_run() {
+    (
+        export PITHEAD_APPLIANCE=1 PITHEAD_RIGFORGE_DIR="$UPM/rigforge" RF_LOG="$UPM/calls" PATH="$UPM/bin:$PATH"
+        for assignment; do export "${assignment?}"; done
+        run_sourced "$UPM" upm_up >/dev/null 2>&1
+    )
+}
+: >"$UPM/calls"
+upm_run
+assert_rc "up -> rc 0" "$?" "0"
+assert_eq "up starts the enabled miner after the stack, so a restore-then-up mines again" \
+    "$(tr '\n' ' ' <"$UPM/calls")" "compose:up -d rigforge:setup appliance=1 "
+: >"$UPM/calls"
+upm_run PITHEAD_BOOT_GATE=1
+assert_rc "boot-gate up -> rc 0" "$?" "0"
+assert_eq "boot-gate up leaves the miner to the post-commit leg" "$(cat "$UPM/calls")" "compose:up -d"
+: >"$UPM/calls"
+upm_run RF_RC=1
+assert_rc "a failed miner setup does not fail up" "$?" "0"
+unset -f upm_up upm_run
+rm -rf "$UPM"
+unset UPM

@@ -80,7 +80,10 @@ main() {
     up)
         _reject_options up "$@"
         require_deployed
+        mutation_lock_acquire up
         stack_up
+        [ "${PITHEAD_BOOT_GATE:-0}" = 1 ] || provision_local_miner || true
+        mutation_lock_release
         ;;
     down)
         _reject_options down "$@"
