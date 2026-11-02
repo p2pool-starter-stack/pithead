@@ -44,11 +44,17 @@ def _terminal_control_history(extra_stats):
     rf = extra_stats.get("rigforge") if isinstance(extra_stats, dict) else None
     history = rf.get("control_history") if isinstance(rf, dict) else None
     for entry in history[:_CONTROL_HISTORY_LIMIT] if isinstance(history, list) else []:
-        if not isinstance(entry, dict):
-            continue
-        change_id, status = entry.get("change_id"), entry.get("status")
-        if isinstance(change_id, str) and change_id and status in _CONTROL_TERMINAL:
-            yield change_id, status, entry.get("reason")
+        if outcome := _terminal_control_entry(entry):
+            yield outcome
+
+
+def _terminal_control_entry(entry):
+    if not isinstance(entry, dict):
+        return None
+    change_id, status = entry.get("change_id"), entry.get("status")
+    if isinstance(change_id, str) and change_id and status in _CONTROL_TERMINAL:
+        return change_id, status, entry.get("reason")
+    return None
 
 
 def _unexplained_config_keys(changed, explained):

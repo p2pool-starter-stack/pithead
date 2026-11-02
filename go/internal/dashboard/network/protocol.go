@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf8"
 )
 
 const maxRequestBytes = 2 << 20
@@ -99,6 +100,9 @@ func Run(input io.Reader, output io.Writer) error {
 }
 
 func build(raw []byte) (any, error) {
+	if !utf8.Valid(raw) {
+		return nil, errors.New("network request is not valid UTF-8")
+	}
 	var operation operationRequest
 	if err := decodeComplete(raw, &operation, false); err != nil {
 		return nil, err
@@ -176,6 +180,12 @@ func build(raw []byte) (any, error) {
 			return nil, errors.New("missing firewall plan input")
 		}
 		return buildFirewallPlan(*request.Configured, *request.State)
+	case "control-outcomes":
+		var request outcomeRequest
+		if err := decodeComplete(raw, &request, true); err != nil {
+			return nil, err
+		}
+		return controlOutcomes(request)
 	default:
 		return nil, fmt.Errorf("unsupported network operation: %s", operation.Operation)
 	}

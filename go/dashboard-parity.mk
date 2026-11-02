@@ -136,3 +136,16 @@ test-go-dashboard-egress-status-parity: go-dashboard-build
 	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_egress_status_plugin \
 		tests/service/network/test_egress_status.py \
 		"$(CURDIR)/tests/go-parity/dashboard_egress_status_compare.py" "$(CURDIR)/tests/go-parity/dashboard_egress_status_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_egress_status_controls.py"
+
+.PHONY: test-go-dashboard-control-outcomes-parity
+test-go-dashboard-control-outcomes-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_control_outcomes_plugin \
+		tests/client/test_xmrig_client.py::test_parse_worker_control_status_absent_is_none \
+		tests/client/test_xmrig_client.py::test_parse_worker_control_status_non_terminal_is_none \
+		tests/client/test_xmrig_client.py::test_parse_worker_control_status_malformed_change_id_is_none \
+		tests/client/test_xmrig_client.py::test_parse_worker_control_status_terminal_outcome \
+		tests/client/test_xmrig_client.py::test_parse_worker_control_status_reason_defaults_none \
+		tests/client/test_xmrig_client.py::test_parse_worker_control_status_full_terminal_vocabulary \
+		tests/service/test_data_service_reconcile_worker_config.py \
+		tests/service/workers/test_worker_change_audit.py tests/service/workers/test_worker_name_space_cap.py \
+		"$(CURDIR)/tests/go-parity/dashboard_control_outcomes_compare.py" "$(CURDIR)/tests/go-parity/dashboard_control_outcomes_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_control_outcomes_controls.py"

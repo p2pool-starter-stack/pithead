@@ -70,6 +70,7 @@ def install():
         go_access_log,
         go_audit_query,
         go_control_http,
+        go_control_outcomes,
         go_documents,
         go_editor,
         go_egress_status,
@@ -92,6 +93,7 @@ def install():
     go_editor.install()
     go_state.install()
     go_control_http.install()
+    go_control_outcomes.install()
     request_spool.write = write
     for name in (
         "submit",
