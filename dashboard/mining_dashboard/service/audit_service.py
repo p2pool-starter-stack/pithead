@@ -249,6 +249,10 @@ def access_summary(limit=50, now=None):
             "rotate_hint": False,
         }
     now = time.time() if now is None else now
+    return _access_summary_rows(raw, limit, now)
+
+
+def _access_summary_rows(raw, limit, now):
     entries = []
     failures = 0
     last_failure = None

@@ -67,6 +67,7 @@ def result(rid) -> dict | None:
 
 def install():
     from mining_dashboard import (
+        go_access_log,
         go_audit_query,
         go_control_http,
         go_documents,
@@ -81,6 +82,7 @@ def install():
     go_documents.install()
     go_polling.install()
     go_audit_query.install()
+    go_access_log.install()
     go_rigforge.install()
     go_preserve.install()
     go_editor.install()

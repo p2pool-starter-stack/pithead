@@ -103,6 +103,8 @@ func handleConfigRequest(request ConfigRequest) (any, error) {
 		return auditMerge(request.Config)
 	case "audit-query":
 		return auditQuery(request.Config)
+	case "audit-access":
+		return auditAccess(request.Config)
 	default:
 		return nil, ValidationError{fmt.Sprintf("unsupported wizard config operation: %s", request.Operation)}
 	}

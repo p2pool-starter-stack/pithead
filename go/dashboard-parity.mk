@@ -118,3 +118,9 @@ test-go-dashboard-audit-query-parity: go-dashboard-build
 	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_audit_query_plugin \
 		tests/service/test_audit_service.py tests/web/test_server_security_log_routes.py \
 		"$(CURDIR)/tests/go-parity/dashboard_audit_query_compare.py" "$(CURDIR)/tests/go-parity/dashboard_audit_query_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_audit_query_controls.py"
+
+.PHONY: test-go-dashboard-access-log-parity
+test-go-dashboard-access-log-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_access_log_plugin \
+		tests/service/test_access_log.py tests/service/test_audit_service.py tests/web/test_server_security_log_routes.py \
+		"$(CURDIR)/tests/go-parity/dashboard_access_log_compare.py" "$(CURDIR)/tests/go-parity/dashboard_access_log_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_access_log_controls.py"
