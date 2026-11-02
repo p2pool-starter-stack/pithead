@@ -739,7 +739,10 @@ An applied change is a real config commit: it goes through the same path as any 
 payout-wallet swap or a clearnet-exposure change still fires the matching Telegram alert.
 
 NOTE: this channel only reads at boot. Inserting the stick into a running machine does nothing
-until you reboot it.
+until you reboot it. In the lean UI preview, open **Advanced > Maintenance > Reboot** and type
+`REBOOT`. Use **Power off**, confirmed with `POWEROFF`, before unplugging or moving the appliance.
+Power-off needs a press of the physical power button to start it again; the dashboard does not
+reconnect after shutdown. The same action is limited to once per five minutes.
 
 ## If something goes wrong
 

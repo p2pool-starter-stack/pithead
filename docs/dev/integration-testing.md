@@ -256,7 +256,8 @@ Useful flags (full list in `run.sh --help`):
 | `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). A failed phase stops every later requested phase, and the summary counts and lists each of them under "did NOT run", including onion rotation and the Tari and Monero stranded-node smokes. Unrequested phases do not count as skipped. |
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
-| `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. Restore retains a valid dashboard-login bcrypt hash when its archived password fingerprint matches the restored configuration. A failed rollback names whether restore, startup, health, exact configuration, or secret verification failed; secret verification names only the mismatched category, never values or hashes. Recommended for the destructive matrix on a precious box; also exercises backup/restore end-to-end. |
+| `--backup-only` | Take and validate a safety backup, wait for stack health, clean the archive and stop. No scenarios or lifecycle operations run. Exclusive of other phases, scenarios, `--rig-name`, `--rig-host`, `--check`, `--readiness` and `--keep`. |
+| `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. Restore retains a valid dashboard-login bcrypt hash when its archived password fingerprint matches the restored configuration. A failed rollback names whether restore, startup, health, exact configuration, or secret verification failed; secret verification names only the mismatched category, never values or hashes. Recommended for the destructive matrix on a precious box. This modifier does not select a phase or suppress scenarios. |
 | `--keep` | Don't restore the original config (leave the box on the last scenario). |
 | `--rotate-secrets` | Rotate live RPC, proxy API and stratum credentials, refuse the old credentials (HTTP 403 for the proxy's supplied stale Bearer token), verify the Monero → p2pool → proxy route, and restore the exact safety archive. Requires `--safety-backup`. With a reserved rig, the controller updates only its borrowed test-pool password before the upstream check, then proves an accepted share counted after that rearm. Config and miner-service restoration must verify before recovery copies or the runner's persistent recovery hold are released; an unverified restore retains the reservation for operator recovery. Interruption terminates the leg and attempts restoration through its EXIT-only trap, without continuing on a restored baseline. A real stratum login must return a valid mining job before the upstream assertion; its authenticated socket stays open during that check, including without a rig. The leg checks owner-only safety copies and cleans only copies created by this rotation. |
 | `--out <dir>` | Where to write the manifest and failure artifacts. |
@@ -607,18 +608,47 @@ release ships ([#1364](https://github.com/p2pool-starter-stack/pithead/issues/13
 inspection (skips the restore). Requires SSH access to the test bench and the miner; see the
 [testbench README](../../tests/integration/tools/testbench-README.md).
 
-`--harness-arg <flag>` (repeatable) passes a hand-picked `run.sh` phase flag, in the order given.
+`--harness-arg <flag>` (repeatable) passes an allowlisted `run.sh` phase or modifier, in the order given.
 This is how bench-ci's `phases` selection
 runs only the named phases against a commit without a dedicated `--mode`. Hand-picked phases
 replace the mode's own phases and the borrowed rig's `--rigforge --rigforge-control`, so a phase
 you did not ask for cannot fail and skip one you did. The mode's scenario,
-the rig identity, the pregate and the restore still run. `--scenario <name>` alone only changes
+the rig identity, the pregate and the restore still run, except that `backup-only`
+excludes scenarios and borrowing a rig. `--scenario <name>` alone only changes
 the scenario; it keeps the mode's and borrowed rig's phases. The canonical accepted-flag list
 is the allowlist in [`validate_harness_args`](../../tests/integration/lib/harness-args.sh).
 Pass `--scenario <name>` as two `--harness-arg` arguments (the flag, then the name).
 Anything else is refused before any bench work, never built into a shell string from the raw value.
 Not supported with `--mode check`, which runs nothing but `--check` by design. `--rotate-secrets`
 requires `--safety-backup` alongside it (also selectable via `--harness-arg`).
+
+For focused backup validation, select `backup-only` with no rig. In bench-ci, submit
+`tier4-e2e` with `options.phases: ["backup-only"]` and `options.no_rig: true`.
+Omit `options.mode`: bench-ci makes it mutually exclusive with `phases` or `scenario`.
+The equivalent wrapper selection is
+`--mode targeted --no-miner --harness-arg --backup-only`.
+The wrapper still takes its canonical rollback backup,
+deploys the candidate, checks readiness and restores the baseline. The candidate harness
+runs only its safety backup, archive-content checks and a bounded health check.
+If the stack does not recover, the existing safety recovery restores the archive
+(down, restore, up). An interrupt during that recovery keeps the archive, fails the run and
+can leave the stack stopped or partly restored. Recover it with `pithead down`, then
+`pithead restore <archive>` using the path the run reports, then `pithead up`. It does not
+apply scenarios, run lifecycle, uninstall, set up or inject faults.
+The selection refuses other harness arguments, a scenario, a rig name or host, or `--keep`.
+The harness uses the archive path the CLI reports, never the newest file, so a concurrent
+run's archive is never used. It removes only a regular file named
+`pithead-backup-YYYYmmdd-HHMMSS.tar.gz` directly in the stack's `backups/` directory. If the reported path is anything else, the run fails and removes
+nothing, so check `backups/` for a leftover plaintext archive. Every failure fails the run.
+An archive that fails the content checks is removed, and so is a validated archive when the
+run is interrupted. An interrupt before validation completes leaves the file in `backups/` for
+manual removal. An interrupt while `pithead backup` runs can also leave the stack stopped,
+because the CLI stops services while it writes the archive; run `pithead up` afterwards. The archive is kept when the backup's own restart failed or the recovery
+restore did not verify.
+
+`--safety-backup` is a prerequisite modifier, not a selectable bench-ci phase or a
+backup-only invocation. It adds a rollback archive before the chosen scenarios and phases;
+without a scenario selection, `run.sh` still runs the scenario matrix.
 
 `--harness-arg --sweep` runs every scenario of the sweep, the way `--mode matrix` does, without the
 destructive phases: it drops the mode's single scenario, adds `--safety-backup`, and launches no

@@ -71,7 +71,18 @@ def test_summary_lists_every_rig_that_did_not_cleanly_finish():
     )
     first, *rest = text.splitlines()
     assert "v1.15.0" in first and "4 rig(s)" in first and "1 upgraded" in first
-    assert rest == ["• b: failed (build broke)", "• c: retry later"]
+    assert rest == ["• b: failed", "• c: retry later"]
+
+
+def test_summary_never_carries_rig_supplied_reason_text():
+    token = "Bearer s3cret-control-credential"
+    text = fleet_upgrade.summary_text(
+        {
+            "version": "v1.15.0",
+            "rigs": [{"name": "b", "status": "failed", "reason": f"auth {token}", "error": token}],
+        }
+    )
+    assert "s3cret" not in text and "auth" not in text
 
 
 def test_latest_result_skips_unreadable_files_and_a_missing_directory(tmp_path, monkeypatch):
