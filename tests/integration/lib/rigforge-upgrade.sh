@@ -99,9 +99,6 @@ _post_worker_upgrade() { # <rig> <version> -> response body
         http://127.0.0.1:8000/api/control/worker-upgrade" 2>/dev/null
 }
 
-# Poll /api/control/result for <id> until it leaves the non-terminal vocabulary, or the deadline.
-# Non-terminal is pending/running/empty; everything else is the host's answer of record
-# (applied/noop/throttled/rolled_back/failed/rejected/accepted — pithead's control_worker_upgrade).
 _poll_upgrade_result() { # <id> <timeout-s> -> terminal status (empty on timeout)
     local id="$1" deadline=$((SECONDS + $2)) body status
     while [ "$SECONDS" -lt "$deadline" ]; do
@@ -112,7 +109,8 @@ _poll_upgrade_result() { # <id> <timeout-s> -> terminal status (empty on timeout
         printf '%s' "$status"
         return 0
     done
-    return 0
+    echo "timed out after ${2}s waiting for upgrade result $id; last status: ${status:-none}" >&2
+    return 1
 }
 
 # The noop leg (#1002a), with its precondition ESTABLISHED rather than assumed: only ever called

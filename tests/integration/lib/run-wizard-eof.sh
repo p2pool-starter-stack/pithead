@@ -7,7 +7,7 @@ run_cli_wizard_eof() {
         cat <<'BASH'
 set -uo pipefail
 umask 077
-work=$(mktemp -d "${TMPDIR:?}/wizard-eof.XXXXXX") || exit 1
+work=$(mktemp -d "${TMPDIR:-/tmp}/wizard-eof.XXXXXX") || exit 1
 trap 'rm -f "$work/config.json" "$work/original" "$work/stdout" "$work/stderr"; rmdir "$work"' EXIT
 printf '{ "preserve": "existing configuration" }\n\n' >"$work/original"
 for chain in Monero Tari; do
