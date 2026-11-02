@@ -33,7 +33,7 @@ migration_prepare_old() {
     }
     old_version=$(_ssh 'cat /opt/pithead/VERSION' | tr -d '[:space:]') || return 1
     local candidate_version
-    candidate_version=$(tr -d '[:space:]' <VERSION)
+    candidate_version=$(tr -d '[:space:]' <VERSION) || return 1
     [ "$old_version" = "$candidate_version" ] || {
         bad "the selected old image cannot exercise the equal-version upgrade: old=$old_version candidate=$candidate_version"
         return 1
