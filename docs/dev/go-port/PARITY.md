@@ -196,7 +196,8 @@ not a frozen starting checkout; the 20:35Z follow-up below adds that comparison.
 | Wizard config preparation, merge/default stripping, machine names and recovery policy | Native ordered Go transforms; Python supplies runtime schema/defaults and spool reads, retaining input normalization and HTTP sequencing | 334 unchanged focused tests plus 12 new comparison/mutation cases; results below |
 | Wizard handoff, acknowledgement, keep-role and retry | Authenticated readiness/status decisions, handoff reads, atomic markers and ordered cleanup native; Python authentication transport, JSON and callback sequencing | 334 unchanged focused tests plus 16 new comparison, mutation and concurrency cases; results below |
 | Wizard rig and restore submission | Native validation, ordered publication and archive-placement plans; Python multipart/auth/lock transport and action execution through native atomic writers; typed plans below | 334 unchanged focused tests with replaced original bodies fatal, three new A/B comparisons and two source mutations; results below |
-| Wizard typed config submission and preserved-disk shortcut | Native routing, keep/auth/install gates, probe-verdict/publication plans and warnings; Python parsing, runtime providers, preparation sequencing and probes remain | 334 unchanged focused tests with original typed handler fatal, ten new A/B comparisons and two source mutations; results below |
+| Wizard typed config submission and preserved-disk shortcut | Native routing, keep/auth/install gates, probe-verdict/publication plans and warnings; Python parsing, runtime providers and probes remain; preparation phases below | 334 unchanged focused tests with original typed handler fatal, ten new A/B comparisons and two source mutations; results below |
+| Wizard typed config preparation | Native source/object gates, strict preparation, prior-attempt decision, default preparation/merge and machine-name validation phases; Python JSON, providers, shape guards and phase execution | 334 unchanged focused originals with parent guards, nine new comparisons/failure/selection cases and two source mutations; [results](results-wizard-preparation.md) |
 | Wizard defaults, explicit config, inventory and change metadata | Native disk selection, answer merge, materialization, row policy, deduplication and spool deletion; Python lexical normalization, providers and callbacks | 334 unchanged focused tests with all six original bodies fatal, five new A/B cases and two source mutations; [results](results-wizard-values.md) |
 | Dashboard raw configuration documents | Native duplicates, placeholders, paths/diagnostics, alias placement and host-error-record refusal; Python standard-library JSON decoder and exception transport | 530 unchanged focused tests through fatal reference guards plus five new A/B cases and two source mutations; [results](results-documents.md) |
 | Wizard token gate, form assembly and install validation | Native Go policy and ordered mutation plans; Python HTTP/cookie transport, input normalization and defaults table | 322 unchanged wizard/defaults tests with original policy bodies fatal; byte/order comparisons, Unicode vector and two source mutations |
@@ -345,17 +346,16 @@ Earlier [auth/form](results-wizard-policy.md), [config/recovery](results-wizard-
 and [raw-document](results-documents.md) reports preserve native boundaries,
 original-suite A/B passes, mutation controls and separately graded coverage.
 
-The [control HTTP results](results-control-http.md) add native request and response
-policies for config, preview, commit, upgrade, OS-update, backup and result routes.
-Frozen/current references pass 157 originals; Go runs those originals with ten
-original functions fatal, plus six A/B cases, two source mutations and seven
-native-failure regressions. Python retains async transport, external validators,
-masked-config reads and service callbacks; worker-specific HTTP remains Python.
-Helper failures and malformed native plans fail as backend errors rather than
-client input errors. Preparation sequencing, remaining state/polling, production
-selection and shipping remain pending; full and coverage results are in that report.
-Both full dashboard arms pass 3719 tests: reference coverage 85.58%, Go 80.11%.
-Separate patch coverage is 35%/86%; combined plus focused cases passes at 93%, with the new bridge separately measured at 191/204 lines.
+The [control HTTP results](results-control-http.md) preserve native policies,
+157 original focused tests, fifteen additions, full 3719-test arms, native failure
+boundaries and separate/combined coverage. Python retains async I/O, external
+validators, masked-config reads, service callbacks and worker-specific HTTP.
+
+The [preparation results](results-wizard-preparation.md) add native typed-config
+source/default/name phases, preserving ordered providers and both prior-attempt
+reads. Python retains decoding, normalization, callbacks and wizard-state assembly.
+Both full arms pass 3719 tests: reference coverage 85.13%, Go 80.02%; the focused target passes 345.
+Separate patch coverage is 31%/86%; combined plus focused cases passes at 92%, with the new bridge separately measured at 53/58 executable lines.
 
 ## Unavailable and known host constraints
 
@@ -393,7 +393,7 @@ partial navigation aid, not parity evidence.
 Doctor and Tor/ZMTP probes remain parked. The operator's 15:30Z ruling moves
 backend work ahead of further CLI refinement. Next, in order:
 
-1. Finish wizard preparation sequencing and worker-specific control HTTP/I/O; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
+1. Finish wizard-state assembly and worker-specific control HTTP/I/O; add production selection and release/dashboard/appliance shipping artifacts with reference fallback.
 2. Finish remaining state/earnings and polling contracts; keep native and fallback claims separate.
 3. Return to config/render/lifecycle and remaining CLI verbs, starting with `upgrade`, `backup` and `restore`.
 4. Resolve G7 status escape bytes and obtain G8 privileged Linux/fleet proof on pushed heads; performance work remains with its separate owner.

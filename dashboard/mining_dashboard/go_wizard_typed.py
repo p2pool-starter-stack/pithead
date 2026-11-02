@@ -89,16 +89,9 @@ async def _submit_locked(request):
     except (ValueError, TypeError):
         return web.json_response({"error": "Not valid JSON: enter a JSON object."}, status=400)
     try:
-        cfg, changes = server.prepare_config(cfg, ref, reject_legacy_conflicts=True)
-        if not server._last_attempt():
-            defaults, _ = server.prepare_config(
-                server.new_install_defaults(
-                    (server._spool_read("platform.txt") or "appliance").strip()
-                ),
-                ref,
-            )
-            cfg = server.deep_merge(defaults, cfg)
-        server.validate_machine_name(cfg, server._last_attempt())
+        from mining_dashboard import go_wizard_preparation
+
+        cfg, changes = go_wizard_preparation.prepare(cfg, ref)
     except ValueError as error:
         return web.json_response({"error": f"Invalid configuration: {error}"}, status=400)
     result = _call("prepared", fields=_fields(form, ("auth_mode",)))
@@ -140,3 +133,6 @@ async def _submit_locked(request):
 def install(server):
     REFERENCE_FUNCTIONS.setdefault("_submit_locked", server._submit_locked)
     server._submit_locked = _submit_locked
+    from mining_dashboard import go_wizard_preparation
+
+    go_wizard_preparation.install(server)
