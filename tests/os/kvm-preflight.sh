@@ -35,6 +35,7 @@ _vm_teardown_step() {
 }
 
 vm_state() { virsh domstate "$VM"; }
+vm_start() { virsh start "$VM"; }
 vm_lease_ip() { virsh domifaddr "$VM" 2>/dev/null | awk '/ipv4/{print $4}' | cut -d/ -f1 | head -1; }
 vm_list_running() { virsh list --name; }
 
