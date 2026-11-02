@@ -72,6 +72,7 @@ source_image_reconcile_snippet() {
     new_id=""
     cleanup() {
         local rc=$?
+        local first=$rc
         trap - EXIT
         [ "$rc" -eq 0 ] || printf "source-image: diagnostic: failed at %s\n" "$stage" >&2
         if docker image tag "$backup_ref" "$ref" && reconcile_compose_images &&
@@ -81,7 +82,11 @@ source_image_reconcile_snippet() {
         else
             rc=1
         fi
-        [ -z "$new_id" ] || docker image rm "$new_id" >/dev/null || rc=1
+        stage=cleanup-new-image
+        if [ -n "$new_id" ] && docker image inspect "$new_id" >/dev/null 2>&1; then
+            docker image rm "$new_id" >/dev/null || rc=1
+        fi
+        [ "$rc" -eq 0 ] || [ "$first" -ne 0 ] || printf "source-image: diagnostic: failed in cleanup after %s\n" "$stage" >&2
         rm -rf -- "$fixture"
         exit "$rc"
     }
@@ -141,8 +146,6 @@ run_source_image_reconcile() {
         it_fail "status OK after source image fixture restoration (#2934)" "stack did not recover"
     fi
     capture_artifacts "source-image-reconcile" "$OUT_DIR"
-    mkdir -p "$OUT_DIR/source-image-reconcile"
-    cp "$OUT_DIR/source-image-reconcile.log" "$OUT_DIR/source-image-reconcile/"
     return 1
 }
 

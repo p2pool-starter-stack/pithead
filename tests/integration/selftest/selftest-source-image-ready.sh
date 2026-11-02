@@ -102,7 +102,6 @@ for test_case in delayed never one unreadable stalled wait-fails-fixture-succeed
         assert_contains "$test_case captures diagnostics after failure" "$(cat "$scratch/$test_case/trace")" captured
         if [ "$test_case" != wait-fails-fixture-succeeds ]; then
             assert_contains "$test_case prints the fixture's failure stage into the job log" "$result" 'source-image-log: source-image: diagnostic: failed at reconcile'
-            assert_eq "$test_case retains the fixture log with the scenario artifacts" "$([ -f "$scratch/$test_case/source-image-reconcile/source-image-reconcile.log" ] && echo yes)" yes
         fi
         if [ "$test_case" = wait-fails-fixture-succeeds ]; then
             assert_contains "successful image assertions cannot erase readiness failure" "$result" 'RESULT rc=1 failures=1'
@@ -112,6 +111,49 @@ for test_case in delayed never one unreadable stalled wait-fails-fixture-succeed
         ;;
     esac
 done
+
+fixture_dir="$scratch/fixture"
+mkdir -p "$fixture_dir/bin" "$fixture_dir/state" "$fixture_dir/tmp"
+cat >"$fixture_dir/pithead" <<'STUB'
+mutation_lock_acquire() { :; }
+reconcile_compose_images() {
+    if [ -f "$STATE/new-live" ]; then rm -f "$STATE/new-live"; else touch "$STATE/new-live"; echo 'Recreating xmrig-proxy: its container still uses the previous image.'; fi
+}
+STUB
+cat >"$fixture_dir/bin/jq" <<'STUB'
+#!/usr/bin/env bash
+echo registry/proxy:dev
+STUB
+cat >"$fixture_dir/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+'compose config --format json') echo '{}' ;;
+'compose ps -q xmrig-proxy') if [ -f "$STATE/new-live" ]; then echo cid-new; else echo cid-old; fi ;;
+'inspect --format {{.Image}} cid-old') echo sha256:old ;;
+'inspect --format {{.Image}} cid-new') echo sha256:new ;;
+'inspect --format {{.State.Running}} cid-old') echo true ;;
+inspect*working_dir*) pwd -P ;;
+'image inspect --format {{.Id}} registry/proxy:dev') if [ -f "$STATE/built" ]; then echo sha256:new; else echo sha256:old; fi ;;
+'image inspect sha256:new') [ -z "$IMAGE_GONE" ] ;;
+'image rm sha256:new') echo 'Error response from daemon: No such image' >&2; [ -z "$IMAGE_GONE" ] ;;
+build*) touch "$STATE/built" ;;
+esac
+STUB
+chmod +x "$fixture_dir/bin/jq" "$fixture_dir/bin/docker"
+snippet_file="$fixture_dir/snippet.sh"
+source_image_reconcile_snippet >"$snippet_file"
+for gone in "" 1; do
+    rm -f "$fixture_dir/state/"*
+    fixture_rc=0
+    (cd "$fixture_dir" && PATH="$fixture_dir/bin:$PATH" STATE="$fixture_dir/state" TMPDIR="$fixture_dir/tmp" IMAGE_GONE="$gone" bash "$snippet_file") >"$scratch/fixture-run.log" 2>&1 || fixture_rc=$?
+    assert_rc "fixture cleanup passes when the built image is ${gone:+already }removed" "$fixture_rc" 0
+    assert_contains "fixture restores the original image when the built image is ${gone:+already }removed" "$(cat "$scratch/fixture-run.log")" 'source-image: original image restored'
+done
+rm -f "$fixture_dir/state/"*
+fixture_rc=0
+(cd "$fixture_dir" && PATH="$fixture_dir/bin:$PATH" STATE="$fixture_dir/state" TMPDIR="$fixture_dir/tmp" IMAGE_GONE="" bash -c 'docker() { if [ "$*" = "image rm sha256:new" ]; then return 1; fi; command docker "$@"; }; export -f docker; bash "$0"' "$snippet_file") >"$scratch/fixture-run.log" 2>&1 || fixture_rc=$?
+assert_rc "fixture cleanup failure on image removal fails the fixture" "$fixture_rc" 1
+assert_contains "fixture names the cleanup stage when removal fails" "$(cat "$scratch/fixture-run.log")" 'source-image: diagnostic: failed in cleanup after cleanup-new-image'
 
 # Exercise the actual timeout, not the stalled mock: a client ignoring TERM must be killed.
 mkdir "$scratch/bin"
