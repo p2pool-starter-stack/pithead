@@ -149,3 +149,10 @@ test-go-dashboard-control-outcomes-parity: go-dashboard-build
 		tests/service/test_data_service_reconcile_worker_config.py \
 		tests/service/workers/test_worker_change_audit.py tests/service/workers/test_worker_name_space_cap.py \
 		"$(CURDIR)/tests/go-parity/dashboard_control_outcomes_compare.py" "$(CURDIR)/tests/go-parity/dashboard_control_outcomes_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_control_outcomes_controls.py"
+
+.PHONY: test-go-dashboard-audit-cap-parity
+test-go-dashboard-audit-cap-parity: go-dashboard-build
+	cd dashboard && TZ=UTC PITHEAD_IMPL=go PYTHONPATH="$(CURDIR)/tests/go-parity:$(CURDIR)/dashboard" uv run --locked --extra test python -m pytest -p dashboard_audit_cap_plugin \
+		tests/service/test_data_service_reconcile_worker_config.py tests/service/workers/test_worker_change_audit.py \
+		tests/service/workers/test_worker_name_space_cap.py tests/service/test_data_service_rig_edit_detection.py \
+		"$(CURDIR)/tests/go-parity/dashboard_audit_cap_compare.py" "$(CURDIR)/tests/go-parity/dashboard_audit_cap_runtime.py" "$(CURDIR)/tests/go-parity/dashboard_audit_cap_controls.py"

@@ -67,6 +67,10 @@ logger = logging.getLogger("WorkerChangeAudit")
 _WORKERS_MAX = 64
 
 
+def _names_full(live_names, max_names):
+    return live_names >= max_names
+
+
 def admit_worker(svc, worker, now, window_sec):
     """Whether ``worker`` may hold a #724 flood-cap window, bounding the name space (#1695).
 
@@ -89,7 +93,7 @@ def admit_worker(svc, worker, now, window_sec):
     for name, (start, _) in list(svc._rig_edit_window.items()):
         if now - start >= window_sec:
             del svc._rig_edit_window[name]
-    if len(svc._rig_edit_window) >= _WORKERS_MAX:
+    if _names_full(len(svc._rig_edit_window), _WORKERS_MAX):
         first_over = svc._rig_edit_names_over is None
         if first_over:
             svc._rig_edit_names_over = now

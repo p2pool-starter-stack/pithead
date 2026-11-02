@@ -39,6 +39,10 @@ _RIG_EDIT_WINDOW_SEC = 3600
 _CONTROL_HISTORY_LIMIT = 20
 
 
+def _count_policy(count):
+    return count < _RIG_EDIT_CAP_PER_HOUR, count == _RIG_EDIT_CAP_PER_HOUR
+
+
 def _terminal_control_history(extra_stats):
     """Yield terminal entries from rigforge#519's additive ``control_history`` ring."""
     rf = extra_stats.get("rigforge") if isinstance(extra_stats, dict) else None
@@ -213,7 +217,7 @@ class DataAuditMixin:
         # unconditional write is what makes a #724 per-worker trip present. Make it conditional
         # and every per-worker trip silently writes the names-ceiling marker instead.
         self._rig_edit_window[worker] = (start, count + 1)
-        return count < _RIG_EDIT_CAP_PER_HOUR, count == _RIG_EDIT_CAP_PER_HOUR
+        return _count_policy(count)
 
     async def _reconcile_worker_config(self, workers, worker_results):
         """Catch up any still-``accepted`` #185 worker-config history row whose change_id the rig

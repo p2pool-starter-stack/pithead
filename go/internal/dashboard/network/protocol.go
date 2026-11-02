@@ -186,6 +186,12 @@ func build(raw []byte) (any, error) {
 			return nil, err
 		}
 		return controlOutcomes(request)
+	case "audit-cap-policy":
+		var request auditCapRequest
+		if err := decodeComplete(raw, &request, true); err != nil {
+			return nil, err
+		}
+		return buildAuditCapPolicy(request)
 	default:
 		return nil, fmt.Errorf("unsupported network operation: %s", operation.Operation)
 	}
