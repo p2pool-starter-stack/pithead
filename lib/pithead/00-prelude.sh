@@ -17,6 +17,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${PITHEAD_IMPL:-go}" = go ] && [ "$#" -e
     case "$1" in
     help | -h | --help | version | -V | --version | status)
         _pithead_go_ready=1
+        [ -z "$(trap -p INT TERM PIPE)" ] || _pithead_go_ready=0
         [ -e /dev/fd/1 ] || [ -e /proc/self/fd/1 ] || _pithead_go_ready=0
         [ -e /dev/fd/2 ] || [ -e /proc/self/fd/2 ] || _pithead_go_ready=0
         if [ "$1" = status ]; then
@@ -35,7 +36,10 @@ if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${PITHEAD_IMPL:-go}" = go ] && [ "$#" -e
         _pithead_go_binary="${PITHEAD_GO_BINARY:-$_pithead_go_dir/go/bin/pithead}"
         if [ "$_pithead_go_ready" = 1 ] && [ -x "$_pithead_go_binary" ]; then
             _pithead_go_code=0
+            _pithead_go_interrupted=0
+            trap '_pithead_go_interrupted=1' INT
             { _pithead_go_receipt="$({ _PITHEAD_GO_NATIVE=1 _PITHEAD_GO_RECEIPT=1 _PITHEAD_GO_SCRIPT="$0" "$_pithead_go_binary" "$@" 3>&1 1>&4; } 2>/dev/null)" || _pithead_go_code=$?; } 4>&1 5>&2
+            trap - INT
             # Require completion evidence before trusting a native exit code.
             if [ "$_pithead_go_receipt" = pithead-native-v1 ]; then
                 case "$_pithead_go_code" in
@@ -44,8 +48,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${PITHEAD_IMPL:-go}" = go ] && [ "$#" -e
                 241) exit 141 ;;
                 esac
             fi
+            [ "$_pithead_go_interrupted" = 0 ] || kill -INT "$$"
         fi
-        unset _pithead_go_ready _pithead_go_charmap _pithead_go_dir _pithead_go_binary _pithead_go_code _pithead_go_receipt
+        unset _pithead_go_ready _pithead_go_charmap _pithead_go_dir _pithead_go_binary _pithead_go_code _pithead_go_receipt _pithead_go_interrupted
         ;;
     esac
 fi

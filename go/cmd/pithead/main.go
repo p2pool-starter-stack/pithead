@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/p2pool-starter-stack/pithead/go/internal/cli"
 )
@@ -20,6 +21,9 @@ func main() {
 		os.Exit(1)
 	}
 	if internal && os.Getenv("_PITHEAD_GO_RECEIPT") == "1" {
+		for _, fd := range []int{3, 4, 5} {
+			syscall.CloseOnExec(fd)
+		}
 		stderr := os.NewFile(5, "native stderr")
 		if _, err := stderr.Stat(); err != nil {
 			os.Exit(125)

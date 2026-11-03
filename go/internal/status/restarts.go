@@ -2,6 +2,7 @@ package status
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -25,6 +26,9 @@ var (
 )
 
 func (r *Runner) restartingNames() ([]string, error) {
+	if os.Getenv("PITHEAD_BOOT_GATE") == "1" {
+		return nil, nil
+	}
 	before, err := r.restartSnapshot()
 	if err != nil || len(before) == 0 {
 		return nil, err

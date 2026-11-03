@@ -36,6 +36,10 @@ func (r *Runner) clearnetBanner() {
 }
 
 func (r *Runner) torAttested(chain string) bool {
+	return r.torAttestedOwnedBy(chain, 0)
+}
+
+func (r *Runner) torAttestedOwnedBy(chain string, owner uint32) bool {
 	stateDir, controlDir := r.getQuiet("CLEARNET_STATE_DIR"), r.getQuiet("CONTROL_DIR")
 	if stateDir == "" {
 		stateDir = filepath.Join(r.Dir, "data", "clearnet-state")
@@ -54,7 +58,7 @@ func (r *Runner) torAttested(chain string) bool {
 		return false
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != 0 {
+	if !ok || stat.Uid != owner {
 		return false
 	}
 	data, err := os.ReadFile(r.path(filepath.Join(controlDir, "results", "clearnet-"+chain+"-tor.json")))

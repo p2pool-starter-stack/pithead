@@ -22,6 +22,7 @@ The launcher's private child environment requests encoded native exit results
 and a completion receipt on a separate descriptor, so a service health failure
 is distinguishable from an executable failure. Native diagnostics use the original
 stderr descriptor after startup; executable startup errors are suppressed during recovery.
+The private receipt and output descriptors are closed when native status starts a child.
 Native status requires Docker, jq, curl, sleep, openssl, open output
 descriptors, and either C/POSIX or a verified UTF-8 locale. Unsupported locales
 and closed output descriptors stay in Bash. An executable that prints before failing can
@@ -30,6 +31,9 @@ leave that output visible before Bash recovers.
 Direct `go/bin/pithead` execution uses `exec` for Bash fallback with the original
 arguments, environment and descriptors. The public shell entry point also
 preserves inherited ignored signals by keeping unsupported invocations in Bash.
+Wrapper interrupts preserve Bash exit behavior; a group INT that prevents native
+completion is re-raised instead of replaying the command. `PITHEAD_BOOT_GATE=1` skips restart snapshots
+and their observation delay in both implementations.
 
 Run the Linux checks through the pinned test image:
 

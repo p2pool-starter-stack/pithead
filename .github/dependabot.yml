@@ -37,6 +37,7 @@ updates:
   # below: a different base, a different policy note, and stakes worth their own group.
   - package-ecosystem: "docker"
     directories:
+      - "/go"
       - "/dashboard"
       - "/build/monero"
       - "/build/p2pool"

@@ -105,6 +105,49 @@ class StatusParityTest(unittest.TestCase):
         self.env["PITHEAD_ENGINE"] = "podman"
         self.compare({"restart": "caddy"})
 
+    def test_boot_gate_skips_restart_observation_exactly(self):
+        sleep_marker = self.install / "slept"
+        (self.bin / "sleep").write_text(f'#!/bin/sh\ntouch "{sleep_marker}"\n')
+        for engine in ("docker", "podman"):
+            self.env["PITHEAD_ENGINE"] = engine
+            for flag in ("1", "true", "01", "0", ""):
+                self.env["PITHEAD_BOOT_GATE"] = flag
+                for model in ({"restart": "caddy"}, {"bad_snapshot": True}):
+                    with self.subTest(engine=engine, flag=flag, model=model):
+                        sleep_marker.unlink(missing_ok=True)
+                        result = self.compare(model)
+                        self.assertEqual(result.returncode, 0 if flag == "1" else 1)
+                        self.assertEqual(self.counter.exists(), flag != "1")
+                        self.assertEqual(sleep_marker.exists(), flag != "1" and "restart" in model)
+
+    def test_boot_health_helper_uses_real_launcher(self):
+        helper = test_cli.ROOT / "os/overlay/pithead-boot-stack-health"
+        self.model.write_text(json.dumps({"restart": "caddy"}))
+        (self.install / ".env").write_text("COMPOSE_PROFILES=\n")
+        for implementation in ("bash", "go"):
+            with self.subTest(implementation=implementation):
+                self.counter.unlink(missing_ok=True)
+                result = subprocess.run(  # noqa: S603
+                    [
+                        test_cli.REAL_BASH,
+                        "-c",
+                        'source "$1"; BOOT_STATUS_LOG=boot-status.log; '
+                        "boot_status_ready || exit; boot_status_blocking",
+                        "boot-status-test",
+                        str(helper),
+                    ],
+                    cwd=self.install,
+                    env=self.child_environment(implementation, self.env),
+                    capture_output=True,
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+                self.assertIn(
+                    "All expected services are up.", (self.install / "boot-status.log").read_text()
+                )
+                self.assertFalse(self.counter.exists())
+
     def test_migration_hold(self):
         version = (self.install / "VERSION").read_text().strip()
         for marker in (version, version + "|A", version + "|B", "malformed", "9.9.9|A"):

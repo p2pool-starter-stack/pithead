@@ -101,7 +101,12 @@ bench-ci as a retryable environment wait after baseline restore.
 
 `make release`'s blocking test gate runs `make lint`, which shells out to `shellcheck`, `shfmt`,
 `node`/`npx`, and `uv`/`uvx`; its `test-stack` leg also runs the Go module raise watch self-test, which
-needs Go 1.21 or newer on PATH (offline, against a fixture module graph; the preflight checks the version; Ubuntu 24.04's `golang-go` is 1.22, Debian 12's is 1.19 and fails the check).
+needs Go 1.21 or newer on PATH (offline, against a fixture module graph; the preflight checks the
+version; Ubuntu 24.04's `golang-go` is 1.22, Debian 12's is 1.19 and fails the check). The native CLI
+tests select the exact Go version pinned in `go/cli.mk` and run the race detector, so preflight also
+verifies that the pinned toolchain is available and that its configured C compiler is on PATH. Go
+downloads a missing pinned toolchain into the same repo-local `.go-cache/mod` used by the test gate
+on first use; preinstall or cache it if the release box cannot reach the Go toolchain service.
 A reimaged box loses these, so the release preflight
 ([#426](https://github.com/p2pool-starter-stack/pithead/issues/426)) stops early and names the
 missing tools and their effective PATH rather than dying mid-gate. The check runs in a dry run
@@ -117,9 +122,9 @@ upstream release builds while some distro builds print a bare number, so the gat
 comparing.
 
 ```bash
-# node 20 (brings npx) + the basics the harness also needs (golang-go: the go-raise-watch self-test)
+# node 20 (brings npx) + the basics the harness also needs
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs jq curl git tar make golang-go
+sudo apt-get install -y nodejs jq curl git tar make golang-go gcc libc6-dev
 
 # shellcheck + shfmt, read from the Makefile pins instead of copied. This block reads the repo, so
 # it needs a checkout and runs from its root. If it does not, the two guards name that as the cause.

@@ -118,7 +118,8 @@ apply_release_path() {
 }
 
 check_release_toolchain() {
-    local tool resolved go_version missing=()
+    local tool resolved go_version pinned_version c_compiler c_compiler_command
+    local pinned_go="" go_cache="$PWD/.go-cache/build" go_mod_cache="$PWD/.go-cache/mod" missing=()
     for tool in "${LINT_TOOLCHAIN[@]}"; do
         if resolved="$(command -v "$tool")"; then
             log "Lint/test tool $tool: $resolved"
@@ -132,6 +133,20 @@ check_release_toolchain() {
     go_version="$(go version 2>&1)" || true
     [[ "$go_version" =~ go1\.([0-9]+) ]] && [ "${BASH_REMATCH[1]}" -ge "$GO_MIN_MINOR" ] ||
         die "go 1.$GO_MIN_MINOR or newer is required by test-stack's go-raise-watch self-test (found: ${go_version:-no output}). Set RELEASE_TOOL_PATH to a newer Go; see docs/dev/release-server.md § The lint/release toolchain."
+    while IFS= read -r tool; do
+        [[ "$tool" =~ ^GO_VERSION[[:space:]]*:=[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)$ ]] && pinned_go="${BASH_REMATCH[1]}"
+    done <go/cli.mk
+    [ -n "$pinned_go" ] || die "Could not read the pinned Go version from go/cli.mk."
+    pinned_version="$(GOTOOLCHAIN="go$pinned_go" GOCACHE="$go_cache" GOMODCACHE="$go_mod_cache" go version 2>&1)" ||
+        die "Pinned Go toolchain go$pinned_go is unavailable (found: ${pinned_version:-no output}). Install or cache it before the release; see docs/dev/release-server.md § The lint/release toolchain."
+    [[ "$pinned_version" =~ go${pinned_go//./\.}([[:space:]]|$) ]] ||
+        die "Pinned Go toolchain go$pinned_go was not selected (found: ${pinned_version:-no output}). See docs/dev/release-server.md § The lint/release toolchain."
+    c_compiler="$(GOTOOLCHAIN="go$pinned_go" GOCACHE="$go_cache" GOMODCACHE="$go_mod_cache" go env CC 2>&1)" ||
+        die "Could not resolve the C compiler required by the Go race detector (found: ${c_compiler:-no output})."
+    read -r c_compiler_command _ <<<"$c_compiler"
+    resolved="$(command -v "$c_compiler_command")" ||
+        die "C compiler '$c_compiler' is required by the Go race detector. Set RELEASE_TOOL_PATH to its installed directory; see docs/dev/release-server.md § The lint/release toolchain."
+    log "Go race-detector C compiler $c_compiler: $resolved"
     ok "Lint/test toolchain present (${LINT_TOOLCHAIN[*]})."
 }
 

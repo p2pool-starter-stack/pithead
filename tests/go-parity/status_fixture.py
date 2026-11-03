@@ -1,6 +1,8 @@
 import json
 import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 model = json.loads(Path(os.environ["STATUS_FIXTURE"]).read_text())
@@ -11,7 +13,22 @@ ids = {name: f"{index + 1:064x}" for index, name in enumerate(services)}
 
 if tool in ("docker", "podman"):
     if args == ["compose", "ps"]:
-        print("fixture compose table")
+        if model.get("invocations"):
+            path = Path(model["invocations"])
+            path.write_text(str(int(path.read_text()) + 1 if path.exists() else 1))
+        if model.get("descendant"):
+            subprocess.Popen(  # noqa: S603
+                [sys.executable, model["descendant"]],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=False,
+            )
+        if model.get("ready"):
+            Path(model["ready"]).touch()
+            while not Path(model["release"]).exists():
+                time.sleep(0.01)
+        print(model.get("table", "fixture compose table"))
     elif args == ["compose", "config", "--services"]:
         print("\n".join(services))
     elif args == ["compose", "ps", "-aq"]:

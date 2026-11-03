@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -9,9 +10,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BASH = shutil.which("bash")
 DOCKER = shutil.which("docker")
-GO_IMAGE = (
-    "golang:1.26.10-trixie@sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4"
-)
 
 
 class ShippingContractTest(unittest.TestCase):
@@ -112,14 +110,66 @@ class ShippingContractTest(unittest.TestCase):
         go_dockerfile = go_dockerfile_path.read_text()
         rootfs_dockerfile = (ROOT / "os/rootfs/Dockerfile").read_text()
         runner_dockerfile = (ROOT / "tests/runner/Dockerfile").read_text()
+        cli_makefile = (ROOT / "go/cli.mk").read_text()
 
-        self.assertIn(f"FROM --platform=$BUILDPLATFORM {GO_IMAGE} AS build", go_dockerfile)
-        self.assertIn(f"FROM {GO_IMAGE} AS gobuild", rootfs_dockerfile)
-        self.assertIn(f"FROM {GO_IMAGE} AS go", runner_dockerfile)
+        go_image = re.search(
+            r"^FROM --platform=\$BUILDPLATFORM (\S+) AS build$", go_dockerfile, re.M
+        )
+        rootfs_image = re.search(r"^FROM (\S+) AS gobuild$", rootfs_dockerfile, re.M)
+        runner_image = re.search(r"^FROM (\S+) AS go$", runner_dockerfile, re.M)
+        go_version = re.search(r"^GO_VERSION := (\S+)$", cli_makefile, re.M)
+
+        self.assertIsNotNone(go_image)
+        self.assertIsNotNone(rootfs_image)
+        self.assertIsNotNone(runner_image)
+        self.assertIsNotNone(go_version)
+        image = go_image.group(1)
+        self.assertEqual(rootfs_image.group(1), image)
+        self.assertEqual(runner_image.group(1), image)
+        self.assertRegex(
+            image,
+            rf"^golang:{re.escape(go_version.group(1))}-trixie@sha256:[0-9a-f]{{64}}$",
+        )
+
         self.assertIn("ENV CGO_ENABLED=0", go_dockerfile)
         self.assertIn("-trimpath -buildvcs=false -ldflags=-buildid=", go_dockerfile)
         self.assertIn("-trimpath -buildvcs=false -ldflags=-buildid=", rootfs_dockerfile)
         self.assertNotIn("require ", (ROOT / "go/go.mod").read_text())
+
+    def test_go_cli_workflow_uses_registry_mirror_and_pr_concurrency(self):
+        workflow = (ROOT / ".github/workflows/go-cli.yml").read_text()
+        checkout_match = re.search(
+            r"^      - uses: actions/checkout@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$",
+            workflow,
+            re.M,
+        )
+        self.assertIsNotNone(checkout_match)
+        checkout = checkout_match.group()
+        self.assertIn(
+            f"{checkout}\n"
+            "        with:\n"
+            "          persist-credentials: false\n"
+            "      - uses: ./.github/actions/docker-registry-mirror",
+            workflow,
+        )
+        self.assertIn(
+            "concurrency:\n"
+            "  group: ${{ github.workflow }}-${{ github.ref }}\n"
+            "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+            workflow,
+        )
+        checkout_index = workflow.index(checkout)
+        mirror_index = workflow.index("      - uses: ./.github/actions/docker-registry-mirror")
+        suite_index = workflow.index("      - name: Run the pinned Linux CLI suites")
+        self.assertLess(checkout_index, mirror_index)
+        self.assertLess(mirror_index, suite_index)
+
+    def test_dependabot_tracks_go_builder_image(self):
+        config = (ROOT / ".github/dependabot.yml").read_text()
+        docker_updates = config.split('- package-ecosystem: "docker"', 1)[1]
+        docker_updates = docker_updates.split("  - package-ecosystem:", 1)[0]
+
+        self.assertIn('      - "/go"\n', docker_updates)
 
     def test_rootfs_stages_only_the_native_cli(self):
         dockerfile = (ROOT / "os/rootfs/Dockerfile").read_text()

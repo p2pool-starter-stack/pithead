@@ -6,9 +6,12 @@ RT_BASH="$(command -v bash)"
 RTB="$SANDBOX/release-tools"
 RT_KEYS="$SANDBOX/release-env-keys"
 RT_TOOLS="$SANDBOX/release-extra-tools"
+RT_NO_PIN="$SANDBOX/release-no-go-pin"
 RT_SENTINEL="release-env-sentinel-3446"
-mkdir -p "$RTB" "$RT_KEYS" "$RT_TOOLS"
-chmod 0755 "$RTB" "$RT_KEYS" "$RT_TOOLS"
+RT_PINNED_GO="$(awk '$1 == "GO_VERSION" && $2 == ":=" { print $3 }' "$ROOT/go/cli.mk")"
+mkdir -p "$RTB" "$RT_KEYS" "$RT_TOOLS" "$RT_NO_PIN/go"
+chmod 0755 "$RTB" "$RT_KEYS" "$RT_TOOLS" "$RT_NO_PIN" "$RT_NO_PIN/go"
+printf 'NOT_GO_VERSION := 0.0.0\n' >"$RT_NO_PIN/go/cli.mk"
 ln -sf "$(command -v stat)" "$RTB/stat"
 ln -sf "$(command -v id)" "$RTB/id"
 
@@ -26,11 +29,14 @@ rt_drive() {
     ' 2>&1
 }
 
-for t in shellcheck shfmt node npx uv uvx go; do
+for t in shellcheck shfmt node npx uv uvx go gcc; do
     printf '#!/bin/sh\nexit 0\n' >"$RT_TOOLS/$t"
     chmod +x "$RT_TOOLS/$t"
 done
-printf '#!/bin/sh\necho "go version go1.22.2 linux/amd64"\n' >"$RT_TOOLS/go"
+printf '%s\n' '#!/bin/sh' \
+    'if [ -n "${GOTOOLCHAIN:-}" ] && { [ "${GOCACHE:-}" != "$PWD/.go-cache/build" ] || [ "${GOMODCACHE:-}" != "$PWD/.go-cache/mod" ]; }; then echo "wrong pinned Go cache" >&2; exit 1; fi' \
+    'if [ "$1 $2" = "env CC" ]; then echo "gcc -m64"; elif [ -n "${GOTOOLCHAIN:-}" ]; then echo "go version ${GOTOOLCHAIN} linux/amd64"; else echo "go version go1.22.2 linux/amd64"; fi' \
+    >"$RT_TOOLS/go"
 
 echo "== unit: release.sh checks the run toolchain in real and dry runs (#426, #3446) =="
 for dry in 0 1; do
@@ -72,6 +78,45 @@ SH
     # MUTATION PROOF: append RELEASE_TOOL_PATH rather than prepend it.
     assert_contains "tool directory is first on PATH" "$rt_out" "FIRST=$RT_TOOLS"
 done
+
+echo "== unit: release.sh requires the race-detector compiler and pinned Go toolchain =="
+cp "$RT_TOOLS/"* "$RTB/"
+rm "$RTB/gcc"
+rt_out="$(
+    rt_drive <<'SH'
+DRY_RUN=0
+SKIP_TESTS=0
+check_release_toolchain
+SH
+)"
+assert_rc "missing race-detector C compiler -> preflight fails" "$?" "1"
+assert_contains "missing C compiler command is named" "$rt_out" "C compiler 'gcc -m64' is required"
+cp "$RT_TOOLS/gcc" "$RTB/gcc"
+printf '%s\n' '#!/bin/sh' \
+    'if [ -z "${GOTOOLCHAIN:-}" ]; then echo "go version go1.22.2 linux/amd64"; else echo "pinned toolchain unavailable" >&2; exit 1; fi' \
+    >"$RTB/go"
+chmod +x "$RTB/go"
+rt_out="$(
+    rt_drive <<'SH'
+DRY_RUN=0
+SKIP_TESTS=0
+check_release_toolchain
+SH
+)"
+assert_rc "unavailable pinned Go toolchain -> preflight fails" "$?" "1"
+assert_contains "pinned Go failure names the cli.mk version" "$rt_out" "Pinned Go toolchain go$RT_PINNED_GO is unavailable"
+assert_contains "pinned Go failure reports the probe output" "$rt_out" "pinned toolchain unavailable"
+cp "$RT_TOOLS/go" "$RTB/go"
+rt_out="$(
+    rt_drive <<'SH'
+DRY_RUN=0
+SKIP_TESTS=0
+cd "$RT_KEYPATH/../release-no-go-pin"
+check_release_toolchain
+SH
+)"
+assert_rc "missing GO_VERSION pin -> preflight fails under nounset" "$?" "1"
+assert_contains "missing GO_VERSION pin has a direct diagnostic" "$rt_out" "Could not read the pinned Go version from go/cli.mk"
 rt_out="$(
     rt_drive <<'SH'
 export -n PATH

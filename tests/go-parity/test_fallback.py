@@ -6,6 +6,7 @@ import subprocess
 import unittest
 
 import test_cli
+import test_status
 
 
 class FallbackContractTest(unittest.TestCase):
@@ -151,7 +152,12 @@ class LauncherRecoveryTest(unittest.TestCase):
         )
 
     def test_missing_nonexecutable_and_broken_binaries_use_bash(self):
-        binary = self.fixture.install / "broken-go"
+        fixture = test_status.StatusParityTest("runTest")
+        fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        fixture.model.write_text(json.dumps({}))
+        (fixture.install / ".env").write_text("COMPOSE_PROFILES=\n")
+        binary = fixture.install / "broken-go"
         for mode in (
             "missing",
             "nonexecutable",
@@ -160,9 +166,17 @@ class LauncherRecoveryTest(unittest.TestCase):
             "invalid",
             "crash",
             "collision",
+            "html",
+            "directory",
         ):
             with self.subTest(mode=mode):
-                if mode != "missing":
+                if binary.is_dir():
+                    binary.rmdir()
+                else:
+                    binary.unlink(missing_ok=True)
+                if mode == "directory":
+                    binary.mkdir()
+                elif mode != "missing":
                     content = {
                         "nonexecutable": b"#!/bin/sh\nexit 200\n",
                         "failure": b"#!/bin/sh\nexit 1\n",
@@ -170,13 +184,19 @@ class LauncherRecoveryTest(unittest.TestCase):
                         "invalid": b"\x7fELF\x00invalid\n",
                         "crash": b'#!/bin/sh\nkill -SEGV "$$"\n',
                         "collision": b"#!/bin/sh\nexit 200\n",
+                        "html": b"<html>not an executable</html>\n",
                     }[mode]
                     binary.write_bytes(content)
                     binary.chmod(0o644 if mode == "nonexecutable" else 0o755)
-                for command in ("help", "version"):
-                    baseline = self.fixture.invoke("bash", command)
-                    actual = self.fixture.invoke(
-                        "go", command, env={"PITHEAD_GO_BINARY": str(binary)}
+                for command in ("help", "version", "status"):
+                    baseline = test_cli.CLIParityTest.invoke(
+                        fixture, "bash", command, env=fixture.env
+                    )
+                    actual = test_cli.CLIParityTest.invoke(
+                        fixture,
+                        "go",
+                        command,
+                        env={**fixture.env, "PITHEAD_GO_BINARY": str(binary)},
                     )
                     self.assertEqual(
                         (actual.returncode, actual.stdout, actual.stderr),
