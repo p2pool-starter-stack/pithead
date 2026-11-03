@@ -248,9 +248,14 @@ release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 a
     return 1
 }
 
+commit_config_stamp() {
+    PITHEAD_DEFER_CONFIG_STAMP=0 bash -c '. ./pithead; stamp_config_version' || true
+}
+
 [ "${BASH_SOURCE[0]}" = "${0}" ] || return 0
 
 export PITHEAD_DEFER_LOCAL_MINER=1
+export PITHEAD_DEFER_CONFIG_STAMP=1
 cd /data/pithead || exit 1
 
 # Role fork (#797): a rig is not a small coordinator, it is a different machine. No compose
@@ -354,6 +359,7 @@ for gate_attempt in $(seq 90); do
     if [ "$gate_pass" = 1 ]; then
         command -v rauc >/dev/null 2>&1 && rauc status mark-good
         boot_gate_passed
+        commit_config_stamp
         echo "pithead-boot: stack is serving (HTTP $code) and doctor reports ${gate_advisory:-healthy}${gate_advisory:+ as its only failing check} — booted slot committed${gate_advisory:+ with that recorded as advisory; run './pithead apply' on the machine to re-mint}"
         # OS-update verdict, success half: this slot just committed while an in-flight flag names
         # exactly this version — the dashboard-driven update landed and can no longer fall back.

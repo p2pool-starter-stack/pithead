@@ -36,6 +36,14 @@ for stamp in '"old"' 17 null '"100000000000.1.0"'; do
     assert_rc "malformed stamp $stamp does not fail" "$?" 0
     assert_eq "stamp $stamp becomes release core" "$(jq -r .config_version "$CV/config.json")" 2.0.0
 done
+jq '.config_version="1.9.0"' "$CV/equal" >"$CV/config.json"
+cp "$CV/config.json" "$CV/older"
+out=$(PITHEAD_DEFER_CONFIG_STAMP=1 run_sourced "$CV" parse_and_validate_config 2>&1)
+assert_rc "deferred stamp keeps validation passing" "$?" 0
+cmp -s "$CV/config.json" "$CV/older" && ok "deferred stamp leaves an uncommitted slot's config bytes untouched" || bad "deferred stamp leaves an uncommitted slot's config bytes untouched" changed
+printf '#!/usr/bin/env bash\nsource %q\n' "$STACK" >"$CV/pithead"
+out=$(cd "$CV" && PITHEAD_DEFER_CONFIG_STAMP=1 bash -c 'source "$1"; commit_config_stamp' _ <(sed -n '/^commit_config_stamp()/,/^}/p' "$ROOT/os/overlay/pithead-boot") 2>&1)
+assert_eq "committing the slot stamps the config" "$(jq -r .config_version "$CV/config.json")" 2.0.0
 cp "$CV/before" "$CV/config.json"
 out=$(run_sourced "$CV" eval 'mv() { return 1; }; parse_and_validate_config' 2>&1)
 assert_rc "stamp write failure is nonfatal" "$?" 0
