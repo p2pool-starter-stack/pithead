@@ -245,7 +245,6 @@ podman inspect dashboard --format '{{json .Config.Env}}' | jq -ce --arg onion '$
     return 1
 }
 
-# Host-side apply provisions the fixture before exercising the dashboard control route.
 phase_provision_dashboard_onion_exposure() {
     # shellcheck disable=SC2034
     local DASH_USER="$1" DASH_PASS="$2"
