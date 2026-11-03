@@ -112,8 +112,9 @@ The stack's defaults:
   dashboard container's own read probes and adopt request are not host-pinned. The typed
   `APPLY` is friction, not a second identity: the dashboard container writes its own request, so a
   compromised dashboard can add or repoint a rig at a LAN address of its choosing and send that
-  address a token it chose, or drop a rig from management. It cannot send a stored rig token to a
-  new address, because a repoint must carry a replacement token.
+  address a token it chose, or drop a rig from management. The preview refuses a repoint that keeps a
+  masked stored token, so it cannot move a token it only holds masked; the host gate cannot tell a
+  retyped token from the stored one, so this assumes the dashboard cannot read stored rig tokens.
   No reference field is refused from the dashboard (#2367); `ssh.*` is absent from release
   images. The dashboard password and the `telegram.events.wallet_changed` /
   `telegram.events.clearnet_exposed` tamper alarms are changeable behind typed `APPLY` and the

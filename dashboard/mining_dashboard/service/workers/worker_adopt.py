@@ -1,23 +1,3 @@
-"""Click-to-adopt a rig: the dashboard-side half of the adopt flow (the operator-decision
-comment, issue #893).
-
-The write itself rides the EXISTING control-channel config path — the same preview/commit
-mechanics ``ConfigView`` uses for any other edit (no new write endpoint, ``web/server.py``
-``handle_control_preview``/``handle_control_commit``). This module only builds the one guard that
-path needs to carry a ``workers.list[]`` write at all: ``pithead``'s ``control_worker_append``
-(``lib/pithead/42-control-approval-helpers.sh``), called by both the preview and the commit gate,
-lets an add, repoint, edit or removal of a per-worker descriptor through behind the typed APPLY and
-its SSRF floor (#2641, #912), and refuses a repoint that keeps the stored token.
-That host-side check is the actual security authority.
-
-What lives here is the *dashboard-side* mirror of the same shape/charset validation pithead's own
-``validate_worker_endpoints`` applies (defense in depth, the same pattern ``control_service``'s
-``SECRET_PATHS``/``EDITABLE_ENV_KEY_PATHS`` already follow), wired into ``handle_control_preview``
-so a malformed adopt submission is refused before it ever reaches the spool — never a
-miner-advertised value auto-trusted: the host field the operator confirms is still just a
-PREFILL, and every field here is exactly what the operator typed or edited in the adopt form.
-"""
-
 import ipaddress
 import re
 
