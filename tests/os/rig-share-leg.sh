@@ -45,13 +45,9 @@ _rig_share_resolves() {
 }
 
 _rig_share_state() {
-    local auth="${coord_user}:${coord_pass}"
-    case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
-    auth=${auth//\\/\\\\}
-    auth=${auth//\"/\\\"}
-    curl --config - -fsSk -m 10 "https://$coord_ip/api/state" <<EOF
-user = "$auth"
-EOF
+    case "${coord_user}:${coord_pass}" in *$'\n'* | *$'\r'*) return 1 ;; esac
+    DASH_USER="$coord_user" DASH_PASS="$coord_pass" \
+        dashboard_curl -fsSk -m 10 "https://$coord_ip/api/state"
 }
 
 _rig_share_counters() {

@@ -15,6 +15,7 @@ status_sync_case() { # <tari-required> <global-syncing> [miner state: "exited no
             case "$1" in
             COMPOSE_PROFILES) printf '%s' 'local_node,local_tari' ;;
             TARI_REQUIRED) printf '%s' "$required" ;;
+            DASHBOARD_BOOT_PROBE_TOKEN) printf '%s' 'fixture-probe-token' ;;
             *) return 1 ;;
             esac
         }
@@ -37,6 +38,7 @@ status_sync_case() { # <tari-required> <global-syncing> [miner state: "exited no
         }
         curl() {
             [ "$api" = ok ] || return 22
+            cat >/dev/null
             printf '{"syncing":%s,"sync":{"monero":{"state":"done"},"tari":{"state":"loading"}}}\n' "$syncing"
         }
         os_migration_hold_active() { return 1; }

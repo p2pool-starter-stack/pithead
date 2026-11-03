@@ -43,7 +43,7 @@ drive() (
         ;;
     _pred_xvb_feed_fresh)
         api_state() { obs >/dev/null && if is_ready; then echo '{"hashrate":{"xvb_stale":false}}'; else echo '{"hashrate":{"xvb_stale":true}}'; fi; }
-        rx() { if is_ready; then echo '{"ts":200}'; else echo '{"ts":50}'; fi; }
+        dashboard_api_get() { if is_ready; then echo '{"ts":200}'; else echo '{"ts":50}'; fi; }
         wait_for 40 5 d _pred_xvb_feed_fresh >"$work/output" 2>&1 || rc=$?
         ;;
     _pred_xvb_routed_visible)

@@ -3,6 +3,8 @@ import base64
 import binascii
 import ipaddress
 import json
+import os
+import secrets
 import sqlite3
 from pathlib import Path
 
@@ -12,6 +14,10 @@ from mining_dashboard.service import auth_sessions, dashboard_auth
 
 COOKIE = "pithead_session"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+MACHINE_ROUTES = {
+    "/metrics": ("metrics", "metrics_password_hash"),
+    "/api/xvb-standby": ("standby", "standby_password_hash"),
+}
 LOGIN_ASSETS = frozenset(
     {
         "/static/pithead-mark.svg",
@@ -47,10 +53,8 @@ def client_key(request):
     return request.remote or "unknown"
 
 
-def require_origin(request, allow_header=False):
+def require_origin(request):
     origin = request.headers.get("Origin")
-    if origin is None and allow_header and request.headers.get("X-Pithead-Control") == "1":
-        return
     expected = f"{'https' if secure(request) else 'http'}://{request.host}"
     if origin != expected:
         raise web.HTTPForbidden(text="Request origin refused.")
@@ -85,20 +89,20 @@ def _unauthorized(request):
 def _credentials(request):
     value = request.headers.get("Authorization", "")
     if len(value) > 1024:
-        return "", "", False
+        return "", ""
     try:
         if value.startswith("Basic "):
             raw = base64.b64decode(value[6:], validate=True).decode()
             name, password = raw.split(":", 1)
-            return name, password, False
+            return name, password
         if value.startswith("Bearer ") and request.path == "/metrics":
-            return "metrics", value[7:], True
+            return "metrics", value[7:]
     except (ValueError, UnicodeError, binascii.Error):
         pass
-    return "", "", False
+    return "", ""
 
 
-async def _check_password(request, name, password, machine=False, bearer=False):
+async def _check_password(request, name, password, machine=False):
     attempts = request.app["auth_runtime"]["attempts"]
     entry = attempts.start(client_key(request))
     if entry is None or request.app["auth_runtime"]["busy"] >= 4:
@@ -107,19 +111,31 @@ async def _check_password(request, name, password, machine=False, bearer=False):
             headers={"Retry-After": str(dashboard_auth.FAILURE_WINDOW)},
         )
     cfg = request["auth_config"]
-    user = cfg["users"].get(name) if not bearer else None
-    machine_hash = cfg["metrics_password_hash"] if machine and name == "metrics" else ""
-    candidates = [(user["password_hash"], user)] if user else []
-    if machine_hash:
-        candidates.append((machine_hash, {"name": "metrics", "role": "viewer"}))
-    if not candidates:
-        candidates.append((next(iter(cfg["users"].values()), {}).get("password_hash", ""), None))
+    if machine:
+        account, key = MACHINE_ROUTES[request.path]
+        hashed = cfg.get(key, "")
+        hashes = {hashed[4:6]: hashed} if hashed else {}
+        user = (
+            {"name": account, "role": "viewer", "password_hash": hashed}
+            if name == account and hashed
+            else None
+        )
+    else:
+        user = cfg["users"].get(name)
+        hashes = {u["password_hash"][4:6]: u["password_hash"] for u in cfg["users"].values()}
+    if user:
+        hashes[user["password_hash"][4:6]] = user["password_hash"]
     request.app["auth_runtime"]["busy"] += 1
     try:
-        for hashed, identity in candidates:
-            if await asyncio.to_thread(dashboard_auth.verify, password, hashed) and identity:
-                attempts.success(entry)
-                return identity
+        matched = False
+        for cost in sorted(hashes):
+            hashed = hashes[cost]
+            verified = await asyncio.to_thread(dashboard_auth.verify, password, hashed)
+            if user and hashed == user["password_hash"]:
+                matched = verified
+        if matched:
+            attempts.success(entry)
+            return user
     finally:
         request.app["auth_runtime"]["busy"] -= 1
     return None
@@ -150,28 +166,47 @@ async def middleware(request, handler):
             and request.headers.get("X-Pithead-Boot-Probe") == "boot-health-v1"
         ):
             return await handler(request)
-        if not enabled and not (request.path == "/metrics" and cfg["metrics_password_hash"]):
+        machine_route = MACHINE_ROUTES.get(request.path)
+        if not enabled and not (machine_route and cfg.get(machine_route[1])):
             return await handler(request)
-        user = await asyncio.to_thread(
-            auth_sessions.authenticate,
-            request.app["state_manager"],
-            request.cookies.get(COOKIE, ""),
-            cfg["users"],
-            secure(request),
-        )
-        basic = False
-        if not user and request.headers.get("Authorization"):
-            name, password, bearer = _credentials(request)
-            user = await _check_password(
-                request, name, password, machine=request.path == "/metrics", bearer=bearer
+        token = os.environ.get("DASHBOARD_BOOT_PROBE_TOKEN", "")
+        user = None
+        if (
+            request.path == "/api/state"
+            and request.method in {"GET", "HEAD"}
+            and trusted_proxy(request)
+            and not any(
+                key.lower() == "forwarded" or key.lower().startswith("x-forwarded-")
+                for key in request.headers
             )
-            basic = bool(user)
+            and token
+            and secrets.compare_digest(
+                request.headers.get("Authorization", "").encode(), f"Bearer {token}".encode()
+            )
+        ):
+            user = {"name": "local-state", "role": "viewer"}
+        if not user:
+            user = await asyncio.to_thread(
+                auth_sessions.authenticate,
+                request.app["state_manager"],
+                request.cookies.get(COOKIE, ""),
+                cfg["users"],
+                secure(request),
+            )
+        if (
+            not user
+            and machine_route
+            and request.method in {"GET", "HEAD"}
+            and request.headers.get("Authorization")
+        ):
+            name, password = _credentials(request)
+            user = await _check_password(request, name, password, machine=True)
         if not user:
             _unauthorized(request)
         if request.method not in SAFE_METHODS:
             if user["role"] != "admin" and request.path != "/logout":
                 raise web.HTTPForbidden(text="Read-only account.")
-            require_origin(request, allow_header=basic)
+            require_origin(request)
         headers = request.headers.copy()
         headers["X-Auth-User"] = user["name"]
         request = request.clone(headers=headers)

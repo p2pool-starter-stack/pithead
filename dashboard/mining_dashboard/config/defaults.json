@@ -79,7 +79,8 @@
         "username": "admin",
         "password": "",
         "users": [],
-        "metrics_password_hash": ""
+        "metrics_password_hash": "",
+        "standby_password_hash": ""
       },
       "onion": {
         "enabled": false,

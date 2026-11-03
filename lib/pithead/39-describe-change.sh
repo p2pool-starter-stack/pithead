@@ -237,7 +237,7 @@ describe_change() {
         ;;
     DASHBOARD_AUTH_CONFIG_FP)
         flag=DEST
-        msg="Dashboard users, roles, or metrics credential changed — active sessions for changed accounts are revoked and the dashboard container is recreated."
+        msg="Dashboard users, roles, metrics credential, or standby credential changed — active sessions for changed accounts are revoked and the dashboard container is recreated."
         ;;
     DASHBOARD_CONTROL_ENABLED)
         if [ "$new" == "true" ]; then

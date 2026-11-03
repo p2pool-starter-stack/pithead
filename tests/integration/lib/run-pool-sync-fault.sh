@@ -3,6 +3,8 @@
 
 # Run in one target shell so EXIT restoration covers failure and signal termination.
 p2pool_sidechain_sync_snippet() {
+    declare -p IT_DASHBOARD_USER IT_DASHBOARD_PASSWORD 2>/dev/null || true
+    cat "${BASH_SOURCE[0]%/*}/dashboard-guest-session.sh"
     cat <<'PROBE'
     set -euo pipefail
     file=$1/stats/pool/stats
@@ -48,7 +50,7 @@ p2pool_sidechain_sync_snippet() {
         local expected=$1 height=$2 deadline state
         deadline=$(($(date +%s) + 90))
         while :; do
-            if state=$(curl -fsS --max-time 10 http://127.0.0.1:8000/api/state) &&
+            if state=$(dashboard_guest_get http://127.0.0.1:8000/api/state 10) &&
                 jq -e --argjson expected "$expected" --argjson height "$height" \
                     '.pool.syncing == $expected and .pool.sidechain_height == $height' <<<"$state" >/dev/null &&
                 sudo -n cat "$file" | jq -e --argjson height "$height" \
@@ -61,7 +63,7 @@ p2pool_sidechain_sync_snippet() {
     }
     wait_sync true 3
     printf '%s\n' 'p2pool-sync: bootstrap syncing=true with raw height 3'
-    curl -fsS --max-time 10 -o "$scratch/overview.mjs" http://127.0.0.1:8000/static/app/overview.mjs
+    dashboard_guest_get http://127.0.0.1:8000/static/app/overview.mjs 10 -o "$scratch/overview.mjs"
     grep -Fq 'P2Pool is syncing its sidechain' "$scratch/overview.mjs"
     printf '%s\n' 'p2pool-sync: served overview contains sidechain sync message'
     sudo -n cat "$file" | jq '.pool_statistics.sidechainHeight = 14973049 |

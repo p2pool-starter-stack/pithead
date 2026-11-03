@@ -12,6 +12,7 @@ const staticRoot = resolve(
 const load = (path) => import(pathToFileURL(resolve(staticRoot, path)));
 const accountPassword = randomBytes(18).toString("base64url");
 const metricsPassword = randomBytes(18).toString("base64url");
+const standbyPassword = randomBytes(18).toString("base64url");
 
 test("signed-in account exposes role and same-origin sign out", async () => {
   const { Account } = await load("app/account.mjs");
@@ -72,6 +73,41 @@ test("monitoring password uses the same hash boundary", async () => {
     assert.deepEqual(JSON.parse(request.options.body), { password: metricsPassword });
     assert.equal(passwordHash, "$2b$fixture-metrics-hash");
     assert.equal(editor.state.metricsPassword, "");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("standby password uses the rendered configuration editor hash boundary", async () => {
+  const { AuthConfigEditor } = await load("config/authconfig.mjs");
+  const { AuthUsersEditor } = await load("config/authusers.mjs");
+  const originalFetch = globalThis.fetch;
+  let request;
+  globalThis.fetch = async (url, options) => {
+    request = { url, options };
+    return { ok: true, json: async () => ({ password_hash: "$2b$fixture-standby-hash" }) };
+  };
+  try {
+    const candidate = {
+      dashboard: { auth: { users: [], standby_password_hash: { __secret__: true } } },
+    };
+    let changed;
+    const field = AuthConfigEditor({ candidate, onChange: (value) => { changed = value; } });
+    const rendered = renderToString(field);
+    assert.match(rendered, /<legend>XvB standby credential<\/legend>/);
+    assert.match(rendered, /set — enter a new password to replace/);
+    const editor = new AuthUsersEditor(field.props);
+    editor.setState = (next) => {
+      editor.state = { ...editor.state, ...next };
+    };
+    editor.state.standbyPassword = standbyPassword;
+    await editor.setStandbyPassword();
+    assert.equal(request.url, "/api/auth/hash");
+    assert.equal(request.options.headers["X-Pithead-Control"], "1");
+    assert.deepEqual(JSON.parse(request.options.body), { password: standbyPassword });
+    assert.equal(changed, candidate);
+    assert.equal(candidate.dashboard.auth.standby_password_hash, "$2b$fixture-standby-hash");
+    assert.equal(editor.state.standbyPassword, "");
   } finally {
     globalThis.fetch = originalFetch;
   }

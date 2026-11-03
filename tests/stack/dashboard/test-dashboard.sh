@@ -508,28 +508,36 @@ mk_tmpdir SP
 mkdir -p "$SP/bin"
 cat >"$SP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >>"${CURL_ARGV_LOG:-/dev/null}"
+cat >>"${CURL_CONFIG_LOG:-/dev/null}"
 [ -n "${CURL_BODY:-}" ] && printf '%s' "$CURL_BODY"
 exit "${CURL_RC:-0}"
 EOF
 chmod +x "$SP/bin/curl"
+printf 'DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token\n' >"$SP/env"
 # Monero mid-sync + Tari still discovering its target height: both surface, monero with numbers.
 sp_body='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":87,"current":2451000,"target":2810000,"remaining":359000},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
-out="$(CURL_BODY="$sp_body" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
+out="$(PITHEAD_ENV_FILE="$SP/env" CURL_BODY="$sp_body" CURL_ARGV_LOG="$SP/argv" CURL_CONFIG_LOG="$SP/config" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: monero syncing shows percent + blocks-to-go" "$out" "87% (2451000 / 2810000 blocks, 359000 to go)"
 assert_contains "sync progress: no-target chain reads as discovering" "$out" "discovering the target height"
 assert_contains "sync progress: header names the #35 hold" "$out" "held until it completes"
+assert_not_contains "dashboard state token stays out of curl argv" "$(cat "$SP/argv")" "fixture-probe-token"
+assert_contains "dashboard state token reaches curl config stdin" "$(cat "$SP/config")" "Authorization: Bearer fixture-probe-token"
+out="$(PITHEAD_ENV_FILE="$SP/env" CURL_BODY="$sp_body" CURL_CONFIG_LOG="$SP/trace-config" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" eval 'set -x; dashboard_state_request -fsS --max-time 3' 2>&1)"
+assert_not_contains "dashboard state token stays out of xtrace" "$out" "fixture-probe-token"
+assert_contains "dashboard state xtrace request keeps its bearer header" "$(cat "$SP/trace-config")" "Authorization: Bearer fixture-probe-token"
 # Both synced: nothing to say (steady-state status stays quiet), non-zero return.
 sp_done='{"sync":{"monero":{"state":"done","percent":100,"current":10,"target":10,"remaining":0},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
 assert_eq "sync progress: both synced -> silent" \
-    "$(CURL_BODY="$sp_done" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
+    "$(PITHEAD_ENV_FILE="$SP/env" CURL_BODY="$sp_done" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
 # Only monero still syncing: the synced tari is omitted (not listed as done).
 sp_partial='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
-out="$(CURL_BODY="$sp_partial" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
+out="$(PITHEAD_ENV_FILE="$SP/env" CURL_BODY="$sp_partial" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: partial -> monero listed" "$out" "monero"
 assert_not_contains "sync progress: partial -> synced tari omitted" "$out" "tari"
 # Dashboard app not answering yet (curl fails): quiet, non-zero — graceful during startup.
 assert_eq "sync progress: dashboard down -> silent" \
-    "$(CURL_RC=22 PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
+    "$(PITHEAD_ENV_FILE="$SP/env" CURL_RC=22 PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
 rm -rf "$SP"
 
 # Required Tari failover distinguishes long RPC outages from live progress.

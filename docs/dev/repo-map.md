@@ -38,15 +38,32 @@ DIY/appliance starter configs (`config.minimal.json`, `config.minimal.appliance.
 `dashboard/mining_dashboard/config/defaults.py` reads the same table for the dashboard and wizards.
 
 Dashboard authentication lives in `dashboard/mining_dashboard/web/auth.py`, with bcrypt
-configuration and SQLite sessions in `service/dashboard_auth.py` and `service/auth_sessions.py`
-under the same package. The CLI renders the hashes-only authentication directory in
+configuration, machine credentials and SQLite sessions in `service/dashboard_auth.py` and
+`service/auth_sessions.py` under the same package. The CLI renders the hashes-only authentication directory in
 `lib/pithead/30-release-fetch-and-masked-config.sh`; Compose and the appliance mount it read-only.
 The session middleware runs before every dashboard route and refuses every unsafe method for
 viewers. `dashboard/tests/web/test_dashboard_auth.py` enumerates the live route table;
+interactive accounts never use HTTP Basic authentication. Basic authentication is limited to the
+fixed machine credentials and their exact `GET`/`HEAD` endpoints. Form login verifies one hash for
+each distinct configured account cost in sorted order, including successful requests, so the work
+does not depend on whether the submitted name exists. Valid legacy hashes keep their existing
+costs; login adds uniform verification work without rewriting them.
 `dashboard/tests/web/test_wizard_dashboard_auth.py` separately checks the console-token wizard.
+The logout, expiry, mixed-cost and standby regressions are in
+`dashboard/tests/web/test_dashboard_auth_regressions.py`, using
+`dashboard/tests/web/dashboard_auth_fixtures.py` alongside the main authentication tests.
+
+Integration dashboard sessions live in `tests/integration/lib/dashboard-session.sh`;
+`tests/integration/lib/e2e-dashboard-session.sh` supplies the E2E wrapper's guest request.
+Guest-side reads share `tests/integration/lib/dashboard-guest-session.sh`.
+Appliance requests use `tests/os/dashboard-session.sh`, with origin, routing and cold-session
+controls in `tests/os/selftest-dashboard-session.sh`, discovered by the existing selftest glob.
+The dashboard healthcheck and CLI status/doctor readers use the existing private boot token
+for read-only loopback `/api/state` access; Compose and Quadlet pass it to the dashboard.
+Forwarded requests and the static boot-health marker cannot authorize this state read.
 
 The Go HTTP port must preserve this middleware order, the `/login`, `/logout`, `/api/auth/session`
-and `/api/auth/hash` contracts, the metrics-only credential, per-user session revisions, and the
+and `/api/auth/hash` contracts, the machine endpoint credentials, per-user session revisions, and the
 route-table refusal test. Caddy first calls `/api/auth/ready`, which succeeds only after a valid,
 explicit authentication file has loaded; older backends fail this check instead of serving an
 unprotected dashboard during an upgrade. Ordinary requests still pass through session middleware.

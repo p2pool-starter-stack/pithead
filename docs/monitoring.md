@@ -221,7 +221,7 @@ that would otherwise keep scraping as healthy. The reject-rate gauge is omitted 
 were submitted in the window (no shares is not 0% rejected). The endpoint renders the same
 metrics snapshot the dashboard UI uses; it is always on and needs no configuration.
 
-`/metrics` accepts either a normal dashboard login or the separate machine-only credential configured
+`/metrics` accepts either a signed-in dashboard session or the separate machine-only credential configured
 as `dashboard.auth.metrics_password_hash`. The machine account's username is `metrics`; it cannot open
 dashboard pages or APIs. The metrics credential protects `/metrics` even when no dashboard users or
 legacy password are configured; in that case the browser dashboard remains open on the LAN. A minimal
@@ -245,6 +245,12 @@ The exposed values are current only — no history; the dashboard's own database
 persisted series. Scraping over Tor from outside the LAN (e.g. via the
 [onion service](configuration.md#remote-access-over-tor-onion-service)) is out of scope here;
 scrape from the same network.
+
+The XvB standby feed uses a separate machine credential. Set
+`dashboard.auth.standby_password_hash`, then authenticate as `standby` when reading
+`/api/xvb-standby`. Do not reuse a dashboard account or the metrics credential. Existing standby
+sources that embed a dashboard login must move to this credential; scripts that interact with the
+dashboard sign in through the form and retain the returned session cookie.
 
 ---
 

@@ -77,7 +77,7 @@ restore_fixture_secret_verdict() {
     dashboard_password=$(_ssh "jq -r '.dashboard.auth.password // \"\"' /data/pithead/config.json")
     expected_auth_fp=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' ' -f1)
     # shellcheck disable=SC2154  # shared through the assembled runner scope
-    auth_code=$(curl -sSk -u "$dashboard_user:$dashboard_password" -m 10 -o /dev/null -w '%{http_code}' "https://$ip/api/state" 2>/dev/null || true)
+    auth_code=$(DASH_USER="$dashboard_user" DASH_PASS="$dashboard_password" dashboard_curl -sSk -m 10 -o /dev/null -w '%{http_code}' "https://$ip/api/state" 2>/dev/null || true)
     # Both archives carry a well-formed hash whose fingerprint matches their password, so restore
     # keeps that exact hash (#2579); a salted rehash would read as a changed credential.
     [ -n "$restored_auth_hash" ] && [ "$restored_auth_hash" = "$expected_auth_hash" ] &&

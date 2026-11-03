@@ -39,6 +39,20 @@ The same card can set a separate **Monitoring password**. Use it with the fixed 
 `metrics` for Prometheus or Grafana. It can read `/metrics` and cannot sign into the dashboard.
 Setting it also places only its bcrypt hash in the configuration draft.
 
+The card also sets a separate **XvB standby password**. Use it with the fixed username
+`standby` for `GET` and `HEAD` requests to `/api/xvb-standby`. It cannot sign into the dashboard,
+open other APIs, or read metrics.
+
+Upgrades stop accepting dashboard account credentials through HTTP Basic authentication. Replace
+an XvB standby source that embeds the former dashboard login with the dedicated standby credential.
+Browser and automation flows that need the dashboard use the sign-in form and its session cookie;
+sign out, password changes, role changes, and session expiry then end that access.
+
+Local health, status and doctor probes use the existing private boot token to read
+`/api/state`. This machine access is limited to direct loopback GET/HEAD requests,
+returns a viewer identity, and refuses forwarded requests and all other routes.
+The token is managed automatically and is not a dashboard account credential.
+
 ## Current dashboard and lean preview
 
 The dashboard at the stack URL remains the legacy default UI. The lean development preview is

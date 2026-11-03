@@ -9,7 +9,7 @@ export const validPassword = (password) => {
 export class AuthUsersEditor extends Component {
   constructor(props) {
     super(props);
-    this.state = { passwords: {}, metricsPassword: "", busy: null, error: "" };
+    this.state = { passwords: {}, metricsPassword: "", standbyPassword: "", busy: null, error: "" };
   }
   change(index, key, value) {
     const users = this.props.users.map((user, at) =>
@@ -60,7 +60,26 @@ export class AuthUsersEditor extends Component {
       this.setState({ busy: null, error: `Could not prepare password: ${error}` });
     }
   }
-  render({ users, onChange, metricsHash }) {
+  async setStandbyPassword() {
+    const password = this.state.standbyPassword;
+    if (!validPassword(password)) return;
+    this.setState({ busy: "standby", error: "" });
+    try {
+      const response = await fetch("/api/auth/hash", {
+        method: "POST",
+        headers: CONTROL_HEADERS,
+        body: JSON.stringify({ password }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const { password_hash: passwordHash } = await response.json();
+      if (!passwordHash) throw new Error("Password hash was not returned");
+      this.props.onStandbyChange(passwordHash);
+      this.setState({ standbyPassword: "", busy: null });
+    } catch (error) {
+      this.setState({ busy: null, error: `Could not prepare password: ${error}` });
+    }
+  }
+  render({ users, onChange, metricsHash, standbyHash }) {
     return html`<section class="card auth-users" aria-labelledby="auth-users-title">
       <h2 id="auth-users-title">Dashboard accounts</h2>
         <p class="text-muted">Add administrators and read-only viewers. The upgraded owner account remains an administrator and keeps the console recovery password. New passwords are hashed before they enter the configuration draft.</p>
@@ -97,6 +116,19 @@ export class AuthUsersEditor extends Component {
           <div class="auth-user-actions"><button type="button" class="btn-toggle"
             disabled=${this.state.busy !== null || !validPassword(this.state.metricsPassword)}
             onClick=${() => this.setMetricsPassword()}>${this.state.busy === "metrics" ? "Hashing…" : "Set monitoring password"}</button></div>
+        </fieldset>
+        <fieldset class="auth-user standby-user">
+          <legend>XvB standby credential</legend>
+          <p class="text-muted">Use the fixed username <code>standby</code> for the XvB standby feed. This credential cannot open the dashboard.</p>
+          <label>Standby password <input type="password" autocomplete="new-password"
+            minlength="8"
+            placeholder=${standbyHash ? "set — enter a new password to replace" : "not set"}
+            value=${this.state.standbyPassword}
+            onInput=${(event) => this.setState({ standbyPassword: event.target.value })} /></label>
+          <span class="text-muted text-xs">At least 8 characters; at most 72 UTF-8 bytes</span>
+          <div class="auth-user-actions"><button type="button" class="btn-toggle"
+            disabled=${this.state.busy !== null || !validPassword(this.state.standbyPassword)}
+            onClick=${() => this.setStandbyPassword()}>${this.state.busy === "standby" ? "Hashing…" : "Set standby password"}</button></div>
         </fieldset>
         ${this.state.error ? html`<p class="status-bad" role="alert">${this.state.error}</p>` : null}
     </section>`;

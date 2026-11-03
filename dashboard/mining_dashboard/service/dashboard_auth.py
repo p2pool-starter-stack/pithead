@@ -7,7 +7,9 @@ import bcrypt
 
 from mining_dashboard.config import documents
 
-HASH_PATTERN = re.compile(r"\$2[aby]\$(0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}")
+HASH_PATTERN = re.compile(
+    r"\$2[aby]\$(0[4-9]|1[0-6])\$[./A-Za-z0-9]{21}[.Oeu][./A-Za-z0-9]{30}[.CGKOSWaeimquy26]"
+)
 NAME_PATTERN = re.compile(r"[A-Za-z0-9._@-]{1,64}")
 FAILURE_WINDOW = 60
 CLIENT_ATTEMPTS = 5
@@ -17,7 +19,12 @@ GLOBAL_ATTEMPTS = 50
 def load():
     path = os.environ.get("DASHBOARD_AUTH_FILE", "")
     if not path:
-        return {"users": {}, "metrics_password_hash": "", "configured": False}
+        return {
+            "users": {},
+            "metrics_password_hash": "",
+            "standby_password_hash": "",
+            "configured": False,
+        }
     with open(path) as stream:
         data = documents.loads(stream.read(65537))
     if not isinstance(data, dict) or not isinstance(data.get("users"), list):
@@ -38,10 +45,13 @@ def load():
         users[user["name"]] = user
     if users and not any(u["role"] == "admin" for u in users.values()):
         raise ValueError("An administrator is required")
-    machine = data.get("metrics_password_hash", "")
-    if not isinstance(machine, str) or (machine and not HASH_PATTERN.fullmatch(machine)):
-        raise ValueError("Invalid monitoring credential")
-    return {"users": users, "metrics_password_hash": machine, "configured": True}
+    machines = {}
+    for key in ("metrics_password_hash", "standby_password_hash"):
+        value = data.get(key, "")
+        if not isinstance(value, str) or (value and not HASH_PATTERN.fullmatch(value)):
+            raise ValueError("Invalid machine credential")
+        machines[key] = value
+    return {"users": users, **machines, "configured": True}
 
 
 def password_bytes(password, minimum=1):
@@ -61,7 +71,7 @@ def verify(password, hashed) -> bool:
 
 
 def hash_password(password):
-    return bcrypt.hashpw(password_bytes(password, minimum=8), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(password_bytes(password, minimum=8), bcrypt.gensalt(rounds=12)).decode()
 
 
 class Attempts:
@@ -92,6 +102,8 @@ def mask_config(cfg):
         return
     if auth.get("metrics_password_hash"):
         auth["metrics_password_hash"] = {"__secret__": True}
+    if auth.get("standby_password_hash"):
+        auth["standby_password_hash"] = {"__secret__": True}
     for user in auth.get("users", []) if isinstance(auth.get("users"), list) else []:
         if isinstance(user, dict) and user.get("password_hash"):
             user["password_hash"] = {"__secret__": True}

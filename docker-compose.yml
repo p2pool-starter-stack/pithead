@@ -799,6 +799,7 @@ services:
       - DASHBOARD_CONTROL_ENABLED=${DASHBOARD_CONTROL_ENABLED:-false}
       - DASHBOARD_AUTH_FILE=${DASHBOARD_AUTH_FILE:-}
       - DASHBOARD_AUTH_CONFIG_FP=${DASHBOARD_AUTH_CONFIG_FP:-}
+      - DASHBOARD_BOOT_PROBE_TOKEN=${DASHBOARD_BOOT_PROBE_TOKEN:-}
       # Dashboard onion (#343, config.json: dashboard.onion.*), display-only here: the header
       # shows the .onion URL so an operator can open the dashboard from a phone over Tor without
       # first reaching a shell (#1853). The appliance's podman quadlet passes the same three

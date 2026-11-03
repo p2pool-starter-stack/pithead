@@ -11,6 +11,8 @@ export function AuthConfigEditor({ candidate, onChange }) {
   };
   return html`<${AuthUsersEditor} users=${users}
     metricsHash=${pathGet(candidate, "dashboard.auth.metrics_password_hash")}
+    standbyHash=${pathGet(candidate, "dashboard.auth.standby_password_hash")}
     onChange=${(next) => change("dashboard.auth.users", next)}
-    onMetricsChange=${(hash) => change("dashboard.auth.metrics_password_hash", hash)} />`;
+    onMetricsChange=${(hash) => change("dashboard.auth.metrics_password_hash", hash)}
+    onStandbyChange=${(hash) => change("dashboard.auth.standby_password_hash", hash)} />`;
 }

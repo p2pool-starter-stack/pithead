@@ -7,6 +7,7 @@
     "dashboard.auth.password",
     "dashboard.auth.users",
     "dashboard.auth.metrics_password_hash",
+    "dashboard.auth.standby_password_hash",
     "dashboard.host",
     "workers.list"
 ]

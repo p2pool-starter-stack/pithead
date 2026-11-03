@@ -4,7 +4,7 @@
 source "$ROOT/os/overlay/pithead-media-config"
 
 # shellcheck disable=SC2016
-jq '.dashboard.auth={"username":"admin","password":"","users":[{"name":"admin","role":"admin","password_hash":"$2y$12$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},{"name":"recovery","role":"viewer","password_hash":"$2y$12$BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"},{"name":"recovery-1","role":"viewer","password_hash":"$2y$12$CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"}]}' "$MC/good.json" >"$MC/named-auth.json"
+jq '.dashboard.auth={"username":"admin","password":"","users":[{"name":"admin","role":"admin","password_hash":"$2y$12$AAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA."},{"name":"recovery","role":"viewer","password_hash":"$2y$12$BBBBBBBBBBBBBBBBBBBBB.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBC"},{"name":"recovery-1","role":"viewer","password_hash":"$2y$12$CCCCCCCCCCCCCCCCCCCCC.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"}]}' "$MC/good.json" >"$MC/named-auth.json"
 recovery_password=$(openssl rand -hex 12)
 jq -n --arg password "$recovery_password" '{dashboard:{auth:{password:$password}}}' >"$MC/recovery-stick.json"
 merged=$(media_merge_config "$MC/named-auth.json" "$MC/recovery-stick.json")

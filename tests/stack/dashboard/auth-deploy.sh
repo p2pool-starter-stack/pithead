@@ -6,8 +6,8 @@ chmod 755 "$auth_native_dir"
 (
     # shellcheck source=/dev/null
     cd "$SANDBOX" && source "$STACK" 2>/dev/null
-    DASHBOARD_AUTH_USER=admin DASHBOARD_LEGACY_AUTH_HASH='' DASHBOARD_METRICS_PASSWORD_HASH='' \
-        DASHBOARD_AUTH_USERS_JSON='[{"name":"owner","role":"admin","password_hash":"$2y$12$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]' \
+    DASHBOARD_AUTH_USER=admin DASHBOARD_LEGACY_AUTH_HASH='' DASHBOARD_METRICS_PASSWORD_HASH='' DASHBOARD_STANDBY_PASSWORD_HASH='' \
+        DASHBOARD_AUTH_USERS_JSON='[{"name":"owner","role":"admin","password_hash":"$2y$12$AAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA."}]' \
         render_dashboard_auth "$auth_native_dir"
 )
 assert_eq "auth directory is owned by the dashboard uid" "$(stat -c %u "$auth_native_dir/auth")" "1000"

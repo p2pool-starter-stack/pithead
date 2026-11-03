@@ -20,7 +20,12 @@ def document(tmp_path, monkeypatch):
 
 def test_auth_unset_preserves_disabled_default(monkeypatch):
     monkeypatch.delenv("DASHBOARD_AUTH_FILE", raising=False)
-    assert dashboard_auth.load() == {"users": {}, "metrics_password_hash": "", "configured": False}
+    assert dashboard_auth.load() == {
+        "users": {},
+        "metrics_password_hash": "",
+        "standby_password_hash": "",
+        "configured": False,
+    }
 
 
 @pytest.mark.parametrize(
@@ -32,6 +37,7 @@ def test_auth_unset_preserves_disabled_default(monkeypatch):
         {"users": [None]},
         {"users": [{"name": "bad/name"}]},
         {"users": [], "metrics_password_hash": None},
+        {"users": [], "standby_password_hash": None},
     ],
 )
 def test_invalid_auth_configuration_is_refused(document, value):
@@ -57,9 +63,41 @@ def test_duplicate_and_non_admin_accounts_are_refused(document):
         dashboard_auth.load()
 
 
+@pytest.mark.parametrize("prefix", ("2a", "2b", "2y"))
+def test_canonical_bcrypt_aliases_are_loaded(document, prefix):
+    hashed = f"${prefix}$12$AAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA."
+    document.write_text(
+        json.dumps(
+            {
+                "users": [{"name": "owner", "role": "admin", "password_hash": hashed}],
+                "metrics_password_hash": hashed,
+                "standby_password_hash": hashed,
+            }
+        )
+    )
+    loaded = dashboard_auth.load()
+    assert loaded["users"]["owner"]["password_hash"] == hashed
+    assert loaded["metrics_password_hash"] == hashed
+    assert loaded["standby_password_hash"] == hashed
+
+
+@pytest.mark.parametrize(
+    "hashed",
+    (
+        "$2b$12$AAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "$2b$12$AAAAAAAAAAAAAAAAAAAAA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.",
+    ),
+)
+def test_noncanonical_bcrypt_salt_and_checksum_are_refused(document, hashed):
+    document.write_text(json.dumps({"users": [], "standby_password_hash": hashed}))
+    with pytest.raises(ValueError):
+        dashboard_auth.load()
+
+
 def test_password_hash_roundtrip_and_long_input_refusal():
     password = secrets.token_urlsafe(20)
     hashed = dashboard_auth.hash_password(password)
+    assert hashed.split("$")[2] == "12"
     assert dashboard_auth.verify(password, hashed)
     assert not dashboard_auth.verify(secrets.token_urlsafe(20), hashed)
     for invalid in ("", "x" * 73, "é" * 37, "a\0b", None, "\ud800"):
@@ -97,6 +135,7 @@ def test_config_masks_hashes_even_when_raw_host_copy_is_loaded():
             "auth": {
                 "users": [{"name": "owner", "role": "admin", "password_hash": value}],
                 "metrics_password_hash": value,
+                "standby_password_hash": value,
             }
         }
     }
@@ -108,6 +147,7 @@ def test_config_masks_hashes_even_when_raw_host_copy_is_loaded():
         "password_hash": {"__secret__": True},
     }
     assert auth["metrics_password_hash"] == {"__secret__": True}
+    assert auth["standby_password_hash"] == {"__secret__": True}
     assert value not in json.dumps(result)
 
 

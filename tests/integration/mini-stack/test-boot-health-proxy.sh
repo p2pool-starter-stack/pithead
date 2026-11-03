@@ -30,7 +30,7 @@ auth_hash=$(printf '%s\n' fixture-password | docker run --rm -i "$image" caddy h
 DASHBOARD_AUTH_HASH_B64=$(printf '%s' "$auth_hash" | openssl base64 -A)
 DASHBOARD_BOOT_PROBE_TOKEN=$(openssl rand -hex 32)
 mkdir -p "$scratch/auth"
-jq -n --arg hash "$auth_hash" '{users:[{name:"admin",role:"admin",password_hash:$hash}],metrics_password_hash:""}' >"$scratch/auth/auth.json"
+jq -n --arg hash "$auth_hash" '{users:[{name:"admin",role:"admin",password_hash:$hash}],metrics_password_hash:$hash}' >"$scratch/auth/auth.json"
 generate_caddyfile "$scratch/Caddyfile"
 chmod 755 "$scratch"
 chmod 644 "$scratch/Caddyfile"
@@ -40,12 +40,14 @@ docker run -d --name "$name-caddy" --network "$name" \
     -v "$scratch/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$name-logs:/var/log/caddy" "$image" >/dev/null
 docker run -d --name "$name-dashboard" --network "container:$name-caddy" \
     -v "$name-logs:/access-log:ro" -v "$scratch/auth:/control/auth:ro" \
-    -e DASHBOARD_AUTH_FILE=/control/auth/auth.json -e UPDATE_INTERVAL=2 pithead-dashboard:itest >/dev/null
+    -e DASHBOARD_AUTH_FILE=/control/auth/auth.json -e DASHBOARD_BOOT_PROBE_TOKEN \
+    -e UPDATE_INTERVAL=2 pithead-dashboard:itest >/dev/null
 run_driver() {
     docker run --rm -i --network "$1" -v "$name-logs:/access-log:ro" \
         -e DASHBOARD_BOOT_PROBE_TOKEN --entrypoint python pithead-dashboard:itest - "$2" "$3" <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
 }
 run_driver "container:$name-caddy" local 127.0.0.1
+docker exec "$name-dashboard" /app/healthcheck.sh >/dev/null
 run_driver "$name" external "$name-caddy"
 # A real fronting proxy turns an external socket into a loopback connection to Caddy.
 docker run -d --name "$name-front" --network "container:$name-caddy" \

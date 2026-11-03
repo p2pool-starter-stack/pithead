@@ -12,6 +12,7 @@ source "${BASH_SOURCE[0]%/*}/lib/readiness-churn.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
 source "${BASH_SOURCE[0]%/*}/lib/remote-endpoints.sh"
 source "${BASH_SOURCE[0]%/*}/lib/redact-it-password.sh"
+source "${BASH_SOURCE[0]%/*}/lib/dashboard-guest-session.sh"
 # --- Output -----------------------------------------------------------------
 # Colour only on a TTY with NO_COLOR unset (https://no-color.org), matching pithead.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -271,9 +272,7 @@ quote_arg() { printf '%q' "$1"; }
 # Run pithead with a subcommand on the target, e.g. `pithead status` or `pithead apply -y`.
 pithead() { rx "$IT_PITHEAD $*"; }
 
-# Fetch the dashboard state JSON from the box (dashboard binds 127.0.0.1:8000 on the host
-# network). Empty output on failure so callers can detect unreachable.
-api_state() { rx "curl -fsS --max-time 10 http://127.0.0.1:8000/api/state" 2>/dev/null; }
+source "${BASH_SOURCE[0]%/*}/lib/dashboard-session.sh"
 
 # Pure: does a /metrics response body carry at least one pithead_ SAMPLE line (#379)? Samples
 # start the line with the metric name; a "# HELP pithead_…" comment line must NOT count — a body

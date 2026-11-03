@@ -105,7 +105,11 @@ check_dashboard_answers() {
         dr_info dashboard-answers "Dashboard probe skipped — no curl."
         return 0
     fi
-    if curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:8000/api/state" 2>/dev/null; then
+    if ! command -v jq >/dev/null 2>&1; then
+        dr_info dashboard-answers "Dashboard probe skipped — no jq."
+        return 0
+    fi
+    if dashboard_state_request -fsS --max-time 3 -o /dev/null 2>/dev/null; then
         dr_ok dashboard-answers "Dashboard app answers on 127.0.0.1:8000."
     else
         dr_warn_surface dashboard-answers "Dashboard container is running but the app isn't answering on 127.0.0.1:8000 — check './pithead logs dashboard'." "The dashboard container is running but the app isn't answering on its own port."

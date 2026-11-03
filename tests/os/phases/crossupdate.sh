@@ -246,7 +246,7 @@ phase_crossupdate() {
     fi
 
     local scode
-    scode=$(curl -sSk -u "$old_user:$old_pass" -m 8 -o /dev/null -w '%{http_code}' "https://$ip/api/state" 2>/dev/null)
+    scode=$(DASH_USER="$old_user" DASH_PASS="$old_pass" dashboard_curl -sSk -m 8 -o /dev/null -w '%{http_code}' "https://$ip/api/state" 2>/dev/null)
     [ "$scode" = "200" ] && ok "the dashboard login minted by the old version still authenticates after the update" ||
         bad "the old version's dashboard login no longer authenticates after the update (got HTTP $scode)"
 }

@@ -162,6 +162,7 @@ MUST_REDACT="monero.wallet_address monero.node_username monero.node_password mon
 tari.wallet_address tari.view_key tari.spend_public_key p2pool.stratum_password xvb.donor_id
 dashboard.auth.username dashboard.auth.password workers.api_token
 dashboard.auth.metrics_password_hash
+dashboard.auth.standby_password_hash
 ssh.authorized_key healthchecks.ping_url telegram.bot_token notifications.ntfy.token
 xvb.standby.source tari.explorer_url"
 # Survivors, each for a stated reason — over-redaction is safe for secrets and not for anything
@@ -395,6 +396,5 @@ assert_contains "KNOWN GAP (#1590) — JSON escaped inside a log string is NOT r
 OUT="$(printf '{"api_token":12345678,"password":null}\n' | redact)"
 assert_contains "KNOWN GAP (#1590) — a non-string secret value is NOT reached" "$OUT" "12345678"
 it_warn "KNOWN GAPS (#1590): escaped-JSON and non-string values are unreachable by the name rule — measured absent from every captured artifact, not fixed"
-
 echo "selftest-redact: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

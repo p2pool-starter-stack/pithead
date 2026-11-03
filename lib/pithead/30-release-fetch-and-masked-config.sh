@@ -5,6 +5,7 @@
 readonly CONTROL_SECRET_PATHS='[
     ["dashboard","auth","password"],
     ["dashboard","auth","metrics_password_hash"],
+    ["dashboard","auth","standby_password_hash"],
     ["telegram","bot_token"],
     ["workers","api_token"],
     ["monero","node_username"],
@@ -27,6 +28,7 @@ render_dashboard_auth() { # <control-dir>
     if ! jq -n --arg legacy_name "${DASHBOARD_AUTH_USER:-admin}" \
         --arg legacy_hash "${DASHBOARD_LEGACY_AUTH_HASH:-}" \
         --arg metrics_hash "${DASHBOARD_METRICS_PASSWORD_HASH:-}" \
+        --arg standby_hash "${DASHBOARD_STANDBY_PASSWORD_HASH:-}" \
         --arg generation "$generation" --argjson previous "$previous" \
         --argjson users "${DASHBOARD_AUTH_USERS_JSON:-[]}" \
         '($users + (if $legacy_hash == "" then [] else [{name:$legacy_name, role:"admin", password_hash:$legacy_hash}] end))
@@ -35,7 +37,7 @@ render_dashboard_auth() { # <control-dir>
             | (($previous.users // []) | map(select(.name == $user.name))[0]) as $old
             | $user + {revision:(if $old.role == $user.role and $old.password_hash == $user.password_hash and ($old.revision | type) == "string"
                                   then $old.revision else ($generation + "-" + (.key | tostring)) end)})
-        | {users: ., metrics_password_hash:$metrics_hash}' \
+        | {users: ., metrics_password_hash:$metrics_hash, standby_password_hash:$standby_hash}' \
         >"$tmp"; then
         rm -f "$tmp"
         return 1

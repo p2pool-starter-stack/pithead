@@ -44,21 +44,13 @@ _wait_new_boot() {
     [ "$scenario" != boot-fails ] || return 1
     touch "$scratch/new-boot"
 }
-curl() {
-    local call rig_count own_count worker=builtin config="" args="$*"
+curl() { fail 'legacy curl path used'; }
+dashboard_curl() {
+    local call rig_count own_count worker=builtin args="$*"
     printf '%s\n' "$@" >>"$scratch/curl-argv"
-    while [ "$#" -gt 0 ]; do
-        if [ "$1" = --config ]; then
-            shift
-            [ "$1" = - ] || fail "curl config did not use stdin"
-            config=$(cat)
-        fi
-        shift
-    done
-    if [ -n "$config" ]; then
-        [ "$(printf '%s\n' "$config" | sed 's/^user = //' | jq -r .)" = "$coord_user:$coord_pass" ] || fail "curl received the wrong credential"
-        printf '%s\n' "$config" >>"$scratch/curl-config"
-    fi
+    [ "$DASH_USER:$DASH_PASS" = "$coord_user:$coord_pass" ] || fail 'dashboard session received the wrong credential'
+    [ "${!#}" = "https://$coord_ip/api/state" ] || fail 'dashboard session targeted the wrong state endpoint'
+    printf 'authenticated\n' >>"$scratch/dashboard-auth"
     call=$(cat "$scratch/polls")
     echo "$((call + 1))" >"$scratch/polls"
     if [ ! -f "$scratch/cut" ]; then
@@ -164,13 +156,13 @@ run_case() {
     local scenario="$1" expected="$2" result=0
     local PASS=0 FAIL=0 expected_pass=12 expected_fail=0
     local VM=rig DISK="$scratch/rig.img" SERIAL="$scratch/rig.log" ip=192.0.2.1
-    for file in virsh teardown requests curl-argv curl-config; do : >"$scratch/$file"; done
+    for file in virsh teardown requests curl-argv dashboard-auth; do : >"$scratch/$file"; done
     rm -f "$scratch/cut" "$scratch/new-boot"
     echo 0 >"$scratch/tick"
     echo 0 >"$scratch/polls"
     rig_share_leg image node 18081 18083 '' '' '' '' "$ip" >"$scratch/verdicts" || result=$?
     ! grep -Fq fixturesecret42 "$scratch/curl-argv" || fail "$scenario credential entered curl argv"
-    [ -s "$scratch/curl-config" ] || fail "$scenario did not authenticate through curl config"
+    [ -s "$scratch/dashboard-auth" ] || fail "$scenario did not authenticate through the dashboard session"
     [ "$result" -eq "$expected" ] || fail "$scenario returned $result, expected $expected"
     [ "$VM" = rig ] && [ "$ip" = 192.0.2.1 ] &&
         [ "$DISK" = "$scratch/rig.img" ] && [ "$SERIAL" = "$scratch/rig.log" ] || fail "$scenario leaked coordinator globals"

@@ -83,7 +83,7 @@ drive() (
         recovery_wait_healthy 60 >"$work/output" 2>&1 || rc=$?
         ;;
     _poll_upgrade_result)
-        rx() { pending_json "$(fx running applied)"; }
+        dashboard_api_get() { pending_json "$(fx running applied)"; }
         _poll_upgrade_result id 60 >"$work/output" 2>&1 || rc=$?
         ;;
     _await_egress_state)

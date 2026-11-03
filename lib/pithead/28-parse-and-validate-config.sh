@@ -330,14 +330,19 @@ parse_and_validate_config() {
     DASHBOARD_AUTH_USERS_JSON=$(jq -c '.dashboard.auth.users' "$CONFIG_FILE")
     [ "$DASHBOARD_AUTH_USERS_JSON" != null ] || DASHBOARD_AUTH_USERS_JSON='[]'
     DASHBOARD_METRICS_PASSWORD_HASH=$(jq -r '.dashboard.auth.metrics_password_hash // ""' "$CONFIG_FILE")
+    DASHBOARD_STANDBY_PASSWORD_HASH=$(jq -r '.dashboard.auth.standby_password_hash // ""' "$CONFIG_FILE")
     DASHBOARD_AUTH_ENABLED=false
     local dash_pw
     dash_pw=$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")
     if [ "$(jq -r 'type' <<<"$DASHBOARD_AUTH_USERS_JSON")" != "array" ]; then
         error "dashboard.auth.users must be an array."
     fi
-    if ! [[ "$DASHBOARD_METRICS_PASSWORD_HASH" =~ ^$|^\$2[aby]\$(0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}$ ]]; then
+    local bcrypt_pattern='^\$2[aby]\$(0[4-9]|1[0-6])\$[./A-Za-z0-9]{21}[.Oeu][./A-Za-z0-9]{30}[.CGKOSWaeimquy26]$'
+    if ! [[ "$DASHBOARD_METRICS_PASSWORD_HASH" =~ ^$|$bcrypt_pattern ]]; then
         error "dashboard.auth.metrics_password_hash must be empty or a bcrypt hash."
+    fi
+    if ! [[ "$DASHBOARD_STANDBY_PASSWORD_HASH" =~ ^$|$bcrypt_pattern ]]; then
+        error "dashboard.auth.standby_password_hash must be empty or a bcrypt hash."
     fi
     if ! jq -e 'all(type == "object" and ((keys - ["name","password_hash","role"]) | length) == 0 and has("name") and has("role") and has("password_hash"))' <<<"$DASHBOARD_AUTH_USERS_JSON" >/dev/null; then
         error "Each dashboard.auth.users entry must contain only name, role and password_hash."
@@ -348,7 +353,7 @@ parse_and_validate_config() {
             error "dashboard.auth.users[].name must be 1–64 chars of letters, digits, and . _ @ -."
         fi
         [[ "$auth_role" =~ ^(admin|viewer)$ ]] || error "dashboard.auth.users[].role must be admin or viewer."
-        [[ "$auth_hash" =~ ^\$2[aby]\$(0[4-9]|1[0-6])\$[./A-Za-z0-9]{53}$ ]] ||
+        [[ "$auth_hash" =~ $bcrypt_pattern ]] ||
             error "dashboard.auth.users[].password_hash must be a bcrypt hash."
         [ "$auth_role" != admin ] || auth_admins=$((auth_admins + 1))
     done < <(jq -r '.[] | [.name,.role,.password_hash] | @tsv' <<<"$DASHBOARD_AUTH_USERS_JSON")
@@ -366,10 +371,11 @@ parse_and_validate_config() {
             error "dashboard.auth.users cannot reuse dashboard.auth.username while the legacy password is set."
         fi
         DASHBOARD_AUTH_PW_FP=$(printf '%s' "$dash_pw" | sha256_hex)
-        local prev_fp prev_hash
+        local prev_fp prev_hash prev_decoded
         prev_fp=$(env_get DASHBOARD_AUTH_PW_FP)
         prev_hash=$(env_get DASHBOARD_AUTH_HASH_B64)
-        if [ "$DASHBOARD_AUTH_PW_FP" = "$prev_fp" ] && [ -n "$prev_hash" ]; then
+        prev_decoded=$(printf '%s' "$prev_hash" | openssl base64 -d -A 2>/dev/null) || prev_decoded=""
+        if [ "$DASHBOARD_AUTH_PW_FP" = "$prev_fp" ] && [[ "$prev_decoded" =~ $bcrypt_pattern ]]; then
             DASHBOARD_AUTH_HASH_B64="$prev_hash" # password unchanged — keep the stable hash
         else
             DASHBOARD_AUTH_HASH_B64=$(caddy_hash_password_b64 "$dash_pw") ||
@@ -384,13 +390,14 @@ parse_and_validate_config() {
     if [ "$DASHBOARD_AUTH_ENABLED" == true ] && [ -z "$dash_pw" ] && [ "$auth_admins" -eq 0 ]; then
         error "dashboard.auth.users must include at least one admin."
     fi
-    if { [ "$DASHBOARD_AUTH_ENABLED" == true ] || [ -n "$DASHBOARD_METRICS_PASSWORD_HASH" ]; } && [ "$DASHBOARD_SECURE" != "true" ] && [ "$(config_bool '.dashboard.onion.enabled' false)" != "true" ]; then
+    if { [ "$DASHBOARD_AUTH_ENABLED" == true ] || [ -n "$DASHBOARD_METRICS_PASSWORD_HASH" ] || [ -n "$DASHBOARD_STANDBY_PASSWORD_HASH" ]; } && [ "$DASHBOARD_SECURE" != "true" ] && [ "$(config_bool '.dashboard.onion.enabled' false)" != "true" ]; then
         warn "dashboard.auth is set but dashboard.secure is false — credentials would travel over plain HTTP. Set dashboard.secure: true for HTTPS."
     fi
     DASHBOARD_AUTH_CONFIG_FP=$(jq -cn --arg legacy_name "$DASHBOARD_AUTH_USER" \
         --arg legacy_hash "$DASHBOARD_LEGACY_AUTH_HASH" --arg metrics_hash "$DASHBOARD_METRICS_PASSWORD_HASH" \
+        --arg standby_hash "$DASHBOARD_STANDBY_PASSWORD_HASH" \
         --argjson users "$DASHBOARD_AUTH_USERS_JSON" \
-        '{users:($users + (if $legacy_hash == "" then [] else [{name:$legacy_name,role:"admin",password_hash:$legacy_hash}] end)),metrics_password_hash:$metrics_hash}' |
+        '{users:($users + (if $legacy_hash == "" then [] else [{name:$legacy_name,role:"admin",password_hash:$legacy_hash}] end)),metrics_password_hash:$metrics_hash,standby_password_hash:$standby_hash}' |
         sha256_hex)
 
     # Optional dashboard onion (#343). Opt-in, default off. When on, pithead publishes the dashboard

@@ -183,6 +183,7 @@ integration_expected=$(
         ! -name remote-endpoints.sh ! -name wallet-fixture.sh ! -name wallet-fixture-recovery.sh \
         ! -name readiness-churn.sh ! -name restore-dashboard-guest.sh ! -name reset-restore-web.sh ! -name reset-restore-startup.sh ! -name lifecycle-pool.sh ! -name disk-enospc-target.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh \
+        ! -name dashboard-guest-session.sh ! -name dashboard-session.sh ! -name e2e-dashboard-session.sh \
         ! -name miner-connection.sh ! -name tari-readiness.sh ! -name xvb-off-dwell.sh -print |
         sed 's|^tests/integration/||'
 )

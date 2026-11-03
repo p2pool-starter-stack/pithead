@@ -6,48 +6,17 @@ import bcrypt
 import pytest
 
 from mining_dashboard.service import control_service
-from mining_dashboard.web import server
-
-
-@pytest.fixture
-def auth_config(tmp_path, monkeypatch):
-    password = secrets.token_urlsafe(18)
-    machine = secrets.token_urlsafe(18)
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=4)).decode()
-    path = tmp_path / "auth.json"
-    data = {
-        "users": [
-            {"name": "owner", "role": "admin", "password_hash": hashed},
-            {"name": "observer", "role": "viewer", "password_hash": hashed},
-        ],
-        "metrics_password_hash": bcrypt.hashpw(machine.encode(), bcrypt.gensalt(rounds=4)).decode(),
-    }
-    path.write_text(json.dumps(data))
-    monkeypatch.setenv("DASHBOARD_AUTH_FILE", str(path))
-    monkeypatch.setattr(server.config, "DASHBOARD_CONTROL_ENABLED", True)
-    return path, data, password, machine
-
-
-@pytest.fixture
-async def auth_client(auth_config, state_manager, aiohttp_client):
-    return await aiohttp_client(server.create_app(state_manager, {}))
-
-
-def origin(client):
-    return str(client.make_url("/").origin())
-
-
-async def login(client, password, name="owner", **kwargs):
-    return await client.post(
-        "/login",
-        data={"username": name, "password": password},
-        headers={"Origin": origin(client), **kwargs},
-        allow_redirects=False,
-    )
-
-
-def basic(name, password):
-    return "Basic " + base64.b64encode(f"{name}:{password}".encode()).decode()
+from tests.web.dashboard_auth_fixtures import (
+    auth_client as auth_client,
+)
+from tests.web.dashboard_auth_fixtures import (
+    auth_config as auth_config,
+)
+from tests.web.dashboard_auth_fixtures import (
+    basic,
+    login,
+    origin,
+)
 
 
 async def test_pages_redirect_and_api_has_no_browser_prompt(auth_client):
@@ -153,7 +122,9 @@ async def test_metrics_credential_cannot_open_other_routes(auth_client, auth_con
     response = await auth_client.get(
         "/metrics", headers={"Authorization": basic("owner", auth_config[2])}
     )
-    assert response.status == 200
+    assert response.status == 401
+    await login(auth_client, auth_config[2])
+    assert (await auth_client.get("/metrics")).status == 200
 
 
 @pytest.mark.parametrize("change", ["password_hash", "role", "remove"])
@@ -221,22 +192,39 @@ async def test_tls_cookie_and_secure_session_refuse_plain_transport(auth_client,
     ).status == 200
 
 
-async def test_existing_basic_clients_keep_control_header_contract(
+async def test_interactive_basic_credentials_cannot_authorize_control(
     auth_client, auth_config, monkeypatch
 ):
     actors = []
     monkeypatch.setattr(control_service, "submit", lambda *a, **kw: actors.append(kw["actor"]))
     headers = {"Authorization": basic("owner", auth_config[2])}
-    assert (await auth_client.post("/api/control/backup", headers=headers)).status == 403
+    response = await auth_client.post(
+        "/api/control/backup",
+        headers={**headers, "X-Pithead-Control": "1", "Origin": origin(auth_client)},
+    )
+    assert response.status == 401
+    assert actors == []
+    assert (await auth_client.post("/api/control/backup", headers=headers)).status == 401
     response = await auth_client.post(
         "/api/control/backup", headers={**headers, "X-Pithead-Control": "1"}
     )
-    assert response.status == 202
-    assert actors == ["owner"]
+    assert response.status == 401
+    assert actors == []
     response = await auth_client.post(
         "/api/control/backup", headers={**headers, "X-Pithead-Control": "1", "Origin": "null"}
     )
+    assert response.status == 401
+    await login(auth_client, auth_config[2])
+    response = await auth_client.post(
+        "/api/control/backup", headers={**headers, "X-Pithead-Control": "1"}
+    )
     assert response.status == 403
+    response = await auth_client.post(
+        "/api/control/backup",
+        headers={**headers, "X-Pithead-Control": "1", "Origin": origin(auth_client)},
+    )
+    assert response.status == 202
+    assert actors == ["owner"]
 
 
 async def test_viewer_cannot_read_one_time_control_or_miner_credentials(
@@ -331,14 +319,14 @@ async def test_bounded_login_request_and_hash_concurrency(auth_client, auth_conf
     [
         "Basic !",
         "Basic " + base64.b64encode(b"missing-separator").decode(),
+        "Basic " + base64.b64encode(b"invalid:\xff").decode(),
         "Basic " + "x" * 2048,
         "Bearer x",
     ],
 )
-async def test_malformed_credentials_do_not_bypass_auth(auth_client, authorization):
-    assert (
-        await auth_client.get("/api/state", headers={"Authorization": authorization})
-    ).status == 401
+@pytest.mark.parametrize("endpoint", ["/api/state", "/metrics", "/api/xvb-standby"])
+async def test_malformed_credentials_do_not_bypass_auth(auth_client, authorization, endpoint):
+    assert (await auth_client.get(endpoint, headers={"Authorization": authorization})).status == 401
 
 
 async def test_boot_probe_exemption_cannot_reach_an_api(auth_client):
@@ -385,7 +373,7 @@ async def test_metrics_named_admin_and_machine_credentials_are_independent(
     path, data, password, machine = auth_config
     data["users"][0]["name"] = "metrics"
     path.write_text(json.dumps(data))
-    for credential in (basic("metrics", password), basic("metrics", machine), "Bearer " + machine):
+    for credential in (basic("metrics", machine), "Bearer " + machine):
         assert (
             await auth_client.get("/metrics", headers={"Authorization": credential})
         ).status == 200
@@ -395,3 +383,8 @@ async def test_metrics_named_admin_and_machine_credentials_are_independent(
     assert (
         await auth_client.get("/api/state", headers={"Authorization": basic("metrics", machine)})
     ).status == 401
+    assert (
+        await auth_client.get("/metrics", headers={"Authorization": basic("metrics", password)})
+    ).status == 401
+    assert (await login(auth_client, password, "metrics")).status == 303
+    assert (await auth_client.get("/metrics")).status == 200

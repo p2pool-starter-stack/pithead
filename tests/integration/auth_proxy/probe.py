@@ -100,9 +100,37 @@ if mode == "authenticated":
     require(status == 200, (status, body))
     session = json.loads(body)
     require(session["role"] == "admin" and session["user"] == os.environ["ADMIN_NAME"], session)
-    status, _, _ = request("/logout", method="POST", headers={"Origin": origin})
+    retained = basic(os.environ["ADMIN_NAME"], os.environ["ADMIN_PASSWORD"])
+    status, _, _ = request(
+        "/logout",
+        method="POST",
+        headers={"Origin": origin, "Authorization": retained},
+    )
     require(status == 303, status)
     require(request("/api/auth/session")[0] == 401, "logout left the session usable")
+    require(
+        request("/api/auth/session", headers={"Authorization": retained})[0] == 401,
+        "retained interactive Basic reopened the identity endpoint",
+    )
+    status, headers, _ = request("/", headers={"Authorization": retained})
+    require(
+        status == 303 and headers.get("Location") == "/login",
+        "retained interactive Basic reopened the dashboard root",
+    )
+    require(
+        request(
+            "/api/auth/hash",
+            method="POST",
+            headers={
+                "Origin": origin,
+                "Authorization": retained,
+                "Content-Type": "application/json",
+                "X-Pithead-Control": "1",
+            },
+        )[0]
+        == 401,
+        "retained interactive Basic reached an administrator route after logout",
+    )
 
     viewer_jar = http.cookiejar.CookieJar()
     opener.add_handler(urllib.request.HTTPCookieProcessor(viewer_jar))

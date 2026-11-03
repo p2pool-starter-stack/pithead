@@ -53,7 +53,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         [ "$remaining" -ge "$request_limit" ] || request_limit=$remaining
         : >"$state_body"
         # shellcheck disable=SC2154 # guest address shared by the suite runner
-        if code=$(curl -sSk -u "$DASH_USER:$DASH_PASS" -o "$state_body" -w '%{http_code}' \
+        if code=$(dashboard_curl -sSk -o "$state_body" -w '%{http_code}' \
             -m "$request_limit" "https://$ip/api/state" 2>/dev/null) &&
             [ "$code" = 200 ] && jq -e 'true' "$state_body" >/dev/null 2>&1; then
             state_ready=1
@@ -248,7 +248,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     fi
     # The header badge (#2385) reads reboot-pending + the target version off /api/state, not the
     # modal — it must say a reboot is owed even with the modal closed, until the reboot happens.
-    if curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/state" 2>/dev/null |
+    if dashboard_curl -sSk "https://$ip/api/state" 2>/dev/null |
         jq -e --arg v "${tag#v}" '.os_update.step == "reboot-pending" and .os_update.version == $v' >/dev/null 2>&1; then
         ok "leg 4: /api/state carries reboot-pending + $tag — the header badge would say 'Reboot to finish the update to $tag'"
     else
@@ -286,7 +286,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     else
         bad "leg 4: no 'updated' verdict after the reboot (got '${verdict:-none}') — commit or verdict is broken"
     fi
-    if curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/state" 2>/dev/null |
+    if dashboard_curl -sSk "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.verdict.outcome == "updated"' >/dev/null 2>&1; then
         ok "leg 4: the success banner's verdict reaches /api/state"
     else

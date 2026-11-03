@@ -102,6 +102,10 @@ rx() {
     esac
 }
 
+dashboard_api_get() { rx "curl $1"; }
+dashboard_api_request() { rx "curl -X $1 --data $(quote_arg "${3:-}") $2"; }
+dashboard_api_status() { dashboard_api_request "$@"; }
+
 # --- Case scaffolding -------------------------------------------------------
 # Each case reports on the COUNTERS the harness itself keeps, because that is what a gate run
 # reads. Asserting on stdout text instead would pass on a leg that printed the right words while

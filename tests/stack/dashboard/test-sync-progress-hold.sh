@@ -8,14 +8,15 @@ mk_tmpdir SH
 mkdir -p "$SH/bin"
 cat >"$SH/bin/curl" <<'CURL'
 #!/usr/bin/env bash
+cat >/dev/null
 printf '%s' "$CURL_BODY"
 CURL
 chmod +x "$SH/bin/curl"
+printf 'DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token\nTARI_REQUIRED=false\n' >"$SH/env"
 sh_tari_off='{"syncing":false,"sync":{"monero":{"state":"done"},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
 assert_eq "tari loading with syncing=false -> no hold message" \
-    "$(CURL_BODY="$sh_tari_off" PATH="$SH/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
+    "$(PITHEAD_ENV_FILE="$SH/env" CURL_BODY="$sh_tari_off" PATH="$SH/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
 sh_mixed='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"loading"}}}'
-printf 'TARI_REQUIRED=false\n' >"$SH/env"
 out="$(PITHEAD_ENV_FILE="$SH/env" CURL_BODY="$sh_mixed" PATH="$SH/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "monero syncing still holds" "$out" "held until it completes"
 assert_not_contains "non-required tari row is not listed" "$out" "tari"
@@ -25,7 +26,7 @@ sh_guide="$(awk '/^### 1\.6 / {section=1; next} section && /^### / {exit} sectio
 assert_contains "fresh-install step 1.6 agrees with the non-required Tari fixture" \
     "$sh_guide" "Sync-hold rows: \`$sh_rows\` in both fresh runs (default and beta opt-in)."
 unset sh_rows sh_guide
-printf 'TARI_REQUIRED=true\n' >"$SH/env"
+printf 'DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token\nTARI_REQUIRED=true\n' >"$SH/env"
 out="$(PITHEAD_ENV_FILE="$SH/env" CURL_BODY="$sh_mixed" PATH="$SH/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "required tari row is listed" "$out" "tari"
 rm -rf "$SH"
