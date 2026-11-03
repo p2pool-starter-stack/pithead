@@ -25,11 +25,26 @@ import asyncio
 import logging
 import time
 
-from mining_dashboard.config.config import MONERO_WALLET_ADDRESS, TARI_WALLET_ADDRESS
+from mining_dashboard.config.config import (
+    MONERO_PAYOUT_ADDRESS,
+    MONERO_SUBADDRESS,
+    MONERO_WALLET_ADDRESS,
+    TARI_WALLET_ADDRESS,
+)
 
 logger = logging.getLogger("DataService")
 
 DOWN_ALERT_ATTEMPTS = 3
+
+
+def observed_monero_pair(observed):
+    if observed == "Unknown":
+        return observed, ""
+    if isinstance(observed, str) and observed.startswith("8"):
+        return MONERO_WALLET_ADDRESS, observed
+    if isinstance(observed, str) and observed:
+        return observed, ""
+    return MONERO_WALLET_ADDRESS, MONERO_SUBADDRESS
 
 
 async def run_isolated(label, step):
@@ -70,7 +85,9 @@ async def sync_monero(state_manager, wallet_client, alert_service):
             r["txid"][:8],
             r["height"],
         )
-        await alert_service.payout_confirmed_alert(chain, r["amount_atomic"], r["txid"])
+        await alert_service.payout_confirmed_alert(
+            chain, r["amount_atomic"], r["txid"], MONERO_PAYOUT_ADDRESS
+        )
     return answered
 
 
@@ -155,7 +172,7 @@ async def observe_enabled_wallets(service):
             "monero",
             service.wallet_client,
             service.monero_wallet_health,
-            MONERO_WALLET_ADDRESS,
+            MONERO_PAYOUT_ADDRESS,
             service.monero_wallet_scan_answered,
         ),
         (

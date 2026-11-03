@@ -414,7 +414,7 @@ class AlertService(
             await asyncio.to_thread(sink.send, text, self.EVT_HASHRATE_LOSS)
         return text
 
-    async def payout_confirmed_alert(self, chain, amount_atomic, txid):
+    async def payout_confirmed_alert(self, chain, amount_atomic, txid, address=None):
         """Push a payout-confirmed alert (#381): the view-only wallet saw an incoming payout land
         on-chain — the ground truth behind the earnings estimate. "Alert once" is enforced upstream
         (the caller only invokes this for genuinely-new ``(chain, txid)`` rows the idempotent
@@ -428,9 +428,10 @@ class AlertService(
             return None
         divisor = 1_000_000 if chain == "tari" else 1_000_000_000_000
         amount = (amount_atomic or 0) / divisor
+        destination = f" to {address[:8]}…" if address else ""
         text = self._fmt(
             f"\U0001f4b0 Payout CONFIRMED on-chain: {amount:.6f} {chain.upper()} "
-            f"landed in your wallet (tx {txid[:8]}…)."
+            f"landed in your wallet{destination} (tx {txid[:8]}…)."
         )
         for sink in sinks:
             await asyncio.to_thread(sink.send, text, self.EVT_PAYOUT_CONFIRMED)

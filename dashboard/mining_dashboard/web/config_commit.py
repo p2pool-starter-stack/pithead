@@ -30,7 +30,7 @@ def approval_envelope(body):
         return None
     suffixes = body.get("payout_suffixes", {})
     if not isinstance(suffixes, dict) or any(
-        key not in ("monero", "tari") or not isinstance(value, str)
+        key not in ("monero", "monero_subaddress", "tari") or not isinstance(value, str)
         for key, value in suffixes.items()
     ):
         raise ValueError("invalid payout confirmation")

@@ -1,7 +1,7 @@
 # Classify a Monero MAINNET address:
-#   primary/standard  "4…" 95   — the ONLY kind p2pool can pay (coinbase) and XvB credits by.
+#   primary/standard  "4…" 95   — the wallet identity p2pool and XvB use.
 #   integrated        "4…" 106  — embeds a payment id; p2pool rejects it.
-#   subaddress        "8…" 95   — p2pool cannot pay a subaddress.
+#   subaddress        "8…" 95   — optional p2pool destination paired with --wallet.
 # Echoes: primary | integrated | subaddress | checksum | invalid  (#250, #829)
 #
 # Shape (prefix + length) alone is not enough: a well-shaped address with one mistyped character

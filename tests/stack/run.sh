@@ -156,12 +156,10 @@ fi
 if in_block 2; then
     # shellcheck source=tests/stack/secrets/test-secrets.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets.sh" && domain_ran test-secrets.sh "$_d0" "$?" || domain_ran test-secrets.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-rig-worker.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig-worker.sh "$_d0" "$?" || domain_ran test-rig-worker.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-connection-announce.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-connection-announce.sh" && domain_ran test-connection-announce.sh "$_d0" "$?" || domain_ran test-connection-announce.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-status-vocabulary.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-status-vocabulary.sh" && domain_ran test-control-status-vocabulary.sh "$_d0" "$?" || domain_ran test-control-status-vocabulary.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-monero-tari.sh disable=SC2015
@@ -174,6 +172,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-recovery-address-gates.sh" && domain_ran test-recovery-address-gates.sh "$_d0" "$?" || domain_ran test-recovery-address-gates.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-p2pool-tari-off.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-p2pool-tari-off.sh" && domain_ran test-p2pool-tari-off.sh "$_d0" "$?" || domain_ran test-p2pool-tari-off.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-monero-subaddress.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-monero-subaddress.sh" && domain_ran test-monero-subaddress.sh "$_d0" "$?" || domain_ran test-monero-subaddress.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-mode-off.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-tari-mode-off.sh "$_d0" "$?" || domain_ran test-tari-mode-off.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-lmdb.sh disable=SC2015
