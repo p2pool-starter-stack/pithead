@@ -56,6 +56,9 @@ assert_eq "the rigs are dialed strictly one after another" \
 assert_eq "no per-rig result files are left behind" "$(find "$WUA/results" -type f | wc -l | tr -d ' ')" "1"
 assert_contains "the run is audited as completed" "$(cat "$WUA/audit/control.log")" '"action":"worker-upgrade-all","status":"completed"'
 assert_contains "each rig upgrade is audited too" "$(cat "$WUA/audit/control.log")" '"action":"worker-upgrade","status":"applied"'
+assert_eq "the run's audit lines match the dashboard's #3865 reader fixture" \
+    "$(grep "\"id\":\"$wua1" "$WUA/audit/control.log" | sed -E 's/"ts":"[^"]*"/"ts":"2026-01-01T00:00:00Z"/')" \
+    "$(cat "$ROOT/dashboard/tests/service/fixtures/worker-upgrade-all-control.jsonl")"
 if grep -q 'tok-' "$WUA/audit/control.log" "$WUA"/results/*.json 2>/dev/null; then
     bad "worker-upgrade-all never leaks a token to results/audit" "token found"
 else
