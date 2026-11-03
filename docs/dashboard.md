@@ -1668,10 +1668,16 @@ when there is a target to download.
    or reboot at the console. Reboot pauses mining — typically under five minutes. The page
    waits and reconnects when the dashboard returns.
 
-After the reboot the machine health-checks itself before committing the new version — the same
-gate every appliance boot runs. A banner reports the outcome: updated to the new version, or
-rolled back to the previous one automatically because a check did not pass inside the window.
-When the host records which check held the gate, the banner names it. A rollback on its own is
+After the reboot the machine is already running the new version, and it health-checks itself
+before committing it — the same gate every appliance boot runs. While that verification is in
+progress the header says **"Verifying the update to vX — leave the machine running"**, and
+nothing on the page asks for a second reboot: a reboot now would fall back to the previous
+version before the update ever had its checks decided, so the host refuses one and says why,
+in the message and in the control log. A banner reports the outcome: updated to the new
+version, or rolled back to the previous one automatically because a check did not pass inside
+the window. When the host records which check held the gate, the banner names it. An update
+interrupted before its verification reached a verdict — a power cut mid-verification, say — is
+reported as interrupted, not as failed health checks. A rollback on its own is
 not evidence that the release was faulty: a check can fail for a reason the update did not cause,
 and the named cause is what tells the two apart before you retry. Either way the machine ends on
 a working system; wallets, settings, and chain data live on the data partition and are never part
