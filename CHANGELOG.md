@@ -11,16 +11,30 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
-## [2.0.2] - Unreleased
+## [2.0.2] - 2026-10-31
+
+Pithead 2.0.2 is a patch release after 2.0.1. It makes a command-line restore refresh the
+dashboard configuration, catches an occupied stratum port before Configuration applies it, and
+makes the commands that act on data directories refuse a path with a line break in it. It changes
+no configuration keys and no component version, and runs no data migration. Entries below apply
+to both channels unless they say otherwise.
 
 ### Fixed
 
 - A command-line restore over an existing install refreshes the dashboard configuration before
   startup, so Configuration and the earnings calculator use the restored values (#3432).
-- Docker bridge detection works with older mawk on Debian 12 and Ubuntu 22.04, keeping engine
-  bridge addresses out of Caddy's bind and certificate-name lists (#3653).
 - Configuration preview and apply refuse an occupied stratum port before committing the change,
-  keeping the running proxy and mining intact (#3417).
+  keeping the running proxy and mining intact. The check runs only when the port changes and does
+  not reserve the port (#3417).
+- `reset-dashboard` refuses a data directory whose path in `.env` contains a carriage return or
+  line feed, so it never deletes a truncated path. The other data-directory checks refuse such a
+  path too (#3502).
+- First-start guidance names the chains your setup actually has to sync before mining starts
+  (#3598).
+- DIY: building the Monero, P2Pool and xmrig-proxy images from a source checkout tries
+  `apt-get update` up to three times, pausing 5 and then 10 seconds, so a mirror that is briefly
+  mid-sync no longer fails those builds at the index update. The package install is not retried
+  (#1802).
 - The appliance release gate accepts a measured Secure Boot non-boot for every version as
   unsupported by design. An unmeasured guest still fails; Secure Boot must remain off (#3678).
 
@@ -29,6 +43,28 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - The dashboard development lock raises filelock to 4.2.4 and virtualenv to 21.14.13 to clear their
   dependency advisories. Both are development tooling only and are absent from the dashboard image
   (#3662, #3014).
+
+### Known issues in 2.0.2
+
+The [known issues listed for 2.0.1](https://github.com/p2pool-starter-stack/pithead/blob/main/CHANGELOG.md#known-issues-in-201),
+including those it carries over from 2.0.0, still apply, except #3432 and #3417, which are fixed
+above. Four issues are planned for 2.0.3, including #3375 from the 2.0.1 list:
+
+- On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
+  boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot (#3375).
+- On the appliance, after `config-reset`, a restore and `pithead up`, the stack starts but the
+  enabled built-in miner may not start, so its saved workers do not reconnect. No workaround has
+  been established (#3623).
+- DIY: a checkout made under a restrictive umask such as `umask 077` builds images whose files
+  their non-root service users cannot read, and Tor then fails before setup completes. Make the
+  checkout under the usual `umask 022` (#3431).
+- With the default Tor egress firewall, the setup wizard and Configuration refuse a remote node
+  hostname whose DNS answer includes an IPv6 address, as on a dual-stack LAN, even when it also
+  resolves to a private IPv4 address. Enter the node's private IPv4 address instead (#2351).
+
+One more is open. The appliance's cosign binary is the same build as in 2.0.1. It carries go-jose
+4.1.4, which scanners report as CVE-2026-116587 (HIGH, fixed in go-jose 4.1.6). Whether Pithead's
+use of cosign is exposed has not been established (#3761).
 
 ## [2.0.1] - 2026-10-25
 
@@ -110,7 +146,7 @@ Entries below apply to both channels unless they say otherwise.
 
 ### Known issues in 2.0.1
 
-These three ship in 2.0.1. #3375 is planned for 2.0.2; #3432 is fixed in 2.0.2. The known issues
+These three ship in 2.0.1. #3375 is planned for 2.0.3; #3432 is fixed in 2.0.2. The known issues
 listed for 2.0.0 still apply, except #3414, #3376, #3384, #3435 and #3390, which are fixed above.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
@@ -238,7 +274,7 @@ changelog and the wizard text only.
 
 - On the appliance, the built-in miner can stay at 0 H/s after a dashboard backup or a recovery
   boot. The dashboard shows 0 H/s for it. Run `sudo systemctl restart xmrig` or reboot. Planned for
-  2.0.2 ([#3375](https://github.com/p2pool-starter-stack/pithead/issues/3375)).
+  2.0.3 ([#3375](https://github.com/p2pool-starter-stack/pithead/issues/3375)).
 - After a dashboard update, the appliance can mint a new self-signed certificate for the same
   addresses, so the browser asks you to trust it again. Fixed in 2.0.1
   ([#3414](https://github.com/p2pool-starter-stack/pithead/issues/3414)).
@@ -247,7 +283,7 @@ changelog and the wizard text only.
   2.0.1 ([#3390](https://github.com/p2pool-starter-stack/pithead/issues/3390)).
 - Setting the stratum port in Configuration to a port another service already uses is not caught
   by the preview. Apply then fails part-way with the proxy stopped; Configuration's recovery
-  restores it. Planned for 2.1.0
+  restores it. Fixed in 2.0.2
   ([#3417](https://github.com/p2pool-starter-stack/pithead/issues/3417)).
 - After a rejected stale Configuration change, the message can say it was saved. Fixed in 2.0.1
   ([#3376](https://github.com/p2pool-starter-stack/pithead/issues/3376)).

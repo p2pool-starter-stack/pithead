@@ -248,10 +248,9 @@ release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 a
     return 1
 }
 
-# Sourceable for the test suite: everything above is definitions, so a `source` stops here and the
-# suite can drive fail_boot in a sandbox. Executed directly — every real boot — this is a no-op.
 [ "${BASH_SOURCE[0]}" = "${0}" ] || return 0
 
+export PITHEAD_DEFER_LOCAL_MINER=1
 cd /data/pithead || exit 1
 
 # Role fork (#797): a rig is not a small coordinator, it is a different machine. No compose
