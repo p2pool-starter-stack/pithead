@@ -11,6 +11,7 @@ source "$HERE/../lib/run-wizard-defaults.sh"
 source "$HERE/../lib/run-wizard-eof.sh"
 
 WORK="$(mktemp -d -t wizard-defaults.XXXXXX)"
+OUT_DIR="$WORK/out"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/bin"
 cat >"$WORK/bin/df" <<'DF'
@@ -44,7 +45,10 @@ rx() {
     case "${WIZARD_FAILURE:-}:$1" in
     eof-fails:*'wizard-eof.XXXXXX'*) return 17 ;;
     entry-read-fails:'cat config.json' | env-fails:*'DEPLOYMENT_COMPLETED=false'* | startup-fails:*'test ! -e .itest-first-run-done'*) return 17 ;;
-    setup-fails:*' setup --skip-deps --skip-optimize') return 17 ;;
+    setup-fails:*' setup --skip-deps --skip-optimize')
+        printf 'setup stopped: PASSWORD=hunter2\nGenerated dashboard password: s3cretvalue\n'
+        return 17
+        ;;
     esac
     case "$1" in
     *' setup --skip-deps --skip-optimize')
@@ -148,6 +152,8 @@ for failure in eof-fails initial-push-fails env-fails setup-fails startup-fails;
     assert_eq "wizard $failure restores its entry configuration before returning failure" \
         "$(wizard_failure_result "$failure")" '1|yes|yes|yes|1'
 done
+assert_eq "a failed CLI setup keeps its redacted output as an artifact" \
+    "$(cat "$WORK/out/cli-defaults/setup.log")" $'setup stopped: PASSWORD=<redacted>\nGenerated dashboard password: <redacted>'
 assert_eq "an unhealthy wizard trial restores its entry configuration" \
     "$(wizard_failure_result health-fails)" '1|yes|yes|yes|2'
 assert_eq "a refused restore push fails without applying or waiting on it" \
