@@ -113,7 +113,7 @@ export class MachinesPage extends Component {
       </section>
       ${
         inspect
-          ? html`<${RigInspector} name=${inspect.name} writable=${writable}
+          ? html`<${RigInspector} name=${inspect.name} writable=${writable} earnings=${state.earnings}
             shared=${workers.filter((worker) => worker?.name === inspect.name).length}
             worker=${findRig(workers, inspect.name, inspect.occurrence) || inspect.worker} onClose=${() => this.close()} />`
           : null

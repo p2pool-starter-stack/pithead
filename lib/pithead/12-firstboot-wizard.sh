@@ -46,11 +46,6 @@ firstboot_wizard() {
         provision_rig_miner || true
         return 0
     fi
-    # A configuration dropped on the medium beats opening a browser at all — but never on the
-    # INSTALLATION medium: pre-seeding covers configuration, not the erase decision (the docs'
-    # exact promise), and a fleet stick that provisioned ITSELF instead of offering the
-    # installer would burn out running a chain it can never hold. There, the pre-seed becomes
-    # the pre-filled combined page instead (below).
     if ! installer_mode_available; then
         # The carried restore first: it holds MORE than a config (keys, database), and once it
         # lands the config pre-seed guard below sees config.json and stands down. Unconditional —
@@ -81,6 +76,8 @@ firstboot_wizard() {
                 warn "Provisioning succeeded, but its setup-wizard history marker could not be recorded; it was kept for retry."
             return
         fi
+    elif ! setup_again_mode && headless_install "$spool"; then
+        return
     fi
     _console "" "Pithead is starting up — preparing the setup page." \
         "This takes a minute or two on first boot. Nothing to do yet."

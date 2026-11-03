@@ -382,12 +382,6 @@ not proven.
 
 ## Open
 
-- **Installing to a disk still needs a human (#979).** Pre-seeding (`pithead-token.txt` /
-  `pithead-config.json` on the ESP) covers configuration headlessly and the installer carries
-  both onto the target, so a fleet can be flashed and provisioned from one file. Choosing
-  which disk to erase is deliberately NOT automated — an unattended installer that picks a
-  disk itself will eventually pick the wrong one. A pre-seeded target would need to name the
-  disk by serial, not by `/dev/` path, and that is unbuilt.
 - **Part of the host-CLI surface is still unreachable on the appliance (#786).** The GA
   trio closed the sharpest losses: dashboard backup export (#908), restore at setup
   (#909), and the media config channel (#910) — which also carries the settings the
