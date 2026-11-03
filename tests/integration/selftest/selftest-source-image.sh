@@ -40,7 +40,8 @@ case "$*" in
     echo new >"$STATE/declared" ;;
 'image tag old pithead-source-image-backup:'*) [ -f "$STATE/old-available" ] && touch "$STATE/pinned" ;;
 'image tag pithead-source-image-backup:'*' proxy:dev') [ -f "$STATE/pinned" ] && echo old >"$STATE/declared" ;;
-'image rm new') [ "$(cat "$STATE/live")" = old ] && touch "$STATE/removed" ;;
+'image inspect new') [ "$CASE" != image-gone ] ;;
+'image rm new') [ "$CASE" != rm-fails ] && [ "$(cat "$STATE/live")" = old ] && touch "$STATE/removed" ;;
 'image rm pithead-source-image-backup:'*)
     [ "$(cat "$STATE/live")" = old ] && rm "$STATE/pinned" && touch "$STATE/backup-removed" ;;
 *) printf 'unexpected Docker call: %s\n' "$*" >&2; exit 1 ;;
@@ -48,7 +49,7 @@ esac
 DOCKER
 chmod +x "$td/bin/docker"
 source_image_reconcile_snippet >"$td/probe.sh"
-for CASE in success no-recreate wrong-owner build-fails missing-container; do
+for CASE in success image-gone rm-fails no-recreate wrong-owner build-fails missing-container; do
     export CASE STATE="$td/state-$CASE"
     mkdir "$STATE"
     printf old >"$STATE/declared"
@@ -65,10 +66,17 @@ for CASE in success no-recreate wrong-owner build-fails missing-container; do
         continue
     fi
     grep -q 'source-image: original image restored' "$td/$CASE.log"
-    if [ "$CASE" = success ]; then
+    if [ "$CASE" = rm-fails ]; then
+        [ "$rc" -ne 0 ] && [ ! -f "$STATE/removed" ]
+        grep -Fxq 'source-image: diagnostic: failed in cleanup after cleanup-new-image' "$td/$CASE.log"
+        [ -f "$STATE/backup-removed" ] && [ ! -f "$STATE/pinned" ]
+        continue
+    fi
+    if [ "$CASE" = success ] || [ "$CASE" = image-gone ]; then
         [ "$rc" -eq 0 ]
         grep -q 'source-image: live old image differs from built declaration' "$td/$CASE.log"
         grep -q 'Recreating xmrig-proxy' "$td/$CASE.log"
+        ! grep -q 'failed in cleanup' "$td/$CASE.log"
         grep -q 'source-image: guarded recreate matches declared image and Compose owner' "$td/$CASE.log"
     else
         [ "$rc" -ne 0 ]
@@ -77,8 +85,8 @@ for CASE in success no-recreate wrong-owner build-fails missing-container; do
     if [ "$CASE" = build-fails ]; then
         grep -Fxq 'source-image: diagnostic: failed at build' "$td/$CASE.log"
     fi
-    [ "$CASE" = build-fails ] || [ -f "$STATE/removed" ]
+    [ "$CASE" = build-fails ] || [ "$CASE" = image-gone ] || [ -f "$STATE/removed" ]
     [ -f "$STATE/backup-removed" ] && [ ! -f "$STATE/pinned" ]
 done
 [ -z "$(ls -A "$td/scratch")" ]
-echo 'selftest-source-image: 5 cases passed (success, missing recreate, wrong owner, build failure, missing container)'
+echo 'selftest-source-image: 7 cases passed (success, image already gone, image removal fails, missing recreate, wrong owner, build failure, missing container)'
