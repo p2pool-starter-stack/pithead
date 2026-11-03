@@ -915,7 +915,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
-- The wizard-defaults probe saves the configuration active on entry and restores it after both successful and failed trials. Restore push, apply, or health failure fails the probe. Malformed payout retries must preserve the valid addresses; mismatch diagnostics report only boolean results and omit both expected and generated payout values. This preserves the preceding scenario's selected pool for the sidechain-change assertion. The outer lifecycle still restores and verifies the original pre-run baseline and secrets exactly.
+- The wizard-defaults probe saves the configuration active on entry and restores it after both successful and failed trials. Restore push, apply, or health failure fails the probe. Malformed payout retries must preserve the valid addresses; mismatch diagnostics report only boolean results and omit both expected and generated payout values. A non-zero `pithead setup` exit keeps the command's redacted output as `cli-defaults/setup.log` in the results directory and prints its last 60 lines. This preserves the preceding scenario's selected pool for the sidechain-change assertion. The outer lifecycle still restores and verifies the original pre-run baseline and secrets exactly.
 - Encrypted reset recovery saves the original configuration bytes in owner-only scratch storage before making a separate candidate-schema fixture. It copies only supported keys already present in the baseline, leaves missing keys absent, and refuses to drop any wallet or payout field, including a field set to null or false. Candidate apply stamps the synthetic configuration before its new encrypted backup is created; no original backup is relabelled. Interruptions continue through the existing destructive-phase safety backup and runner restoration. Every normal return, including a failed recovery, applies the saved baseline, reinstalls its exact bytes after apply has stamped any legacy configuration, then starts the stack and requires matching bytes and secret fingerprints plus consecutive healthy status reads within 240 seconds. Unverified cleanup fails the row and retains the private recovery copy outside artifacts. `reset-restore.fixture.json` records validated numeric candidate and applied fixture version stamps, plus the original baseline stamp or null when it is absent or invalid, and refuses an unstamped fixture before backup. Fixture apply and cleanup output are retained in `reset-restore.fixture-apply.log` and `reset-restore.cleanup.log`; restore and startup keep their separate logs. The newer-backup refusal remains covered by `tests/stack/config/version.sh` and the retained failing lifecycle job 2889.
 - Reset recovery checks its captured reset output for both failed-shutdown warnings and polls an all-state project census for up to 60 seconds until it is empty, before the configless `down`. Engine or log-read errors fail these guards on both DIY and appliance channels. A census timeout includes the last remaining container IDs in the failure detail, or `unreadable` when the last census returned no output after an engine error.
 - `restart` brings the stack back healthy (two consecutive `status` → `0` reads with unchanged
@@ -1361,6 +1361,28 @@ hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it
 Each run writes a manifest (`results/manifest.txt`) recording exactly what was under test: the
 stack `VERSION`, git revision, and `docker compose images`. A run is reproducible.
 
+The onion-rotation phase retains `results/tor-lifecycle/rotation.jsonl` and
+`results/tor-lifecycle/healer.jsonl` on successful and failed calls. Each receipt contains
+only a UTC timestamp, caller, operation ID, opaque engine container ID (or `unavailable`),
+requested action and result. Rotation records each Compose stop/up exit status, including
+staged LAN-bind retries and restoration calls. The healer resolves container identity and
+issues each Docker action under the same shared mutation lock, so a replacement while
+waiting is identified after the lock is acquired. Identity lookup failure records
+`unavailable` without preventing the action. The healer records
+`confirmed` or `unconfirmed`, since a lost engine response does not prove the action failed.
+`requested` records precede the call. Receipt collection keeps at most 128 records per
+command, accepts only the fixed schema and consumes lines in 1025-byte chunks. It discards
+oversized lines, credentials, onion addresses, keys and ordinary command output.
+Receipt failures do not replace lifecycle command results or prevent recovery.
+The healer also records host-gated `recover` submissions and their terminal host result or
+unconfirmed timeout; these identify the control request, not individual host engine calls.
+
+After restoring the original onion identity, the phase invokes the deployed healer with a
+controlled probe failure and an expired cooldown to exercise its real Tor stop/start branch.
+It also makes a start request for a deliberately absent container to retain an unconfirmed
+call. Monero is not restarted by this fixture. The phase verifies both callers' receipts and
+waits for stack health. These per-job artifacts pass through ordinary artifact redaction;
+they add no persistent runtime audit history and cannot identify a historical caller.
 The Tari-enable lifecycle trial retains its exact numeric `height_before` diagnostic baseline
 and pre-apply `enable_started` freshness threshold in `tari-enable/snapshots.log`. The before-off
 snapshot is a separate API observation and may have a different height. Snapshots, per-poll `samples.jsonl`, and
