@@ -40,8 +40,12 @@ case "$*" in
     echo new >"$STATE/declared" ;;
 'image tag old pithead-source-image-backup:'*) [ -f "$STATE/old-available" ] && touch "$STATE/pinned" ;;
 'image tag pithead-source-image-backup:'*' proxy:dev') [ -f "$STATE/pinned" ] && echo old >"$STATE/declared" ;;
-'image inspect new') [ "$CASE" != image-gone ] ;;
-'image rm new') [ "$CASE" != rm-fails ] && [ "$(cat "$STATE/live")" = old ] && touch "$STATE/removed" ;;
+'image rm new')
+    case "$CASE" in
+    image-gone) echo 'Error response from daemon: No such image: new' >&2; exit 1 ;;
+    rm-fails) echo 'Error response from daemon: conflict: image is being used' >&2; exit 1 ;;
+    esac
+    [ "$(cat "$STATE/live")" = old ] && touch "$STATE/removed" ;;
 'image rm pithead-source-image-backup:'*)
     [ "$(cat "$STATE/live")" = old ] && rm "$STATE/pinned" && touch "$STATE/backup-removed" ;;
 *) printf 'unexpected Docker call: %s\n' "$*" >&2; exit 1 ;;
@@ -68,7 +72,8 @@ for CASE in success image-gone rm-fails no-recreate wrong-owner build-fails miss
     grep -q 'source-image: original image restored' "$td/$CASE.log"
     if [ "$CASE" = rm-fails ]; then
         [ "$rc" -ne 0 ] && [ ! -f "$STATE/removed" ]
-        grep -Fxq 'source-image: diagnostic: failed in cleanup after cleanup-new-image' "$td/$CASE.log"
+        grep -Fxq 'source-image: diagnostic: failed in cleanup: built image removal' "$td/$CASE.log"
+        grep -Fq 'image is being used' "$td/$CASE.log"
         [ -f "$STATE/backup-removed" ] && [ ! -f "$STATE/pinned" ]
         continue
     fi

@@ -71,22 +71,21 @@ source_image_reconcile_snippet() {
     backup_ref="pithead-source-image-backup:${fixture##*/}"
     new_id=""
     cleanup() {
-        local rc=$?
-        local first=$rc
+        local rc=$? err
         trap - EXIT
         [ "$rc" -eq 0 ] || printf "source-image: diagnostic: failed at %s\n" "$stage" >&2
         if docker image tag "$backup_ref" "$ref" && reconcile_compose_images &&
             [ "$(docker inspect --format '{{.Image}}' "$(docker compose ps -q xmrig-proxy)")" = "$old_id" ]; then
             printf '%s\n' 'source-image: original image restored'
-            docker image rm "$backup_ref" >/dev/null || rc=1
+            docker image rm "$backup_ref" >/dev/null || { rc=1; printf '%s\n' 'source-image: diagnostic: failed in cleanup: backup image removal' >&2; }
         else
             rc=1
+            printf '%s\n' 'source-image: diagnostic: failed in cleanup: original image restore' >&2
         fi
-        stage=cleanup-new-image
-        if [ -n "$new_id" ] && docker image inspect "$new_id" >/dev/null 2>&1; then
-            docker image rm "$new_id" >/dev/null || rc=1
+        if [ -n "$new_id" ] && ! err=$(docker image rm "$new_id" 2>&1 >/dev/null) && [[ $err != *"No such image"* ]]; then
+            rc=1
+            printf '%s\n%s\n' 'source-image: diagnostic: failed in cleanup: built image removal' "$err" >&2
         fi
-        [ "$rc" -eq 0 ] || [ "$first" -ne 0 ] || printf "source-image: diagnostic: failed in cleanup after %s\n" "$stage" >&2
         rm -rf -- "$fixture"
         exit "$rc"
     }
