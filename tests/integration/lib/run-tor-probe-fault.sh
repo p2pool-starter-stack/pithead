@@ -115,16 +115,68 @@ _tor_probe_recovered() { # <epoch>
     rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following NEWNYM:'
 }
 
-# Lifecycle proves the branch image includes the diagnostic and rejects ordinary healthy Tor.
+tor_recovery_lock_snapshot_snippet() {
+    cat <<'SNAPSHOT'
+set -o pipefail
+source ./pithead >/dev/null 2>&1 || exit 1
+path=$(mutation_lock_path)
+record=$(head -c 256 "$path" 2>/dev/null) || record=
+if [[ "$record" =~ ^pid=([0-9]+)\ verb=([a-z-]+)\ since=([0-9TZ:-]+)$ ]]; then
+    pid=${BASH_REMATCH[1]} verb=${BASH_REMATCH[2]} since=${BASH_REMATCH[3]}
+    case "$verb" in
+    up | down | restart | setup | apply | egress-sync | tor-recover | tor-history | tor-newnym | backup | restore | upgrade | reset-dashboard | config-reset | factory-reset | firstboot-install | uninstall | os-update | rotate-secrets) ;;
+    *) verb=unknown ;;
+    esac
+    printf 'lock-record: pid=%s verb=%s since=%s\n' "$pid" "$verb" "$since"
+else
+    printf '%s\n' 'lock-record: unrecorded'
+fi
+if ! sudo -n lslocks --notruncate --json --output PID,TYPE,MODE,PATH 2>/dev/null |
+    jq -r --arg path "$path" '[.locks[] | select(.path == $path and .type == "FLOCK") |
+        select((.pid | type) == "number" and .pid > 0) |
+        select(.mode == "WRITE" or .mode == "READ")][:16] |
+        if length == 0 then "kernel-lock: none-observed"
+        else .[] | "kernel-lock: pid=\(.pid) mode=\(.mode)" end'; then
+    printf '%s\n' 'kernel-lock: unavailable'
+fi
+SNAPSHOT
+}
+
+tor_recovery_probe_now_s() {
+    python3 -c 'import time; print(int(time.monotonic()))'
+}
+
 tor_recovery_healthy_probe() {
-    local output rc=0
+    local output='' rc=0 started elapsed attempt=0 snapshot remaining
+    local probe_command="${IT_PITHEAD:-./pithead}" IT_PITHEAD
+    : >"$OUT_DIR/tor-recovery-admission.log"
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
     assert_rc "Tor recovery lifecycle proof keeps the egress firewall enforced" "$?" "0"
     rx 'docker exec tor test -x /usr/local/bin/tor-recovery-diagnose.sh' >/dev/null 2>&1
     assert_rc "Tor image carries the authenticated recovery diagnostic" "$?" "0"
     rx 'docker exec tor /usr/local/bin/tor-recovery-diagnose.sh' >/dev/null 2>&1
     assert_rc "healthy Tor refuses bootstrap-stall recovery diagnosis" "$?" "1"
-    output=$(pithead tor-recover check 2>&1) || rc=$?
+    started=$(tor_recovery_probe_now_s)
+    while :; do
+        elapsed=$(($(tor_recovery_probe_now_s) - started))
+        remaining=$((60 - elapsed))
+        [ "$remaining" -gt 0 ] || break
+        IT_PITHEAD="timeout --kill-after=2 $remaining $probe_command"
+        rc=0
+        attempt=$((attempt + 1))
+        output=$(pithead tor-recover check 2>&1) || rc=$?
+        elapsed=$(($(tor_recovery_probe_now_s) - started))
+        printf 'probe: attempt=%s elapsed_s=%s rc=%s\n' "$attempt" "$elapsed" "$rc" >>"$OUT_DIR/tor-recovery-admission.log"
+        if [ "$rc" -eq 1 ] && [[ "$output" == *'Tor recovery refused: circuit history is not saturated.'* ]]; then break; fi
+        snapshot=$(rx "timeout --kill-after=1 5 bash -c $(quote_arg "$(tor_recovery_lock_snapshot_snippet)")" 2>/dev/null) || snapshot='kernel-lock: unavailable'
+        printf '%s\n' "$snapshot" | grep -E '^(lock-record: (unrecorded|pid=[0-9]+ verb=(up|down|restart|setup|apply|egress-sync|tor-recover|tor-history|tor-newnym|backup|restore|upgrade|reset-dashboard|config-reset|factory-reset|firstboot-install|uninstall|os-update|rotate-secrets|unknown) since=[0-9TZ:-]+)|kernel-lock: (none-observed|unavailable|pid=[0-9]+ mode=(WRITE|READ)))$' |
+            head -n 17 >>"$OUT_DIR/tor-recovery-admission.log"
+        [ "$rc" -eq 75 ] || break
+        elapsed=$(($(tor_recovery_probe_now_s) - started))
+        [ "$elapsed" -lt 60 ] || break
+        sleep 2
+    done
+    printf 'admission: elapsed_s=%s rc=%s\n' "$(($(tor_recovery_probe_now_s) - started))" "$rc" >>"$OUT_DIR/tor-recovery-admission.log"
     assert_rc "healthy Tor recovery check exits 1 (#3262)" "$rc" "1"
     assert_contains "healthy Tor recovery check names its guard (#3262)" "$output" "Tor recovery refused: circuit history is not saturated."
     if [[ "$output" = *"aborted unexpectedly"* || "$output" = *"bash -x"* ]]; then

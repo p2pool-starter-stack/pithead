@@ -720,7 +720,9 @@ health gate. If you restore from the shell instead of the wizard page, firstboot
 configuration that appears after its entry check, including while it prepares the page.
 It closes the page and frees ports 80 and 443 for Caddy; run `./pithead up` after that.
 A retry round that opened with a retained configuration does not automatically detect its
-replacement by a CLI restore.
+replacement by a CLI restore. On the appliance, `up` reinstates the enabled built-in miner from
+the restored configuration; disabled local mining stays stopped. Boot-owned startup leaves miner
+provisioning to its bounded post-commit step, so miner setup cannot delay the A/B commit gate.
 
 Copy the archive back and run:
 
