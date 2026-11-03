@@ -244,6 +244,7 @@ rotate_dashboard_onion() {
     render_env         # persist the new address + keys
     generate_caddyfile # #546: without this the Caddyfile still points at the retired address's vhost
     docker compose restart caddy >/dev/null 2>&1 || true
+    TOR_ROTATION_OPERATION=
     refresh_dashboard_onion_runtime
     log "Dashboard onion rotated."
     if [ "$DASHBOARD_ONION_CLIENT_AUTH" == "true" ]; then
