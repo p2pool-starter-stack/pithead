@@ -21,8 +21,12 @@ publish() {
     fi
     write_manifest "$manifest"
     if [ "$DRY_RUN" -eq 0 ]; then cat "$WORKDIR/appliance-rigforge.md" >>"$manifest"; fi
-    local bundle="$WORKDIR/pithead.tar.gz" bundle_sig="$WORKDIR/pithead.tar.gz.sig"
-    make_bundle "$bundle"
+    local bundle="$WORKDIR/pithead.tar.gz" bundle_sig="$WORKDIR/pithead.tar.gz.sig" native_dir=""
+    if [ "$DRY_RUN" -eq 0 ]; then
+        native_dir="$WORKDIR/native-linux-amd64"
+        build_native_artifacts "$native_dir"
+    fi
+    PITHEAD_REQUIRE_NATIVE_BUNDLE=1 make_bundle "$bundle" "$native_dir"
     append_bundle_sha256 "$manifest" "$bundle"
     sign_bundle "$bundle" "$bundle_sig"
     if [ "$DRY_RUN" -eq 0 ]; then
@@ -124,6 +128,16 @@ compose_build_mounts() {
         sed -E 's/^[[:space:]]*-[[:space:]]+//; s/:$//' | sort -u
 }
 
+build_native_artifacts() {
+    local out="$1"
+    rm -rf "$out"
+    mkdir -p "$out" || die "build_native_artifacts: could not create the output directory."
+    docker buildx build --platform linux/amd64 --builder "$BUILDX_BUILDER" --file go/Dockerfile --target artifacts \
+        --output "type=local,dest=$out" go >/dev/null ||
+        die "build_native_artifacts: could not build the native Linux binary."
+    [ -x "$out/pithead" ] || die "build_native_artifacts: native Linux binary is missing."
+}
+
 # A pinned, pull-based install bundle: the runtime files needed to `./pithead setup` WITHOUT building.
 # Deliberately ships NO image Dockerfiles — so pithead detects release mode (is_source_checkout=false),
 # resolves STACK_VERSION from the bundled VERSION, and pulls the published `:vX.Y.Z` images. Every
@@ -131,7 +145,11 @@ compose_build_mounts() {
 # containers find the config templates they render at setup.
 make_bundle() (
     # Unpacks to a versionless "pithead/" dir. Ships only the operator docs needed to run the stack.
-    local out="$1" d="$WORKDIR/pithead" generated
+    local out="$1" native_dir="${2:-}" d="$WORKDIR/pithead" generated
+    [ "${PITHEAD_REQUIRE_NATIVE_BUNDLE:-0}" -eq 0 ] || [ "$DRY_RUN" -eq 1 ] || [ -n "$native_dir" ] ||
+        die "make_bundle: native Linux binary is required."
+    [ -z "$native_dir" ] || [ -x "$native_dir/pithead" ] ||
+        die "make_bundle: native Linux binary is missing."
     generated="$(mktemp "$REPO_ROOT/.pithead.bundle.XXXXXX")" || die "make_bundle: could not create a pithead rebuild."
     trap 'rm -f "$generated"' EXIT
     PITHEAD_BUILD_ROOT="$REPO_ROOT" PITHEAD_BUILD_ARTIFACT="$generated" bash "$REPO_ROOT/scripts/build-pithead.sh" >/dev/null ||
@@ -164,6 +182,10 @@ make_bundle() (
     if [ "$DRY_RUN" -eq 1 ]; then
         printf '   %s[dry-run]%s would tar -> %s\n' "$C_YELLOW" "$C_RESET" "$out"
         return 0
+    fi
+    if [ -n "$native_dir" ]; then
+        mkdir -p "$d/go/bin" || die "make_bundle: could not create the native binary directory."
+        cp "$native_dir/pithead" "$d/go/bin/" || die "make_bundle: failed to copy the native Linux binary."
     fi
     # Digest-pin the first-party images in the BUNDLED compose (#376). The released images pull by
     # mutable `:vX.Y.Z` tag, so a re-pointed tag / leaked registry token could substitute a

@@ -13,6 +13,43 @@
 #
 set -Eeuo pipefail
 
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${PITHEAD_IMPL:-go}" = go ] && [ "$#" -eq 1 ]; then
+    case "$1" in
+    help | -h | --help | version | -V | --version | status)
+        _pithead_go_ready=1
+        [ -e /dev/fd/1 ] || [ -e /proc/self/fd/1 ] || _pithead_go_ready=0
+        [ -e /dev/fd/2 ] || [ -e /proc/self/fd/2 ] || _pithead_go_ready=0
+        if [ "$1" = status ]; then
+            case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+            "" | C | POSIX) ;;
+            *)
+                _pithead_go_charmap="$(locale charmap 2>&1)" || _pithead_go_charmap=""
+                case "$_pithead_go_charmap" in
+                UTF-8 | UTF8 | utf8 | utf-8) ;;
+                *) _pithead_go_ready=0 ;;
+                esac
+                ;;
+            esac
+        fi
+        _pithead_go_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+        _pithead_go_binary="${PITHEAD_GO_BINARY:-$_pithead_go_dir/go/bin/pithead}"
+        if [ "$_pithead_go_ready" = 1 ] && [ -x "$_pithead_go_binary" ]; then
+            _pithead_go_code=0
+            { _pithead_go_receipt="$({ _PITHEAD_GO_NATIVE=1 _PITHEAD_GO_RECEIPT=1 _PITHEAD_GO_SCRIPT="$0" "$_pithead_go_binary" "$@" 3>&1 1>&4; } 2>/dev/null)" || _pithead_go_code=$?; } 4>&1 5>&2
+            # Require completion evidence before trusting a native exit code.
+            if [ "$_pithead_go_receipt" = pithead-native-v1 ]; then
+                case "$_pithead_go_code" in
+                200) exit 0 ;;
+                201) exit 1 ;;
+                241) exit 141 ;;
+                esac
+            fi
+        fi
+        unset _pithead_go_ready _pithead_go_charmap _pithead_go_dir _pithead_go_binary _pithead_go_code _pithead_go_receipt
+        ;;
+    esac
+fi
+
 # --- Logging Utilities ---
 # Colour only when stdout is a terminal and NO_COLOR is unset (https://no-color.org).
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then

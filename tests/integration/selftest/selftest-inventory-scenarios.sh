@@ -17,7 +17,9 @@ echo "== inventory counts and lists literal-tab scenarios only =="
 mkdir -p "$TMP/tree/tests"
 cp "$ROOT/tests/inventory.sh" "$TMP/tree/tests/inventory.sh"
 ln -s "$ROOT/dashboard" "$TMP/tree/dashboard"
+cp -R "$ROOT/go" "$TMP/tree/"
 cp -R "$ROOT/tests/stack" "$ROOT/tests/integration" "$TMP/tree/tests/"
+ln -s "$ROOT/tests/go-parity" "$TMP/tree/tests/go-parity"
 {
     printf "scenario_matrix() {\n    cat <<'EOF'\n"
     for n in {1..8}; do printf 'aaa-%s\tfoo=bar\n' "$n"; done

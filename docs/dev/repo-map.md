@@ -7,6 +7,7 @@ under the directories below.
 ```text
 pithead/
 ├── lib/pithead/           ordered source slices for the generated CLI
+├── go/                   optional native help, version and bare status CLI
 ├── dashboard/
 │   ├── mining_dashboard/ Python application and browser assets
 │   └── tests/            Python and frontend tests, grouped like the source
@@ -14,6 +15,7 @@ pithead/
 ├── build/                container build contexts for stack daemons
 ├── tests/
 │   ├── stack/            CLI unit suites, grouped by feature
+│   ├── go-parity/        native CLI parity, fallback and shipping contracts
 │   ├── integration/      live harness, selftests, fakes, and tools
 │   └── os/               appliance harness and phase modules
 ├── scripts/
@@ -47,6 +49,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Area | Start here | Change and verify |
 |---|---|---|
 | CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. |
+| Native CLI | `go/cmd/pithead/`, `go/internal/cli/`, `go/internal/status/` | `make go-build` builds the optional binary; `make test-go test-go-parity` checks units, coverage and Bash parity. See [native CLI](go-cli.md). |
 | Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |

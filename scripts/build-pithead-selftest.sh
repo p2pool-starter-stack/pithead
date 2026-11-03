@@ -315,13 +315,17 @@ self_test() {
     # The distribution contract: a clean checkout carries no generated CLI, and plain `make`
     # creates an executable ignored copy. Apply the caller's working diff so this case is useful
     # before commit as well as in CI.
-    local repo clone patch
+    local repo clone patch path
     repo=$(git -C "$(dirname "$BUILD")/.." rev-parse --show-toplevel)
     clone=$(mktemp -d)
     patch="$clone/working.patch"
     git clone -q "$repo" "$clone/repo"
     git -C "$repo" diff --binary HEAD >"$patch"
     [ ! -s "$patch" ] || git -C "$clone/repo" apply --index "$patch"
+    while IFS= read -r -d '' path; do
+        mkdir -p "$clone/repo/$(dirname "$path")"
+        cp -p "$repo/$path" "$clone/repo/$path"
+    done < <(git -C "$repo" ls-files --others --exclude-standard -z)
     rc=0
     [ ! -e "$clone/repo/pithead" ] || rc=1
     _case "a clean checkout does not contain the generated pithead" 0 "$rc"

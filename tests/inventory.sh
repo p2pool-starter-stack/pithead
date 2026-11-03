@@ -47,6 +47,25 @@ n_py_fake=0
 for f in tests/integration/fakes/test_*.py; do n_py_fake=$((n_py_fake + $(py_tests "$f" | count))); done
 n_node=0
 for f in $NODE_FILES; do n_node=$((n_node + $(node_tests "$f" | count))); done
+n_go=0
+while IFS= read -r f; do
+    n=$(grep -cE '^func Test[A-Za-z0-9_]+\(' "$f" || true)
+    [ "$n" -gt 0 ] || {
+        echo "inventory drift: no tests in $f" >&2
+        exit 1
+    }
+    n_go=$((n_go + n))
+done < <(find go -name '*_test.go' | sort)
+n_go_parity=0
+for f in tests/go-parity/test_*.py; do
+    n=$(py_tests "$f" | count)
+    [ "$n" -gt 0 ] || {
+        echo "inventory drift: no tests in $f" >&2
+        exit 1
+    }
+    n_go_parity=$((n_go_parity + n))
+done
+[ "$n_go" -gt 0 ] && [ "$n_go_parity" -gt 0 ] || exit 1
 # Every tests/stack suite, not just run.sh — #1105 moves sections out of run.sh into per-domain
 # files, and counting the one file made each split shrink the inventory in silence. See the
 # per-file drift gate below for why the aggregate zero-check never noticed. The glob is iterated
@@ -60,7 +79,7 @@ n_scen=$(awk -F'\t' 'NF>1{print $1}' <(sed -n '/scenario_matrix() {/,/^EOF/p' te
 n_axes=$(grep -cE '=' <(sed -n '/axis_coverage() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E '^[a-z].*='))
 n_mini=$(grep -cE 'log "scenario [0-9]' tests/integration/mini-stack/run-mini-stack.sh)
 
-total=$((n_py_dash + n_py_fake + n_node + n_stack + n_selftest + n_scen + n_mini))
+total=$((n_py_dash + n_py_fake + n_node + n_stack + n_selftest + n_scen + n_mini + n_go + n_go_parity))
 
 # --- drift gate -----------------------------------------------------------
 # The gathering above is grep-based, so a suite that moves, renames or changes shape enumerates
@@ -210,6 +229,8 @@ ${n_scen} live config scenarios (${n_axes} axis values) · ${n_mini} mini-stack 
 | 1 — Unit | dashboard pytest | ${n_py_dash} |
 | 1 — Unit | frontend (node --test) | ${n_node} |
 | 1 — Unit | \`pithead\` shell suite | ${n_stack} sections |
+| 1 — Unit | Native CLI Go | ${n_go} |
+| 1 — Parity | Native CLI against Bash and shipping contracts | ${n_go_parity} |
 | 1 — Unit | compose hardening + generated Caddyfile parsing (#90/#1037) | 1 |
 | 2 — Contract | fake-daemon clients | ${n_py_fake} |
 | 3 — Mini-stack | docker control-plane scenarios | ${n_mini} |

@@ -1,4 +1,8 @@
+FROM golang:1.26.10-trixie@sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4 AS go
 FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+
+COPY --from=go /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 # The versions come from the Makefile — it is the one place either is written (#1679, #1688) — and
 # are passed in by scripts/test-container.sh via `make -s print-*-version`. The sha256s are tied to
@@ -16,7 +20,7 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash ca-certificates coreutils curl e2fsprogs findutils git gnupg iproute2 make \
+    bash ca-certificates coreutils curl e2fsprogs findutils gcc git gnupg iproute2 libc6-dev make \
     openssh-client python3 sudo xxd \
     procps tar xz-utils \
     && install -m 0755 -d /etc/apt/keyrings \

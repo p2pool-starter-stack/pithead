@@ -21,6 +21,12 @@ else
     rm -f "$DST/cosign.registry-ca.crt"
 fi
 [ -f "$DST/pithead" ] && chmod 755 "$DST/pithead"
+if [ -f "$SRC/go/bin/pithead" ]; then
+    mkdir -p "$DST/go/bin"
+    install -m 755 "$SRC/go/bin/pithead" "$DST/go/bin/pithead"
+elif [ -f "$DST/go/bin/pithead" ] || [ -L "$DST/go/bin/pithead" ]; then
+    rm -f "$DST/go/bin/pithead"
+fi
 # Config templates that services bind-mount: program data, replaced wholesale.
 #
 # NOT images/: firstboot loads the wizard archive from /opt/pithead/images — the read-only slot —

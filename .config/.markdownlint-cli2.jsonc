@@ -13,6 +13,7 @@
   },
   "globs": ["**/*.md"],
   "ignores": [
+    ".go-cache/**",
     "**/node_modules/**",
     "**/.venv/**",
     "dashboard/tests/browser/test-results/**",

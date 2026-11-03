@@ -108,6 +108,11 @@ if [ "${1:-}" = --case ]; then
     esac
     appliance_identity "$WORKDIR/image" "$WORKDIR/bundle" "$WORKDIR/keyring" "$STACK_VERSION" "$GIT_COMMIT" release >"$WORKDIR/appliance-rigforge.md"
     case "$scenario" in identity | floor-match) exit 0 ;; esac
+    build_native_artifacts() {
+        mkdir -p "$1"
+        printf '#!/bin/sh\nexit 0\n' >"$1/pithead"
+        chmod 0755 "$1/pithead"
+    }
     make_bundle() { printf 'install bundle\n' >"$1"; }
     sign_bundle() {
         [ "$scenario" != no-install-signature ] || return 0
