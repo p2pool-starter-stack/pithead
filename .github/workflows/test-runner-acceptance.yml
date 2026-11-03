@@ -1,0 +1,55 @@
+name: Test runner acceptance
+
+on:
+  pull_request:
+    paths:
+      - "tests/runner/**"
+      - ".github/workflows/test-runner-acceptance.yml"
+      - "docs/dev/testing-strategy.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  acceptance:
+    name: Runner image (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [fixed, missing-iproute2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
+      - name: Check acceptance parser
+        run: python3 tests/runner/accept-iproute2.py --self-test
+      - name: Rebuild image and run C2-C5
+        env:
+          IMAGE_CASE: ${{ matrix.image }}
+          PROOF_DIR: ${{ runner.temp }}/runner-acceptance
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          args=()
+          if [ "$IMAGE_CASE" = missing-iproute2 ]; then
+            args+=(--missing-iproute2)
+          fi
+          python3 tests/runner/accept-iproute2.py \
+            --output "$PROOF_DIR" "${args[@]}"
+      - name: Retain exact-head acceptance output
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: runner-acceptance-${{ matrix.image }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/runner-acceptance
+          if-no-files-found: error
+          retention-days: 14

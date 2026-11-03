@@ -72,10 +72,8 @@ export async function waitForDashboard(waiting, pollMs, max) {
       const res = await fetch("/api/state?range=1h");
       if (res.ok) {
         window.location.reload();
-        return;
+        return true;
       }
-    } catch {
-      /* still rebooting */
-    }
+    } catch {}
   }
 }

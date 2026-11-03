@@ -294,7 +294,7 @@ run_rotate_onion() {
     ROTATE_ONION_RESTORE_ARMED=1
 
     it_step "rotating the dashboard onion…"
-    pithead rotate-dashboard-onion -y >/dev/null 2>&1
+    rotation_with_receipts
     assert_rc "rotate-dashboard-onion completes" "$?" "0"
     if wait_for 60 3 "rotated dashboard onion runtime" dashboard_onion_runtime_matches; then
         it_pass "dashboard runtime receives the rotated onion address (#3074)"
@@ -371,4 +371,5 @@ run_rotate_onion() {
     [ "$ROTATE_ONION_RESTORE_ARMED" = 0 ] && it_pass "restored dashboard onion reachable from outside again"
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy after restoring the pre-rotation onion" "$?" "0"
+    healer_with_receipts
 }

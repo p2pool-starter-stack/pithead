@@ -35,14 +35,9 @@ ensure_config_exists() {
     wizard_print_pointer
 }
 
-# Stage 1 (required — only the operator can answer these): the Monero payout address, local/remote
-# node (+ remote details), the Tari merge-mining question (delegated to wizard_ask_tari), pool tier,
-# and a generated dashboard login (with an explicit opt-out). Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
-# MONERO_MODE_WIZ, REMOTE_HOST, REMOTE_RPC, REMOTE_ZMQ, IN_MONERO_USER, IN_MONERO_PASS, POOL_TIER,
-# IN_DASH_USER, IN_DASH_PASS — plus wizard_ask_tari's own.
 wizard_ask_core() {
     while :; do
-        read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || break
+        read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || error "End of input while reading the Monero payout address. Aborting."
         case "$(monero_address_type "$IN_MONERO_WALLET")" in
         primary) break ;;
         subaddress) echo "  ✗ That's a subaddress (8…) — p2pool can't pay it. Use your PRIMARY address (starts with 4)." >&2 ;;
@@ -225,8 +220,8 @@ wizard_ask_tari() {
     fi
 
     while :; do
-        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || break
-        [ -z "$IN_TARI_WALLET" ] && break # the required-field check below owns this
+        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || error "End of input while reading the Tari payout address. Aborting."
+        [ -z "$IN_TARI_WALLET" ] && break
         case "$(tari_address_type "$IN_TARI_WALLET")" in
         ok | unchecked) break ;;
         checksum) echo "  ✗ Checksum failed — at least one character is mistyped. Re-copy the address from your Tari wallet." >&2 ;;
