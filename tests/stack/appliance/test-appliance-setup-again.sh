@@ -128,12 +128,13 @@ assert_eq "...and the restored config.json replaced the pre-existing one" "$(jq 
 rm -f "$SAESP/pithead-restore.enc"
 
 echo "== unit: firstboot_wizard restores legacy remote-node settings without a new-node preflight (#2230) =="
-SAW_STUBS_LEGACY='container_engine() { echo true; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { printf "{\"monero\":{\"mode\":\"remote\",\"wallet_address\":\"4restored\"},\"tari\":{\"mode\":\"local\"}}" >"$PWD/config.json"; return 0; }; remote_node_addresses_allowed() { return 0; }; preflight_remote_nodes() { echo preflight >>"${RF_LOG:?}"; [ "$(grep -c "^preflight$" "$RF_LOG")" -gt 1 ]; }; ensure_appliance_dashboard_password() { :; }; apply_appliance_defaults() { :; }; bash() { return 0; }; wizard_spool_has() { return 0; }; record_machine_role() { :; }; setup_confirmed() { echo setup >>"${RF_LOG:?}"; }; control_audit_provisioned() { return 0; }; firstboot_wizard'
+SAW_STUBS_LEGACY='wizard_issue_file() { printf "%s/console.issue" "$PWD"; }; agetty() { [ "$1" = --reload ]; }; container_engine() { echo true; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { printf "{\"monero\":{\"mode\":\"remote\",\"wallet_address\":\"4restored\"},\"tari\":{\"mode\":\"local\"}}" >"$PWD/config.json"; return 0; }; remote_node_addresses_allowed() { return 0; }; preflight_remote_nodes() { echo preflight >>"${RF_LOG:?}"; [ "$(grep -c "^preflight$" "$RF_LOG")" -gt 1 ]; }; ensure_appliance_dashboard_password() { :; }; apply_appliance_defaults() { :; }; bash() { return 0; }; wizard_spool_has() { return 0; }; record_machine_role() { :; }; setup_confirmed() { echo setup >>"${RF_LOG:?}"; }; control_audit_provisioned() { return 0; }; firstboot_wizard'
 rm -f "$SAWB/config.json"
 mkdir -p "$SAWB/data/firstboot"
 : >"$RF_LOG"
 out=$(PITHEAD_INSTALL_BIN=/nonexistent PITHEAD_REGISTRY=registry STACK_VERSION=dev run_sourced "$SAWB" eval "$SAW_STUBS_LEGACY" 2>&1)
 assert_rc "a restored legacy remote-node config reaches setup" "$?" "0"
+assert_eq "restored setup removes its console banner on exit" "$([ -e "$SAWB/console.issue" ] || echo gone)" gone
 assert_not_contains "the current new-node preflight does not reject the restored archive" "$(cat "$RF_LOG")" "preflight"
 assert_contains "the restored config reaches the credentials-handoff path" "$(cat "$RF_LOG")" "setup"
 echo "== unit: firstboot_wizard closes its page when the CLI provisions the box beside it (#3369) =="
@@ -162,13 +163,14 @@ esac
 exit 0
 ENG
 chmod +x "$SAWB/bin/eng"
-SAW_STUBS_CLI='reset_slot_restore_good() { echo reset-slot-restored >>"${RF_LOG:?}"; }; container_engine() { echo "$SAWB/bin/eng"; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { return 2; }; firstboot_consume_spool() { return 1; }; setup() { echo setup-ran >>"${RF_LOG:?}"; }; firstboot_wizard'
+SAW_STUBS_CLI='wizard_issue_file() { printf "%s/console.issue" "$PWD"; }; agetty() { [ "$1" = --reload ]; }; reset_slot_restore_good() { echo reset-slot-restored >>"${RF_LOG:?}"; }; container_engine() { echo "$SAWB/bin/eng"; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { return 2; }; firstboot_consume_spool() { return 1; }; setup() { echo setup-ran >>"${RF_LOG:?}"; }; firstboot_wizard'
 export SAWB
 rm -f "$SAWB/config.json"
 : >"$RF_LOG"
 rm -f "$SAWB/config.json"
 out=$(LAND_CONFIG=1 PITHEAD_INSTALL_BIN=/nonexistent PITHEAD_REGISTRY=registry STACK_VERSION=dev run_sourced "$SAWB" eval "$SAW_STUBS_CLI" 2>&1)
 assert_rc "a config.json landed by the CLI while the page is open -> the wizard returns" "$?" "0"
+assert_eq "CLI provisioning closes the console banner with the page" "$([ -e "$SAWB/console.issue" ] || echo gone)" gone
 assert_contains "clean wizard startup reaches reset slot preservation" "$(cat "$RF_LOG")" "reset-slot-restored"
 assert_contains "...and says why" "$out" "provisioned without it"
 assert_contains "...the page's container is removed (the exit trap), freeing 80/443" "$(cat "$RF_LOG")" "rm -f pithead-wizard"

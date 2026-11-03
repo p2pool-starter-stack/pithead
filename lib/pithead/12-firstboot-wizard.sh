@@ -117,32 +117,14 @@ firstboot_wizard() {
         warn "Booted from removable media with no internal disk to install onto."
         warn "Running the stack from a USB stick is unsupported — it is too slow for the chain and the stick will wear out."
     fi
-    # Offline first boot: the appliance carries the wizard image as an archive (os/rootfs/images),
-    # because at this point the operator may have no working network yet — that is what they are
-    # here to configure. The loader is the boot path's own (see load_baked_images): naming the
-    # image forces a load when the tag is missing entirely, whatever the digest record says.
     load_baked_images "$image"
-    # Double quotes on purpose: $engine expands NOW, at trap definition. It is a local, and the
-    # trap also fires after this function's locals are gone — where set -u would turn the trap
-    # itself into the crash that masks whatever actually failed. The spool paths expand now for
-    # the same reason, so the trap can still clear this session's restore and setup secrets.
     local cert_fp=""
 
-    # shellcheck disable=SC2064  # expand-now is the point (see above)
-    trap "'$engine' rm -f pithead-wizard >/dev/null 2>&1 || true; clear_restore_submission '$spool' '$restore_spool' || true; clear_setup_candidate '$restore_spool/config.json' '$restore_spool/handoff.json' || true; clear_restore_carry || true" EXIT
+    # shellcheck disable=SC2064
+    trap "wizard_clear_announcement || true; '$engine' rm -f pithead-wizard >/dev/null 2>&1 || true; clear_restore_submission '$spool' '$restore_spool' || true; clear_setup_candidate '$restore_spool/config.json' '$restore_spool/handoff.json' || true; clear_restore_carry || true" EXIT
     while :; do
-        # Re-stage per session, and re-derive the fingerprint with it: the accept path removes the
-        # spool, so a retry that reused a cert_fp computed once would advertise HTTPS and a
-        # fingerprint for a certificate the container can no longer read (#1063).
         cert_fp=$(stage_wizard_spool "$spool") || error "Could not prepare the setup page files."
         [ -n "$cert_fp" ] || warn "Could not generate a setup certificate — the setup page will be plain HTTP."
-        # Every wizard session starts with CLEAN flow state. The spool lives on this medium's
-        # /data, which survives reboots — so a fleet stick that installed machine 1 still
-        # carries its handoff.json, ack and installed markers, and machine 2's boot would open
-        # on the switch-off page with machine 1's stale credentials card still answering.
-        # error.txt and last-attempt.json survive on purpose: they are the retry context the
-        # failed-provisioning path just wrote for the reopened page. The restore passphrase and
-        # an installer's config candidate live in the volatile restore spool and go every round.
         rm -f "$spool/handoff.json" "$spool/handoff-ack" "$spool/installing" \
             "$spool/installed" "$spool/applied" "$spool/install-request" \
             "$spool/rig-request.json" "$spool/role" \

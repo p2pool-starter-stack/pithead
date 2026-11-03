@@ -26,13 +26,8 @@ EGRESS_UNIT_BEFORE=""
 EGRESS_CHECK_BEFORE=""
 LAN_CHECK_BEFORE=""
 
-# absent only when systemd itself answers not-found: a failed lookup is "" (unknown), never absent.
-egress_boot_unit_state() { # [unit] -> present | absent | "" (the bench could not be asked)
-    local u="${1:-pithead-egress.service}"
-    on_bench "if systemctl cat $u >/dev/null 2>&1; then echo present; elif [ \"\$(systemctl show -p LoadState --value $u 2>/dev/null)\" = not-found ]; then echo absent; fi" 2>/dev/null || true
-}
+source "$(dirname "${BASH_SOURCE[0]}")/restore-unit-state.sh" || return $?
 
-# The egress check pair (#2599), restored on the same rule as the boot unit below.
 restore_egress_check_units() {
     case "$EGRESS_CHECK_BEFORE" in
     present) return 0 ;;
@@ -267,9 +262,9 @@ census_get() { # <census> <service>
 #      recreated or restarted a node that the deploy kept and the harness left as the baseline's.
 # Returns 0 when all five and independent authenticated daemon sync hold.
 RESTORE_PROOF_VAR="MONERO_NODE_PASSWORD"
-# shellcheck disable=SC2034  # CONTROL_PROOF_FAILED is declared and read by e2e.sh, which sources
-# this file; it is set here because this is where the control-channel verdict is graded.
+# shellcheck disable=SC2034
 verify_restore_proof() {
+    verify_restore_unit_capture || return 1
     local prc=0 disk cid baked="" verdict
     disk="$(on_bench "grep -E '^${RESTORE_PROOF_VAR}=' '$RESTORE_DIR/.env' 2>/dev/null | head -n1" || true)"
     cid="$(on_bench "docker ps -q --filter label=com.docker.compose.project=pithead --filter label=com.docker.compose.service=dashboard 2>/dev/null | head -n1" || true)"
