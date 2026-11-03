@@ -1,0 +1,12 @@
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545","actor":"admin","action":"worker-upgrade-all","status":"started","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-0","actor":"admin","action":"worker-upgrade","status":"started","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-0","actor":"admin","action":"worker-upgrade","status":"applied","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-1","actor":"admin","action":"worker-upgrade","status":"started","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-1","actor":"admin","action":"worker-upgrade","status":"failed","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-2","actor":"admin","action":"worker-upgrade","status":"started","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-2","actor":"admin","action":"worker-upgrade","status":"rejected","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-3","actor":"admin","action":"worker-upgrade","status":"started","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-3","actor":"admin","action":"worker-upgrade","status":"rejected","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-4","actor":"admin","action":"worker-upgrade","status":"started","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545-4","actor":"admin","action":"worker-upgrade","status":"noop","keys":"","approver":""}
+{"ts":"2026-01-01T00:00:00Z","id":"45454545-4545-4545-9545-454545454545","actor":"admin","action":"worker-upgrade-all","status":"completed","keys":"","approver":""}
