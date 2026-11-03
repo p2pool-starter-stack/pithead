@@ -249,13 +249,13 @@ release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 a
 }
 
 commit_config_stamp() {
-    PITHEAD_DEFER_CONFIG_STAMP=0 bash -c '. ./pithead; stamp_config_version' || true
+    rm -f config.json.stamp-deferred
+    bash -c '. ./pithead; stamp_config_version' || echo "pithead-boot: config_version was not stamped" >&2
 }
 
 [ "${BASH_SOURCE[0]}" = "${0}" ] || return 0
 
 export PITHEAD_DEFER_LOCAL_MINER=1
-export PITHEAD_DEFER_CONFIG_STAMP=1
 cd /data/pithead || exit 1
 
 # Role fork (#797): a rig is not a small coordinator, it is a different machine. No compose
@@ -288,6 +288,7 @@ fi
 
 # Claim a legacy version-only marker before image loading/render can fail. The slot-qualified
 # marker also lets the previous slot's older boot code recognise a same-version fallback.
+: >config.json.stamp-deferred
 hold_chain=0
 migration_rc=0
 bash -c '. ./pithead; os_prepare_migration_hold' || migration_rc=$?

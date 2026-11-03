@@ -98,9 +98,11 @@ assert_eq "the hold-chain commit block calls release_held_chain_services and tol
     "$(grep -cE '^\s*\[ "\$hold_chain" = 1 \] && \{ release_held_chain_services \|\| true; \}' "$BOOTSCRIPT" || true)" "1"
 assert_eq "no bare, un-retried up remains on the release path" \
     "$(grep -cE '^\s*\./pithead up \|\| true' "$BOOTSCRIPT" || true)" "0"
-assert_eq "the boot exports the config-stamp deferral before render" \
-    "$(grep -cE '^export PITHEAD_DEFER_CONFIG_STAMP=1$' "$BOOTSCRIPT" || true)" "1"
-assert_eq "the commit block stamps the config right after mark-good's gate passes" \
+arm_line=$(grep -nE '^: >config\.json\.stamp-deferred$' "$BOOTSCRIPT" | cut -d: -f1)
+render_line=$(grep -nE '^\./pithead render' "$BOOTSCRIPT" | cut -d: -f1)
+assert_eq "the boot arms the stamp deferral before the first render" \
+    "$([ -n "$arm_line" ] && [ "$arm_line" -lt "$render_line" ] && echo before || echo wrong)" "before"
+assert_eq "the commit block stamps the config right after boot_gate_passed" \
     "$(grep -A1 -E '^\s*boot_gate_passed$' "$BOOTSCRIPT" | grep -cE '^\s*commit_config_stamp$' || true)" "1"
 unset -f rl_stub rl_run
 unset RL rl_out rl_defaults BOOTSCRIPT
