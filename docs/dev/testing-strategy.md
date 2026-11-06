@@ -688,7 +688,8 @@ The existing missing Go, missing `envsubst`, three Compose-pull assertions and l
 flake remain excluded from C5, which only judges those 52 assertions. No extra tools are added.
 The image sets neither `TMPDIR` nor `RUNNER_TEMP`, so shell suites and the OS runner self-tests take scratch from
 `${TMPDIR:-${RUNNER_TEMP:-/tmp}}`; the Tor heal and runner-module self-tests and the Caddy bridge-bind rows
-(`br0`, `br-lan` kept, engine bridges dropped) must pass there, and the retained `C5-stack.log` shows them.
+(`br0`, `br-lan` kept, engine bridges dropped) must pass there, and the retained `C5-stack.log` shows them. The runner-module self-test runs the dashboard modules through `uv`
+(system `python3` has no `requests` in the image) and falls back to `python3` where `uv` is absent.
 C1 is an issue-specific scope proof: run `python3 tests/runner/accept-iproute2.py --scope-only`
 on #3115's exact PR head. It permits exactly `tests/runner/Dockerfile`,
 `.github/workflows/test-runner-acceptance.yml`, `tests/runner/accept-iproute2.py` and
