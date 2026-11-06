@@ -20,7 +20,6 @@ def _svc():
 
 
 def _body(revision, change_id=None, version=None):
-    """An enriched worker body carrying the shape ``parse_config_meta`` returns."""
     meta = {"revision": revision, "last_change_id": change_id}
     return {"rigforge": {"version": version, "config_meta": meta}}
 
