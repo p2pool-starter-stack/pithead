@@ -228,7 +228,8 @@ async def note_revision_drift(svc, worker_row, extra_stats, cap, window_sec):
             await record_cap_marker(svc, worker, cap, "revision-drift")
         return
     version = ((extra_stats or {}).get("rigforge") or {}).get("version")
-    version = version if isinstance(version, str) and len(version) <= _MAX_VERSION_LEN else None
+    valid = isinstance(version, str) and version.isascii() and version.isprintable()
+    version = version if valid and 0 < len(version) <= _MAX_VERSION_LEN else None
     drift = await asyncio.to_thread(svc.state_manager.note_worker_revision, worker, meta, version)
     if not drift:
         return

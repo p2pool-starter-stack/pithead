@@ -30,9 +30,9 @@ def _body(revision, change_id=None, version=None):
 
 
 def _poll(svc, worker, revision, change_id=None, version=None):
-    """One poll of one worker through the real caller, so the wiring is what is under test."""
-    body = _body(revision, change_id, version)
-    asyncio.run(svc._reconcile_worker_config([{"name": worker}], [body]))
+    asyncio.run(
+        svc._reconcile_worker_config([{"name": worker}], [_body(revision, change_id, version)])
+    )
 
 
 def _rig_edit(svc, worker, change_id):
@@ -55,6 +55,8 @@ class TestRigForgeUpgradeRebase:
             assert _rows(sm, "rig-drift") == []
             _poll(svc, "rig1", "ccc", version="1.1.0")
             assert len(_rows(sm, "rig-drift")) == 1
+            _poll(svc, "rig1", "ddd", version="1.2\udcff")
+            assert len(_rows(sm, "rig-drift")) == 2
         finally:
             sm.close()
 
