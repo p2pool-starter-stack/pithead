@@ -21,18 +21,13 @@ def _svc():
 
 def _body(revision, change_id=None, version=None):
     """An enriched worker body carrying the shape ``parse_config_meta`` returns."""
-    return {
-        "rigforge": {
-            "version": version,
-            "config_meta": {"revision": revision, "last_change_id": change_id},
-        }
-    }
+    meta = {"revision": revision, "last_change_id": change_id}
+    return {"rigforge": {"version": version, "config_meta": meta}}
 
 
 def _poll(svc, worker, revision, change_id=None, version=None):
-    asyncio.run(
-        svc._reconcile_worker_config([{"name": worker}], [_body(revision, change_id, version)])
-    )
+    body = _body(revision, change_id, version)
+    asyncio.run(svc._reconcile_worker_config([{"name": worker}], [body]))
 
 
 def _rig_edit(svc, worker, change_id):
