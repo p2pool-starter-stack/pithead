@@ -245,8 +245,6 @@ class TestTheReadFailsClosed:
 
 
 class TestRigForgeVersionRebase:
-    """#3915: a revision that moves across a RigForge version change is a re-base, not an edit."""
-
     def test_move_with_version_change_is_silent(self, state_manager):
         state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
         assert state_manager.note_worker_revision("rig1", _meta("bbb"), "1.1.0") is None
