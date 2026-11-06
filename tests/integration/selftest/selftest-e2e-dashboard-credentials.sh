@@ -115,7 +115,7 @@ run_case() {
     ) >"$scratch/output" 2>&1
     rc=$?
     for candidate in "$FIXTURE_EXPECTED" incorrect-fixture-value; do
-        if grep -Fq -- "$candidate" "$scratch/output" "$scratch/argv" "$scratch/commands" "$scratch/.e2e-run.sh" "$scratch/results/e2e-harness.log" 2>/dev/null; then
+        if grep -rFq -- "$candidate" "$scratch/output" "$scratch/argv" "$scratch/commands" "$scratch/.e2e-run.sh" "$scratch/results" 2>/dev/null; then
             fail 'credential entered command, runner, log or artifact'
         fi
     done
@@ -148,6 +148,8 @@ grep -Fq '/metrics serves pithead_ samples through Caddy' "$scratch/results/e2e-
 grep -Fq inline-pregate-remote.sh "$scratch/commands" || fail 'remote inline pregate path was not exercised'
 PARENT_ACTOR="" PARENT_NONCE="" run_case targeted incorrect-fixture-value 0
 [ "$?" -ne 0 ] || fail 'remote inline pregate accepted an incorrect credential'
+[ "$(cat "$scratch/events")" = $'readiness\ncheck' ] || fail 'remote inline pregate did not reach the authenticated check'
+[ ! -f "$scratch/results/e2e-harness.done" ] || fail 'remote failed pregate launched detached harness'
 run_case check "$FIXTURE_EXPECTED" 23
 [ "$?" -eq 23 ] || fail 'detached harness status was lost'
 run_case targeted $'fixture\nextra' 0
