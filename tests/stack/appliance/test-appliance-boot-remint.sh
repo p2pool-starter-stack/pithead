@@ -183,7 +183,7 @@ fv_two=$(fv_run "$(dj fail "$COVER" fail 'monerod is not running')")
 assert_contains "two failing checks: both on the flag, in doctor's order" "$fv_two" "flag=[\"$COVER\",\"monerod is not running\"]"
 assert_contains "…the console names the first" "$fv_two" "held by: The dashboard certificate"
 fv_none=$(fv_run "")
-assert_contains "no doctor file: nothing added to the flag" "$fv_none" "flag=absent"
+assert_contains "no doctor file: the flag records the failed gate with no causes" "$fv_none" "flag=[]"
 assert_contains "…the verdict carries an empty list and is still rolled_back" "$fv_none" "verdict=[] outcome=rolled_back"
 assert_not_contains "…and the console line is the plain one" "$fv_none" "held by"
 echo "== unit: the A/B commit gate also consumes 'pithead status', a third signal (#2383) =="
