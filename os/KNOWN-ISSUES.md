@@ -382,19 +382,15 @@ not proven.
 
 ## Open
 
-- **Installing to a disk still needs a human (#979).** Pre-seeding (`pithead-token.txt` /
-  `pithead-config.json` on the ESP) covers configuration headlessly and the installer carries
-  both onto the target, so a fleet can be flashed and provisioned from one file. Choosing
-  which disk to erase is deliberately NOT automated — an unattended installer that picks a
-  disk itself will eventually pick the wrong one. A pre-seeded target would need to name the
-  disk by serial, not by `/dev/` path, and that is unbuilt.
 - **Part of the host-CLI surface is still unreachable on the appliance (#786).** The GA
   trio closed the sharpest losses: dashboard backup export (#908), restore at setup
   (#909), and the media config channel (#910) — which also carries the settings the
   dashboard never exposes, so "changing these later means reinstalling" no longer holds.
   The CLI remainder is on the dashboard too now — support bundle, doctor detail, rotations
   (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
-  (#911) and fleet descriptor editing (#912).
+  (#911) and fleet descriptor editing (#912). Appliance reboot and clean power-off are available
+  in the lean UI preview's Advanced > Maintenance section (#2384). KVM covers shutdown and a
+  simulated button restart; real firmware's physical power button still needs the manual M17 check.
 - **The manual hardware battery has run once, on a dev image, and is incomplete (#2044).** The
   operator ran it on one physical box on 2026-09-18 and 2026-09-19 against a debug image built
   from `develop` at `1b0da07016`; the per-step results are in the manual release checklist's
@@ -410,20 +406,16 @@ not proven.
   adopt, or a stick-root boot (its share leg, #2063, does now prove an accepted share, against a
   second guest the battery itself boots as a coordinator); converting what it can is #1886's
   first gap.)
-- **The appliance does not boot with Secure Boot on, and nothing signs the chain (#2187).** The
-  KVM battery now measures this rather than leaving it an unread flag: every other guest in
-  `tests/os/run.sh` pins `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
-  (`_secure_boot_guest_leg`, #2055 G2) boots one with it ON and records whether userspace is
-  reached. It is not: **that measured deferred limitation does not fail the boot phase.** The image
-  installs `shim-signed`, which is Microsoft-signed, but plain `grub-efi-amd64` and an unsigned
-  kernel, and the repo carries no `sbsign`, no `mokutil` and no enrolled keys — so shim refuses to
-  chainload the bootloader and the boot stops there. The blocker is therefore signing, not the
-  harness. #2187 defers signing past 2.0.0 to `v2.x - post-GA`; `secure_boot_boot_verdict` states
-  the measured outcome plainly for 2.0.0, while later versions fail a non-boot. A guest that
-  cannot even be DEFINED — no OVMF
-  secure-boot firmware on the host — is reported as unmeasured rather than as a product defect, so a bench firmware gap cannot
-  read as this one. This is the KVM half only: hardware-enforced Secure Boot with real platform
-  keys is still the manual battery's M-row above (#2044).
+- **Secure Boot is unsupported by design (#2187).** [Disable Secure Boot before booting
+  the appliance](../docs/appliance.md#2-boot-the-machine-from-the-stick). The KVM battery keeps
+  measuring the result: every other guest in `tests/os/run.sh` pins
+  `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
+  (`_secure_boot_guest_leg`, #2055 G2) starts with it ON and records whether userspace is
+  reached. A measured non-boot passes for every image version with the instruction to turn
+  Secure Boot off. A guest that cannot be defined fails as unmeasured; an unexpected boot
+  passes with the note to cross-check the guest's SecureBoot EFI variable before trusting
+  enforcement. The KVM result does not establish hardware-enforced Secure Boot behavior
+  with real platform keys; the physical hardware battery remains separate (#2044).
 - **The faulted-setup leg armed the wrong seam, and a real dead page sat behind it (#2050).**
   Measured on the KVM bench 2026-09-10 at pithead#2002's head, with the registry override in place
   so image refs were NOT a factor (the zero-container dump's `comm -23 want have` was empty). The

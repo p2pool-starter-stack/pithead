@@ -1,6 +1,5 @@
-# Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	python3 scripts/build-config-defaults.py --check
@@ -31,6 +30,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_tor_recovery_info.sh
 	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
 	bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
+	bash tests/stack/standalone/test_tor_lifecycle_receipts.sh
 	bash tests/stack/standalone/test_data_reset.sh
 	bash tests/stack/standalone/test_directory_linebreaks.sh
 	bash tests/stack/standalone/test_os_update_recovery.sh
@@ -55,10 +55,12 @@ test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
-	for t in tests/integration/selftest/*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
-	for t in tests/os/selftest*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
+	@result=0; home=$$(mktemp -d); trap 'rm -rf "$$home"' EXIT; for t in tests/integration/selftest/*.sh tests/os/selftest*.sh; do \
+		env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$$home" bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; result=1; }; \
+	done; exit $$result
 
 test-tools:
+	python3 tests/integration/test_selftest_runner.py
 	python3 tests/tools/test_lmdb_build.py
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh
@@ -71,6 +73,9 @@ test-tools:
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
 	sed -n '/^  pull_request:$$/,/^permissions:$$/p' .github/workflows/integration-mini-stack.yml | grep -Fqx '      - "lib/pithead/**"'
+
+test-bridge-awk: pithead
+	bash tests/stack/standalone/test_bridge_awk.sh
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q

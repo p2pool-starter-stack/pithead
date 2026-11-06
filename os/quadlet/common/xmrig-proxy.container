@@ -17,7 +17,14 @@ ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true
 PodmanArgs=--memory 512m --memory-swap 512m
+HealthCmd=/bin/sh -c '[ -x /usr/local/bin/xmrig-proxy-healthcheck.sh ] && exec /usr/local/bin/xmrig-proxy-healthcheck.sh || exit 0'
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=30s
+Notify=healthy
 [Service]
 Restart=always
+TimeoutStartSec=infinity
 [Install]
 WantedBy=multi-user.target

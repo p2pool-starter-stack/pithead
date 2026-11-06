@@ -31,6 +31,7 @@ from mining_dashboard.service.host_resources import build_host_resources
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
+from mining_dashboard.service.workers.donation import fleet_donation
 from mining_dashboard.version import resolve_version
 
 # The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two
@@ -372,6 +373,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "xvb_standby": state_mgr.get_xvb_standby(),
         "tari": build_tari(data),
         "workers": build_workers(data.get("workers", []), data.get("rigforge_release")),
+        "xmrig_donation": fleet_donation(data.get("workers", [])),
         "energy": build_energy(data.get("workers", []), data.get("prices")),
         "proxy_summary": build_proxy_summary(data),
         "share_stats": build_share_stats(share_stats, range_arg, window),

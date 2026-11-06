@@ -255,7 +255,7 @@ Everything runs through `pithead` (`./pithead help` lists it all):
 | `./pithead doctor` | Read-only health report (deps, Docker, AVX2, HugePages, RAM/disk, onion state). |
 | `./pithead version` | Print the installed stack version on one line (offline; also `-V` / `--version`). |
 | `./pithead backup` | Save config, secrets, the Tor onion keys, and the dashboard's database to a passphrase-encrypted archive under `backups/` (`--with-chains` adds blockchain data; `--no-encrypt` writes plaintext; `-y` / `--yes` skips the prompts). |
-| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; `-y` / `--yes` skips the prompt). |
+| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env`, `Caddyfile`, and the masked dashboard configuration from the configuration (asks before overwriting; `-y` / `--yes` skips the prompt). |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak — see [Rotating the internal secrets](docs/operations.md#rotating-the-internal-secrets). |
 
 Commands chain in one call (`./pithead apply upgrade` runs both, stopping on the first failure;

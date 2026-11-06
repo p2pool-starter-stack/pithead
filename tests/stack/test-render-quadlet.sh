@@ -28,6 +28,8 @@ assert_contains "remote Quadlet Tor receives P2Pool onion port (#2936)" \
 assert_quadlet_parity remote "$ROOT/os/quadlet" "$QOUT" \
     mining.network proxy.network tor.container p2pool.container xmrig-proxy.container \
     caddy.container docker-proxy.container docker-control.container dashboard.container
+python3 "$ROOT/tests/stack/standalone/test_quadlet_health.py" "$QOUT/xmrig-proxy.container" "$ROOT/docker-compose.yml"
+assert_rc "quadlet proxy healthcheck matches Compose and preserves degradation (#1217)" "$?" "0"
 assert_eq "quadlet p2pool disables its persistent file log (#1989)" "$(grep -c '^Exec=--no-log-file ' "$QOUT/p2pool.container")" "1"
 compose_caddy=$(awk '/^  caddy:/{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2; exit}' "$ROOT/docker-compose.yml")
 assert_eq "compose parse finds a digest-pinned caddy image (control)" \

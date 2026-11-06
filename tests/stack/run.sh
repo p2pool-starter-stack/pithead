@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Dependency-free test suite for pithead (no bats required).
-# Mixes unit tests (sourcing pithead and calling its functions) with black-box CLI tests
-# (running a sandboxed copy of pithead with docker/sudo stubbed out).
 #
 # Usage: tests/stack/run.sh [BLOCK]
 #   (none)  every block in turn, each in its own bash process, then the summed verdict
@@ -37,7 +35,6 @@ stack_verdict() { # <label>: the summary line, and the suite's exit status
     printf '0 failed\n'
     exit 0
 }
-
 if [ "$#" -eq 0 ]; then
     : >"$SANDBOX/block-tally"
     for _b in $(seq 1 "$STACK_BLOCKS"); do
@@ -80,6 +77,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-upgrade-lock.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-lock.sh" && domain_ran test-control-upgrade-lock.sh "$_d0" "$?" || domain_ran test-control-upgrade-lock.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-worker-upgrade-all.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-worker-upgrade-all.sh" && domain_ran test-control-worker-upgrade-all.sh "$_d0" "$?" || domain_ran test-control-worker-upgrade-all.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-verify.sh" && domain_ran test-release-verify.sh "$_d0" "$?" || domain_ran test-release-verify.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-signing.sh disable=SC2015
@@ -96,7 +95,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-sync-progress-hold.sh" && domain_ran test-sync-progress-hold.sh "$_d0" "$?" || domain_ran test-sync-progress-hold.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-onion-apply-password.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-onion-apply-password.sh" && domain_ran test-onion-apply-password.sh "$_d0" "$?" || domain_ran test-onion-apply-password.sh "$_d0" "$?"
-
     # Regression (#1330): test-dashboard-onion.sh passes alone; only a separate `bash`, not a subshell, proves it.
     # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
     bash -c '
@@ -278,6 +276,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-backup.sh" && domain_ran test-control-backup.sh "$_d0" "$?" || domain_ran test-control-backup.sh "$_d0" "$?"
     # shellcheck source=tests/stack/doctor/test-doctor-exposure.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-exposure.sh" && domain_ran test-doctor-exposure.sh "$_d0" "$?" || domain_ran test-doctor-exposure.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-power-verbs.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-power-verbs.sh" && domain_ran test-control-power-verbs.sh "$_d0" "$?" || domain_ran test-control-power-verbs.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-diagnostics.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-diagnostics.sh" && domain_ran test-control-diagnostics.sh "$_d0" "$?" || domain_ran test-control-diagnostics.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-grub-hugepages.sh disable=SC2015
@@ -304,6 +304,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-defaults.sh" && domain_ran test-appliance-defaults.sh "$_d0" "$?" || domain_ran test-appliance-defaults.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-install.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && domain_ran test-appliance-install.sh "$_d0" "$?" || domain_ran test-appliance-install.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-headless-install.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-headless-install.sh" && domain_ran test-appliance-headless-install.sh "$_d0" "$?" || domain_ran test-appliance-headless-install.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-config-merge.sh disable=SC2015
@@ -392,9 +394,9 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-surface.sh" && domain_ran test-doctor-surface.sh "$_d0" "$?" || domain_ran test-doctor-surface.sh "$_d0" "$?"
     # shellcheck source=tests/stack/doctor/test-doctor-memory.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-memory.sh" && domain_ran test-doctor-memory.sh "$_d0" "$?" || domain_ran test-doctor-memory.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"
 fi
+host_fence_final_check
 [ -z "$_tally" ] || printf '%s %s %s\n' "$STACK_BLOCK" "$PASS" "$FAIL" >>"$_tally"
 stack_verdict "pithead tests, block $STACK_BLOCK of $STACK_BLOCKS"

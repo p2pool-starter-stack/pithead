@@ -3,7 +3,7 @@
 # tor-history verb (#3052). No engine or bench access.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-WORK=$(mktemp -d "${TMPDIR:?}/pithead-tor-heal-outage.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-heal-outage.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"

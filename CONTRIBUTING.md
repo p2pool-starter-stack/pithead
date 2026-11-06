@@ -32,13 +32,14 @@ rejects the fixed version. For example, the developer tooling's filelock fix nee
 virtualenv version:
 
 ```bash
-uv lock --project dashboard --upgrade-package filelock==4.2.1 --upgrade-package virtualenv==21.10.0
+uv lock --project dashboard --upgrade-package filelock==4.2.1 --upgrade-package virtualenv==21.14.13
 ```
 
 Review the lockfile diff, run the dashboard tests, and require the built dashboard image's
 Trivy scan to pass without adding an ignore entry.
-`dashboard/tests/test_dependency_security.py` checks the locked security floors, loaded runtime
-dependency versions, and that Requests' CA bundle excludes the compromised emSign ECC Root CA - G3.
+`dashboard/tests/test_dependency_security.py` checks the locked security floors (virtualenv 21.14.13
+and filelock 4.2.1 or newer), loaded runtime dependency versions, and that Requests' CA bundle
+excludes the compromised emSign ECC Root CA - G3.
 Filelock is locked through the `dev` extra's pre-commit/virtualenv chain; its floor is checked
 in the lockfile because the dashboard runtime and `test` extra do not install it.
 
