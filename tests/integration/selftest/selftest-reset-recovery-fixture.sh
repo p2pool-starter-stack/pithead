@@ -47,7 +47,7 @@ case_fixture() (
             [ "$fault" != snapshot ] || return 1
             cat config.json
             ;;
-        'tr -d " \t\r\n" <VERSION') tr -d ' \t\r\n' <VERSION ;;
+        'tr -d " \t\r\n" <VERSION') [ "$fault" != version ] && tr -d ' \t\r\n' <VERSION ;;
         'cat config.reference.json') [ "$fault" != reference ] && cat config.reference.json ;;
         'sha256sum config.json') shasum -a 256 config.json ;;
         'umask 077; cat >config.json')
@@ -142,7 +142,7 @@ case_fixture wallet-fields && it_pass "synthetic recovery preserves both wallets
     it_fail "synthetic recovery preserves both wallets, keys, scan fields and donor identity" "wallet fields changed"
 case_fixture none && it_pass "newer baseline uses a candidate-stamped synthetic archive and returns exact original bytes" ||
     it_fail "newer baseline uses a candidate-stamped synthetic archive and returns exact original bytes" "fixture contract failed"
-for fault in scratch snapshot snapshot-secrets reference wallet-loss wallet-loss-null wallet-loss-false partial-copy apply apply-stamp probe cleanup-copy cleanup-final-copy cleanup-down cleanup-apply cleanup-up cleanup-health cleanup-bytes cleanup-secrets; do
+for fault in scratch snapshot snapshot-secrets reference version wallet-loss wallet-loss-null wallet-loss-false partial-copy apply apply-stamp probe cleanup-copy cleanup-final-copy cleanup-down cleanup-apply cleanup-up cleanup-health cleanup-bytes cleanup-secrets; do
     case_fixture "$fault" && it_pass "reset fixture handles $fault without accepting unverified cleanup" ||
         it_fail "reset fixture handles $fault without accepting unverified cleanup" "failure control failed"
 done
