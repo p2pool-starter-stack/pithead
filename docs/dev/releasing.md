@@ -418,6 +418,23 @@ Read all four completed KVM jobs' full status, logs, artifacts and evidence. Req
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
 
+Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be tagged; a job whose
+`commit` differs from it is not evidence for the release, however recently it passed. Any change
+after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
+rerun the boot, rig, provision and crossupdate jobs on the new SHA and read them again before
+submitting e2e. Publishing waits for that rerun: the `bench-ci/tier4` status that `release.sh`
+checks is for one exact SHA, so a status from the candidate commit never covers the tag. The
+2.0.2 release shipped one commit after the commit its crossupdate and provision jobs proved
+([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)). Each job is capped at 240
+minutes; the recipe states no shorter runtime because the boot, rig and crossupdate groups differ
+by bench.
+
+The update fault leg (`update` phase, leg 5) installs a bundle whose dashboard healthcheck fails
+through the dashboard's own update door, then requires the rollback verdict to carry a non-empty
+`blocking` list naming the dashboard container and the rendered banner to read `Blocked by:`. On
+any failure the job keeps the failed boot's `pithead-boot` journal, the verdict JSON, grubenv and
+the doctor output beside the serial log (`pithead-os-serial.log.leg5-evidence`).
+
 Immediately before submitting e2e, have Devops prepare the canonical payout wallet on **every**
 bench eligible for this e2e leg. Submit `wallet-prepare` with empty options to each owning bench's
 endpoint, using its exact canonical checkout SHA, and inspect its rows and
