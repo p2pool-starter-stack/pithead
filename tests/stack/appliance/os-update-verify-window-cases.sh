@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-: "${STACK_SUITE:?is unset: this file is sourced by test-appliance-os-update-lock.sh, which tests/stack/run.sh sources — run tests/stack/run.sh}"
+: "${STACK_SUITE:?is unset: this file is sourced by test-appliance-os-update-lock.sh — run tests/stack/run.sh}"
 : "${SANDBOX:?}"
 : "${STACK:?}"
 : "${ROOT:?}"

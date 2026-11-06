@@ -176,6 +176,5 @@ assert_contains "contended: the host-side log names the contention" "$osl_out" "
 assert_eq "contended: the staged bundle is kept for the retry" "$([ -f "$OSLDIR/pithead-os-v9.9.9.raucb" ] && echo present || echo absent)" "present"
 kill "$OSLHOLDER" 2>/dev/null || true
 
-# shellcheck source=tests/stack/appliance/test-appliance-os-update-verify-window.sh disable=SC2015
-_d1=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-os-update-verify-window.sh" && domain_ran test-appliance-os-update-verify-window.sh "$_d1" "$?" || domain_ran test-appliance-os-update-verify-window.sh "$_d1" "$?"
-unset _d1
+# shellcheck source=tests/stack/appliance/os-update-verify-window-cases.sh
+source "$HERE/appliance/os-update-verify-window-cases.sh"
