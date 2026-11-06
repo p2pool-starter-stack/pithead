@@ -82,7 +82,7 @@ source_image_reconcile_snippet() {
             rc=1
             printf '%s\n' 'source-image: diagnostic: failed in cleanup: original image restore' >&2
         fi
-        if [ -n "$new_id" ] && ! err=$(docker image rm "$new_id" 2>&1 >/dev/null) && [[ $err != *"No such image"* ]]; then
+        if [ -n "$new_id" ] && ! err=$(docker image rm "$new_id" 2>&1 >/dev/null) && [[ $err != *"No such image: $new_id"* ]]; then
             rc=1
             printf '%s\n%s\n' 'source-image: diagnostic: failed in cleanup: built image removal' "$err" >&2
         fi

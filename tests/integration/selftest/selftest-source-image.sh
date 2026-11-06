@@ -47,13 +47,14 @@ case "$*" in
     esac
     [ "$(cat "$STATE/live")" = old ] && touch "$STATE/removed" ;;
 'image rm pithead-source-image-backup:'*)
+    [ "$CASE" != backup-rm-fails ] || { echo 'Error response from daemon: conflict' >&2; exit 1; }
     [ "$(cat "$STATE/live")" = old ] && rm "$STATE/pinned" && touch "$STATE/backup-removed" ;;
 *) printf 'unexpected Docker call: %s\n' "$*" >&2; exit 1 ;;
 esac
 DOCKER
 chmod +x "$td/bin/docker"
 source_image_reconcile_snippet >"$td/probe.sh"
-for CASE in success image-gone rm-fails no-recreate wrong-owner build-fails missing-container; do
+for CASE in success image-gone rm-fails backup-rm-fails no-recreate wrong-owner build-fails missing-container; do
     export CASE STATE="$td/state-$CASE"
     mkdir "$STATE"
     printf old >"$STATE/declared"
@@ -71,10 +72,18 @@ for CASE in success image-gone rm-fails no-recreate wrong-owner build-fails miss
     fi
     grep -q 'source-image: original image restored' "$td/$CASE.log"
     if [ "$CASE" = rm-fails ]; then
-        [ "$rc" -ne 0 ] && [ ! -f "$STATE/removed" ]
+        [ "$rc" -ne 0 ]
+        [ ! -f "$STATE/removed" ]
         grep -Fxq 'source-image: diagnostic: failed in cleanup: built image removal' "$td/$CASE.log"
         grep -Fq 'image is being used' "$td/$CASE.log"
-        [ -f "$STATE/backup-removed" ] && [ ! -f "$STATE/pinned" ]
+        [ -f "$STATE/backup-removed" ]
+        [ ! -f "$STATE/pinned" ]
+        continue
+    fi
+    if [ "$CASE" = backup-rm-fails ]; then
+        [ "$rc" -ne 0 ]
+        grep -Fxq 'source-image: diagnostic: failed in cleanup: backup image removal' "$td/$CASE.log"
+        [ -f "$STATE/removed" ]
         continue
     fi
     if [ "$CASE" = success ] || [ "$CASE" = image-gone ]; then
@@ -94,4 +103,4 @@ for CASE in success image-gone rm-fails no-recreate wrong-owner build-fails miss
     [ -f "$STATE/backup-removed" ] && [ ! -f "$STATE/pinned" ]
 done
 [ -z "$(ls -A "$td/scratch")" ]
-echo 'selftest-source-image: 7 cases passed (success, image already gone, image removal fails, missing recreate, wrong owner, build failure, missing container)'
+echo 'selftest-source-image: 8 cases passed (success, image already gone, image removal fails, backup removal fails, missing recreate, wrong owner, build failure, missing container)'
