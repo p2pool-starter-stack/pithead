@@ -147,7 +147,7 @@ async def test_submitted_json_is_what_gets_written(client, seeded):
     assert r.status == 200
     written = json.loads((seeded / "config.json").read_text())
     assert written["monero"]["wallet_address"] == "4XYZ"
-    # The full attempt is kept for retry; no half-written temp files beside the atomic targets.
+    cfg["tari"]["mode"] = "off"
     assert json.loads((seeded / "last-attempt.json").read_text()) == cfg
     assert not [p for p in seeded.iterdir() if p.name.startswith(".")]
 

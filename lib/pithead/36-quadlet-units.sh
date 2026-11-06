@@ -1,10 +1,3 @@
-# Appliance unit rendering (#77 phase 1). Emits Podman Quadlet units from a rendered .env — the
-# second render target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime
-# architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
-# drift needs a bench re-proof. Spike-proven rules baked in: Notify=healthy services carry
-# TimeoutStartSec=infinity (a finite timeout KILLS a not-yet-healthy service — compose's
-# start_period never does); plain depends_on maps to After=+Wants= (Requires= would stop-couple);
-# tmpfs options use mode= (podman rejects uid=/gid=).
 render_quadlet_units() {
     local envf="$1" outdir="$2"
     [ -f "$envf" ] || error "render-quadlet: env file not found: $envf"
@@ -287,8 +280,15 @@ ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true
 PodmanArgs=--memory 512m --memory-swap 512m
+HealthCmd=/bin/sh -c '[ -x /usr/local/bin/xmrig-proxy-healthcheck.sh ] && exec /usr/local/bin/xmrig-proxy-healthcheck.sh || exit 0'
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=30s
+Notify=healthy
 [Service]
 Restart=always
+TimeoutStartSec=infinity
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -298,7 +298,7 @@ EOF
 Description=pithead caddy
 [Container]
 ContainerName=caddy
-Image=docker.io/library/caddy:2.11.7@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772
+Image=docker.io/library/caddy:2.11.7@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e
 Network=host
 Volume=$(_qenv QUADLET_CADDYFILE):/etc/caddy/Caddyfile:ro
 Volume=pithead-caddy-data:/data

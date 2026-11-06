@@ -56,12 +56,6 @@ DU
 chmod +x "$WT/bin/du"
 
 echo "== unit: Enter-through is NO on a new install, and tari.mode is written EXPLICITLY (#1916, #3333) =="
-# Tari merge-mining is an opt-in beta, so the default is off however much disk there is. The key is
-# written even so: wizard_write_config otherwise omits-and-inherits, and an omitted tari.mode
-# parses as local, which would merge-mine anyway. The address line is never consumed, because a
-# decline asks nothing further. Note what is NOT asserted: that the transcript lacks the address
-# prompt. `read -p` writes its prompt to the terminal only, so a piped run prints none and that
-# assertion passes against any wizard at all. The config shape is the real proof.
 for size in ROOMY SMALL; do
     kb="WT_${size}_KB" h="WT_${size}_H"
     out="$(wt_run "default-$size" "${!kb}" "${!h}" "$WALLET\n\n\n\n\n\n\n\n\n\n")"
@@ -77,6 +71,12 @@ for size in ROOMY SMALL; do
     assert_not_contains "$size disk: the verdict never says running it is the default" "$out" "running it is the default"
     assert_contains "$size disk: the verdict says declining is the default" "$out" "declining is the default"
 done
+
+WT_GUIDE="$(cat "$ROOT/docs/dev/manual-qa/diy/01-fresh-install.md")"
+WT_DEFAULT_EXPECTATION="$(awk '/^### 1\.4a / {section=1; next} section && /^### / {exit} section {print}' <<<"$WT_GUIDE")"
+assert_contains "fresh-install step 1.4a agrees with the roomy Enter-through config" \
+    "$WT_DEFAULT_EXPECTATION" "Fresh Enter-through expectation: \`tari_mode=$(jq -r '.tari.mode' <<<"$(wt_cfg default-ROOMY)")\`"
+assert_not_contains "fresh-install guide never derives the Tari default from free disk" "$WT_GUIDE" "fitting disk"
 
 echo "== unit: a data disk that already holds a Tari chain keeps local as the Enter default (#3333) =="
 mkdir -p "$WT/default-held/data/tari"
@@ -116,7 +116,7 @@ c="$(
 assert_eq "answering 2 on a small host still runs the bundled node" "$(jq -r '.tari.mode' <<<"$c")" "local"
 assert_eq "and stores the address it was given" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
 assert_eq "a Yes on a new install writes dashboard.tari_required false (#3333)" "$(jq -r '.dashboard.tari_required' <<<"$c")" "false"
-assert_eq "a No writes no dashboard.tari_required" "$(jq -r '.dashboard | has("tari_required")' <<<"$(wt_cfg roomy-declined)")" "false"
+assert_eq "a No explicitly writes dashboard.tari_required false" "$(jq -r '.dashboard.tari_required' <<<"$(wt_cfg roomy-declined)")" "false"
 
 echo "== unit: an unrecognised answer falls back to the default rather than guessing (#1916) =="
 out="$(wt_run garbage "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\nbanana\n\n\n\n\n\n\n\n")"
@@ -243,5 +243,5 @@ sto_profiles="$(run_sourced "$STO" env_get_file "$STO/.env" COMPOSE_PROFILES)"
 assert_contains "the declined machine still runs its own Monero node" "$sto_profiles" "local_node"
 assert_not_contains "the declined machine runs no Tari container (no local_tari profile)" "$sto_profiles" "local_tari"
 
-unset c out tari_reads sto_profiles WT WT_ROOMY_KB WT_ROOMY_H WT_SMALL_KB WT_SMALL_H STO sto_out sto_rc
+unset WT_GUIDE WT_DEFAULT_EXPECTATION c out tari_reads sto_profiles WT WT_ROOMY_KB WT_ROOMY_H WT_SMALL_KB WT_SMALL_H STO sto_out sto_rc
 unset -f wt_run wt_cfg

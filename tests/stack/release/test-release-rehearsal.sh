@@ -152,6 +152,7 @@ assert_eq "custom-registry dry-run needs no warning" "$rehearsal_out" ''
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 rehearsal_main() {
     PITHEAD_REHEARSAL="$1"
+    DRAFT=1
     preflight() {
         check_registry_policy
         printf 'preflight\n' >>"$REHEARSAL_TEST/calls"
@@ -163,6 +164,7 @@ rehearsal_main() {
     smoke_test() { printf 'smoke\n' >>"$REHEARSAL_TEST/calls"; }
     promote() { printf 'promote\n' >>"$REHEARSAL_TEST/calls"; }
     sign_images() { printf 'sign\n' >>"$REHEARSAL_TEST/calls"; }
+    prepare_appliance() { printf 'appliance\n' >>"$REHEARSAL_TEST/calls"; }
     publish() { printf 'publish\n' >>"$REHEARSAL_TEST/calls"; }
     main
     rm -rf "$WORKDIR"
@@ -173,8 +175,7 @@ assert_eq "rehearsal runs every stage through signing" "$(cat "$REHEARSAL_TEST/c
 assert_contains "rehearsal announces its stop point" "$rehearsal_out" 'Rehearsal complete: nothing was tagged or published'
 rehearsal_out="$(rehearsal_case rehearsal_main 0 2>&1)"
 assert_rc "ordinary custom-registry main completes" "$?" 0
-assert_contains "ordinary main still publishes" "$(cat "$REHEARSAL_TEST/calls")" $'sign\npublish'
-# MUTATION PROOF: omitting config or builder selection routes private-CA/HTTP writes to the default.
+assert_contains "ordinary main prepares appliance assets before the draft" "$(cat "$REHEARSAL_TEST/calls")" $'sign\nappliance\npublish'
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329 # cross-source globals and recording stubs
 rehearsal_builder() {
     BUILDX_BUILDER=rehearsal-builder

@@ -4,15 +4,13 @@
 # shellcheck source=os/rauc/populate-slot.sh
 . "$RELEASE_LIB_DIR/../../os/rauc/populate-slot.sh"
 
-# --- Stage 2: test gate ---------------------------------------------------------------------------
-
 test_gate() {
     stage "2/7  Test gate (blocking)"
     if [ "$SKIP_TESTS" -eq 1 ]; then
         warn "Skipping 'make test' (--skip-tests). A skipped gate means an unvalidated release."
     else
         log "Running 'make test' (lint + dashboard pytest + shell suite + compose)..."
-        run make test
+        run make test FILE_BUDGET_BASE_REF="$GIT_COMMIT"
         ok "make test passed."
     fi
     if [ "$SKIP_INTEGRATION" -eq 1 ]; then

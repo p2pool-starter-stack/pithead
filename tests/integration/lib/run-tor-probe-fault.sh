@@ -9,8 +9,18 @@ tor_probe_ns_ipt() { # <iptables args...>
 }
 
 _tor_probe_mining_sample() {
-    local state accepted workers
-    state=$(api_state) || return 1
+    local state accepted workers diagnostic sample="${1:-baseline}"
+    state=$(api_state) || {
+        printf 'Tor mining sample %s: API unavailable\n' "$sample" >&2
+        return 1
+    }
+    diagnostic=$(printf '%s' "$state" | jq -c '{
+        accepted:(.proxy_summary.accepted | gsub(","; "") | tonumber? // null),
+        workers:(.proxy_workers | numbers // null),
+        worker_h60:([.workers[]?.h60 | numbers] | if length > 0 then add else null end),
+        worker_uptime_min:([.workers[]?.uptime | numbers] | min // null)
+    }' 2>/dev/null) || diagnostic='{"unavailable":true}'
+    printf 'Tor mining sample %s: %s\n' "$sample" "$diagnostic" >&2
     accepted=$(jq_get "$state" '.proxy_summary.accepted | gsub(","; "") | tonumber')
     workers=$(jq_get "$state" '.proxy_workers')
     [ -n "$accepted" ] && [ "${workers:-0}" -ge "${EXPECTED_WORKERS:-1}" ] 2>/dev/null || return 1
@@ -44,11 +54,12 @@ fault_tor_probe_egress() {
     assert_rc "read-only recovery can inspect the live Tor state and onion identities" "$?" "0"
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
     assert_rc "Tor-egress firewall remains enforced before fault" "$?" "0"
-    if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq '.tor.auto_heal=true')" ||
+    if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq '.tor.auto_heal=true | .dashboard.auth.password="" | .dashboard.control.enabled=false')" ||
         ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
         it_fail "Tor probe fault enabled opt-in recovery" "apply or health failed"
         return
     fi
+    assert_eq "No login leaves general dashboard control disabled" "$(env_on_box DASHBOARD_CONTROL_ENABLED)" false
     prefix=$(env_on_box NETWORK_PREFIX)
     tor_before=$(rx "docker inspect tor --format '{{.State.StartedAt}}'")
     monero_before=$(rx "docker inspect monerod --format '{{.State.StartedAt}}'")
@@ -70,16 +81,16 @@ fault_tor_probe_egress() {
     it_step "fault: dashboard Tor SOCKS requests fail while mining onions stay connected…"
     for ((i = 0; i < 25; i++)); do
         sleep 60
-        now=$(_tor_probe_mining_sample) || now=
+        now=$(_tor_probe_mining_sample "$((i + 1))") || now=
         if [ -z "$now" ]; then
-            mining_failure=${mining_failure:-"sample $i had no live proxy worker or accepted-share counter"}
+            mining_failure=${mining_failure:-"sample $((i + 1)) had no live proxy worker or accepted-share counter"}
         elif [ "$now" -lt "$last" ]; then
-            mining_failure=${mining_failure:-"sample $i reset the proxy accepted-share counter"}
+            mining_failure=${mining_failure:-"sample $((i + 1)) reset the proxy accepted-share counter"}
         elif [ "$now" -gt "$last" ]; then
             last=$now
             last_progress=$((i + 1))
         elif [ "$((i + 1 - last_progress))" -ge 5 ]; then
-            mining_failure=${mining_failure:-"no accepted share in five minutes by sample $i"}
+            mining_failure=${mining_failure:-"no accepted share in five minutes by sample $((i + 1))"}
         fi
     done
     if [ -n "$mining_failure" ]; then
@@ -107,9 +118,23 @@ fault_tor_probe_egress() {
     else
         it_fail "Tor egress recovery names the preceding step" "no corroborated recovery log"
     fi
+    _tor_probe_capture "$epoch"
     push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 ||
         it_fail "Tor probe fault restored baseline config" "baseline apply failed"
 }
+
+_tor_probe_capture() (
+    local dir="$OUT_DIR/tor-probe-fault"
+    if ! mkdir -p "$dir"; then
+        printf 'Tor healer evidence directory unavailable\n' >&2
+        return 0
+    fi
+    set -o pipefail
+    if ! rx "timeout 30 docker logs --since $1 --tail 2000 dashboard 2>&1" |
+        redact >"$dir/dashboard.log"; then
+        printf 'Tor healer log read failed\n' >>"$dir/dashboard.log" || true
+    fi
+)
 
 _tor_probe_recovered() { # <epoch>
     rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following NEWNYM:'

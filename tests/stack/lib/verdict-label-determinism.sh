@@ -115,6 +115,7 @@ test-appliance-boot-labels.sh|medium
 test-appliance-boot-labels.sh|row
 test-appliance-boot-labels.sh|tran
 test-appliance-boot.sh|ph
+test-appliance-headless-install.sh|hsp_bad
 test-appliance-hostname.sh|mode
 test-appliance-hostname.sh|op
 test-appliance-identity-boot.sh|cli_pages
@@ -125,6 +126,7 @@ test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
 test-appliance-reset-slot.sh|rs_case
 test-appliance-rig-config-merge.sh|rcm_invalid
+test-cli.sh|first_run_case
 test-config-document.sh|raw
 test-config-document.sh|verb
 test-config.sh|2
@@ -139,6 +141,7 @@ test-control-core.sh|reowned
 test-control-diagnostics.sh|_c
 test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
+test-control-editable-allowlist.sh|inactive_guidance
 test-control-editable-allowlist.sh|k
 test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
@@ -149,6 +152,7 @@ test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-grub-hugepages.sh|mode
 test-grub-hugepages.sh|param
+test-manual-qa-oracle.sh|id
 test-payout-wallet-pairs.sh|chain
 test-payout-wallet-pairs.sh|field
 test-payout-wallet-pairs.sh|k
@@ -162,6 +166,7 @@ test-release.sh|comp
 test-release.sh|pin_rel
 test-release.sh|svc
 test-render-quadlet.sh|f
+test-render-quadlet.sh|profile
 test-restore-configless.sh|rcf_status
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
@@ -177,6 +182,10 @@ test-tor-port-validation.sh|invalid_port
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
+test-wizard-addresses.sh|wa_chain
+test-wizard-addresses.sh|wa_eof
+test-wizard-addresses.sh|wa_existing
+test-wizard-addresses.sh|wa_message
 test-wizard-tari.sh|mono
 test-wizard-tari.sh|size
 test-wizard-tari.sh|tari

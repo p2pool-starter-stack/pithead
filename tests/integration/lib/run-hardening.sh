@@ -1,15 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-_set_env_token() { # _set_env_token <value>
-    rx "(
-        umask 077
-        tmp=\$(mktemp .env.itest.XXXXXX) || exit 1
-        trap 'rm -f \"\$tmp\"' EXIT
-        awk -v t=$(quote_arg "$1") '/^PROXY_AUTH_TOKEN=/{print \"PROXY_AUTH_TOKEN=\" t; next} {print}' .env > \"\$tmp\" &&
-            chown --reference=.env \"\$tmp\" && mv -f \"\$tmp\" .env
-    )"
-}
-
 # Drop a file into the control spool on the box (mirrors push_config's stdin-over-ssh transfer so
 # no JSON quoting has to survive the remote shell string). <abs-path> is on the box.
 _spool_write() { # _spool_write <abs-path-on-box> <content>
@@ -33,9 +23,6 @@ _uuid4() {
     fi
 }
 
-# Wait up to <timeout>s for the systemd path unit to write results/<id>.json with a status OTHER
-# than <exclude> (so a leftover preview result doesn't satisfy a wait for the commit result).
-# Returns 0 and echoes the status when it settles; 1 on timeout. Proof the unit actually fired.
 _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
     local cdir="$1" id="$2" exclude="$3" timeout="${4:-90}" waited=0 st
     while [ "$waited" -lt "$timeout" ]; do
@@ -47,6 +34,7 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
         sleep 3
         waited=$((waited + 3))
     done
+    echo "timed out after ${timeout}s waiting for control result $id; last status: ${st:-none}" >&2
     return 1
 }
 
@@ -101,6 +89,7 @@ run_hardening() {
     IT_CURRENT_SCENARIO="hardening"
     echo ""
     it_log "── v1.4 hardening phase (#377/#33/#424) ────────────"
+    run_tari_off_preview
 
     if ! has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_skip_phase "hardening" "remote mode: no local containers/systemd to exercise" "by-design"
@@ -162,7 +151,7 @@ run_hardening() {
     #    file. Needs a dashboard password (control refuses to enable without one). Enable control,
     #    let apply install + enable the unit, then drop requests and let systemd act.
     local ctrl_config
-    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.secure=true | .dashboard.auth={username:"admin",password:"a tier4 control passphrase"} | .dashboard.control={enabled:true}')"
+    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.secure=true | .dashboard.auth={username:"admin",password:"a tier4 control passphrase"} | .dashboard.control={enabled:true} | .notifications.webhooks=[] | .dashboard.energy.cost_per_kwh=0')"
     push_config "$ctrl_config"
     it_step "apply with dashboard.control enabled (installs the systemd path unit)…"
     pithead apply -y >/dev/null 2>&1
@@ -240,6 +229,8 @@ run_hardening() {
                 echo $?
             )" 0
 
+        run_webhook_validation "$cdir" "$ctrl_config"
+
         # 3a. A NON-sensitive change (an allowlisted alert toggle) committed via the spool must be
         #     applied BY THE PATH UNIT — not by us calling control-run-pending.
         # Use an allowlisted key that renders UNCONDITIONALLY: DASHBOARD_CHECK_UPDATES is always
@@ -273,10 +264,21 @@ run_hardening() {
         assert_contains "control mutation audited (#33)" \
             "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"action":"commit"'
 
-        # 3b. A wallet swap previews behind typed confirmation (#2305). Give the commit a valid
-        #     payout suffix but omit APPLY: refusal must come from the host confirmation gate,
-        #     not from an incomplete approval envelope or address validation. Clear the old
-        #     wallet's view key only in this refused candidate; it cannot match the new address.
+        local port_before port_after occupied_port port_rc=0 snapshot_rc=0
+        occupied_port="$(env_on_box HOST_PORT)"
+        occupied_port="${occupied_port:-443}"
+        port_before="$(rx 'sha256sum config.json .env && docker inspect xmrig-proxy --format "{{.Id}} {{.State.StartedAt}} {{.State.Running}}" && test ! -e .env.apply-incomplete')"
+        assert_contains "occupied port trial starts with a running proxy (#3417)" "$port_before" "true"
+        rx "docker exec -i dashboard python3 - $(quote_arg "$occupied_port")" --stdin <"$HERE/lib/occupied-stratum.py" || port_rc=$?
+        assert_rc "occupied stratum port refused through control API; mining continues (#3417)" "$port_rc" 0
+        port_after="$(rx 'sha256sum config.json .env && docker inspect xmrig-proxy --format "{{.Id}} {{.State.StartedAt}} {{.State.Running}}" && test ! -e .env.apply-incomplete')" || snapshot_rc=$?
+        assert_rc "occupied stratum port captures final config and proxy (#3417)" "$snapshot_rc" 0
+        assert_eq "occupied stratum port leaves config and proxy untouched (#3417)" "$port_after" "$port_before"
+        assert_rc "occupied stratum port leaves no incomplete apply (#3417)" "$(
+            rx 'test ! -e .env.apply-incomplete'
+            echo $?
+        )" 0
+
         local uuid_bad bad_cfg wallet_before preview suffix
         uuid_bad="$(_uuid4)"
         wallet_before="$(env_on_box MONERO_WALLET_ADDRESS)"
@@ -342,21 +344,20 @@ run_auth_fail_closed() {
     fi
 
     local fails_before="$IT_FAIL"
-    # 1. Empty the token; `pithead up` must refuse to start AND name the documented fix.
     it_step "emptying PROXY_AUTH_TOKEN in .env and running 'pithead up'…"
-    if ! _set_env_token ""; then
-        it_fail "empty PROXY_AUTH_TOKEN for fail-closed probe" "environment replacement failed"
+    local out rc
+    out="$(_empty_token_probe "$orig" 2>&1)"
+    rc=$?
+    it_log "$(grep '^auth-probe:' <<<"$out")"
+    if ! grep -q '^auth-probe: admitted after' <<<"$out" || grep -q '^auth-probe: token replacement failed' <<<"$out"; then
+        it_fail "empty-token probe admitted to the mutation window with the token emptied" "$out"
         return 1
     fi
-    local out rc
-    out="$(pithead up 2>&1)"
-    rc=$?
+    assert_contains "token was empty when pithead up evaluated it" "$out" "auth-probe: token empty at evaluation"
     assert_ne "pithead up fails closed (non-zero exit) on an empty PROXY_AUTH_TOKEN" "$rc" "0"
     assert_contains "compose guard refuses the unauthenticated proxy API (#153)" \
         "$out" "refusing to start an unauthenticated xmrig-proxy control API"
-    # 2. Restore the EXACT original token (apply would mint a new one) and recover.
-    it_step "restoring the original PROXY_AUTH_TOKEN and recovering…"
-    _set_env_token "$orig" || it_fail "restore PROXY_AUTH_TOKEN" "environment replacement failed"
+    it_step "verifying the original PROXY_AUTH_TOKEN and recovering…"
     if [ "$(env_on_box PROXY_AUTH_TOKEN)" = "$orig" ]; then
         it_pass "original PROXY_AUTH_TOKEN restored verbatim"
     else

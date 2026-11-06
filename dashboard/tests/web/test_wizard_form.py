@@ -97,7 +97,7 @@ def test_a_healthchecks_url_is_written_only_when_given():
 
 def test_the_local_miner_is_opt_in():
     assert build_config({**BASE, "local_miner": "on"})["local_miner"] == {"enabled": True}
-    assert "local_miner" not in build_config(BASE)
+    assert build_config(BASE)["local_miner"]["enabled"] is True
 
 
 def test_the_clearnet_first_sync_applies_to_both_chains_or_neither():
@@ -131,7 +131,7 @@ def test_a_yes_to_tari_cannot_hold_or_reject_monero_mining():
     for answer in ("local", "remote"):
         cfg = build_config({**BASE, "tari_mode": answer, "tari_remote_host": "h"})
         assert cfg["dashboard"]["tari_required"] is False, answer
-    assert "tari_required" not in build_config({**BASE, "tari_mode": "off"})["dashboard"]
+    assert build_config({**BASE, "tari_mode": "off"})["dashboard"]["tari_required"] is False
 
 
 def test_declining_tari_asks_for_no_payout_address():

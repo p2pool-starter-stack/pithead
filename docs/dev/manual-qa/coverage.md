@@ -33,9 +33,25 @@ DIY steps that apply there.
 | Backup and restore | [11.1–11.4](diy/11-backup-restore-resets.md), [S5](release/scenarios.md) | [13.13, 13.14, 13.14a](appliance/13b-updates-restore-and-media.md) |
 | Resets and removal | [11.5–11.7](diy/11-backup-restore-resets.md) | [15.2, 15.3](appliance/15-rename-and-resets.md) |
 | Power loss | [S3](release/scenarios.md) | [13.19](appliance/13b-updates-restore-and-media.md) |
+| Dashboard reboot and clean power-off | Hidden; use the host shell | [M17 physical-button restart](appliance/13b-updates-restore-and-media.md#m17--clean-shutdown-and-physical-button-restart) |
 | Machine name | [1.4](diy/01-fresh-install.md) (the hostname prompt) | [15.1](appliance/15-rename-and-resets.md) |
 | Headless setup and recovery | Not applicable: a DIY host has its own shell. | [13.16, 13.17, 13.23](appliance/13b-updates-restore-and-media.md) |
 | [Rigs](README.md#glossary) | Not applicable: a DIY rig is a RigForge install, tested in that project. | [14.1–14.4](appliance/14-rigforge-rig.md) |
+
+## Automated checklist coverage
+
+`tests/stack/test_checklist.sh`, run by block 1 of `tests/stack/run.sh`, validates all four
+[sample configs](sample-configs.md) with synthetic fixture credentials. It checks all 17
+[Broken configs](sample-configs.md#broken-configs) rows through dry-run and normal apply,
+except the final onion-without-login row, which is dry-run only. Each refusal checks the
+message, nonzero exit, unchanged rendered `.env` and absence of Compose startup; dry runs
+also preserve the candidate config. Placeholder values must stay out of the output.
+The table's mutations and their order must match the test cases.
+`tests/stack/test_checklist_cases.py`, called by the checklist test, checks table-cell
+whitespace and rejects added rows without matching mutations.
+
+Step [6.5](diy/06-settings-command-line.md) keeps the normal-apply onion-password generation,
+cancellation, login and restoration checks manual.
 
 ## Re-cut coverage
 

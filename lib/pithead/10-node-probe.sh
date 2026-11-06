@@ -134,7 +134,7 @@ remote_node_addresses_allowed() { # <config-file>
             return 1
         }
     fi
-    if [ "$(jq -r '.tari.mode // "local"' "$cfg")" = remote ]; then
+    if [ "$(config_get .tari.mode "$cfg")" = remote ]; then
         host=$(jq -r '.tari.remote.host // ""' "$cfg")
         port=$(jq -r '.tari.remote.grpc_port // 18142' "$cfg")
         remote_node_address "$cfg" "$host" >/dev/null || {
@@ -175,7 +175,7 @@ preflight_remote_nodes() { # <config-file>
             return 1
         fi
     fi
-    if [ "$(jq -r '.tari.mode // "local"' "$cfg")" = remote ]; then
+    if [ "$(config_get .tari.mode "$cfg")" = remote ]; then
         host=$(jq -r '.tari.remote.host // ""' "$cfg")
         port=$(jq -r '.tari.remote.grpc_port // 18142' "$cfg")
         address=$(remote_node_address "$cfg" "$host") || {

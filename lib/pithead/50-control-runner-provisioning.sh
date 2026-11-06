@@ -84,7 +84,7 @@ provision_control_runner() {
     # read-only root, systemd cannot write the /etc symlink a persistent enable needs.
     local -a enable_args=(enable --now)
     case "$unit_dir" in /run/*) enable_args=(enable --runtime --now) ;; esac
-    if [ "${DASHBOARD_CONTROL_ENABLED:-false}" != "true" ]; then
+    if [ "${DASHBOARD_CONTROL_ENABLED:-false}" != "true" ] && [ "${TOR_AUTO_HEAL:-false}" != "true" ]; then
         if [ -e "$unit_dir/pithead-control.path" ] || [ -e "$unit_dir/pithead-control.service" ]; then
             # The unit names are box-global but a box can hold several checkouts (release bench:
             # live stack + e2e harness + bundle-smoke tmp dirs). Only remove units whose ExecStart

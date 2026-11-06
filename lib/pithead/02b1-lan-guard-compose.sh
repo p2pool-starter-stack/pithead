@@ -13,15 +13,15 @@ lan_guard_prepare_up() {
     lan_guard_check_keep_running || return 1
 }
 
-# A staged rule has no start marker. Stop any already-running LAN node before even the first
-# loopback-bound compose pass; a failed engine query cannot be mistaken for an empty set.
 lan_guard_stop_published() {
+    local project
+    project=$(compose_project_name) || return 1
     local ids kp c id seen=" "
     for kp in $(lan_guard_published); do
         c=$(lan_guard_container "${kp#*:}")
         [[ "$seen" == *" $c "* ]] && continue
         seen+="$c "
-        ids=$(docker ps -q --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$c" 2>/dev/null) ||
+        ids=$(docker ps -q --filter "label=com.docker.compose.project=$project" --filter "label=com.docker.compose.service=$c" 2>/dev/null) ||
             {
                 warn "lan-guard:engine-unreadable — cannot check running LAN nodes."
                 return 1
@@ -66,20 +66,16 @@ lan_guard_scoped_up() {
     return 1
 }
 
-# A failed first up has not completed its requested work, but may have stopped a prior node.
-# Retry just those nodes with the loopback binds still exported; report the original failure.
 lan_guard_restore_stopped() {
     [ "${#LAN_GUARD_STOPPED_SERVICES[@]}" -gt 0 ] || return 0
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up -d "${LAN_GUARD_STOPPED_SERVICES[@]}" ||
+    lan_guard_engine_up -d "${LAN_GUARD_STOPPED_SERVICES[@]}" ||
         warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes after compose failed."
 }
 
-# Recreate stopped LAN nodes even when the caller names only another service.
-lan_guard_compose_up() { # <compose up arguments>
+lan_guard_compose_up() {
     local rc=0 up_args=("$@")
     if lan_guard_scoped_up "$@"; then up_args+=("${LAN_GUARD_STOPPED_SERVICES[@]}" "${LAN_GUARD_REBOUND_SERVICES[@]}"); fi
-    # The dashboard bind-mounts this exact lock inode across versioned installs.
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}" || rc=$?
+    lan_guard_engine_up "${up_args[@]}" || rc=$?
     if [ "$rc" = 0 ]; then
         finish_lan_guard_after_up "${up_args[@]}" || rc=1
     else
@@ -108,7 +104,7 @@ finish_lan_guard_after_up() { # <original compose up arguments>
     for ((i = 0; i + 1 < ${#up_args[@]}; i++)); do
         [ "${up_args[$i]}" = --pull ] && up_args[$((i + 1))]=never
     done
-    if PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${up_args[@]}"; then
+    if lan_guard_engine_up "${up_args[@]}"; then
         log "LAN-only sources enforced on port(s) ${ports[*]} after Docker created its network."
         return 0
     fi
@@ -118,6 +114,14 @@ finish_lan_guard_after_up() { # <original compose up arguments>
     }
     lan_guard_stop_published || return 1
     for kp in $(lan_guard_published); do export "${kp%%:*}=127.0.0.1"; done
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "$@" || warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes."
+    lan_guard_engine_up "$@" || warn "lan-guard:recreate-failed — could not restore the loopback-bound nodes."
     return 1
+}
+
+lan_guard_engine_up() {
+    local rc=0
+    tor_rotation_receipt up requested || true
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "$@" || rc=$?
+    tor_rotation_receipt up "$rc" || true
+    return "$rc"
 }

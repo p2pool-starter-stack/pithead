@@ -77,7 +77,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "workers" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -87,6 +87,14 @@ control_process_request() { # <claimed-file> <control-dir>
     # writes the file, so re-validate it against the basic_auth username charset.
     printf '%s' "$actor" | grep -qE '^[A-Za-z0-9._@-]{0,64}$' || actor="untrusted"
     action=$(jq -r '.action // ""' "$file")
+    if [ "${CONTROL_HEAL_ONLY:-false}" = true ]; then
+        if [ "$(env_get TOR_AUTO_HEAL)" != true ] || [ "$actor" != tor-heal ] ||
+            ! [[ "$action" = tor-newnym || "$action" = tor-history || "$action" = tor-recover ]]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"only Tor healing is enabled",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+            return 0
+        fi
+    fi
     case "$action" in
     egress-sync)
         chain=$(jq -r 'if ((keys | sort) == ["action","actor","chain","id"])
@@ -130,6 +138,7 @@ control_process_request() { # <claimed-file> <control-dir>
     upgrade) control_upgrade "$file" "$id" "$actor" "$cdir" ;;
     worker-apply) control_worker_apply "$file" "$id" "$actor" "$cdir" ;;
     worker-upgrade) control_worker_upgrade "$file" "$id" "$actor" "$cdir" ;;
+    worker-upgrade-all) control_worker_upgrade_all "$file" "$id" "$actor" "$cdir" ;;
     restart | apply) control_lifecycle "$action" "$id" "$actor" "$cdir" ;;
     backup) control_backup "$id" "$actor" "$cdir" ;;
     # Appliance OS update, one verb per step so every network move stays separate from every
@@ -139,6 +148,8 @@ control_process_request() { # <claimed-file> <control-dir>
     os-verify) control_os_verify "$file" "$id" "$actor" "$cdir" ;;
     os-install) control_os_install "$file" "$id" "$actor" "$cdir" ;;
     os-reboot) control_os_reboot "$file" "$id" "$actor" "$cdir" ;;
+    sys-reboot) control_sys_reboot "$file" "$id" "$actor" "$cdir" ;;
+    sys-poweroff) control_sys_poweroff "$file" "$id" "$actor" "$cdir" ;;
     # Read-only diagnostics for a shell-less appliance operator: report, never mutate. Both are
     # bounded host-side and the log tail is redacted by bundle_redact_log before it is written.
     diag-doctor) control_diag_doctor "$id" "$actor" "$cdir" ;;
@@ -268,8 +279,9 @@ control_run_pending() {
     # drain (control_runner_wait_idle) does not wait on its own parent's claim (#2363).
     export PITHEAD_CONTROL_RUNNER_PID=$$
     [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
-        error "The dashboard control channel is not enabled (dashboard.control.enabled)."
-    local cdir
+        [ "$(env_get TOR_AUTO_HEAL)" == "true" ] ||
+        error "Dashboard control and Tor auto-heal are not enabled."
+    local cdir CONTROL_HEAL_ONLY
     cdir=$(env_get CONTROL_DIR)
     [ -n "$cdir" ] || cdir="$PWD/data/control"
     mkdir -p "$cdir/staged" "$cdir/results" "$cdir/audit"
@@ -308,6 +320,7 @@ control_run_pending() {
     # OS-update budget: a bundle download attempt or a slot install holds the runner for minutes
     # too, so exactly one os-* verb runs per drain; the rest reject with a retry hint.
     CONTROL_OS_BUDGET=1
+    CONTROL_POWER_BUDGET=1
     names=$(cd "$cdir/requests" 2>/dev/null && ls -1tr -- *.json 2>/dev/null) || true
     if [ -z "$names" ]; then
         log "No pending control requests."
@@ -346,6 +359,8 @@ control_run_pending() {
             rm -f "$snapshot" "$claim"
             continue
         fi
+        CONTROL_HEAL_ONLY=true
+        [ "$(env_get DASHBOARD_CONTROL_ENABLED)" != true ] || CONTROL_HEAL_ONLY=false
         control_process_request "$snapshot" "$cdir"
         rm -f "$snapshot"
         rm -f "$claim"

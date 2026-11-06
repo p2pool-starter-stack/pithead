@@ -11,22 +11,10 @@ apply_appliance_defaults() { # [config, default $CONFIG_FILE]
     local config="${1:-$CONFIG_FILE}" tmp
     [ -f "$config" ] || return 0
     tmp=$(mktemp) || return 1
-    # dashboard.control.enabled: on DIY the operator has a shell, so the config editor is a
-    # convenience and stays off. An appliance has NO other way in — no shell, ssh disabled — so
-    # without this the machine is unconfigurable after first boot and the only route to a changed
-    # payout address is a reflash. Production runs with it on. It sits behind the generated
-    # login, which is why the password above is not optional.
-    # ...but only behind a password. `strip_defaults` drops any wizard answer equal to the
-    # reference default, and the reference has control.enabled false, so the key is absent from
-    # EVERY submission — including "No login", which leaves the password empty. Injecting
-    # unconditionally therefore built the exact pair parse_and_validate_config refuses, and the
-    # machine dead-ended on first boot after the operator had been told provisioning started
-    # (#1066). An unauthenticated config editor is what that rule exists to prevent, so the
-    # honest resolution is to leave the channel off rather than to weaken the rule.
-    if jq '
-        if .tor.auto_heal == null then (.tor //= {}) | .tor.auto_heal = true else . end
+    if jq --argjson defaults "$(config_defaults new appliance)" '
+        if .tor.auto_heal == null then (.tor //= {}) | .tor.auto_heal = $defaults.tor.auto_heal else . end
         | if .dashboard.control.enabled == null and ((.dashboard.auth.password // "") != "")
-          then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = true
+          then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = $defaults.dashboard.control.enabled
           else . end' \
         "$config" >"$tmp" && mv "$tmp" "$config"; then
         return 0
@@ -237,4 +225,18 @@ validate_energy_config() {
             then "dashboard.energy.price_feed must be true or false (fetch live XMR/XTM prices from CoinGecko over Tor; default false, no clearnet egress)."
           else empty end' "$CONFIG_FILE" 2>/dev/null)
     [ -z "$en_err" ] || error "$en_err"
+}
+
+validate_webhook_config() {
+    local hook_error
+    if ! hook_error=$(jq -r '
+        .notifications.webhooks as $hooks
+        | if $hooks == null then empty
+          elif ($hooks | type) != "array" then "notifications.webhooks must be an array of URL strings."
+          else $hooks | to_entries | map(select((.value | type) != "string")) | first
+            | select(. != null) | "notifications.webhooks[\(.key)] must be a URL string; null and other non-string members are not allowed."
+          end' "$CONFIG_FILE" 2>/dev/null); then
+        error "Could not validate notifications.webhooks."
+    fi
+    [ -z "$hook_error" ] || error "$hook_error"
 }

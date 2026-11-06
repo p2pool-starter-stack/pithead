@@ -83,11 +83,12 @@ CONTROL_HEADERS = {"X-Pithead-Control": "1"}
 
 @pytest.fixture
 async def worker_client(aiohttp_client, control_spool, monkeypatch):
-    """Control channel on, one editable worker descriptor, and a worker in the live snapshot.
-
-    Exposes the StateManager so tests can read back the config history the route records."""
     from mining_dashboard.config import config as cfg_mod
+    from mining_dashboard.service.workers import worker_refresh
     from mining_dashboard.web.views import views
+
+    monkeypatch.setattr(worker_refresh, "REFRESH_ATTEMPTS", 0)
+    monkeypatch.setattr(worker_refresh, "REFRESH_DELAY_S", 0)
 
     monkeypatch.setattr(
         cfg_mod, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "10.0.0.9", "control_port": 8082}]

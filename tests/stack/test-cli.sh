@@ -1,9 +1,5 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# CLI domain (#1105 Phase 1): dispatch, subcommand chaining, completion, guards, the small input
-# validators, host/deps detection, version, and the first-run epilogue. Sourced by
-# tests/stack/run.sh after lib.sh. (The apply --dry-run and symlink-invocation sections stay
-# with the control-channel cluster: they run against the $C sandbox and its applied state.)
 echo "== unit: resolve_default =="
 assert_eq "auto -> default" "$(run_sourced "$SANDBOX" resolve_default auto /def)" "/def"
 assert_eq "empty -> default" "$(run_sourced "$SANDBOX" resolve_default '' /def)" "/def"
@@ -131,15 +127,17 @@ assert_rc "accepts 253 chars (the DNS name bound)" "$?" "0"
 run_sourced "$SANDBOX" is_valid_host "$(printf 'a%.0s' $(seq 1 254))" >/dev/null 2>&1
 assert_rc "rejects 254 chars, past the bound (#558)" "$?" "1"
 
-echo "== unit: first-run epilogue shows once after up (#384) =="
-# The "what happens next" onboarding note: prints on the first up in a fresh deploy dir, drops a
-# marker beside .env, and stays silent on every later restart.
-mk_tmpdir FR
-out="$(run_sourced "$FR" print_first_run_epilogue 2>&1)"
-assert_contains "first-run: epilogue explains the sync-then-mine hold" "$out" "held until Monero and Tari finish their first sync"
-assert_eq "first-run: silent on the second up (marker respected)" \
-    "$(run_sourced "$FR" print_first_run_epilogue 2>&1)" ""
-rm -rf "$FR"
+echo "== unit: first-run epilogue follows rendered requirements and shows once =="
+for first_run_case in off:false:Monero local:false:Monero remote:false:Monero 'local:true:Monero and Tari' 'remote:true:Monero and Tari' 'local::Monero and Tari'; do
+    IFS=: read -r first_run_mode first_run_required first_run_chains <<<"$first_run_case"
+    mk_tmpdir FR
+    printf 'TARI_MODE=%s\nTARI_REQUIRED=%s\n' "$first_run_mode" "$first_run_required" >"$FR/.env"
+    out="$(run_sourced "$FR" print_first_run_epilogue 2>&1)"
+    assert_contains "first-run $first_run_case: names only required chains" "$out" "The miner is held until the initial sync finishes for $first_run_chains, then starts automatically."
+    assert_not_contains "first-run $first_run_case: no unconditional both-chain estimate" "$out" "sync of both chains"
+    assert_eq "first-run $first_run_case: silent on restart" "$(run_sourced "$FR" print_first_run_epilogue 2>&1)" ""
+    rm -rf "$FR"
+done
 
 echo "== unit: host detection (#140) =="
 # detect_os reads ID / VERSION_ID / PRETTY_NAME from an overridable os-release (drives the

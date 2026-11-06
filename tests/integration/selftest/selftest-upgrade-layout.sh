@@ -105,7 +105,6 @@ echo "== a restored baseline that will not start names the step that stopped it 
         return 1
     }
     ! start_restored_baseline && [ "$BASELINE_START_ERROR" = "[ERROR] monero.remote.host is not a valid host. Got" ] || exit 1
-    # baseline_up runs in this shell, so its counted skip survives a captured step.
     pithead() { :; }
     baseline_up() { UP_RAN_HERE=1; }
     UP_RAN_HERE=0

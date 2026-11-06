@@ -1,17 +1,16 @@
 # shellcheck shell=bash
-# Recovery operations must not interpolate the Compose model when rendered state is missing.
-# The shipped project is pinned to pithead. Include this directory's legacy project only with
-# its exact working-directory label, as in the project migration's ownership boundary.
-configless_project_ps() { # <ps output flags...> -- [ps filters...]
+configless_project_ps() {
+    local project
+    project=$(compose_project_name) || return 1
     local out=() legacy ids
     while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
         out+=("$1")
         shift
     done
     shift
-    docker ps --all "${out[@]}" --filter label=com.docker.compose.project=pithead "$@" || return 1
+    docker ps --all "${out[@]}" --filter "label=com.docker.compose.project=$project" "$@" || return 1
     legacy=$(basename "$PWD" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')
-    if [ -n "$legacy" ] && [ "$legacy" != pithead ]; then
+    if [ -n "$legacy" ] && [ "$project" = pithead ] && [ "$legacy" != "$project" ]; then
         ids=$(docker ps --all "${out[@]}" --filter "label=com.docker.compose.project=$legacy" \
             --filter "label=com.docker.compose.project.working_dir=$PWD" "$@") || return 1
         [ -z "$ids" ] || printf '%s\n' "$ids"

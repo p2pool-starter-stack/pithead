@@ -82,10 +82,8 @@ phase_boot() {
     fi
 
     phase_wizard_redirect
+    phase_wizard_identity
 
-    # Exercise the installed unit under systemd. The guest has a real emulated UART; a temporary
-    # runtime drop-in gives the SAME ExecCondition a type-0 fixture, then is removed before reboot.
-    # Keep the dead-port state for five minutes, long enough to expose the original 10 s loop.
     local getty_type getty_state getty_restarts getty_result getty_errors
     getty_type=$(_ssh 'cat /sys/class/tty/ttyS0/type' 2>/dev/null | tr -d '\r\n')
     getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')

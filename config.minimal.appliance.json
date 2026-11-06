@@ -1,0 +1,23 @@
+{
+  "tari": {
+    "mode": "off",
+    "clearnet_initial_sync": false
+  },
+  "xvb": {
+    "enabled": false
+  },
+  "dashboard": {
+    "tari_required": false,
+    "host": "pithead"
+  },
+  "local_miner": {
+    "enabled": true
+  },
+  "monero": {
+    "clearnet_initial_sync": false,
+    "wallet_address": "your_monero_wallet_address"
+  },
+  "p2pool": {
+    "stratum_password": ""
+  }
+}

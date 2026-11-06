@@ -19,20 +19,10 @@ announce_dashboard_url() {
     announce_local_miner # #593: hand off the pool URL + secret for a co-located RigForge worker
 }
 
-# Local miner opt-in (#593). When the operator asked to also mine on this host with its spare CPU,
-# hand them the two values a RigForge install on this box would otherwise prompt for — the stack's
-# own stratum URL and the stratum secret — so a co-located worker self-registers with nothing to
-# copy by hand (the dashboard already discovers workers from the proxy). Pithead does NOT install
-# or tune the miner: RigForge owns HugePages/GRUB/MSR and the miner service. Prints nothing unless
-# local_miner.enabled is on.
 announce_local_miner() {
-    [ "$(config_bool '.local_miner.enabled' false 2>/dev/null || echo false)" = "true" ] || return 0
-    # On the appliance the miner is built in: pithead renders RigForge's config and the boot path
-    # runs its setup, so there is nothing to install and no values to copy.
+    [ "$(config_get .local_miner.enabled 2>/dev/null || echo false)" = "true" ] || return 0
     if is_appliance; then
         if local_miner_hugepages_blocked; then
-            # #1103: opted in, but reduced HugePages means the built-in miner never actually
-            # starts (provision_local_miner refuses it) — say that instead of claiming it runs.
             warn "Local mining is opted in, but this machine's reduced HugePages reservation cannot also fit a co-located miner — the built-in RigForge worker is not started. Use a 16 GB machine for the built-in miner."
         else
             log "Local mining is ON: this machine also mines with its own CPU. The built-in RigForge worker points at the stack's own stratum and appears in the dashboard's Workers view."

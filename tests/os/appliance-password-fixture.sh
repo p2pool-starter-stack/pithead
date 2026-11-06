@@ -1,5 +1,14 @@
 # shellcheck shell=bash
 # Password round-trip cleanup: preserve failed assertions while restoring later legs' login.
+assert_console_login() {
+    if _ssh 'python3 -' <"$SCRIPT_DIR/console-login-probe.py"; then
+        ok "root login matches the dashboard password in volatile /etc ($1, #3072)"
+    else
+        bad "root login matches the dashboard password in volatile /etc ($1, #3072)"
+        return 1
+    fi
+}
+
 _password_fixture_exercise() {
     local old_pass="$DASH_PASS"
     password_commit_via_host "os1966-repointed" || return 1
@@ -8,12 +17,23 @@ _password_fixture_exercise() {
         bad "dashboard did not accept the new password after the commit"
         return 1
     fi
+    assert_console_login "password repoint" || return 1
+    if ! _reboot_wait reboot 300 || ! provisioning_settled 900 || provisioning_setup_failed; then
+        bad "the repointed-password guest did not finish an unaided reboot (#3072)"
+        return 1
+    fi
+    sensitive_live_config >/dev/null || {
+        bad "the repointed dashboard login did not survive an unaided reboot (#3072)"
+        return 1
+    }
+    assert_console_login "unaided reboot with changed password" || return 1
     password_commit_via_host "$old_pass" || return 1
     DASH_PASS="$old_pass"
     if ! sensitive_live_config >/dev/null; then
         bad "dashboard did not accept the restored fixture password"
         return 1
     fi
+    assert_console_login "restored password"
 }
 
 password_fixture_round_trip() {
@@ -61,9 +81,17 @@ _password_fixture_self_test() (
         [ "$shape" != cleanup-fail ] || return 1
         changed=0
     }
+    assert_console_login() {
+        case "$shape:$1" in
+        console-fail:password\ repoint | reboot-console-fail:unaided* | restored-console-fail:restored*) return 1 ;;
+        esac
+    }
+    _reboot_wait() { [ "$shape" != reboot-fail ]; }
+    provisioning_settled() { [ "$shape" != settle-fail ]; }
+    provisioning_setup_failed() { return 1; }
     bad() { errors=$((errors + 1)); }
     ok() { successes=$((successes + 1)); }
-    for shape in first-fail restoration-preview-fail new-login-fail restored-login-fail; do
+    for shape in first-fail restoration-preview-fail new-login-fail restored-login-fail console-fail reboot-console-fail restored-console-fail reboot-fail settle-fail; do
         changed=0 commits=0 restored=0 reads=0 errors=0 successes=0
         ! password_fixture_round_trip || return 1
         [ "$changed" -eq 0 ] && [ "$restored" -eq 1 ] && [ "$DASH_PASS" = original ] || return 1

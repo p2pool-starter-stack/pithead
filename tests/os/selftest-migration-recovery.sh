@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export TMPDIR="${TMPDIR:-${RUNNER_TEMP:?set TMPDIR or RUNNER_TEMP}}"
+export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
 HERE=$(cd "$(dirname "$0")" && pwd)
 python3 "$HERE/selftest-migration-recovery.py"
 # shellcheck source=tests/os/migration-recovery.sh
@@ -124,12 +124,20 @@ fail() {
     }
     provisioning_settled() { :; }
     provisioning_setup_failed() { return 1; }
+    (
+        bad() { printf '%s' "$*" >"$T/bad"; }
+        _wizard_provision_capture() { fail 'version mismatch reached provisioning'; }
+        _ssh() { if [ "$1" = 'cat /opt/pithead/VERSION' ]; then echo 0.0.0; else git rev-parse origin/develop; fi; }
+        if migration_prepare_old; then fail 'unequal baseline version accepted'; fi
+        grep -Fq "old=0.0.0 candidate=$(tr -d '[:space:]' <VERSION)" "$T/bad" || fail 'version refusal does not name both versions'
+    )
     sensitive_live_config() {
         python3 - "$HERE" "$T/form" <<'PYFIX'
 import importlib.util, json, sys
 from pathlib import Path
 from urllib.parse import parse_qs
 root = Path(sys.argv[1]).parents[1] / "dashboard/mining_dashboard"
+sys.path.insert(0, str(root.parent))
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)

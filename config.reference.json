@@ -10,15 +10,21 @@
     "clearnet": false,
     "data_dir": "auto"
   },
-  "proxy": { "donate_level": 0 },
-  "local_miner": { "enabled": false },
+  "proxy": {
+    "donate_level": 0
+  },
+  "local_miner": {
+    "enabled": false
+  },
   "xvb": {
     "enabled": true,
     "url": "na.xmrvsbeast.com:4247",
     "donor_id": "auto",
     "donation_level": "auto",
     "tor": true,
-    "standby": { "source": "" }
+    "standby": {
+      "source": ""
+    }
   },
   "monero": {
     "wallet_address": "your_monero_wallet_address",
@@ -49,7 +55,10 @@
     "mode": "local",
     "grpc_lan_access": false,
     "clearnet_initial_sync": false,
-    "remote": { "host": "tari-node.lan", "grpc_port": 18142 },
+    "remote": {
+      "host": "tari-node.example",
+      "grpc_port": 18142
+    },
     "data_dir": "auto",
     "mem_limit": "auto",
     "explorer_url": "https://textexplore.tari.com/?json"
@@ -66,9 +75,17 @@
     "expose_public_ip": false,
     "port": "auto",
     "timezone": "auto",
-    "auth": { "username": "admin", "password": "" },
-    "onion": { "enabled": false, "client_auth": true },
-    "control": { "enabled": false },
+    "auth": {
+      "username": "admin",
+      "password": ""
+    },
+    "onion": {
+      "enabled": false,
+      "client_auth": true
+    },
+    "control": {
+      "enabled": false
+    },
     "energy": {
       "cost_per_kwh": 0,
       "currency": "USD",
@@ -83,7 +100,9 @@
     "check_for_updates": true,
     "data_dir": "auto"
   },
-  "healthchecks": { "ping_url": "" },
+  "healthchecks": {
+    "ping_url": ""
+  },
   "telegram": {
     "enabled": false,
     "bot_token": "",
@@ -118,13 +137,24 @@
       "raffle_win": true
     },
     "daily_summary_time": "08:00",
-    "commands": { "enabled": false }
+    "commands": {
+      "enabled": false
+    }
   },
   "notifications": {
     "webhooks": [],
-    "ntfy": { "url": "", "token": "" },
+    "ntfy": {
+      "url": "",
+      "token": ""
+    },
     "tor": true
   },
-  "tor": { "data_dir": "auto", "auto_heal": false },
-  "network": { "subnet": "172.28.0.0/24", "tor_egress_firewall": true }
+  "tor": {
+    "data_dir": "auto",
+    "auto_heal": false
+  },
+  "network": {
+    "subnet": "172.28.0.0/24",
+    "tor_egress_firewall": true
+  }
 }

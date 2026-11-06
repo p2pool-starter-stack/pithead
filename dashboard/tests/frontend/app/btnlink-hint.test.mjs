@@ -1,22 +1,3 @@
-// Unit tests for the inline link-button and hint-cell chrome the Earnings table depends on
-// (#1861), on the badgebutton.test.mjs (#1858) pattern: no DOM, so they prove the stylesheet's
-// own cascade rather than a painted pixel.
-//
-// Two defects are pinned here, both of which shipped once:
-//   1. `.btn-link` was scoped to `.advanced-hint .btn-link`. The Earnings card has no
-//      `.advanced-hint` ancestor, so its Configuration button arrived as UA chrome — Chromium's
-//      `ButtonFace` fill (#efefef) and an outset border, neither theme-aware. In dark that fill
-//      measures 2.20:1 against --accent (2.67:1 against --text-muted), below the 4.5:1 AA needs:
-//      #1858's defect, one card over.
-//   2. `.eva-table td` carries `overflow-wrap: anywhere` (added for #83 so a long value wraps on a
-//      phone). The hint is prose, so it broke mid-word ("monero.view_k" / "ey") at 390px; the
-//      `.eva-hint` cell has to resolve back to wrapping at spaces only.
-//
-// This is the 390px evidence at the tier this repo has: the wrap and the contrast are decided by
-// the cascade these assertions read, and nothing in the frontend suite renders CSS (render.mjs is
-// a vnode-to-string walker with no layout engine). A painted screenshot would need a browser
-// harness this repo does not have — see #2402.
-// Run with: node --test dashboard/tests/frontend/
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";

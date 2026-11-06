@@ -69,3 +69,29 @@ assert_proxy_password_live() { # <config-json>
         it_fail "$row" "configured mode, rendered password and daemon flag differ"
     fi
 }
+
+assert_stratum_client_controls() {
+    local probe_channel probe_miner="" probe_env="" probe_result
+    local row="stratum password and TLS client controls (#3078)"
+    if ! probe_channel=$(rx 'source ./pithead >/dev/null || exit $?; if is_appliance; then printf "appliance\n"; else channel_status=$?; [ "$channel_status" -eq 1 ] || exit "$channel_status"; printf "diy\n"; fi' 2>/dev/null); then
+        it_fail "$row" "appliance channel detection failed"
+        return
+    fi
+    case "$probe_channel" in
+    appliance)
+        probe_miner=" /opt/rigforge/prebuilt/xmrig/build/xmrig"
+        probe_env="TMPDIR=/data/pithead/data "
+        ;;
+    diy) ;;
+    *)
+        it_fail "$row" "appliance channel detection returned an unknown result"
+        return
+        ;;
+    esac
+    if probe_result=$(rx "${probe_env}timeout 2100 python3 -c $(quote_arg "$(cat "$HERE/rotate-auth-probe.py")") controls$probe_miner" 2>/dev/null); then
+        it_pass "$row"
+    else
+        it_fail "$row" "client refusal, zero-counter or positive mining assertion failed"
+    fi
+    printf '%s\n' "$probe_result"
+}
