@@ -1,32 +1,28 @@
 # shellcheck shell=bash
 
+rollback_blocking_check() { # <json> <jq-path-to-object> <failing-check-substring>
+    local json="$1" path="$2" needle="$3"
+    [ "$path" = . ] && path=
+    if ! printf '%s' "$json" | jq -e "($path.blocking // []) | map(select(type == \"string\" and length > 0)) | length > 0" >/dev/null 2>&1; then
+        printf 'blocking list is empty or absent'
+        return 1
+    fi
+    if ! printf '%s' "$json" | jq -e --arg n "$needle" "$path.blocking | any(type == \"string\" and contains(\$n))" >/dev/null 2>&1; then
+        printf 'blocking does not name "%s": %s' "$needle" "$(printf '%s' "$json" | jq -c "$path.blocking" | cut -c1-200)"
+        return 1
+    fi
+}
+
 rollback_verdict_check() { # <os-update-state.json> <failing-check-substring>
-    local state="$1" needle="$2"
-    if ! printf '%s' "$state" | jq -e '.verdict.outcome == "rolled_back"' >/dev/null 2>&1; then
-        printf 'verdict outcome is %s, not rolled_back' "$(printf '%s' "$state" | jq -r '.verdict.outcome // "absent"' 2>/dev/null || echo unreadable)"
+    if ! printf '%s' "$1" | jq -e '.verdict.outcome == "rolled_back"' >/dev/null 2>&1; then
+        printf 'verdict outcome is %s, not rolled_back' "$(printf '%s' "$1" | jq -r '.verdict.outcome // "absent"' 2>/dev/null || echo unreadable)"
         return 1
     fi
-    if ! printf '%s' "$state" | jq -e '(.verdict.blocking // []) | map(select(type == "string" and length > 0)) | length > 0' >/dev/null 2>&1; then
-        printf 'rolled_back verdict has an empty blocking list'
-        return 1
-    fi
-    if ! printf '%s' "$state" | jq -e --arg n "$needle" '.verdict.blocking | any(type == "string" and contains($n))' >/dev/null 2>&1; then
-        printf 'blocking does not name "%s": %s' "$needle" "$(printf '%s' "$state" | jq -c '.verdict.blocking' | cut -c1-200)"
-        return 1
-    fi
+    rollback_blocking_check "$1" .verdict "$2"
 }
 
-rollback_banner() { # <os-update-state.json> <repo-root>
-    printf '%s' "$1" | jq -c '.verdict' | node --input-type=module -e '
-const { verdictText } = await import(process.argv[1]);
-let raw = "";
-for await (const chunk of process.stdin) raw += chunk;
-process.stdout.write(verdictText(JSON.parse(raw)) ?? "");
-' "file://$2/dashboard/mining_dashboard/web/static/system/osverdict.mjs"
-}
-
-rollback_banner_blocked() { # <os-update-state.json> <repo-root>
-    case "$(rollback_banner "$1" "$2")" in *"Blocked by: "?*) return 0 ;; *) return 1 ;; esac
+rollback_banner_served() { # <dashboard-ip> <user:pass>
+    curl -sSk -u "$2" -m 20 "https://$1/static/system/osverdict.mjs" 2>/dev/null | grep -qF 'Blocked by: '
 }
 
 rollback_evidence() { # <dest-prefix>

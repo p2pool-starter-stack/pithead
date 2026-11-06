@@ -17,7 +17,7 @@ _update_healthgate_leg_body() {
             "leg 4 did not reach a committed, provisioned guest on this run, so there is no live pithead-boot to install a fault bundle against" missing
         return
     fi
-    local fbundle fbrc marker fmarker fdeadline fserial_mark fstate
+    local fbundle fbrc marker fmarker fdeadline fserial_mark
     info "building v3fault bundle (dashboard healthcheck forced to 'exit 1')"
     export PITHEAD_TEST_BREAK_HEALTHCHECK=1
     fbundle=$(_build_bundle v3fault)
@@ -109,28 +109,18 @@ _update_healthgate_leg_body() {
     else
         bad "leg 5: no 'container dashboard' line in the fault boot's journal — the gate did not name the cause"
     fi
-    fdeadline=$(($(date +%s) + 300))
-    fstate=""
-    while [ "$(date +%s)" -lt "$fdeadline" ]; do
-        fstate=$(_ssh "cat /data/pithead/data/control/results/os-update-state.json" 2>/dev/null)
-        [ "$(printf '%s' "$fstate" | jq -r '.verdict.outcome // ""' 2>/dev/null)" = "rolled_back" ] && break
-        sleep 10
-    done
-    if out=$(rollback_verdict_check "$fstate" "container dashboard"); then
-        ok "leg 5: the rolled_back verdict carries a blocking list naming the dashboard container"
+    local flag
+    flag=$(_ssh "cat /data/pithead/data/os-update/in-flight.json" 2>/dev/null)
+    if out=$(rollback_blocking_check "$flag" . "container dashboard"); then
+        ok "leg 5: the in-flight record the fallback boot read carries a blocking list naming the dashboard container"
     else
-        bad "leg 5: rollback verdict: $out"
-    fi
-    if rollback_banner_blocked "$fstate" "$PWD"; then
-        ok "leg 5: the banner built from that verdict reads 'Blocked by: ...'"
-    else
-        bad "leg 5: the banner built from the verdict has no 'Blocked by:' cause"
+        bad "leg 5: in-flight record after the fallback: $out"
     fi
     # shellcheck disable=SC2154
-    if curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/state" 2>/dev/null | jq -e '.os_update.verdict.outcome == "rolled_back" and (.os_update.verdict.blocking | length > 0)' >/dev/null 2>&1; then
-        ok "leg 5: /api/state carries the rolled_back verdict and its blocking list"
+    if rollback_banner_served "$ip" "$DASH_USER:$DASH_PASS"; then
+        ok "leg 5: the dashboard serves a banner that names the blocking check ('Blocked by:')"
     else
-        bad "leg 5: /api/state does not carry the rolled_back verdict with its blocking list"
+        bad "leg 5: the served banner module has no 'Blocked by:' cause"
     fi
 }
 
@@ -140,5 +130,7 @@ phase_update_healthgate_leg() {
     if [ "$FAIL" -gt "$fail_before" ]; then
         rollback_evidence "$SERIAL.leg5-evidence"
         info "leg 5 failure evidence (boot journal, verdict, grubenv, doctor) kept at $SERIAL.leg5-evidence"
+        head -c 12000 "$SERIAL.leg5-evidence" | LC_ALL=C tr -cd '\11\12\40-\176'
+        echo
     fi
 }

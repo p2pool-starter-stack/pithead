@@ -430,10 +430,13 @@ minutes; the recipe states no shorter runtime because the boot, rig and crossupd
 by bench.
 
 The update fault leg (`update` phase, leg 5) installs a bundle whose dashboard healthcheck fails
-through the dashboard's own update door, then requires the rollback verdict to carry a non-empty
-`blocking` list naming the dashboard container and the rendered banner to read `Blocked by:`. On
-any failure the job keeps the failed boot's `pithead-boot` journal, the verdict JSON, grubenv and
-the doctor output beside the serial log (`pithead-os-serial.log.leg5-evidence`).
+through the dashboard's own update door, so the in-flight flag is armed. After the fallback it
+requires the flag's `blocking` list to name the dashboard container and the served banner module to
+carry its `Blocked by:` clause. Both slots of that phase are built from one tree, so they share a
+version and pithead-boot writes no `rolled_back` verdict there; the verdict itself is asserted by
+the real-upgrade scenario, whose slots differ. On any failure the job keeps the failed boot's
+`pithead-boot` journal, the verdict JSON, grubenv and the doctor output in
+`pithead-os-serial.log.leg5-evidence` and prints it, bounded, to the job log.
 
 Immediately before submitting e2e, have Devops prepare the canonical payout wallet on **every**
 bench eligible for this e2e leg. Submit `wallet-prepare` with empty options to each owning bench's
