@@ -93,7 +93,7 @@ _xvb_gate_order_self_test() (
 _xvb_gate_payload_self_test() {
     local root out py=(python3)
     root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-    command -v uv >/dev/null 2>&1 && py=(uv run --quiet --locked --project "$root/dashboard" python)
+    python3 -c 'import requests' >/dev/null 2>&1 || ! command -v uv >/dev/null 2>&1 || py=(uv run --quiet --locked --project "$root/dashboard" python)
     out="$(PAYLOAD="$(_xvb_gate_payload | base64 -d)" PYTHONPATH="$root/dashboard" "${py[@]}" -c '
 import os, subprocess, sys, tempfile
 d = tempfile.mkdtemp()

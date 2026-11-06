@@ -647,7 +647,8 @@ Measured on a macOS host driving the container (#2078), not inferred. "Container
 daemon. A tier that needs something the container cannot supply says so.
 The image sets neither `TMPDIR` nor `RUNNER_TEMP`, so shell suites and the OS runner self-tests take scratch from
 `${TMPDIR:-${RUNNER_TEMP:-/tmp}}`; the Tor heal and runner-module self-tests and the Caddy bridge-bind rows
-(`br0`, `br-lan` kept, engine bridges dropped) must pass there.
+(`br0`, `br-lan` kept, engine bridges dropped) must pass there. The XvB gate-payload self-test runs the dashboard modules through `uv`
+when system `python3` cannot import `requests` (the image case) and `uv` exists, and otherwise uses `python3`.
 
 | Tier | Needs on the host | Runs in the container? |
 |---|---|---|
