@@ -21,8 +21,13 @@ rollback_verdict_check() { # <os-update-state.json> <failing-check-substring>
     rollback_blocking_check "$1" .verdict "$2"
 }
 
-rollback_banner_served() { # <dashboard-ip> <user:pass>
-    curl -sSk -u "$2" -m 20 "https://$1/static/system/osverdict.mjs" 2>/dev/null | grep -qF 'Blocked by: '
+rollback_banner_served() { # <dashboard-ip> <user:pass> [<wait-seconds>]
+    local deadline=$(($(date +%s) + ${3:-0}))
+    while :; do
+        curl -sSk -u "$2" -m 20 "https://$1/static/system/osverdict.mjs" 2>/dev/null | grep -qF 'Blocked by: ' && return 0
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep 10
+    done
 }
 
 rollback_evidence() { # <dest-prefix>

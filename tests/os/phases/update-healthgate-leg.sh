@@ -118,7 +118,7 @@ _update_healthgate_leg_body() {
         bad "leg 5: in-flight record after the fallback: $out"
     fi
     # shellcheck disable=SC2154
-    if rollback_banner_served "$ip" "$DASH_USER:$DASH_PASS"; then
+    if rollback_banner_served "$ip" "$DASH_USER:$DASH_PASS" 300; then
         ok "leg 5: the dashboard serves a banner that names the blocking check ('Blocked by:')"
     else
         bad "leg 5: the served banner module has no 'Blocked by:' cause"
