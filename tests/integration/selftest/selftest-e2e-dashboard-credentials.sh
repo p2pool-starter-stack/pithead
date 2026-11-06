@@ -13,7 +13,8 @@ trap 'rm -rf "$scratch"' EXIT
 export FIXTURE_ROOT="${HERE%/tests/integration/selftest}"
 export FIXTURE_EXPECTED='fixture-dashboard-42"\tail'
 export FIXTURE_WORK="$scratch"
-mkdir -p "$scratch/bin" "$scratch/tests/integration" "$scratch/results" "$scratch/tmp"
+mkdir -p "$scratch/bin" "$scratch/tests/integration/lib" "$scratch/results" "$scratch/tmp"
+cp "$HERE/../lib/inline-pregate-remote.sh" "$scratch/tests/integration/lib/"
 export IT_DASHBOARD_PASSWORD=ambient-fixture-value
 cat >"$scratch/bin/awk" <<'SH'
 #!/usr/bin/env bash
@@ -22,9 +23,20 @@ case "${!#}" in
 *) exec /usr/bin/awk "$@" ;;
 esac
 SH
-for transport in nohup setsid; do
-    printf '%s\n' '#!/usr/bin/env bash' 'exec "$@"' >"$scratch/bin/$transport"
-done
+printf '%s\n' '#!/usr/bin/env bash' 'exec "$@"' >"$scratch/bin/nohup"
+cat >"$scratch/bin/setsid" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = --wait ] && shift
+exec python3 -c '
+import os, sys
+if os.getpgrp() == os.getpid():
+    pid = os.fork()
+    if pid:
+        sys.exit(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]))
+os.setsid()
+os.execvp(sys.argv[1], sys.argv[1:])
+' "$@"
+SH
 chmod +x "$scratch/bin/"*
 cat >"$scratch/tests/integration/run.sh" <<'SH'
 #!/usr/bin/env bash
@@ -81,7 +93,7 @@ run_case() {
         unset IT_SCRATCH_DIR
         MODE="$mode" BORROW_MINER=0 WORKERS=1 BENCH_HOST=fixture.invalid E2E_DIR="$scratch" RESTORE_DIR="$scratch"
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
-        RIG_LOCK_PARENT_ACTOR=actor RIG_LOCK_PARENT_NONCE=nonce
+        RIG_LOCK_PARENT_ACTOR="${PARENT_ACTOR-actor}" RIG_LOCK_PARENT_NONCE="${PARENT_NONCE-nonce}"
         HARNESS_PHASE_ARGS=" --lifecycle" SCENARIO=""
         log() { printf '%s\n' "$*"; }
         step() { printf '%s\n' "$*"; }
@@ -130,6 +142,12 @@ for mode in targeted check; do
         fi
     done
 done
+PARENT_ACTOR="" PARENT_NONCE="" run_case targeted "$FIXTURE_EXPECTED" 0 || fail 'remote inline pregate lost the dashboard credential'
+grep -Fq '/metrics serves pithead_ samples through Caddy' "$scratch/results/e2e-harness.log" || fail 'remote inline pregate skipped authenticated metrics'
+[ "$(cat "$scratch/events")" = $'readiness\ncheck\ndetached' ] || fail 'remote inline pregate did not reach later harness'
+grep -Fq inline-pregate-remote.sh "$scratch/commands" || fail 'remote inline pregate path was not exercised'
+PARENT_ACTOR="" PARENT_NONCE="" run_case targeted incorrect-fixture-value 0
+[ "$?" -ne 0 ] || fail 'remote inline pregate accepted an incorrect credential'
 run_case check "$FIXTURE_EXPECTED" 23
 [ "$?" -eq 23 ] || fail 'detached harness status was lost'
 run_case targeted $'fixture\nextra' 0
