@@ -312,7 +312,7 @@ class WorkerConfigStoreMixin:
         self, worker: str, meta: dict | None, rigforge_version: str | None = None
     ) -> dict | None:
         revision = (meta or {}).get("revision")
-        if not worker or not revision or not _bindable(worker, rigforge_version):
+        if not worker or not revision or not _bindable(worker):
             return None
         last_change_id = meta.get("last_change_id")
         try:
@@ -329,8 +329,11 @@ class WorkerConfigStoreMixin:
                 rebased = (
                     row is not None
                     and row["revision"] != revision
+                    and rigforge_version is not None
                     and row["rigforge_version"] != rigforge_version
                 )
+                if row is not None and rigforge_version is None:
+                    rigforge_version = row["rigforge_version"]
                 drift_from = _next_drift_from(None if rebased else row, revision, last_change_id)
                 now = time.time()
                 self._conn.execute(

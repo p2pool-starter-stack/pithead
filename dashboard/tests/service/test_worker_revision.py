@@ -278,3 +278,12 @@ class TestRigForgeVersionRebase:
     def test_unstored_version_row_is_a_rebase(self, state_manager):
         state_manager.note_worker_revision("rig1", _meta("aaa"))
         assert state_manager.note_worker_revision("rig1", _meta("bbb"), "1.1.0") is None
+
+    def test_omitted_version_is_not_a_rebase(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        assert state_manager.note_worker_revision("rig1", _meta("bbb")) is not None
+
+    def test_omitted_version_keeps_the_stored_one(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        state_manager.note_worker_revision("rig1", _meta("aaa"))
+        assert state_manager.note_worker_revision("rig1", _meta("bbb"), "1.0.0") is not None
