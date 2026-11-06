@@ -11,6 +11,7 @@ source "$HERE/../lib/run-wizard-defaults.sh"
 source "$HERE/../lib/run-wizard-eof.sh"
 
 WORK="$(mktemp -d -t wizard-defaults.XXXXXX)"
+OUT_DIR="$WORK/out"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/bin"
 cat >"$WORK/bin/df" <<'DF'
@@ -44,7 +45,10 @@ rx() {
     case "${WIZARD_FAILURE:-}:$1" in
     eof-fails:*'wizard-eof.XXXXXX'*) return 17 ;;
     entry-read-fails:'cat config.json' | env-fails:*'DEPLOYMENT_COMPLETED=false'* | startup-fails:*'test ! -e .itest-first-run-done'*) return 17 ;;
-    setup-fails:*' setup --skip-deps --skip-optimize') return 17 ;;
+    setup-fails:*' setup --skip-deps --skip-optimize')
+        printf 'setup stopped: PASSWORD=hunter2\nGenerated dashboard password: s3cretvalue\n'
+        return 17
+        ;;
     esac
     case "$1" in
     *' setup --skip-deps --skip-optimize')
@@ -148,6 +152,8 @@ for failure in eof-fails initial-push-fails env-fails setup-fails startup-fails;
     assert_eq "wizard $failure restores its entry configuration before returning failure" \
         "$(wizard_failure_result "$failure")" '1|yes|yes|yes|1'
 done
+assert_eq "a failed CLI setup keeps its redacted output as an artifact" \
+    "$(cat "$WORK/out/cli-defaults/setup.log")" $'setup stopped: PASSWORD=<redacted>\nGenerated dashboard password: <redacted>'
 assert_eq "an unhealthy wizard trial restores its entry configuration" \
     "$(wizard_failure_result health-fails)" '1|yes|yes|yes|2'
 assert_eq "a refused restore push fails without applying or waiting on it" \
@@ -218,6 +224,19 @@ missing_result=$(
     printf '%s|%s' "$?" "$IT_FAIL"
 )
 assert_eq "missing baseline wallet fails the proof before remote I/O" "$missing_result" '1|1'
+
+eof_unset_tmpdir_result=$(
+    IT_FAIL=0
+    rx() { (cd "$WORK" && env -u TMPDIR PATH="$WORK/bin:$PATH" bash -c "$1"); }
+    leftovers() { compgen -G "/tmp/wizard-eof.*" | wc -l | tr -d ' '; }
+    before=$(leftovers)
+    run_cli_wizard_eof "$monero" "$tari" >/dev/null 2>&1
+    ok_rc=$?
+    IT_PITHEAD="$WORK/missing-cli"
+    run_cli_wizard_eof "$monero" "$tari" >/dev/null 2>&1
+    printf '%s|%s|%s|%s' "$ok_rc" "$?" "$(($(leftovers) - before))" "$IT_FAIL"
+)
+assert_eq "payout EOF fixture runs without TMPDIR and removes its scratch directory on success and failure" "$eof_unset_tmpdir_result" '0|1|0|1'
 
 echo "selftest-wizard-defaults: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

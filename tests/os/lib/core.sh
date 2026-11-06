@@ -113,6 +113,17 @@ _reboot_wait() {
     _ssh "$1" >/dev/null 2>&1 || true
     _wait_new_boot "$before" "$2"
 }
+_poweroff_wait() {
+    local deadline state=unknown
+    deadline=$(($(date +%s) + $1))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        state=$(virsh domstate "$VM" 2>/dev/null || echo unknown)
+        [ "$state" = "shut off" ] && return 0
+        sleep 5
+    done
+    info "guest never reached 'shut off' within $1 s — last libvirt state: $state"
+    return 1
+}
 _ssh_unreachable_reason() {
     local probed_ip="$1" state cur_ip
     state=$(vm_state 2>/dev/null || echo unknown)
