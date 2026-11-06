@@ -48,6 +48,7 @@ _update_healthgate_leg_body() {
         bad "leg 5: could not age the guest or plant the update-server seam"
         return
     fi
+    _ssh 'rm -f /data/pithead/data/os-update/.check-stamp /data/pithead/data/os-update/.check-stamp-short'
     out=$(_os_step '{"action":"check"}' 120)
     if [ "$(printf '%s' "$out" | jq -r '.status')" = "checked" ]; then
         out=$(_os_step "{\"action\":\"download\",\"version\":\"$tag\"}" 900)
