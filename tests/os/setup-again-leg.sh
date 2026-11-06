@@ -71,12 +71,9 @@ _setup_again_session() {
         rm -f "$jar"
         return 1
     }
-    ok "the setup page is up on the set-up-again boot, with a fresh token ($token)"
+    ok "the setup page is up on the set-up-again boot, with a fresh token"
 }
 
-# Submit the rig form and wait for its card. $1 = worker, $2 = pool (default the guest's own sshd
-# over IPv4), $3 = a jq filter for what to print (default the token and address on one line, which
-# is what legs 1 and 2 read). Prints that; rc 1 = reported.
 _setup_again_rig_submit() {
     local scode card tries=0 pool="${2:-127.0.0.1:22}"
     scode=$(curl -sSk -b "$jar" --data "role=rig&rig_pool=$pool&rig_worker=$1" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)

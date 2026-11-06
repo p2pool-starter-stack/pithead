@@ -20,7 +20,8 @@ provision_tor() {
     compose_up --pull "$(resolve_pull_policy)" -d tor || {
         local rc=$?
         warn "Tor image build or startup failed (exit $rc). Configuration was retained; check Docker's error above before retrying setup."
-        return "$rc"
+        warn "Docker dependency failure during Tor provisioning. See $DOCS_URL/docs/getting-started.md#interrupted-source-build."
+        exit "$rc"
     }
     log "Waiting for Tor hidden services to be generated..."
     P2POOL_ONION=$(wait_for_onion p2pool) ||
@@ -219,9 +220,12 @@ rotate_dashboard_onion() {
     [ -n "$TOR_DATA_DIR" ] && [ "${hs_dir##*/}" == "dashboard" ] ||
         error "Refusing to wipe an unexpected path (\"$hs_dir\")."
     log "Stopping tor and wiping the dashboard hidden service..."
-    docker compose stop tor >/dev/null 2>&1 || true
+    local TOR_ROTATION_OPERATION tor_stop_rc=0
+    TOR_ROTATION_OPERATION="rotate-$(date -u +%s)-$$" || true
+    tor_lifecycle_receipt "$TOR_ROTATION_OPERATION" stop requested || true
+    docker compose stop tor >/dev/null 2>&1 || tor_stop_rc=$?
+    tor_lifecycle_receipt "$TOR_ROTATION_OPERATION" stop "$tor_stop_rc" || true
     sudo rm -rf "$hs_dir" 2>/dev/null || rm -rf "$hs_dir" 2>/dev/null || true
-    # Force fresh keys + address on the next provision.
     DASHBOARD_ONION="placeholder"
     DASHBOARD_ONION_CLIENT_PUBKEY="placeholder"
     DASHBOARD_ONION_CLIENT_PRIVKEY="placeholder"

@@ -1,5 +1,16 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+validate_backup_only_args() {
+    [ "$BACKUP_ONLY" = 1 ] || return 0
+    local option
+    for option in ${!RUN_@} CHECK_ONLY READINESS KEEP_STATE ONLY_SCENARIO RIG_NAME RIG_HOST; do
+        if [ "${!option}" != 0 ] && [ -n "${!option}" ]; then
+            it_err "--backup-only cannot be combined with scenarios, other phases, a rig, --check, --readiness or --keep."
+            exit 2
+        fi
+    done
+}
+
 safety_backup() {
     if [ "$SAFETY_BACKUP" != "1" ]; then
         [ "$RUN_ROTATE_ONION" != "1" ] || arm_safety_abort_restore
@@ -7,44 +18,60 @@ safety_backup() {
     fi
     [ "$RUN_IMAGE_UPGRADE" != "1" ] || UPGRADE_TELEMETRY_EPOCH="$(rx 'date +%s')"
     it_log "Taking a safety backup before destructive scenarios (pithead backup -y)…"
-    # Read the archive path the CLI itself reports, not `ls -t backups/*` — a concurrent bench
-    # run's archive can win that race, and rolling back onto a foreign archive is unrecoverable.
+    local listing member stack_dir stack_root candidate
+    stack_dir="$(rx 'pwd')" && stack_root="$(rx 'pwd -P')" || {
+        it_fail "safety backup source directory resolved" "cannot verify archive destinations"
+        return 1
+    }
+    case "$stack_dir:$stack_root" in /*:/*) ;; *)
+        it_fail "safety backup source directory resolved" "expected an absolute directory"
+        return 1
+        ;;
+    esac
     if ! pithead backup -y --no-encrypt >"$OUT_DIR/backup.log" 2>&1; then
-        SAFETY_ARCHIVE="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
+        candidate="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
         it_fail "safety backup created" "see $OUT_DIR/backup.log"
-        if [ -n "$SAFETY_ARCHIVE" ] && rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")"; then
+        if [ -n "$candidate" ] && rx "test -f $(quote_arg "$candidate") && test ! -L $(quote_arg "$candidate")"; then
             SAFETY_RESTORE_FAILED=1
+            SAFETY_ARCHIVE="$candidate"
             it_warn "backup is valid but stack restart failed; retaining $SAFETY_ARCHIVE"
         fi
         return 1
     fi
-    SAFETY_ARCHIVE="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
-    if [ -z "$SAFETY_ARCHIVE" ] || ! rx "test -f $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")"; then
-        it_fail "safety backup archive located" "the successful backup did not name a regular archive"
-        safety_cleanup
+    candidate="$(sed -n 's/^.*Backup written to: //p' "$OUT_DIR/backup.log" | tail -n1)"
+    case "${candidate%/*}" in "$stack_dir/backups" | "$stack_root/backups") ;; *) candidate="" ;; esac
+    [[ "${candidate##*/}" =~ ^pithead-backup-[0-9]{8}-[0-9]{6}\.tar\.gz$ ]] || candidate=""
+    if [ -z "$candidate" ] || ! rx "test -f $(quote_arg "$candidate") && test ! -L $(quote_arg "$candidate") && archive_dir=\$(cd -P -- $(quote_arg "${candidate%/*}") && pwd -P) && backups_dir=\$(cd -P -- $(quote_arg "$stack_root/backups") && pwd -P) && test -n \"\$archive_dir\" && test \"\$archive_dir\" = \"\$backups_dir\""; then
+        it_fail "safety backup archive located" "the successful backup did not name a regular archive in $stack_root/backups; nothing removed"
         return 1
     fi
+    SAFETY_ARCHIVE="$candidate"
     it_log "Safety backup: $SAFETY_ARCHIVE"
-    # Exercise backup as an assertion: the archive must list the core files we'd roll back to.
-    # An archive missing either one is not a rollback net, so refuse to run the destructive phases.
-    local listing
-    listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"
-    assert_contains "backup archive contains config.json" "$listing" "config.json"
-    assert_contains "backup archive contains .env" "$listing" ".env"
-    if ! printf '%s\n' "$listing" | grep -q 'config.json' || ! printf '%s\n' "$listing" | grep -q '\.env'; then
+    if ! listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"; then
+        it_fail "safety backup archive readable" "tar could not read the complete archive"
         safety_cleanup
         return 1
     fi
+    for member in config.json .env; do
+        if printf '%s\n' "$listing" | grep -Fx -e "${stack_root#/}/$member" -e "./${stack_root#/}/$member" \
+            -e "${stack_dir#/}/$member" -e "./${stack_dir#/}/$member" >/dev/null; then
+            it_pass "backup archive contains $member"
+        else
+            it_fail "backup archive contains $member" "required member missing"
+            safety_cleanup
+            return 1
+        fi
+    done
     wait_status_ok 240 || {
         it_fail "stack recovered after safety backup" "pithead status did not become healthy"
-        # This gate fails before any scenario can capture its usual diagnostics. Capture before the
-        # recovery changes the state, but never let diagnostic I/O alter that recovery or its verdict.
+        _SAFETY_RECOVERING=1
         local recovery_dir="$OUT_DIR/safety-backup-recovery"
         if mkdir -p "$recovery_dir"; then
             rx "docker compose ps" 2>&1 | redact >"$recovery_dir/compose-ps.txt" || true
             rx "$IT_PITHEAD status" 2>&1 | redact >"$recovery_dir/health-check.txt" || true
         fi
         safety_restore_exact && safety_cleanup || true
+        _SAFETY_RECOVERING=0
         return 1
     }
     if [ "$RUN_IMAGE_UPGRADE" = "1" ]; then
@@ -124,10 +151,12 @@ safety_abort_restore() {
         restore_failed=1
         it_warn "interrupted onion rotation could not restore its original identity"
     fi
-    # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
-    # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
-    # so the restore is attempted.
-    if [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
+    if [ "${BACKUP_ONLY:-0}" = 1 ] && [ "${_SAFETY_RECOVERING:-0}" = 1 ]; then
+        restore_failed=1
+        it_warn "interrupted safety recovery; archive retained at ${SAFETY_ARCHIVE:-<none>}"
+    elif [ "${BACKUP_ONLY:-0}" = 1 ]; then
+        safety_cleanup || restore_failed=1
+    elif [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
         safety_restore_exact || restore_failed=1
     elif [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
@@ -162,7 +191,10 @@ safety_cleanup() {
     elif [ "$KEEP_STATE" = "1" ]; then
         it_warn "--keep: leaving the safety backup at $SAFETY_ARCHIVE"
     else
-        rx "rm -f $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1 || true
+        if ! rx "rm -f -- $(quote_arg "$SAFETY_ARCHIVE") && test ! -e $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1; then
+            it_fail "safety backup archive removed" "cleanup failed; unencrypted archive retained"
+            return 1
+        fi
         it_step "removed the safety backup archive"
     fi
 }

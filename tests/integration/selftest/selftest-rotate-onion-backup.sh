@@ -69,7 +69,7 @@ drive_backup() { # <reported-container-mount> -> run_rotate_onion rc
                 eval "$SNIPPET"
             '
         }
-        pithead() { exit 23; }
+        rotation_with_receipts() { exit 23; }
         run_rotate_onion
     ) >/dev/null 2>&1
 }

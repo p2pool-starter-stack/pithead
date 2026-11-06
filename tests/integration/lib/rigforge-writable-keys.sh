@@ -284,9 +284,7 @@ run_rigforge_pools() { # <rig>
         "$res" _pred_rig_pool_urls "$rig" "$(_pool_urls "$probe")")"
     assert_eq "pools edit applied on the rig (#1002b)" "$status" "applied"
     assert_contains "the rig's own config reports the probe's pools (#1002b)" "$ckeys" "pools"
-    # The readback is blind once a run has left the rig on the probe (every run after the first), so
-    # the change's own #185 history row is the verdict that it landed, and the ledger retires on it.
-    row="$(_settle_history_row "$rig" "$change_id")"
+    row="$(_settle_history_row "$rig" "$change_id" 300)"
     assert_eq "pools worker-apply recorded in the per-worker history (#185/#1471/#2407)" "$row" "applied"
     case "$status|$row" in applied\|applied | rejected\|* | rolled_back\|* | *\|rejected | *\|rolled_back)
         rig_key_clear dash "$rig" pools
