@@ -57,6 +57,7 @@ RUN set -e; \
     if [ "$PITHEAD_UPDATER" = "rauc" ]; then updater_packages="rauc rauc-service"; fi; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+        apt \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
         grub-efi-amd64 shim-signed \
