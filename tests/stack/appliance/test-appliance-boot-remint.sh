@@ -305,7 +305,7 @@ assert_eq "doctor clean, status names the unhealthy dashboard -> the flag carrie
 assert_eq "both fail: doctor's message first, then status's container row" \
     "$(fs_run "$(dj fail "$COVER")" '  ✗ caddy         restarting (possible crash loop — check logs)')" \
     "flag=[\"$COVER\",\"container caddy: restarting (possible crash loop — check logs)\"]"
-assert_eq "neither fails -> nothing added" "$(fs_run '' '')" "flag=absent"
+assert_eq "neither fails -> no causes added to the failed flag" "$(fs_run '' '')" "flag=[]"
 unset -f fs_run
 unset FS
 
