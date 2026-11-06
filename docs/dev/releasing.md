@@ -153,11 +153,20 @@ already name. The Main Branch ruleset requires PRs from everyone except organiza
 the push is refused, the script says so and prints the command to run by hand; the release
 itself is unaffected — `main` merely lags until an admin runs it.
 
+Forward-merge `develop` into each longer-lived integration branch (today `develop-v2.1.0`) right
+after every 2.0.x publish, and at the latest before the next release-prep PR lands. The e2e
+harness seeds its checkout from the bench's live `config.json`, which the live CLI stamps with
+`develop`'s `VERSION`. An integration branch with an older `VERSION` then archives a stamp its CLI
+correctly refuses to restore (#3114), so the lifecycle round-trip, safety-rollback and
+dashboard-carry rows fail. Lifecycle and safety-backup proofs on such a branch wait for the
+forward-merge; the seeded stamp is never rewritten ([#3664]).
+
 Release-note prose that once lived in the `main` merge commit's body belongs in the GitHub
 Release notes, where operators actually read it. The branch model itself is in
 [CONTRIBUTING.md](../../CONTRIBUTING.md#development-workflow).
 
 [#1076]: https://github.com/p2pool-starter-stack/pithead/issues/1076
+[#3664]: https://github.com/p2pool-starter-stack/pithead/issues/3664
 
 ### Pipeline: stage → smoke-test → promote
 
