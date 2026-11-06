@@ -645,6 +645,9 @@ shell argument or a log line.
 Measured on a macOS host driving the container (#2078), not inferred. "Container" means
 `make test-container`, which runs the tier in `tests/runner/Dockerfile` against the host's Docker
 daemon. A tier that needs something the container cannot supply says so.
+The image sets neither `TMPDIR` nor `RUNNER_TEMP`, so shell suites and the OS runner self-tests take scratch from
+`${TMPDIR:-${RUNNER_TEMP:-/tmp}}`; the Tor heal and runner-module self-tests and the Caddy bridge-bind rows
+(`br0`, `br-lan` kept, engine bridges dropped) must pass there.
 
 | Tier | Needs on the host | Runs in the container? |
 |---|---|---|
