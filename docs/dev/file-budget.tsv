@@ -11,7 +11,7 @@ dashboard/mining_dashboard/service/notify/alert_edges.py	453
 dashboard/mining_dashboard/service/notify/alert_service.py	518
 dashboard/mining_dashboard/service/notify/telegram_formatters.py	501
 dashboard/mining_dashboard/service/storage_service.py	785
-dashboard/mining_dashboard/service/workers/worker_config_store.py	448
+dashboard/mining_dashboard/service/workers/worker_config_store.py	419
 dashboard/mining_dashboard/service/xvb/algo_service.py	558
 dashboard/mining_dashboard/sim/donation_model.py	539
 dashboard/mining_dashboard/web/server.py	630
