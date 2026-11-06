@@ -153,8 +153,8 @@ already name. The Main Branch ruleset requires PRs from everyone except organiza
 the push is refused, the script says so and prints the command to run by hand; the release
 itself is unaffected — `main` merely lags until an admin runs it.
 
-Forward-merge `develop` into each longer-lived integration branch (today `develop-v2.1.0`) right
-after every 2.0.x publish, and at the latest before the next release-prep PR lands. The e2e
+Forward-merge `develop` into each longer-lived integration branch (today `develop-v2.1.0`) at
+the latest right after every 2.0.x publish. The e2e
 harness seeds its checkout from the bench's live `config.json`, which the live CLI stamps with
 `develop`'s `VERSION`. An integration branch with an older `VERSION` then archives a stamp its CLI
 correctly refuses to restore (#3114), so the lifecycle round-trip, safety-rollback and
