@@ -362,8 +362,6 @@ class TestTelemetryTableHealth:
     def test_a_failed_recovery_reads_unhealthy(self, state_manager, monkeypatch):
         original_connect = sqlite3.connect
 
-        # The production path #1615 reports, rather than close(): _recover_corrupt_db's reconnect
-        # raises, `_conn` stays None for good, and every telemetry write is dropped from then on.
         def boom(*_a, **_kw):
             raise sqlite3.OperationalError("unable to open database file")
 
