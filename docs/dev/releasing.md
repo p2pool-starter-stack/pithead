@@ -95,6 +95,10 @@ two jobs: `build-images` rebuilds the stack images from the branch and scans the
 `sweep-shipped` scans all six images already published, each tag resolved to a digest, so a CVE in
 the bytes users are running is caught after one.
 
+A digest-pinned base can lag a published security fix until upstream rebuilds the image. The Alpine
+image builds name the base's openssl and musl packages in their apk upgrade list, so an installable
+fix lands on the next rebuild without an ignore (#1438, #3929).
+
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
 ([#1377](https://github.com/p2pool-starter-stack/pithead/issues/1377)).

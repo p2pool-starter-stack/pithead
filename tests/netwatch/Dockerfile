@@ -16,18 +16,7 @@
 # one digest.
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
-# conntrack-tools: `conntrack -E` streams connection EVENTS from the kernel. Event mode rather than
-# `-L` table polling is the whole point — a table snapshot misses any flow that opens and closes
-# between two polls, which is exactly the shape of a DNS leak or a single probe dial, and is the
-# blind spot that bench-verify-egress.sh's /proc/net/tcp sampling already has. Nothing is proven by
-# a second instrument with the first one's weakness.
-#
-# tcpdump: not used by the verdict. It is here for the diagnosis step after a red, where the
-# question stops being "did something unexpected leave" and becomes "what was in it".
-#
-# --upgrade libcrypto3/libssl3: the same #1438 fix build/tor/Dockerfile and tor-client carry, and
-# newly load-bearing on this base — see tor-client's copy for the measurement.
-RUN apk add --no-cache --upgrade libcrypto3 libssl3 conntrack-tools tcpdump
+RUN apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils conntrack-tools tcpdump
 
 # Runs with --network host and NET_ADMIN/NET_RAW on the bench: conntrack reads the HOST's
 # connection table, which is the vantage point the whole design rests on. No USER drop here, unlike
