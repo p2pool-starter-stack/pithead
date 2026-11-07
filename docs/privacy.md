@@ -268,8 +268,10 @@ risk is the one-time IP disclosure, not tampering.
 image, so a pull during provisioning would be a clearnet request that Tor could not route: your
 ISP would see the lookup and TLS handshake for `ghcr.io`, and GitHub would see your address
 asking for the Monero, P2Pool and XMRig-proxy images. The appliance image therefore carries tor,
-monero, p2pool, xmrig-proxy, the dashboard, caddy and the docker-socket-proxy, verified against
-the release key when the image was built, and first boot loads them from disk. Before Tor is up
+monero, p2pool, xmrig-proxy, the dashboard, caddy and the docker-socket-proxy, each pinned by
+digest, and first boot loads them from disk. A release build also checks the signature of every first-party image it takes from the
+registry, and a startup check skips the registry only for an image whose
+pinned digest is already on the machine. Before Tor is up
 the machine's only network traffic is DHCP and DNS from your router, time synchronization, and the
 clock check against `www.debian.org` that Tor needs before it can build circuits; none of it
 names Pithead. After Tor is up, release metadata, upgrade bundles and OS updates all go through

@@ -144,7 +144,7 @@ check_release_verification() {
     elif ! cosign_available; then
         dr_warn_surface release-verification "cosign.pub is present but docker is not available to run the verifier — 'up'/'upgrade' refuse to pull until it is. Start the Docker daemon." "The container engine is not available to run the release verifier, so no image can be pulled until it is back. The appliance image ships that engine, so this system copy is faulty."
     elif cosign_host_bin >/dev/null; then
-        dr_ok release-verification "Release signatures are checked with the cosign baked into this appliance; the baked images were verified when the image was built, and nothing is fetched to verify them."
+        dr_ok release-verification "Release signatures are checked with the cosign baked into this appliance, and no verifier image is fetched."
     elif docker image inspect "$COSIGN_IMAGE" >/dev/null 2>&1; then
         dr_ok release-verification "'up' and 'upgrade' verify the release images against cosign.pub; the pinned verifier image is already here, nothing to install."
     else

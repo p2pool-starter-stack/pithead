@@ -21,7 +21,7 @@ phase_provision_registry_cut() {
         return 0
     fi
     read -r host port <<<"$endpoint"
-    if _ssh "ip=\$(getent ahostsv4 '$host' | awk 'NR==1{print \$1}'); [ -n \"\$ip\" ] && iptables -I OUTPUT 1 -p tcp -d \"\$ip\" --dport '$port' -m comment --comment pithead-978-registry-cut -j REJECT"; then
+    if _ssh "ips=\$(getent ahosts '$host' | awk '{print \$1}' | sort -u); [ -n \"\$ips\" ] || exit 1; for ip in \$ips; do case \$ip in *:*) t=ip6tables ;; *) t=iptables ;; esac; \$t -I OUTPUT 1 -p tcp -d \$ip --dport '$port' -m comment --comment pithead-978-registry-cut -j REJECT || exit 1; done"; then
         ok "the registry is unreachable from the guest for the whole of provisioning (#978)"
     else
         bad "could not cut the guest off from the registry (#978)"
@@ -31,7 +31,7 @@ phase_provision_registry_cut() {
 
 phase_provision_registry_untouched() {
     local hits
-    hits=$(_ssh "iptables -L OUTPUT -v -n -x | awk '/pithead-978-registry-cut/ {sum += \$1; seen = 1} END {if (seen) print sum + 0; else print \"missing\"}'" 2>/dev/null | tr -d '\r\n')
+    hits=$(_ssh "{ iptables -L OUTPUT -v -n -x; ip6tables -L OUTPUT -v -n -x; } | awk '/pithead-978-registry-cut/ {sum += \$1; seen = 1} END {if (seen) print sum + 0; else print \"missing\"}'" 2>/dev/null | tr -d '\r\n')
     if [ "$hits" = 0 ]; then
         ok "provisioning never tried to reach the registry (#978)"
     else

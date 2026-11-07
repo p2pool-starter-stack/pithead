@@ -34,11 +34,13 @@ cosign_available() {
 }
 
 cosign_run() {
-    local bin args=()
+    local bin home rc args=()
     if bin=$(cosign_host_bin); then
         args=("${@/#\/w\//$PWD/}")
-        HOME=/tmp "$bin" "${args[@]}"
-        return
+        home=$(mktemp -d) || return 1
+        HOME="$home" "$bin" "${args[@]}" && rc=0 || rc=$?
+        rm -rf "$home"
+        return "$rc"
     fi
     docker image inspect "$COSIGN_IMAGE" >/dev/null 2>&1 ||
         docker pull -q "$COSIGN_IMAGE" >/dev/null 2>&1 ||
@@ -107,8 +109,6 @@ verify_release_images() {
         cosign_registry_args=(--allow-http-registry)
     fi
     for suffix in tor monero p2pool xmrig-proxy dashboard; do
-        is_appliance && [ -f "${PITHEAD_IMAGES_DIR:-/opt/pithead/images}/${suffix}.tar.gz" ] && continue
-        verified=$((verified + 1))
         repo="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-${suffix}"
         # #557: plain `sha="$(...)"` aborts under errexit on a no-match grep BEFORE this error()
         # fires — `if !` suspends errexit for the assignment so the crafted diagnostic is reachable.
@@ -116,6 +116,8 @@ verify_release_images() {
             error "cosign.pub is present but pithead-${suffix} is not digest-pinned in docker-compose.yml — cannot bind verification to the bytes compose pulls; refusing. A signed release bundle pins every first-party image by @sha256."
         fi
         image="${repo}@${sha}"
+        is_appliance && docker image inspect "$image" >/dev/null 2>&1 && continue
+        verified=$((verified + 1))
         if ! out=$(cosign_run verify --key cosign.pub --private-infrastructure "${cosign_registry_args[@]}" "$image" 2>&1); then
             # Strip control chars: cosign's stderr echoes registry-supplied bytes, and error()
             # prints via `echo -e`, so an attacker-controlled registry response could otherwise
@@ -135,7 +137,7 @@ verify_release_images() {
     if [ "$verified" -eq 5 ]; then
         log "All 5 release images verify against their pinned digest (cosign.pub)."
     else
-        log "$verified of 5 release images verify against their pinned digest (cosign.pub); the rest are baked into this appliance."
+        log "$verified of 5 release images verify against their pinned digest (cosign.pub); the rest are present locally at their pinned digest."
     fi
 }
 

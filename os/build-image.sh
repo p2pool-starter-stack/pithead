@@ -277,6 +277,7 @@ if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
     docker pull -q "$WIZARD_SOURCE" >/dev/null
     docker tag "$WIZARD_SOURCE" "$WIZARD_IMAGE"
 elif [ "${PITHEAD_WIZARD_FROM_REGISTRY:-0}" = "1" ]; then
+    verify_baked_image "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-dashboard@$(grep -oE 'pithead-dashboard:[^[:space:]]*@sha256:[0-9a-f]{64}' os/build/stage/docker-compose.yml | grep -oE 'sha256:[0-9a-f]{64}' | head -1)" || exit 1
     docker pull -q "$WIZARD_IMAGE" >/dev/null
 else
     docker build -q -t "$WIZARD_IMAGE" dashboard >/dev/null

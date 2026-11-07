@@ -19,7 +19,6 @@
 # is how an appliance ended up unable to install from its own stick — the store was broken by the
 # reset, not by anything the wizard did. A correct BASE layer carries no `lower` file at all, so a
 # zero-length one is damage, never a legitimate state.
-#
 repair_broken_image_store() { # $1: container engine
     local engine="$1" root
     root=$("$engine" info --format '{{.Store.GraphRoot}}' 2>/dev/null) || return 0
