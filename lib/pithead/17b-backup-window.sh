@@ -1,5 +1,4 @@
 # shellcheck shell=bash
-# Opt-in observations exclude raw fields and never alter startup status.
 backup_window_observe() {
     [[ "${PITHEAD_BACKUP_WINDOW_TOKEN:-}" =~ ^[0-9a-f]{32}$ ]] || return 0
     python3 - "$PITHEAD_BACKUP_WINDOW_TOKEN" "$1" 2>/dev/null <<'PY' || true
@@ -30,11 +29,9 @@ def utc_timestamp(value):
         return None  # RFC3339 -00:00 means the local offset is unknown.
     try:
         offset = "+00:00" if value.endswith("Z") else value[-6:]
-        # Parse whole seconds only: Python 3.10 rejects Docker's nanosecond fraction.
         utc = datetime.datetime.fromisoformat(value[:19] + offset).astimezone(datetime.timezone.utc)
     except (ValueError, OverflowError):
         return None
-    # Preserve Docker's fractional precision rather than truncating nanoseconds.
     return utc.isoformat(timespec="seconds")[:-6] + (match["fraction"] or "") + "Z"
 
 

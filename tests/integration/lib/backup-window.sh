@@ -1,5 +1,4 @@
 # shellcheck shell=bash
-# Create the result before preflight or candidate deployment.
 backup_window_init() {
     local parent="${IT_BACKUP_WINDOW_DIR:-${CI_ARTIFACTS:-${TMPDIR:-}}}"
     if ! BACKUP_WINDOW_DIR="$(python3 "$HERE/lib/backup-window.py" init "$parent")"; then
@@ -37,7 +36,6 @@ backup_window_attempt() {
 
 backup_window_finish() { # <original exit> <valid|invalid> <original transcript>
     [ -n "${BACKUP_WINDOW_DIR:-}" ] || return 0
-    # Failure to collect diagnostics never replaces the backup's numeric exit status.
     local sanitized
     if sanitized="$(backup_sanitize_output "$3")"; then
         printf '%s\n' "$sanitized" | python3 "$HERE/lib/backup-window.py" diagnostics "$BACKUP_WINDOW_DIR" || true

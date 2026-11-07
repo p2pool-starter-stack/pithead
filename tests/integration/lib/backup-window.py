@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Version 1 backup-window producer and strict observation validator (stdlib only)."""
 
 import datetime
 import json

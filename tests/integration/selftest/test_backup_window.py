@@ -1,5 +1,3 @@
-"""Pure fixtures for the versioned backup result; no daemon or SSH."""
-
 import copy
 import importlib.util
 import json

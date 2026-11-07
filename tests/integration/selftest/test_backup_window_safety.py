@@ -1,5 +1,3 @@
-"""Adversarial result-storage and semantic-validation fixtures."""
-
 import copy
 import importlib.util
 import io

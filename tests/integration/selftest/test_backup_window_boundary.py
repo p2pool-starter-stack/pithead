@@ -1,5 +1,3 @@
-"""Exercise the real shared restart observer and wrapper against bounded fakes."""
-
 import importlib.util
 import json
 import os

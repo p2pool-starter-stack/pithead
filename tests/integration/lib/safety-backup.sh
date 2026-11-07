@@ -2,7 +2,6 @@
 backup_stack() {
     command -v python3 >/dev/null || die "python3 is required before the safety backup can run."
     log "Taking a safety backup of the live stack (the rollback anchor)"
-    # Unattended plaintext backups require --no-encrypt, and the anchor stays on the bench (#2757).
     backup_window_attempt
     local out rc=0 archive_state=invalid token="" archive_dir before="" after="" new="" census_ok=1
     archive_dir="$CANONICAL_DIR/backups"
