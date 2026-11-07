@@ -356,7 +356,8 @@ wizard_write_config() {
 wizard_print_pointer() {
     echo ""
     echo "That's the core config — everything else (ports, XvB, alerts, energy pricing, per-worker"
-    echo "overrides, ...) keeps its default. Want a mining subaddress, payout confirmation, or per-kWh cost?"
-    echo "Set monero.subaddress / monero.view_key / dashboard.energy.cost_per_kwh in"
+    echo "overrides, ...) keeps its default. Want a mining subaddress, payout confirmation, a per-kWh"
+    echo "cost, or per-worker overrides? Set monero.subaddress / monero.view_key /"
+    echo "dashboard.energy.cost_per_kwh / workers.list in"
     echo "$CONFIG_FILE and run '$0 apply' — see $DOCS_URL/docs/configuration.md, or use the dashboard's config editor."
 }
