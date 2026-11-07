@@ -7,8 +7,6 @@ from tests.web._wizard_support import *  # noqa: F403
     ["pit-X7KM2Q", "PIT-X7KM2Q", "pit-x7km2q", "X7KM2Q", "x7km2q", "  pit-X7KM2Q  "],
 )
 async def test_token_transcription_variants_all_pass(client, typed):
-    # The operator copies from a console, often on a phone that autocapitalizes. Case and the
-    # pit- prefix carry no entropy; neither may fail a correct transcription.
     r = await _auth(client, typed)
     assert r.status == 302
     assert "SameSite=Strict" in r.headers.get("Set-Cookie", "")
