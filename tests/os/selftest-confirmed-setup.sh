@@ -18,6 +18,7 @@ is_deployed() { [ "$deployed" = yes ]; }
 mutation_lock_acquire() { trace lock; }
 mutation_lock_release() { trace unlock; }
 render_env() { trace render; }
+render_dashboard_auth() { :; }
 provision_tor() { trace tor; }
 prompt_start_stack() { trace start; }
 for stub in check_prerequisites ensure_config_exists ensure_onion_password parse_and_validate_config \
@@ -28,7 +29,7 @@ for stub in check_prerequisites ensure_config_exists ensure_onion_password parse
     announce_dashboard_url provision_local_miner; do
     eval "$stub() { :; }"
 done
-REBOOT_REQUIRED=false deployed=yes
+CONTROL_DIR="$work/control" REBOOT_REQUIRED=false deployed=yes
 if (PITHEAD_SETUP_AGAIN=1 setup </dev/null) >"$work/direct.log" 2>&1; then
     echo 'headless setup accepted an existing deployment' >&2
     exit 1

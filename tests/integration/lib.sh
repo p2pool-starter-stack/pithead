@@ -12,6 +12,7 @@ source "${BASH_SOURCE[0]%/*}/lib/readiness-churn.sh"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
 source "${BASH_SOURCE[0]%/*}/lib/remote-endpoints.sh"
 source "${BASH_SOURCE[0]%/*}/lib/redact-it-password.sh"
+source "${BASH_SOURCE[0]%/*}/lib/dashboard-guest-session.sh"
 # --- Output -----------------------------------------------------------------
 # Colour only on a TTY with NO_COLOR unset (https://no-color.org), matching pithead.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -38,9 +39,9 @@ it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
 # POSITION (#1596); an IP by SCOPE (#1609), its \x01 sentinel an INVARIANT, not an input guess (#1613).
 redact() {
     redact_it_password | redact_onions | sed -E \
-        -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|EXPLORER_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
+        -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWORD_HASH|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|EXPLORER_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
         -e 's/(Stratum password:).*/\1 <redacted>/; s/(Stratum authentication is ON: every rig must connect with pass ).*/\1<redacted>/' \
-        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
+        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|password_hash|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
 }
 # Counters are global so the runner can total them across scenarios. The skip buckets and the
 # three helpers that move them live next door; sourced here so anything that has lib.sh has them.
@@ -271,9 +272,7 @@ quote_arg() { printf '%q' "$1"; }
 # Run pithead with a subcommand on the target, e.g. `pithead status` or `pithead apply -y`.
 pithead() { rx "$IT_PITHEAD $*"; }
 
-# Fetch the dashboard state JSON from the box (dashboard binds 127.0.0.1:8000 on the host
-# network). Empty output on failure so callers can detect unreachable.
-api_state() { rx "curl -fsS --max-time 10 http://127.0.0.1:8000/api/state" 2>/dev/null; }
+source "${BASH_SOURCE[0]%/*}/lib/dashboard-session.sh"
 
 # Pure: does a /metrics response body carry at least one pithead_ SAMPLE line (#379)? Samples
 # start the line with the metric name; a "# HELP pithead_…" comment line must NOT count — a body

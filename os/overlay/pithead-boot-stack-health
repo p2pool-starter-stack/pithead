@@ -58,10 +58,6 @@ gate_resolve_spec() { # <host> <port> -> a --resolve spec, or empty when the hos
     esac
 }
 
-# Same domain-separated digest as Caddy's renderer, using the owner-only .env auth hash.
-# Stream the capability to curl's stdin so it never becomes a process argument.
 gate_probe_header() {
-    local capability
-    capability=$(printf 'pithead-boot-health-v1:%s' "$(gate_env_val DASHBOARD_AUTH_HASH_B64)" | sha256sum | cut -d' ' -f1)
-    printf 'X-Pithead-Boot-Probe: %s\n' "$capability"
+    printf 'X-Pithead-Boot-Probe: %s\n' "$(gate_env_val DASHBOARD_BOOT_PROBE_TOKEN)"
 }

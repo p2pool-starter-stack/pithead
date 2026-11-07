@@ -60,6 +60,12 @@ setup_baseline() {
     )
 }
 
+miner_dashboard_state() {
+    declare -F dashboard_guest_get >/dev/null ||
+        source "$MOUNT/harness/tests/integration/lib/dashboard-guest-session.sh"
+    (cd "$MOUNT/current" && dashboard_guest_get http://127.0.0.1:8000/api/state 10)
+}
+
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     SERIAL_CONSOLE=/dev/null
@@ -103,6 +109,11 @@ if [ "$NEW_SHA" = --self-test ]; then
     setup_rc=0
     SETUP_EXIT=17 setup_baseline || setup_rc=$?
     [ "$setup_rc" -eq 17 ]
+    dashboard_guest_get() {
+        [ "$PWD" = "$MOUNT/current" ] && [ "$*" = 'http://127.0.0.1:8000/api/state 10' ]
+        printf '{"fixture":true}\n'
+    }
+    [ "$(miner_dashboard_state)" = '{"fixture":true}' ]
     rm -rf "$MOUNT"
     mkdir "$MOUNT"
     printf '1.20.0\n' >"$INPUT/fixture/pithead/VERSION"
@@ -217,7 +228,7 @@ stage miner-share
 miner_start=$SECONDS
 miner_ready=0
 while :; do
-    miner_state="$(curl -fsS --max-time 10 http://127.0.0.1:8000/api/state 2>/dev/null || true)"
+    miner_state="$(miner_dashboard_state 2>/dev/null || true)"
     miner_ready=0
     [ "$(jq -r '.sync.monero.state // ""' <<<"$miner_state" 2>/dev/null)" = "done" ] && miner_ready=$((miner_ready + 1))
     [ "$(jq -r '.sync.tari.state // ""' <<<"$miner_state" 2>/dev/null)" = "done" ] && miner_ready=$((miner_ready + 2))

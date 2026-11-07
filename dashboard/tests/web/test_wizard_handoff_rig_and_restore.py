@@ -140,7 +140,7 @@ async def test_handoff_serves_what_the_host_published(client, spool):
 
 async def test_ack_needs_auth_and_a_published_handoff(client, spool):
     r = await client.post("/handoff-ack", allow_redirects=False)
-    assert r.status == 302
+    assert r.status == 403
     await _auth(client)
     assert (await client.post("/handoff-ack")).status == 400  # nothing published yet
     assert not (spool / "handoff-ack").exists()
@@ -329,7 +329,7 @@ async def test_unauthed_rig_submit_writes_nothing(client, seeded):
     r = await client.post(
         "/submit", data={"role": "rig", "rig_pool": "10.0.0.5:3333"}, allow_redirects=False
     )
-    assert r.status == 302
+    assert r.status == 403
     assert not (seeded / "rig-request.json").exists()
 
 
@@ -393,7 +393,7 @@ async def test_restore_oversize_upload_is_refused_without_spooling(client, seede
     assert not (seeded / "restore-archive").exists()
 
 
-async def test_restore_unauthed_redirects_and_writes_nothing(client, seeded):
+async def test_restore_unauthed_is_forbidden_and_writes_nothing(client, seeded):
     r = await client.post("/submit-restore", data=_archive_form(), allow_redirects=False)
-    assert r.status == 302
+    assert r.status == 403
     assert not (seeded / "restore-archive").exists()

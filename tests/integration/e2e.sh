@@ -296,7 +296,7 @@ restore_all() {
 
     # 3. Chains sanity: they must be untouched (the whole point).
     local sync
-    sync="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '\"\(.sync.monero.state)/\(.sync.tari.state)\"' 2>/dev/null" || true)"
+    sync="$(bench_api_state 2>/dev/null | jq -r '"\(.sync.monero.state)/\(.sync.tari.state)"' 2>/dev/null || true)"
     [ -n "$sync" ] && step "post-restore sync state (monero/tari): $sync"
 
     if [ "$CONTROL_PROOF_FAILED" = "1" ]; then
@@ -317,6 +317,7 @@ restore_all() {
 }
 trap e2e_exit EXIT
 # --- Small waiters / helpers ------------------------------------------------
+source "$HERE/lib/e2e-dashboard-session.sh" || exit $?
 wait_bench_healthy() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300}))
     while :; do
@@ -330,7 +331,7 @@ wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st refusal="destructive phases"
     [ "${2:-}" = restore ] && refusal="baseline proof"
     while :; do
-        st="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '\"\(.sync.monero.state)/\(.sync.tari.state)\"' 2>/dev/null" || true)"
+        st="$(bench_api_state 2>/dev/null | jq -r '"\(.sync.monero.state)/\(.sync.tari.state)"' 2>/dev/null || true)"
         [ "$st" = "done/done" ] && {
             ok "monero + tari re-confirmed synced ($st) — existing chains reused, no re-sync"
             return 0
@@ -355,7 +356,7 @@ miner_reload() {
 wait_workers() { # <n> <timeout_s>
     local want="$1" deadline=$(($(date +%s) + ${2:-180})) got
     while :; do
-        got="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.proxy_workers // 0' 2>/dev/null" || echo 0)"
+        got="$(bench_api_state 2>/dev/null | jq -r '.proxy_workers // 0' 2>/dev/null || echo 0)"
         [ -n "$got" ] && [ "$got" -ge "$want" ] 2>/dev/null && {
             ok "$got worker(s) mining through the test bench"
             return 0
@@ -415,7 +416,7 @@ preflight() {
         if wait_synced 120 preflight; then
             ok "bench chains synced (monero done, tari done)"
         else
-            sync_line="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '$E2E_SYNC_SUMMARY_JQ' 2>/dev/null" || true)"
+            sync_line="$(bench_api_state 2>/dev/null | jq -r "$E2E_SYNC_SUMMARY_JQ" 2>/dev/null || true)"
             [ -n "$sync_line" ] || die "Cannot read the bench dashboard's sync state (127.0.0.1:8000/api/state on $BENCH_HOST) — is the stack up? --skip-preflight overrides."
             read -r mst mheights tst theights <<<"$sync_line"
             warn "monero: $mst (current/target $mheights)"

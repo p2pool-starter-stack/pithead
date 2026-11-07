@@ -306,7 +306,7 @@ async def test_retry_is_authenticated_and_only_opens_a_real_failure(client, spoo
     unauth = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
     await unauth.start_server()
     try:
-        assert (await unauth.post("/retry", allow_redirects=False)).status == 302
+        assert (await unauth.post("/retry", allow_redirects=False)).status == 403
     finally:
         await unauth.close()
     await _auth(client)

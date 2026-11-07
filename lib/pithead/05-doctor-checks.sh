@@ -157,7 +157,7 @@ check_release_verification() {
 # when the dashboard has no verdict (not running, Tari off, or the loop has not run yet).
 tari_chain_verdict() {
     command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-    curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
+    dashboard_state_request -fsS --max-time 5 2>/dev/null |
         jq -r '.tari.health // empty | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null || true
 }
 
@@ -196,7 +196,7 @@ tari_chain_status_line() {
 # remote node whose peers are not visible, or the loop has not run yet).
 monero_chain_verdict() {
     command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-    curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
+    dashboard_state_request -fsS --max-time 5 2>/dev/null |
         jq -r '.monero.health // empty | select(.level == "green" or .level == "red") | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null || true
 }
 

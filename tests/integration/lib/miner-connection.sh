@@ -8,14 +8,16 @@ miner_connection_matches() { # <body> <password> <tls> <certificate-digest> <por
 }
 
 assert_miner_connection_live() {
-    local response headers body password tls fingerprint="" dir port
-    response=$(rx 'curl -fsS --max-time 15 -D - http://127.0.0.1:8000/api/miner-connection' 2>/dev/null) || {
+    local headers body password tls fingerprint="" dir port
+    headers=$(dashboard_api_headers /api/miner-connection) || {
         it_fail "Connect a miner endpoint responds (#3092)" "request failed"
         return
     }
-    response=${response//$'\r'/}
-    headers=${response%%$'\n\n'*}
-    body=${response#*$'\n\n'}
+    body=$(dashboard_api_get /api/miner-connection) || {
+        it_fail "Connect a miner endpoint responds (#3092)" "request failed"
+        return
+    }
+    headers=${headers//$'\r'/}
     if printf '%s\n' "$headers" | grep -Eiq '^Cache-Control: no-store$'; then
         it_pass "Connect a miner credentials are not cached (#3092)"
     else

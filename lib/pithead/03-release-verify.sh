@@ -169,6 +169,7 @@ reconcile_compose_images() {
 }
 
 stack_upgrade() {
+    local upgrade_caddy_before upgrade_caddy_changed=0
     if is_appliance; then
         error "This is a Pithead OS appliance: the program tree is delivered by OS images and resynced from the system slot at every boot, so a tarball upgrade here would silently revert at the next reboot. Updates arrive as signed OS images — see the appliance guide."
     fi
@@ -194,13 +195,16 @@ stack_upgrade() {
     DEPLOYMENT_COMPLETED=true
     render_env "$PITHEAD_ENV_STAGE"
     mv "$PITHEAD_ENV_STAGE" "$ENV_FILE"
+    render_dashboard_auth "$CONTROL_DIR" || error "Could not render the dashboard authentication file."
     # #2636: a Tari major that migrates chain data needs room for the old database again. Refuse
     # on the freshly rendered .env and before provision_node_onions, whose onion step can start tor:
     # nothing is started or recreated first, so the migrating node never starts on a full volume.
     tari_upgrade_space_precheck
     provision_node_onions # #103: as in apply — a node switched to local needs its onion first
     inject_service_configs
+    upgrade_caddy_before=$(cat Caddyfile 2>/dev/null || true)
     generate_caddyfile
+    [ "$upgrade_caddy_before" = "$(cat Caddyfile 2>/dev/null)" ] || upgrade_caddy_changed=1
     provision_ssh_access
     provision_console_login
     log "Re-rendered generated config for the current release."
@@ -214,6 +218,7 @@ stack_upgrade() {
         verify_release_images
         PITHEAD_PULL=always compose_up_checked -d || error "Upgrade failed during 'docker compose up' — see the error above."
     fi
+    [ "$upgrade_caddy_changed" -eq 0 ] || docker compose restart caddy || error "Upgrade rebuilt the dashboard but could not activate the new Caddy configuration."
     if [ "${DASHBOARD_ONION_ENABLED:-false}" == "true" ] && onion_missing "${DASHBOARD_ONION:-}"; then
         if provision_dashboard_onion && render_env; then
             generate_caddyfile

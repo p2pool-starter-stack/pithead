@@ -10,7 +10,11 @@ run_restore_dashboard_probe() {
         it_fail "restore probe captures the original Tari baseline (#3432)" "configuration, secrets or Tari mode unreadable"
         return 1
     fi
-    if rx 'bash -s' --stdin <"$(dirname "${BASH_SOURCE[0]}")/restore-dashboard-guest.sh" 2>&1 |
+    if {
+        declare -p IT_DASHBOARD_USER IT_DASHBOARD_PASSWORD 2>/dev/null || true
+        cat "${BASH_SOURCE[0]%/*}/dashboard-guest-session.sh" "${BASH_SOURCE[0]%/*}/restore-dashboard-guest.sh"
+    } |
+        rx 'bash -s' --stdin 2>&1 |
         redact >"$OUT_DIR/restore-dashboard.log"; then
         it_pass "CLI restore refreshes dashboard configuration and running energy cost (#3432)"
     else

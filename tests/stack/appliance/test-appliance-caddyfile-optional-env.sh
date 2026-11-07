@@ -102,10 +102,9 @@ coe_rc=$?
 assert_rc "#1246: render survives a .env with no DASHBOARD_AUTH_HASH_B64" "$coe_rc" 0
 assert_eq "#1246: it renders a real Caddyfile and degrades to no auth block" "$(coe_state)" "no-auth"
 
-# Positive control for the classifier: it MUST report with-auth when the key is present. "no-auth"
-# is worth nothing until the same instrument has been shown finding an auth block that is there.
+# A legacy hash no longer changes Caddy policy; authentication is handled by the dashboard.
 coe_render "$STACK" "$coe_full" >/dev/null 2>&1
-assert_eq "#1246 control: the auth block IS rendered when the key is present" "$(coe_state)" "with-auth"
+assert_eq "#1246 control: a legacy hash still renders without basic auth" "$(coe_state)" "no-auth"
 
 echo "== black-box: the same render with the default respelled off aborts instead (#1246) =="
 coe_mutant="$COE/pithead-mutant"
@@ -132,4 +131,4 @@ assert_eq "#1246 mutant: and the abort leaves no Caddyfile at all" "$(coe_state)
 coe_render "$coe_mutant" "$coe_full" >/dev/null 2>&1
 coe_rc=$?
 assert_rc "#1246 mutant: still renders fine when the key IS present" "$coe_rc" 0
-assert_eq "#1246 mutant: and that render still carries the auth block" "$(coe_state)" "with-auth"
+assert_eq "#1246 mutant: and that render still delegates auth" "$(coe_state)" "no-auth"

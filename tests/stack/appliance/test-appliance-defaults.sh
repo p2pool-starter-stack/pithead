@@ -275,6 +275,55 @@ assert_eq "no password -> the control channel is NOT turned on (#1066)" "$(jq -r
 printf '{"dashboard":{"control":{"enabled":false},"auth":{"password":"a-real-password"}}}' >"$ADSB/config.json"
 PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" apply_appliance_defaults >/dev/null 2>&1
 assert_eq "an explicit control.enabled false is respected" "$(jq -r '.dashboard.control.enabled' "$ADSB/config.json")" "false"
+auth_hash='$2y$12$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+printf '{"dashboard":{"auth":{"username":"admin","users":[{"name":"admin","role":"admin","password_hash":"%s"}]}}}' "$auth_hash" >"$ADSB/config.json"
+PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" ensure_appliance_dashboard_password >/dev/null 2>&1
+assert_eq "named accounts do not create a colliding legacy login" "$(jq -r '.dashboard.auth.password // ""' "$ADSB/config.json")" ""
+PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" apply_appliance_defaults >/dev/null 2>&1
+assert_eq "a named admin enables appliance control" "$(jq -r '.dashboard.control.enabled' "$ADSB/config.json")" "true"
+real_jq=$(command -v jq)
+mkdir -p "$ADSB/bin"
+cat >"$ADSB/bin/jq" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${JQ_ARGV_LOG:?}"
+exec "${REAL_JQ:?}" "$@"
+EOF
+chmod +x "$ADSB/bin/jq"
+: >"$ADSB/jq.argv"
+: >"$ADSB/console-secret"
+printf '%s' '{"dashboard":{"auth":{"username":"admin"}}}' >"$ADSB/config.json"
+out=$(PATH="$ADSB/bin:$PATH" REAL_JQ="$real_jq" JQ_ARGV_LOG="$ADSB/jq.argv" \
+    PITHEAD_CONSOLE_SECRET_DEVICE="$ADSB/console-secret" PITHEAD_CONFIG_FILE="$ADSB/config.json" \
+    run_sourced "$ADSB" eval 'set -x; ensure_appliance_dashboard_password' 2>&1)
+generated_password=$($real_jq -r '.dashboard.auth.password' "$ADSB/config.json")
+case "$(cat "$ADSB/jq.argv")$out" in
+*"$generated_password"*) bad "generated dashboard password stays out of argv and logs" "generated password was exposed" ;;
+*) ok "generated dashboard password stays out of argv and logs" ;;
+esac
+case "$(cat "$ADSB/console-secret")" in
+*"$generated_password"*) ok "generated dashboard password reaches only the physical-console sink" ;;
+*) bad "generated dashboard password reaches only the physical-console sink" "physical-console sink was empty" ;;
+esac
+unset generated_password
+: >"$ADSB/jq.argv"
+printf '%s' '{"dashboard":{"onion":{"enabled":true},"auth":{}}}' >"$ADSB/config.json"
+out=$(PATH="$ADSB/bin:$PATH" REAL_JQ="$real_jq" JQ_ARGV_LOG="$ADSB/jq.argv" \
+    PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" eval 'set -x; ensure_onion_password' 2>&1)
+onion_password=$($real_jq -r '.dashboard.auth.password' "$ADSB/config.json")
+if [ -n "$onion_password" ]; then ok "onion fallback writes its generated password"; else bad "onion fallback writes its generated password" "password was empty"; fi
+case "$(cat "$ADSB/jq.argv")$out" in
+*"$onion_password"*) bad "generated onion password stays out of argv and logs" "generated password was exposed" ;;
+*) ok "generated onion password stays out of argv and logs" ;;
+esac
+unset onion_password
+existing_password=$(openssl rand -hex 12)
+printf '{"dashboard":{"onion":{"enabled":true},"auth":{"password":"%s"}}}' "$existing_password" >"$ADSB/config.json"
+out=$(PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" eval 'set -x; ensure_onion_password; ensure_appliance_dashboard_password' 2>&1)
+case "$out" in
+*"$existing_password"*) bad "existing dashboard password stays out of xtrace" "existing password was exposed" ;;
+*) ok "existing dashboard password stays out of xtrace" ;;
+esac
+unset existing_password
 # The whole first-boot sequence for the documented "No login" answer, in the order the appliance
 # runs it. The invariant is the one the validator enforces: this machine must never hand itself a
 # config carrying an enabled control channel and no password.

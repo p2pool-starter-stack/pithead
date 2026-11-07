@@ -54,20 +54,25 @@ assert_contains "update-check enable is INFO" "$(run_sourced "$SANDBOX" describe
 assert_contains "update-check enable mentions GitHub/Tor" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_CHECK_UPDATES false true)" "GitHub"
 assert_contains "update-check disable is INFO" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_CHECK_UPDATES true false)" "no longer contacts GitHub"
 
-# generate_caddyfile renders a basic_auth block ONLY when a hash is configured, carrying the username
-# and the *decoded* bcrypt string Caddy expects; with no hash the dashboard stays open (no basic_auth).
+# Caddy delegates authentication to the dashboard and strips spoofable identity headers.
 auth_hb64="$(printf '%s' '$2y$14$UNITTESTbcrypthashvalue000000000000000000000000000000' | openssl base64 -A)"
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_on="$(
     cd "$SANDBOX" && source "$STACK" 2>/dev/null
     set +e
     DASHBOARD_SECURE=true HOST_IP=box.lan DASHBOARD_AUTH_USER=admin DASHBOARD_AUTH_HASH_B64="$auth_hb64" \
+        DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token \
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-assert_contains "caddy renders basic_auth when login set" "$caddy_on" "basic_auth"
-assert_contains "caddy basic_auth carries the username" "$caddy_on" "admin"
-assert_contains "caddy basic_auth carries decoded hash" "$caddy_on" '$2y$14$UNITTESTbcrypthashvalue'
+assert_not_contains "caddy no longer renders browser basic auth" "$caddy_on" "basic_auth"
+assert_not_contains "caddy never embeds the bcrypt hash" "$caddy_on" '$2y$14$UNITTESTbcrypthashvalue'
+assert_contains "caddy strips spoofed auth user" "$caddy_on" "header_up -X-Auth-User"
+assert_contains "caddy sets the forwarded scheme" "$caddy_on" 'header_up X-Forwarded-Proto {scheme}'
+assert_contains "caddy sets the forwarded client" "$caddy_on" 'header_up X-Forwarded-For {remote_host}'
+assert_contains "caddy fails closed until the backend loads auth" "$caddy_on" 'uri /api/auth/ready'
+assert_contains "boot bypass requires the host capability" "$caddy_on" 'header X-Pithead-Boot-Probe "fixture-probe-token"'
+assert_contains "ordinary requests strip a forged boot marker" "$caddy_on" 'header_up -X-Pithead-Boot-Probe'
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_off="$(
     cd "$SANDBOX" && source "$STACK" 2>/dev/null
@@ -503,85 +508,39 @@ mk_tmpdir SP
 mkdir -p "$SP/bin"
 cat >"$SP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >>"${CURL_ARGV_LOG:-/dev/null}"
+cat >>"${CURL_CONFIG_LOG:-/dev/null}"
 [ -n "${CURL_BODY:-}" ] && printf '%s' "$CURL_BODY"
 exit "${CURL_RC:-0}"
 EOF
 chmod +x "$SP/bin/curl"
+printf 'DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token\n' >"$SP/env"
 # Monero mid-sync + Tari still discovering its target height: both surface, monero with numbers.
 sp_body='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":87,"current":2451000,"target":2810000,"remaining":359000},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
-out="$(CURL_BODY="$sp_body" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
+out="$(PITHEAD_ENV_FILE="$SP/env" CURL_BODY="$sp_body" CURL_ARGV_LOG="$SP/argv" CURL_CONFIG_LOG="$SP/config" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: monero syncing shows percent + blocks-to-go" "$out" "87% (2451000 / 2810000 blocks, 359000 to go)"
 assert_contains "sync progress: no-target chain reads as discovering" "$out" "discovering the target height"
 assert_contains "sync progress: header names the #35 hold" "$out" "held until it completes"
+assert_not_contains "dashboard state token stays out of curl argv" "$(cat "$SP/argv")" "fixture-probe-token"
+assert_contains "dashboard state token reaches curl config stdin" "$(cat "$SP/config")" "Authorization: Bearer fixture-probe-token"
+out="$(PITHEAD_ENV_FILE="$SP/env" CURL_BODY="$sp_body" CURL_CONFIG_LOG="$SP/trace-config" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" eval 'set -x; dashboard_state_request -fsS --max-time 3' 2>&1)"
+assert_not_contains "dashboard state token stays out of xtrace" "$out" "fixture-probe-token"
+assert_contains "dashboard state xtrace request keeps its bearer header" "$(cat "$SP/trace-config")" "Authorization: Bearer fixture-probe-token"
 # Both synced: nothing to say (steady-state status stays quiet), non-zero return.
 sp_done='{"sync":{"monero":{"state":"done","percent":100,"current":10,"target":10,"remaining":0},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
 assert_eq "sync progress: both synced -> silent" \
-    "$(CURL_BODY="$sp_done" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
+    "$(PITHEAD_ENV_FILE="$SP/env" CURL_BODY="$sp_done" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
 # Only monero still syncing: the synced tari is omitted (not listed as done).
 sp_partial='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
-out="$(CURL_BODY="$sp_partial" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
+out="$(PITHEAD_ENV_FILE="$SP/env" CURL_BODY="$sp_partial" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: partial -> monero listed" "$out" "monero"
 assert_not_contains "sync progress: partial -> synced tari omitted" "$out" "tari"
 # Dashboard app not answering yet (curl fails): quiet, non-zero — graceful during startup.
 assert_eq "sync progress: dashboard down -> silent" \
-    "$(CURL_RC=22 PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
+    "$(PITHEAD_ENV_FILE="$SP/env" CURL_RC=22 PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
 rm -rf "$SP"
-
-echo "== black-box: dashboard auth lifecycle (#8) =="
-# Hashing uses the pinned Caddy image and stubbed `caddy hash-password` for the offline lifecycle.
-cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml"
-AUTH_LOG="$V/auth-docker.log"
-
-# (1) ENABLE: a password turns on basic_auth — hash + fingerprint persisted, plaintext never stored.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "proxy":{"donate_level":0}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"hunter2hunter2"}} }\n' "$WALLET" >"$V/config.json"
-: >"$AUTH_LOG"
-out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-rc=$?
-assert_rc "auth enable applies cleanly" "$rc" "0"
-assert_eq "auth username persisted" "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_USER)" "admin"
-hash1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)"
-fp1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)"
-[ -n "$hash1" ] && ok "auth hash persisted (base64)" || bad "auth hash persisted (base64)" "empty"
-[ -n "$fp1" ] && ok "auth fingerprint persisted" || bad "auth fingerprint persisted" "empty"
-assert_contains "auth hashing disables container logs" "$(cat "$AUTH_LOG")" "run --rm -i --log-driver none "
-assert_contains "auth hashed via the pinned caddy image" "$(cat "$AUTH_LOG")" "hash-password"
-assert_not_contains "auth password stays out of docker argv" "$(cat "$AUTH_LOG")" "hunter2hunter2"
-assert_contains "Caddyfile gains basic_auth" "$(cat "$V/Caddyfile")" "basic_auth"
-case "$(cat "$V/.env" "$V/Caddyfile")" in
-*hunter2hunter2*) bad "auth plaintext never persisted" "password leaked into .env/Caddyfile" ;;
-*) ok "auth plaintext never persisted" ;;
-esac
-
-# (2) REUSE: re-applying (here nudging an unrelated knob) keeps the SAME hash and does NOT re-hash —
-# bcrypt is salted, so a stable fingerprint is what keeps the Caddyfile from churning every apply.
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "proxy":{"donate_level":1}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"hunter2hunter2"}} }\n' "$WALLET" >"$V/config.json"
-: >"$AUTH_LOG"
-out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_eq "unchanged password keeps the same hash" "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)" "$hash1"
-case "$(cat "$AUTH_LOG")" in
-*hash-password*) bad "unchanged password is not re-hashed" "caddy hash-password was called again" ;;
-*) ok "unchanged password is not re-hashed (stable hash)" ;;
-esac
-
-# (3) CHANGE: a new password re-hashes (fingerprint changes) and recreates the caddy container.
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "proxy":{"donate_level":1}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"freshpass99"}} }\n' "$WALLET" >"$V/config.json"
-: >"$AUTH_LOG"
-out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_contains "password rotation disables container logs" "$(cat "$AUTH_LOG")" "run --rm -i --log-driver none "
-assert_contains "changed password re-hashes" "$(cat "$AUTH_LOG")" "hash-password"
-assert_eq "changed password updates fingerprint" "$([ "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)" != "$fp1" ] && echo changed)" "changed"
-assert_contains "auth change recreates caddy" "$(cat "$AUTH_LOG")" "restart caddy"
-
-# (4) DISABLE: clearing the password drops basic_auth — hash cleared, dashboard reachable again.
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "proxy":{"donate_level":1}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
-out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_eq "auth disable clears the hash" "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)" ""
-case "$(cat "$V/Caddyfile")" in
-*basic_auth*) bad "auth disable drops basic_auth" "basic_auth still present in the Caddyfile" ;;
-*) ok "auth disable drops basic_auth" ;;
-esac
 
 # Required Tari failover distinguishes long RPC outages from live progress.
 assert_contains "Tari-required preview names the outage window" "$(run_sourced "$SANDBOX" describe_change TARI_REQUIRED false true)" "15-minute Tari RPC outage"
 assert_contains "Tari-required preview exempts progress states" "$(run_sourced "$SANDBOX" describe_change TARI_REQUIRED false true)" "startup, migration and syncing only alert"
+source "$ROOT/tests/stack/dashboard/auth-deploy.sh"

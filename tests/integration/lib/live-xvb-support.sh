@@ -222,7 +222,7 @@ run_xvb_routing_smoke() {
         capture_artifacts "xvb-routing" "$OUT_DIR"
         return 0
     fi
-    XVB_FEED_TS_BEFORE="$(rx 'curl -fsS --max-time 8 http://127.0.0.1:8000/api/xvb-standby 2>/dev/null' | jq -r '(.ts // 0) | floor' 2>/dev/null)"
+    XVB_FEED_TS_BEFORE="$(dashboard_api_get /api/xvb-standby | jq -r '(.ts // 0) | floor' 2>/dev/null)"
     [[ "$XVB_FEED_TS_BEFORE" =~ ^[0-9]+$ ]] || XVB_FEED_TS_BEFORE=0
     arm_xvb_abort_restore
     # `donor` is the lowest tier (1,000 H/s); the box's own configured level is deliberately

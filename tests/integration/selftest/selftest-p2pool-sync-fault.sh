@@ -81,13 +81,15 @@ for CASE in success transient pre-fix missing-flag sticky raw-drift missing-modu
     export CASE STATE="$td/$CASE"
     mkdir -p "$STATE/data dir/stats/pool" "$STATE/scratch"
     echo 0 >"$STATE/clock"
+    printf '{}\n' >"$STATE/config.json"
     touch "$STATE/running"
     # A different, real-looking file must come back byte-for-byte, with its mode preserved.
     echo '{"pool_statistics":{"hashRate":9000000,"sidechainHeight":14000000}}' >"$STATE/original"
     cp "$STATE/original" "$STATE/data dir/stats/pool/stats"
     chmod 600 "$STATE/data dir/stats/pool/stats"
     rc=0
-    PATH="$td/bin:$PATH" TMPDIR="$STATE/scratch" bash "$td/probe.sh" "$STATE/data dir" >"$STATE/log" 2>&1 || rc=$?
+    (cd "$STATE" && PATH="$td/bin:$PATH" TMPDIR="$STATE/scratch" \
+        bash "$td/probe.sh" "$STATE/data dir") >"$STATE/log" 2>&1 || rc=$?
     [ -f "$STATE/running" ] # Every return path must start the writer again.
     if [ "$CASE" = restore-fails ]; then
         [ "$rc" -ne 0 ]

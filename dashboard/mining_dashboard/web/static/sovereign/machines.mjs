@@ -66,15 +66,21 @@ export class MachinesPage extends Component {
     opener?.focus();
   }
   render(
-    { state, connected = true, sessionExpired = false, onDirtyChange },
+    {
+      state,
+      connected = true,
+      sessionExpired = false,
+      readOnly = state?.auth?.enabled === true && state.auth.role !== "admin",
+      onDirtyChange,
+    },
     { find, sort, shares, inspect },
   ) {
     if (!state) return html`<p class="panel" role="status">Waiting for rig data…</p>`;
     const workers = Array.isArray(state.workers) ? state.workers : [];
     const rows = rigRows(workers, { find, sort });
-    const writable = connected && !sessionExpired;
+    const writable = connected && !sessionExpired && !readOnly;
     return html`<div class="machines-page">
-      <${ConnectCard} writable=${!sessionExpired} />
+      <${ConnectCard} writable=${!sessionExpired && !readOnly} />
       ${
         localMinerAvailable(state) && writable
           ? html`<section class="panel" aria-labelledby="local-miner-title"><h2 id="local-miner-title">This box</h2>

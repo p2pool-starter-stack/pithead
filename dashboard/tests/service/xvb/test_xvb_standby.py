@@ -1,12 +1,19 @@
 import asyncio
+import base64
+import json
 from unittest.mock import MagicMock, patch
+from urllib.parse import quote
 
+import bcrypt
 import pytest
 import requests
+from aiohttp import web
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY
+from mining_dashboard.service import dashboard_auth
 from mining_dashboard.service.storage_service import StateManager
 from mining_dashboard.service.xvb.xvb_standby import XvbStandbyPuller, parse_standby
+from mining_dashboard.web import auth
 
 
 class _Resp:
@@ -54,6 +61,51 @@ class TestParseStandby:
 
 
 class TestPuller:
+    async def test_machine_credential_reaches_protected_server(
+        self, aiohttp_server, tmp_path, monkeypatch
+    ):
+        password = "standby-pässword"
+        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=4)).decode()
+        auth_file = tmp_path / "auth.json"
+        auth_file.write_text(
+            json.dumps(
+                {
+                    "users": [
+                        {
+                            "name": "operator",
+                            "role": "admin",
+                            "password_hash": hashed,
+                        }
+                    ],
+                    "standby_password_hash": hashed,
+                }
+            )
+        )
+        monkeypatch.setenv("DASHBOARD_AUTH_FILE", str(auth_file))
+        sm = StateManager(db_path=":memory:")
+        app = web.Application(middlewares=[auth.middleware])
+        app["state_manager"] = sm
+        app["auth_runtime"] = {
+            "attempts": dashboard_auth.Attempts(),
+            "busy": 0,
+            "signature": "",
+        }
+
+        async def standby(_request):
+            return web.json_response({"commanded_fraction": 0.42})
+
+        app.router.add_get("/api/xvb-standby", standby)
+        server = await aiohttp_server(app)
+        source = str(server.make_url("/api/xvb-standby")).replace(
+            "http://", f"http://standby:{quote(password, safe='')}@", 1
+        )
+        try:
+            pulled = await asyncio.to_thread(XvbStandbyPuller(sm, source=source).fetch_once)
+            assert pulled["commanded_fraction"] == 0.42
+            assert sm.get_xvb_standby()["commanded_fraction"] == 0.42
+        finally:
+            sm.close()
+
     def test_disabled_when_source_blank(self):
         puller = XvbStandbyPuller(MagicMock(), source="")
         assert puller.enabled is False
@@ -79,6 +131,42 @@ class TestPuller:
             assert sm.get_xvb_standby()["commanded_fraction"] == 0.42
         finally:
             sm.close()
+
+    def test_fetch_once_sends_standby_credential_without_url_userinfo(self):
+        sm = MagicMock()
+        puller = XvbStandbyPuller(
+            sm, source="https://standby:p%40ss@primary.example/api/xvb-standby"
+        )
+        payload = {"commanded_fraction": 0.42}
+        with patch(
+            "mining_dashboard.service.xvb.xvb_standby.bounded_get",
+            return_value=_Resp(200, payload),
+        ) as get:
+            assert puller.fetch_once()["commanded_fraction"] == 0.42
+        get.assert_called_once_with(
+            "https://primary.example/api/xvb-standby",
+            timeout=15,
+            proxies={"http": TOR_SOCKS_PROXY, "https": TOR_SOCKS_PROXY},
+            headers={
+                "User-Agent": "pithead-dashboard",
+                "Authorization": "Basic " + base64.b64encode(b"standby:p@ss").decode(),
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "https://admin:password@primary.example/api/xvb-standby",
+            "https://standby@primary.example/api/xvb-standby",
+        ],
+    )
+    def test_fetch_once_rejects_non_machine_userinfo(self, source):
+        sm = MagicMock()
+        puller = XvbStandbyPuller(sm, source=source)
+        with patch("mining_dashboard.service.xvb.xvb_standby.bounded_get") as get:
+            assert puller.fetch_once() is None
+        get.assert_not_called()
+        sm.set_xvb_standby.assert_not_called()
 
     def test_fetch_once_non_200_keeps_last(self):
         sm = MagicMock()

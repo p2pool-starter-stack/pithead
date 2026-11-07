@@ -27,6 +27,15 @@ test("upgrade button gates on rigforge_update + an editable, control-enabled wor
   assert.doesNotMatch(current, /Upgrade rig…|New RigForge release/);
 });
 
+test("a viewer sees worker detail without config, adopt, or upgrade actions", () => {
+  const inspector = readyInstance(UPG_DETAIL);
+  inspector.props.readOnly = true;
+  const html = renderToString(inspector.render());
+  assert.match(html, /mining/);
+  assert.match(html, /History/);
+  assert.doesNotMatch(html, /Upgrade rig|Adopt this rig|Apply to rig|name="DONATION"/);
+});
+
 // #1877 split the upgrade flow out of workerview.mjs into its own module: RigUpgrade owns
 // upgArmed/upgBusy/upgResult and the POST, and WorkerInspect only hands it the rig's name, the
 // server-derived update and the editor's busy flag. The tests either side of these still drive the

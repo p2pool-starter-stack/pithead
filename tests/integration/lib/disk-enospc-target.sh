@@ -27,7 +27,7 @@ attempted=0
 wait_db() {
     local want=$1 i value
     for ((i = 0; i < 18; i++)); do
-        value=$(curl -fsS --max-time 5 http://127.0.0.1:8000/api/state | jq -r '.db_healthy') || value=""
+        value=$(dashboard_guest_get http://127.0.0.1:8000/api/state 5 | jq -r '.db_healthy') || value=""
         [ "$value" != "$want" ] || return 0
         sleep 5
     done

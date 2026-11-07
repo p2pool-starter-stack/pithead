@@ -205,7 +205,7 @@ _provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user
     # reads it too (the DIY gate, or #2063's share leg) has anything to drive.
     local deadline=$(($(date +%s) + 900)) released=0
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        curl -sSk -u "$dash_user:$dash_pass" -m 5 "https://$ip/api/state" 2>/dev/null | jq -e '.' >/dev/null 2>&1 && {
+        DASH_USER="$dash_user" DASH_PASS="$dash_pass" dashboard_curl -sSk -m 5 "https://$ip/api/state" 2>/dev/null | jq -e '.' >/dev/null 2>&1 && {
             released=1
             break
         }

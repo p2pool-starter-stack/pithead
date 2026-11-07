@@ -128,9 +128,10 @@ const AccessCard = ({ access, filters, onFilters, pager, onPager }) => {
       ${
         access.rotate_hint
           ? html`<p class="status-bad">Repeated failed logins — someone who can reach the
-              dashboard is guessing the password. Rotate it (set a new
-              <code>dashboard.auth.password</code> and run <code>./pithead apply</code>) and, if
-              the onion address may have leaked, run
+              dashboard is guessing a password. Reset the affected account in
+              <strong>Configuration › Dashboard accounts</strong>, then preview and apply it. For
+              the legacy owner account, set a new <code>dashboard.auth.password</code> and run
+              <code>./pithead apply</code>. If the onion address may have leaked, run
               <code>./pithead rotate-dashboard-onion</code>.</p>`
           : null
       }

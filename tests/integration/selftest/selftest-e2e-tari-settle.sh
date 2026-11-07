@@ -51,7 +51,9 @@ run_wait_synced() { # <timeout_s> <first-state> [state-after-one-poll] -> "<rc>"
         ok() { :; }
         warn() { :; }
         sleep() { [ -z "$NEXT" ] || STATE="$NEXT"; } # no real waiting
-        on_bench() { printf '%s' "$STATE"; }
+        bench_api_state() {
+            printf '{"sync":{"monero":{"state":"%s"},"tari":{"state":"%s"}}}\n' "${STATE%/*}" "${STATE#*/}"
+        }
         eval "$WAIT_SRC"
         wait_synced "$1"
         echo "rc=$?"
@@ -75,6 +77,9 @@ run_preflight_sync() { # <initial> <after-one-poll>
         warn() { :; }
         die() { exit 1; }
         sleep() { STATE="$NEXT"; }
+        bench_api_state() {
+            printf '{"sync":{"monero":{"state":"%s"},"tari":{"state":"%s"}}}\n' "${STATE%/*}" "${STATE#*/}"
+        }
         on_bench() {
             if [[ "$1" == *current* ]]; then
                 printf 'loading 0/0 loading 0/0'

@@ -156,6 +156,10 @@ export function initDashboard({
         headers: { "X-Requested-With": "fetch" },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
+      if (res.status === 401) {
+        globalThis.location?.assign?.("/login");
+        return;
+      }
       if (!res.ok) throw new Error("HTTP " + res.status);
       state = await res.json();
       connected = true;

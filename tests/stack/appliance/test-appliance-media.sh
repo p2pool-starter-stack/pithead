@@ -378,9 +378,7 @@ assert_eq "no secret list -> the running config is never rewritten" "$(cmp -s "$
 assert_not_contains "no secret list -> no diff is ever displayed" "$(cat "$MC/nosecrets.out")" "DIFF-WAS-SHOWN"
 assert_contains "no secret list -> the stage refuses out loud" "$(cat "$MC/nosecrets.out")" "cannot read the secret-path list"
 
-# The issue-965 shape end to end: a stick naming ONLY the pool tier must change the pool tier
-# and NOTHING else — the generated dashboard login, the appliance defaults and the node
-# credentials all survive, and none of them appear in the console diff as a change.
+# The issue-965 shape: a stick naming only the pool tier changes only that tier; credentials survive.
 STICK7="$MC/stick-minimal"
 mkdir -p "$STICK7"
 cp "$MC/minimal-stick.json" "$STICK7/pithead-config.json"
@@ -405,3 +403,5 @@ assert_contains "minimal stick: the diff names the one real change" "$(cat "$MC/
 assert_not_contains "minimal stick: nothing unnamed shows up as changed" "$(cat "$MC/minimal.out")" "dashboard.auth.password"
 assert_contains "minimal stick: the console states the keep-what-you-do-not-name rule" \
     "$(cat "$MC/minimal.out")" "Settings the file does not name keep their current values."
+# shellcheck source=tests/stack/appliance/auth-recovery.sh
+source "$ROOT/tests/stack/appliance/auth-recovery.sh"

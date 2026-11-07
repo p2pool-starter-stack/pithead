@@ -13,12 +13,17 @@ class FrontProxy(BaseHTTPRequestHandler):
         self.forward()
 
     def forward(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length) if length else None
         with closing(http.client.HTTPConnection("127.0.0.1", 8080, timeout=5)) as upstream:
-            upstream.request(self.command, self.path, headers=dict(self.headers))
+            upstream.request(self.command, self.path, body=body, headers=dict(self.headers))
             response = upstream.getresponse()
             body = response.read()
             self.send_response(response.status)
             self.send_header("Content-Length", str(len(body)))
+            for name, value in response.getheaders():
+                if name.lower() not in {"connection", "content-length", "transfer-encoding"}:
+                    self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
 
@@ -26,4 +31,5 @@ class FrontProxy(BaseHTTPRequestHandler):
         pass
 
 
-ThreadingHTTPServer(("", 8081), FrontProxy).serve_forever()
+if __name__ == "__main__":
+    ThreadingHTTPServer(("", 8081), FrontProxy).serve_forever()

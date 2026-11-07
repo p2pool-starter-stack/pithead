@@ -10,6 +10,7 @@
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
+import { AuthConfigEditor } from "./authconfig.mjs";
 import { Field, validNumber } from "./configfield.mjs";
 import {
   buildSections,
@@ -134,7 +135,6 @@ export class ConfigView extends Component {
       this.setState({ phase: "error", error: String(e) });
     }
   }
-
   // Field -> candidate -> pane. The field's declared type drives coercion (shared
   // configsync.coerceForType), so a port stays a number and a toggle a boolean in the JSON.
   // A numeric field keeps the operator's text as a draft while they type (#3350): re-rendering
@@ -171,7 +171,6 @@ export class ConfigView extends Component {
     pathSet(candidate, field.key, value);
     this.setState({ candidate, editText: JSON.stringify(candidate, null, 2), jsonError: null });
   }
-
   onJsonInput(text) {
     const err = jsonSyntaxError(text);
     if (err) {
@@ -205,13 +204,11 @@ export class ConfigView extends Component {
     reader.onload = () => this.onJsonInput(String(reader.result));
     reader.readAsText(file);
   }
-
   // Poll the result endpoint until a terminal result lands (shared pollResult above; kept as a
   // method because the view's flows and tests drive it through the instance).
   poll(id, skip) {
     return pollResult(id, skip);
   }
-
   // Keep explicit values; only read_config's untouched defaults were absent from config.json.
   buildProposed() {
     const { candidate, defaultKeys, jsonError, pristine } = this.state;
@@ -406,6 +403,8 @@ export class ConfigView extends Component {
     );
     return html`<div class="config-view">
         <${ConfigVersion} cfg=${this.state.cfg} />
+        ${this.props.readOnly ? html`<div class="card readonly-notice" role="status"><strong>Read-only account.</strong> You can review every setting, but only an administrator can change it.</div>` : null}
+        <fieldset class="config-permissions" disabled=${this.props.readOnly === true}>
         ${error ? previewFailure(error, this.props.appliance) : null}
         ${
           lastApply?.status === "failed"
@@ -418,6 +417,8 @@ export class ConfigView extends Component {
             ? html`<div class="card"><p class="status-warn">SSH settings from an older configuration are ignored and are not saved from this page.</p></div>`
             : null
         }
+        <${AuthConfigEditor} candidate=${this.state.candidate}
+          onChange=${(candidate) => this.setState({ candidate, editText: JSON.stringify(candidate, null, 2), jsonError: null })} />
         ${this.renderForm(core, groups)}
         ${this.renderJson(editText, jsonError, busy)}
         <div class="config-actions">
@@ -425,6 +426,7 @@ export class ConfigView extends Component {
             ${dirty ? html`<button class="btn-toggle" disabled=${busy} onClick=${() => this.load()}>Discard edits</button>` : null}
         </div>
         <p class="sr-only" role="status" aria-live="polite">${phase === "previewing" ? "Previewing changes…" : ""}</p>
+        </fieldset>
         ${
           this.props.active !== false && (phase === "confirm" || phase === "committing")
             ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview} confirmText=${confirmText}

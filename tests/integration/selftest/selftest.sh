@@ -239,6 +239,7 @@ echo "== api_state + jq_get: parse a fixture =="
 # Stub rx so api_state returns a representative /api/state payload.
 FIXTURE='{"sync":{"monero":{"state":"done"},"tari":{"state":"done"}},"monero":{"mode":"Pruned"},"pool":{"type":"Main"},"proxy_workers":2,"stratum":{"conns":2,"total_hashes":12345}}'
 rx() { printf '%s' "$FIXTURE"; }
+dashboard_api_get() { printf '%s' "$FIXTURE"; }
 ST="$(api_state)"
 assert_eq "parse monero sync state" "$(jq_get "$ST" '.sync.monero.state')" "done"
 assert_eq "parse pool type" "$(jq_get "$ST" '.pool.type')" "Main"

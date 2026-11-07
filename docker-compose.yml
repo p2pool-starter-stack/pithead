@@ -670,6 +670,7 @@ services:
       # SECURITY.md; this boundary protects the host config, staged intents, results and audit log
       # from direct container writes.
       - ${CONTROL_DIR:-./data/control}/masked:/control/masked:ro
+      - ${CONTROL_DIR:-./data/control}/auth:/control/auth:ro
       # Caddy's JSON access log (#349), read-only: the dashboard tails it to show recent accesses
       # and a failed-login count (a burst of 401s = rotate the password / onion). Caddy owns the
       # write side and the rotation; every field read from here is treated as hostile input.
@@ -796,6 +797,9 @@ services:
       # When off, the control routes are not registered at all (they 404); the spool mounts above
       # are inert because no host-side runner is installed.
       - DASHBOARD_CONTROL_ENABLED=${DASHBOARD_CONTROL_ENABLED:-false}
+      - DASHBOARD_AUTH_FILE=${DASHBOARD_AUTH_FILE:-}
+      - DASHBOARD_AUTH_CONFIG_FP=${DASHBOARD_AUTH_CONFIG_FP:-}
+      - DASHBOARD_BOOT_PROBE_TOKEN=${DASHBOARD_BOOT_PROBE_TOKEN:-}
       # Dashboard onion (#343, config.json: dashboard.onion.*), display-only here: the header
       # shows the .onion URL so an operator can open the dashboard from a phone over Tor without
       # first reaching a shell (#1853). The appliance's podman quadlet passes the same three

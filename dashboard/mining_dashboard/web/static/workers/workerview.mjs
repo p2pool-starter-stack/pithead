@@ -236,7 +236,8 @@ export class WorkerInspect extends Component {
   renderBody(detail) {
     const { mode, tableEdits, editText, jsonError, busy, result, chartRange, chartLoading } =
       this.state;
-    const canEdit = detail.control_enabled && detail.editable;
+    const controlEnabled = detail.control_enabled && !this.props.readOnly;
+    const canEdit = controlEnabled && detail.editable;
     return html`
         <div class="worker-inspect-body">
             <div class="stat-grid">
@@ -291,9 +292,13 @@ export class WorkerInspect extends Component {
             </div>
             ${!busy && this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
             <${StatusLine} result=${result} />`
-                : detail.control_enabled
+                : controlEnabled
                   ? html`<${AdoptRigForm} name=${this.props.name} ip=${detail.ip} onAdopted=${() => this.load()} />`
-                  : html`<p class="text-muted text-small">Config editing is off. Enable dashboard.control (which needs a dashboard password) to edit a rig's config.</p>`
+                  : html`<p class="text-muted text-small">${
+                      this.props.readOnly
+                        ? "Config editing is unavailable for this account."
+                        : "Config editing is off. Enable dashboard.control (which needs an admin login) to edit a rig's config."
+                    }</p>`
             }
 
             <h3 class="card-subhead mt-2">History</h3>

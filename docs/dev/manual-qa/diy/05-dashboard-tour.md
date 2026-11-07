@@ -159,18 +159,17 @@ This part checks every panel of the dashboard on a DIY box: the header, both vie
 **What you do:**
 
 1. Open the dashboard in a private browser window.
-2. Enter a wrong password.
-3. Enter the right password.
+2. On Pithead's login page, enter an account name and a wrong password.
+3. Enter the account's right password.
 
 **What you should see:**
 
-- The wrong password is refused.
+- The wrong password shows a generic refusal on the login page, without a browser Basic-auth prompt.
 - The right password lets you in.
 
-**Automated:** `tests/integration/mini-stack/test-boot-health-proxy.sh` runs the rendered
-Caddy with missing, wrong and correct credentials and checks 401/401/200. It also
-checks that the upstream receives the authenticated name despite a spoofed header.
-Keep the browser prompt check manual; step 7.8 later counts this wrong password.
+**Automated:** `tests/integration/auth_proxy/run.sh` checks login, cookie authentication and
+logout through real Caddy, including spoofed-header refusals. `dashboard/tests/browser/auth.test.mjs`
+checks the login page and viewer controls. Step 7.8 later counts this wrong password.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -178,26 +177,16 @@ Keep the browser prompt check manual; step 7.8 later counts this wrong password.
 
 **What you do:**
 
-1. On the laptop, run this command. Replace `<dashboard password>` with the dashboard password, and `<host>` with the box's hostname or address, the same one you use to open the dashboard:
-
-   ```bash
-   curl -k -u admin:<dashboard password> https://<host>/metrics
-   ```
-
-2. Run it again without `-u admin:<dashboard password>`:
-
-   ```bash
-   curl -k https://<host>/metrics
-   ```
+1. In the signed-in browser, open `/metrics` on the dashboard's address.
+2. Return to the dashboard, sign out, then open `/metrics` again.
 
 **What you should see:**
 
-- The first command prints Prometheus text with `pithead_` lines, including `pithead_shares_accepted_total`.
-- Without `-u`, the request is refused.
+- The signed-in request shows Prometheus text with `pithead_` lines, including `pithead_shares_accepted_total`.
+- After signing out, the request is refused.
 
-**Automated:** `tests/integration/mini-stack/test-boot-health-proxy.sh` checks the real
-dashboard metrics through Caddy: no or wrong credentials return 401, and the right
-credentials return 200 with `pithead_shares_accepted_total`.
+**Automated:** `tests/integration/auth_proxy/run.sh` checks metrics through Caddy with both a
+login session and the separate machine credential, including wrong-credential refusals.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 

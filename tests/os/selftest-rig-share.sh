@@ -101,8 +101,10 @@ _ssh() {
     *) fail "unexpected guest command" ;;
     esac
 }
-curl() {
+dashboard_curl() {
     local arm reads accepted rejected=0 invalid=0 rate=250 online=online other=1 coordinator=coordinator
+    [ "$DASH_USER:$DASH_PASS" = "$coord_user:$coord_pass" ] || fail 'dashboard session received the wrong credential'
+    [ "${!#}" = "https://$coord_ip/api/state" ] || fail 'dashboard session targeted the wrong state endpoint'
     arm=$(cat "$scratch/arm")
     reads=$(cat "$scratch/reads")
     printf '%s\n' "$((reads + 1))" >"$scratch/reads"

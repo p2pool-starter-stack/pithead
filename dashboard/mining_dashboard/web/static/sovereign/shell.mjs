@@ -1,3 +1,4 @@
+import { Account } from "../app/account.mjs";
 import { Component, html } from "../app/preact.mjs";
 import { PAGES, routeUrl, SECTIONS } from "./navigation.mjs";
 import { profileBadge, stackStatus } from "./status.mjs";
@@ -103,6 +104,7 @@ export function Shell({
         <a href=${link("machines")} onClick=${navigate("machines")}>Server · address hidden</a>
         <a class=${`status-chip status-${status.level}`} href=${link("overview")} onClick=${navigate("overview")}>${status.text}</a>
         <span>${profileBadge(state?.profile)}</span>
+        <${Account} auth=${state?.auth} compact=${true} />
         <nav aria-label="Main navigation">${Object.entries(PAGES).map(
           ([
             key,

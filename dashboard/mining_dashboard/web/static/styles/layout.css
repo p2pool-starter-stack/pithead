@@ -123,6 +123,22 @@
   opacity: 0.5;
 }
 
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.account-user {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.account form {
+  margin: 0;
+}
+
 /* Hero KPI band (Issue #81): a prominent strip of the headline numbers under the header. A
  * responsive auto-fit grid so the cards sit in one row on a wide screen and reflow when narrow;
  * long tier/mode text wraps inside its card rather than overflowing. */

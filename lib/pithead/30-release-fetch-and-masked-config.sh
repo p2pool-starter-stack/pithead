@@ -4,6 +4,8 @@
 # the two lists in step.
 readonly CONTROL_SECRET_PATHS='[
     ["dashboard","auth","password"],
+    ["dashboard","auth","metrics_password_hash"],
+    ["dashboard","auth","standby_password_hash"],
     ["telegram","bot_token"],
     ["workers","api_token"],
     ["monero","node_username"],
@@ -15,6 +17,40 @@ readonly CONTROL_SECRET_PATHS='[
     ["notifications","ntfy","url"],
     ["notifications","ntfy","token"],
     ["xvb","standby","source"]]'
+
+render_dashboard_auth() { # <control-dir>
+    local adir="$1/auth" tmp final previous generation
+    mkdir -p "$adir" || return 1
+    tmp="$adir/.auth.json.tmp"
+    final="$adir/auth.json"
+    previous=$(jq -c '.' "$final" 2>/dev/null || printf null)
+    generation=$(openssl rand -hex 16) || return 1
+    if ! jq -n --arg legacy_name "${DASHBOARD_AUTH_USER:-admin}" \
+        --arg legacy_hash "${DASHBOARD_LEGACY_AUTH_HASH:-}" \
+        --arg metrics_hash "${DASHBOARD_METRICS_PASSWORD_HASH:-}" \
+        --arg standby_hash "${DASHBOARD_STANDBY_PASSWORD_HASH:-}" \
+        --arg generation "$generation" --argjson previous "$previous" \
+        --argjson users "${DASHBOARD_AUTH_USERS_JSON:-[]}" \
+        '($users + (if $legacy_hash == "" then [] else [{name:$legacy_name, role:"admin", password_hash:$legacy_hash}] end))
+        | to_entries
+        | map(.value as $user
+            | (($previous.users // []) | map(select(.name == $user.name))[0]) as $old
+            | $user + {revision:(if $old.role == $user.role and $old.password_hash == $user.password_hash and ($old.revision | type) == "string"
+                                  then $old.revision else ($generation + "-" + (.key | tostring)) end)})
+        | {users: ., metrics_password_hash:$metrics_hash, standby_password_hash:$standby_hash}' \
+        >"$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    chmod 600 "$tmp" &&
+        { chown "${APP_UID:-1000}:${APP_GID:-1000}" "$tmp" 2>/dev/null || sudo chown "${APP_UID:-1000}:${APP_GID:-1000}" "$tmp"; } &&
+        mv -f "$tmp" "$final" || {
+        rm -f "$tmp"
+        return 1
+    }
+    { chown "${APP_UID:-1000}:${APP_GID:-1000}" "$adir" 2>/dev/null || sudo chown "${APP_UID:-1000}:${APP_GID:-1000}" "$adir"; } &&
+        { chmod 700 "$adir" 2>/dev/null || sudo chmod 700 "$adir"; }
+}
 
 # #690: bound every host-runner curl so a hostile/MITM'd rig or release response can't stream an
 # unbounded body into memory ($( )) or onto disk (-o) inside the --max-time window. --max-filesize
@@ -212,6 +248,10 @@ render_masked_config() { # <control-dir>
           then .dashboard.workers |= map(
               if (.token // "") == "" then . else .token = {"__secret__": true} end
               | if (.api_token // "") == "" then . else .api_token = {"__secret__": true} end)
+          else . end
+        | if (.dashboard.auth.users | type) == "array"
+          then .dashboard.auth.users |= map(
+              if (.password_hash // "") == "" then . else .password_hash = {"__secret__": true} end)
           else . end
         # notifications.webhooks[] (#848): the whole URL is the bearer secret (query strings carry
         # tokens), and there is no fixed leaf path — mask each set entry, like the worker tokens.

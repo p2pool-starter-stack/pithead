@@ -77,6 +77,22 @@ set -euo pipefail
 endpoint=${!#}
 endpoint=${endpoint##*/}
 printf 'curl-%s\n' "$endpoint" >>trace
+if [ "$endpoint" = login ]; then
+    body=$(cat)
+    [ "$body" = 'username=admin&password=fixture-password' ]
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = -c ]; then printf 'fixture-session\n' >"$2"; break; fi
+        shift
+    done
+    printf '303'
+    exit 0
+fi
+cookie=""
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = -b ]; then cookie=$2; break; fi
+    shift
+done
+[ -n "$cookie" ] && [ "$(cat "$cookie")" = fixture-session ]
 if [ "$endpoint" = state ]; then
     if [ "$FIXTURE_FAULT" = state-stale ]; then
         printf '{"energy":{"cost_per_kwh":0.789}}\n'
@@ -103,7 +119,9 @@ COPY
     chmod +x "$dir/pithead" "$dir/bin/curl" "$dir/bin/cp"
     local scratch_root="$dir/data"
     [ "$fault" != scratch ] || scratch_root="$dir/absent"
-    (cd "$dir" && FIXTURE_FAULT="$fault" TMPDIR="$scratch_root" PATH="$dir/bin:$PATH" bash "$HERE/../lib/restore-dashboard-guest.sh") >"$dir/output" 2>"$dir/stderr" || rc=$?
+    (cd "$dir" && FIXTURE_FAULT="$fault" TMPDIR="$scratch_root" PATH="$dir/bin:$PATH" \
+        bash -c 'source "$1"; source "$2"' _ "$HERE/../lib/dashboard-guest-session.sh" \
+        "$HERE/../lib/restore-dashboard-guest.sh") >"$dir/output" 2>"$dir/stderr" || rc=$?
     printf '%s' "$rc"
 }
 assert_eq "a newer baseline can supply a separate candidate fixture" "$(run_case success)" 0
@@ -121,7 +139,7 @@ assert_eq "wallets, payout controls and false settings are unchanged in the fixt
          .xvb.donor_id, .xvb.enabled])' "$work/success/synthetic-at-backup.json")" true
 assert_eq "both APIs are checked after restore/up before cleanup applies anything" \
     "$(cat "$work/success/trace")" \
-    $'apply\nbackup\napply\ncurl-config\ndown\nrestore\nup\ncurl-config\ncurl-state\ndown\napply\nup\nstatus\nstatus'
+    $'apply\nbackup\napply\ncurl-login\ncurl-config\ndown\nrestore\nup\ncurl-login\ncurl-config\ncurl-login\ncurl-state\ndown\napply\nup\nstatus\nstatus'
 assert_eq "a verified cleanup removes only its fixture and new archive" \
     "$(find "$work/success/data" -type f | wc -l | tr -d ' ')|$([ ! -e "$work/success/backups/pithead-backup-fixture.tar.gz" ] && cat "$work/success/backups/existing.tar.gz")" '0|untouched'
 assert_eq "Tari off without a wallet remains a supported fixture" "$(run_case off-no-wallet)" 0
@@ -149,7 +167,8 @@ for fault in cleanup-apply cleanup-mutation cleanup-unhealthy; do
     retained=$(find "$work/$fault/data" -name original.json -type f)
     assert_eq "$fault retains the unchanged recovery baseline" \
         "$([ -n "$retained" ] && cmp -s "$work/$fault/original.json" "$retained" && echo yes)" yes
-    assert_eq "$fault keeps recovery files private" "$(stat -c %a "$retained")|$(stat -c %a "$(dirname "$retained")")" '600|700'
+    assert_eq "$fault keeps recovery files private" \
+        "$(stat -c %a "$retained" 2>/dev/null || stat -f %Lp "$retained")|$(stat -c %a "$(dirname "$retained")" 2>/dev/null || stat -f %Lp "$(dirname "$retained")")" '600|700'
     assert_contains "$fault reports unverified cleanup" "$(cat "$work/$fault/output")" 'cleanup unverified'
 done
 assert_eq "cleanup health failure is bounded" "$(grep -c '^status$' "$work/cleanup-unhealthy/trace")" 4

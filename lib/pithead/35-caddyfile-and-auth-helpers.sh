@@ -51,19 +51,8 @@ caddy_hash_password_b64() {
 
 generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
-    # Every vhost forwards the authenticated basic_auth username as X-Auth-User (#33) — the audit
-    # `actor` for control-channel requests. header_up SETS the header, so a client-supplied
-    # X-Auth-User can never spoof it; with auth off the placeholder renders empty.
-    #
-    # Optional basic_auth block (#8), rendered only when a dashboard password is configured. The
-    # hash is decoded from its base64 .env form back to the raw bcrypt string Caddy expects; it
-    # protects every route, so the dashboard prompts for login before anything is served.
-    local auth=""
-    if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
-        local hash
-        hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
-        auth=$(printf '    basic_auth {\n        %s %s\n    }' "$DASHBOARD_AUTH_USER" "$hash")
-    fi
+    local auth_enabled="${DASHBOARD_AUTH_ENABLED:-false}"
+    [ "$auth_enabled" == true ] || [ -z "${DASHBOARD_AUTH_HASH_B64:-}" ] || auth_enabled=true
     # Access log (#349): every vhost writes a JSON line per request (timestamp, status, method,
     # URI, authenticated user) to one shared file under the host-mounted CADDY_LOG_DIR; the
     # dashboard tails it read-only, and repeated 401s there are the operator's "someone is
@@ -187,8 +176,7 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     fi
     # NO trailing newline: consumed as $(_bind_line) on its own heredoc line, and command
     # substitution strips trailing newlines anyway — emitting one here produced
-    # `bind ... ::1    basic_auth {` on a single line, which Caddy will not parse. Same convention
-    # as $auth above. Empty when binding is off, which collapses to a blank line, like $auth.
+    # `bind ... ::1    log {` on a single line, which Caddy will not parse.
     _bind_line() {
         [ -n "$bind_addrs" ] || return 0
         printf '    bind %s' "$bind_addrs"
@@ -290,18 +278,10 @@ $(_bind_line)
             warn "Could not provide a certificate for the dashboard — falling back to Caddy's own."
         fi
     fi
-    # The boot capability is derived from the private salted auth hash, never the password.
-    # Missing login disables the 401 exemption. A local fronting proxy cannot mint the
-    # capability for its untrusted clients; the header is removed from logs and upstreams.
-    local boot_capability boot_marker=""
-    boot_capability=$(printf 'pithead-boot-health-v1:%s' "${DASHBOARD_AUTH_HASH_B64:-}" | sha256_hex)
-    [ -z "$auth" ] || boot_marker='        log_append @boot_health <pithead_probe boot-health-v1'
-    # Only the host's exact credential-free boot request earns this log field. remote_ip
-    # uses the socket peer, never a client-supplied forwarding header. Onion sites do not
-    # carry the matcher. Keep marking before rewrite/auth, including the locked 401 path.
+    # Only the host's exact credential-free boot request receives the marker the dashboard trusts.
     local scheme=http
     [ "$DASHBOARD_SECURE" != "true" ] || scheme=https
-    log "Generating Caddyfile for $scheme ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
+    log "Generating Caddyfile for $scheme ($site_hosts$port_suffix)$([ "$auth_enabled" == true ] && echo ' with login')..."
     cat <<EOF >>"$target"
 $(_site_addresses "$scheme") {
 $([ "$scheme" != https ] || printf '%s' "$tls_line")
@@ -312,15 +292,32 @@ $logblk
         method GET
         expression {http.request.uri} == "/.pithead-boot-health"
         not header Authorization *
-        header X-Pithead-Boot-Probe "$boot_capability"
+        header X-Pithead-Boot-Probe "${DASHBOARD_BOOT_PROBE_TOKEN:-disabled}"
     }
-    route {
-$boot_marker
-        rewrite @boot_health /
-$auth
+    handle @boot_health {
+        log_append <pithead_probe boot-health-v1
+        rewrite * /
+        forward_auth 127.0.0.1:8000 {
+            uri /api/auth/ready
+        }
         reverse_proxy 127.0.0.1:8000 {
-            header_up X-Auth-User {http.auth.user.id}
+            header_up -X-Auth-User
+            header_up -X-Auth-Role
+            header_up X-Pithead-Boot-Probe boot-health-v1
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+    handle {
+        forward_auth 127.0.0.1:8000 {
+            uri /api/auth/ready
+        }
+        reverse_proxy 127.0.0.1:8000 {
+            header_up -X-Auth-User
+            header_up -X-Auth-Role
             header_up -X-Pithead-Boot-Probe
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-For {remote_host}
         }
     }
 }
@@ -329,22 +326,26 @@ EOF
     # Onion vhost (#343): a second site reachable ONLY from the tor container, via the bridge gateway
     # (NETWORK_PREFIX.1 — the /24's first host, where host-networked Caddy binds and bridge containers
     # route out). It is never on the LAN. Plain HTTP: Tor provides the transport encryption inside the
-    # tunnel, so no `tls internal` here. It MUST carry the same auth block — refuse to publish an
-    # unauthenticated control panel (config validation already fails closed; this is belt-and-suspenders).
+    # tunnel, so no `tls internal` here. Refuse to publish an unauthenticated control panel.
     if [ "${DASHBOARD_ONION_ENABLED:-false}" == "true" ]; then
-        if [ -z "$auth" ]; then
-            error "Refusing to render the dashboard onion vhost without a login: dashboard.onion.enabled is on but no auth hash is set."
+        if [ "$auth_enabled" != true ]; then
+            error "Refusing to render the dashboard onion vhost without a configured login."
         fi
         log "Adding onion vhost for the dashboard (${NETWORK_PREFIX}.1, login required)..."
         cat <<EOF >>"$target"
 
 http://${NETWORK_PREFIX}.1 {
 $(_onion_bind_line)
-$auth
 $logblk
+    forward_auth 127.0.0.1:8000 {
+        uri /api/auth/ready
+    }
     reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
+        header_up -X-Auth-User
+        header_up -X-Auth-Role
         header_up -X-Pithead-Boot-Probe
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-For {remote_host}
     }
 }
 EOF
@@ -363,11 +364,16 @@ EOF
 https://${DASHBOARD_ONION} {
     tls internal
 $(_onion_bind_line)
-$auth
 $logblk
+    forward_auth 127.0.0.1:8000 {
+        uri /api/auth/ready
+    }
     reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
+        header_up -X-Auth-User
+        header_up -X-Auth-Role
         header_up -X-Pithead-Boot-Probe
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-For {remote_host}
     }
 }
 EOF

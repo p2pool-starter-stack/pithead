@@ -4,6 +4,7 @@
 # Neither fixture depends on another CI block having run.
 build_doctor_stubs
 build_val_sandbox
+state_run_sourced() { DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token run_sourced "$@"; }
 
 echo "== unit: doctor + status Tari chain verdict (#2464) =="
 # The verdict is the dashboard's (/api/state .tari.health): amber WARNs, red FAILs doctor, and status
@@ -12,29 +13,29 @@ tari_state() { # <level> <reasons-json-array> <advice>
     printf '{"tari":{"connected":true,"health":{"level":"%s","reasons":%s,"advice":"%s"}}}' "$1" "$2" "$3"
 }
 RED="$(tari_state red '["tip 342574 unchanged for 31 min","0 peer connections for 31 min"]' "restart the Tari node")"
-out="$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_tari_chain 2>&1)"
+out="$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" check_tari_chain 2>&1)"
 assert_contains "tari chain: red -> doctor FAIL names the verdict" "$out" "NOT following the chain"
 assert_contains "tari chain: red -> doctor carries every reason" "$out" "tip 342574 unchanged for 31 min; 0 peer connections for 31 min"
 assert_contains "tari chain: red -> doctor names the next step" "$out" "next: restart the Tari node"
 tari_chain_fail_count() { DR_FAIL=0 && check_tari_chain >/dev/null 2>&1 && echo "$DR_FAIL"; }
 assert_eq "tari chain: red counts as a doctor failure" \
-    "$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" tari_chain_fail_count)" "1"
+    "$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" tari_chain_fail_count)" "1"
 AMBER="$(tari_state amber '["0 peer connections for 12 min"]' "restart the Tari node")"
-out="$(CURL_BODY="$AMBER" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_tari_chain 2>&1)"
+out="$(CURL_BODY="$AMBER" PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" check_tari_chain 2>&1)"
 assert_contains "tari chain: amber -> doctor WARN with the reason" "$out" "may be stalling: 0 peer connections for 12 min"
-out="$(CURL_BODY="$(tari_state green '[]' '')" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_tari_chain 2>&1)"
+out="$(CURL_BODY="$(tari_state green '[]' '')" PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" check_tari_chain 2>&1)"
 assert_contains "tari chain: green -> OK, claiming only what the verdict establishes" "$out" "no degraded signal confirmed"
 assert_not_contains "tari chain: green does not claim peers or explorer agreement" "$out" "peers connected"
-out="$(CURL_BODY="$(tari_state green '[]' '')" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" tari_chain_status_line 2>&1)"
+out="$(CURL_BODY="$(tari_state green '[]' '')" PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" tari_chain_status_line 2>&1)"
 assert_contains "tari chain: status prints the green line" "$out" "tari chain    no degraded signal confirmed"
-out="$(CURL_BODY='{"tari":{"connected":true}}' PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_tari_chain 2>&1)"
+out="$(CURL_BODY='{"tari":{"connected":true}}' PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" check_tari_chain 2>&1)"
 assert_eq "tari chain: no verdict (Tari off, loop not run) -> silent" "$out" ""
-out="$(CURL_RC=7 PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_tari_chain 2>&1)"
+out="$(CURL_RC=7 PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" check_tari_chain 2>&1)"
 assert_eq "tari chain: dashboard not answering -> silent (check_dashboard_answers owns that)" "$out" ""
 
-out="$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" tari_chain_status_line 2>&1)"
+out="$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" tari_chain_status_line 2>&1)"
 assert_contains "tari chain: status prints the red line" "$out" "tari chain    NOT following the chain: tip 342574"
-out="$(CURL_BODY="$AMBER" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" tari_chain_status_line 2>&1)"
+out="$(CURL_BODY="$AMBER" PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" tari_chain_status_line 2>&1)"
 assert_contains "tari chain: status prints the amber line" "$out" "0 peer connections for 12 min"
 
 echo "== black-box: tari.explorer_url renders to .env (#2464) =="
@@ -52,7 +53,7 @@ assert_eq "a blank tari.explorer_url renders blank (reference off)" "$(run_sourc
 # verdict line is extra, and #2464 must not change status's exit code (CI caught curl's exit 7).
 tari_status_strict() { set -eo pipefail && tari_chain_status_line && echo "rc=0"; }
 assert_eq "tari chain: dashboard down under pipefail leaves status's line empty, rc 0" \
-    "$(CURL_RC=7 PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" tari_status_strict 2>&1)" "rc=0"
+    "$(CURL_RC=7 PATH="$DRBIN:$PATH" state_run_sourced "$SANDBOX" tari_status_strict 2>&1)" "rc=0"
 
 echo "== unit: support bundle masks the Tari explorer URL in config.masked.json (#2464) =="
 # Synthetic, credential-bearing: userinfo and a path token must not reach the bundle's config copy.

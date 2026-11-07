@@ -11,6 +11,7 @@ FAKE=$(mktemp -d)
 trap 'rm -rf "$FAKE"' EXIT
 export FAKE
 mkdir -p "$FAKE/bin" "$FAKE/data dir"
+printf '{}\n' >"$FAKE/config.json"
 python_bin=$(command -v python3)
 {
     echo 'REAL_USER=ubuntu'
@@ -144,7 +145,8 @@ env_on_box() { case "$1" in COMPOSE_PROFILES) echo local_node ;; *) echo "$FAKE/
 export IT_MODE=local
 export IT_REMOTE_DIR="$FAKE"
 rx() {
-    "$python_bin" - "$FAKE" "$1" <<'PYTHON'
+    command cat >"$FAKE/rx.stdin"
+    "$python_bin" - "$FAKE" "$1" "$FAKE/rx.stdin" <<'PYTHON'
 import signal
 import subprocess
 import sys
@@ -155,7 +157,8 @@ def default_signals():
         signal.signal(sig, signal.SIG_DFL)
 
 result = subprocess.run(['bash', '-c', sys.argv[2]], cwd=sys.argv[1],
-                        start_new_session=True, preexec_fn=default_signals)
+                        input=Path(sys.argv[3]).read_bytes(), start_new_session=True,
+                        preexec_fn=default_signals)
 exit_code = result.returncode if result.returncode >= 0 else 128 - result.returncode
 Path(sys.argv[1], 'target.exit').write_text(str(exit_code))
 raise SystemExit(exit_code)

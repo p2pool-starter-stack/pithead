@@ -37,6 +37,7 @@ from aiohttp import web
 
 from mining_dashboard.config import documents
 from mining_dashboard.config.defaults import new_install_defaults
+from mining_dashboard.wizard.authentication import token_middleware
 from mining_dashboard.wizard.defaults import (
     disk_inventory,
     explicit_wizard_config,
@@ -597,7 +598,9 @@ def make_app(exit_fn=sys.exit, restore_enabled=False, secure_cookie=False) -> we
     mimetypes.add_type("text/javascript", ".js")
     # aiohttp's default (1 MiB) refuses a restore upload before submit_restore's own, clearer
     # cap gets a chance to run; a little slack over RESTORE_MAX_BYTES covers multipart overhead.
-    app = web.Application(client_max_size=RESTORE_MAX_BYTES + 1_048_576)
+    app = web.Application(
+        client_max_size=RESTORE_MAX_BYTES + 1_048_576, middlewares=[token_middleware(_authed)]
+    )
     app["failures"] = 0
     app["exit"] = exit_fn
     app["restore_enabled"] = restore_enabled

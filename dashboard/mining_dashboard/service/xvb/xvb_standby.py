@@ -22,8 +22,10 @@ last-held standby, and a backup with no standby yet simply cold-starts as before
 """
 
 import asyncio
+import base64
 import logging
 import time
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 import requests
 
@@ -97,11 +99,22 @@ class XvbStandbyPuller:
         if not self.enabled:
             return None
         try:
+            parts = urlsplit(self.source)
+            username = unquote(parts.username or "")
+            password = unquote(parts.password or "")
+            headers = {"User-Agent": "pithead-dashboard"}
+            source = self.source
+            if parts.username is not None or parts.password is not None:
+                if username != "standby" or parts.password is None:
+                    return None
+                source = urlunsplit(parts._replace(netloc=parts.netloc.rsplit("@", 1)[-1]))
+                encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
+                headers["Authorization"] = f"Basic {encoded}"
             resp = bounded_get(
-                self.source,
+                source,
                 timeout=15,
                 proxies=self._proxies(),
-                headers={"User-Agent": "pithead-dashboard"},
+                headers=headers,
             )
             if resp.status_code != 200:
                 logger.debug("Standby pull got HTTP %s (kept silent)", resp.status_code)

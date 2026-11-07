@@ -242,7 +242,7 @@ _phase_provision_initial_body() {
     phase_provision_address_watch "$pv_user" "$pv_pass"
 
     phase_miner_connection_installed "$handoff_body"
-    if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
+    if [ -n "$pv_pass" ] && DASH_USER="$pv_user" DASH_PASS="$pv_pass" dashboard_curl -sSk "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.step' >/dev/null 2>&1; then
         ok "appliance state carries os_update — the dashboard OS-update control renders"
     else

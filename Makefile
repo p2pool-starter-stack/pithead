@@ -83,6 +83,7 @@ test-fakes: ## Fake-daemon contract test — real dashboard clients vs controlla
 test-mini-stack: pithead ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
 	bash tests/integration/mini-stack/run-mini-stack.sh
 	bash tests/integration/mini-stack/test-boot-health-proxy.sh
+	bash tests/integration/auth_proxy/run.sh
 
 test-tari-config-parse: pithead ## Feed the rendered Tari config to the pinned minotari_node image (needs docker; CI, #2341)
 	bash tests/stack/standalone/test_tari_config_parse.sh

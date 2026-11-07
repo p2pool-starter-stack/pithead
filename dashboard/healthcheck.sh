@@ -7,4 +7,4 @@
 # incident exposed (#622). The slim image ships no curl/wget; python3 (the app's own venv,
 # already on PATH) probes with stdlib urllib, which raises — exiting non-zero — on any
 # connect failure or non-2xx status.
-exec python3 -c 'import urllib.request as u; u.urlopen(u.Request("http://127.0.0.1:8000/api/state", method="HEAD"), timeout=5)'
+exec python3 -c 'import os; import urllib.request as u; token=os.environ.get("DASHBOARD_BOOT_PROBE_TOKEN", ""); u.urlopen(u.Request("http://127.0.0.1:8000/api/state", method="HEAD", headers={"Authorization": "Bearer " + token} if token else {}), timeout=5)'

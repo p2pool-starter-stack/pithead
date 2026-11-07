@@ -60,9 +60,9 @@ rx() {
         ;;
     *PAYOUT_SCAN_GRACE_SEC=0*) return "$STUB_HEALTH_RC" ;;
     *'.payout-scanning'*) return "$STUB_MARKER_RC" ;;
-    *api/state*) echo "$STUB_STATE" ;;
     esac
 }
+dashboard_api_get() { printf '%s\n' "$STUB_STATE"; }
 CFG='{"tari":{"view_key":"k","payout_scan_birthday":"1425"}}'
 ST='{"earnings":{"tari_confirmed":{"enabled":true,"count":0}}}'
 LOCAL_ARGV="minotari_console_wallet --birthday 1425 -p wallet.http_server_url=http://172.28.0.27:9000 -p wallet.fallback_http_server_url=http://172.28.0.27:9000"

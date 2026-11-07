@@ -191,9 +191,9 @@ async def test_a_bare_json_array_is_refused(client, seeded):
     assert not (seeded / "config.json").exists()
 
 
-async def test_submit_unauthed_redirects_and_writes_nothing(client, seeded):
+async def test_submit_unauthed_is_forbidden_and_writes_nothing(client, seeded):
     r = await client.post("/submit", data={"config": "{}"}, allow_redirects=False)
-    assert r.status == 302
+    assert r.status == 403
     assert not (seeded / "config.json").exists()
 
 
@@ -302,7 +302,7 @@ async def test_unauthed_install_writes_nothing(client, installer):
         data={"config": _CFG, "disk": "nvme0n1", "confirm": "nvme0n1"},
         allow_redirects=False,
     )
-    assert r.status == 302
+    assert r.status == 403
     assert not (installer / "install-request").exists()
 
 

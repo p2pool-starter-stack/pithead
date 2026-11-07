@@ -104,7 +104,23 @@ media_find_config() {
 media_merge_config() { # <running-json> <candidate-json>
     local out
     out=$(mktemp) || return 1
-    if ! jq -s '.[0] * (.[1] | del(.config_version))' "$1" "$2" >"$out" 2>/dev/null; then
+    if ! jq -s '
+        def recovery_name($names):
+            first(range(0; infinite) as $n
+                | (if $n == 0 then "recovery" else "recovery-\($n)" end) as $name
+                | select($names | index($name) == null)
+                | $name);
+        .[1] as $staged
+        | (.[0] * ($staged | del(.config_version)))
+        | if (($staged.dashboard.auth.password? // "") != "") then
+            (.dashboard.auth.users // [] | map(.name)) as $names
+            | (.dashboard.auth.username // "admin") as $legacy
+            | if ($names | index($legacy)) != null
+              then .dashboard.auth.username = recovery_name($names)
+              else .
+              end
+          else .
+          end' "$1" "$2" >"$out" 2>/dev/null; then
         jq 'if type == "object" then del(.config_version) else . end' "$2" >"$out" 2>/dev/null || cp "$2" "$out" || {
             rm -f "$out"
             return 1

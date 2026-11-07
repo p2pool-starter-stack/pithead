@@ -4,6 +4,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/api/auth/ready":
+            self.send_error(404)
+            return
         body = json.dumps({"actor": self.headers.get("X-Auth-User")}).encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))

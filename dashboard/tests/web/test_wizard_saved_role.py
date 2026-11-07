@@ -116,7 +116,7 @@ async def test_keep_role_writes_the_file_the_host_waits_on(client, spool):
 async def test_keep_role_needs_the_token(client, spool):
     spool.joinpath("saved-role.json").write_text(json.dumps(RIG))
     r = await client.post("/keep-role", allow_redirects=False)
-    assert r.status == 302
+    assert r.status == 403
     assert not (spool / "keep-role").exists()
 
 

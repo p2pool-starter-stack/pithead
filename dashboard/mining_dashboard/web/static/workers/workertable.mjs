@@ -76,7 +76,17 @@ const ProxyTotals = ({ summary }) => {
     </div>`;
 };
 
-function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, localOnly, onInspect }) {
+function WorkersTable({
+  workers,
+  summary,
+  ui,
+  onSort,
+  hostIp,
+  stratumPort,
+  localOnly,
+  onInspect,
+  controlEnabled,
+}) {
   // First-run empty state (#385): show the one action to take instead of empty headers.
   // `workers` includes offline rigs, so a temporarily all-offline fleet keeps its (red) table.
   if ((workers || []).length === 0) {
@@ -124,9 +134,9 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, local
                             <td>${
                               onInspect
                                 ? html`<button type="button" class="worker-name-link" onClick=${() => onInspect(w.name)}
-                                                title="Inspect / edit this worker's config">${w.name}</button>`
+                                                title="Inspect this worker">${w.name}</button>`
                                 : w.name
-                            } <${PoolBadge} pool=${w.pool} /><${ApiBadge} w=${w} onInspect=${onInspect} /><${RigForgeChips} rf=${w.rigforge} /><${RigUpdateBadge} up=${w.rigforge_update} name=${w.name} onInspect=${onInspect} /></td>
+                            } <${PoolBadge} pool=${w.pool} /><${ApiBadge} w=${w} onInspect=${controlEnabled ? onInspect : null} /><${RigForgeChips} rf=${w.rigforge} /><${RigUpdateBadge} up=${w.rigforge_update} name=${w.name} onInspect=${controlEnabled ? onInspect : null} /></td>
                             <td>${w.ip}</td>
                             <td>${uptimeCell(w)}</td>
                             <td>${w.h60_str}</td>

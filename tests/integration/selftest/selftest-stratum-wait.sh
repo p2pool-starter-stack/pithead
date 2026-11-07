@@ -13,7 +13,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
 
-rx() { printf '%s' "$FIXTURE"; }
+api_state() { printf '%s' "$FIXTURE"; }
 BAD=0
 case_() { # name want(0=true,1=false) fixture
     local got=0
