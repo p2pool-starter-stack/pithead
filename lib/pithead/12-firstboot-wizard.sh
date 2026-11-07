@@ -113,11 +113,7 @@ firstboot_wizard() {
         warn "Booted from removable media with no internal disk to install onto."
         warn "Running the stack from a USB stick is unsupported — it is too slow for the chain and the stick will wear out."
     fi
-    # Offline first boot: the appliance carries the wizard image as an archive (os/rootfs/images),
-    # because at this point the operator may have no working network yet — that is what they are
-    # here to configure. The loader is the boot path's own (see load_baked_images): naming the
-    # image forces a load when the tag is missing entirely, whatever the digest record says.
-    load_baked_images "$image"
+    PITHEAD_LOAD_ONLY=dashboard load_baked_images "$image"
     # Double quotes on purpose: $engine expands NOW, at trap definition. It is a local, and the
     # trap also fires after this function's locals are gone — where set -u would turn the trap
     # itself into the crash that masks whatever actually failed. The spool paths expand now for

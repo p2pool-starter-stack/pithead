@@ -438,8 +438,8 @@ not proven.
   the same edit `restore_apply` already makes on the carried-.env door (#1239). Both fixed on this
   branch; unverified until the next run.
 - **The battery's image must be built against a registry that actually has its tags (#2043).**
-  Root-caused: this is the #978 entry below, reached from the battery side. Only the wizard image
-  is baked, so at first boot every other service is a pull of `pithead-<service>:v$(cat VERSION)`
+  Root-caused: this is the #978 entry below, reached from the battery side. Before #978 only the
+  wizard image was baked, so at first boot every other service was a pull of `pithead-<service>:v$(cat VERSION)`
   — and while VERSION leads the last release, those tags exist nowhere public. An image built
   with plain `--ssh` keeps the default registry (`TEST_REGISTRY` needs `PITHEAD_REGISTRY` set
   too), so the wizard submit and `setup` succeed, leg 4 captures a dashboard login, and then no
@@ -460,9 +460,8 @@ not proven.
   A `--phase all` run in a configuration that CAN pass has now been made (2026-09-10, 189/3): the
   four zero-container legs pass and this cause is cleared. What remains failing is tracked as #1956,
   #2050 and #2051.
-- **Only the wizard image is baked in (#978).** The rest of the stack still pulls at
-  provision time, so the plan's "first boot works offline" property is partial: the setup
-  page works without a network, provisioning does not. Baking the full set roughly triples
-  the image and inflates every update bundle — sized deliberately, not forgotten. This is also
-  why the KVM battery needs `PITHEAD_REGISTRY` (#2043): the consequence of the partial bake is
-  that every battery run depends on a registry that can serve the VERSION being tested.
+- **Tari images are pulled at enable time (#978).** The image bakes every always-on service,
+  so default-profile provisioning needs no registry. The opt-in Tari images are still pulled
+  when Tari is turned on, which is a clearnet fetch of `quay.io`; see `docs/privacy.md`. The
+  KVM battery still needs `PITHEAD_REGISTRY` (#2043), because the build bakes the images from a
+  registry that can serve the VERSION being tested.

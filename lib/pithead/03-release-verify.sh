@@ -23,21 +23,23 @@ compose_pinned_digest() {
 # a tag, and treat bumping it as a supply-chain change.
 readonly COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign@sha256:4bedb8de1c5c1abd8dea60de704ba449402d238623fa8bb33d2ccaa9beffcbf5" # v2.6.3
 
-# Verification is possible at all — i.e. we can run the verifier. Kept as its own predicate so the
-# callers' fail-closed refusals read the same as they did when this was `command -v cosign`.
+cosign_host_bin() {
+    local bin="${PITHEAD_COSIGN_BIN:-/usr/local/bin/cosign}"
+    is_appliance && [ -x "$bin" ] && printf '%s' "$bin"
+}
+
 cosign_available() {
+    cosign_host_bin >/dev/null && return 0
     command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 }
 
-# Run cosign in a container, with the install dir mounted read-only at /w as its working dir.
-# ponytail: ONE mount, because every file cosign is ever handed lives under the install dir —
-# cosign.pub sits next to this script, and the bundle + .sig it verifies on a one-click upgrade go
-# under CONTROL_DIR, which is derived as "$PWD/data/control" and is not operator-settable. A caller
-# that ever needs a path outside $PWD must add its own mount rather than assume this one covers it.
-# HOME=/tmp: cosign caches TUF material under $HOME and prints a multi-line warning when it cannot
-# write there — noise on every verify, and the operator is not meant to see this run at all.
-# The image pull is quiet and happens once; without it docker streams pull progress mid-`up`.
 cosign_run() {
+    local bin args=()
+    if bin=$(cosign_host_bin); then
+        args=("${@/#\/w\//$PWD/}")
+        HOME=/tmp "$bin" "${args[@]}"
+        return
+    fi
     docker image inspect "$COSIGN_IMAGE" >/dev/null 2>&1 ||
         docker pull -q "$COSIGN_IMAGE" >/dev/null 2>&1 ||
         return 1
@@ -95,7 +97,7 @@ verify_release_images() {
     cosign_available ||
         error "cosign.pub is present but docker is not available to run the verifier — refusing an unverified pull. Install Docker ($DOCS_URL/docs/getting-started.md#1-prerequisites) and re-run '$0'."
     # The 5 first-party images, verified by the exact digest compose pins them to (#451/#461).
-    local suffix repo sha image out said cosign_registry_args=()
+    local suffix repo sha image out said verified=0 cosign_registry_args=()
     # A debug build's private-registry CA is program material beside cosign.pub, so the install-dir
     # mount already carries it into the container — a relative name, like --key on the same command.
     if [ -f cosign.registry-ca.crt ]; then
@@ -105,6 +107,8 @@ verify_release_images() {
         cosign_registry_args=(--allow-http-registry)
     fi
     for suffix in tor monero p2pool xmrig-proxy dashboard; do
+        is_appliance && [ -f "${PITHEAD_IMAGES_DIR:-/opt/pithead/images}/${suffix}.tar.gz" ] && continue
+        verified=$((verified + 1))
         repo="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-${suffix}"
         # #557: plain `sha="$(...)"` aborts under errexit on a no-match grep BEFORE this error()
         # fires — `if !` suspends errexit for the assignment so the crafted diagnostic is reachable.
@@ -128,7 +132,11 @@ verify_release_images() {
             error "Signature verification FAILED for $image — the published image does not match the release key; refusing to pull or restart, nothing was changed. cosign said: $said"
         fi
     done
-    log "All 5 release images verify against their pinned digest (cosign.pub)."
+    if [ "$verified" -eq 5 ]; then
+        log "All 5 release images verify against their pinned digest (cosign.pub)."
+    else
+        log "$verified of 5 release images verify against their pinned digest (cosign.pub); the rest are baked into this appliance."
+    fi
 }
 
 reconcile_compose_images() {

@@ -229,12 +229,15 @@ PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIG
     sudo os/rauc/mkimage.sh --dev
 ```
 
-**A dev image pulls its services; only the wizard image is baked.** At first boot the appliance
-pulls `pithead-<service>:v$(cat VERSION)` for all five first-party services, and while VERSION
-leads the last release those tags exist nowhere public. Build without `PITHEAD_REGISTRY` and the
-appliance provisions, publishes dashboard credentials, and then runs ZERO containers — five
-battery legs report it and each waits up to 25 minutes (#2043). `build-image.sh` refuses such a
-build; publish the five images to a registry the builder and the guest can both reach first.
+**The image bakes the always-on services from the registry at build time.** `build-image.sh`
+pulls `pithead-<service>:v$(cat VERSION)` for the five first-party services, plus caddy and the
+docker-socket-proxy at the digests the staged compose pins, and saves each as an archive under
+`/opt/pithead/images` (#978). The build prints every archive's size. While VERSION leads the last
+release those tags exist nowhere public, so a build without `PITHEAD_REGISTRY` has nothing to
+bake; `build-image.sh` refuses it up front (#2043). Publish the five images to a registry the
+builder can reach first. The guest never contacts that registry: first boot loads the archives.
+A release build verifies each first-party image against `cosign.pub` before it is archived; a
+debug build against a private registry does not. The opt-in Tari images are not baked.
 
 **A dev image ships the last release's compose file, not the tree's.** Every `image:` in
 `docker-compose.yml` is pinned by `STACK_VERSION`, and the appliance derives that from its baked
