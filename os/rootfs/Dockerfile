@@ -4,8 +4,8 @@ ARG COMPOSE_VERSION=v5.5.1
 ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 ARG COSIGN_VERSION=v3.1.3
 ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
-ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7 github.com/go-jose/go-jose/v4@v4.1.6"
+ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2"
+ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7 github.com/go-jose/go-jose/v4@v4.1.6"
 ENV CGO_ENABLED=0
 
 RUN git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \
