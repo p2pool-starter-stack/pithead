@@ -315,8 +315,6 @@ test("a restore network failure shows an actionable error beside the retry", asy
   restore();
 });
 
-// --- the token gate --------------------------------------------------------------------------
-
 test("gate errors are announced beside the Continue action", () => {
   const out = renderToString(html`<${Gate} error="Wrong token." onSubmit=${() => {}} />`);
   assert.match(out, /role="alert"/);
