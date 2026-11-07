@@ -1,5 +1,6 @@
 import { Component, html } from "../app/preact.mjs";
 import { EarningsControl } from "./earnings-control.mjs";
+import { FleetUpgrade } from "./machines-fleet.mjs";
 import { RigInspector } from "./machines-inspector.mjs";
 import {
   findRig,
@@ -83,6 +84,7 @@ export class MachinesPage extends Component {
           : null
       }
       <section class="panel" aria-labelledby="rigs-title"><h2 id="rigs-title">Rigs</h2>
+        <${FleetUpgrade} controlEnabled=${state.control_enabled === true} writable=${writable} />
         <p>${workers.length ? rigSummary(workers) : "No rigs have connected yet. Copy the rig settings above into your miner and it appears here."}</p>
         ${
           workers.length
