@@ -3,7 +3,9 @@
 
 coordinator_saved_state_valid() {
     printf '%s' "$1" | jq -e --argjson expected "$2" '
-        .stage == "setup" and .saved_role == {role: "pithead"} and
+        .stage == "setup" and
+        (.saved_role | type == "object" and keys == ["role"] and
+          (.role == "pithead" or .role == "both")) and
         .new_machine == false and
         (.config as $config | all($expected | paths(scalars);
           . as $p | ($config | getpath($p)) == ($expected | getpath($p)))) and
@@ -68,28 +70,31 @@ _coordinator_setup_prefill() {
         report=$(printf '%s' "$WIZ_STATE" | jq -c --argjson expected "$coord_answers" '
             .config as $config | {
               setup: (.stage == "setup"),
-              coordinator: (.saved_role == {role: "pithead"}),
+              coordinator: (.saved_role | type == "object" and keys == ["role"] and
+                (.role == "pithead" or .role == "both")),
               saved: (.new_machine == false),
               changed_answers: ([$expected | paths(scalars) | . as $p |
                 select(($config | getpath($p)) != ($expected | getpath($p)))] | length)
             }' 2>/dev/null) || report=unreadable
         info "coordinator setup-again prefill checks: $report"
-        bad "coordinator setup-again: saved pithead role and safe prefill did not match the saved answers"
+        bad "coordinator setup-again: saved coordinator role and safe prefill did not match the saved answers"
         return 1
     }
-    ok "coordinator setup-again: saved pithead role and prefilled answers carry no secrets"
+    coord_saved_role=$(printf '%s' "$WIZ_STATE" | jq -er '.saved_role.role') || return 1
+    ok "coordinator setup-again: saved coordinator role and prefilled answers carry no secrets"
 }
 
 _coordinator_setup_preserved() {
     local identity answers
     identity=$(_coordinator_setup_identity) || return 1
     answers=$(_coordinator_setup_answers) || return 1
-    [ "$answers" = "$coord_answers" ] && [ -n "$identity" ] && [ "$identity" = "$coord_identity" ] &&
-        _ssh 'cd /data/pithead && test "$(cat data/monero/.kvm-setup-again)" = coordinator-chain && test "$(cat data/tari/.kvm-setup-again)" = coordinator-chain && test "$(cat machine-role)" = pithead' >/dev/null 2>&1
+    [ "$answers" = "$coord_answers" ] && [ -n "$identity" ] && [ -n "$coord_saved_role" ] &&
+        [ "$identity" = "$coord_identity" ] &&
+        _ssh "cd /data/pithead && test \"\$(cat data/monero/.kvm-setup-again)\" = coordinator-chain && test \"\$(cat data/tari/.kvm-setup-again)\" = coordinator-chain && test \"\$(cat machine-role)\" = '$coord_saved_role'" >/dev/null 2>&1
 }
 
 _coordinator_setup_again_body() {
-    local coord_answers coord_snapshot coord_identity coord_height="" deadline handoff code current
+    local coord_answers coord_snapshot coord_identity coord_saved_role="" coord_height="" deadline handoff code current
     local DASH_USER="$1" DASH_PASS="$2"
     coord_stage=baseline
     coord_answers=$(_coordinator_setup_answers) || return 1

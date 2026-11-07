@@ -422,7 +422,9 @@ the configured test registry fail before the image build. Release builds do not 
   legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
   with local chains and the non-default nano pool. The authenticated wizard must name the saved
-  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  coordinator role (`pithead`, or `both` for an appliance whose own miner the 2.1.0 defaults enable)
+  and prefill its answers with secrets blank; the on-disk role marker must equal the named role.
+  POST **Keep it** through the wizard;
   require the original dashboard login, unchanged configuration and host identity, both chain
   sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
   the served config; require the credentials card's login and the same chains and identity.
