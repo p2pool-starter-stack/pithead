@@ -55,6 +55,10 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; `broken-configs.tsv` and `tests/stack/test-manual-qa-oracle.sh` replay the documented dry-run refusals in shell block 5. The start page holds the run sheet, result rules and glossary. |
 
+The APT package is built by `scripts/release/apt.sh` from `packaging/deb/` and the pinned key files in
+`packaging/apt/`; `tests/packaging/deb-lifecycle.sh` runs in `.github/workflows/deb-package.yml`, and
+`.github/workflows/apt-feed.yml` deploys the pre-signed feed ([APT feed](releasing.md#the-apt-feed)).
+
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
 `tests/tools/test_lmdb_build.py` checks extraction and provenance inputs;

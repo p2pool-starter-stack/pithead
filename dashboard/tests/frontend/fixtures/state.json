@@ -1,4 +1,5 @@
 {
+  "apt_update_command": null,
   "avg_window": "10m",
   "avg_windows": [
     "1m",
