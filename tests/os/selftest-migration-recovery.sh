@@ -124,6 +124,13 @@ fail() {
     }
     provisioning_settled() { :; }
     provisioning_setup_failed() { return 1; }
+    (
+        bad() { printf '%s' "$*" >"$T/bad"; }
+        _wizard_provision_capture() { fail 'version mismatch reached provisioning'; }
+        _ssh() { if [ "$1" = 'cat /opt/pithead/VERSION' ]; then echo 0.0.0; else git rev-parse origin/develop; fi; }
+        if migration_prepare_old; then fail 'unequal baseline version accepted'; fi
+        grep -Fq "old=0.0.0 candidate=$(tr -d '[:space:]' <VERSION)" "$T/bad" || fail 'version refusal does not name both versions'
+    )
     sensitive_live_config() {
         python3 - "$HERE" "$T/form" <<'PYFIX'
 import importlib.util, json, sys
