@@ -8,8 +8,7 @@ echo "== source upgrade stale-image reconciliation and failure cleanup (#2934) =
 td=$(mktemp -d)
 trap 'rm -rf -- "$td"' EXIT
 mkdir -p "$td/bin" "$td/stack" "$td/scratch"
-# Read the real reconciler; only Docker and guarded up are substituted in this pure selftest.
-sed -n '/^reconcile_source_upgrade_images() {$/,/^}$/p' "$HERE/../../../lib/pithead/03-release-verify.sh" >"$td/stack/pithead"
+sed -n '/^reconcile_compose_images() {$/,/^}$/p' "$HERE/../../../lib/pithead/03-release-verify.sh" >"$td/stack/pithead"
 cat >>"$td/stack/pithead" <<'CLI'
 mutation_lock_acquire() { :; }
 log() { printf '%s\n' "$*"; }

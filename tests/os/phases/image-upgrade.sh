@@ -247,4 +247,5 @@ phase_image_upgrade() {
     else
         bad "deployed image upgrade gate failed (${guest_failure:-stage=unattributed exit=$rc})"
     fi
+    image_upgrade_certificate_continuity_leg
 }

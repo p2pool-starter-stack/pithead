@@ -1,6 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# --- Arg parsing ------------------------------------------------------------
 # shellcheck disable=SC2034  # the data-dir / remote-host globals are consumed by lib.sh:resolve_overrides
 parse_args() {
     while [ $# -gt 0 ]; do
@@ -106,9 +105,24 @@ parse_args() {
             RUN_RESET_DASHBOARD=1
             shift
             ;;
-        --fault-injection)
+        --fault-injection | --fault-injection-ssh)
             RUN_FAULTS=1
+            [ "$1" != --fault-injection-ssh ] || FAULT_SSH=1
             shift
+            ;;
+        --fault-ssh-dest)
+            case "${2:-}" in
+            "")
+                it_err "--fault-ssh-dest requires an SSH destination <user@host>."
+                exit 2
+                ;;
+            -*)
+                it_err "--fault-ssh-dest needs an SSH destination, got the flag '$2'."
+                exit 2
+                ;;
+            esac
+            FAULT_SSH_DEST="$2"
+            shift 2
             ;;
         --image-upgrade)
             [ "$#" -ge 3 ] || {
@@ -236,6 +250,10 @@ parse_args() {
         it_err "Provide --host <user@host> or --local. See --help."
         exit 2
     fi
+    [ "$FAULT_SSH" != 1 ] || [ -n "$FAULT_SSH_DEST" ] || {
+        it_err "--fault-injection-ssh needs --fault-ssh-dest <user@host>; refusing to run the phase locally."
+        exit 2
+    }
     [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || {
         it_err "--rig-name contains unsupported characters: $RIG_NAME"
         exit 2

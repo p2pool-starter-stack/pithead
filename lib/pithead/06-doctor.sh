@@ -325,6 +325,7 @@ doctor() {
         else
             dr_warn_surface "No containers reported by 'docker compose ps' — the stack may be stopped (run './pithead up') or run from a different directory." "No containers are running — the mining stack is stopped on this machine."
         fi
+        check_container_restarts
         check_revenue_containers
         check_dashboard_answers
         check_dashboard_public_listener

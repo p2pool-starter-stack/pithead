@@ -38,6 +38,13 @@ dotenv_decode_value() {
         done
         value="$out"
     fi
+    case "${2:-}" in
+    *_DIR)
+        case "$value" in
+        *$'\r'* | *$'\n'*) error "Directory values in .env must not contain CR or LF." ;;
+        esac
+        ;;
+    esac
     printf '%s' "$value"
 }
 
@@ -47,8 +54,8 @@ env_get_file() {
     local file="$1" key="$2" line
     [ -f "$file" ] || return 0
     line=$(grep -E "^$key=" "$file" 2>/dev/null) || true
-    line=${line%%$'\n'*}             # first matching line
-    dotenv_decode_value "${line#*=}" # value after the first '='
+    line=${line%%$'\n'*}
+    dotenv_decode_value "${line#*=}" "$key"
 }
 
 env_get() { env_get_file "$ENV_FILE" "$1"; }
@@ -168,11 +175,11 @@ _data_dir_is_broad_root() {
     return 1
 }
 
-# Refuse data directories that would be catastrophic to chown -R / rm -rf.
 assert_safe_dir() {
     local d="$1"
-    # 1) System + top-level roots, user homes, and the bare mount/parent dirs people most often
-    #    fat-finger a data_dir to. A dedicated SUBfolder (e.g. /srv/pithead) remains allowed (#91).
+    case "$d" in
+    *$'\r'* | *$'\n'*) error "Data directories must not contain CR or LF." ;;
+    esac
     if _data_dir_is_broad_root "$d"; then
         error "Refusing to use '$d' as a data directory — it's a system, home, or bare mount root. Choose a dedicated subfolder in $CONFIG_FILE (e.g. .../pithead-data)."
     fi
@@ -243,22 +250,11 @@ is_ipv4() {
     return 0
 }
 
-# Addresses held by container-engine interfaces (podman/docker/compose bridges and their veth
-# ends, matched by the engines' own naming so a LAN bridge like br0 or br-lan is kept), one per line; nothing when `ip` is absent. These come and go with the engine: a bridge
-# the setup wizard or a previous boot created is still in `hostname -I` when the Caddyfile is
-# rendered and gone by the time `up` starts Caddy. Listening on a literal that vanished fails the
-# whole file with "bind: cannot assign requested address" (#3406). Interface-name based, not an
-# engine query, so the answer never depends on the engine being reachable (see
-# appliance_site_names).
 container_bridge_addrs() {
     command -v ip >/dev/null 2>&1 || return 0
-    ip -o addr show 2>/dev/null | awk '$2 ~ /^(podman[0-9]+|docker[0-9]+|br-[0-9a-f]{12}|veth[0-9a-f]*|cni-podman[0-9]+|cni[0-9]+)$/ { split($4, a, "/"); print a[1] }'
+    ip -o addr show 2>/dev/null | awk '$2 ~ /^(podman[0-9]+|docker[0-9]+|veth[0-9a-f]*|cni-podman[0-9]+|cni[0-9]+)$/ || ($2 ~ /^br-[0-9a-f]+$/ && length($2) == 15) { split($4, a, "/"); print a[1] }'
 }
 
-# True if $1 is a globally-routable (public) IP literal — i.e. NOT loopback/private/link-local/
-# CGNAT/ULA. Pure + testable (#113): the stratum port is unauthenticated, so setup/doctor warn when
-# the host is publicly addressable. IPv4 excluded ranges: 0/8, 10/8, 127/8, 169.254/16, 172.16/12,
-# 192.168/16, 100.64/10 (CGNAT). IPv6: only 2000::/3 (global unicast) is treated as public.
 is_public_ip() {
     local addr="$1" a b h
     case "$addr" in

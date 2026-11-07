@@ -100,7 +100,9 @@ bench-ci as a retryable environment wait after baseline restore.
 ### The lint/release toolchain
 
 `make release`'s blocking test gate runs `make lint`, which shells out to `shellcheck`, `shfmt`,
-`node`/`npx`, and `uv`/`uvx`. A reimaged box loses these, so the release preflight
+`node`/`npx`, and `uv`/`uvx`; its `test-stack` leg also runs the Go module raise watch self-test, which
+needs Go 1.21 or newer on PATH (offline, against a fixture module graph; the preflight checks the version; Ubuntu 24.04's `golang-go` is 1.22, Debian 12's is 1.19 and fails the check).
+A reimaged box loses these, so the release preflight
 ([#426](https://github.com/p2pool-starter-stack/pithead/issues/426)) stops early and names the
 missing tools and their effective PATH rather than dying mid-gate. The check runs in a dry run
 and a real cut whenever the test gate is enabled; each resolved tool path is printed. Restore them with the same pinned versions CI uses
@@ -115,9 +117,9 @@ upstream release builds while some distro builds print a bare number, so the gat
 comparing.
 
 ```bash
-# node 20 (brings npx) + the basics the harness also needs
+# node 20 (brings npx) + the basics the harness also needs (golang-go: the go-raise-watch self-test)
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs jq curl git tar make
+sudo apt-get install -y nodejs jq curl git tar make golang-go
 
 # shellcheck + shfmt, read from the Makefile pins instead of copied. This block reads the repo, so
 # it needs a checkout and runs from its root. If it does not, the two guards name that as the cause.
@@ -512,7 +514,7 @@ compose hardening, config rendering, dashboard tests.
 | Caddy-fronted `/metrics` with dashboard authentication | Medium. Supply the live credential input and record the missing leg tracked by [#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058). |
 | Multi-worker scale: the harness assumes ~2 workers | Medium. Add a load-gen worker + assert proxy routing/hashrate for perf confidence; [#1999](https://github.com/p2pool-starter-stack/pithead/issues/1999) tracks it. |
 | Real Tari merge-mined block acceptance | Low. Probabilistic; rely on template/connectivity checks. |
-| Fault injection over SSH: no recorded live evidence | Low-Medium. The faults already use the shared SSH/local target wrapper; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) tracks the focused remote quoting, cleanup, and restoration proof. |
+| Fault injection between two machines | Low-Medium. `--harness-arg --fault-injection-ssh` exercises the `rx()` SSH branch and its extra shell quoting by dialing the reserved bench's own alias; it does not prove a second machine's network. See [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) for the managed phase's exact-head stop, SIGSTOP, remove, cleanup and restoration evidence. |
 
 Recommended before release: record the new combined upgrade/XvB run. The remaining rows are
 explicit residual gaps.

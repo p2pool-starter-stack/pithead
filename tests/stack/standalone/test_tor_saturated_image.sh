@@ -2,7 +2,7 @@
 # Offline state-write behavior of the actual Tor image; run by image CI.
 set -euo pipefail
 echo "== Tor image offline saturated-state recovery =="
-log=$(mktemp "${TMPDIR:?}/tor-offline.XXXXXX")
+log=$(mktemp "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/tor-offline.XXXXXX")
 trap 'rm -f "$log"' EXIT
 docker run -i --rm --network none --entrypoint sh "${1:?Tor image required}" -s <<'GUEST' | tee "$log"
 set -eu

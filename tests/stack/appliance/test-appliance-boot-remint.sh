@@ -135,7 +135,7 @@ assert_eq "the re-mint branch follows the ready check and precedes progress, sle
     "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_progress:-0}" ] && [ "${l_progress:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
 l_gr=$(grep -n -F 'gate_ready() {' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 l_set=$(grep -n -F '    gate_doctor_ran=1' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
-l_doc=$(grep -n -F '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
+l_doc=$(grep -n -F './pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 assert_eq "gate_ready marks the round BEFORE it runs doctor, so a quiet round can never act on last round's file" \
     "$([ "${l_gr:-0}" -lt "${l_set:-0}" ] && [ "${l_set:-0}" -lt "${l_doc:-0}" ] && echo ordered)" "ordered"
 

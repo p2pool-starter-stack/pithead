@@ -242,25 +242,11 @@ stack_up() {
     log "Starting stack..."
     warn_missing_data_dirs
     migrate_compose_project
-    # Install the Tor-only egress firewall BEFORE the containers start (#270). DOCKER-USER is a static
-    # chain whose rules reference the fixed subnet/Tor IP, so they can go in before the network exists;
-    # Docker preserves DOCKER-USER and (re)adds the FORWARD jump when it creates the network. Doing this
-    # first closes the startup window in which a clearnet app (e.g. Tari) could dial out unfenced; the
-    # firewall resets such a flow once it is in (#2672), but the packets sent before that have leaked.
     apply_tor_egress_firewall
-    provision_egress_check_units # #2599: the dashboard reads the firewall's live state
+    provision_egress_check_units
     provision_lan_guard_check_units
-    # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
-    # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
-    # the one unverified pull. Same guard: source checkouts skip, a missing cosign.pub warns and
-    # proceeds (#461 — an install predating the first signed release has no key to verify against),
-    # a present key that fails aborts before anything starts.
     verify_release_images
-    # Docker Compose automatically picks up COMPOSE_PROFILES from .env
-    #
-    # PITHEAD_HOLD_CHAIN=1 defers chains and LMDB changes until A/B commit (#851); plain `up` starts them afterward.
     if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
-        # Revoke the carried mining latch before dashboard startup; ordinary outages retain it.
         local dashboard_dir
         dashboard_dir=$(env_get DASHBOARD_DATA_DIR)
         [ -n "$dashboard_dir" ] && rearm_sync_gate_marker "$dashboard_dir" 1 || error "Could not reset the mining sync gate for the data migration."
@@ -278,25 +264,30 @@ stack_up() {
     elif ! compose_up_checked -d; then
         error "Stack failed to start — see the error above."
     fi
+    if is_appliance; then
+        reconcile_compose_images || error "Stack failed to converge containers to their declared images."
+    fi
+    if [ "${PITHEAD_HOLD_CHAIN:-0}" != 1 ] && [ "${PITHEAD_DEFER_LOCAL_MINER:-0}" != 1 ]; then
+        provision_local_miner || true
+    fi
     log "Stack started successfully!"
-    # Remind the operator at start-time if a node is coming up on clearnet (#183).
     print_clearnet_banner
     announce_dashboard_url
     print_first_run_epilogue
     mutation_lock_release
 }
 
-# One-time onboarding after the stack first comes up (#384): explain that mining doesn't start until
-# both chains finish their initial sync, and where to watch progress. Keyed on a marker file beside
-# .env so it shows once (fresh setup/up) and not on every restart of an already-running box. The
-# dashboard itself drives the sync-then-mine handoff (#35) — this is just the "what happens next".
 print_first_run_epilogue() {
     [ -f "$FIRST_RUN_MARKER" ] && return 0
     : >"$FIRST_RUN_MARKER" 2>/dev/null || true
+    local chains="Monero"
+    if [ "$(env_get TARI_REQUIRED 2>/dev/null || true)" != false ]; then
+        chains="Monero and Tari"
+    fi
     log "What happens next:"
-    log "  The miner is held until Monero and Tari finish their first sync, then starts automatically."
+    log "  The miner is held until the initial sync finishes for $chains, then starts automatically."
     log "  Watch progress with '$0 status' or live on the dashboard."
-    log "  First-time sync of both chains can take several hours to a few days, depending on disk and network."
+    log "  Initial chain sync can take several hours to a few days, depending on disk and network."
 }
 
 stack_down() {

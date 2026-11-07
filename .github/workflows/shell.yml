@@ -42,6 +42,13 @@ jobs:
         # run.sh sources the generated root `pithead` (git-ignored). Until #2048 split `lint-sh`
         # off, the build came in free as that target's prerequisite.
         run: make pithead
+      - name: Hold the default stratum port
+        run: |
+          nohup python3 -c 'import socket,time; s=socket.socket(); s.bind(("0.0.0.0",3333)); s.listen(1); time.sleep(3600)' >"$RUNNER_TEMP/hold-3333.log" 2>&1 &
+          for _ in $(seq 50); do (exec 3<>/dev/tcp/127.0.0.1/3333) 2>/dev/null && exit 0; sleep 0.1; done
+          cat "$RUNNER_TEMP/hold-3333.log" >&2
+          echo "nothing listens on 3333" >&2
+          exit 1
       - name: Run pithead test suite block
         run: bash tests/stack/run.sh "$BLOCK"
         env:
@@ -70,6 +77,13 @@ jobs:
           persist-credentials: false
       - name: Build the generated CLI
         run: make pithead
+      - name: Hold the default stratum port
+        run: |
+          nohup python3 -c 'import socket,time; s=socket.socket(); s.bind(("0.0.0.0",3333)); s.listen(1); time.sleep(3600)' >"$RUNNER_TEMP/hold-3333.log" 2>&1 &
+          for _ in $(seq 50); do (exec 3<>/dev/tcp/127.0.0.1/3333) 2>/dev/null && exit 0; sleep 0.1; done
+          cat "$RUNNER_TEMP/hold-3333.log" >&2
+          echo "nothing listens on 3333" >&2
+          exit 1
       - name: Run prerequisite fragment in a fresh process
         shell: bash
         run: |
@@ -101,7 +115,7 @@ jobs:
 
   shell-standalone:
     name: Shell tests (standalone suites + tooling)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15 # ~110 s of the old `shell` job, the first-boot journal suite being 60 s of it (#2048)
     # Each suite is named outright rather than globbed: standalone/ also holds test_compose.sh,
     # which belongs to the `compose` job and which sources test_dotenv.sh itself, so a glob would
@@ -124,6 +138,8 @@ jobs:
         # Real ext4 damage against the product's own repair escalation (#1062). Unprivileged —
         # e2fsprogs on plain files — and it hard-fails rather than skips when CI lacks the tools.
         run: bash tests/stack/standalone/test_data_reset.sh
+      - name: Run directory line-break regression
+        run: bash tests/stack/standalone/test_directory_linebreaks.sh
       - name: Run OS-update recovery suite
         # #1050 dead-end states re-arm and report.
         run: bash tests/stack/standalone/test_os_update_recovery.sh
@@ -135,19 +151,33 @@ jobs:
         run: bash tests/stack/standalone/test_appliance_hugepages.sh
       - name: Run clearnet marker attestation contract
         run: python3 tests/stack/standalone/test_clearnet_attestation.py
+      - name: Run stratum port preflight contract
+        run: python3 tests/stack/standalone/test_stratum_port.py
       - name: Test-inventory drift check
-        # The inventory generator is grep-based; it exits non-zero when any suite it
-        # enumerates counts zero — i.e. a suite moved or changed shape and the inventory
-        # would silently under-count (#981). Output discarded: the generated file is
-        # git-ignored and read on demand via `make test-inventory`.
         run: bash tests/inventory.sh > /dev/null
       - name: Run integration harness self-test
-        # Pure logic and bounded local transport fixtures for the tests/integration/
-        # harness (config rendering, matrix coverage, redaction, Digest connection reuse). The LIVE matrix (tests/integration/run.sh) needs a real test
-        # server and runs as a gated/manual release gate (#54), not on every PR.
         run: make test-integration-selftest
       - name: Run repository tooling checks
         run: make test-tools
+
+  bridge-awk:
+    name: Container bridge awk portability (Debian 12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
+      - name: Run bridge and Caddy regressions in the pinned test runner
+        run: |
+          bash scripts/test-container.sh true
+          docker run --rm --user root -v "$PWD:$PWD" -w "$PWD" \
+            pithead-test-runner:local bash -euc '
+              apt-get update
+              apt-get install -y --no-install-recommends mawk gawk busybox
+              make test-bridge-awk
+            '
 
   soak-macos:
     name: Soak self-test (macOS, ${{ matrix.bash }})

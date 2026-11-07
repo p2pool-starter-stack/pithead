@@ -63,3 +63,11 @@ paths = ['''^tests/os/appliance-tari-wallet-leg\.sh$''']
 regexes = [
   '''(?m)^TARI_WALLET_TEST_SPEND_KEY=e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76[ \t\r]*$''',
 ]
+
+[[allowlists]]
+description = "Empty ntfy token followed by a boolean in versioned render goldens"
+condition = "AND"
+regexTarget = "match"
+targetRules = ["generic-api-key"]
+paths = ['''^tests/stack/fixtures/config-2\.0\.0/(diy|appliance)\.env$''']
+regexes = ['''^NTFY_TOKEN=\r?\nNOTIFY_TOR=true$''']

@@ -132,7 +132,13 @@ host already holds `3333`. Set the port with [`p2pool.stratum_port`](configurati
 ```
 
 After `pithead apply`, point every rig at the new port (`YOUR_STACK_IP:4444`) — a rig still on the
-old port can't connect. `apply` flags a port change as destructive for exactly this reason, and the
+old port can't connect. Configuration preview, `pithead apply --dry-run` and `pithead apply`
+check a changed stratum port on the configured bind address and refuse it if the host already
+holds it. The control runner repeats this check before committing the configuration. The
+current port remains usable for unrelated configuration changes. The check does not reserve
+the port; a service that binds it afterwards can still make apply fail.
+
+`apply` requires confirmation for a port change because it disconnects the rigs. The
 firewall rules above must allow the new port instead of `3333`. On [RigForge](https://github.com/p2pool-starter-stack/rigforge),
 set the matching `pool.port` and run `rigforge apply`.
 
@@ -486,8 +492,13 @@ appliance mode after the stack is up, and repeats that on every boot — the min
 in `/run` and is re-created each time, like every other
 derived thing on the appliance. The worker appears in the dashboard's Workers Alive table; toggle
 `local_miner.enabled` from the dashboard's configuration view to turn it off or on again. Apply
-starts or stops the built-in miner without rebooting, even when this is the only setting changed. The
-rest of this section is the DIY flow.
+starts or stops the built-in miner without rebooting, even when this is the only setting changed.
+`up` also converges the built-in miner after starting the stack, including after a shell restore
+following config-reset and reboot. Boot-owned startup defers miner setup until after the A/B
+slot commits, including when migration releases the held chain services. The boot then runs miner
+setup once with a 30-minute timeout; a slow or failed miner cannot delay the commit. Interactive
+setup also provisions the miner once, after its stack-start prompt. Miner setup failures warn
+without failing stack startup. The rest of this section is the DIY flow.
 
 Opt in during `./pithead setup` (the prompt "Also mine on this machine with its spare CPU?", off by
 default), or set it in `config.json`:

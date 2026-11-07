@@ -13,18 +13,13 @@ CONNECTION:
   --identity <keyfile>   SSH private key (adds -i <keyfile>)
   --ssh-opt <opt>        extra ssh -o option (repeatable), e.g. --ssh-opt Port=2222
   --local                run against a stack on this machine instead of over SSH
-  --dir <path>           the Pithead stack directory ON THE BOX, relative to the SSH login
-                         dir or absolute (default: pithead). Avoid a literal ~ — your local
-                         shell would expand it before the box sees it.
-  --pithead <cmd>        how to invoke pithead on the box (default: ./pithead;
-                         use "sudo ./pithead" if docker needs root there)
-
+  --dir <path>           target stack dir, absolute or relative to SSH login (default: pithead).
+                         Avoid literal ~, which the caller's shell expands.
+  --pithead <cmd>        target CLI command (default: ./pithead; use "sudo ./pithead" for root).
 MATRIX:
-  --check                NON-DESTRUCTIVE: assert the box's current live state only — no config
-                         changes, no apply, no restore. The safe first run / health check.
-  --readiness            NON-DESTRUCTIVE: assess whether the box is fit to be a release/
-                         validation server (synced chains reusable, snapshot-capable FS, disk
-                         headroom, secrets not world-readable, dashboard localhost-only).
+  --check                read-only current-state assertions, without apply or restore.
+  --readiness            read-only: synced chains, snapshot FS, disk space, owner-only secrets,
+                         dashboard localhost-only.
   --scenario <name>      run only one scenario (see --list)
   --workers <n>          miners expected online while mining (default: 2)
   --no-mining-asserts    SKIP mining assertions (workers online, stratum hashes, cold-cache
@@ -39,38 +34,22 @@ MATRIX:
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
                          baseline is pruned)
-  --lifecycle            also run the lifecycle phase (restart, apply secret-preservation,
-                         and the #255 ensure_owner migration: a root-owned file under a data
-                         dir must be chowned to the container uid by apply)
-  --reset-dashboard      also run the reset-dashboard phase (#2346): `pithead reset-dashboard`
-                         wipes the .env-named dirs, not an unapplied config.json path (#139),
-                         recreates them owned by APP_UID (#550), leaves the chains untouched
-                         (height never rewinds), brings dashboard/p2pool back healthy, and a
-                         forced real compose failure reaches the friendly retry message instead
-                         of a bare errexit abort (#557). DESTRUCTIVE-then-restored; requires
-                         --safety-backup so interruption restores the baseline and removes decoys.
-  --safety-backup        take a `pithead backup` BEFORE the destructive scenarios; if anything
-                         fails, automatically roll the box back to it (down → restore → up).
-                         The archive is removed on success. Recommended for the destructive
-                         matrix on a precious box. Also exercises backup/restore end-to-end.
-  --fault-injection      also run the fault-injection phase: deliberately break monerod
-                         (stop / SIGSTOP / remove) and assert pithead's status verdicts
-                         (down / unhealthy / missing) and the failover→recovery cycle. Also
-                         makes the dashboard data dir read-only and asserts /api/state flags
-                         db_healthy:false, then restores it (#202), and forces a real
-                         `iptables -I` failure and asserts the #270 firewall rolls back
-                         fail-closed (no half-open ruleset). Also stops the tor container and
-                         asserts no clearnet egress leaks while SOCKS is down AND that
-                         `doctor` flags the outage loudly (#563), shadows timedatectl for a
-                         real clock-drift verdict, and tmpfs-fills the dashboard data dir for
-                         a real ENOSPC verdict (#383). DESTRUCTIVE-then-restored; works over
-                         SSH and locally. Slow (healthcheck + node-health debounce).
+  --lifecycle            restart; apply must preserve secrets and chown root-owned data to the container uid;
+                         also backup→restore and uninstall→setup checks.
+  --reset-dashboard      `pithead reset-dashboard` wipes the .env-named dirs, recreates them owned by APP_UID,
+                         leaves chains untouched and brings dashboard/p2pool back healthy; also forces a compose
+                         failure to reach the friendly retry. DESTRUCTIVE-then-restored; requires --safety-backup.
+  --safety-backup        back up before destructive scenarios; roll back on failure (down→restore→up).
+                         Remove the archive on success; recommended for destructive runs.
+  --fault-injection      stop/SIGSTOP/remove monerod; assert down/unhealthy/missing verdicts and failover recovery.
+                         Test read-only/ENOSPC DB verdicts, fail-closed firewall rollback, Tor outage/doctor,
+                         clock drift, DNS and sidechain recovery. SSH or local; slow; destructive-then-restored.
+  --fault-injection-ssh  run that phase's rx() calls over SSH; requires --fault-ssh-dest.
+  --fault-ssh-dest <h>   SSH destination for that phase; e2e.sh supplies the bench's own alias.
   --image-upgrade <old-sha> <new-sha>
-                         run `pithead upgrade` from a private candidate release bundle against
-                         the already-running old images and prove image revision, chain-data and
-                         height continuity, categorized secret fingerprints, workers, and mining
-                         across the change. Both arguments must be exact 40-hex Pithead commits.
-                         DESTRUCTIVE; requires --safety-backup and --local.
+                         run `pithead upgrade` from a private candidate bundle against the running old images;
+                         prove image revisions, chain-data/heights, secret categories, workers and mining.
+                         DESTRUCTIVE; exact 40-hex commits; requires --safety-backup and --local.
   --candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>
                          private candidate bundle, detached signature, and external trust root.
                          Required with --image-upgrade; all paths must be absolute local files.
@@ -141,7 +120,6 @@ OUTPUT:
   --list                 print the scenario matrix and axis coverage, then exit
   -h, --help             this help
 
-Scenarios whose prerequisites are missing (a full/pruned alt data dir, or a remote endpoint)
-are reported SKIPPED — never silently dropped, never mutating the canonical synced chain.
+Missing scenario inputs are reported SKIPPED; the canonical synced chain is never mutated.
 EOF
 }

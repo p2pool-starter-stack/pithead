@@ -381,10 +381,10 @@ assert_egress_dial_pair() {
             it_pass "clearnet dial is DROPPED with the firewall on (#270/#2059)"
         fi
         if run_egress_socks_probe "$tor_socks"; then
-            it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)"
+            it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)${EGRESS_PROBE_SUMMARY:+ — $EGRESS_PROBE_SUMMARY}"
         else
             it_fail "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)" \
-                "no egress even via Tor SOCKS at $tor_socks — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
+                "no egress even via Tor SOCKS at $tor_socks ($EGRESS_PROBE_SUMMARY) — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
         fi
     fi
 }

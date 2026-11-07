@@ -49,8 +49,23 @@ run_cli_wizard_defaults() {
     assert_rc "fresh CLI defaults complete real setup" "$rc" 0
     assert_contains "fresh CLI defaults reach completed preparation" "$out" "Deployment preparation complete"
     rx 'rm -f .itest-wizard-defaults.json'
-    pithead up >/dev/null 2>&1
-    assert_rc "fresh CLI defaults start their rendered services" "$?" 0
+    rx "set -e
+        source ./pithead
+        test ! -e .itest-first-run-done
+        had_marker=false
+        if [ -e \"\$FIRST_RUN_MARKER\" ]; then
+            mv \"\$FIRST_RUN_MARKER\" .itest-first-run-done
+            had_marker=true
+        fi
+        trap 'rm -f \"\$FIRST_RUN_MARKER\"; if [ \"\$had_marker\" = true ]; then mv .itest-first-run-done \"\$FIRST_RUN_MARKER\"; fi' EXIT
+        out=\$($IT_PITHEAD up 2>&1)
+        [ -f \"\$FIRST_RUN_MARKER\" ]
+        chains=Monero
+        if [ \"\$(env_get TARI_REQUIRED)\" != false ]; then chains='Monero and Tari'; fi
+        [[ \"\$out\" == *\"The miner is held until the initial sync finishes for \$chains, then starts automatically.\"* ]]
+        out=\$($IT_PITHEAD restart 2>&1)
+        [[ \"\$out\" != *'What happens next:'* ]]" >/dev/null 2>&1
+    assert_rc "fresh CLI first-start names required chains and restart suppresses the note" "$?" 0
     lifecycle_gate_sample after-wizard-up
     wait_status_ok 300
     assert_rc "fresh CLI defaults report a healthy stack" "$?" 0

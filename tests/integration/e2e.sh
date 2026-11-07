@@ -85,7 +85,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
-  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable, allowlisted; --sweep = every scenario)
+  --harness-arg <f> run this run.sh phase instead of the mode's (repeatable; incl. --fault-injection-ssh; --sweep = every scenario)
   --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -394,12 +394,11 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The images the baseline is on (and whether it has the #2460/#2599 egress units), captured before
-    # deploy_branch rebuilds the first-party images — on a source-checkout box under the very tag the
-    # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
-    # record is taken here or not at all. Read by verify_restore_proof.
-    EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)" EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
-    LAN_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-guard.service)" HOLD_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-hold.service)" LAN_CHECK_BEFORE="$(egress_boot_unit_state pithead-lan.timer)"
+    RESTORED=1
+    if ! capture_restore_unit_states && [ "$MODE" != check ]; then
+        die "Required pre-run unit state is unknown; refusing before backup, wallet capture or deployment."
+    fi
+    RESTORED=0
     if BASELINE_IMAGES="$(stack_image_census)" && [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else
@@ -616,6 +615,9 @@ run_harness() {
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
     phases="$phases${HARNESS_SCENARIO_ARGS:-}$remote_args $no_mining"
+    case " ${HARNESS_PHASE_ARGS:-} " in
+    *" --fault-injection-ssh "*) phases="$phases --fault-ssh-dest $(quote_arg "$BENCH_HOST")" ;;
+    esac
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     harness_install_runner || die "Failed to install the detached harness runner."

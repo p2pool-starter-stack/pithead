@@ -149,6 +149,7 @@ reset_apply2360() {
     rm -rf "$APPLY2360"
     mkdir -p "$APPLY2360_OLD"
     printf 'livedb' >"$APPLY2360_OLD/mining_data.db"
+    printf '{}\n' >"$APPLY2360/config.json"
     printf 'DASHBOARD_DATA_DIR=%s\n' "$APPLY2360_OLD" >"$APPLY2360/.env"
     : >"$APPLY2360_LOG"
 }

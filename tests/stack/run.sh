@@ -149,11 +149,11 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-backup-recovery.sh" && domain_ran test-backup-recovery.sh "$_d0" "$?" || domain_ran test-backup-recovery.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-backup-stop-scope.sh" && domain_ran test-backup-stop-scope.sh "$_d0" "$?" || domain_ran test-backup-stop-scope.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-cli-restore-hardening.sh" && domain_ran test-cli-restore-hardening.sh "$_d0" "$?" || domain_ran test-cli-restore-hardening.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/test-cli-restore-sqlite.sh" && domain_ran test-cli-restore-sqlite.sh "$_d0" "$?" || domain_ran test-cli-restore-sqlite.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-restore-configless.sh" && domain_ran test-restore-configless.sh "$_d0" "$?" || domain_ran test-restore-configless.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-install-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-install-verify.sh" && domain_ran test-install-verify.sh "$_d0" "$?" || domain_ran test-install-verify.sh "$_d0" "$?"
 fi
-
 if in_block 2; then
     # shellcheck source=tests/stack/secrets/test-secrets.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets.sh" && domain_ran test-secrets.sh "$_d0" "$?" || domain_ran test-secrets.sh "$_d0" "$?"
@@ -395,6 +395,6 @@ if in_block 5; then
     # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"
 fi
-
+host_fence_final_check
 [ -z "$_tally" ] || printf '%s %s %s\n' "$STACK_BLOCK" "$PASS" "$FAIL" >>"$_tally"
 stack_verdict "pithead tests, block $STACK_BLOCK of $STACK_BLOCKS"
