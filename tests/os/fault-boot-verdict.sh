@@ -8,7 +8,6 @@
 # that failed to reach it late in a long run. Only a serial log showing none of GRUB, kernel or
 # login evidence is a real brick; anything else is a probe failure and never disqualifying.
 
-# A busy guest can outlive an abrupt stop, so confirm its state before judging another boot.
 fault_power_cut() {
     local tries state out=""
     for tries in 1 2 3 4 5 6; do
