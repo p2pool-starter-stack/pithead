@@ -43,7 +43,7 @@ gate_restart_caddy() {
 boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason" (sync-held #31/#35 excluded)
     [ -s "$BOOT_STATUS_LOG" ] || return 0
     grep -E '(✗|⚠.*UNHEALTHY)' "$BOOT_STATUS_LOG" 2>/dev/null |
-        sed -E 's/^[[:space:]]*[✗⚠][[:space:]]+([^[:space:]]+)[[:space:]]+/container \1: /'
+        sed -E 's/^[[:space:]]*(✗|⚠)[[:space:]]+([^[:space:]]+)[[:space:]]+/container \2: /'
 }
 boot_status() {
     install -m 600 /dev/null "$BOOT_STATUS_LOG" || return 1
