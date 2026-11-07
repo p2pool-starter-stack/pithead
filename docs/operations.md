@@ -10,7 +10,7 @@ separately, [below](#appliance-only-commands).
 |---|---|
 | `./pithead setup` | First-time setup (interactive): dependency check, config, Tor provisioning, kernel optimization, and start. `--skip-optimize` skips kernel/GRUB tuning; `--skip-deps` skips the dependency check/install. |
 | `./pithead apply` | Preview and apply `config.json` changes. Warns before disruptive ones and recreates only what changed. `-y` / `--yes` skips the prompt. |
-| `./pithead up` | Start the stack. On the appliance, also start the built-in miner when `local_miner.enabled` is on; the boot unit leaves that to its later `local-miner` step. |
+| `./pithead up` | Start the stack. |
 | `./pithead down` | Stop the stack. |
 | `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` rebuilds circuits when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts right after tor is healthy again so it re-dials its peers (#972). `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
 | `./pithead upgrade` | Re-render the generated config, then **pull** (release bundle) or **rebuild** (source checkout) the images and restart. Run after downloading a newer bundle or a `git pull`. |
