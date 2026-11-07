@@ -114,7 +114,7 @@ def confirmed_payouts_summary(
 ):
     """Roll confirmed on-chain payouts into running totals + a count (#381/#462/#787).
 
-    ``payouts`` is the current wallet's list (``storage.get_payouts(chain, wallet_id)``): each carries ``ts``
+    ``payouts`` is the stored-payout list (``storage.get_payouts(chain)``): each carries ``ts``
     (unix seconds) and ``amount_atomic``. Sums are converted atomic→whole-unit at this edge only,
     via ``divisor`` (piconero 1e12 for Monero, microTari 1e6 for Tari) with the amount keys prefixed
     by ``unit`` (``xmr_*`` / ``xtm_*``). ``enabled`` is False when the feature is off

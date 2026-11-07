@@ -196,8 +196,6 @@ class TestRaffleWins:
 
 
 class TestPayouts:
-    """Wallet-scoped receipts retain idempotence and chain isolation."""
-
     def _rows(self):
         return [
             {"txid": "aa", "height": 100, "ts": 1000.0, "amount_atomic": 250_000_000_000},
@@ -216,7 +214,6 @@ class TestPayouts:
         assert len(state_manager.get_payouts("monero", "fixture-wallet")) == 2
 
     def test_same_txid_different_chain_is_a_distinct_payout(self, state_manager):
-        # Chain isolation prevents transaction identifiers from colliding across chains.
         state_manager.add_payouts("monero", "fixture-wallet", [self._rows()[0]])
         new = state_manager.add_payouts("tari", "fixture-wallet", [self._rows()[0]])
         assert len(new) == 1

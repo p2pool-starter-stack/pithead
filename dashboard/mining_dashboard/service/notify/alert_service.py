@@ -417,7 +417,7 @@ class AlertService(
     async def payout_confirmed_alert(self, chain, amount_atomic, txid):
         """Push a payout-confirmed alert (#381): the view-only wallet saw an incoming payout land
         on-chain — the ground truth behind the earnings estimate. "Alert once" is enforced upstream
-        (the caller only invokes this for new ``(chain, wallet_id, txid)`` rows the idempotent
+        (the caller only invokes this for genuinely-new ``(chain, txid)`` rows the idempotent
         ``payouts`` table just inserted), so a dashboard restart re-scanning the tip replays nothing.
         Carries the chain so the shared table/event serves Tari's sibling (#462), and the chain
         also picks the atomic-unit divisor — Monero stores piconero (1e12/XMR), Tari microTari

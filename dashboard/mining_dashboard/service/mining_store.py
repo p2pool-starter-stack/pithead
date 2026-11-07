@@ -31,7 +31,6 @@ class MiningStoreMixin:
     def add_payouts(
         self, chain: str, wallet_id: str | None, rows: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Return newly inserted receipts so rescanning this wallet never repeats an alert."""
         if not wallet_id or not rows:
             return []
         new_rows = []

@@ -51,7 +51,6 @@ async def run_isolated(label, step):
 
 
 async def sync_monero(state_manager, wallet_client, alert_service):
-    """Capture the configured identity before scanning so a config change cannot relabel receipts."""
     chain = "monero"
     wallet_id = configured_wallet_id(chain)
     if wallet_id is None:
@@ -73,7 +72,6 @@ async def sync_monero(state_manager, wallet_client, alert_service):
 
 
 async def sync_tari(state_manager, tari_wallet_client, alert_service):
-    """Capture the configured identity before scanning so a config change cannot relabel receipts."""
     chain = "tari"
     wallet_id = configured_wallet_id(chain)
     if wallet_id is None:

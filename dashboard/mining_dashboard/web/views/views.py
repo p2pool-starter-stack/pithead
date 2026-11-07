@@ -241,12 +241,10 @@ def read_os_update_state() -> dict | None:
 
 
 def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASHRATE_WINDOW):
-    """Assemble the shared payload so dashboard sections use the same computed metrics."""
     data = data or {}
     history = state_mgr.get_history()
     share_stats = state_mgr.get_share_stats()  # per-poll share-health deltas (#116)
     raffle_wins = state_mgr.get_raffle_wins()  # rounds this wallet won, from XvB's winners file
-    # Totals and chart markers share the current wallet's receipt history.
     monero_payouts = (
         state_mgr.get_payouts("monero", configured_wallet_id("monero"))
         if config.PAYOUT_CONFIRM_ENABLED
