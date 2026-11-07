@@ -49,7 +49,9 @@ tick() {
     bash "$ROOT/os/overlay/pithead-miner-recovery" >"$work/output"
 }
 no_restart() { [ ! -s "$work/calls" ]; }
+rm -f "$work/stack/.pithead.lock"
 tick 100
+[ "$(stat -c %a "$work/stack/.pithead.lock" 2>/dev/null || stat -f %Lp "$work/stack/.pithead.lock")" = 644 ]
 tick 399
 no_restart
 tick 400

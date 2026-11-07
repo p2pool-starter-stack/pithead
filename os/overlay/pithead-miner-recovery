@@ -7,7 +7,9 @@ reset_window() {
     exit 0
 }
 cd "${PITHEAD_DIR:-/data/pithead}" 2>/dev/null || reset_window
-exec 9>>"${PITHEAD_LOCK_FILE:-.pithead.lock}"
+lock_file=${PITHEAD_LOCK_FILE:-.pithead.lock}
+(umask 022 && : >>"$lock_file") || reset_window
+exec 9>>"$lock_file"
 flock -n 9 || reset_window
 [ "$(cat machine-role 2>/dev/null || true)" != rig ] || reset_window
 jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
