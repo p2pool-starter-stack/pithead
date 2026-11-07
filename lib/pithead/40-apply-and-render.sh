@@ -256,7 +256,6 @@ apply() {
         error "The configuration changed after apply rendered its preview. Re-run '$0 apply' to review and confirm the current configuration."
     fi
 
-    if [ "${#changed[@]}" -gt 0 ]; then
         # Carry the DB before publication so a refusal preserves its active path.
         if { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; }; then
             if [ -n "$dashboard_data_dir_old" ] && [ -n "${DASHBOARD_DIR:-}" ] &&

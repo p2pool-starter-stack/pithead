@@ -343,7 +343,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     rm -f "$errf"
 }
 
-# Commit only the host-staged copy bound to the preview.
 control_commit() ( # <id> <actor> <control-dir> [confirm-token] [approval-json]
     local id="$1" actor="$2" cdir="$3" confirm="${4:-}" approval="${5:-null}"
     local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0 carried_ssh=0
@@ -379,7 +378,6 @@ control_commit() ( # <id> <actor> <control-dir> [confirm-token] [approval-json]
         audit_action="commit-confirmed"
         rm -f "${staged}.confirmed"
     fi
-    # Retain the previous config for recovery if child apply fails.
     control_carried_ssh "$staged" && carried_ssh=1
     cp "$CONFIG_FILE" "${CONFIG_FILE}.bak-control"
     cp "$staged" "$CONFIG_FILE"
