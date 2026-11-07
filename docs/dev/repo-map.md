@@ -150,8 +150,10 @@ original-byte cleanup and private recovery retention are exercised by
 `tests/integration/lib/reset-restore-web.sh`. The startup-window restore fixture is
 `tests/integration/lib/reset-restore-startup.sh`, with the guest-only pause in
 `tests/os/wizard-startup-guest.sh` and pure controls in `tests/os/selftest-wizard-startup.sh`.
-Consecutive status censuses are in
-`tests/integration/lib/readiness-churn.sh`.
+Consecutive status censuses are in `tests/integration/lib/readiness-churn.sh`. Deterministic
+changing responses for integration and appliance selftests live in
+`tests/integration/lib/selftest/fake-eventual.sh`; `tests/integration/test_selftest_runner.py`
+guards their isolated Makefile discovery.
 
 Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
@@ -191,6 +193,9 @@ Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
+Tor lifecycle receipts are emitted by `32a-tor-lifecycle-receipts.sh` and
+`service/health/tor_lifecycle.py`; the onion-rotation integration phase retains and checks
+them through `tests/integration/lib/tor-lifecycle-receipts.sh`.
 The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
 the same host-gated recovery as the CLI.
 
@@ -346,6 +351,9 @@ records; effective Caddy configuration is reported only as matcher/log-destinati
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
+The focused safety-backup selector is `--backup-only` in `tests/integration/run.sh`;
+`tests/integration/selftest/selftest-backup-only.sh` checks exclusive selection, archive
+validation and recovery without scenarios or lifecycle operations.
 `tests/integration/lib/tari-readiness.sh` supplies the running-state battery's fresh
 required-Tari observation. `mergemine-probe.sh` in the same directory binds the gRPC
 proof to the current container epoch. Their pure controls live in
@@ -443,6 +451,11 @@ failures past the old tail limit and native gzip rotation;
 undercount and failure controls.
 
 ## What stays at the root
+
+Appliance power controls use `lib/pithead/46b-control-power.sh`, the dashboard's
+`web/views/power_views.py` route, and the lean UI's `web/static/sovereign/power.mjs` component.
+`tests/os/appliance-power-leg.sh` exercises dashboard-ordered reboot and clean shutdown in the
+provision phase; the physical-button boundary is covered by the manual appliance battery.
 
 - Runtime contracts: generated `pithead`, `pithead-completion.bash`,
   `docker-compose.yml`, `config.*.json`, `cosign.pub`, and `VERSION`.
