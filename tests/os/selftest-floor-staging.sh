@@ -92,6 +92,7 @@ _ssh() {
         [ "$(wc -l <"$T/osupdate-calls")" -ne 4 ] || return 1
         ;;
     *.os-data-floor*) echo 1.0.0 ;;
+    *config_version*) sed 's/[-+].*//' VERSION ;;
     *"floor is back to'"*) return 1 ;;
     esac
     return 0

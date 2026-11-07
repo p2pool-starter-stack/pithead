@@ -14,6 +14,7 @@ config_version_ok() {
 
 stamp_config_version() {
     local stamp version owner tmp
+    [ ! -e "$CONFIG_FILE.stamp-deferred" ] || return 0
     version=$(config_code_version) || {
         warn "Could not read the release version — config_version was not written."
         return 0
