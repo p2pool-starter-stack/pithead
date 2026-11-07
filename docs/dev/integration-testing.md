@@ -752,8 +752,9 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   takes the prerequisite skip only when startup evidence is not classified as lost and the
   window was read and held no such line: p2pool then built no client, the
   download did not complete, and no input to this harness would create the signal, which is what
-  earns the counted `by-design` class rather than the predicate's bit. Every case the order moves,
-  it moves out of the skip ledger into a pass or a fail, never the other way. Only the matching
+  earns the counted `by-design` class rather than the predicate's bit. Reading the capture first moves a case
+  out of the skip ledger into a pass or a fail. The one exception is the evidence-loss fallback
+  above, which can turn a would-be fail into a counted `missing` row, never into a skip. Only the matching
   lines cross the wire: at most 200 recent matching lines plus the latest chain-id line,
   each clipped to 2048 characters. Each log read has a 15-second timeout. The container's argv
   line — carrying both wallet addresses, the RPC credential and the onion — stays out of the capture.

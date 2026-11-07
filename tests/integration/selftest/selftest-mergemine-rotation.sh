@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Rotation fallback controls for the p2pool -> Tari startup observation (#3298).
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

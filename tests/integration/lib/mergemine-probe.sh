@@ -277,7 +277,6 @@ mm_mask_excerpt() {
 # to THIS harness would make the signal exist (cycle 40 measured zero Tari gRPC calls across five
 # legs against absent, synced-fake and partial-fake monerods). Covering it means running against
 # a synced chain, not supplying something.
-#
 assert_mergemine_roundtrip() {
     local observed verdict epoch current lines rc=0 excerpt=""
     observed="$(mm_await_roundtrip)" || rc=$?
