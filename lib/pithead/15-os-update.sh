@@ -1,5 +1,4 @@
 # --- OS update (appliance A/B slots) ---
-# Variant confirmation protects the appliance's management channel across updates.
 
 os_running_variant() { # echoes debug|release|unknown
     local v
@@ -67,7 +66,6 @@ os_raise_data_floor() { # $1: new floor, $2: optional slot-specific install inte
     f=$(os_data_floor_file)
     cur=$(os_data_floor)
     os_migration_write "$f.prev" "${cur:-none}" || return 1
-    # Publish ownership before raising the floor so an interrupted preparation can be reconciled.
     if [ -n "${2:-}" ]; then
         os_migration_write "$(os_migration_marker_file)" "$2" || return 1
     fi
@@ -76,7 +74,6 @@ os_raise_data_floor() { # $1: new floor, $2: optional slot-specific install inte
     fi
 }
 
-# Slot ownership prevents a same-version fallback from claiming the candidate's protection.
 os_migration_marker_file() { printf '%s' "${PITHEAD_MIGRATION_MARKER_FILE:-/data/pithead/.os-migration-pending}"; }
 
 os_migration_fingerprint() {
@@ -112,7 +109,6 @@ os_disarm_prepared_migration() {
     jq -e --arg slot "$slot" \
         '[.slots[] | .[] | select(.state == "booted" and .bootname == $slot and .boot_status == "good")] | length == 1' \
         <<<"$status" >/dev/null || return 1
-    # RAUC rejects marking while busy; successful disarm prevents a later unprotected boot.
     rauc status mark-bad other && sync && os_restore_prepared_migration
 }
 
@@ -325,7 +321,6 @@ os_update() {
             fi
         fi
     fi
-    # Take the mutation lock after interactive confirmation so waiting for input cannot block other verbs.
     mutation_lock_acquire os-update
     local marker candidate migration_rc=0
     marker=$(os_migration_marker_file)
@@ -356,7 +351,6 @@ os_update() {
         log "Marked a data migration pending: the candidate's chain services start only after its slot commits."
     fi
     log "Installing OS update bundle: $bundle (running: $running, bundle: $target)"
-    # Preserve RAUC's progress and diagnosis without exposing the staged bundle path in errors.
     local rauc_log
     rauc_log=$(mktemp)
     if rauc install "$bundle" 2>&1 | tee "$rauc_log"; then

@@ -67,7 +67,6 @@ mkdir -p "$OUSB/bin"
 # hatches for #1041's error-surfacing tests: RAUC_INFO_RC/RAUC_INFO_ERR fail `info` (a signature
 # verdict) with a chosen message on stderr, RAUC_INSTALL_RC/RAUC_INSTALL_ERR do the same for
 # `install`. Both default to a clean 0/no-output — every test above this one never sets them.
-# The genuine shell and JSON captures keep metadata parsing tied to RAUC's output format.
 cat >"$OUSB/bin/rauc" <<'EOF'
 #!/usr/bin/env bash
 echo "[rauc] $*" >>"${RAUC_LOG:?}"
@@ -393,7 +392,6 @@ assert_eq "the real bundle's own declared floor is recorded, not a stand-in valu
 unset -f ourun_v_realfixture
 unset RIS RIJ FWR
 
-# A replacement must disarm the pending candidate before consuming its migration protection.
 MK="$OUSB/marker-mig"
 rm -f "$MK"
 MARKER_FILE="$MK" ourun_v "1.10.0" "$OUSB/floor-scratch" "$OUSB/info-mig.txt" bundle.raucb >/dev/null 2>&1
