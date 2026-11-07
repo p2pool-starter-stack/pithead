@@ -203,6 +203,13 @@ for scenario in success success-both boot-failed session-failed prefill-failed k
         grep -q '"coordinator":false' "$work/trace"
         grep -q '"changed_answers":6' "$work/trace"
         ;;
+    success) grep -q 'the page names the saved role pithead' "$work/trace" ;;
+    success-both) grep -q 'the page names the saved role both' "$work/trace" ;;
+    identity-changed | onion-changed) grep -q 'machine identity changed' "$work/trace" ;;
+    chain-lost) grep -q 'chain sentinel or the role marker drifted' "$work/trace" ;;
+    config-changed) grep -q 'boot snapshot differs from baseline' "$work/trace" ;;
+    keep-marker-left) grep -q 'keep-role marker survived the boot' "$work/trace" ;;
+    setup-not-settled) grep -q 'setup-again unit is not active' "$work/trace" ;;
     services-only) grep -q 'dashboard_http=200 curl_exit=0 state_ready=no' "$work/trace" ;;
     auth-refused) grep -q 'dashboard_http=401 curl_exit=0 state_ready=no' "$work/trace" ;;
     esac
