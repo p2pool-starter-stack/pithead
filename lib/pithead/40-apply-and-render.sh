@@ -169,7 +169,6 @@ apply() {
         [ -n "$key" ] && changed+=("$key")
     done < <(env_changed_keys "$ENV_FILE" "$newenv")
 
-    # Retry interrupted publication and service convergence even when the rendered environment matches.
     local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
     # Armed before .env commits, cleared when apply ends: a retry would otherwise keep the old login hash (#3332).
@@ -249,7 +248,6 @@ apply() {
         # the active path unchanged, rather than stranding the stopped dashboard on a new path.
         mutation_lock_acquire apply
         lock_held=1
-        # A failed marker write must preserve the previous retry's reset scope.
         local marker_stage
         marker_stage=$(mktemp "${apply_marker}.XXXXXX") || error "Could not stage the apply recovery marker."
         if ! {
@@ -311,7 +309,6 @@ apply() {
     fi
     provision_node_onions # #103: a node that just went local needs its onion before it starts
     inject_service_configs
-    # Compare rendered content because bind-mounted Caddyfile changes do not trigger recreation.
     if [ -f "Caddyfile" ]; then
         caddy_had=1
         caddy_before=$(cat "Caddyfile")
