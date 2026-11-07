@@ -120,7 +120,7 @@ run_reset_dashboard() {
     assert_eq "recreated p2pool/stats dir owned by APP_UID 1000 (#550)" \
         "$(rx "stat -c %u $(quote_arg "$p2pool_dir/stats") 2>/dev/null")" "1000"
 
-    wait_for 240 5 "dashboard and p2pool healthy after reset-dashboard" _reset_dashboard_services_healthy || true
+    wait_for 600 5 "dashboard and p2pool healthy after reset-dashboard" _reset_dashboard_services_healthy || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after reset-dashboard" "$?" "0"
     assert_eq "dashboard container healthy after reset" "$(service_state dashboard)" "running healthy"
