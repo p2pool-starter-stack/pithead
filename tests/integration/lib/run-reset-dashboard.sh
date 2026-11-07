@@ -1,6 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# Real filesystem and Compose behavior require a live reset with rollback protection.
 _reset_dashboard_services_healthy() {
     [ "$(service_state dashboard)" = "running healthy" ] && [ "$(service_state p2pool)" = "running healthy" ]
 }
@@ -27,11 +26,9 @@ run_reset_dashboard() {
         it_fail "reset-dashboard phase preconditions" "data directories contain line breaks"
         return
     fi
-    # Reuse the dashboard image so the failure fixture needs no registry pull.
     local blocker_image
     blocker_image="$(rx "docker inspect --format '{{.Config.Image}}' dashboard 2>/dev/null")"
 
-    # Unapplied config decoys distinguish the live .env targets from config-only paths.
     local decoy_dashboard decoy_p2pool decoy_config decoy_paths
     if ! decoy_paths="$(rx "dashboard=''; p2pool=''; cleanup() { [ -z \"\$dashboard\" ] || rm -rf -- \"\$dashboard\"; [ -z \"\$p2pool\" ] || rm -rf -- \"\$p2pool\"; }; trap cleanup EXIT; dashboard=\$(mktemp -d $(quote_arg "${dashboard_dir}.CONFIGONLY.XXXXXX")) || exit; p2pool=\$(mktemp -d $(quote_arg "${p2pool_dir}.CONFIGONLY.XXXXXX")) || exit; printf '%s\\n%s\\n' \"\$dashboard\" \"\$p2pool\" || exit; trap - EXIT")"; then
         it_fail "reset-dashboard phase preconditions" "could not create isolated config-only decoys"
@@ -67,7 +64,6 @@ run_reset_dashboard() {
         reset_dashboard_cleanup
         return
     fi
-    # get_info.height is one past get_info.top_block_hash's height.
     mblock_before="$(monero_block_identity "$((mheight - 1))")"
     if [ -z "$mblock_before" ]; then
         it_fail "monerod block identity before reset-dashboard" "get_block_header_by_height failed before the reset"
@@ -102,13 +98,11 @@ run_reset_dashboard() {
     assert_eq "recreated p2pool/stats dir owned by APP_UID 1000 (#550)" \
         "$(rx "stat -c %u $(quote_arg "$p2pool_dir/stats") 2>/dev/null")" "1000"
 
-    # Both reset services must pass their own healthchecks, not merely remain running while starting.
     wait_for 240 5 "dashboard and p2pool healthy after reset-dashboard" _reset_dashboard_services_healthy || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after reset-dashboard" "$?" "0"
     assert_eq "dashboard container healthy after reset" "$(service_state dashboard)" "running healthy"
     assert_eq "p2pool container healthy after reset" "$(service_state p2pool)" "running healthy"
-    # Fresh mining telemetry must follow the reset of p2pool's session counter.
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || true
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || true
     local reset_state
@@ -117,7 +111,6 @@ run_reset_dashboard() {
         "$(jq_get "$reset_state" '.stratum.total_hashes')" "$EXPECTED_WORKERS"
     [ "$SKIP_MINING_ASSERTS" = "1" ] || assert_share_stats_live
 
-    # Dashboard health can precede its first successful Monero RPC connection.
     wait_for 120 5 "monerod RPC after reset-dashboard" monero_chain_tip || true
     local mtip2 mheight2
     mtip2="$(monero_chain_tip)"
@@ -137,16 +130,13 @@ run_reset_dashboard() {
         it_fail "tari chain-untouched check" "dashboard did not report a numeric height before and after the reset"
     fi
 
-    # A failed reset must reach restoration before another destructive fault.
     if [ "$IT_FAIL" -gt "$failures_before_reset" ]; then
         reset_dashboard_cleanup
         return
     fi
 
-    # A foreign p2pool container forces a real Compose name conflict.
     if [ -n "$blocker_image" ]; then
         it_step "forcing a real compose failure to exercise the #557 friendly-failure branch…"
-        # Hold the mutation lock until the captured blocker is removed.
         local fail_result fail_out fail_rc
         fail_result="$(rx "source ./pithead; mutation_lock_acquire reset-dashboard-test; blocker=''; complete=0; cleanup() { [ -z \"\$blocker\" ] || docker rm -f \"\$blocker\" >/dev/null 2>&1 || true; [ \"\$complete\" = 1 ] || PITHEAD_LOCK_HELD=1 ./pithead up >/dev/null 2>&1 || true; mutation_lock_release; }; trap cleanup EXIT; docker rm -f p2pool >/dev/null 2>&1; blocker=\$(docker create --name p2pool $(quote_arg "$blocker_image")) || exit 0; if PITHEAD_LOCK_HELD=1 ./pithead reset-dashboard -y 2>&1; then rc=0; else rc=\$?; fi; complete=1; printf '\n__reset_dashboard_rc=%s\n' \"\$rc\"")"
         fail_rc="$(printf '%s\n' "$fail_result" | sed -n 's/^__reset_dashboard_rc=//p' | tail -n1)"

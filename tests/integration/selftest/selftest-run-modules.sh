@@ -236,7 +236,6 @@ reset_service_p2pool="running starting"
 reset_service_p2pool="running unhealthy"
 ! _reset_dashboard_services_healthy || exit 1
 
-# The safety EXIT trap must restore the config and decoys after an interrupted reset.
 if (
     IT_MODE=local IT_SSH_DEST='' RIG_NAME='' RIGFORGE_BOOTSTRAP_VERSION=''
     FAULT_SSH=0 FAULT_SSH_DEST='' RUN_IMAGE_UPGRADE=0 RUN_RESET_DASHBOARD=0 RUN_ROTATE_SECRETS=0 RUN_XVB_ROUTING=0 SAFETY_BACKUP=0 SKIP_MINING_ASSERTS=0

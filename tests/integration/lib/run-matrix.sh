@@ -23,7 +23,6 @@ push_config() {
     fi
 }
 
-# Read a single (non-secret) .env value off the box using Pithead's dotenv decoder.
 env_on_box() { rx "bash -c 'source ./pithead && env_get_file .env \"\$1\"' _ $(quote_arg "$1")"; }
 
 # Services currently running, one per line, sorted. Honours active compose profiles, so
