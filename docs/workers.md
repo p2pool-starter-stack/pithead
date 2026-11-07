@@ -8,8 +8,10 @@ before sizing the machines. The appliance's [role chooser](appliance.md#what-is-
 sets that arrangement; a worker-only machine holds no chain data or payout wallet configuration.
 
 The endpoint is the `xmrig-proxy` service on port `3333` by default. Every successful coordinator
-`setup`, `up`, and `apply` prints the pool URL and stratum password, or states that no password is
-set. This includes an `apply` with no configuration changes and a host with local mining enabled.
+`setup`, `up`, and `apply` prints the pool URL and says whether stratum authentication is on, or
+states that no password is set. When authentication is on, get the password from the
+dashboard's **Connect a miner** block. This includes an `apply` with no configuration changes and a
+host with local mining enabled.
 When stratum TLS is enabled, the output also includes the certificate fingerprint to pin on rigs.
 The pool URL uses the dashboard hostname for an all-interface bind, or the configured stratum
 bind address; a loopback bind permits local connections only. The dashboard's Connect a miner card
@@ -153,12 +155,12 @@ New installs have **no stratum password**. The CLI and appliance setup wizards a
 configurations retain their password setting; `"auto"` continues to reuse its saved secret.
 The proxy rejects a miner whose `pass` does not match a configured password.
 
-`setup`, `up` and `apply` print the connection details. The appliance setup hand-off shows the
-password before provisioning. The dashboard's **Connect a miner** block shows the LAN pool URL,
-password with Reveal and Copy, and the TLS fingerprint when enabled. A dashboard without a
-login also shows the password: anyone on that LAN can retrieve it. Enable dashboard authentication
-before sharing access. When no password is set, all these surfaces say so and miners connect
-without one.
+`setup`, `up` and `apply` print the connection details and authentication state. The appliance setup
+hand-off shows the password before provisioning. The dashboard's **Connect a miner**
+block shows the LAN pool URL, password with Reveal and Copy, and the TLS fingerprint when enabled.
+A dashboard without a login also shows the password: anyone on that LAN can retrieve it. Enable
+dashboard authentication before sharing access. When no password is set, all these surfaces say so
+and miners connect without one.
 
 To adopt it on an existing fleet, update
 the rigs first (set each rig's `pass`, or push it over the rigs' control API from the dashboard's
@@ -170,8 +172,9 @@ moment the stack enforces it.
 "p2pool": { "stratum_password": "auto" }
 ```
 
-After `pithead apply`, the stack prints the password (it's also saved in `.env` as
-`PROXY_STRATUM_PASSWORD`). Add it as the `pass` field on every rig; rigs without it are rejected:
+After `pithead apply`, get the password from the dashboard's **Connect a miner** block
+(it's also saved in `.env` as `PROXY_STRATUM_PASSWORD`). Add it as the `pass` field on every rig;
+rigs without it are rejected:
 
 ```json
 {
@@ -511,12 +514,13 @@ default), or set it in `config.json`:
 }
 ```
 
-Run `./pithead apply`. Setup, up, and apply print the two values a RigForge install needs — the local pool
+Run `./pithead apply`. Setup, up, and apply print the local pool
 URL (`127.0.0.1:3333` by default, or your `p2pool.stratum_bind` address and `p2pool.stratum_port`)
-and the stratum password (the `PROXY_STRATUM_PASSWORD` already in `.env`, or an explicit
-“none set” when authentication is off). Install [RigForge](https://github.com/p2pool-starter-stack/rigforge)
-on the same host and enter those two values when it asks; the worker self-registers and appears in
-the dashboard's Workers Alive table like any other rig.
+and authentication state, including an explicit “none set” when authentication is off.
+Get a configured password from the dashboard's **Connect a miner** block.
+Install [RigForge](https://github.com/p2pool-starter-stack/rigforge) on the same host and enter the pool
+URL and password when it asks; the worker self-registers and appears in the dashboard's Workers Alive
+table like any other rig.
 
 On DIY, Pithead does not install, run, or tune the miner. RigForge owns all host-level tuning —
 HugePages, GRUB, MSR, the CPU governor, and the miner service. Two things to know before enabling
