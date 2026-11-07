@@ -29,11 +29,16 @@ exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 `kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_lease_ip`,
-`vm_list_running` and `vm_destroy`. Shared SSH diagnostics, DHCP polling and the
+`vm_list_running`, `vm_power_cut`, `vm_start` and `vm_destroy`. `vm_power_cut`
+abruptly stops the guest without undefining it; `vm_start` starts that same domain.
+Shared SSH diagnostics, DHCP polling and the
 stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
 failure handling, teardown order and caller routing using a temporary `virsh` executable
 without a guest; the tier-1
-`make test-integration-selftest` target discovers it. Libvirt remains the only backend;
+`make test-integration-selftest` target discovers it. `selftest-provision-power-cut.sh`
+checks power-control argument and error propagation, the three M10 cycles, recovery
+ordering and immediate failure on a failed cut, start or new boot without a guest.
+Libvirt remains the only backend;
 the battery still requires the Linux bench and does not run on macOS.
 `selftest-eventual-core.sh` drives the real control-drain, SSH, new-boot, reboot,
 dashboard-marker, DHCP, setup-page and serial waits with delayed, never-ready and
@@ -329,7 +334,8 @@ the configured test registry fail before the image build. Release builds do not 
   (`fault`) or was a clean reboot; this is the first that hits a provisioned one. Before each cut,
   poll the monerod height up to 18 times, 10 seconds apart. An empty result fails the row and
   returns before flushing or cutting power. A non-empty result that is not a non-negative
-  integer also fails before flushing or cutting power. After EVERY cut, the leg
+  integer also fails before flushing or cutting power. The leg calls `vm_power_cut`,
+  waits three seconds, then calls `vm_start` for the same guest. After EVERY cut, the leg
   asserts every container returns and provisioning settles within 900 seconds without failed setup
   before recovery checks or the next cut, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
@@ -338,7 +344,9 @@ the configured test registry fail before the image build. Release builds do not 
   is not owed back; #2557), and the miner and the boot-gated slot commit both survive. A KVM
   guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack
   rather than the full remote-node repoint M10 describes on real hardware — #2067 allows that for
-  a first version.
+  a first version. Changes to this control path require a successful current-head
+  `tier4-kvm` provision job that executes all three M10 cuts and recovery checks;
+  pure selftests do not establish appliance recovery.
 - **rig** — answer `RigForge` on the same page and prove the other machine this image installs:
   it mines from the baked binary with no compile and no clearnet, starts no containers at all,
   and takes an A/B update — install, boot, self-commit on the miner running, persistence —
