@@ -64,7 +64,7 @@ for size in ROOMY SMALL; do
     assert_eq "$size disk Enter-through: NO tari.wallet_address — nothing merge-mines, so nothing is paid" \
         "$(jq -r '.tari | has("wallet_address")' <<<"$c")" "false"
     assert_eq "$size disk Enter-through: tari carries the mode and nothing else" \
-        "$(jq -rc '.tari | keys' <<<"$c")" '["clearnet_initial_sync","mode"]'
+        "$(jq -rc '.tari | keys' <<<"$c")" '["mode"]'
     assert_contains "$size disk: the decline says what it turned off and how to turn it back on" "$out" "Tari merge-mining is OFF"
     assert_contains "$size disk: and points at the key that does it" "$out" "tari.mode"
     assert_contains "$size disk: the question calls it a beta" "$out" "Yes (beta)"
@@ -152,7 +152,7 @@ assert_contains "fast sync warns about both networks" "$out" "exposes your IP ad
 out="$(wt_run private "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n1\n\n\nnone\n\n\n\n\n")"
 c="$(wt_cfg private)"
 assert_eq "explicit no-login choice remains available" "$(jq -r '.dashboard | has("auth")' <<<"$c")" "false"
-assert_eq "new install writes private keys for both chains" "$(jq -rc '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$c")" '[false,false]'
+assert_eq "new install inherits private sync from Balance" "$(jq -rc '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$c")" '[null,null]'
 assert_not_contains "private sync has no exposure warning" "$out" "Fast sync exposes"
 budget=$(PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$SANDBOX" wizard_disk_budget)
 assert_eq "host publishes the measured data filesystem bytes" "$(jq -r '.available_bytes' <<<"$budget")" "$((WT_SMALL_KB * 1024))"
