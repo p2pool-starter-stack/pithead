@@ -120,9 +120,9 @@ gate for anything that changes what runs on a box. The rows mirror bench-ci's "W
 
 | The diff touches | Proof on the PR's head before merge |
 |---|---|
-| `build/<service>/`: a Dockerfile, an entrypoint, a config template, a healthcheck, a seed list | tiers 1 to 3 green, then a bench-ci `tier4-e2e` job with `options.mode` `targeted` (or `matrix`): the branch is built and deployed, the service starts from the rendered file and reports healthy |
-| compose files, config rendering (`lib/pithead/*.sh` apply, render and inject paths, `config.reference.json`, templates), the control plane, anything that stops or starts a container | the same `tier4-e2e` `targeted` or `matrix` job |
-| deploy, upgrade and restore paths, merge-mining, Tor, real miners | `tier4-e2e`, `targeted` or `matrix`, or the phase or scenario that exercises it (`phases: ["sweep"]` runs every scenario without the destructive phases) |
+| `build/<service>/`: a Dockerfile, an entrypoint, a config template, a healthcheck, a seed list | tiers 1 to 3 green, then a bench-ci `tier4-e2e` job with `options.mode` `targeted` (or the [split matrix proof](integration-testing.md#split-matrix-proof-on-bench-ci)): the branch is built and deployed, the service starts from the rendered file and reports healthy |
+| compose files, config rendering (`lib/pithead/*.sh` apply, render and inject paths, `config.reference.json`, templates), the control plane, anything that stops or starts a container | the same `tier4-e2e` `targeted` job or [split matrix proof](integration-testing.md#split-matrix-proof-on-bench-ci) |
+| deploy, upgrade and restore paths, merge-mining, Tor, real miners | `tier4-e2e` `targeted`, the [split matrix proof](integration-testing.md#split-matrix-proof-on-bench-ci), or the phase or scenario that exercises it (`phases: ["sweep"]` runs every scenario without the destructive phases) |
 | `os/`, RAUC, the wizard, first boot, the installer, updates | `tier4-kvm`, one phase at a time; the two [release phase groups](releasing.md#which-gates-are-automated-and-which-are-not) before a release |
 | the RigForge worker to stack contract | rigforge `tier4-e2e` |
 | dashboard logic and its tests, docs, workflows, scripts that never run on a box | tiers 1 to 3 are the proof; the PR body names this row as the reason no bench job ran |
@@ -783,8 +783,8 @@ handful of suites are invoked as their own CI step instead and are listed as exe
 | Integration harness **self-test** | 4 | every PR | ✅ required |
 | **Test-inventory drift** check (every suite still enumerates; every domain file is sourced) | — | every PR | ✅ required |
 | Fake-daemon **docker mini-stack** | 3 | PRs touching the harness, dashboard, CLI source, or workflow | ✅ (own workflow) |
-| **Live config matrix** on real nodes | 4 | manual / pre-release | ✅ **release gate** ([#44](https://github.com/p2pool-starter-stack/pithead/issues/44)) |
-| **Targeted live run** for a change to what runs on a box (`build/`, compose, config rendering, the control plane, deploy, upgrade, restore, merge-mining, Tor, miners) | 4 | every such PR, on its head (bench-ci `tier4-e2e`, `targeted` or `matrix`) | ✅ required: the adversarial review returns a PR without it |
+| **Live config matrix** on real nodes | 4 | manual / pre-release, using the [split matrix proof](integration-testing.md#split-matrix-proof-on-bench-ci) | ✅ **release gate** ([#44](https://github.com/p2pool-starter-stack/pithead/issues/44)) |
+| **Targeted live run** for a change to what runs on a box (`build/`, compose, config rendering, the control plane, deploy, upgrade, restore, merge-mining, Tor, miners) | 4 | every such PR, on its head (bench-ci `tier4-e2e` `targeted`, affected phases, or the [split matrix proof](integration-testing.md#split-matrix-proof-on-bench-ci)) | ✅ required: the adversarial review returns a PR without it |
 | **KVM appliance battery** (`tests/os/run.sh`) | 4 | every PR touching `os/`, RAUC, the wizard, first boot, the installer or updates, on its head (bench-ci `tier4-kvm`, one phase at a time); `all` phases against the exact commit, pre-cut | ✅ **release gate for the image**, enforced by `release.sh`'s `bench-ci/tier4` preflight ([appliance-release.md](appliance-release.md)) |
 
 Tiers 1 and 2 run on every PR; tier 3 runs for the paths named above. Tier 4 is the blocking
