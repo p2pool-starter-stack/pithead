@@ -1,7 +1,6 @@
 # shellcheck shell=bash
 # shellcheck source=tests/integration/lib/run-channel.sh
 source "${BASH_SOURCE[0]%/*}/run-channel.sh" || exit $?
-# Run the real CLI on the deployed candidate, checking credentials inside the target shell.
 connection_announcements_snippet() {
     lifecycle_gate_snippet
     cat <<'PROBE'
@@ -90,7 +89,6 @@ run_connection_announcements() {
     it_step "checking setup/up/apply connection announcements on the candidate…"
     out="$(rx "$(connection_announcements_snippet)" 2>&1)"
     rc=$?
-    # Never retain raw CLI output from a candidate whose protection is under test.
     printf 'connection announcement probe exit: %s\n' "$rc" >"$OUT_DIR/connection-announcements.log"
     # Reconstruct only our fixed diagnostic labels; the remote output is never copied.
     for marker in initialization setup up apply no-change; do

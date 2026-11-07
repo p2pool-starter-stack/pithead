@@ -19,7 +19,6 @@ announce_dashboard_url() {
     announce_local_miner
 }
 
-# DIY miners need connection guidance; the appliance configures its built-in worker.
 announce_local_miner() {
     [ "$(config_bool '.local_miner.enabled' false 2>/dev/null || echo false)" = "true" ] || return 0
     # On the appliance the miner is built in: pithead renders RigForge's config and the boot path
@@ -56,7 +55,6 @@ announce_local_miner() {
     log "  RigForge compiles/tunes XMRig and owns all host tuning (HugePages/GRUB/MSR) — Pithead does not. See $DOCS_URL/docs/workers.md#mine-on-the-stack-host-itself."
 }
 
-# Credentials belong in the dashboard or one-time setup handoff.
 announce_stratum_auth() {
     local sp
     sp=$(env_get PROXY_STRATUM_PASSWORD 2>/dev/null || true)
