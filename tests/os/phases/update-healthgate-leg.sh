@@ -131,7 +131,6 @@ phase_update_healthgate_leg() {
     if [ "$FAIL" -gt "$fail_before" ]; then
         rollback_evidence "$SERIAL.leg5-evidence"
         info "leg 5 failure evidence (boot journal, verdict, grubenv, doctor) kept at $SERIAL.leg5-evidence"
-        head -c 12000 "$SERIAL.leg5-evidence" | LC_ALL=C tr -cd '\11\12\40-\176'
-        echo
+        bash scripts/sanitize-test-log.sh --lines 200 "$SERIAL.leg5-evidence"
     fi
 }

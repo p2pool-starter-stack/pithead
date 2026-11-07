@@ -426,15 +426,15 @@ submitting e2e. Publishing waits for that rerun: the `bench-ci/tier4` status tha
 checks is for one exact SHA, so a status from the candidate commit never covers the tag. The
 2.0.2 release shipped one commit after the commit its crossupdate and provision jobs proved
 ([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)). Each job is capped at 240
-minutes; the recipe states no shorter runtime because the boot, rig and crossupdate groups differ
-by bench.
+minutes.
 
 The update fault leg (`update` phase, leg 5) installs a bundle whose dashboard healthcheck fails
 through the dashboard's own update door, so the in-flight flag is armed. After the fallback it
 requires the flag's `blocking` list to name the dashboard container and the served banner module to
 carry its `Blocked by:` clause. Both slots of that phase are built from one tree, so they share a
 version and pithead-boot writes no `rolled_back` verdict there; the verdict itself is asserted by
-the real-upgrade scenario, whose slots differ. On any failure the job keeps the failed boot's
+the real-upgrade scenario ([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)),
+whose slots differ. On any failure the job keeps the failed boot's
 `pithead-boot` journal, the verdict JSON, grubenv and the doctor output in
 `pithead-os-serial.log.leg5-evidence` and prints it, bounded, to the job log.
 
