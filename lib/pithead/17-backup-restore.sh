@@ -168,7 +168,6 @@ stack_backup() {
         fi
     fi
 
-    # Rebuild from current metadata under the lock before stopping services or writing an archive.
     mutation_lock_acquire backup
     backup_collect_items "$with_chains"
     if [ -n "$running" ]; then
