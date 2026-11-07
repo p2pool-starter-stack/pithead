@@ -39,8 +39,8 @@ phase_fault() {
         info "fault A$i — destroy mid-write"
         _ssh "nohup sh -c '$(_install_cmd /data/update.bundle)' >/tmp/inst.log 2>&1 &" || true
         sleep 12
-        verdict=$(fault_power_cut "$VM") || {
-            bad "A$i: the power cut did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
+        verdict=$(fault_power_cut) || {
+            bad "A$i: the power cut was not confirmed, so no boot was judged: $verdict"
             return
         }
         sleep 3
@@ -50,8 +50,8 @@ phase_fault() {
         }
         # A start that fails leaves no guest to judge: that is the harness, not a brick (#2746:
         # jobs 220 and 129 read an A1 console with not one byte after the cut).
-        start_out=$(virsh start "$VM" 2>&1) || {
-            bad "A$i: virsh start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
+        start_out=$(vm_start 2>&1) || {
+            bad "A$i: VM start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
             return
         }
         # A hard power cycle can hand the guest a NEW DHCP lease; without re-reading it here,
@@ -69,7 +69,7 @@ phase_fault() {
             bad "A$i: $verdict"
             return
         else
-            bad "A$i: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
+            bad "A$i: BRICKED — $verdict — domain: $(vm_state --reason 2>&1 | head -1) (disqualifying)"
             return
         fi
     done
@@ -134,8 +134,8 @@ phase_fault() {
     fi
     _ssh "nohup sh -c '$(_commit_cmd)' >/tmp/commit.log 2>&1 &" || true
     sleep 1
-    verdict=$(fault_power_cut "$VM") || {
-        bad "B: the power cut did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
+    verdict=$(fault_power_cut) || {
+        bad "B: the power cut was not confirmed, so no boot was judged: $verdict"
         return
     }
     sleep 3
@@ -145,8 +145,8 @@ phase_fault() {
     }
     # A start that fails leaves no guest to judge: that is the harness, not a brick (#2746:
     # jobs 220 and 129 read an A1 console with not one byte after the cut).
-    start_out=$(virsh start "$VM" 2>&1) || {
-        bad "B: virsh start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
+    start_out=$(vm_start 2>&1) || {
+        bad "B: VM start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
         return
     }
     _wait_dhcp_ip 60 || true # same stale-lease hazard as fault A above
@@ -159,7 +159,7 @@ phase_fault() {
         bad "B: $verdict"
         return
     else
-        bad "B: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
+        bad "B: BRICKED — $verdict — domain: $(vm_state --reason 2>&1 | head -1) (disqualifying)"
         return
     fi
 
@@ -235,8 +235,8 @@ phase_fault() {
         bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
         return
     fi
-    verdict=$(fault_power_cut "$VM") || {
-        bad "D: the power cut during the image load did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
+    verdict=$(fault_power_cut) || {
+        bad "D: the power cut during the image load was not confirmed, so no boot was judged: $verdict"
         return
     }
     sleep 3
@@ -245,7 +245,7 @@ phase_fault() {
         bad "D: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
         return
     }
-    virsh start "$VM" >/dev/null 2>&1 || {
+    vm_start >/dev/null 2>&1 || {
         bad "D: could not restore power after the image-load cut"
         return
     }
@@ -277,7 +277,7 @@ phase_fault() {
             bad "D: $verdict"
         else
             # Narrowing the match makes a red actionable only if it says what the console DID say.
-            bad "D: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
+            bad "D: BRICKED — $verdict — domain: $(vm_state --reason 2>&1 | head -1) (disqualifying)"
         fi
         return
     fi

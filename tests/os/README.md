@@ -28,8 +28,19 @@ install-to-disk, the rig role, and the update → commit → rollback cycle that
 exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
-`kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_lease_ip`,
-`vm_list_running` and `vm_destroy`. Shared SSH diagnostics, DHCP polling and the
+`kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_start`,
+`vm_stop_abrupt`, `vm_lease_ip`, `vm_list_running` and `vm_destroy`.
+The start and abrupt-stop helpers operate on the current test VM and preserve
+the backend's output and exit status; `vm_state --reason` adds diagnostic detail.
+The fault phase uses these helpers for power cuts, restarts and state diagnostics.
+It retries an abrupt stop up to six times, ten seconds apart, and requires a
+successful state read of `shut off` before resetting the console or restarting.
+A failed or empty state read stops the leg without judging another boot.
+`selftest-fault-power-cut.sh` checks these contracts and the retry order;
+`selftest-fault-lifecycle.sh` checks the fault sequence and its refusal paths
+without a guest. Acceptance still requires a successful current-head `tier4-kvm`
+`fault` job covering A1/A2/A3, C, B, rollback, the subsequent update and D.
+Shared SSH diagnostics, DHCP polling and the
 stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
 failure handling, teardown order and caller routing using a temporary `virsh` executable
 without a guest; the tier-1

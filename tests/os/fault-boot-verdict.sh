@@ -8,16 +8,15 @@
 # that failed to reach it late in a long run. Only a serial log showing none of GRUB, kernel or
 # login evidence is a real brick; anything else is a probe failure and never disqualifying.
 
-# fault_power_cut <domain> — cut the guest's power and wait until the domain is really off. A
-# guest killed mid-write can outlive one `virsh destroy` (QEMU still flushing, "Device or resource
-# busy"); a discarded failure left it running, `virsh start` then refused "Domain is already
-# active", and the unresponsive guest was judged BRICKED (#2746: jobs 220, 129, 224). Retries for
-# about a minute. Returns 1, printing virsh's last word, when the domain never reports "shut off".
 fault_power_cut() {
-    local tries out=""
+    local tries state out=""
     for tries in 1 2 3 4 5 6; do
-        out=$(virsh destroy "$1" 2>&1)
-        [ "$(virsh domstate "$1" 2>/dev/null | head -1)" = "shut off" ] && return 0
+        out=$(vm_stop_abrupt 2>&1) || true
+        state=$(vm_state 2>/dev/null) && [ -n "$state" ] || {
+            printf 'could not read VM state after the power cut'
+            return 1
+        }
+        [ "$state" = "shut off" ] && return 0
         [ "$tries" -lt 6 ] && sleep 10
     done
     printf '%s' "$out" | tr -s '\n' ' ' | cut -c1-200
