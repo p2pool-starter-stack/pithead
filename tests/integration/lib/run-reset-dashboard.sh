@@ -77,8 +77,11 @@ run_reset_dashboard() {
         return
     fi
 
+    local live_markers
+    live_markers="$(quote_arg "$dashboard_dir/.itest-marker") $(quote_arg "$p2pool_dir/.itest-marker")"
     if ! rx "mkdir -p $(quote_arg "$dashboard_dir") $(quote_arg "$p2pool_dir") && : > $(quote_arg "$dashboard_dir/.itest-marker") && : > $(quote_arg "$p2pool_dir/.itest-marker")" >/dev/null 2>&1; then
         it_fail "reset-dashboard phase preconditions" "could not write the live-dir markers"
+        rx "rm -f -- $live_markers" >/dev/null 2>&1 || true
         reset_dashboard_cleanup
         return
     fi
@@ -137,6 +140,7 @@ run_reset_dashboard() {
     fi
 
     if [ "$IT_FAIL" -gt "$failures_before_reset" ]; then
+        rx "rm -f -- $live_markers" >/dev/null 2>&1 || true
         reset_dashboard_cleanup
         return
     fi

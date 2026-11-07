@@ -232,7 +232,7 @@ done
     safety_restore_exact() { printf 'restore\n' >>"$OUT_DIR/reset-abort-order"; }
     safety_abort_restore
 ) >/dev/null 2>&1
-[ "$(sed -n '1p' "$OUT_DIR/reset-abort-order")" = 'docker ps -aq --filter label=pithead.itest=reset-dashboard-blocker | xargs -r docker rm -f' ] &&
+[ "$(sed -n '1p' "$OUT_DIR/reset-abort-order")" = 'ids=$(docker ps -aq --filter label=pithead.itest=reset-dashboard-blocker) && { [ -z "$ids" ] || docker rm -f $ids; }' ] &&
     [ "$(sed -n '2p' "$OUT_DIR/reset-abort-order")" = restore ] || {
     echo "interrupted reset did not remove its name blocker before the safety restore" >&2
     exit 1
