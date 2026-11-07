@@ -112,6 +112,15 @@ run_reset_dashboard() {
     assert_rc "status OK after reset-dashboard" "$?" "0"
     assert_eq "dashboard container healthy after reset" "$(service_state dashboard)" "running healthy"
     assert_eq "p2pool container healthy after reset" "$(service_state p2pool)" "running healthy"
+    if [ "$(service_state p2pool)" != "running healthy" ]; then
+        local diag_dir="$OUT_DIR/reset-dashboard-diagnostics"
+        mkdir -p "$diag_dir" &&
+            {
+                rx "docker inspect --format '{{json .State}}' p2pool" 2>&1 | redact >"$diag_dir/p2pool-state.json"
+                rx "docker logs --tail 120 p2pool" 2>&1 | redact >"$diag_dir/p2pool.log"
+                rx "ls -ldn $(quote_arg "$p2pool_dir") $(quote_arg "$p2pool_dir/stats")" 2>&1 | redact >"$diag_dir/p2pool-dir.txt"
+            } || true
+    fi
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || true
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || true
     local reset_state
