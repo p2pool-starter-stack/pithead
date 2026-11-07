@@ -130,6 +130,12 @@ another command is running comes back refused with nothing changed, instead of o
 install underneath it. Read-only commands — `status`, `doctor` and `logs` among them — never take
 it and never wait.
 
+`apply` holds the lock while it reads and renders the configuration, releases it for
+confirmation, then checks the configuration and live `.env` again after reacquiring it.
+If either changed, it discards the staged render and stops before publishing it or
+changing services. Re-run `./pithead apply` to review the current changes and confirm
+any payout-wallet redirect again. `apply -y` also rejects a stale render.
+
 The dashboard takes the same lock for each container start or stop it sends through its control
 proxy. This keeps the sync gate, node-down failover, clearnet-to-Tor transition and Tor self-heal
 from changing a container while a CLI mutation is recreating the stack. The dashboard receives a
@@ -345,7 +351,10 @@ units are disabled and removed, the routes disappear from the dashboard (404), a
 directory is left in place. To inspect or drain the queue by hand, run
 `./pithead control-run-pending`. A commit keeps the previous config at `config.json.bak-control`;
 a failed apply names it in the result and retries container recreation on the next apply, same as
-the CLI.
+the CLI. The commit checks preview freshness and approval, publishes `config.json`, and
+runs its child `apply -y` under one mutation lock. A preview made against an older
+configuration is rejected after the wait, as is a commit that times out waiting for
+the lock; make a fresh preview before committing again.
 
 ---
 
