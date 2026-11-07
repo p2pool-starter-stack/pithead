@@ -762,6 +762,10 @@ its own — the line goes quiet, even though the earlier move stands. The durabl
 `rig-drift` row in the Security panel, which is written once and never withdrawn; this line is a
 statement about the config in front of you.
 
+A revision that moves in the same poll that shows a different RigForge version is a re-base by the
+upgrade, not an edit, so it writes no `rig-drift` row and raises no line. A dashboard upgraded
+past a rig's last seen version has no stored version for it and treats its first move the same way.
+
 Neither check has an all-clear. Both either report a disagreement or say nothing at all, and their
 silence is not evidence: a clear line would be a reassurance bounded by everything listed above,
 which is the reading the whole section exists to prevent. Where they are silent the older reading
