@@ -55,11 +55,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # `rauc info` extracts a bundle's manifest with unsquashfs, and without it `pithead os-update`
 # cannot read any bundle's compatibility metadata — every guard it carries was dead on the
 # appliance (found live on the bench, not by CI, whose stack tests stub rauc).
-# --fresh-index changes this ARG to rebuild the package layer with a current apt index. A cache
-# hit now reuses both update and install together; it cannot run install against an older index.
 ARG APT_INDEX_STAMP=0
 ARG PITHEAD_UPDATER=""
-# apt/gzip/libpcre2-8-0/libsqlite3-0/perl-base/zlib1g are CVE pins, not deps (#1438, #2104, #3923); xxd stays out because the rootfs has no consumer (#1380).
 RUN set -e; \
     updater_packages=""; \
     if [ "$PITHEAD_UPDATER" = "rauc" ]; then updater_packages="rauc rauc-service"; fi; \
