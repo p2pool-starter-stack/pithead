@@ -18,8 +18,10 @@ costs this cut nothing but its import block.
 
 import sqlite3
 import time
+from types import SimpleNamespace
 
 from mining_dashboard.config.config import HISTORY_RETENTION_SEC
+from mining_dashboard.service import storage_service
 from mining_dashboard.service.storage_service import NETWORK_HISTORY_RETENTION_SEC, StateManager
 
 
@@ -358,16 +360,19 @@ class TestTelemetryTableHealth:
         assert state_manager.get_table_health()["blocks"] == {"healthy": False, "last_write": t0}
 
     def test_a_failed_recovery_reads_unhealthy(self, state_manager, monkeypatch):
-        # The production path #1615 reports, rather than close(): _recover_corrupt_db's reconnect
-        # raises, `_conn` stays None for good, and every telemetry write is dropped from then on.
+        original_connect = sqlite3.connect
+
         def boom(*_a, **_kw):
             raise sqlite3.OperationalError("unable to open database file")
 
-        monkeypatch.setattr("mining_dashboard.service.storage_service.sqlite3.connect", boom)
+        monkeypatch.setattr(
+            storage_service, "sqlite3", SimpleNamespace(**{**vars(sqlite3), "connect": boom})
+        )
         state_manager._recover_corrupt_db("test: forced reconnect failure")
         assert state_manager.is_db_unrecoverable() is True
         state_manager.add_block(time.time(), height=1, difficulty=1.0)
         assert state_manager.get_table_health()["blocks"]["healthy"] is False
+        assert sqlite3.connect is original_connect
 
 
 class TestTelemetryTablesAfterClose:
