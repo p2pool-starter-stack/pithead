@@ -277,6 +277,76 @@ cat "$CONTROL_DIR/masked/config.json"''',
         )
         self.assertIn("changed while its credentials were masked", result.stdout)
 
+    def probe_stub_script(self):
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        curl = bin_dir / "curl"
+        curl.write_text(
+            '#!/usr/bin/env bash\nprintf "ARGS %s\\n" "$*" >> "$PROBE_LOG"\n'
+            'while IFS= read -r line || [ -n "$line" ]; do printf "STDIN %s\\n" "$line" >> "$PROBE_LOG"; done\n'
+            'printf \'{"status":"OK","nettype":"mainnet","height":1,"target_height":1}\\n200\'\n'
+        )
+        curl.chmod(0o700)
+        timeout = bin_dir / "timeout"
+        timeout.write_text('#!/usr/bin/env bash\nshift\nexec "$@"\n')
+        timeout.chmod(0o700)
+        return (
+            f'export PATH="{bin_dir}:$PATH" PROBE_LOG="{self.root}/probe.log"\n'
+            "zmq_endpoint_is_publisher() { return 0; }\n"
+        )
+
+    def test_backup_probe_uses_its_own_login_only(self):
+        cfg = {
+            "monero": {
+                "node_username": "primary",
+                "node_password": "primary-secret",
+                "backup_nodes": [
+                    dict(NODE, rpc_login="backup:backup-secret"),
+                    dict(NODE, host="open.example"),
+                ],
+            }
+        }
+        result = self.shell(
+            self.probe_stub_script() + 'preflight_monero_backups "$CONFIG_FILE"', cfg
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = (self.root / "probe.log").read_text().split("ARGS ")[1:]
+        self.assertEqual(len(calls), 2)
+        self.assertIn("--digest", calls[0])
+        self.assertIn("backup:backup-secret", calls[0])
+        self.assertNotIn("primary", calls[0])
+        self.assertNotIn("--digest", calls[1])
+        self.assertNotIn("STDIN", calls[1])
+        self.assertNotIn("primary", calls[1])
+
+    def test_primary_probe_keeps_the_configured_login(self):
+        cfg = {"monero": {"node_username": "primary", "node_password": "primary-secret"}}
+        result = self.shell(
+            self.probe_stub_script() + 'monero_rpc_speaks "$CONFIG_FILE" 192.168.1.20 18081', cfg
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = (self.root / "probe.log").read_text()
+        self.assertIn("--digest", log)
+        self.assertIn("primary:primary-secret", log)
+
+    def test_remote_node_preflight_reaches_the_backup_checks(self):
+        cfg = {"monero": {"backup_nodes": [NODE]}}
+        result = self.shell(
+            """preflight_monero_backups() { printf 'backup-preflight\\n'; }
+preflight_remote_nodes "$CONFIG_FILE" """,
+            cfg,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("backup-preflight", result.stdout)
+        result = self.shell(
+            """remote_node_address() { return 1; }
+preflight_monero_backups() { printf 'backup-preflight\\n'; }
+remote_node_addresses_allowed "$CONFIG_FILE" """,
+            cfg,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("monero.backup_nodes[0]", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
