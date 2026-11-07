@@ -86,6 +86,7 @@ _wait_setup_page() { :; }
 phase_wizard_redirect() { :; }
 stage_dashboard_exposure_addresses() { :; }
 provision_node_preflight() { :; }
+provision_node_preflight_accepts_reserved_name() { :; }
 provision_setup_failure_recovery() { :; }
 provision_browser_submit() { echo 200; }
 wizard_miner_connection_card_valid() { :; }
