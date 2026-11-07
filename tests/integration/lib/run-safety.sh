@@ -127,6 +127,7 @@ safety_abort_restore() {
     # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
     # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
     # so the restore is attempted.
+    [ -z "${RESET_DASHBOARD_DECOY_DASHBOARD:-}" ] || reset_dashboard_remove_blocker || restore_failed=1
     if [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
         safety_restore_exact || restore_failed=1
@@ -153,6 +154,13 @@ arm_safety_abort_restore() {
     fi
     _SAFETY_RESTORE_ARMED=1
     trap safety_abort_restore EXIT
+}
+
+reset_dashboard_remove_blocker() {
+    rx "docker ps -aq --filter label=pithead.itest=reset-dashboard-blocker | xargs -r docker rm -f" >/dev/null 2>&1 || {
+        it_fail "reset-dashboard name blocker removed" "could not remove the labelled p2pool blocker container"
+        return 1
+    }
 }
 
 reset_dashboard_cleanup() {

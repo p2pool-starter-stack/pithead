@@ -46,8 +46,8 @@ run_reset_dashboard() {
     if ! decoy_config="$(printf '%s' "$BASELINE_CONFIG" | jq --arg dashboard "$decoy_dashboard" --arg p2pool "$decoy_p2pool" \
         '.dashboard.data_dir=$dashboard | .p2pool.data_dir=$p2pool')" ||
         ! push_config "$decoy_config" ||
-        ! rx "mkdir -p $(quote_arg "$dashboard_dir") $(quote_arg "$p2pool_dir") $(quote_arg "$decoy_dashboard") $(quote_arg "$decoy_p2pool") && : > $(quote_arg "$dashboard_dir/.itest-marker") && : > $(quote_arg "$p2pool_dir/.itest-marker") && : > $(quote_arg "$decoy_dashboard/.itest-marker") && : > $(quote_arg "$decoy_p2pool/.itest-marker")" >/dev/null 2>&1; then
-        it_fail "reset-dashboard phase preconditions" "could not write the decoy config and live-dir markers"
+        ! rx "mkdir -p $(quote_arg "$decoy_dashboard") $(quote_arg "$decoy_p2pool") && : > $(quote_arg "$decoy_dashboard/.itest-marker") && : > $(quote_arg "$decoy_p2pool/.itest-marker")" >/dev/null 2>&1; then
+        it_fail "reset-dashboard phase preconditions" "could not write the decoy config and markers"
         reset_dashboard_cleanup
         return
     fi
@@ -73,6 +73,12 @@ run_reset_dashboard() {
     theight="$(jq_get "$(api_state)" '.sync.tari.current')"
     if [[ ! "$theight" =~ ^[0-9]+$ ]]; then
         it_fail "tari chain-untouched precondition" "dashboard did not report a numeric height before the reset"
+        reset_dashboard_cleanup
+        return
+    fi
+
+    if ! rx "mkdir -p $(quote_arg "$dashboard_dir") $(quote_arg "$p2pool_dir") && : > $(quote_arg "$dashboard_dir/.itest-marker") && : > $(quote_arg "$p2pool_dir/.itest-marker")" >/dev/null 2>&1; then
+        it_fail "reset-dashboard phase preconditions" "could not write the live-dir markers"
         reset_dashboard_cleanup
         return
     fi
@@ -138,9 +144,9 @@ run_reset_dashboard() {
     if [ -n "$blocker_image" ]; then
         it_step "forcing a real compose failure to exercise the #557 friendly-failure branch…"
         local fail_result fail_out fail_rc
-        fail_result="$(rx "source ./pithead; mutation_lock_acquire reset-dashboard-test; blocker=''; complete=0; cleanup() { [ -z \"\$blocker\" ] || docker rm -f \"\$blocker\" >/dev/null 2>&1 || true; [ \"\$complete\" = 1 ] || PITHEAD_LOCK_HELD=1 ./pithead up >/dev/null 2>&1 || true; mutation_lock_release; }; trap cleanup EXIT; docker rm -f p2pool >/dev/null 2>&1; blocker=\$(docker create --name p2pool $(quote_arg "$blocker_image")) || exit 0; if PITHEAD_LOCK_HELD=1 ./pithead reset-dashboard -y 2>&1; then rc=0; else rc=\$?; fi; complete=1; printf '\n__reset_dashboard_rc=%s\n' \"\$rc\"")"
+        fail_result="$(rx "source ./pithead; mutation_lock_acquire reset-dashboard-test; blocker=''; complete=0; cleanup() { [ -z \"\$blocker\" ] || docker rm -f \"\$blocker\" >/dev/null 2>&1 || true; [ \"\$complete\" = 1 ] || PITHEAD_LOCK_HELD=1 ./pithead up >/dev/null 2>&1 || true; mutation_lock_release; }; trap cleanup EXIT; docker rm -f p2pool >/dev/null 2>&1; blocker=\$(docker create --name p2pool --label pithead.itest=reset-dashboard-blocker $(quote_arg "$blocker_image")) || exit 0; if PITHEAD_LOCK_HELD=1 ./pithead reset-dashboard -y 2>&1; then rc=0; else rc=\$?; fi; complete=1; printf '\n__reset_dashboard_rc=%s\n' \"\$rc\"")"
         fail_rc="$(printf '%s\n' "$fail_result" | sed -n 's/^__reset_dashboard_rc=//p' | tail -n1)"
-        fail_out="$(printf '%s\n' "$fail_result" | sed '/^__reset_dashboard_rc=/d')"
+        fail_out="$(printf '%s\n' "$fail_result" | sed '/^__reset_dashboard_rc=/d' | redact)"
         if [[ ! "$fail_rc" =~ ^[0-9]+$ ]]; then
             it_fail "reset-dashboard compose-failure fixture" "could not create the isolated p2pool name blocker"
             pithead up >/dev/null 2>&1 || true
