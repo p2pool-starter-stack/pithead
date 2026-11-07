@@ -11,6 +11,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Security
+
+- The appliance rootfs raises golang.org/x/net to 0.62.0 in the Cosign and Docker Compose it
+  builds. This clears CVE-2026-78661 in both binaries (#3931).
+
 ## [2.0.2] - 2026-10-31
 
 Pithead 2.0.2 is a patch release after 2.0.1. It makes a command-line restore refresh the
