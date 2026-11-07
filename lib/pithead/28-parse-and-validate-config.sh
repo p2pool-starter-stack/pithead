@@ -36,7 +36,6 @@ parse_and_validate_config() {
     case "$TARI_WALLET" in
     *[[:space:]]*) error "tari.wallet_address contains whitespace — a Tari address (base58 or emoji) has none. Check for a stray space or line break in $CONFIG_FILE." ;;
     esac
-    # The primary remains p2pool's wallet identity and XvB donor identity (#250/#2484).
     case "$(monero_address_type "$MONERO_WALLET")" in
     primary) ;;
     subaddress) error "monero.wallet_address is a SUBADDRESS (starts with 8). Keep your PRIMARY/standard Monero address (starts with 4) here and put the optional mining subaddress in monero.subaddress." ;;

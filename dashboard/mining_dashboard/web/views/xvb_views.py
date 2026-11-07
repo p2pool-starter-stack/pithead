@@ -58,9 +58,6 @@ WALLET_CHANGED_BADGE_SEC = 72 * 3600
 
 
 def recent_wallet_change(state_mgr, now=None) -> dict | None:
-    """The payout-wallet tripwire's change record (#375) if one happened within the banner
-    window: ``{"old8", "new8", "ts"}`` (addresses pre-truncated to 8 chars by the alerter),
-    else ``None``; an unreadable value reads as no recent change."""
     try:
         ts = float(state_mgr.get_kv("payout_wallet_changed_ts") or 0)
     except (TypeError, ValueError):

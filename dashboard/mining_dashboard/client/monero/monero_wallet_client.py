@@ -182,7 +182,6 @@ class MoneroWalletClient:
         return payouts, True
 
     def payout_addresses(self):
-        """Return the wallet's primary and configured subaddress when they are owned."""
         result = self._rpc("get_address")
         if not result or not result.get("address"):
             return None
