@@ -393,6 +393,13 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 [configuration](../configuration.md). The wizard spool-file protocol is in
 [appliance wizard](appliance-wizard.md#host-and-page-spool-files).
 
+Dashboard receipt identities live in `dashboard/mining_dashboard/service/payout_identity.py`.
+`dashboard/mining_dashboard/service/mining_store.py` scopes receipt reads, inserts and cursors;
+`dashboard/mining_dashboard/service/storage_schema.py` migrates legacy receipts to `unknown`.
+The wallet-switch regressions are
+`dashboard/tests/service/test_payout_wallet_identity.py` and
+`dashboard/tests/web/views/test_payout_wallet_identity.py`.
+
 Payout confirmation validates private view scalars in `lib/pithead/25b-payout-keys.sh`; the wallet
 entrypoints select storage by address/key fingerprint. `tests/stack/test-payout-wallet-pairs.sh`
 proves matching keys, derivation, selection and checked legacy adoption. The Tari entrypoint's
