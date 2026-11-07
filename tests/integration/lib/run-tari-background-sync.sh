@@ -8,8 +8,24 @@ tari_enable_snapshot() { # <phase>: allowlisted, bounded evidence; no env/config
 }
 
 tari_enable_mining_sample() {
-    # Read the unchanged proxy, not P2Pool's counter which resets during apply.
-    rx "docker exec dashboard python3 -c 'import json;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN;s=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_summary();print(json.dumps({\"workers\":s.get(\"miners\",{}).get(\"now\"),\"hashes\":s.get(\"results\",{}).get(\"hashes_total\")}))'" 2>/dev/null
+    rx "docker exec dashboard python3 -c 'import json,os
+from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient
+from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN,TARI_STATS_PATH
+s=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_summary()
+updated=receipt_state=receipt_height=None
+try:
+ with open(TARI_STATS_PATH,\"rb\") as f:
+  raw=f.read(1048577)
+  receipt_updated=int(os.fstat(f.fileno()).st_mtime)
+ if len(raw)>1048576:
+  raise ValueError
+ chain=json.loads(raw)[\"chains\"][0]
+ receipt_state=chain[\"channel_state\"]
+ receipt_height=chain[\"height\"]
+ updated=receipt_updated
+except (OSError,ValueError,KeyError,IndexError,TypeError,AttributeError):
+ pass
+print(json.dumps({\"workers\":s.get(\"miners\",{}).get(\"now\"),\"hashes\":s.get(\"results\",{}).get(\"hashes_total\"),\"template_updated\":updated,\"receipt_state\":receipt_state,\"receipt_height\":receipt_height}))'" 2>/dev/null
 }
 
 sync_gate_marker_state() {
@@ -30,7 +46,8 @@ run_tari_background_sync() {
         it_skip_leg "Tari-only apply keeps Monero mining (#3094)" "requires a local Tari baseline" "missing"
         return 0
     fi
-    local saved_config proxy_start deadline state window_hashes=0 synced=0 failed=0 previous_hashes="" hashes height_before mining_sample observed window_start last_advance
+    local last_state=unobserved last_connected=unobserved last_current=unobserved last_height=unobserved template_updated=unobserved receipt_state=unobserved receipt_height=unobserved
+    local saved_config proxy_start deadline state window_hashes=0 synced=0 failed=0 previous_hashes="" hashes height_before mining_sample observed enable_started window_start last_advance
     height_before="$(jq_get "$(api_state)" '.tari.height | tonumber')"
     [[ "$height_before" =~ ^[0-9]+$ ]] || {
         it_fail "pre-enable Tari template height is readable (#3094)" "no numeric template baseline"
@@ -52,10 +69,10 @@ run_tari_background_sync() {
             it_fail "Tari-off proxy start is readable (#3094)" "container inspection failed"
             failed=1
         else
-            # Let the dashboard persist the earned release and the stopped chain fall behind.
-            # No chain files are removed or rewritten; this is a warm-chain catch-up trial.
             sleep 90
             tari_enable_snapshot before-enable >>"$evidence/snapshots.log"
+            enable_started="$(now_s)"
+            printf 'enable_started=%s\n' "$enable_started" >>"$evidence/snapshots.log"
             if ! push_config "$(render_scenario_config "$saved_config" 'tari.mode=local' 'dashboard.tari_required=true')" ||
                 ! pithead apply -y >"$evidence/on.apply.log" 2>&1; then
                 it_fail "Tari off -> local applies (#3094)" "apply failed"
@@ -79,10 +96,17 @@ run_tari_background_sync() {
                     fi
                     state="$(api_state)"
                     observed="$(now_s)"
+                    last_state="$(jq_get "$state" '.sync.tari.state')"
+                    last_connected="$(jq_get "$state" '.tari.connected')"
+                    last_current="$(jq_get "$state" '.sync.tari.current | tonumber')"
+                    last_height="$(jq_get "$state" '.tari.height | tonumber')"
                     mining_sample="$(tari_enable_mining_sample)" || mining_sample='{}'
                     printf '%s\n' "$state" | jq -c --argjson observed "$observed" --argjson mining "$mining_sample" \
-                        '{observed: $observed, workers: $mining.workers, hashes: $mining.hashes, stratum_hashes: .stratum.total_hashes, tari_sync: (.sync.tari | {state, current, target, percent}), template: (.tari | {connected, height})}' | redact >>"$evidence/samples.jsonl"
+                        '{observed: $observed, workers: $mining.workers, hashes: $mining.hashes, stratum_hashes: .stratum.total_hashes, template_updated: $mining.template_updated, receipt_state: $mining.receipt_state, receipt_height: $mining.receipt_height, tari_sync: (.sync.tari | {state, current, target, percent}), template: (.tari | {connected, height})}' | redact >>"$evidence/samples.jsonl"
                     hashes="$(jq_get "$mining_sample" '.hashes')"
+                    template_updated="$(jq_get "$mining_sample" '.template_updated')"
+                    receipt_state="$(jq_get "$mining_sample" '.receipt_state')"
+                    receipt_height="$(jq_get "$mining_sample" '.receipt_height | tonumber')"
                     if ! [ "$(jq_get "$mining_sample" '.workers')" -ge 1 ] 2>/dev/null ||
                         ! [[ "$hashes" =~ ^[0-9]+$ ]] ||
                         { [ -n "$previous_hashes" ] && [ "$hashes" -lt "$previous_hashes" ]; }; then
@@ -102,17 +126,26 @@ run_tari_background_sync() {
                         window_hashes=0
                         break
                     fi
-                    if [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] &&
-                        [ "$(jq_get "$state" '.tari.connected')" = true ] &&
-                        [ "$(jq_get "$state" '.tari.height | tonumber')" -gt "$height_before" ] 2>/dev/null; then
+                    if [ "$last_state" = "done" ] &&
+                        [ "$last_connected" = true ] &&
+                        [[ "$last_current" =~ ^[1-9][0-9]*$ ]] &&
+                        [[ "$template_updated" =~ ^[0-9]+$ ]] &&
+                        [ "$template_updated" -ge "$enable_started" ] 2>/dev/null &&
+                        [ "$receipt_state" = READY ] &&
+                        [[ "$receipt_height" =~ ^[0-9]+$ ]] &&
+                        [ "$receipt_height" -eq "$last_height" ] 2>/dev/null &&
+                        [ "$last_height" -gt "$last_current" ] 2>/dev/null; then
                         synced=1
                     fi
-                    # Cover startup and completion even when the warm chain catches up quickly.
                     if [ "$synced" = 1 ] && [ "$window_hashes" = 1 ] && [ "$((observed - window_start))" -ge 120 ]; then break; fi
                     sleep 2
                 done
                 assert_eq "workers keep hashing across the Tari enable window (#3094)" "$window_hashes" 1
-                assert_eq "merge-mining templates arrive after Tari sync (#3094)" "$synced" 1
+                if [ "$synced" = 1 ]; then
+                    it_pass "merge-mining templates arrive after Tari sync (#3094)"
+                else
+                    it_fail "merge-mining templates arrive after Tari sync (#3094)" "last_state=${last_state:-unreadable} (need done); last_connected=${last_connected:-unreadable} (need true); last_sync_current=${last_current:-unreadable} (need positive integer); last_template_updated=${template_updated:-unreadable} (need >= $enable_started); last_receipt_state=${receipt_state:-unreadable} (need READY); last_receipt_height=${receipt_height:-unreadable} (need = ${last_height:-valid API template height}); last_template_height=${last_height:-unreadable} (need > ${last_current:-valid sync current})"
+                fi
                 [ "$window_hashes" = 1 ] && [ "$synced" = 1 ] || failed=1
                 if [ "$continuity_failed" = 0 ]; then
                     if [ "$continuity_checks" -gt 0 ]; then

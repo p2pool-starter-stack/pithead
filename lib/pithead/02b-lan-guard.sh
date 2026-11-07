@@ -312,11 +312,11 @@ check_lan_guard() {
     check_lan_guard_hold "${ports[@]}"
     lan_guard_enforced "${ports[@]}" || rc=$?
     if [ "$rc" = 0 ] && tor_egress_boot_unit_applies && ! systemctl is-enabled "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
-        dr_warn_surface "LAN-only sources are enforced on port(s) ${ports[*]} now, but $LAN_GUARD_BOOT_UNIT is not enabled, so a reboot reopens them to every source until './pithead up'. Run './pithead up' to install it." "Node port(s) ${ports[*]} are limited to the LAN now, but that limit will not survive a restart of this machine."
+        dr_warn_surface lan-guard "LAN-only sources are enforced on port(s) ${ports[*]} now, but $LAN_GUARD_BOOT_UNIT is not enabled, so a reboot reopens them to every source until './pithead up'. Run './pithead up' to install it." "Node port(s) ${ports[*]} are limited to the LAN now, but that limit will not survive a restart of this machine."
         return 0
     fi
     if [ "$rc" = 0 ]; then
-        dr_ok "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
+        dr_ok lan-guard "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
         return 0
     fi
     for kp in $published; do
@@ -327,11 +327,11 @@ check_lan_guard() {
         docker port "$c" "${kp#*:}/tcp" 2>/dev/null | grep -qv '^127\.0\.0\.1:' && exposed+=("${kp#*:}")
     done
     if [ "$running" = 0 ]; then
-        dr_info "LAN-only source check skipped — the node containers aren't running."
+        dr_info lan-guard "LAN-only source check skipped — the node containers aren't running."
     elif [ "${#exposed[@]}" -gt 0 ]; then
-        dr_fail_surface "Port(s) ${exposed[*]} are published on every interface with NO LAN-only source rule ($(lan_guard_reason "$rc")), so any address that can route to this host can connect. Run './pithead up' to reinstall it." "Node port(s) ${exposed[*]} are open to every network, not just the LAN: the rule that limits them is missing ($(lan_guard_reason "$rc")). Restarting this machine reinstalls it."
+        dr_fail_surface lan-guard "Port(s) ${exposed[*]} are published on every interface with NO LAN-only source rule ($(lan_guard_reason "$rc")), so any address that can route to this host can connect. Run './pithead up' to reinstall it." "Node port(s) ${exposed[*]} are open to every network, not just the LAN: the rule that limits them is missing ($(lan_guard_reason "$rc")). Restarting this machine reinstalls it."
     else
-        dr_warn_surface "LAN access is on for port(s) ${ports[*]}, but they are held on 127.0.0.1: the LAN-only source rule cannot be installed ($(lan_guard_reason "$rc")). Fix that and run './pithead up'." "LAN access is on for node port(s) ${ports[*]}, but they are only reachable from this machine: the rule that limits them to the LAN cannot be installed ($(lan_guard_reason "$rc"))."
+        dr_warn_surface lan-guard "LAN access is on for port(s) ${ports[*]}, but they are held on 127.0.0.1: the LAN-only source rule cannot be installed ($(lan_guard_reason "$rc")). Fix that and run './pithead up'." "LAN access is on for node port(s) ${ports[*]}, but they are only reachable from this machine: the rule that limits them to the LAN cannot be installed ($(lan_guard_reason "$rc"))."
     fi
     return 0
 }
@@ -347,7 +347,7 @@ check_lan_guard_hold() { # <port>...
         seen+="$c "
         policy=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$c" 2>/dev/null) || continue
         if container_is_running "$c"; then
-            [ "$policy" = no ] || dr_fail_surface "$c publishes a LAN port with restart policy '$policy', so after a reboot Docker starts it before the LAN-only source rule is back. Run './pithead up'." "$c could start after a restart before the rule that limits its LAN port is back."
+            [ "$policy" = no ] || dr_fail_surface lan-guard-hold "$c publishes a LAN port with restart policy '$policy', so after a reboot Docker starts it before the LAN-only source rule is back. Run './pithead up'." "$c could start after a restart before the rule that limits its LAN port is back."
             continue
         fi
         if systemctl is-failed --quiet "$LAN_GUARD_BOOT_UNIT" 2>/dev/null; then
@@ -357,7 +357,7 @@ check_lan_guard_hold() { # <port>...
         else
             why="it exited (code $(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)), and with LAN access on Docker does not restart it; $LAN_GUARD_CHECK_TIMER starts it within 2 minutes while the LAN-only source rule is live"
         fi
-        dr_fail_surface "$c is down: $why. Run './pithead up' to start it." "$c is down; it is started again within 2 minutes if the LAN-only source rule is live."
+        dr_fail_surface lan-guard-hold "$c is down: $why. Run './pithead up' to start it." "$c is down; it is started again within 2 minutes if the LAN-only source rule is live."
     done
 }
 

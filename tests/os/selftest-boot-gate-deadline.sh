@@ -81,6 +81,7 @@ for scenario in unhealthy slow-dashboard slow-doctor slow-status slow-render lat
             [ "$1" != 1800 ] || return 0
             [ "$1" = --kill-after=2 ] || fail 'probe has no forced-kill grace'
             local budget=$2 operation=$4 duration=0
+            [ "$3" != env ] || operation=$6
             [ "$3" != curl ] || {
                 curl
                 return

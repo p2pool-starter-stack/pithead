@@ -170,9 +170,12 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
         for _bh in $(hostname -I 2>/dev/null); do
             is_public_ip "$_bh" && continue
             case "$_bridge_addrs" in *" $_bh "*) continue ;; esac
+            if [ -n "${NETWORK_PREFIX:-}" ] && [ "$_bh" = "${NETWORK_PREFIX}.1" ]; then
+                continue
+            fi
             case "$_bh" in
-            *:*) ;;                # IPv6 literal
-            *[!0-9.]*) continue ;; # not an address literal
+            *:*) ;;
+            *[!0-9.]*) continue ;;
             esac
             bind_addrs="${bind_addrs:+$bind_addrs }$_bh"
         done

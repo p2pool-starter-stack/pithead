@@ -113,6 +113,39 @@ numbered sources, so `make` builds the executable before the first `./pithead` c
 > Changed your mind later? You can convert a clone to the published images in place. See
 > [Switching a source checkout to release images](operations.md#switching-a-source-checkout-to-release-images).
 
+#### Interrupted source build
+
+If setup is interrupted while building Tor, it returns a nonzero status and retains `config.json`.
+A Tor build or startup failure preserves Docker's error output and exit status, names the failed
+phase and points here. Keep the configuration; the next `./pithead setup` uses it again.
+
+The BuildKit error `failed to stat active key during commit: snapshot ... does not exist: not found`
+is a Docker build-state failure, not evidence that `config.json` is damaged. Inspect the daemon,
+containers and build cache before retrying:
+
+```bash
+docker info
+docker ps -a
+docker system df
+docker buildx du
+sudo journalctl -u docker.service -n 100 --no-pager
+```
+
+The build-cache command requires the Buildx plugin; see [Docker's disk-usage reference](https://docs.docker.com/reference/cli/docker/buildx/du/).
+The journal command applies to Linux hosts running Docker under systemd. Review logs locally;
+they can contain private configuration. Then retry from the unchanged checkout:
+
+```bash
+./pithead setup
+```
+
+Pithead does not restart Docker or prune its cache. If the same snapshot error persists, arrange
+operator recovery after inspecting the logs and other workloads. A Docker daemon restart affects
+other containers on the host; it is an explicit operator action, not a default setup repair.
+Do not delete `config.json`, containers, volumes or broad build caches to retry setup.
+Keep destructive recovery experiments on a disposable isolated host. A retry that succeeds only
+after operator assistance must be recorded as assisted recovery, not an unattended retry pass.
+
 ---
 
 ## 3. Run setup

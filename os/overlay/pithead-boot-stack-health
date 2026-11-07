@@ -47,7 +47,7 @@ boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason"
 }
 boot_status() {
     install -m 600 /dev/null "$BOOT_STATUS_LOG" || return 1
-    gate_run status ./pithead status >"$BOOT_STATUS_LOG" 2>&1
+    gate_run status env PITHEAD_BOOT_GATE=1 ./pithead status >"$BOOT_STATUS_LOG" 2>&1
 }
 boot_status_ready() {
     boot_status && ! grep -q 'health check pending' "$BOOT_STATUS_LOG" && [ -z "$(boot_status_blocking)" ]
@@ -68,7 +68,7 @@ gate_ready() {
     gate_answer_is_dashboard "$1" "$2" || return 1
     local doctor_result=0
     gate_doctor_ran=1
-    gate_run doctor ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || doctor_result=$?
+    gate_run doctor env PITHEAD_BOOT_GATE=1 ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || doctor_result=$?
     case "$doctor_result" in
     124 | 137)
         gate_doctor_ran=0

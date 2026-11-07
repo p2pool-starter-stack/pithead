@@ -3,7 +3,7 @@
 # tor-history verb (#3052). No engine or bench access.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-WORK=$(mktemp -d "${TMPDIR:?}/pithead-tor-heal-outage.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-heal-outage.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
@@ -252,7 +252,7 @@ AUTO_HEAL_OFF=1
 # shellcheck source=lib/pithead/21-doctor-stack-checks.sh
 source "$ROOT/lib/pithead/21-doctor-stack-checks.sh"
 container_is_running() { return 0; }
-dr_fail_surface() { printf '%s\n' "$1" >>"$WORK/doctor"; }
+dr_fail_surface() { printf '%s\n' "$2" >>"$WORK/doctor"; }
 printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 check_tor_circuit_history
 grep -q "pithead tor-recover check" "$WORK/doctor"

@@ -99,9 +99,6 @@ _post_worker_upgrade() { # <rig> <version> -> response body
         http://127.0.0.1:8000/api/control/worker-upgrade" 2>/dev/null
 }
 
-# Poll /api/control/result for <id> until it leaves the non-terminal vocabulary, or the deadline.
-# Non-terminal is pending/running/empty; everything else is the host's answer of record
-# (applied/noop/throttled/rolled_back/failed/rejected/accepted — pithead's control_worker_upgrade).
 _poll_upgrade_result() { # <id> <timeout-s> -> terminal status (empty on timeout)
     local id="$1" deadline=$((SECONDS + $2)) body status
     while [ "$SECONDS" -lt "$deadline" ]; do
@@ -112,7 +109,8 @@ _poll_upgrade_result() { # <id> <timeout-s> -> terminal status (empty on timeout
         printf '%s' "$status"
         return 0
     done
-    return 0
+    echo "timed out after ${2}s waiting for upgrade result $id; last status: ${status:-none}" >&2
+    return 1
 }
 
 # The noop leg (#1002a), with its precondition ESTABLISHED rather than assumed: only ever called
@@ -136,6 +134,17 @@ _rigforge_upgrade_noop_leg() { # <rig> <version-tag>
     else
         it_pass "the noop answer is the dashboard's synchronous shortcut, not a rig dial (#1002a)"
     fi
+}
+
+_rigforge_fleet_nothing_behind_leg() { # <rig> <version-tag>
+    local plan eligible code
+    plan="$(rx "curl -sS --max-time 10 http://127.0.0.1:8000/api/control/worker-upgrade-all" 2>/dev/null)"
+    eligible="$(printf '%s' "$plan" | jq -r --arg n "$1" '[.eligible[]? | select(.name==$n)] | length' 2>/dev/null)"
+    assert_eq "update-all lists no eligible rig once the rig is on $2 (#3823)" "$eligible" "0"
+    code="$(rx "curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' \
+        --data $(quote_arg "$(jq -nc --arg v "$2" '{version:$v}')") \
+        http://127.0.0.1:8000/api/control/worker-upgrade-all" 2>/dev/null)"
+    assert_eq "update-all refuses to start with nothing behind (#3823)" "$code" "409"
 }
 
 # The real upgrade leg (#1237): drive an actual version change through the product path.
@@ -259,7 +268,7 @@ run_rigforge_upgrade() { # <rig-name>
     fi
 
     _rigforge_upgrade_real_leg "$rig" "$latest"
-    # Only now is "the rig is on $latest" something this run established rather than assumed, which
-    # is the precondition the noop leg needs to mean anything.
-    _pred_rig_version_is "$rig" "$latest" && _rigforge_upgrade_noop_leg "$rig" "$latest"
+    _pred_rig_version_is "$rig" "$latest" || return 0
+    _rigforge_upgrade_noop_leg "$rig" "$latest"
+    _rigforge_fleet_nothing_behind_leg "$rig" "$latest"
 }

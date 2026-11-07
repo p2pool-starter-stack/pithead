@@ -294,7 +294,7 @@ run_rotate_onion() {
     ROTATE_ONION_RESTORE_ARMED=1
 
     it_step "rotating the dashboard onion…"
-    pithead rotate-dashboard-onion -y >/dev/null 2>&1
+    rotation_with_receipts
     assert_rc "rotate-dashboard-onion completes" "$?" "0"
 
     local new_onion new_client_fp current_mining_fp restored_key_fp
@@ -366,4 +366,5 @@ run_rotate_onion() {
     [ "$ROTATE_ONION_RESTORE_ARMED" = 0 ] && it_pass "restored dashboard onion reachable from outside again"
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy after restoring the pre-rotation onion" "$?" "0"
+    healer_with_receipts
 }

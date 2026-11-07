@@ -5,6 +5,7 @@ set -uo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERE="$(cd "$TEST_DIR/.." && pwd)"
 python3 "$TEST_DIR/test-wallet-recovery.py" || exit 1
+python3 "$TEST_DIR/test-wallet-recovery-replay.py" || exit 1
 python3 "$TEST_DIR/test-wallet-recovery-interface.py" || exit 1
 python3 "$TEST_DIR/test-wallet-recovery-live.py" || exit 1
 
