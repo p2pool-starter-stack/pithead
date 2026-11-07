@@ -66,7 +66,7 @@ rx() {
     PATH="$MM_TMP/bin:$PATH" bash -c "$1"
 }
 
-mm_set() { # <oldest> [log-rc]
+mm_set() {
     MM_OLDEST="$1"
     MM_LOG_RC="${2:-0}"
     export MM_OLDEST MM_LOG_RC
@@ -128,12 +128,12 @@ mm_outcome() {
     )
 }
 
-mm_expect() { # <name> <counts>
+mm_expect() {
     MM_OUTCOME="$(mm_outcome)"
     assert_contains "$1" "$MM_OUTCOME" "COUNTS $2"
 }
 
-mm_case() { # <oldest> <startup> <recent> [recent-rc] [restart-stage]
+mm_case() {
     mm_set "$1"
     MM_STARTUP="$2"
     MM_RECENT="$3"

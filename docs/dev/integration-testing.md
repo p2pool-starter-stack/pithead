@@ -725,7 +725,8 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   the deadline. Log-read errors fail separately from an exhausted readiness window.
   If no round-trip is found, the oldest retained timestamp is compared with the same container's
   start time. A gap greater than 60 seconds is a conservative heuristic for lost startup evidence,
-  not proof of rotation; ordinary delayed startup and the exact 60-second boundary still fail.
+  not proof of rotation; a delayed first log line beyond 60 seconds is treated the same way, while
+  the exact 60-second boundary and a rotation that leaves a gap of 60 seconds or less still fail.
   When evidence may be lost, a fresh chain-id line from the last 60 seconds can pass the row.
   Without that proof, including when the fresh read fails or contains only local client lines,
   the row counts as `missing` with the evidence-loss reason. Both fallback observations are
@@ -754,7 +755,8 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   download did not complete, and no input to this harness would create the signal, which is what
   earns the counted `by-design` class rather than the predicate's bit. Reading the capture first moves a case
   out of the skip ledger into a pass or a fail. The one exception is the evidence-loss fallback
-  above, which can turn a would-be fail into a counted `missing` row, never into a skip. Only the matching
+  above, which can turn a would-be fail or a `by-design` skip into a counted `missing` skip when
+  startup evidence may be lost. Only the matching
   lines cross the wire: at most 200 recent matching lines plus the latest chain-id line,
   each clipped to 2048 characters. Each log read has a 15-second timeout. The container's argv
   line — carrying both wallet addresses, the RPC credential and the onion — stays out of the capture.
