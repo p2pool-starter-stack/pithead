@@ -58,10 +58,6 @@ WALLET_CHANGED_BADGE_SEC = 72 * 3600
 
 
 def recent_wallet_change(state_mgr, now=None) -> dict | None:
-    """The payout-wallet tripwire's change record (#375) if one happened within the banner
-    window: ``{"old8", "new8", "ts"}`` (addresses pre-truncated to 8 chars by the alerter),
-    else ``None``. Reads the kv_store keys AlertService persists; any unreadable value reads
-    as "no recent change" rather than breaking ``/api/state``."""
     try:
         ts = float(state_mgr.get_kv("payout_wallet_changed_ts") or 0)
     except (TypeError, ValueError):
@@ -70,7 +66,8 @@ def recent_wallet_change(state_mgr, now=None) -> dict | None:
         return None
     return {
         "old8": state_mgr.get_kv("payout_wallet_prev8") or "?",
-        "new8": (state_mgr.get_kv("payout_wallet") or "")[:8],
+        "new8": state_mgr.get_kv("payout_wallet_new8")
+        or (state_mgr.get_kv("payout_wallet") or "")[:8],
         "ts": ts,
     }
 

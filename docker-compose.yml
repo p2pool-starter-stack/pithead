@@ -464,6 +464,7 @@ services:
     # word-splitting), which mangles a multi-flag value. The entrypoint word-splits this env var.
     environment:
       - P2POOL_FLAGS=${P2POOL_FLAGS:-}
+      - MONERO_SUBADDRESS=${MONERO_SUBADDRESS:-}
       # Merge-mining opt-in (#1855). The variable is delivered here; the entrypoint does NOT read
       # it yet, so "off" still passes --merge-mine at a Tari node that is not running (#1903 drops
       # the triple from argv). The default matches the parser's default for a MISSING tari.mode
@@ -724,6 +725,7 @@ services:
       - P2POOL_CLEARNET=${P2POOL_CLEARNET:-false}
       - P2POOL_URL=${P2POOL_URL}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS}
+      - MONERO_SUBADDRESS=${MONERO_SUBADDRESS:-}
       # Payout confirmation (#381): poll the view-only wallet-rpc for confirmed incoming payouts.
       # Enabled only when a view key is set on a local node (pithead renders true); off = the
       # dashboard never polls and the wallet-rpc container isn't started. Creds authenticate the

@@ -34,7 +34,6 @@ from mining_dashboard.config.config import (
     GITHUB_RIGFORGE_RELEASES_API,
     HOST_IP,
     MONERO_CLEARNET_SYNC,
-    MONERO_WALLET_ADDRESS,
     PAYOUT_CONFIRM_ENABLED,
     REJECT_WORKERS_CONTAINER,
     SYNC_GATE_CONTAINERS,
@@ -407,7 +406,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         # Payout-wallet tripwire (#375): what p2pool itself reports mining to —
                         # the same stratum field the dashboard's Stratum card shows — with the
                         # env address as fallback while p2pool is down/restarting. Empty => no-op.
-                        observed_wallet=stratum_raw.get("wallet") or MONERO_WALLET_ADDRESS,
+                        observed_wallet=payout_sync.observed_monero_pair(stratum_raw.get("wallet")),
                         # Block-found / payout-found edges (#336): p2pool's cumulative pool-wide
                         # block counter and the height of the last one. 0 while the stats file is
                         # missing/unparsable, which the edge treats as a silent rebaseline.

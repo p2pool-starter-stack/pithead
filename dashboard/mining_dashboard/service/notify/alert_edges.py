@@ -4,6 +4,7 @@ import time
 from mining_dashboard.config.config import (
     DISK_CRITICAL_PERCENT,
     DISK_WARN_PERCENT,
+    MONERO_PAYOUT_ADDRESS,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
     TELEGRAM_ENABLED,
@@ -186,24 +187,23 @@ class AlertEdgesMixin:
         ]
 
     def _wallet_edges(self, observed):
-        """Payout-wallet tamper tripwire (#375). ``observed`` is the wallet p2pool itself reports
-        mining to (stratum stats), with the env address as fallback — ground truth of where
-        rewards go. Baseline in the kv_store so an `apply`-driven container recreate can't wipe
-        it (that recreate IS the attack window). Empty/Unknown observations no-op: p2pool briefly
-        reports no wallet while restarting, and that must not read as "changed to ''" or re-seed.
-        The first-ever observation seeds silently. Only the first 8 chars of each address are
-        ever put in a message."""
-        if not observed or observed == "Unknown" or self._kv_get is None or self._kv_set is None:
+        primary, subaddress = observed if isinstance(observed, tuple) else (observed, "")
+        if not primary or primary == "Unknown" or self._kv_get is None or self._kv_set is None:
             return []
         baseline = self._kv_get("payout_wallet")
         if not baseline:
-            self._kv_set("payout_wallet", observed)
+            self._kv_set("payout_wallet", primary)
+            self._kv_set("payout_subaddress", subaddress)
             return []
-        if observed == baseline:
+        baseline_subaddress = self._kv_get("payout_subaddress") or ""
+        if primary == baseline and subaddress == baseline_subaddress:
             return []
-        old8, new8 = baseline[:8], observed[:8]
-        self._kv_set("payout_wallet", observed)
+        old, new = (baseline_subaddress, subaddress) if primary == baseline else (baseline, primary)
+        old8, new8 = old[:8] or "(none)", new[:8] or "(none)"
+        self._kv_set("payout_wallet", primary)
+        self._kv_set("payout_subaddress", subaddress)
         self._kv_set("payout_wallet_prev8", old8)  # for the dashboard banner's tooltip
+        self._kv_set("payout_wallet_new8", new8)
         self._kv_set("payout_wallet_changed_ts", time.time())
         self._record_incident(self.EVT_WALLET_CHANGED)
         return [
@@ -431,7 +431,7 @@ class AlertEdgesMixin:
                     self.EVT_PAYOUT_FOUND,
                     self._fmt(
                         f"\U0001f4b0 Payout incoming — you held {shares_in_window} PPLNS "
-                        "share(s) when the block was found."
+                        f"share(s) when the block was found, paying {MONERO_PAYOUT_ADDRESS[:8]}…."
                     ),
                 )
             )

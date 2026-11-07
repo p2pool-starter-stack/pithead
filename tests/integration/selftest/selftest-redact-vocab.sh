@@ -50,7 +50,7 @@ RENDER="$(cd "$HERE/../../.." && pwd)/lib/pithead/33-render-env.sh"
 # none of these lists fails below BY NAME, so the rendered schema cannot drift past it.
 MUST_REDACT="TARI_EXPLORER_URL DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP DASHBOARD_AUTH_USER
 DASHBOARD_ONION_CLIENT_PRIVKEY DASHBOARD_ONION_CLIENT_PUBKEY HEALTHCHECKS_PING_URL
-MONERO_NODE_PASSWORD MONERO_NODE_USERNAME MONERO_VIEW_KEY MONERO_WALLET_ADDRESS
+MONERO_NODE_PASSWORD MONERO_NODE_USERNAME MONERO_VIEW_KEY MONERO_WALLET_ADDRESS MONERO_SUBADDRESS
 NOTIFY_WEBHOOK_URLS NTFY_TOKEN NTFY_URL PROXY_AUTH_TOKEN PROXY_STRATUM_PASSWORD TARI_SPEND_PUBLIC_KEY
 TARI_VIEW_KEY TARI_WALLET_ADDRESS TARI_WALLET_PASSWORD TELEGRAM_BOT_TOKEN WALLET_RPC_PASSWORD
 WALLET_RPC_USERNAME WORKER_API_TOKENS XMRIG_API_TOKEN XVB_DONOR_ID"
@@ -119,7 +119,10 @@ except StopIteration:
     print("!!could not locate render_env's .env heredoc in 33-render-env.sh")
     raise SystemExit(0)
 
-keys = sorted({m.group(1) for l in src[start + 1:end] if (m := re.match(r"^([A-Z][A-Z0-9_]*)=", l))})
+keys = {m.group(1) for l in src[start + 1:end]
+        if (m := re.match(r"^(?:\$\{[^}]+\})?([A-Z][A-Z0-9_]*)=", l))}
+keys.update(re.findall(r"printf -v \w+ '([A-Z][A-Z0-9_]*)=", "\n".join(src)))
+keys = sorted(keys)
 if len(keys) < 100:
     print(f"!!the .env population read as only {len(keys)} keys — the heredoc bounds moved")
     raise SystemExit(0)

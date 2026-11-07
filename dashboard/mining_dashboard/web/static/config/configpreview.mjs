@@ -22,6 +22,8 @@ export const PreviewModal = ({
   );
   const displayValue = (key, value) =>
     String(value ?? (key === "workers.api_port" ? "8080 (default)" : "unset"));
+  const payoutName = (chain) =>
+    chain === "monero_subaddress" ? "Monero subaddress" : chain === "monero" ? "Monero" : "Tari";
   const armed = (!preview.destructive || confirmText === "APPLY") && suffixesMatch;
   return html`<${Modal} ref=${modalRef} title="Review changes" onClose=${onClose}
       onCancel=${() => !busy && onCancel()}>
@@ -49,7 +51,7 @@ export const PreviewModal = ({
           }
           ${Object.entries(payoutConfirmations).map(
             ([chain, suffix]) => html`<label class="config-confirm-type">Type the final characters
-                of the new ${chain === "monero" ? "Monero" : "Tari"} payout address,
+                of the new ${payoutName(chain)} payout address,
                 <code>${suffix}</code>:
                 <input type="text" value=${payoutSuffixes?.[chain] || ""}
                        onInput=${(event) => onPayoutSuffix(chain, event.target.value)} /></label>`,
