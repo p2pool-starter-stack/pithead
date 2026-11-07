@@ -59,7 +59,19 @@ boot path drives most of them for you:
 | `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console, and five wrong tries mint a fresh one. |
 | `./pithead load-images` | Load the baked container-image archives from `/opt/pithead/images` into the engine when their content changed since the last load. The boot path runs this every boot, so a reinstall or update that ships new images converges with no wizard involvement. |
 | `./pithead local-miner` | Converge this machine's RigForge worker to what the machine is: on a coordinator it follows `local_miner.enabled` (RigForge setup in appliance mode when on, the miner stopped when off); on a rig it follows `rig.json`. Run every boot; a no-op outside the appliance. |
-| `./pithead render-quadlet` | Render Podman Quadlet units — the appliance runtime — from a rendered `.env`. Defaults to `--env .env` and `--out ./quadlet`. The `os/quadlet/` fixtures pin its output byte for byte. |
+| `./pithead render-quadlet` | Render Podman Quadlet units from a rendered `.env`. Defaults to `--env .env` and `--out ./quadlet`. The `os/quadlet/` fixtures pin its output byte for byte. Appliance boot remains Compose-managed. |
+
+For stack-owned Quadlet images, nonempty `PITHEAD_REGISTRY` and `STACK_VERSION`
+values in the input file take precedence independently. Missing or empty values
+use the process build provenance computed by the CLI. The shared provenance
+contract honors a nonempty process `PITHEAD_REGISTRY` override, otherwise using
+the default registry. It computes `STACK_VERSION` as `dev` for a source checkout,
+`v<VERSION>` for a release bundle, or `dev` when `VERSION` is absent or empty;
+an inherited process `STACK_VERSION` does not override that computation.
+The normal environment renderer keeps these build values out of `.env`.
+Direct callers of `render_quadlet_units` must initialize build provenance or
+supply both values in the input file; unresolved values are refused before
+creating output. Upstream image pins are unchanged.
 
 ### With a node running elsewhere
 
