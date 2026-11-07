@@ -29,6 +29,15 @@ hugepages_decision_pages() {
     fi
 }
 
+hugepages_carveout_mb() {
+    local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" live carved
+    carved=$(($(hugepages_decision_pages) * 2))
+    live=$(awk '/HugePages_Total/{t=$2} /Hugepagesize/{s=$2} END{print int(t*s/1024)}' "$meminfo" 2>/dev/null || echo 0)
+    [ "${live:-0}" -ge 0 ] 2>/dev/null || live=0
+    [ "$live" -lt "$carved" ] && carved="$live"
+    printf '%s\n' "$carved"
+}
+
 # Kernel boot params pithead appends to GRUB_CMDLINE_LINUX for RandomX: reserve 6 GiB of
 # 2 MiB HugePages and disable Transparent HugePages. NOTE the THP param is SINGULAR
 # (transparent_hugepage) — the plural form is an unrecognized param the kernel silently ignores,
