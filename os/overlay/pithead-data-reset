@@ -68,7 +68,6 @@ boot_disk_part() { # $1: PARTLABEL ("esp" or "data") -> prints /dev/node, or not
     printf '%s' "$part"
 }
 
-# Unavailable probe space is not evidence of filesystem damage.
 try_mount_ro() { # $1: partition
     local mnt
     mnt=$(mktemp -d) || {
@@ -102,8 +101,6 @@ backup_superblocks() { # $1: partition -> block numbers, one per line, best firs
 # that used to reach `mkfs`. A corrupt primary superblock is the textbook case: `fsck -p` exits 8,
 # prints the very command that would have saved the partition, and we reformatted instead, taking
 # the wallets, the Tor onion keys and both chains with it.
-#
-# rc 0 = mountable, rc 1 = repairs exhausted, rc 2 = probe unavailable.
 data_mountable() { # $1: data partition
     try_mount_ro "$1" && return 0
     [ "$?" -eq 1 ] || return 2
@@ -139,10 +136,6 @@ data_mountable() { # $1: data partition
     return 1
 }
 
-# Unavailable probes emit no verdict so callers cannot mistake them for filesystem damage.
-#   skip                 healthy partition, no request — touch nothing (the fail-safe default)
-#   reformat-requested   the factory-reset marker is present
-#   reformat-wedged      the partition will not mount even after fsck
 data_reset_decision() { # $1: data partition, $2: marker file path
     if [ -f "$2" ]; then
         echo reformat-requested
@@ -205,8 +198,6 @@ main() {
         return 0
     }
 
-    # Read (and later clear) the factory-reset marker on the ESP. The ESP is not mounted this early,
-    # so mount it ourselves; if it will not mount we simply have no marker to act on.
     esp_part=$(boot_disk_part esp) || esp_part=""
     esp_mnt=$(mktemp -d) || {
         log "could not allocate an ESP mount directory — refusing recovery"
@@ -227,14 +218,20 @@ main() {
         ;;
     reformat-requested)
         log "factory-reset requested — wiping $data_part"
-        reformat_data "$data_part" && record_wipe "${marker:+$esp_mnt}" "factory-reset requested"
-        # Consume the marker so the wipe is one-shot, never a reboot loop.
-        [ -n "$marker" ] && rm -f "$marker" 2>/dev/null || true
+        if reformat_data "$data_part"; then
+            record_wipe "${marker:+$esp_mnt}" "factory-reset requested"
+        else
+            [ "$?" -ne 2 ] || rc=2
+        fi
+        [ "$rc" -eq 2 ] || [ -z "$marker" ] || rm -f "$marker" 2>/dev/null || true
         ;;
     reformat-wedged)
         log "$data_part could not be mounted after every repair — reinitializing it so the box can recover"
-        reformat_data "$data_part" &&
+        if reformat_data "$data_part"; then
             record_wipe "${marker:+$esp_mnt}" "unrecoverable /data reinitialized — everything on it was lost"
+        else
+            [ "$?" -ne 2 ] || rc=2
+        fi
         ;;
     esac
 

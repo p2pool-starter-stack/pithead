@@ -11,6 +11,7 @@ source "$ROOT/os/overlay/pithead-data-reset"
 
 TRACE="$work/trace"
 MKTEMP_FAIL=""
+MARKER_PRESENT=""
 MOUNT_RESULT=1
 cases=0
 
@@ -27,6 +28,7 @@ reset_fixture() {
     : >"$TRACE"
     command rm -f "$work/esp-mounted"
     MKTEMP_FAIL=""
+    MARKER_PRESENT=""
     MOUNT_RESULT=1
 }
 
@@ -48,6 +50,7 @@ mount() {
         return "$MOUNT_RESULT"
     fi
     printf 'mount %s\n' "$1" >>"$TRACE"
+    [ -z "$MARKER_PRESENT" ] || : >"$2/$MARKER_NAME"
     printf '%s\n' "$2" >"$work/esp-mounted"
     return 0
 }
@@ -198,6 +201,17 @@ rc=$?
 [ "$(count 'mount')" -eq 0 ] || fail 'ESP allocation failure attempted a mount'
 [ "$(count 'fsck')" -eq 0 ] || fail 'ESP allocation failure attempted repair'
 [ "$(count 'mkfs.ext4')" -eq 0 ] || fail 'ESP allocation failure formatted data'
+cases=$((cases + 1))
+
+reset_fixture
+MKTEMP_FAIL=2
+MARKER_PRESENT=1
+main >"$work/main-output" 2>"$work/main-error"
+rc=$?
+[ "$rc" -ne 0 ] || fail 'main accepted unavailable reformat mount space'
+[ "$(count 'mkfs.ext4')" -eq 0 ] || fail 'requested reset formatted without mount space'
+esp_mnt=$(awk '$1 == "mktemp" { print $2; exit }' "$TRACE")
+[ -f "$esp_mnt/$MARKER_NAME" ] || fail 'refused reset consumed the reset marker'
 cases=$((cases + 1))
 
 printf 'selftest-data-reset-probe: %s cases passed\n' "$cases"
