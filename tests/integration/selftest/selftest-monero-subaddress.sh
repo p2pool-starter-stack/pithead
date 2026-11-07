@@ -4,6 +4,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 source "$HERE/../scenarios.sh"
 
+echo "== monero subaddress: scenario prerequisites and resolved config =="
 overrides="$(scenario_overrides local-pruned-main-subaddress || true)"
 assert_contains "subaddress scenario is prerequisite gated" "$overrides" "monero_subaddress=env"
 unset IT_MONERO_SUBADDRESS IT_MONERO_VIEW_KEY
@@ -26,6 +27,7 @@ case "$RESOLVED" in
 *monero_subaddress=env*) it_fail "marker is removed" "marker remained" ;;
 *) it_pass "marker is removed" ;;
 esac
+echo "== monero subaddress: redaction by name =="
 probe="$(printf '%s' bounded-marker)"
 for line in "MONERO_SUBADDRESS=$probe" "{\"subaddress\":\"$probe\"}" "--subaddress $probe" "--subaddress=$probe"; do
     case "$(printf '%s\n' "$line" | redact)" in
