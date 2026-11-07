@@ -169,10 +169,6 @@ apply() {
         [ -n "$key" ] && changed+=("$key")
     done < <(env_changed_keys "$ENV_FILE" "$newenv")
 
-    # A marker left by a previous apply whose `docker compose up` failed AFTER the new config was
-    # committed (#125): the stack then runs OLD containers against NEW config files, and because a
-    # re-apply diffs the (already-committed) .env it would see no change and silently no-op. While
-    # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
     local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
     # Armed before .env commits, cleared when apply ends: a retry would otherwise keep the old login hash (#3332).
@@ -252,6 +248,19 @@ apply() {
         # the active path unchanged, rather than stranding the stopped dashboard on a new path.
         mutation_lock_acquire apply
         lock_held=1
+        local marker_stage
+        marker_stage=$(mktemp "${apply_marker}.XXXXXX") || error "Could not stage the apply recovery marker."
+        if ! {
+            case "$rearm_sync_gate" in
+            1) echo rearm-sync-gate ;;
+            2) echo rearm-tari-only ;;
+            *) : ;;
+            esac >"$marker_stage" &&
+                python3 -c 'import os, sys; os.replace(sys.argv[1], sys.argv[2])' "$marker_stage" "$apply_marker"
+        }; then
+            rm -f "$marker_stage"
+            error "Could not publish the apply recovery marker."
+        fi
         if { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; }; then
             if [ -n "$dashboard_data_dir_old" ] && [ -n "${DASHBOARD_DIR:-}" ] &&
                 [ "$dashboard_data_dir_old" != "$DASHBOARD_DIR" ] && [ -f "$dashboard_data_dir_old/mining_data.db" ]; then
@@ -259,7 +268,6 @@ apply() {
                 # either removes the unpublished copy and retries the change, or keeps the committed
                 # copy plus this marker so an unchanged re-apply still recreates the container.
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
-                : >"$apply_marker"
                 dashboard_carry_recovery=1
                 PITHEAD_DASHBOARD_CARRY_RECOVERY=("$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" 0 "$incomplete") # #2785: EXIT outlives apply's locals after errexit.
                 trap 'recover_dashboard_data_carry "${PITHEAD_DASHBOARD_CARRY_RECOVERY[@]}"; rm -f "$PITHEAD_ENV_STAGE" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true' EXIT
@@ -270,26 +278,6 @@ apply() {
         lan_guard_arm_transition "$newenv" || error "The LAN-only source rule could not be armed before changing .env."
         : >"$caddy_marker"
         mv "$newenv" "$ENV_FILE"
-        provision_node_onions # #103: a node that just went local needs its onion before it starts
-        inject_service_configs
-        # Whether caddy needs a restart is decided by COMPARING the rendered file, never by a list
-        # of keys someone has to remember to extend (#1052). The list had drifted:
-        # dashboard.expose_public_ip was missing from it, so turning OFF the opt-in that serves the
-        # dashboard on a globally-routable address re-rendered the Caddyfile without its bind lines
-        # and left caddy holding the wildcard listener — the operator sees the setting saved, sees
-        # the file change, and the box stays exposed.
-        #
-        # An absent previous file is a fresh install: compose starts caddy on the new one below, so
-        # there is no old configuration to displace. Emptiness is not absence — a zero-byte file
-        # left by a crashed render is a box whose caddy serves nothing, and that wants the restart.
-        if [ -f "Caddyfile" ]; then
-            caddy_had=1
-            caddy_before=$(cat "Caddyfile")
-        fi
-        generate_caddyfile
-        if [ "$caddy_pending" -eq 1 ] || { [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; }; then
-            caddy_changed=1
-        fi
     else
         rm -f "$newenv"
         if [ "$incomplete" -eq 0 ]; then
@@ -312,14 +300,22 @@ apply() {
             return 0
         fi
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
-        caddy_changed=$caddy_pending
-        [ "$caddy_pending" -eq 0 ] || generate_caddyfile
     fi
 
     # The retry branch reaches here without a hold; the changed branch already has one.
     if [ "$lock_held" -eq 0 ]; then
         mutation_lock_acquire apply
         lock_held=1
+    fi
+    provision_node_onions # #103: a node that just went local needs its onion before it starts
+    inject_service_configs
+    if [ -f "Caddyfile" ]; then
+        caddy_had=1
+        caddy_before=$(cat "Caddyfile")
+    fi
+    generate_caddyfile
+    if [ "$caddy_pending" -eq 1 ] || { [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; }; then
+        caddy_changed=1
     fi
     # Client-auth keys must be written before tor is recreated below, so an onion just turned on (or a
     # client-auth toggle) takes effect on this apply rather than the next (#343).
@@ -338,12 +334,6 @@ apply() {
     # before the rules go in. Idempotent, so the common case
     # (already installed from `up`) is a cheap re-assert; the .env it reads was committed just above.
     apply_tor_egress_firewall
-    # Keep recreate and reset scope retryable until up succeeds (#125).
-    case "$rearm_sync_gate" in
-    1) echo rearm-sync-gate >"$apply_marker" ;;
-    2) echo rearm-tari-only >"$apply_marker" ;;
-    *) : >"$apply_marker" ;;
-    esac
     migrate_dashboard_data
     # Write after data migration and before recreation. Tari-only resets retain the earned
     # mining release; a full reset waits for both required chains. Atomic replacement does
