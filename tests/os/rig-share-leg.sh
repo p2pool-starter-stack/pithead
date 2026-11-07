@@ -131,5 +131,13 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
         bad "share leg: the coordinator's own built-in miner never showed an accepted share within ${RIG_SHARE_WINDOW_SEC}s"
     fi
 
+    local miner_rc=0
+    local dash_user="$coord_user" dash_pass="$coord_pass"
+    ip="$coord_ip"
+    miner_backup_trial kvm-rig-share || miner_rc=$?
+    ip="$rig_ip"
+    if [ "$miner_rc" != 0 ] && [ "$miner_rc" != 77 ]; then
+        bad "connected rig cannot mask local miner backup recovery (#3375)"
+    fi
     _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
 }

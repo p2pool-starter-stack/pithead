@@ -5,7 +5,7 @@ ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
 ARG COSIGN_VERSION=v3.1.3
 ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7"
+ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7 github.com/go-jose/go-jose/v4@v4.1.6"
 ENV CGO_ENABLED=0
 
 RUN git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \
@@ -33,7 +33,8 @@ RUN /out/docker-compose version && /out/cosign version \
     && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
     && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.10" \
     && go version /out/cosign | grep -qxF "/out/cosign: go1.26.10" \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]'
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
 # ---------------------------------------------------------------------------------------------
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
@@ -215,8 +216,8 @@ COPY os/overlay/pithead-sync.service /etc/systemd/system/pithead-sync.service
 COPY os/overlay/pithead-sync /usr/local/sbin/pithead-sync
 # State mounts derive from the boot disk every boot, never labels: every pithead disk carries the same labels, and two at once made LABEL= mount the wrong /data.
 COPY os/overlay/pithead-mount-generator /usr/lib/systemd/system-generators/pithead-mount-generator
-COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer /etc/systemd/system/
-COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch /usr/local/sbin/
+COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer os/overlay/pithead-miner-recovery.service os/overlay/pithead-miner-recovery.timer /etc/systemd/system/
+COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery /usr/local/sbin/
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config
 # Hugepages sizing (#977): the sysctl.d reservation above is sized for the supported 16 GB machine;
@@ -265,7 +266,7 @@ RUN mkdir -p /etc/ssh/sshd_config.d \
 RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
     && systemctl mask systemd-firstboot.service
-RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
+RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-miner-recovery /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
 # The updater is chosen per image. The package install above includes RAUC only when selected;
 # leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even
@@ -296,7 +297,7 @@ RUN systemctl enable podman.socket pithead-boot.service pithead-cpu-governor.ser
         systemd-networkd systemd-networkd-wait-online pithead-sync.service pithead-firstboot.service \
         pithead-data-reset.service pithead-machine-id.service pithead-hugepages.service \
         pithead-journal-persist.service pithead-setup-again.service pithead-boot-version.service \
-        pithead-address-watch.timer \
+        pithead-address-watch.timer pithead-miner-recovery.timer \
     && systemctl disable ssh
 # systemd-repart.service is static — it is pulled in by sysinit.target, and `systemctl enable` on a
 # static unit is an error that would fail the build. Assert it is present instead.

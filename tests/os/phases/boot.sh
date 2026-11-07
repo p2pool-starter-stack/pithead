@@ -226,12 +226,12 @@ _vm_boot_disk() {
     cp "$1" "$DISK"
     qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
     : >"$SERIAL"
-    kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
+    kvm_preflight || exit 1
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import --disk "path=$DISK,format=raw,bus=virtio" \
-        --network network=default,model=virtio --graphics none \
+        --network network=default,model=virtio --graphics none --video vga \
         --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || return 1
     _wait_dhcp_ip 120
 }

@@ -2,6 +2,7 @@ wizard_start_page() {
     local engine="$1" image="$2" spool="$3" restore_spool="$4" card_mount="$5" installer="$6" token="$7" cert_fp="$8"
     local host_addresses
     "$engine" rm -f pithead-wizard >/dev/null 2>&1 || true
+    wizard_clear_announcement || error "Could not clear the previous setup console announcement."
     host_addresses=$(wizard_host_addresses) || host_addresses=""
     "$engine" run -d --name pithead-wizard --entrypoint python3 \
         -p 80:8000 -p 443:8443 -e WIZARD_TOKEN="$token" \
@@ -19,5 +20,5 @@ wizard_start_page() {
         error "Could not start the wizard container ($engine, $image). Pre-seed config.json or run '$0 firstboot-wizard --cli'."
     }
     [ "$installer" -eq 1 ] || reset_slot_restore_good "$engine" || warn "Could not restore the reset slot's good state; reboot may fall back."
-    wizard_announce_setup "$host_addresses" "$token" "$cert_fp"
+    wizard_announce_setup "$host_addresses" "$token" "$cert_fp" || error "Could not publish the setup console announcement."
 }

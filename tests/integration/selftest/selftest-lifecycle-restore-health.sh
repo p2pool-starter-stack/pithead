@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # A failed backup restore must stop later faults before they touch an unhealthy stack (#2501).
 set -uo pipefail
+lifecycle_mining_step() {
+    shift
+    "$@"
+}
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
@@ -8,7 +12,7 @@ source "$HERE/../lib.sh"
 
 echo "== lifecycle restore health gates fault injection (#2501) =="
 
-LIFECYCLE_SRC="$(sed -n '/^run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
+LIFECYCLE_SRC="$(sed -n '/^_run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecycle.sh" | sed '1s/^_run_lifecycle/run_lifecycle/')"
 assert_eq "the extraction is the whole lifecycle function" \
     "$(printf '%s\n' "$LIFECYCLE_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_lifecycle() { } "
 
@@ -62,6 +66,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
+        run_image_permissions() { :; }
         run_restore_dashboard_probe() {
             trace_restore_order dashboard-probe
             [ "$RESTORE_CASE" != dashboard-probe-fails ] || {
@@ -270,6 +275,7 @@ drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
             return "$lifecycle_rc"
         }
         run_fault_injection() { fault_ran=yes; }
+        run_fault_injection_maybe() { run_fault_injection; }
         it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         gate() { eval "$MAIN_SRC"; }
         gate >/dev/null 2>&1 || true
