@@ -360,7 +360,6 @@ up_sig_order=$(
 assert_eq "first-install up verifies release-image signatures before 'compose up' (#452)" \
     "$(printf '%s\n' "$up_sig_order" | grep -xE 'verify|compose' | tr '\n' ',')" "verify,compose,"
 
-# An incomplete marker forces the retry path so the test can observe firewall ordering without a prompt.
 apply_order=$(
     cd "$SANDBOX" || exit
     # shellcheck disable=SC1090

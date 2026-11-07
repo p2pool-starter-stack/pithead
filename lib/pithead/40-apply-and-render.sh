@@ -150,7 +150,6 @@ apply_publish_env() {
 }
 
 apply() {
-    # The changed and retry paths share one lock hold so the depth counter balances.
     local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_target=""
     local assume_yes=0 dry_run=0 porcelain=0 arg
     for arg in "$@"; do
@@ -182,7 +181,6 @@ apply() {
     resolve_dashboard_host # non-interactive
     DEPLOYMENT_COMPLETED=true
 
-    # Stage both files so confirmation cannot change live wallet inputs.
     local newenv="$PITHEAD_ENV_STAGE"
     render_env "$newenv" "${newenv}.tari-wallet-secret"
 
@@ -211,7 +209,6 @@ apply() {
         for key in "${changed[@]}"; do
             old=$(env_get_file "$ENV_FILE" "$key")
             new=$(env_get_file "$newenv" "$key")
-            # Each changed payout wallet requires its own typed confirmation.
             case "$key" in MONERO_WALLET_ADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
@@ -237,7 +234,6 @@ apply() {
         echo ""
 
         if [ "${#wallet_keys[@]}" -gt 0 ] && [ "$assume_yes" -eq 0 ]; then
-            # Typed wallet confirmation also covers other disruptive changes in this apply.
             local wkey wnew wallet_new8 wlabel
             for wkey in "${wallet_keys[@]}"; do
                 wnew=$(env_get_file "$newenv" "$wkey")
@@ -262,13 +258,11 @@ apply() {
             fi
         fi
 
-        # Carry the database only after confirmation and before publishing its new mount.
         apply_lock_revision "$revision"
         lock_held=1
         if { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; }; then
             if [ -n "$dashboard_data_dir_old" ] && [ -n "${DASHBOARD_DIR:-}" ] &&
                 [ "$dashboard_data_dir_old" != "$DASHBOARD_DIR" ] && [ -f "$dashboard_data_dir_old/mining_data.db" ]; then
-                # Arm recovery before the carry stops the dashboard so failed publication can restore it.
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 : >"$apply_marker"
                 dashboard_carry_recovery=1
@@ -283,7 +277,6 @@ apply() {
         apply_publish_env
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
-        # Compare rendered content so every Caddy configuration change triggers a restart.
         if [ -f "Caddyfile" ]; then
             caddy_had=1
             caddy_before=$(cat "Caddyfile")

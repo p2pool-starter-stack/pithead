@@ -317,7 +317,6 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    # The bind-mounted secret must belong to APP_UID, including when apply stages it before confirmation.
     local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
     local tari_secret_target="${2:-$tari_secret_file}"
     if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then

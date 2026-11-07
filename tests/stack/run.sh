@@ -7,9 +7,6 @@
 #   (none)  every block in turn, each in its own bash process, then the summed verdict
 #   BLOCK   one block, 1..STACK_BLOCKS: what each leg of the Shell workflow's matrix runs
 #
-# CI runs contiguous blocks in fresh processes so fixtures cannot leak across blocks.
-# Shared fixture builders also let prerequisite fragments run independently.
-# stack_blocks_audit checks registrations, domain accounting, and the workflow matrix.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_BLOCKS=5
