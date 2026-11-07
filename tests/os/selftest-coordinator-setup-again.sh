@@ -125,7 +125,15 @@ _ssh() {
         [ "$scenario" != secret-baseline-missing ]
         ;;
     *'sha256sum config.json'*)
-        if [ "$scenario:$stage" = config-changed:keep ]; then printf changed; else printf original; fi
+        if [ "$scenario" = env-drift ]; then
+            if [ "$stage" = keep ]; then
+                printf 'ch config.json\nch .env\nch Caddyfile\nch machine-role\n'
+            else printf 'or config.json\nor .env\nor Caddyfile\nor machine-role\n'; fi
+        elif [ "$scenario:$stage" = config-changed:keep ]; then
+            printf changed
+        else
+            printf original
+        fi
         ;;
     *'sha256sum /etc/machine-id'*)
         printf 'machine-key-hashes\n'
@@ -135,6 +143,14 @@ _ssh() {
             printf '%056d.onion\n' 0 | tr 0 c
         else
             printf '%056d.onion\n' 0 | tr 0 a
+        fi
+        ;;
+    *'done < .env'*)
+        if [ "$scenario" = env-drift ] && [ -f "$work/envseen" ]; then
+            printf 'K1 h9\nK3 h3\n'
+        else
+            [ "$scenario" != env-drift ] || touch "$work/envseen"
+            printf 'K1 h1\nK2 h2\n'
         fi
         ;;
     *'test "$(cat data/monero/'*) [ -f "$work/sentinels" ] && [ "$scenario" != chain-lost ] ;;
@@ -177,7 +193,7 @@ curl() {
 }
 ip=fixture
 for scenario in success success-both boot-failed session-failed prefill-failed keep-refused login-changed \
-    config-changed identity-changed chain-lost height-regressed malformed-state \
+    config-changed env-drift identity-changed chain-lost height-regressed malformed-state \
     submit-refused missing-handoff ack-refused resubmit-login-failed onion-changed unsettled \
     secret-baseline-missing setup-not-settled keep-marker-left cleanup-failed services-only auth-refused; do
     printf baseline >"$work/stage"
@@ -208,6 +224,7 @@ for scenario in success success-both boot-failed session-failed prefill-failed k
     identity-changed | onion-changed) grep -q 'machine identity changed' "$work/trace" ;;
     chain-lost) grep -q 'chain sentinel or the role marker drifted' "$work/trace" ;;
     config-changed) grep -q 'boot snapshot differs from baseline' "$work/trace" ;;
+    env-drift) grep -q 'keys moved: K1 +K3 -K2 ' "$work/trace" ;;
     keep-marker-left) grep -q 'keep-role marker survived the boot' "$work/trace" ;;
     setup-not-settled) grep -q 'setup-again unit is not active' "$work/trace" ;;
     services-only) grep -q 'dashboard_http=200 curl_exit=0 state_ready=no' "$work/trace" ;;

@@ -113,6 +113,34 @@ _coordinator_setup_preserved() {
     }
 }
 
+_coordinator_setup_env_map() {
+    _ssh 'cd /data/pithead && while IFS= read -r line; do key=${line%%=*}; case "$key" in [A-Z]*) val=${line#*=}; printf "%s %s\n" "$key" "$(printf "%s" "$val" | sha256sum | cut -d" " -f1)";; esac; done < .env' 2>/dev/null
+}
+
+_coordinator_setup_env_drift() {
+    local current_map drift tmpf
+    if [ -z "${coord_env_map:-}" ]; then
+        info "coordinator setup-again: .env baseline key map was unavailable"
+        return 0
+    fi
+    current_map=$(_coordinator_setup_env_map)
+    if [ -z "$current_map" ]; then
+        info "coordinator setup-again: .env keys could not be read for the drift diff"
+        return 0
+    fi
+    tmpf=$(mktemp) || {
+        info "coordinator setup-again: .env key diff could not be staged"
+        return 0
+    }
+    drift=$(printf '%s\n' "$coord_env_map" >"$tmpf" &&
+        printf '%s\n' "$current_map" |
+        awk 'NR == FNR { a[$1] = $2; next }
+                { seen[$1] = 1; if (!($1 in a)) printf "+%s ", $1; else if (a[$1] != $2) printf "%s ", $1 }
+                END { for (k in a) if (!(k in seen)) printf "-%s ", k }' "$tmpf" -)
+    rm -f "$tmpf"
+    info "coordinator setup-again: .env keys moved: ${drift:-none}"
+}
+
 _coordinator_setup_snapshot_drift() {
     local matched=0 name a b
     for name in config.json .env Caddyfile machine-role; do
@@ -120,6 +148,7 @@ _coordinator_setup_snapshot_drift() {
         b=$(printf '%s\n' "${current:-}" | awk -v n="$name" '$2 == n { print $1; exit }')
         if [ -n "$a" ] && [ "$a" != "$b" ]; then
             info "coordinator setup-again: $name changed across the boot"
+            [ "$name" = ".env" ] && _coordinator_setup_env_drift
             matched=1
         fi
     done
@@ -127,13 +156,14 @@ _coordinator_setup_snapshot_drift() {
 }
 
 _coordinator_setup_again_body() {
-    local coord_answers coord_snapshot coord_identity coord_saved_role="" coord_height="" deadline handoff code current
+    local coord_answers coord_snapshot coord_identity coord_env_map="" coord_saved_role="" coord_height="" deadline handoff code current
     local DASH_USER="$1" DASH_PASS="$2"
     coord_stage=baseline
     coord_answers=$(_coordinator_setup_answers) || return 1
     printf '%s' "$coord_answers" | jq -e 'type == "object" and (.monero.wallet_address | length > 0)' >/dev/null 2>&1 || return 1
     _ssh 'cd /data/pithead && jq -e ".p2pool.stratum_password | type == \"string\" and length > 0" config.json >/dev/null' || return 1
     coord_snapshot=$(_coordinator_setup_snapshot) || return 1
+    coord_env_map=$(_coordinator_setup_env_map)
     coord_identity=$(_coordinator_setup_identity) || return 1
     [ -n "$coord_snapshot" ] && [ -n "$coord_identity" ] || return 1
     deadline=$((SECONDS + 300))
