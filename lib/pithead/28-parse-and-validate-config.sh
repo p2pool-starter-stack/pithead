@@ -165,9 +165,7 @@ parse_and_validate_config() {
         MONERO_REMOTE_ZMQ_PORT=$(jq -r '.monero.remote.zmq_port // 18083' "$CONFIG_FILE")
         is_valid_port "$MONERO_REMOTE_ZMQ_PORT" || error "monero.remote.zmq_port must be a TCP port 1–65535. Got \"$MONERO_REMOTE_ZMQ_PORT\"."
     fi
-    # tari.mode remote (#103), mirroring monero.mode above: a third-party (or fleet-shared) Tari
-    # base node needs a host — an empty one would render an empty TARI_GRPC_ADDRESS and mining can't
-    # merge-mine, so abort at validation rather than let that reach the containers silently.
+    validate_monero_backups
     if [ "$TARI_MODE" == "remote" ]; then
         TARI_REMOTE_HOST=$(jq -r '.tari.remote.host // empty' "$CONFIG_FILE")
         [ -n "$TARI_REMOTE_HOST" ] || error "tari.mode is \"remote\" but tari.remote.host is not set in $CONFIG_FILE."

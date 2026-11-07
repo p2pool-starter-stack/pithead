@@ -320,8 +320,6 @@ render_env() {
             error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
     fi
 
-    # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
-    # before the heredoc so embedded line breaks become quoted escapes, not dotenv assignments.
     (
         umask 077
         cat <<EOF >"$target"
@@ -332,6 +330,8 @@ DASHBOARD_DATA_DIR=$(dotenv_render_value "$DASHBOARD_DIR")
 TOR_DATA_DIR=$(dotenv_render_value "$TOR_DATA_DIR")
 MONERO_NODE_USERNAME=$(dotenv_render_value "$MONERO_USER")
 MONERO_NODE_PASSWORD=$(dotenv_render_value "$MONERO_PASS")
+P2POOL_BACKUP_ARGS_B64=$(dotenv_render_value "$(monero_backup_args)")
+MONERO_BACKUP_NODES=$(dotenv_render_value "$(jq -c '.monero.backup_nodes // []' "$CONFIG_FILE")")
 MONERO_WALLET_ADDRESS=$(dotenv_render_value "$MONERO_WALLET")
 MONERO_VIEW_KEY=$(dotenv_render_value "$MONERO_VIEW_KEY")
 PAYOUT_SCAN_HEIGHT=$(dotenv_render_value "$PAYOUT_SCAN_HEIGHT")

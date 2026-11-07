@@ -200,13 +200,17 @@ MUST_SURVIVE="xvb.url workers.api_auth telegram.chat_id"
 # alternations reaches it without touching `xvb.url`, the MUST_SURVIVE neighbour that made the
 # same move unsafe for the bare word `url`. Moved to MUST_REDACT above.
 KNOWN_GAP="notifications.ntfy.url notifications.webhooks[]"
-# Arrays OF OBJECTS: not a gap in redact() but in what an EMPTY value document can say about a
-# schema. Their `.token` and `.api_token` entries are masked by render_masked_config and covered at tier 1
-# in tests/stack/test-worker-config.sh; populate them and both names return to the name rule through
-# the screen above. The deprecated dashboard.workers[] twin went with the alias in 2.0.0 (#1832).
-ELEMENT_SHAPE_UNKNOWN="workers.list[]"
+ELEMENT_SHAPE_UNKNOWN="workers.list[] monero.backup_nodes[]"
 
-SENTINEL="S3nt1nelVALUE" # short, alphanumeric: reachable by the NAME rule and by no other
+SENTINEL="S3nt1nelVALUE"
+OUT="$(printf '{"monero":{"backup_nodes":[{"host":"backup.example","rpc_port":18081,"zmq_port":18083,"rpc_login":"backup:%s"}]}}\n' "$SENTINEL" | redact)"
+case "$OUT" in
+*"$SENTINEL"*) it_fail "populated backup node credential is redacted" "credential survived" ;;
+*) it_pass "populated backup node credential is redacted" ;;
+esac
+assert_contains "populated backup node endpoint survives" "$OUT" '"host":"backup.example"'
+assert_contains "populated backup node ports survive" "$OUT" '"rpc_port":18081,"zmq_port":18083'
+
 SCREENED="$(
     python3 - "$REF" "$HERE/../lib.sh" <<'PY'
 import json, re, sys
@@ -317,14 +321,10 @@ for field in $SCREENED; do
         assert_contains "KNOWN GAP ($gap_ref) — $field is NOT redacted by the STREAM filter" "$out" "$SENTINEL"
         continue
     fi
-    # No assertion is possible against an EMPTY object array, and a passing row here would read as
-    # coverage it does not have. That emptiness is the bucket's whole premise, so it is READ from
-    # the schema (#1748): asserted, the row went on printing it over a reference that had gained
-    # an element, and an element named outside the screen's vocabulary reds nothing else either.
     if in_list "$field" "$ELEMENT_SHAPE_UNKNOWN"; then
         elems="$(printf '%s\n' "$ARRAY_LEN" | awk -v f="$field" '$1 == f { print $2; exit }')"
         if [ "$elems" = "0" ]; then
-            it_warn "NOT MEASURED (#1723): $field is an array of objects and the reference carries 0 elements, read from the schema — its .token and .api_token entries are covered by render_masked_config and by tier 1, not by this filter."
+            it_warn "NOT MEASURED (#1723): $field is an array of objects and the reference carries 0 elements, read from the schema — its credential entries need populated fixtures in addition to this schema inventory."
         else
             it_fail "$field is in ELEMENT_SHAPE_UNKNOWN and the reference carries no element" \
                 "the reference carries ${elems:-no measured count} — this bucket asserts nothing BECAUSE there was no element to probe, so reclassify $field against what its element actually holds"

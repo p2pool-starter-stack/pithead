@@ -90,7 +90,7 @@ def test_node_changes_are_confirm_gated_and_probed():
     by_path = {
         k
         for k, target in control_service.CONFIRM_ENV_KEY_PATHS.items()
-        if any(".remote." in p for p in target)
+        if any(".remote." in p or p == "monero.backup_nodes" for p in target)
     }
     login = {"MONERO_NODE_USERNAME", "MONERO_NODE_PASSWORD"}
     assert by_path | login == keys["node_preflight"], (

@@ -203,6 +203,10 @@ render_masked_config() { # <control-dir>
         reduce $paths[] as $p (.;
             if ((try getpath($p) catch null) // "") == "" then .
             else setpath($p; {"__secret__": true}) end)
+        | if (.monero.backup_nodes | type) == "array"
+          then .monero.backup_nodes |= map(if type == "object" and (.rpc_login // "") != ""
+              then .rpc_login = {"__secret__": true} else . end)
+          else . end
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
               if (.token // "") == "" then . else .token = {"__secret__": true} end

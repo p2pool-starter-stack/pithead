@@ -5,6 +5,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$HERE/.."
 source "$ROOT/lib.sh"
 export INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/run-monero-backups.sh
+source "$ROOT/lib/run-monero-backups.sh"
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "${ENOSPC_FAULT_MODULE:-$ROOT/lib/run-faults.sh}"
 FAKE=$(mktemp -d)

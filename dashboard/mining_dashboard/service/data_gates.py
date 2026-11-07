@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import stat
@@ -65,14 +66,15 @@ class DataGateMixin:
         self.latest_data["miner_released"] = self.miner_released
         self.latest_data["sync_gate_monero_only"] = self.sync_gate_monero_only
 
-    async def _apply_worker_rejection(self, monero_down, tari_down=False):
-        """Stop the proxy on a debounced required-node outage; readmit only after
-        every required node is confirmed healthy. Tari is required by default;
-        opting out preserves Monero mining through a Tari-only outage.
+    async def _worker_monero_down(self, primary_sync, primary_down):
+        if not self.monero_backups.nodes:
+            return primary_down
+        if self.miner_released:
+            self.monero_pool_health.ever_up = True
+        usable = await asyncio.to_thread(self.monero_backups.usable, primary_sync)
+        return self.monero_pool_health.update(usable)
 
-        Act only on transitions. Failed Docker operations leave the flag unchanged
-        so the next cycle retries; repeat operations are safe (HTTP 304).
-        """
+    async def _apply_worker_rejection(self, monero_down, tari_down=False):
         required_down = monero_down or (_runtime().TARI_REQUIRED and tari_down)
         if required_down:
             if not self.workers_rejected:
@@ -84,8 +86,8 @@ class DataGateMixin:
                     self.workers_rejected = True
             return
 
-        # Not-down is insufficient after a dashboard restart or during recovery.
-        recovered = self.monero_health.healthy and (
+        monero_health = self.monero_pool_health if self.monero_backups.nodes else self.monero_health
+        recovered = monero_health.healthy and (
             not _runtime().TARI_REQUIRED or self.tari_health.healthy
         )
         if self.workers_rejected and recovered:

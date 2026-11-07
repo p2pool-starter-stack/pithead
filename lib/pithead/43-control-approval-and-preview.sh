@@ -46,7 +46,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # dotted tokens.
     local unknown
     if ! unknown=$(jq -rn --argjson carried "$carried_ssh" --slurpfile ref "$REFERENCE_CONFIG" --slurpfile cfg "$staged" '
-        def norm: [.[] | strings] | join(".");
+        def norm: (if .[0:2] == ["monero", "backup_nodes"] then .[0:2] else [.[] | strings] end) | join(".");
         ([$cfg[0] | paths | select(($carried != 1 or .[0] != "ssh") and .[0:2] != ["workers", "list"]) | norm]
          - [$ref[0] | paths | norm])
         | unique | join(", ")' 2>/dev/null); then
@@ -199,6 +199,12 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               then setpath($p; (($live[0] | try getpath($p) catch null) // ""))
               else . end)
         | if ($live[0] | has("config_version")) then .config_version = $live[0].config_version else del(.config_version) end
+        | if (.monero.backup_nodes | type) == "array"
+          then .monero.backup_nodes |= (to_entries | map(
+              .key as $i | .value
+              | if (.rpc_login | type) == "object" and .rpc_login.__secret__ == true
+                then .rpc_login = ($live[0].monero.backup_nodes[$i].rpc_login // "") else . end))
+          else . end
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
               if (.token | type) == "object" and .token.__secret__ == true
@@ -282,6 +288,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               any($secret_paths[]; . == $p)
               or ($p[0:2] == ["workers","list"] and ($p[-1] == "token" or $p[-1] == "api_token"))
               or ($p[0:2] == ["dashboard","workers"] and ($p[-1] == "token" or $p[-1] == "api_token"))
+              or ($p[0:2] == ["monero","backup_nodes"] and $p[-1] == "rpc_login")
               or $p[0:2] == ["notifications","webhooks"];
             ($ref[0] * $live[0]) as $live_full
             | ($ref[0] * $staged[0]) as $staged_full
