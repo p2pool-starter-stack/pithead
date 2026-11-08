@@ -36,8 +36,13 @@ reported versions. The Go builder is pinned by digest at [1.26.10](https://go.de
 [CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
 in both binaries' standard library.
 
+The rootfs install list names `apt`, `gzip`, `libpcre2-8-0`, `libsqlite3-0`, `perl-base` and
+`zlib1g` only to pull the distro's security build past the digest-pinned base
+(#1438, #2104, #3923); `xxd` stays out because the rootfs has no consumer (#1380).
+
 `COMPOSE_GO_RAISES` and `COSIGN_GO_RAISES` raise x/mod to v0.41.0, x/net to
-v0.60.0 and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
+v0.62.0 for [CVE-2026-78661](https://github.com/p2pool-starter-stack/pithead/issues/3931),
+and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
 for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585),
 and go-jose/v4 to v4.1.6 for
 [CVE-2026-116587](https://github.com/p2pool-starter-stack/pithead/issues/3761).
