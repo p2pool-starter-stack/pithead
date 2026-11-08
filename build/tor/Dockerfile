@@ -2,13 +2,7 @@
 # names the Alpine minor line (3.24) so Dependabot's patch-update policy has a real version to track.
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
-# Install Tor plus netcat, which the bootstrap healthcheck needs to talk to the control port.
-# Deliberately NOT xxd: the healthcheck's `xxd -p -c 256` is served by busybox's own applet, so
-# `apk add xxd` bought nothing but vim's CVE stream (#1372). --no-cache keeps the image small.
-# --upgrade names the base's own openssl libs so they follow the distro's security repo: the
-# digest-pinned base can lag a published fix until upstream rebuilds the image, and that lag
-# closed the CVE gate base-wide on 2026-08-28 (CVE-2026-14456, #1438).
-RUN apk add --no-cache --upgrade libcrypto3 libssl3 tor netcat-openbsd
+RUN apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils tor netcat-openbsd
 
 # Copy the Tor config TEMPLATE + the entrypoint that renders it: the bridge subnet prefix is
 # substituted at container start (#180). The rendered torrc lands in /tmp (the unprivileged 'tor'
