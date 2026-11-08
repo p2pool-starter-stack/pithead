@@ -248,10 +248,7 @@ release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 a
     return 1
 }
 
-commit_config_stamp() {
-    rm -f config.json.stamp-deferred
-    bash -c '. ./pithead; stamp_config_version' || echo "pithead-boot: config_version was not stamped" >&2
-}
+commit_config_stamp() { rm -f config.json.stamp-deferred && bash -c '. ./pithead; stamp_config_version' || echo "pithead-boot: config_version was not stamped" >&2; }
 
 [ "${BASH_SOURCE[0]}" = "${0}" ] || return 0
 
