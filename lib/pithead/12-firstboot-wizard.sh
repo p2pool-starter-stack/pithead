@@ -436,7 +436,7 @@ firstboot_wizard() {
                 return 0
             fi
             if ! "$engine" inspect -f '{{.State.Running}}' pithead-wizard 2>/dev/null | grep -q true; then
-                warn "Wizard stopped (token lockout or crash) — minting a fresh token and restarting it."
+                warn "Wizard stopped — restarting the setup page."
                 break
             fi
             sleep 2
