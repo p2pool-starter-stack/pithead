@@ -570,29 +570,30 @@ async def keep_role(request: web.Request) -> web.Response:
 
 
 async def status(request: web.Request) -> web.Response:
+    authed = _authed(request)
     if installer_mode() and _spool_read("stick") != "1":
         if _spool_read("installed") is not None:
-            return web.Response(
-                text="Installed — the machine is switching itself off. "
+            text = (
+                "Installed — the machine is switching itself off. "
                 "Wait for it to go dark, then remove the USB stick and power it back on."
             )
-        err = _spool_read("error.txt")
-        if err is not None:
-            return web.Response(text=f"Install failed: {err}")
-        return web.Response(text="Copying the system to the disk…")
-    if _spool_read("applied") is not None:
+        elif (err := _spool_read("error.txt")) is not None:
+            text = f"Install failed: {err}" if authed else "Install failed."
+        else:
+            text = "Copying the system to the disk…"
+    elif _spool_read("applied") is not None:
         if _spool_read("role") == "rig":
-            # A rig serves no dashboard, so this page is the last thing it will ever show:
-            # say where the machine went rather than promising a link that does not exist.
-            return web.Response(
-                text="Rig settings saved. The miner is starting on this machine now — "
+            text = (
+                "Rig settings saved. The miner is starting on this machine now — "
                 "it appears in your Pithead's Workers view once it connects."
             )
-        return web.Response(text="Provisioned — the dashboard is coming up now.")
-    err = _spool_read("error.txt")
-    if err is not None:
-        return web.Response(text=f"Rejected: {err} — go back and correct the form.")
-    return web.Response(text="Waiting for this machine to validate and apply…")
+        else:
+            text = "Provisioned — the dashboard is coming up now."
+    elif (err := _spool_read("error.txt")) is not None:
+        text = f"Rejected: {err} — go back and correct the form." if authed else "Rejected."
+    else:
+        text = "Waiting for this machine to validate and apply…"
+    return web.Response(text=text, headers={"Cache-Control": "no-store"})
 
 
 def make_app(restore_enabled=False, secure_cookie=False) -> web.Application:

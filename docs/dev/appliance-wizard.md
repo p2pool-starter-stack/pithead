@@ -40,6 +40,10 @@ evicts its oldest entry when full. A network failure is reported separately from
 `wizard_stage()` in `wizard/server.py` derives the step from **spool files only**, and the client
 renders what it is told. The client must never infer the stage.
 
+`/status` exposes coarse progress without authentication. Stored `error.txt` details require
+the current wizard session; anonymous failed or rejected states use generic text. Status
+responses use `Cache-Control: no-store`, as does the authenticated `/api/wizard-state` payload.
+
 | Stage | True when | View |
 |---|---|---|
 | `failed` | the installation medium has `error.txt` | the failure reason and **Back to the settings** |
