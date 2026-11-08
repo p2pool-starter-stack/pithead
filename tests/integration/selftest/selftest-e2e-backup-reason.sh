@@ -110,6 +110,33 @@ case "$out" in
 *) it_pass "Unicode bidi controls do not reach the log" ;;
 esac
 
+echo "== successful backup records its reported archive =="
+cat >"$sandbox/pithead" <<'FAKE'
+#!/usr/bin/env bash
+mkdir -p backups
+: >backups/pithead-backup-20260101-000001.tar.gz
+: >backups/pithead-backup-20260101-000002.tar.gz
+printf 'Backup written to: %s/backups/pithead-backup-20260101-000001.tar.gz\n' "$PWD"
+FAKE
+if (
+    source "$HERE/../lib/backup-prune.sh"
+    # shellcheck disable=SC2034
+    CANONICAL_DIR="$sandbox"
+    log() { :; }
+    ok() { :; }
+    die() { exit 1; }
+    on_bench() { bash -c "$1"; }
+    eval "$SRC"
+    backup_stack >/dev/null &&
+        [ "$SAFETY_ARCHIVE" = "$sandbox/backups/pithead-backup-20260101-000001.tar.gz" ] &&
+        [ -f "$sandbox/backups/.pithead-e2e-safety/pithead-backup-20260101-000001.tar.gz" ] &&
+        [ ! -e "$sandbox/backups/.pithead-e2e-safety/pithead-backup-20260101-000002.tar.gz" ]
+); then
+    it_pass "only the reported archive is recorded despite a newer unrelated archive"
+else
+    it_fail "only the reported archive is recorded despite a newer unrelated archive"
+fi
+
 echo ""
 printf 'backup-reason self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
