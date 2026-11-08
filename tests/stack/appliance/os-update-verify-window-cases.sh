@@ -57,7 +57,7 @@ unset -f osw_reset
 
 echo "== unit: the new slot moves the persisted step to verifying before anything else on the boot reads it (#3909) =="
 OSV="$SANDBOX/os-verify-window"
-osv_run() { # <running-version> <inflight-to|""> -> "<step>|<gate>|<state-version>|<state-file>"
+osv_run() {
     rm -rf "$OSV"
     mkdir -p "$OSV/data/os-update" "$OSV/data/control/results"
     printf '%s\n' "$1" >"$OSV/VERSION"
@@ -93,7 +93,7 @@ unset -f osv_run
 
 echo "== unit: the fallback verdict separates a gate that never judged from one that judged (#3909) =="
 OSR="$SANDBOX/os-rollback-gate"
-osr_run() { # <running-version> <inflight-to|""> <gate|""> [blocking-json] -> "<interrupted>|<outcome>|<blocking0>"
+osr_run() {
     rm -rf "$OSR"
     mkdir -p "$OSR/data/os-update" "$OSR/data/control/results"
     printf '%s\n' "$1" >"$OSR/VERSION"
