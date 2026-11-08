@@ -13,6 +13,7 @@ run_lifecycle() {
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
     run_cli_wizard_defaults || return 1
+    run_support_bundle || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
     prove_wallet_recovery || return 1
