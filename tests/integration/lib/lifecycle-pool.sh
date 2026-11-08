@@ -5,9 +5,13 @@ lifecycle_pool_flags_match() {
     rx "grep -qE '^P2POOL_FLAGS=' .env" && pool_flags_correct "$1"
 }
 
+lifecycle_pool_config() {
+    rx "jq -er 'if type == \"object\" then (.p2pool.pool | if . == null then \"mini\" else . end) else error(\"invalid config\") end | select(. == \"main\" or . == \"mini\" or . == \"nano\")' config.json"
+}
+
 lifecycle_pool_start() {
     local pool
-    if ! pool="$(rx "jq -er 'if type == \"object\" then (.p2pool.pool | if . == null then \"mini\" else . end) else error(\"invalid config\") end | select(. == \"main\" or . == \"mini\" or . == \"nano\")' config.json")"; then
+    if ! pool="$(lifecycle_pool_config)"; then
         it_fail "pool change starting config readable" "cannot determine the deployed sidechain" >&2
         return 1
     fi
