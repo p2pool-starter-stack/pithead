@@ -525,6 +525,18 @@ assert_eq "config.json (state) survives the resync" "$(cat "$SSB/data/rigforge/c
 assert_eq "a same-pin native rebuild is left alone" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
 rm -f "$SSB/opt-pithead/cosign.registry-ca.crt" && run_sync >/dev/null 2>&1
 [ ! -e "$SSB/data/pithead/cosign.registry-ca.crt" ] && ok "a later release removes the stale debug registry CA" || bad "a later release removes the stale debug registry CA" "still present"
+# A same-commit build without the donate minimum marker (a RigForge before 1.18.1) is not "already
+# built" for the new RigForge, so the baked prebuilt carrying the marker replaces it.
+printf '0\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-donate-min"
+run_sync >/dev/null 2>&1
+assert_eq "a build missing the donate minimum marker is replaced by the prebuilt" \
+    "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "bin-v2"
+assert_eq "the donate minimum marker rides with the seed" \
+    "$(cat "$SSB/data/rigforge/data/worker/xmrig/.rigforge-donate-min" 2>/dev/null)" "0"
+printf 'native-rebuild' >"$SSB/data/rigforge/data/worker/xmrig/build/xmrig"
+run_sync >/dev/null 2>&1
+assert_eq "a same-pin build that carries the marker is left alone" \
+    "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
 # A new pin arrives with a new image AND its new prebuilt: the cached build is replaced, so the
 # on-box clone path never needs to run.
 printf 'commit-C\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-commit"
