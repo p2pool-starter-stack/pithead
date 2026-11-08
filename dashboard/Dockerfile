@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     openssl-provider-legacy \
     perl-base \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

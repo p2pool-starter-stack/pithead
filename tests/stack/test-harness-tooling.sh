@@ -156,6 +156,7 @@ echo "== unit: image builds pull base security fixes past the digest pin (#3923,
 for alpine_image in build/tor tests/integration/tor-client tests/netwatch; do assert_contains "alpine image build pulls the base's musl past the digest pin with the openssl libs (#3929)" "$(cat "$ROOT/$alpine_image/Dockerfile")" 'apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils'; done
 assert_contains "netwatch build pulls the base's zlib with the rest (#3929)" "$(cat "$ROOT/tests/netwatch/Dockerfile")" 'musl musl-utils zlib'
 for debian_image in build/monero build/p2pool build/xmrig-proxy dashboard; do assert_contains "debian image build lists apt to pull its security build (#3923)" "$(cat "$ROOT/$debian_image/Dockerfile")" 'apt \'; done
+assert_contains "dashboard build lists zlib1g to pull its security build (#3923)" "$(cat "$ROOT/dashboard/Dockerfile")" 'zlib1g'
 echo "== unit: patch-coverage overlap self-test (#1000) =="
 # diff-cover exits 0 on "No lines with coverage information" — a vacuous pass. The wrapper's
 # overlap check is what turns that into a loud not-applicable pass or a real failure; its
