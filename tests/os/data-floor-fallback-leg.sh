@@ -120,7 +120,7 @@ _floor_target_slot() {
 }
 
 phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration bundle at VERSION
-    local good_bundle="$1" vfail="$FLOOR_FALLBACK_VERSION" floor0 bundle out rc state target_slot
+    local good_bundle="$1" vfail="$FLOOR_FALLBACK_VERSION" floor0 bundle out rc state target_slot stamp want_stamp
     info "floor-fallback leg — a data_migration update that fails its gate must give the /data floor back (#1393)"
     floor0=$(_ssh "cat /data/pithead/.os-data-floor 2>/dev/null" | tr -d ' \r\n')
     if [ -z "$floor0" ]; then
@@ -183,6 +183,13 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
         ok "the fallback boot said so on the console (journal line names $floor0)"
     else
         bad "no 'floor is back to $floor0' line in the fallback boot's journal"
+    fi
+    stamp=$(_ssh "jq -r .config_version /data/pithead/config.json" 2>/dev/null | tr -d ' \r\n')
+    want_stamp=$(sed 's/[-+].*//' VERSION | tr -d '[:space:]')
+    if [ "$stamp" = "$want_stamp" ]; then
+        ok "the failed $vfail slot left config_version at $want_stamp (#3910)"
+    else
+        bad "after the fallback config_version = '$stamp', want '$want_stamp' (#3910)"
     fi
     # Issue step 3's last clause: a bundle at the restored floor installs again. Before the restore
     # this same install was below a $vfail floor — the negative case below proves that refusal.

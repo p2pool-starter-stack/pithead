@@ -93,6 +93,7 @@ _ssh() {
         ;;
     *"cat /proc/cmdline"*) echo "quiet rauc.slot=${BOOTED_SLOT:-A}" ;;
     *.os-data-floor*) echo 1.0.0 ;;
+    *config_version*) sed 's/[-+].*//' VERSION ;;
     *"floor is back to'"*) return 1 ;;
     esac
     return 0
