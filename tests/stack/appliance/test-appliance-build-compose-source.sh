@@ -152,6 +152,7 @@ unset l_build l_stage l_stop l_wizard
 caller="$CS/caller"
 mkdir -p "$caller/os/build/stage" "$caller/scripts"
 cp "$ROOT/os/build-image.sh" "$caller/os/build-image.sh"
+cp "$ROOT/os/bake-images.sh" "$caller/os/bake-images.sh"
 printf '0.0.1\n' >"$caller/VERSION"
 printf '#!/usr/bin/env bash\n' >"$caller/scripts/build-pithead.sh"
 printf 'stale\n' >"$caller/os/build/stage/docker-compose.yml"
