@@ -766,6 +766,11 @@ preserves the destination's file in `data/monero`, `data/tari`, and `data/p2pool
 install may already have synced chain data, and replacing it would force a resync. It still adds
 files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
 
+When the administrative archive contains `mining_data.db`, restore removes the destination's
+WAL, shared-memory and rollback-journal sidecars before copying the archived database and its
+sidecars. A crashed destination writer's committed rows cannot override the archived rows.
+Without an archived database, restore does not perform this sidecar cleanup.
+
 > NOTE: The archive stores the source box's absolute paths, and `restore` puts every file back
 > exactly where it came from, after validating the destinations. A different installation path
 > is refused rather than redirected into the old directory tree. Recreate the original

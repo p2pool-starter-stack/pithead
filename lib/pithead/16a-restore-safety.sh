@@ -276,6 +276,12 @@ restore_commit_stage() {
     done
     for path in "${RESTORE_ALLOWED_DIRS[@]}"; do
         rel="${path#/}"
+        if [ "$path" = "${RESTORE_ALLOWED_DIRS[4]}" ] && [ -f "$RESTORE_STAGE_DIR/$rel/mining_data.db" ]; then
+            sudo rm -f -- "$path/mining_data.db-wal" "$path/mining_data.db-shm" "$path/mining_data.db-journal" || {
+                restore_discard_stage
+                error "Restore could not discard the previous dashboard database sidecars; keep the stack stopped and inspect the destination before retrying."
+            }
+        fi
         # This explicit recovery command makes the archive win collisions. The wizard setup
         # path intentionally preserves existing chain files; see docs/operations.md's
         # "Restore collision rules" for the different operational intent.
