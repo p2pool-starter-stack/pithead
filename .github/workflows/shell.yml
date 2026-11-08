@@ -117,6 +117,8 @@ jobs:
           bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
           bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
           bash tests/stack/standalone/test_tor_lifecycle_receipts.sh
+      - name: Run onion runtime convergence contract
+        run: bash tests/stack/standalone/test_onion_runtime.sh
       - name: Prove the interrupted-build diagnostic fails on RC3
         env:
           TMPDIR: ${{ runner.temp }}

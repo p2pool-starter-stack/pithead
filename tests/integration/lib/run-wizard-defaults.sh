@@ -68,6 +68,11 @@ cli_wizard_defaults_trial() {
     rx "sed -i 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' .env && grep -qx 'DEPLOYMENT_COMPLETED=false' .env" || return 1
     out=$(rx "printf '\\nn\\n' | $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)
     rc=$?
+    if [ "$rc" != 0 ]; then
+        mkdir -p "$OUT_DIR/cli-defaults"
+        printf '%s\n' "$out" | redact | sed -E 's/(Generated dashboard password: ).*/\1<redacted>/' >"$OUT_DIR/cli-defaults/setup.log"
+        tail -n 60 "$OUT_DIR/cli-defaults/setup.log" | sed 's/^/        /'
+    fi
     assert_rc "fresh CLI defaults complete real setup" "$rc" 0
     [ "$rc" = 0 ] || return "$rc"
     assert_contains "fresh CLI defaults reach completed preparation" "$out" "Deployment preparation complete"
