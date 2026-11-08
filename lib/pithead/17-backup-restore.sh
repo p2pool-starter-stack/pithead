@@ -75,10 +75,8 @@ stack_backup() {
     require_env
     backup_collect_items "$with_chains"
 
-    # Resolve encryption before touching disk. Plaintext is explicit; unattended use without a
-    # passphrase refuses instead of silently archiving secrets in plaintext (#374).
     local pass=""
-    { set +x; } 2>/dev/null # xtrace would print the passphrase below (see the prompt-path comment)
+    { set +x; } 2>/dev/null
     if [ "$no_encrypt" -eq 0 ]; then
         if [ -n "${PITHEAD_BACKUP_PASSPHRASE:-}" ]; then
             pass="$PITHEAD_BACKUP_PASSPHRASE"
@@ -113,15 +111,7 @@ stack_backup() {
         log "Including blockchain data (this can be very large)..."
     fi
 
-    # Disk-space pre-check — run BEFORE we touch the running stack, so a "not enough space"
-    # answer leaves everything as it was. Blockchains (--with-chains) are largely incompressible,
-    # so we assume the archive needs roughly the source size plus a ~5% safety margin.
     local need_kb avail_kb
-    # sudo: the Tor data dir is owned by 100:101; -c gives a grand total across all items.
-    # `|| true`: du exits non-zero if it can't read any descendant (a permission-denied subdir, a
-    # file vanishing mid-walk, an NFS hiccup) even though 2>/dev/null hides the message and a total
-    # is still printed. Without this, errexit (set -e) aborts the whole backup on a bare assignment,
-    # making the graceful "proceeding without a space check" fallback below unreachable (#127).
     need_kb=$(sudo du -sck "${BACKUP_ITEMS[@]}" 2>/dev/null | awk 'END{print $1}') || true
     avail_kb=$(df -Pk "$backups_dir" 2>/dev/null | awk 'NR==2{print $4}') || true
     if [ -n "$need_kb" ] && [ -n "$avail_kb" ]; then
@@ -187,14 +177,6 @@ stack_backup() {
     for p in "${BACKUP_ITEMS[@]}"; do rel+=("${p#/}"); done
 
     log "Creating backup archive..."
-    # Read with sudo because the Tor data dir is owned by 100:101.
-    #
-    # One bounded retry (#970): even with the stack stopped, tar can lose a race against a
-    # container teardown finishing its last flush or a startup that slipped past the running
-    # snapshot above — "file changed as we read it" is exit 1 and pipefail fails the pipeline.
-    # A second pass a few seconds later reads a quiet tree; failing twice is a real fault and
-    # stays fatal. tar's own stderr is left on the terminal both times — the failing member's
-    # name is the diagnosis.
     local _attempt _backup_ok=0
     for _attempt in 1 2; do
         if [ -n "$pass" ]; then

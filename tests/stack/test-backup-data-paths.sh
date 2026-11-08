@@ -72,7 +72,7 @@ bdp_reset() {
     bdp_write_env
 }
 
-bdp_run() { # <running:0|1> <lock-change:empty|desired|both>
+bdp_run() {
     local running="$1" change="$2"
     (
         cd "$BDP" || exit 1
@@ -92,7 +92,7 @@ bdp_run() { # <running:0|1> <lock-change:empty|desired|both>
     )
 }
 
-bdp_assert_metadata() { # <archive> <label>
+bdp_assert_metadata() {
     local archive="$1" label="$2" archived_config archived_env desired applied i
     archived_config=$(tar -xOzf "$archive" "${BDP#/}/config.json")
     archived_env=$(tar -xOzf "$archive" "${BDP#/}/.env")

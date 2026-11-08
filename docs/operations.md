@@ -677,6 +677,13 @@ paths recorded in `.env`, even when blockchains are excluded. Revert an unapplie
 to take a safety backup, or complete the intended apply before retrying. Backup checks again and
 rebuilds its file list under the mutation lock, before stopping services or creating an archive.
 
+The free-space estimate reads every item with `sudo du` and adds a 5% margin; if the size or the
+free space cannot be read, backup warns and proceeds without the check. The estimate covers the
+file list built before the prompts, because the space prompt must not wait for an answer while
+holding the mutation lock. If `tar` then fails for lack of space, the partial archive is removed
+and a stopped stack is started again. `tar` gets one retry after five seconds, so a container
+finishing its last write during the stop does not fail the backup; a second failure is fatal.
+
 Encryption is `openssl enc -aes-256-cbc -pbkdf2` with 600,000 PBKDF2 iterations (`openssl` is
 already a stack dependency; AEAD modes like GCM are not available through `openssl enc`, so CBC is
 the portable choice). The tar stream pipes straight into `openssl` — no plaintext archive ever
