@@ -119,7 +119,7 @@ apply_tor_egress_firewall() {
     if [ "$(normalize_bool "$enabled")" != "true" ]; then
         remove_tor_egress_firewall
         warn "Tor-only egress firewall is OFF (network.tor_egress_firewall=false) — a misconfigured app could reach clearnet."
-        remove_tor_egress_boot_unit
+        remove_tor_egress_boot_unit || true
         [ "${1:-}" = refresh ] || provision_egress_sync_runner || return 1
         return 0
     fi
