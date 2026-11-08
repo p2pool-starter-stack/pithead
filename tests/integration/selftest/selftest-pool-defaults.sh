@@ -63,6 +63,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         }
         has_compose_profile() { [ "${POOL_APPLY_FAIL:-}" = 1 ]; }
         run_cli_wizard_defaults() { :; }
+        run_p2pool_extra_flags() { :; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
         run_restore_dashboard_probe() { :; }
