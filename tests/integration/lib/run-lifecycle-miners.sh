@@ -91,11 +91,13 @@ lifecycle_mining_step() {
         before=absent
         names=${LIFECYCLE_MINER_NAMES:-'[]'}
     else
-        before=$(lifecycle_proxy_started) && names=$(lifecycle_worker_set) || {
+        end=$((SECONDS + ${BOUND_PRECONDITION:-60}))
+        until before=$(lifecycle_proxy_started) && names=$(lifecycle_worker_set); do
+            [ "$SECONDS" -lt "$end" ] && sleep 5 && continue
             lifecycle_mining_row fail "$label mining precondition" "proxy inspection or live worker set unreadable"
             lifecycle_mining_diagnostics "$label precondition"
             return 1
-        }
+        done
     fi
     if [ "$label" = config-reset ]; then
         LIFECYCLE_MINER_NAMES=$names

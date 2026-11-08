@@ -7,7 +7,7 @@ wizard_restore_baseline() {
     push_config "$BASELINE_CONFIG" || return 1
     out=$(LIFECYCLE_MINING_ACTIVE=0 pithead apply -y 2>&1)
     rc=$?
-    [ "$rc" = 0 ] || it_err "CLI defaults restore apply exited $rc: $out"
+    [ "$rc" = 0 ] || it_err "CLI defaults restore apply exited $rc: $(redact <<<"$out")"
     return "$rc"
 }
 run_cli_wizard_defaults() {

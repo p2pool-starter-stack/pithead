@@ -374,11 +374,12 @@ printf '%s\n' 'PASS: wrapper rows reach the harness results through a redirected
         failed=$((failed + 1))
         last="$1"
     }
+    redact() { sed 's/boom/redacted/'; }
     LIFECYCLE_MINING_ACTIVE=1 IT_PITHEAD=fixture BASELINE_CONFIG='{}'
     wizard_restore_baseline
     [ "$applies" = 1 ] && [ "$steps" = 0 ] && [ "$failed" = 0 ]
     APPLY_RC=7
     if wizard_restore_baseline; then exit 1; fi
-    [ "$failed" = 1 ] && [[ "$last" == *"exited 7: apply boom" ]]
+    [ "$failed" = 1 ] && [[ "$last" == *"exited 7: apply redacted" ]]
 )
 printf '%s\n' 'PASS: wizard restore apply runs once, unwrapped, and fails loudly with its own output'
