@@ -269,6 +269,53 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     marker=$(_ssh cat /etc/pithead-test-marker)
     [ "$marker" = "v2" ] && ok "leg 4: the dashboard-driven update booted v2" ||
         bad "leg 4: expected v2 after the dashboard reboot, got '$marker'"
+    local wstate="" saw_verifying=0 wdeadline=$(($(date +%s) + 300))
+    while [ "$(date +%s)" -lt "$wdeadline" ]; do
+        wstate=$(_ssh "jq -r '.step // \"\"' /data/pithead/data/control/results/os-update-state.json" 2>/dev/null)
+        [ "$wstate" = "verifying" ] && {
+            saw_verifying=1
+            break
+        }
+        sleep 3
+    done
+    if [ "$saw_verifying" = 1 ]; then
+        ok "leg 4: the new slot moved the persisted step to verifying before committing — the dashboard never re-offers the reboot"
+        local probe_id="3909abcd-abcd-4bcd-8bcd-abcdabcdabcd" probe_st="" probe_err="" probe_rdeadline=$(($(date +%s) + 240))
+        local midboot
+        midboot=$(_boot_id)
+        if _ssh "printf '%s\n' '{\"id\":\"$probe_id\",\"action\":\"os-reboot\",\"actor\":\"admin\"}' > /data/pithead/data/control/requests/$probe_id.json"; then
+            while [ "$(date +%s)" -lt "$probe_rdeadline" ]; do
+                probe_st=$(_ssh "jq -r '.status // \"\"' /data/pithead/data/control/results/$probe_id.json" 2>/dev/null)
+                [ -n "$probe_st" ] && break
+                sleep 5
+            done
+            probe_err=$(_ssh "jq -r '.error // \"\"' /data/pithead/data/control/results/$probe_id.json" 2>/dev/null)
+            if [ "$probe_st" = "rejected" ] && printf '%s' "$probe_err" | grep -q "already running v${tag#v}"; then
+                ok "leg 4: os-reboot REFUSED during the verify window — '$probe_err'"
+            else
+                bad "leg 4: the planted os-reboot during the verify window did not refuse as expected (got status '${probe_st:-none}', error '$probe_err')"
+            fi
+            local afterboot
+            afterboot=$(_boot_id)
+            if [ -n "$midboot" ] && [ "$afterboot" = "$midboot" ]; then
+                ok "leg 4: the refused reboot ordered nothing — same boot id before and after the probe"
+            else
+                bad "leg 4: the boot id changed across the os-reboot probe ('$midboot' -> '${afterboot:-none}') — the refusal did not hold the machine"
+            fi
+            local audit_hits
+            audit_hits=$(_ssh "grep -c '\"action\":\"os-reboot\",\"status\":\"rejected\"' /data/pithead/data/control/audit/control.log" 2>/dev/null)
+            [ -n "$audit_hits" ] || audit_hits=0
+            if [ "$audit_hits" -ge 1 ]; then
+                ok "leg 4: the refusal is in the control audit log"
+            else
+                bad "leg 4: the refusal is not in the control audit log"
+            fi
+        else
+            bad "leg 4: could not plant the os-reboot probe request in the control spool"
+        fi
+    else
+        bad "leg 4: the persisted step never read as verifying while the new slot was uncommitted (last read: '${wstate:-none}') — the dashboard could offer a second reboot"
+    fi
     # The verdict is written only when pithead-boot's health gate commits the slot — waiting for
     # it proves install + reboot + commit landed, and that the banner's data exists.
     local vdeadline=$(($(date +%s) + 900)) verdict=""

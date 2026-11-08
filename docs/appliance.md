@@ -478,9 +478,14 @@ reboot, but **any reboot boots the update**, including a power cut, watchdog res
 **Set up again**. The dashboard reboot action expires after 24 hours; that does not disarm
 the installed slot. The downloaded bundle is deleted after a successful install. Confirm
 the dashboard reboot separately; mining pauses typically under five minutes, then the
-machine runs its normal health checks before keeping the new version. A banner reports the outcome, including an automatic return to the previous
+machine runs its normal health checks before keeping the new version. While those checks are
+still running the machine is already on the new copy, so the dashboard shows
+"Verifying the update to vX — leave the machine running" and offers no second reboot; a reboot
+asked for in that window is refused with its reason, because it would fall back before the
+update was ever decided. A banner reports the outcome, including an automatic return to the previous
 version if the new one failed — and, when those health checks were what held it back,
-which check it was, so a return is never mistaken for a bad release. One thing the machine
+which check it was, so a return is never mistaken for a bad release. A copy interrupted before
+its checks reached a verdict is reported as interrupted, not as a failed check. One thing the machine
 repairs on its own during that wait: a network address that arrived after the certificate
 was made gets a fresh certificate minted there and then, instead of failing the checks
 and returning to the previous version. If the certificate still does not match after that,
