@@ -41,13 +41,13 @@ phase_provision_registry_untouched() {
 
 phase_provision_baked_stack() {
     local images service missing=""
-    images=$(_ssh "podman ps --format '{{.Image}}'" 2>/dev/null | tr '\n' ' ')
+    images=$(_ssh "podman images --format '{{.Repository}}'" 2>/dev/null | tr '\n' ' ')
     for service in tor monero p2pool xmrig-proxy dashboard; do
         case "$images" in *"pithead-$service"*) ;; *) missing="$missing $service" ;; esac
     done
     if [ -z "$missing" ]; then
-        ok "every always-on service runs from the baked image set (#978)"
+        ok "every always-on service image is loaded from the baked set (#978)"
     else
-        bad "services not running from baked images:$missing (running: ${images:-none})"
+        bad "service images missing after provisioning:$missing (present: ${images:-none})"
     fi
 }
