@@ -42,6 +42,9 @@ touch "$CV/config.json.stamp-deferred"
 out=$(run_sourced "$CV" parse_and_validate_config 2>&1)
 assert_rc "deferred stamp keeps validation passing" "$?" 0
 cmp -s "$CV/config.json" "$CV/older" && ok "deferred stamp leaves an uncommitted slot's config bytes untouched" || bad "deferred stamp leaves an uncommitted slot's config bytes untouched" changed
+cp "$CV/older" "$CV/copy.json"
+out=$(PITHEAD_CONFIG_FILE=copy.json run_sourced "$CV" parse_and_validate_config 2>&1)
+cmp -s "$CV/copy.json" "$CV/older" && ok "deferral also holds for a validated copy of the config" || bad "deferral also holds for a validated copy of the config" changed
 printf '#!/usr/bin/env bash\nsource %q\n' "$STACK" >"$CV/pithead"
 out=$(cd "$CV" && bash -c 'source "$1"; commit_config_stamp' _ <(sed -n '/^commit_config_stamp()/,/^}/p' "$ROOT/os/overlay/pithead-boot") 2>&1)
 assert_eq "committing the slot stamps the config" "$(jq -r .config_version "$CV/config.json")" 2.0.0
