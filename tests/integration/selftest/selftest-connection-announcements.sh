@@ -61,7 +61,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     if [ "$1" = setup ]; then echo 'You can start the stack later with: ./pithead up'; fi
     if [ "$1" = apply ] && { [ "$probe_command" != "${OMIT_COMMAND:-}" ] || [ "${OMIT_FIELD:-}" != unchanged ]; }; then echo 'No configuration changes detected'; fi
     if [ "$probe_command" != "${OMIT_COMMAND:-}" ] || [ "${OMIT_FIELD:-}" != pool ]; then echo 'Pool URL: fixture-box:3333'; fi
-    if [ "$probe_command" != "${OMIT_COMMAND:-}" ] || [ "${OMIT_FIELD:-}" != password ]; then echo 'Stratum password: fixture.pool-pass'; fi
+    if [ "$probe_command" != "${OMIT_COMMAND:-}" ] || [ "${OMIT_FIELD:-}" != auth ]; then echo 'Stratum authentication is ON; open Connect a miner'; fi
+    if [ "${LEAK_SECRET:-0}" = 1 ]; then echo 'fixture.pool-pass'; fi
     if [ "$probe_command" != "${OMIT_COMMAND:-}" ] || [ "${OMIT_FIELD:-}" != tls ]; then
         openssl x509 -in "$(env_get PROXY_TLS_DIR)/cert.pem" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]'
     fi
@@ -71,15 +72,21 @@ FAKE
 chmod +x "$fixture/pithead"
 probe=$(connection_announcements_snippet)
 (cd "$fixture" && bash -c "$probe") >"$fixture/output" 2>&1
-grep -Fq 'connections: no-change apply matches rendered credentials and preserves env' "$fixture/output"
+grep -Fq 'connections: no-change apply protects connection details and preserves env' "$fixture/output"
 expected_gate_stages=$'before-setup\nafter-setup\nafter-up\nafter-apply\nafter-no-change'
 [ "$(retain_lifecycle_gate_samples <"$fixture/output" | awk '{print $2}')" = "$expected_gate_stages" ]
 echo 'PASS: complete connection probe executes its final assertion'
 rm -f "$fixture/apply-count"
+if (cd "$fixture" && LEAK_SECRET=1 bash -c "$probe") >"$fixture/output" 2>&1; then
+    echo 'FAIL: configured credential leak was accepted' >&2
+    exit 1
+fi
+echo 'PASS: configured credential leak fails closed'
+rm -f "$fixture/apply-count"
 (cd "$fixture" && SKIP_HOST_PROMPT=1 bash -c "$probe") >"$fixture/output" 2>&1
 echo 'PASS: setup answers the startup prompt when no hostname prompt appears'
 for command in setup up apply no-change; do
-    for field in pool password tls miner; do
+    for field in pool auth tls miner; do
         rm -f "$fixture/apply-count"
         if (cd "$fixture" && OMIT_COMMAND="$command" OMIT_FIELD="$field" bash -c "$probe") >"$fixture/output" 2>&1; then
             echo "FAIL: missing $command $field was accepted" >&2

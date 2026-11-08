@@ -277,11 +277,6 @@ wizard_ask_shape() {
         read -r -p "Telegram chat id: " TELEGRAM_CHAT_ID || true
     fi
 
-    # Local miner opt-in (#593). A box that runs the stack 24/7 can mine with its spare CPU by
-    # co-locating a RigForge worker pointed at the stack's own loopback stratum. Off by default —
-    # this only records the intent; setup prints the two values a RigForge install needs (the pool
-    # URL and stratum secret) at the end. Pithead never installs or tunes the miner: RigForge owns
-    # all host tuning (HugePages/GRUB/MSR) and the miner service.
     read -r -p "Also mine on this machine with its spare CPU (co-locate a RigForge worker)? (y/N): " IN_LOCAL_MINER || true
     LOCAL_MINER=false
     [[ "$IN_LOCAL_MINER" =~ ^[Yy] ]] && LOCAL_MINER=true

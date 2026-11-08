@@ -125,6 +125,8 @@ test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
 test-appliance-reset-slot.sh|rs_case
 test-appliance-rig-config-merge.sh|rcm_invalid
+test-apply-retry.sh|label
+test-apply-retry.sh|scope
 test-cli.sh|first_run_case
 test-config-document.sh|raw
 test-config-document.sh|verb
@@ -137,6 +139,7 @@ test-connection-announce.sh|ca_enabled
 test-control-add-only-ssrf.sh|2
 test-control-add-only-ssrf.sh|3
 test-control-core.sh|reowned
+test-control-deploy.sh|scope
 test-control-diagnostics.sh|_c
 test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
