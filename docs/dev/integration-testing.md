@@ -995,7 +995,7 @@ The control legs cover:
   each leg reads the original off the rig itself, derives a probe from it, asserts the **rig**
   reports the new value, and restores. No new environment variable or port is needed; the
   DONATION revert's diagnostic sample dials the rig directly, while the assertion reads the
-  dashboard. `DONATION` only ever moves toward zero (a rig already at 0 is nudged to RigForge's default 1), and
+  dashboard. `DONATION` only ever moves toward zero (a rig already at 0 is probed with a nonzero value), and
   `watchdog_interval_min` steps one minute away from wherever it sits, inside RigForge's 1–1440
   range. The restore runs whatever the assertions said, so a mid-leg failure cannot strand a
   borrowed rig on a probe value.
