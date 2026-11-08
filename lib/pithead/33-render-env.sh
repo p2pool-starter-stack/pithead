@@ -1,8 +1,11 @@
+# Single writer for the env file. Derives every value from the parsed config plus the preserved
+# secrets/onions/host, so it is safe to call repeatedly (bootstrap, finalize, or apply).
+# $1 = target file (defaults to $ENV_FILE); apply renders to a temp file first to diff it.
 render_env() {
-    local target="${1:-$ENV_FILE}" project
-    project=$(compose_project_name) || return 1
+    local target="${1:-$ENV_FILE}"
     log "Rendering environment configuration ($target)..."
 
+    # Mode → host / ports / compose profile
     local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
         mono_host="${NETWORK_PREFIX}.26" rpc_port="18081" zmq_port="18083" profiles="local_node"
@@ -314,11 +317,8 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    # Tari view-only wallet secret delivery (#462): the view key, spend key and wallet password ride an
-    # owner-only data/ file bind-mounted at /run/secrets (never `environment:`, which `docker inspect`
-    # shows). The mount keeps its owner, so it must be the container's APP_UID (#2731). Built as a temp
-    # file then renamed, so a planted symlink is replaced, not followed. REAL .env target only.
     local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
+    local tari_secret_target="${2:-$tari_secret_file}"
     if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
         tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
@@ -326,9 +326,9 @@ render_env() {
             "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp" &&
             tari_foreign=$(find "$tari_secret_tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
             { [ -z "$tari_foreign" ] || chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp"; } &&
-            mv -f "$tari_secret_tmp" "$tari_secret_file" && tari_secret_ok=true
+            mv -fT -- "$tari_secret_tmp" "$tari_secret_target" && tari_secret_ok=true
         # An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
-        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
+        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "$tari_secret_target" = "$tari_secret_file" ] && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
             error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
     fi
 
@@ -452,7 +452,6 @@ MONERO_ZMQ_PORT=$(dotenv_render_value "$zmq_port")
 TARI_MODE=$(dotenv_render_value "$TARI_MODE")
 TARI_GRPC_ADDRESS=$(dotenv_render_value "$tari_grpc_addr")
 TARI_GRPC_BIND=$(dotenv_render_value "$tari_grpc_bind")
-COMPOSE_PROJECT_NAME=$(dotenv_render_value "$project")
 COMPOSE_PROFILES=$(dotenv_render_value "$profiles")
 TOR_COMPOSE_PROFILES=$(dotenv_render_value "$tor_profiles")
 DASHBOARD_SECURE=$(dotenv_render_value "$DASHBOARD_SECURE")

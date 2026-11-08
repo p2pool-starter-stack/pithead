@@ -1,6 +1,5 @@
-# Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
@@ -8,7 +7,7 @@ pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the gene
 test: lint test-dashboard test-frontend test-stack test-netwatch test-compose test-integration-selftest test-tools test-fakes ## Local checks (Docker required; no live test host)
 
 test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (deps from uv.lock); emits coverage.xml
-	cd dashboard && uv run --locked --extra test python -m pytest -n auto \
+	cd dashboard && uv run --locked --extra test python -m pytest \
 		--cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 
 test-clearnet-replay-proof: ## Retained Linux ext4 proof of all 100 marker replay cases
@@ -70,6 +69,9 @@ test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
 	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
 	sed -n '/^  pull_request:$$/,/^permissions:$$/p' .github/workflows/integration-mini-stack.yml | grep -Fqx '      - "lib/pithead/**"'
+
+test-bridge-awk: pithead
+	bash tests/stack/standalone/test_bridge_awk.sh
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q
@@ -190,7 +192,7 @@ lint-topology: ## Fail if a real-looking IPv6/IPv4/hostname/path/user@host liter
 
 lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, or an existing offender grows past its docs/dev/file-budget.tsv ceiling (#1105 Phase 0)
 	bash scripts/lint/lint-file-budget.sh --self-test
-	FILE_BUDGET_BASE_REF="$$(git rev-parse HEAD)" bash scripts/lint/selftest-file-budget-release.sh
+	bash scripts/lint/selftest-file-budget-release.sh
 	bash scripts/lint/lint-file-budget.sh
 
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards

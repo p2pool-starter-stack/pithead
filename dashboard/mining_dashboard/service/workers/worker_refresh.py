@@ -69,14 +69,19 @@ async def refresh_worker_after_upgrade(
     name,
     target_version,
     worker_client=None,
-    attempts=None,
-    delay_s=None,
+    attempts=REFRESH_ATTEMPTS,
+    delay_s=REFRESH_DELAY_S,
     sleep=asyncio.sleep,
 ):
-    if attempts is None:
-        attempts = REFRESH_ATTEMPTS
-    if delay_s is None:
-        delay_s = REFRESH_DELAY_S
+    """Out-of-cycle refresh of one worker's reported RigForge version (#1233).
+
+    ``latest_data`` is the SAME shared dict the main poll loop publishes to ``/api/state``/
+    ``/api/worker`` — mutating the matched worker's ``rigforge`` entry in place is what lets the
+    NEXT read reflect the fresh version without waiting out ``UPDATE_INTERVAL``. A worker that has
+    since dropped out of the table (offline fall-off, #182) or never had an IP is a silent no-op —
+    nothing to refresh. ``worker_client`` is an injection seam for tests; production opens its own
+    short-lived session so this never competes with the main loop's long-lived one.
+    """
     workers = (latest_data or {}).get("workers") or []
     entry = next((w for w in workers if w.get("name") == name), None)
     if not entry or not entry.get("ip"):

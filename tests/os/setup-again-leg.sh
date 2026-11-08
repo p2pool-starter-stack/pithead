@@ -43,12 +43,9 @@ _setup_again_boot() {
         bad "pithead-setup-again is '${st:-unreadable}' 120 s into the boot — the flag was not honoured"
 }
 
-# The wizard session on a set-up-again boot: the token THIS boot minted (read past the offset
-# _setup_again_boot took before the reboot, never the last session's), the page served, a session
-# cookie in $jar. Sets token and jar in the caller; rc 1 = reported.
 _setup_again_session() {
     local tries=0 from="${SA_SERIAL_OFFSET:-0}"
-    # A harness-driven guest boot truncates the console log; then everything in it is this boot's.
+    _setup_again_journal_token || return 1
     [ "$(stat -c %s "$SERIAL" 2>/dev/null || echo 0)" -ge "$from" ] || from=0
     token=""
     while [ "$tries" -lt 40 ]; do
@@ -61,6 +58,11 @@ _setup_again_session() {
         bad "no one-time token appeared on the console after the reboot into the setup entry"
         return 1
     }
+    [ "$token" = "$SA_JOURNAL_TOKEN" ] || {
+        bad "the console token does not match the current boot journal"
+        return 1
+    }
+    _setup_again_console_proof || return 1
     _wait_setup_page 120 || {
         bad "the setup page never served on the set-up-again boot"
         return 1
@@ -71,12 +73,9 @@ _setup_again_session() {
         rm -f "$jar"
         return 1
     }
-    ok "the setup page is up on the set-up-again boot, with a fresh token ($token)"
+    ok "the setup page is up on the set-up-again boot, with a fresh token"
 }
 
-# Submit the rig form and wait for its card. $1 = worker, $2 = pool (default the guest's own sshd
-# over IPv4), $3 = a jq filter for what to print (default the token and address on one line, which
-# is what legs 1 and 2 read). Prints that; rc 1 = reported.
 _setup_again_rig_submit() {
     local scode card tries=0 pool="${2:-127.0.0.1:22}"
     scode=$(curl -sSk -b "$jar" --data "role=rig&rig_pool=$pool&rig_worker=$1" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)

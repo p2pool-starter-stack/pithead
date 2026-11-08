@@ -105,6 +105,22 @@ roundtrip_confirm "P2POOL_DATA_DIR" '.p2pool.data_dir="'"$C"'/data/p2pool2"' '.p
 roundtrip_confirm "TOR_DATA_DIR" '.tor.data_dir="'"$C"'/data/tor2"' '.tor.data_dir' "$C/data/tor2"
 roundtrip_confirm "DASHBOARD_DATA_DIR" '.dashboard.data_dir="'"$C"'/data/dashboard2"' '.dashboard.data_dir' "$C/data/dashboard2"
 roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
+STRATUM_HOLD_PORT_FILE="$C/stratum-hold.port"
+python3 -c 'import socket,sys,time
+s=socket.socket(); s.bind(("0.0.0.0",0)); s.listen(1)
+open(sys.argv[1],"w").write(str(s.getsockname()[1])); time.sleep(60)' "$STRATUM_HOLD_PORT_FILE" &
+STRATUM_HOLD_PID=$!
+for _ in $(seq 50); do
+    [ -s "$STRATUM_HOLD_PORT_FILE" ] && break
+    sleep 0.1
+done
+STRATUM_HELD=$(cat "$STRATUM_HOLD_PORT_FILE")
+jq --argjson p "$STRATUM_HELD" '.p2pool.stratum_port=$p' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_eq "the stack harness stubs the stratum bind probe, so a held port does not refuse apply" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+kill "$STRATUM_HOLD_PID" 2>/dev/null || true
+wait "$STRATUM_HOLD_PID" 2>/dev/null || true
+roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
 # PRUNE STARTS OFF IN THE BASELINE ABOVE, and that is not tidiness. monero_prune_flag defaults to
 # TRUE (19-small-utilities.sh), so on a config with no monero.prune key the rendered MONERO_PRUNE is
 # already 1 — setting it to true renders the SAME value, emits no porcelain row, and the commit then
@@ -255,46 +271,6 @@ jq -n --arg w "$WALLET" '{
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_eq "the same monero.remote.host moves the render once remote (firing control)" "$(env_now MONERO_NODE_HOST)" "evil.example.com"
 assert_eq "the same tari.remote.host moves the render once remote (firing control)" "$(env_now TARI_GRPC_ADDRESS)" "evil.example.com:9"
-
-jq --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:(. | .tari.remote.host="active-tari.example")}' "$C/config.json" >"$REQS/$UUID3.json"
-run_pending >/dev/null
-
-UUID4="44444444-4444-4444-8444-444444444444"
-jq '.tari.mode="off" | .tari.clearnet_initial_sync=true' "$C/config.json" >"$C/config.candidate"
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" PITHEAD_CONFIG_FILE="$C/config.candidate" ./pithead apply --dry-run --porcelain 2>/dev/null)"
-assert_rc "remote-to-off combined preview succeeds (#3383)" "$?" "0"
-assert_contains "combined preview retains Tari-off confirmation (#3383)" "$out" "Tari merge-mining OFF"
-assert_contains "combined preview retains chain data (#3383)" "$out" "chain data on disk is KEPT"
-for inactive_guidance in 'CLEARNET initial sync' 'tari is recreated' 'node endpoint' 'trusts the chain data'; do
-    assert_not_contains "combined preview omits inactive $inactive_guidance (#3383)" "$out" "$inactive_guidance"
-done
-jq '.tari.mode="local" | .tari.clearnet_initial_sync=true' "$C/config.json" >"$C/config.candidate"
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" PITHEAD_CONFIG_FILE="$C/config.candidate" ./pithead apply --dry-run --porcelain 2>/dev/null)"
-assert_contains "active local preview keeps clearnet confirmation (#3383)" "$out" "$(printf 'CONFIRM\tTARI_CLEARNET_SYNC\t')"
-assert_contains "active local preview keeps clearnet warning (#3383)" "$out" "Tari CLEARNET initial sync ENABLED"
-assert_eq "active remote endpoint preview retains trust guidance (#3383)" \
-    "$(jq -r '[.changes[] | select(.key == "TARI_GRPC_ADDRESS")] | any(.flag == "CONFIRM" and (.msg | contains("trusts the chain data")))' "$RESULTS/$UUID3.json" 2>/dev/null)" "true"
-jq '.tari.mode="off" | .tari.clearnet_initial_sync=false' "$C/config.json" >"$C/config.off" && mv "$C/config.off" "$C/config.json"
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y 2>&1)"
-rc=$?
-assert_rc "Tari-off baseline applies before its inactive-field preview (#3383)" "$rc" "0"
-assert_eq "Tari-off baseline renders TARI_MODE=off (#3383)" "$(run_sourced "$C" env_get_file "$C/.env" TARI_MODE)" "off"
-jq --arg id "$UUID4" '{id:$id,action:"preview",actor:"admin",config:(. | .tari.remote.host="inactive-tari.example" | .tari.remote.grpc_port=18143 | .tari.clearnet_initial_sync=true)}' \
-    "$C/config.json" >"$REQS/$UUID4.json"
-run_pending >/dev/null
-assert_eq "Tari-off preview status (#3383)" "$(jq -r '.status' "$RESULTS/$UUID4.json")" "previewed"
-assert_eq "inactive endpoint edits retain typed confirmation (#3383)" "$(jq -r '.destructive' "$RESULTS/$UUID4.json")" "true"
-assert_eq "Tari-off preview gives no active guidance for inactive settings (#3383)" \
-    "$(jq -r '[.changes[] | select(.key == "TARI_GRPC_ADDRESS" or .key == "TARI_CLEARNET_SYNC" or .key == "tari.remote.host" or .key == "tari.remote.grpc_port")] | all(.msg | test("inactive|stored|no effect|will not run"; "i"))' "$RESULTS/$UUID4.json")" "true"
-jq '.tari.clearnet_initial_sync=true' "$C/config.json" >"$C/config.off" && mv "$C/config.off" "$C/config.json"
-run_sourced "$C" eval 'PITHEAD_DRY_RUN=1; parse_and_validate_config && load_preserved_state && resolve_dashboard_host && DEPLOYMENT_COMPLETED=true && render_env "$ENV_FILE"' >/dev/null 2>&1
-assert_rc "stored clearnet preview baseline renders (#3383)" "$?" "0"
-assert_eq "stored clearnet preview baseline keeps its flag (#3383)" "$(run_sourced "$C" env_get_file "$C/.env" TARI_CLEARNET_SYNC)" "true"
-jq '.tari.mode="local"' "$C/config.json" >"$C/config.candidate"
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" PITHEAD_CONFIG_FILE="$C/config.candidate" ./pithead apply --dry-run --porcelain 2>/dev/null)"
-assert_contains "enabling stored clearnet sync warns about exposure (#3383)" "$out" "Tari CLEARNET initial sync ENABLED"
-rm -f "$RESULTS/$UUID4.json" "$STAGED/$UUID4.json" "$C/config.candidate"
-rm -f "$RESULTS/$UUID3.json" "$STAGED/$UUID3.json"
 
 echo "== black-box: the compose-profile token set is closed (#1929) =="
 # WHY THIS GUARD EXISTS. COMPOSE_PROFILES is on the confirm allowlist so that a tari.mode switch

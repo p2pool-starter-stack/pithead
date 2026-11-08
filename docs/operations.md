@@ -19,7 +19,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead test-alert` | Send one marked test message through every configured Telegram, webhook, and ntfy sink. Prints one result per sink without exposing URLs or tokens and exits non-zero if any configured sink fails. Healthchecks is reported as excluded because a ping would move the dead-man switch. |
 | `./pithead doctor` | Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk, `.env`/onion state, and container status — plus runtime checks: the Tor container is actually running while the mining stack runs (a loud FAIL when it's down — the privacy backbone is dead), the Tor-egress firewall rules are actually installed (a reboot silently drops them while the containers auto-restart), something is listening on the stratum port (`p2pool.stratum_port`, default `3333`, and whether that port sits on a public IP), the dashboard app answers behind its container, a clearnet request through Tor's SOCKS succeeds (a failing Tor guard breaks Healthchecks/Telegram/XvB while mining still works — fix with `./pithead restart tor`, or set `tor.auto_heal: true` with a dashboard login and `dashboard.control.enabled: true` to automate it), a local monerod reports `synchronized` from its own RPC (a node stranded at 0 peers by a Tor restart keeps a green healthcheck while mining sits on a stale tip — fix with `./pithead restart monerod`, #972), and, on the appliance, Caddy has no wildcard or public-address dashboard listener and the served certificate covers every name Caddy answers on without expiring within 30 days (fix either with `./pithead apply`; an unreadable certificate file warns instead of failing, so a read hiccup can't reboot-loop the box). A paste-able health report. |
 | `./pithead backup` | Save `config.json`, `.env`, `Caddyfile`, the Tor onion keys, and the dashboard's database (your hashrate history & settings) to a timestamped, passphrase-encrypted archive under `backups/` (checks free space first; stops a running stack, except caddy, for a clean copy, then restarts everything). If startup fails with unhealthy Tor and its circuit history has the saturated signature, backup discards only Tor's `state` file before retrying; onion keys remain. Other startup failures retain their original error and diagnostics. `--with-chains` also includes the blockchain data; `--no-encrypt` writes a plaintext `tar.gz`; `-y` / `--yes` skips the prompts (low free space and stopping the stack). |
-| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
+| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env`, `Caddyfile`, and the masked dashboard configuration from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
 | `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. With the config editor on, the dashboard header's **Show client key** button gets the same line without a shell, which is how an appliance operator gets it. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
@@ -56,7 +56,7 @@ boot path drives most of them for you:
 |---|---|
 | `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A bundle that declares `data_migration` is refused when a local Tari node's data volume lacks free space of `data.mdb`'s size plus 5 GiB, the room its migration needs for the compacted copy; the refusal names the volume, the size needed and the size free, the same check `upgrade` makes (#2645). A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. On success it says the update is written to the spare slot, that this machine keeps running the current version until it reboots, that the reboot boots the new slot and commits it only if the stack comes up healthy (otherwise the next boot falls back), and the exact reboot command. `--reboot` reboots to finish the update once installed — it asks first unless `-y` is also given. |
 | `./pithead factory-reset` | **DESTRUCTIVE**, appliance only. Erase the whole data partition back to a blank machine — chains, wallets, Tor keys and settings all go — then reboot into the setup wizard. The resync that follows costs days, so reach for `config-reset` first. Type-to-confirm unless `-y`. |
-| `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console, and five wrong tries mint a fresh one. |
+| `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console. Five wrong tries from one network peer start a 60-second cooldown for that peer; retry the same token afterwards. |
 | `./pithead load-images` | Load the baked container-image archives from `/opt/pithead/images` into the engine when their content changed since the last load. The boot path runs this every boot, so a reinstall or update that ships new images converges with no wizard involvement. |
 | `./pithead local-miner` | Converge this machine's RigForge worker to what the machine is: on a coordinator it follows `local_miner.enabled` (RigForge setup in appliance mode when on, the miner stopped when off); on a rig it follows `rig.json`. Run every boot; a no-op outside the appliance. |
 | `./pithead render-quadlet` | Render Podman Quadlet units — the appliance runtime — from a rendered `.env`. Defaults to `--env .env` and `--out ./quadlet`. The `os/quadlet/` fixtures pin its output byte for byte. |
@@ -200,6 +200,9 @@ A miner deliberately created/exited/stopped by the sync gate or node failover is
 exception during normal operation. A pending appliance data migration also withholds its chain
 services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero;
 `doctor` applies the same observed-restart check to every Compose service, including Caddy.
+The appliance boot health gate runs both commands with the internal `PITHEAD_BOOT_GATE=1`, which
+skips the three-second restart window so its 10-second poll keeps the 2.0.0 pace. Like 2.0.0, the
+gate does not look for restart loops between reads; do not set the variable in a shell.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image
@@ -245,7 +248,13 @@ nothing is written or recreated. `--porcelain` makes the output machine-readable
 **Changing the payout wallet:** `apply` asks you to type the last 8 characters of the new address
 (a bare `y` is not enough for the one change that redirects every future reward; `apply -y` skips
 the prompt for automation). Changing both the Monero and Tari addresses in one `apply` prompts
-once per address. The dashboard also watches the wallet p2pool actually mines to: any
+once per address. Cancelling keeps the live environment and Tari wallet secret file unchanged;
+unpublished staged files are removed. After confirmation, apply checks that the configuration
+and live environment still match the preview, then publishes under the mutation lock.
+If either changed while waiting, re-run `apply` to review the current changes.
+If sidecar publication fails, apply restores the previous environment; a failed restoration
+reports the saved environment file to use for recovery.
+The dashboard also watches the wallet p2pool actually mines to: any
 change raises a `wallet_changed` [Telegram alert](telegram.md) and a 72-hour top-bar banner —
 including a change you made yourself. Treat that pair as confirmation; if you didn't change it,
 your rewards are being redirected — check `config.json` and re-apply the correct address.
@@ -556,7 +565,7 @@ want it gone.
 
 | item | what |
 |---|---|
-| containers + networks | the selected Compose project (`pithead` by default), `mining_net`, `proxy_net` |
+| containers + networks | the `pithead` compose project, `mining_net`, `proxy_net` |
 | images | every ref from `docker compose config --images` |
 | named volumes | `caddy_data`, `wallet_data`, `tari_wallet_db` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues. On startup, `tari-wallet` repairs a root-owned volume before running as uid 1000. Uninstall removes the Tari wallet volume even when its payout profile is disabled, after checking its Compose ownership labels. If Docker cannot list, inspect, or remove that volume, uninstall stops before deleting `.env` so the operator can retry. |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only; firewall services and check timers are stopped, their failed state cleared, and their manager records checked after unit-file removal. Another checkout's check units are preserved. A failed cleanup returns non-zero without reporting “Uninstalled.” |
@@ -713,9 +722,14 @@ starts, firstboot restores that same slot's good state on each configless boot, 
 reboot while setup is still open. The record remains until a provisioned boot passes its health
 gate, so reset, CLI restore and setup followed by a normal reboot keep the intended slot. An
 unverified slot keeps its normal fallback; the next provisioned boot still requires the stack
-health gate. If you restore from the shell instead of the wizard page, the wizard closes its
-page within seconds of `config.json` returning, which frees ports 80 and 443 for Caddy; run
-`./pithead up` after that.
+health gate. If you restore from the shell instead of the wizard page, firstboot detects a
+configuration that appears after its entry check, including while it prepares the page.
+It closes the page and frees ports 80 and 443 for Caddy; run `./pithead up` after that.
+A retry round that opened with a retained configuration does not automatically detect its
+replacement by a CLI restore. On the appliance, `up` re-renders the miner's derived config
+from the restored stratum port and password and reinstates the enabled built-in miner; disabled
+local mining stays stopped. Boot-owned startup leaves miner provisioning to its bounded
+post-commit step, so miner setup cannot delay the A/B commit gate.
 
 Copy the archive back and run:
 
@@ -735,7 +749,9 @@ volumes. Networks remain until a configured Compose shutdown. The pinned `pithea
 this directory's legacy project are checked; legacy containers must also carry this directory's
 working-directory label. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
-before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
+before committing them. `.env`, `Caddyfile`, and the masked dashboard configuration are regenerated
+from validated `config.json`. The next `up` serves the restored configuration and energy cost
+without an intervening `apply` or another restart;
 the validated proxy token, wallet RPC and database passwords, and Tor identities are retained
 exactly from the archived environment. The dashboard login hash and fingerprint are retained with
 them while the fingerprint matches `dashboard.auth.password` and the hash is well-formed bcrypt;
@@ -755,6 +771,11 @@ the archive replaces the destination's file. The appliance wizard's restore-at-s
 preserves the destination's file in `data/monero`, `data/tari`, and `data/p2pool`: a `wipe=keep`
 install may already have synced chain data, and replacing it would force a resync. It still adds
 files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
+
+When the administrative archive contains `mining_data.db`, restore removes the destination's
+WAL, shared-memory and rollback-journal sidecars before copying the archived database and its
+sidecars. A crashed destination writer's committed rows cannot override the archived rows.
+Without an archived database, restore does not perform this sidecar cleanup.
 
 > NOTE: The archive stores the source box's absolute paths, and `restore` puts every file back
 > exactly where it came from, after validating the destinations. A different installation path

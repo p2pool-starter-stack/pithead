@@ -35,6 +35,13 @@ resolve_base_ref() {
         }
         return 0
     fi
+    if [ -n "${GITHUB_BASE_REF:-}" ]; then
+        git rev-parse -q --verify "refs/remotes/origin/${GITHUB_BASE_REF}^{commit}" 2>/dev/null || {
+            echo "file-budget: FAIL — invalid GITHUB_BASE_REF; fetch the PR base from origin." >&2
+            return 1
+        }
+        return 0
+    fi
     local dev
     for dev in origin/develop develop; do
         if git rev-parse -q --verify "$dev" >/dev/null 2>&1; then

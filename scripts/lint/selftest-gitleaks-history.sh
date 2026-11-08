@@ -2,7 +2,7 @@
 # Prove the historical Digest exception without exempting later copies of the fixture.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SANDBOX=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/gitleaks-history.XXXXXX")
+SANDBOX=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/gitleaks-history.XXXXXX")
 trap 'rm -rf "$SANDBOX"' EXIT
 COMMIT=051add657bebb7f744aef9e0622ad2ea9591d96b
 FIXTURE=tests/integration/selftest/test_restore_curl_connection.py

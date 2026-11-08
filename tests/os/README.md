@@ -1,7 +1,5 @@
 # Appliance image harness
 
-The `--help` usage text in `run.sh` declares the supported phases. Bench-ci reads its `--phase` list for phase discovery and remote-node admission. Keep that list when editing the harness.
-
 Tier-4 tests for the `pithead-os` appliance image (#77 phase 2): the properties only real
 firmware and a real A/B updater can prove. The compose/CLI stack is covered by the other
 tiers ([`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md)); this harness
@@ -109,14 +107,20 @@ The harness builds its own update bundles from the same tarball (`os/rauc/mkbund
 signed with a throwaway development key. A release build names its key instead — see the custody
 runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 
+Harness builds declare dashboard markers as a JSON array in `tests/os/dashboard-markers.json`. The runner publishes
+and signs each final marker image before invoking the appliance builder, then forwards
+`PITHEAD_TEST_MARKER_IMAGES` as version-1 JSON text bound to the candidate commit, never a file path.
+`PITHEAD_TEST_IMAGE_COMMIT` carries that source identity into exported fixture trees without Git metadata.
+The builder uses the selected immutable reference for both Compose pinning and the baked archive;
+it adds no image layer after signing. Missing markers, another commit or a reference outside
+the configured test registry fail before the image build. Release builds do not use this mapping.
+`selftest-marker-images.sh` checks selection, rejection and the pinned/archive source contract.
+
 ## Phases
 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd
   banner reaches the serial console, the first-boot wizard announces its URL + one-time token,
-  the console SHA-256 fingerprint matches the certificate served over TLS, and five wrong tokens
-  restart the wizard with a fresh console token. The old token is refused and the new token opens
-  authenticated wizard state. These checks run before the boot phase reboots the guest.
-  Assert serial getty is active on the guest's UART; give its installed
+  and the token gate answers. Assert serial getty is active on the guest's UART; give its installed
   condition a type-0 port for five minutes and require an inactive unit with no restarts or terminal
   errors, then restore the UART, require the unit active again and check a clean hangup respawns
   the login prompt. Also assert
@@ -132,7 +136,14 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Also asserts `/data` grew to fill the disk, and that host identity (SSH host-key fingerprint,
   machine-id) survives the A/B swap (#894/#895) — both live on `/data`, untouched by the slot
   swap.
-- **install** — boot the image as removable media beside a blank disk, run the disk installer,
+- **install** — first submit RigForge with a blank internal disk, acknowledge its card and boot
+  from that disk alone. Poll for the same token in the installed rig and miner configurations,
+  an active XMRig process, no coordinator configuration or containers, and a scrubbed seed on the target’s mounted FAT ESP.
+  The host must consume a pending rig submission before considering a bare keep reinstall;
+  `selftest-install-rig-dispatch.sh` checks card-before-erase, acknowledgement and bare-keep controls.
+  Keep the console capture mode 0600 and send the setup token to authentication through stdin.
+  This checks miner startup against the guest’s SSH listener, not an accepted share. Then
+  boot the image as removable media beside a blank disk, run the disk installer,
   then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an
   incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
   `/data` must survive a second install over the same disk, and the three-way wipe choice
@@ -157,7 +168,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   served, generated login authenticating, firstboot and system journals free of bcrypt credentials,
   built-in miner up. Journal reads must succeed and contain entries; the check never prints matched hashes. The Tor-only egress enforcement backstop — a real clearnet dial from a
   mining container, which must be DROPPED while the same container still reaches clearnet through
-  Tor's SOCKS — runs on EVERY path through this phase, including the aborting ones, and reports RED
+  Tor's SOCKS (up to three attempts, with retries isolated by SOCKS username, [#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)) — runs on EVERY path through this phase, including the aborting ones, and reports RED
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
@@ -275,33 +286,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   revision/change ID after reboot. Feed reads retry up to 12 times, five seconds apart; missing
   provenance fails the leg. A power-cut leg (M13's rig half, #2067) then destroys the guest
   mid-mining and asserts the same "mining unaided" fact off a real
-  `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063, #3425) boots a second,
-  concurrent guest as a remote-node coordinator (`stack`'s helper, from the same image).
-  Through the "Set up again" entry it points the rig at the coordinator by IPv4 address,
-  then by `kvm-share-coordinator.invalid`, then back by address. The hostname is a fixture
-  in the rig guest's volatile `/etc/hosts` overlay. Save the original contents once,
-  then reapply the entry after every setup boot, before authenticating or submitting;
-  guest IPv4 resolution must name exactly the coordinator before and after each switch.
-  An unmapped `.invalid` name must fail the same hostname arm before provisioning.
-  Each arm requires exactly one pool in the miner config, naming the requested endpoint.
-  With the rig stopped at setup, the leg records its accepted-share baseline, then polls
-  the coordinator's `/api/state` every 15 seconds for up to 600 seconds per arm
-  (`PITHEAD_OS_RIG_SHARE_WINDOW_SEC` overrides that bound). Two consecutive observations
-  must show accepted above that arm's baseline and positive one-minute `h60` on an online rig worker. The fixture uses the serialized
-  `/api/state` worker fields; the internal `h10` field is not part of that response.
-  Every observed rig counter must have zero rejected and invalid shares; either becoming
-  positive fails immediately. The coordinator's built-in miner must also have accepted
-  shares on the exact worker named by its guest hostname, with an integer accepted counter.
-  Missing or malformed worker fields cannot pass. Each arm logs its accepted baseline
-  and bounded initial/final observations: row counts, numeric share counters, hashrate and
-  online flags only. Worker names, addresses and unrelated state fields are excluded.
-  A failed state request cannot contribute a passing observation, even with a parseable body. The hosts fixture is restored and the
-  rig root verified read-only without remounting it; the coordinator guest is torn down. `selftest-rig-share.sh` exercises the complete leg with
-  fake transport, clocks and worker snapshots, including stale return-arm shares,
-  rejected/invalid counters, missing fields, hostname failures, extra pools, coordinator identity/counter types, hosts-file write failures and read-only-root verification. Each fake setup boot
-  discards the hosts overlay, matching the appliance boot contract.
-  A bench with no reserved remote Monero node counts it a `missing` leg skip, using
-  the same inputs as the `stack` phase.
+  `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063) closes
+  with the one thing every other row here cannot show: an ACCEPTED share. It boots a second,
+  concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
+  no second build), re-points the already-proven rig at that guest's stratum through the "Set up
+  again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
+  the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
+  counts it a `missing` leg skip, the same env vars the `stack` phase needs.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -329,8 +320,32 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
-- **reset** — the shell-less box's last resort, never before run against a real disk. Leg 0 runs
-  the cheap tier first, on the same provisioned guest: `pithead config-reset -y` must clear
+- **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
+  with local chains and the non-default nano pool. Each setup-again session separately checks
+  the current boot journal for a minted token, the new-boot serial slice and tty1 text from
+  `/dev/vcs1`. `wizard-console-leg.sh` restarts both gettys during a paused direct announcement
+  and requires the current URL and token before releasing it; disabling issue publication is
+  its negative control. Bounded console captures and getty properties are retained between `BEGIN setup-console`
+  and `END setup-console` markers in the collected rig log.
+  `selftest-wizard-console.sh` checks publication, replacement, cleanup and failed verdicts.
+  The authenticated wizard must name the saved `pithead` role and prefill its answers with
+  secrets blank. POST **Keep it** through the wizard;
+  require the original dashboard login, unchanged configuration and host identity, both chain
+  sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
+  the served config; require the credentials card's login and the same chains and identity.
+  Both returns poll for successful setup completion, HTTP 200 with the dashboard's
+  `sync.monero` state object, and resumed height. A timeout reports the stage, height verdict,
+  HTTP status, curl exit and setup verdict without response bodies or credentials.
+  `coordinator-setup-again-leg.sh` implements this leg; `selftest-coordinator-setup-again.sh`
+  uses the generated dashboard response fixture and drives failure controls without a guest.
+  `selftest-confirmed-setup.sh` drives the real installed wizard and setup functions with host
+  effects stubbed: accepted forms re-provision, Keep it and rejected forms do not, provisioning
+  errors reach the retry path, restored browser submissions skip the new-node preflight,
+  and direct headless setup still refuses a deployed machine.
+  Saved-answer comparisons exclude the read-only `config_version` host stamp, which the wizard
+  omits. The selftest runs the sanitizing query against a stamped config with populated secrets;
+  a prefill failure reports only fixed shape verdicts and a changed-answer count.
+  Leg 0 then runs the cheap reset tier on the same provisioned guest: `pithead config-reset -y` must clear
   `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
   while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every
   data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
@@ -354,21 +369,19 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   asserts the wedged-`/data` recovery reformats it rather than bricking.
 - **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
   reflinks under the disposable guest's writable data partition, verify and install the published
-  v2.0.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
-  submitted images. The baseline uses remote Monero and remote Tari, and keeps its five data dirs
-  on a shared root beside the version dirs on the same reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
+  v1.20.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
+  submitted images. The baseline uses remote Monero and remote Tari because v1.20.0 predates
+  Tari-off mode, and keeps its five data dirs on a shared root beside the version dirs on the same
+  reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
   the tier's debug-registry public key, so submitted images are verified against the key that
   signed them. When `PITHEAD_REGISTRY_CA` is set, the signed candidate also carries that CA as
-  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. Baseline setup,
-  candidate upgrade and baseline rollback all use the CLI's existing DIY test override inside the
-  appliance-shaped Podman guest, so derived host files use one render mode. Its private volatile
-  script is invoked through `bash`, so a
+  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. It runs the release-shaped stack under the CLI's existing test override inside the
+  otherwise appliance-shaped guest. Its private volatile script is invoked through `bash`, so a
   noexec mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
-  and resumed hashes. The baseline uses `pithead-v2.0.0-baseline` so a candidate whose `VERSION`
-  is still `2.0.0` gets a fresh version directory. The candidate upgrade and baseline restoration
-  both enforce the strict Tor-egress check. Release-input preparation failures name only the
-  failed sub-step, a redacted
+  and resumed hashes. The v1.20.0 rollback starts without the strict Tor-egress check, because that
+  release cannot install the podman ruleset; the run records it as a counted by-design row that
+  [#2696](https://github.com/p2pool-starter-stack/pithead/issues/2696) removes. Release-input preparation failures name only the failed sub-step, a redacted
   command, and its exit status. Downstream guest failures name only a fixed stage (including the
   mountpoint or loop-mount half of reflink setup) and integer exit status; command output, tokens,
   keys, signature material, and topology stay hidden. Its EXIT trap stops the stack, unmounts the
@@ -380,32 +393,21 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   the DIY gate that `release-gate.yml` runs and that has never once driven the appliance runtime
   (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
   unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
-  --auth-fail-closed` against the `remote-main-secure-tari` scenario, then
-  `remote-main-stratum-tls`. The latter runs the shipped XMRig against the guest proxy: wrong
-  and unconfigured passwords and a changed TLS pin must be refused with no job, active
-  connection or accepted share for 120 seconds each. A separate raw probe omits the wire
-  password. Fixture setup authenticates without submissions and disconnects to retain a
-  numeric zero accepted counter; refused clients create no worker row. Correct-pin TLS and
-  same-port cleartext must each produce a new proxy-owned accepted share within 600 seconds.
-  `selftest-stratum-controls.sh` checks miner lifecycle, counters, pinning and suite dispatch.
-  The probe reads XMRig's private `log-file`, separate from stdout: the pinned binary disables
-  console output when stdout is a regular file. The fixture reproduces that behavior.
-  The first live remote-node
+  --auth-fail-closed` against the `remote-main-secure-tari` scenario. The first live remote-node
   coverage on either channel (#1446). Reuses the same reserved-node env vars as the `provision`
   phase's remote-node consumer row below; without them the phase records a counted `missing`
   skip (#2356) rather than a bare line, so a bench that cannot run it says so in the tally. Measured cost: about
-  fifteen minutes to a mining guest, then the existing lifecycle checks; authentication controls
-  add eight minutes of negative observation and up to twenty minutes for accepted shares. The scenario
+  fifteen minutes to a mining guest, then about ten for the two DIY-gate invocations. The scenario
   invocation names `--scenario` on purpose — the harness's default is its whole 15-scenario matrix,
   nearly all `monero.mode=local`, which this guest has no chain for. Two parity rows are out of
   scope here for want of inputs this guest cannot give them: the `monero.mode=local` scenario
   (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
   diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate and tor-heal, including image-upgrade, fault, reset and stack, and the full run is required once for
+crossupdate, including image-upgrade, fault, reset and stack, and the full run is required once for
 every RC candidate.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
@@ -499,6 +501,15 @@ On a failed current-startup Tari round trip, the row first searches the full cur
 runtime predicate as a bounded reason, and allowlisted Monero/Tari RPC and sync fields from the
 guest's existing authenticated dashboard clients. Those readiness fields are diagnostic only: the
 current-process `uses chain_id` handshake remains the pass assertion.
+
+The `stack` phase's lifecycle reset-restore leg also restores while firstboot is starting.
+After the ordinary open-page restore, it resets again and restarts the guest's firstboot
+service with a temporary test wrapper. The wrapper pauses console announcement after the
+entry check and before round opening; the real encrypted CLI restore lands configuration
+before startup resumes. The leg requires successful firstboot exit, removal of the wizard,
+free HTTP/HTTPS ports before `up`, a stable Caddy and a dashboard response. It removes the
+runtime service override afterwards. `selftest-wizard-startup.sh` covers startup, round
+preparation, retained retry configuration and installer behavior without a guest.
 
 ## Static verification
 

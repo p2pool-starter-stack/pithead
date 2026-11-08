@@ -1,10 +1,12 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-
-bash "$HERE/lifecycle/compose-project.sh"
-assert_rc "Compose project ownership checks" "$?" 0
+# compose_up_checked renames a container an interrupted recreate left under compose's temporary
+# "<12-hex>_<name>" (#2595). Sourced by tests/stack/test-lifecycle.sh.
 
 echo "== unit: an apply never ends with a service under compose's recreate name (#2595) =="
+# Replays bench job 840: the first pass creates 4556c4f42f1d_monerod, then aborts on p2pool's
+# state conflict before removing the old monerod; the #2293 retry removes the old monerod as
+# surplus and starts the replacement without renaming it. The stub's container list is a file.
 RN="$SANDBOX/recreate-names"
 mkdir -p "$RN"
 printf 'COMPOSE_PROFILES=local_node\n' >"$RN/.env"

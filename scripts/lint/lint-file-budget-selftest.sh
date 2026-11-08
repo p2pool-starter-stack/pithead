@@ -16,7 +16,7 @@ HERE=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)
 # shellcheck source=scripts/lint/lint-file-budget.sh
 source "$HERE/lint-file-budget.sh"
 
-unset FILE_BUDGET_BASE_REF
+unset FILE_BUDGET_BASE_REF GITHUB_BASE_REF
 
 self_test() {
     local tmp out st_fail=0 rc=0

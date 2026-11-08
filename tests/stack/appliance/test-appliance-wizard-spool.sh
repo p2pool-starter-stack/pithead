@@ -93,7 +93,8 @@ rm -f "$WSS/restart-stage/.restore.escape"
 
 mk_tmpdir WBK
 mkdir -p "$WBK/preseed"
-WBK_STUBS='machine_role() { echo pithead; }; setup_again_mode() { return 1; }
+WBK_STUBS='wizard_issue_file() { printf "%s/console.issue" "$PWD"; }; agetty() { [ "$1" = --reload ]; }
+machine_role() { echo pithead; }; setup_again_mode() { return 1; }
 installer_mode_available() { return 1; }; consume_preseed_restore() { return 1; }; consume_preseed_config() { return 2; }
 boot_is_removable() { return 1; }; _console() { :; }; container_engine() { echo true; }
 export_build_provenance() { PITHEAD_REGISTRY=fixture; STACK_VERSION=dev; }; load_baked_images() { :; }
@@ -105,6 +106,7 @@ wizard_spool_publish() { :; }; warn() { :; }; log() { :; }; bash() { cp config.j
 sleep() { exit 7; }'
 PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBK_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "post-validation refusal reaches candidate cleanup" "$?" 7
+assert_eq "a refused setup round clears its console banner" "$([ -e "$WBK/console.issue" ] || echo gone)" gone
 assert_eq "post-validation refusal leaves no migration backup" "$([ -e "$WBK/config.json.bak-1x" ] || echo gone)" gone
 mkdir -p "$WBK/installed/preseed" "$WBK/installed/data/firstboot"
 printf live-config-sentinel >"$WBK/installed/config.json"
@@ -207,7 +209,7 @@ run_sourced "$WSS" eval 'install() { return 99; }; rm() { return 99; }; wizard_r
 assert_rc "restore cleanup leaves installer pre-seeds untouched" "$?" 0
 run_sourced "$WSS" eval 'wizard_restore_installer_preseeds() { :; }; clear_setup_candidate() { :; }; clear_legacy_restore_carry() { return 1; }; wizard_clear_restore_state() { :; }; wizard_cleanup_installer_credentials a b c 0 d e f'
 assert_rc "legacy credential cleanup failure stops installer cleanup" "$?" 1
-fb_restore_paths=$(sed -n '/^firstboot_wizard() {/,/^}$/p' "$STACK")
+fb_restore_paths=$(sed -n '/^firstboot_wizard() {/,/^}$/p; /^wizard_start_page() {/,/^}$/p' "$STACK")
 assert_eq "every retry snapshot uses the secret-stripping publisher" "$(grep -c wizard_publish_retry_config <<<"$fb_restore_paths")" 3
 assert_eq "every accepted-restore exit clears its marker and carry" "$(grep -c 'wizard_clear_restore_state "$rec"' <<<"$fb_restore_paths")" 5
 assert_eq "both installer exits check the shared credential cleanup" "$(grep -c wizard_cleanup_installer_credentials <<<"$fb_restore_paths")" 2

@@ -30,6 +30,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         trace_lifecycle() { [ -z "${LIFECYCLE_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$LIFECYCLE_TRACE_OUT"; }
+        trace_restore_order() { [ -z "${RESTORE_ORDER_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$RESTORE_ORDER_TRACE_OUT"; }
         capture_artifacts() {
             printf 'CAPTURE:%s\n' "$1"
             trace_lifecycle "capture:$1"
@@ -52,7 +53,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         has_compose_profile() { case "$RESTORE_CASE" in carry-*) return 0 ;; *) return 1 ;; esac }
         wait_for() { :; }
         assert_rc() { :; }
-        dashboard_durable_rows() { printf 'blocks -'; }
+        dashboard_durable_rows() { [ "$RESTORE_CASE" = carry-rows-unreadable ] || printf 'blocks -'; }
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
         run_cli_wizard_defaults() { [ "$RESTORE_CASE" != wizard-defaults-fails ] || {
@@ -60,14 +61,29 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             return 1
         }; }
         lifecycle_gate_sample() { :; }
+        run_support_bundle() { :; }
         run_source_image_reconcile() { :; }
+        run_image_permissions() { :; }
+        run_restore_dashboard_probe() {
+            trace_restore_order dashboard-probe
+            [ "$RESTORE_CASE" != dashboard-probe-fails ] || {
+                it_fail
+                return 1
+            }
+        }
+        run_tari_background_sync() {
+            trace_restore_order tari
+            [ "$RESTORE_CASE" != tari-fails ] || {
+                it_fail
+                return 1
+            }
+        }
         dashboard_tls_identity() { printf identity; }
         assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
             it_fail
             return 1
         }; }
         run_password_tls_continuity() { :; }
-        run_tari_background_sync() { :; }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
@@ -75,12 +91,13 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             *) printf absent ;;
             esac
         }
-        prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
-        prove_wallet_recovery() { :; }        # Recovery proof has its own selftest.
-        tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
-        run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
+        prove_wallet_supersession() { :; }
+        prove_wallet_recovery() { :; }
+        tor_recovery_healthy_probe() { :; }
+        run_connection_announcements() { :; }
         # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
-        run_reset_restore() { # the leg is driven by selftest-reset-restore.sh
+        run_reset_restore() {
+            trace_restore_order reset-restore
             case "$RESTORE_CASE" in
             reset-refused-intact)
                 RESET_RESTORE_STACK_INTACT=1
@@ -132,9 +149,24 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         fi
         printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
+        [ "$RESTORE_CASE" != carry-rows-unreadable ] || printf '|applied=%s' "$([ -e "$OUT_DIR/dashboard-carry.apply.log" ] && echo yes || echo no)"
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
+
+ORDER_TRACE=$(mktemp) || exit 1
+assert_eq "the dashboard probe runs before a failing Tari trial" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes tari-fails)" "1|1"
+assert_eq "Tari failure stops the later reset recovery" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari'
+: >"$ORDER_TRACE"
+assert_eq "a dashboard probe failure prevents the Tari trial" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes dashboard-probe-fails)" "1|1"
+assert_eq "a failed dashboard probe stops before Tari and reset" "$(cat "$ORDER_TRACE")" dashboard-probe
+: >"$ORDER_TRACE"
+assert_eq "healthy dashboard and Tari probes still reach reset recovery" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes)" "0|0"
+assert_eq "healthy probes keep the full recovery order" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari\nreset-restore'
+rm -f "$ORDER_TRACE"
 
 assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
@@ -177,6 +209,7 @@ assert_eq "a healthy dashboard carry keeps lifecycle passing (#2360)" "$(drive_r
 assert_eq "a failed dashboard carry apply fails lifecycle and retains its diagnostic (#2785)" "$(drive_restore yes carry-apply-fails)" "1|1|carry apply failed before health wait"
 assert_eq "a healthy apply whose carry never becomes healthy fails lifecycle (#2785)" "$(drive_restore yes carry-health-fails)" "1|1"
 assert_eq "lost durable rows across the carry fail lifecycle (#2360)" "$(drive_restore yes carry-rows-diverge)" "1|1"
+assert_eq "an unreadable pre-move dashboard probe fails lifecycle and skips the carry apply (#3664)" "$(drive_restore yes carry-rows-unreadable)" "1|1|applied=no"
 assert_eq "a failed dashboard carry cleanup fails lifecycle (#2360)" "$(drive_restore yes carry-cleanup-fails)" "1|1"
 assert_eq "a source checkout's missing-image leg keeps lifecycle passing (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes)" "0|0"
 assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes no-proxy-image)" "1|1"
@@ -231,17 +264,17 @@ fi
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1 _gated$/,/^    fi # fault-injection gate$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"
 
-drive_gate() {
+drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
     (
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
-        RUN_LIFECYCLE=1 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
-            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1" preview_rc="${3:-0}"
-        run_p2pool_preview() { return "$preview_rc"; }
+        RUN_LIFECYCLE=1 RUN_RESET_DASHBOARD=0 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
         run_lifecycle() {
             LIFECYCLE_STACK_INTACT="${intact:-0}"
             return "$lifecycle_rc"
         }
         run_fault_injection() { fault_ran=yes; }
+        run_fault_injection_maybe() { run_fault_injection; }
         it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         gate() { eval "$MAIN_SRC"; }
         gate >/dev/null 2>&1 || true
@@ -250,7 +283,6 @@ drive_gate() {
 }
 
 assert_eq "fault injection runs after a healthy lifecycle" "$(drive_gate 0)" "yes"
-assert_eq "fault injection is reported skipped after a failed P2Pool preview (#3382)" "$(drive_gate 0 1 1)" "skipped:fault-injection "
 assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)" "$(drive_gate 1)" "skipped:fault-injection "
 assert_eq "fault injection runs after a lifecycle row failed with the stack intact (#3342)" "$(intact=1 drive_gate 1)" "yes"
 assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection "

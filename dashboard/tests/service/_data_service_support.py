@@ -24,18 +24,6 @@ from mining_dashboard.service.data_service import (
     _XVB_REGISTER_FAIL_ALERT,
     DataService,
 )
-from mining_dashboard.service.storage_service import StateManager
-
-
-@pytest.fixture
-def xvb_service():
-    sm = StateManager(db_path=":memory:")
-    try:
-        svc = DataService(sm, MagicMock(), MagicMock())
-        svc.alert_service = AsyncMock()
-        yield svc, sm
-    finally:
-        sm.close()
 
 
 class _FakeClientSession:

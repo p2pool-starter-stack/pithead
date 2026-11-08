@@ -5,7 +5,14 @@ set -euo pipefail
 INPUT=/run/pithead-image-upgrade
 MOUNT=/data/pithead-image-upgrade-mount
 LOOP=/data/pithead-image-upgrade.xfs
-OLD_SHA=c59e5ad6fc7c1fe82eb7558a2f962c18c1266299
+OLD_SHA=296fe6af551b773bae49486e98517ac274b896cd
+# Measurement ceiling for the built-in miner's first accepted share (#2057). The deployed run
+# reports the figure it actually took; this bound exists so a miner that never mines fails the
+# gate instead of hanging it. Job 639, the first run to ever get this far (local-miner render was
+# broken before it), reported gate-predicate mask 6/15 (tari synced + workers, not monero synced
+# or hashes) still short at the old 1200s ceiling — raised to 1800s, the figure tests/os/lib/core.sh's
+# own SSH_TIMEOUT comment already assumed for "the 1800s local-miner wait" before this constant
+# ever matched it.
 MINER_SHARE_BUDGET=1800
 NEW_SHA="${1:?candidate commit required}"
 GUEST_STAGE=guest-preflight
@@ -25,10 +32,10 @@ stage() { # <next-stage>
     GUEST_STAGE="$1"
 }
 
-record_failure() {
+record_failure() { # <exit-status>
     local rc="$1"
     case "$GUEST_STAGE" in
-    guest-preflight | remote-node-reachable | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-setup | local-miner-tree | local-miner-role | local-miner-render | local-miner-rigforge | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
+    guest-preflight | remote-node-reachable | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner-tree | local-miner-role | local-miner-render | local-miner-rigforge | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
     *) GUEST_STAGE=unattributed ;;
     esac
     printf 'stage=%s exit=%d\n' "$GUEST_STAGE" "$rc" >"$INPUT/guest-stage"
@@ -37,34 +44,19 @@ record_failure() {
 }
 
 verify_bundle_trust() {
-    cosign verify-blob --key "$INPUT/project.pub" --signature "$INPUT/v2.0.0.sig" \
-        --insecure-ignore-tlog=true "$INPUT/v2.0.0.tar.gz" >/dev/null
+    cosign verify-blob --key "$INPUT/project.pub" --signature "$INPUT/v1.20.0.sig" \
+        --insecure-ignore-tlog=true "$INPUT/v1.20.0.tar.gz" >/dev/null
     if cosign verify-blob --key "$INPUT/bundle.pub" --signature "$INPUT/wrong.sig" \
         --insecure-ignore-tlog=true "$INPUT/candidate.tar.gz" >/dev/null 2>&1; then
         record_failure 1
     fi
 }
 
-install_baseline() {
-    tar -xzf "$INPUT/v2.0.0.tar.gz" -C "$MOUNT" || return $?
-    mv "$MOUNT/pithead" "$MOUNT/pithead-v2.0.0-baseline" || return $?
-    [ "$(tr -d '[:space:]' <"$MOUNT/pithead-v2.0.0-baseline/VERSION")" = "2.0.0" ] || return 1
-    ln -s pithead-v2.0.0-baseline "$MOUNT/current"
-}
-
-setup_baseline() {
-    (
-        cd "$MOUNT/current" || exit $?
-        printf '\n' | env -u PITHEAD_REGISTRY -u PITHEAD_REGISTRY_CA PITHEAD_APPLIANCE=0 \
-            ./pithead setup --skip-deps --skip-optimize
-    )
-}
-
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     SERIAL_CONSOLE=/dev/null
     trap 'rm -rf "$INPUT"' EXIT
-    for GUEST_STAGE in remote-node-reachable reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify local-miner-tree local-miner-role local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
+    for GUEST_STAGE in remote-node-reachable reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-role local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
         if (record_failure 17 >/dev/null); then
             exit 1
         else
@@ -84,33 +76,6 @@ if [ "$NEW_SHA" = --self-test ]; then
         rc=$?
     fi
     [ "$rc" -eq 1 ] && [ "$(cat "$INPUT/guest-stage")" = 'stage=bundle-trust exit=1' ]
-    MOUNT="$INPUT/install"
-    mkdir -p "$INPUT/fixture/pithead" "$MOUNT"
-    printf '2.0.0\n' >"$INPUT/fixture/pithead/VERSION"
-    printf 'signed-compose-fixture\n' >"$INPUT/fixture/pithead/docker-compose.yml"
-    tar -czf "$INPUT/v2.0.0.tar.gz" -C "$INPUT/fixture" pithead
-    install_baseline
-    [ "$(readlink "$MOUNT/current")" = pithead-v2.0.0-baseline ]
-    [ ! -e "$MOUNT/pithead-v2.0.0" ]
-    cmp "$INPUT/fixture/pithead/docker-compose.yml" "$MOUNT/current/docker-compose.yml"
-    printf '%s\n' '#!/usr/bin/env bash' \
-        '[ "$*" = "setup --skip-deps --skip-optimize" ] || exit 2' \
-        '[ "$PITHEAD_APPLIANCE" = 0 ] || exit 3' \
-        '[ -z "${PITHEAD_REGISTRY+x}${PITHEAD_REGISTRY_CA+x}" ] || exit 4' \
-        'exit "${SETUP_EXIT:-0}"' >"$MOUNT/current/pithead"
-    chmod +x "$MOUNT/current/pithead"
-    PITHEAD_APPLIANCE=1 PITHEAD_REGISTRY=registry.example PITHEAD_REGISTRY_CA=unused setup_baseline
-    setup_rc=0
-    SETUP_EXIT=17 setup_baseline || setup_rc=$?
-    [ "$setup_rc" -eq 17 ]
-    rm -rf "$MOUNT"
-    mkdir "$MOUNT"
-    printf '1.20.0\n' >"$INPUT/fixture/pithead/VERSION"
-    tar -czf "$INPUT/v2.0.0.tar.gz" -C "$INPUT/fixture" pithead
-    if install_baseline; then
-        exit 1
-    fi
-    [ ! -e "$MOUNT/current" ]
     echo "image-upgrade-guest self-test: PASS"
     exit
 fi
@@ -172,25 +137,84 @@ stage bundle-trust
 verify_bundle_trust
 
 stage baseline-install
-install_baseline
+tar -xzf "$INPUT/v1.20.0.tar.gz" -C "$MOUNT"
+mv "$MOUNT/pithead" "$MOUNT/pithead-v1.20.0"
+[ "$(tr -d '[:space:]' <"$MOUNT/pithead-v1.20.0/VERSION")" = "1.20.0" ]
+ln -s pithead-v1.20.0 "$MOUNT/current"
+# Data on a shared root beside the version dirs, never inside one: `pithead upgrade` only deploys a
+# fresh version dir when every data dir resolves outside the running one, and the gate stages
+# exactly that layout. With v1.20.0's `auto` defaults the data sat in pithead-v1.20.0/data and the
+# candidate came up beside it on empty dirs (job 158). Same reflink volume, so snapshots stay CoW.
 (umask 077 && jq --arg root "$MOUNT/data" '
     .monero.data_dir = ($root + "/monero") | .tari.data_dir = ($root + "/tari") |
     .p2pool.data_dir = ($root + "/p2pool") | .tor.data_dir = ($root + "/tor") |
     .dashboard.data_dir = ($root + "/dashboard")
 ' "$INPUT/config.json" >"$MOUNT/config.shared-data.json")
-install -m 0600 "$MOUNT/config.shared-data.json" "$MOUNT/current/config.json"
+install -m 0600 "$MOUNT/config.shared-data.json" "$MOUNT/pithead-v1.20.0/config.json"
 rm -f "$MOUNT/config.shared-data.json"
 mkdir "$MOUNT/harness"
 tar -xzf "$INPUT/harness.tar.gz" -C "$MOUNT/harness"
 
-stage baseline-setup
-setup_baseline
+# v1.20.0's docker-compose.yml sets tmpfs `uid=1000,gid=1000` on wallet-rpc, tari-wallet and
+# xmrig-proxy; Docker accepts it but this appliance's Podman-compatible API rejects it as an
+# unknown mount option (job 480). Later releases fixed this the same way current develop's
+# docker-compose.yml already does: drop uid=/gid= and, where the entry had no explicit mode=
+# of its own (xmrig-proxy's /home/ubuntu, unlike the two /tmp entries), add `mode=1777` so the
+# tmpfs stays world-writable without the rejected owner pin — job 542 proved dropping uid=/gid=
+# alone is not enough: xmrig-proxy's entrypoint could no longer write its own tmpfs and crashed
+# immediately (`container died`, main process exit status 1, seconds after `baseline-setup`
+# otherwise succeeded). The signed bundle stays byte-identical on disk; only this guest-local
+# extracted copy is patched. `make_bundle` digest-pins first-party image refs into
+# docker-compose.yml at release-build time, so the packaged file is never byte-identical to the
+# git-tracked source — checksum only the exact tmpfs lines being touched (untouched by digest
+# pinning), not the whole file, so an unexpected bundle fails closed instead of being silently
+# rewritten.
+stage baseline-compat
+compose_file="$MOUNT/pithead-v1.20.0/docker-compose.yml"
+[ "$(grep -F ',uid=1000,gid=1000' "$compose_file" | sha256sum | cut -d' ' -f1)" = cffbad16a895b738a4a21025961a8980df516c29c9d03842f0323b2932980405 ]
+sed -i -e 's/,mode=1777,uid=1000,gid=1000/,mode=1777/g' -e 's/,uid=1000,gid=1000/,mode=1777/g' "$compose_file"
 
+stage baseline-setup
+(
+    cd "$MOUNT/current"
+    printf '\n' | env -u PITHEAD_REGISTRY -u PITHEAD_REGISTRY_CA PITHEAD_APPLIANCE=1 \
+        ./pithead setup --skip-deps --skip-optimize
+)
+
+# The gate's success signal is real mining: `run.sh --image-upgrade` refuses --no-mining-asserts,
+# so it needs >=1 proxy worker and a positive stratum hash count from a stack that was set up
+# seconds ago. The appliance ships its own miner (the baked RigForge tree and prebuilt XMRig), and
+# `local-miner` is its one supported invocation — it renders the miner's config at 127.0.0.1's
+# stratum port and starts the same xmrig.service unit a provisioned coordinator runs. The baseline
+# is v1.20.0, which predates that subcommand, so the APPLIANCE's own CLI is invoked against the
+# baseline stack directory rather than the bundle's.
+# Split into named checkpoints (job 537: the CLI call alone gave no sub-stage) so the next
+# deployed run identifies which primitive failed without widening the phase-private payload —
+# the same pattern jobs 478-480 used to isolate the reflink mount boundary.
 stage local-miner-tree
 [ -x /data/rigforge/rigforge.sh ] && [ -d /data/rigforge ]
+# `render_local_miner_config` returns 0 WITHOUT writing its config on exactly two branches: a
+# missing RigForge tree (ruled out above) and a machine_role of `rig`. Job 553/632 (jobs 553 and
+# 632, before this fix) reported local-miner-render even with both ruled out: 00-prelude.sh's
+# `cd "$SCRIPT_DIR"` runs on EVERY invocation of /opt/pithead/pithead, unconditionally — so `cd
+# "$MOUNT/current"` below never put the CLI's $PWD there, and machine_role() (which reads
+# $PWD/machine-role, with no override before #2057) actually read /opt/pithead/machine-role, the
+# appliance's OWN marker, not the baseline's. Assert the baseline's role directly so the stage
+# name still distinguishes it from a genuine render failure.
 stage local-miner-role
 [ "$(cat "$MOUNT/current/machine-role" 2>/dev/null || echo pithead)" != rig ]
 
+# `pithead local-miner` renders RigForge's own config.json (a side effect that always happens
+# first, win or lose) THEN runs `rigforge.sh setup`. Job 547 got past the tmpfs fix cleanly —
+# every container including xmrig-proxy started and stayed healthy — but this call still failed,
+# with nothing in the guest journal to say where inside it. Whether config.json exists afterward
+# tells render from rigforge.sh apart without capturing any command output: the appliance's own
+# CLI is pithead's to fix, RigForge's own `setup` is a companion repo's.
+#
+# PITHEAD_CONFIG_FILE/PITHEAD_ENV_FILE/PITHEAD_MACHINE_ROLE_FILE, not `cd`: the CLI's own prelude
+# `cd`s to its SCRIPT_DIR (/opt/pithead) before reading anything, on every invocation, so pointing
+# it at the baseline directory needs the explicit overrides — the same ones the control runner's
+# staged-config preview already relies on for the same reason.
 local_miner_rc=0
 (
     cd "$MOUNT/current"

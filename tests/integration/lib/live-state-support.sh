@@ -137,6 +137,11 @@ cleanup_state_snapshots() {
 }
 
 derived_state_fingerprint() {
+    # v1.20.0, the image gate's baseline, predates control_unit_dir (#2057, job 1152): guard the
+    # call rather than requiring it, the same tolerance baseline_up already gives container_engine.
+    # A CLI without it never installed the control-runner units either, so the loop below reports
+    # them "absent" against an unresolved path, exactly as it does for any other genuinely-missing
+    # file — the fingerprint still covers everything that CLI's host state actually has.
     rx 'set -euo pipefail; source ./pithead; d=""; declare -F control_unit_dir >/dev/null && d=$(control_unit_dir); { for p in .env Caddyfile; do [ -f "$p" ] && sha256sum "$p" || exit 1; done; [ -d build ] || exit 1; find build -type f -exec sha256sum {} +; for p in "$d/pithead-control.path" "$d/pithead-control.service" /run/systemd/system/ssh.service.d/pithead.conf /run/pithead-ssh/authorized_keys; do if [ -f "$p" ]; then sudo -n sha256sum "$p" || exit 1; else echo "absent $p"; fi; done; systemctl show -p UnitFileState --value pithead-control.path; systemctl show -p ActiveState --value pithead-control.path; sudo -n passwd -S root | awk "{print \$2}"; } | sort | sha256sum | cut -d" " -f1'
 }
 
@@ -297,7 +302,10 @@ stack_cli_has() { # <function>
     rx "bash -c 'source ./pithead >/dev/null 2>&1 </dev/null; declare -F $1 >/dev/null' 2>/dev/null"
 }
 
-start_step() {
+# Run one start step in this shell (baseline_up's counted skip must survive), and keep the fixed
+# text of its own [ERROR] line if it fails (job 1247 stopped at "render" with
+# the output discarded).
+start_step() { # <command...>
     local out rc=0
     out="$(mktemp)" || return 1
     "$@" >"$out" 2>&1 || rc=$?
@@ -308,6 +316,9 @@ start_step() {
     return "$rc"
 }
 
+# Bring the restored baseline back up, one named step at a time; $BASELINE_START_STEP says which
+# stopped it (job 1213 reported only "start"). Runs in this shell, not a subshell, so baseline_up's
+# counted skip survives.
 start_restored_baseline() {
     # shellcheck disable=SC2034 # both read by live-upgrade-support.sh:restore_upgrade_baseline
     BASELINE_START_STEP=reset-units BASELINE_START_ERROR=""
@@ -341,6 +352,19 @@ _pred_upgrade_workers_capture() {
     restored_workers="$(jq -r '.workers[]?.name' <<<"$state" 2>/dev/null | sort -u)"
     [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] &&
         [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null
+}
+
+_worker_name_digests() {
+    local name
+    head -n 16 | while IFS= read -r name; do [ -z "$name" ] || printf '%s\n' "$(printf %s "$name" | sha256sum | cut -c1-8)"; done | paste -sd, -
+}
+
+upgrade_worker_set_diff() {
+    local expected=$1 observed=$2 proxy=${3:-}
+    printf 'expected=%s observed=%s proxy_workers=%s missing=[%s] extra=[%s]' \
+        "$(grep -c . <<<"$expected" || true)" "$(grep -c . <<<"$observed" || true)" "$proxy" \
+        "$(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$observed") | _worker_name_digests)" \
+        "$(comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$observed") | _worker_name_digests)"
 }
 
 upgrade_miner_observation_start() {
