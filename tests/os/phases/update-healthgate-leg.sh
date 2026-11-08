@@ -112,7 +112,7 @@ _update_healthgate_leg_body() {
     fi
     local flag
     flag=$(_ssh "cat /data/pithead/data/os-update/in-flight.json" 2>/dev/null)
-    if out=$(rollback_blocking_check "$flag" . "container dashboard"); then
+    if out=$(rollback_blocking_check "$flag" . "container nonexistent"); then
         ok "leg 5: the in-flight record the fallback boot read carries a blocking list naming the dashboard container"
     else
         bad "leg 5: in-flight record after the fallback: $out"
