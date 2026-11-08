@@ -102,16 +102,8 @@ assert_xvb_over_tor() {
 # shellcheck source=tests/integration/lib/xvb-off-dwell.sh
 source "${BASH_SOURCE[0]%/*}/xvb-off-dwell.sh" || return $?
 
-# /metrics through the operator path (#379): curl the Prometheus endpoint THROUGH host-networked
-# Caddy — scheme from DASHBOARD_SECURE, vhost from HOST_IP, pinned to loopback so the box needn't
-# resolve its own hostname — and assert a pithead_ sample line survives the trip. This is the
-# wiring api_state (which hits the app directly on 127.0.0.1:8000) can't prove: the route a real
-# scraper uses, behind the proxy and its basic_auth (#8). Only the bcrypt HASH of the dashboard
-# password lives in .env, so when a login is set the plaintext must come via IT_DASHBOARD_PASSWORD
-# (it travels to curl as stdin configuration, outside shell/SSH/curl argv) —
-# without it the check skips rather than false-FAILs on the 401 Caddy returns by design.
 assert_metrics_via_caddy() {
-    local host secure scheme port curl_auth="" body
+    local host secure scheme port body
     host="$(env_on_box HOST_IP)"
     if [ -z "$host" ]; then
         it_skip_leg "/metrics via Caddy" "no HOST_IP in .env"
@@ -131,10 +123,12 @@ assert_metrics_via_caddy() {
             it_skip_leg "/metrics via Caddy" "dashboard login is set — export IT_DASHBOARD_PASSWORD to test through it"
             return 0
         fi
-        curl_auth="$(printf 'user = %s\n' "$(printf '%s:%s' "$(env_on_box DASHBOARD_AUTH_USER)" "$IT_DASHBOARD_PASSWORD" | jq -Rs .)")"
     fi
-    # -k: the LAN cert is Caddy's internal CA (tls internal); trust isn't what this asserts.
-    body="$(printf '%s\n' "$curl_auth" | rx "curl -ksS --max-time 15 -K - --resolve $(quote_arg "$host:$port:127.0.0.1") $(quote_arg "$scheme://$host/metrics")" --stdin 2>/dev/null)"
+    body="$({
+        declare -p IT_DASHBOARD_USER IT_DASHBOARD_PASSWORD 2>/dev/null || true
+        declare -f dashboard_guest_get
+        printf 'dashboard_guest_get %q 15 -k --resolve %q\n' "$scheme://$host:$port/metrics" "$host:$port:127.0.0.1"
+    } | rx 'bash -s' --stdin 2>/dev/null)"
     if metrics_has_pithead_sample "$body"; then
         it_pass "/metrics serves pithead_ samples through Caddy (#379)"
     else

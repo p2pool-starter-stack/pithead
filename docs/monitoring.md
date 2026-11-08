@@ -221,9 +221,10 @@ that would otherwise keep scraping as healthy. The reject-rate gauge is omitted 
 were submitted in the window (no shares is not 0% rejected). The endpoint renders the same
 metrics snapshot the dashboard UI uses; it is always on and needs no configuration.
 
-`/metrics` is served on the same routes as the dashboard itself: Caddy fronts it on the
-dashboard port, and when a dashboard password is set (`dashboard.auth.password`, see
-[Configuration](configuration.md)), the scrape needs the same credentials. A minimal
+`/metrics` accepts either a signed-in dashboard session or the separate machine-only credential configured
+as `dashboard.auth.metrics_password_hash`. The machine account's username is `metrics`; it cannot open
+dashboard pages or APIs. The metrics credential protects `/metrics` even when no dashboard users or
+legacy password are configured; in that case the browser dashboard remains open on the LAN. A minimal
 `scrape_configs` entry:
 
 ```yaml
@@ -233,9 +234,9 @@ scrape_configs:
     scheme: https
     tls_config:
       insecure_skip_verify: true   # the stack's certificate is self-signed
-    basic_auth:                    # only when dashboard.auth.password is set
-      username: admin
-      password: <your dashboard password>
+    basic_auth:
+      username: metrics
+      password: <the password matching dashboard.auth.metrics_password_hash>
     static_configs:
       - targets: ["<host>"]
 ```
@@ -244,6 +245,12 @@ The exposed values are current only — no history; the dashboard's own database
 persisted series. Scraping over Tor from outside the LAN (e.g. via the
 [onion service](configuration.md#remote-access-over-tor-onion-service)) is out of scope here;
 scrape from the same network.
+
+The XvB standby feed uses a separate machine credential. Set
+`dashboard.auth.standby_password_hash`, then authenticate as `standby` when reading
+`/api/xvb-standby`. Do not reuse a dashboard account or the metrics credential. Existing standby
+sources that embed a dashboard login must move to this credential; scripts that interact with the
+dashboard sign in through the form and retain the returned session cookie.
 
 ---
 

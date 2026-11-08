@@ -23,6 +23,9 @@ rx() {
     [ -f "$OUT_DIR/worker-detail.failure.json" ] || [ "$EXPECT_CAPTURE" = 0 ] || return 99
     case "$1" in *ACCESS_TOKEN*) echo 400 ;; *) echo 403 ;; esac
 }
+dashboard_api_status() {
+    case "$1:$2:$3" in POST:/api/control/worker-apply:*ACCESS_TOKEN*) printf '%s' 400 ;; *) return 1 ;; esac
+}
 EXPECT_CAPTURE=1
 echo "== judged Worker Inspect failures are retained before later probes =="
 run_rigforge_integration rig1

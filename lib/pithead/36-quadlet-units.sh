@@ -379,7 +379,7 @@ ContainerName=dashboard
 Environment=$(_qenvq PROXY_STRATUM_PASSWORD) $(_qenvq PROXY_STRATUM_TLS) $(_qenvq STRATUM_TLS_FINGERPRINT)
 Image=$reg/pithead-dashboard:$ver
 Network=host
-Environment=$(_qenvq HOST_IP) $(_qenvq TZ DASHBOARD_TZ) $(_qenvq TARI_EXPLORER_URL) $(_qenvq MONERO_NODE_HOST) $(_qenvq MONERO_RPC_URL) $(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state $(_qenvq TOR_EGRESS_FIREWALL) $(_qenvq TOR_AUTO_HEAL) $(_qenvq P2POOL_CLEARNET) $(_qenvq P2POOL_URL) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq TARI_WALLET_ADDRESS) $(_qenvq STRATUM_PORT) $(_qenvq STRATUM_BIND) $(_qenvq TARI_REQUIRED) $(_qenvq TARI_GRPC_ADDRESS) $(_qenvq XVB_ENABLED) $(_qenvq XVB_TOR_ENABLED) $(_qenvq XVB_DONATION_LEVEL) PROXY_HOST=$prefix.29 $(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} $(_qenvq DASHBOARD_CHECK_UPDATES) $(_qenvq DASHBOARD_CONTROL_ENABLED) $(_qenvq DASHBOARD_FAIL_CLOSED) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_ADDRESS) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH) $(_qenvq TELEGRAM_ENABLED)
+Environment=$(_qenvq HOST_IP) $(_qenvq TZ DASHBOARD_TZ) $(_qenvq TARI_EXPLORER_URL) $(_qenvq MONERO_NODE_HOST) $(_qenvq MONERO_RPC_URL) $(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state $(_qenvq TOR_EGRESS_FIREWALL) $(_qenvq TOR_AUTO_HEAL) $(_qenvq P2POOL_CLEARNET) $(_qenvq P2POOL_URL) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq TARI_WALLET_ADDRESS) $(_qenvq STRATUM_PORT) $(_qenvq STRATUM_BIND) $(_qenvq TARI_REQUIRED) $(_qenvq TARI_GRPC_ADDRESS) $(_qenvq XVB_ENABLED) $(_qenvq XVB_TOR_ENABLED) $(_qenvq XVB_DONATION_LEVEL) PROXY_HOST=$prefix.29 $(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} $(_qenvq DASHBOARD_CHECK_UPDATES) $(_qenvq DASHBOARD_CONTROL_ENABLED) $(_qenvq DASHBOARD_AUTH_FILE) $(_qenvq DASHBOARD_AUTH_CONFIG_FP) $(_qenvq DASHBOARD_BOOT_PROBE_TOKEN) $(_qenvq DASHBOARD_FAIL_CLOSED) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_ADDRESS) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH) $(_qenvq TELEGRAM_ENABLED)
 Environment=$(_qenvq TARI_MODE)
 Volume=$(_qenv P2POOL_DATA_DIR)/stats:/app/stats:ro
 Volume=$(_qenv DASHBOARD_DATA_DIR):/data
@@ -388,6 +388,7 @@ Volume=$(_qenv CONTROL_DIR)/requests:/control/requests
 Volume=$(_qenv CONTROL_DIR)/results:/control/results:ro
 Volume=$(_qenv CONTROL_DIR)/audit:/control/audit:ro
 Volume=$(_qenv CONTROL_DIR)/masked:/control/masked:ro
+Volume=$(_qenv CONTROL_DIR)/auth:/control/auth:ro
 Volume=$(_qenv CADDY_LOG_DIR):/access-log:ro
 Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/config.reference.json:/host-config/config.reference.json:ro
 Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/config.core-keys.json:/host-config/config.core-keys.json:ro
@@ -401,6 +402,5 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
-
     log "Rendered Quadlet units to $outdir ($(find "$outdir" -maxdepth 1 \( -name '*.container' -o -name '*.network' \) | wc -l | tr -d ' ') files)."
 }

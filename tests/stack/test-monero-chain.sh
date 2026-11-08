@@ -129,25 +129,26 @@ assert_eq "peers.sh: no answer is refused" "$(mon_peers down)" "rc=1 out="
 assert_not_contains "peers.sh: never prints the login" "$(mon_peers "$REAL")" "s3cr3tpw"
 
 echo "== unit: doctor + status Monero chain verdict (#2499) =="
+monero_state_run_sourced() { DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token run_sourced "$@"; }
 mon_state() { # <level> <reasons-json-array> <advice>
     printf '{"monero":{"health":{"level":"%s","reasons":%s,"advice":"%s"}}}' "$1" "$2" "$3"
 }
 RED="$(mon_state red '["0 outgoing peers for 11 min"]' "restart monerod")"
-out="$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_monero_chain 2>&1)"
+out="$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" monero_state_run_sourced "$SANDBOX" check_monero_chain 2>&1)"
 assert_contains "monero chain: red -> doctor FAIL names the verdict" "$out" "NOT following the chain"
 assert_contains "monero chain: red -> doctor carries the numbers and next step" "$out" "0 outgoing peers for 11 min — next: restart monerod"
 mon_chain_fail_count() { DR_FAIL=0 && check_monero_chain >/dev/null 2>&1 && echo "$DR_FAIL"; }
 assert_eq "monero chain: red counts as a doctor failure" \
-    "$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" mon_chain_fail_count)" "1"
-out="$(CURL_BODY="$(mon_state green '[]' '')" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_monero_chain 2>&1)"
+    "$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" monero_state_run_sourced "$SANDBOX" mon_chain_fail_count)" "1"
+out="$(CURL_BODY="$(mon_state green '[]' '')" PATH="$DRBIN:$PATH" monero_state_run_sourced "$SANDBOX" check_monero_chain 2>&1)"
 assert_contains "monero chain: green -> OK" "$out" "at the tip with peers"
-out="$(CURL_BODY='{"monero":{"health":{"level":"unknown","reasons":[],"advice":""}}}' PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_monero_chain 2>&1)"
+out="$(CURL_BODY='{"monero":{"health":{"level":"unknown","reasons":[],"advice":""}}}' PATH="$DRBIN:$PATH" monero_state_run_sourced "$SANDBOX" check_monero_chain 2>&1)"
 assert_eq "monero chain: no verdict (remote node) -> silent" "$out" ""
-out="$(CURL_RC=7 PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_monero_chain 2>&1)"
+out="$(CURL_RC=7 PATH="$DRBIN:$PATH" monero_state_run_sourced "$SANDBOX" check_monero_chain 2>&1)"
 assert_eq "monero chain: dashboard not answering -> silent" "$out" ""
-out="$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monero_chain_status_line 2>&1)"
+out="$(CURL_BODY="$RED" PATH="$DRBIN:$PATH" monero_state_run_sourced "$SANDBOX" monero_chain_status_line 2>&1)"
 assert_contains "monero chain: status prints the red line" "$out" "monero chain  NOT following the chain: 0 outgoing peers for 11 min"
-out="$(CURL_BODY="$(mon_state green '[]' '')" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" monero_chain_status_line 2>&1)"
+out="$(CURL_BODY="$(mon_state green '[]' '')" PATH="$DRBIN:$PATH" monero_state_run_sourced "$SANDBOX" monero_chain_status_line 2>&1)"
 assert_contains "monero chain: status prints the green line" "$out" "monero chain  at the tip, with peers"
 
 echo "== unit: doctor prints peers next to the sync flag (#2499, #2921) =="

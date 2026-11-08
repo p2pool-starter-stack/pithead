@@ -41,7 +41,7 @@ rr_dashboard_response() {
     [ -n "$host" ] || return 1
     port=$(env_on_box HOST_PORT) || return 1
     secure=$(env_on_box DASHBOARD_SECURE) || return 1
-    auth=$(env_on_box DASHBOARD_AUTH_HASH_B64) || return 1
+    auth=$(rx 'jq -r "((.dashboard.auth.password // \"\") != \"\") or ((.dashboard.auth.users // []) | length > 0)" config.json') || return 1
     if [ "$secure" = false ]; then
         scheme=http
         port=${port:-80}
@@ -49,11 +49,10 @@ rr_dashboard_response() {
         scheme=https
         port=${port:-443}
     fi
-    expected=200
-    [ -z "$auth" ] || expected=401
+    case "$auth" in true) expected=303 ;; false) expected=200 ;; *) return 1 ;; esac
     # The appliance always requires auth, even if an erroneous render omitted the hash.
     detected_channel=$(rx 'source ./pithead || exit; if is_appliance; then printf appliance; else printf diy; fi') || return 1
-    case "$detected_channel" in appliance) expected=401 ;; diy) ;; *) return 1 ;; esac
+    case "$detected_channel" in appliance) expected=303 ;; diy) ;; *) return 1 ;; esac
     response=$(rx "curl --noproxy '*' -ksS --max-time 15 --resolve $(quote_arg "$host:$port:127.0.0.1") -w '\n%{http_code}' $(quote_arg "$scheme://$host:$port/")") || return 1
     code=${response##*$'\n'}
     [ "$code" = "$expected" ] && ! grep -qi 'Pithead setup' <<<"$response"

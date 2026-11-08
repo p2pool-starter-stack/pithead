@@ -192,7 +192,7 @@ _pred_proxy_route() { # <mode-substring> <active-pool-url>
 _pred_xvb_feed_fresh() {
     local st ts
     st="$(api_state)"
-    ts="$(rx 'curl -fsS --max-time 8 http://127.0.0.1:8000/api/xvb-standby 2>/dev/null' | jq -r '(.ts // 0) | floor' 2>/dev/null)"
+    ts="$(dashboard_api_get /api/xvb-standby | jq -r '(.ts // 0) | floor' 2>/dev/null)"
     [ "$(jq_get "$st" '.hashrate.xvb_stale')" = "false" ] &&
         [ "${ts:-0}" -gt "$XVB_FEED_TS_BEFORE" ] 2>/dev/null
 }

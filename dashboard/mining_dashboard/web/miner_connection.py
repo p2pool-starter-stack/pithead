@@ -5,6 +5,7 @@ import os
 from aiohttp import web
 
 from mining_dashboard.config import config
+from mining_dashboard.web.auth import session_info
 from mining_dashboard.web.views.header import host_display_addr
 
 
@@ -27,8 +28,8 @@ def stratum_state():
 
 async def handle_miner_connection(request):
     password = os.environ.get("PROXY_STRATUM_PASSWORD", "")
-    # Every route sits behind Caddy's configured login. The owner also permits credentials
-    # on a login-free LAN dashboard; published onion dashboards require authentication.
+    if session_info(request)["role"] == "viewer":
+        password = ""
     host, local_only = stratum_endpoint()
     tls = os.environ.get("PROXY_STRATUM_TLS") == "true"
     body = {

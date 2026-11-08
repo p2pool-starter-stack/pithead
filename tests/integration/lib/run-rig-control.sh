@@ -3,7 +3,7 @@
 _worker_apply() { # <worker> <changes-json>  -> echoes the dashboard result JSON
     local body
     body="$(printf '%s' "$2" | jq -ce --arg w "$1" 'if type == "object" then {worker:$w,changes:.} else error("changes") end')" || return 1
-    printf '%s' "$body" | rx "curl -fsS --max-time 60 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' --data-binary @- http://127.0.0.1:8000/api/control/worker-apply" --stdin 2>/dev/null
+    dashboard_api_request POST /api/control/worker-apply "$body"
 }
 
 # The #513 leg: nudge max_temp_c by +1 through the dashboard, then revert it. Its own function so the

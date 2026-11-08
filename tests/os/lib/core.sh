@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2034 # dashboard-session.sh reads this through the assembled runner scope.
+DASHBOARD_SESSION_DIR=$(mktemp -d) || exit 1
 : "${OS_RUN_SUITE:?source via the suite runner}"
 ok() {
     PASS=$((PASS + 1))
@@ -348,6 +350,7 @@ require_clean_bench() {
 }
 cleanup() {
     local approval_cleanup_rc=0
+    declare -F dashboard_session_cleanup >/dev/null && dashboard_session_cleanup
     package_appliance_cleanup || approval_cleanup_rc=$?
     declare -F approval_fixture_cleanup >/dev/null && approval_fixture_cleanup || approval_cleanup_rc=$?
     if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then # Preserve the console on failure.

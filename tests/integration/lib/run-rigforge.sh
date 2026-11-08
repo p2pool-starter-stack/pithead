@@ -58,7 +58,8 @@ run_rigforge_integration() { # [rig-name]
     local code_noheader code_badkey
     code_noheader="$(rx "curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST -H 'Content-Type: application/json' --data '{\"worker\":\"$rig\",\"changes\":{\"DONATION\":1}}' http://127.0.0.1:8000/api/control/worker-apply" 2>/dev/null || echo 000)"
     assert_eq "Worker Inspect write refuses a request without the control header (403, #185)" "$code_noheader" "403"
-    code_badkey="$(rx "curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' --data '{\"worker\":\"$rig\",\"changes\":{\"ACCESS_TOKEN\":\"x\"}}' http://127.0.0.1:8000/api/control/worker-apply" 2>/dev/null || echo 000)"
+    code_badkey="$(dashboard_api_status POST /api/control/worker-apply \
+        "$(jq -nc --arg worker "$rig" '{worker:$worker,changes:{ACCESS_TOKEN:"x"}}')" || echo 000)"
     assert_eq "Worker Inspect write rejects a non-writable key (400, #185)" "$code_badkey" "400"
     it_step "full dashboard->rig config push + rollback (#185) is a manual runbook step — it restarts the borrowed loaner and needs the rig's control API opted in"
 }

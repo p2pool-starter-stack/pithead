@@ -31,6 +31,7 @@ printf '%s\n' "${SS_OUT:-}"
 EOF
     cat >"$DRBIN/curl" <<'EOF'
 #!/usr/bin/env bash
+case "$*" in *api/state*) cat >>"${DASHBOARD_STATE_CONFIG_LOG:-/dev/null}" ;; esac
 [ -n "${CURL_BODY:-}" ] && printf '%s' "$CURL_BODY"
 exit "${CURL_RC:-0}"
 EOF

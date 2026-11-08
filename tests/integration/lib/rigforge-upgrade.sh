@@ -94,16 +94,15 @@ _pred_rig_version_is() { # <rig> <want-version>
 # include the synchronous 200 noop and the 202 pending, and a shape assertion on the body is what
 # tells the two apart — an -f that swallowed an error page would erase exactly that signal.
 _post_worker_upgrade() { # <rig> <version> -> response body
-    rx "curl -sS --max-time 15 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' \
-        --data $(quote_arg "$(jq -nc --arg w "$1" --arg v "$2" '{worker:$w,version:$v}')") \
-        http://127.0.0.1:8000/api/control/worker-upgrade" 2>/dev/null
+    dashboard_api_request POST /api/control/worker-upgrade \
+        "$(jq -nc --arg w "$1" --arg v "$2" '{worker:$w,version:$v}')"
 }
 
 _poll_upgrade_result() { # <id> <timeout-s> -> terminal status (empty on timeout)
     local id="$1" deadline=$((SECONDS + $2)) body status
     while [ "$SECONDS" -lt "$deadline" ]; do
         sleep 5
-        body="$(rx "curl -fsS --max-time 10 $(quote_arg "http://127.0.0.1:8000/api/control/result?id=$id")" 2>/dev/null)"
+        body="$(dashboard_api_get "/api/control/result?id=$id")"
         status="$(printf '%s' "$body" | jq -r '.status // empty' 2>/dev/null)"
         case "$status" in "" | pending | running) continue ;; esac
         printf '%s' "$status"
@@ -137,13 +136,12 @@ _rigforge_upgrade_noop_leg() { # <rig> <version-tag>
 }
 
 _rigforge_fleet_nothing_behind_leg() { # <rig> <version-tag>
-    local plan eligible code
-    plan="$(rx "curl -sS --max-time 10 http://127.0.0.1:8000/api/control/worker-upgrade-all" 2>/dev/null)"
+    local plan eligible code body
+    plan="$(dashboard_api_get /api/control/worker-upgrade-all)"
     eligible="$(printf '%s' "$plan" | jq -r --arg n "$1" '[.eligible[]? | select(.name==$n)] | length' 2>/dev/null)"
     assert_eq "update-all lists no eligible rig once the rig is on $2 (#3823)" "$eligible" "0"
-    code="$(rx "curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' \
-        --data $(quote_arg "$(jq -nc --arg v "$2" '{version:$v}')") \
-        http://127.0.0.1:8000/api/control/worker-upgrade-all" 2>/dev/null)"
+    body="$(jq -nc --arg v "$2" '{version:$v}')"
+    code="$(dashboard_api_status POST /api/control/worker-upgrade-all "$body")"
     assert_eq "update-all refuses to start with nothing behind (#3823)" "$code" "409"
 }
 

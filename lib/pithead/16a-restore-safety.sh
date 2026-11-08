@@ -99,6 +99,7 @@ restore_staged_members_safe() {
 restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
     local staged_cfg="$1" staged_env="$2" staged_caddy="$3" seed="${2}.canonical"
     local key value count kind decoded dash_password dash_fp_ok=0
+    { set +x; } 2>/dev/null
     dash_password=$(jq -r '.dashboard.auth.password // ""' "$staged_cfg") || return 1
     : >"$seed" || return 1
     while read -r key kind; do
@@ -145,6 +146,7 @@ DASHBOARD_ONION_CLIENT_PUBKEY client
 DASHBOARD_ONION_CLIENT_PRIVKEY client
 DASHBOARD_AUTH_PW_FP dashfp
 DASHBOARD_AUTH_HASH_B64 bcrypt
+DASHBOARD_BOOT_PROBE_TOKEN hex32
 DEPLOYMENT_COMPLETED bool
 EOF
     if ! PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \

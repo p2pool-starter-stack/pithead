@@ -63,7 +63,9 @@ synced_of() { # <state> [wait_synced's 2nd argument] -> the lines wait_synced pr
         ok() { :; }
         warn() { :; }
         sleep() { :; }
-        on_bench() { printf '%s' "$STATE"; }
+        bench_api_state() {
+            printf '{"sync":{"monero":{"state":"%s"},"tari":{"state":"%s"}}}' "${STATE%/*}" "${STATE#*/}"
+        }
         eval "$WAIT_SRC"
         wait_synced 0 "${2:-}"
         echo "rc=$?"
@@ -90,7 +92,8 @@ readiness_of() { # <tari state> -> the lines the readiness phase printed
         wait_for() { shift 3 && "$@"; } # one look, as if the bounded wait had expired
         pithead() { return 0; }
         env_on_box() { :; }
-        rx() { case "$1" in *api/state*) printf '{"sync":{"tari":{"state":"%s"}}}' "$TARI_STATE" ;; *backups*) return 0 ;; *) return 1 ;; esac }
+        dashboard_api_get() { printf '{"sync":{"tari":{"state":"%s"}}}' "$TARI_STATE"; }
+        rx() { case "$1" in *backups*) return 0 ;; *) return 1 ;; esac }
         IT_FAIL=0 IT_FAILED_NAMES="" # so Tari's row is the only one that can fail
         assert_release_readiness
     ) 2>/dev/null | said
@@ -218,7 +221,8 @@ preflight_of() { # <sync summary> [skip_preflight] -> the lines preflight printe
         warn() { :; }
         parent_lock_checkpoint() { :; }
         stack_image_census() { :; }
-        on_bench() { case "$1" in *api/state*) printf '%s' "$SYNC" ;; esac }
+        on_bench() { :; }
+        bench_api_state() { jq -Rn --arg value "$SYNC" '$value'; }
         wait_synced() { [ "$(printf '%s' "$SYNC" | awk '{print $1 "/" $3}')" = done/done ]; } # settled elsewhere
         eval "$(sed -n '/^die() {/,/^}$/p' "$E2E_SRC")"
         eval "$PREFLIGHT_SRC"

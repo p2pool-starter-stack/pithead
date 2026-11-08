@@ -28,7 +28,7 @@
 
 # The Worker Inspect detail for a rig — `.rig_config`, `.history`, `.last_applied`, all of it.
 _worker_detail() { # <rig> -> the /api/worker detail JSON
-    rx "curl -fsS --max-time 10 $(quote_arg "http://127.0.0.1:8000/api/worker?name=$1")" 2>/dev/null
+    dashboard_api_get "/api/worker?name=$1"
 }
 
 # Read one writable key out of the rig's own reported config, as compact JSON. Empty when the rig

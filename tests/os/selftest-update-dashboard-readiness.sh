@@ -26,8 +26,8 @@ sleep() {
     printf '%s\n' "$(($(cat "$scratch/clock") + $1))" >"$scratch/clock"
     printf '%s\n' "$1" >>"$scratch/sleeps"
 }
-curl() {
-    local output='' limit='' login='' url='' calls
+dashboard_curl() {
+    local output='' limit='' url='' calls
     while [ "$#" -gt 0 ]; do
         case "$1" in
         -o)
@@ -38,16 +38,12 @@ curl() {
             limit=$2
             shift
             ;;
-        -u)
-            login=$2
-            shift
-            ;;
         https://*) url=$1 ;;
         esac
         shift
     done
     [ "$url" = "https://$ip/api/state" ] || fail 'readiness must query the state endpoint'
-    [ "$login" = "$DASH_USER:$DASH_PASS" ] || fail 'state poll must use the captured login'
+    [ "$DASH_USER:$DASH_PASS" = 'fixture-user:fixture-password' ] || fail 'state poll must use the captured login'
     [ -n "$output" ] || fail 'state response must be retained'
     [ "$limit" -gt 0 ] && [ "$limit" -le 8 ] || fail 'unbounded request'
     [ "$limit" -le "$((120 - $(cat "$scratch/clock")))" ] || fail 'request exceeds deadline'

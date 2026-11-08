@@ -45,6 +45,24 @@ assert_eq "defaults path: password printed once" "$(grep -Fc "$w1_pass" "$W1/out
 assert_contains "defaults path: no raffle question" "$(cat "$W1/output")" "Dashboard login"
 if grep -q 'Join the XMRvsBeast raffle?' "$W1/output"; then bad "wizard does not ask XvB"; else ok "wizard does not ask XvB"; fi
 
+WSEC="$SANDBOX/wizard-password-trace"
+mkdir -p "$WSEC/bin"
+real_jq=$(command -v jq)
+cat >"$WSEC/bin/jq" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${JQ_ARGV_LOG:?}"
+exec "${REAL_JQ:?}" "$@"
+EOF
+chmod +x "$WSEC/bin/jq"
+trace_password=$(openssl rand -hex 12)
+out=$(printf '%s\n\n2\n%s\nmain\noperator\n%s\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" "$trace_password" |
+    PATH="$WSEC/bin:$PATH" REAL_JQ="$real_jq" JQ_ARGV_LOG="$WSEC/jq.argv" run_sourced "$WSEC" eval 'set -x; run_wizard' 2>&1)
+written_password=$($real_jq -r '.dashboard.auth.password' "$WSEC/config.json")
+case "$out" in *"$trace_password"*) bad "wizard password stays out of xtrace" "password was exposed" ;; *) ok "wizard password stays out of xtrace" ;; esac
+case "$(cat "$WSEC/jq.argv")" in *"$trace_password"*) bad "wizard password stays out of jq argv" "password was exposed" ;; *) ok "wizard password stays out of jq argv" ;; esac
+[ "$written_password" = "$trace_password" ] && ok "wizard writes the entered dashboard password" || bad "wizard writes the entered dashboard password" "written password changed"
+unset trace_password written_password
+
 # Opt-in to the local miner (#593): answering 'y' to the final shape prompt writes
 # local_miner.enabled=true; every other answer left blank so only that key appears.
 WLM="$SANDBOX/wizard-local-miner"

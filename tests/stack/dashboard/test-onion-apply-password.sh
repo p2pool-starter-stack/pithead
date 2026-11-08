@@ -22,7 +22,7 @@ onion_apply_password_cases() {
     out=$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run 2>&1)
     rc=$?
     assert_rc "onion without auth fails dry-run validation" "$rc" 1
-    assert_contains "dry-run names missing onion password" "$out" "dashboard.onion.enabled is true but dashboard.auth.password is empty"
+    assert_contains "dry-run names missing onion authentication" "$out" "dashboard.onion.enabled is true but dashboard authentication is empty"
     assert_eq "dry-run leaves candidate byte-identical" "$(
         cmp -s "$C/config.json" "$C/baseline"
         echo $?

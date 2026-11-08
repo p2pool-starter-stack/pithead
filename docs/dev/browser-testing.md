@@ -33,6 +33,7 @@ cd dashboard/tests/browser
 | Diagnostics | Doctor and log requests, CSRF headers, transient polling failure, refusal/retry | Live doctor/repair meaning and redaction (#3262, #3277) |
 | OS update | One-click error Close and focus return, busy Escape refusal, exact reboot confirmation, Later clears confirmation, host refusal | Signed bundle/slot writes, unattended boot/health/rollback (#3260), certificate trust (#3242) |
 | DIY update | Exact typed confirmation and version payload, cancel, busy Escape refusal, restart polling, completion/reload and appliance/readonly gates | Signed release validation, container recreation and actual rollback/data preservation |
+| Authentication | Login error and local form target, light/dark/phone captures, account role and sign-out display, viewer access with disabled controls, password hashing before config preview | Session persistence and expiry, bcrypt verification, proxy/TLS cookie handling and live onion access |
 
 The Playwright journeys run in Chromium, Firefox, WebKit and a mobile Chromium viewport.
 `make test-browser` also runs the separate Node HTTPS backup fixture in Chromium; CI repeats
@@ -63,6 +64,10 @@ width to inspect another breakpoint. Captures show the first 900 CSS pixels of t
 dashboard with synthetic telemetry; they never contact a live stack. The default width is 390.
 The test checks the rendered theme, loaded worker and PNG dimensions. It runs in the existing
 browser suite, but does not compare screenshots or assert that every element fits its column.
+
+`auth.test.mjs` also attaches `login-light.png`, `login-dark.png`, `login-phone.png`, and
+`viewer-dashboard.png`. These captures use synthetic account names and local API fixtures. Inspect
+all four before review; image existence alone does not prove layout quality.
 
 ## Fixtures and failures
 

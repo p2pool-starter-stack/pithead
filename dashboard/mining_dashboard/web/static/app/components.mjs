@@ -68,6 +68,7 @@ class DashboardView extends Component {
     // Backup is its own view, not a card below the config editor (#1854): an operator handed a
     // working machine has to be able to find "take a backup" without reading the editor first.
     const backupView = ui.view === "backup";
+    const readOnly = state.auth?.enabled === true && state.auth?.role !== "admin";
     // Layout by operator relevance (#159): the at-a-glance chart and the rigs themselves lead (this
     // stack may drive many machines), then this stack's own detail cards, then pool-wide and network
     // context as reference at the bottom — "mine" first, "the world" last.
@@ -98,7 +99,7 @@ class DashboardView extends Component {
         <${AdvancedHint} ui=${ui} onView=${onView} onDismissHint=${onDismissHint} />
         ${
           this.configVisited
-            ? html`<div class="card-stack"><div hidden=${!configView}><${ConfigView} active=${configView && !suspended} focus=${ui.configFocus} appliance=${!!state.os_update} onDirtyChange=${this.onConfigDirty} /></div>${configView ? html`<${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} />` : null}</div>`
+            ? html`<div class="card-stack"><div hidden=${!configView}><${ConfigView} active=${configView && !suspended} focus=${ui.configFocus} appliance=${!!state.os_update} readOnly=${readOnly} onDirtyChange=${this.onConfigDirty} /></div>${configView ? html`<${DiagnosticsPanel} enabled=${state.control_enabled} /><${SecurityPanel} />` : null}</div>`
             : null
         }
         ${
@@ -118,7 +119,7 @@ class DashboardView extends Component {
         </div>
         <div class="grid">
             <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.stratum_host} stratumPort=${state.stratum_port} localOnly=${state.stratum_local_only}
-                             onInspect=${state.control_enabled ? onInspect : null} />
+                             onInspect=${state.control_enabled || readOnly ? onInspect : null} controlEnabled=${state.control_enabled} />
         </div>
         <div class="grid-section-label">Your Stack</div>
         <div class="grid grid-columns">
@@ -166,12 +167,12 @@ export function App({
   // every landmark (axe `region`). Once state exists it lives inside Header, next to the version
   // badges, and needs no wrapper of its own.
   const switcher = html`<section aria-label="Theme"><${ThemeSwitcher} theme=${ui.theme} onTheme=${onTheme} /></section>`;
-  // Worker Inspect overlay (#185): opened from a worker name in the table; the panel does its own
-  // fetch/apply/poll. `key` remounts it when a different worker is picked. Only reachable when the
-  // control channel is on (the trigger is gated on state.control_enabled).
+  // `key` remounts Worker Inspect when a different worker is picked.
   const inspect =
     state && ui.inspectWorker
-      ? html`<${WorkerInspect} name=${ui.inspectWorker} onClose=${onCloseInspect} key=${ui.inspectWorker} />`
+      ? html`<${WorkerInspect} name=${ui.inspectWorker} onClose=${onCloseInspect}
+          readOnly=${state.auth?.enabled === true && state.auth?.role !== "admin"}
+          key=${ui.inspectWorker} />`
       : null;
   if (!state) {
     return html`<${Fragment}>

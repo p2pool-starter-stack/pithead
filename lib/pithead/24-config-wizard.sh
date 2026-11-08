@@ -106,6 +106,7 @@ wizard_ask_core() {
     echo "--- Dashboard Login ---"
     read -r -p "Dashboard username [admin]: " IN_DASH_USER || true
     IN_DASH_USER="${IN_DASH_USER:-admin}"
+    { set +x; } 2>/dev/null
     while :; do
         read -r -s -p "Dashboard password (8+ chars, Enter to generate, 'none' for no login): " IN_DASH_PASS || true
         echo ""
@@ -325,7 +326,8 @@ wizard_write_config() {
     fi
 
     if [ -n "$IN_DASH_PASS" ]; then
-        cfg=$(jq --arg u "$IN_DASH_USER" --arg p "$IN_DASH_PASS" '.dashboard.auth = {username: $u, password: $p}' <<<"$cfg")
+        cfg=$(printf '%s' "$IN_DASH_PASS" | jq -Rs --arg u "$IN_DASH_USER" --slurpfile cfg <(printf '%s' "$cfg") \
+            '. as $p | $cfg[0] | .dashboard.auth = {username: $u, password: $p}')
     fi
 
     cfg=$(jq --argjson fast "$CLEARNET_SYNC" \

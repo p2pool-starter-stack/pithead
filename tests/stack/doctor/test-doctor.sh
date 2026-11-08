@@ -138,9 +138,10 @@ out="$(RUNNING_CONTAINERS="xmrig-proxy" STRATUM_PORT=4444 SS_OUT='LISTEN 0 4096 
 assert_contains "stratum listen: custom port listening -> OK" "$out" "Stratum :4444 is listening"
 
 # Dashboard probe: container running + app answers -> OK; running + no answer -> WARN (not FAIL).
-out="$(RUNNING_CONTAINERS="dashboard" CURL_RC=0 PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_dashboard_answers 2>&1)"
+out="$(RUNNING_CONTAINERS="dashboard" CURL_RC=0 DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token DASHBOARD_STATE_CONFIG_LOG="$SANDBOX/state-config" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_dashboard_answers 2>&1)"
 assert_contains "dashboard probe: answers -> OK" "$out" "answers on 127.0.0.1:8000"
-out="$(RUNNING_CONTAINERS="dashboard" CURL_RC=22 PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_dashboard_answers 2>&1)"
+assert_contains "doctor dashboard probe sends the machine bearer" "$(cat "$SANDBOX/state-config")" "Authorization: Bearer fixture-probe-token"
+out="$(RUNNING_CONTAINERS="dashboard" CURL_RC=22 DASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_dashboard_answers 2>&1)"
 assert_contains "dashboard probe: no answer -> WARN" "$out" "WARN"
 out="$(RUNNING_CONTAINERS="" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_dashboard_answers 2>&1)"
 assert_contains "dashboard probe: container down -> info" "$out" "isn't running"
@@ -348,6 +349,7 @@ EOF
     chmod +x "$bin/docker"
     cat >"$bin/curl" <<'EOF'
 #!/usr/bin/env bash
+cat >/dev/null
 echo "$*" >>"${0%/*}/curl.log"
 exit 7
 EOF
@@ -357,7 +359,7 @@ ST="$SANDBOX/status"
 mkdir -p "$ST/bin"
 cp "$STACK" "$ST/pithead"
 make_status_stub "$ST/bin"
-printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=local_node,local_tari\nHOST_IP=box.lan\n' >"$ST/.env"
+printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=local_node,local_tari\nHOST_IP=box.lan\nDASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token\n' >"$ST/.env"
 ALL_UP="tor=running:healthy monerod=running:healthy p2pool=running:none tari=running:healthy xmrig-proxy=running:none dashboard=running:none docker-proxy=running:none docker-control=running:none caddy=running:none"
 
 out="$(cd "$ST" && FAKE_STATES="$ALL_UP" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
@@ -380,6 +382,7 @@ assert_rc "status: proxy stop under sync hold exits 0" "$rc" "0"
 assert_contains "status: proxy stop notes sync hold" "$out" "finish syncing"
 if command -v jq >/dev/null 2>&1; then
     assert_contains "status: the sync probe reached the stub, not a live dashboard" "$(cat "$ST/bin/curl.log" 2>/dev/null)" "http://127.0.0.1:8000/api/state"
+    assert_not_contains "status: the dashboard token stays out of curl argv" "$(cat "$ST/bin/curl.log" 2>/dev/null)" "fixture-probe-token"
 else
     bad "status: the sync probe reached the stub, not a live dashboard" "jq is not on PATH, so status never probes /api/state; install jq"
 fi
@@ -397,7 +400,7 @@ assert_rc "status: restarting sync-gated miner exits 1" "$rc" "1"
 assert_contains "status: restarting sync-gated miner is named" "$out" "xmrig-proxy   restarting"
 assert_not_contains "status: restarting sync-gated miner is never called intentional" "$out" "likely intentional"
 
-printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=\nHOST_IP=box.lan\n' >"$ST/.env"
+printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=\nHOST_IP=box.lan\nDASHBOARD_BOOT_PROBE_TOKEN=fixture-probe-token\n' >"$ST/.env"
 REMOTE="tor=running:healthy monerod=missing p2pool=running:none tari=running:healthy xmrig-proxy=running:none dashboard=running:none docker-proxy=running:none docker-control=running:none caddy=running:none"
 out="$(cd "$ST" && FAKE_STATES="$REMOTE" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?

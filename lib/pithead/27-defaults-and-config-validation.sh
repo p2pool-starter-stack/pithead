@@ -13,7 +13,9 @@ apply_appliance_defaults() { # [config, default $CONFIG_FILE]
     tmp=$(mktemp) || return 1
     if jq --argjson defaults "$(config_defaults new appliance)" '
         if .tor.auto_heal == null then (.tor //= {}) | .tor.auto_heal = $defaults.tor.auto_heal else . end
-        | if .dashboard.control.enabled == null and ((.dashboard.auth.password // "") != "")
+        | if .dashboard.control.enabled == null and (
+              ((.dashboard.auth.password // "") != "") or
+              (((.dashboard.auth.users // []) | type) == "array" and any((.dashboard.auth.users // [])[]; .role == "admin")))
           then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = $defaults.dashboard.control.enabled
           else . end' \
         "$config" >"$tmp" && mv "$tmp" "$config"; then

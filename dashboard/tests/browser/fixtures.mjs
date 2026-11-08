@@ -10,6 +10,7 @@ const staticRoot = resolve(process.env.PITHEAD_BROWSER_STATIC || resolve(webRoot
 const template = await readFile(resolve(webRoot, "templates/index.html"), "utf8");
 const wizardTemplate = await readFile(resolve(webRoot, "templates/wizard.html"), "utf8");
 const sovereignTemplate = await readFile(resolve(webRoot, "templates/sovereign.html"), "utf8");
+const loginTemplate = await readFile(resolve(webRoot, "templates/login.html"), "utf8");
 const initialState = JSON.parse(
   await readFile(new URL("../frontend/fixtures/state.json", import.meta.url), "utf8"),
 );
@@ -44,6 +45,10 @@ export const test = base.extend({
         if (path === "/ui-preview") {
           res.writeHead(200, { "Content-Type": "text/html" });
           return res.end(sovereignTemplate);
+        }
+        if (path === "/login") {
+          res.writeHead(200, { "Content-Type": "text/html" });
+          return res.end(loginTemplate);
         }
         if (path === "/" || path === "/fixture" || path === "/setup") {
           res.writeHead(200, { "Content-Type": "text/html" });
@@ -99,6 +104,7 @@ export const test = base.extend({
         open: () => page.goto(origin),
         openPreview: (query = "") => page.goto(`${origin}/ui-preview${query}`),
         openWizard: () => page.goto(`${origin}/setup`),
+        openLogin: (query = "") => page.goto(`${origin}/login${query}`),
         mount: async (script) => {
           fixture = `<!doctype html><html lang="en"><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">

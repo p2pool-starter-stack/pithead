@@ -19,12 +19,10 @@ apply_dry_run() {
         DEPLOYMENT_COMPLETED=true
         render_env "$newenv"
     } >&2
-
     local changed=() key old new line flag msg
     while IFS= read -r key; do
         [ -n "$key" ] && changed+=("$key")
     done < <(env_changed_keys "$ENV_FILE" "$newenv")
-
     if [ "${#changed[@]}" -eq 0 ]; then
         [ "$porcelain" -eq 0 ] && log "No configuration changes detected."
         rm -f "$newenv"
@@ -48,7 +46,6 @@ apply_dry_run() {
     done
     rm -f "$newenv"
 }
-
 # Regenerate every DERIVED file — .env, Caddyfile, service configs, host units — from
 # config.json plus THIS program, touching no containers. The appliance's boot path runs this
 # every boot (#790): derived files must never outlive the program that rendered them, and an
@@ -65,6 +62,7 @@ render_derived() {
     reconcile_appliance_hostname
     DEPLOYMENT_COMPLETED=true
     render_env "$ENV_FILE"
+    render_dashboard_auth "$CONTROL_DIR" || error "Could not render the dashboard authentication file."
     provision_node_onions
     inject_service_configs
     generate_caddyfile
@@ -300,6 +298,7 @@ apply() {
                 docker compose restart caddy
                 rm -f "$caddy_marker"
             fi
+            render_dashboard_auth "$CONTROL_DIR" || error "Could not render the dashboard authentication file."
             provision_control_runner
             provision_firewall_check_units || error "Firewall check units could not be provisioned."
             reconcile_appliance_hostname
@@ -321,6 +320,7 @@ apply() {
         mutation_lock_acquire apply
         lock_held=1
     fi
+    render_dashboard_auth "$CONTROL_DIR" || error "Could not render the dashboard authentication file."
     # Client-auth keys must be written before tor is recreated below, so an onion just turned on (or a
     # client-auth toggle) takes effect on this apply rather than the next (#343).
     provision_onion_client_auth
@@ -345,15 +345,19 @@ apply() {
     *) : >"$apply_marker" ;;
     esac
     migrate_dashboard_data
-    # Write after data migration and before recreation. Tari-only resets retain the earned
-    # mining release; a full reset waits for both required chains. Atomic replacement does
-    # not follow a planted symlink; a directory fails closed and leaves the retry marker.
+    # Write after migration and before recreation. Tari-only resets retain the earned mining release;
+    # a full reset waits for both chains. A symlink or directory fails closed and leaves the retry marker.
     if [ "$rearm_sync_gate" -ne 0 ]; then
         # A stale marker can satisfy the file check, so one writer must report success.
         { rearm_sync_gate_marker "$DASHBOARD_DIR" "$rearm_sync_gate" 2>/dev/null ||
             sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\" \"\$2\"" _ "$DASHBOARD_DIR" "$rearm_sync_gate"; } &&
             [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
             error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
+    fi
+    if [ "$caddy_changed" -eq 1 ] || is_source_checkout; then
+        local dashboard_build=()
+        is_source_checkout && dashboard_build+=(--build)
+        compose_up_checked -d "${dashboard_build[@]}" --no-deps dashboard || error "The authenticated dashboard could not be prepared before Caddy changed; the existing Caddy gate remains active."
     fi
     # Recreate changed services; compose_up_checked also removes inactive profiles (#795).
     if ! compose_up_checked -d --remove-orphans; then

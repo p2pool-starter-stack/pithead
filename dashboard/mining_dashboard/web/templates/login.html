@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in — Pithead</title>
+    <link rel="icon" type="image/svg+xml" href="/static/pithead-mark.svg">
+    <script src="/static/sovereign/theme-init.js"></script>
+    <link rel="stylesheet" href="/static/sovereign/tokens.css">
+    <link rel="stylesheet" href="/static/login.css">
+    <script type="module" src="/static/login.js"></script>
+</head>
+<body>
+    <main class="login-shell">
+        <section class="login-card" aria-labelledby="login-title">
+            <div class="login-brand"><img src="/static/pithead-mark.svg" alt="" width="48" height="48"><span>Pithead</span></div>
+            <p class="login-kicker">Sovereign mining control</p>
+            <h1 id="login-title">Sign in to your stack</h1>
+            <p class="login-copy">Use the account configured by the owner of this Pithead.</p>
+            <p class="login-error" role="alert" hidden>The username or password is incorrect. Try again.</p>
+            <form method="post" action="/login">
+                <label for="username">Username</label>
+                <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" autocomplete="current-password" required>
+                <button type="submit">Sign in</button>
+            </form>
+            <p class="login-note">Your session stays on this Pithead. The same sign-in works from its LAN and onion addresses.</p>
+        </section>
+    </main>
+</body>
+</html>

@@ -137,7 +137,7 @@ assert_eq "restored database is owner-only" "$(file_mode "$BK/data/dashboard/das
 # secrets still round-trip.
 # Dashboard auth is generated from the password, so it is built here rather than written literally.
 CR_DASH_FP=$(printf '%s' fixture-dashboard-pass | sha256sum | cut -d' ' -f1)
-CR_DASH_HASH=$(printf '$2y$14$%s' "$(printf 'U%.0s' {1..53})" | openssl base64 -A)
+CR_DASH_HASH=$(printf '%s' '$2y$14$AAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.' | openssl base64 -A)
 jq '.p2pool.stratum_password = "fixture.literal-pass" | .dashboard.auth = {"username":"admin","password":"fixture-dashboard-pass"}' "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
 cat >"$ROOTS/${BK#/}/.env" <<'EOF'
 PROXY_AUTH_TOKEN=abcdef0123456789abcdef01
@@ -191,19 +191,19 @@ printf 'services: {caddy: {image: caddy:2.0.0@sha256:%064d}}\n' 0 >"$BK/docker-c
 mkdir -p "$CR/hashbin"
 cat >"$CR/hashbin/docker" <<EOF
 #!/usr/bin/env bash
-case "\$*" in *hash-password*) printf '\$2y\$14\$%s\n' "$(printf 'R%.0s' {1..53})" ;; *) exec "$BK/bin/docker" "\$@" ;; esac
+case "\$*" in *hash-password*) printf '%s\n' '\$2y\$14\$RRRRRRRRRRRRRRRRRRRRR.RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRC' ;; *) exec "$BK/bin/docker" "\$@" ;; esac
 EOF
 chmod +x "$CR/hashbin/docker"
 out="$(cd "$BK" && PATH="$CR/hashbin:$BK/bin:$PATH" ./pithead restore -y "$CR/stale-dashboard-auth.tar.gz" 2>&1)"
 assert_rc "restore accepts a dashboard password changed since the last render" "$?" 0
 assert_not_contains "restore drops a dashboard hash for another password" "$(cat "$BK/.env")" "$CR_DASH_HASH"
-assert_contains "restore rehashes the configured dashboard password" "$(cat "$BK/.env")" "DASHBOARD_AUTH_HASH_B64=$(printf '$2y$14$%s' "$(printf 'R%.0s' {1..53})" | openssl base64 -A)"
+assert_contains "restore rehashes the configured dashboard password" "$(cat "$BK/.env")" "DASHBOARD_AUTH_HASH_B64=$(printf '%s' '$2y$14$RRRRRRRRRRRRRRRRRRRRR.RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRC' | openssl base64 -A)"
 assert_eq "restore fingerprints the configured dashboard password" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$(printf '%s' other-dashboard-pass | sha256sum | cut -d' ' -f1)"
 jq '.dashboard.auth.password = "fixture-dashboard-pass"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
 
 # A hash that is not well-formed bcrypt (an older release's, or a damaged one) must not survive,
 # nor block the restore: it is dropped and the configured password is hashed again.
-CR_REHASH="DASHBOARD_AUTH_HASH_B64=$(printf '$2y$14$%s' "$(printf 'R%.0s' {1..53})" | openssl base64 -A)"
+CR_REHASH="DASHBOARD_AUTH_HASH_B64=$(printf '%s' '$2y$14$RRRRRRRRRRRRRRRRRRRRR.RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRC' | openssl base64 -A)"
 sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$(printf 'not-bcrypt' | openssl base64 -A)/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
 cr_archive "$CR/malformed-dashboard-hash.tar.gz"
 out="$(cd "$BK" && PATH="$CR/hashbin:$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-dashboard-hash.tar.gz" 2>&1)"

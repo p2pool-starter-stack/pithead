@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # shellcheck source=tests/os/control-request-evidence.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/control-request-evidence.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dashboard-session.sh"
 wizard_state_poll() {
     local raw="" http="" crc=0 tries=0
     WIZ_STATE="" WIZ_STATE_WHY=""
@@ -78,13 +79,6 @@ provision_node_preflight() { # <ip> <jar> <host> <reason> <error-substring> <lab
         bad "remote-node preflight did not refuse $label with retained values (HTTP ${code:-none})"
         return 1
     fi
-}
-dashboard_curl() {
-    local auth="${DASH_USER}:${DASH_PASS}"
-    case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
-    auth=${auth//\\/\\\\}
-    auth=${auth//\"/\\\"}
-    curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
 control_result_stamp_id() {
     printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
@@ -322,7 +316,6 @@ _recovery_self_test() {
     [ "$(control_result_stamp_id '' r5)" = "" ] || return 1
     echo "provision-browser-submit self-test: preflight retention, submit-shaping and control-payload controls passed"
 }
-
 # --- self-test (#1936) -----------------------------------------------------------------------
 #
 # The curl shim answers timeout, no-config, HTML-error and delayed-config shapes. The last case

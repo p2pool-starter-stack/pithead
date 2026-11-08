@@ -285,11 +285,12 @@ _wizard_provision_capture() { # <serial-byte-offset, default 0> [explicit Tari m
         rm -f "$jar"
         return 1
     fi
+    # shellcheck disable=SC2034 # dashboard_curl reads this through dynamic scope.
     DASH_USER=$(printf '%s' "$handoff" | jq -r '.username // "admin"')
     DASH_PASS=$(printf '%s' "$handoff" | jq -r '.password // ""')
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
     rm -f "$jar"
-    # shellcheck disable=SC2034  # shared through the assembled runner scope
+    # shellcheck disable=SC2034 # shared through the assembled runner scope.
     [ -n "$DASH_PASS" ] || WIZ_FAIL_REASON="gate: handoff — password came back empty"
     [ -n "$DASH_PASS" ]
 }
@@ -298,12 +299,12 @@ _wizard_provision_capture() { # <serial-byte-offset, default 0> [explicit Tari m
 # in-flight, not terminal). Echoes the final result JSON; rc 1 on transport failure/deadline.
 _os_step() { # <json-body> [<deadline-s>]
     local body="$1" deadline=$(($(date +%s) + ${2:-180})) rid out st
-    rid=$(curl -sSk -u "$DASH_USER:$DASH_PASS" -H 'Content-Type: application/json' \
+    rid=$(dashboard_curl -sSk -H 'Content-Type: application/json' \
         -H 'X-Pithead-Control: 1' --data "$body" "https://$ip/api/control/os-update" 2>/dev/null |
         jq -r '.id // ""')
     [ -n "$rid" ] || return 1
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        out=$(curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/control/result?id=$rid" 2>/dev/null)
+        out=$(dashboard_curl -sSk "https://$ip/api/control/result?id=$rid" 2>/dev/null)
         st=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || st="pending"
         case "$st" in
         pending | running | downloading | installing | "") sleep 3 ;;

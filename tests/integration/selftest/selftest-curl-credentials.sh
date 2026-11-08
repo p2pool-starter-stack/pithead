@@ -11,7 +11,7 @@ mkdir "$TMP/bin" "$TMP/box"
 REAL_BASH="$(command -v bash)"
 REAL_CURL="$(command -v curl)"
 REAL_JQ="$(command -v jq)"
-export REAL_BASH REAL_CURL REAL_JQ ARGV_LOG="$TMP/argv" CURL_CONFIG="$TMP/config" CURL_PARSED="$TMP/parsed.c" CURL_BODY="$TMP/body"
+export REAL_BASH REAL_CURL REAL_JQ ARGV_LOG="$TMP/argv" CURL_CONFIG="$TMP/config" CURL_PARSED="$TMP/parsed.c" CURL_BODY="$TMP/body" CURL_URLS="$TMP/urls"
 cat >"$TMP/bin/bash" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >>"$ARGV_LOG"
@@ -35,6 +35,7 @@ cat >"$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" >>"$ARGV_LOG"
+printf '%s\n' "${!#}" >>"$CURL_URLS"
 case " $* " in
 *' -K - '*)
     config="$(cat)"
@@ -43,18 +44,31 @@ case " $* " in
     ;;
 *) : >"$CURL_CONFIG" ;;
 esac
-case " $* " in *' --data-binary @- '*) cat >"$CURL_BODY" ;; *) : >"$CURL_BODY" ;; esac
+case " $* " in *' --data-binary @- '*) cat >"$CURL_BODY" ;; *) : ;; esac
 output='' previous=''
+cookie=''
+status=''
 for arg; do
     [ "$previous" != -o ] || output="$arg"
+    [ "$previous" != -c ] || cookie="$arg"
+    [ "$previous" != -w ] || status="$arg"
     previous="$arg"
 done
-if [ -n "$output" ]; then
+if [ -n "$output" ] && [ "$output" != /dev/null ]; then
     printf '{"change_id":"0123456789abcdef","status":"applied"}\n' >"$output"
     printf 200
     exit 0
 fi
+[ -z "$status" ] || case "${!#}" in */login) ;; *) printf 200; exit 0 ;; esac
 case "${!#}" in
+*/login)
+    printf 'session\n' >"$cookie"
+    printf '%s' "${FAKE_DASHBOARD_LOGIN_CODE:-303}"
+    ;;
+*/api/state)
+    case " $* " in *' -fsSI '*) printf 'Cache-Control: no-store\r\n\r\n' ;; *) printf '{"authenticated":true}\n' ;; esac
+    ;;
+*/api/xvb-standby) printf '{"ts":1}\n' ;;
 */get_info) printf '{"status":"OK","synchronized":true}\n' ;;
 */metrics) printf 'pithead_up 1\n' ;;
 */worker-apply) printf '{"status":"applied"}\n' ;;
@@ -69,7 +83,7 @@ IT_DASHBOARD_PASSWORD='fixturesecret42"\tail'
 IT_RIG_TOKEN='fixturesecret42"\token'
 export RIG_HOST=worker.invalid RIG_CONTROL_PORT=8082
 printf 'MONERO_NODE_USERNAME=fixture-user\nMONERO_NODE_PASSWORD=%s\n' "$IT_DASHBOARD_PASSWORD" >"$TMP/box/.env"
-printf '{"monero":{"mode":"local"}}\n' >"$TMP/box/config.json"
+printf '{"monero":{"mode":"local"},"dashboard":{"auth":{"username":"fixture-user","password":"configured","users":[]}}}\n' >"$TMP/box/config.json"
 
 # These functions have no direct entry point; extract the actual shipped bodies.
 for spec in \
@@ -111,14 +125,58 @@ check_transport() { # <config directive> <expected decoded credential>
     data-binary) grep -Fq "CURLOPT_POSTFIELDS, $encoded);" "$CURL_PARSED" ;;
     esac
 }
+check_dashboard_session_transport() {
+    test "$(python3 -c 'import sys, urllib.parse; print(urllib.parse.parse_qs(sys.stdin.read())["password"][0])' <"$CURL_BODY")" = "$IT_DASHBOARD_PASSWORD"
+    test "$(python3 -c 'import sys, urllib.parse; print(urllib.parse.parse_qs(sys.stdin.read())["username"][0])' <"$CURL_BODY")" = fixture-user
+    grep -Fxq -- '-b' "$ARGV_LOG"
+    ! grep -Eq 'Authorization: Basic|(^|[[:space:]])-u([[:space:]]|$)' "$ARGV_LOG"
+    if grep -Fq fixturesecret42 "$ARGV_LOG"; then
+        echo 'FAIL: dashboard form credential entered process argv' >&2
+        return 1
+    fi
+}
 
 echo "== authenticated probes keep credentials in curl config stdin and ordinary SSH stdin untouched =="
 for IT_MODE in local ssh; do
     : >"$ARGV_LOG"
+    test "$(api_state)" = '{"authenticated":true}'
+    test "$(python3 -c 'import sys, urllib.parse; print(urllib.parse.parse_qs(sys.stdin.read())["password"][0])' <"$CURL_BODY")" = "$IT_DASHBOARD_PASSWORD"
+    if grep -Fq fixturesecret42 "$ARGV_LOG"; then
+        echo 'FAIL: dashboard form credential entered process argv' >&2
+        exit 1
+    fi
+    printf '{"dashboard":{"auth":{"password":"","users":[{"name":"named-admin","role":"admin","password_hash":"fixture"}]}}}\n' >"$TMP/box/config.json"
+    test "$(api_state)" = '{"authenticated":true}'
+    test "$(python3 -c 'import sys, urllib.parse; print(urllib.parse.parse_qs(sys.stdin.read())["username"][0])' <"$CURL_BODY")" = named-admin
+    printf '{"monero":{"mode":"local"},"dashboard":{"auth":{"username":"fixture-user","password":"configured","users":[]}}}\n' >"$TMP/box/config.json"
+    : >"$ARGV_LOG"
+    dashboard_body='{"worker":"worker1","changes":{"DONATION":1}}'
+    test "$(dashboard_api_request POST /api/control/worker-apply "$dashboard_body")" = '{"status":"applied"}'
+    test "$(cat "$CURL_BODY")" = "$dashboard_body"
+    test "$(dashboard_api_status POST /api/control/worker-apply "$dashboard_body")" = 200
+    dashboard_api_headers /api/state | grep -Fq 'Cache-Control: no-store'
+    grep -Fq 'Origin: http://127.0.0.1:8000' "$ARGV_LOG"
+    grep -Fxq -- '-b' "$ARGV_LOG"
+    if grep -Fq fixturesecret42 "$ARGV_LOG"; then
+        echo 'FAIL: dashboard form credential entered process argv' >&2
+        exit 1
+    fi
+    FAKE_DASHBOARD_LOGIN_CODE=404
+    export FAKE_DASHBOARD_LOGIN_CODE
+    test "$(api_state)" = '{"authenticated":true}'
+    : >"$CURL_URLS"
+    if dashboard_api_request POST /api/control/worker-apply "$dashboard_body" >/dev/null 2>&1 ||
+        grep -Fq /api/control/worker-apply "$CURL_URLS"; then
+        echo 'FAIL: mutation was attempted after a legacy login-route response' >&2
+        exit 1
+    fi
+    unset FAKE_DASHBOARD_LOGIN_CODE
+    : >"$ARGV_LOG"
     monero_caught_up
     check_transport user "fixture-user:$IT_DASHBOARD_PASSWORD"
+    : >"$ARGV_LOG"
     assert_metrics_via_caddy
-    check_transport user "fixture-user:$IT_DASHBOARD_PASSWORD"
+    check_dashboard_session_transport
     direct_changes='{"pools":[{"url":"pool.invalid:3333","pass":"fixturesecret42-direct"}]}'
     test "$(_rig_control_apply "$direct_changes")" = 0123456789abcdef
     check_transport header "Authorization: Bearer $IT_RIG_TOKEN"

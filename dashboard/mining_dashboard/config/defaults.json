@@ -77,7 +77,10 @@
       "timezone": "auto",
       "auth": {
         "username": "admin",
-        "password": ""
+        "password": "",
+        "users": [],
+        "metrics_password_hash": "",
+        "standby_password_hash": ""
       },
       "onion": {
         "enabled": false,

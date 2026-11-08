@@ -69,7 +69,7 @@ drive_reset_restore() (
         HOST_IP) printf dashboard.invalid ;;
         HOST_PORT) case "$fault" in custom-port | custom-http) printf 8443 ;; esac ;;
         DASHBOARD_SECURE) if [ "$fault" = custom-http ]; then printf false; else printf true; fi ;;
-        DASHBOARD_AUTH_HASH_B64) [ "$fault" = noauth ] || printf fixture ;;
+        DASHBOARD_AUTH_HASH_B64) case "$fault" in noauth | named) ;; *) printf fixture ;; esac ;;
         esac
         return 0
     }
@@ -79,6 +79,10 @@ drive_reset_restore() (
 
     rx() {
         case "$1" in
+        'jq -r '*config.json)
+            [ "$fault" != read-auth ] || return 1
+            if [ "$fault" = noauth ]; then printf false; else printf true; fi
+            ;;
         'sha256sum config.json')
             [ "$fault" != snapshot ] || return 1
             if [ "$fault" = config ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
@@ -111,7 +115,7 @@ drive_reset_restore() (
             [ "$fault" != custom-http ] || scheme=http
             [[ "$1" == *"--resolve dashboard.invalid:$port:127.0.0.1"* ]] &&
                 [[ "$1" == *"$scheme://dashboard.invalid:$port/"* ]] || return 127
-            local body=dashboard code=401
+            local body=dashboard code=303
             [ "$fault" != body ] || body='Pithead setup'
             [ "$fault" != zero ] || code=000
             [ "$fault" != code ] || code=503
@@ -196,8 +200,9 @@ assert_eq "healthy reset recovery proves every leg" "$(drive_reset_restore none)
 assert_eq "appliance recovery proves the setup-page trigger and web ownership" "$(drive_reset_restore none appliance)" '0|0|14'
 assert_eq "custom HTTPS port is used by both URL and resolve" "$(drive_reset_restore custom-port)" '0|0|13'
 assert_eq "custom HTTP port is used by both URL and resolve" "$(drive_reset_restore custom-http)" '0|0|13'
+assert_eq "named-only DIY authentication expects the login redirect" "$(drive_reset_restore named)" '0|0|13'
 assert_eq "DIY without auth expects HTTP 200" "$(drive_reset_restore noauth)" '0|0|13'
-for fault in page wizard restart started id starting body zero curl code noauth wizard-start channel env-HOST_PORT env-DASHBOARD_SECURE env-DASHBOARD_AUTH_HASH_B64; do
+for fault in page wizard restart started id starting body zero curl code noauth wizard-start channel env-HOST_PORT env-DASHBOARD_SECURE read-auth; do
     verdict=$(drive_reset_restore "$fault" appliance)
     if [[ "$verdict" == 1\|1\|* ]]; then
         it_pass "appliance recovery refuses $fault web failure"

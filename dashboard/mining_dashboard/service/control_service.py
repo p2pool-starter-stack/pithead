@@ -21,7 +21,7 @@ import time
 import uuid
 
 from mining_dashboard.config import config, documents
-from mining_dashboard.service import audit_service, config_operations, request_spool
+from mining_dashboard.service import audit_service, config_operations, dashboard_auth, request_spool
 
 logger = logging.getLogger("ControlService")
 
@@ -80,9 +80,8 @@ def _set(cfg, path, value):
 
 
 def mask_secrets(cfg):
-    """Mask fixed secret leaves, webhook URLs, and per-worker tokens in place. Mirrors
-    pithead's ``render_masked_config``; shared by ``read_config`` and ``data_service`` so masks
-    never drift between the two defense-in-depth passes. An empty secret stays empty."""
+    """Mask the host config again before exposing it to dashboard clients."""
+    dashboard_auth.mask_config(cfg)
     for path in SECRET_PATHS:
         found, value = _get(cfg, path)
         if found and value:
@@ -242,19 +241,13 @@ def _confirm_paths(cfg=None):
 
 
 def env_key_config_paths(env_key):
-    """The config-path prefixes a committed audit ``keys`` env-var name covers (#530).
-
-    The #33 audit log records a commit's WHAT-changed as env-var NAMES (control_approval_gate's
-    ``porcelain_keys``), while the out-of-band host-edit watcher diffs config.json PATHS — so
-    correlating "did a commit explain this changed key" needs this env->path bridge. Mirrors the
-    commit gate's own derivation: an allowlisted var maps through EDITABLE_ENV_KEY_PATHS, and the
-    synthetic ``DASHBOARD_ENERGY`` name (which the gate folds in for a dashboard.energy-only
-    commit, a config.json-only block that never renders to .env, #504) covers the whole energy
-    block by prefix. An unrecognised name maps to nothing, so it can never explain a diffed key."""
+    """Map audited environment keys to the configuration changes they explain."""
     if "." in env_key:
         return (env_key,)
     if env_key == "DASHBOARD_ENERGY":
         return ("dashboard.energy",)
+    if env_key == "DASHBOARD_AUTH_CONFIG_FP":
+        return ("dashboard.auth",)
     return EDITABLE_ENV_KEY_PATHS.get(env_key, ())
 
 

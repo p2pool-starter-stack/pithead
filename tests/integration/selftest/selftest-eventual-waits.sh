@@ -87,7 +87,7 @@ db_drive() (
         clock=$((clock + $1))
         [ "$clock" -le 1000 ] || exit 99
     }
-    curl() { fake_eventual "$work/reads" "$mode" 2 '{"db_healthy":false}' '{"db_healthy":true}'; }
+    dashboard_guest_get() { fake_eventual "$work/reads" "$mode" 2 '{"db_healthy":false}' '{"db_healthy":true}'; }
     wait_db true || rc=$?
     if [ "$mode" = never ]; then
         [ "$rc" = 1 ] && [ "$clock" = 90 ]

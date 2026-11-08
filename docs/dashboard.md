@@ -7,6 +7,52 @@ starts); with `dashboard.secure: false` it serves plain HTTP.
 The dashboard has two states. While the nodes catch up to the network it shows Sync Mode. Once both
 chains are synced it switches to the operational view.
 
+## Signing in and account roles
+
+When dashboard authentication is enabled, every browser page first opens Pithead's own sign-in
+screen. The screen follows the saved light, dark or system theme and is the same over the LAN and
+the onion address. A failed sign-in gives one generic error. **Sign out** in the dashboard header
+ends the current session.
+
+Sessions survive a dashboard restart and expire after 30 minutes without a request or 24 hours
+after signing in. Each account can keep 16 sessions; a further sign-in replaces its least recently
+used session. Changing an account's password or role revokes its sessions. Failed sign-ins are
+limited to five per client and fifty across the dashboard in a rolling minute; the limit expires
+automatically. Session cookies are HttpOnly and SameSite=Strict, and use Secure over HTTPS.
+
+Each account is an **Admin** or **Read-only viewer**. Administrators retain the configuration,
+backup, upgrade, diagnostics and worker controls. Viewers can open every dashboard page and review
+the Configuration view, but its fields and every other action that changes the stack are disabled;
+the server also refuses direct attempts to use those routes. The signed-in name and role appear in
+the header.
+
+Administrators manage accounts in **Configuration › Dashboard accounts**. Add an account, choose
+its role, enter a new password, and select **Set password**. The browser immediately replaces the
+password with a bcrypt hash in the configuration draft; preview and apply the draft through the
+ordinary configuration flow. New passwords must have at least 8 characters, contain no NUL
+character, and occupy no more than 72 UTF-8 bytes. The password itself is never written into
+`config.json`. The owner account migrated from the earlier single-password configuration remains
+an administrator and keeps its console and USB recovery behavior; the accounts listed here are additional. Keep an
+administrator credential available so the dashboard remains manageable.
+
+The same card can set a separate **Monitoring password**. Use it with the fixed username
+`metrics` for Prometheus or Grafana. It can read `/metrics` and cannot sign into the dashboard.
+Setting it also places only its bcrypt hash in the configuration draft.
+
+The card also sets a separate **XvB standby password**. Use it with the fixed username
+`standby` for `GET` and `HEAD` requests to `/api/xvb-standby`. It cannot sign into the dashboard,
+open other APIs, or read metrics.
+
+Upgrades stop accepting dashboard account credentials through HTTP Basic authentication. Replace
+an XvB standby source that embeds the former dashboard login with the dedicated standby credential.
+Browser and automation flows that need the dashboard use the sign-in form and its session cookie;
+sign out, password changes, role changes, and session expiry then end that access.
+
+Local health, status and doctor probes use the existing private boot token to read
+`/api/state`. This machine access is limited to direct loopback GET/HEAD requests,
+returns a viewer identity, and refuses forwarded requests and all other routes.
+The token is managed automatically and is not a dashboard account credential.
+
 ## Current dashboard and lean preview
 
 The dashboard at the stack URL remains the legacy default UI. The lean development preview is
@@ -95,7 +141,8 @@ last rig appearing.
 The list's **Advanced** section holds find, sort (attention first, name or hashrate), and a
 shares-and-version column; no list control appears outside it.
 
-Clicking or activating a rig is the only way into its inspector. Outside Advanced the inspector
+Clicking or activating a rig is the only way into its inspector for an administrator. Viewers see
+the same rig list without action buttons. Outside Advanced the inspector
 shows health only: status, the last time the rig recorded hashrate in the past 24 hours, its
 RigForge version against the latest release, the 24-hour average hashrate, and accepted and
 rejected shares. Each snapshot poll refreshes the inspector, except while an edit or apply is in
@@ -1337,8 +1384,9 @@ there is nothing to configure.
 ## Configuration view
 
 Edit `config.json` from the dashboard. Off by default: set `dashboard.control.enabled: true` in
-`config.json`, set a `dashboard.auth.password` (required — this channel can change the payout
-wallet, so it refuses to run without a login), and run `./pithead apply`. A **Configuration**
+`config.json`, configure an admin in `dashboard.auth.users` or set the legacy
+`dashboard.auth.password`, and run `./pithead apply`. This channel can change the payout wallet,
+so an authenticated admin is required. A **Configuration**
 button sits next to the Simple/Advanced toggle whether or not the channel is on; with it off, the
 view explains how to turn it on and nothing else.
 
@@ -1560,22 +1608,23 @@ Operational details:
 Below the form, the Configuration view shows two read-only security panels
 ([#349](https://github.com/p2pool-starter-stack/pithead/issues/349)):
 
-- **Access log.** Recent dashboard requests from Caddy's access log — time, HTTP status, method,
-  path, and the logged-in user — plus a count of failed logins (401s) timestamped within the
+- **Access log.** Recent dashboard requests from Caddy's access log — time, HTTP status, method
+  and path — plus a count of failed logins (401s) timestamped within the
   last 24 hours among bounded retained records. Reads cover the active file and the two newest
   Caddy generations, up to 4 MiB per file. The reader accepts timestamped `access-<timestamp>-size.log`
   backups from the pinned Caddy, legacy `access-<timestamp>.log` backups, and their gzip forms.
   Plain and compressed copies share one timestamp slot. Missing generations, retention, or byte limits can
   omit failures; a zero count does not prove there were no failed logins. Over
   Tor there is no source IP to trace or block, so the signal is the *rate* of failures: five or
-  more in a day shows a warning to rotate the dashboard password (set a new
-  `dashboard.auth.password`, run `./pithead apply`) and, if the onion address may have leaked,
+  more in a day shows a warning to reset the affected account's password in **Dashboard accounts**
+  and apply the change. For the legacy owner, change `dashboard.auth.password` and run
+  `./pithead apply`. If the onion address may have leaked, also run
   `./pithead rotate-dashboard-onion`. The log is always on; entries appear once Caddy has handled
   a request on this version. The exact credential-free appliance boot probe stays visible in
   the table but is excluded from the failure count and warning. Caddy marks it only on a
   loopback connection to `/.pithead-boot-health` carrying the private boot capability.
-  The capability is derived from the owner-only salted login hash and removed from logs
-  and upstream requests. Ordinary requests, wrong passwords, and network clients requesting
+  The capability is generated independently of account credentials and kept in owner-only rendered
+  state. Its value is removed from logs and upstream requests. Ordinary requests, wrong passwords, and network clients requesting
   that path, including through a local reverse proxy, still count.
 - **Recent config changes.** The control channel's host-side audit trail: one row per handled
   request — timestamp, dashboard user, operation, outcome, and the *names* of the settings
@@ -1887,9 +1936,10 @@ of an update.
   and run `./pithead apply`.
 - **Reaching it from another machine.** Use the stack server's hostname/IP. If the hostname doesn't
   resolve on your LAN, set `dashboard.host` in `config.json` to an address that does.
-- **Adding a login.** The dashboard has no password by default, fine for a private LAN appliance. If
-  the box is shared or reachable beyond your LAN, set `dashboard.auth.password` (keep
-  `dashboard.secure: true`) and run `./pithead apply` to put a login prompt in front of it. See
+- **Adding a login.** The reference config leaves authentication off; the setup wizards generate a
+  password by default. Configure an admin in `dashboard.auth.users` or set the legacy
+  `dashboard.auth.password`, keep `dashboard.secure: true`, and run `./pithead apply` to enable the
+  sign-in page. Add viewers through **Dashboard accounts** or the same named-user list. See
   [Configuration › Exposing the dashboard safely](configuration.md#exposing-the-dashboard-safely).
 - **On your phone.** The layout is responsive. Open the same URL and it reflows to a single column
   with a stacked header.

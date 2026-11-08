@@ -219,9 +219,10 @@ fault_disk_enospc() {
         it_fail "ENOSPC fault" "no DASHBOARD_DATA_DIR in .env"
         return 1
     fi
-    script=$(cat "$(dirname "${BASH_SOURCE[0]}")/disk-enospc-target.sh") || return 1
+    script=$(cat "${BASH_SOURCE[0]%/*}/dashboard-guest-session.sh" "${BASH_SOURCE[0]%/*}/disk-enospc-target.sh") || return 1
     it_step "fault: owned tmpfs ENOSPC and dashboard recovery…"
-    out=$(rx "bash -c $(quote_arg "$script") bash $(quote_arg "$ddir")" 2>&1) || rc=$?
+    out=$({ printf '%s\0%s\0' "${IT_DASHBOARD_USER:-}" "${IT_DASHBOARD_PASSWORD:-}"; } |
+        rx "IFS= read -r -d '' IT_DASHBOARD_USER; IFS= read -r -d '' IT_DASHBOARD_PASSWORD; export IT_DASHBOARD_USER IT_DASHBOARD_PASSWORD; bash -c $(quote_arg "$script") bash $(quote_arg "$ddir")" --stdin 2>&1) || rc=$?
     printf '%s\n' "$out" | grep '^ENOSPC ' || true
     if printf '%s\n' "$out" | grep -Fxq 'ENOSPC mount restored'; then
         ENOSPC_STORAGE_SAFE=1

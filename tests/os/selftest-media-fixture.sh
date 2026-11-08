@@ -120,6 +120,8 @@ for failure in construction attachment; do
             TRACE="$ROOT/phase-$failure-$failed_leg"
             : >"$TRACE"
             export ip=guest DISK="$ROOT/guest.img" SERIAL="$ROOT/serial" HARNESS_WALLET=wallet HARNESS_TARI=tari
+            fixture_user="fixture-${RANDOM}${RANDOM}"
+            fixture_password=$(printf '%s' "$RANDOM$RANDOM$RANDOM$RANDOM" | sha256sum | cut -c1-32)
             calls=0 attachments=0
             info() { :; }
             ok() { printf 'ok %s\n' "$1" >>"$TRACE"; }
@@ -130,7 +132,9 @@ for failure in construction attachment; do
                 echo "$ROOT/initial-loop"
             }
             touch "$ROOT/initial-loopp1"
-            mktemp() { command mktemp -d "$ROOT/initial-mount.XXXXXX"; }
+            mktemp() {
+                if [ "${1:-}" = -d ]; then command mktemp -d "$ROOT/initial-mount.XXXXXX"; else command mktemp "$ROOT/cookie.XXXXXX"; fi
+            }
             mount() { :; }
             umount() { command rm "$1/pithead-config.json"; }
             sleep() { :; }
@@ -142,8 +146,8 @@ for failure in construction attachment; do
             _ssh() {
                 case "$1" in
                 *'podman ps'*) echo 'dashboard caddy' ;;
-                *dashboard.auth.username*) echo admin ;;
-                *password*) echo fixture-password ;;
+                *dashboard.auth.username*) echo "$fixture_user" ;;
+                *password*) echo "$fixture_password" ;;
                 *p2pool.pool*) echo nano ;;
                 *control.enabled* | *auto_heal*) echo true ;;
                 reboot) echo reboot >>"$TRACE" ;;
@@ -162,7 +166,37 @@ for failure in construction attachment; do
             _media_stick_has_config() { return 1; }
             wait_serial() { printf 'assert %s\n' "$1" >>"$TRACE"; }
             serial_has() { :; }
-            curl() { case "$*" in *-u*) echo 200 ;; *) echo 401 ;; esac }
+            curl() {
+                case " $* " in *' -u '*) echo basic-auth >>"$TRACE" ;; esac
+                case "$*" in
+                *'/login'*)
+                    local arg body cookie="" previous=""
+                    echo auth-form >>"$TRACE"
+                    body=$(cat)
+                    [ "$body" = "username=$fixture_user&password=$fixture_password" ] || return 1
+                    for arg in "$@"; do
+                        [ "$previous" != -c ] || cookie=$arg
+                        previous=$arg
+                    done
+                    [ -n "$cookie" ] || return 1
+                    printf session >"$cookie"
+                    echo 303
+                    ;;
+                *'-w'*)
+                    local arg cookie="" previous=""
+                    for arg in "$@"; do
+                        [ "$previous" != -b ] || cookie=$arg
+                        previous=$arg
+                    done
+                    if [ -n "$cookie" ] && [ "$(cat "$cookie" 2>/dev/null)" = session ]; then
+                        echo cookie-root >>"$TRACE"
+                        echo 200
+                    else
+                        echo 303
+                    fi
+                    ;;
+                esac
+            }
             phase_media
             grep -q '^bad .*media .*fixture' "$TRACE" || {
                 cat "$TRACE"
@@ -173,6 +207,11 @@ for failure in construction attachment; do
             [ "$(grep -c '^attach$' "$TRACE")" -eq "$expected_attachments" ] || exit 1
             [ "$(grep -c '^reboot$' "$TRACE")" -eq "$((failed_leg - 1))" ] || exit 1
             [ "$(grep -c '^assert ' "$TRACE")" -eq "$(((failed_leg - 1) * 2))" ] || exit 1
+            if [ "$failed_leg" -eq 2 ]; then
+                [ "$(grep -c '^auth-form$' "$TRACE")" -eq 1 ] || exit 1
+                [ "$(grep -c '^cookie-root$' "$TRACE")" -eq 1 ] || exit 1
+                ! grep -q '^basic-auth$' "$TRACE" || exit 1
+            fi
             [[ "$(tail -1 "$TRACE")" == "bad media "*"fixture "* ]] || exit 1
             ! grep -qi 'cancel' "$TRACE" || exit 1
         ) || exit 1

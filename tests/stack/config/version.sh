@@ -104,3 +104,4 @@ merged=$(
 assert_eq "USB recovery drops supplied stamp" "$(jq 'has("config_version")' "$merged")" false
 assert_eq "USB recovery retains real setting" "$(jq -r .p2pool.pool "$merged")" main
 rm -f "$merged"
+source "$HERE/config/auth-users.sh"

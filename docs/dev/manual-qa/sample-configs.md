@@ -220,7 +220,7 @@ For every row:
 | `duplicate-wallet` | Add a second `"wallet_address"` line inside the `monero` block | `duplicate key "wallet_address" at monero (path monero.wallet_address)` |
 | `placeholder-password` | Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | `placeholder value at dashboard.auth.password` |
 | `placeholder-telegram` | Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case) | `placeholder value at telegram.bot_token` |
-| `onion-missing-password` | Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block | `dashboard.onion.enabled is true but dashboard.auth.password is empty` |
+| `onion-missing-password` | Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block | `dashboard.onion.enabled is true but dashboard authentication is empty` |
 
 **Record:** under step 6.5 in the results sheet: PASS when every row matches, FAIL with the row
 that did not.
