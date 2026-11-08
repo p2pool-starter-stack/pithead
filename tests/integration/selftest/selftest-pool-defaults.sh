@@ -38,6 +38,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         has_compose_profile() { return 1; }
         run_cli_wizard_defaults() { :; }
         lifecycle_gate_sample() { :; }
+        run_support_bundle() { :; }
         run_source_image_reconcile() { :; }
         run_image_permissions() { :; }
         run_restore_dashboard_probe() { :; }

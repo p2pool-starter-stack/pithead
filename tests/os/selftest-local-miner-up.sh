@@ -57,6 +57,7 @@ probe() (
     }
     systemctl() { printf 'systemctl %s\n' "$*" >>"$td/stops"; }
     rm -f "$td/config.json" "$td/stops"
+    [ -z "${STALE:-}" ] || printf stale >"$td/config.json"
     stack_up
 )
 
@@ -79,6 +80,7 @@ check $'compose\nreleased' 1 true 1 0 0
 blocked=1 check $'compose\nreleased' 1 true 0 0 0
 grep -qx 'systemctl stop xmrig.service' "$td/stops"
 check $'compose\nrender\nminer\nreleased' 1 true 0 0 1
+STALE=1 check $'compose\nrender\nminer\nreleased' 1 true 0 0 0
 if output=$(probe 1 true 0 1 0); then
     printf 'FAIL: compose failure succeeded\n' >&2
     exit 1
