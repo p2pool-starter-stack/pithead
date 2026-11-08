@@ -26,7 +26,7 @@ def utc_timestamp(value):
                r"(?P<fraction>\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])")
     match = re.fullmatch(pattern, value) if isinstance(value, str) else None
     if not match or value.endswith("-00:00"):
-        return None  # RFC3339 -00:00 means the local offset is unknown.
+        return None
     try:
         offset = "+00:00" if value.endswith("Z") else value[-6:]
         utc = datetime.datetime.fromisoformat(value[:19] + offset).astimezone(datetime.timezone.utc)

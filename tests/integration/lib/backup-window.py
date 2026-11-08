@@ -342,7 +342,7 @@ def main():
         initialize(target)
         return
     directory = Path(target)
-    try:  # Unsafe directories are never recoverable record corruption.
+    try:
         os.close(safe_directory(directory))
     except (OSError, ValueError):
         if action != "finish":

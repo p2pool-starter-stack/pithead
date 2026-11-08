@@ -49,9 +49,9 @@ class BackupWindowTests(unittest.TestCase):
     def test_nanosecond_window_does_not_include_adjacent_executions(self):
         begin = observation(observed_at="2026-01-01T01:00:01.123456900Z")
         for start, end, expected in (
-            ("123456100", "123456800", "unknown"),  # Entirely before the window.
-            ("123456800", "123456950", "unknown"),  # Straddles window admission.
-            ("123456950", "123456999", "unknown"),  # Ends after the sample.
+            ("123456100", "123456800", "unknown"),
+            ("123456800", "123456950", "unknown"),
+            ("123456950", "123456999", "unknown"),
             ("123456900", "123456980", "observed"),
         ):
             with self.subTest(start=start, end=end):

@@ -21,7 +21,7 @@ PY
     [ -z "$BACKUP_WINDOW_DIR" ] || python3 "$HERE/lib/backup-window.py" emit "$BACKUP_WINDOW_DIR" || true
 }
 
-backup_window_identity() { # <checkout>; fixed lines, validated by the producer
+backup_window_identity() { # <checkout>
     on_bench "cd $(quote_arg "$1") && { git rev-parse HEAD 2>/dev/null || echo unknown; sha256sum pithead 2>/dev/null | cut -d' ' -f1; if test -d .git || test -f .git; then if test -z \"\$(git status --porcelain --untracked-files=no 2>/dev/null)\"; then echo clean; else echo dirty; fi; else echo unknown; fi; }" 2>/dev/null || printf 'unknown\nunknown\nunknown\n'
 }
 
