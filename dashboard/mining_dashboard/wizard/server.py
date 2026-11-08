@@ -603,8 +603,6 @@ def make_app(restore_enabled=False, secure_cookie=False) -> web.Application:
     # Use the dashboard fix for the same static tree so browsers can execute them.
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("text/javascript", ".js")
-    # aiohttp's default (1 MiB) refuses a restore upload before submit_restore's own, clearer
-    # cap gets a chance to run; a little slack over RESTORE_MAX_BYTES covers multipart overhead.
     app = web.Application(client_max_size=RESTORE_MAX_BYTES + 1_048_576)
     app["failures"] = {}
     app["restore_enabled"] = restore_enabled
