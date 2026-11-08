@@ -29,7 +29,7 @@ exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 `kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_start`,
-`vm_stop_abrupt`, `vm_lease_ip`, `vm_list_running` and `vm_destroy`.
+`vm_stop_abrupt`, `vm_lease_ip`, `vm_list_running`, `vm_destroy` and `vm_create`.
 The start and abrupt-stop helpers operate on the current test VM and preserve
 the backend's output and exit status; `vm_state --reason` adds diagnostic detail.
 The fault phase uses these helpers for power cuts, restarts and state diagnostics.
@@ -44,8 +44,15 @@ Shared SSH diagnostics, DHCP polling and the
 stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
 failure handling, teardown order and caller routing using a temporary `virsh` executable
 without a guest; the tier-1
-`make test-integration-selftest` target discovers it. Libvirt remains the only backend;
-the battery still requires the Linux bench and does not run on macOS.
+`make test-integration-selftest` target discovers it. The ordinary boot, Secure Boot and
+shared disk-boot paths call `vm_create DISK SERIAL SECURE_BOOT`, where `SECURE_BOOT`
+is `no` or `yes`. Callers retain disk preparation and the host memory preflight;
+the helper preserves the libvirt firmware, CPU, disk, network and serial settings.
+`selftest-boot-lifecycle.sh` checks those settings, caller routing, ordering and failure
+handling without a guest. Changes to these creation paths require a successful
+current-head `tier4-kvm` boot job before merging. Libvirt remains the only backend;
+the authoritative battery requires the Linux bench and does not run on macOS.
+No software-emulation smoke mode is supported by this harness.
 `selftest-eventual-core.sh` drives the real control-drain, SSH, new-boot, reboot,
 dashboard-marker, DHCP, setup-page and serial waits with delayed, never-ready and
 flapping responses. `selftest-eventual-approval.sh` exercises password commit
