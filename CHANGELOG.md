@@ -11,6 +11,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Security
+
+- The images and the appliance rootfs pull the distro's security builds of apt (CVE-2026-109518)
+  and zlib (CVE-2026-76844, CVE-2026-85091) past their digest-pinned bases (#3923).
+- The Alpine images pull the patched musl past their digest-pinned base (CVE-2026-107891, #3929).
+- The appliance rootfs raises golang.org/x/net to 0.62.0 in the Cosign and Docker Compose it
+  builds, clearing CVE-2026-78661 in both binaries (#3931).
+
 ## [2.0.2] - 2026-10-31
 
 Pithead 2.0.2 is a patch release after 2.0.1. It makes a command-line restore refresh the

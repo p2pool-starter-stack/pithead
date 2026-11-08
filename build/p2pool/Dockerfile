@@ -5,6 +5,7 @@ ARG P2POOL_VERSION=v4.18.1
 ARG P2POOL_HASH=eeab5aca0edf4756cb295c5fda5b2d5344208aecbbdcb2ffd8471dfe14e6c2c5
 
 RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
+    apt \
     wget ca-certificates libgomp1 socat \
     && rm -rf /var/lib/apt/lists/*
 
