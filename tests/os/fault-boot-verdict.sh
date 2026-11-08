@@ -25,7 +25,7 @@ fault_power_cut() {
 
 # The boot under test must be judged by its own console alone (#2746). Two ways to draw that line:
 #
-# fault_serial_cut <log> — for a power cut. Call after `virsh destroy` and before `virsh start`,
+# fault_serial_cut <log> — for a power cut. Call after vm_stop_abrupt and before vm_start,
 # while no QEMU holds the file. Moves the old console to <log>.pre-cut and empties <log>, so the
 # next boot writes from byte 0 whether its file chardev appends or truncates. A file-position
 # mark cannot do this: a restarted log re-grows, and the same disk prints the same banner

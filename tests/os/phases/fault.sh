@@ -48,8 +48,6 @@ phase_fault() {
             bad "A$i: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
             return
         }
-        # A start that fails leaves no guest to judge: that is the harness, not a brick (#2746:
-        # jobs 220 and 129 read an A1 console with not one byte after the cut).
         start_out=$(vm_start 2>&1) || {
             bad "A$i: VM start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
             return
@@ -143,8 +141,6 @@ phase_fault() {
         bad "B: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
         return
     }
-    # A start that fails leaves no guest to judge: that is the harness, not a brick (#2746:
-    # jobs 220 and 129 read an A1 console with not one byte after the cut).
     start_out=$(vm_start 2>&1) || {
         bad "B: VM start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
         return
@@ -276,7 +272,6 @@ phase_fault() {
         elif [ $? -eq 2 ]; then
             bad "D: $verdict"
         else
-            # Narrowing the match makes a red actionable only if it says what the console DID say.
             bad "D: BRICKED — $verdict — domain: $(vm_state --reason 2>&1 | head -1) (disqualifying)"
         fi
         return

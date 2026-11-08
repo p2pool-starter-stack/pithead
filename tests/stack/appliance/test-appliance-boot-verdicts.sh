@@ -257,15 +257,11 @@ assert_eq "leg C stops when its mark cannot be read" \
     "$(grep -cF 'fault_serial_mark "$SERIAL") || {' "$ROOT/tests/os/phases/fault.sh")" "1"
 assert_eq "all four legs report an unjudgeable boot as such" \
     "$(grep -cF 'elif [ $? -eq 2 ]; then' "$ROOT/tests/os/phases/fault.sh")" "4"
-# Jobs 220 and 129: A1's console held not one byte after the cut, and a discarded `virsh start`
-# error could not be told from a brick. Legs A and B stop on a failed start; A, B and D name the
-# domain state on a BRICKED row.
 assert_eq "legs A and B stop when VM start fails after the cut" \
     "$(grep -cF 'start_out=$(vm_start 2>&1) || {' "$ROOT/tests/os/phases/fault.sh")" "2"
 assert_eq "every power-cut BRICKED row names the domain state" \
     "$(grep -cF -- '— domain: $(vm_state --reason' "$ROOT/tests/os/phases/fault.sh")" "3"
 # #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
-# Mutation run: drop the copy -> no .failed file.
 rm -f "$FBV/no-boot.failed"
 fault_boot_verdict "$FBV/no-boot" 0 >/dev/null
 assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.failed" 2>/dev/null)" "$(cat "$FBV/no-boot")"
@@ -273,17 +269,13 @@ assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.fail
 # (A missing log fails the copy for root too, where a read-only directory would not.)
 verdict=$(fault_boot_verdict "$FBV/absent" 0)
 assert_contains "a console that cannot be kept is named in the verdict" "$verdict" "could not keep the console at $FBV/absent.failed"
-# Jobs 220, 129 and 224: `virsh destroy` on a guest busy writing its spare slot failed, the
-# discarded failure left the domain up, and `virsh start` answered "Domain is already active".
-# fault_power_cut retries until the domain reports "shut off", or says it never did.
-# Mutation run: return after one destroy -> the "third try" row reads 1, not 0.
-pcut() { # <tries until the domain is off, 0 = never> -> "<rc> <destroy calls> <output>"
+pcut() {
     (
         # shellcheck source=tests/os/kvm-preflight.sh
         source "$ROOT/tests/os/kvm-preflight.sh"
         VM=fixture
         want="$1"
-        echo 0 >"$FBV/destroys" # a file: fault_power_cut calls virsh inside $(...)
+        echo 0 >"$FBV/destroys"
         virsh() {
             local n
             n=$(cat "$FBV/destroys")

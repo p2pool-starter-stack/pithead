@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HERE="${PITHEAD_FAULT_SELFTEST_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 # shellcheck disable=SC2034
