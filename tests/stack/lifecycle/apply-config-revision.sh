@@ -20,6 +20,7 @@ apply_revision_run() { # <injected-label|none> <confirmation> [scope] [interacti
         bash -Eeuo pipefail -c '
         cd "$ACR"
         source "$STACK"
+        trap cleanup_env_staging EXIT
         TEST_LOCK_DEPTH=0
         RENDER_LABEL=""
         P2POOL_ONION=onion-state-present
@@ -61,7 +62,7 @@ apply_revision_run() { # <injected-label|none> <confirmation> [scope] [interacti
             printf "release\n" >>"$ACR/actions"
         }
         mv() {
-            case "$1" in "$PITHEAD_ENV_STAGE") printf "publish\n" >>"$ACR/actions" ;; esac
+            case "$*" in *"$PITHEAD_ENV_STAGE "*) printf "publish\n" >>"$ACR/actions" ;; esac
             command mv "$@"
         }
         compose_up_checked() { printf "recreate\n" >>"$ACR/actions"; }

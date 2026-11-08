@@ -161,9 +161,10 @@ The steps above need a display once, to read the token. You can skip that by wri
 USB stick **after flashing it** — the stick's small `PITHEAD` volume is readable on any
 Windows, macOS or Linux machine, so plug it into your laptop and drop a file on it:
 
-- **`pithead-token.txt`** — one line with a token you choose (letters, digits and dashes).
-  The machine uses that instead of printing its own, so you can open the setup page without
-  ever seeing its console.
+- **`pithead-token.txt`** — one line with a token you choose (letters, digits and dashes),
+  with at least 16 characters after an optional case-insensitive `pit-` prefix. The machine
+  sanitizes it to that alphabet, keeps at most 32 characters, and uses it instead of printing
+  its own, so you can open the setup page without ever seeing its console.
 - **`pithead-config.json`** — a complete configuration. First boot applies it and provisions
   itself; no setup page at all. Copy `config.json` from a machine you already set up, see
   [configuration](configuration.md), or build one in
@@ -478,9 +479,14 @@ reboot, but **any reboot boots the update**, including a power cut, watchdog res
 **Set up again**. The dashboard reboot action expires after 24 hours; that does not disarm
 the installed slot. The downloaded bundle is deleted after a successful install. Confirm
 the dashboard reboot separately; mining pauses typically under five minutes, then the
-machine runs its normal health checks before keeping the new version. A banner reports the outcome, including an automatic return to the previous
+machine runs its normal health checks before keeping the new version. While those checks are
+still running the machine is already on the new copy, so the dashboard shows
+"Verifying the update to vX — leave the machine running" and offers no second reboot; a reboot
+asked for in that window is refused with its reason, because it would fall back before the
+update was ever decided. A banner reports the outcome, including an automatic return to the previous
 version if the new one failed — and, when those health checks were what held it back,
-which check it was, so a return is never mistaken for a bad release. One thing the machine
+which check it was, so a return is never mistaken for a bad release. A copy interrupted before
+its checks reached a verdict is reported as interrupted, not as a failed check. One thing the machine
 repairs on its own during that wait: a network address that arrived after the certificate
 was made gets a fresh certificate minted there and then, instead of failing the checks
 and returning to the previous version. If the certificate still does not match after that,
@@ -649,6 +655,11 @@ nothing could mount it. When that does happen the setup page itself says so, dat
 shell. If you have a backup, restore it instead of setting up as a fresh machine — a
 factory reset you asked for never shows this notice.
 
+If recovery cannot allocate a temporary mount directory, it stops and reports the
+failure in the `pithead-data-reset` service journal. An unavailable read-only probe
+does not authorize further repairs or erasure. A reformat also requires its mount
+directory to be allocated before formatting starts.
+
 ## Recovering from a backup
 
 Fresh flash, restore, done — if the machine is gone (dead disk, stolen, dropped), a backup
@@ -758,8 +769,11 @@ try the IP the console prints as well as <https://pithead.local>; some networks 
 password. A release image does not provide SSH. Reinstall from the USB media to recover a broken
 appliance; a manually deployed debug image carries its own SSH key for development diagnostics.
 
-**"Wrong token."** The token changes each time the setup service restarts — read the
-current one from the console. After five wrong attempts it mints a new one on purpose.
+**"Wrong token."** A generated token changes each time the setup service restarts; a valid
+preseed token is reused. Read the current token from the console or your preseed file.
+Five wrong attempts from the same network peer start a 60-second
+cooldown. Wait for the time shown on the page, then retry the same token; the wizard stays open
+and other authenticated operators keep their sessions.
 
 **The address was rejected.** For Monero you most likely pasted a subaddress (starts with
 `8`) or an integrated address. Use your primary address, which starts with `4` and is 95

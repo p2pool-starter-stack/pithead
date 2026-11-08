@@ -21,7 +21,7 @@ dashboard/mining_dashboard/web/static/config/configview.mjs	555
 dashboard/mining_dashboard/web/static/system/osupdate.mjs	404
 dashboard/mining_dashboard/web/views/views.py	426
 dashboard/mining_dashboard/web/views/xvb_views.py	682
-dashboard/mining_dashboard/wizard/server.py	671
+dashboard/mining_dashboard/wizard/server.py	664
 dashboard/tests/client/test_xmrig_client.py	489
 dashboard/tests/config/test_config.py	445
 dashboard/tests/frontend/system/osupdate.test.mjs	427
@@ -44,7 +44,6 @@ lib/pithead/33-render-env.sh	481
 lib/pithead/36-quadlet-units.sh	406
 scripts/watch/trivyignore-watch.sh	599
 tests/integration/e2e.sh	684
-tests/integration/lib/run-cli.sh	410
 tests/integration/fakes/test_contract.py	437
 tests/integration/lib.sh	686
 tests/integration/lib/live-upgrade-support.sh	413

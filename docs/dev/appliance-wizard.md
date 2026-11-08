@@ -23,10 +23,26 @@ action — validation, disk installs, provisioning — happens host-side, the sa
 the [#33 control channel](../dashboard.md#configuration-view). A compromised container can
 write the spool and nothing more.
 
+## Authentication gate
+
+Failed tokens are counted per direct peer address from `request.remote`; forwarded-address
+headers do not select the bucket. Entries below the threshold expire 60 seconds after their
+latest failure. The fifth failure starts a fixed 60-second cooldown and returns `429` with
+`Retry-After`; blocked requests do not extend it, and even the correct token must wait. The
+wizard keeps running and keeps the same token, so the browser tells that peer when to retry it
+instead of asking for a replacement. Successful authentication clears only that
+peer's failures and creates its session. Existing authenticated cookies retain access,
+including for operators sharing the blocked peer. The failure map holds at most 1,024 peers and
+evicts the entry it began tracking first when full, even if that peer is still in cooldown. Guessing is bounded per peer (five tries a minute), not globally, and the token does not rotate, so several peers multiply the rate; the six-character token holds about 29.7 bits. A network failure is reported separately from throttling.
+
 ## The stage machine
 
 `wizard_stage()` in `wizard/server.py` derives the step from **spool files only**, and the client
 renders what it is told. The client must never infer the stage.
+
+`/status` exposes coarse progress without authentication. Stored `error.txt` details require
+the current wizard session; anonymous failed or rejected states use generic text. Status
+responses use `Cache-Control: no-store`, as does the authenticated `/api/wizard-state` payload.
 
 | Stage | True when | View |
 |---|---|---|

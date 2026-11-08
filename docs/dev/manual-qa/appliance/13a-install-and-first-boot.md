@@ -89,13 +89,19 @@ install, and the first checks on the installed appliance (steps 13.1 to 13.9).
 
 1. From the laptop, open `https://pithead.local`.
 2. Then open the IP the console printed.
-3. Enter a wrong token five times.
+3. Enter the correct token in one window and leave the setup form open.
+4. In a private window, enter a wrong token five times.
+5. Keep using the authenticated window during the cooldown. After 60 seconds, enter the same
+   correct token in the private window.
 
 **What you should see:**
 
 - Both addresses show the token page after one certificate warning.
 - The fingerprint in the browser matches the one on the console.
-- Five wrong tokens mint a fresh one on the console.
+- The fifth wrong token starts a 60-second cooldown for the private window's network peer and
+  tells you to retry the same token. It does not restart the wizard or print a replacement token.
+- The already authenticated window remains usable throughout, and the same correct token opens
+  the private window after the cooldown.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
