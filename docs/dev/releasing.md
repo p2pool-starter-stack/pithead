@@ -459,8 +459,10 @@ baseline across the eligible fleet. The e2e leg cannot be pinned to the prepared
 nightly lifecycle runs off those benches until this e2e job starts: uninstall removes the wallet
 fixture. If preparation or that scheduling window is unavailable, stop before submitting e2e.
 
-Use `targeted` until the frozen SHA includes the harness fix from
-[#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026); then set `E2E_MODE=matrix`.
+Keep `E2E_MODE=targeted` for the status-gated e2e job. When full config-matrix coverage is
+required, collect the [split matrix proof](integration-testing.md#split-matrix-proof-on-bench-ci)
+on the same frozen SHA in addition to the status-gated job. The unbounded `matrix` preset is
+not a supported single-job proof within bench-ci's 240-minute cap.
 Keep the real rig in the run. Only the owner may authorize `no_rig` after reviewing failures
 confined to rigforge-control harness rows. The final e2e job alone requests the aggregate status,
 with the two group jobs in `after`. A bench resolves `after` only against its own jobs, and the

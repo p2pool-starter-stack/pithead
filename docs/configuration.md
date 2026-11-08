@@ -230,11 +230,12 @@ directly.
 | `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns a mistyped password locks this session out and, on the appliance, also changes the console `root` login | Confirm preview + typed `APPLY` + approval envelope (a live login credential change) |
 | `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it); warns a wrong URL stops the pings or pings someone else's check | Confirm preview + typed `APPLY` + approval envelope |
 
-`workers.list` is narrower than the rest. The dashboard can only adopt a new rig: an append with
-every existing descriptor unchanged, a name no existing rig uses, a control host that is not this
-machine or one of its bridges, and a typed `APPLY`. Repointing, reordering or removing a rig the
-dashboard already controls is refused even with `APPLY`; change those in `config.json` on the host,
-or with a configuration stick on an appliance.
+`workers.list` has its own checks. The dashboard can add, repoint, edit, reorder and remove rigs.
+Every change needs a typed `APPLY`, and the preview names each added, repointed and removed rig.
+A name may not appear twice, and a new or repointed control host may not be this machine or one of
+its bridges. A rig that moves to a new address must have its token entered again: a stored token is
+never carried to an address you did not give. Removing a rig only stops the dashboard managing it;
+the miner keeps running.
 
 When a key is absent from `config.json`, the view uses the value in `config.reference.json` and
 labels it `(default)`. That value is also what the renderer applies; a failed apply is called out so
