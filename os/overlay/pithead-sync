@@ -49,9 +49,8 @@ if [ -d "$RF_SRC" ]; then
         rm -rf "${RF_DST:?}/$base"
         cp -a "$f" "$RF_DST/$base"
     done
-    # Seed the image's prebuilt XMRig into the workspace when the pinned commit or the donate
-    # minimum marker changed (or nothing is built yet); a build without the marker would make
-    # RigForge recompile over clearnet. Otherwise same-commit builds are LEFT ALONE: a native recompile of the same
+    # Reseed the prebuilt XMRig when the commit or donate-min marker differs, else RigForge would
+    # recompile over clearnet. Otherwise same-commit builds are LEFT ALONE: a native recompile of the same
     # pin is the operator's better binary, and RigForge's own integrity record covers it. A new
     # pin arrives with a new image and its new prebuilt, so the on-box clone path (github over
     # clearnet — unreachable from a Tor-only appliance) never needs to run.

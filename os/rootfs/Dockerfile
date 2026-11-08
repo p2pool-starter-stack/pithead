@@ -140,9 +140,8 @@ RUN curl -fsSL -o /tmp/rigforge.tar.gz \
 # appliance may be Tor-only, and RigForge's build step clones github over clearnet — so the
 # clone happens HERE, on the build host, and pithead-sync seeds the result into the workspace
 # where RigForge's "already built" check accepts it (binary + commit marker + sha record + donate
-# minimum marker, the exact format rigforge.sh writes). The donate patch is the one compile_xmrig
-# applies at DONATION 0, the appliance default: default level 0 and minimum level 0, and
-# xmrig_already_built rejects a build whose .rigforge-donate-min is not 0.
+# minimum marker, the exact format rigforge.sh writes). The donate patch matches compile_xmrig at
+# DONATION 0 (default and minimum level 0).
 # The sed anchors match rigforge.sh's exact NAME="${NAME:-value}" quoting; a cosmetic upstream
 # reformat extracts nothing, so the guard names the cause instead of failing mute mid-chain.
 RUN set -e \

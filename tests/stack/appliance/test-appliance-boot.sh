@@ -525,8 +525,7 @@ assert_eq "config.json (state) survives the resync" "$(cat "$SSB/data/rigforge/c
 assert_eq "a same-pin native rebuild is left alone" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
 rm -f "$SSB/opt-pithead/cosign.registry-ca.crt" && run_sync >/dev/null 2>&1
 [ ! -e "$SSB/data/pithead/cosign.registry-ca.crt" ] && ok "a later release removes the stale debug registry CA" || bad "a later release removes the stale debug registry CA" "still present"
-# A same-commit build without the donate minimum marker (a RigForge before 1.18.1) is not "already
-# built" for the new RigForge, so the baked prebuilt carrying the marker replaces it.
+# A same-commit build lacking the donate minimum marker is reseeded from the prebuilt.
 printf '0\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-donate-min"
 run_sync >/dev/null 2>&1
 assert_eq "a build missing the donate minimum marker is replaced by the prebuilt" \
