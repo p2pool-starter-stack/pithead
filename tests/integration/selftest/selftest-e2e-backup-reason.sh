@@ -109,10 +109,12 @@ echo "== successful backup records its reported archive =="
 cat >"$sandbox/pithead" <<'FAKE'
 #!/usr/bin/env bash
 mkdir -p backups
-: >backups/pithead-backup-20260101-000001.tar.gz
-: >backups/pithead-backup-20260101-000002.tar.gz
+printf x >payload
+tar -czf backups/pithead-backup-20260101-000001.tar.gz payload
 printf 'Backup written to: %s/backups/pithead-backup-20260101-000001.tar.gz\n' "$PWD"
 FAKE
+mkdir -p "$sandbox/backups"
+: >"$sandbox/backups/pithead-backup-20260101-000002.tar.gz"
 if (
     source "$HERE/../lib/backup-prune.sh"
     # shellcheck disable=SC2034
