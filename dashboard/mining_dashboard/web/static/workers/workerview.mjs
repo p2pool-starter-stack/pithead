@@ -53,7 +53,7 @@ function fieldValue(field, edits) {
   return field.type === "boolean" ? String(field.value) : field.value;
 }
 
-function WorkerField({ field, edits, onEdit, busy }) {
+export function WorkerField({ field, edits, onEdit, busy }) {
   const value = fieldValue(field, edits);
   let input;
   if (field.type === "boolean") {

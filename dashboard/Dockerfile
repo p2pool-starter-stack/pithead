@@ -25,6 +25,7 @@ ENV UV_PYTHON_DOWNLOADS=never \
 # digest pinned above, so there is nothing newer to bump to. apt-get upgrade is the blanket
 # alternative and hadolint bans it (DL3005).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    apt \
     bash \
     gzip \
     iproute2 \
@@ -34,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     openssl-provider-legacy \
     perl-base \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

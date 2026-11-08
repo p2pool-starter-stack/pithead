@@ -184,15 +184,7 @@ _phase_provision_reboot() {
         bad "the miner did not return after the reboot — its runtime unit was never re-rendered"
     fi
 
-    # ---- commit-gate honesty (#852): the gate must REFUSE a mining-dead slot ----------------
-    # The slot self-committed above off a HEALTHY stack. But "the dashboard answers" is a subset of "the stack
-    # is alive": a slot whose monerod/p2pool crashed while caddy+dashboard keep serving is exactly the
-    # healthy-looking-but-dead slot a curl-only gate committed. The real gate is `pithead doctor --json`
-    # (os/overlay/pithead-boot); assert its DECISION both ways on this running stack. Reboot/fallback can't
-    # show it here — RAUC's commit is sticky, so the already-committed slot won't re-arm — so we drive the
-    # gate command the boot path runs and check its exit code. This is the assertion whose absence let the
-    # curl-only gate ship green.
-    _gate() { _ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; }
+    _gate() { _ssh "cd /data/pithead && PITHEAD_BOOT_GATE=1 PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; }
     # Healthy, mid initial sync with mining held (#35): the gate must COMMIT. A gate that rejected
     # this would never commit a fresh box — the over-tightening the sync-tolerant rule guards.
     if _gate; then
