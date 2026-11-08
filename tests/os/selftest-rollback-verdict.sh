@@ -54,6 +54,9 @@ for want in \
     'out(cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json)' \
     'out(journalctl -u pithead-boot -b -1' \
     'out(journalctl -u pithead-boot -b 0'; do
-    grep -qF "$want" "$dest" || { echo "missing guest command: $want" >&2; exit 1; }
+    grep -qF "$want" "$dest" || {
+        echo "missing guest command: $want" >&2
+        exit 1
+    }
 done
 echo "rollback verdict helpers: ok"
