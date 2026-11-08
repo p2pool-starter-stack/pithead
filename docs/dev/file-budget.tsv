@@ -21,7 +21,7 @@ dashboard/mining_dashboard/web/static/config/configview.mjs	555
 dashboard/mining_dashboard/web/static/system/osupdate.mjs	404
 dashboard/mining_dashboard/web/views/views.py	426
 dashboard/mining_dashboard/web/views/xvb_views.py	682
-dashboard/mining_dashboard/wizard/server.py	670
+dashboard/mining_dashboard/wizard/server.py	664
 dashboard/tests/client/test_xmrig_client.py	489
 dashboard/tests/config/test_config.py	445
 dashboard/tests/frontend/system/osupdate.test.mjs	427

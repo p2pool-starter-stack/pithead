@@ -33,7 +33,7 @@ wizard keeps running and keeps the same token, so the browser tells that peer wh
 instead of asking for a replacement. Successful authentication clears only that
 peer's failures and creates its session. Existing authenticated cookies retain access,
 including for operators sharing the blocked peer. The failure map holds at most 1,024 peers and
-evicts its oldest entry when full. A network failure is reported separately from throttling.
+evicts the entry it began tracking first when full, even if that peer is still in cooldown. Guessing is bounded per peer (five tries a minute), not globally, and the token does not rotate, so several peers multiply the rate; the six-character token holds about 29.7 bits. A network failure is reported separately from throttling.
 
 ## The stage machine
 

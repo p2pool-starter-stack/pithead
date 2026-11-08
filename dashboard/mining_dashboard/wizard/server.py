@@ -66,10 +66,6 @@ from mining_dashboard.wizard_transaction import (
 MAX_FAILURES = 5
 AUTH_COOLDOWN_SECONDS = 60
 MAX_AUTH_CLIENTS = 1024
-# Restore-at-setup upload cap (#909): a Pithead backup holds only config, keys and the
-# dashboard database, never the blockchains — 64 MiB is generous headroom over that. Mirrored
-# in the pithead script's own RESTORE_MAX_BYTES (client + server, per the spool contract); the
-# two can't share a literal across languages, so keep the VALUE in step by hand.
 RESTORE_MAX_BYTES = 64 * 1024 * 1024
 
 COOKIE = "wizard_session"
@@ -599,8 +595,6 @@ async def status(request: web.Request) -> web.Response:
 def make_app(restore_enabled=False, secure_cookie=False) -> web.Application:
     if not clear_page_temps():
         raise RuntimeError("temporary wizard files could not be cleared safely")
-    # Hosts without /etc/mime.types mislabel ES modules as application/octet-stream.
-    # Use the dashboard fix for the same static tree so browsers can execute them.
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("text/javascript", ".js")
     app = web.Application(client_max_size=RESTORE_MAX_BYTES + 1_048_576)

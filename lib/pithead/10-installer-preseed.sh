@@ -17,8 +17,6 @@ install_bin() { printf '%s' "${PITHEAD_INSTALL_BIN:-/usr/local/sbin/pithead-inst
 # only on the console, so every machine needs a monitor walked to it once.
 PRESEED_DIR="${PITHEAD_PRESEED_DIR:-/boot/efi}"
 
-# A pre-seeded token, sanitised. Anything outside the token alphabet is dropped rather than
-# interpreted — this string is operator input arriving from a filesystem anyone can write.
 preseed_token() {
     local f="$PRESEED_DIR/pithead-token.txt" t effective
     [ -f "$f" ] || return 1
