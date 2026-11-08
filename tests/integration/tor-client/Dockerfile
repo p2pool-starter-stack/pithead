@@ -15,7 +15,7 @@ FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cab
 # build/tor/Dockerfile has since #1438: a digest-pinned base can lag a published fix until upstream
 # rebuilds the image. 3.21 was unaffected; this base carries openssl 3.5.7-r0 and CVE-2026-14456 is
 # fixed in 3.5.8-r0, which reds the test-image CVE gate. Measured: 2 HIGH without this line, 0 with.
-RUN apk add --no-cache --upgrade libcrypto3 libssl3 tor curl ca-certificates
+RUN apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils tor curl ca-certificates
 
 COPY probe.sh /usr/local/bin/probe.sh
 RUN chmod 0755 /usr/local/bin/probe.sh
