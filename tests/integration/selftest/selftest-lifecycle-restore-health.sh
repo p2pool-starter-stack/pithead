@@ -72,6 +72,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
         lifecycle_pool_start() { printf main; }
+        lifecycle_pool_config() { [ "$RESTORE_CASE" != pool-state-fails ] && printf mini; }
         lifecycle_pool_apply() {
             push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$1")"
             pithead apply -y >/dev/null 2>&1

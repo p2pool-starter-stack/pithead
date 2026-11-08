@@ -71,3 +71,11 @@ _onion_reachable_external() {
     *) return 3 ;;
     esac
 }
+
+dashboard_onion_runtime_matches() {
+    rx "onion=\$(sed -n 's/^DASHBOARD_ONION_ADDRESS=//p' .env)
+        test -n \"\$onion\" && test \"\$onion\" != placeholder || exit 1
+        docker inspect dashboard --format '{{json .Config.Env}}' |
+        jq -se --arg expected \"DASHBOARD_ONION_ADDRESS=\$onion\" '
+            length == 1 and (.[0] | type == \"array\" and index(\$expected) != null)' >/dev/null"
+}
