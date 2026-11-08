@@ -29,4 +29,5 @@ backup_stack() {
     }
     [ "$archive_state" = valid ] || die "Backup ran but produced no valid archive."
     ok "safety backup: $SAFETY_ARCHIVE"
+    backup_prune on_bench "$CANONICAL_DIR/backups" "$SAFETY_ARCHIVE"
 }
