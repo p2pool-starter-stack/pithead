@@ -92,6 +92,13 @@ a failed probe. `selftest-restore-dashboard-guest.sh` covers the synthetic fixtu
 `selftest-lifecycle-restore-health.sh` and `selftest-reset-restore.sh` cover ordering and state refusal.
 The real A/B reset leg is `tests/os/phases/reset-slot.sh`; it checks wizard setup, CLI restore
 and reboot with setup still open before the final provisioned reboot.
+`tests/stack/test-cli-restore-sqlite.sh` checks administrative restore against real crashed
+SQLite WALs, including archived WAL rows and a clean-sidecar control.
+
+The DIY lifecycle support-bundle leg is `tests/integration/lib/run-support-bundle.sh`;
+`check-support-bundle.py` in the same directory inspects archives without extraction.
+`tests/integration/selftest/selftest-support-bundle.sh` supplies archive and restoration
+failure controls through the integration selftest target.
 
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in

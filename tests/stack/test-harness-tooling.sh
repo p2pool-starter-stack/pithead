@@ -152,6 +152,10 @@ assert_rc "every real healthcheck script exists where its own Dockerfile promise
 
 echo "== unit: image builds retry apt update (#1802) =="
 for image in monero p2pool xmrig-proxy; do assert_contains "image build retries apt update with delayed, bounded backoff (#1802)" "$(cat "$ROOT/build/$image/Dockerfile")" 'for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done'; done
+echo "== unit: image builds pull base security fixes past the digest pin (#3923, #3929) =="
+for alpine_image in build/tor tests/integration/tor-client tests/netwatch; do assert_contains "alpine image build pulls the base's musl past the digest pin with the openssl libs (#3929)" "$(cat "$ROOT/$alpine_image/Dockerfile")" 'apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils'; done
+assert_contains "netwatch build pulls the base's zlib with the rest (#3929)" "$(cat "$ROOT/tests/netwatch/Dockerfile")" 'musl musl-utils zlib'
+for debian_image in dashboard os/rootfs; do assert_contains "debian image build lists zlib1g to pull its security build (#3923)" "$(cat "$ROOT/$debian_image/Dockerfile")" 'zlib1g'; done
 echo "== unit: patch-coverage overlap self-test (#1000) =="
 # diff-cover exits 0 on "No lines with coverage information" — a vacuous pass. The wrapper's
 # overlap check is what turns that into a loud not-applicable pass or a real failure; its
