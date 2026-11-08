@@ -165,6 +165,10 @@ reset_dashboard_remove_blocker() {
 
 reset_dashboard_cleanup() {
     [ -n "${RESET_DASHBOARD_DECOY_DASHBOARD:-}" ] || return 0
+    if [ -n "${BASELINE_CONFIG:-}" ] && ! push_config "$BASELINE_CONFIG"; then
+        it_fail "reset-dashboard baseline config restored" "cleanup failed; decoy paths and safety archive retained"
+        return 1
+    fi
     if ! rx "rm -rf -- $(quote_arg "$RESET_DASHBOARD_DECOY_DASHBOARD") $(quote_arg "$RESET_DASHBOARD_DECOY_P2POOL")" >/dev/null 2>&1; then
         it_fail "reset-dashboard decoys removed" "cleanup failed; decoy paths and safety archive retained"
         return 1

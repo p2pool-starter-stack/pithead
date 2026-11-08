@@ -4,19 +4,6 @@ _reset_dashboard_services_healthy() {
     [ "$(service_state dashboard)" = "running healthy" ] && [ "$(service_state p2pool)" = "running healthy" ]
 }
 
-_reset_dashboard_diagnostics() {
-    [ "$(service_state p2pool)" != "running healthy" ] || [ "$(jq_get "$(api_state)" '.stratum.total_hashes')" = 0 ] || return 0
-    local diag_dir="$OUT_DIR/reset-dashboard-diagnostics/$1"
-    mkdir -p "$diag_dir" || return 0
-    {
-        rx "docker inspect --format '{{json .State}}' p2pool" 2>&1 | redact >"$diag_dir/p2pool-state.json"
-        rx "docker logs --tail 120 p2pool" 2>&1 | redact >"$diag_dir/p2pool.log"
-        rx "docker logs --tail 200 dashboard" 2>&1 | redact >"$diag_dir/dashboard.log"
-        rx "ls -ldn $(quote_arg "$2") $(quote_arg "$2/stats")" 2>&1 | redact >"$diag_dir/p2pool-dir.txt"
-        jq -c '{miner_released, sync_gate_monero_only, proxy_workers, sync}' <<<"$(api_state)" 2>&1 | redact >"$diag_dir/gate-state.json"
-    } || true
-}
-
 run_reset_dashboard() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="reset-dashboard"
@@ -125,10 +112,8 @@ run_reset_dashboard() {
     assert_rc "status OK after reset-dashboard" "$?" "0"
     assert_eq "dashboard container healthy after reset" "$(service_state dashboard)" "running healthy"
     assert_eq "p2pool container healthy after reset" "$(service_state p2pool)" "running healthy"
-    _reset_dashboard_diagnostics after-health-wait "$p2pool_dir"
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || true
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 900 || true
-    _reset_dashboard_diagnostics after-mining-wait "$p2pool_dir"
     local reset_state
     reset_state="$(api_state)"
     assert_mining_state "$SKIP_MINING_ASSERTS" "$(jq_get "$reset_state" '.proxy_workers')" \
