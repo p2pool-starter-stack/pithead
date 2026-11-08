@@ -40,7 +40,7 @@ rollback_evidence() {
         echo "== grubenv"
         _ssh "grub-editenv /boot/efi/grub/grubenv list" 2>&1
         echo "== doctor"
-        _ssh "pithead doctor --json" 2>&1
+        _ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>&1
         echo "== pithead-boot journal (previous boot)"
         _ssh "journalctl -u pithead-boot -b -1 -o short-iso --no-pager" 2>&1
         echo "== pithead-boot journal (this boot)"

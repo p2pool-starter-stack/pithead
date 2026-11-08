@@ -427,8 +427,11 @@ Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be ta
 `commit` differs from it is not evidence for the release, however recently it passed. Any change
 after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
 rerun the boot, rig, provision and crossupdate jobs on the new SHA and read them again before
-submitting e2e. Publishing waits for that rerun: the `bench-ci/tier4` status that `release.sh`
-checks is for one exact SHA, so a status from the candidate commit never covers the tag. The
+submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
+`bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
+release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
+`scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
+procedural step the operator verifies, not a tool enforcement. The
 2.0.2 release shipped one commit after the commit its crossupdate and provision jobs proved
 ([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)). Each job is capped at 240
 minutes.

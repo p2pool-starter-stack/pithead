@@ -47,5 +47,13 @@ rollback_evidence "$dest"
 for section in verdict in-flight grubenv doctor "pithead-boot journal (previous boot)"; do
     grep -qF "== $section" "$dest"
 done
-grep -qF 'out(journalctl -u pithead-boot -b -1' "$dest"
+for want in \
+    'out(cat /data/pithead/data/control/results/os-update-state.json)' \
+    'out(cat /data/pithead/data/os-update/in-flight.json)' \
+    'out(grub-editenv /boot/efi/grub/grubenv list)' \
+    'out(cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json)' \
+    'out(journalctl -u pithead-boot -b -1' \
+    'out(journalctl -u pithead-boot -b 0'; do
+    grep -qF "$want" "$dest" || { echo "missing guest command: $want" >&2; exit 1; }
+done
 echo "rollback verdict helpers: ok"
