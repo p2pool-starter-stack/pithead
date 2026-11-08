@@ -37,13 +37,7 @@ backup_collect_items() {
     fi
 }
 
-# Turns a tar failure into something the NEXT investigation can read straight off the log,
-# instead of needing another bench boot before anyone can look (#1059/#1244: a genuine
-# occurrence had config.json present and root-owned moments earlier, then unstattable at tar
-# time — twice, across the #970 retry — on a guest that was recycled before the state could be
-# inspected by hand). $1 = the directory tar's `-C` pointed at; the rest = the absolute item
-# paths passed to it, so this prints exactly what an investigator would check by hand next.
-backup_diagnose_items() { # <tar -C dir> <item>...
+backup_diagnose_items() {
     local cwd="$1"
     shift
     warn "tar ran with -C \"$cwd\" against these resolved items:"
