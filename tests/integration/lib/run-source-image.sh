@@ -71,17 +71,21 @@ source_image_reconcile_snippet() {
     backup_ref="pithead-source-image-backup:${fixture##*/}"
     new_id=""
     cleanup() {
-        local rc=$?
+        local rc=$? err
         trap - EXIT
         [ "$rc" -eq 0 ] || printf "source-image: diagnostic: failed at %s\n" "$stage" >&2
         if docker image tag "$backup_ref" "$ref" && reconcile_compose_images &&
             [ "$(docker inspect --format '{{.Image}}' "$(docker compose ps -q xmrig-proxy)")" = "$old_id" ]; then
             printf '%s\n' 'source-image: original image restored'
-            docker image rm "$backup_ref" >/dev/null || rc=1
+            docker image rm "$backup_ref" >/dev/null || { rc=1; printf '%s\n' 'source-image: diagnostic: failed in cleanup: backup image removal' >&2; }
         else
             rc=1
+            printf '%s\n' 'source-image: diagnostic: failed in cleanup: original image restore' >&2
         fi
-        [ -z "$new_id" ] || docker image rm "$new_id" >/dev/null || rc=1
+        if [ -n "$new_id" ] && ! err=$(docker image rm "$new_id" 2>&1 >/dev/null) && [[ $err != *"No such image: $new_id"* ]]; then
+            rc=1
+            printf '%s\n%s\n' 'source-image: diagnostic: failed in cleanup: built image removal' "$err" >&2
+        fi
         rm -rf -- "$fixture"
         exit "$rc"
     }
@@ -124,6 +128,7 @@ run_source_image_reconcile() {
     rc=$?
     printf '%s\n' "$out" | redact >"$OUT_DIR/source-image-reconcile.log"
     assert_rc "source upgrade image reconciliation and cleanup (#2934)" "$rc" 0
+    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | redact | tail -n 40 | sed 's/^/source-image-log: /'
     assert_contains "source upgrade fixture starts with a real stale live image (#2934)" "$out" \
         'source-image: live old image differs from built declaration'
     assert_contains "source upgrade recreates through the guarded path (#2934)" "$out" \

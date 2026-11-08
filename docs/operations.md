@@ -56,7 +56,7 @@ boot path drives most of them for you:
 |---|---|
 | `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A bundle that declares `data_migration` is refused when a local Tari node's data volume lacks free space of `data.mdb`'s size plus 5 GiB, the room its migration needs for the compacted copy; the refusal names the volume, the size needed and the size free, the same check `upgrade` makes (#2645). A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. On success it says the update is written to the spare slot, that this machine keeps running the current version until it reboots, that the reboot boots the new slot and commits it only if the stack comes up healthy (otherwise the next boot falls back), and the exact reboot command. `--reboot` reboots to finish the update once installed — it asks first unless `-y` is also given. |
 | `./pithead factory-reset` | **DESTRUCTIVE**, appliance only. Erase the whole data partition back to a blank machine — chains, wallets, Tor keys and settings all go — then reboot into the setup wizard. The resync that follows costs days, so reach for `config-reset` first. Type-to-confirm unless `-y`. |
-| `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console, and five wrong tries mint a fresh one. |
+| `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console. Five wrong tries from one network peer start a 60-second cooldown for that peer; retry the same token afterwards. |
 | `./pithead load-images` | Load the baked container-image archives from `/opt/pithead/images` into the engine when their content changed since the last load. The boot path runs this every boot, so a reinstall or update that ships new images converges with no wizard involvement. |
 | `./pithead local-miner` | Converge this machine's RigForge worker to what the machine is: on a coordinator it follows `local_miner.enabled` (RigForge setup in appliance mode when on, the miner stopped when off); on a rig it follows `rig.json`. Run every boot; a no-op outside the appliance. |
 | `./pithead render-quadlet` | Render Podman Quadlet units — the appliance runtime — from a rendered `.env`. Defaults to `--env .env` and `--out ./quadlet`. The `os/quadlet/` fixtures pin its output byte for byte. |
@@ -248,7 +248,13 @@ nothing is written or recreated. `--porcelain` makes the output machine-readable
 **Changing the payout wallet:** `apply` asks you to type the last 8 characters of the new address
 (a bare `y` is not enough for the one change that redirects every future reward; `apply -y` skips
 the prompt for automation). Changing both the Monero and Tari addresses in one `apply` prompts
-once per address. The dashboard also watches the wallet p2pool actually mines to: any
+once per address. Cancelling keeps the live environment and Tari wallet secret file unchanged;
+unpublished staged files are removed. After confirmation, apply checks that the configuration
+and live environment still match the preview, then publishes under the mutation lock.
+If either changed while waiting, re-run `apply` to review the current changes.
+If sidecar publication fails, apply restores the previous environment; a failed restoration
+reports the saved environment file to use for recovery.
+The dashboard also watches the wallet p2pool actually mines to: any
 change raises a `wallet_changed` [Telegram alert](telegram.md) and a 72-hour top-bar banner —
 including a change you made yourself. Treat that pair as confirmation; if you didn't change it,
 your rewards are being redirected — check `config.json` and re-apply the correct address.
@@ -820,8 +826,8 @@ them (a brief restart; chain data and dashboard history are untouched):
   the stack, no follow-up needed. With `monero.mode: "remote"` the credential belongs to the
   remote node and is skipped.
 - **Stratum access-password** (`PROXY_STRATUM_PASSWORD`) — rotated only when
-  `p2pool.stratum_password` is `"auto"`. The new value is printed at the end. Every rig is
-  rejected until its stratum `pass` is updated to it — see
+  `p2pool.stratum_password` is `"auto"`. Get the new value from the dashboard's **Connect a miner**
+  block. Every rig is rejected until its stratum `pass` is updated to it — see
   [Workers › Authentication](workers.md#authentication). A literal password lives in
   `config.json`: change it there and run `./pithead apply`. When stratum auth is off there is
   nothing to rotate.

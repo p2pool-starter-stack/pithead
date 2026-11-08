@@ -175,3 +175,6 @@ assert_eq "contended: the state file returns to idle" "$(jq -r '.step' "$OSLSTAT
 assert_contains "contended: the host-side log names the contention" "$osl_out" "still held the machine"
 assert_eq "contended: the staged bundle is kept for the retry" "$([ -f "$OSLDIR/pithead-os-v9.9.9.raucb" ] && echo present || echo absent)" "present"
 kill "$OSLHOLDER" 2>/dev/null || true
+
+# shellcheck source=tests/stack/appliance/os-update-verify-window-cases.sh
+source "$HERE/appliance/os-update-verify-window-cases.sh"

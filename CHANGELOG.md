@@ -19,6 +19,16 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - The appliance rootfs raises golang.org/x/net to 0.62.0 in the Cosign and Docker Compose it
   builds, clearing CVE-2026-78661 in both binaries (#3931).
 
+### Fixed
+
+- The dashboard no longer asks for a second reboot while an installed update is still being
+  verified. After the reboot, the new copy of the system moves the stored update status to
+  verifying before its health checks finish, the header shows the verification window, and a
+  reboot asked for in that window is refused with its reason recorded in the control log — a
+  reboot then would have returned the machine to the previous version before the update was
+  ever decided. An update interrupted before its verification reached a verdict is now reported
+  as interrupted, not as failed health checks (#3909).
+
 ## [2.0.2] - 2026-10-31
 
 Pithead 2.0.2 is a patch release after 2.0.1. It makes a command-line restore refresh the
