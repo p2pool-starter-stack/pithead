@@ -158,7 +158,6 @@ fi
 if in_block 2; then
     # shellcheck source=tests/stack/secrets/test-secrets.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets.sh" && domain_ran test-secrets.sh "$_d0" "$?" || domain_ran test-secrets.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-rig-worker.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig-worker.sh "$_d0" "$?" || domain_ran test-rig-worker.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-connection-announce.sh disable=SC2015
