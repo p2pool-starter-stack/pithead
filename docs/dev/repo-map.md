@@ -95,6 +95,11 @@ and reboot with setup still open before the final provisioned reboot.
 `tests/stack/test-cli-restore-sqlite.sh` checks administrative restore against real crashed
 SQLite WALs, including archived WAL rows and a clean-sidecar control.
 
+The DIY lifecycle support-bundle leg is `tests/integration/lib/run-support-bundle.sh`;
+`check-support-bundle.py` in the same directory inspects archives without extraction.
+`tests/integration/selftest/selftest-support-bundle.sh` supplies archive and restoration
+failure controls through the integration selftest target.
+
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
 `16a-restore-safety.sh`. Regression coverage is `tests/stack/test-restore-configless.sh` and the
@@ -282,6 +287,10 @@ The checks retain assertion errors and bounded counts in the battery output; raw
 header and user values are omitted. Bounded current/rolled-log counts expose discarded
 records; effective Caddy configuration is reported only as matcher/log-destination flags.
 
+The reset-dashboard phase is `tests/integration/lib/run-reset-dashboard.sh`; its rollback-protected
+live path checks directory targets, ownership, chain continuity, service health and resumed mining.
+Harness help lives in `tests/integration/lib/run-usage.sh`; argument parsing stays in `run-cli.sh`.
+
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
 `tests/integration/lib/tari-readiness.sh` supplies the running-state battery's fresh
@@ -409,6 +418,13 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 [testing guide](testing-guide.md). For configuration values, read
 [configuration](../configuration.md). The wizard spool-file protocol is in
 [appliance wizard](appliance-wizard.md#host-and-page-spool-files).
+
+Dashboard receipt identities live in `dashboard/mining_dashboard/service/payout_identity.py`.
+`dashboard/mining_dashboard/service/mining_store.py` scopes receipt reads, inserts and cursors;
+`dashboard/mining_dashboard/service/storage_schema.py` migrates legacy receipts to `unknown`.
+The wallet-switch regressions are
+`dashboard/tests/service/test_payout_wallet_identity.py` and
+`dashboard/tests/web/views/test_payout_wallet_identity.py`.
 
 Payout confirmation validates private view scalars in `lib/pithead/25b-payout-keys.sh`; the wallet
 entrypoints select storage by address/key fingerprint. `tests/stack/test-payout-wallet-pairs.sh`
