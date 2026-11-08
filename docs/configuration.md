@@ -125,7 +125,7 @@ show every answer as a radio choice. The target-disk inventory remains a select 
 prerelease or build suffix. An equal stamp leaves the file untouched; a dry run never stamps.
 An absent stamp means 2.0.0. Configuration versioning starts at 2.0.0, with no 1.x migrations.
 A failed stamp write warns and validation continues. `pithead backup` validates first, so it
-stamps before archiving.
+stamps before archiving. On the appliance, `pithead-boot` holds `config.json.stamp-deferred` in `/data/pithead` from the start of each boot until the slot commits, and no stamp is written meanwhile, so an update that falls back leaves the stamp the previous version wrote. A boot that never commits leaves the marker, and the stamp waits for the next committing boot.
 
 A newer stamp is kept. Apply, render and boot show a warning; the media, pre-seed, firstboot and
 restore validators discard warnings on success. Pre-seed rewrites an older stamp. Both restore
