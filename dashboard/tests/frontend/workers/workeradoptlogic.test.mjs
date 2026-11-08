@@ -13,6 +13,7 @@ import { test } from "node:test";
 
 import {
   buildAdoptedConfig,
+  buildRemovedConfig,
   DEFAULT_API_PORT,
   DEFAULT_CONTROL_PORT,
   hostIsInternal,
@@ -207,4 +208,30 @@ test("buildAdoptedConfig: trims stray whitespace off host and token", () => {
   const cfg = buildAdoptedConfig({}, "rig1", " 10.0.0.9 ", "8081", "8082", " tok \n");
   assert.equal(cfg.workers.list[0].host, "10.0.0.9");
   assert.equal(cfg.workers.list[0].token, "tok");
+});
+
+test("validateAdoptFields: a blank token is allowed only when optional", () => {
+  assert.equal(validateAdoptFields("10.0.0.9", "8081", "8082", "", true), "");
+  assert.notEqual(validateAdoptFields("10.0.0.9", "8081", "8082", ""), "");
+  assert.notEqual(validateAdoptFields("10.0.0.9", "8081", "8082", "short", true), "");
+});
+
+test("buildAdoptedConfig: an existing name is replaced in place and keeps its masked token", () => {
+  const live = { workers: { list: [
+    { name: "rig1", host: "10.0.0.9", token: { __secret__: true } },
+    { name: "rig2", host: "10.0.0.10", token: { __secret__: true } },
+  ] } };
+  const cfg = buildAdoptedConfig(live, "rig1", "10.0.0.77", "8081", "8082", "");
+  assert.deepEqual(cfg.workers.list[0], {
+    name: "rig1", host: "10.0.0.77", port: 8081, control_port: 8082, token: { __secret__: true },
+  });
+  assert.deepEqual(cfg.workers.list[1], live.workers.list[1]);
+});
+
+test("buildRemovedConfig: drops only the named descriptor", () => {
+  const live = { p2pool: { pool: "mini" }, workers: { list: [{ name: "rig1" }, { name: "rig2" }] } };
+  const cfg = buildRemovedConfig(live, "rig1");
+  assert.deepEqual(cfg.workers.list, [{ name: "rig2" }]);
+  assert.equal(cfg.p2pool.pool, "mini");
+  assert.equal(live.workers.list.length, 2);
 });
