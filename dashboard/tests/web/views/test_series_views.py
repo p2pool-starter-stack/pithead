@@ -212,9 +212,7 @@ class TestBlocksDiskGrowthXvbHistorySeries:
         out = series_views.build_payouts(mgr, "all")
         assert out["monero"] == []
         assert len(out["tari"]) == 1
-        mgr.get_payouts.assert_called_once_with(
-            "tari", series_views.configured_wallet_id("tari")
-        )
+        mgr.get_payouts.assert_called_once_with("tari", series_views.configured_wallet_id("tari"))
         assert series_views.build_payouts(None, "all") == {"monero": [], "tari": []}
 
     def test_payouts_ride_build_state_end_to_end(self, _data, _state_mgr, monkeypatch):
