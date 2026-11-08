@@ -96,8 +96,9 @@ two jobs: `build-images` rebuilds the stack images from the branch and scans the
 the bytes users are running is caught after one.
 
 A digest-pinned base can lag a published security fix until upstream rebuilds the image. The Alpine
-image builds name the base's openssl and musl packages in their apk upgrade list, so an installable
-fix lands on the next rebuild without an ignore (#1438, #3929).
+image builds name the base's openssl and musl packages in their apk upgrade list, and the Debian
+builds name packages such as apt in their install lists, so an installable fix lands on the next
+rebuild without an ignore (#1438, #3923, #3929).
 
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days

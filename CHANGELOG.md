@@ -21,6 +21,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - Tor auto-heal now works on **No login** appliances through a host-restricted healing channel. General dashboard control remains disabled, and state recovery retains its evidence, onion-identity, lock and six-hour cooldown checks (#3166).
 - XvB sync regression tests now check real stored stats, reward estimates and raffle wins. Failed fetches and unparseable round aggregates must retain the last good readings and freshness timestamps; a local failure-count update remains allowed (#3056).
 
+### Security
+
+- The Alpine images pull the patched musl past their digest-pinned base (CVE-2026-107891, #3929).
+- The Ubuntu and Debian image builds list apt in their install lists, pulling the distro's security
+  builds of apt and its libapt-pkg dependency past the digest-pinned base (CVE-2026-109518, #3923).
+
 ## [2.0.2] - 2026-10-31
 
 Pithead 2.0.2 is a patch release after 2.0.1. It makes a command-line restore refresh the
