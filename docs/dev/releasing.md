@@ -158,20 +158,11 @@ already name. The Main Branch ruleset requires PRs from everyone except organiza
 the push is refused, the script says so and prints the command to run by hand; the release
 itself is unaffected — `main` merely lags until an admin runs it.
 
-Forward-merge `develop` into each longer-lived integration branch (today `develop-v2.1.0`) at
-the latest right after every 2.0.x publish. The e2e
-harness seeds its checkout from the bench's live `config.json`, which the live CLI stamps with
-`develop`'s `VERSION`. An integration branch with an older `VERSION` then archives a stamp its CLI
-correctly refuses to restore (#3114), so the lifecycle round-trip, safety-rollback and
-dashboard-carry rows fail. Lifecycle and safety-backup proofs on such a branch wait for the
-forward-merge; the seeded stamp is never rewritten ([#3664]).
-
 Release-note prose that once lived in the `main` merge commit's body belongs in the GitHub
 Release notes, where operators actually read it. The branch model itself is in
 [CONTRIBUTING.md](../../CONTRIBUTING.md#development-workflow).
 
 [#1076]: https://github.com/p2pool-starter-stack/pithead/issues/1076
-[#3664]: https://github.com/p2pool-starter-stack/pithead/issues/3664
 
 ### Forward merges into release-line branches
 
@@ -195,7 +186,8 @@ git push origin forward/develop-into-develop-v2.1.0
 Resolve conflicts on that branch. Version metadata takes `develop`'s values: `VERSION`, the
 `version` line in `dashboard/pyproject.toml`, and the `mining-dashboard` entry in
 `dashboard/uv.lock` must equal `develop`'s, or lifecycle end-to-end proofs on the release-line
-head fail on version skew ([#3664]).
+head fail on version skew ([#3664]). Until the forward merge lands,
+lifecycle and safety-backup proofs on a lagging release line wait for it: the seeded `config.json` carries the live stamp and is never rewritten.
 
 Open the PR from the `forward/` branch into the target. Never use `develop` itself as the head:
 conflict resolutions need a branch of their own, and a head that is `develop` changes under
