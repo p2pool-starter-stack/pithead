@@ -59,6 +59,7 @@ if [ "${1:-}" = fixture ]; then
     lan_guard_restore_stopped() { :; }
     mutation_lock_path() { echo ignored; }
     compose_up() { lan_guard_compose_up "$@"; }
+    compose_up_checked() { compose_up "$@"; }
     if [ "${5:-}" = broken ]; then tor_lifecycle_receipt() { return 19; }; fi
     rotate_dashboard_onion -y
     exit 0

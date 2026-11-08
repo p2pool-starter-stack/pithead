@@ -121,17 +121,19 @@ run_lifecycle() {
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
-            local fp_b backed_pool fp_after gate_marker_before gate_marker_after
+            local fp_b backed_key backed_pool revert_from fp_after gate_marker_before gate_marker_after
             if ! fp_b="$(upgrade_secret_fingerprints)" || [ -z "$fp_b" ]; then
                 it_fail "backup secrets fingerprint readable" "could not fingerprint backed-up secrets"
                 lifecycle_ok=0
             elif ! gate_marker_before="$(sync_gate_marker_state)"; then
                 it_fail "backed-up sync-gate policy readable" "missing path or invalid marker"
                 lifecycle_ok=0
-            elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
-                it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
+            elif ! backed_key="$(lifecycle_pool_config)" || [ -z "$backed_key" ]; then
+                it_fail "backed-up pool state readable" "config.json did not name the backed-up sidechain"
                 lifecycle_ok=0
-            elif push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
+            elif backed_pool="$(pool_label "$backed_key")" &&
+                revert_from="$([ "$backed_key" = main ] && printf mini || printf main)" &&
+                push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$revert_from")" &&
                 pithead apply -y >/dev/null 2>&1 &&
                 pithead down >/dev/null 2>&1 &&
                 pithead restore -y "$arch" >/dev/null 2>&1 &&
