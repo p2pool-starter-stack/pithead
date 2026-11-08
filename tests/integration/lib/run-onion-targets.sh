@@ -46,7 +46,7 @@ assert_onion_targets() { # <monero mode> <pool name>
 }
 
 _onion_reachable_external() {
-    local onion="${1:-}" saved_env="${2:-}" out rc snippet verdict
+    local onion="${1:-}" saved_env="${2:-}" auth="${3:-auto}" out rc snippet verdict
     # shellcheck disable=SC2034
     ONION_PROBE_STARTED="$(now_s)"
     [ -n "$onion" ] || onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
@@ -62,12 +62,36 @@ _onion_reachable_external() {
         onion_probe_note build "" ""
         return 3
     fi
-    if [ -n "$saved_env" ]; then
-        snippet="priv=\$(sudo -n awk -F= '\$1 == \"DASHBOARD_ONION_CLIENT_PRIVKEY\" { print substr(\$0, index(\$0, \"=\") + 1) }' $(quote_arg "$saved_env"));"
-        snippet="$snippet [ -n \"\$priv\" ] || exit 4; line=$(quote_arg "${onion%.onion}:descriptor:x25519:")\$priv;"
-    else
-        snippet="line=\$(./pithead onion-client-key 2>/dev/null | grep -E 'descriptor:x25519:' | head -1 || true);"
-    fi
+    case "$auth" in
+    required)
+        if [ -n "$saved_env" ]; then
+            onion_probe_note input "" ""
+            return 3
+        fi
+        snippet="credential=\$(./pithead onion-client-key 2>/dev/null) || exit 4;"
+        snippet="$snippet line=\$(printf '%s\\n' \"\$credential\" | grep -E '^[[:space:]]*$(quote_arg "${onion%.onion}"):descriptor:x25519:[A-Z2-7]+$' | sed 's/^[[:space:]]*//' | head -1);"
+        snippet="$snippet [ -n \"\$line\" ] || exit 4;"
+        ;;
+    none)
+        if [ -n "$saved_env" ]; then
+            onion_probe_note input "" ""
+            return 3
+        fi
+        snippet="line='';"
+        ;;
+    auto)
+        if [ -n "$saved_env" ]; then
+            snippet="priv=\$(sudo -n awk -F= '\$1 == \"DASHBOARD_ONION_CLIENT_PRIVKEY\" { print substr(\$0, index(\$0, \"=\") + 1) }' $(quote_arg "$saved_env"));"
+            snippet="$snippet [ -n \"\$priv\" ] || exit 4; line=$(quote_arg "${onion%.onion}:descriptor:x25519:")\$priv;"
+        else
+            snippet="line=\$(./pithead onion-client-key 2>/dev/null | grep -E 'descriptor:x25519:' | head -1 || true);"
+        fi
+        ;;
+    *)
+        onion_probe_note input "" ""
+        return 3
+        ;;
+    esac
     snippet="$snippet if [ -n \"\$line\" ]; then printf '%s\n' \"\$line\" | docker run -i --rm -e ONION_ADDR=$(quote_arg "$onion") -e AUTH_STDIN=1 pithead-tor-client-test;"
     snippet="$snippet else docker run --rm -e ONION_ADDR=$(quote_arg "$onion") pithead-tor-client-test; fi"
     if out="$(rx "$snippet" 2>&1)"; then
@@ -83,6 +107,10 @@ _onion_reachable_external() {
     ok) return 0 ;;
     http-reachability) return 1 ;;
     client-bootstrap) return 2 ;;
+    authorization)
+        [ "$auth" = required ] && return 4
+        return 3
+        ;;
     *) return 3 ;;
     esac
 }
