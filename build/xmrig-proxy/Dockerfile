@@ -7,6 +7,7 @@ ARG XMRIG_PROXY_VERSION=6.26.0
 ARG XMRIG_PROXY_HASH=73cceb10be474ba8ce20faddb9d2c6af0cb50bce84e72f7d36a326f7147c01c4
 
 RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
+    apt \
     wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
