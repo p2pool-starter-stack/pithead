@@ -186,7 +186,8 @@ git push origin forward/develop-into-develop-v2.1.0
 Resolve conflicts on that branch. Version metadata takes `develop`'s values: `VERSION`, the
 `version` line in `dashboard/pyproject.toml`, and the `mining-dashboard` entry in
 `dashboard/uv.lock` must equal `develop`'s, or lifecycle end-to-end proofs on the release-line
-head fail on version skew ([#3664]).
+head fail on version skew ([#3664]). Until the forward merge lands,
+lifecycle and safety-backup proofs on a lagging release line wait for it: the seeded `config.json` carries the live stamp and is never rewritten.
 
 Open the PR from the `forward/` branch into the target. Never use `develop` itself as the head:
 conflict resolutions need a branch of their own, and a head that is `develop` changes under
