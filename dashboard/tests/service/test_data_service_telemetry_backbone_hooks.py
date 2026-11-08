@@ -170,3 +170,15 @@ class TestTelemetryBackboneHooks:
             svc, p2pool_stats={"pool": {"last_share_time": 0, "difficulty": 0, "blocks_found": 6}}
         )
         assert sm.get_table_health()["blocks"]["healthy"] is False
+
+
+async def test_host_resource_metadata_is_persisted_by_existing_poll():
+    tests = TestTelemetryBackboneHooks()
+    svc, sm, proxy = tests._svc()
+    proxy.get_workers.return_value = {"workers": []}
+    samples = {"cpu": {"sampled_at": 123, "value": 50, "reason": None}}
+    with patch.object(ds_mod, "get_host_resource_samples", return_value=samples) as getter:
+        await tests._run_one(svc)
+    getter.assert_called_once_with()
+    assert svc.latest_data["system"]["host_resources"] == samples
+    assert sm.load_snapshot()["system"]["host_resources"] == samples

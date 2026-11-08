@@ -20,7 +20,7 @@ render_exposure_caddy() { # <expose-public>
         is_appliance() { return 0; }
         appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
         appliance_mint_cert() { return 1; }
-        hostname() { printf '%s %s.1 %s %s\n' "$lan" "$network_prefix" "$global" "$ula"; }
+        stub_host_addrs "$lan $network_prefix.1 $global $ula"
         DASHBOARD_SECURE=true DASHBOARD_HOST=pithead.local HOST_IP=pithead.local NETWORK_PREFIX="$network_prefix" DASHBOARD_AUTH_HASH_B64="" \
             DASHBOARD_EXPOSE_PUBLIC_IP="$1" generate_caddyfile >/dev/null 2>&1
         cat Caddyfile
@@ -94,7 +94,7 @@ render_onion_caddy() { # <expose-public>
         is_appliance() { return 0; }
         appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
         appliance_mint_cert() { return 1; }
-        hostname() { printf '%s %s.1 %s %s\n' "$lan" "$network_prefix" "$global" "$ula"; }
+        stub_host_addrs "$lan $network_prefix.1 $global $ula"
         DASHBOARD_SECURE=true DASHBOARD_HOST=pithead.local HOST_IP=pithead.local NETWORK_PREFIX="$network_prefix" \
             DASHBOARD_AUTH_USER=admin DASHBOARD_AUTH_HASH_B64='$2y$14$UNITTESTbcrypthashvalue000000000000000000000000000000' \
             DASHBOARD_ONION_ENABLED=true DASHBOARD_EXPOSE_PUBLIC_IP="$1" generate_caddyfile >/dev/null 2>&1
@@ -140,7 +140,8 @@ onion_phase_out=$(
     }
     ok() { :; }
     bad() { printf 'BAD:%s\n' "$1"; }
-    phase_provision_dashboard_onion_exposure
+    phase_provision_dashboard_onion_control() { return 0; }
+    phase_provision_dashboard_onion_exposure fixture-user fixture-password
 )
 assert_contains "phase still restores the config after the NETWORK_PREFIX guard fires" "$onion_phase_out" "RESTORED"
 assert_contains "phase reports the NETWORK_PREFIX read failure" "$onion_phase_out" "BAD:onion exposure: could not read NETWORK_PREFIX"
@@ -160,7 +161,8 @@ onion_apply_fail_out=$(
     tor_health_evidence() { printf 'TOR-EVIDENCE\n'; }
     ok() { :; }
     bad() { printf 'BAD:%s\n' "$1"; }
-    phase_provision_dashboard_onion_exposure
+    phase_provision_dashboard_onion_control() { return 0; }
+    phase_provision_dashboard_onion_exposure fixture-user fixture-password
 )
 assert_contains "a refused apply still restores the config" "$onion_apply_fail_out" "RESTORED"
 assert_contains "a refused apply is reported" "$onion_apply_fail_out" "BAD:onion exposure: ./pithead apply -y did not accept the onion-enabled config"

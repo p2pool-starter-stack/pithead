@@ -153,15 +153,7 @@ assert_eq "boot ran and is active: go" "$(psf inactive active no yes)" "go"
 unset -f psf
 
 echo "== unit: secure_boot_boot_verdict — Secure Boot ON is measured, not left an unread flag (#2055 G2) =="
-# tests/os/run.sh's phase_boot second guest cannot be driven from here (it needs real KVM +
-# OVMF secure-boot firmware), but the verdict is pure text-matching over two already-observed
-# signals (did virt-install define the guest, did a userspace banner appear, and image version) —
-# pulled into
-# tests/os/secure-boot-boot-verdict.sh for exactly that reason. The case that matters is the
-# second pair below: a guest that DEFINED successfully but never reached userspace reports the
-# signing gap without failing the phase for 2.0.0. Later versions require signing, so the same
-# measured non-boot fails and the deferral cannot hide a regression.
-sbv() { # <virt-install-defined> <userspace-banner-seen> <image-version> -> "<rc> <verdict-text>"
+sbv() {
     local out rc
     out=$(
         # shellcheck disable=SC1091
@@ -174,14 +166,18 @@ sbv() { # <virt-install-defined> <userspace-banner-seen> <image-version> -> "<rc
 assert_eq "guest defined + reaches userspace under SB: passes" \
     "$(sbv 1 1 2.0.0)" \
     "0 the image reaches userspace with Secure Boot ON — signing works (or SB was not actually enforced; cross-check the guest's own SecureBoot EFI variable before trusting this as a pass)"
-assert_eq "guest defined but never reaches userspace under SB: records the deferred state" \
-    "$(sbv 1 0 2.0.0)" \
-    "0 the image does NOT reach userspace with Secure Boot ON (pithead#2187: shim-signed is the only signed link in the chain — grub-efi-amd64 and the kernel ship unsigned) — measured, deferred past 2.0.0 to v2.x - post-GA"
-assert_eq "guest defined but never reaches userspace after signing is required: fails" \
-    "$(sbv 1 0 2.0.1)" \
-    "1 the image does NOT reach userspace with Secure Boot ON — signing is required, so this is a regression"
+assert_eq "2.0.0: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.0.0)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
+assert_eq "2.0.1: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.0.1)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
+assert_eq "2.0.2: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.0.2)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
+assert_eq "2.1.0: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.1.0)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
+assert_eq "2.0.10: measured Secure Boot non-boot is unsupported by design" "$(sbv 1 0 2.0.10)" \
+    "0 the image does NOT reach userspace with Secure Boot ON — Secure Boot is unsupported by design; turn it off"
 assert_eq "virt-install could not even define the guest: fails, names it unmeasured (a possible bench firmware gap)" \
-    "$(sbv 0 0 2.0.0)" \
+    "$(sbv 0 0 2.0.2)" \
     "1 could not even DEFINE a Secure-Boot-enabled guest (no matching OVMF secure-boot firmware on this host?) — Secure Boot is UNMEASURED here, not proven either way; check for a bench firmware gap before reading this as a product defect"
 unset -f sbv
 
@@ -261,15 +257,11 @@ assert_eq "leg C stops when its mark cannot be read" \
     "$(grep -cF 'fault_serial_mark "$SERIAL") || {' "$ROOT/tests/os/phases/fault.sh")" "1"
 assert_eq "all four legs report an unjudgeable boot as such" \
     "$(grep -cF 'elif [ $? -eq 2 ]; then' "$ROOT/tests/os/phases/fault.sh")" "4"
-# Jobs 220 and 129: A1's console held not one byte after the cut, and a discarded `virsh start`
-# error could not be told from a brick. Legs A and B stop on a failed start; A, B and D name the
-# domain state on a BRICKED row.
-assert_eq "legs A and B stop when virsh start fails after the cut" \
-    "$(grep -cF 'start_out=$(virsh start "$VM" 2>&1) || {' "$ROOT/tests/os/phases/fault.sh")" "2"
+assert_eq "legs A and B stop when VM start fails after the cut" \
+    "$(grep -cF 'start_out=$(vm_start 2>&1) || {' "$ROOT/tests/os/phases/fault.sh")" "2"
 assert_eq "every power-cut BRICKED row names the domain state" \
-    "$(grep -cF -- '— domain: $(virsh domstate "$VM" --reason' "$ROOT/tests/os/phases/fault.sh")" "3"
+    "$(grep -cF -- '— domain: $(vm_state --reason' "$ROOT/tests/os/phases/fault.sh")" "3"
 # #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
-# Mutation run: drop the copy -> no .failed file.
 rm -f "$FBV/no-boot.failed"
 fault_boot_verdict "$FBV/no-boot" 0 >/dev/null
 assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.failed" 2>/dev/null)" "$(cat "$FBV/no-boot")"
@@ -277,14 +269,13 @@ assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.fail
 # (A missing log fails the copy for root too, where a read-only directory would not.)
 verdict=$(fault_boot_verdict "$FBV/absent" 0)
 assert_contains "a console that cannot be kept is named in the verdict" "$verdict" "could not keep the console at $FBV/absent.failed"
-# Jobs 220, 129 and 224: `virsh destroy` on a guest busy writing its spare slot failed, the
-# discarded failure left the domain up, and `virsh start` answered "Domain is already active".
-# fault_power_cut retries until the domain reports "shut off", or says it never did.
-# Mutation run: return after one destroy -> the "third try" row reads 1, not 0.
-pcut() { # <tries until the domain is off, 0 = never> -> "<rc> <destroy calls> <output>"
+pcut() {
     (
+        # shellcheck source=tests/os/kvm-preflight.sh
+        source "$ROOT/tests/os/kvm-preflight.sh"
+        VM=fixture
         want="$1"
-        echo 0 >"$FBV/destroys" # a file: fault_power_cut calls virsh inside $(...)
+        echo 0 >"$FBV/destroys"
         virsh() {
             local n
             n=$(cat "$FBV/destroys")
@@ -299,7 +290,7 @@ pcut() { # <tries until the domain is off, 0 = never> -> "<rc> <destroy calls> <
             esac
         }
         sleep() { :; }
-        out=$(fault_power_cut vm)
+        out=$(fault_power_cut)
         rc=$?
         printf '%s %s %s' "$rc" "$(cat "$FBV/destroys")" "$out"
     )
@@ -309,7 +300,7 @@ assert_eq "a domain that takes three destroys is waited for" "$(pcut 3)" "0 3 "
 assert_eq "a domain that never goes off fails the cut with virsh's word" "$(pcut 0)" \
     "1 6 error: Failed to terminate process: Device or resource busy"
 assert_eq "all three power-cut legs cut through fault_power_cut and stop when it fails" \
-    "$(grep -cF 'verdict=$(fault_power_cut "$VM") || {' "$ROOT/tests/os/phases/fault.sh")" "3"
+    "$(grep -cF 'verdict=$(fault_power_cut) || {' "$ROOT/tests/os/phases/fault.sh")" "3"
 unset -f pcut
 unset -f fault_power_cut fault_serial_cut fault_serial_mark fault_serial_since
 unset -f fault_boot_verdict

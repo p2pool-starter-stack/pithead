@@ -217,6 +217,7 @@ class TestBuildState:
             "xvb_calc",
             "tari",
             "workers",
+            "xmrig_donation",
             "proxy_summary",
             "share_stats",
             "reject_pct_24h",

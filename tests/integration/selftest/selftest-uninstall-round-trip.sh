@@ -93,7 +93,15 @@ uninstall)
     [ "$FAKE_CASE" != removes-unrelated ] || rm -f .unrelated-volume
     ;;
 setup)
-    # The real setup refuses a deployed .env; the harness must hand back its secrets without the flag.
+    if [[ "$FAKE_CASE" = setup-long-* ]]; then
+        echo 'Stratum password: fixture-secret'
+        echo 'Stratum authentication is ON: every rig must connect with pass "fixture-secret" (set it as the xmrig/RigForge stratum password).'
+        echo 'No such image: tecnativa/docker-socket-proxy:v0.5.0@sha256:x' >&2
+        printf 'compose output %s\n' {1..30}
+        echo 'PROXY_AUTH_TOKEN=fixture-secret' >&2
+        echo 'final setup diagnostic'
+        exit 1
+    fi
     ! grep -q '^DEPLOYMENT_COMPLETED=' .env && grep -q '^PROXY_AUTH_TOKEN=tok$' .env || exit 1
     cp .env.fixture .env
     [ "$FAKE_CASE" != resync ] || { rm data/monero/lmdb/data.mdb && truncate -s 70M data/monero/lmdb/data.mdb; }
@@ -121,7 +129,7 @@ drive() { # <case> -> round-trip-rc|failures
         esac
         [ "$1" != active-wallet-profile ] || sed -i 's/COMPOSE_PROFILES=local_node,local_tari/COMPOSE_PROFILES=local_node,local_tari,tari_payout_confirm/' "$B/.env"
         # shellcheck disable=SC2034 # read by rx and the extracted functions
-        IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
+        IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0 OUT_DIR="$B/results"
         export FAKE_CASE="$1"
         it_step() { :; }
         it_skip_leg() { printf '%s|%s|%s' "$1" "$2" "$3" >"$B/skip"; }
@@ -131,7 +139,7 @@ drive() { # <case> -> round-trip-rc|failures
         rr_web_ports_owned_by_dashboard() {
             [ "$1" = "setup after uninstall" ] || return 1
             touch "$B/web-checked"
-            [ "$FAKE_CASE" != web-fails ] || {
+            [ "$FAKE_CASE" != web-fails ] && [ "$FAKE_CASE" != setup-long-web-fails ] || {
                 it_fail "web ownership" "injected fault"
                 return 1
             }
@@ -171,6 +179,23 @@ drive() { # <case> -> round-trip-rc|failures
         printf '%s|%s' "$result" "$IT_FAIL"
     )
 }
+
+assert_eq "a long failed setup fails the round trip (#3345)" "$(drive setup-long-fails)" "1|1"
+assert_contains "a long failed setup keeps its early cause (#3345)" "$(cat "$T/box-setup-long-fails/run.log")" "No such image"
+assert_contains "a long failed setup keeps its final line (#3345)" "$(cat "$T/box-setup-long-fails/run.log")" "final setup diagnostic"
+assert_contains "a long failed setup redacts credentials (#3345)" "$(cat "$T/box-setup-long-fails/run.log")" "PROXY_AUTH_TOKEN=<redacted>"
+assert_contains "a long failed setup redacts the password announcement (#3345)" "$(cat "$T/box-setup-long-fails/run.log")" "Stratum password: <redacted>"
+assert_contains "a long failed setup redacts the rig instructions (#3345)" "$(cat "$T/box-setup-long-fails/run.log")" "connect with pass <redacted>"
+assert_eq "a long failed setup never prints credentials (#3345)" "$(grep -c fixture-secret "$T/box-setup-long-fails/run.log" || true)" "0"
+
+for expected in "No such image" "final setup diagnostic" "PROXY_AUTH_TOKEN=<redacted>" "Stratum password: <redacted>" "connect with pass <redacted>"; do
+    assert_contains "setup artifact retains $expected (#3345)" "$(cat "$T/box-setup-long-fails/results/lifecycle-setup/setup.log")" "$expected"
+done
+assert_eq "setup artifact never saves credentials (#3345)" "$(grep -c fixture-secret "$T/box-setup-long-fails/results/lifecycle-setup/setup.log" || true)" "0"
+
+assert_eq "a failed setup and web check both fail the round trip (#3345)" "$(drive setup-long-web-fails)" "1|2"
+assert_contains "a failed web check keeps the setup cause (#3345)" "$(cat "$T/box-setup-long-web-fails/run.log")" "No such image"
+assert_contains "a failed web check retains the setup artifact (#3345)" "$(cat "$T/box-setup-long-web-fails/results/lifecycle-setup/setup.log")" "No such image"
 
 assert_eq "setup refuses a failed web ownership check" "$(drive web-fails)" "1|1"
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"

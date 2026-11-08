@@ -7,7 +7,7 @@ source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/lib/run-tari-background-sync.sh
 INTEGRATION_RUN_SUITE=1 source "$HERE/../lib/run-tari-background-sync.sh"
 echo "== durable Tari marker reads for same-box restore =="
-fixture="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/tari-marker-selftest.XXXXXX")" || exit 1
+fixture="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/tari-marker-selftest.XXXXXX")" || exit 1
 trap 'rm -rf "$fixture"' EXIT
 env_on_box() { printf '%s' "$fixture"; }
 rx() { bash -c "${1#sudo }"; }
