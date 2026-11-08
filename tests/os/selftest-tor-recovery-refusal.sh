@@ -84,6 +84,9 @@ _vm_boot_disk() { :; }
 _wait_ssh() { :; }
 _wait_setup_page() { :; }
 phase_wizard_redirect() { :; }
+phase_provision_registry_cut() { :; }
+phase_provision_registry_untouched() { :; }
+phase_provision_baked_stack() { :; }
 stage_dashboard_exposure_addresses() { :; }
 provision_node_preflight() { :; }
 provision_setup_failure_recovery() { :; }

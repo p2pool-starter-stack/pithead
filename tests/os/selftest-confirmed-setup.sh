@@ -16,6 +16,8 @@ warn() { :; }
 log() { :; }
 is_deployed() { [ "$deployed" = yes ]; }
 mutation_lock_acquire() { trace lock; }
+is_appliance() { return 1; }
+load_baked_images() { :; }
 mutation_lock_release() { trace unlock; }
 render_env() { trace render; }
 provision_tor() { trace tor; }
