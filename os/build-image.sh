@@ -205,9 +205,6 @@ fi
 # full Docker build consumes the repository root as its context.
 bash scripts/build-pithead.sh
 
-# Bake the wizard's container image into the appliance: first boot must reach the setup page
-# without a registry (the operator may have no working network config yet, and the plan's
-# offline-first-boot property depends on it).
 STACK_VERSION="v$(tr -d ' \t\r\n' <VERSION)"
 # os/build/ is git-ignored, so staging there keeps the tree clean (the build stamps itself dirty
 # otherwise, and mkimage refuses a dirty stamp). The Dockerfile COPYs both files from this path.
