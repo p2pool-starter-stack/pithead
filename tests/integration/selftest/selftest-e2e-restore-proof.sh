@@ -204,6 +204,7 @@ proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restor
         control_units_verdict() { echo on-target; }
         chain_restore_proof() { return 0; }
         verify_chain_sync_proof() { [ "${PROBE_SYNC_FAIL:-}" != yes ]; }
+        verify_restore_unit_capture() { return 0; }
         restore_egress_boot_unit() { return 0; }
         restore_egress_check_units() { return 0; }
         restore_lan_check_units() { return 0; }
@@ -349,7 +350,7 @@ assert_contains "and the restore says so, so a leftover from a cancelled run is 
 assert_eq "a unit that survives the removal fails the restore proof" "$(egress_restore absent present 1)" "1 present 1"
 assert_eq "an unrecorded baseline fails closed and removes nothing" "$(egress_restore "" present)" "1 present 0"
 assert_contains "verify_restore_proof runs the egress unit restore" "$(declare -f verify_restore_proof)" "restore_egress_boot_unit"
-assert_contains "e2e.sh records the unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"'
+assert_contains "e2e.sh records the unit before deploy_branch installs it" "$(declare -f capture_restore_unit_states)" 'egress_boot_unit_state "$unit"'
 
 # shellcheck source=tests/integration/tools/restore-lan-unit-proof-cases.sh
 source "$HERE/../tools/restore-lan-unit-proof-cases.sh"
@@ -378,8 +379,8 @@ assert_eq "a check pair the baseline already had is left alone" "$(check_restore
 assert_eq "a check pair that survives the removal fails the restore proof" "$(check_restore absent present 1)" "1 present 1"
 assert_eq "an unrecorded baseline fails closed and removes nothing" "$(check_restore "" present)" "1 present 0"
 assert_contains "verify_restore_proof runs the check pair restore" "$(declare -f verify_restore_proof)" "restore_egress_check_units"
-assert_contains "e2e.sh records the timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"'
-assert_contains "e2e.sh records the LAN timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'LAN_CHECK_BEFORE="$(egress_boot_unit_state pithead-lan.timer)"'
+assert_contains "e2e.sh records the timer before deploy_branch installs it" "${RESTORE_UNIT_MAP[*]}" 'EGRESS_CHECK_BEFORE:pithead-egress.timer'
+assert_contains "e2e.sh records the LAN timer before deploy_branch installs it" "${RESTORE_UNIT_MAP[*]}" 'LAN_CHECK_BEFORE:pithead-lan.timer'
 assert_contains "restore proof removes a LAN timer added by the run" "$(declare -f verify_restore_proof)" "restore_lan_check_units"
 # shellcheck source=tests/integration/tools/restore-lan-check-proof-cases.sh
 source "$HERE/../tools/restore-lan-check-proof-cases.sh"

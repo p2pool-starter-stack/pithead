@@ -18,6 +18,7 @@ from mining_dashboard.client.xmrig_client import parse_rigforge
 from mining_dashboard.config import config
 from mining_dashboard.helper.utils import effective_hashrate, get_tier_info
 from mining_dashboard.service.control_service import SECRET_SENTINEL, mask_secrets
+from mining_dashboard.service.workers.donation import reported_level
 
 # xmrig-proxy 6.x /workers rows are positional arrays; name the fields we read so the
 # normalization below isn't a wall of magic indices. A row has >= _PX_MIN_FIELDS entries.
@@ -205,16 +206,10 @@ def _merge_direct_stats(workers, results, active_pool_port):
     """
     final_workers = []
     for w, extra_stats in zip(workers, results, strict=False):
-        # api_ok: True (probe succeeded), False (probe failed — surfaced, not swallowed), or unset
-        # (not probed, e.g. an internal IP per the SSRF guard). `adopted` (#1857) rides with it.
         api_ok = extra_stats.get("api_ok") if extra_stats else None
         if api_ok is not None:
             w["api_ok"], w["adopted"] = api_ok, bool(extra_stats.get("adopted"))
 
-        # RigForge enriched feed (#235): a superset /1/summary carries an extra `rigforge` block.
-        # Present only for RigForge rigs whose descriptor port points at the enriched feed; a
-        # plain-xmrig rig parses to None and gets no chips. A miner-down enriched body has no XMRig
-        # keys, so this rides in even when api_ok can't confirm live hashrate.
         rf = parse_rigforge(extra_stats) if extra_stats else None
         if rf is not None:
             w["rigforge"] = rf
@@ -224,6 +219,8 @@ def _merge_direct_stats(workers, results, active_pool_port):
 
             is_proxy = extra_stats.get("kind") == "proxy"
             hr_scale = _KHS_TO_HS if is_proxy else 1
+            if not is_proxy and (level := reported_level(extra_stats)) is not None:
+                w["donate_level"] = level
 
             hr_total = extra_stats.get("hashrate", {}).get("total", [])
             if isinstance(hr_total, list) and len(hr_total) >= 3:

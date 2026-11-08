@@ -14,6 +14,7 @@ source "$ROOT/lib/run-onion-targets.sh"
 source "$ROOT/lib/run-hardening.sh"
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$ROOT/lib/run-rotate-onion.sh"
+wait_for() { return 0; }
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -32,7 +33,7 @@ trial() {
             case "$1" in
                 *"docker compose up -d tor"*) printf "swap\n" >>"$CALLS" ;;
                 *"/hostname"*) printf "hostname\n" >>"$CALLS"; printf "old.onion\n" ;;
-                *"restart caddy"*) printf "caddy\n" >>"$CALLS" ;;
+                *"up -d --no-deps dashboard"*) printf "dashboard\ncaddy\n" >>"$CALLS" ;;
                 *"rm -f"*) printf "cleanup\n" >>"$CALLS" ;;
             esac
         }
@@ -40,6 +41,7 @@ trial() {
         rotate_onion_env_fingerprint() { printf "envs\n"; }
         pithead() { printf "render\n" >>"$CALLS"; }
         wait_status_ok() { printf "health\n" >>"$CALLS"; }
+        wait_for() { printf "runtime\n" >>"$CALLS"; }
         _onion_reachable_external() { printf "external\n" >>"$CALLS"; }
         SAFETY_BACKUP=0 RUN_ROTATE_ONION=1 SAFETY_ARCHIVE="" SAFETY_RESTORE_FAILED=0
         _SAFETY_RESTORE_ARMED=0 _SAFETY_FOREIGN_TRAP=""
@@ -58,7 +60,7 @@ trial() {
         rc=$?
     fi
     local expected
-    expected="$(printf 'swap\nkey\nhostname\nrender\ncaddy\nhealth\nexternal\ncleanup')"
+    expected="$(printf 'swap\nkey\nhostname\nrender\ndashboard\ncaddy\nhealth\nruntime\nexternal\ncleanup')"
     [ "$rc" -ne 0 ] && [ "$(cat "$calls")" = "$expected" ]
 }
 
@@ -319,7 +321,7 @@ fi
 
 state_line="$(grep -n 'ROTATE_ONION_OLD_KEY_FP="\$old_key_fp"' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
 arm_line="$(grep -n '^[[:space:]]*ROTATE_ONION_RESTORE_ARMED=1$' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
-rotate_line="$(grep -n 'pithead rotate-dashboard-onion -y' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
+rotate_line="$(grep -n '    rotation_with_receipts' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
 if [ "$state_line" -lt "$arm_line" ] && [ "$arm_line" -lt "$rotate_line" ]; then
     it_pass "restore state is complete before the trap arms and rotation begins"
 else

@@ -32,8 +32,9 @@ mining, and the **Compose stack** you run on a host you manage.
 ## What it does
 
 - ⛏️ **P2Pool payouts, Tari merge-mined.** Mines Monero on [P2Pool](https://p2pool.io/): no pool
-  operator, no fee, rewards paid to your own wallet. Every hash can merge-mine Tari on the same
-  work — the appliance's setup wizard asks, and a machine that declines mines Monero alone.
+  operator, no pool fee, rewards paid to your own wallet; the optional project donation is off
+  by default. Every hash can merge-mine Tari on the same work — the appliance's setup wizard
+  asks, and a machine that declines mines Monero alone.
   P2Pool's PPLNS payouts are lumpy, and Tari's solo merge-mining payouts are lumpier still;
   see [payout expectations](docs/dashboard.md#earnings--expected-vs-actual).
 - 🧠 **XvB switching engine.** Watches the XMRvsBeast raffle and shifts hashrate to hold your tier,
@@ -254,7 +255,7 @@ Everything runs through `pithead` (`./pithead help` lists it all):
 | `./pithead doctor` | Read-only health report (deps, Docker, AVX2, HugePages, RAM/disk, onion state). |
 | `./pithead version` | Print the installed stack version on one line (offline; also `-V` / `--version`). |
 | `./pithead backup` | Save config, secrets, the Tor onion keys, and the dashboard's database to a passphrase-encrypted archive under `backups/` (`--with-chains` adds blockchain data; `--no-encrypt` writes plaintext; `-y` / `--yes` skips the prompts). |
-| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; `-y` / `--yes` skips the prompt). |
+| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env`, `Caddyfile`, and the masked dashboard configuration from the configuration (asks before overwriting; `-y` / `--yes` skips the prompt). |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak — see [Rotating the internal secrets](docs/operations.md#rotating-the-internal-secrets). |
 
 Commands chain in one call (`./pithead apply upgrade` runs both, stopping on the first failure;
@@ -268,7 +269,8 @@ Full reference: **[Operations & Maintenance](docs/operations.md)**.
 
 ## 🤝 Donate
 
-If this stack saved you time, donations to this XMR wallet are appreciated:
+The [optional hashpower donation](docs/donation.md) is off by default and appears only in releases
+that publish a project endpoint; for a manual transfer, use this XMR wallet:
 
 ```
 486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R

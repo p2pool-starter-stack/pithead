@@ -52,8 +52,9 @@ _setup_again_rig_submit() {
         jq '.pools += [{url:"fallback.invalid:3333"}]' "$scratch/config.json" >"$scratch/extra.json"
         mv "$scratch/extra.json" "$scratch/config.json"
     fi
-    printf 'fixture-card coordinator\n'
+    printf '{"token":"fixture-card","address":"coordinator"}\n'
 }
+rig_adopt_leg() { [ -n "$rig_card" ]; }
 _rig_mining_up() { return 0; }
 _ssh() {
     case "$*" in
