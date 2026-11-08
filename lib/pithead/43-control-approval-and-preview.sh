@@ -343,7 +343,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     rm -f "$errf"
 }
 
-control_commit() ( # <id> <actor> <control-dir> [confirm-token] [approval-json]
+control_commit() (
     local id="$1" actor="$2" cdir="$3" confirm="${4:-}" approval="${5:-null}"
     local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0 carried_ssh=0
     local basef="$cdir/staged/.$id.base"
@@ -354,8 +354,6 @@ control_commit() ( # <id> <actor> <control-dir> [confirm-token] [approval-json]
         mutation_lock_release
         return 0
     fi
-    # On refusal the gate's stdout is the reason; on approval it is the changed key names, which
-    # the audit entries below record — WHAT changed, by name only (#349).
     local gate_out audit_keys=""
     if ! gate_out=$(control_approval_gate "$staged" "$confirm" "$id" "$actor" "$approval" "$cdir"); then
         [ -n "$gate_out" ] || gate_out="approval denied"

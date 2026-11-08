@@ -3,7 +3,7 @@ control_live_config_sum() {
     sha256sum "$CONFIG_FILE" 2>/dev/null | cut -d' ' -f1
 }
 
-control_commit_lock_exit() { # <status> <id> <actor> <control-dir>
+control_commit_lock_exit() {
     local rc="$1" id="$2" actor="$3" cdir="$4"
     trap - EXIT
     [ "$rc" -eq "$PITHEAD_EX_LOCK_TIMEOUT" ] || exit "$rc"
