@@ -225,7 +225,11 @@ _phase_provision_migration() {
     }
     # With the marker gone, a chain node that dies on its migration must reach the operator (#2588).
     phase_provision_chain_fault_after_release "$pv_user" "$pv_pass"
-    phase_provision_same_version_fallback
+    if ! phase_provision_same_version_fallback; then
+        bad "the data-floor fallback leg was not exercised: the same-version fallback left no verified committed guest"
+        rm -f "$mig_bundle"
+        return 1
+    fi
     phase_provision_floor_fallback_leg "$mig_bundle"
     rm -f "$mig_bundle"
 }
