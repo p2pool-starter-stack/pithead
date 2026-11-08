@@ -842,13 +842,24 @@ the earnings card then shows a **Confirmed on-chain** block under the estimate â
 the same **Confirmed on-chain** block in XTM once Tari payout confirmation is on (see the Tari note
 below).
 
+Receipt history and scan progress are separate for each configured wallet on each chain.
+Switching from wallet A to B starts B's history independently; switching back restores A's
+receipts and cursor. Dashboard totals, chart markers, Telegram earnings and completeness
+markers use only the current wallet. Equivalent Tari address encodings share one identity.
+
+On upgrade, receipts saved without a wallet identity remain in the database under `unknown`.
+They do not contribute to current totals or scan progress. The first scan for each wallet
+starts from height zero and records the receipts it finds under that wallet's identity;
+rediscovered legacy receipts can therefore trigger confirmation alerts again. No receipts
+are assigned to a wallet merely because it is configured during the upgrade.
+
 | Figure | What it sums |
 |---|---|
 | **Yesterday** | The previous full calendar day, midnight to midnight in the dashboard's timezone (`dashboard.timezone`) â€” the same clock the daily summary fires on. Not a trailing 24 hours. |
 | **Confirmed 24h** | The trailing 24 hours from now. Deliberately a different span from **Yesterday**, so the two disagree during the day. |
 | **Running 7d** | The trailing 7 days from now. |
 | **Running 30d** | The trailing 30 days from now. |
-| **Confirmed all-time** | Every payout recorded, however far back. |
+| **Confirmed all-time** | Every payout recorded for the current wallet, however far back. |
 | **Last payout** | Time since the most recent confirmed payout, hover for the payout count. |
 
 A running window is marked with a `*` when it reaches back further than the oldest payout on
