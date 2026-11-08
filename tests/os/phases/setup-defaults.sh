@@ -66,6 +66,12 @@ phase_setup_defaults() {
         return 1
         ;;
     esac
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "fresh defaults provisioning settled — $(provisioning_state)"
+    else
+        bad "fresh defaults provisioning did not finish successfully — $(provisioning_state)"
+        return 1
+    fi
     if _ssh "jq -e '.tari.mode == \"off\" and .xvb.enabled == false and
         .dashboard.tari_required == false and .dashboard.host == \"pithead\" and
         .local_miner.enabled == true and

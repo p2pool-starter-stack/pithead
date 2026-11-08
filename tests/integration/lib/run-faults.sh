@@ -211,36 +211,27 @@ fault_clock_drift() {
         "$(printf '%s' "$out" | grep -c 'NOT NTP-synchronized')" "0"
 }
 
-# ENOSPC / db-unhealthy verdict (#383): fault_db_readonly (above) proves the #131 db_healthy flag
-# under a PERMISSION failure (chmod a-w); a genuinely FULL disk is a different real failure mode
-# (ENOSPC, not EACCES) and is never forced — only a disk-headroom *warning* is checked (doctor's
-# check_disk_grouped). A 1MiB tmpfs bind-mounted OVER the dashboard data dir shadows its real
-# contents (nothing on the box's actual disk is touched; unmounting restores them) and fills solid,
-# so the dashboard's sqlite writes there hit a REAL kernel ENOSPC. Reuses the same db_healthy
-# predicate/assertions as fault_db_readonly — the trigger differs, the observable contract doesn't.
 fault_disk_enospc() {
-    local ddir
+    local ddir script out rc=0 fails_before=$IT_FAIL
+    ENOSPC_STORAGE_SAFE=0
     ddir="$(env_on_box DASHBOARD_DATA_DIR)"
     if [ -z "$ddir" ]; then
-        it_skip_leg "ENOSPC fault" "no DASHBOARD_DATA_DIR in .env"
-        return 0
+        it_fail "ENOSPC fault" "no DASHBOARD_DATA_DIR in .env"
+        return 1
     fi
-    it_step "fault: mount a 1MiB tmpfs over the dashboard data dir and fill it (real ENOSPC, #383)…"
-    if ! rx "sudo mount -t tmpfs -o size=1m,uid=1000,gid=1000 tmpfs $(quote_arg "$ddir")" >/dev/null 2>&1; then
-        it_skip_leg "ENOSPC fault" "could not mount a tmpfs over the data dir (no root / tmpfs support?)"
-        return 0
+    script=$(cat "$(dirname "${BASH_SOURCE[0]}")/disk-enospc-target.sh") || return 1
+    it_step "fault: owned tmpfs ENOSPC and dashboard recovery…"
+    out=$(rx "bash -c $(quote_arg "$script") bash $(quote_arg "$ddir")" 2>&1) || rc=$?
+    printf '%s\n' "$out" | grep '^ENOSPC ' || true
+    if printf '%s\n' "$out" | grep -Fxq 'ENOSPC mount restored'; then
+        ENOSPC_STORAGE_SAFE=1
     fi
-    rx "dd if=/dev/zero of=$(quote_arg "$ddir/.itest-fill") bs=1M count=4 >/dev/null 2>&1" >/dev/null 2>&1 || true
-    rx "docker compose restart dashboard" >/dev/null 2>&1
-    wait_for 90 5 "dashboard to report db_healthy=false under real ENOSPC" _pred_db_healthy_is false || true
-    assert_eq "db_healthy false under a real full disk (ENOSPC, #383)" \
-        "$(jq_get "$(api_state)" '.db_healthy')" "false"
-    it_step "recover: unmount the tmpfs, restoring the real data dir…"
-    rx "sudo umount $(quote_arg "$ddir")" >/dev/null 2>&1
-    rx "docker compose restart dashboard" >/dev/null 2>&1
-    wait_for 90 5 "dashboard to report db_healthy=true after ENOSPC recovery" _pred_db_healthy_is true || true
-    assert_eq "db_healthy true after real disk restored" \
-        "$(jq_get "$(api_state)" '.db_healthy')" "true"
+    assert_rc "ENOSPC target lifecycle completes" "$rc" "0"
+    assert_contains "real ENOSPC reached" "$out" "ENOSPC fill confirmed"
+    assert_contains "db_healthy false under a real full disk (ENOSPC, #383)" "$out" "ENOSPC db unhealthy confirmed"
+    assert_contains "only the owned ENOSPC mount removed; baseline restored" "$out" "ENOSPC mount restored"
+    assert_contains "db_healthy true after real disk restored" "$out" "ENOSPC dashboard recovered"
+    [ "$rc" = 0 ] && [ "$IT_FAIL" = "$fails_before" ]
 }
 
 # P2Pool seed-node DNS with a cold peer cache (#2496). --socks5 does not stop p2pool's seed loader:
@@ -336,20 +327,22 @@ run_fault_injection() {
     fault_firewall_status_alert
     fault_tor_down
     fault_clock_drift
-    fault_disk_enospc
+    if ! fault_disk_enospc && [ "$ENOSPC_STORAGE_SAFE" != 1 ]; then
+        rx "docker compose up -d monerod tor" >/dev/null 2>&1 || true
+        fault_rules_clear_all
+        rx 'bash -c "source ./pithead && apply_tor_egress_firewall" >/dev/null 2>&1' ||
+            it_fail "firewall restored after unsafe ENOSPC cleanup" "host firewall recovery failed"
+        rx 'rm -rf .itest-bin' >/dev/null 2>&1 || true
+        return 1
+    fi
     fault_p2pool_cold_cache_dns
     fault_p2pool_sidechain_sync
     fault_tor_probe_egress
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
 
-    # Belt-and-braces: whatever happened above, leave monerod + tor up, the dashboard data dir
-    # writable (real fs, not the ENOSPC tmpfs), the firewall reinstated, the timedatectl shadow
-    # gone, and the stack healthy — all unconditional so a mid-phase abort can't leave the box
-    # read-only, tmpfs-shadowed, clock-shadowed, or with clearnet egress open.
     rx "docker compose up -d monerod" >/dev/null 2>&1 || true
     rx "docker compose up -d tor" >/dev/null 2>&1 || true
     fault_rules_clear_all
-    rx "sudo umount $(quote_arg "$(env_on_box DASHBOARD_DATA_DIR)")" >/dev/null 2>&1 || true
     rx "sudo chmod -R u+w $(quote_arg "$(env_on_box DASHBOARD_DATA_DIR)")" >/dev/null 2>&1 || true
     rx "docker compose restart dashboard" >/dev/null 2>&1 || true
     rx 'bash -c "source ./pithead && apply_tor_egress_firewall" >/dev/null 2>&1' || true

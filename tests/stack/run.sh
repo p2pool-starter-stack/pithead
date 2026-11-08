@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Dependency-free test suite for pithead (no bats required).
-# Mixes unit tests (sourcing pithead and calling its functions) with black-box CLI tests
-# (running a sandboxed copy of pithead with docker/sudo stubbed out).
 #
 # Usage: tests/stack/run.sh [BLOCK]
 #   (none)  every block in turn, each in its own bash process, then the summed verdict
@@ -37,7 +35,6 @@ stack_verdict() { # <label>: the summary line, and the suite's exit status
     printf '0 failed\n'
     exit 0
 }
-
 if [ "$#" -eq 0 ]; then
     : >"$SANDBOX/block-tally"
     for _b in $(seq 1 "$STACK_BLOCKS"); do
@@ -62,6 +59,8 @@ fi
 STACK_BLOCK="$1"
 in_block() { [ "$1" = "$STACK_BLOCK" ]; }
 if in_block 1; then
+    bash "$HERE/test_checklist.sh"
+    assert_rc "manual checklist refusal contracts" "$?" 0
     bash "$HERE/test_control_audit_order.sh"
     assert_rc "control audit precedes result" "$?" "0"
     # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
@@ -78,6 +77,8 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-upgrade-lock.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-lock.sh" && domain_ran test-control-upgrade-lock.sh "$_d0" "$?" || domain_ran test-control-upgrade-lock.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-worker-upgrade-all.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-worker-upgrade-all.sh" && domain_ran test-control-worker-upgrade-all.sh "$_d0" "$?" || domain_ran test-control-worker-upgrade-all.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-verify.sh" && domain_ran test-release-verify.sh "$_d0" "$?" || domain_ran test-release-verify.sh "$_d0" "$?"
     # shellcheck source=tests/stack/release/test-release-signing.sh disable=SC2015
@@ -94,7 +95,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-sync-progress-hold.sh" && domain_ran test-sync-progress-hold.sh "$_d0" "$?" || domain_ran test-sync-progress-hold.sh "$_d0" "$?"
     # shellcheck source=tests/stack/dashboard/test-onion-apply-password.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-onion-apply-password.sh" && domain_ran test-onion-apply-password.sh "$_d0" "$?" || domain_ran test-onion-apply-password.sh "$_d0" "$?"
-
     # Regression (#1330): test-dashboard-onion.sh passes alone; only a separate `bash`, not a subshell, proves it.
     # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
     bash -c '
@@ -153,7 +153,6 @@ if in_block 1; then
     # shellcheck source=tests/stack/test-install-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-install-verify.sh" && domain_ran test-install-verify.sh "$_d0" "$?" || domain_ran test-install-verify.sh "$_d0" "$?"
 fi
-
 if in_block 2; then
     # shellcheck source=tests/stack/secrets/test-secrets.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets.sh" && domain_ran test-secrets.sh "$_d0" "$?" || domain_ran test-secrets.sh "$_d0" "$?"
@@ -220,7 +219,6 @@ if in_block 2; then
     # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
 fi
-
 if in_block 3; then
     # Approval gate (#33), add-only (#893), SSRF floor (#122, #2671); own sandbox (#1105 R13). POSITION-LOCKED: the next three read gate_try()/$UUID5.
     # shellcheck source=tests/stack/control/test-control-add-only-ssrf.sh disable=SC2015
@@ -262,11 +260,9 @@ if in_block 4; then
     *LEAK-*) bad "masked copy holds no notification secret" "a notification secret leaked into $MASKED" ;;
     *) ok "masked copy holds no notification secret" ;;
     esac
-
     # shellcheck source=tests/stack/test-spool-audit.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 fi
-
 if in_block 5; then
     # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
@@ -276,11 +272,12 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy-layout.sh" && domain_ran test-control-deploy-layout.sh "$_d0" "$?" || domain_ran test-control-deploy-layout.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-lifecycle-verbs.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-lifecycle-verbs.sh" && domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?" || domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-backup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-backup.sh" && domain_ran test-control-backup.sh "$_d0" "$?" || domain_ran test-control-backup.sh "$_d0" "$?"
     # shellcheck source=tests/stack/doctor/test-doctor-exposure.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-exposure.sh" && domain_ran test-doctor-exposure.sh "$_d0" "$?" || domain_ran test-doctor-exposure.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-power-verbs.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-power-verbs.sh" && domain_ran test-control-power-verbs.sh "$_d0" "$?" || domain_ran test-control-power-verbs.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-diagnostics.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-diagnostics.sh" && domain_ran test-control-diagnostics.sh "$_d0" "$?" || domain_ran test-control-diagnostics.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-grub-hugepages.sh disable=SC2015
@@ -289,8 +286,12 @@ if in_block 5; then
     assert_rc "setup build interruption regression" "$?" 0
     # shellcheck source=tests/stack/test-wizard-setup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-manual-qa-oracle.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-manual-qa-oracle.sh" && domain_ran test-manual-qa-oracle.sh "$_d0" "$?" || domain_ran test-manual-qa-oracle.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-tari.sh" && domain_ran test-wizard-tari.sh "$_d0" "$?" || domain_ran test-wizard-tari.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-wizard-addresses.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-addresses.sh" && domain_ran test-wizard-addresses.sh "$_d0" "$?" || domain_ran test-wizard-addresses.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-provisioning.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-provisioning.sh" && domain_ran test-control-provisioning.sh "$_d0" "$?" || domain_ran test-control-provisioning.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-runner-drain.sh disable=SC2015
@@ -303,6 +304,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-defaults.sh" && domain_ran test-appliance-defaults.sh "$_d0" "$?" || domain_ran test-appliance-defaults.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-install.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && domain_ran test-appliance-install.sh "$_d0" "$?" || domain_ran test-appliance-install.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-headless-install.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-headless-install.sh" && domain_ran test-appliance-headless-install.sh "$_d0" "$?" || domain_ran test-appliance-headless-install.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-config-merge.sh disable=SC2015
@@ -391,10 +394,9 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-surface.sh" && domain_ran test-doctor-surface.sh "$_d0" "$?" || domain_ran test-doctor-surface.sh "$_d0" "$?"
     # shellcheck source=tests/stack/doctor/test-doctor-memory.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-memory.sh" && domain_ran test-doctor-memory.sh "$_d0" "$?" || domain_ran test-doctor-memory.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"
 fi
-
+host_fence_final_check
 [ -z "$_tally" ] || printf '%s %s %s\n' "$STACK_BLOCK" "$PASS" "$FAIL" >>"$_tally"
 stack_verdict "pithead tests, block $STACK_BLOCK of $STACK_BLOCKS"
