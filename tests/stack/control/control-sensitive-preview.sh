@@ -126,6 +126,7 @@ for extra_route in false true; do
             parse_and_validate_config
             load_preserved_state
             resolve_dashboard_host
+            DEPLOYMENT_COMPLETED=true
             render_env "$PITHEAD_ENV_DRYRUN"
             mv "$PITHEAD_ENV_DRYRUN" "$ENV_FILE"
         ' >/dev/null 2>&1
@@ -136,11 +137,11 @@ for extra_route in false true; do
     assert_eq "expert no-dns previews confirmed ($extra_route)" \
         "$(jq -r '.status == "previewed" and .destructive and any(.changes[]; .key == "p2pool.extra_flags" and .flag == "CONFIRM" and (.msg | contains("--no-dns")))' "$RESULTS/$UUID5.json")" true
     assert_eq "expert no-dns does not reset PPLNS ($extra_route)" "$(preview_without "PPLNS")" true
-    gate_reason=$(cd "$C" && PATH="$C/bin:$PATH" bash -c 'source ./pithead; if control_approval_gate "$@"; then exit 0; else exit "$?"; fi' ./pithead "$C/cand.json" "" "$UUID5" admin null "$C/data/control")
+    gate_reason=$(cd "$C" && PATH="$C/bin:$PATH" bash -c 'source ./pithead; if control_approval_gate "$@"; then exit 0; else exit "$?"; fi' "$C/pithead" "$C/cand.json" "" "$UUID5" admin null "$C/data/control")
     assert_rc "expert no-dns refuses direct gate ($extra_route)" "$?" 1
     assert_contains "expert no-dns asks for typed APPLY ($extra_route)" "$gate_reason" "type APPLY"
     assert_eq "unconfirmed expert flag is not persisted ($extra_route)" "$(jq -c '.p2pool.extra_flags' "$C/config.json")" '[]'
-    gate_reason=$(cd "$C" && PATH="$C/bin:$PATH" bash -c 'source ./pithead; if control_approval_gate "$@"; then exit 0; else exit "$?"; fi' ./pithead "$C/cand.json" APPLY "$UUID5" admin null "$C/data/control")
+    gate_reason=$(cd "$C" && PATH="$C/bin:$PATH" bash -c 'source ./pithead; if control_approval_gate "$@"; then exit 0; else exit "$?"; fi' "$C/pithead" "$C/cand.json" APPLY "$UUID5" admin null "$C/data/control")
     assert_rc "expert no-dns confirmed gate accepts ($extra_route): $gate_reason" "$?" 0
     jq '.p2pool.extra_flags=["--wallet bad"]' "$C/config.json" >"$C/cand.json"
     preview_only "$C/cand.json"
