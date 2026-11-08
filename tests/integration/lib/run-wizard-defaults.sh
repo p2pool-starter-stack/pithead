@@ -2,6 +2,14 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 # Exercise the real CLI wizard and setup against the candidate stack. Wallets come from
 # the baseline; the runner owns restoration of the deployment after this lifecycle phase.
+wizard_restore_baseline() {
+    local out rc
+    push_config "$BASELINE_CONFIG" || return 1
+    out=$(LIFECYCLE_MINING_ACTIVE=0 pithead apply -y 2>&1)
+    rc=$?
+    [ "$rc" = 0 ] || it_err "CLI defaults restore apply exited $rc: $out"
+    return "$rc"
+}
 run_cli_wizard_defaults() {
     local monero tari cfg out rc
     monero=$(jq -er '.monero.wallet_address | select(type == "string" and length > 0)' <<<"${BASELINE_CONFIG:-null}") || {
@@ -71,7 +79,7 @@ run_cli_wizard_defaults() {
     assert_rc "fresh CLI defaults report a healthy stack" "$?" 0
     # Keep the general lifecycle's secret-preservation tests on their original fixture.
     lifecycle_gate_sample before-wizard-restore
-    push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1
+    wizard_restore_baseline
     rc=$?
     lifecycle_gate_sample after-wizard-restore-apply
     if [ "$rc" -eq 0 ]; then
@@ -79,4 +87,5 @@ run_cli_wizard_defaults() {
         rc=$?
     fi
     assert_rc "CLI defaults proof restores the baseline config for lifecycle" "$rc" 0
+    return "$rc"
 }

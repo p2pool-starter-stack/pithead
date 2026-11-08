@@ -52,7 +52,7 @@ lifecycle_mining_diagnostics() {
     {
         printf 'lifecycle mining diagnostic: %s\n' "$1"
         rx "timeout --kill-after=2 10 docker inspect --format 'proxy status={{.State.Status}} networks={{json .NetworkSettings.Networks}}' xmrig-proxy
-            timeout --kill-after=2 10 docker network inspect --format '{{json .IPAM.Config}}' mining_net
+            timeout --kill-after=2 10 docker network inspect --format '{{.Name}} driver={{.Driver}}' mining_net
             timeout --kill-after=2 10 docker compose exec -T dashboard python3 -c 'import os; print(\"proxy endpoint=\" + os.environ.get(\"PROXY_HOST\", \"\") + \":\" + os.environ.get(\"PROXY_API_PORT\", \"\"))'
             timeout --kill-after=2 10 systemctl show xmrig.service -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus" 2>&1 | tail -n 20
     } >>"$LIFECYCLE_MINER_DIAGNOSTICS" || true

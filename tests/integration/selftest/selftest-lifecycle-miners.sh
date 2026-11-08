@@ -352,3 +352,33 @@ printf '%s\n' 'PASS: real startup-restore sequence preserves worker binding thro
     ! grep -Fq 'workers reconnect' "$work/redirected-fail.log" "$work/redirected-pass.log"
 )
 printf '%s\n' 'PASS: wrapper rows reach the harness results through a redirected caller pipeline'
+
+(
+    source "$ROOT/tests/integration/lib/run-wizard-defaults.sh"
+    applies=0 steps=0 failed=0
+    push_config() { :; }
+    rx() {
+        applies=$((applies + 1))
+        [ "${APPLY_RC:-0}" = 0 ] || {
+            echo 'apply boom'
+            return "$APPLY_RC"
+        }
+    }
+    lifecycle_proxy_started() { echo new; }
+    lifecycle_proxy_workers() { return 1; }
+    lifecycle_mining_step() {
+        steps=$((steps + 1))
+        return 1
+    }
+    it_err() {
+        failed=$((failed + 1))
+        last="$1"
+    }
+    LIFECYCLE_MINING_ACTIVE=1 IT_PITHEAD=fixture BASELINE_CONFIG='{}'
+    wizard_restore_baseline
+    [ "$applies" = 1 ] && [ "$steps" = 0 ] && [ "$failed" = 0 ]
+    APPLY_RC=7
+    if wizard_restore_baseline; then exit 1; fi
+    [ "$failed" = 1 ] && [[ "$last" == *"exited 7: apply boom" ]]
+)
+printf '%s\n' 'PASS: wizard restore apply runs once, unwrapped, and fails loudly with its own output'
