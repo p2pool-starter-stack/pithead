@@ -324,9 +324,9 @@ cryptographically random token of at least 32 ASCII characters; generate one wit
 `openssl rand -hex 16`. A shorter legacy token still works for raw host control but gets no derived
 read bearer, because the bearer would make guessing that token offline practical.
 
-Appliance rigs run stock XMRig, which ignores a `DONATION` below 1 and donates at least 1%. A
-RigForge-built rig has the same floor at the level it was compiled with; lowering it needs a rebuild.
-Worker Inspect shows the configured value, not the rate the miner runs.
+An appliance rig defaults `DONATION` to 0 and honours any value from 0 up: the XMRig it runs is
+patched with a minimum donate level of 0 (RigForge 1.18.1 and later compile the same minimum). Worker
+Inspect shows the configured value, not the rate the miner runs.
 
 ! The control token is **write-capable** and travels in **cleartext HTTP** over the LAN (like the
 stratum password): a change can alter a rig's pools or its thermal `watchdog`/`max_temp_c`, so anyone

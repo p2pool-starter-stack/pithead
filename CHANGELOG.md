@@ -19,6 +19,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - The appliance rootfs raises golang.org/x/net to 0.62.0 in the Cosign and Docker Compose it
   builds, clearing CVE-2026-78661 in both binaries (#3931).
 
+### Changed
+
+- The appliance image bakes RigForge 1.18.1. Its prebuilt XMRig carries RigForge's donation
+  default and minimum of 0, a `pools` edit from Worker Inspect on an appliance rig is refused
+  (set the pool in Pithead configuration), and an appliance upgraded from 2.0.2
+  reseeds the prebuilt XMRig on first boot instead of keeping the one 2.0.2 shipped (#3817).
+
 ### Fixed
 
 - The dashboard no longer asks for a second reboot while an installed update is still being

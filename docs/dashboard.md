@@ -443,11 +443,12 @@ doesn't come back to a live hashrate — rolls it back on its own. The panel sho
 (applied / rejected / rolled back — or failed with the rig's reason, when its own rollback
 path broke) and appends it to the history.
 
-> NOTE: `DONATION` below the rig's built-in minimum has no effect. Appliance rigs run stock XMRig,
-> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig has the same
-> floor at the level it was compiled with, and lowering it needs a rebuild. Worker Inspect shows the
-> value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
-> report XMRig's live donate level.
+> NOTE: An appliance rig defaults `DONATION` to 0 and honours any value from 0 up; the compiled
+> minimum is 0 from RigForge 1.18.1. Worker Inspect shows the value in the rig's `config.json`, not
+> the rate the miner runs, because the rig's feed does not report XMRig's live donate level.
+>
+> A `pools` edit from Worker Inspect on an appliance rig is refused with `appliance-pools-read-only`;
+> change the pool in Pithead configuration instead.
 
 > **Remote rig control is beta in 2.0.0.** An appliance rig listens for control at every boot,
 > pinned to the coordinator and gated by its token; dashboard writes need the rig adopted first.
@@ -562,6 +563,10 @@ dashboard can account for — because someone applied a change through it, or th
 its own — the line goes quiet, even though the earlier move stands. The durable record is the
 `rig-drift` row in the Security panel, which is written once and never withdrawn; this line is a
 statement about the config in front of you.
+
+A revision that moves in the same poll that shows a different RigForge version is a re-base by the
+upgrade, not an edit, so it writes no `rig-drift` row and raises no line. A dashboard upgraded
+past a rig's last seen version has no stored version for it and treats its first move the same way.
 
 Neither check has an all-clear. Both either report a disagreement or say nothing at all, and their
 silence is not evidence: a clear line would be a reassurance bounded by everything listed above,
