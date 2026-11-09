@@ -226,7 +226,7 @@ STUB_HISTORY='[{"change_id":"c-DONATION","status":"applied"},
 
 echo "== run_rigforge_writable_keys: DONATION only ever moves TOWARD zero =="
 # A rig already donating is nudged DOWN to 0, never up: the probe can only reduce what a borrowed
-# rig gives away. Only a rig at 0 is nudged to 1 (RigForge's own default). Kills a fixed `orig+1`.
+# rig gives away. Only a rig at 0 gets a nonzero probe. Kills a fixed `orig+1`.
 STUB_DETAIL='{"rig_config":{"DONATION":5,"watchdog_interval_min":5}}'
 reset_applies
 quietly run_rigforge_writable_keys rig1 >/dev/null
@@ -236,7 +236,7 @@ assert_eq "and restored to 5" "$(applies | sed -n 2p)" '{"DONATION":5}'
 STUB_DETAIL='{"rig_config":{"DONATION":0,"watchdog_interval_min":5}}'
 reset_applies
 quietly run_rigforge_writable_keys rig1 >/dev/null
-assert_eq "a rig donating 0 is probed to RigForge's default 1" \
+assert_eq "a rig donating 0 is probed to a nonzero value" \
     "$(applies | sed -n 1p)" '{"DONATION":1}'
 assert_eq "and restored to 0" "$(applies | sed -n 2p)" '{"DONATION":0}'
 

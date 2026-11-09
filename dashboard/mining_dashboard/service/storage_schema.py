@@ -158,16 +158,7 @@ class StorageSchemaMixin:
             "CREATE TABLE IF NOT EXISTS share_stats "
             "(ts REAL, accepted INTEGER, rejected INTEGER, invalid INTEGER, expired INTEGER)"
         )
-        # Confirmed on-chain payouts from the view-only wallet (#381). Keyed (chain, txid) — NOT
-        # txid alone — so the Tari sibling (#462) reuses this exact table with chain="tari"; the
-        # payout_confirmed alert carries the chain too. Additive, forward-only: mirrors events /
-        # share_stats, so no _migrate_db change is needed. amount_atomic keeps the wallet's native
-        # atomic units; the view layer converts to XMR at the edge.
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS payouts "
-            "(chain TEXT, txid TEXT, height INTEGER, ts REAL, amount_atomic INTEGER, "
-            "PRIMARY KEY (chain, txid))"
-        )
+        self._create_payouts_table()
         # Per-worker config-change history for the Worker Inspect page (#185). RigForge keeps no
         # config history on the rig, so Pithead owns it: one row per change the dashboard applied,
         # with the writable-key `changes` we sent (each row IS a diff from the prior state, by
@@ -248,14 +239,9 @@ class StorageSchemaMixin:
             "(id TEXT PRIMARY KEY, ts TEXT, source TEXT, actor TEXT, action TEXT, status TEXT, "
             "keys TEXT)"
         )
-        # The config revision each rig was last OBSERVED serving (#1551), one row per worker, plus
-        # the revision it drifted FROM while that drift is still current (#1564, migrated below).
-        # The PRIMARY KEY is the only index it wants. Holding the rig's opaque `revision` NEXT TO
-        # the `last_change_id` beside it is the point: a later poll tells a recorded change (both
-        # moved) from an edit underneath RigForge (only the revision moved) — #1542's open door.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS worker_config_revision (worker TEXT PRIMARY KEY, "
-            "revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT)"
+            "revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT, rigforge_version TEXT)"
         )
 
     def _create_indexes(self):
@@ -276,9 +262,36 @@ class StorageSchemaMixin:
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_history_ts ON worker_history(ts)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts)")
 
+    def _create_payouts_table(self):
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS payouts "
+            "(chain TEXT, wallet_id TEXT NOT NULL, txid TEXT, height INTEGER, ts REAL, "
+            "amount_atomic INTEGER, PRIMARY KEY (chain, wallet_id, txid))"
+        )
+
+    def _migrate_payout_identity(self, cursor):
+        cursor.execute("PRAGMA table_info(payouts)")
+        if "wallet_id" in {info[1] for info in cursor.fetchall()}:
+            return
+        self._conn.execute("SAVEPOINT payout_identity")
+        try:
+            self._conn.execute("ALTER TABLE payouts RENAME TO payouts_legacy")
+            self._create_payouts_table()
+            self._conn.execute(
+                "INSERT INTO payouts (chain, wallet_id, txid, height, ts, amount_atomic) "
+                "SELECT chain, 'unknown', txid, height, ts, amount_atomic FROM payouts_legacy"
+            )
+            self._conn.execute("DROP TABLE payouts_legacy")
+        except sqlite3.Error:
+            self._conn.execute("ROLLBACK TO payout_identity")
+            raise
+        finally:
+            self._conn.execute("RELEASE payout_identity")
+
     def _migrate_db(self):
         """Handles schema migrations for existing databases."""
         cursor = self._conn.cursor()
+        self._migrate_payout_identity(cursor)
 
         # History Table Migrations
         cursor.execute("PRAGMA table_info(history)")
