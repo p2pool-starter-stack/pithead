@@ -4,29 +4,32 @@ The contract for delivering an OS bundle to an appliance rig (`machine-role` is 
 
 ## Scope
 
-- A shipped rig has no SSH, no dashboard and no control channel of Pithead's, and RigForge's git upgrade cannot apply to its baked, read-only tree. Today a rig moves to a newer OS only by re-flashing its media or by booting a newer stick and choosing **Keep everything**.
-- Delivery covers **disk-installed rigs only**. The KVM rig phase proves the A/B install, the role and settings surviving the swap, and the self-commit on that layout. A rig that runs from its USB stick re-flashes until a delivery test passes on a measured stick layout (ESP, two 4 GiB slots and `/data` on the stick; the `rigmedia` phase automates row M14, #2069). Docs claim remote update only for measured layouts. The rig timer enforces this: it does nothing when `MEDIA=usb` in the boot environment (`grub-editenv`, written at boot by `pithead-boot-version record-booted`). No minimum stick size is established, and the claim stays disk-only until a delivery test measures one.
+- A shipped rig has no SSH, no dashboard and no control channel of Pithead's, and RigForge's git upgrade cannot apply to its baked, read-only tree. Today a rig moves to a newer OS only by re-flashing its media or by booting a newer stick and choosing **Keep everything**, which keeps `/data` and so the role, `rig.json` and the token (`os/installer/pithead-install:222-276`). No test proves that route for a rig yet; #3961 asks for it.
+- Delivery covers **disk-installed rigs only**. The KVM rig phase proves the A/B install, the role and settings surviving the swap, and the self-commit on that layout. A rig that runs from its USB stick re-flashes until a delivery test passes on a measured stick layout (ESP, two 4 GiB slots and `/data` on the stick; the `rigmedia` phase automates row M14, #2069). Docs claim remote update only for measured layouts. The rig timer enforces this and fails closed: it proceeds only when `MEDIA=internal` in the boot environment (`grub-editenv`, written at boot by `pithead-boot-version record-booted`). An unset or unreadable `MEDIA` (`record_media` can fail) counts as not internal. No minimum stick size is established, and the claim stays disk-only until a delivery test measures one.
 - Part 1 (the appliance flag in the feed, refusing the RigForge git upgrade, the docs paragraph) belongs to #3961 and is not part of this contract.
 
 ## Design: the rig pulls from its coordinator
 
 Rigs dial the coordinator. Nothing new listens on a rig and nothing is fetched over clearnet: the coordinator already fetches releases over Tor (`os-check` and `os-download`, `lib/pithead/48-os-update-verbs.sh`), and the rig reads the result over the LAN.
 
-A rig never runs ahead of its coordinator. The operator consents to an update on the coordinator, by running `os-check`, `os-download` and `os-verify` there. A rig installs only what the coordinator holds as verified.
+A rig never runs ahead of its coordinator. The operator consents to an update on the coordinator, by running `os-check`, `os-download`, `os-verify` and `os-install` there. The coordinator offers a rig only the version it has itself installed and committed, so a rig is never newer than the machine it reports to.
 
 ## Contract
 
 ### What the coordinator serves
 
-- Only the staged bundle that `target.json` names, and only while the recorded OS-update state (`results/os-update-state.json`) is `verified` for that same tag. A bundle that is downloaded but not verified, or whose tag differs from the state, is not served: the coordinator answers "none available".
+- Only the **rig offer**: a retained copy of the bundle the coordinator itself installed, keyed to its tag. `os-install` moves the verified bundle into the offer directory (a sibling of the staging directory under `/data`) instead of deleting it at `lib/pithead/48-os-update-verbs.sh:323`, replacing any older offer. This is needed because `os-install` removes the staged bundle and `target.json`, and the coordinator's committing boot returns the state to `idle` (`os/overlay/pithead-boot`), so a gate on the transient `verified` step would be open only between `os-verify` and `os-install`, and a rig checking once a day would usually find nothing.
+- The offer is served only while the coordinator's running version equals the offer's tag. After a rollback, a failed commit or a later downgrade the versions differ and the coordinator answers "none available". A bundle that was downloaded but never installed is never served.
+- The offer counts against `/data` headroom: the `os-download` space check includes the retained offer, and a factory reset removes it with the rest of `/data`.
 - Over the LAN only. The endpoint is not published on Tor and not reachable from outside the coordinator's own network.
 - The coordinator serves the `.raucb` file and its version as they stand. It signs nothing and publishes no manifest.
 - The endpoint's scheme, port and path are fixed by the coordinator-endpoint pull request, which adds them to this page before it merges.
 
 ### How the rig authenticates
 
-- The rig presents the `access_token` it already holds in `rig.json` (the #1836 control token, which Pithead mints and renders into RigForge's `ACCESS_TOKEN`). There is no new credential and no new storage format.
-- The coordinator compares it in constant time against the token it holds for that rig in its worker record, the one it already uses to call the rig. A missing or wrong token gets an empty answer: no bundle, no version, no hint of which part failed.
+- The rig proves it holds the `access_token` in `rig.json` (the #1836 control token, which Pithead mints and renders into RigForge's `ACCESS_TOKEN`). There is no new credential and no new storage format.
+- The token never crosses the LAN. The coordinator sends a random nonce and the rig answers with HMAC-SHA256 of it keyed by the token, so a host on the LAN that spoofs the pool-host name learns nothing reusable. This refines the ruling's "constant-time compare": the compare is the same, on the HMAC instead of the token. The endpoint pull request fixes the framing.
+- The rig sends no identity beyond the proof. The coordinator computes the expected HMAC for every rig token in its worker records and compares each in constant time without stopping at a match, so the matching record identifies the rig. A missing, wrong or unknown proof gets an empty answer: no bundle, no version, no hint of which part failed.
 - Neither side logs the token, and the coordinator's audit log records the rig and the verdict only.
 
 ### Where the rig looks, and when
@@ -64,7 +67,7 @@ Each is separate, in this order. `#1837` closes with the last.
 
 | Order | Change | Proof |
 |---|---|---|
-| 1 | Coordinator endpoint: serves the verified bundle behind the rig token | `tier4-e2e` on its own head |
+| 1 | Coordinator endpoint, plus the `os-install` change that retains the rig offer and the space check: serves the offer behind the rig proof | `tier4-e2e` on its own head |
 | 2 | Rig timer and fetch under `os/` | `tier4-kvm` on its own head |
 | 3 | Rejection tests: unsigned bundle, wrong `compatible`, older and equal version, missing or wrong token | `tests/os` selftests and a `tier4-kvm` leg |
 | 4 | KVM proof: rig on an older bundle, coordinator holding a newer verified one; install, reboot, commit, mine on the new slot; role, `rig.json`, `ACCESS_TOKEN` and settings unchanged; the version survives a further reboot; an uncommitted slot falls back | `tier4-kvm`, one bounded run, no soak |
