@@ -504,3 +504,9 @@ The e2e wrapper captures required pre-run systemd unit states through
 `tests/integration/lib/restore-unit-state.sh`. Restoration checks their capture records before
 unit removal; `tests/integration/selftest/selftest-restore-unit-capture.sh` covers failed reads
 and state lost between preflight and restoration.
+
+The wrapper safety-backup producer is `tests/integration/lib/safety-backup.sh`;
+`backup-window.sh` and `backup-window.py` in the same directory collect and validate
+its [versioned result](backup-window-results.md). The CLI samples the shared restart
+boundary through `lib/pithead/17b-backup-window.sh`. Fixture/selftests are in
+`tests/integration/selftest/selftest-backup-window.sh` and its Python test modules.

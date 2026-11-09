@@ -99,7 +99,7 @@ assert_eq "run-lifecycle prunes only on the successful-backup path" \
 assert_eq "run-lifecycle protects the safety anchor" \
     "$(grep -c 'backup_prune rx backups "\$arch" "\${SAFETY_ARCHIVE:-}"' "$HERE/../lib/run-lifecycle.sh")" "1"
 assert_eq "e2e backup_stack prunes only after the archive is located" \
-    "$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../e2e.sh" | grep -A1 'ok "safety backup:' | tail -n1 | grep -c backup_prune)" "1"
+    "$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../lib/safety-backup.sh" | grep -A1 'ok "safety backup:' | tail -n1 | grep -c backup_prune)" "1"
 
 printf '\nbackup-prune self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
