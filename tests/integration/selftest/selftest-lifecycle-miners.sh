@@ -124,12 +124,17 @@ lifecycle_mining_step restore mutation
 lifecycle_mining_step up mutation
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
 [ "$IT_SKIPPED_LEGS" = "$((skips + 5))" ]
+lifecycle_mining_step node-down mutation
+[ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 1 ]
+lifecycle_mining_step node-recovery mutation
+[ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
+[ "$IT_SKIPPED_LEGS" = "$((skips + 7))" ]
 unset NO_WORKERS
 SKIP_MINING_ASSERTS=1
 lifecycle_mining_step backup mutation
-[ "$IT_SKIPPED_LEGS" = "$((skips + 6))" ]
+[ "$IT_SKIPPED_LEGS" = "$((skips + 8))" ]
 if lifecycle_mining_step apply mutation_fails; then exit 1; else rc=$?; fi
-[ "$rc" = 7 ] && [ "$IT_SKIPPED_LEGS" = "$((skips + 7))" ]
+[ "$rc" = 7 ] && [ "$IT_SKIPPED_LEGS" = "$((skips + 9))" ]
 unset SKIP_MINING_ASSERTS
 OUT_DIR="$work/results"
 mkdir -p "$OUT_DIR"
