@@ -117,3 +117,25 @@ async def test_state_prefills_the_default_name_over_saved_auto(hostname_client, 
     spool.joinpath("last-attempt.json").write_text(json.dumps(cfg))
     state = await (await client.get("/api/wizard-state")).json()
     assert state["config"]["dashboard"]["host"] == expected
+
+
+@pytest.mark.parametrize(
+    "bad", ["Shed-3", "shed_3", "shed.local", "-shed", "auto", "localhost", "a" * 64]
+)
+async def test_rig_worker_is_the_machine_name_and_follows_the_shared_rule(hostname_client, bad):
+    client, spool = hostname_client
+    result = await client.post(
+        "/submit", data={"role": "rig", "rig_pool": "10.0.0.5:3333", "rig_worker": bad}
+    )
+    assert result.status == 400
+    assert (await result.json())["error"] == MACHINE_NAME_RULE
+    assert not spool.joinpath("rig-request.json").exists()
+
+
+async def test_rig_worker_that_follows_the_rule_is_accepted(hostname_client):
+    client, spool = hostname_client
+    result = await client.post(
+        "/submit", data={"role": "rig", "rig_pool": "10.0.0.5:3333", "rig_worker": "shed-3"}
+    )
+    assert result.status == 200
+    assert json.loads(spool.joinpath("rig-request.json").read_text())["worker"] == "shed-3"
