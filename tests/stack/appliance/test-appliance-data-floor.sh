@@ -119,8 +119,8 @@ assert_contains "a non-matching marker leaves chain services unheld" "$hold_else
 commit_cleanup=$(awk '/^    if \[ "\$gate_pass" = 1 \]; then$/{f=1} f&&/stack is serving/{exit} f' "$BOOT")
 assert_contains "the coordinator commits durably before fallback cleanup" "$commit_cleanup" 'rauc status mark-good && sync || fail_boot'
 assert_contains "fallback cleanup is reached after the successful commit" "$commit_cleanup" 'boot_gate_passed
-        if [ "$hold_chain" = 0 ]; then
-            restore_data_floor_after_fallback "$migration_fingerprint"'
+        commit_config_stamp
+        [ "$hold_chain" != 0 ] || restore_data_floor_after_fallback "$migration_fingerprint"'
 assert_contains "the shared commit cleanup removes and syncs both records" "$(cat "$BOOT")" \
     '            clear) rm -f "$(os_migration_marker_file)" "$(os_data_floor_file).prev" && sync || exit 1 ;;'
 assert_contains "held coordinator release uses durable record cleanup" "$(cat "$BOOT")" '    clear_migration_hold "$@" || return 1'
