@@ -127,6 +127,10 @@ test-appliance-reset-slot.sh|rs_case
 test-appliance-rig-config-merge.sh|rcm_invalid
 test-apply-retry.sh|label
 test-apply-retry.sh|scope
+test-backup-data-paths.sh|BDP_ENV_KEYS
+test-backup-data-paths.sh|BDP_I
+test-backup-data-paths.sh|i
+test-backup-data-paths.sh|label
 test-cli.sh|first_run_case
 test-config-document.sh|raw
 test-config-document.sh|verb
