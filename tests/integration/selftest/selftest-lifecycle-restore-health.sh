@@ -53,7 +53,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         has_compose_profile() { case "$RESTORE_CASE" in carry-*) return 0 ;; *) return 1 ;; esac }
         wait_for() { :; }
         assert_rc() { :; }
-        dashboard_durable_rows() { printf 'blocks -'; }
+        dashboard_durable_rows() { [ "$RESTORE_CASE" = carry-rows-unreadable ] || printf 'blocks -'; }
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
         run_cli_wizard_defaults() { [ "$RESTORE_CASE" != wizard-defaults-fails ] || {
@@ -61,7 +61,9 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             return 1
         }; }
         lifecycle_gate_sample() { :; }
+        run_support_bundle() { :; }
         run_source_image_reconcile() { :; }
+        run_image_permissions() { :; }
         run_restore_dashboard_probe() {
             trace_restore_order dashboard-probe
             [ "$RESTORE_CASE" != dashboard-probe-fails ] || {
@@ -147,6 +149,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         fi
         printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
+        [ "$RESTORE_CASE" != carry-rows-unreadable ] || printf '|applied=%s' "$([ -e "$OUT_DIR/dashboard-carry.apply.log" ] && echo yes || echo no)"
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
@@ -206,6 +209,7 @@ assert_eq "a healthy dashboard carry keeps lifecycle passing (#2360)" "$(drive_r
 assert_eq "a failed dashboard carry apply fails lifecycle and retains its diagnostic (#2785)" "$(drive_restore yes carry-apply-fails)" "1|1|carry apply failed before health wait"
 assert_eq "a healthy apply whose carry never becomes healthy fails lifecycle (#2785)" "$(drive_restore yes carry-health-fails)" "1|1"
 assert_eq "lost durable rows across the carry fail lifecycle (#2360)" "$(drive_restore yes carry-rows-diverge)" "1|1"
+assert_eq "an unreadable pre-move dashboard probe fails lifecycle and skips the carry apply (#3664)" "$(drive_restore yes carry-rows-unreadable)" "1|1|applied=no"
 assert_eq "a failed dashboard carry cleanup fails lifecycle (#2360)" "$(drive_restore yes carry-cleanup-fails)" "1|1"
 assert_eq "a source checkout's missing-image leg keeps lifecycle passing (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes)" "0|0"
 assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes no-proxy-image)" "1|1"
@@ -263,13 +267,14 @@ assert_contains "the extracted gate includes lifecycle and fault injection" "$MA
 drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
     (
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
-        RUN_LIFECYCLE=1 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
+        RUN_LIFECYCLE=1 RUN_RESET_DASHBOARD=0 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
             RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
         run_lifecycle() {
             LIFECYCLE_STACK_INTACT="${intact:-0}"
             return "$lifecycle_rc"
         }
         run_fault_injection() { fault_ran=yes; }
+        run_fault_injection_maybe() { run_fault_injection; }
         it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         gate() { eval "$MAIN_SRC"; }
         gate >/dev/null 2>&1 || true

@@ -563,6 +563,10 @@ its own — the line goes quiet, even though the earlier move stands. The durabl
 `rig-drift` row in the Security panel, which is written once and never withdrawn; this line is a
 statement about the config in front of you.
 
+A revision that moves in the same poll that shows a different RigForge version is a re-base by the
+upgrade, not an edit, so it writes no `rig-drift` row and raises no line. A dashboard upgraded
+past a rig's last seen version has no stored version for it and treats its first move the same way.
+
 Neither check has an all-clear. Both either report a disagreement or say nothing at all, and their
 silence is not evidence: a clear line would be a reassurance bounded by everything listed above,
 which is the reading the whole section exists to prevent. Where they are silent the older reading
@@ -842,13 +846,24 @@ the earnings card then shows a **Confirmed on-chain** block under the estimate �
 the same **Confirmed on-chain** block in XTM once Tari payout confirmation is on (see the Tari note
 below).
 
+Receipt history and scan progress are separate for each configured wallet on each chain.
+Switching from wallet A to B starts B's history independently; switching back restores A's
+receipts and cursor. Dashboard totals, chart markers, Telegram earnings and completeness
+markers use only the current wallet. Equivalent Tari address encodings share one identity.
+
+On upgrade, receipts saved without a wallet identity remain in the database under `unknown`.
+They do not contribute to current totals or scan progress. The first scan for each wallet
+starts from height zero and records the receipts it finds under that wallet's identity;
+rediscovered legacy receipts can therefore trigger confirmation alerts again. No receipts
+are assigned to a wallet merely because it is configured during the upgrade.
+
 | Figure | What it sums |
 |---|---|
 | **Yesterday** | The previous full calendar day, midnight to midnight in the dashboard's timezone (`dashboard.timezone`) — the same clock the daily summary fires on. Not a trailing 24 hours. |
 | **Confirmed 24h** | The trailing 24 hours from now. Deliberately a different span from **Yesterday**, so the two disagree during the day. |
 | **Running 7d** | The trailing 7 days from now. |
 | **Running 30d** | The trailing 30 days from now. |
-| **Confirmed all-time** | Every payout recorded, however far back. |
+| **Confirmed all-time** | Every payout recorded for the current wallet, however far back. |
 | **Last payout** | Time since the most recent confirmed payout, hover for the payout count. |
 
 A running window is marked with a `*` when it reaches back further than the oldest payout on
@@ -1668,10 +1683,16 @@ when there is a target to download.
    or reboot at the console. Reboot pauses mining — typically under five minutes. The page
    waits and reconnects when the dashboard returns.
 
-After the reboot the machine health-checks itself before committing the new version — the same
-gate every appliance boot runs. A banner reports the outcome: updated to the new version, or
-rolled back to the previous one automatically because a check did not pass inside the window.
-When the host records which check held the gate, the banner names it. A rollback on its own is
+After the reboot the machine is already running the new version, and it health-checks itself
+before committing it — the same gate every appliance boot runs. While that verification is in
+progress the header says **"Verifying the update to vX — leave the machine running"**, and
+nothing on the page asks for a second reboot: a reboot now would fall back to the previous
+version before the update ever had its checks decided, so the host refuses one and says why,
+in the message and in the control log. A banner reports the outcome: updated to the new
+version, or rolled back to the previous one automatically because a check did not pass inside
+the window. When the host records which check held the gate, the banner names it. An update
+interrupted before its verification reached a verdict — a power cut mid-verification, say — is
+reported as interrupted, not as failed health checks. A rollback on its own is
 not evidence that the release was faulty: a check can fail for a reason the update did not cause,
 and the named cause is what tells the two apart before you retry. Either way the machine ends on
 a working system; wallets, settings, and chain data live on the data partition and are never part

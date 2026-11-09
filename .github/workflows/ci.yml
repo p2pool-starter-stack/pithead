@@ -101,24 +101,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - service: monero
-            context: build/monero
-          - service: p2pool
-            context: build/p2pool
-          - service: tor
-            context: build/tor
-          - service: xmrig-proxy
-            context: build/xmrig-proxy
-          - service: dashboard
-            context: dashboard
+        service: [monero, p2pool, tor, xmrig-proxy, dashboard]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/docker-registry-mirror
-      - name: docker build ./${{ matrix.context }}
-        run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
+      - name: Build under umask 077 and prove non-root file access
+        run: TMPDIR="$RUNNER_TEMP" bash tests/stack/standalone/test_image_permissions.sh "${{ matrix.service }}" "pithead-${{ matrix.service }}:ci"
       - name: Prove offline Tor saturated-state recovery
         if: matrix.service == 'tor'
         env: {TMPDIR: "${{ runner.temp }}"}
