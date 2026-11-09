@@ -23,7 +23,8 @@ unchanged IP address or another coordinator keep their pool setting.
 To rename a rig, use **Set up again** and change its name. The name is the worker name, so
 the rig gets a new control token and the Pithead's adopted entry for the old name goes stale.
 Adopt the rig again from the coordinator's Workers view with the new card's token. A saved
-worker name that is not a valid label leaves the hostname at the image default.
+worker name that is not a hostname label leaves the hostname at the image default; an
+older name with capitals is lowercased.
 
 **A DIY machine is named by its OS hostname, not by setup.** To rename one: change the OS
 hostname (`hostnamectl set-hostname <name>`), run `./pithead apply`, then repoint any rigs
