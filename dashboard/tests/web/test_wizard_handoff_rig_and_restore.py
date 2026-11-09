@@ -1,4 +1,5 @@
 # ruff: noqa: F403, F405
+from mining_dashboard.wizard_config import MACHINE_NAME_RULE
 from tests.web._wizard_support import *  # noqa: F403
 
 
@@ -231,6 +232,17 @@ async def test_rig_pool_must_look_like_host_port(client, seeded):
         r = await client.post("/submit", data={"role": "rig", "rig_pool": bad})
         assert r.status == 400, bad
         assert "host:port" in (await r.json())["error"]
+    assert not (seeded / "rig-request.json").exists()
+
+
+async def test_rig_worker_is_the_machine_name_and_follows_the_shared_rule(client, seeded):
+    await _auth(client)
+    for bad in ("Shed-3", "shed_3", "shed.local", "-shed", "auto", "localhost", "a" * 64):
+        r = await client.post(
+            "/submit", data={"role": "rig", "rig_pool": "10.0.0.5:3333", "rig_worker": bad}
+        )
+        assert r.status == 400, bad
+        assert (await r.json())["error"] == MACHINE_NAME_RULE
     assert not (seeded / "rig-request.json").exists()
 
 

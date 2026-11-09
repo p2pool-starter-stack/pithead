@@ -224,6 +224,12 @@ printf '{"pool":"invalid host:3333","worker":"fixture"}' >"$WSS/spool/rig-reques
 run_sourced "$WSS" eval 'timeout() { : >"$WSS/dialed"; return 0; }; firstboot_consume_rig "$WSS/spool"' >/dev/null
 assert_rc "invalid rig host syntax is refused before the dial" "$?" 1
 [ ! -e "$WSS/dialed" ] && ok "invalid host never reaches the network command" || bad "invalid host never reaches the network command" "dialed"
+rm -f "$WSS/dialed"
+printf '{"pool":"example.test:3333","worker":"Bad_Name"}' >"$WSS/spool/rig-request.json"
+run_sourced "$WSS" eval 'timeout() { : >"$WSS/dialed"; return 0; }; firstboot_consume_rig "$WSS/spool"' >/dev/null
+assert_rc "a rig name that breaks the machine-name rule is refused (#3810)" "$?" 1
+[ ! -e "$WSS/dialed" ] && ok "a refused rig name never reaches the network command" || bad "a refused rig name never reaches the network command" "dialed"
+assert_contains "the refusal is the shared machine-name message" "$(cat "$WSS/spool/error.txt")" 'lowercase letters, digits or hyphens'
 printf '{"pool":"example.test:3333","worker":"fixture"}' >"$WSS/spool/rig-request.json"
 run_sourced "$WSS" eval 'timeout() { [ "$#" = 7 ] && [ "$5" = _ ] && [ "$6" = example.test ] && [ "$7" = 3333 ]; }; firstboot_consume_rig "$WSS/spool"' >/dev/null
 assert_rc "rig host and port travel as command arguments" "$?" 0

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { WizardApp } from "../../../mining_dashboard/web/static/wizard/wizard.mjs";
 import { renderToString } from "../helpers/render.mjs";
 
-test("coordinators ask for the machine name, rigs retain their worker field", () => {
+test("coordinators ask for the machine name, rigs name themselves by their worker", () => {
   const app = new WizardApp({});
   app.setState = (patch) => Object.assign(app.state, patch);
   for (const enabled of [false, true]) {
@@ -25,8 +25,13 @@ test("coordinators ask for the machine name, rigs retain their worker field", ()
   assert.match(renderToString(app.renderSetup()), /value="garden-box"/);
   app.state.role = "rig";
   const rig = renderToString(app.renderSetup());
-  assert.doesNotMatch(rig, /Name this machine/);
-  assert.match(rig, /Worker name/);
+  assert.doesNotMatch(rig, /name="machine_name"/);
+  assert.match(rig, /Name this machine \(its worker name\)/);
+  assert.doesNotMatch(rig, /lowercase letters/);
+  app.state.rigWorker = "Shed_3";
+  assert.match(renderToString(app.renderSetup()), /lowercase letters, digits or hyphens/);
+  app.state.rigWorker = "shed-3";
+  assert.doesNotMatch(renderToString(app.renderSetup()), /lowercase letters/);
 });
 
 test("legacy addresses are displayed honestly, and auto and localhost refuse as names", () => {

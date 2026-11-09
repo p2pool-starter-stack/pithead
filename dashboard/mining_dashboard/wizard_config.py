@@ -15,6 +15,14 @@ MACHINE_NAME_RULE = (
 )
 
 
+def validate_machine_label(name: str) -> None:
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", name) or name in (
+        "auto",
+        "localhost",
+    ):
+        raise ValueError(MACHINE_NAME_RULE)
+
+
 def validate_machine_name(cfg: dict, previous: dict) -> None:
     """Reject malformed explicit coordinator names before publishing a setup request.
 

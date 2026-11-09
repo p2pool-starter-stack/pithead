@@ -5,8 +5,9 @@ The coordinator wizard's **Name this machine** field sets `dashboard.host`.
 Use 1–63 lowercase letters, digits or hyphens, starting and ending with a letter or digit;
 `auto` and `localhost` are reserved. The browser wizard and the server refuse a name that breaks
 it, and the setup prompt asks again, all with one message. The field is prefilled with the
-default name, and an empty answer at the setup prompt keeps it; new coordinators default to `pithead`. RigForge-only installs keep
-their worker-name field. A reinstall that keeps everything retains the saved configuration,
+default name, and an empty answer at the setup prompt keeps it; new coordinators default to `pithead`. A RigForge rig has one name:
+its worker name is also its hostname and its `<name>.local` address, checked by the same rule
+and the same collision warning, and the rig card repeats the warning. A reinstall that keeps everything retains the saved configuration,
 including its name. If another machine on your network already answers `<name>.local`, setup
 warns before claiming the name and the credentials card repeats the warning.
 
@@ -18,6 +19,11 @@ change, open the new address. The browser must trust a new self-signed certifica
 Rigs whose pool uses the old machine name stop mining after a rename. Use **Set up again**
 on each affected rig and change its pool to the new name on port `3333`. Rigs using an
 unchanged IP address or another coordinator keep their pool setting.
+
+To rename a rig, use **Set up again** and change its name. The name is the worker name, so
+the rig gets a new control token and the Pithead's adopted entry for the old name goes stale.
+Adopt the rig again from the coordinator's Workers view with the new card's token. A saved
+worker name that is not a valid label leaves the hostname at the image default.
 
 **A DIY machine is named by its OS hostname, not by setup.** To rename one: change the OS
 hostname (`hostnamectl set-hostname <name>`), run `./pithead apply`, then repoint any rigs

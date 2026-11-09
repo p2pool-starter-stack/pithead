@@ -153,6 +153,7 @@ export const Done = ({
             <p>This is what the machine will be.</p>
             ${rigCardFields(handoff).map((f) => html`<${Field} label=${f.label}><code class=${f.label === "Control token" ? "wizard-mono wizard-token" : "wizard-mono"}>${f.value}</code><//>`)}
             <${Note}>${rigCardNote(handoff)}<//>
+            ${handoff.warning && html`<p class="c-bad">${handoff.warning}</p>`}
             <button type="button" class="btn-toggle active" onClick=${onAck}>
                 ${installer && !stick ? "Looks right — erase the disk and install" : "Looks right — save it"}</button>`
         : handoff

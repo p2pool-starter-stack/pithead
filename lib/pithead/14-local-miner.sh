@@ -398,6 +398,7 @@ provision_rig_miner() {
     # function is called BARE from the boot path (pithead-boot -> `pithead local-miner`, errexit
     # armed) but under `|| true` from the wizard — a failure inside it passed first boot and
     # killed every boot after, which is the one signature a full gate is needed to see.
+    (reconcile_rig_hostname) || warn "Could not apply the rig's name as this machine's hostname."
     rig_minimize_writes || true
     render_rig_miner_config || return 1
     if rigforge_setup_run; then

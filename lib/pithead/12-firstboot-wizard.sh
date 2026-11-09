@@ -193,8 +193,13 @@ firstboot_wizard() {
                 rig_token=$(rig_access_token) || rig_token="" # empty here = the render leg refuses below
                 # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE, no login) and
                 # this box's address; an unresolvable pool host (#1867) adds control:"off" and why instead.
+                local rig_warning=""
+                if is_machine_name_label "$rig_worker" && appliance_mdns_name_in_use "$rig_worker"; then
+                    rig_warning="Another machine on this network already answers ${rig_worker}.local — give this rig a different name if both must be reachable."
+                    _console "" "Warning: $rig_warning"
+                fi
                 jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
-                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end)' | write_handoff_card "$card_spool"
+                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" --arg warn "$rig_warning" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end) + (if $warn == "" then {} else {warning: $warn} end)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2

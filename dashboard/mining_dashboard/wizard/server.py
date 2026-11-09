@@ -49,6 +49,7 @@ from mining_dashboard.wizard_config import (
     deep_merge,
     prefill_machine_name,
     prepare_config,
+    validate_machine_label,
     validate_machine_name,
 )
 from mining_dashboard.wizard_install import validate_install_request
@@ -316,6 +317,12 @@ def _submit_rig(form: dict) -> web.Response:
             {"error": "enter the pool address as host:port — a Pithead answers on port 3333"},
             status=400,
         )
+    worker = str(form.get("rig_worker", "")).strip()
+    if worker:
+        try:
+            validate_machine_label(worker)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
     stick = installer_mode() and str(form.get("disk", "")).strip() == "usb"
     install = None
     if installer_mode() and not stick:
@@ -324,7 +331,6 @@ def _submit_rig(form: dict) -> web.Response:
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
     rig = {"pool": pool}
-    worker = str(form.get("rig_worker", "")).strip()
     if worker:
         rig["worker"] = worker
     password = str(form.get("rig_password", "")).strip()

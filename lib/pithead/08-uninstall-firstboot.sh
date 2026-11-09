@@ -361,6 +361,12 @@ firstboot_consume_rig() ( # <spool-dir>
     req="$snap"
     pool=$(jq -r '.pool // ""' "$req" 2>/dev/null | tr -d '[:cntrl:]')
     worker=$(jq -r '.worker // ""' "$req" 2>/dev/null | tr -d '[:cntrl:]')
+    if [ -n "$worker" ] && ! is_machine_name_label "$worker"; then
+        printf '%s' "$MACHINE_NAME_RULE" | wizard_spool_publish "$spool" error.txt cat
+        rm -f "$spool/rig-request.json"
+        wizard_clear_submission_transaction "$spool" || return 1
+        return 1
+    fi
     host="${pool%:*}"
     port="${pool##*:}"
     host="${host#\[}"

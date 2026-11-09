@@ -6,7 +6,7 @@ appliance_hostname_label() {
     is_appliance || return 0
     local name="${DASHBOARD_HOST:-}"
     [[ "$name" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || return 0
-    [ "$name" != auto ] || return 0
+    [ "$name" != auto ] && [ "$name" != localhost ] || return 0
     printf '%s' "${name,,}"
 }
 
@@ -27,6 +27,12 @@ appliance_mdns_name_in_use() {
         case "$mine" in *" $answer "*) ;; *) return 0 ;; esac
     done
     return 1
+}
+
+reconcile_rig_hostname() {
+    local DASHBOARD_HOST
+    DASHBOARD_HOST=$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)
+    reconcile_appliance_hostname
 }
 
 # The interfaces Avahi may publish this machine's name on: its real NICs, comma-separated, empty

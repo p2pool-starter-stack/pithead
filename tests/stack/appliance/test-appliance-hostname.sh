@@ -84,6 +84,11 @@ hn_run() {
             appliance_mint_cert >/dev/null
             cert_san_string "$PITHEAD_TLS_DIR/wizard.crt"
             ;;
+        rig)
+            printf '{"worker":"%s"}\n' "$5" >rig.json
+            reconcile_rig_hostname
+            printf 'kernel=%s static=%s calls=%s\n' "$(hostname)" "$(hostnamectl --static)" "$(wc -l <calls)"
+            ;;
         reconcile)
             reconcile_appliance_hostname
             printf 'kernel=%s static=%s calls=%s\n' "$(hostname)" "$(hostnamectl --static)" "$(wc -l <calls)"
@@ -138,6 +143,10 @@ for pin in example.test 192.168.1.10 auto '' 'bad name' '-bad' "$(printf 'a%.0s'
     assert_eq "legacy or invalid non-label does not rename host" "$(hn_run appliance "$pin" reconcile)" 'kernel=old-name static=old-name calls=0'
 done
 assert_eq "reconcile sets the kernel AND static name and refreshes Avahi (#2350)" "$(hn_run appliance Garden-Box reconcile)" 'kernel=garden-box static=garden-box calls=2'
+assert_eq "a rig takes its hostname from rig.json's worker, not dashboard.host" "$(hn_run appliance dashboard-name rig changed shed-3)" 'kernel=shed-3 static=shed-3 calls=2'
+for worker in '' 'Bad_Name' 'bad name' localhost auto; do
+    assert_eq "a rig worker that is no valid label leaves the hostname alone ('$worker')" "$(hn_run appliance dashboard-name rig changed "$worker")" 'kernel=old-name static=old-name calls=0'
+done
 assert_eq "existing name still retries mDNS announcement" "$(hn_run appliance old-name reconcile)" 'kernel=old-name static=old-name calls=1'
 assert_eq "named cert includes mDNS and permitted IP" "$(hn_run appliance garden-box names)" 'DNS:garden-box.local,IP:192.168.1.10,DNS:localhost'
 assert_contains "minted certificate follows resolved name" "$(hn_run appliance garden-box cert)" 'DNS:garden-box.local'
