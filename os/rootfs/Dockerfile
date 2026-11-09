@@ -112,8 +112,8 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # The built-in miner (#796): a pinned RigForge tree plus everything it needs, baked at image
 # build because nothing can be installed later — apt cannot run on the read-only root, and even
 # a rw-remount install leaves its /etc state (alternatives, ld.so.cache) on the volatile overlay
-# where the first reboot breaks the compiler. RIGFORGE_REF pins rigforge's develop commit
-# b2d4c3d9, the code that becomes v1.18.0 after the 2.0.0 soak; then pin releases by commit.
+# where the first reboot breaks the compiler. RIGFORGE_REF pins the commit of RigForge
+# v1.18.1 (8f06cb8d); pin releases by commit.
 # v1.16.0 is the floor for the HugePages pool ceiling: hugepages_pool_ceiling_mb (rigforge#398,
 # filed from #1103) is absent from v1.15.1's tree entirely, and declaring it into one fails OPEN —
 # parse_config never reads the key, so the rendered config would look capped and behave as today.
@@ -127,7 +127,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
-ARG RIGFORGE_REF=b2d4c3d9ca1da74d0e6d5ccce772d401acc8be03
+ARG RIGFORGE_REF=8f06cb8df791f3cb16d47bbee85fde92103cbe0b
 RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
     && mkdir -p /opt/rigforge \
@@ -139,9 +139,9 @@ RUN curl -fsSL -o /tmp/rigforge.tar.gz \
 # Prebuild XMRig at RigForge's own pin, read from the baked tree so the two cannot drift. The
 # appliance may be Tor-only, and RigForge's build step clones github over clearnet — so the
 # clone happens HERE, on the build host, and pithead-sync seeds the result into the workspace
-# where RigForge's "already built" check accepts it (binary + commit marker + sha record, the
-# exact format rigforge.sh writes). The donate-level source patch is skipped on purpose: the
-# default (1%) equals XMRig's own default, and the runtime config carries the value regardless.
+# where RigForge's "already built" check accepts it (binary + commit marker + sha record + donate
+# minimum marker, the exact format rigforge.sh writes). The donate patch matches compile_xmrig at
+# DONATION 0 (default and minimum level 0).
 # The sed anchors match rigforge.sh's exact NAME="${NAME:-value}" quoting; a cosmetic upstream
 # reformat extracts nothing, so the guard names the cause instead of failing mute mid-chain.
 RUN set -e \
@@ -152,11 +152,15 @@ RUN set -e \
             exit 1; }; } \
     && git clone --quiet --branch "$XMRIG_VERSION" --depth 1 https://github.com/xmrig/xmrig.git /tmp/xmrig \
     && test "$(git -C /tmp/xmrig rev-parse HEAD)" = "$XMRIG_COMMIT" \
+    && sed -i 's/kDefaultDonateLevel = 1;/kDefaultDonateLevel = 0;/; s/kMinimumDonateLevel = 1;/kMinimumDonateLevel = 0;/' /tmp/xmrig/src/donate.h \
+    && grep -Fxq 'constexpr const int kDefaultDonateLevel = 0;' /tmp/xmrig/src/donate.h \
+    && grep -Fxq 'constexpr const int kMinimumDonateLevel = 0;' /tmp/xmrig/src/donate.h \
     && cmake -S /tmp/xmrig -B /tmp/xmrig/build -DWITH_HWLOC=ON >/dev/null \
     && make -C /tmp/xmrig/build -j"$(nproc)" >/dev/null \
     && mkdir -p /opt/rigforge/prebuilt/xmrig/build \
     && install -m 755 /tmp/xmrig/build/xmrig /opt/rigforge/prebuilt/xmrig/build/xmrig \
     && printf '%s\n' "$XMRIG_COMMIT" >/opt/rigforge/prebuilt/xmrig/.rigforge-commit \
+    && printf '0\n' >/opt/rigforge/prebuilt/xmrig/.rigforge-donate-min \
     && sha256sum /opt/rigforge/prebuilt/xmrig/build/xmrig | awk '{print $1}' \
         >/opt/rigforge/prebuilt/xmrig/.rigforge-sha256 \
     && rm -rf /tmp/xmrig
