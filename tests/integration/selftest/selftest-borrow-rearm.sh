@@ -224,7 +224,7 @@ assert_eq "  and the verified restore prunes the anchor" \
 assert_eq "  and nothing named .e2e-orig. rides into the archived tree" \
     "$(printf '%s\n' "$MINT_OUT" | sed -n 's/^archive=//p')" "0"
 
-drive_leftovers() { # <pools-json> <old-count> <new-count> [old-is-oldest]
+drive_leftovers() {
     local i old_day=2 new_day=1
     [ "${4:-}" = old ] && {
         old_day=1
