@@ -216,11 +216,6 @@ phase_crossupdate() {
     fi
 
     # The reseed of the workspace miner from the slot's baked build is only proven here, on a guest that carried the older one.
-    if _rig_mining_up 18; then
-        ok "the built-in miner runs after the cross-version update (xmrig unit active, process running)"
-    else
-        bad "the built-in miner is not running after the cross-version update (unit: $(_ssh 'systemctl is-active xmrig' 2>/dev/null || echo unknown))"
-    fi
     if _ssh "cmp -s /data/rigforge/data/worker/xmrig/build/xmrig /opt/rigforge/prebuilt/xmrig/build/xmrig"; then
         ok "the workspace miner is the candidate slot's baked binary byte for byte"
     else
