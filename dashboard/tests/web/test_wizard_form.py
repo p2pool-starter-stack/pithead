@@ -107,8 +107,8 @@ def test_the_clearnet_first_sync_applies_to_both_chains_or_neither():
     assert cfg["monero"]["clearnet_initial_sync"] is True
     assert cfg["tari"]["clearnet_initial_sync"] is True
     plain = build_config({**BASE, "clearnet_sync": "false"})
-    assert plain["monero"]["clearnet_initial_sync"] is False
-    assert plain["tari"]["clearnet_initial_sync"] is False
+    assert plain["monero"].get("clearnet_initial_sync", False) is False
+    assert plain["tari"].get("clearnet_initial_sync", False) is False
 
 
 def test_the_mode_key_is_written_for_every_answer_including_the_default():
@@ -143,9 +143,8 @@ def test_declining_tari_asks_for_no_payout_address():
 
 
 def test_merge_mining_locally_still_carries_the_payout_address():
-    # The other direction of the test above: turning it on puts the address back.
     cfg = build_config({**BASE, "tari_mode": "local"})
-    assert cfg["tari"] == {"mode": "local", "wallet_address": "t", "clearnet_initial_sync": False}
+    assert cfg["tari"] == {"mode": "local", "wallet_address": "t"}
 
 
 def test_an_empty_address_on_a_machine_that_merge_mines_reaches_the_host():
@@ -180,10 +179,11 @@ def test_fast_sync_excludes_remote_and_disabled_chains():
 
 
 def test_stratum_password_is_opt_in_and_generated_only_for_yes():
-    assert build_config(BASE)["p2pool"]["stratum_password"] == ""
+    assert build_config(BASE)["p2pool"].get("stratum_password", "") == ""
     for answer in ("false", "", "on"):
         assert (
-            build_config({**BASE, "stratum_password": answer})["p2pool"]["stratum_password"] == ""
+            build_config({**BASE, "stratum_password": answer})["p2pool"].get("stratum_password", "")
+            == ""
         )
     password = build_config({**BASE, "stratum_password": "true"})["p2pool"]["stratum_password"]
     assert len(password) == 24

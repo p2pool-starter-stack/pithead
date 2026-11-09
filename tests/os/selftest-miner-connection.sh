@@ -52,7 +52,8 @@ wizard_write_config
 check test "$(jq -r .p2pool.stratum_password "$CONFIG_FILE")" = "$WIZ_STRATUM_PASSWORD"
 wizard_ask_stratum_password </dev/null
 wizard_write_config
-check test "$(jq -r .p2pool.stratum_password "$CONFIG_FILE")" = ""
+check test "$(jq -r .profile "$CONFIG_FILE")" = balance
+check test "$(jq -r '.p2pool | has("stratum_password")' "$CONFIG_FILE")" = false
 
 candidate="$scratch/config.json"
 printf '{"p2pool":{"stratum_password":"","stratum_tls":false}}' >"$candidate"

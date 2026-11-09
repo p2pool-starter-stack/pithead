@@ -8,13 +8,12 @@ describe_change() {
             ;;
         esac
     fi
-    if describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
+    if describe_profile_change "$key" "$old" "$new" || describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
     fi
     case "$key" in
     MONERO_PRUNE)
-        # Both directions require confirmation; disabling warns that restoring full history needs a re-sync.
         case "$new" in
         true | 1)
             flag=CONFIRM
