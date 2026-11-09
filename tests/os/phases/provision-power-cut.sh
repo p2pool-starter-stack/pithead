@@ -129,7 +129,7 @@ _phase_provision_power_cut() {
             bad "M10.$i: could not read the boot id before the power cut"
             return 1
         }
-        vm_power_cut >/dev/null 2>&1 || {
+        vm_stop_abrupt >/dev/null 2>&1 || {
             bad "M10.$i: could not cut power"
             return 1
         }

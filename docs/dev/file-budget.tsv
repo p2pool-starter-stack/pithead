@@ -5,7 +5,7 @@
 dashboard/mining_dashboard/client/xmrig_client.py	446
 dashboard/mining_dashboard/config/config.py	693
 dashboard/mining_dashboard/service/control_service.py	414
-dashboard/mining_dashboard/service/data_helpers.py	430
+dashboard/mining_dashboard/service/data_helpers.py	427
 dashboard/mining_dashboard/service/data_service.py	648
 dashboard/mining_dashboard/service/notify/alert_edges.py	453
 dashboard/mining_dashboard/service/notify/alert_service.py	518
@@ -43,7 +43,7 @@ lib/pithead/28-parse-and-validate-config.sh	464
 lib/pithead/33-render-env.sh	481
 lib/pithead/36-quadlet-units.sh	406
 scripts/watch/trivyignore-watch.sh	599
-tests/integration/e2e.sh	684
+tests/integration/e2e.sh	663
 tests/integration/lib/run-cli.sh	410
 tests/integration/fakes/test_contract.py	437
 tests/integration/lib.sh	686

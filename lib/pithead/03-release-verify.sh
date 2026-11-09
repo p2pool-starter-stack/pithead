@@ -218,6 +218,7 @@ stack_upgrade() {
         if provision_dashboard_onion && render_env; then
             generate_caddyfile
             docker compose restart caddy
+            refresh_dashboard_onion_runtime
         fi
     fi
     update_current_symlink # #455: only a SUCCESSFUL upgrade moves the `current ->` pointer

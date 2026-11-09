@@ -26,7 +26,7 @@ expect_rc() {
     [ "$got" -eq "$expected" ] || fail "expected rc $expected, got $got from $*"
 }
 
-type vm_power_cut >/dev/null 2>&1 || fail 'vm_power_cut is missing'
+type vm_stop_abrupt >/dev/null 2>&1 || fail 'vm_stop_abrupt is missing'
 type vm_start >/dev/null 2>&1 || fail 'vm_start is missing'
 
 virsh_rc=0
@@ -37,14 +37,14 @@ virsh() {
 
 : >"$scratch/virsh"
 # shellcheck disable=SC2218
-vm_power_cut
+vm_stop_abrupt
 # shellcheck disable=SC2218
 vm_start
 printf '%s\n' "destroy $VM" "start $VM" >"$scratch/expected"
 cmp -s "$scratch/expected" "$scratch/virsh" || fail 'lifecycle wrappers passed unexpected virsh arguments'
 ! grep -Fq undefine "$scratch/virsh" || fail 'power-cycle wrappers undefine the guest'
 virsh_rc=17
-expect_rc 17 vm_power_cut
+expect_rc 17 vm_stop_abrupt
 virsh_rc=23
 expect_rc 23 vm_start
 virsh_rc=0
@@ -83,7 +83,7 @@ _boot_id() {
     record boot-id
     printf 'boot-%s\n' "$cycle"
 }
-vm_power_cut() {
+vm_stop_abrupt() {
     record power-cut
     [ "$mode" != cut-fails ]
 }
