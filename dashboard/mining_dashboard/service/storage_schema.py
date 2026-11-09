@@ -239,14 +239,9 @@ class StorageSchemaMixin:
             "(id TEXT PRIMARY KEY, ts TEXT, source TEXT, actor TEXT, action TEXT, status TEXT, "
             "keys TEXT)"
         )
-        # The config revision each rig was last OBSERVED serving (#1551), one row per worker, plus
-        # the revision it drifted FROM while that drift is still current (#1564, migrated below).
-        # The PRIMARY KEY is the only index it wants. Holding the rig's opaque `revision` NEXT TO
-        # the `last_change_id` beside it is the point: a later poll tells a recorded change (both
-        # moved) from an edit underneath RigForge (only the revision moved) — #1542's open door.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS worker_config_revision (worker TEXT PRIMARY KEY, "
-            "revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT)"
+            "revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT, rigforge_version TEXT)"
         )
 
     def _create_indexes(self):
