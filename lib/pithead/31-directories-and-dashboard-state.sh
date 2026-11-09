@@ -309,11 +309,13 @@ resolve_dashboard_host() {
         done
         if [ -n "$input_host" ] && [ "$input_host" != "$(hostname)" ]; then
             DASHBOARD_HOST="$input_host"
-            if [ -f "${CONFIG_FILE:-}" ]; then
-                tmp=$(mktemp) &&
-                    jq --arg n "$input_host" '(.dashboard //= {}) | .dashboard.host = $n' "$CONFIG_FILE" >"$tmp" &&
-                    mv "$tmp" "$CONFIG_FILE" && chmod 600 "$CONFIG_FILE" ||
-                    rm -f "$tmp"
+            if [ -f "${CONFIG_FILE:-}" ] && tmp=$(mktemp) &&
+                jq --arg n "$input_host" '(.dashboard //= {}) | .dashboard.host = $n' "$CONFIG_FILE" >"$tmp" &&
+                mv "$tmp" "$CONFIG_FILE" && chmod 600 "$CONFIG_FILE"; then
+                :
+            else
+                rm -f "${tmp:-}"
+                warn "Could not save the machine name to ${CONFIG_FILE:-config.json} — it applies to this run only."
             fi
         elif [ -n "$input_host" ]; then
             DASHBOARD_HOST="$input_host"

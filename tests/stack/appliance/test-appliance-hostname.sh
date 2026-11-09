@@ -259,12 +259,17 @@ nm_run() {
             if appliance_mdns_name_in_use box; then printf in-use; else printf free; fi
             ;;
         diy-ask)
-            unset DASHBOARD_HOST HOST_IP PRESERVED_HOST_IP
-            is_appliance() { return 1; }
-            printf 'evil-name\n' >stdin.txt
-            resolve_dashboard_host interactive <stdin.txt >out.txt 2>&1
-            read -r leftover <stdin.txt
-            printf 'host=%s leftover=%s\n' "$HOST_IP" "$leftover"
+            python3 - "$STACK" <<'PY'
+import os, pty, select, subprocess, sys
+master, slave = pty.openpty()
+script = 'source "$1"; unset DASHBOARD_HOST HOST_IP PRESERVED_HOST_IP; is_appliance() { return 1; }; resolve_dashboard_host interactive; printf "host=%s\n" "$HOST_IP"'
+proc = subprocess.Popen(["bash", "-c", script, "bash", sys.argv[1]], stdin=slave, stdout=slave, stderr=slave)
+os.write(master, b"evil-name\n")
+out = b""
+while select.select([master], [], [], 0.2)[0] or proc.poll() is None:
+    out += os.read(master, 4096)
+print([line for line in out.decode().splitlines() if line.startswith("host=")][0].strip())
+PY
             ;;
         esac
     )
@@ -290,4 +295,4 @@ assert_eq "a name another machine answers is in use" "$(FAKE_ANSWERS='192.0.2.5'
 assert_eq "an unanswered name is free" "$(FAKE_ANSWERS='' nm_run inuse)" free
 assert_eq "off the appliance nothing is ever announced" "$(FAKE_APPLIANCE=0 FAKE_ANSWERS='192.0.2.5' nm_run inuse)" free
 assert_eq "DIY setup reads no hostname input" "$(nm_run diy-ask)" \
-    "host=$(hostname) leftover=evil-name"
+    "host=$(hostname)"

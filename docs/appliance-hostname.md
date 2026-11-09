@@ -3,9 +3,9 @@
 The coordinator wizard's **Name this machine** field sets `dashboard.host`.
 
 Use 1–63 lowercase letters, digits or hyphens, starting and ending with a letter or digit;
-`auto` and `localhost` are reserved. The browser wizard, the setup prompt and the server all
-enforce that one rule with one message. The field is prefilled with the default name and an
-empty answer keeps it; new coordinators default to `pithead`. RigForge-only installs keep
+`auto` and `localhost` are reserved. The browser wizard and the server refuse a name that breaks
+it, and the setup prompt asks again, all with one message. The field is prefilled with the
+default name, and an empty answer at the setup prompt keeps it; new coordinators default to `pithead`. RigForge-only installs keep
 their worker-name field. A reinstall that keeps everything retains the saved configuration,
 including its name. If another machine on your network already answers `<name>.local`, setup
 warns before claiming the name and the credentials card repeats the warning.
