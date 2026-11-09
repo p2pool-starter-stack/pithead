@@ -148,12 +148,12 @@ awc() { # <starts before the SAN appears> <start exit code>
     AWC_RC=$2
     _ssh() {
         case "$1" in
-            "systemctl start"*)
-                AWC_STARTS=$((AWC_STARTS + 1))
-                return "$AWC_RC"
-                ;;
-            "systemctl list-timers"*) echo "journal-at-failure" ;;
-            openssl*) [ "$AWC_STARTS" -ge "$AWC_MINT_AT" ] && printf 'X509v3 Subject Alternative Name:\n    DNS:x, %s\n' "$AWC_SAN" ;;
+        "systemctl start"*)
+            AWC_STARTS=$((AWC_STARTS + 1))
+            return "$AWC_RC"
+            ;;
+        "systemctl list-timers"*) echo "journal-at-failure" ;;
+        openssl*) [ "$AWC_STARTS" -ge "$AWC_MINT_AT" ] && printf 'X509v3 Subject Alternative Name:\n    DNS:x, %s\n' "$AWC_SAN" ;;
         esac
     }
     ADDRESS_WATCH_SETTLE=0 address_watch_converge "$AWC_SAN"
