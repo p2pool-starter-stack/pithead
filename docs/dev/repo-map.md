@@ -90,6 +90,9 @@ Doctor verdict ids are pinned in `tests/stack/doctor/check-ids.py`;
 `tests/stack/doctor/test-doctor-appliance.sh` checks the JSON and support-bundle rows,
 and the surface and memory suites check that an id survives verdict and wording changes.
 
+Apply revision checks are covered by `tests/stack/lifecycle/apply-config-revision.sh`;
+dashboard publication and child-apply locking by `tests/stack/control/commit-lock.sh`.
+
 Container restart observation is shared by status and doctor in
 `lib/pithead/04a-container-restarts.sh`; its Docker and Podman fixtures are in
 `tests/os/selftest-container-restarts.sh`, and the appliance Caddy crash-loop proof runs in the
@@ -135,6 +138,13 @@ a failed probe. `selftest-restore-dashboard-guest.sh` covers the synthetic fixtu
 `selftest-lifecycle-restore-health.sh` and `selftest-reset-restore.sh` cover ordering and state refusal.
 The real A/B reset leg is `tests/os/phases/reset-slot.sh`; it checks wizard setup, CLI restore
 and reboot with setup still open before the final provisioned reboot.
+`tests/stack/test-cli-restore-sqlite.sh` checks administrative restore against real crashed
+SQLite WALs, including archived WAL rows and a clean-sidecar control.
+
+The DIY lifecycle support-bundle leg is `tests/integration/lib/run-support-bundle.sh`;
+`check-support-bundle.py` in the same directory inspects archives without extraction.
+`tests/integration/selftest/selftest-support-bundle.sh` supplies archive and restoration
+failure controls through the integration selftest target.
 
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
@@ -143,7 +153,11 @@ lifecycle leg `tests/integration/lib/run-reset-restore.sh`, with failure control
 `tests/integration/selftest/selftest-reset-restore.sh`. Candidate-compatible fixture projection,
 original-byte cleanup and private recovery retention are exercised by
 `tests/integration/selftest/selftest-reset-recovery-fixture.sh`. Shared web ownership checks are in
-`tests/integration/lib/reset-restore-web.sh`. The startup-window restore fixture is
+`tests/integration/lib/reset-restore-web.sh`. Host-miner startup and worker-return checks are in
+`tests/integration/lib/reset-restore-miner.sh`, with lifecycle logic covered by
+`tests/os/selftest-local-miner-up.sh`, which also executes normal and migration boot entry paths
+to check post-commit miner ordering. Boot and setup pass `PITHEAD_DEFER_LOCAL_MINER=1` through
+stack startup when they own the later miner step. The startup-window restore fixture is
 `tests/integration/lib/reset-restore-startup.sh`, with the guest-only pause in
 `tests/os/wizard-startup-guest.sh` and pure controls in `tests/os/selftest-wizard-startup.sh`.
 Consecutive status censuses are in `tests/integration/lib/readiness-churn.sh`. Deterministic
@@ -240,6 +254,11 @@ password and certificate. Both have mutation self-tests beside their harnesses.
 
 `lib/pithead/12a-wizard-addresses.sh` supplies non-bridge host addresses for the
 setup container and prints the journal and physical-console connection announcements.
+It atomically publishes the same details to a private temporary getty issue file, so
+login-prompt startup can repeat the current session. `tests/os/wizard-console-leg.sh`
+checks journal minting, serial delivery and tty1 text on each setup-again session,
+including a paused-writer getty restart and a publication-disabled negative control.
+`tests/os/selftest-wizard-console.sh` covers publication, replacement, cleanup and failure verdicts.
 `lib/pithead/12a-wizard-page.sh` starts each page container with those addresses,
 its per-round token and certificate, then restores the reset slot and announces the page.
 `tests/os/wizard-redirect-leg.sh` checks the plain-port
@@ -287,12 +306,12 @@ the deployed CLI during the hardening phase.
 
 | Directory | How it runs |
 |---|---|
-| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites, cut into five blocks that CI runs as parallel jobs. Missing or failed sources fail the run. The Tor section includes `test-tor-port-validation.sh` for entrypoint rejection before rendering or launch. `test_setup_build_interrupt.sh` runs independently in a stack block and covers a Tor-build SIGINT, retained configuration, failure diagnostics and a successful retry. The standalone `test_checklist.sh`, called by block 1, validates the manual QA samples and every broken-config refusal, including unchanged rendered state and no Compose startup. |
+| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites, cut into five blocks that CI runs as parallel jobs. Missing or failed sources fail the run. The Tor section includes `test-tor-port-validation.sh` for entrypoint rejection before rendering or launch. `test_setup_build_interrupt.sh` runs independently in a stack block and covers a Tor-build SIGINT, retained configuration, failure diagnostics and a successful retry. The standalone `test_checklist.sh`, called by block 1, validates the manual QA samples and every broken-config refusal, including unchanged rendered state and no Compose startup. Block 1 includes `test-backup-data-paths.sh` for backup refusal on desired/applied data-path mismatch, lock-time rebuilds, and real archive contents. |
 | `tests/stack/{appliance,control,dashboard,doctor,lifecycle,release,secrets}/` | Feature assertions loaded by the stack runner; retain shared setup and cleanup order. Dashboard database-copy checks live in `control/test-dashboard-carry.sh`; apply recovery stays in `control/test-control-deploy.sh`. |
 | `tests/stack/standalone/test_grub_hugepages_real.sh` | Normal-user hosted regression using native GRUB tools in a private mount namespace; checks cloud drop-in precedence, rerun stability and a missing-drop-in control. The Shell workflow also requires it to fail on RC2. |
 | `tests/stack/lib/` | Shared harness modules and sandbox builders used by feature fragments; `control-fixtures.sh` and `backup-fixtures.sh` initialize independent prerequisite runs; `host-fence.sh` puts a `sudo` and a recording stub per tool first on PATH that no-op the host firewall and systemctl verbs. `config-document-parser.py` holds CLI decoder cases invoked by `test-config-document.sh`; dashboard decoder tests stay in the dashboard image context. |
 | `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. `test_clearnet_attestation.py` exercises the CLI reader with host-claim and replay metadata; it needs the repository CLI sources and stays outside the dashboard image context. |
-| `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `run-pool-preview.sh` checks routing-only P2Pool previews in lifecycle using an isolated candidate config. `parent-lock.sh` drains the inline pregate process group before restore (`inline-pregate-remote.sh` verifies the SSH-side groups) and reaps the wrapper’s own loaner child afterward; `worker-detail-diagnostics.sh` projects judged Worker Inspect failure responses without identities or secrets. `fault-rules.sh` removes `pithead-e2e-fault-*` firewall rules from every running container's network namespace before a fault leg and when the harness exits. `run-rotate-secrets.sh` streams `tests/integration/rotate-auth-probe.py` to the dashboard for bounded HTTP and stratum authentication checks; `borrow-fixture.sh` owns the controller's rig credential and restoration handshakes. `run-pool-sync-fault.sh` injects bootstrap pool stats and checks the dashboard sync state and recovery, with trap-protected restoration; its selftest checks failures and cleanup without Docker. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. `wallet-fixture.sh`, `wallet-fixture.py` and its adjacent `wallet_fixture_capture.py` preserve legacy and fingerprinted Monero caches through destructive tests and verify them before releasing the reservation. `wallet_fixture_supersession.py` owns retained snapshot retirement; `tools/prove-wallet-supersession.py` exercises it in lifecycle. `wallet_fixture_recovery.py`, its private proof store `wallet_fixture_recovery_record.py` and its `wallet-fixture-recovery.sh` steps restore a retained snapshot after its job ended ([wallet-recovery.md](wallet-recovery.md)); `tools/prove-wallet-recovery.py` runs that operator entry point against a separate private snapshot in lifecycle. |
+| `tests/integration/lib/` | Sourced helpers and phase functions for the live harness. `run-pool-preview.sh` checks routing-only P2Pool previews in lifecycle using an isolated candidate config. `lan-crash-evidence.sh` retains allowlisted node and timer/service observations around the LAN crash-recovery poll. `parent-lock.sh` drains the inline pregate process group before restore (`inline-pregate-remote.sh` verifies the SSH-side groups) and reaps the wrapper’s own loaner child afterward; `worker-detail-diagnostics.sh` projects judged Worker Inspect failure responses without identities or secrets; `onion-baseline-diagnostics.sh` records the failure stage of the rotate-onion external baseline probe. `fault-rules.sh` removes `pithead-e2e-fault-*` firewall rules from every running container's network namespace before a fault leg and when the harness exits. `run-rotate-secrets.sh` streams `tests/integration/rotate-auth-probe.py` to the dashboard for bounded HTTP and stratum authentication checks; `borrow-fixture.sh` owns the controller's rig credential and restoration handshakes. `run-pool-sync-fault.sh` injects bootstrap pool stats and checks the dashboard sync state and recovery, with trap-protected restoration; its selftest checks failures and cleanup without Docker. `restore-chain-sync.sh` streams the read-only `restore-chain-sync.py` daemon proof to the restored baseline. The restoration transport uses libcurl Digest; `tests/integration/selftest/selftest-restore-curl-connection.sh` exercises its challenged connection against a bounded synthetic server in CI. `wallet-fixture.sh`, `wallet-fixture.py` and its adjacent `wallet_fixture_capture.py` preserve legacy and fingerprinted Monero caches through destructive tests and verify them before releasing the reservation. `wallet_fixture_supersession.py` owns retained snapshot retirement; `tools/prove-wallet-supersession.py` exercises it in lifecycle. `wallet_fixture_recovery.py`, its private proof store `wallet_fixture_recovery_record.py` and its `wallet-fixture-recovery.sh` steps restore a retained snapshot after its job ended ([wallet-recovery.md](wallet-recovery.md)); `tools/prove-wallet-recovery.py` runs that operator entry point against a separate private snapshot in lifecycle. |
 | `tests/integration/payout-pairs/` | Isolated live apply, wallet services and dashboard. The Docker API guard limits fixture apply to its private storage and Compose project. The initial env carries only the synced nodes’ provisioning identities, leaving runtime state and wallet passwords to the fixture’s actual apply. Image lookup loads all source profiles so the wallet’s node dependency is present, and refuses a failed Compose model before pulling. `test-payout-pair-preparation.py` covers preparation and env isolation without creating containers. The model transform accepts environment lists and mappings while preserving unexpanded values; `test-payout-pair-model.py` checks both forms and the isolation contract. Apply uses the caller’s uid/gid so its owner-only files remain readable; successful cleanup exposes only the private scratch tree to a restricted removal container. Wallet identity checks follow a bounded readiness poll that requires fresh direct health and height checks even when dashboard cards still show cached success; `test-payout-pair-runtime.py` covers startup retries, deadline failures and invocation ordering. The fixture carries no dashboard login and an inert `caddy` stub, so apply’s real Caddy restart has a target without a proxy; the guard prints the rule behind any denial (never the request body) into the apply log. |
 | `tests/integration/selftest/` | Harness logic and bounded local transport fixtures; `selftest-wizard-defaults.sh` runs the real CLI wizard with the runner baseline contract and stubbed deployment I/O. `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. `doctor-tip-time.sh` runs both doctor formats against the live stack with a zero-timestamp RPC response during the check phase. |
@@ -344,6 +363,10 @@ diagnostic redaction and delayed current-boot commit.
 The checks retain assertion errors and bounded counts in the battery output; raw request,
 header and user values are omitted. Bounded current/rolled-log counts expose discarded
 records; effective Caddy configuration is reported only as matcher/log-destination flags.
+
+The reset-dashboard phase is `tests/integration/lib/run-reset-dashboard.sh`; its rollback-protected
+live path checks directory targets, ownership, chain continuity, service health and resumed mining.
+Harness help lives in `tests/integration/lib/run-usage.sh`; argument parsing stays in `run-cli.sh`.
 
 The harness entry points retain their command-line interfaces. Live integration
 and appliance runs require a reserved host; local selftests do not start a VM.
@@ -419,6 +442,8 @@ The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated gue
 to prove No login egress recovery through host NEWNYM and the final healer restart,
 plus auto-heal off and unrelated-request rejection with production timers.
 Saturated recovery guards remain covered by the host recovery fixtures.
+The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
+run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
 run by the Tor image build job. It verifies either startup repair of all 1000 abandoned
 observations and an empty persisted history, or the legacy warning and shutdown-write
@@ -473,6 +498,13 @@ For test tiers and placement, read [testing strategy](testing-strategy.md) and
 [testing guide](testing-guide.md). For configuration values, read
 [configuration](../configuration.md). The wizard spool-file protocol is in
 [appliance wizard](appliance-wizard.md#host-and-page-spool-files).
+
+Dashboard receipt identities live in `dashboard/mining_dashboard/service/payout_identity.py`.
+`dashboard/mining_dashboard/service/mining_store.py` scopes receipt reads, inserts and cursors;
+`dashboard/mining_dashboard/service/storage_schema.py` migrates legacy receipts to `unknown`.
+The wallet-switch regressions are
+`dashboard/tests/service/test_payout_wallet_identity.py` and
+`dashboard/tests/web/views/test_payout_wallet_identity.py`.
 
 Payout confirmation validates private view scalars in `lib/pithead/25b-payout-keys.sh`; the wallet
 entrypoints select storage by address/key fingerprint. `tests/stack/test-payout-wallet-pairs.sh`

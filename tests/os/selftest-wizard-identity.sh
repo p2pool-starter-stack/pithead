@@ -34,18 +34,11 @@ bad() {
     failures=$((failures + 1))
     printf 'FAIL %s\n' "$*" >>"$scratch/rows"
 }
-sleep() { :; }
-date() {
-    local ticks
-    ticks=$(cat "$scratch/ticks")
-    printf '%s' "$((ticks + 60))" >"$scratch/ticks"
-    printf '%s' "$ticks"
-}
+sleep() { printf 1 >"$scratch/slept"; }
 curl() {
     local args="$*" count token
     [[ "$args" == *"--pinnedpubkey sha256//"* ]] || return 2
     [ "$scenario" != changed-key ] || return 90
-    [[ "$args" != *pit-AAAAA2* && "$args" != *pit-AAAAA3* ]] || return 2
     case "$args" in
     *token=wrong-token*)
         count=$(cat "$scratch/attempts")
@@ -54,7 +47,7 @@ curl() {
         if [ "$scenario" = early-lockout ] && [ "$count" -eq 4 ]; then
             printf 429
         elif [ "$count" -eq 5 ]; then
-            [ "$scenario" = no-rotation ] || printf 'One-time token: pit-AAAAA3\n' >>"$SERIAL"
+            [ "$scenario" != restarted ] || printf 'One-time token: pit-AAAAA3\n' >>"$SERIAL"
             if [ "$scenario" = restarted-mismatch ]; then
                 printf 'SHA-256: %s\n' "$mismatch_fingerprint" >>"$SERIAL"
             fi
@@ -65,15 +58,14 @@ curl() {
         ;;
     *token@-*)
         token=$(cat)
-        case "$token" in
-        pit-AAAAA2)
-            if [ "$scenario" = old-accepted ]; then printf 302; else printf 403; fi
-            ;;
-        pit-AAAAA3)
-            if [ "$scenario" = new-refused ]; then printf 403; else printf 302; fi
-            ;;
-        *) return 2 ;;
-        esac
+        [ "$token" = pit-AAAAA2 ] || return 2
+        if [ -f "$scratch/slept" ]; then
+            if [ "$scenario" = post-cooldown-refused ]; then printf 403; else printf 302; fi
+        elif [ "$scenario" = no-cooldown ]; then
+            printf 302
+        else
+            printf 429
+        fi
         ;;
     *api/wizard-state*)
         if [ "$scenario" = no-session ]; then printf 401; else printf 200; fi
@@ -86,13 +78,13 @@ curl() {
         ;;
     esac
 }
-for scenario in healthy mismatch missing-certificate early-lockout no-lockout no-rotation unavailable old-accepted new-refused no-session changed-key restarted-mismatch; do
+for scenario in healthy mismatch missing-certificate early-lockout no-lockout no-cooldown restarted restarted-mismatch post-cooldown-refused unavailable no-session changed-key; do
     printf 'One-time token: pit-AAAAA2\nSHA-256: %s\n' "$fingerprint" >"$SERIAL"
     if [ "$scenario" = mismatch ]; then
         printf 'SHA-256: %s\n' "$mismatch_fingerprint" >>"$SERIAL"
     fi
     printf 0 >"$scratch/attempts"
-    printf 0 >"$scratch/ticks"
+    rm -f "$scratch/slept"
     : >"$scratch/rows"
     passes=0 failures=0
     phase_wizard_identity

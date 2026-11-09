@@ -284,7 +284,7 @@ def spool(tmp_path, monkeypatch):
 
 @pytest.fixture
 async def client(spool):
-    client = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    client = TestClient(TestServer(wizard.make_app()))
     await client.start_server()
     await client.post("/auth", data={"token": "pit-X7KM2Q"}, allow_redirects=False)
     yield client

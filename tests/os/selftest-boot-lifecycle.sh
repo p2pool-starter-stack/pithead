@@ -47,7 +47,7 @@ expect_line() {
 : >"$SERIAL"
 vm_create "$DISK" "$SERIAL" no
 vm_create "$DISK" "$SERIAL" yes
-expected_plain="virt-install <--name> <$VM> <--memory> <16384> <--vcpus> <4> <--cpu> <host-passthrough> <--osinfo> <debian12> <--boot> <uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no> <--import> <--disk> <path=$DISK,format=raw,bus=virtio> <--network> <network=default,model=virtio> <--graphics> <none> <--serial> <file,path=$SERIAL> <--noautoconsole>"
+expected_plain="virt-install <--name> <$VM> <--memory> <16384> <--vcpus> <4> <--cpu> <host-passthrough> <--osinfo> <debian12> <--boot> <uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no> <--import> <--disk> <path=$DISK,format=raw,bus=virtio> <--network> <network=default,model=virtio> <--graphics> <none> <--video> <vga> <--serial> <file,path=$SERIAL> <--noautoconsole>"
 expected_secure="${expected_plain/firmware.feature0.enabled=no/firmware.feature0.enabled=yes}"
 expect_line "$expected_plain" "$scratch/virt-install.calls"
 expect_line "$expected_secure" "$scratch/virt-install.calls"

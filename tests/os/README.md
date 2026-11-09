@@ -181,8 +181,9 @@ the configured test registry fail before the image build. Release builds do not 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd
   banner reaches the serial console, the first-boot wizard announces its URL + one-time token,
   the console SHA-256 fingerprint matches the certificate served over TLS, and five wrong tokens
-  restart the wizard with a fresh console token. The old token is refused and the new token opens
-  authenticated wizard state. These checks run before the boot phase reboots the guest.
+  return four 403s then a 429 cooldown that also holds back the correct token. The wizard does
+  not restart or print a new token, and after 65 seconds the same token opens authenticated
+  wizard state. These checks run before the boot phase reboots the guest.
   Assert serial getty is active on the guest's UART; give its installed
   condition a type-0 port for five minutes and require an inactive unit with no restarts or terminal
   errors, then restore the UART, require the unit active again and check a clean hangup respawns
@@ -442,8 +443,15 @@ the configured test registry fail before the image build. Release builds do not 
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
-  with local chains and the non-default nano pool. The authenticated wizard must name the saved
-  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  with local chains and the non-default nano pool. Each setup-again session separately checks
+  the current boot journal for a minted token, the new-boot serial slice and tty1 text from
+  `/dev/vcs1`. `wizard-console-leg.sh` restarts both gettys during a paused direct announcement
+  and requires the current URL and token before releasing it; disabling issue publication is
+  its negative control. Bounded console captures and getty properties are retained between `BEGIN setup-console`
+  and `END setup-console` markers in the collected rig log.
+  `selftest-wizard-console.sh` checks publication, replacement, cleanup and failed verdicts.
+  The authenticated wizard must name the saved `pithead` role and prefill its answers with
+  secrets blank. POST **Keep it** through the wizard;
   require the original dashboard login, unchanged configuration and host identity, both chain
   sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
   the served config; require the credentials card's login and the same chains and identity.

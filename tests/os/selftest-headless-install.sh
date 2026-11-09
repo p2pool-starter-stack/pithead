@@ -24,7 +24,8 @@ umount() {
 }
 mode=ready
 headless_install_stage '{"fixture":true}'
-test "$(cat "$work/esp/pithead-token.txt")" = PiT-K7m2Qx
+test "$(cat "$work/esp/pithead-token.txt")" = "$HEADLESS_INSTALL_TOKEN"
+[[ "$HEADLESS_INSTALL_TOKEN" == PiT-* ]] && [ "$((${#HEADLESS_INSTALL_TOKEN} - 4))" -ge 16 ]
 jq -e '.fixture == true' "$work/esp/pithead-config.json" >/dev/null
 headless_install_stage '{"fixture":true}' PHTARGET01
 test "$(cat "$work/esp/pithead-target-serial.txt")" = PHTARGET01

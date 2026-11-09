@@ -18,6 +18,7 @@ trap 'rm -rf "$scratch"' EXIT
     clear_legacy_wizard_snapshots() { :; }
     clear_restore_stages() { :; }
     wizard_clear_restore_state() { :; }
+    wizard_clear_announcement() { :; }
     clear_setup_candidate() { :; }
     installer_mode_available() { return 1; }
     machine_role() { printf coordinator; }
@@ -73,4 +74,4 @@ trap 'rm -rf "$scratch"' EXIT
     [ "$(grep -c '^WIZARD_TOKEN=pit-AAAAA[23]$' engine-args)" = 2 ]
     [ "$(grep -c '^WIZARD_TLS_CERT=/wizard-spool/wizard.crt$' engine-args)" = 2 ]
 )
-printf 'selftest-wizard-lockout-loop: PASS\n'
+printf 'selftest-wizard-restart-loop: PASS\n'

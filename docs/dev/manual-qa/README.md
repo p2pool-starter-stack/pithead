@@ -187,9 +187,6 @@ A step that fails for a reason listed here is linked to the issue listed, not fi
   wizard's JSON pane collapses a duplicate key silently (last one wins) instead of refusing it;
   `apply` and the dashboard's Configuration editor refuse it as
   [7.6](diy/07-settings-dashboard.md) expects.
-- [rigforge#583](https://github.com/p2pool-starter-stack/rigforge/issues/583): on an appliance
-  rig, a pool changed from Worker Inspect reverts at the next reboot; change it in the rig's
-  `rig.json` instead.
 
 ## Glossary
 

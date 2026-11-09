@@ -23,10 +23,26 @@ action — validation, disk installs, provisioning — happens host-side, the sa
 the [#33 control channel](../dashboard.md#configuration-view). A compromised container can
 write the spool and nothing more.
 
+## Authentication gate
+
+Failed tokens are counted per direct peer address from `request.remote`; forwarded-address
+headers do not select the bucket. Entries below the threshold expire 60 seconds after their
+latest failure. The fifth failure starts a fixed 60-second cooldown and returns `429` with
+`Retry-After`; blocked requests do not extend it, and even the correct token must wait. The
+wizard keeps running and keeps the same token, so the browser tells that peer when to retry it
+instead of asking for a replacement. Successful authentication clears only that
+peer's failures and creates its session. Existing authenticated cookies retain access,
+including for operators sharing the blocked peer. The failure map holds at most 1,024 peers and
+evicts the entry it began tracking first when full, even if that peer is still in cooldown. Guessing is bounded per peer (five tries a minute), not globally, and the token does not rotate, so several peers multiply the rate; the six-character token holds about 29.7 bits. A network failure is reported separately from throttling.
+
 ## The stage machine
 
 `wizard_stage()` in `wizard/server.py` derives the step from **spool files only**, and the client
 renders what it is told. The client must never infer the stage.
+
+`/status` exposes coarse progress without authentication. Stored `error.txt` details require
+the current wizard session; anonymous failed or rejected states use generic text. Status
+responses use `Cache-Control: no-store`, as does the authenticated `/api/wizard-state` payload.
 
 | Stage | True when | View |
 |---|---|---|
@@ -228,9 +244,13 @@ rig — keep means keep whatever the role says.
 `os/rauc/grub.cfg`'s fourth entry boots the slot the default would have booted and appends
 `pithead.setup=1` to that one boot's kernel cmdline. `pithead-setup-again.service`, the flag's
 only reader, runs `pithead firstboot-wizard` on a provisioned machine with `PITHEAD_SETUP_AGAIN=1`
-and `Before=pithead-boot.service`, so the role's normal boot waits behind the page. Under the
-switch (`lib/pithead/12a-setup-again.sh`) three things change and nothing else: the "already a
-rig" and "config.json present" short-circuits are skipped; `stage_wizard_spool` publishes
+and `Before=pithead-boot.service`, so the role's normal boot waits behind the page. Each
+announcement atomically publishes the URL, one-time token and certificate fingerprint to
+`/run/issue.d/pithead-setup.issue` with mode `0600`. The login prompts reload that file and
+print it again when either getty starts; the same text is copied directly to tty1 and ttyS0.
+A new round replaces the file. The wizard's exit trap and both units' `ExecStopPost` remove it.
+Under the switch (`lib/pithead/12a-setup-again.sh`) three things change and nothing else:
+the "already a rig" and "config.json present" short-circuits are skipped; `stage_wizard_spool` publishes
 `saved-role.json` and points the pre-fill at the saved answers (`rig-defaults.json` gets the saved
 pool + worker; `last-attempt.json` gets `config.json` through `strip_config_secrets`, unless a
 failed retry's context is already there); and the inner loop honours `keep-role`. The page shows

@@ -228,7 +228,7 @@ assert_eq "unsafe phase still restores the host firewall" "$(grep -c '^firewall-
 gate=$(sed -n '/^    if \[ "$rig_control_ok" = 1 \] && \[ "$RUN_FAULTS" = "1" \]; then$/,/^    fi # fault-injection gate$/p' "$ROOT/run.sh")
 [ -n "$gate" ] || exit 1
 (
-    export rig_control_ok=1 RUN_FAULTS=1 lifecycle_ok=1 LIFECYCLE_STACK_INTACT=0
+    export rig_control_ok=1 RUN_FAULTS=1 FAULT_SSH=0 lifecycle_ok=1 LIFECYCLE_STACK_INTACT=0
     SAFETY_RESTORE_FAILED=0
     sampling_finished=0
     run_fault_injection() { return 1; }

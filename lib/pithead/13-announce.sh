@@ -16,7 +16,7 @@ announce_dashboard_url() {
     [ "$bind" != "127.0.0.1" ] || log "Stratum is bound to loopback: local connections only."
     announce_stratum_auth
     announce_stratum_tls # #261: prints the fingerprint rigs pin; no-op when TLS is off
-    announce_local_miner # #593: hand off the pool URL + secret for a co-located RigForge worker
+    announce_local_miner
 }
 
 announce_local_miner() {
@@ -44,15 +44,13 @@ announce_local_miner() {
     log "Local miner opt-in is ON: point a RigForge install on THIS host at the stack's stratum:"
     log "  • Pool URL:         $host:$port"
     if [ -n "$secret" ]; then
-        log "  • Stratum password: $secret"
+        log "  • Stratum authentication is ON: retrieve the password from the dashboard's Connect a miner panel."
     else
         log "  • Stratum password: none set (any password is accepted)"
     fi
     log "  RigForge compiles/tunes XMRig and owns all host tuning (HugePages/GRUB/MSR) — Pithead does not. See $DOCS_URL/docs/workers.md#mine-on-the-stack-host-itself."
 }
 
-# Surface the stratum access-password (#152) so the operator can configure each rig's 'pass'.
-# The operator's shared secret already lives in .env; show it again so a later rig can connect.
 announce_stratum_auth() {
     local sp
     sp=$(env_get PROXY_STRATUM_PASSWORD 2>/dev/null || true)
@@ -60,6 +58,5 @@ announce_stratum_auth() {
         log "Stratum password: none set (any password is accepted)"
         return 0
     fi
-    log "Stratum password: $sp"
-    log "Stratum authentication is ON: every rig must connect with pass \"$sp\" (set it as the xmrig/RigForge stratum password). See $DOCS_URL/docs/workers.md#authentication."
+    log "Stratum authentication is ON: retrieve the password from the dashboard's Connect a miner panel. See $DOCS_URL/docs/workers.md#authentication."
 }

@@ -46,7 +46,7 @@ vm_create() {
         --osinfo debian12 \
         --boot "uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=$secure_boot" \
         --import --disk "path=$disk,format=raw,bus=virtio" \
-        --network network=default,model=virtio --graphics none \
+        --network network=default,model=virtio --graphics none --video vga \
         --serial "file,path=$serial" --noautoconsole
 }
 

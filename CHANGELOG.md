@@ -16,17 +16,30 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - Appliance reboot and clean power-off in the lean UI preview's Advanced > Maintenance section,
   with typed confirmation and host-side cooldowns (#2384).
 
+### Changed
+
+- The appliance image bakes RigForge 1.18.1. Its prebuilt XMRig carries RigForge's donation
+  default and minimum of 0, a `pools` edit from Worker Inspect on an appliance rig is refused
+  (set the pool in Pithead configuration), and an appliance upgraded from 2.0.2
+  reseeds the prebuilt XMRig on first boot instead of keeping the one 2.0.2 shipped (#3817).
+
 ### Fixed
 
 - Tor auto-heal now works on **No login** appliances through a host-restricted healing channel. General dashboard control remains disabled, and state recovery retains its evidence, onion-identity, lock and six-hour cooldown checks (#3166).
 - XvB sync regression tests now check real stored stats, reward estimates and raffle wins. Failed fetches and unparseable round aggregates must retain the last good readings and freshness timestamps; a local failure-count update remains allowed (#3056).
+- The dashboard no longer asks for a second reboot while an installed update is still being
+  verified. After the reboot, the new copy of the system moves the stored update status to
+  verifying before its health checks finish, the header shows the verification window, and a
+  reboot asked for in that window is refused with its reason recorded in the control log — a
+  reboot then would have returned the machine to the previous version before the update was
+  ever decided. An update interrupted before its verification reached a verdict is now reported
+  as interrupted, not as failed health checks (#3909).
 
 ### Security
 
+- The images and the appliance rootfs pull the distro's security builds of apt (CVE-2026-109518)
+  and zlib (CVE-2026-76844, CVE-2026-85091) past their digest-pinned bases (#3923).
 - The Alpine images pull the patched musl past their digest-pinned base (CVE-2026-107891, #3929).
-- The Ubuntu and Debian image builds list apt, and the dashboard image and the appliance rootfs
-  also zlib1g, in their install lists, pulling the distro's security builds past the digest-pinned
-  bases (CVE-2026-109518, CVE-2026-76844, CVE-2026-85091, #3923).
 - The appliance rootfs raises golang.org/x/net to 0.62.0 in the Cosign and Docker Compose it
   builds, clearing CVE-2026-78661 in both binaries (#3931).
 

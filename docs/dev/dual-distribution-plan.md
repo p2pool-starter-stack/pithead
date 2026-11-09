@@ -373,8 +373,11 @@ minimization instead:
 - Only-when-unprovisioned, and the window closes permanently at handoff.
 - The token is **short and human-typable** — 6 characters from an unambiguous
   alphabet (no 0/O/1/l), e.g. `pit-X7KM2Q`, printed on the console/terminal. It is
-  used once to reach the form; attempts are throttled and N failures mint a fresh
-  token. No form field renders before it.
+  used once to reach the form. The fifth failure from one direct peer starts a fixed
+  60-second cooldown for that peer; blocked requests do not extend it, the token remains
+  valid, and authenticated sessions continue. A custom token pre-seeded on removable media
+  needs at least 16 letters, digits or dashes after the optional `pit-` prefix. No form field
+  renders before authentication.
 - The wizard collects wallet **addresses** and shape choices only. The dashboard
   password is generated host-side and **displayed once** at handoff; view keys and
   other secrets are day-2 entries through the authenticated HTTPS dashboard.

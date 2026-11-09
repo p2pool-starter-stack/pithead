@@ -55,7 +55,10 @@ ONLY_SCENARIO=""
 CHECK_ONLY=0
 READINESS=0
 RUN_LIFECYCLE=0
+RUN_RESET_DASHBOARD=0
 RUN_FAULTS=0
+FAULT_SSH=0
+FAULT_SSH_DEST=""
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
 RUN_ROTATE_ONION=0
@@ -79,6 +82,8 @@ RIG_CONTROL_PORT="8082"
 SAFETY_BACKUP=0
 BACKUP_ONLY=0
 SAFETY_ARCHIVE=""
+RESET_DASHBOARD_DECOY_DASHBOARD=""
+RESET_DASHBOARD_DECOY_P2POOL=""
 SAFETY_RESTORE_FAILED=0
 SAFETY_RESTORE_FAIL_REASON=""
 _SAFETY_RESTORE_ARMED=0
@@ -99,6 +104,8 @@ BASELINE_SECRET_FP=""
 BASELINE_EXACT_SECRET_FP=""
 
 INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/run-usage.sh
+source "$HERE/lib/run-usage.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-cli.sh
 source "$HERE/lib/run-cli.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-matrix.sh
@@ -127,8 +134,12 @@ source "$HERE/lib/run-connection-announcements.sh" || exit $?
 source "$HERE/lib/run-reset-restore.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-pool-preview.sh
 source "$HERE/lib/run-pool-preview.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-support-bundle.sh
+source "$HERE/lib/run-support-bundle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-reset-dashboard.sh
+source "$HERE/lib/run-reset-dashboard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh
 source "$HERE/lib/run-rotate-secrets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
@@ -288,7 +299,7 @@ main() {
     local lifecycle_ok=1 _gated
     LIFECYCLE_STACK_INTACT=0
     if [ "$rig_control_ok" != 1 ]; then
-        for _gated in LIFECYCLE:lifecycle ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening ROTATE_ONION:rotate-onion \
+        for _gated in LIFECYCLE:lifecycle RESET_DASHBOARD:reset-dashboard ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening ROTATE_ONION:rotate-onion \
             XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit TARI_STRANDED:tari-stranded MONERO_STRANDED:monero-stranded \
             MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
             local _flag="RUN_${_gated%%:*}"
@@ -302,7 +313,7 @@ main() {
     fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
         if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then
-            if ! run_fault_injection; then
+            if ! run_fault_injection_maybe; then
                 SAFETY_RESTORE_FAILED=1
                 it_fail "fault phase storage verified before continuing" "ENOSPC cleanup unverified; retain the safety archive for operator recovery"
                 hugepages_finish
@@ -313,6 +324,7 @@ main() {
             it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"
         fi
     fi # fault-injection gate
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_RESET_DASHBOARD" = "1" ] && run_reset_dashboard
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_SECRETS" = "1" ] && run_rotate_secrets
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening

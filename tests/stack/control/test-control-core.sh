@@ -351,7 +351,6 @@ assert_eq "one-field commit preserves an explicit credential" \
     "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
 assert_eq "one-field commit audits only its key (#2365)" \
     "$(tail -n 1 "$AUDIT" | jq -r '.keys')" "dashboard.energy.cost_per_kwh"
-
 # Expired staged intent (older than the 10-min commit window) → rejected as expired and cleared.
 # Age it ~15 min: past the 10-min expiry the commit enforces, but INSIDE the 60-min stale sweep so
 # the sweep leaves it for control_commit to judge (a 2020 date would be swept first, #33 hardening).
@@ -361,7 +360,6 @@ printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID2" >"$REQS/$UUID2
 run_pending >/dev/null
 assert_contains "expired staged intent is rejected" "$(jq -r '.error' "$RESULTS/$UUID2.json" 2>/dev/null)" "expired"
 [ ! -f "$STAGED/$UUID2.json" ] && ok "expired staged intent cleared" || bad "expired staged intent cleared" "still staged"
-
 echo "== black-box: reserved-node preview is CONFIRM-tier, not approval-tier (#1888/#1920; #2297) =="
 # Baseline is already remote-mode on BOTH chains so the candidate below moves only the four
 # node-endpoint keys (MONERO_NODE_HOST/RPC_PORT/ZMQ_PORT, TARI_GRPC_ADDRESS) — a local_node MODE
@@ -398,6 +396,8 @@ assert_eq "tari endpoint named in preview_values" \
 rm -f "$RESULTS/$UUID3.json" "$STAGED/$UUID3.json"
 # shellcheck source=tests/stack/control/config-concurrency.sh
 source "$HERE/control/config-concurrency.sh"
+# shellcheck source=tests/stack/control/commit-lock.sh
+source "$HERE/control/commit-lock.sh"
 # Restore the baseline this file's own tail is documented to leave behind (pool mini, local mode,
 # node_password "p", dashboard password "a control passphrase") — test-secrets-masking.sh, sourced
 # right after this file, reads that exact state rather than re-establishing it itself.

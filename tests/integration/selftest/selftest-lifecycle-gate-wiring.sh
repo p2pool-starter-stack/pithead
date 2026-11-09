@@ -96,7 +96,9 @@ prove_wallet_recovery() {
     recovery_proof_calls=$((recovery_proof_calls + 1))
     return "$recovery_proof_rc"
 }
+run_image_permissions() { :; }
 run_connection_announcements() { :; }
+run_support_bundle() { :; }
 run_cli_wizard_defaults() { :; }
 run_restore_dashboard_probe() { :; }
 run_tari_background_sync() { :; }

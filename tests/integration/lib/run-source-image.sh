@@ -71,17 +71,21 @@ source_image_reconcile_snippet() {
     backup_ref="pithead-source-image-backup:${fixture##*/}"
     new_id=""
     cleanup() {
-        local rc=$?
+        local rc=$? err
         trap - EXIT
         [ "$rc" -eq 0 ] || printf "source-image: diagnostic: failed at %s\n" "$stage" >&2
         if docker image tag "$backup_ref" "$ref" && reconcile_compose_images &&
             [ "$(docker inspect --format '{{.Image}}' "$(docker compose ps -q xmrig-proxy)")" = "$old_id" ]; then
             printf '%s\n' 'source-image: original image restored'
-            docker image rm "$backup_ref" >/dev/null || rc=1
+            docker image rm "$backup_ref" >/dev/null || { rc=1; printf '%s\n' 'source-image: diagnostic: failed in cleanup: backup image removal' >&2; }
         else
             rc=1
+            printf '%s\n' 'source-image: diagnostic: failed in cleanup: original image restore' >&2
         fi
-        [ -z "$new_id" ] || docker image rm "$new_id" >/dev/null || rc=1
+        if [ -n "$new_id" ] && ! err=$(docker image rm "$new_id" 2>&1 >/dev/null) && [[ $err != *"No such image: $new_id"* ]]; then
+            rc=1
+            printf '%s\n%s\n' 'source-image: diagnostic: failed in cleanup: built image removal' "$err" >&2
+        fi
         rm -rf -- "$fixture"
         exit "$rc"
     }
@@ -124,6 +128,7 @@ run_source_image_reconcile() {
     rc=$?
     printf '%s\n' "$out" | redact >"$OUT_DIR/source-image-reconcile.log"
     assert_rc "source upgrade image reconciliation and cleanup (#2934)" "$rc" 0
+    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | redact | tail -n 40 | sed 's/^/source-image-log: /'
     assert_contains "source upgrade fixture starts with a real stale live image (#2934)" "$out" \
         'source-image: live old image differs from built declaration'
     assert_contains "source upgrade recreates through the guarded path (#2934)" "$out" \
@@ -141,4 +146,27 @@ run_source_image_reconcile() {
     fi
     capture_artifacts "source-image-reconcile" "$OUT_DIR"
     return 1
+}
+
+run_image_permissions() {
+    if ! rx 'test -f dashboard/Dockerfile'; then
+        it_skip_leg "restrictive checkout image permissions (#3431)" "release install: no local builds" "by-design"
+        return 0
+    fi
+    local probe service ref out rc before="$IT_FAIL"
+    for probe in tor:c59e5ad6fc7c1fe82eb7558a2f962c18c1266299 tor:HEAD monero:HEAD p2pool:HEAD xmrig-proxy:HEAD dashboard:HEAD; do
+        service=${probe%%:*}
+        ref=${probe#*:}
+        out=$(rx "set -e; image=pithead-permission-probe-\$\$:$(quote_arg "$service"); trap 'docker image rm -f \"\$image\" >/dev/null 2>&1' EXIT; timeout --kill-after=30 1200 bash tests/stack/standalone/test_image_permissions.sh $(quote_arg "$service") \"\$image\" $(quote_arg "$ref")" 2>&1)
+        rc=$?
+        printf '%s\n' "$out" | redact >"$OUT_DIR/image-permissions-$service-$ref.log"
+        if [ "$ref" != HEAD ]; then
+            assert_rc "Tor restrictive checkout reproduces the reported failure at c59e5ad (#3431)" "$rc" 1
+            assert_contains "Tor baseline fails on its unreadable template (#3431)" "$out" 'FAIL: unreadable runtime file: /etc/tor/torrc.template'
+            continue
+        fi
+        assert_rc "$service non-root image accepts a restrictive checkout (#3431)" "$rc" 0
+        assert_contains "$service runtime files are accessible under umask 077 (#3431)" "$out" "PASS: $service runtime file permissions"
+    done
+    [ "$IT_FAIL" -eq "$before" ]
 }

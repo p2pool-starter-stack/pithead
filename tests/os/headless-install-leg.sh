@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154
+HEADLESS_INSTALL_TOKEN=PiT-K7m2Qx9Vw4Rn8Tz3
+
 headless_install_stage() {
     local loop mnt tries=0 rc=0
     loop=$(losetup -Pf --show "$DISK") || return 1
@@ -19,7 +21,7 @@ headless_install_stage() {
         if [ "$#" = 0 ]; then
             rm -f "$mnt/pithead-token.txt" "$mnt/pithead-config.json" "$mnt/pithead-target-serial.txt" || rc=1
         else
-            printf '%s\n' 'PiT-K7m2Qx' >"$mnt/pithead-token.txt" &&
+            printf '%s\n' "$HEADLESS_INSTALL_TOKEN" >"$mnt/pithead-token.txt" &&
                 printf '%s' "$1" >"$mnt/pithead-config.json" || rc=1
             if [ -n "${2:-}" ]; then
                 printf '%s\n' "$2" >"$mnt/pithead-target-serial.txt" || rc=1
@@ -37,8 +39,11 @@ headless_install_stage() {
 }
 
 headless_install_auth() {
-    local variant
-    for variant in PiT-K7m2Qx pit-k7m2qx PIT-K7M2QX k7m2qx K7M2QX; do
+    local variant bare upper lower
+    bare=${HEADLESS_INSTALL_TOKEN#PiT-}
+    upper=${HEADLESS_INSTALL_TOKEN^^}
+    lower=${HEADLESS_INSTALL_TOKEN,,}
+    for variant in "$HEADLESS_INSTALL_TOKEN" "$lower" "$upper" "${bare,,}" "${bare^^}"; do
         rm -f "$jar"
         if ! curl -fsSk -m 10 -c "$jar" --data-urlencode "token=$variant" "https://$ip/auth" -o /dev/null 2>/dev/null ||
             ! grep -q wizard_session "$jar"; then
