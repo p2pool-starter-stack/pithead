@@ -91,18 +91,12 @@ normalize_bool() {
     esac
 }
 
-# Read a JSON boolean from $CONFIG_FILE honouring an explicit `false`. jq's `//` treats `false` (not
-# just `null`) as empty, so `<path> // true` silently coerces a configured false back to the default —
-# we null-check instead. Args: <jq-path-expr> <default:true|false>. Pure given $CONFIG_FILE so it
-# unit-tests in isolation (#294 — this bug had broken the #270 firewall opt-out and xvb.tor=false).
-# An optional third argument reads a staged config without changing the process-wide CONFIG_FILE.
 config_bool() {
-    jq -r "if $1 == null then $2 else $1 end" "${3:-$CONFIG_FILE}"
+    local fallback
+    fallback=$(profile_default "${1#.}" "$2" "${3:-$CONFIG_FILE}") || return 1
+    jq -r "if $1 == null then $fallback else $1 end" "${3:-$CONFIG_FILE}"
 }
 
-# Monero pruning as the .env-style flag the dashboard reads: 1 (on) / 0 (off). Pruning is on
-# unless config explicitly sets monero.prune:false — via config_bool so that explicit false is
-# honoured, not coerced (#294). Tolerates a missing/unreadable config (defaults to pruned).
 monero_prune_flag() {
     [ "$(config_bool '.monero.prune' true 2>/dev/null || echo true)" = "true" ] && echo 1 || echo 0
 }

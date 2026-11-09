@@ -62,7 +62,14 @@ EOF
         *.29) marker="$(tor_egress_choice_marker)/xvb" ;;
         *) return 1 ;;
         esac
-        if [ -n "${chain:-}" ]; then marker="$(clearnet_state_dir)/$chain.synced"; fi
+        if [ -n "${chain:-}" ]; then
+            if [ "$(env_get PITHEAD_PROFILE 2>/dev/null)" = performance ]; then
+                marker="$(tor_egress_choice_marker)/$chain"
+                chain=
+            else
+                marker="$(clearnet_state_dir)/$chain.synced"
+            fi
+        fi
         printf -v qmarker '%q' "$marker"
         printf -v qipt '%q' "$ipt"
         printf -v qtag '%q' "$TOR_EGRESS_TAG"
