@@ -152,6 +152,7 @@ awc() { # <starts before the SAN appears> <start exit code>
                 AWC_STARTS=$((AWC_STARTS + 1))
                 return "$AWC_RC"
                 ;;
+            "systemctl list-timers"*) echo "journal-at-failure" ;;
             openssl*) [ "$AWC_STARTS" -ge "$AWC_MINT_AT" ] && printf 'X509v3 Subject Alternative Name:\n    DNS:x, %s\n' "$AWC_SAN" ;;
         esac
     }
@@ -169,6 +170,7 @@ assert_eq "…with no SAN left for the verdict" "$ADDRESS_WATCH_SANS" ""
 awc 1 1
 assert_eq "a failing service start is repeated even when the SAN is present" "$AWC_STARTS" 6
 assert_eq "…and its exit code reaches the verdict" "$ADDRESS_WATCH_RC" 1
+assert_eq "the journal is read straight after the last run" "$ADDRESS_WATCH_JOURNAL" "journal-at-failure"
 unset -f awc _ssh
 unset AWC_SAN AWC_STARTS AWC_MINT_AT AWC_RC
 

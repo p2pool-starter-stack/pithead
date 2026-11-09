@@ -385,7 +385,7 @@ both local-miner toggles converge without rebooting.
 parser and earnings modules through authenticated Caddy; `selftest-earnings-assets.sh` rejects
 old, missing, redirected and unrelated responses without a guest.
 The address-watch provision leg in `tests/os/appliance-address-watch-leg.sh` checks certificate
-SAN coverage (rerunning the watch service and rereading the SANs up to six times, and on failure printing the timer state and the service journal since boot) and the deployed dashboard recovery assets through TLS, then executes the served
+SAN coverage (rerunning the watch service and rereading the SANs up to six times, and on failure printing the timer state and the service journal, read straight after the last run) and the deployed dashboard recovery assets through TLS, then executes the served
 fingerprint instruction over SSH. Its refusal controls are in `tests/os/selftest-dashboard-recovery.sh`.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata, failure snapshots and bounded control transport recovery; its selftest runs through

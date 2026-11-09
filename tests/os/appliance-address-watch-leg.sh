@@ -130,6 +130,7 @@ address_watch_converge() { # <san-entry>
         [ "$ADDRESS_WATCH_RC" = 0 ] && [[ "$ADDRESS_WATCH_SANS" == *"$1"* ]] && break
     done
     ADDRESS_WATCH_ATTEMPTS=$attempt
+    ADDRESS_WATCH_JOURNAL=$(_ssh "systemctl list-timers pithead-address-watch.timer --all --no-pager; systemctl status pithead-address-watch.service --no-pager -n 0; journalctl -u pithead-address-watch.service -b --no-pager -n 200" 2>/dev/null | tr -d '\r') || ADDRESS_WATCH_JOURNAL=""
 }
 
 phase_provision_address_watch() {
@@ -165,8 +166,7 @@ phase_provision_address_watch() {
         printf '%s' "$doctor" | jq -r '.checks[]? | select(.message | test("certificate")) | "\(.status): \(.message)"' 2>/dev/null | sed 's/^/     doctor: /'
         _ssh "echo hostname-I: \$(hostname -I); openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -ext subjectAltName | tr '\n' ' '" 2>/dev/null | tr ':' '_' | sed 's/^/     /'
         echo "     address watch service runs: $ADDRESS_WATCH_ATTEMPTS"
-        _ssh "systemctl list-timers pithead-address-watch.timer --all --no-pager; systemctl status pithead-address-watch.service --no-pager -n 0" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
-        _ssh "journalctl -u pithead-address-watch.service -b --no-pager -n 80" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
+        printf '%s\n' "$ADDRESS_WATCH_JOURNAL" | sed 's/^/     | /'
         return 1
     fi
     phase_provision_dashboard_recovery "$1" "$2"
