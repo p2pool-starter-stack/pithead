@@ -218,6 +218,8 @@ case "$*" in
       echo "-A DOCKER-USER -p tcp -m tcp --dport $port -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN"
     done ;;
   'iptables -S FORWARD') echo '-A FORWARD -j DOCKER-USER' ;;
+  # Drain piped input like the real command, so a writer under pipefail never takes SIGPIPE.
+  iptables-restore* | ip6tables-restore* | 'nft -f -'* | tee\ * | chpasswd*) cat >/dev/null ;;
 esac
 exit 0
 EOF

@@ -458,7 +458,7 @@ drive_recovery() { # <pools-json> <n-backups> -> $OUT (the warn lines), $CFGDIR 
         # SC2034/SC2329: the config vars and the stubs are read and called by the eval'd block,
         # which shellcheck cannot follow into.
         # shellcheck disable=SC2034,SC2329
-        MINER_HOST=rig1 BENCH_HOST=bench.example MINER_XMRIG_CONFIG="$CFGDIR/config.json"
+        MINER_HOST=rig1 BENCH_HOST=bench.example MINER_XMRIG_CONFIG="$CFGDIR/config.json" MINER_E2E_BACKUP_DIR="$CFGDIR/e2e-backups"
         on_miner() { eval "$1"; }
         warn() { echo "WARN $*"; }
         die() { echo "DIE $*" && exit 1; }
