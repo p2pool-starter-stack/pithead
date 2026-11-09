@@ -36,7 +36,7 @@ ensure_config_exists() {
 
 wizard_ask_core() {
     while :; do
-        read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || break
+        read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || error "End of input while reading the Monero payout address. Aborting."
         case "$(monero_address_type "$IN_MONERO_WALLET")" in
         primary) break ;;
         subaddress) echo "  ✗ That's a subaddress (8…) — p2pool can't pay it. Use your PRIMARY address (starts with 4)." >&2 ;;
@@ -177,8 +177,8 @@ wizard_ask_tari() {
     fi
 
     while :; do
-        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || break
-        [ -z "$IN_TARI_WALLET" ] && break # the required-field check below owns this
+        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || error "End of input while reading the Tari payout address. Aborting."
+        [ -z "$IN_TARI_WALLET" ] && break
         case "$(tari_address_type "$IN_TARI_WALLET")" in
         ok | unchecked) break ;;
         checksum) echo "  ✗ Checksum failed — at least one character is mistyped. Re-copy the address from your Tari wallet." >&2 ;;
@@ -304,6 +304,18 @@ wizard_write_config() {
     (
         umask 077
         printf '%s\n' "$cfg" >"$CONFIG_FILE"
+        if [ -n "${WIZ_PROFILE:-}" ]; then
+            profile_select "$CONFIG_FILE" "$WIZ_PROFILE"
+        else
+            local tmp
+            tmp=$(mktemp) || return 1
+            jq '
+                .profile="balance"
+                | if .p2pool.stratum_password == "" then del(.p2pool.stratum_password) else . end
+                | if .monero.clearnet_initial_sync == false then del(.monero.clearnet_initial_sync) else . end
+                | if .tari.clearnet_initial_sync == false then del(.tari.clearnet_initial_sync) else . end' "$CONFIG_FILE" >"$tmp" && cat "$tmp" >"$CONFIG_FILE"
+            rm -f "$tmp"
+        fi
     )
 }
 

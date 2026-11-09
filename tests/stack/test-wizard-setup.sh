@@ -15,6 +15,8 @@ assert_eq "pool tier inherits mini" "$(jq -r '.p2pool | has("pool")' <<<"$w1_cfg
 assert_eq "username is admin" "$(jq -r '.dashboard.auth.username' <<<"$w1_cfg")" admin
 assert_eq "new install XvB is off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" false
 assert_eq "DIY miner is off" "$(jq -r '.local_miner.enabled' <<<"$w1_cfg")" false
+assert_eq "new install records the balance profile" "$(jq -r '.profile' <<<"$w1_cfg")" balance
+assert_eq "private sync inherits Balance" "$(jq -r '.monero | has("clearnet_initial_sync")' <<<"$w1_cfg")" false
 w1_pass=$(jq -r '.dashboard.auth.password' <<<"$w1_cfg")
 assert_eq "generated password has 32 characters" "${#w1_pass}" 32
 assert_eq "password is alphanumeric" "$(printf %s "$w1_pass" | tr -d 'A-Za-z0-9')" ""
@@ -41,6 +43,8 @@ w2_cfg="$(cat "$W2/config.json")"
 assert_eq "fast sync applies to both local chains" "$(jq -c '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$w2_cfg")" '[true,true]'
 assert_eq "remote access enables onion" "$(jq -r '.dashboard.onion.enabled' <<<"$w2_cfg")" true
 assert_eq "Telegram answers survive" "$(jq -c '[.telegram.enabled,.telegram.bot_token,.telegram.chat_id]' <<<"$w2_cfg")" '[true,"mybottoken123","987654321"]'
+
+echo "== unit: wizard_print_pointer — closing pointer names what it deliberately didn't ask (#502) =="
 pointer_out="$(run_sourced "$SANDBOX" wizard_print_pointer 2>&1)"
 for key in monero.view_key dashboard.energy.cost_per_kwh workers.list docs/configuration.md; do
     assert_contains "closing pointer names $key" "$pointer_out" "$key"
@@ -93,15 +97,20 @@ mkdir -p "$RT/build/tari" "$RT/dashboard" "$RT/data/tor" "$RT/data/dashboard"
 cp "$STACK" "$RT/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$RT/build/tari/"
 make_stubs "$RT/bin"
-# make_stubs's sudo is a bare no-op — fine for setup's conditional sudo calls (writable test dirs
-# skip them), but stack_backup shells to `sudo tar`/`sudo du` UNCONDITIONALLY. Same passthrough
-# override the firstboot_consume_restore fixture above uses, for the same reason.
 cat >"$RT/bin/sudo" <<'SUDOEOF'
 #!/usr/bin/env bash
-[ "$1" = "chown" ] && exit 0
-exec "$@"
+[ "$1" != -n ] || shift
+case "$1" in
+    tar | du) exec "$@" ;;
+    tee) cat >/dev/null ;;
+esac
+exit 0
 SUDOEOF
 chmod +x "$RT/bin/sudo"
+"$RT/bin/sudo" touch "$RT/host-command-ran"
+assert_eq "restore fixture never executes unrelated host commands" "$([ -e "$RT/host-command-ran" ] && echo yes || echo no)" "no"
+printf 'unit fixture\n' | "$RT/bin/sudo" tee "$RT/host-unit"
+assert_eq "restore fixture drains unit output without writing host units" "$([ -e "$RT/host-unit" ] && echo yes || echo no)" "no"
 cat >"$RT/.env" <<EOF
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion

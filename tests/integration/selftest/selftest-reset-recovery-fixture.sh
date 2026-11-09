@@ -16,6 +16,7 @@ case_fixture() (
     cd "$root/work" || exit 1
     printf ' {"config_version":"9.9.9","future":true,"monero":{"wallet_address":"fixture-wallet"},"dashboard":{"energy":{"cost_per_kwh":0.2}}}\n\n' >config.json
     cp -p config.json "$root/original.json"
+    printf '2.0.2-rc1\n' >VERSION
     printf '%s\n' '{"config_version":"2.0.0","monero":{"wallet_address":"reference-wallet"},"tari":{"wallet_address":"reference-placeholder"},"dashboard":{"energy":{"cost_per_kwh":0.0}}}' >config.reference.json
     if [ "$fault" = baseline-unstamped ] || [ "$fault" = baseline-invalid ]; then
         if [ "$fault" = baseline-invalid ]; then
@@ -46,6 +47,7 @@ case_fixture() (
             [ "$fault" != snapshot ] || return 1
             cat config.json
             ;;
+        'tr -d " \t\r\n" <VERSION') [ "$fault" != version ] && tr -d ' \t\r\n' <VERSION ;;
         'cat config.reference.json') [ "$fault" != reference ] && cat config.reference.json ;;
         'sha256sum config.json') shasum -a 256 config.json ;;
         'umask 077; cat >config.json')
@@ -66,12 +68,12 @@ case_fixture() (
         if [ "$calls" -eq 1 ] && [ "$1" = apply ]; then
             [ "$fault" != apply ] || return 1
             [ "$fault" != apply-stamp ] || return 0
-            jq '.config_version="2.0.0"' config.json >next.json && mv next.json config.json
+            jq --arg v "$(tr -d '\n' <VERSION | sed 's/-.*//')" '.config_version=$v' config.json >next.json && mv next.json config.json
         elif [ "$calls" -ge 2 ]; then
             [ "$fault:$1" != cleanup-apply:apply ] || return 1
             [ "$fault:$1" != cleanup-up:up ] || return 1
             if [ "$1" = apply ] && jq -e '.config_version != "9.9.9"' config.json >/dev/null; then
-                jq '.config_version="2.0.0"' config.json >next.json && mv next.json config.json
+                jq --arg v "$(tr -d '\n' <VERSION | sed 's/-.*//')" '.config_version=$v' config.json >next.json && mv next.json config.json
             fi
         fi
         [ "$fault:$1" != cleanup-down:down ]
@@ -82,7 +84,7 @@ case_fixture() (
     }
     wait_status_ok() { [ "$fault" != cleanup-health ]; }
     run_reset_restore_fixture() {
-        jq -e '.config_version == "2.0.0" and (has("future") | not) and .monero.wallet_address == "fixture-wallet"' config.json >/dev/null || return 1
+        jq -e '.config_version == "2.0.2" and (has("future") | not) and .monero.wallet_address == "fixture-wallet"' config.json >/dev/null || return 1
         if [ "$fault" = wallet-fields ]; then
             jq -e '.monero.view_key == "monero-view" and .monero.payout_scan_height == 123 and .monero.payout_wallet == "monero-payout" and .tari.wallet_address == "tari-wallet" and .tari.view_key == "tari-view" and .tari.spend_public_key == "tari-spend" and .tari.payout_scan_birthday == 456 and .xvb.donor_id == "fixture-donor"' config.json >/dev/null || return 1
         else
@@ -112,7 +114,7 @@ case_fixture() (
         else
             jq -e '.baseline_version == "9.9.9"' "$root/artifacts/reset-restore.fixture.json" >/dev/null || exit 1
         fi
-        jq -e '.candidate_version == "2.0.0" and .fixture_version == "2.0.0"' "$root/artifacts/reset-restore.fixture.json" >/dev/null || exit 1
+        jq -e '.candidate_version == "2.0.2" and .fixture_version == "2.0.2"' "$root/artifacts/reset-restore.fixture.json" >/dev/null || exit 1
         [ -z "$(ls -A "$TMPDIR")" ] || exit 1
         [ "$(cat "$root/commands")" = $'apply\ndown\napply\nup' ] || exit 1
     else
@@ -140,7 +142,7 @@ case_fixture wallet-fields && it_pass "synthetic recovery preserves both wallets
     it_fail "synthetic recovery preserves both wallets, keys, scan fields and donor identity" "wallet fields changed"
 case_fixture none && it_pass "newer baseline uses a candidate-stamped synthetic archive and returns exact original bytes" ||
     it_fail "newer baseline uses a candidate-stamped synthetic archive and returns exact original bytes" "fixture contract failed"
-for fault in scratch snapshot snapshot-secrets reference wallet-loss wallet-loss-null wallet-loss-false partial-copy apply apply-stamp probe cleanup-copy cleanup-final-copy cleanup-down cleanup-apply cleanup-up cleanup-health cleanup-bytes cleanup-secrets; do
+for fault in scratch snapshot snapshot-secrets reference version wallet-loss wallet-loss-null wallet-loss-false partial-copy apply apply-stamp probe cleanup-copy cleanup-final-copy cleanup-down cleanup-apply cleanup-up cleanup-health cleanup-bytes cleanup-secrets; do
     case_fixture "$fault" && it_pass "reset fixture handles $fault without accepting unverified cleanup" ||
         it_fail "reset fixture handles $fault without accepting unverified cleanup" "failure control failed"
 done

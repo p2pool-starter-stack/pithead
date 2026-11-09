@@ -51,6 +51,9 @@ echo 'selftest-credential-journals: PASS (clean, six leaks, two errors, two empt
     _vm_boot_disk() { ip=fixture.invalid; }
     _wait_ssh() { :; }
     _wait_setup_page() { :; }
+    provisioning_settled() { return 0; }
+    provisioning_setup_failed() { return 1; }
+    provisioning_state() { echo fixture-settled; }
     _ssh() {
         case "$*" in
         'bash -s') bash -s ;;

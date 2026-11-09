@@ -36,9 +36,8 @@ docker run -d --name "$name-caddy" --network "$name" \
     -v "$scratch/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$name-logs:/var/log/caddy" "$image" >/dev/null
 docker run -d --name "$name-dashboard" --network "container:$name-caddy" \
     -v "$name-logs:/access-log:ro" -e UPDATE_INTERVAL=2 pithead-dashboard:itest >/dev/null
-# The driver runs once on the loopback side, once across the bridge as an untrusted client.
 run_driver() {
-    docker run --rm -i --network "$1" -e DASHBOARD_AUTH_HASH_B64 --entrypoint python pithead-dashboard:itest - "$2" "$3" <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
+    docker run --rm -i --network "$1" -v "$name-logs:/access-log:ro" -e DASHBOARD_AUTH_HASH_B64 --entrypoint python pithead-dashboard:itest - "$2" "$3" <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
 }
 run_driver "container:$name-caddy" local 127.0.0.1
 run_driver "$name" external "$name-caddy"
@@ -57,9 +56,21 @@ capability = hashlib.sha256(("pithead-boot-health-v1:" + os.environ["DASHBOARD_A
 if capability in raw or "X-Pithead-Boot-Probe" in raw:
     raise AssertionError("boot capability leaked into access log")
 PYLOG
-# Authentication disabled must still prove a real nonempty dashboard page after rewriting.
 DASHBOARD_AUTH_HASH_B64=""
 generate_caddyfile "$scratch/Caddyfile"
 docker exec "$name-caddy" caddy reload --config /etc/caddy/Caddyfile >/dev/null
 run_driver "container:$name-caddy" unlocked 127.0.0.1
 echo '  ✓ rendered Caddy boot marker survives auth and cannot suppress network login failures'
+
+docker rm -f "$name-dashboard" "$name-caddy" >/dev/null
+docker volume rm "$name-logs" >/dev/null
+docker volume create "$name-logs" >/dev/null
+DASHBOARD_AUTH_HASH_B64=$(printf '%s\n' fixture-password | docker run --rm -i "$image" caddy hash-password | openssl base64 -A)
+generate_caddyfile "$scratch/Caddyfile"
+docker run -d --name "$name-caddy" --network "$name" \
+    -v "$scratch/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$name-logs:/var/log/caddy" "$image" >/dev/null
+docker run -d --name "$name-dashboard" --network "container:$name-caddy" \
+    -v "$ROOT/tests/integration/mini-stack/caddy-auth-upstream.py:/fixture.py:ro" \
+    --entrypoint python pithead-dashboard:itest /fixture.py >/dev/null
+run_driver "$name" auth-wire "$name-caddy"
+echo '  ✓ real Caddy enforces login, overwrites the audit actor, and logs two failed logins'

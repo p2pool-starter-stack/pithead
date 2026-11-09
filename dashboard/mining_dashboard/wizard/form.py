@@ -1,6 +1,6 @@
 import secrets
 
-from mining_dashboard.config.defaults import default_of
+from mining_dashboard.config.defaults import default_of, select_profile
 from mining_dashboard.wizard.defaults import automatic_setup_defaults
 
 
@@ -75,4 +75,6 @@ def build_config(
     if tz and tz != default_of("dashboard.timezone", platform):
         cfg.setdefault("dashboard", {})["timezone"] = tz
 
+    if "profile" in form or not (fast or form.get("stratum_password") == "true"):
+        return select_profile(cfg, s_("profile") or "balance")
     return cfg

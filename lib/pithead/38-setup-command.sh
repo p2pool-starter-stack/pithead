@@ -1,16 +1,6 @@
-# --- Top-level Commands ---
-
 setup() {
     if is_deployed; then
         warn "A previous deployment was detected."
-        # An interactive ask with no terminal is an EOF, and `read`'s `|| true` used to swallow
-        # that into an empty answer — read as decline, exit 0: a headless caller believed setup
-        # succeeded while nothing ran (#924's silent false success). Headless now REFUSES loudly
-        # instead of proceeding: an unattended re-provision (Tor container recreate, full
-        # re-render, a possible GRUB edit) must never ride on the mere absence of a terminal —
-        # `pithead setup` has long been a safe probe on a deployed box for cron/automation, and
-        # the appliance's own headless paths never reach this branch (a failed provisioning
-        # attempt is not deployed). A real terminal keeps the prompt exactly as before.
         if [ -t 0 ]; then
             local RERUN
             read -r -p "Re-run setup (re-provisions Tor and may modify GRUB)? (y/N): " RERUN || true
@@ -24,9 +14,10 @@ setup() {
         fi
     fi
 
-    # After the re-run prompt above, so the hold never spans a human wait. The firstboot
-    # wizard runs `(setup)` in a subshell (#1059), so this IS the wizard's hold and it is not one
-    # line wider than the provisioning itself — the loop's wait for a submitted form is outside it.
+    setup_confirmed
+}
+
+setup_confirmed() {
     mutation_lock_acquire setup
 
     check_prerequisites
@@ -63,9 +54,6 @@ setup() {
         echo "After reboot, start the stack with: '$0 up'"
     else
         prompt_start_stack
-        # The miner leg comes AFTER the stack: it points at the stack's own stratum, and
-        # RigForge starts the service it installs. Appliance-only inside; best-effort — a
-        # miner that cannot start must not fail provisioning of the stack that just did.
         provision_local_miner || true
     fi
 }

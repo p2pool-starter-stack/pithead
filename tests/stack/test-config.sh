@@ -1,27 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Config domain (#1105 Phase 1, appliance lane): what decides whether a config.json is admissible
-# and what it renders into — the multi-field validator that refuses a bad config before anything is
-# written (wallet address forms and their checksums, the two worker shapes, energy, the /24 subnet
-# rule), the closed-schema invariant keeping config.reference.json a superset of every path pithead
-# reads plus the core-key shortlist that must stay inside it (#561/#502/#529), describe_change's
-# per-key classification of an apply into INFO / CONFIRM / destructive DEST rows and its rule that no
-# secret value ever reaches the preview (#719/#152/#121/#380), `pithead render` rebuilding the whole
-# derived layer in place (#790), and the subnet-collision diagnosis a failed compose network is
-# translated into (#180).
-# Sourced by tests/stack/run.sh.
-#
-# Why the source line sits where it does: this file makes the suite's FIRST build_val_sandbox()
-# call ($V, seed_env), so its stanza holds the ORIGINAL global position of the "config validation"
-# block. Only read-only sections move; nothing here touches $C or the ambient .env/Caddyfile.
-#
-# Left behind, code-checked (not markers): the config_bool / env-helper probes (#294), unnamed for
-# this module by the #1252 domain map; the editable-allowlist round-trip (#522, cut to
-# test-control-editable-allowlist.sh by #1105 R14); and render-quadlet parity, an appliance test.
+TMPDIR="$SANDBOX" bash "$HERE/config/profile.sh"
+assert_rc "profile rendering and persistent clearnet behavior" "$?" "0"
 
 echo "== unit: describe_change =="
-# Monero prune (#719): DISABLE (on → off) forces a full re-sync (DEST); ENABLE (off → on)
-# reclaims disk (CONFIRM). Both require confirmation from the dashboard.
 assert_contains "prune disable is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_PRUNE 1 0)" "DEST"
 assert_contains "prune enable is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_PRUNE 0 1)" "CONFIRM"
 assert_contains "rpc lan is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_RPC_BIND 127.0.0.1 0.0.0.0)" "DEST"

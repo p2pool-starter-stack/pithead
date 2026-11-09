@@ -152,6 +152,7 @@ ENABLE_XVB = (
     os.environ.get("XVB_ENABLED", str(default_of("xvb.enabled", legacy=True))).lower() == "true"
 )
 
+PITHEAD_PROFILE = os.environ.get("PITHEAD_PROFILE", "balance")
 TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "socks5h://172.28.0.25:9050")
 
 XVB_TOR_ENABLED = os.environ.get("XVB_TOR_ENABLED", "true").lower() == "true"
@@ -163,6 +164,8 @@ DONATION_TOR_ENABLED = (
     os.environ.get("DONATION_TOR_ENABLED", str(default_of("donation.tor"))).lower() == "true"
 )
 XVB_TOR_SOCKS5 = TOR_SOCKS_PROXY.split("://", 1)[-1]
+OUTBOUND_TOR_PROXY = "" if PITHEAD_PROFILE == "performance" else TOR_SOCKS_PROXY
+XVB_HTTP_PROXY = TOR_SOCKS_PROXY if XVB_TOR_ENABLED else ""
 
 _XVB_SUBMIT_DEFAULT = "https://xmrvsbeast.com/cgi-bin/p2pool_bonus_submit_api.cgi"
 _XVB_SUBMIT_DISABLE_SENTINELS = {"off", "none", "false", "disabled", "0"}
@@ -421,16 +424,9 @@ TELEGRAM_DAILY_SUMMARY_TIME = os.environ.get("TELEGRAM_DAILY_SUMMARY_TIME", "08:
 NOTIFY_WEBHOOK_URLS = os.environ.get("NOTIFY_WEBHOOK_URLS", "").split()
 NTFY_URL = os.environ.get("NTFY_URL", "").strip()
 NTFY_TOKEN = os.environ.get("NTFY_TOKEN", "").strip()
-# Route the webhook/ntfy POSTs over Tor (default), so the endpoint sees a Tor exit, not the host
-# IP — the same egress rule as Telegram (#340). notifications.tor:false opts out for LAN /
-# self-hosted endpoints (Tor exits can't reach RFC1918 addresses); flipping it makes clearnet
-# endpoints see the host IP.
 NOTIFY_TOR = os.environ.get("NOTIFY_TOR", "true").strip().lower() == "true"
+NOTIFICATION_PROXY = TOR_SOCKS_PROXY if NOTIFY_TOR else ""
 
-# Hashrate-degradation detector (Issue #99). Flags a sustained drop in total hashrate below
-# HASHRATE_DROP_THRESHOLD_PCT of its trailing baseline for HASHRATE_DROP_MINUTES minutes — surfaced
-# as a chart event marker (always on) and, when telegram.events.hashrate_loss is on, an alert.
-# Rendered from config.json dashboard.hashrate_drop_threshold / dashboard.hashrate_drop_minutes.
 HASHRATE_DROP_THRESHOLD_PCT = int(float(os.environ.get("HASHRATE_DROP_THRESHOLD_PCT", 50)))
 HASHRATE_DROP_MINUTES = int(float(os.environ.get("HASHRATE_DROP_MINUTES", 10)))
 

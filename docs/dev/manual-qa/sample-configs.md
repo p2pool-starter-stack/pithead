@@ -170,20 +170,25 @@ On the second machine, use this complete file:
 ## Broken configs
 
 Step 6.5 works through every row of this table; 10.7 and 13.24 point back at it. The last row
-is the onion-without-login refusal that 10.7 names.
+is the onion-without-login refusal that 10.7 names. Tier 1 reads this table and the four
+samples directly: it validates the samples with fixture credentials and checks each refusal,
+unchanged `.env`, and absence of `compose up`. The final onion-without-login row is
+dry-run only; every other row also runs through `apply -y`. Dry runs preserve the candidate
+config, and placeholder refusals must not print the placeholder value.
 
 **What you do:**
 
 1. Start from a working `config.json`.
 2. Keep a baseline copy with `cp config.json config.json.qa-broken`.
 3. Make the change in one row of the table below, and only that change.
+   [The replay cases](broken-configs.tsv) encode these edits and message substrings for tier-1 CI.
 4. Run:
 
    ```bash
    ./pithead apply --dry-run
    ```
 
-5. Check the refusal against the second column. Record the nonzero exit status.
+5. Check the refusal against the message column. Record the nonzero exit status.
 6. Check that the candidate config, rendered `.env` and container identities are unchanged
    from immediately before the dry run.
 7. Restore `config.json.qa-broken` before the next row.
@@ -193,28 +198,29 @@ is the onion-without-login refusal that 10.7 names.
 For every row:
 
 - The dry run stops before anything changes.
-- It prints a message that contains the text in the second column.
+- It prints a message that contains the text in the message column.
 - The running stack is untouched.
+- Placeholder refusals name the key without printing the supplied placeholder.
 
-| Change | The message contains |
-|---|---|
-| Delete one closing `}` | A refusal saying the configuration is not valid JSON (for example `Invalid configuration: not valid JSON.`) |
-| Set `monero.wallet_address` to the QA **subaddress** (starts with `8`) | `is a SUBADDRESS (starts with 8)` |
-| Swap two different neighbouring characters in the middle of `monero.wallet_address` | `fails its checksum` |
-| Swap two different neighbouring characters in the middle of `tari.wallet_address` | `tari.wallet_address fails its checksum` |
-| Set `p2pool.pool` to `"large"` | `p2pool.pool must be "main", "mini", or "nano"` |
-| Set `tari.mode` to `"maybe"` | `tari.mode must be "local", "remote" or "off"` |
-| Set `monero.mode` to `"cloud"` | `monero.mode must be "local" or "remote"` |
-| Set `p2pool.stratum_password` to `"has space"` | `p2pool.stratum_password must be "auto", empty, or 1–128 chars` |
-| Add `"proxy": { "donate_level": 150 }` | `proxy.donate_level must be an integer 0–99` |
-| Set `dashboard.auth.password` to `"short"` | `dashboard.auth.password must be 8–128 printable characters` |
-| Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters) | `must be at least 16 characters when dashboard.onion.enabled is true` |
-| Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
-| Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | A refusal that names the duplicated key and says where it is, for example `duplicate key "p2pool" at the top level` |
-| Add a second `"wallet_address"` line inside the `monero` block | A refusal that names `monero.wallet_address` as a duplicated key |
-| Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | A refusal that names `dashboard.auth.password` as a placeholder and does not print the value |
-| Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case) | A refusal that names `telegram.bot_token` as a placeholder |
-| Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block | `dashboard.onion.enabled is true but dashboard.auth.password is empty` |
+| Case | Change | The message contains |
+|---|---|---|
+| `malformed-json` | Delete one closing `}` | `Invalid configuration: not valid JSON.` |
+| `monero-subaddress` | Set `monero.wallet_address` to the QA **subaddress** (starts with `8`) | `is a SUBADDRESS (starts with 8)` |
+| `monero-checksum` | Swap two different neighbouring characters in the middle of `monero.wallet_address` | `fails its checksum` |
+| `tari-checksum` | Swap two different neighbouring characters in the middle of `tari.wallet_address` | `tari.wallet_address fails its checksum` |
+| `pool` | Set `p2pool.pool` to `"large"` | `p2pool.pool must be "main", "mini", or "nano"` |
+| `tari-mode` | Set `tari.mode` to `"maybe"` | `tari.mode must be "local", "remote" or "off"` |
+| `monero-mode` | Set `monero.mode` to `"cloud"` | `monero.mode must be "local" or "remote"` |
+| `stratum-password` | Set `p2pool.stratum_password` to `"has space"` | `p2pool.stratum_password must be "auto", empty, or 1–128 chars` |
+| `proxy-donation` | Add `"proxy": { "donate_level": 150 }` | `proxy.donate_level must be an integer 0–99` |
+| `short-password` | Set `dashboard.auth.password` to `"short"` | `dashboard.auth.password must be 8–128 printable characters` |
+| `onion-short-password` | Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters) | `must be at least 16 characters when dashboard.onion.enabled is true` |
+| `onion-weak-password` | Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
+| `duplicate-pool` | Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | `duplicate key "p2pool" at the top level (path p2pool)` |
+| `duplicate-wallet` | Add a second `"wallet_address"` line inside the `monero` block | `duplicate key "wallet_address" at monero (path monero.wallet_address)` |
+| `placeholder-password` | Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | `placeholder value at dashboard.auth.password` |
+| `placeholder-telegram` | Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case) | `placeholder value at telegram.bot_token` |
+| `onion-missing-password` | Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block | `dashboard.onion.enabled is true but dashboard.auth.password is empty` |
 
 **Record:** under step 6.5 in the results sheet: PASS when every row matches, FAIL with the row
 that did not.

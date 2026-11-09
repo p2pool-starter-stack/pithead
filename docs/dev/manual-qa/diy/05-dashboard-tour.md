@@ -167,7 +167,12 @@ This part checks every panel of the dashboard on a DIY box: the header, both vie
 - The wrong password is refused.
 - The right password lets you in.
 
-**Record:** PASS, FAIL or N/A in the results sheet. Step 7.8 later counts this wrong password.
+**Automated:** `tests/integration/mini-stack/test-boot-health-proxy.sh` runs the rendered
+Caddy with missing, wrong and correct credentials and checks 401/401/200. It also
+checks that the upstream receives the authenticated name despite a spoofed header.
+Keep the browser prompt check manual; step 7.8 later counts this wrong password.
+
+**Record:** PASS, FAIL or N/A in the results sheet.
 
 ### 5.11 Metrics
 
@@ -189,6 +194,10 @@ This part checks every panel of the dashboard on a DIY box: the header, both vie
 
 - The first command prints Prometheus text with `pithead_` lines, including `pithead_shares_accepted_total`.
 - Without `-u`, the request is refused.
+
+**Automated:** `tests/integration/mini-stack/test-boot-health-proxy.sh` checks the real
+dashboard metrics through Caddy: no or wrong credentials return 401, and the right
+credentials return 200 with `pithead_shares_accepted_total`.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 

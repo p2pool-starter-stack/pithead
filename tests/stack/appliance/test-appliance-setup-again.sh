@@ -33,6 +33,11 @@ assert_eq "coordinator: ...with the login stripped (the reinstall rule)" "$(jq -
 printf '{"monero":{"wallet":"4retry"}}' >"$SASB/spool/last-attempt.json"
 PITHEAD_SETUP_AGAIN=1 run_sourced "$SASB" publish_saved_role "$SASB/spool" >/dev/null 2>&1
 assert_eq "an existing last-attempt.json (a failed retry's context) is never overwritten" "$(jq -r '.monero.wallet' "$SASB/spool/last-attempt.json")" "4retry"
+printf 'both\n' >"$SASB/machine-role"
+rm -f "$SASB/spool/saved-role.json"
+PITHEAD_SETUP_AGAIN=1 run_sourced "$SASB" publish_saved_role "$SASB/spool" >/dev/null 2>&1
+assert_eq "coordinator with its own miner: the published role follows the marker (#3934)" "$(jq -r '.role' "$SASB/spool/saved-role.json")" "both"
+rm -f "$SASB/machine-role" "$SASB/spool/saved-role.json"
 
 echo "== unit: wizard_keep_requested — Keep it ends the session with nothing touched (#1318) =="
 run_sourced "$SASB" wizard_keep_requested "$SASB/spool" >/dev/null 2>&1
@@ -128,7 +133,7 @@ assert_eq "...and the restored config.json replaced the pre-existing one" "$(jq 
 rm -f "$SAESP/pithead-restore.enc"
 
 echo "== unit: firstboot_wizard restores legacy remote-node settings without a new-node preflight (#2230) =="
-SAW_STUBS_LEGACY='container_engine() { echo true; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { printf "{\"monero\":{\"mode\":\"remote\",\"wallet_address\":\"4restored\"},\"tari\":{\"mode\":\"local\"}}" >"$PWD/config.json"; return 0; }; remote_node_addresses_allowed() { return 0; }; preflight_remote_nodes() { echo preflight >>"${RF_LOG:?}"; [ "$(grep -c "^preflight$" "$RF_LOG")" -gt 1 ]; }; ensure_appliance_dashboard_password() { :; }; apply_appliance_defaults() { :; }; bash() { return 0; }; wizard_spool_has() { return 0; }; record_machine_role() { :; }; setup() { echo setup >>"${RF_LOG:?}"; }; control_audit_provisioned() { return 0; }; firstboot_wizard'
+SAW_STUBS_LEGACY='container_engine() { echo true; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { printf "{\"monero\":{\"mode\":\"remote\",\"wallet_address\":\"4restored\"},\"tari\":{\"mode\":\"local\"}}" >"$PWD/config.json"; return 0; }; remote_node_addresses_allowed() { return 0; }; preflight_remote_nodes() { echo preflight >>"${RF_LOG:?}"; [ "$(grep -c "^preflight$" "$RF_LOG")" -gt 1 ]; }; ensure_appliance_dashboard_password() { :; }; apply_appliance_defaults() { :; }; bash() { return 0; }; wizard_spool_has() { return 0; }; record_machine_role() { :; }; setup_confirmed() { echo setup >>"${RF_LOG:?}"; }; control_audit_provisioned() { return 0; }; firstboot_wizard'
 rm -f "$SAWB/config.json"
 mkdir -p "$SAWB/data/firstboot"
 : >"$RF_LOG"

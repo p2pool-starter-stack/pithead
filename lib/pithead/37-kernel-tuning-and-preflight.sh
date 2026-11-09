@@ -29,6 +29,15 @@ hugepages_decision_pages() {
     fi
 }
 
+hugepages_carveout_mb() {
+    local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" live carved
+    carved=$(($(hugepages_decision_pages) * 2))
+    live=$(awk '/HugePages_Total/{t=$2} /Hugepagesize/{s=$2} END{print int(t*s/1024)}' "$meminfo" 2>/dev/null || echo 0)
+    [ "${live:-0}" -ge 0 ] 2>/dev/null || live=0
+    [ "$live" -lt "$carved" ] && carved="$live"
+    printf '%s\n' "$carved"
+}
+
 # Kernel boot params pithead appends to GRUB_CMDLINE_LINUX for RandomX: reserve 6 GiB of
 # 2 MiB HugePages and disable Transparent HugePages. NOTE the THP param is SINGULAR
 # (transparent_hugepage) — the plural form is an unrecognized param the kernel silently ignores,
@@ -176,7 +185,7 @@ check_disk_grouped() {
     done
 
     if [ "${#mounts[@]}" -eq 0 ]; then
-        [ "$mode" = "doctor" ] && dr_info "No data dirs resolved to a filesystem — skipping disk check."
+        [ "$mode" = "doctor" ] && dr_info disk-space "No data dirs resolved to a filesystem — skipping disk check."
         return 0
     fi
 
@@ -192,9 +201,9 @@ check_disk_grouped() {
         avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}')
         if [ "$mode" = "doctor" ]; then
             if [ -n "$avail_kb" ] && [ "$avail_kb" -ge "$need_kb" ] 2>/dev/null; then
-                dr_ok "Data on $mount ($comps): ${avail_h:-?} free — needs ~${req_gib[i]} GiB."
+                dr_ok disk-space "Data on $mount ($comps): ${avail_h:-?} free — needs ~${req_gib[i]} GiB."
             else
-                dr_warn "Data on $mount ($comps): ${avail_h:-?} free — below the ~${req_gib[i]} GiB the stack needs there."
+                dr_warn disk-space "Data on $mount ($comps): ${avail_h:-?} free — below the ~${req_gib[i]} GiB the stack needs there."
             fi
         else
             if [ -n "$avail_kb" ] && [ "$avail_kb" -lt "$need_kb" ] 2>/dev/null; then

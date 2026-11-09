@@ -148,7 +148,8 @@ _setup_again_session() {
     jar="$scratch/cookies"
     touch "$jar"
 }
-_setup_again_rig_submit() { echo 'fixture card'; }
+_setup_again_rig_submit() { echo '{"token":"fixture"}'; }
+rig_adopt_leg() { [ -n "$rig_card" ]; }
 _rig_mining_up() { return 0; }
 _ssh() {
     case "$*" in

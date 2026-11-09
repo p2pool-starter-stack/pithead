@@ -45,12 +45,19 @@ The Go builder is pinned by digest at [1.26.10](https://go.dev/doc/devel/release
 [CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
 in both binaries' standard library.
 
+The rootfs install list names `apt`, `gzip`, `libpcre2-8-0`, `libsqlite3-0`, `perl-base` and
+`zlib1g` only to pull the distro's security build past the digest-pinned base
+(#1438, #2104, #3923); `xxd` stays out because the rootfs has no consumer (#1380).
+
 `COMPOSE_GO_RAISES` and `COSIGN_GO_RAISES` raise x/mod to v0.41.0, x/net to
-v0.60.0 and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
-for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585).
+v0.62.0 for [CVE-2026-78661](https://github.com/p2pool-starter-stack/pithead/issues/3931),
+and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
+for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585),
+and go-jose/v4 to v4.1.6 for
+[CVE-2026-116587](https://github.com/p2pool-starter-stack/pithead/issues/3761).
 Compose already selects compress v1.19.2 from its pinned upstream source.
 The build asserts the compiled Go version of both binaries and Cosign's
-compiled compress version before copying them into the rootfs.
+compiled compress and go-jose versions before copying them into the rootfs.
 
 Module raises modify upstream's module graph, including transitive dependencies
 selected by Go's minimum-version selection. Upstream `go.sum` authenticates its
@@ -331,7 +338,7 @@ The update phase also packages its built v1 `system.img` and dev-signed v2 bundl
 asset sizes and checksums, and compares the decompressed image with the original.
 Its phase log retains the sizes and hashes; harness cleanup removes the packaged copies.
 This checks the release packaging path with test signing, not the final release-key artifacts.
-`--phase all` runs all eight — boot, update, install, provision, rig, media, fault and reset.
+Standalone `--phase all` runs the whole battery except crossupdate and tor-heal; bench-ci refuses it as a capped job, so the release cut submits phase groups instead.
 Expect roughly 25 minutes per phase, most of it image builds, so budget an evening rather
 than a coffee break. It ran five of the eight until #1064, which meant a cut that followed
 this page ran none of the destructive phases: the power cuts, the corrupt-bundle refusal, the
@@ -386,8 +393,9 @@ Hardware: one x86-64 machine with UEFI, ≥ 16 GiB RAM, an internal SSD/NVMe, wi
 ethernet, and a USB stick. A second disk makes M4 and M5 meaningful.
 
 **M1 — flash and boot.** Write the image to the USB stick. Disable Secure Boot in firmware,
-then boot the target from it. Expected: reaches userspace. Secure Boot support is deferred past
-2.0.0 to `v2.x - post-GA` (#2187); the KVM boot row records the current failure.
+then boot the target from it. Expected: reaches userspace. Secure Boot is unsupported by design
+(#2187); follow the [install guide's firmware instructions](../appliance.md#2-boot-the-machine-from-the-stick).
+The KVM boot row records a measured non-boot as the expected state for every image version.
 
 **M2 — discovery.** Read the token from the console, then find the box from another machine
 at `http://pithead.local` and at the IP it printed. Expected: both load the token gate, and
@@ -488,6 +496,11 @@ that archive with the kit's passphrase, and finish installation. Expected: the n
 the restored config, its payout wallet and onion address exactly match the recorded values, and
 the dashboard answers. Keep the timestamp with the release evidence so the archive is unambiguous.
 
+**M17 — dashboard power-off and physical-button restart.** Follow the
+[M17 hardware check](manual-qa/appliance/13b-updates-restore-and-media.md#m17--clean-shutdown-and-physical-button-restart).
+The appliance must power off on its own, then boot and resume mining after a physical button press.
+KVM verifies the software round trip; the button and firmware remain hardware evidence.
+
 **M16 — change settings after provisioning.** In Configuration, change one benign energy value,
 preview it, apply it, reload, and confirm it persisted. Then point one node endpoint at a reachable
 test node: confirm the preview warns, verify a commit without the literal `APPLY` is refused, type
@@ -549,12 +562,12 @@ channels share the final cut commit, one version and one GitHub Release.
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
-   submit two independent bench-ci `tier4-kvm` jobs on this exact SHA, with
-   `timeout_minutes=240` each: `boot,update,install,provision` and
-   `rig,rigmedia,media,fault,reset,image-upgrade,stack`. Record both job IDs in the release issue.
-   Follow [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not)
-   for wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel
-   either KVM group. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
+   submit the four bench-ci `tier4-kvm` jobs on this exact SHA from
+   [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not):
+   the boot and rig groups, the provision job against the seeded baseline and the crossupdate job
+   from the previous release. Record every job ID in the release issue. Follow the same section for
+   wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel any KVM
+   job. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for
@@ -668,7 +681,7 @@ channels share the final cut commit, one version and one GitHub Release.
    ```
 
    Record both sizes and checksums in the release issue. Stop if either asset reaches 2 GiB.
-   Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15 and M16) on
+   Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15, M16 and M17) on
    real hardware by flashing `pithead-os-${tag}.img.xz` with the command in
    [the appliance guide](../appliance.md#1-write-the-image-to-a-usb-stick). The soak starts from
    that same compressed artifact. Record results. The human half of a

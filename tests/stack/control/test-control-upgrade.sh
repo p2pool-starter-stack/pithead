@@ -785,10 +785,10 @@ assert_eq "verifier-missing refusal downloads no bundle" "$(grep -c 'releases/do
 rm -f "$UPG/cosign.pub" "$UPG/nodocker/jq"
 reset_upgrade_state
 
-# The runner refuses to run at all when the channel is off (fail-closed).
 control_config main
 "$C/bin/docker" >/dev/null 2>&1 || true
-sed -i.bak 's/"control":{"enabled":true}/"control":{"enabled":false}/' "$C/config.json" 2>/dev/null || true
+jq '.dashboard.control.enabled = false | .tor.auto_heal = false' "$C/config.json" >"$C/config.next"
+mv "$C/config.next" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 out="$(run_pending)"
 assert_rc "runner refuses when the channel is disabled" "$?" "1"
