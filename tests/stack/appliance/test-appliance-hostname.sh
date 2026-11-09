@@ -145,7 +145,7 @@ done
 assert_eq "reconcile sets the kernel AND static name and refreshes Avahi (#2350)" "$(hn_run appliance Garden-Box reconcile)" 'kernel=garden-box static=garden-box calls=2'
 assert_eq "a rig takes its hostname from rig.json's worker, not dashboard.host" "$(hn_run appliance dashboard-name rig changed shed-3)" 'kernel=shed-3 static=shed-3 calls=2'
 for worker in '' 'Bad_Name' 'bad name' localhost auto; do
-    assert_eq "a rig worker that is no valid label leaves the hostname alone ('$worker')" "$(hn_run appliance dashboard-name rig changed "$worker")" 'kernel=old-name static=old-name calls=0'
+    assert_eq "a rig worker that is no valid label leaves the hostname alone" "$(hn_run appliance dashboard-name rig changed "$worker")" 'kernel=old-name static=old-name calls=0'
 done
 assert_eq "existing name still retries mDNS announcement" "$(hn_run appliance old-name reconcile)" 'kernel=old-name static=old-name calls=1'
 assert_eq "named cert includes mDNS and permitted IP" "$(hn_run appliance garden-box names)" 'DNS:garden-box.local,IP:192.168.1.10,DNS:localhost'
