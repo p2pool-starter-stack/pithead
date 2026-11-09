@@ -277,9 +277,8 @@ render_env() {
             if [ "$OS_TYPE" == "Darwin" ]; then
                 ram_mb=$(($(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1048576))
             else
-                ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
-                # HugePages_Total (pages) * Hugepagesize (kB) -> MiB reserved out of RAM.
-                huge_mb=$(awk '/HugePages_Total/{t=$2} /Hugepagesize/{s=$2} END{print int(t*s/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+                ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' "${PITHEAD_MEMINFO:-/proc/meminfo}" 2>/dev/null || echo 0)
+                huge_mb=$(hugepages_carveout_mb)
             fi
             [ "${ram_mb:-0}" -gt 0 ] 2>/dev/null || ram_mb=16384 # unknown host => assume 16 GB
             [ "${huge_mb:-0}" -ge 0 ] 2>/dev/null || huge_mb=0
