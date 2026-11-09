@@ -109,7 +109,7 @@ lifecycle_mining_step() {
         "$@" || return $?
         LIFECYCLE_MINER_NAMES=$names
         case "$label" in
-        down | uninstall | config-reset) LIFECYCLE_MINER_STOPPED=1 ;;
+        down | node-down | uninstall | config-reset) LIFECYCLE_MINER_STOPPED=1 ;;
         restore) : ;;
         *) LIFECYCLE_MINER_STOPPED=0 ;;
         esac
@@ -120,7 +120,7 @@ lifecycle_mining_step() {
     lifecycle_mining_save || return 1
     "$@" || rc=$?
     [ "$rc" = 0 ] || return "$rc"
-    case "$label" in down | uninstall | config-reset)
+    case "$label" in down | node-down | uninstall | config-reset)
         LIFECYCLE_MINER_STOPPED=1
         lifecycle_mining_save
         return $?

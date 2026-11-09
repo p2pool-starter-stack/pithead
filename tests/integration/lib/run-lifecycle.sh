@@ -96,12 +96,12 @@ _run_lifecycle() {
     # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_step "stopping monerod to exercise node-down failover…"
-        rx "docker compose stop monerod" >/dev/null 2>&1
+        lifecycle_mining_step node-down rx "docker compose stop monerod >/dev/null 2>&1"
         wait_for 120 5 "status to report node down" _pred_status_down || true
         pithead status >/dev/null 2>&1
         assert_rc "status non-zero when node down" "$?" "1"
         it_step "starting monerod and waiting for readmit…"
-        lifecycle_mining_step node-recovery rx "docker compose start monerod" >/dev/null 2>&1
+        lifecycle_mining_step node-recovery rx "docker compose start monerod >/dev/null 2>&1"
         wait_status_ok 240 || true
         pithead status >/dev/null 2>&1
         assert_rc "status OK after node recovery" "$?" "0"

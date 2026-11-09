@@ -98,6 +98,13 @@ lifecycle_mining_step restore mutation
 lifecycle_mining_step up proxy_start
 [ ! -e "$PROXY_ABSENT_FILE" ]
 [ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
+started=old CASE=good
+lifecycle_mining_step node-down proxy_shutdown | cat >/dev/null
+[ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 1 ]
+[ "$(jq -c .names "$LIFECYCLE_MINER_STATE")" = '["local","rig"]' ]
+lifecycle_mining_step node-recovery proxy_start
+[ ! -e "$PROXY_ABSENT_FILE" ]
+[ "$(jq -r .stopped "$LIFECYCLE_MINER_STATE")" = 0 ]
 unset PROXY_ABSENT_FILE
 NO_WORKERS=1 started=old
 skips=$IT_SKIPPED_LEGS
