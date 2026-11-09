@@ -383,3 +383,30 @@ printf '%s\n' 'PASS: wrapper rows reach the harness results through a redirected
     [ "$failed" = 1 ] && [[ "$last" == *"exited 7: apply redacted" ]]
 )
 printf '%s\n' 'PASS: wizard restore apply runs once, unwrapped, and fails loudly with its own output'
+
+(
+    source "$ROOT/tests/integration/lib/run-support-bundle.sh"
+    applies=0 gated=0 IT_FAIL=0
+    rx() {
+        case "$1" in
+        'cat config.json') echo '{"dashboard":{"auth":{}},"p2pool":{},"telegram":{}}' ;;
+        'set -e; umask 077;'*) echo /fixture/snapshot ;;
+        'fixture apply -y') applies=$((applies + 1)) ;;
+        esac
+    }
+    lifecycle_mining_step() {
+        gated=$((gated + 1))
+        return 1
+    }
+    openssl() { echo nonce; }
+    upgrade_secret_fingerprints() { echo fingerprint; }
+    push_config() { :; }
+    wait_status_ok() { :; }
+    quote_arg() { printf '%s' "$1"; }
+    it_pass() { :; }
+    it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
+    LIFECYCLE_MINING_ACTIVE=1 IT_PITHEAD=fixture
+    run_support_bundle
+    [ "$applies" = 2 ] && [ "$gated" = 0 ] && [ "$IT_FAIL" = 0 ]
+)
+printf '%s\n' 'PASS: support-bundle applies run outside the mining gate while its stratum password is rotated'
