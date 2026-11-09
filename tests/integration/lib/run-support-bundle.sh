@@ -15,7 +15,7 @@ run_support_bundle() {
     [ -n "$before" ] || return 1
     snapshot=$(rx 'set -e; umask 077; export TMPDIR="${TMPDIR:-$HOME}"; d=$(mktemp -d "$TMPDIR/support-bundle.XXXXXX"); if cp -p config.json "$d/config.json" && cp -p .env "$d/env"; then printf "%s" "$d"; else rm -f "$d/config.json" "$d/env"; rmdir "$d"; exit 1; fi') || return 1
     [ -n "$snapshot" ] || return 1
-    # The fixture rotates the stratum password, so borrowed rigs stay locked out until the restore.
+    # Borrowed rigs stay locked out until the restore, so the caller gates the whole step, not each apply.
     if push_config "$changed" && LIFECYCLE_MINING_ACTIVE=0 pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
         it_pass "support-bundle credential fixture applied to a healthy stack"
         if rx "set -e
