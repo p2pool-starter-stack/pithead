@@ -311,6 +311,11 @@ firstboot_wizard() {
                 local DASHBOARD_HOST stratum_addr dash_user dash_pass miner_connection
                 miner_connection=$(wizard_prepare_miner_connection "$candidate" "$installer" "$spool") || error "Could not prepare miner connection credentials safely."
                 DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host "$candidate" 2>/dev/null)" "")
+                local name_warning=""
+                if is_machine_name_label "$DASHBOARD_HOST" && appliance_mdns_name_in_use "$DASHBOARD_HOST"; then
+                    name_warning="Another machine on this network already answers ${DASHBOARD_HOST}.local — give this machine a different name if both must be reachable."
+                    _console "" "Warning: $name_warning"
+                fi
                 reconcile_appliance_hostname
                 stratum_addr="stratum+$(jq -r 'if .p2pool.stratum_tls == true then "ssl" else "tcp" end' "$candidate")://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$candidate")
@@ -322,8 +327,8 @@ firstboot_wizard() {
                 # credentials must not vanish with it.
                 jq -n --arg u "$dash_user" --arg p "$dash_pass" \
                     --arg d "https://$(hostname).local" --arg s "$stratum_addr" \
-                    --argjson miner "$miner_connection" \
-                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner' | write_handoff_card "$card_spool"
+                    --arg w "$name_warning" --argjson miner "$miner_connection" \
+                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner + (if $w != "" then {warning:$w} else {} end)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2

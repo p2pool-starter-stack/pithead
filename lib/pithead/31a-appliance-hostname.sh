@@ -10,6 +10,25 @@ appliance_hostname_label() {
     printf '%s' "${name,,}"
 }
 
+MACHINE_NAME_RULE="Name this machine: 1–63 lowercase letters, digits or hyphens, starting and ending with a letter or digit; auto and localhost are reserved."
+
+is_machine_name_label() {
+    [[ "$1" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || return 1
+    [ "$1" != auto ] && [ "$1" != localhost ]
+}
+
+appliance_mdns_name_in_use() { # <label>; 0 when <label>.local answers on an address that is not this machine's
+    is_appliance || return 1
+    local answers mine answer
+    answers=$(getent ahostsv4 "${1}.local" 2>/dev/null | awk '{print $1}' | sort -u) || return 1
+    [ -n "$answers" ] || return 1
+    mine=" $(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^$' | tr '\n' ' ')"
+    for answer in $answers; do
+        case "$mine" in *" $answer "*) ;; *) return 0 ;; esac
+    done
+    return 1
+}
+
 # The interfaces Avahi may publish this machine's name on: its real NICs, comma-separated, empty
 # when none carries a global address yet. Avahi publishes on EVERY interface that has one, and each
 # container bridge the engine creates has one too, so <name>.local resolved to a bridge gateway

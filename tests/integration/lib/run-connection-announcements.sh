@@ -42,7 +42,7 @@ out=$(python3 tests/integration/tools/connection-setup-pty.py) || {
     printf '%s\n' 'connections: diagnostic: failed at setup'
     printf 'connections: diagnostic: setup command exit %s\n' "$rc"
     # Whitelist stage labels, never excerpts: even a failed setup can print credentials.
-    for reached in 'Re-run setup' 'Skipping dependency checks' 'Enter Hostname' \
+    for reached in 'Re-run setup' 'Skipping dependency checks' \
         'Initializing Tor service' 'Waiting for Tor hidden services' \
         'Deployment preparation complete' 'Start Pithead now' 'Another pithead operation'; do
         if [[ "$out" == *"$reached"* ]]; then
@@ -96,7 +96,7 @@ run_connection_announcements() {
             printf 'Failed at: %s\n' "$marker" >>"$OUT_DIR/connection-announcements.log"
         fi
     done
-    for marker in 'Re-run setup' 'Skipping dependency checks' 'Enter Hostname' \
+    for marker in 'Re-run setup' 'Skipping dependency checks' \
         'Initializing Tor service' 'Waiting for Tor hidden services' \
         'Deployment preparation complete' 'Start Pithead now' 'Another pithead operation'; do
         if [[ "$out" == *"connections: diagnostic: setup reached $marker"* ]]; then

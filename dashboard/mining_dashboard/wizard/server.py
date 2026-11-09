@@ -47,6 +47,7 @@ from mining_dashboard.wizard.defaults import (
 from mining_dashboard.wizard.form import build_config
 from mining_dashboard.wizard_config import (
     deep_merge,
+    prefill_machine_name,
     prepare_config,
     validate_machine_name,
 )
@@ -256,17 +257,16 @@ async def wizard_state(request: web.Request) -> web.Response:
     if changes:
         remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
     budget = _spool_json("disk-budget.json") or {}
+    platform = (_spool_read("platform.txt") or "appliance").strip()
+
     raw_handoff = _spool_read("handoff.json", handoff_dir()) if stage == "handoff" else None
     return web.json_response(
         {
             "stage": stage,
             "mode": "installer" if installer_mode() else "setup",
-            "config": deep_merge(
-                ref,
-                attempt
-                or new_machine_answers(
-                    budget, _disks(), (_spool_read("platform.txt") or "appliance").strip()
-                ),
+            "config": prefill_machine_name(
+                deep_merge(ref, attempt or new_machine_answers(budget, _disks(), platform)),
+                platform,
             ),
             "reference": ref,
             "new_machine": not bool(attempt),

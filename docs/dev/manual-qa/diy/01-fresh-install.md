@@ -128,7 +128,7 @@ This part tests the path a new user takes, from an empty machine to a stack that
    - [Tor](../README.md#glossary) dashboard access: decline.
    - Telegram: decline.
    - Local mining: decline.
-   - `Enter Hostname`: accept the default.
+   - setup asks **no** hostname question: DIY setup never prompts for a name and uses this machine's hostname.
    - `Modify GRUB for persistent HugePages now?`: answer `y`.
 7. If setup does not ask about GRUB (HugePages are already persistent), it asks `Start Pithead now? (Y/n)` instead: answer `y`, and skip the reboot in 1.5.
 8. Write down the dashboard login the wizard shows. It is shown once, and you need it in 1.8.

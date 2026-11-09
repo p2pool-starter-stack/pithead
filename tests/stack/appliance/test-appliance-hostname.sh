@@ -239,3 +239,51 @@ no allow-interfaces line'
 assert_eq "an auto-named appliance still refreshes Avahi" "$(md_run reconcile)" \
     'calls=overlay systemctl try-restart avahi-daemon.service '
 unset MD
+
+echo "== unit: the machine-name rule is one rule with one message (#3810) =="
+nm_run() {
+    (
+        cd "$HN" || exit 1
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
+        source "$STACK"
+        set -eu
+        case "$1" in
+        label) is_machine_name_label "$2" ;;
+        rule) printf '%s\n' "$MACHINE_NAME_RULE" ;;
+        inuse)
+            is_appliance() { [ "${FAKE_APPLIANCE:-1}" = 1 ]; }
+            getent() { printf '%s\n' "$FAKE_ANSWERS"; }
+            hostname() { printf '192.168.1.10 10.0.0.5\n'; }
+            if appliance_mdns_name_in_use box; then printf in-use; else printf free; fi
+            ;;
+        diy-ask)
+            unset DASHBOARD_HOST HOST_IP PRESERVED_HOST_IP
+            is_appliance() { return 1; }
+            printf 'evil-name\n' >stdin.txt
+            resolve_dashboard_host interactive <stdin.txt >out.txt 2>&1
+            read -r leftover <stdin.txt
+            printf 'host=%s leftover=%s\n' "$HOST_IP" "$leftover"
+            ;;
+        esac
+    )
+}
+assert_eq "plain labels are accepted" "$(
+    for good in a 7 pithead garden-box "$(printf 'a%.0s' {1..63})"; do
+        nm_run label "$good" && printf 'yes ' || printf 'no '
+    done
+)" 'yes yes yes yes yes '
+assert_eq "reserved words, cases, lengths and shapes are refused" "$(
+    for bad in '' Auto Box localhost auto a-box- '-a' 'a b' 'a.b' "$(printf 'a%.0s' {1..64})"; do
+        nm_run label "$bad" && printf 'wrong ' || printf 'no '
+    done
+)" 'no no no no no no no no no no '
+assert_eq "the rule names the reserved words it refuses" "$(nm_run rule)" \
+    'Name this machine: 1–63 lowercase letters, digits or hyphens, starting and ending with a letter or digit; auto and localhost are reserved.'
+assert_eq "a name answering on one of this machine's addresses is free" \
+    "$(FAKE_ANSWERS='192.0.2.5
+10.0.0.5' nm_run inuse)" free
+assert_eq "a name another machine answers is in use" "$(FAKE_ANSWERS='192.0.2.5' nm_run inuse)" in-use
+assert_eq "an unanswered name is free" "$(FAKE_ANSWERS='' nm_run inuse)" free
+assert_eq "off the appliance nothing is ever announced" "$(FAKE_APPLIANCE=0 FAKE_ANSWERS='192.0.2.5' nm_run inuse)" free
+assert_eq "DIY setup reads no hostname input" "$(nm_run diy-ask)" \
+    "host=$(hostname) leftover=evil-name"

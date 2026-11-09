@@ -182,8 +182,10 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      install also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero
      mining. Changeable later from the
      dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
-   - Once the config is written, setup asks one more thing: the hostname you'll use to reach the
-     dashboard in a browser. Enter accepts this machine's hostname.
+   - On an appliance, setup then asks one optional thing: this machine's name. Enter accepts the
+     default; anything you type is checked against the name rule in
+     [Appliance name](appliance-hostname.md). On a DIY install setup asks no hostname question at
+     all — the dashboard is reached by this machine's hostname.
    - **A few more, Enter for the default:** a faster clearnet initial sync (hours instead of days,
      for every local chain, exposing your IP address to the Monero network and, when Tari runs
      locally, the Tari network until initial sync finishes) instead of
@@ -272,8 +274,8 @@ The dashboard is served over HTTPS by Caddy:
 https://<your-hostname>
 ```
 
-`<your-hostname>` is the host you set during setup (the script prints the exact URL when it
-starts the stack). Caddy uses a local certificate authority (`tls internal`).
+`<your-hostname>` is this machine's hostname — the name you gave the appliance during setup, if
+you named one (the script prints the exact URL when it starts the stack). Caddy uses a local certificate authority (`tls internal`).
 [Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
 browser warnings after certificate renewal. Prefer plain HTTP on your LAN? Set
 `dashboard.secure: false` in `config.json` and run `./pithead apply`.
