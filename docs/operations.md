@@ -678,6 +678,21 @@ can refuse before the running stack is stopped for an archive that would fail an
 source checkout, `backups/` is git-ignored — the archive carries `.env` and the onion private keys,
 and secret scanners can't see inside a tarball.
 
+Backup refuses when the resolved data directories in `config.json` disagree with the applied
+paths recorded in `.env`, even when blockchains are excluded. Revert an unapplied data-path edit
+to take a safety backup, or complete the intended apply before retrying. Backup checks again and
+rebuilds its file list under the mutation lock, before stopping services or creating an archive.
+
+The file list uses absolute paths, so a `PITHEAD_CONFIG_FILE` override that already names an
+absolute path is archived as given. The free-space estimate reads every item with `sudo du`
+(the Tor data directory is owned by UID 100) and adds a 5% margin. If `du` cannot read part of a
+tree, or the size or free space cannot be read at all, backup warns and proceeds without the
+check instead of aborting. The estimate covers the file list built before the prompts, because
+the space prompt must not wait for an answer while holding the mutation lock. `tar` gets one
+retry after five seconds, so a container finishing its last write during the stop does not fail
+the backup. Each failed attempt removes its partial archive. A second failure is fatal: backup
+prints the resolved state of every archived path, then starts the stack again if it stopped it.
+
 Encryption is `openssl enc -aes-256-cbc -pbkdf2` with 600,000 PBKDF2 iterations (`openssl` is
 already a stack dependency; AEAD modes like GCM are not available through `openssl enc`, so CBC is
 the portable choice). The tar stream pipes straight into `openssl` — no plaintext archive ever
