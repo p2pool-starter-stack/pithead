@@ -98,6 +98,7 @@ prove_wallet_recovery() {
 }
 run_connection_announcements() { :; }
 run_cli_wizard_defaults() { :; }
+run_p2pool_extra_flags() { :; }
 run_restore_dashboard_probe() { :; }
 run_tari_background_sync() { :; }
 assert_mining_probe_ready() {

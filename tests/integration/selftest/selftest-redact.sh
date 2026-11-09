@@ -204,7 +204,7 @@ KNOWN_GAP="notifications.ntfy.url notifications.webhooks[]"
 # schema. Their `.token` and `.api_token` entries are masked by render_masked_config and covered at tier 1
 # in tests/stack/test-worker-config.sh; populate them and both names return to the name rule through
 # the screen above. The deprecated dashboard.workers[] twin went with the alias in 2.0.0 (#1832).
-ELEMENT_SHAPE_UNKNOWN="workers.list[]"
+ELEMENT_SHAPE_UNKNOWN="workers.list[] p2pool.extra_flags[]"
 
 SENTINEL="S3nt1nelVALUE" # short, alphanumeric: reachable by the NAME rule and by no other
 SCREENED="$(

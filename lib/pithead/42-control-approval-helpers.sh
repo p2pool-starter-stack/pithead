@@ -79,6 +79,13 @@ control_mark_config_confirm_rows() {
     fi
     while IFS= read -r path; do
         case "$path" in
+        p2pool.extra_flags)
+            local extra_old extra_new
+            extra_old=$(jq -c '.p2pool.extra_flags // []' "$CONFIG_FILE")
+            extra_new=$(jq -c '.p2pool.extra_flags // []' "$staged")
+            out+="${out:+$'\n'}CONFIRM"$'\t'"$path"$'\t'"P2Pool expert options: $extra_old → $extra_new; confirm before applying."
+            continue
+            ;;
         monero.remote.host) endpoint_key=MONERO_NODE_HOST ;;
         monero.remote.rpc_port) endpoint_key=MONERO_RPC_PORT ;;
         monero.remote.zmq_port) endpoint_key=MONERO_ZMQ_PORT ;;

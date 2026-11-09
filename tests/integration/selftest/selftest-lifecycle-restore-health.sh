@@ -74,6 +74,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             return 1
         }; }
         lifecycle_gate_sample() { :; }
+        run_p2pool_extra_flags() { :; }
         run_source_image_reconcile() { :; }
         lifecycle_pool_start() { printf main; }
         lifecycle_pool_config() { [ "$RESTORE_CASE" != pool-state-fails ] && printf mini; }
