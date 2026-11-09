@@ -39,6 +39,7 @@ MINER_HOST="${MINER_HOST:-}"
 CANONICAL_DIR="${CANONICAL_DIR:-/srv/code/pithead}"
 E2E_DIR="${E2E_DIR:-/srv/code/pithead-e2e}"
 MINER_XMRIG_CONFIG="${MINER_XMRIG_CONFIG:-/opt/rigforge/data/worker/xmrig/build/config.json}"
+MINER_E2E_BACKUP_DIR="${MINER_E2E_BACKUP_DIR:-/opt/rigforge/data/e2e-backups}"
 GIT_REMOTE_URL="${GIT_REMOTE_URL:-https://github.com/p2pool-starter-stack/pithead.git}"
 MODE="targeted" # targeted (default, lean) | check | matrix (full sweep, opt-in)
 WORKERS=1
@@ -96,7 +97,7 @@ OPTIONS:
   --keep            don't restore at the end (leave the branch deployed + miner repointed — debugging)
   -h, --help        this help
 
-ENV OVERRIDES: BENCH_HOST, MINER_HOST, CANONICAL_DIR, E2E_DIR, MINER_XMRIG_CONFIG, GIT_REMOTE_URL, and
+ENV OVERRIDES: BENCH_HOST, MINER_HOST, CANONICAL_DIR, E2E_DIR, MINER_XMRIG_CONFIG, MINER_E2E_BACKUP_DIR, GIT_REMOTE_URL, and
   RIG_HOST, RIG_NAME, IT_RIG_TOKEN, IT_RIG_ROLLBACK_CHANGES, IT_RIG_POOLS_PROBE, RIG_CONTROL_PORT, RIGFORGE_CONFIG, RIGFORGE_BOOTSTRAP_VERSION,
   IT_MONERO_VIEW_KEY, IT_TARI_VIEW_KEY, IT_TARI_SPEND_PUBLIC_KEY (payout-confirm row; sent to the harness on stdin)
   IT_SCRATCH_DIR (existing target scratch directory; inherited as TMPDIR by target commands and the detached harness)
@@ -530,19 +531,19 @@ borrow_miner() {
     # Unreadable clears and restores NOTHING — a config half-written by a run that died mid-restore
     # looks exactly like this, and must not cost the only copy of the original.
     local leftover borrowed verdict="the recovery above found no un-restored borrow to undo. Read as the rig's own permanent bench pool: the backup taken next records it and the restore returns to it."
-    leftover="$(on_miner "ls -1 '$MINER_XMRIG_CONFIG'.e2e-orig.* 2>/dev/null | sort | head -n1" || true)"
+    leftover="$(on_miner "ls -1 -- '$MINER_E2E_BACKUP_DIR'/*.e2e-orig.* '$MINER_XMRIG_CONFIG'.e2e-orig.* 2>/dev/null | awk '{k=\$0; sub(/^.*\\.e2e-orig\\./,\"\",k); print k \"\\t\" \$0}' | sort | cut -f2- | head -n1" || true)"
     borrowed="$(on_miner "jq -r --arg b '$BENCH_HOST' 'if (((.pools[0].url // \"\") | ascii_downcase | contains(\$b | ascii_downcase)) or any(.pools[]?; .[\"rig-id\"]? == \"pithead-e2e\")) then \"yes\" else \"no\" end' '$MINER_XMRIG_CONFIG' 2>/dev/null" || true)"
     if [ "$borrowed" = "yes" ] && [ -n "$leftover" ]; then
         verdict="it survived the recovery above, which restored this rig from its OLDEST backup, so it predates THIS run's borrow. If an earlier run reported HAND-REPAIR, that ambiguity is still unresolved."
         warn "$MINER_HOST is still borrowed by an earlier e2e run that never restored it; $leftover holds its pre-borrow config. Restoring from it now, BEFORE this run's backup is minted (#1178)."
-        on_miner "cp -a '$leftover' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && rm -f '$MINER_XMRIG_CONFIG'.e2e-orig.*" || die "Failed to restore $MINER_HOST from $leftover."
+        on_miner "cp -a '$leftover' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && rm -f '$MINER_XMRIG_CONFIG'.e2e-orig.* '$MINER_E2E_BACKUP_DIR'/*.e2e-orig.*" || die "Failed to restore $MINER_HOST from $leftover."
     elif [ "$borrowed" = "yes" ]; then
         verdict="the recovery above could NOT undo the borrow it found — no .e2e-orig.* survived, so this is EITHER the rig's own permanent bench pool OR that un-undoable REORDER, and nothing on the rig tells them apart. HAND-REPAIR before trusting this run's restore."
         warn "$MINER_HOST looks borrowed but NO .e2e-orig.* backup survives, so the pre-borrow state is unrecoverable. Stripping any tagged pool; a pure REORDER cannot be undone and this run's backup will record it."
         on_miner "jq '.pools |= [.[] | select(.[\"rig-id\"]? != \"pithead-e2e\")]' '$MINER_XMRIG_CONFIG' > '$MINER_XMRIG_CONFIG.e2e.tmp' && mv '$MINER_XMRIG_CONFIG.e2e.tmp' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG'" || die "Failed to strip leftover tagged pool(s) from $MINER_HOST config."
     elif [ "$borrowed" = "no" ] && [ -n "$leftover" ]; then
         warn "$MINER_HOST carries leftover e2e backup(s) but does not look borrowed — RigForge regenerates this file on every apply. Clearing them as stale, so 'oldest' keeps meaning the original."
-        on_miner "rm -f '$MINER_XMRIG_CONFIG'.e2e-orig.*" || die "Failed to clear stale e2e backups on $MINER_HOST."
+        on_miner "rm -f '$MINER_XMRIG_CONFIG'.e2e-orig.* '$MINER_E2E_BACKUP_DIR'/*.e2e-orig.*" || die "Failed to clear stale e2e backups on $MINER_HOST."
     elif [ "$borrowed" != "no" ]; then
         warn "could not read $MINER_HOST's pool list, so it cannot be judged borrowed or clean — leaving the config AND any backup(s) untouched. A half-written config looks exactly like this."
     fi
@@ -566,7 +567,8 @@ borrow_miner() {
         warn "  Verify by hand if that surprises you: jq '.pools[].url' $MINER_XMRIG_CONFIG on $MINER_HOST"
         ;;
     esac
-    MINER_CFG_BACKUP="$MINER_XMRIG_CONFIG.e2e-orig.$(on_miner 'date +%Y%m%d-%H%M%S')"
+    on_miner "install -d -m 700 '$MINER_E2E_BACKUP_DIR' 2>/dev/null || sudo -n install -d -m 700 -o \"\$(id -un)\" -g \"\$(id -gn)\" '$MINER_E2E_BACKUP_DIR'" || die "Failed to create the e2e miner backup dir $MINER_E2E_BACKUP_DIR on $MINER_HOST (mode 700, owned by the SSH user)."
+    MINER_CFG_BACKUP="$MINER_E2E_BACKUP_DIR/$(basename "$MINER_XMRIG_CONFIG").e2e-orig.$(on_miner 'date +%Y%m%d-%H%M%S')"
     on_miner "cp -a '$MINER_XMRIG_CONFIG' '$MINER_CFG_BACKUP'" || die "Failed to back up the miner config."
     step "miner config backed up → $MINER_CFG_BACKUP"
     repoint_miner || die "Failed to repoint the miner config."
