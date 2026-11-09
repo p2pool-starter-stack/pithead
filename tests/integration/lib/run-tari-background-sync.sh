@@ -107,7 +107,8 @@ run_tari_background_sync() {
                     template_updated="$(jq_get "$mining_sample" '.template_updated')"
                     receipt_state="$(jq_get "$mining_sample" '.receipt_state')"
                     receipt_height="$(jq_get "$mining_sample" '.receipt_height | tonumber')"
-                    if ! [ "$(jq_get "$mining_sample" '.workers')" -ge 1 ] 2>/dev/null ||
+                    if { ! [ "$(jq_get "$mining_sample" '.workers')" -ge 1 ] 2>/dev/null &&
+                        [ "$((observed - window_start))" -ge 90 ]; } ||
                         ! [[ "$hashes" =~ ^[0-9]+$ ]] ||
                         { [ -n "$previous_hashes" ] && [ "$hashes" -lt "$previous_hashes" ]; }; then
                         failed=1
