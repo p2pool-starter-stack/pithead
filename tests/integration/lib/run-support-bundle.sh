@@ -47,6 +47,10 @@ run_support_bundle() {
         it_fail "support-bundle restores its starting configuration and stack health" "restoration failed"
         restoration_ok=0
     fi
+    # The rotated password sent a borrowed rig to its next pool, and XMRig does not come back on its own.
+    if [ "$restoration_ok" -eq 1 ] && [ -n "${RIG_NAME:-}" ]; then
+        wait_borrow_rearm || restoration_ok=0
+    fi
     rx "rm -f $(quote_arg "$snapshot")/config.json $(quote_arg "$snapshot")/env && rmdir $(quote_arg "$snapshot")" || return 1
     [ "$restoration_ok" -eq 1 ] && [ "$IT_FAIL" -eq "$failures" ]
 }
