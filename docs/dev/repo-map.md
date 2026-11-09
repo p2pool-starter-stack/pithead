@@ -56,6 +56,9 @@ executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
 
+Apply revision checks are covered by `tests/stack/lifecycle/apply-config-revision.sh`;
+dashboard publication and child-apply locking by `tests/stack/control/commit-lock.sh`.
+
 Container restart observation is shared by status and doctor in
 `lib/pithead/04a-container-restarts.sh`; its Docker and Podman fixtures are in
 `tests/os/selftest-container-restarts.sh`, and the appliance Caddy crash-loop proof runs in the
