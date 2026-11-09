@@ -134,6 +134,11 @@ provision_dashboard_onion() {
     DASHBOARD_ONION=$(docker exec tor cat /var/lib/tor/dashboard/hostname)
 }
 
+refresh_dashboard_onion_runtime() {
+    compose_up_checked -d --no-deps dashboard ||
+        error "Could not refresh the dashboard onion address; run '$0 up' to retry."
+}
+
 # The dashboard onion's client-auth credential, or the reason there is not one (#1882). Echoes
 # "<address><TAB><private key>" on success; on failure echoes the operator-facing reason and
 # returns 1. STDOUT IS THE RETURN VALUE here, so nothing in this function may log or warn.
@@ -220,9 +225,12 @@ rotate_dashboard_onion() {
     [ -n "$TOR_DATA_DIR" ] && [ "${hs_dir##*/}" == "dashboard" ] ||
         error "Refusing to wipe an unexpected path (\"$hs_dir\")."
     log "Stopping tor and wiping the dashboard hidden service..."
-    docker compose stop tor >/dev/null 2>&1 || true
+    local TOR_ROTATION_OPERATION tor_stop_rc=0
+    TOR_ROTATION_OPERATION="rotate-$(date -u +%s)-$$" || true
+    tor_lifecycle_receipt "$TOR_ROTATION_OPERATION" stop requested || true
+    docker compose stop tor >/dev/null 2>&1 || tor_stop_rc=$?
+    tor_lifecycle_receipt "$TOR_ROTATION_OPERATION" stop "$tor_stop_rc" || true
     sudo rm -rf "$hs_dir" 2>/dev/null || rm -rf "$hs_dir" 2>/dev/null || true
-    # Force fresh keys + address on the next provision.
     DASHBOARD_ONION="placeholder"
     DASHBOARD_ONION_CLIENT_PUBKEY="placeholder"
     DASHBOARD_ONION_CLIENT_PRIVKEY="placeholder"
@@ -236,6 +244,8 @@ rotate_dashboard_onion() {
     render_env         # persist the new address + keys
     generate_caddyfile # #546: without this the Caddyfile still points at the retired address's vhost
     docker compose restart caddy >/dev/null 2>&1 || true
+    TOR_ROTATION_OPERATION=
+    refresh_dashboard_onion_runtime
     log "Dashboard onion rotated."
     if [ "$DASHBOARD_ONION_CLIENT_AUTH" == "true" ]; then
         onion_client_key

@@ -26,15 +26,29 @@ INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh"
 
-_restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <secrets: match|drift>
+_restore_reason() {
     (
-        SAFETY_ARCHIVE=/tmp/a.tar.gz SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
+        OUT_DIR="$(mktemp -d)" && trap 'rm -rf "$OUT_DIR"' EXIT
+        SAFETY_ARCHIVE="$OUT_DIR/a.tar.gz" SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
+        _diagnostic_mode="${6:-normal}"
+        redact() {
+            [ "$_diagnostic_mode" != redactor-fail ] || return 1
+            sed 's/secret/<redacted>/g'
+        }
         BASELINE_CONFIG='baseline' BASELINE_EXACT_SECRET_FP=$'wallet=wallet-before\nproxy=proxy-before'
         _restore_rc="$1" _up_rc="$2" _health_rc="$3" _config_state="${4:-match}" _secret_state="${5:-match}"
         pithead() {
             case "$1" in
             down) return 0 ;;
-            restore) return "$_restore_rc" ;;
+            restore)
+                if [ "$_diagnostic_mode" = long ]; then
+                    printf 'discarded-head-marker'
+                    printf '%70000s' ''
+                fi
+                printf 'Restoring from %s\n' "$SAFETY_ARCHIVE"
+                printf 'restore detail secret\n'
+                return "$_restore_rc"
+                ;;
             up) return 0 ;;
             esac
         }
@@ -50,6 +64,20 @@ _restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <se
         }
         it_log() { :; }
         safety_restore_exact >/dev/null 2>&1
+        if [ "$_diagnostic_mode" = redactor-fail ]; then
+            [ ! -s "$OUT_DIR/safety-restore.log" ] || exit 1
+        elif [ "$_diagnostic_mode" = long ]; then
+            [ "$(wc -c <"$OUT_DIR/safety-restore.log")" -eq 65536 ] || exit 1
+            [ "$(tail -n 1 "$OUT_DIR/safety-restore.log" | tail -c 26)" = 'restore detail <redacted>' ] || exit 1
+            ! grep -q discarded-head-marker "$OUT_DIR/safety-restore.log" || exit 1
+        else
+            grep -q 'restore detail <redacted>' "$OUT_DIR/safety-restore.log" || exit 1
+            ! grep -q secret "$OUT_DIR/safety-restore.log" || exit 1
+        fi
+        ! grep -Fq "$SAFETY_ARCHIVE" "$OUT_DIR/safety-restore.log" || exit 1
+        if [ "$_diagnostic_mode" != redactor-fail ]; then
+            grep -q '<safety-archive>' "$OUT_DIR/safety-restore.log" || exit 1
+        fi
         printf '%s' "$SAFETY_RESTORE_FAIL_REASON"
     )
 }
@@ -57,6 +85,9 @@ _restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <se
 echo "== safety_restore_exact names which check failed, not a generic verdict (#2062, #2362) =="
 
 assert_eq "restore failure is named" "$(_restore_reason 1 0 0 match match)" "pithead restore failed"
+assert_eq "redactor failure preserves the restore failure" "$(_restore_reason 1 0 0 match match redactor-fail)" "pithead restore failed"
+assert_eq "redactor failure cannot fail a successful restore" "$(_restore_reason 0 0 0 match match redactor-fail)" ""
+assert_eq "restore output retains only its final 64 KiB" "$(_restore_reason 1 0 0 match match long)" "pithead restore failed"
 assert_eq "startup failure is named" "$(_restore_reason 0 1 0 match match)" "stack did not come back up"
 assert_eq "health failure is named" "$(_restore_reason 0 0 1 match match)" "pithead status did not become healthy within 240s"
 assert_eq "a healthy restore leaves no reason" "$(_restore_reason 0 0 0 match match)" ""
@@ -72,8 +103,9 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
         local mode="$1" td wait_calls=0 restore_calls=0 cleanup_calls=0 capture_started=0
         td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
         SAFETY_BACKUP=1 RUN_IMAGE_UPGRADE=0 OUT_DIR="$td/results" IT_PITHEAD=pithead
-        SAFETY_ARCHIVE="$td/archive" SAFETY_RESTORE_FAILED=0
+        SAFETY_ARCHIVE=/stack/backups/pithead-backup-20260101-000000.tar.gz SAFETY_RESTORE_FAILED=0
         command mkdir -p "$OUT_DIR"
+        backup_prune() { :; }
         pithead() { [ "$1" = backup ] && printf 'Backup written to: %s\n' "$SAFETY_ARCHIVE"; }
         mkdir() {
             capture_started=1
@@ -83,7 +115,8 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
             printf '%s\n' "$1" >>"$td/rx"
             case "$1" in
             'test -f'*) return 0 ;;
-            tar*) printf 'config.json\n.env\n' ;;
+            'pwd' | 'pwd -P') printf '/stack\n' ;;
+            tar*) printf 'stack/config.json\nstack/.env\n' ;;
             *'docker compose ps')
                 [ "$mode" = command-fail ] && return 1
                 printf 'tor unhealthy token=secret\n'
@@ -113,12 +146,12 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
             safety_backup &&
                 [ ! -e "$OUT_DIR/safety-backup-recovery" ] &&
                 [ "$wait_calls:$restore_calls:$cleanup_calls" = 1:0:0 ] &&
-                [ "$(wc -l <"$td/rx")" -eq 2 ]
+                [ "$(wc -l <"$td/rx")" -eq 4 ]
         else
             ! safety_backup &&
                 [ "$wait_calls:$restore_calls:$cleanup_calls" = 1:1:1 ] &&
                 [ "$capture_started" = 1 ] && {
-                [ "$(wc -l <"$td/rx")" -eq "$([ "$mode" = mkdir-fail ] && echo 2 || echo 4)" ] &&
+                [ "$(wc -l <"$td/rx")" -eq "$([ "$mode" = mkdir-fail ] && echo 4 || echo 6)" ] &&
                     case "$mode" in
                     mkdir-fail) [ ! -e "$OUT_DIR/safety-backup-recovery" ] ;;
                     normal)

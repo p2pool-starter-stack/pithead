@@ -12,8 +12,13 @@ jq -n --argjson answers "$fixture_answers" '$answers + {
 }' >"$work/live-config.json"
 dashboard_state=$(cat "$here/../../dashboard/tests/frontend/fixtures/state.json")
 state='{"stage":"setup","saved_role":{"role":"pithead"},"new_machine":false,"config":{"monero":{"wallet_address":"fixture-monero","mode":"local","out_peers":12,"node_password":""},"tari":{"wallet_address":"fixture-tari","mode":"local"},"p2pool":{"pool":"nano","stratum_password":""},"dashboard":{"auth":{"password":""}}}}'
-coordinator_saved_state_valid "$state" "$fixture_answers"
-for mutation in '.saved_role.role="rig"' '.saved_role.token="secret"' '.stage="handoff"' \
+for saved_role in pithead both; do
+    coordinator_saved_state_valid \
+        "$(printf '%s' "$state" | jq --arg r "$saved_role" '.saved_role.role=$r')" "$fixture_answers"
+done
+for mutation in '.saved_role.role="rig"' '.saved_role.role="BOTH"' '.saved_role.role=""' \
+    '.saved_role=null' '.saved_role={"role":"both","pool":"x"}' \
+    '.saved_role.token="secret"' '.stage="handoff"' \
     '.new_machine=true' '.config.p2pool.pool="mini"' '.config.monero.node_password="secret"' \
     '.config.monero.view_key="secret"' '.config.tari.spend_public_key="secret"' \
     '.config.dashboard.auth.password="secret"' '.config.telegram.bot_token="secret"' '.config.monero.node_username="secret"' \
@@ -27,7 +32,7 @@ done
 if coordinator_saved_state_valid '{}' "$fixture_answers" || coordinator_saved_state_valid 'unreadable' "$fixture_answers"; then
     exit 1
 fi
-echo 'coordinator prefill: safe answers accepted, 18 invalid states refused'
+echo 'coordinator prefill: both coordinator roles accepted, 21 invalid states refused'
 
 (
     # shellcheck source=tests/os/setup-again-leg.sh
@@ -84,6 +89,8 @@ _setup_again_session() {
 wizard_state_poll() {
     WIZ_STATE="$state"
     [ "$scenario" != prefill-failed ] || WIZ_STATE='{}'
+    [ "$scenario" != success-both ] ||
+        WIZ_STATE=$(printf '%s' "$WIZ_STATE" | jq '.saved_role.role="both"')
 }
 _monerod_height() {
     if [ "$scenario" = height-regressed ] && [ "$(cat "$work/stage")" != baseline ]; then
@@ -118,7 +125,15 @@ _ssh() {
         [ "$scenario" != secret-baseline-missing ]
         ;;
     *'sha256sum config.json'*)
-        if [ "$scenario:$stage" = config-changed:keep ]; then printf changed; else printf original; fi
+        if [ "$scenario" = env-drift ]; then
+            if [ "$stage" = keep ]; then
+                printf 'ch config.json\nch .env\nch Caddyfile\nch machine-role\n'
+            else printf 'or config.json\nor .env\nor Caddyfile\nor machine-role\n'; fi
+        elif [ "$scenario:$stage" = config-changed:keep ]; then
+            printf changed
+        else
+            printf original
+        fi
         ;;
     *'sha256sum /etc/machine-id'*)
         printf 'machine-key-hashes\n'
@@ -128,6 +143,14 @@ _ssh() {
             printf '%056d.onion\n' 0 | tr 0 c
         else
             printf '%056d.onion\n' 0 | tr 0 a
+        fi
+        ;;
+    *'done < .env'*)
+        if [ "$scenario" = env-drift ] && [ -f "$work/envseen" ]; then
+            printf 'K1 h9\nK3 h3\n'
+        else
+            [ "$scenario" != env-drift ] || touch "$work/envseen"
+            printf 'K1 h1\nK2 h2\n'
         fi
         ;;
     *'test "$(cat data/monero/'*) [ -f "$work/sentinels" ] && [ "$scenario" != chain-lost ] ;;
@@ -169,8 +192,8 @@ curl() {
     esac
 }
 ip=fixture
-for scenario in success boot-failed session-failed prefill-failed keep-refused login-changed \
-    config-changed identity-changed chain-lost height-regressed malformed-state \
+for scenario in success success-both boot-failed session-failed prefill-failed keep-refused login-changed \
+    config-changed env-drift identity-changed chain-lost height-regressed malformed-state \
     submit-refused missing-handoff ack-refused resubmit-login-failed onion-changed unsettled \
     secret-baseline-missing setup-not-settled keep-marker-left cleanup-failed services-only auth-refused; do
     printf baseline >"$work/stage"
@@ -178,7 +201,7 @@ for scenario in success boot-failed session-failed prefill-failed keep-refused l
     : >"$work/auth"
     rc=0
     phase_coordinator_setup_again admin original-login || rc=$?
-    if [ "$scenario" = success ]; then
+    if [ "$scenario" = success ] || [ "$scenario" = success-both ]; then
         [ "$rc" -eq 0 ]
         [ "$(grep -c '^ok:' "$work/trace")" -eq 5 ]
         [ "$(grep -c '^boot$' "$work/trace")" -eq 2 ]
@@ -196,6 +219,14 @@ for scenario in success boot-failed session-failed prefill-failed keep-refused l
         grep -q '"coordinator":false' "$work/trace"
         grep -q '"changed_answers":6' "$work/trace"
         ;;
+    success) grep -q 'the page names the saved role pithead' "$work/trace" ;;
+    success-both) grep -q 'the page names the saved role both' "$work/trace" ;;
+    identity-changed | onion-changed) grep -q 'machine identity changed' "$work/trace" ;;
+    chain-lost) grep -q 'chain sentinel or the role marker drifted' "$work/trace" ;;
+    config-changed) grep -q 'boot snapshot differs from baseline' "$work/trace" ;;
+    env-drift) grep -q 'keys moved: K1 +K3 -K2 ' "$work/trace" ;;
+    keep-marker-left) grep -q 'keep-role marker survived the boot' "$work/trace" ;;
+    setup-not-settled) grep -q 'setup-again unit is not active' "$work/trace" ;;
     services-only) grep -q 'dashboard_http=200 curl_exit=0 state_ready=no' "$work/trace" ;;
     auth-refused) grep -q 'dashboard_http=401 curl_exit=0 state_ready=no' "$work/trace" ;;
     esac

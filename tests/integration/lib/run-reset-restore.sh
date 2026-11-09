@@ -30,7 +30,7 @@ run_restore_dashboard_probe() {
 
 run_reset_restore() {
     RESET_RESTORE_STACK_INTACT=0
-    local scratch original_config original_secrets after_config after_secrets saved_umask rc=0 mutated=0 verified=1
+    local scratch code_version original_config original_secrets after_config after_secrets saved_umask rc=0 mutated=0 verified=1
     saved_umask=$(umask)
     umask 077
     scratch=$(mktemp -d "${TMPDIR:-${XDG_RUNTIME_DIR:-/var/tmp}}/reset-recovery.XXXXXXXX") || {
@@ -66,12 +66,13 @@ run_reset_restore() {
         rc=1
     else
         mutated=1
-        if rx 'umask 077; cat >config.json' --stdin <"$scratch/fixture.json" &&
+        if code_version=$(rx 'tr -d " \t\r\n" <VERSION') && code_version=${code_version%%[-+]*} &&
+            rx 'umask 077; cat >config.json' --stdin <"$scratch/fixture.json" &&
             pithead apply -y 2>&1 | redact >"$OUT_DIR/reset-restore.fixture-apply.log" &&
             rx 'cat config.json' >"$scratch/applied.json" &&
-            jq -en --slurpfile original "$scratch/original.json" --slurpfile reference "$scratch/reference.json" --slurpfile applied "$scratch/applied.json" '
+            jq -en --slurpfile original "$scratch/original.json" --arg code_version "$code_version" --slurpfile applied "$scratch/applied.json" '
                 def stamp: if type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$") then . else null end;
-                ($reference[0].config_version | stamp) as $candidate |
+                ($code_version | stamp) as $candidate |
                 select($candidate != null and $applied[0].config_version == $candidate) |
                 {baseline_version: ($original[0].config_version | stamp), candidate_version: $candidate, fixture_version: $applied[0].config_version}
             ' >"$scratch/receipt.json" && mv -- "$scratch/receipt.json" "$OUT_DIR/reset-restore.fixture.json"; then

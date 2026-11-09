@@ -23,9 +23,6 @@ _uuid4() {
     fi
 }
 
-# Wait up to <timeout>s for the systemd path unit to write results/<id>.json with a status OTHER
-# than <exclude> (so a leftover preview result doesn't satisfy a wait for the commit result).
-# Returns 0 and echoes the status when it settles; 1 on timeout. Proof the unit actually fired.
 _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
     local cdir="$1" id="$2" exclude="$3" timeout="${4:-90}" waited=0 st
     while [ "$waited" -lt "$timeout" ]; do
@@ -37,6 +34,7 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
         sleep 3
         waited=$((waited + 3))
     done
+    echo "timed out after ${timeout}s waiting for control result $id; last status: ${st:-none}" >&2
     return 1
 }
 

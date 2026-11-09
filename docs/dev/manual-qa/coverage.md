@@ -33,6 +33,7 @@ DIY steps that apply there.
 | Backup and restore | [11.1–11.4](diy/11-backup-restore-resets.md), [S5](release/scenarios.md) | [13.13, 13.14, 13.14a](appliance/13b-updates-restore-and-media.md) |
 | Resets and removal | [11.5–11.7](diy/11-backup-restore-resets.md) | [15.2, 15.3](appliance/15-rename-and-resets.md) |
 | Power loss | [S3](release/scenarios.md) | [13.19](appliance/13b-updates-restore-and-media.md) |
+| Dashboard reboot and clean power-off | Hidden; use the host shell | [M17 physical-button restart](appliance/13b-updates-restore-and-media.md#m17--clean-shutdown-and-physical-button-restart) |
 | Machine name | [1.4](diy/01-fresh-install.md) (the hostname prompt) | [15.1](appliance/15-rename-and-resets.md) |
 | Headless setup and recovery | Not applicable: a DIY host has its own shell. | [13.16, 13.17, 13.23](appliance/13b-updates-restore-and-media.md) |
 | [Rigs](README.md#glossary) | Not applicable: a DIY rig is a RigForge install, tested in that project. | [14.1–14.4](appliance/14-rigforge-rig.md) |

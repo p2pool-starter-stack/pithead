@@ -34,7 +34,13 @@ The preview keeps the last successful snapshot when polling fails, labels it sta
 and asks the operator to sign in again when the session expires. Earnings shows recorded payouts
 and Machines lists the rigs; the Overview and Settings bodies are still being built. The preview does not
 announce a cutover from the legacy UI. The
-drawer supplies its container and Appearance controls; Maintenance and Inspect belong to
+drawer supplies its container and Appearance controls. Advanced > Maintenance offers **Reboot**
+and **Power off** on an appliance with dashboard control enabled; these controls are absent on DIY.
+Type `REBOOT` or `POWEROFF` to confirm. Reboot pauses mining and reconnects this page; power-off
+stops the appliance until someone presses its physical power button. The host accepts one power
+request per drain and refuses the same action for five minutes, including across reboots.
+If it cannot persist the cooldown, it refuses the request without ordering a restart or shutdown.
+Other Maintenance and Inspect controls belong to
 [#2540](https://github.com/p2pool-starter-stack/pithead/issues/2540).
 
 ### Earnings in the lean preview
@@ -102,8 +108,12 @@ Apply and the upgrade; an unsaved edit stays in the editor. When a shared name b
 inspector reloads the rig and drops an edit typed against the other rig's values. An unadopted rig gets the
 existing adopt form (host, ports, token, typed APPLY), which confirms the saved entry; managed
 telemetry follows the next poll of the rig. For an adopted rig, **Update this rig** offers the
-upgrade when the rig is behind and its release page is reported, and otherwise says why not. The
-configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
+upgrade when the rig is behind and its release page is reported, and otherwise says why not.
+**Connection** shows the rig's saved address and ports: **Save address** repoints or edits it, and
+**Remove this rig** deletes its descriptor. A blank token keeps the stored one only while the
+address is unchanged; a new address needs the token entered again. Both preview the change, name
+each added, repointed or removed rig, and apply only after typed APPLY; removing a rig stops the
+dashboard managing it and leaves the miner running. The configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
 from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
 upgrade is not held. Closing the inspector returns focus to the rig and keeps the list's scroll position.
 The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
@@ -633,8 +643,8 @@ doesn't come back to a live hashrate — rolls it back on its own. The panel sho
 path broke) and appends it to the history.
 
 > NOTE: `DONATION` below the rig's built-in minimum has no effect. Appliance rigs run stock XMRig,
-> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig has the same
-> floor at the level it was compiled with, and lowering it needs a rebuild. Worker Inspect shows the
+> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig applies a lower level
+> without a rebuild, except builds older than 1.18.1, which need an upgrade first. Worker Inspect shows the
 > value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
 > report XMRig's live donate level.
 
@@ -1684,7 +1694,9 @@ when client authorization is on and the config editor with it, a **Show client k
 it, because on a machine with no shell an address nothing can open is the same as no address at
 all. The key is not in this container: the button asks the host, the host answers once through the
 read-only results spool and then wipes its copy, and the reveal is recorded in the [config-change
-log](#access-log-and-recent-config-changes). This panel still redacts the address.
+log](#access-log-and-recent-config-changes). This panel still redacts the address. When apply or
+upgrade first discovers the onion address, or rotation replaces it, the dashboard is recreated
+with the rendered address so the header reflects it in the same operation.
 
 A `[redacted].onion` here is not a promise that the address is absent from
 the browser — scroll up and it is in the header on both the Compose stack and the appliance. When

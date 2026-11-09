@@ -45,9 +45,10 @@ cli_wizard_defaults_trial() {
             printf 'garbage\\n%s\\n\\n2\\ngarbage\\n%s\\n' $(quote_arg "$monero") $(quote_arg "$tari")
             printf '\\n\\n\\n\\n\\n\\n\\n'
         } | { wizard_ask_core; wizard_ask_shape; wizard_write_config; }
-        jq -e '.xvb.enabled == false and .monero.clearnet_initial_sync == false and
+        jq -e '.profile == \"balance\" and .xvb.enabled == false and
+            (.monero | has(\"clearnet_initial_sync\") | not) and
             .tari.mode == \"local\" and .dashboard.tari_required == false and
-            .tari.clearnet_initial_sync == false and (.dashboard.auth.password | length) == 32' .itest-wizard-defaults.json >/dev/null" 2>&1)
+            (.tari | has(\"clearnet_initial_sync\") | not) and (.dashboard.auth.password | length) == 32' .itest-wizard-defaults.json >/dev/null" 2>&1)
     rc=$?
     assert_rc "fresh CLI wizard writes the explicit Tari yes, no XvB, Tor sync and a generated dashboard password" "$rc" 0
     [ "$rc" = 0 ] || return 1
@@ -68,6 +69,11 @@ cli_wizard_defaults_trial() {
     rx "sed -i 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' .env && grep -qx 'DEPLOYMENT_COMPLETED=false' .env" || return 1
     out=$(rx "printf '\\nn\\n' | $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)
     rc=$?
+    if [ "$rc" != 0 ]; then
+        mkdir -p "$OUT_DIR/cli-defaults"
+        printf '%s\n' "$out" | redact | sed -E 's/(Generated dashboard password: ).*/\1<redacted>/' >"$OUT_DIR/cli-defaults/setup.log"
+        tail -n 60 "$OUT_DIR/cli-defaults/setup.log" | sed 's/^/        /'
+    fi
     assert_rc "fresh CLI defaults complete real setup" "$rc" 0
     [ "$rc" = 0 ] || return "$rc"
     assert_contains "fresh CLI defaults reach completed preparation" "$out" "Deployment preparation complete"

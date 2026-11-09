@@ -45,8 +45,13 @@ The Go builder is pinned by digest at [1.26.10](https://go.dev/doc/devel/release
 [CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
 in both binaries' standard library.
 
+The rootfs install list names `apt`, `gzip`, `libpcre2-8-0`, `libsqlite3-0`, `perl-base` and
+`zlib1g` only to pull the distro's security build past the digest-pinned base
+(#1438, #2104, #3923); `xxd` stays out because the rootfs has no consumer (#1380).
+
 `COMPOSE_GO_RAISES` and `COSIGN_GO_RAISES` raise x/mod to v0.41.0, x/net to
-v0.60.0 and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
+v0.62.0 for [CVE-2026-78661](https://github.com/p2pool-starter-stack/pithead/issues/3931),
+and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
 for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585),
 and go-jose/v4 to v4.1.6 for
 [CVE-2026-116587](https://github.com/p2pool-starter-stack/pithead/issues/3761).
@@ -333,7 +338,7 @@ The update phase also packages its built v1 `system.img` and dev-signed v2 bundl
 asset sizes and checksums, and compares the decompressed image with the original.
 Its phase log retains the sizes and hashes; harness cleanup removes the packaged copies.
 This checks the release packaging path with test signing, not the final release-key artifacts.
-`--phase all` runs all eight — boot, update, install, provision, rig, media, fault and reset.
+Standalone `--phase all` runs the whole battery except crossupdate and tor-heal; bench-ci refuses it as a capped job, so the release cut submits phase groups instead.
 Expect roughly 25 minutes per phase, most of it image builds, so budget an evening rather
 than a coffee break. It ran five of the eight until #1064, which meant a cut that followed
 this page ran none of the destructive phases: the power cuts, the corrupt-bundle refusal, the
@@ -490,6 +495,11 @@ returns after its brief disconnect. Boot a fresh target into the wizard, choose 
 that archive with the kit's passphrase, and finish installation. Expected: the new machine runs
 the restored config, its payout wallet and onion address exactly match the recorded values, and
 the dashboard answers. Keep the timestamp with the release evidence so the archive is unambiguous.
+
+**M17 — dashboard power-off and physical-button restart.** Follow the
+[M17 hardware check](manual-qa/appliance/13b-updates-restore-and-media.md#m17--clean-shutdown-and-physical-button-restart).
+The appliance must power off on its own, then boot and resume mining after a physical button press.
+KVM verifies the software round trip; the button and firmware remain hardware evidence.
 
 **M16 — change settings after provisioning.** In Configuration, change one benign energy value,
 preview it, apply it, reload, and confirm it persisted. Then point one node endpoint at a reachable
@@ -671,7 +681,7 @@ channels share the final cut commit, one version and one GitHub Release.
    ```
 
    Record both sizes and checksums in the release issue. Stop if either asset reaches 2 GiB.
-   Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15 and M16) on
+   Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15, M16 and M17) on
    real hardware by flashing `pithead-os-${tag}.img.xz` with the command in
    [the appliance guide](../appliance.md#1-write-the-image-to-a-usb-stick). The soak starts from
    that same compressed artifact. Record results. The human half of a

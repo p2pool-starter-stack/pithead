@@ -25,11 +25,13 @@ test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% 
 	bash scripts/lint/patch-coverage.sh
 
 test-stack: pithead ## pithead shell test suite
+	bash tests/stack/standalone/test_onion_runtime.sh
 	bash tests/stack/run.sh
 	bash tests/stack/standalone/test_tor_recovery.sh
 	bash tests/stack/standalone/test_tor_recovery_info.sh
 	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
 	bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
+	bash tests/stack/standalone/test_tor_lifecycle_receipts.sh
 	bash tests/stack/standalone/test_data_reset.sh
 	bash tests/stack/standalone/test_directory_linebreaks.sh
 	bash tests/stack/standalone/test_os_update_recovery.sh
@@ -54,10 +56,12 @@ test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
-	for t in tests/integration/selftest/*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
-	for t in tests/os/selftest*.sh; do bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; exit $$suite_rc; }; done
+	@result=0; home=$$(mktemp -d); trap 'rm -rf "$$home"' EXIT; for t in tests/integration/selftest/*.sh tests/os/selftest*.sh; do \
+		env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$$home" bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; result=1; }; \
+	done; exit $$result
 
 test-tools:
+	python3 tests/integration/test_selftest_runner.py
 	python3 tests/tools/test_lmdb_build.py
 	bash scripts/lint/test-sanitize-test-log.sh
 	bash scripts/lint/test-package-appliance.sh

@@ -151,10 +151,11 @@
   },
   "tor": {
     "data_dir": "auto",
-    "auto_heal": false
+    "auto_heal": true
   },
   "network": {
     "subnet": "172.28.0.0/24",
     "tor_egress_firewall": true
-  }
+  },
+  "profile": "balance"
 }

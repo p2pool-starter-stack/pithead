@@ -8,31 +8,21 @@
 # that failed to reach it late in a long run. Only a serial log showing none of GRUB, kernel or
 # login evidence is a real brick; anything else is a probe failure and never disqualifying.
 
-# fault_power_cut <domain> — cut the guest's power and wait until the domain is really off. A
-# guest killed mid-write can outlive one `virsh destroy` (QEMU still flushing, "Device or resource
-# busy"); a discarded failure left it running, `virsh start` then refused "Domain is already
-# active", and the unresponsive guest was judged BRICKED (#2746: jobs 220, 129, 224). Retries for
-# about a minute. Returns 1, printing virsh's last word, when the domain never reports "shut off".
 fault_power_cut() {
-    local tries out=""
+    local tries state out=""
     for tries in 1 2 3 4 5 6; do
-        out=$(virsh destroy "$1" 2>&1)
-        [ "$(virsh domstate "$1" 2>/dev/null | head -1)" = "shut off" ] && return 0
+        out=$(vm_stop_abrupt 2>&1) || true
+        state=$(vm_state 2>/dev/null) && [ -n "$state" ] || {
+            printf 'could not read VM state after the power cut'
+            return 1
+        }
+        [ "$state" = "shut off" ] && return 0
         [ "$tries" -lt 6 ] && sleep 10
     done
     printf '%s' "$out" | tr -s '\n' ' ' | cut -c1-200
     return 1
 }
 
-# The boot under test must be judged by its own console alone (#2746). Two ways to draw that line:
-#
-# fault_serial_cut <log> — for a power cut. Call after `virsh destroy` and before `virsh start`,
-# while no QEMU holds the file. Moves the old console to <log>.pre-cut and empties <log>, so the
-# next boot writes from byte 0 whether its file chardev appends or truncates. A file-position
-# mark cannot do this: a restarted log re-grows, and the same disk prints the same banner
-# byte for byte, so neither its size nor its prefix proves where the new boot began (job 220).
-# Prints 0, the offset to judge from. A log that does not exist yet needs no move. A log that
-# exists but cannot be moved aside and emptied prints nothing and returns 1: the leg must stop.
 fault_serial_cut() {
     rm -f "$1.pre-cut" 2>/dev/null
     if [ -e "$1" ]; then

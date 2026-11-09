@@ -348,6 +348,18 @@ wizard_write_config() {
     (
         umask 077
         printf '%s\n' "$cfg" >"$CONFIG_FILE"
+        if [ -n "${WIZ_PROFILE:-}" ]; then
+            profile_select "$CONFIG_FILE" "$WIZ_PROFILE"
+        else
+            local tmp
+            tmp=$(mktemp) || return 1
+            jq '
+                .profile="balance"
+                | if .p2pool.stratum_password == "" then del(.p2pool.stratum_password) else . end
+                | if .monero.clearnet_initial_sync == false then del(.monero.clearnet_initial_sync) else . end
+                | if .tari.clearnet_initial_sync == false then del(.tari.clearnet_initial_sync) else . end' "$CONFIG_FILE" >"$tmp" && cat "$tmp" >"$CONFIG_FILE"
+            rm -f "$tmp"
+        fi
     )
 }
 

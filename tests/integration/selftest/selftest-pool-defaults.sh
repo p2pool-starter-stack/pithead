@@ -31,8 +31,10 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         it_fail() { printf 'failure:%s\n' "$1" >>"$TRACE"; }
         pithead() {
             [ "${POOL_APPLY_FAIL:-}:$1" != 1:apply ] || return 1
+            [ "$1" != backup ] || printf 'Backup written to: backups/test.tar.gz\n'
             [ "$1" != apply ] || cp "$OUT_DIR/pending-config" "$OUT_DIR/current-config"
         }
+        backup_prune() { :; }
         wait_status_ok() { :; }
         wait_monero_synced() { :; }
         secret_fingerprint() { printf 'test-fingerprint'; }
@@ -114,26 +116,26 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
 
 for case_name in omitted empty-section main mini nano; do
     case "$case_name" in
-    omitted) config='{}' pool='' expected=Mini alternate=main ;;
-    empty-section) config='{"p2pool":{}}' pool='' expected=Mini alternate=main ;;
-    main) config='{"p2pool":{"pool":"main"}}' pool=main expected=Main alternate=mini ;;
-    mini) config='{"p2pool":{"pool":"mini"}}' pool=mini expected=Mini alternate=main ;;
-    nano) config='{"p2pool":{"pool":"nano"}}' pool=nano expected=Nano alternate=mini ;;
+    omitted) config='{}' pool='' expected=Mini alternate=main revert=mini ;;
+    empty-section) config='{"p2pool":{}}' pool='' expected=Mini alternate=main revert=mini ;;
+    main) config='{"p2pool":{"pool":"main"}}' pool=main expected=Main alternate=mini revert=main ;;
+    mini) config='{"p2pool":{"pool":"mini"}}' pool=mini expected=Mini alternate=main revert=mini ;;
+    nano) config='{"p2pool":{"pool":"nano"}}' pool=nano expected=Nano alternate=mini revert=main ;;
     esac
     assert_eq "$case_name waits for its effective pool" \
         "$(drive_pool scenario "$config")" "$(printf 'push:%s\nready:180:%s' "$pool" "$expected")"
     assert_eq "$case_name lifecycle applies and checks the alternate pool" \
         "$(drive_pool lifecycle "$config")" \
-        "$(printf 'push:%s\nswitch:pool actually changed:%s\npush:%s\nswitch:restore reverts the pool to the backed-up value:Main' \
-            "$alternate" "$(pool_label "$alternate")" "$alternate")"
+        "$(printf 'push:%s\nswitch:pool actually changed:%s\npush:%s\nswitch:restore reverts the pool to the backed-up value:%s' \
+            "$alternate" "$(pool_label "$alternate")" "$revert" "$(pool_label "$alternate")")"
 done
 
 assert_eq "lifecycle switches from the preceding Main scenario rather than its saved Mini baseline" \
     "$(drive_pool lifecycle '{"p2pool":{"pool":"mini"}}' '' '{"p2pool":{"pool":"main"}}')" \
-    "$(printf 'push:mini\nswitch:pool actually changed:Mini\npush:mini\nswitch:restore reverts the pool to the backed-up value:Main')"
+    "$(printf 'push:mini\nswitch:pool actually changed:Mini\npush:main\nswitch:restore reverts the pool to the backed-up value:Mini')"
 assert_eq "lifecycle switches from a sparse Mini scenario rather than its saved Main baseline" \
     "$(drive_pool lifecycle '{"p2pool":{"pool":"main"}}' '' '{}')" \
-    "$(printf 'push:main\nswitch:pool actually changed:Main\npush:main\nswitch:restore reverts the pool to the backed-up value:Main')"
+    "$(printf 'push:main\nswitch:pool actually changed:Main\npush:mini\nswitch:restore reverts the pool to the backed-up value:Main')"
 assert_eq "a failed pool apply removes the ownership probe before stopping lifecycle" \
     "$(POOL_APPLY_FAIL=1 drive_pool lifecycle '{"p2pool":{"pool":"mini"}}')" \
     "$(printf 'push:main\nfailure:pool change apply returned healthy\nowner-probe-cleaned')"

@@ -95,6 +95,11 @@ two jobs: `build-images` rebuilds the stack images from the branch and scans the
 `sweep-shipped` scans all six images already published, each tag resolved to a digest, so a CVE in
 the bytes users are running is caught after one.
 
+A digest-pinned base can lag a published security fix until upstream rebuilds the image. The Alpine
+image builds name the base's openssl and musl packages in their apk upgrade list, and the Debian
+builds name packages such as apt and zlib1g in their install lists, so an installable fix lands on
+the next rebuild without an ignore (#1438, #3923, #3929).
+
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
 ([#1377](https://github.com/p2pool-starter-stack/pithead/issues/1377)).
@@ -398,7 +403,8 @@ reports the pin held, and confirm the image cache still lists the commit right b
 provision. The cut cannot seed itself: `old_image` needs a strictly older build.
 
 Submit four KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
-cap, and so does the boot group with provision.
+cap, and so does the boot group with provision; bench-ci refuses an `all` submission before job
+creation. Standalone `tests/os/run.sh --phase all` is unaffected.
 
 - Boot group: boot, update, install.
 - Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases.
@@ -458,8 +464,10 @@ baseline across the eligible fleet. The e2e leg cannot be pinned to the prepared
 nightly lifecycle runs off those benches until this e2e job starts: uninstall removes the wallet
 fixture. If preparation or that scheduling window is unavailable, stop before submitting e2e.
 
-Use `targeted` until the frozen SHA includes the harness fix from
-[#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026); then set `E2E_MODE=matrix`.
+Keep `E2E_MODE=targeted` for the status-gated e2e job. When full config-matrix coverage is
+required, collect the [split matrix proof](integration-testing.md#split-matrix-proof-on-bench-ci)
+on the same frozen SHA in addition to the status-gated job. The unbounded `matrix` preset is
+not a supported single-job proof within bench-ci's 240-minute cap.
 Keep the real rig in the run. Only the owner may authorize `no_rig` after reviewing failures
 confined to rigforge-control harness rows. The final e2e job alone requests the aggregate status,
 with the two group jobs in `after`. A bench resolves `after` only against its own jobs, and the

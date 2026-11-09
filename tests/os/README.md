@@ -28,13 +28,41 @@ install-to-disk, the rig role, and the update → commit → rollback cycle that
 exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
-`kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_lease_ip`,
-`vm_list_running` and `vm_destroy`. Shared SSH diagnostics, DHCP polling and the
+`kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_start`,
+`vm_stop_abrupt`, `vm_lease_ip`, `vm_list_running`, `vm_destroy` and `vm_create`.
+The start and abrupt-stop helpers operate on the current test VM and preserve
+the backend's output and exit status; `vm_state --reason` adds diagnostic detail.
+The fault phase uses these helpers for power cuts, restarts and state diagnostics.
+It retries an abrupt stop up to six times, ten seconds apart, and requires a
+successful state read of `shut off` before resetting the console or restarting.
+A failed or empty state read stops the leg without judging another boot.
+`selftest-fault-power-cut.sh` checks these contracts and the retry order;
+`selftest-fault-lifecycle.sh` checks the fault sequence and its refusal paths
+without a guest. Acceptance still requires a successful current-head `tier4-kvm`
+`fault` job covering A1/A2/A3, C, B, rollback, the subsequent update and D.
+Shared SSH diagnostics, DHCP polling and the
 stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
 failure handling, teardown order and caller routing using a temporary `virsh` executable
 without a guest; the tier-1
-`make test-integration-selftest` target discovers it. Libvirt remains the only backend;
-the battery still requires the Linux bench and does not run on macOS.
+`make test-integration-selftest` target discovers it. The ordinary boot, Secure Boot and
+shared disk-boot paths call `vm_create DISK SERIAL SECURE_BOOT`, where `SECURE_BOOT`
+is `no` or `yes`. Callers retain disk preparation and the host memory preflight;
+the helper preserves the libvirt firmware, CPU, disk, network and serial settings.
+`selftest-boot-lifecycle.sh` checks those settings, caller routing, ordering and failure
+handling without a guest. Changes to these creation paths require a successful
+current-head `tier4-kvm` boot job before merging. Libvirt remains the only backend;
+the authoritative battery requires the Linux bench and does not run on macOS.
+No software-emulation smoke mode is supported by this harness.
+`selftest-eventual-core.sh` drives the real control-drain, SSH, new-boot, reboot,
+dashboard-marker, DHCP, setup-page and serial waits with delayed, never-ready and
+flapping responses. `selftest-eventual-approval.sh` exercises password commit
+polling through `pending`, `accepted`, `running` and `previewed`, including the
+140-poll timeout and its final-status diagnostic. Both use the integration
+harness's file-backed `fake_eventual` and run through the same selftest glob.
+`selftest-eventual-guest-waits.sh` extracts the XVB proxy, Tor and gate-release waits, the
+p2pool sync-gate hold, the wizard-state poll, the migration mining wait, the reset-slot wait,
+the unit-condition wait, the rig-adopt state wait and the rig-share window, and checks each passes on a late response and fails at its bound
+on a response that never arrives.
 
 After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
 with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and
@@ -206,7 +234,10 @@ the configured test registry fail before the image build. Release builds do not 
 - **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; waits up to 900 seconds for provisioning to settle without failed setup before checking persisted choices and login; proves Tor sync, XvB off, persisted choices, a generated working dashboard login, and firstboot/system journals free of bcrypt credentials.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
-  served, generated login authenticating, firstboot and system journals free of bcrypt credentials,
+  served, generated login authenticating, the onion header state matching Tor and the rendered
+  environment, both client-key forms returned through control with an applied audit row and timed
+  host-result redaction, firstboot and system journals free of bcrypt credentials,
+  state-failure diagnostics limited to HTTP/curl status and agreement booleans,
   built-in miner up. Journal reads must succeed and contain entries; the check never prints matched hashes. The Tor-only egress enforcement backstop — a real clearnet dial from a
   mining container, which must be DROPPED while the same container still reaches clearnet through
   Tor's SOCKS (up to three attempts, with retries isolated by SOCKS username, [#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)) — runs on EVERY path through this phase, including the aborting ones, and reports RED
@@ -412,7 +443,9 @@ the configured test registry fail before the image build. Release builds do not 
   legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
   with local chains and the non-default nano pool. The authenticated wizard must name the saved
-  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  coordinator role (`pithead`, or `both` for an appliance whose own miner the 2.1.0 defaults enable)
+  and prefill its answers with secrets blank; the on-disk role marker must equal the named role.
+  POST **Keep it** through the wizard;
   require the original dashboard login, unchanged configuration and host identity, both chain
   sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
   the served config; require the credentials card's login and the same chains and identity.
@@ -506,9 +539,13 @@ the configured test registry fail before the image build. Release builds do not 
 
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate and tor-heal, including image-upgrade, fault, reset and stack, and the full run is required once for
-every RC candidate.
+the whole battery; the run exits non-zero if anything failed. Standalone `all` means every phase
+except crossupdate and tor-heal, including image-upgrade, fault, reset and stack.
+
+Every RC candidate needs the full battery, but not as one bench-ci `phases: ["all"]` job: that
+exceeds the 240-minute cap, and bench-ci refuses it before job creation. Submit the phase groups in
+[the release procedure](../../docs/dev/releasing.md#which-gates-are-automated-and-which-are-not).
+Completed rows stay valid when a later phase fails or times out.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input

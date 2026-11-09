@@ -25,6 +25,7 @@ source "$HERE/lib.sh" || exit $?
 # shellcheck source=tests/integration/scenarios.sh
 source "$HERE/scenarios.sh" || exit $?
 source "$HERE/lib/rigforge-apply-settle.sh" || exit $?
+source "$HERE/lib/backup-prune.sh" || exit $?
 # shellcheck source=tests/integration/lib/rig-key-ledger.sh
 source "$HERE/lib/rig-key-ledger.sh" || exit $? # must precede any module that marks a write (#1379)
 # shellcheck source=tests/integration/lib/rigforge-writable-keys.sh
@@ -76,6 +77,7 @@ RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
 RIG_CONTROL_PORT="8082"
 SAFETY_BACKUP=0
+BACKUP_ONLY=0
 SAFETY_ARCHIVE=""
 SAFETY_RESTORE_FAILED=0
 SAFETY_RESTORE_FAIL_REASON=""
@@ -146,6 +148,8 @@ source "$HERE/lib/run-hardening.sh" || exit $?
 source "$HERE/lib/run-tari-off-preview.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$HERE/lib/run-rotate-onion.sh" || exit $?
+# shellcheck source=tests/integration/lib/tor-lifecycle-receipts.sh
+source "$HERE/lib/tor-lifecycle-receipts.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rigforge.sh
@@ -218,7 +222,18 @@ main() {
     fi
 
     # Optional rollback net for the destructive phases that follow.
+    [ "$BACKUP_ONLY" != 1 ] || arm_safety_abort_restore
     if ! safety_backup; then
+        summary
+        return
+    fi
+    if [ "$BACKUP_ONLY" = 1 ]; then
+        safety_cleanup || {
+            summary
+            return
+        }
+        SAFETY_ARCHIVE=""
+        it_pass "backup-only selection completed; scenarios and lifecycle operations excluded"
         summary
         return
     fi

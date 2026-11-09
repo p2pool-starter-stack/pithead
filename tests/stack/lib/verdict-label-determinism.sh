@@ -115,6 +115,7 @@ test-appliance-boot-labels.sh|medium
 test-appliance-boot-labels.sh|row
 test-appliance-boot-labels.sh|tran
 test-appliance-boot.sh|ph
+test-appliance-headless-install.sh|hsp_bad
 test-appliance-hostname.sh|mode
 test-appliance-hostname.sh|op
 test-appliance-identity-boot.sh|cli_pages
@@ -133,6 +134,7 @@ test-config.sh|bad_port
 test-config.sh|checked
 test-config.sh|core_checked
 test-confirm-approval.sh|secret_key
+test-confirm-approval.sh|target
 test-connection-announce.sh|ca_enabled
 test-control-add-only-ssrf.sh|2
 test-control-add-only-ssrf.sh|3
@@ -142,6 +144,7 @@ test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|inactive_guidance
 test-control-editable-allowlist.sh|k
+test-control-editable-allowlist.sh|target_profile
 test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
 test-control-secret-and-dial-guards.sh|HOOKS
@@ -166,6 +169,7 @@ test-release.sh|pin_rel
 test-release.sh|svc
 test-render-quadlet.sh|f
 test-render-quadlet.sh|profile
+test-render-quadlet.sh|qnode
 test-restore-configless.sh|rcf_status
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
