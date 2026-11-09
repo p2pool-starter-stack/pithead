@@ -290,5 +290,6 @@ check_dashboard_host_drift() {
     rendered=$(env_get HOST_IP)
     current=$(hostname)
     [ -n "$rendered" ] && [ -n "$current" ] && [ "$rendered" != "$current" ] || return 0
-    dr_warn dashboard-host "The machine's hostname is '$current' but .env still advertises '$rendered' — run './pithead apply' to refresh the dashboard address, then repoint any rigs pinned to the old name."
+    local msg="The machine's hostname is '$current' but .env still advertises '$rendered' — run './pithead apply' to refresh the dashboard address, then repoint any rigs pinned to the old name."
+    dr_warn_surface dashboard-host "$msg" "$msg"
 }

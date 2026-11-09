@@ -44,13 +44,9 @@ def validate_machine_name(cfg: dict, previous: dict) -> None:
 
 
 def prefill_machine_name(cfg: dict, platform: str) -> dict:
-    """Show the name this machine will actually announce, not the ``auto`` sentinel.
-
-    The wizard prefills its machine-name field with the default, so a saved or defaulted
-    ``auto`` renders as what it means on this platform instead of the sentinel."""
     dflt = default_of("dashboard.host", platform)
     dash = cfg.get("dashboard")
-    if dflt != "auto" and isinstance(dash, dict) and dash.get("host", "auto") == "auto":
+    if dflt != "auto" and isinstance(dash, dict) and dash.get("host") == "auto":
         cfg["dashboard"] = {**dash, "host": dflt}
     return cfg
 

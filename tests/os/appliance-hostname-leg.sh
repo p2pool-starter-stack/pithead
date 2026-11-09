@@ -197,10 +197,6 @@ phase_provision_hostname_regressions() { # <dashboard-user> <dashboard-password>
     # shellcheck disable=SC2154  # handoff_body is the initial leg's local (dynamic scope)
     assert_appliance_hostname_identity fixture-box "wizard hostname" "$DASH_USER" "$DASH_PASS" "$handoff_body" || return
 
-    # #3810: the name is the OPERATOR'S, so it has to survive into the two artifacts that carry it
-    # forward — config.json (the source every later identity read is rendered from; an `auto`
-    # sentinel here means the wizard field was dropped on the floor) and the credentials card
-    # (whose optional warning key must stay absent when nothing on the LAN answers the name).
     if dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
         jq -e '.dashboard.host == "fixture-box"' >/dev/null; then
         ok "the chosen machine name is what config.json keeps, not the prefill sentinel"

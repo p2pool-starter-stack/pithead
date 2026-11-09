@@ -17,7 +17,7 @@ is_machine_name_label() {
     [ "$1" != auto ] && [ "$1" != localhost ]
 }
 
-appliance_mdns_name_in_use() { # <label>; 0 when <label>.local answers on an address that is not this machine's
+appliance_mdns_name_in_use() {
     is_appliance || return 1
     local answers mine answer
     answers=$(getent ahostsv4 "${1}.local" 2>/dev/null | awk '{print $1}' | sort -u) || return 1

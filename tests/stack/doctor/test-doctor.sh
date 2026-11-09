@@ -434,9 +434,6 @@ assert_rc "doctor exits 1 on a critical FAIL" "$rc" "1"
 assert_contains "doctor header carries the version (#386)" "$out" "Version: pithead v9.9.9"
 
 echo "== unit: DIY dashboard-host drift warning (#3810) =="
-# A renamed DIY machine keeps its dashboard address pinned to the old name unless apply runs.
-# doctor warns only when dashboard.host is still auto (the advanced pin stays silent) and only
-# off the appliance (the appliance reconciles the OS hostname instead).
 drift_run() {
     (
         cd "$SANDBOX" || exit 1

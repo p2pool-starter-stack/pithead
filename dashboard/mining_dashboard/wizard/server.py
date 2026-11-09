@@ -258,7 +258,6 @@ async def wizard_state(request: web.Request) -> web.Response:
         remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
     budget = _spool_json("disk-budget.json") or {}
     platform = (_spool_read("platform.txt") or "appliance").strip()
-
     raw_handoff = _spool_read("handoff.json", handoff_dir()) if stage == "handoff" else None
     return web.json_response(
         {

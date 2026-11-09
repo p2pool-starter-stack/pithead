@@ -241,9 +241,11 @@ assert_eq "an auto-named appliance still refreshes Avahi" "$(md_run reconcile)" 
 unset MD
 
 echo "== unit: the machine-name rule is one rule with one message (#3810) =="
+NM="$SANDBOX/machine-name"
+mkdir -p "$NM"
 nm_run() {
     (
-        cd "$HN" || exit 1
+        cd "$NM" || exit 1
         # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$STACK"
         set -eu
@@ -279,9 +281,11 @@ assert_eq "reserved words, cases, lengths and shapes are refused" "$(
 )" 'no no no no no no no no no no '
 assert_eq "the rule names the reserved words it refuses" "$(nm_run rule)" \
     'Name this machine: 1–63 lowercase letters, digits or hyphens, starting and ending with a letter or digit; auto and localhost are reserved.'
-assert_eq "a name answering on one of this machine's addresses is free" \
+assert_eq "a name answering only on this machine's own address is free" \
+    "$(FAKE_ANSWERS='10.0.0.5' nm_run inuse)" free
+assert_eq "a name also answered by another machine is in use" \
     "$(FAKE_ANSWERS='192.0.2.5
-10.0.0.5' nm_run inuse)" free
+10.0.0.5' nm_run inuse)" in-use
 assert_eq "a name another machine answers is in use" "$(FAKE_ANSWERS='192.0.2.5' nm_run inuse)" in-use
 assert_eq "an unanswered name is free" "$(FAKE_ANSWERS='' nm_run inuse)" free
 assert_eq "off the appliance nothing is ever announced" "$(FAKE_APPLIANCE=0 FAKE_ANSWERS='192.0.2.5' nm_run inuse)" free
