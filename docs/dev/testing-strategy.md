@@ -952,7 +952,11 @@ tier 3/4:
   (the `tests/netwatch` image). It asserts the Tor default runs with `--no-dns` (a clearnet config
   runs without it), p2pool reaches peers and mining resumes, and no `seeds*.p2pool.io` or
   `*.p2poolpeers.net` query appears in the capture. A unique host lookup is the capture's positive
-  control, so a blind capture fails instead of reading as clean.
+  control, so a blind capture fails instead of reading as clean. The image's instruments are the
+  design: `conntrack -E` streams kernel connection EVENTS — a table snapshot misses any flow that
+  opens and closes between two polls, exactly the shape of a DNS leak or a single probe dial, the
+  blind spot `/proc/net/tcp` sampling shares — and `tcpdump` rides along for the diagnosis after a
+  red, when the question stops being "did something unexpected leave" and becomes "what was in it".
 - **Insecure + main matrix row.** ✅ Now a dedicated `local-pruned-main-insecure` row: the two axes
   decouple, so a regression specific to insecure+main (vs. the pre-existing insecure+nano row) has
   somewhere to fail.

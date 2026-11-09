@@ -47,6 +47,7 @@ safety_backup() {
     fi
     SAFETY_ARCHIVE="$candidate"
     it_log "Safety backup: $SAFETY_ARCHIVE"
+    backup_prune rx backups "$SAFETY_ARCHIVE"
     if ! listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"; then
         it_fail "safety backup archive readable" "tar could not read the complete archive"
         safety_cleanup
@@ -196,7 +197,7 @@ safety_cleanup() {
     elif [ "$KEEP_STATE" = "1" ]; then
         it_warn "--keep: leaving the safety backup at $SAFETY_ARCHIVE"
     else
-        if ! rx "rm -f -- $(quote_arg "$SAFETY_ARCHIVE") && test ! -e $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1; then
+        if ! rx "rm -f -- $(quote_arg "$SAFETY_ARCHIVE") $(quote_arg "${SAFETY_ARCHIVE%/*}/.pithead-e2e-safety/${SAFETY_ARCHIVE##*/}") && test ! -e $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1; then
             it_fail "safety backup archive removed" "cleanup failed; unencrypted archive retained"
             return 1
         fi

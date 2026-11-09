@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-#
-# Self-test for #2757/#2815: a failed safety backup names its exit status and preserves its
-# redacted output. Job 1283 died on a bare "pithead backup failed." because backup_stack sent
-# output to /dev/null. backup_stack is extracted out of the shipped e2e.sh; on_bench runs its REAL command
-# string against a fake `pithead`, so a redirection put back into that command empties the reason.
-#
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,9 +6,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/lib/remote-endpoints.sh
 source "$HERE/../lib/remote-endpoints.sh"
+source "$HERE/../lib/backup-window.sh"
 
 echo "== backup_stack names why the safety backup failed =="
-SRC="$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../e2e.sh")"
+SRC="$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../lib/safety-backup.sh")"
 assert_eq "the extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$SRC" | sed -n '1p;$p' | tr '\n' ' ')" "backup_stack() { } "
 
@@ -109,6 +104,35 @@ case "$out" in
 *$'\342\200\256'*) it_fail "Unicode bidi controls do not reach the log" "[$out]" ;;
 *) it_pass "Unicode bidi controls do not reach the log" ;;
 esac
+
+echo "== successful backup records its reported archive =="
+cat >"$sandbox/pithead" <<'FAKE'
+#!/usr/bin/env bash
+mkdir -p backups
+printf x >payload
+tar -czf backups/pithead-backup-20260101-000001.tar.gz payload
+printf 'Backup written to: %s/backups/pithead-backup-20260101-000001.tar.gz\n' "$PWD"
+FAKE
+mkdir -p "$sandbox/backups"
+: >"$sandbox/backups/pithead-backup-20260101-000002.tar.gz"
+if (
+    source "$HERE/../lib/backup-prune.sh"
+    # shellcheck disable=SC2034
+    CANONICAL_DIR="$sandbox"
+    log() { :; }
+    ok() { :; }
+    die() { exit 1; }
+    on_bench() { bash -c "$1"; }
+    eval "$SRC"
+    backup_stack >/dev/null &&
+        [ "$SAFETY_ARCHIVE" = "$sandbox/backups/pithead-backup-20260101-000001.tar.gz" ] &&
+        [ -f "$sandbox/backups/.pithead-e2e-safety/pithead-backup-20260101-000001.tar.gz" ] &&
+        [ ! -e "$sandbox/backups/.pithead-e2e-safety/pithead-backup-20260101-000002.tar.gz" ]
+); then
+    it_pass "only the reported archive is recorded despite a newer unrelated archive"
+else
+    it_fail "only the reported archive is recorded despite a newer unrelated archive"
+fi
 
 echo ""
 printf 'backup-reason self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
