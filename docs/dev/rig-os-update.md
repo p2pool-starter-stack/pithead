@@ -5,7 +5,7 @@ The contract for delivering an OS bundle to an appliance rig (`machine-role` is 
 ## Scope
 
 - A shipped rig has no SSH, no dashboard and no control channel of Pithead's, and RigForge's git upgrade cannot apply to its baked, read-only tree. Today a rig moves to a newer OS only by re-flashing its media or by booting a newer stick and choosing **Keep everything**.
-- Delivery covers **disk-installed rigs only**. The KVM rig phase proves the A/B install, the role and settings surviving the swap, and the self-commit on that layout. A rig that runs from its USB stick re-flashes until a delivery test passes on a measured stick layout (ESP, two 4 GiB slots and `/data` on the stick; the `rigmedia` phase automates row M14, #2069). Docs claim remote update only for measured layouts. The rig timer enforces this: it does nothing when `MEDIA=usb` in the boot environment (`pithead-boot-version record-media`).
+- Delivery covers **disk-installed rigs only**. The KVM rig phase proves the A/B install, the role and settings surviving the swap, and the self-commit on that layout. A rig that runs from its USB stick re-flashes until a delivery test passes on a measured stick layout (ESP, two 4 GiB slots and `/data` on the stick; the `rigmedia` phase automates row M14, #2069). Docs claim remote update only for measured layouts. The rig timer enforces this: it does nothing when `MEDIA=usb` in the boot environment (`grub-editenv`, written at boot by `pithead-boot-version record-booted`). No minimum stick size is established, and the claim stays disk-only until a delivery test measures one.
 - Part 1 (the appliance flag in the feed, refusing the RigForge git upgrade, the docs paragraph) belongs to #3961 and is not part of this contract.
 
 ## Design: the rig pulls from its coordinator
@@ -44,7 +44,7 @@ A rig never runs ahead of its coordinator. The operator consents to an update on
 
 ### Install, commit and fall back
 
-- The rig installs with `pithead os-update -y` into its idle slot, then reboots on its own. The reboot interrupts mining for the length of the boot; the timer runs only after the rig has been up long enough to have committed its current slot.
+- The rig installs with `pithead os-update -y --reboot`, which writes the idle slot and then reboots. The reboot interrupts mining for the length of the boot; the timer runs only after the rig has been up long enough to have committed its current slot.
 - On the new slot the rig branch of `os/overlay/pithead-boot` commits as soon as `xmrig.service` is active. Nothing checks hashing or pool reachability. This is by design, and it is the only gate a delivered bundle passes.
 - If the miner never comes up, the slot stays uncommitted and the next boot returns to the previous slot. The rig branch of `pithead-boot` writes no record today, so the timer's follow-up PR adds one: on the next run the rig compares the booted version with the version it installed and writes the mismatch to the status file.
 - `rig.json`, the `ACCESS_TOKEN`, the role and settings live on `/data` and are unchanged by the swap.
