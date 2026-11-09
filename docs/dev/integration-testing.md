@@ -132,7 +132,11 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
 - Continue-on-error. A failing assertion doesn't abort the run. The whole matrix is collected
   and summarized, with per-scenario artifacts for the failures. A failed pre-run safety backup
   stops before candidate deployment and leaves its complete redacted, control-free output in the harness log;
-  the failure row also names the exit status and its last 20 lines.
+  the failure row also names the exit status and its last 20 lines. The wrapper emits a
+  [version 1 backup-window result](backup-window-results.md) before restoration, separating the
+  backup command's original exit from archive validation, Tor restart observations and later
+  wallet/candidate failures. Its result and sanitized diagnostics use a fresh caller-side directory;
+  they do not depend on the candidate creating its results directory.
 
 ---
 
@@ -148,7 +152,7 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
    an external node (see `--remote-monero-host`).
 3. Tools on the box: `jq`, `curl`, `docker` (with compose v2), and `sha256sum`. The first three
    are already Pithead prerequisites; `sha256sum` ships with coreutils. The machine running
-   `tests/integration/e2e.sh` also needs `python3` to sanitize failed safety-backup output.
+   `tests/integration/e2e.sh` also needs `python3` to sanitize safety-backup output and emit its structured result.
 4. Access. Key-based SSH from wherever you run the suite, or run it on the box with `--local`.
    If Docker needs root there, use `--pithead "sudo ./pithead"`.
 5. Optional: a second synced data dir for the opposite prune mode if you want to cover both
@@ -257,7 +261,7 @@ Useful flags (full list in `run.sh --help`):
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
 | `--backup-only` | Take and validate a safety backup, wait for stack health, clean the archive and stop. No scenarios or lifecycle operations run. Exclusive of other phases, scenarios, `--rig-name`, `--rig-host`, `--check`, `--readiness` and `--keep`. |
-| `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. Restore retains a valid dashboard-login bcrypt hash when its archived password fingerprint matches the restored configuration. A failed rollback names whether restore, startup, health, exact configuration, or secret verification failed; secret verification names only the mismatched category, never values or hashes. Recommended for the destructive matrix on a precious box. This modifier does not select a phase or suppress scenarios. |
+| `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. After a successful harness backup (this one, and the one the default lifecycle phase takes without `--safety-backup`), keep the newest 10 recorded plaintext safety archives plus active restore anchors. Set `PITHEAD_E2E_BACKUP_KEEP` to another count, or `0` to disable deletion while still recording new archives. The harness records its own archives in `backups/.pithead-e2e-safety/`; existing unrecorded archives, manual backups, encrypted backups and chain backups remain untouched. Removing a harness archive also removes its record. Restore retains a valid dashboard-login bcrypt hash when its archived password fingerprint matches the restored configuration. A failed rollback names whether restore, startup, health, exact configuration, or secret verification failed; secret verification names only the mismatched category, never values or hashes. Recommended for the destructive matrix on a precious box; also exercises backup/restore end-to-end. This modifier does not select a phase or suppress scenarios. |
 | `--keep` | Don't restore the original config (leave the box on the last scenario). |
 | `--rotate-secrets` | Rotate live RPC, proxy API and stratum credentials, refuse the old credentials (HTTP 403 for the proxy's supplied stale Bearer token), verify the Monero → p2pool → proxy route, and restore the exact safety archive. Requires `--safety-backup`. With a reserved rig, the controller updates only its borrowed test-pool password before the upstream check, then proves an accepted share counted after that rearm. Config and miner-service restoration must verify before recovery copies or the runner's persistent recovery hold are released; an unverified restore retains the reservation for operator recovery. Interruption terminates the leg and attempts restoration through its EXIT-only trap, without continuing on a restored baseline. A real stratum login must return a valid mining job before the upstream assertion; its authenticated socket stays open during that check, including without a rig. The leg checks owner-only safety copies and cleans only copies created by this rotation. |
 | `--out <dir>` | Where to write the manifest and failure artifacts. |
