@@ -57,19 +57,34 @@ PY
 }
 
 backup_restart_stack() {
-    backup_stack_up && return 0
+    backup_window_observe restart_before
+    if backup_stack_up; then
+        backup_window_observe restart_succeeded
+        return 0
+    fi
+    backup_window_observe restart_failed
     backup_diagnose_tor
     backup_recover_tor_state
     if is_appliance; then
         warn "The stack did not restart after the backup — retrying through the appliance boot path."
         # The boot unit owns its own mutation window and carries the appliance image registry.
         mutation_lock_release
-        sudo systemctl restart pithead-boot.service && return 0
+        backup_window_observe restart_before
+        if sudo systemctl restart pithead-boot.service; then
+            backup_window_observe restart_succeeded
+            return 0
+        fi
+        backup_window_observe restart_failed
         warn "The appliance boot path also failed to restart the stack."
         return 1
     fi
     warn "The stack did not restart after the backup — retrying the normal startup path once."
-    backup_stack_up && return 0
+    backup_window_observe restart_before
+    if backup_stack_up; then
+        backup_window_observe restart_succeeded
+        return 0
+    fi
+    backup_window_observe restart_failed
     backup_diagnose_tor
     warn "The stack failed to restart after two attempts."
     return 1

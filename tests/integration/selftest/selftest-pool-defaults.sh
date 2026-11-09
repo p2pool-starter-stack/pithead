@@ -31,8 +31,10 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         it_fail() { printf 'failure:%s\n' "$1" >>"$TRACE"; }
         pithead() {
             [ "${POOL_APPLY_FAIL:-}:$1" != 1:apply ] || return 1
+            [ "$1" != backup ] || printf 'Backup written to: backups/test.tar.gz\n'
             [ "$1" != apply ] || cp "$OUT_DIR/pending-config" "$OUT_DIR/current-config"
         }
+        backup_prune() { :; }
         wait_status_ok() { :; }
         wait_monero_synced() { :; }
         secret_fingerprint() { printf 'test-fingerprint'; }

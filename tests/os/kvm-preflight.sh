@@ -34,9 +34,21 @@ _vm_teardown_step() {
     return "$rc"
 }
 
-vm_state() { virsh domstate "$VM"; }
+vm_state() { virsh domstate "$VM" "$@"; }
+vm_start() { virsh start "$VM"; }
+vm_stop_abrupt() { virsh destroy "$VM"; }
 vm_lease_ip() { virsh domifaddr "$VM" 2>/dev/null | awk '/ipv4/{print $4}' | cut -d/ -f1 | head -1; }
 vm_list_running() { virsh list --name; }
+
+vm_create() {
+    local disk="$1" serial="$2" secure_boot="$3"
+    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
+        --osinfo debian12 \
+        --boot "uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=$secure_boot" \
+        --import --disk "path=$disk,format=raw,bus=virtio" \
+        --network network=default,model=virtio --graphics none \
+        --serial "file,path=$serial" --noautoconsole
+}
 
 vm_destroy() {
     local domains
