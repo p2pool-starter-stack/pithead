@@ -306,10 +306,6 @@ def _publish_install_request(request: dict) -> None:
 
 
 def _submit_rig(form: dict) -> web.Response:
-    """The RigForge role's submission: no pithead config at all — a pool address, a worker name,
-    an optional stratum password, on their own spool channel. The coordinator flow stays
-    byte-for-byte untouched because nothing goes near config.json; the HOST dials the pool. On the
-    medium the disk gates match every other role, bar one target: "usb" runs from the stick."""
     pool = str(form.get("rig_pool", "")).strip()
     host, _, port = pool.rpartition(":")
     if not host or not port.isdigit():
@@ -318,11 +314,10 @@ def _submit_rig(form: dict) -> web.Response:
             status=400,
         )
     worker = str(form.get("rig_worker", "")).strip()
-    if worker:
-        try:
-            validate_machine_label(worker)
-        except ValueError as exc:
-            return web.json_response({"error": str(exc)}, status=400)
+    try:
+        validate_machine_label(worker)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     stick = installer_mode() and str(form.get("disk", "")).strip() == "usb"
     install = None
     if installer_mode() and not stick:
