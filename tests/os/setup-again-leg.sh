@@ -218,6 +218,10 @@ rig_setup_again_coordinator_leg() {
     *pithead.setup=1*rauc.slot=B* | *rauc.slot=B*pithead.setup=1*) ok "after the update the setup entry followed the default to slot B" ;;
     *) bad "the setup entry did not follow the default to slot B — cmdline: $(printf '%s' "$cmd" | cut -c1-160)" ;;
     esac
+    case "$(_ssh 'grub-editenv /boot/efi/grub/grubenv list' 2>/dev/null | tr -d '\r' | tr '\n' ' ')" in
+    *"B_OK=1 "*"B_TRY=0"* | *"B_TRY=0"*"B_OK=1"*) ok "with the page open the updated slot stays committed (B_OK=1 B_TRY=0): abandoning it boots B again (#3960)" ;;
+    *) bad "slot B is not committed while the set-up-again page is open — a reboot would fall back to A (#3960)" ;;
+    esac
     _setup_again_session || return
     scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
