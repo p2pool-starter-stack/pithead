@@ -124,7 +124,7 @@ rearm_attempts() { # <attempt that finds the worker, or 0 for never>
         wait_workers() { [ "$(wc -l <"$t/repoints")" -eq "$1" ]; }
         step() { :; }
         warn() { :; }
-        WORKERS="$1"
+        export WORKERS="$1"
         handle_borrow_rearm "$t/req" "$t/ack" run-9 >/dev/null 2>&1
         echo "rc=$? repoints=$(wc -l <"$t/repoints" | tr -d ' ') ack=$(cat "$t/ack" 2>/dev/null || echo none)"
     )
