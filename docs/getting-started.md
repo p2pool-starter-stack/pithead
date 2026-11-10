@@ -301,13 +301,13 @@ Management is a separate opt-in:
   control port and write-capable token, plus Pithead's authenticated dashboard control channel.
   Keep read probe credentials separate from the control token. Use an isolated trusted LAN or
   protected tunnel: the RigForge control API uses plaintext HTTP.
-- **Adopt this rig** can append a new descriptor after host-side target validation and typed
-  `APPLY`. It cannot repoint, reorder or remove an existing descriptor. Saving a descriptor is
-  followed by the next successful telemetry poll; it is not proof that work was accepted.
+- **Adopt this rig** appends a descriptor, and the inspector's Connection section repoints or
+  removes one. Each runs host-side target validation and needs typed `APPLY`; the confirmation
+  names every added, repointed and removed rig. Saving a descriptor is followed by the next
+  successful telemetry poll; it is not proof that work was accepted.
   See [Worker Inspect](dashboard.md#worker-inspect) and
   [per-worker prerequisites](workers.md#per-worker-overrides).
-  Broader descriptor editing belongs to [pithead#912](https://github.com/p2pool-starter-stack/pithead/issues/912);
-  the enrollment redesign belongs to [pithead#2533](https://github.com/p2pool-starter-stack/pithead/issues/2533).
+  The enrollment redesign belongs to [pithead#2533](https://github.com/p2pool-starter-stack/pithead/issues/2533).
 
 ## 7. Check progress and first accepted work
 

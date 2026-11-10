@@ -1,7 +1,6 @@
 {
   "tari": {
-    "mode": "off",
-    "clearnet_initial_sync": false
+    "mode": "off"
   },
   "xvb": {
     "enabled": false
@@ -14,9 +13,9 @@
     "enabled": false
   },
   "monero": {
-    "clearnet_initial_sync": false,
     "wallet_address": "your_monero_wallet_address"
   },
+  "profile": "balance",
   "p2pool": {
     "stratum_password": ""
   }
