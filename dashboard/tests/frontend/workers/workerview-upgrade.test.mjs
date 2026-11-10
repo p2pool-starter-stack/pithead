@@ -140,6 +140,44 @@ test("afterUpgrade on a rejected result refreshes once and never waits (#3947)",
   assert.equal(fx.inst.state.phase, "ready");
 });
 
+test("afterUpgrade stops re-reading once the dialog unmounts mid-wait (#3947)", async () => {
+  const fx = afterUpgradeFixture([{ version: "1.11.1", stats: [] }]);
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    const out = await inner(...args);
+    if (fx.calls() === 2) fx.inst.componentWillUnmount();
+    return out;
+  };
+  try {
+    await fx.inst.afterUpgrade({ status: "applied" }, 0, 10);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.calls(), 2);
+  assert.equal(fx.inst.state.waitTimedOut, false);
+});
+
+function findElement(node, type) {
+  if (!node || typeof node !== "object") return null;
+  if (node.type === type) return node;
+  const kids = [].concat(node.props?.children ?? []);
+  for (const k of kids) {
+    const hit = findElement(k, type);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+test("WorkerInspect wires RigUpgrade's onDone to afterUpgrade with the outcome (#3947)", () => {
+  const inst = readyInstance(UPG_DETAIL);
+  const seen = [];
+  inst.afterUpgrade = (out) => seen.push(out);
+  const el = findElement(inst.render(), RigUpgrade);
+  assert.ok(el, "RigUpgrade not found in the rendered tree");
+  el.props.onDone({ status: "rejected" });
+  assert.deepEqual(seen, [{ status: "rejected" }]);
+});
+
 test("RigUpgrade keeps a rejected result line after onDone (#3947)", async () => {
   const inst = upgradeInstance();
   const realFetch = globalThis.fetch;
