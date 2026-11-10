@@ -127,9 +127,10 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
+COPY os/rootfs/fetch-archive.sh /usr/local/bin/fetch-archive
 ARG RIGFORGE_REF=8f06cb8df791f3cb16d47bbee85fde92103cbe0b
-RUN curl -fsSL -o /tmp/rigforge.tar.gz \
-        "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
+RUN sh /usr/local/bin/fetch-archive \
+        "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" /tmp/rigforge.tar.gz \
     && mkdir -p /opt/rigforge \
     && tar -xzf /tmp/rigforge.tar.gz -C /opt/rigforge --strip-components=1 \
     && rm -rf /tmp/rigforge.tar.gz /opt/rigforge/tests \
