@@ -56,11 +56,13 @@ None of those pays Pithead.
 
 ## Cost
 
-`donation.percent` selects an integer percentage from 1 to 10. The nominal time per day is
+`donation.percent` selects a percentage from 0.1 to 10 (default 0 while donation is disabled). The nominal time per day is
 `1,440 × percentage / 100` minutes:
 
 | Percentage | Minutes per day |
 |---|---|
+| 0.1 % | 1.44 |
+| 0.25 % | 3.6 |
 | 1 % | 14.4 |
 | 2 % | 28.8 |
 | 5 % | 72 |

@@ -5,14 +5,19 @@ from mining_dashboard.service.workers import fleet_upgrade
 RELEASE = {"tag": "v1.15.0", "url": "https://example.invalid/r"}
 
 
-def rig(name, version="1.14.0", status="online", adopted=True, api_ok=True, fresh=True):
+def rig(
+    name, version="1.14.0", status="online", adopted=True, api_ok=True, fresh=True, appliance=None
+):
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if fresh else "2020-01-01T00:00:00Z"
+    rigforge = {"version": version, "generated_at": stamp}
+    if appliance is not None:
+        rigforge["appliance"] = appliance
     return {
         "name": name,
         "status": status,
         "adopted": adopted,
         "api_ok": api_ok,
-        "rigforge": {"version": version, "generated_at": stamp},
+        "rigforge": rigforge,
     }
 
 
@@ -37,6 +42,24 @@ def test_plan_partitions_behind_rigs_and_names_the_reason_for_the_rest():
     assert set(skipped) == {"offline", "stale", "unmanaged", "unreachable"}
     assert "adopt" in skipped["unmanaged"]
     assert "control API" in skipped["unreachable"]
+
+
+def test_plan_skips_appliance_rigs_and_says_why():
+    workers = [
+        rig("appliance-behind", appliance=True),
+        rig("appliance-current", "1.15.0", appliance=True),
+        rig("appliance-off", appliance=False),
+        rig("offline-appliance", status="offline", appliance=True),
+        rig("plain-behind"),
+    ]
+    out = fleet_upgrade.plan(workers, RELEASE)
+    assert out["eligible"] == [
+        {"name": "appliance-off", "running": "1.14.0"},
+        {"name": "plain-behind", "running": "1.14.0"},
+    ]
+    skipped = {s["name"]: s["reason"] for s in out["skipped"]}
+    assert set(skipped) == {"appliance-behind", "appliance-current", "offline-appliance"}
+    assert all("appliance" in r and "Pithead OS image" in r for r in skipped.values())
 
 
 def test_plan_lists_adopted_rigs_it_cannot_read_and_hides_current_ones_even_when_offline():
