@@ -26,9 +26,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/lib.sh" || exit $?
 # shellcheck source=tests/integration/lib/rig-supply.sh
-source "$HERE/lib/rig-supply.sh" || exit $?
-# shellcheck source=tests/integration/lib/rig-owner.sh
-source "$HERE/lib/rig-owner.sh" || exit $?
+source "$HERE/lib/rig-supply.sh" && source "$HERE/lib/rig-owner.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/restore-proof.sh
 source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" && source "$HERE/lib/restore-mining-ready.sh" && source "$HERE/lib/backup-prune.sh" || exit $?
@@ -596,8 +594,7 @@ run_harness() {
     # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
     # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
     if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
-        rig_supply
-        rig_owner_hold || true
+        rig_supply && rig_owner_hold || true
         [ -n "$RIG_NAME" ] || die "Borrowed rig NAME unavailable from $RIGFORGE_CONFIG."
         [ -n "${HARNESS_PHASE_ARGS:-}" ] || phases="$phases --rigforge --rigforge-control" # hand-picked phases replace these too (bench-ci#878)
         phases="$phases --rig-name $(quote_arg "$RIG_NAME")${RIG_HOST:+ --rig-host $(quote_arg "$RIG_HOST") --rig-control-port $(quote_arg "$RIG_CONTROL_PORT")}${RIGFORGE_BOOTSTRAP_VERSION:+ --rigforge-bootstrap-version $(quote_arg "$RIGFORGE_BOOTSTRAP_VERSION")}"
@@ -635,7 +632,6 @@ run_harness() {
         on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed '/e2e-env:/d; s/^/      /' || true
     done
 
-    rig_owner_release
     echo ""
     log "Harness finished (exit $rc). Full log:"
     on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/  /'

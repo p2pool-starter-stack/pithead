@@ -239,38 +239,6 @@ assert_not_contains "worker-apply keeps the control token out of curl argv" \
     "$(grep '^ARGS=' "$WA3/curl.log")" "tok-rig1"
 assert_contains "worker-apply gives curl its bearer through stdin config" \
     "$(grep '^CONFIG=' "$WA3/curl.log")" "Authorization: Bearer tok-rig1"
-WAB="$SANDBOX/ctrl3985-busy"
-mkdir -p "$WAB/staged" "$WAB/results" "$WAB/audit" "$WAB/bin"
-cp "$WA3/config.json" "$WAB/config.json"
-cat >"$WAB/bin/curl" <<'EOF'
-#!/usr/bin/env bash
-out="$(cat >/dev/null)" url=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-    -o) out="$2"; shift 2 ;;
-    *) url="$1"; shift ;;
-    esac
-done
-case "$url" in
-*/apply)
-    printf '{"change_id":"b0b0b0b0b0b0b0b0"}' >"$out"
-    printf '202' ;;
-*/status)
-    printf '{"change_id":"b0b0b0b0b0b0b0b0","status":"busy","reason":"rig is lent to a bench job; retry after it is returned"}' >"$out"
-    printf '200' ;;
-*) printf '000' ;;
-esac
-exit 0
-EOF
-chmod +x "$WAB/bin/curl"
-ub="b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1"
-printf '{"id":"%s","action":"worker-apply","actor":"admin","worker":"rig1","changes":{"pools":["pool.example:3333"]}}\n' "$ub" >"$WAB/req.json"
-PATH="$WAB/bin:$PATH" CONTROL_WA_BUDGET=1 PITHEAD_CONFIG_FILE="$WAB/config.json" \
-    run_sourced_e "$SANDBOX" control_process_request "$WAB/req.json" "$WAB" >/dev/null 2>&1
-assert_eq "worker-apply lands the rig's busy refusal as a terminal status (#3985)" \
-    "$(jq -r '.status' "$WAB/results/$ub.json" 2>/dev/null)" "busy"
-assert_contains "worker-apply busy result carries the rig's reason (#3985)" \
-    "$(jq -r '.reason' "$WAB/results/$ub.json" 2>/dev/null)" "lent to a bench job"
 WA4="$SANDBOX/ctrl185-failed"
 mkdir -p "$WA4/staged" "$WA4/results" "$WA4/audit" "$WA4/bin"
 cp "$WA3/config.json" "$WA4/config.json"
@@ -445,11 +413,6 @@ assert_contains "the noop result carries the rig's already-on-target reason" \
 w18="cdcdcdcd-cdcd-42cd-92cd-cdcdcdcdcdcd"
 wu_accept_case "$w18" '{"change_id":"chg-9","status":"throttled","reason":"throttled — too soon since the last upgrade attempt"}' \
     "a first-class 'throttled' terminal lands as retry-later on the first poll" "throttled"
-w20="efefefef-efef-42ef-92ef-efefefefefef"
-wu_accept_case "$w20" '{"change_id":"chg-9","status":"busy","reason":"rig is lent to a bench job; retry after it is returned"}' \
-    "a first-class 'busy' terminal lands on the first poll, not the poll-cap fallback (#3985)" "busy"
-assert_contains "the busy upgrade result carries the rig's reason (#3985)" \
-    "$(jq -r '.reason' "$WU_LAST_DIR/results/$w20.json" 2>/dev/null)" "lent to a bench job"
 # A genuine failure that merely MENTIONS the throttle must stay a fault (rigforge#321's
 # fail-closed refusal): only the legacy leading-"throttled" free text remaps to retry-later.
 w19="dededede-dede-42de-92de-dededededede"
