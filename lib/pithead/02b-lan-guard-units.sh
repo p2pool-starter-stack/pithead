@@ -78,9 +78,16 @@ remove_lan_guard_check_units() {
     if [ -e "$unit_dir/$LAN_GUARD_CHECK_SERVICE" ] &&
         [ "$(control_units_owner_dir "$LAN_GUARD_CHECK_SERVICE" lan-guard-check)" != "$(pwd -P)" ]; then return 0; fi
     sudo systemctl disable --now "$LAN_GUARD_CHECK_TIMER" >/dev/null 2>&1 || rc=1
+    local unit
+    for unit in "$LAN_GUARD_CHECK_TIMER" "$LAN_GUARD_CHECK_SERVICE"; do
+        [ -e "$unit_dir/$unit" ] || continue
+        stop_systemd_unit_state "$unit" || rc=1
+    done
+    [ "$rc" = 0 ] || return "$rc"
     sudo rm -f "$unit_dir/$LAN_GUARD_CHECK_TIMER" "$unit_dir/$LAN_GUARD_CHECK_SERVICE" || rc=1
     sudo systemctl daemon-reload >/dev/null 2>&1 || rc=1
     [ ! -e "$unit_dir/$LAN_GUARD_CHECK_TIMER" ] && [ ! -e "$unit_dir/$LAN_GUARD_CHECK_SERVICE" ] || rc=1
+    removed_systemd_units_absent "$LAN_GUARD_CHECK_TIMER" "$LAN_GUARD_CHECK_SERVICE" || rc=1
     return "$rc"
 }
 
@@ -188,19 +195,24 @@ provision_lan_guard_boot_unit() { # <port>...
     log "At boot, ${containers[*]} start only once the LAN-only source rule is back ($LAN_GUARD_HOLD_UNIT); Docker does not restart them; after a crash $LAN_GUARD_CHECK_TIMER does, within 2 minutes, while the rule is live."
 }
 
-# Disable and delete both units (switches off, uninstall); 1 if a step fails or a unit or want stays.
 remove_lan_guard_boot_unit() {
     local unit_dir lg_unit lg_removed=0 rc=0
     unit_dir=$(control_unit_dir)
     for lg_unit in "$LAN_GUARD_HOLD_UNIT" "$LAN_GUARD_BOOT_UNIT"; do
         [ -e "$unit_dir/$lg_unit" ] || continue
-        sudo systemctl disable "$lg_unit" >/dev/null 2>&1 || rc=1
+        if ! sudo systemctl disable "$lg_unit" >/dev/null 2>&1 ||
+            ! stop_systemd_unit_state "$lg_unit"; then
+            rc=1
+            continue
+        fi
         sudo rm -f "$unit_dir/$lg_unit" || rc=1
         lg_removed=1
     done
-    [ "$lg_removed" = 0 ] || sudo systemctl daemon-reload >/dev/null 2>&1 || rc=1
+    if [ "$lg_removed" != 0 ]; then
+        sudo systemctl daemon-reload >/dev/null 2>&1 || rc=1
+        removed_systemd_units_absent "$LAN_GUARD_HOLD_UNIT" "$LAN_GUARD_BOOT_UNIT" || rc=1
+    fi
     [ ! -e "$unit_dir/$LAN_GUARD_HOLD_UNIT" ] && [ ! -e "$unit_dir/$LAN_GUARD_BOOT_UNIT" ] || rc=1
-    # An unreadable want list is not an empty one.
     if command -v systemctl >/dev/null 2>&1; then
         lg_unit=$(systemctl show -p Wants --value docker.service multi-user.target 2>/dev/null) || rc=1
         ! grep -qE 'pithead-lan-(guard|hold)\.service' <<<"$lg_unit" || rc=1

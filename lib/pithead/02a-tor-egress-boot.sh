@@ -112,12 +112,35 @@ provision_tor_egress_boot_unit() { # <subnet> <tor_ip> [sync-ip ...]
     fi
 }
 
-# Disable and delete the unit (opt-out, uninstall). Only our unit name, never another firewall's.
+stop_systemd_unit_state() {
+    sudo systemctl stop "$1" >/dev/null 2>&1 &&
+        sudo systemctl reset-failed "$1" >/dev/null 2>&1
+}
+
+removed_systemd_units_absent() {
+    local remaining attempt
+    for ((attempt = 0; attempt < 5; attempt++)); do
+        remaining=$(systemctl list-units --all --plain --no-legend "$@" 2>/dev/null) || return 1
+        [ -n "$remaining" ] || return 0
+        sleep 0.2
+    done
+    return 1
+}
+
 remove_tor_egress_boot_unit() {
     local unit_dir
     unit_dir=$(control_unit_dir)
     [ -e "$unit_dir/$TOR_EGRESS_BOOT_UNIT" ] || return 0
-    sudo systemctl disable "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1 || true
-    sudo rm -f "$unit_dir/$TOR_EGRESS_BOOT_UNIT" || true
-    sudo systemctl daemon-reload >/dev/null 2>&1 || true
+    if ! sudo systemctl disable "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1 ||
+        ! stop_systemd_unit_state "$TOR_EGRESS_BOOT_UNIT"; then
+        warn "egress-boot:stop-failed — could not disable, stop and clear $TOR_EGRESS_BOOT_UNIT."
+        return 1
+    fi
+    if ! sudo rm -f "$unit_dir/$TOR_EGRESS_BOOT_UNIT" ||
+        [ -e "$unit_dir/$TOR_EGRESS_BOOT_UNIT" ] ||
+        ! sudo systemctl daemon-reload >/dev/null 2>&1 ||
+        ! removed_systemd_units_absent "$TOR_EGRESS_BOOT_UNIT"; then
+        warn "egress-boot:removal-incomplete — $TOR_EGRESS_BOOT_UNIT removal could not be verified."
+        return 1
+    fi
 }

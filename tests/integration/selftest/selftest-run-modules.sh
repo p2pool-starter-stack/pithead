@@ -57,6 +57,8 @@ source "$ROOT/lib/run-support-bundle.sh" || exit $?
 source "$ROOT/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-reset-dashboard.sh
 source "$ROOT/lib/run-reset-dashboard.sh" || exit $?
+declare -F arm_uninstall_systemd_state >/dev/null || exit 1
+declare -F verify_uninstall_systemd_state >/dev/null || exit 1
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh
 source "$ROOT/lib/run-rotate-secrets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh

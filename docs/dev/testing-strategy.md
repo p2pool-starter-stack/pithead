@@ -53,6 +53,11 @@ and site-list assertions with each implementation. Docker bridge detection uses 
 hexadecimal suffix and an exact length check, without awk interval expressions;
 LAN bridges such as `br0` and `br-lan` remain eligible addresses.
 
+The lifecycle uninstall round trip starts with an active-exited egress boot service and a
+failed LAN-check service. It independently polls the manager inventory after uninstall
+and rejects retained records or an unreadable inventory. The systemd removal unit suite
+covers scoped cleanup, command failures and foreign-checkout ownership.
+
 The root `pithead` tested at tiers 1–4 is generated and git-ignored. Each Make test entry point
 that reads it depends on the `pithead` build target, while the live E2E provisioner builds it after
 cleaning its source checkout. A clean clone therefore exercises the same generated CLI as a local

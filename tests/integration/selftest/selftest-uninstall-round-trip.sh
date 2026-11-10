@@ -124,6 +124,8 @@ drive() { # <case> -> round-trip-rc|failures
         IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
         export FAKE_CASE="$1"
         it_step() { :; }
+        arm_uninstall_systemd_state() { :; }
+        verify_uninstall_systemd_state() { :; }
         it_skip_leg() { printf '%s|%s|%s' "$1" "$2" "$3" >"$B/skip"; }
         wait_status_ok() { :; }
         env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
