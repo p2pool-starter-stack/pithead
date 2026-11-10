@@ -123,7 +123,7 @@ assert_contains "fallback cleanup is reached after the successful commit" "$comm
         [ "$hold_chain" != 0 ] || restore_data_floor_after_fallback "$migration_fingerprint"'
 assert_contains "the shared commit cleanup removes and syncs both records" "$(cat "$BOOT")" \
     '            clear) rm -f "$(os_migration_marker_file)" "$(os_data_floor_file).prev" && sync || exit 1 ;;'
-assert_contains "held coordinator release uses durable record cleanup" "$(cat "$BOOT")" '    clear_migration_hold "$@" || return 1'
+assert_contains "held coordinator release uses durable record cleanup" "$(cat "$BOOT")" '    clear_migration_hold "$@" || echo "pithead-boot: FAULT'
 assert_contains "the rig uses the same cleanup after commitment" "$(cat "$BOOT")" \
     'if [ "$hold_chain" = 1 ]; then clear_migration_hold "$migration_fingerprint"; else restore_data_floor_after_fallback "$migration_fingerprint"; fi'
 
