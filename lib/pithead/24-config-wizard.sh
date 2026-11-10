@@ -1,15 +1,3 @@
-# First-run wizard (#502/#529). Split ask/write/pointer into their own functions so the tier-1
-# suite can drive the Q&A directly (piped stdin) without ensure_config_exists's tty gate below —
-# that gate exists to refuse a non-interactive run, not to block testing the prompts themselves.
-# Scope is deliberately narrow: the CORE_KEYS_CONFIG shortlist (wallet addresses, monero.mode,
-# p2pool.pool, dashboard auth) plus a few high-level "how should this run" shape questions —
-# tari.mode among them (#1916), asked by wizard_ask_tari in the same place and the same three-way
-# shape the browser wizard asks it, so the two setup paths cannot answer it differently.
-# New installs write XvB off and private initial sync explicitly; other defaults are inherited.
-# workers.list (also in the shortlist, #529) isn't asked inline: it's a variable-length list of
-# per-rig objects, not a single answer, and the standard fleet needs no entries at all (see
-# docs/workers.md) — so it's covered by the closing pointer instead of a prompt, matching the
-# treatment #502 already prescribes for monero.view_key / dashboard.energy.cost_per_kwh.
 ensure_config_exists() {
     [ -f "$CONFIG_FILE" ] && return 0
 

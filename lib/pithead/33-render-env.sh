@@ -96,11 +96,6 @@ render_env() {
     rpc_lan=$(jq -r '.monero.rpc_lan_access // false' "$CONFIG_FILE")
     if [ "$rpc_lan" == "true" ]; then rpc_bind="0.0.0.0"; else rpc_bind="127.0.0.1"; fi
 
-    # monerod ZMQ LAN exposure (#760). A separate key from rpc_lan_access on purpose: that key's
-    # documented use is wallets (RPC only), and widening it to also open ZMQ would change the
-    # exposure of existing deployments. A node SERVING remote stacks (#103's other half) needs
-    # both: rpc_lan_access for the RPC, zmq_lan_access for the block-notification feed p2pool
-    # requires. ZMQ pub has no auth — trusted LAN only.
     local zmq_bind zmq_lan
     zmq_lan=$(jq -r '.monero.zmq_lan_access // false' "$CONFIG_FILE")
     if [ "$zmq_lan" == "true" ]; then zmq_bind="0.0.0.0"; else zmq_bind="127.0.0.1"; fi
@@ -139,7 +134,6 @@ render_env() {
     case "$xvb_donor" in
     "" | auto | DYNAMIC_ID) xvb_donor="${MONERO_WALLET:0:8}" ;;
     esac
-    # Donation tier target: auto (default) / donor|vip|whale|mega
     xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
 
