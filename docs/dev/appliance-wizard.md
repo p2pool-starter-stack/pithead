@@ -538,8 +538,12 @@ Five steps, each answering a hardware-validated failure:
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
    passenger (`|| true`). The appliance checks an active, enabled local miner every 30 seconds.
-   Five minutes of successful proxy worker-list readings with no connection for the local
-   miner’s rendered identity queue an XMRig restart, logged by `pithead-miner-recovery.service`.
+   A successful proxy worker-list reading that finds the proxy container restarted since the
+   previous reading while the local miner still has no connection queues an immediate XMRig
+   restart — a proxy replaced underneath a live miner is the stall XMRig never recovers from
+   itself, so it does not wait out the window. Otherwise five minutes of successful proxy
+   worker-list readings with no connection for the local miner’s rendered identity queue an
+   XMRig restart, logged by `pithead-miner-recovery.service`.
    Other connected rigs do not reset that window. Missing readings, a connected local miner, a stopped
    miner, or a busy stack operation reset that window. The guard holds the mutation lock only for
    that busy check and around the restart, never while it reads the proxy, so a zero-wait command

@@ -91,6 +91,13 @@ miner_watch_restore() {
     fi
     return "$failed"
 }
+miner_fastpath_receipt() {
+    [ -e /usr/local/sbin/pithead-miner-recovery ] || return 0
+    grep -Fq 'proxy was recreated' /usr/local/sbin/pithead-miner-recovery || return 0
+    timeout 10 journalctl --no-pager --since "@$(cat "$T3375/backup-at")" \
+        -u pithead-miner-recovery.service | grep -Fq 'proxy was recreated' || return 1
+    printf '%s\n' 'pithead-t3375: fastpath_restart=observed'
+}
 miner_watch() {
     local end=$((SECONDS + 1200))
     touch "$T3375/ready"
@@ -288,6 +295,10 @@ miner_verdict() {
         return 1
     }
     printf '%s\n' 'pithead-t3375: local_reconnection=observed'
+    miner_fastpath_receipt || {
+        miner_failure fastpath-restart-missing
+        return 1
+    }
     end=$((SECONDS + BOUND_SHARE))
     while [ "$SECONDS" -lt "$end" ]; do
         counts=$(miner_counts) || counts=''
@@ -330,7 +341,10 @@ miner_guest_dispatch() {
     backup-ready)
         podman inspect --format '{{.Id}}' xmrig-proxy >"$T3375/proxy-id"
         ;;
-    backup-applied) touch "$T3375/backup-applied" ;;
+    backup-applied)
+        touch "$T3375/backup-applied"
+        date -u +%s >"$T3375/backup-at"
+        ;;
     verdict) miner_verdict "$2" "${3:-}" ;;
     cleanup) miner_cleanup ;;
     *) exit 64 ;;

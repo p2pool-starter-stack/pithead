@@ -6,6 +6,7 @@ reset_window() {
     rm -f "$STATE"
     exit 0
 }
+mark_proxy() { [ -z "$proxy_now" ] || printf '%s\n' "$proxy_now" >"$STATE.proxy"; }
 cd "${PITHEAD_DIR:-/data/pithead}" 2>/dev/null || reset_window
 lock_file=${PITHEAD_LOCK_FILE:-.pithead.lock}
 (umask 022 && : >>"$lock_file") || reset_window
@@ -51,7 +52,23 @@ except Exception:
     print("reset")
 PY
 ) 2>/dev/null || reset_window
-[ "$reading" = idle ] || reset_window
+proxy_now=$(timeout 10 podman inspect -f '{{.State.StartedAt}}' xmrig-proxy 2>/dev/null) || proxy_now=
+seen_proxy=$(cat "$STATE.proxy" 2>/dev/null || true)
+[ "$reading" = idle ] || {
+    mark_proxy
+    reset_window
+}
+if [ -n "$seen_proxy" ] && [ -n "$proxy_now" ] && [ "$seen_proxy" != "$proxy_now" ]; then
+    flock -n 9 || reset_window
+    jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
+    systemctl is-active --quiet xmrig.service || reset_window
+    mark_proxy
+    printf '%s\n' 'pithead-miner-recovery: local miner proxy was recreated while the miner was disconnected; restarting xmrig'
+    systemctl --no-block try-restart xmrig.service
+    rm -f "$STATE"
+    exit 0
+fi
+mark_proxy
 read -r uptime _ <"${PITHEAD_MINER_RECOVERY_UPTIME:-/proc/uptime}"
 now=${uptime%%.*}
 start=$(cat "$STATE" 2>/dev/null || true)
