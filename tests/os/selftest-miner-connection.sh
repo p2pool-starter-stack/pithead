@@ -47,12 +47,13 @@ fail fail_generation
 
 CONFIG_FILE="$scratch/written-config.json"
 MONERO_MODE_WIZ=local IN_MONERO_WALLET=fixture-wallet IN_MONERO_USER=rpc IN_MONERO_PASS=fixture-rpc
-TARI_MODE_WIZ=off POOL_TIER=mini IN_DASH_PASS="" CLEARNET_SYNC=false ONION_ENABLED=false TELEGRAM_BOT_TOKEN=""
+TARI_MODE_WIZ=off IN_DASH_PASS="" CLEARNET_SYNC=false ONION_ENABLED=false TELEGRAM_BOT_TOKEN=""
 wizard_write_config
 check test "$(jq -r .p2pool.stratum_password "$CONFIG_FILE")" = "$WIZ_STRATUM_PASSWORD"
 wizard_ask_stratum_password </dev/null
 wizard_write_config
-check test "$(jq -r .p2pool.stratum_password "$CONFIG_FILE")" = ""
+check test "$(jq -r .profile "$CONFIG_FILE")" = balance
+check test "$(jq -r '.p2pool | has("stratum_password")' "$CONFIG_FILE")" = false
 
 candidate="$scratch/config.json"
 printf '{"p2pool":{"stratum_password":"","stratum_tls":false}}' >"$candidate"

@@ -1,5 +1,6 @@
 render_env() {
-    local target="${1:-$ENV_FILE}" project
+    local target="${1:-$ENV_FILE}" project profile
+    profile=$(profile_name)
     project=$(compose_project_name) || return 1
     log "Rendering environment configuration ($target)..."
 
@@ -66,9 +67,9 @@ render_env() {
     monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
     tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
 
-    # Block-verification threads — hardware-dependent, so derive from THIS host's core count
-    # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores
-    # and cap at 8 (diminishing returns past that). Override with monero.prep_blocks_threads.
+    [ "$MONERO_MODE" = local ] || monero_clearnet=false
+    [ "$TARI_MODE" = local ] || tari_clearnet=false
+
     local prep_threads cores
     prep_threads=$(jq -r '.monero.prep_blocks_threads // "auto"' "$CONFIG_FILE")
     if ! [[ "$prep_threads" =~ ^[0-9]+$ ]]; then
@@ -95,16 +96,10 @@ render_env() {
     rpc_lan=$(jq -r '.monero.rpc_lan_access // false' "$CONFIG_FILE")
     if [ "$rpc_lan" == "true" ]; then rpc_bind="0.0.0.0"; else rpc_bind="127.0.0.1"; fi
 
-    # monerod ZMQ LAN exposure (#760). A separate key from rpc_lan_access on purpose: that key's
-    # documented use is wallets (RPC only), and widening it to also open ZMQ would change the
-    # exposure of existing deployments. A node SERVING remote stacks (#103's other half) needs
-    # both: rpc_lan_access for the RPC, zmq_lan_access for the block-notification feed p2pool
-    # requires. ZMQ pub has no auth — trusted LAN only.
     local zmq_bind zmq_lan
     zmq_lan=$(jq -r '.monero.zmq_lan_access // false' "$CONFIG_FILE")
     if [ "$zmq_lan" == "true" ]; then zmq_bind="0.0.0.0"; else zmq_bind="127.0.0.1"; fi
 
-    # P2Pool pool type → flags + p2p port
     local pool_type p2pool_flags p2pool_port
     pool_type=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
     p2pool_flags=""
@@ -117,12 +112,18 @@ render_env() {
         p2pool_port="37890"
     fi
 
-    # Route outbound sidechain P2P through Tor by default (#165); p2pool.clearnet opts out for yield.
-    # See p2pool_outbound_flags + docs/privacy.md. Uses the configured subnet so a custom NETWORK_PREFIX
-    # (#180) still points at the Tor container (.25).
+    if p2pool_needs_light_mode; then
+        p2pool_flags="${p2pool_flags:+$p2pool_flags }--light-mode"
+    fi
+
     local p2pool_socks
-    p2pool_socks=$(p2pool_outbound_flags "$(jq -r '.p2pool.clearnet // false' "$CONFIG_FILE")" "$NETWORK_PREFIX")
+    p2pool_socks=$(p2pool_outbound_flags "$(config_bool '.p2pool.clearnet' false)" "$NETWORK_PREFIX")
     [ -n "$p2pool_socks" ] && p2pool_flags="${p2pool_flags:+$p2pool_flags }$p2pool_socks"
+
+    p2pool_flags="${p2pool_flags:+$p2pool_flags }--no-upnp"
+    if [ "$profile" = privacy ] && [ "$P2POOL_CLEARNET" != true ]; then
+        p2pool_flags+=" --no-clearnet-p2p"
+    fi
 
     local xvb_enabled xvb_url xvb_donor xvb_donation_level xvb_tor
     xvb_enabled=$(config_get .xvb.enabled)
@@ -133,9 +134,13 @@ render_env() {
     case "$xvb_donor" in
     "" | auto | DYNAMIC_ID) xvb_donor="${MONERO_WALLET:0:8}" ;;
     esac
-    # Donation tier target: auto (default) / donor|vip|whale|mega
     xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
+
+    local donation_enabled donation_percent donation_tor
+    donation_enabled=$(config_get .donation.enabled)
+    donation_percent=$(config_get .donation.percent)
+    donation_tor=$(config_get .donation.tor)
 
     local tari_required
     tari_required=$(config_get .dashboard.tari_required)
@@ -165,24 +170,16 @@ render_env() {
     local check_for_updates
     check_for_updates=$(jq -r 'if .dashboard.check_for_updates == false then "false" else "true" end' "$CONFIG_FILE")
 
-    # Per-worker xmrig API probe (#171/#172). The dashboard enriches each proxy-reported worker by
-    # reading that miner's own xmrig /1/summary for uptime + per-miner hashrate — ONE configured
-    # way, no auto-detection. Defaults match the stock RigForge worker: an open, read-only API
-    # (xmrig http.restricted, no access-token) on port 8080, so the standard stack needs no config.
-    #   workers.api_auth: none (default) | name (Bearer=worker's stratum name) | token (Bearer=workers.api_token, one shared token for every worker).
-    # Upgrade note: a stack whose miners still set an xmrig access-token should set api_auth "name", else the no-auth probe 401s and those workers read api_ok=false (see docs/configuration.md).
     local worker_api_port worker_api_auth worker_api_token worker_api_tokens_json
     worker_api_port=$(jq -r '.workers.api_port // 8080' "$CONFIG_FILE")
-    worker_api_auth=$(jq -r '.workers.api_auth // "none"' "$CONFIG_FILE")
-    worker_api_token=$(jq -r '.workers.api_token // ""' "$CONFIG_FILE")
+    worker_api_auth=$(config_get .workers.api_auth)
+    worker_api_token=$(config_get .workers.api_token)
+    if [ "$worker_api_token" = auto ]; then
+        worker_api_token=$(env_get XMRIG_API_TOKEN)
+        [ -n "$worker_api_token" ] || worker_api_token=$(openssl rand -hex 24)
+    fi
     worker_api_tokens_json=$(jq -c '(.workers.api_port // 8080) as $port | reduce ((.workers.list // [])[] | select((.name // "") != "" and (.host // "") != "" and (.api_token // "") != "")) as $worker ({}; .[$worker.name] //= {host: $worker.host, port: ($worker.port // $port), token: $worker.api_token})' "$CONFIG_FILE") # read-only probe tokens only; control tokens stay host-only
 
-    # Telegram operator bot (#121 alerts, #45 commands). Disabled by default. bot_token is a
-    # secret: it lives only in this owner-only .env (chmod 600 below) and the dashboard never logs
-    # it. Per-event toggles default to on, so enabling Telegram turns on the full set and an
-    # operator only opts *out* of the noisy ones. The interactive command interface is a separate
-    # opt-in (telegram.commands.enabled, default false). A blank chat_id/bot_token keeps everything
-    # off even if enabled=true (the dashboard guards that too). See docs/telegram.md.
     local tg_enabled tg_token tg_chat tg_commands
     tg_enabled=$(jq -r 'if .telegram.enabled != null then .telegram.enabled | tostring else "false" end' "$CONFIG_FILE")
     tg_token=$(jq -r '.telegram.bot_token // empty' "$CONFIG_FILE")
@@ -241,19 +238,8 @@ render_env() {
     notify_webhooks=$(jq -r '(.notifications.webhooks // []) | join(" ")' "$CONFIG_FILE")
     ntfy_url=$(jq -r '.notifications.ntfy.url // empty' "$CONFIG_FILE")
     ntfy_token=$(jq -r '.notifications.ntfy.token // empty' "$CONFIG_FILE")
-    notify_tor=$(jq -r 'if .notifications.tor != null then .notifications.tor | tostring else "true" end' "$CONFIG_FILE")
+    notify_tor=$(config_bool '.notifications.tor' true)
 
-    # Tari memory cap (#55). Tari officially needs only a few GB (min 4 GB host, 8 GB+ recommended),
-    # but its memory grows unbounded over time — one 32 GB host was seen at ~11 GB while staying
-    # healthy. Uncapped, that growth can OOM the whole host on small machines. So the cap is a SAFETY
-    # CEILING, not a tight leash: it lets Tari use what it wants and only OOM-restarts it (cleanly,
-    # since memswap_limit in compose disables swap) on a genuine runaway that would otherwise take the
-    # host down.
-    #
-    # "auto" sizes the ceiling from RAM that is actually free for normal use. Two big chunks are NOT:
-    #   - HugePages: this stack reserves vm.nr_hugepages=3072 (~6 GB) for RandomX (used by p2pool).
-    #     That RAM is carved out of the buddy allocator and is invisible to container memory stats,
-    #     so we subtract it up front — otherwise Tari's cap + HugePages + the rest of the stack can
     #     exceed physical RAM and the host OOMs before Tari's own limit ever fires.
     #   - a ~25% reserve (>=2 GB) of what's left, for monerod/p2pool/Tor/the dashboard/the OS/page
     #     cache. Tari gets the remainder, floored at 2 GB. Those other services now also carry their
@@ -277,9 +263,8 @@ render_env() {
             if [ "$OS_TYPE" == "Darwin" ]; then
                 ram_mb=$(($(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1048576))
             else
-                ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
-                # HugePages_Total (pages) * Hugepagesize (kB) -> MiB reserved out of RAM.
-                huge_mb=$(awk '/HugePages_Total/{t=$2} /Hugepagesize/{s=$2} END{print int(t*s/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+                ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' "${PITHEAD_MEMINFO:-/proc/meminfo}" 2>/dev/null || echo 0)
+                huge_mb=$(hugepages_carveout_mb)
             fi
             [ "${ram_mb:-0}" -gt 0 ] 2>/dev/null || ram_mb=16384 # unknown host => assume 16 GB
             [ "${huge_mb:-0}" -ge 0 ] 2>/dev/null || huge_mb=0
@@ -353,6 +338,7 @@ P2POOL_ONION_ADDRESS=$(dotenv_render_value "$P2POOL_ONION")
 DASHBOARD_ONION_ADDRESS=$(dotenv_render_value "$DASHBOARD_ONION")
 DASHBOARD_ONION_CLIENT_PUBKEY=$(dotenv_render_value "$DASHBOARD_ONION_CLIENT_PUBKEY")
 DASHBOARD_ONION_CLIENT_PRIVKEY=$(dotenv_render_value "$DASHBOARD_ONION_CLIENT_PRIVKEY")
+PITHEAD_PROFILE=$(dotenv_render_value "$profile")
 P2POOL_FLAGS=$(dotenv_render_value "$p2pool_flags")
 P2POOL_PORT=$(dotenv_render_value "$p2pool_port")
 STRATUM_BIND=$(dotenv_render_value "$STRATUM_BIND")
@@ -365,6 +351,9 @@ XVB_POOL_URL=$(dotenv_render_value "$xvb_url")
 XVB_DONOR_ID=$(dotenv_render_value "$xvb_donor")
 XVB_ENABLED=$(dotenv_render_value "$xvb_enabled")
 XVB_TOR_ENABLED=$(dotenv_render_value "$xvb_tor")
+DONATION_ENABLED=$(dotenv_render_value "$donation_enabled")
+DONATION_PERCENT=$(dotenv_render_value "$donation_percent")
+DONATION_TOR_ENABLED=$(dotenv_render_value "$donation_tor")
 XVB_DONATION_LEVEL=$(dotenv_render_value "$xvb_donation_level")
 TARI_REQUIRED=$(dotenv_render_value "$tari_required")
 DASHBOARD_FAIL_CLOSED=$(dotenv_render_value "$fail_closed")

@@ -429,11 +429,9 @@ async def _submit_locked(request: web.Request) -> web.Response:
     except ValueError as exc:
         return web.json_response({"error": f"Invalid configuration: {exc}"}, status=400)
     clear_submission_sidecars()
-    mode = str(form.get("auth_mode", "")).strip()
-    if mode in ("auto", "set", "none"):
-        _spool_write_text("auth-mode", mode)
-    # On the installation medium, config and disk arrive TOGETHER — one page, one submission,
-    # validated without side effects; the trigger is published only after the candidate.
+    auth = cfg.get("dashboard", {}).get("auth", {})
+    mode = "none" if raw and isinstance(auth, dict) and auth.get("password") == "" else "auto"
+    _spool_write_text("auth-mode", mode)
     install = None
     if installer_mode():
         try:
@@ -448,11 +446,11 @@ async def _submit_locked(request: web.Request) -> web.Response:
         _spool_write_text("last-attempt.json", json.dumps(cfg))
         spool_remove("install-request")
         return web.json_response({"error": first_failure(report), "node_probe": report}, status=400)
-    # Keep the full attempt for a retry, write only what differs from the defaults.
+    previous_profile = _last_attempt().get("profile", "balance")
     _spool_write_text("submission-staging", "1")
     remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
     _spool_write_text("last-attempt.json", json.dumps(cfg))
-    _spool_write_config(explicit_wizard_config(cfg, ref))
+    _spool_write_config(explicit_wizard_config(cfg, ref, previous_profile=previous_profile))
     if install:
         _publish_install_request(install)
     _spool_write_text("submission-active", "1")

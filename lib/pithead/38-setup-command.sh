@@ -50,6 +50,7 @@ setup_confirmed() {
     log "Deployment preparation complete!"
     mutation_lock_release
     announce_dashboard_url
+    [ -z "${IN_DASH_PASS:-}" ] || wizard_print_pointer
     if [ "$REBOOT_REQUIRED" = true ]; then
         echo -e "\n${C_YELLOW}[!] ATTENTION: System optimization requires a reboot.${C_RESET}"
         echo "Please run: 'sudo reboot' now."

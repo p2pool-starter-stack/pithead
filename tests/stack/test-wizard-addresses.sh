@@ -7,7 +7,7 @@ mkdir -p "$WA/retry"
 printf '%s\n' "$VALID_SUBADDR" "$VALID_INTEGRATED" "${VALID_PRIMARY:0:50}B${VALID_PRIMARY:51}" \
     garbage "$VALID_PRIMARY" '' 2 "${VALID_TARI:0:90}B" \
     f26J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5Cb \
-    garbage "$VALID_TARI" nano '' none '' '' '' '' |
+    garbage "$VALID_TARI" '' '' '' '' |
     run_sourced "$WA/retry" run_wizard >"$WA/retry/stdout" 2>"$WA/retry/stderr"
 assert_rc "wizard saves after all address retries" "$?" 0
 wa_err=$(cat "$WA/retry/stderr")
@@ -26,7 +26,7 @@ done
 wa_cfg=$(cat "$WA/retry/config.json" 2>/dev/null)
 assert_eq "retry saves the valid Monero primary" "$(jq -r '.monero.wallet_address' <<<"$wa_cfg")" "$VALID_PRIMARY"
 assert_eq "retry saves the valid Tari mainnet address" "$(jq -r '.tari.wallet_address' <<<"$wa_cfg")" "$VALID_TARI"
-assert_eq "retries leave the following pool answer aligned" "$(jq -r '.p2pool.pool' <<<"$wa_cfg")" nano
+assert_eq "retries leave no pool tier answer to misalign" "$(jq -r '.p2pool | has("pool")' <<<"$wa_cfg")" false
 
 echo "== unit: payout EOF aborts without creating or replacing config =="
 for wa_chain in monero tari; do

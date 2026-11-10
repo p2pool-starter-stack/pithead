@@ -164,11 +164,13 @@ Setup walks through five stages. It's interactive on the first run and safe to r
    fills in the rest and writes a minimal `config.json`, locked down to owner-only (`chmod 600`).
    Use a dedicated Monero mining wallet: P2Pool payout addresses are public
    ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)).
-   - **Required:** your Monero wallet address; whether you're running a local Monero node (the
-     default — the stack runs its own) or connecting to a remote one, with a local node's RPC
-     credentials auto-generated; and your P2Pool pool tier (`main`/`mini`/`nano` — pick low if
-     you're not sure, a high-hashrate default silently starves a small rig of shares). An
-     dashboard login, generated on Enter and printed once; enter `none` to opt out.
+   - **Required:** your Monero wallet address and whether you're running a local Monero node (the
+     default — the stack runs its own) or connecting to a remote one. Local-node RPC credentials
+     are generated automatically. Setup inherits the `mini` P2Pool sidechain default. It generates
+     a random 32-character alphanumeric dashboard password and shows it once in the final handoff; if setup stops before then, read
+     `dashboard.auth.password` from the owner-only `config.json`.
+     To disable dashboard login, explicitly set `dashboard.auth.password` to an empty string in
+     **Advanced** or `config.json`; there is no no-login prompt.
    - **Merge-mine Tari? (beta)** Three answers: no, run the bundled Tari node here, or use a Tari
      node you already run. Tari runs on pre-release upstream software, so Enter means no. Yes
      downloads and syncs a Tari chain over Tor, which takes days. A yes asks for your Tari payout address, and "a node I already run" asks
@@ -274,8 +276,10 @@ The dashboard is served over HTTPS by Caddy:
 https://<your-hostname>
 ```
 
-`<your-hostname>` is this machine's hostname — the name you gave the appliance during setup, if
-you named one (the script prints the exact URL when it starts the stack). Caddy uses a local certificate authority (`tls internal`).
+`<your-hostname>` is the address printed by setup: this machine's hostname, or the name you gave an
+appliance during setup. A DIY install derives it from the machine hostname through
+`dashboard.host: auto`; an existing explicit `dashboard.host` override remains in effect. Caddy uses a
+local certificate authority (`tls internal`).
 [Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
 browser warnings after certificate renewal. Prefer plain HTTP on your LAN? Set
 `dashboard.secure: false` in `config.json` and run `./pithead apply`.

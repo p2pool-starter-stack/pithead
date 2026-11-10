@@ -447,6 +447,7 @@
     "type": "Main",
     "uptime": "0m 0s"
   },
+  "pool_tier_suggestion": null,
   "proxy_summary": {
     "accepted": "0",
     "best": "\u2014",

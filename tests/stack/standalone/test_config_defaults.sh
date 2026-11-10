@@ -2,6 +2,7 @@
 set -euo pipefail
 # shellcheck source=tests/stack/lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib.sh"
+bash "$ROOT/tests/stack/config/automatic-defaults.sh" || exit 1
 echo "== unit: shared defaults exports, setup parity and v2.0.0 compatibility =="
 if python3 "$ROOT/scripts/build-config-defaults.py" --check; then
     ok "defaults exports match the canonical table"
@@ -30,9 +31,13 @@ for defaults_platform in diy appliance; do
         "$STACK" "$ROOT/tests/stack/fixtures/config-2.0.0/absent.json" "$defaults_flag") >"$defaults_dir/golden.log" 2>&1; then
         ok "$defaults_platform sparse v2 config parses and renders"
         sed "s|$defaults_dir/golden|@ROOT@|g" "$defaults_dir/golden/.env" >"$defaults_dir/normalized.env"
-        assert_eq "$defaults_platform full env matches v2.0.0 golden" \
+        assert_eq "$defaults_platform full env matches v2.0.0 plus profile defaults" \
             "$(cat "$defaults_dir/normalized.env")" \
-            "$(awk '/^COMPOSE_PROFILES=/ { print "COMPOSE_PROJECT_NAME=pithead" } { print }' "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.env")"
+            "$(awk '
+                /^P2POOL_FLAGS=/ { print "PITHEAD_PROFILE=balance"; print $0 " --no-upnp"; next }
+                /^TOR_AUTO_HEAL=/ { print "TOR_AUTO_HEAL=true"; next }
+                /^COMPOSE_PROFILES=/ { print "COMPOSE_PROJECT_NAME=pithead" }
+                { print }' "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.env")"
         assert_eq "$defaults_platform absent local_miner.enabled matches v2.0.0" \
             "$(cat "$defaults_dir/golden/local-miner.txt")" "$(cat "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.local-miner")"
         assert_eq "$defaults_platform absent dashboard.host matches v2.0.0" \
@@ -87,7 +92,7 @@ for defaults_platform in diy appliance; do
     done
     assert_eq "$defaults_platform every non-required table default agrees with absent-key rendering" \
         "$(cat "$defaults_dir/full.env")" "$(cat "$defaults_dir/absent.env")"
-    for defaults_row in 'TARI_MODE off' 'XVB_ENABLED false' 'TARI_REQUIRED false'; do
+    for defaults_row in 'TARI_MODE off' 'XVB_ENABLED false' 'TARI_REQUIRED false' 'DONATION_ENABLED false'; do
         read -r defaults_key defaults_value <<<"$defaults_row"
         assert_eq "$defaults_platform parsed minimal $defaults_key" \
             "$(grep "^$defaults_key=" "$defaults_dir/minimal.env" | cut -d= -f2-)" "$defaults_value"

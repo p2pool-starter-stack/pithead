@@ -33,6 +33,11 @@ assert_eq "coordinator: ...with the login stripped (the reinstall rule)" "$(jq -
 printf '{"monero":{"wallet":"4retry"}}' >"$SASB/spool/last-attempt.json"
 PITHEAD_SETUP_AGAIN=1 run_sourced "$SASB" publish_saved_role "$SASB/spool" >/dev/null 2>&1
 assert_eq "an existing last-attempt.json (a failed retry's context) is never overwritten" "$(jq -r '.monero.wallet' "$SASB/spool/last-attempt.json")" "4retry"
+printf 'both\n' >"$SASB/machine-role"
+rm -f "$SASB/spool/saved-role.json"
+PITHEAD_SETUP_AGAIN=1 run_sourced "$SASB" publish_saved_role "$SASB/spool" >/dev/null 2>&1
+assert_eq "coordinator with its own miner: the published role follows the marker (#3934)" "$(jq -r '.role' "$SASB/spool/saved-role.json")" "both"
+rm -f "$SASB/machine-role" "$SASB/spool/saved-role.json"
 
 echo "== unit: wizard_keep_requested — Keep it ends the session with nothing touched (#1318) =="
 run_sourced "$SASB" wizard_keep_requested "$SASB/spool" >/dev/null 2>&1

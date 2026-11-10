@@ -10,10 +10,10 @@ tor_egress_sync_ips() {
     local marker
     marker="$(clearnet_state_dir)/monero.synced"
     [ "${EGRESS_SYNC_CLOSE_CHAIN:-}" != monero ] && [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = true ] &&
-        [ ! -e "$marker" ] && [ ! -L "$marker" ] && printf '%s\n' "$prefix.26"
+        { [ "$(env_get PITHEAD_PROFILE 2>/dev/null)" = performance ] || { [ ! -e "$marker" ] && [ ! -L "$marker" ]; }; } && printf '%s\n' "$prefix.26"
     marker="$(clearnet_state_dir)/tari.synced"
     [ "${EGRESS_SYNC_CLOSE_CHAIN:-}" != tari ] && [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] &&
-        [ ! -e "$marker" ] && [ ! -L "$marker" ] && printf '%s\n' "$prefix.27"
+        { [ "$(env_get PITHEAD_PROFILE 2>/dev/null)" = performance ] || { [ ! -e "$marker" ] && [ ! -L "$marker" ]; }; } && printf '%s\n' "$prefix.27"
     [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] && printf '%s\n' "$prefix.28"
     [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
         [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ] && printf '%s\n' "$prefix.29"
@@ -23,10 +23,12 @@ tor_egress_sync_ips() {
 tor_egress_choice_marker() { printf '%s.egress-choice-active' "$(mutation_lock_path)"; }
 tor_egress_choice_active() {
     case "${1:-}" in
+    monero) [ "$(env_get PITHEAD_PROFILE 2>/dev/null)" = performance ] && [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = true ] ;;
+    tari) [ "$(env_get PITHEAD_PROFILE 2>/dev/null)" = performance ] && [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] ;;
     p2pool) [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] ;;
     xvb) [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
         [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ] ;;
-    *) tor_egress_choice_active p2pool || tor_egress_choice_active xvb ;;
+    *) tor_egress_choice_active monero || tor_egress_choice_active tari || tor_egress_choice_active p2pool || tor_egress_choice_active xvb ;;
     esac
 }
 
@@ -36,7 +38,7 @@ prune_tor_egress_choice_markers() {
     local marker choice
     marker=$(tor_egress_choice_marker)
     [ ! -L "$marker" ] || return 1
-    for choice in p2pool xvb; do
+    for choice in monero tari p2pool xvb; do
         tor_egress_choice_active "$choice" && continue
         if [ -e "$marker/$choice" ] || [ -L "$marker/$choice" ]; then
             rmdir "$marker/$choice" || return 1
@@ -49,7 +51,7 @@ arm_tor_egress_choice_marker() {
     local marker choice
     marker=$(tor_egress_choice_marker)
     [ ! -L "$marker" ] && { mkdir "$marker" 2>/dev/null || [ -d "$marker" ]; } || return 1
-    for choice in p2pool xvb; do
+    for choice in monero tari p2pool xvb; do
         tor_egress_choice_active "$choice" || continue
         [ ! -L "$marker/$choice" ] &&
             { mkdir "$marker/$choice" 2>/dev/null || [ -d "$marker/$choice" ]; } || return 1
@@ -118,7 +120,11 @@ apply_tor_egress_firewall() {
     [ -n "$enabled" ] || enabled=true
     if [ "$(normalize_bool "$enabled")" != "true" ]; then
         remove_tor_egress_firewall
-        warn "Tor-only egress firewall is OFF (network.tor_egress_firewall=false) — a misconfigured app could reach clearnet."
+        if [ "$(env_get PITHEAD_PROFILE)" = performance ]; then
+            log "Performance: the egress firewall is off by choice."
+        else
+            warn "Tor-only egress firewall is OFF (network.tor_egress_firewall=false) — a misconfigured app could reach clearnet."
+        fi
         remove_tor_egress_boot_unit
         [ "${1:-}" = refresh ] || provision_egress_sync_runner || return 1
         return 0
