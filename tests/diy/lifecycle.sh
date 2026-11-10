@@ -19,8 +19,10 @@ services_running() { (cd "$DIY_DIR" && docker compose ps --status running --serv
 monero_local() { [ "$(jq -r '.monero.mode // "local"' "$DIY_DIR/config.json")" = local ]; }
 
 gate_holds() {
-    local deadline=$((SECONDS + 900))
-    until services_running | grep -x monerod >/dev/null; do
+    local deadline=$((SECONDS + 900)) running
+    while :; do
+        running=$(services_running) || running=""
+        grep -x monerod <<<"$running" >/dev/null && break
         [ "$SECONDS" -lt "$deadline" ] || {
             echo "monerod never started"
             return 1
@@ -28,9 +30,13 @@ gate_holds() {
         sleep 5
     done
     for _ in 1 2 3 4; do
-        if services_running | grep -Ex 'p2pool|xmrig-proxy' >/dev/null; then
+        running=$(services_running) || {
+            echo "could not list the running services"
+            return 1
+        }
+        if grep -Ex 'p2pool|xmrig-proxy' <<<"$running" >/dev/null; then
             echo "p2pool or xmrig-proxy is running before the chains sync"
-            services_running
+            printf '%s\n' "$running"
             return 1
         fi
         sleep 10
@@ -67,6 +73,7 @@ clean_start_checks() {
         return 1
     }
     findings=$(diy_residue_scan)
+    ! command -v docker >/dev/null 2>&1 || findings+=$(docker images --format 'image: {{.Repository}}:{{.Tag}}' 2>/dev/null)
     [ -z "$findings" ] || {
         echo "$findings"
         return 1
@@ -218,6 +225,13 @@ kept_paths() {
 stop_and_snapshot() {
     (cd "$DIY_DIR" && ./pithead down) || return 1
     kept_paths >"$DIY_STATE_DIR/kept-paths"
+    local kept_path
+    while read -r kept_path; do
+        [ -e "$kept_path" ] || [ "$kept_path" = "$DIY_DIR/backups" ] || {
+            echo "kept path missing before uninstall: $kept_path"
+            return 1
+        }
+    done <"$DIY_STATE_DIR/kept-paths"
     (cd "$DIY_DIR" && docker compose config --images | sort -u) >"$DIY_STATE_DIR/images.txt" || return 1
     mapfile -t KEPT <"$DIY_STATE_DIR/kept-paths"
     diy_tree_digest "${KEPT[@]}" >"$DIY_STATE_DIR/kept.digest"
@@ -281,7 +295,7 @@ image_ids() {
 
 upgrade_check() {
     local before_config after
-    before_config=$(sha256sum "$DIY_DIR/config.json")
+    before_config=$(jq -S 'del(.config_version)' "$DIY_DIR/config.json")
     image_ids >"$DIY_STATE_DIR/images-before"
     tar -C "$DIY_ROOT" --exclude=./config.json --exclude=./data --exclude=./backups -cf - . | tar -C "$DIY_DIR" -xf - || return 1
     (cd "$DIY_DIR" && bash scripts/build-pithead.sh && timeout 3600 ./pithead upgrade) || return 1
@@ -289,8 +303,8 @@ upgrade_check() {
         echo "version after upgrade is not the candidate"
         return 1
     }
-    [ "$(sha256sum "$DIY_DIR/config.json")" = "$before_config" ] || {
-        echo "config.json changed across upgrade"
+    [ "$(jq -S 'del(.config_version)' "$DIY_DIR/config.json")" = "$before_config" ] || {
+        echo "config.json changed across upgrade beyond config_version"
         return 1
     }
     after=$(image_ids)

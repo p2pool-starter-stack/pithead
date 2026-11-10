@@ -350,6 +350,8 @@ guest fixture (#2677), which proves real-Tor reboot persistence and is not repla
 | `uninstall-candidate-*`, `uninstall-upgraded-*` | `uninstall -y` exits 0 and removes `.env`; no `pithead-*` unit file, active or failed unit record, container, volume, image or firewall rule remains; `config.json`, every `*_DATA_DIR` and `backups/` are byte-identical (#2379). The systemd row is red while #3627 is open |
 | `reboot-residue`, `after-reboot-*`, `reboot-*` | after the final uninstall the harness exits 75 when the lane's marker file `/var/lib/cloud/diy-reboot-resume` exists; the lane reboots the guest and runs `lifecycle.sh --after-reboot`, which checks the boot id changed and repeats the residue and kept-data checks. Without the marker the row is `MISSING` (bench-ci#2456) |
 
+The upgrade step overlays the candidate source tree on the installed release and runs `./pithead upgrade`, the documented source-checkout path: the candidate is unreleased, so the release path (pull and cosign-verify published images) is not exercised there. `upgrade` stamps `config_version`, so the step compares `config.json` without that key. The wizard's Tari question is answered explicitly (No), because its Enter default depends on free disk. Uninstall removes the images of the stack's current Compose file, so images of the previous release are not asserted gone.
+
 Chain data: the guest has no synced chain and no remote node is configured, so the harness proves
 pre-sync behaviour only, as the egress scenario does. `up` is checked for the sync gate, and
 `apply`, `doctor`, `rotate-secrets`, `backup`, `restore` and `upgrade` assert what holds before
