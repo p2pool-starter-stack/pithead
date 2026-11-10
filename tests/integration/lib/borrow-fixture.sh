@@ -79,7 +79,6 @@ handle_borrow_rearm() { # <request> <ack> <run-id>
         ;;
     rearm)
         step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
-        # A restart that meets a still-refusing proxy fails over again, so each attempt restarts.
         local attempt
         for attempt in 1 2 3 4; do
             repoint_miner || return 1

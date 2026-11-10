@@ -102,6 +102,14 @@ The DIY lifecycle support-bundle leg is `tests/integration/lib/run-support-bundl
 `check-support-bundle.py` in the same directory inspects archives without extraction.
 `tests/integration/selftest/selftest-support-bundle.sh` supplies archive and restoration
 failure controls through the integration selftest target.
+The leg's credential fixture rotates the stratum password, so borrowed rigs stay locked out
+until the restore. The lifecycle caller therefore gates the whole step, not each apply.
+The restore copies `config.json` and `.env` back, so `apply` finds no change. `pithead up`
+then recreates the services still running on the fixture's environment.
+A refused rig fails over to its next pool, and XMRig does not come back on its own. After a
+verified restore, the controller re-arms it (`borrow-fixture.sh`, `rearm`). It restarts the rig
+up to four times, 60 seconds apart, because a restart that meets a still-refusing proxy fails
+over again.
 
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in

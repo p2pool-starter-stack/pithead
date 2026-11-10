@@ -15,7 +15,6 @@ run_support_bundle() {
     [ -n "$before" ] || return 1
     snapshot=$(rx 'set -e; umask 077; export TMPDIR="${TMPDIR:-$HOME}"; d=$(mktemp -d "$TMPDIR/support-bundle.XXXXXX"); if cp -p config.json "$d/config.json" && cp -p .env "$d/env"; then printf "%s" "$d"; else rm -f "$d/config.json" "$d/env"; rmdir "$d"; exit 1; fi') || return 1
     [ -n "$snapshot" ] || return 1
-    # Borrowed rigs stay locked out until the restore, so the caller gates the whole step, not each apply.
     if push_config "$changed" && LIFECYCLE_MINING_ACTIVE=0 pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
         it_pass "support-bundle credential fixture applied to a healthy stack"
         if rx "set -e
@@ -35,7 +34,6 @@ run_support_bundle() {
     else
         it_fail "support-bundle credential fixture applied to a healthy stack" "config, apply or bounded health check failed"
     fi
-    # Apply sees the copied-back .env as unchanged, so up recreates services still on the fixture's env.
     if rx "cp -p $(quote_arg "$snapshot")/config.json config.json && cp -p $(quote_arg "$snapshot")/env .env" &&
         LIFECYCLE_MINING_ACTIVE=0 pithead apply -y >/dev/null 2>&1 && LIFECYCLE_MINING_ACTIVE=0 pithead up >/dev/null 2>&1 &&
         wait_status_ok 240; then
@@ -50,7 +48,6 @@ run_support_bundle() {
         it_fail "support-bundle restores its starting configuration and stack health" "restoration failed"
         restoration_ok=0
     fi
-    # The rotated password sent a borrowed rig to its next pool, and XMRig does not come back on its own.
     if [ "$restoration_ok" -eq 1 ] && [ -n "${RIG_NAME:-}" ]; then
         wait_borrow_rearm || restoration_ok=0
     fi
