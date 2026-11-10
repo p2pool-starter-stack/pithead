@@ -104,16 +104,16 @@ miner_reload() {
         }
         reload() {
             old=$(mainpid --system)
-            if sudo -n systemctl restart xmrig >/dev/null 2>&1 || { sudo -n systemctl stop xmrig >/dev/null 2>&1 && sudo -n systemctl start xmrig >/dev/null 2>&1; }; then
+            if sudo -n systemctl restart xmrig >/dev/null 2>&1; then
                 moved --system "$old"
                 return
             fi
-            old=$(mainpid --user)
-            if systemctl --user restart xmrig >/dev/null 2>&1; then
-                moved --user "$old"
+            if sudo -n systemctl stop xmrig >/dev/null 2>&1; then
+                sudo -n systemctl start xmrig >/dev/null 2>&1 && moved --system "$old"
                 return
             fi
-            pkill -HUP -u "$(id -u)" -x xmrig >/dev/null 2>&1
+            old=$(mainpid --user)
+            systemctl --user restart xmrig >/dev/null 2>&1 && moved --user "$old"
         }
         reload
     '

@@ -5,11 +5,11 @@ CLEARNET_FIXTURE_DIAG=""
 _control_apply_idle() { # [seconds]
     local deadline=$(($(date +%s) + ${1:-60})) SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}"
     while :; do
-        _ssh '[ "$(systemctl is-active pithead-control.service)" != activating ] && flock -n /data/pithead/.pithead.lock true' && return 0
+        _ssh 'systemctl is-active --quiet pithead-control.path && [ "$(systemctl is-active pithead-control.service)" != activating ] && flock -n /data/pithead/.pithead.lock true' && return 0
         [ "$(date +%s)" -lt "$deadline" ] || break
         sleep 3
     done
-    CLEARNET_FIXTURE_DIAG="the control runner or the mutation lock stayed busy for the whole wait"
+    CLEARNET_FIXTURE_DIAG="${CLEARNET_FIXTURE_DIAG:+$CLEARNET_FIXTURE_DIAG$'\n'}the control runner or the mutation lock stayed busy for the whole wait"
     return 1
 }
 
@@ -28,7 +28,6 @@ jq -e ".p2pool.clearnet == true" config.json >/dev/null') && return 0
     return 1
 }
 
-# The fixture waits for an idle control runner, retries one failed apply, and reports the apply's exit and tail.
 _clearnet_fixture_self_test() (
     local idle_probes=0 now=0 f=0 count
     count=$(mktemp)
@@ -45,7 +44,8 @@ _clearnet_fixture_self_test() (
     approval_restore_step() {
         echo >>"$count"
         [ "$(wc -l <"$count")" -gt "$fail_calls" ] && return 0
-        printf 'approval restore operation=clearnet-apply exit=1\n[ERROR] apply conflict\n'
+        printf 'approval restore operation=clearnet-apply exit=1\n'
+        printf '[ERROR] noise\nFailed to apply the config\n' | python3 "$(dirname "${BASH_SOURCE[0]}")/approval-restore-output.py"
         return 1
     }
     fail_calls=1
@@ -55,6 +55,11 @@ _clearnet_fixture_self_test() (
     : >"$count"
     reserved_node_clearnet_fixture && f=$((f + 1))
     [ "$(wc -l <"$count")" -eq 2 ] || f=$((f + 1))
-    case "$CLEARNET_FIXTURE_DIAG" in *'exit=1'*'apply conflict'*) ;; *) f=$((f + 1)) ;; esac
+    case "$CLEARNET_FIXTURE_DIAG" in *'exit=1'*'[output redacted]'*'failed to apply'*) ;; *) f=$((f + 1)) ;; esac
+    fail_calls=5
+    : >"$count"
+    _control_apply_idle() { [ "$(wc -l <"$count")" -eq 0 ]; }
+    reserved_node_clearnet_fixture && f=$((f + 1))
+    case "$CLEARNET_FIXTURE_DIAG" in *'exit=1'*) ;; *) f=$((f + 1)) ;; esac
     [ "$f" -eq 0 ]
 )

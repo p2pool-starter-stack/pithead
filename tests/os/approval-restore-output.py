@@ -26,6 +26,7 @@ PHRASES = (
     "failed to apply",
     "configuration invalid",
     "configuration validation failed",
+    "waiting for another pithead operation",
     "control spool still holds",
     "in-flight request(s) after the drain deadline",
 )

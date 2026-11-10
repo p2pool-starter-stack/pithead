@@ -179,33 +179,34 @@ echo "== the borrow moves a root-run rig and the worker gate names it (#3972) ==
 reload_rc() { # <restart-ok> <stopstart-ok> <pid-moves> <user-ok> <pkill-ok>
     (
         source "$HERE/../lib/borrow-fixture.sh"
-        pid=100 restart_ok="$1" stopstart_ok="$2" moves="$3" user_ok="$4" pkill_ok="$5" pkill_args=""
+        pid=100 restart_ok="$1" stopstart_ok="$2" moves="$3" user_ok="$4"
         on_miner() { eval "$1"; }
         sleep() { :; }
         systemctl() {
             case "$*" in
             *"show -p MainPID"*) echo "$pid" ;;
-            "--user restart xmrig") [ "$user_ok" = 1 ] ;;
+            "--user restart xmrig") [ "$user_ok" = 1 ] && pid=300 ;;
             esac
         }
         sudo() {
             shift
             case "$2" in
             restart) [ "$restart_ok" = 1 ] ;;
-            stop) [ "$stopstart_ok" = 1 ] ;;
+            stop) [ "$stopstart_ok" != 0 ] ;;
             start) [ "$stopstart_ok" = 1 ] && { [ "$moves" = 1 ] && pid=200; true; } ;;
             esac
         }
-        pkill() { pkill_args="$*"; [ "$pkill_ok" = 1 ]; }
+        pkill() { return 0; }
         miner_reload
-        rc=$?
-        echo "$rc $pkill_args"
+        echo $?
     )
 }
-assert_eq "stop then start reloads a root-run xmrig when restart is refused" "$(reload_rc 0 1 1 0 0)" "0 "
-assert_eq "a start that leaves the same MainPID is not a reload" "$(reload_rc 0 1 0 0 0)" "1 "
-assert_eq "refused restart, failed signal and no user unit fail loudly" "$(reload_rc 0 0 0 0 0)" "1 -HUP -u $(id -u) -x xmrig"
-assert_eq "the signal fallback only targets the caller's own xmrig" "$(reload_rc 0 0 0 0 1)" "0 -HUP -u $(id -u) -x xmrig"
+assert_eq "stop then start reloads a root-run xmrig when restart is refused" "$(reload_rc 0 1 1 0 0)" 0
+assert_eq "a start that leaves the same MainPID is not a reload" "$(reload_rc 0 1 0 0 0)" 1
+assert_eq "a stop that succeeds with a failed start fails loudly" "$(reload_rc 0 2 1 1 0)" 1
+assert_eq "a user unit restart that moves its MainPID is a reload" "$(reload_rc 0 0 0 1 0)" 0
+assert_eq "refused restart, refused stop and no user unit fail loudly" "$(reload_rc 0 0 0 0 0)" 1
+assert_eq "a signal that would reach xmrig is never a fallback" "$(reload_rc 0 0 0 0 1)" 1
 
 worker_gate() { # <worker rows json> <name>
     (
