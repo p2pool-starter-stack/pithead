@@ -136,7 +136,8 @@ RUN sh /usr/local/bin/fetch-archive \
     && rm -rf /tmp/rigforge.tar.gz /opt/rigforge/tests \
     && chmod +x /opt/rigforge/rigforge.sh \
     && printf 'ref=%s version=%s\n' "$RIGFORGE_REF" "$(tr -d ' \t\r\n' </opt/rigforge/VERSION)" \
-        >/opt/rigforge/RIGFORGE_REF
+        >/opt/rigforge/RIGFORGE_REF \
+    && rm /usr/local/bin/fetch-archive
 # Prebuild XMRig at RigForge's own pin, read from the baked tree so the two cannot drift. The
 # appliance may be Tor-only, and RigForge's build step clones github over clearnet — so the
 # clone happens HERE, on the build host, and pithead-sync seeds the result into the workspace

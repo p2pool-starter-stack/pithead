@@ -163,10 +163,15 @@ class ArchiveLayerFetchTest(FetchTestBase):
         self.assertEqual(result.stderr.count("failed (exit 124, status 000)"), 3)
         self.assertEqual(self.sleep_log.read_text(), "5\n10\n")
 
-    def test_dockerfile_copies_helper_before_fetch(self):
+    def test_dockerfile_copies_helper_in_the_stage_that_fetches(self):
         dockerfile = DOCKERFILE.read_text()
-        copied = dockerfile.index("COPY os/rootfs/fetch-archive.sh /usr/local/bin/fetch-archive")
-        self.assertLess(copied, dockerfile.index("RUN sh /usr/local/bin/fetch-archive"))
+        stage = dockerfile[dockerfile.rindex("FROM debian") :]
+        self.assertIn(
+            "    && rm /usr/local/bin/fetch-archive\n",
+            stage[stage.index("RUN sh /usr/local/bin/fetch-archive") :],
+        )
+        copied = stage.index("COPY os/rootfs/fetch-archive.sh /usr/local/bin/fetch-archive")
+        self.assertLess(copied, stage.index("RUN sh /usr/local/bin/fetch-archive"))
 
 
 @unittest.skipUnless(shutil.which("wget"), "needs GNU wget on PATH")
