@@ -1129,7 +1129,10 @@ leave the key empty and no wallet is rendered. It is opt-in and adds no configur
   preview names the node and the route and needs typed `APPLY`.
 - **Route by profile.** Privacy scans only through Tor, and apply refuses a node Tor cannot reach
   (a private, loopback, link-local or CGNAT address, or an unqualified or `.local` name) with a one-line
-  reason. Balance and Performance connect directly. Under Balance the egress firewall stays on and
+  reason. The wallet hands a hostname to Tor unresolved, so the host does no DNS lookup for it.
+  `monero-wallet-rpc` starts behind a proxy only with daemon certificate checks off
+  (`--daemon-ssl-allow-any-cert`), which changes nothing for a plain-HTTP node.
+  Balance and Performance connect directly. Under Balance the egress firewall stays on and
   admits only private-network addresses, so Balance reaches a remote node on your LAN or over WireGuard,
   not a public one. Performance has no firewall.
 - **Failure is visible.** The Earnings page says "Tracking may be incomplete" with the reason when the

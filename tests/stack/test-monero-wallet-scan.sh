@@ -90,6 +90,8 @@ assert_contains "remote wallet dials the configured node and port" "$direct_args
 assert_not_contains "a direct remote wallet adds no proxy" "$direct_args" "--proxy"
 tor_args="$(ws_args tor PAYOUT_NODE_REMOTE=true PAYOUT_NODE_PROXY=172.28.0.25:9050 MONERO_NODE_HOST=node.example.com)"
 assert_contains "a Privacy remote wallet scans through the Tor SOCKS port" "$tor_args" "--proxy 172.28.0.25:9050"
+assert_contains "a proxied wallet passes the flag monero-wallet-rpc requires to start behind a proxy" "$tor_args" "--daemon-ssl-allow-any-cert"
+assert_not_contains "a direct wallet keeps certificate checks" "$direct_args" "--daemon-ssl-allow-any-cert"
 v6_args="$(ws_args v6 PAYOUT_NODE_REMOTE=true MONERO_NODE_HOST=2001:db8::1)"
 assert_contains "an IPv6 node is bracketed for the wallet" "$v6_args" "--daemon-address [2001:db8::1]:18081"
 key_args="$(ws_args key PAYOUT_NODE_REMOTE=true MONERO_VIEW_KEY=feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface)"

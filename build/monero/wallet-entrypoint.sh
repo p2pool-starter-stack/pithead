@@ -155,7 +155,7 @@ set -- \
     --log-level 0 \
     --non-interactive
 if [ "${PAYOUT_NODE_REMOTE:-false}" = true ]; then set -- "$@" --untrusted-daemon; else set -- "$@" --trusted-daemon; fi
-[ -z "${PAYOUT_NODE_PROXY:-}" ] || set -- "$@" --proxy "$PAYOUT_NODE_PROXY"
+[ -z "${PAYOUT_NODE_PROXY:-}" ] || set -- "$@" --proxy "$PAYOUT_NODE_PROXY" --daemon-ssl-allow-any-cert
 
 # Mark a scan on EVERY start (#718, #2756): a first creation scans from the restore height (genesis
 # is hours); a reopen catches up from the height the wallet last stored, which after a long stop, a
