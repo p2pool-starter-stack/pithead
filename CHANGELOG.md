@@ -14,20 +14,24 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ## [2.0.3] - Unreleased
 
 Pithead 2.0.3 is a patch release after 2.0.2. It bakes RigForge 1.18.1 into the appliance image,
-restarts a built-in miner that stays at 0 H/s, restores the built-in miner after a command-line
-restore, keeps an appliance update from stamping the configuration of a slot that rolls back,
-keeps payout history separate for each payout wallet, hardens the appliance setup wizard and the
-commands that write stratum credentials or support bundles, and clears the image-scan findings
-raised since 2.0.2. It adds no configuration keys. It changes one component version (RigForge
-1.18.1 in the appliance image) and the dashboard's grpcio, and it runs one data migration: payout
-receipts saved without a wallet identity move to an `unknown` identity (see Fixed). Entries below
-apply to both channels unless they say otherwise.
+keeps the appliance's built-in miner running (it restarts one that has lost its connection to the
+proxy for five minutes, and starts it again after a command-line restore and `up`), keeps an
+appliance update from stamping the configuration of a slot that rolls back, keeps payout history
+separate for each payout wallet, hardens the setup wizard, stops setup and apply from printing the
+stratum password, makes support bundles owner-only, and clears the image-scan findings in apt,
+zlib, musl, golang.org/x/net and go-jose raised since 2.0.2. The miner restart is a mitigation:
+its root cause is not established (#3375 stays open). It adds no configuration keys. It changes
+one component version (RigForge 1.18.1 in the appliance image) and the dashboard's grpcio, and it
+runs one data migration: payout receipts saved without a wallet identity move to an `unknown`
+identity (see Fixed). Entries below apply to both channels unless they say otherwise; the
+built-in miner, the RigForge bake and the config stamp deferral are appliance only.
 
 ### Security
 
 - The images and the appliance rootfs pull the distro's security builds of apt (CVE-2026-109518)
   and zlib (CVE-2026-76844, CVE-2026-85091) past their digest-pinned bases (#3923).
-- The Alpine images pull the patched musl past their digest-pinned base (CVE-2026-107891, #3929).
+- The Tor image pulls the patched musl and musl-utils past its digest-pinned base
+  (CVE-2026-107891, #3929).
 - The appliance rootfs raises golang.org/x/net to 0.62.0 in the Cosign and Docker Compose it
   builds, clearing CVE-2026-78661 in both binaries (#3931).
 - The appliance rootfs raises go-jose to 4.1.6 in the Cosign it builds, clearing CVE-2026-116587
@@ -38,9 +42,9 @@ apply to both channels unless they say otherwise.
 - On the appliance, the setup wizard shows stored setup and installer error details only to the
   current wizard session. Unauthenticated status requests get generic text, and every status
   response is sent no-store (#3907).
-- Setup announcements, `pithead status`, the configuration wizard and change descriptions no
-  longer print the stratum credentials, so the appliance journal does not retain them. They
-  report the authentication state and point to the dashboard's Connect a miner panel (#3906).
+- Setup announcements, `pithead status`, secret-rotation warnings and change descriptions no
+  longer print the stratum password, so the appliance journal does not retain it. They report
+  that authentication is on and point to the dashboard's Connect a miner panel (#3906).
 
 ### Changed
 
@@ -57,30 +61,35 @@ apply to both channels unless they say otherwise.
 
 - On the appliance, a built-in miner that stays at 0 H/s is restarted automatically. A check every
   30 seconds restarts XMRig when the xmrig-proxy worker list has shown no connection for the
-  built-in miner for five minutes while it is enabled and running. Other connected rigs, missing
-  readings, a stopped miner or a busy stack operation reset that window, a disabled miner is not
-  started, and the check does not hold the stack lock, so `pithead tor-recover` is not refused
-  because of it. This restarts the miner but does not remove the cause of the stall (#3386, #3375).
+  built-in miner for five minutes while it is enabled and running. Other connected rigs do not
+  hide a disconnected built-in miner. Unreadable readings, a stopped miner, the rig role or a
+  busy stack operation reset that window, a disabled miner is not started, and the check holds
+  the stack lock only briefly and never while it reads the proxy, so `pithead tor-recover` is
+  not refused because of it. This restarts the miner but does not remove the cause of the stall
+  (#3386, #3375).
 - On the appliance, `pithead up` starts the enabled built-in miner after the stack starts, so after
-  `config-reset`, a restore and `pithead up` the saved workers reconnect. Boot and first-time
-  setup still leave miner setup until the new slot commits (#3624, #3623).
-- The built-in miner's configuration is re-rendered on every provision, so after a command-line
-  `restore` the miner no longer starts with a stratum password or port that differs from the
-  restored `.env` and has its shares rejected by the proxy (#3863, #3862).
+  `config-reset`, a restore and `pithead up` the saved workers reconnect. Boot leaves miner setup
+  until the new slot commits, and setup run by the boot defers to it; interactive setup starts the
+  miner once, after its stack-start prompt (#3624, #3623).
+- On the appliance, `pithead up` re-renders the built-in miner's configuration from the current
+  stratum port and password whenever the miner is enabled, so after a command-line `restore` the
+  miner no longer starts with credentials that differ from the restored `.env` and has its shares
+  rejected by the proxy (#3863, #3862).
 - DIY: a checkout made under a restrictive umask such as `umask 077` now builds images whose
   runtime scripts and templates their non-root service users can read, so Tor no longer fails
   before setup completes (#3552, #3431).
 - On the appliance, a rolled-back OS update no longer leaves `config.json` stamped by the newer
   version, which blocked saving in the older one. The stamp now waits until the new slot commits.
-  A 2.0.2 machine that already rolled back keeps its newer stamp and needs a later update or a
+  A machine that already rolled back from 2.0.2 keeps its newer stamp and needs a later update or a
   one-time re-stamp (#3914, #3910).
-- The dashboard no longer asks for a second reboot while an installed update is still being
-  verified. After the reboot, the new copy of the system moves the stored update status to
-  verifying before its health checks finish, the header shows the verification window, and a
-  reboot asked for in that window is refused with its reason recorded in the control log — a
-  reboot then would have returned the machine to the previous version before the update was
-  ever decided. An update interrupted before its verification reached a verdict is now reported
-  as interrupted, not as failed health checks (#3909).
+- On the appliance, the dashboard no longer asks for a second reboot while an installed update is
+  still being verified. After the reboot, the new copy of the system moves the stored update
+  status to verifying before its health checks finish, the header shows the verification window,
+  and a reboot asked for in that window is refused with the reason shown on the dashboard and the
+  rejection recorded in the control log. A reboot then would have returned the machine to the
+  previous version before the update was ever decided. An update interrupted before its
+  verification reached a verdict is now reported as interrupted, not as failed health checks
+  (#3909).
 - On the appliance, an OS update that carries a chain data migration records its protection before
   the new system is activated. The candidate holds chain services until its slot commits. A
   failed or superseded install restores the previous data floor only after the running slot is
@@ -96,7 +105,9 @@ apply to both channels unless they say otherwise.
   prefix (#3898).
 - On the appliance, data recovery stops when it cannot allocate its read-only probe directory,
   instead of treating the failure as an unmountable data partition and going on to repair or
-  reformat it without ever probing it. A requested factory reset is unchanged (#3896, #3885).
+  reformat it without ever probing it. A requested factory reset still wipes the data partition,
+  but now refuses, fails the unit and keeps the reset request when a mount directory cannot be
+  allocated (#3896, #3885).
 - A restore over an existing install removes the destination dashboard database's leftover WAL,
   SHM and journal files before copying the archived database, so a crashed writer's log can no
   longer replay old rows over the restored data (#3897).
@@ -110,11 +121,12 @@ apply to both channels unless they say otherwise.
   when the environment already matches. The marker and any pending sync-gate reset scope stay
   until apply succeeds, and the dashboard commit and the CLI use the same recovery (#3899, #3883).
 - A dashboard configuration commit holds the mutation lock from preview validation through apply,
-  so a concurrent command-line apply can no longer interleave and publish or recreate from a stale
-  snapshot. A lock timeout rejects the commit and is audited (#3892, #3884).
-- Previewing a configuration apply no longer replaces the live Tari wallet secret. The new secret
-  is staged and published only after you confirm, so declining the wallet prompt cannot leave the
-  old environment paired with new secret material (#3893, #3875).
+  so a concurrent command-line apply waits for it instead of interleaving with the copy of the
+  staged configuration and the apply. A lock timeout rejects the commit and is audited (#3892,
+  #3884).
+- `pithead apply` no longer replaces the live Tari wallet secret before you confirm. The new
+  secret is staged and published only after you confirm, so declining the wallet prompt cannot
+  leave the old environment paired with new secret material (#3893, #3875).
 - Payout history and scan cursors are kept per payout wallet. Switching the payout address no
   longer credits earlier receipts to the new wallet or skips its receipts below the previous
   wallet's highest block, and each wallet's history survives switches and restarts. On upgrade,
@@ -124,12 +136,13 @@ apply to both channels unless they say otherwise.
   rig after a RigForge upgrade changes how its configuration revision is derived. A revision
   move across a RigForge version change is treated as a re-base (#3925, #3915).
 - Worker Inspect keeps the upgrade result line and unsaved edits after a one-click RigForge
-  upgrade, and re-reads the rig until it reports the new version instead of showing the
-  pre-upgrade state (#3947).
-- On the appliance, the coordinator no longer offers **Upgrade rig…** for a rig that reports being
-  an appliance, and a worker upgrade request for one is refused before any lookup or connection.
-  An appliance rig updates with its own signed OS image. A rig whose RigForge is too old to report
-  itself still shows the offer (#3968, #3961).
+  upgrade, and re-reads the rig every 3 seconds for up to 90 seconds until it reports the new
+  version instead of showing the pre-upgrade state (#3947).
+- The coordinator no longer offers **Upgrade rig…** for a rig whose RigForge reports being an
+  appliance, and a worker upgrade request for one is refused before any lookup or connection. An
+  appliance rig updates with its own signed OS image. The report needs a RigForge newer than the
+  1.18.1 baked into this release, so until a rig runs one, the offer still appears for it (#3968,
+  #3961).
 - With the Tor egress firewall on, a remote Monero or Tari node entered by a dual-stack LAN name is
   now accepted on its private IPv4 answer, in the first-boot wizard and in a day-two configuration
   commit, instead of being refused with the egress-firewall message (#2351, #2419).
@@ -140,16 +153,16 @@ The [known issues listed for 2.0.2](https://github.com/p2pool-starter-stack/pith
 including those it carries over from 2.0.1 and 2.0.0, still apply, except #3623, #3431, #2351 and
 #3761, which are fixed above, and #3375, which is mitigated above. The RigForge pool-edit issue
 from 2.0.0 (rigforge#583) is fixed on the appliance by the RigForge 1.18.1 entry above. The
-`threads` issue (rigforge#588) is not: 2.0.3 still runs a RigForge that ignores `threads`. Four
-are planned for 2.0.4, including the cause of the stall that 2.0.3 only mitigates:
+`threads` issue (rigforge#588) is not: 2.0.3 still runs a RigForge that ignores `threads`. These
+remain open, and #3983, #3960 and #3987 are planned for 2.0.4:
 
 - On the appliance, a built-in miner that stalls after a dashboard backup or a recovery boot is
   now restarted automatically once the proxy has seen no connection from it for five minutes.
   Until then the dashboard shows 0 H/s for it. The cause of the stall is not established, so it
   can recur; `sudo systemctl restart xmrig` recovers it at once (#3375).
 - On the appliance, when an update that migrates data commits and clearing the stack's migration
-  hold fails, the failure is not reported and the Monero, P2Pool and Tari services can stay
-  stopped. No workaround has been established (#3983).
+  hold fails, the failure is not reported and the node, P2Pool and proxy services can stay
+  stopped, so nothing is mined. Rebooting the appliance clears it (#3983).
 - On the appliance, opening "Set up again" and then rebooting or powering off without choosing
   anything can leave the machine booting the previous release after an update (#3960).
 - On the appliance, saving a setting that changes the dashboard certificate or the Caddyfile can
