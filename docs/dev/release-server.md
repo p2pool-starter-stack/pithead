@@ -434,7 +434,7 @@ forwards it to both pre-gates and its detached run; other callers keep the opt-i
 While a lent rig is locked, RigForge answers a remote upgrade or apply with the terminal status
 `busy` (rigforge#670). A harness that owns the rig marks that with a root-owned
 `/run/rigforge-rig-owner` file holding a live pid, and RigForge honours the file only while the
-pid is alive. `e2e.sh` writes it over SSH on the borrowed rig (`lib/rig-owner.sh`), keeps it alive
+pid is alive. `e2e.sh` writes it over SSH on the borrowed rig (`tests/integration/lib/rig-owner.sh`), keeps it alive
 with the SSH session that wrote it, and removes it when the harness finishes or the restore runs, so
 the `rigforge-upgrade` leg can upgrade the rig it borrowed. The dashboard records `busy` in the
 rig's change history with its reason.
