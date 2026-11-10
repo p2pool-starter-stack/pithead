@@ -154,7 +154,7 @@ including those it carries over from 2.0.1 and 2.0.0, still apply, except #3623,
 #3761, which are fixed above, and #3375, which is mitigated above. The RigForge pool-edit issue
 from 2.0.0 (rigforge#583) is fixed on the appliance by the RigForge 1.18.1 entry above. The
 `threads` issue (rigforge#588) is not: 2.0.3 still runs a RigForge that ignores `threads`. These
-remain open, and #3983, #3960 and #3987 are planned for 2.0.4:
+four remain open and are planned for 2.0.4:
 
 - On the appliance, a built-in miner that stalls after a dashboard backup or a recovery boot is
   now restarted automatically once the proxy has seen no connection from it for five minutes.
