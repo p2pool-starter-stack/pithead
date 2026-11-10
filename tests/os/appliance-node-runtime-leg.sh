@@ -266,9 +266,7 @@ _reserved_node_regressions() {
         bad "reserved-node audit did not bind the current request and applied status, or carried an approver"
         node_ok=0
     }
-    if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
-        any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
-        any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
+    if ! endpoint_shown "$preview" "$live" monero "$mh" || ! endpoint_shown "$preview" "$live" tari "$th"; then
         bad "reserved-node preview omitted an endpoint the operator must see before confirming ($(reserved_node_preview_payload "$preview"))"
         node_ok=0
     fi
