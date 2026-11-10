@@ -147,6 +147,15 @@ tl_run '{"telegram":{"enabled":false,"bot_token":"t","chat_id":"1"}}'
 assert_eq "credentials with enabled false map to off" "$(tl_level)" '["off",false,false]'
 tl_run '{"telegram":{"enabled":true,"bot_token":"t","chat_id":"1","events":{"wallet_changed":false}}}'
 assert_contains "a switched-off tamper alarm warns that the alarms are now always on" "$TL_OUT" "tamper alarms are now always on"
+tl_run '{"telegram":{"enabled":true,"bot_token":"   ","chat_id":"1","events":{"node_down":false}}}'
+assert_eq "a blank token counts as no credentials" "$(tl_level)|$TL_OUT" '["off",false,false]|'
+tl_run '{"telegram":{"enabled":"true","bot_token":"t","chat_id":"1"}}'
+assert_eq "a string true still counts as enabled" "$(tl_level)" '["all",false,false]'
+tl_run '{"telegram":{"bot_token":"t","chat_id":"1","events":{"clearnet_exposed":false}}}'
+assert_contains "a switched-off tamper alarm warns even when Telegram was disabled" "$TL_OUT" "tamper alarms are now always on"
+tl_run '{"telegram":{"enabled":false,"bot_token":"t","chat_id":"1","commands":{"enabled":true}}}'
+assert_eq "commands stay off when Telegram was disabled" "$(jq -c '.telegram.commands.enabled' "$TL/config.json")" "false"
+assert_contains "the warning says the command bot was switched off" "$TL_OUT" "telegram.commands.enabled was set to false"
 tl_run '{"telegram":{"enabled":true,"bot_token":"","chat_id":""}}'
 assert_eq "no credentials map to off without a warning" "$(tl_level)|$TL_OUT" '["off",false,false]|'
 tl_run '{"telegram":{"enabled":true,"bot_token":"t","chat_id":"1","events":{"worker_joined":false}}}'

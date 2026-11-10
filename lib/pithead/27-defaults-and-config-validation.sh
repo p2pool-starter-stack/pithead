@@ -212,8 +212,8 @@ TELEGRAM_LEVEL_MIGRATION_JQ='
     {name:"all", set:optional}];
   (.telegram // {}) as $t
   | (($t.events | if type == "object" then . else {} end)) as $ev
-  | ((($t.bot_token // "") | tostring) != "" and (($t.chat_id // "") | tostring) != "") as $creds
-  | ($creds and ($t.enabled == true)) as $sending
+  | ((($t.bot_token // "") | tostring | gsub("^\\s+|\\s+$"; "")) != "" and (($t.chat_id // "") | tostring | gsub("^\\s+|\\s+$"; "")) != "") as $creds
+  | ($creds and (($t.enabled // false) | tostring) == "true") as $sending
   | (if $sending then [optional[] | select($ev[.] != false)] else [] end) as $old
   | (reduce levels[] as $l ({best: null};
       ([($l.set - $old)[], ($old - $l.set)[]] | length) as $d
@@ -226,7 +226,8 @@ TELEGRAM_LEVEL_MIGRATION_JQ='
       ["clearnet_exposed", ($sending and $ev.clearnet_exposed != false)],
       ["payout_wallet_down", $sending] | select(.[1] | not) | .[0] ] else [] end) as $always
   | {level: $level, started: $started, stopped: $stopped, always: $always,
-     tamper_off: ($creds and ($ev.wallet_changed == false or $ev.clearnet_exposed == false) and $sending)}'
+     tamper_off: ($ev.wallet_changed == false or $ev.clearnet_exposed == false),
+     commands_off: ($creds and ($sending | not) and ($t.commands.enabled == true))}'
 
 migrate_telegram_alert_level() {
     local owner tmp="${CONFIG_FILE}.tmp" plan level msg
@@ -242,7 +243,7 @@ migrate_telegram_alert_level() {
     owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
     if (
         umask 077
-        jq --arg level "$level" '.telegram |= (del(.enabled, .events) | .level = $level)' "$CONFIG_FILE" >"$tmp" 2>/dev/null
+        jq --arg level "$level" --argjson commands_off "$(jq '.commands_off' <<<"$plan")" '.telegram |= (del(.enabled, .events) | .level = $level | if $commands_off then .commands.enabled = false else . end)' "$CONFIG_FILE" >"$tmp" 2>/dev/null
     ); then
         mv "$tmp" "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"
@@ -252,12 +253,13 @@ migrate_telegram_alert_level() {
         warn "Could not write telegram.level to $CONFIG_FILE — the removed telegram.enabled and telegram.events keys are no longer read, and the dashboard config editor will refuse commits until they are deleted."
         return 0
     fi
-    if jq -e '(.started | length) + (.stopped | length) + (.always | length) > 0' <<<"$plan" >/dev/null; then
+    if jq -e '(.started | length) + (.stopped | length) + (.always | length) > 0 or .tamper_off or .commands_off' <<<"$plan" >/dev/null; then
         msg="Telegram alert level set to \"$level\" (telegram.enabled and telegram.events were removed)."
         jq -e '.started | length > 0' <<<"$plan" >/dev/null && msg="$msg Alerts that start: $(jq -r '.started | join(", ")' <<<"$plan")."
         jq -e '.stopped | length > 0' <<<"$plan" >/dev/null && msg="$msg Alerts that stop: $(jq -r '.stopped | join(", ")' <<<"$plan")."
         jq -e '.always | length > 0' <<<"$plan" >/dev/null && msg="$msg Always-on alarms that start: $(jq -r '.always | join(", ")' <<<"$plan")."
         jq -e '.tamper_off' <<<"$plan" >/dev/null && msg="$msg The wallet-change and clearnet-exposure tamper alarms are now always on."
+        jq -e '.commands_off' <<<"$plan" >/dev/null && msg="$msg telegram.commands.enabled was set to false because Telegram was disabled; set it to true to use the command bot."
         warn "$msg"
     fi
 }
