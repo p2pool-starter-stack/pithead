@@ -49,15 +49,13 @@ if [ -d "$RF_SRC" ]; then
         rm -rf "${RF_DST:?}/$base"
         cp -a "$f" "$RF_DST/$base"
     done
-    # Seed the image's prebuilt XMRig into the workspace when the pinned commit changed (or
-    # nothing is built yet). Same-commit builds are LEFT ALONE: a native recompile of the same
-    # pin is the operator's better binary, and RigForge's own integrity record covers it. A new
-    # pin arrives with a new image and its new prebuilt, so the on-box clone path (github over
-    # clearnet — unreachable from a Tor-only appliance) never needs to run.
+    # Reseed when the commit or donate-min marker differs, since a Tor-only box cannot recompile.
     if [ -d "$RF_SRC/prebuilt/xmrig" ]; then
         baked_commit=$(cat "$RF_SRC/prebuilt/xmrig/.rigforge-commit" 2>/dev/null || true)
         have_commit=$(cat "$RF_DST/data/worker/xmrig/.rigforge-commit" 2>/dev/null || true)
-        if [ -n "$baked_commit" ] && [ "$baked_commit" != "$have_commit" ]; then
+        baked_min=$(cat "$RF_SRC/prebuilt/xmrig/.rigforge-donate-min" 2>/dev/null || true)
+        have_min=$(cat "$RF_DST/data/worker/xmrig/.rigforge-donate-min" 2>/dev/null || true)
+        if [ -n "$baked_commit" ] && { [ "$baked_commit" != "$have_commit" ] || [ "$baked_min" != "$have_min" ]; }; then
             mkdir -p "$RF_DST/data/worker"
             rm -rf "$RF_DST/data/worker/xmrig"
             cp -a "$RF_SRC/prebuilt/xmrig" "$RF_DST/data/worker/xmrig"
