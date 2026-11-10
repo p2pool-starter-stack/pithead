@@ -4,11 +4,6 @@ import pytest
 from tests.service._data_service_support import *  # noqa: F403
 
 
-@pytest.fixture(autouse=True)
-def tari_local(monkeypatch):
-    monkeypatch.setattr("mining_dashboard.service.data_setup.TARI_MODE", "local")
-
-
 class TestControlPlaneComposition:
     """Compositions of the sync-gate (#35) and failover (#31) the per-feature tests don't
     cover on their own: the required-Tari hold, and the two features coexisting after release."""

@@ -26,11 +26,6 @@ def service(snapshot):
     return svc
 
 
-@pytest.fixture(autouse=True)
-def tari_local(monkeypatch):
-    monkeypatch.setattr("mining_dashboard.service.data_setup.TARI_MODE", "local")
-
-
 @pytest.mark.parametrize(
     ("marker_text", "earned", "released"),
     [

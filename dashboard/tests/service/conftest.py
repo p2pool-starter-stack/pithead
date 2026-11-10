@@ -169,3 +169,9 @@ def _no_tari_explorer_fetch(monkeypatch):
 @pytest.fixture(autouse=True)
 def xvb_enabled(monkeypatch):
     monkeypatch.setattr("mining_dashboard.service.metrics.ENABLE_XVB", True)
+
+
+@pytest.fixture(autouse=True)
+def tari_local(monkeypatch):
+    monkeypatch.setattr("mining_dashboard.service.data_setup.TARI_MODE", "local")
+    monkeypatch.setattr("mining_dashboard.service.data_service.ENABLE_XVB", True)
