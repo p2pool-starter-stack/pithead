@@ -153,9 +153,10 @@ assert_eq "abandoning set up again during an update falls back to A (#3960)" "$(
     source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
     os_update_rollback_verdict >/dev/null
 )
-assert_contains "the fallback boot records the interrupted verdict (#3960)" \
-    "$(cat "$RB/data/pithead/data/control/results/os-update-state.json")" '"interrupted":true'
-assert_contains "and names the unverified update rolled back (#3960)" \
-    "$(cat "$RB/data/pithead/data/control/results/os-update-state.json")" '"outcome":"rolled_back"'
+rb_verdict="$RB/data/pithead/data/control/results/os-update-state.json"
+assert_eq "the fallback boot records the interrupted verdict (#3960)" \
+    "$(jq -r '.verdict.interrupted' "$rb_verdict")" true
+assert_eq "and names the unverified update rolled back (#3960)" \
+    "$(jq -r '.verdict.outcome' "$rb_verdict")" rolled_back
 unset RB PITHEAD_APPLIANCE PITHEAD_CMDLINE PITHEAD_BUILD_COMMIT_FILE PITHEAD_GRUBENV
 unset -f rb_call rb_seed rb_unit_runs rb_boot
