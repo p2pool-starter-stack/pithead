@@ -16,7 +16,7 @@ commands if you want them.
 
 ## What you'll get
 
-When enabled, the stack sends a short message on each of these events. Every alert is
+With a bot token and chat id set, the stack sends a short message on these events, filtered by your alert level. Every alert is
 **debounced** — a momentary blip won't ping you, and you get **one** message per real
 transition, not a stream:
 
@@ -54,7 +54,7 @@ transition, not a stream:
 Every message is prefixed with your dashboard hostname (e.g. `[rig-box.lan]`), so if you point
 more than one stack at the same chat you can tell them apart.
 
-Each of these can be **turned off individually** — see [Choosing which alerts you get](#choosing-which-alerts-you-get).
+One alert level chooses which of these you get — see [Choosing which alerts you get](#choosing-which-alerts-you-get).
 
 ---
 
@@ -114,9 +114,9 @@ Add a `telegram` block to your `config.json`. The minimum to switch it on:
     "tari":     { "wallet_address": "your_tari_wallet_address" },
 
     "telegram": {
-        "enabled": true,
         "bot_token": "123456789:AAExampleExampleExampleExampleExample",
-        "chat_id": "-1001234567890"
+        "chat_id": "-1001234567890",
+        "level": "important"
     }
 }
 ```
@@ -145,56 +145,71 @@ exit non-zero. Healthchecks is listed as excluded because its ping moves the dea
 
 ## Choosing which alerts you get
 
-Every event is on by default once Telegram is enabled. To silence one, add it to a `telegram.events`
-block and set it to `false` — any event you don't list stays on:
+Telegram delivery exists once both `bot_token` and `chat_id` are set. One setting, `telegram.level`,
+chooses which optional alerts you get:
+
+| Level | Alerts |
+|---|---|
+| `off` (also when `level` is absent) | No optional alerts |
+| `critical` | The six `critical` rows below: node down or recovered, container trouble, database write failure, disk space, hashrate loss |
+| `important` | `critical` plus the thirteen `important` rows: workers, sync, XvB, payouts, host warnings |
+| `all` | `important` plus the six `all` rows: workers joining or leaving, the start-up heartbeat, the daily summary, blocks found, new releases |
+
+An unknown level is treated as `all`, and the dashboard logs a line saying so.
 
 ```json
 "telegram": {
-    "enabled": true,
     "bot_token": "…",
     "chat_id": "…",
-    "events": {
-        "worker_offline": false,
-        "worker_recovered": false
-    }
+    "level": "important"
 }
 ```
 
-| Event key | Default | Alert |
+The **always** rows are delivered at every level, including `off`, whenever the token and chat id
+are set, and have no switch: the payout-wallet change and clearnet-exposure tamper alarms, and the
+payout-wallet-down alert. To stop all Telegram delivery, clear the bot token or the chat id; that
+change takes the typed `APPLY` and the confirmation envelope, like any change that repoints the
+alarms.
+
+Webhook and ntfy sinks carry every alert at every level; the level gates Telegram only.
+
+| Event key | Level | Alert |
 |---|---|---|
-| `node_down` | `true` | Monero/Tari node went down; also the Monero node reachable but out of sync for 10+ minutes (peers lost after a Tor restart) |
-| `node_recovered` | `true` | …and came back / back in sync |
-| `worker_offline` | `true` | A rig went DOWN |
-| `worker_recovered` | `true` | …and came back |
-| `worker_joined` | `true` | A new rig joined the fleet |
-| `worker_left` | `true` | A rig dropped off the dashboard entirely |
-| `sync_finished` | `true` | Initial sync done, mining started |
-| `disk_space` | `true` | Data disk filling up / critical / recovered |
-| `db_unhealthy` | `true` | Dashboard database writes failing / recovered |
-| `db_reset` | `true` | Corrupt dashboard database auto-healed (quarantined + reset); history cleared |
-| `xvb_no_share` | `true` | XvB on but no PPLNS share (wins skipped) / restored |
-| `clearnet_exposed` | `true` | Chosen clearnet sync or Tor transition pending until host verification / verified Tor daemon and closed exception; the host's Tor-only egress firewall is missing / restored |
-| `xvb_registration` | `true` | XvB auto-registration rejected / failing / recovered |
-| `new_release` | `true` | A newer Pithead release is available |
-| `stack_online` | `true` | One-shot "dashboard is up" heartbeat on start |
-| `daily_summary` | `true` | Once-a-day status roll-up (time set by `telegram.daily_summary_time`, default `08:00`) |
-| `hashrate_low` | `true` | Hashrate can't sustain the chosen XvB tier / recovered |
-| `hashrate_loss` | `true` | Total hashrate dropped sharply and stayed down (outage / rig dark) / recovered |
-| `hugepages` | `true` | HugePages not reserved (RandomX capped) / reserved after a reboot |
-| `low_ram` | `true` | Host has less RAM than the stack wants (one-shot heads-up) |
-| `wallet_changed` | `true` | The payout wallet p2pool mines to changed — fires on every change, including your own `./pithead apply` (old/new addresses truncated to 8 chars) |
-| `high_reject_rate` | `true` | Pool-wide reject rate over the trailing hour crossed 5% (the same threshold as the dashboard's ⚠ flag) / dropped back |
-| `block_found` | `true` | The P2Pool sidechain found a Monero block (pool-wide — every miner with a PPLNS share gets paid) |
-| `payout_found` | `true` | That block pays you — this node held a share in the PPLNS window when it was found |
-| `payout_confirmed` | `true` | A payout (Monero or Tari) confirmed on-chain by the view-only wallet |
-| `container_unhealthy` | `true` | A stack container is crash-looping or stuck failing its healthcheck / recovered. Also a LAN-access node (restart policy `no`, a `*_lan_access` switch on the Docker install) down for two minutes: held since boot by a failed LAN guard, or exited with its exit code (the LAN check starts a crashed one again while the rule is live) |
-| `raffle_win` | `true` | This wallet won an XvB raffle round, per XvB's public winners file — fires once per win, with the round type and credited hashrate |
+| `node_down` | critical | Monero/Tari node went down; also the Monero node reachable but out of sync for 10+ minutes (peers lost after a Tor restart) |
+| `node_recovered` | critical | …and came back / back in sync |
+| `worker_offline` | important | A rig went DOWN |
+| `worker_recovered` | important | …and came back |
+| `worker_joined` | all | A new rig joined the fleet |
+| `worker_left` | all | A rig dropped off the dashboard entirely |
+| `sync_finished` | important | Initial sync done, mining started |
+| `disk_space` | critical | Data disk filling up / critical / recovered |
+| `db_unhealthy` | critical | Dashboard database writes failing / recovered |
+| `db_reset` | important | Corrupt dashboard database auto-healed (quarantined + reset); history cleared |
+| `xvb_no_share` | important | XvB on but no PPLNS share (wins skipped) / restored |
+| `clearnet_exposed` | always | Chosen clearnet sync or Tor transition pending until host verification / verified Tor daemon and closed exception; the host's Tor-only egress firewall is missing / restored |
+| `xvb_registration` | important | XvB auto-registration rejected / failing / recovered |
+| `new_release` | all | A newer Pithead release is available |
+| `stack_online` | all | One-shot "dashboard is up" heartbeat on start |
+| `daily_summary` | all | Once-a-day status roll-up (time set by `telegram.daily_summary_time`, default `08:00`) |
+| `hashrate_low` | important | Hashrate can't sustain the chosen XvB tier / recovered |
+| `hashrate_loss` | critical | Total hashrate dropped sharply and stayed down (outage / rig dark) / recovered |
+| `hugepages` | important | HugePages not reserved (RandomX capped) / reserved after a reboot |
+| `low_ram` | important | Host has less RAM than the stack wants (one-shot heads-up) |
+| `wallet_changed` | always | The payout wallet p2pool mines to changed — fires on every change, including your own `./pithead apply` (old/new addresses truncated to 8 chars) |
+| `high_reject_rate` | important | Pool-wide reject rate over the trailing hour crossed 5% (the same threshold as the dashboard's ⚠ flag) / dropped back |
+| `block_found` | all | The P2Pool sidechain found a Monero block (pool-wide — every miner with a PPLNS share gets paid) |
+| `payout_found` | important | That block pays you — this node held a share in the PPLNS window when it was found |
+| `payout_confirmed` | important | A payout (Monero or Tari) confirmed on-chain by the view-only wallet |
+| `container_unhealthy` | critical | A stack container is crash-looping or stuck failing its healthcheck / recovered. Also a LAN-access node (restart policy `no`, a `*_lan_access` switch on the Docker install) down for two minutes: held since boot by a failed LAN guard, or exited with its exit code (the LAN check starts a crashed one again while the rule is live) |
+| `raffle_win` | important | This wallet won an XvB raffle round, per XvB's public winners file — fires once per win, with the round type and credited hashrate |
+| `payout_wallet_down` | always | A payout wallet became unreachable or reports a different address (debounced, one alert per wallet; sent only when payout confirmation is enabled) |
+
+Per-event switches (`telegram.events.*`) and `telegram.enabled` were removed in 2.1.0. `./pithead apply`
+maps an existing configuration to the nearest level, rewrites the config, and prints one warning that
+lists the alerts that start or stop. Only `telegram.daily_summary_time` and `telegram.commands.enabled`
+stay as separate settings.
 
 Run `./pithead apply` after editing.
-
-When payout confirmation is enabled, `payout_wallet_down` sends one debounced alert per wallet
-that becomes unreachable or reports a different address. It is sent whenever an alert sink is
-enabled; there is no separate event toggle for this payout-safety signal.
 
 > The dashboard also shows an **AVX2-missing** badge when the CPU lacks AVX2, but it has **no
 > alert** — it's a fixed hardware fact with nothing to do at runtime, so it stays a badge (and shows
@@ -221,7 +236,6 @@ by adding a `commands` block.
 
 ```json
 "telegram": {
-    "enabled": true,
     "bot_token": "…",
     "chat_id": "…",
     "commands": { "enabled": true }
@@ -326,14 +340,14 @@ top-level `config.json` block:
   {"event": "node_down", "text": "🔴 ⛓️ Monero node is DOWN — workers failing over to backup pools.", "ts": 1781136000}
   ```
 
-  `event` is the same key used in `telegram.events` (the table above), `text` is the exact
+  `event` is the alert key from the table in [Choosing which alerts you get](#choosing-which-alerts-you-get), `text` is the exact
   message Telegram would get, `ts` is a Unix timestamp.
 - **`ntfy.url`** — one topic URL (`https://server/topic`; self-hosted servers work). Each alert's
   text is POSTed as the message body. Set `ntfy.token` for an access-protected topic — it's sent
   as an `Authorization: Bearer` header.
 - **`tor`** — keep the POSTs on Tor (the default; see below).
 
-Then `./pithead apply`. Sinks carry **every** event — the `telegram.events` toggles gate Telegram
+Then `./pithead apply`. Sinks carry **every** event — `telegram.level` gates Telegram
 only. Like the Telegram alerter, sends **fail silently** (an unreachable endpoint never breaks the
 stack), and the URLs and token are **secrets**: webhook URLs often embed a key in the query
 string, so they live only in the owner-only `.env` and are never printed by `apply` or written to
@@ -414,10 +428,10 @@ The **hashrate-drop** alert has its own two `config.json` knobs (not env vars):
 
 | Symptom | Likely cause / fix |
 |---|---|
-| No messages at all | Confirm `telegram.enabled` is `true` **and** both `bot_token` and `chat_id` are set — a missing one keeps alerting **off**. Did you run `./pithead apply`? |
+| No messages at all | Confirm both `bot_token` and `chat_id` are set — a missing one keeps alerting **off** — and that `telegram.level` is not `off`, which leaves only the always-on alarms. Did you run `./pithead apply`? |
 | Still nothing | Make sure the bot has been **added to the group** (or that you sent it `/start` for a direct chat). A bot can't message a chat it isn't in. |
 | `chat_id` looks wrong | Group ids are **negative** and long (`-100…`). Re-check with `@userinfobot`. |
-| Works for "down" but not a specific alert | Check `telegram.events` — that event may be toggled `false`. |
+| Works for "down" but not a specific alert | Check `telegram.level` — that alert may belong to a more verbose level (see the table above). |
 | Alerts work but commands don't | Commands are a **separate** switch: set `telegram.commands.enabled` to `true` and `./pithead apply`. |
 | Bot ignores my commands | It only answers the configured `chat_id`. Send from that exact chat, and check the id with `@userinfobot`. |
 | No messages, Tor issues | Telegram is reached **over Tor**; if Tor is down or Telegram is blocking the exit, sends/polls fail silently and resume on their own. See [Privacy and secrets](#privacy-and-secrets). |

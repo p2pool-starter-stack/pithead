@@ -26,7 +26,7 @@ UUID5="55555555-5555-4555-8555-555555555555"
 jq -n --arg w "$WALLET" \
     '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"nano",stratum_password:"s3cretpw"},
-    telegram:{enabled:true,bot_token:"123456:legit-ABC_def",chat_id:"1111"},
+    telegram:{bot_token:"123456:legit-ABC_def",chat_id:"1111"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},
                control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
@@ -103,16 +103,13 @@ jq '.xvb.url="attacker.example:4247"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "xvb pool-url repoint commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json keeps the default xvb url" "$(jq -r '.xvb.url // "unset"' "$C/config.json")" "unset"
-# The tamper-evidence alert toggles are not free-commit like their siblings: silencing
-# WALLET_CHANGED without the typed APPLY and envelope is refused (#2367 made it confirm, not host-only).
 jq '.telegram.events={wallet_changed:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
-assert_eq "wallet-changed alert silencing is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-# An allowlisted operational toggle on the same baseline still commits.
-jq '.telegram.events={node_down:false}' "$C/config.json" >"$C/cand.json"
+assert_eq "a removed per-event alert key is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+jq '.telegram.level="critical"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
-assert_eq "allowlisted alert toggle still applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
-assert_eq "alert toggle landed in config.json" "$(jq -r '.telegram.events.node_down' "$C/config.json")" "false"
+assert_eq "the alert level still applies without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "alert level landed in config.json" "$(jq -r '.telegram.level' "$C/config.json")" "critical"
 # dashboard.workers (#172) was the alias removed in 2.0.0 (#1832). It never rendered to .env, so
 # the env-diff allowlist cannot see it, yet a committed attacker host would point token-bearing
 # probes at it. Its explicit refusal went with the alias and the closed-schema check now refuses it

@@ -5,6 +5,7 @@ import requests
 
 from mining_dashboard.config.config import NOTIFICATION_PROXY as TOR_SOCKS_PROXY
 from mining_dashboard.helper.http import raise_for_success, request_failure_class
+from mining_dashboard.service.notify.alert_levels import level_delivers, normalize_level
 
 logger = logging.getLogger("TelegramNotifier")
 
@@ -22,11 +23,6 @@ class TelegramNotifier:
 
     Discipline (mirrors the rest of the stack):
 
-    - **Disabled by default.** ``enabled`` is only true when explicitly switched on *and*
-      both ``bot_token`` and ``chat_id`` are present. A missing/half-filled config leaves it
-      off, so :meth:`send` is a silent no-op rather than an error on every cycle.
-    - **Per-event toggles.** ``events`` gates which alert kinds are delivered, so an operator
-      can enable Telegram and still silence the ones they find noisy.
     - **Always over Tor.** Sends ride the bridge Tor SOCKS proxy (``socks5h``, so the DNS lookup
       goes through Tor too), so Telegram sees a Tor exit, not the host IP — never a clearnet beacon,
       matching the Healthchecks.io pinger (#79) and the XvB fetch (#163).
@@ -40,10 +36,9 @@ class TelegramNotifier:
 
     def __init__(
         self,
-        enabled=False,
         bot_token="",
         chat_id="",
-        events=None,
+        level="",
         timeout=10,
         api_base=TELEGRAM_API_BASE,
         tor_proxy=TOR_SOCKS_PROXY,
@@ -52,24 +47,17 @@ class TelegramNotifier:
         # chat_id may be a negative integer (Telegram group ids look like -1001234567890);
         # keep it as a string so render/transport never reformat it.
         self.chat_id = str(chat_id or "").strip()
-        self.events = dict(events or {})
+        self.level = normalize_level(level)
         self.timeout = timeout
         self._api_base = api_base.rstrip("/")
         # Route over the bridge Tor SOCKS proxy so the host IP is never exposed to Telegram.
         # tor_proxy is a test seam; the default wires the configured proxy.
         self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
-        self.enabled = bool(enabled and self.bot_token and self.chat_id)
+        self.enabled = bool(self.bot_token and self.chat_id)
         self.last_failure = ""
 
-        if enabled and not self.enabled:
-            # Switched on but unusable — tell the operator once, without leaking the token.
-            logger.warning(
-                "Telegram alerts enabled but bot_token/chat_id are missing — alerts stay off."
-            )
-
     def event_enabled(self, event):
-        """True only when the notifier is usable *and* this event kind is toggled on."""
-        return self.enabled and bool(self.events.get(event, False))
+        return self.enabled and level_delivers(self.level, event)
 
     def send(self, text, event="") -> bool:
         """Push one message. Returns True on a successful 2xx send, False otherwise

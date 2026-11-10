@@ -36,7 +36,7 @@ _alert_egress_overlay() {
     local overlay="$BASELINE_CONFIG"
     if [ -n "${IT_TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${IT_TELEGRAM_CHAT_ID:-}" ]; then
         overlay="$(printf '%s' "$overlay" | jq --arg t "$IT_TELEGRAM_BOT_TOKEN" --arg c "$IT_TELEGRAM_CHAT_ID" \
-            '.telegram.enabled=true | .telegram.bot_token=$t | .telegram.chat_id=$c')"
+            '.telegram.level="all" | .telegram.bot_token=$t | .telegram.chat_id=$c')"
     fi
     if [ -n "${IT_NTFY_URL:-}" ]; then
         overlay="$(printf '%s' "$overlay" | jq --arg u "$IT_NTFY_URL" --arg t "${IT_NTFY_TOKEN:-}" \

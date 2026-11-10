@@ -116,10 +116,11 @@ The stack's defaults:
   masked stored token, so it cannot move a token it only holds masked; the host gate cannot tell a
   retyped token from the stored one, so this assumes the dashboard cannot read stored rig tokens.
   No reference field is refused from the dashboard (#2367); `ssh.*` is absent from release
-  images. The dashboard password and the `telegram.events.wallet_changed` /
-  `telegram.events.clearnet_exposed` tamper alarms are changeable behind typed `APPLY` and the
+  images. The dashboard password is changeable behind typed `APPLY` and the
   confirmation envelope, so a signed-in session can replace the login it arrived with (on the
-  appliance also the console `root` login) or silence an alarm; the preview names both costs.
+  appliance also the console `root` login); the preview names the cost. The wallet-changed and
+  clearnet-exposed tamper alarms are always on at every Telegram alert level and have no switch;
+  clearing the bot token or chat id stops delivery and takes the same typed `APPLY` and envelope.
 - Attack visibility (#349): Caddy writes a JSON access log for every dashboard vhost (LAN and
   onion), and the control channel's host-side audit log records who changed what (setting names
   only, never values). The dashboard surfaces both read-only — a burst of 401s is the

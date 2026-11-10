@@ -103,8 +103,8 @@ assert_eq "full path: dashboard.auth.password set" "$(jq -r '.dashboard.auth.pas
 assert_eq "full path: clearnet-sync cluster sets BOTH chains together" \
     "$(jq -rc '[.monero.clearnet_initial_sync, .tari.clearnet_initial_sync]' <<<"$w2_cfg")" '[true,true]'
 assert_eq "full path: remote-access sets dashboard.onion.enabled" "$(jq -r '.dashboard.onion.enabled' <<<"$w2_cfg")" "true"
-assert_eq "full path: telegram cluster sets enabled+token+chat_id together" \
-    "$(jq -rc '[.telegram.enabled, .telegram.bot_token, .telegram.chat_id]' <<<"$w2_cfg")" '[true,"mybottoken123","987654321"]'
+assert_eq "full path: telegram cluster sets token+chat_id together and no removed keys" \
+    "$(jq -rc '[.telegram.bot_token, .telegram.chat_id, (.telegram | has("enabled"), has("events"))]' <<<"$w2_cfg")" '["mybottoken123","987654321",false,false]'
 
 echo "== unit: wizard_print_pointer — closing pointer names what it deliberately didn't ask (#502) =="
 pointer_out="$(run_sourced "$SANDBOX" wizard_print_pointer 2>&1)"

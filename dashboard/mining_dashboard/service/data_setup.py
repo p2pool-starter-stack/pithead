@@ -186,12 +186,6 @@ class DataSetupMixin:
         # Per-chain "currently exposed on clearnet" flags, surfaced in the snapshot for the UI/banner.
         self.clearnet_sync_state = {"monero": False, "tari": False, "active": False}
 
-        # Notifications-only Telegram alerter (Issue #121). Consumes the loop's existing edges
-        # (node down/recovered, sync gate open) plus a debounced per-worker presence tracker.
-        # Disabled unless telegram.enabled + bot_token + chat_id are configured, so this is a
-        # cheap no-op for the default stack. The payout-wallet tripwire baseline (#375) is backed
-        # by the SQLite kv_store, not AlertService memory — `apply` recreates this container, and
-        # an in-memory baseline would silently re-seed to a tampered wallet.
         self.alert_service = AlertService(
             kv_get=self.state_manager.get_kv, kv_set=self.state_manager.set_kv
         )

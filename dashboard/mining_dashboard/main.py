@@ -38,7 +38,6 @@ def build_app() -> web.Application:
     data_service = DataService(state_manager, proxy_client, xvb_client)
     algo_service = AlgoService(state_manager, proxy_client, data_service)
     # On-demand Telegram command interface (#45). Reads the snapshot data_service already collects;
-    # a no-op unless telegram.enabled + telegram.commands.enabled + bot_token + chat_id are set.
     telegram_bot = TelegramCommandBot(data_service)
     # Backup-stack warm-standby puller (#249): pulls the primary's XvB controller state so a
     # failover resumes warm. Inert unless xvb.standby.source is configured.

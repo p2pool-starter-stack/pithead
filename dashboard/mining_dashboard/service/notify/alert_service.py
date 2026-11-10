@@ -7,8 +7,7 @@ from mining_dashboard.config.config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
     TELEGRAM_DAILY_SUMMARY_TIME,
-    TELEGRAM_ENABLED,
-    TELEGRAM_EVENTS,
+    TELEGRAM_LEVEL,
 )
 from mining_dashboard.helper.utils import format_hashrate
 from mining_dashboard.service.health.container_health import EDGE_MESSAGES, ContainerHealthMonitor
@@ -32,10 +31,9 @@ REJECT_ALERT_PCT = 5.0
 def build_default_notifier():
     """Construct the Telegram notifier from the process config (Issue #121)."""
     return TelegramNotifier(
-        enabled=TELEGRAM_ENABLED,
         bot_token=TELEGRAM_BOT_TOKEN,
         chat_id=TELEGRAM_CHAT_ID,
-        events=TELEGRAM_EVENTS,
+        level=TELEGRAM_LEVEL,
     )
 
 
@@ -94,7 +92,6 @@ class AlertService(
     blocked Telegram send never stalls the data loop.
     """
 
-    # Event keys — must match config.json's telegram.events toggles and TELEGRAM_EVENTS.
     EVT_NODE_DOWN = "node_down"
     EVT_NODE_RECOVERED = "node_recovered"
     EVT_WORKER_OFFLINE = "worker_offline"
@@ -120,7 +117,6 @@ class AlertService(
     EVT_BLOCK_FOUND = "block_found"
     EVT_PAYOUT_FOUND = "payout_found"
     EVT_PAYOUT_CONFIRMED = "payout_confirmed"
-    # Wallet-down follows the payout feature and alerting, without an event-specific toggle.
     EVT_PAYOUT_WALLET_DOWN = "payout_wallet_down"
     EVT_CONTAINER_UNHEALTHY = "container_unhealthy"
     EVT_RAFFLE_WIN = "raffle_win"

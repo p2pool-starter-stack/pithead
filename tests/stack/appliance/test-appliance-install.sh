@@ -332,7 +332,7 @@ cat >"$SCS/prev.json" <<'PREV'
                 "workers": [{"name": "w0", "host": "h", "token": "LEAK-oldworker"}]},
   "workers": {"api_auth": true, "api_token": "LEAK-apitoken",
               "list": [{"name": "rig1", "host": "rig1.lan", "token": "LEAK-workertoken"}]},
-  "telegram": {"enabled": true, "bot_token": "LEAK-bot", "chat_id": "LEAK-chat"},
+  "telegram": {"level": "all", "bot_token": "LEAK-bot", "chat_id": "LEAK-chat"},
   "healthchecks": {"ping_url": "https://hc.example/LEAK-ping"},
   "notifications": {"ntfy": {"url": "https://ntfy.example/LEAK-url", "token": "LEAK-ntfy"}},
   "ssh": {"enabled": true, "authorized_key": "ssh-ed25519 LEAK-sshkey"},
