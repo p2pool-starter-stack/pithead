@@ -37,8 +37,9 @@ applied through the authenticated configuration flow. A fresh persisted release,
 direct synchronized RPC, healthy mining services and an increasing hash counter
 establish recovery. The original local configuration is restored before the
 same-version and floor-fallback legs. Before building a fault bundle, the battery
-retains the good bundle in `TMPDIR` when set, otherwise beside the built bundle
-in its job-owned build directory. The retained copy uses a `.saved` suffix so
+retains the good bundle in the run's scratch directory, which the battery's exit
+cleanup removes with the floor-fallback bundle, so no saved bundle outlives the
+run. The retained copy uses a `.saved` suffix so
 the builder’s `*.raucb` discovery cannot select it instead of a later fault
 bundle. An unset or empty `TMPDIR` does not prevent the fallback proof.
 
