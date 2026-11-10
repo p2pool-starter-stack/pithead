@@ -4,6 +4,7 @@ import { NodeProbeProgress, NodeProbeReport } from "../network/nodeprobe.mjs";
 import { InstallSection } from "./stages.mjs";
 import { StratumPasswordChoice } from "./stratumpassword.mjs";
 import * as failure from "./wizardfailure.mjs";
+import { MachineName } from "./wizardhostname.mjs";
 import { fastSyncWarning, TariSection, tariAnswer } from "./wizardmining.mjs";
 import { Err, Field, Note, RadioField } from "./wizardparts.mjs";
 
@@ -130,6 +131,7 @@ export function renderSetup(app) {
                 onWipe=${app.changeWipe} />`
             }
             ${diskPicked && !keepEverything && rig && app.renderRigFields()}
+            ${diskPicked && !keepEverything && !rig && html`<${MachineName} cfg=${cfg} edit=${app.edit} />`}
             ${
               diskPicked &&
               !keepEverything &&

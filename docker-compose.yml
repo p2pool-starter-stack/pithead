@@ -725,7 +725,7 @@ services:
       - XVB_DONOR_ID=${XVB_DONOR_ID}
       - XVB_TOR_ENABLED=${XVB_TOR_ENABLED:-true}
       - DONATION_ENABLED=${DONATION_ENABLED:-false}
-      - DONATION_PERCENT=${DONATION_PERCENT:-2}
+      - DONATION_PERCENT=${DONATION_PERCENT:-0}
       - DONATION_TOR_ENABLED=${DONATION_TOR_ENABLED:-true}
       - XVB_DONATION_LEVEL=${XVB_DONATION_LEVEL:-auto}
       # Backup-stack warm-standby source (#249): the primary dashboard's read-only /api/xvb-standby

@@ -13,17 +13,30 @@ for value in false null 1 '[]' '"invalid"'; do
     assert_rc "donation block $value is refused" "$?" 1
     assert_contains "invalid donation block names the object" "$out" "donation must be an object"
 done
-for value in 0 11 '"5"' 2.5 true null; do
+for value in 11 10.1 0.099 -1 '"5"' true null; do
     jq --argjson value "$value" '.donation.percent = $value' "$AD/base.json" >"$AD/config.json"
     out=$(run_sourced "$AD" validate_donation_config 2>&1)
     assert_rc "invalid donation percentage $value is refused" "$?" 1
     assert_contains "invalid percentage names the field" "$out" "donation.percent"
 done
-for value in $(seq 1 10); do
+for value in 0.1 0.25 2.5 $(seq 1 10) 0; do
     jq --argjson value "$value" '.donation.percent = $value' "$AD/base.json" >"$AD/config.json"
     run_sourced "$AD" validate_donation_config >/dev/null 2>&1
     assert_rc "donation percentage $value accepted" "$?" 0
 done
+jq '.donation = {enabled: true, percent: 0}' "$AD/base.json" >"$AD/config.json"
+out=$(run_sourced "$AD" validate_donation_config 2>&1)
+assert_rc "zero percent is refused while donation is enabled" "$?" 1
+assert_contains "zero percent error names the field" "$out" "donation.percent"
+jq '.donation = {enabled: true}' "$AD/base.json" >"$AD/config.json"
+run_sourced "$AD" validate_donation_config >/dev/null 2>&1
+assert_rc "enabling donation without a percentage is refused" "$?" 1
+jq '.donation = {enabled: true, percent: 0.1}' "$AD/base.json" >"$AD/config.json"
+run_sourced "$AD" validate_donation_config >/dev/null 2>&1
+assert_rc "enabled donation accepts 0.1 percent" "$?" 0
+jq '.donation = {enabled: false, percent: 0}' "$AD/base.json" >"$AD/config.json"
+run_sourced "$AD" validate_donation_config >/dev/null 2>&1
+assert_rc "zero percent is accepted while donation is disabled" "$?" 0
 for key in enabled tor; do
     for value in '"true"' 1 null; do
         jq --arg key "$key" --argjson value "$value" '.donation[$key] = $value' "$AD/base.json" >"$AD/config.json"
@@ -32,7 +45,7 @@ for key in enabled tor; do
         assert_contains "boolean error names the field" "$out" "donation.$key"
     done
     for value in true false; do
-        jq --arg key "$key" --argjson value "$value" '.donation[$key] = $value' "$AD/base.json" >"$AD/config.json"
+        jq --arg key "$key" --argjson value "$value" '.donation[$key] = $value | .donation.percent = 0.1' "$AD/base.json" >"$AD/config.json"
         run_sourced "$AD" validate_donation_config >/dev/null 2>&1
         assert_rc "boolean donation $key accepted" "$?" 0
     done
@@ -59,7 +72,7 @@ for memory in 8388607 8388608 8388609; do
     else
         assert_not_contains "host at or above floor uses full mode" "$flags" "--light-mode"
     fi
-    for row in "DONATION_ENABLED false" "DONATION_PERCENT 2" "DONATION_TOR_ENABLED true" "XMRIG_API_PORT 8080" "HOST_IP test-machine"; do
+    for row in "DONATION_ENABLED false" "DONATION_PERCENT 0" "DONATION_TOR_ENABLED true" "XMRIG_API_PORT 8080" "HOST_IP test-machine"; do
         read -r key expected <<<"$row"
         assert_eq "rendered $key uses its automatic default" "$(run_sourced "$AD" env_get_file "$AD/.env" "$key")" "$expected"
     done

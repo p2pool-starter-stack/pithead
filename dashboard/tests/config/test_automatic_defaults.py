@@ -6,7 +6,9 @@ from mining_dashboard.config import config
 from mining_dashboard.config.defaults import TABLE
 
 
-@pytest.mark.parametrize("enabled,percent,tor", [(None, None, None), ("true", "10", "false")])
+@pytest.mark.parametrize(
+    "enabled,percent,tor", [(None, None, None), ("true", "10", "false"), ("true", "0.25", "true")]
+)
 def test_donation_runtime_defaults_and_overrides(monkeypatch, enabled, percent, tor):
     for key, value in zip(
         ("DONATION_ENABLED", "DONATION_PERCENT", "DONATION_TOR_ENABLED"),
@@ -19,7 +21,7 @@ def test_donation_runtime_defaults_and_overrides(monkeypatch, enabled, percent, 
             monkeypatch.setenv(key, value)
     importlib.reload(config)
     assert config.DONATION_ENABLED is (enabled == "true")
-    assert config.DONATION_PERCENT == (2 if percent is None else 10)
+    assert config.DONATION_PERCENT == (0 if percent is None else float(percent))
     assert config.DONATION_TOR_ENABLED is (tor != "false")
     monkeypatch.undo()
     importlib.reload(config)

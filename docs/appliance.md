@@ -351,7 +351,7 @@ the exact address the checks reached, so installation cannot resolve it to a dif
 Only when everything passes does the page show the things you must save:
 
 - the **dashboard login** (generated and shown once)
-- the **dashboard address** (derived from the machine hostname when `dashboard.host` is `auto`)
+- the **dashboard address** (`https://<machine-name>.local`, `pithead` unless you named the machine)
 - where to **point your miners** (the advertised Stratum address and port)
 - the **stratum password**, or **No stratum password** when it is off
 - the **TLS fingerprint** when stratum TLS is enabled

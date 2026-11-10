@@ -142,7 +142,7 @@ def test_donation_is_dark_on_all_new_install_paths(platform):
     ):
         effective = effective_defaults(platform)
         effective.update(cfg)
-        assert effective["donation"] == {"enabled": False, "percent": 2, "tor": True}
+        assert effective["donation"] == {"enabled": False, "percent": 0, "tor": True}
     reference = effective_defaults(platform)
     assert "pool" not in build_config({}, platform=platform)["p2pool"]
     assert reference["workers"]["api_port"] == 8080

@@ -159,7 +159,7 @@ XVB_TOR_ENABLED = os.environ.get("XVB_TOR_ENABLED", "true").lower() == "true"
 DONATION_ENABLED = (
     os.environ.get("DONATION_ENABLED", str(default_of("donation.enabled"))).lower() == "true"
 )
-DONATION_PERCENT = int(os.environ.get("DONATION_PERCENT", default_of("donation.percent")))
+DONATION_PERCENT = float(os.environ.get("DONATION_PERCENT", default_of("donation.percent")))
 DONATION_TOR_ENABLED = (
     os.environ.get("DONATION_TOR_ENABLED", str(default_of("donation.tor"))).lower() == "true"
 )

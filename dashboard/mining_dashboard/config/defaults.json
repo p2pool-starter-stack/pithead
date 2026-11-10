@@ -28,7 +28,7 @@
     },
     "donation": {
       "enabled": false,
-      "percent": 2,
+      "percent": 0,
       "tor": true
     },
     "monero": {
@@ -166,7 +166,7 @@
   },
   "appliance": {
     "dashboard": {
-      "host": "auto",
+      "host": "pithead",
       "control": {
         "enabled": true
       }
@@ -205,6 +205,12 @@
       "path": "local_miner.enabled",
       "platform": "appliance",
       "value": false,
+      "retired_by": "pithead#3576"
+    },
+    {
+      "path": "dashboard.host",
+      "platform": "appliance",
+      "value": "auto",
       "retired_by": "pithead#3576"
     }
   ],

@@ -7,7 +7,7 @@
   },
   "dashboard": {
     "tari_required": false,
-    "host": "auto"
+    "host": "pithead"
   },
   "local_miner": {
     "enabled": true

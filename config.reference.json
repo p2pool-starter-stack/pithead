@@ -28,7 +28,7 @@
   },
   "donation": {
     "enabled": false,
-    "percent": 2,
+    "percent": 0,
     "tor": true
   },
   "monero": {
