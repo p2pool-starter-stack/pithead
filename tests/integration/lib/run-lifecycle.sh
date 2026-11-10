@@ -13,6 +13,7 @@ run_lifecycle() {
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
     run_cli_wizard_defaults || return 1
+    run_support_bundle || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
     prove_wallet_recovery || return 1
@@ -62,6 +63,7 @@ run_lifecycle() {
     run_restore_dashboard_probe || return 1
     run_tari_background_sync || return 1
     local cur_pool fp_before other restore_tls_before
+    run_image_permissions || return 1
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
@@ -182,23 +184,27 @@ run_lifecycle() {
         if [ -n "$carry_old" ]; then
             carry_epoch="$(rx 'date +%s')"
             carry_new="${carry_old}-carried-$carry_epoch"
-            # telemetry_rows_continue leaves the volatile kv_store shapes out (live-state-support.sh).
             rows_before="$(dashboard_durable_rows "$carry_epoch")"
-            it_step "confirmed dashboard.data_dir move: $carry_old -> ${carry_new}…"
-            push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
-            if pithead apply -y 2>&1 | redact >"$OUT_DIR/dashboard-carry.apply.log" && wait_status_ok 180; then
-                assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
-                rows_after="$(dashboard_durable_rows "$carry_epoch")"
-                if telemetry_rows_continue "$rows_before" "$rows_after"; then
-                    it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
+            if [ -z "$rows_before" ]; then
+                it_fail "pre-move dashboard rows readable" "the dashboard returned no rows before the data_dir move; the carry apply was skipped"
+                lifecycle_ok=0
+            else
+                it_step "confirmed dashboard.data_dir move: $carry_old -> ${carry_new}…"
+                push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
+                if pithead apply -y 2>&1 | redact >"$OUT_DIR/dashboard-carry.apply.log" && wait_status_ok 180; then
+                    assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
+                    rows_after="$(dashboard_durable_rows "$carry_epoch")"
+                    if telemetry_rows_continue "$rows_before" "$rows_after"; then
+                        it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
+                    else
+                        it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move ($(telemetry_rows_diff "$rows_before" "$rows_after"))"
+                        lifecycle_ok=0
+                    fi
                 else
-                    it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move ($(telemetry_rows_diff "$rows_before" "$rows_after"))"
+                    it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy; see $OUT_DIR/dashboard-carry.apply.log"
+                    capture_artifacts "lifecycle-carry" "$OUT_DIR"
                     lifecycle_ok=0
                 fi
-            else
-                it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy; see $OUT_DIR/dashboard-carry.apply.log"
-                capture_artifacts "lifecycle-carry" "$OUT_DIR"
-                lifecycle_ok=0
             fi
             # The product correctly refuses to overwrite the old, still-complete directory on a
             # reverse move. Stop first and remove only this test's verified copy, so suite cleanup

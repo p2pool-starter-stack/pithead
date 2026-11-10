@@ -1,5 +1,12 @@
 # ruff: noqa: F403, F405
+from mining_dashboard.config import config
+from mining_dashboard.service.payout_identity import configured_wallet_id
 from tests.service._data_service_support import *  # noqa: F403
+
+
+@pytest.fixture(autouse=True)
+def _configured_wallet(monkeypatch):
+    monkeypatch.setattr(config, "MONERO_WALLET_ADDRESS", "fixture-wallet")
 
 
 class TestPayoutSync:
@@ -20,7 +27,7 @@ class TestPayoutSync:
             payout = {"txid": "aa", "height": 100, "ts": 1000.0, "amount_atomic": 250_000_000_000}
             svc.wallet_client.scan.return_value = ([payout], True)
             asyncio.run(svc._sync_payouts())
-            assert len(sm.get_payouts("monero")) == 1
+            assert len(sm.get_payouts("monero", configured_wallet_id("monero"))) == 1
             svc.alert_service.payout_confirmed_alert.assert_awaited_once_with(
                 "monero", 250_000_000_000, "aa"
             )
@@ -36,7 +43,7 @@ class TestPayoutSync:
             asyncio.run(svc._sync_payouts())
             asyncio.run(svc._sync_payouts())
             assert svc.alert_service.payout_confirmed_alert.await_count == 1
-            assert len(sm.get_payouts("monero")) == 1
+            assert len(sm.get_payouts("monero", configured_wallet_id("monero"))) == 1
         finally:
             sm.close()
 
@@ -45,7 +52,9 @@ class TestPayoutSync:
         svc, sm = self._svc_with_real_storage()
         try:
             sm.add_payouts(
-                "monero", [{"txid": "old", "height": 500, "ts": 1.0, "amount_atomic": 1}]
+                "monero",
+                configured_wallet_id("monero"),
+                [{"txid": "old", "height": 500, "ts": 1.0, "amount_atomic": 1}],
             )
             svc.wallet_client.scan.return_value = ([], True)
             asyncio.run(svc._sync_payouts())
@@ -68,7 +77,7 @@ class TestPayoutSync:
             svc.wallet_client.scan.return_value = ([], False)
             assert asyncio.run(svc._sync_payouts()) is False
             assert svc.monero_wallet_scan_answered is False
-            assert sm.get_payouts("monero") == []
+            assert sm.get_payouts("monero", configured_wallet_id("monero")) == []
         finally:
             sm.close()
 

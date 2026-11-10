@@ -23,7 +23,7 @@ async def hostname_client(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("WIZARD_SPOOL", str(tmp_path))
     monkeypatch.setenv("WIZARD_TOKEN", "pit-NAME01")
-    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+    async with TestClient(TestServer(wizard.make_app())) as client:
         await client.post("/auth", data={"token": "pit-NAME01"})
         yield client, tmp_path
 

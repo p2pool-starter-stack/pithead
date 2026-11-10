@@ -1,7 +1,6 @@
 # shellcheck shell=bash
 # shellcheck source=tests/integration/lib/run-channel.sh
 source "${BASH_SOURCE[0]%/*}/run-channel.sh" || exit $?
-# Run the real CLI on the deployed candidate, keeping credentials inside the target shell.
 connection_announcements_snippet() {
     lifecycle_gate_snippet
     cat <<'PROBE'
@@ -20,7 +19,9 @@ trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at
     [[ "$out" == *"Pool URL: $host:$(stratum_port_effective)"* ]]
     secret=$(env_get PROXY_STRATUM_PASSWORD)
     if [ -n "$secret" ]; then
-        [[ "$out" == *"Stratum password: $secret"* ]]
+        [[ "$out" == *"Stratum authentication is ON"* ]]
+        [[ "$out" == *"Connect a miner"* ]]
+        [[ "$out" != *"$secret"* ]]
     else
         [[ "$out" == *"Stratum password: none set"* ]]
     fi
@@ -54,17 +55,17 @@ out=$(python3 tests/integration/tools/connection-setup-pty.py) || {
 [[ "$out" == *"You can start the stack later with:"* ]]
 lifecycle_gate_sample_target after-setup
 check_output "$out"
-printf '%s\n' 'connections: setup with startup declined matches rendered credentials'
+printf '%s\n' 'connections: setup with startup declined protects connection details'
 stage=up
 out=$(./pithead up 2>&1)
 lifecycle_gate_sample_target after-up
 check_output "$out"
-printf '%s\n' 'connections: up matches rendered credentials'
+printf '%s\n' 'connections: up protects connection details'
 stage=apply
 out=$(./pithead apply -y 2>&1)
 lifecycle_gate_sample_target after-apply
 check_output "$out"
-printf '%s\n' 'connections: apply matches rendered credentials'
+printf '%s\n' 'connections: apply protects connection details'
 before=$(sha256sum .env)
 stage=no-change
 out=$(./pithead apply -y 2>&1)
@@ -72,7 +73,7 @@ out=$(./pithead apply -y 2>&1)
 check_output "$out"
 lifecycle_gate_sample_target after-no-change
 [ "$(sha256sum .env)" = "$before" ]
-printf '%s\n' 'connections: no-change apply matches rendered credentials and preserves env'
+printf '%s\n' 'connections: no-change apply protects connection details and preserves env'
 PROBE
 }
 
@@ -80,15 +81,14 @@ run_connection_announcements() {
     skip_appliance_checkout_probe \
         "setup is owned by the wizard and the CLI PTY tool is not shipped; strict proof runs on DIY" \
         "coordinator connection announcement probe succeeds (#3090)" \
-        "setup with startup declined matches rendered credentials (#3090)" \
-        "up matches rendered credentials (#3090)" \
-        "apply matches rendered credentials (#3090)" \
-        "no-change apply matches rendered credentials and preserves env (#3090)" && return 0
+        "setup with startup declined protects connection details (#3090)" \
+        "up protects connection details (#3090)" \
+        "apply protects connection details (#3090)" \
+        "no-change apply protects connection details and preserves env (#3090)" && return 0
     local out rc before="$IT_FAIL" marker
     it_step "checking setup/up/apply connection announcements on the candidate…"
     out="$(rx "$(connection_announcements_snippet)" 2>&1)"
     rc=$?
-    # Never retain the raw CLI output: it intentionally contains the pool password.
     printf 'connection announcement probe exit: %s\n' "$rc" >"$OUT_DIR/connection-announcements.log"
     # Reconstruct only our fixed diagnostic labels; the remote output is never copied.
     for marker in initialization setup up apply no-change; do
@@ -106,15 +106,15 @@ run_connection_announcements() {
     printf '%s\n' "$out" | retain_lifecycle_gate_samples >>"$OUT_DIR/lifecycle-gate.log"
     assert_rc "coordinator connection announcement probe succeeds (#3090)" "$rc" 0
     for marker in \
-        'setup with startup declined matches rendered credentials' \
-        'up matches rendered credentials' \
-        'apply matches rendered credentials' \
-        'no-change apply matches rendered credentials and preserves env'; do
+        'setup with startup declined protects connection details' \
+        'up protects connection details' \
+        'apply protects connection details' \
+        'no-change apply protects connection details and preserves env'; do
         if [[ "$out" == *"connections: $marker"* ]]; then
             it_pass "$marker (#3090)"
             printf 'PASS: %s\n' "$marker" >>"$OUT_DIR/connection-announcements.log"
         else
-            it_fail "$marker (#3090)" "required credential assertions did not complete; CLI output withheld"
+            it_fail "$marker (#3090)" "required connection assertions did not complete; CLI output withheld"
         fi
     done
     [ "$IT_FAIL" -eq "$before" ]
