@@ -9,7 +9,6 @@ monero_only='{"preview_values":[{"key":"monero.remote.host","new":"10.0.0.5"}]}'
 local_live='{"monero":{"mode":"local"},"tari":{"mode":"local"}}'
 same_live='{"monero":{"mode":"local"},"tari":{"mode":"remote","remote":{"host":"node.lan","grpc_port":18142}}}'
 other_live='{"monero":{"mode":"local"},"tari":{"mode":"remote","remote":{"host":"other.lan","grpc_port":18142}}}'
-# The provisioned shape: a host retained from an earlier attempt while the chain is still local.
 retained_live='{"monero":{"mode":"local"},"tari":{"mode":"local","remote":{"host":"node.lan","grpc_port":18142}}}'
 to_remote='{"preview_values":[{"key":"monero.remote.host","new":"10.0.0.5"},{"key":"tari.mode","new":"remote"}]}'
 
@@ -17,7 +16,6 @@ endpoint_shown "$shown" "$local_live" tari node.lan
 endpoint_shown "$shown" "$local_live" monero 10.0.0.5
 endpoint_shown "$monero_only" "$same_live" tari node.lan
 endpoint_shown "$to_remote" "$retained_live" tari node.lan
-# set -e ignores a negated command, so a hidden endpoint must fail explicitly.
 hidden() {
     if endpoint_shown "$@"; then
         echo "selftest-endpoint-shown: $3 $4 counted as shown" >&2
