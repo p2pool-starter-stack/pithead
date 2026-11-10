@@ -33,6 +33,18 @@ if [ "${TARI_MODE:-}" = off ]; then
     [ "$_dropped" -eq 0 ] || echo "[p2pool-entrypoint] tari.mode off (#1903): not merge-mining, --merge-mine dropped from the launch."
 fi
 
+case " ${P2POOL_FLAGS:-} " in
+*" --no-clearnet-p2p "*)
+    case "${P2POOL_PORT:-}" in 37888 | 37889 | 37890) ;; *) exit 78 ;; esac
+    if ! [[ "${NETWORK_PREFIX:-}" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then exit 78; fi
+    IFS=. read -r _net_a _net_b _net_c <<<"$NETWORK_PREFIX"
+    for _octet in "$_net_a" "$_net_b" "$_net_c"; do
+        [ "$((10#$_octet))" -le 255 ] || exit 78
+    done
+    socat "TCP4-LISTEN:$P2POOL_PORT,bind=${NETWORK_PREFIX}.28,range=${NETWORK_PREFIX}.25/32,fork,reuseaddr" "TCP4:127.0.0.1:$P2POOL_PORT" &
+    ;;
+esac
+
 if printf '%s' "${P2POOL_FLAGS:-}" | grep -q -- '--socks5'; then
     _args=("$@")
     _group=0

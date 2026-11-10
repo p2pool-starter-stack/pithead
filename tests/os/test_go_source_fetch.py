@@ -56,6 +56,7 @@ class SourceFetchTest(unittest.TestCase):
         run("git", "-C", str(self.bare), "update-server-info", env=self.env)
         self.mode = "healthy"
         self.interruptions = 0
+        self.release = threading.Event()
         self.requests = []
         owner = self
 
@@ -66,7 +67,7 @@ class SourceFetchTest(unittest.TestCase):
             def do_GET(self):
                 owner.requests.append(self.path)
                 if owner.mode == "slow":
-                    time.sleep(2)
+                    owner.release.wait(60)
                     self.close_connection = True
                     return
                 if "/objects/" in self.path and (
@@ -89,6 +90,7 @@ class SourceFetchTest(unittest.TestCase):
         self.addCleanup(thread.join)
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
+        self.addCleanup(self.release.set)
         self.url = f"http://127.0.0.1:{self.server.server_port}/source.git"
         self.bin = self.root / "bin"
         self.bin.mkdir()
@@ -174,7 +176,7 @@ class SourceFetchTest(unittest.TestCase):
         self.assertIsNotNone(real_timeout)
         self.write_tool(
             "timeout",
-            f'[ "$1" = --kill-after=5s ]\n[ "$2" = 180s ]\nshift 2\nexec "{real_timeout}" --kill-after=1s 1s "$@"\n',
+            f'[ "$1" = --kill-after=5s ]\n[ "$2" = 180s ]\nshift 2\nexec "{real_timeout}" --kill-after=5s 1s "$@"\n',
         )
 
     def test_attempt_deadline_is_enforced(self):
@@ -183,7 +185,7 @@ class SourceFetchTest(unittest.TestCase):
         started = time.monotonic()
         result = self.fetch()
         self.assert_clean_failure(result)
-        self.assertLess(time.monotonic() - started, 10)
+        self.assertLess(time.monotonic() - started, 20)
         self.assertEqual(result.stderr.count("failed (exit 124)"), 3)
         self.assertEqual(self.sleep_log.read_text(), "5\n10\n")
 

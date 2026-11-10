@@ -120,6 +120,8 @@ export class RigInspector extends WorkerInspect {
             canEdit=${!blocked} busy=${busy} onDone=${() => this.load()} />`
             : html`<p>This rig is on the latest release it reports.</p>`
       }
+      <h3>Connection</h3>
+      <${AdoptRigForm} existing=${true} name=${this.props.name} onAdopted=${() => this.load()} />
       ${
         detail.writable_keys?.includes("DONATION")
           ? html`<${DonationControl} name=${this.props.name} worker=${this.props.worker} rigConfig=${detail.rig_config}

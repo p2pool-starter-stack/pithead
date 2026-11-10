@@ -47,6 +47,7 @@ safety_backup() {
     fi
     SAFETY_ARCHIVE="$candidate"
     it_log "Safety backup: $SAFETY_ARCHIVE"
+    backup_prune rx backups "$SAFETY_ARCHIVE"
     if ! listing="$(rx "tar -tzf $(quote_arg "$SAFETY_ARCHIVE") 2>/dev/null")"; then
         it_fail "safety backup archive readable" "tar could not read the complete archive"
         safety_cleanup
@@ -98,10 +99,15 @@ safety_secret_drift_categories() { # <baseline category=hash lines> <actual cate
 }
 
 safety_restore_exact() {
-    local restored_secrets
+    local restored_secrets restore_output restore_rc=0
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
-    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
+    restore_output="$(pithead restore -y "$SAFETY_ARCHIVE" 2>&1)" || restore_rc=$?
+    restore_output="${restore_output//"$SAFETY_ARCHIVE"/<safety-archive>}"
+    if [ -n "${OUT_DIR:-}" ]; then
+        printf '%s\n' "$restore_output" | redact | tail -c 65536 >"$OUT_DIR/safety-restore.log" || true
+    fi
+    if [ "$restore_rc" -ne 0 ]; then
         SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
     elif ! baseline_up >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
@@ -191,7 +197,7 @@ safety_cleanup() {
     elif [ "$KEEP_STATE" = "1" ]; then
         it_warn "--keep: leaving the safety backup at $SAFETY_ARCHIVE"
     else
-        if ! rx "rm -f -- $(quote_arg "$SAFETY_ARCHIVE") && test ! -e $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1; then
+        if ! rx "rm -f -- $(quote_arg "$SAFETY_ARCHIVE") $(quote_arg "${SAFETY_ARCHIVE%/*}/.pithead-e2e-safety/${SAFETY_ARCHIVE##*/}") && test ! -e $(quote_arg "$SAFETY_ARCHIVE") && test ! -L $(quote_arg "$SAFETY_ARCHIVE")" >/dev/null 2>&1; then
             it_fail "safety backup archive removed" "cleanup failed; unencrypted archive retained"
             return 1
         fi

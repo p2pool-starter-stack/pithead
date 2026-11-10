@@ -126,7 +126,7 @@ run_pending >/dev/null
 assert_eq "worker repoint cannot reuse a masked bearer" \
     "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
 assert_contains "masked-token repoint names the host route, not a token retry" \
-    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "on the host"
+    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "token again"
 
 jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0]
@@ -134,34 +134,26 @@ jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
       | .workers.list[0].host="192.168.1.51"
       | .workers.list[0].token="replacement-token")}' >"$REQS/$GUARD_UUID.json"
 run_pending >/dev/null
-# Even with an explicit replacement bearer, a repoint edits an adopted rig: refused (#2641/#912).
-assert_eq "worker repoint with an explicit bearer is refused at preview" \
-    "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
-assert_contains "worker repoint refusal names the adopted-rig boundary" \
-    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "already controls"
-assert_not_contains "worker repoint refusal never echoes the bearer" \
+assert_eq "worker repoint with an explicit bearer previews as a confirmed change" \
+    "$(jq -r '"\(.status) \(.destructive)"' "$RESULTS/$GUARD_UUID.json")" "previewed true"
+assert_contains "worker repoint preview shows the host delta" \
+    "$(jq -r '.changes[] | select(.key == "workers.list") | .msg' "$RESULTS/$GUARD_UUID.json")" "repointed: "
+assert_not_contains "worker repoint preview never echoes the bearer" \
     "$(cat "$RESULTS/$GUARD_UUID.json")" "replacement-token"
 jq -n --arg id "$GUARD_UUID" \
-    '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$GUARD_UUID.json"
+    '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$GUARD_UUID.json"
 run_pending >/dev/null
-assert_eq "APPLY does not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+assert_contains "a worker repoint without APPLY is refused" "$(jq -r '"\(.status): \(.error)"' "$RESULTS/$GUARD_UUID.json")" "rejected: this change is disruptive"
 assert_eq "worker repoint leaves the host and bearer as they were" \
     "$(jq -r '.workers.list[0] | .host + "|" + .token' "$C/config.json")" "192.168.1.50|rig-token"
 
-# Same-host field edits of an adopted rig are edits too, even riding with a valid adopt: an explicit
-# new token or control port is refused with APPLY, so a host-only prefix check could not pass them.
 for EDIT in '.workers.list[0].token="edited-token"' '.workers.list[0].control_port=9082'; do
     jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
-        '{id:$id,action:"preview",actor:"admin",config:($live[0] | '"$EDIT"'
-          | .workers.list += [{name:"rig-9",host:"192.168.1.60",control_port:8082,token:"t9"}])}' >"$REQS/$GUARD_UUID.json"
+        '{id:$id,action:"preview",actor:"admin",config:($live[0] | '"$EDIT"')}' >"$REQS/$GUARD_UUID.json"
     run_pending >/dev/null
-    jq -n --arg id "$GUARD_UUID" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY"}' >"$REQS/$GUARD_UUID.json"
-    run_pending >/dev/null
-    assert_contains "a same-host edit of an adopted rig is refused with APPLY (${EDIT%%=*})" \
-        "$(jq -r '"\(.status): \(.error)"' "$RESULTS/$GUARD_UUID.json")" "rejected: this change edits or removes a rig the dashboard already controls"
+    assert_contains "a same-host edit of an adopted rig previews as a confirmed change (${EDIT%%=*})" \
+        "$(jq -r '.changes[] | select(.key == "workers.list") | .msg' "$RESULTS/$GUARD_UUID.json")" "edited: "
 done
-assert_eq "same-host edits leave the adopted rig as it was and adopt nothing" \
-    "$(jq -r '"\(.workers.list[0].token)|\(.workers.list[0].control_port)|\(.workers.list | length)"' "$C/config.json")" "rig-token|8082|1"
 
 # Webhook sentinels restore by position, and each carries the live slot it was masked at (#2373).
 jq '.notifications.webhooks=["https://example.com/hook","https://example.com/two"]' "$C/config.json" >"$C/config.json.tmp" &&

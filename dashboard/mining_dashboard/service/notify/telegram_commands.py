@@ -12,7 +12,9 @@ from mining_dashboard.config.config import (
     TELEGRAM_CHAT_ID,
     TELEGRAM_COMMANDS_ENABLED,
     TELEGRAM_ENABLED,
-    TOR_SOCKS_PROXY,
+)
+from mining_dashboard.config.config import (
+    NOTIFICATION_PROXY as TOR_SOCKS_PROXY,
 )
 from mining_dashboard.helper.http import bounded_get
 from mining_dashboard.service.metrics import build_metrics
