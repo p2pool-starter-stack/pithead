@@ -4,6 +4,8 @@
 echo "== black-box: unchanged apply announces connections and converges local mining =="
 build_val_sandbox
 seed_env
+printf 'MemTotal:       67108864 kB\n' >"$V/meminfo"
+export PITHEAD_MEMINFO="$V/meminfo"
 printf '{"monero":{"wallet_address":"%s","node_username":"u","node_password":"p"},"tari":{"wallet_address":"%s"},"p2pool":{"stratum_password":"fixture.pool-pass"},"dashboard":{"secure":false,"host":"fixture-box"}}\n' "$WALLET" "$VALID_TARI" >"$V/config.json"
 ca_out="$(cd "$V" && PATH="$V/bin:$PATH" DOCKER_LOG="$V/docker.log" ./pithead apply -y 2>&1)"
 assert_rc "initial apply succeeds" "$?" 0
@@ -89,3 +91,4 @@ assert_contains "up announces pool" "$ca_out" "Pool URL: fixture-box:3333"
 assert_contains "up announces password" "$ca_out" "Stratum password: fixture.pool-pass"
 unset CA CAS ca_out ca_enabled ca_env ca_fp
 unset -f ca_apply ca_setup_reboot
+unset PITHEAD_MEMINFO

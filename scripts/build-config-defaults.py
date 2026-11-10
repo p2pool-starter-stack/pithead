@@ -33,7 +33,8 @@ def artifacts() -> dict[Path, str]:
         )
         result[ROOT / filename] = json.dumps(config, indent=2) + "\n"
     runtime = {
-        key: TABLE[key] for key in ("values", "appliance", "materialize", "profiles", "migrations")
+        key: TABLE[key]
+        for key in ("values", "appliance", "materialize", "profiles", "runtime", "migrations")
     }
     script = ROOT / "lib/pithead/19a-config-defaults.sh"
     before, rest = script.read_text().split("    cat <<'PITHEAD_DEFAULTS_JSON'\n", 1)

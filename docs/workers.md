@@ -460,7 +460,8 @@ seconds of the rebuild finishing rather than up to a full cycle later.
 `GET /api/control/worker-upgrade-all` lists what an update-all run would do, and `POST` starts it.
 The plan names the target version (the cached latest RigForge release), the managed rigs that are
 behind it, and the rigs that cannot take the upgrade with the reason: offline or stale telemetry, an
-unrecognised version, not adopted, or control API unreachable. A rig already on the latest release is not listed. The control
+unrecognised version, not adopted, control API unreachable, or an appliance rig that updates with its
+Pithead OS image instead. A rig already on the latest release is not listed. The control
 channel and its editor must be on, as for the single-rig upgrade.
 
 The start request carries only the version the operator reviewed. The dashboard derives the rig

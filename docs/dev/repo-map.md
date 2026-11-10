@@ -54,6 +54,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. Quadlet golden units share `os/quadlet/common/`; `tests/stack/test-render-quadlet.sh` checks complete profile inventories and byte parity. `os/rootfs/fetch-go-source.sh` bounds pinned Go-source fetches; `tests/os/selftest-go-source-fetch.sh` runs its local Git transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; `broken-configs.tsv` and `tests/stack/test-manual-qa-oracle.sh` replay the documented dry-run refusals in shell block 5. The start page holds the run sheet, result rules and glossary. |
+| Donation endpoint | [Runbook](donation-endpoint.md) | Operator runbook for a Tor onion-only P2Pool mini endpoint and XMRig Proxy donation traffic. |
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
@@ -150,6 +151,13 @@ Consecutive status censuses are in `tests/integration/lib/readiness-churn.sh`. D
 changing responses for integration and appliance selftests live in
 `tests/integration/lib/selftest/fake-eventual.sh`; `tests/integration/test_selftest_runner.py`
 guards their isolated Makefile discovery.
+
+`post_op_invariants` in `tests/integration/lib/post-op-invariants.sh` runs after the lifecycle restart,
+backup restore and reset recovery steps. It asserts what a user sees, not only process health: every
+worker online before the step is online again, `failures_24h` is unchanged (the reset-recovery step allows the one unauthenticated web probe its own check sends), the dashboard and not the
+setup page serves the web port with no wizard container, every running container keeps its Id,
+`StartedAt` and restart count for 60 seconds and is healthy, and on the appliance no pithead or xmrig
+unit has failed. A fault case per check is in `tests/integration/selftest/selftest-post-op-invariants.sh`.
 
 Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before

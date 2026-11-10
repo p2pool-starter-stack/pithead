@@ -11,6 +11,7 @@ cp "$(dirname "$script")/VERSION" VERSION
 source "$script"
 hostname() { printf legacy-machine; }
 nproc() { printf 8; }
+host_memtotal_kb() { printf 67108864; }
 chown() { return 0; }
 caddy_hash_password_b64() { printf 'fixture-hash' | base64; }
 detect_host_timezone() { printf UTC; }
