@@ -2,7 +2,7 @@ import json
 import logging
 import os
 
-from mining_dashboard.config.defaults import default_of
+from mining_dashboard.config.defaults import TABLE, default_of
 from mining_dashboard.config.worker_endpoints import load_energy_config, load_worker_endpoints
 
 logger = logging.getLogger("Config")
@@ -15,33 +15,15 @@ BASE_STATS_DIR = "/app/stats"
 DISK_PATH = "/data"
 DB_FILE_PATH = os.path.join(DISK_PATH, "mining_data.db")
 
-# Low-disk warning thresholds (% used of the data filesystem), surfaced as a top-bar badge (#138):
-# a heads-up at WARN, a prominent critical alert near full. The chains keep growing and a full data
-# disk corrupts monerod's DB mid-write, so this is a runtime guard distinct from the setup-time
-# pre-flight estimate. (The disk *bar* uses its own colour thresholds; these gate the badge.)
 DISK_WARN_PERCENT = 85
 DISK_CRITICAL_PERCENT = 95
 
-# Minimum host RAM (GB) below which the dashboard flags a low-RAM badge/alert (#104). Mirrors the
-# setup/doctor pre-flight threshold; a code-level default (not a config.json knob).
-# The capacity floor is MODE-AWARE: what this machine runs locally decides how much RAM it
-# honestly needs (operator observation, 2026-07-31 — the old flat floor predates remote
-# Monero/Tari modes). Local Tari is the famous OOM appetite; local monerod syncs heavy too; a
-# coordinator with both remote is a light box. The full-local floor is 14, not 16: a nominal
-# "16 GB" machine reports ~15.x usable (reserved memory, GiB-vs-GB), and the documented
-# minimum spec must never wear a permanent warning. Setting LOW_RAM_GB pins a flat floor.
 _LOW_RAM_ENV = os.environ.get("LOW_RAM_GB")
-LOW_RAM_BASE_GB = 3  # p2pool + proxy + tor + caddy + dashboard
-LOW_RAM_LOCAL_MONERO_GB = 5
-LOW_RAM_LOCAL_TARI_GB = 6
-# The built-in miner's own footprint, counted only when local_miner.enabled: its RandomX
-# dataset is 3 GB outright as 3×1 GB pages (the unfragmented-pool case), or ~2.4 GB as 2 MB
-# pages plus per-thread scratchpads and process overhead — bench-measured via smaps while both
-# sides mined. 3 GB covers the reservation either way. Deliberately NOT the 6 GB headroom the
-# miner's rendered config declares (hugepages_reserve_extra_mb): that is the stack's OWN
-# hugepage budget, which the container floors above already count — adding it here would count
-# p2pool's dataset twice.
-LOW_RAM_LOCAL_MINER_GB = 3
+LOW_RAM_GB = TABLE["runtime"]["low_ram_gb"]
+LOW_RAM_BASE_GB = LOW_RAM_GB["base"]
+LOW_RAM_LOCAL_MONERO_GB = LOW_RAM_GB["monero"]
+LOW_RAM_LOCAL_TARI_GB = LOW_RAM_GB["tari"]
+LOW_RAM_LOCAL_MINER_GB = LOW_RAM_GB["miner"]
 
 
 def local_miner_enabled(path=None) -> bool:
@@ -58,7 +40,6 @@ def local_miner_enabled(path=None) -> bool:
 
 
 def low_ram_floor_gb(monero_local: bool, tari_local: bool | None) -> float:
-    """The least usable RAM this machine's actual workload wants, in GB."""
     if _LOW_RAM_ENV is not None:
         return float(_LOW_RAM_ENV)
     return (
@@ -167,31 +148,21 @@ ENABLE_XVB = (
     os.environ.get("XVB_ENABLED", str(default_of("xvb.enabled", legacy=True))).lower() == "true"
 )
 
+PITHEAD_PROFILE = os.environ.get("PITHEAD_PROFILE", "balance")
 TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "socks5h://172.28.0.25:9050")
 
-# Route XvB DONATION MINING through Tor by default too (#166), not just the stats fetch (#163): while
-# donating, the proxy connects to na.xmrvsbeast.com, which would otherwise expose the host IP. The
-# algo controller sets this host:port as the XvB pool's per-pool `socks5` field (xmrig-proxy resolves
-# that pool's DNS proxy-side). `xvb.tor: false` opts out (direct, for max yield). The host:port is
-# derived from TOR_SOCKS_PROXY (so a custom subnet, #180, carries through) with the scheme stripped —
-# xmrig wants a bare host:port.
 XVB_TOR_ENABLED = os.environ.get("XVB_TOR_ENABLED", "true").lower() == "true"
+DONATION_ENABLED = (
+    os.environ.get("DONATION_ENABLED", str(default_of("donation.enabled"))).lower() == "true"
+)
+DONATION_PERCENT = float(os.environ.get("DONATION_PERCENT", default_of("donation.percent")))
+DONATION_TOR_ENABLED = (
+    os.environ.get("DONATION_TOR_ENABLED", str(default_of("donation.tor"))).lower() == "true"
+)
 XVB_TOR_SOCKS5 = TOR_SOCKS_PROXY.split("://", 1)[-1]
+OUTBOUND_TOR_PROXY = "" if PITHEAD_PROFILE == "performance" else TOR_SOCKS_PROXY
+XVB_HTTP_PROXY = TOR_SOCKS_PROXY if XVB_TOR_ENABLED else ""
 
-# XvB raffle-registration endpoint (#263). Mining to the XvB pool isn't enough to enter the raffle —
-# a wallet is only entered once it's registered against this endpoint (and only if it already has a
-# share in the P2Pool PPLNS window). Same host as the XvB stats fetch above. The operator asked us
-# not to *advertise* this API ("to mitigate abuse"), so don't surface the bare URL in user-facing
-# docs/README — but it ships here as the working default. Override with XVB_SUBMIT_URL (e.g. a test
-# server); set it to a disable sentinel (off/none/false/disabled/0) to turn auto-registration off
-# while keeping XvB on. The call ALWAYS rides Tor (TOR_SOCKS_PROXY) like the stats fetch (#163) since it
-# carries the full wallet — it is NOT subject to the xvb.tor donation opt-out.
-#
-# Contract — GET ?address=<full wallet>, verified live 2026-06-28:
-#   2xx                                              => freshly registered
-#   422 "ERROR: Wallet Address Already Registered"   => already in (idempotent success)
-#   422 "ERROR: Invalid Wallet Address"              => bad wallet (permanent — stop retrying)
-#   no-share / 5xx / other                           => transient, retry on the next poll
 _XVB_SUBMIT_DEFAULT = "https://xmrvsbeast.com/cgi-bin/p2pool_bonus_submit_api.cgi"
 _XVB_SUBMIT_DISABLE_SENTINELS = {"off", "none", "false", "disabled", "0"}
 _xvb_submit_env = os.environ.get("XVB_SUBMIT_URL", "").strip()
@@ -449,16 +420,9 @@ TELEGRAM_DAILY_SUMMARY_TIME = os.environ.get("TELEGRAM_DAILY_SUMMARY_TIME", "08:
 NOTIFY_WEBHOOK_URLS = os.environ.get("NOTIFY_WEBHOOK_URLS", "").split()
 NTFY_URL = os.environ.get("NTFY_URL", "").strip()
 NTFY_TOKEN = os.environ.get("NTFY_TOKEN", "").strip()
-# Route the webhook/ntfy POSTs over Tor (default), so the endpoint sees a Tor exit, not the host
-# IP — the same egress rule as Telegram (#340). notifications.tor:false opts out for LAN /
-# self-hosted endpoints (Tor exits can't reach RFC1918 addresses); flipping it makes clearnet
-# endpoints see the host IP.
 NOTIFY_TOR = os.environ.get("NOTIFY_TOR", "true").strip().lower() == "true"
+NOTIFICATION_PROXY = TOR_SOCKS_PROXY if NOTIFY_TOR else ""
 
-# Hashrate-degradation detector (Issue #99). Flags a sustained drop in total hashrate below
-# HASHRATE_DROP_THRESHOLD_PCT of its trailing baseline for HASHRATE_DROP_MINUTES minutes — surfaced
-# as a chart event marker (always on) and, when telegram.events.hashrate_loss is on, an alert.
-# Rendered from config.json dashboard.hashrate_drop_threshold / dashboard.hashrate_drop_minutes.
 HASHRATE_DROP_THRESHOLD_PCT = int(float(os.environ.get("HASHRATE_DROP_THRESHOLD_PCT", 50)))
 HASHRATE_DROP_MINUTES = int(float(os.environ.get("HASHRATE_DROP_MINUTES", 10)))
 

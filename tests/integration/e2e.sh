@@ -28,11 +28,11 @@ source "$HERE/lib.sh" || exit $?
 # shellcheck source=tests/integration/lib/rig-supply.sh
 source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
-# restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
-source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" && source "$HERE/lib/restore-mining-ready.sh" || exit $? # chain-keep: #2639; mining-ready: #3152
+source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" && source "$HERE/lib/restore-mining-ready.sh" && source "$HERE/lib/backup-prune.sh" || exit $?
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" && source "$HERE/lib/wallet-fixture.sh" || exit $?
+source "$HERE/lib/backup-window.sh" && backup_window_init || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -495,21 +495,7 @@ provision() {
     fi
 }
 # --- Phase 2: safety backup of the live stack -------------------------------
-backup_stack() {
-    command -v python3 >/dev/null || die "python3 is required before the safety backup can run."
-    log "Taking a safety backup of the live stack (the rollback anchor)"
-    # ponytail: --no-encrypt, as v1.4 refuses plaintext unattended without PITHEAD_BACKUP_PASSPHRASE; the anchor stays on the bench. Output kept for the die reason (#2757).
-    local out rc=0 && out="$(on_bench "cd '$CANONICAL_DIR' && ./pithead backup -y --no-encrypt 2>&1")" || rc=$?
-    [ "$rc" -eq 0 ] || {
-        out="$(printf '%s\n' "$out" | python3 -c 'import sys; s = sys.stdin.buffer.read().decode("utf-8", "ignore"); sys.stdout.write("".join(c for c in s if c in "\n\t" or c.isprintable()))' | redact_remote_output)"
-        printf '%s\n' "$out" >&2
-        die "pithead backup failed (exit $rc): $(printf '%s\n' "$out" | tail -n 20 | paste -sd'|' -)"
-    }
-    SAFETY_ARCHIVE="$(on_bench "ls -t '$CANONICAL_DIR'/backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1")"
-    [ -n "$SAFETY_ARCHIVE" ] || die "Backup ran but produced no archive."
-    ok "safety backup: $SAFETY_ARCHIVE"
-}
-
+source "$HERE/lib/safety-backup.sh" || exit $?
 # --- Phase 3: borrow the miner ----------------------------------------------
 borrow_miner() {
     [ "$BORROW_MINER" = "1" ] || {
@@ -620,10 +606,8 @@ run_harness() {
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     harness_install_runner || die "Failed to install the detached harness runner."
-    # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
-    # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        harness_pregate "$WORKERS" "$remote_args $no_mining" > >(redact_remote_output) 2> >(redact_remote_output >&2) || return 1
+        run_inline_pregate "$WORKERS" "$remote_args $no_mining" || return 1
     fi
     harness_launch_records
     harness_prepare "$rearm_id" || die "Failed to record harness launch intent."

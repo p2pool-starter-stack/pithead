@@ -1,8 +1,36 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+source "${BASH_SOURCE[0]%/*}/reset-restore-startup.sh"
+
+run_restore_dashboard_probe() {
+    local before_config before_secrets before_tari after_config after_secrets after_tari probe_rc=0
+    if ! before_config=$(rx 'sha256sum config.json') || [ -z "$before_config" ] ||
+        ! before_secrets=$(upgrade_secret_fingerprints) || [ -z "$before_secrets" ] ||
+        ! before_tari=$(env_on_box TARI_MODE) || [ -z "$before_tari" ]; then
+        it_fail "restore probe captures the original Tari baseline (#3432)" "configuration, secrets or Tari mode unreadable"
+        return 1
+    fi
+    if rx 'bash -s' --stdin <"$(dirname "${BASH_SOURCE[0]}")/restore-dashboard-guest.sh" 2>&1 |
+        redact >"$OUT_DIR/restore-dashboard.log"; then
+        it_pass "CLI restore refreshes dashboard configuration and running energy cost (#3432)"
+    else
+        it_fail "CLI restore refreshes dashboard configuration and running energy cost (#3432)" "see restore-dashboard.log"
+        probe_rc=1
+    fi
+    if ! after_config=$(rx 'sha256sum config.json') || [ "$after_config" != "$before_config" ] ||
+        ! after_secrets=$(upgrade_secret_fingerprints) || [ "$after_secrets" != "$before_secrets" ] ||
+        ! after_tari=$(env_on_box TARI_MODE) || [ "$after_tari" != "$before_tari" ] ||
+        ! wait_status_ok 240; then
+        it_fail "restore probe returns the original healthy Tari baseline (#3432)" "configuration, secrets, Tari mode or readiness differs"
+        return 1
+    fi
+    it_pass "restore probe returns the original healthy Tari baseline (#3432)"
+    return "$probe_rc"
+}
+
 run_reset_restore() {
     RESET_RESTORE_STACK_INTACT=0
-    local scratch original_config original_secrets after_config after_secrets saved_umask rc=0 mutated=0 verified=1
+    local scratch code_version original_config original_secrets after_config after_secrets saved_umask rc=0 mutated=0 verified=1
     saved_umask=$(umask)
     umask 077
     scratch=$(mktemp -d "${TMPDIR:-${XDG_RUNTIME_DIR:-/var/tmp}}/reset-recovery.XXXXXXXX") || {
@@ -38,12 +66,13 @@ run_reset_restore() {
         rc=1
     else
         mutated=1
-        if rx 'umask 077; cat >config.json' --stdin <"$scratch/fixture.json" &&
+        if code_version=$(rx 'tr -d " \t\r\n" <VERSION') && code_version=${code_version%%[-+]*} &&
+            rx 'umask 077; cat >config.json' --stdin <"$scratch/fixture.json" &&
             pithead apply -y 2>&1 | redact >"$OUT_DIR/reset-restore.fixture-apply.log" &&
             rx 'cat config.json' >"$scratch/applied.json" &&
-            jq -en --slurpfile original "$scratch/original.json" --slurpfile reference "$scratch/reference.json" --slurpfile applied "$scratch/applied.json" '
+            jq -en --slurpfile original "$scratch/original.json" --arg code_version "$code_version" --slurpfile applied "$scratch/applied.json" '
                 def stamp: if type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$") then . else null end;
-                ($reference[0].config_version | stamp) as $candidate |
+                ($code_version | stamp) as $candidate |
                 select($candidate != null and $applied[0].config_version == $candidate) |
                 {baseline_version: ($original[0].config_version | stamp), candidate_version: $candidate, fixture_version: $applied[0].config_version}
             ' >"$scratch/receipt.json" && mv -- "$scratch/receipt.json" "$OUT_DIR/reset-restore.fixture.json"; then
@@ -87,6 +116,7 @@ run_reset_restore_fixture() {
     local before_config before_secrets archive out rc after_config after_secrets
     local failures_before="$IT_FAIL"
     it_step "encrypted backup → config-reset → restore without rendered configuration…"
+    post_op_begin
     before_config=$(rx 'sha256sum config.json') && before_secrets=$(upgrade_secret_fingerprints) || {
         it_fail "reset recovery captures configuration and secrets" "snapshot unreadable"
         return 1
@@ -149,7 +179,6 @@ run_reset_restore_fixture() {
     fi
     rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
         redact >"$OUT_DIR/reset-restore.reset.log"
-    # The appliance reboots into first-boot setup right after the reset; every later step waits for it.
     if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log" && ! reset_restore_wait_reboot "$boot_before" 300; then
         it_fail "guest returns after the config-reset reboot" "no new boot reached the target within 300s"
         return 1
@@ -210,9 +239,13 @@ run_reset_restore_fixture() {
     rr_web_ports_owned_by_dashboard "reset recovery" || return 1
     if wait_status_ok 600; then
         it_pass "stack healthy after encrypted restore following config-reset"
+        POI_PROBES_ALLOWED=1 post_op_invariants "after reset recovery"
     else
         it_fail "stack healthy after encrypted restore following config-reset" "status did not recover"
         return 1
+    fi
+    if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log"; then
+        rr_restore_during_wizard_startup "$archive" || return 1
     fi
     after_config=$(rx 'sha256sum config.json') && after_secrets=$(upgrade_secret_fingerprints) || {
         it_fail "reset recovery reads restored configuration and secrets" "snapshot unreadable"

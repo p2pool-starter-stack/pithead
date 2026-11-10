@@ -56,7 +56,14 @@ accounts for the difference from 14.4 and 28.8 minutes; longer runs converge.
 At 0.1 percent, 100 cycles (16 hours 40 minutes) accrue the first 60-second slice.
 Over a week of 1008 cycles, the planner delivers 600 seconds against a
 604.8-second target and carries the remaining 4.8 seconds of debt. The shortfall
-is below one 60-second slice.
+is below one 60-second slice. The weekly property compares carried debt with the
+independently calculated target minus delivered time using a `1e-6` ms absolute
+tolerance and no relative tolerance. Binary64 rounding at the three-cycle debt
+cap is at most `2.33e-10` ms per operation; allowing four operations per cycle
+across 1008 cycles stays below `1e-6` ms. This also covers the target calculation's
+rounding. The tests retain the 0.28 percent, zero-XvB case and reject injected
+`0.001` ms accounting drift in either direction. Cycle totals, minimum dwell,
+reserve, one-slice shortfall and debt-cap assertions remain unchanged.
 
 Run the examples and property tests with the locked test extra:
 

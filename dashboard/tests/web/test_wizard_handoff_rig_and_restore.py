@@ -333,22 +333,6 @@ async def test_unauthed_rig_submit_writes_nothing(client, seeded):
     assert not (seeded / "rig-request.json").exists()
 
 
-async def test_auth_mode_rides_beside_the_config(client, seeded):
-    # "no login" is an empty password, which is also what "not chosen" looks like — the choice
-    # cannot be encoded in the config without colliding with a real one.
-    await _auth(client)
-    cfg = {"monero": {"wallet_address": "4XYZ"}, "tari": {"wallet_address": "t"}}
-    await client.post("/submit", data={"config": json.dumps(cfg), "auth_mode": "none"})
-    assert (seeded / "auth-mode").read_text() == "none"
-
-
-async def test_an_unknown_auth_mode_is_ignored(client, seeded):
-    await _auth(client)
-    cfg = {"monero": {"wallet_address": "4XYZ"}, "tari": {"wallet_address": "t"}}
-    await client.post("/submit", data={"config": json.dumps(cfg), "auth_mode": "whatever"})
-    assert not (seeded / "auth-mode").exists()
-
-
 async def test_restore_writes_the_archive_and_passphrase_and_clears_a_previous_error(
     client, seeded, restore_spool
 ):

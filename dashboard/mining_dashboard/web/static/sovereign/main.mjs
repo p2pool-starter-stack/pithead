@@ -1,9 +1,14 @@
 import { html, render } from "../app/preact.mjs";
+import { EarningsPage } from "./earnings.mjs";
+import { MachinesPage } from "./machines.mjs";
 import { createNavigation, PAGES, readRoute, routeUrl } from "./navigation.mjs";
 import { Overview, OverviewAdvanced } from "./overview.mjs";
 import { RANGES } from "./overview-model.mjs";
 import { createPolling } from "./polling.mjs";
+import { PowerControl } from "./power.mjs";
 import { Shell } from "./shell.mjs";
+import { createSyncHistory } from "./sync-model.mjs";
+import { overviewContent } from "./sync-view.mjs";
 
 export function initSovereign({
   win = window,
@@ -38,7 +43,16 @@ export function initSovereign({
   if (!initial.searchParams.has("range")) initial.searchParams.set("range", "24h");
   let route = readRoute(initial, read("dashboardView"));
   win.history.replaceState(null, "", routeUrl(initial, route.page, route.advanced));
-  let data = { snapshot: null, connected: true, sessionExpired: false };
+  let snapshotStorage;
+  try {
+    snapshotStorage = win.sessionStorage;
+  } catch {}
+  const syncHistory = createSyncHistory(snapshotStorage);
+  let data = {
+    snapshot: syncHistory.snapshot,
+    connected: !syncHistory.snapshot,
+    sessionExpired: false,
+  };
   let lastQuery = win.location.search;
   let pendingChart = false;
   const refresh = () => {
@@ -62,6 +76,22 @@ export function initSovereign({
       refresh();
     },
   });
+  const dirtyEarnings = new Set();
+  const onDirtyChange = (key, dirty) => {
+    if (dirty) dirtyEarnings.add(key);
+    else dirtyEarnings.delete(key);
+  };
+  const pageRenderer = (page, state) =>
+    renderPage?.(page, state) ||
+    (page === "overview"
+      ? html`<${Overview} ...${chartProps()} />`
+      : page === "earnings"
+      ? html`<${EarningsPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
+        url=${win.location.href} onDirtyChange=${onDirtyChange} />`
+      : page === "machines"
+        ? html`<${MachinesPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
+        onDirtyChange=${onDirtyChange} />`
+        : null);
   const paint = () => {
     doc.title = `Pithead — ${PAGES[route.page][0]}`;
     render(
@@ -73,15 +103,19 @@ export function initSovereign({
         doc.documentElement.dataset.theme = theme;
         paint();
       }} onNavigate=${(page, section) => navigation.go(page, section)}
-      onRetry=${() => polling.tick()} renderPage=${renderPage || ((page) => (page === "overview" ? html`<${Overview} ...${chartProps()} />` : null))}
-      renderSection=${renderSection || ((section) => html`<${OverviewAdvanced} section=${section} ...${chartProps()} />`)} />`,
+      onRetry=${() => polling.tick()} renderPage=${(page, state) => overviewContent({ page, state, history: syncHistory, connected: data.connected, renderPage: pageRenderer })} renderSection=${(
+        section,
+      ) =>
+        section === "maintenance" && data.snapshot?.os_update && data.snapshot?.control_enabled
+          ? html`${renderSection?.(section, data.snapshot)}<${PowerControl} snapshot=${data.snapshot} />`
+          : renderSection?.(section, data.snapshot) || html`<${OverviewAdvanced} section=${section} ...${chartProps()} />`} />`,
       root,
     );
   };
   const navigation = createNavigation({
     win,
     preference: read("dashboardView"),
-    dirty: hasUnsavedChanges,
+    dirty: () => hasUnsavedChanges() || dirtyEarnings.size > 0,
     onChange: (next) => {
       const pageChanged = route.page !== next.page;
       route = next;
@@ -95,6 +129,7 @@ export function initSovereign({
     },
   });
   const polling = createPolling({
+    initialSnapshot: syncHistory.snapshot,
     fetchFn: (signal) => {
       const params = new URL(win.location.href).searchParams;
       const query = new URLSearchParams();
@@ -104,6 +139,7 @@ export function initSovereign({
       return fetchFn(`/api/state?${query}`, { signal, cache: "no-store" });
     },
     publish: (next) => {
+      if (next.connected) syncHistory.observe(next.snapshot);
       data = next;
       paint();
       if (pendingChart) {

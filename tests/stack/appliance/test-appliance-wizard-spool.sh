@@ -143,7 +143,7 @@ for credential_path in preseed browser; do
         if [ "$credential_fault" = openssl ]; then
             credential_stub='openssl() { return 9; }'
         else
-            credential_stub='jq() { case "$*" in *".dashboard.auth.password = "*) return 9 ;; *) command jq "$@" ;; esac; }'
+            credential_stub='jq() { case "$*" in *".dashboard.auth = "*) return 9 ;; *) command jq "$@" ;; esac; }'
         fi
         echo "== firstboot credential failure: $credential_path / $credential_fault =="
         out=$(PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
@@ -207,7 +207,7 @@ run_sourced "$WSS" eval 'install() { return 99; }; rm() { return 99; }; wizard_r
 assert_rc "restore cleanup leaves installer pre-seeds untouched" "$?" 0
 run_sourced "$WSS" eval 'wizard_restore_installer_preseeds() { :; }; clear_setup_candidate() { :; }; clear_legacy_restore_carry() { return 1; }; wizard_clear_restore_state() { :; }; wizard_cleanup_installer_credentials a b c 0 d e f'
 assert_rc "legacy credential cleanup failure stops installer cleanup" "$?" 1
-fb_restore_paths=$(sed -n '/^firstboot_wizard() {/,/^}$/p' "$STACK")
+fb_restore_paths=$(sed -n '/^firstboot_wizard() {/,/^}$/p; /^wizard_start_page() {/,/^}$/p' "$STACK")
 assert_eq "every retry snapshot uses the secret-stripping publisher" "$(grep -c wizard_publish_retry_config <<<"$fb_restore_paths")" 3
 assert_eq "every accepted-restore exit clears its marker and carry" "$(grep -c 'wizard_clear_restore_state "$rec"' <<<"$fb_restore_paths")" 5
 assert_eq "both installer exits check the shared credential cleanup" "$(grep -c wizard_cleanup_installer_credentials <<<"$fb_restore_paths")" 2

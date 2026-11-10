@@ -28,7 +28,9 @@ import time
 import requests
 
 from mining_dashboard.config.config import (
-    TOR_SOCKS_PROXY,
+    XVB_HTTP_PROXY as TOR_SOCKS_PROXY,
+)
+from mining_dashboard.config.config import (
     XVB_STANDBY_INTERVAL_S,
     XVB_STANDBY_SOURCE,
 )

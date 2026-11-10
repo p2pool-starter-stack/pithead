@@ -2,6 +2,10 @@ parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
     validate_webhook_config
+    case "$(profile_name)" in
+    performance | balance | privacy) ;;
+    *) error 'profile must be "performance", "balance" or "privacy".' ;;
+    esac
 
     validate_config_control_characters
 
@@ -189,16 +193,7 @@ parse_and_validate_config() {
     validate_worker_endpoints
     validate_energy_config
 
-    # Optional miner authentication on the stratum port (#152). xmrig-proxy's --access-password
-    # rejects rigs whose stratum 'pass' doesn't match, so only devices that know the secret can
-    # mine through the proxy (this also shrinks the #122 SSRF surface). Three modes:
-    #   ""/absent → disabled (default): any rig that can reach :3333 may mine; 'pass' is ignored.
-    #   "auto"    → generate a secret once and PERSIST it in .env (reused across apply, exactly like
-    #               PROXY_AUTH_TOKEN); set the same value as every rig's stratum 'pass'.
-    #   <literal> → use exactly this password.
-    # Rendered to PROXY_STRATUM_PASSWORD. The password travels CLEARTEXT over stratum, so this is
-    # access control ("who may mine"), not encryption — pair it with a LAN-only bind / firewall.
-    STRATUM_PASSWORD=$(jq -r '.p2pool.stratum_password // ""' "$CONFIG_FILE")
+    STRATUM_PASSWORD=$(config_get .p2pool.stratum_password)
     if [ "$STRATUM_PASSWORD" = "auto" ]; then
         STRATUM_PASSWORD=$(env_get PROXY_STRATUM_PASSWORD) # reuse a previously generated one
         [ -n "$STRATUM_PASSWORD" ] || STRATUM_PASSWORD=$(openssl rand -hex 12)
@@ -220,16 +215,12 @@ parse_and_validate_config() {
     # flip later — the same discipline as the #208 default).
     STRATUM_TLS=$(normalize_bool "$(config_bool '.p2pool.stratum_tls' false)")
 
-    # xmrig-proxy dev-fee donation level (#173). xmrig-proxy's own compiled default is 0% (no
-    # donation) — which the stack inherited silently; expose it so operators can both SEE it and
-    # opt in. Default 0 (off); set N to donate N% of submitted hashrate to the xmrig developers
-    # (integer 0–99). Rendered to PROXY_DONATE_LEVEL and passed verbatim as --donate-level so the
-    # effective level is always visible. NOTE: this is NOT the XvB donation — that is xvb.* steered
-    # by the decision engine, never the proxy dev fee.
     DONATE_LEVEL=$(jq -r '.proxy.donate_level // 0' "$CONFIG_FILE")
     if ! printf '%s' "$DONATE_LEVEL" | grep -qE '^[0-9]+$' || [ "$DONATE_LEVEL" -gt 99 ]; then
         error "proxy.donate_level must be an integer 0–99 (percent); default 0 (got \"$DONATE_LEVEL\")."
     fi
+
+    validate_donation_config
 
     MONERO_USER=$(jq -r '.monero.node_username // empty' "$CONFIG_FILE")
     MONERO_PASS=$(jq -r '.monero.node_password // empty' "$CONFIG_FILE")

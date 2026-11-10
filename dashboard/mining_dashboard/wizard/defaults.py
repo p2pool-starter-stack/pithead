@@ -1,4 +1,9 @@
-from mining_dashboard.config.defaults import default_of, merge, new_install_defaults
+from mining_dashboard.config.defaults import (
+    automatic_setup_defaults,
+    default_of,
+    merge,
+    select_profile,
+)
 
 
 def tari_disk_default(budget: dict, disks: list[dict], target: str, wipe: str = "keep") -> str:
@@ -16,6 +21,10 @@ def tari_disk_default(budget: dict, disks: list[dict], target: str, wipe: str = 
 
 
 def fast_sync_warning(cfg: dict) -> str:
+    if cfg.get("profile") == "performance":
+        return "Performance exposes your IP: local nodes, P2Pool, XvB, alerts, release checks and price feeds use the normal internet without Tor."
+    if cfg.get("profile") == "privacy":
+        return "Privacy requires every rig to use the new password and worker API token; TLS is optional per connection."
     networks = []
     for chain, name in (("monero", "Monero"), ("tari", "Tari")):
         section = cfg.get(chain)
@@ -28,22 +37,29 @@ def fast_sync_warning(cfg: dict) -> str:
 
 def new_machine_answers(budget: dict, disks: list[dict], platform: str = "appliance") -> dict:
     return merge(
-        new_install_defaults(platform), {"tari": {"mode": tari_disk_default(budget, disks, "")}}
+        automatic_setup_defaults(platform), {"tari": {"mode": tari_disk_default(budget, disks, "")}}
     )
 
 
-def explicit_wizard_config(cfg: dict, ref: dict) -> dict:
+def explicit_wizard_config(cfg: dict, ref: dict, *, previous_profile: str = "balance") -> dict:
     from mining_dashboard.config.defaults import TABLE
     from mining_dashboard.wizard_config import strip_defaults
 
+    if (
+        isinstance(cfg.get("profile", "balance"), str)
+        and cfg.get("profile", "balance") in TABLE["profiles"]
+        and cfg.get("profile", "balance") != previous_profile
+    ):
+        cfg = select_profile(cfg, cfg["profile"])
     written = strip_defaults(cfg, ref) if ref else cfg
-    for path in TABLE["materialize"] + [
-        "monero.clearnet_initial_sync",
-        "tari.clearnet_initial_sync",
-    ]:
+    written["profile"] = cfg.get("profile", "balance")
+    for path in TABLE["materialize"]:
         block, key = path.split(".")
         if isinstance(cfg.get(block), dict) and key in cfg[block]:
             written.setdefault(block, {})[key] = cfg[block][key]
+    auth = cfg.get("dashboard", {}).get("auth")
+    if isinstance(auth, dict) and auth.get("password") == "":
+        written.setdefault("dashboard", {}).setdefault("auth", {})["password"] = ""
     return written
 
 

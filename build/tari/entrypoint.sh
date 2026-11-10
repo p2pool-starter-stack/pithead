@@ -41,12 +41,10 @@ apply_clearnet_initial_sync() {
         "$cfg" >"$tmp" && mv "$tmp" "$cfg"
 }
 
-# True when Tari should sync over clearnet NOW: flag on AND the auto-transition marker absent (#234).
 clearnet_sync_active() {
-    [ "${TARI_CLEARNET_SYNC:-false}" = "true" ] && [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]
+    [ "${TARI_CLEARNET_SYNC:-false}" = "true" ] && { [ "${PITHEAD_PROFILE:-balance}" = performance ] || { [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]; }; }
 }
 
-# Render the runtime config from the canonical Tor config, applying clearnet only while active.
 render_tari_runtime_config() {
     local src="$1" runtime="$2"
     mkdir -p "$(dirname "$runtime")"
@@ -351,7 +349,9 @@ lan_guard_gate "${TARI_GRPC_BIND:-127.0.0.1}"
 
 render_tari_runtime_config "$TARI_CONFIG_SRC" "$TARI_CONFIG_RUNTIME"
 
-if clearnet_sync_active; then
+if clearnet_sync_active && [ "${PITHEAD_PROFILE:-balance}" = performance ]; then
+    echo "Performance: Tari uses clearnet for sync and ongoing operation; its IP is visible."
+elif clearnet_sync_active; then
     echo "=========================================================================="
     echo "WARNING: TARI CLEARNET INITIAL SYNC IS ACTIVE (#183)"
     echo "  Tari P2P is running over CLEARNET (TCP + seeds.tari.com DNS seed) to sync"

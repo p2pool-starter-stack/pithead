@@ -60,7 +60,10 @@ class ChecklistCasesTests(unittest.TestCase):
         )
         for prefix in ("|", "| ", "  |\t"):
             with self.subTest(prefix=prefix):
-                extra = prefix + 'Set `monero.mode` to `"invalid-extra"` | `monero.mode must be` |'
+                extra = (
+                    prefix
+                    + '`extra` | Set `monero.mode` to `"invalid-extra"` | `monero.mode must be` |'
+                )
                 result, messages = self.generate(document.replace(last, last + "\n" + extra))
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("checklist mutations changed", result.stderr)

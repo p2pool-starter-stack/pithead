@@ -21,16 +21,15 @@ phase_setup_defaults() {
     if jq -e '.new_machine and .disk_budget.available_bytes < .disk_budget.local_need_bytes and
         .config.tari.mode == "off" and .config.xvb.enabled == false and
         .config.dashboard.tari_required == false and .config.dashboard.host == "pithead" and
-        .config.local_miner.enabled == true and
+        .config.dashboard.auth.username == "admin" and .config.dashboard.auth.password == null and
+        .config.p2pool.pool == "mini" and .config.local_miner.enabled == true and
         .config.monero.clearnet_initial_sync == false and .config.tari.clearnet_initial_sync == false and
         .auth_mode == "auto"' <<<"$state" >/dev/null; then
-        ok "fresh appliance defaults pin Tari off, XvB off, optional Tari, pithead host and local mining"
+        ok "fresh appliance defaults pin Tari off, XvB off, optional Tari, pithead host, generated login, mini and local mining"
     else
         bad "fresh appliance defaults differ from the small-disk contract"
         return 1
     fi
-    # The page blanks the reference's template wallets before it submits; curl must do the same, or
-    # the placeholder check (#3106) refuses the Tari template address even with Tari off.
     cfg=$(jq -c --arg m "$HARNESS_WALLET" '.config | .monero.wallet_address = $m | .tari.wallet_address = ""' <<<"$state") || return 1
     code=$(curl -sSk -b "$jar" --data-urlencode "config=$cfg" --data-urlencode auth_mode=auto \
         "https://$guest_ip/submit" -o /dev/null -w '%{http_code}')
@@ -72,10 +71,11 @@ phase_setup_defaults() {
         bad "fresh defaults provisioning did not finish successfully — $(provisioning_state)"
         return 1
     fi
-    if _ssh "jq -e '.tari.mode == \"off\" and .xvb.enabled == false and
+    if _ssh "jq -e '.profile == \"balance\" and .tari.mode == \"off\" and .xvb.enabled == false and
         .dashboard.tari_required == false and .dashboard.host == \"pithead\" and
         .local_miner.enabled == true and
-        .monero.clearnet_initial_sync == false and .tari.clearnet_initial_sync == false and
+        (.monero | has(\"clearnet_initial_sync\") | not) and
+        (.tari | has(\"clearnet_initial_sync\") | not) and
         (.dashboard.auth.password | length) == 32' /data/pithead/config.json" >/dev/null; then
         ok "fresh appliance setup persists all explicit new-install choices"
     else

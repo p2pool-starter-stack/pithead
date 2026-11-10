@@ -18,6 +18,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 RESTORED=no
         OUT_DIR="$(mktemp -d)"
         trap 'rm -rf "$OUT_DIR"' EXIT
+        mkdir -p "$OUT_DIR/backups/.pithead-e2e-safety"
+        touch "$OUT_DIR/backups/pithead-backup-test.tar.gz" "$OUT_DIR/backups/.pithead-e2e-safety/pithead-backup-test.tar.gz"
         # A file carries failures out of command substitutions and redirected/conditional calls.
         command_not_found_handle() {
             printf 'restore fixture: command not found: %s\n' "$1" >>"$OUT_DIR/missing-command"
@@ -26,23 +28,35 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }
         it_log() { :; }
         it_step() { :; }
+        backup_prune() { :; }
         it_pass() { :; }
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         trace_lifecycle() { [ -z "${LIFECYCLE_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$LIFECYCLE_TRACE_OUT"; }
+        trace_restore_order() { [ -z "${RESTORE_ORDER_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$RESTORE_ORDER_TRACE_OUT"; }
         capture_artifacts() {
             printf 'CAPTURE:%s\n' "$1"
             trace_lifecycle "capture:$1"
         }
         pithead() {
             [ "$RESTORE_CASE:$1:$PUSH_COUNT" != carry-apply-fails:down:3 ] || trace_lifecycle carry-cleanup-down
+            [ "$RESTORE_CASE:$1" = archive-missing:backup ] || [ "$1" != backup ] || printf '[pithead] Backup written to: backups/pithead-backup-test.tar.gz\n'
             case "$RESTORE_CASE:$1" in
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
                 echo 'carry apply failed before health wait'
                 return 1
-            } ;; # the third push is the carry
+            } ;;
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
+            up-long-fails:up)
+                echo 'Stratum password: fixture-secret'
+                echo 'Stratum authentication is ON: every rig must connect with pass "fixture-secret" (set it as the xmrig/RigForge stratum password).'
+                echo 'No such image: tecnativa/docker-socket-proxy:v0.5.0@sha256:x' >&2
+                printf 'compose output %s\n' {1..30}
+                echo 'PROXY_AUTH_TOKEN=fixture-secret' >&2
+                echo 'final up diagnostic'
+                return 1
+                ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
         }
@@ -59,15 +73,37 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             it_fail
             return 1
         }; }
+        post_op_begin() { [ -z "${POST_OP_TRACE_OUT:-}" ] || echo post-op-begin >>"$POST_OP_TRACE_OUT"; }
+        post_op_invariants() { [ -z "${POST_OP_TRACE_OUT:-}" ] || echo "post-op:$1" >>"$POST_OP_TRACE_OUT"; }
         lifecycle_gate_sample() { :; }
         run_source_image_reconcile() { :; }
+        lifecycle_pool_start() { printf main; }
+        lifecycle_pool_config() { [ "$RESTORE_CASE" != pool-state-fails ] && printf mini; }
+        lifecycle_pool_apply() {
+            push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$1")"
+            pithead apply -y >/dev/null 2>&1
+            wait_status_ok 180 || true
+        }
+        run_restore_dashboard_probe() {
+            trace_restore_order dashboard-probe
+            [ "$RESTORE_CASE" != dashboard-probe-fails ] || {
+                it_fail
+                return 1
+            }
+        }
+        run_tari_background_sync() {
+            trace_restore_order tari
+            [ "$RESTORE_CASE" != tari-fails ] || {
+                it_fail
+                return 1
+            }
+        }
         dashboard_tls_identity() { printf identity; }
         assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
             it_fail
             return 1
         }; }
         run_password_tls_continuity() { :; }
-        run_tari_background_sync() { :; }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
@@ -75,12 +111,13 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             *) printf absent ;;
             esac
         }
-        prove_wallet_supersession() { :; }    # Identity proof has its own selftest.
-        prove_wallet_recovery() { :; }        # Recovery proof has its own selftest.
-        tor_recovery_healthy_probe() { :; }   # Live Tor proof is outside this restore fixture.
-        run_connection_announcements() { :; } # Box-output proof is covered by its own selftest.
+        prove_wallet_supersession() { :; }
+        prove_wallet_recovery() { :; }
+        tor_recovery_healthy_probe() { :; }
+        run_connection_announcements() { :; }
         # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
-        run_reset_restore() { # the leg is driven by selftest-reset-restore.sh
+        run_reset_restore() {
+            trace_restore_order reset-restore
             case "$RESTORE_CASE" in
             reset-refused-intact)
                 RESET_RESTORE_STACK_INTACT=1
@@ -120,22 +157,42 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             *"image inspect --format"*) printf 'sha256:id' ;;
             "docker image inspect "*) [ "$RESTORE_CASE" != up-fails ] || trace_lifecycle post-up-image-inspect ;;
             ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;;
+            "rm -f backups/pithead-backup-test.tar.gz"*) (cd "$OUT_DIR" && bash -c "$1") ;;
             "rm -rf -- "*) [ "$RESTORE_CASE" != carry-cleanup-fails ] ;;
             esac
         }
         eval "$LIFECYCLE_SRC"
         run_lifecycle >"${LIFECYCLE_OUT:-/dev/null}"
         local lifecycle_rc=$?
+        [ -z "${LIFECYCLE_ARTIFACT_OUT:-}" ] || cp "$OUT_DIR/lifecycle-up/up.log" "$LIFECYCLE_ARTIFACT_OUT"
         if [ -s "$OUT_DIR/missing-command" ]; then
             printf '127|%s' "$((IT_FAIL + 1))"
             exit 127
         fi
         printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
+        if [ "$RESTORE_CASE" = cleanup-record ]; then
+            printf '|archive=%s|marker=%s' "$([ -e "$OUT_DIR/backups/pithead-backup-test.tar.gz" ] && echo yes || echo no)" "$([ -e "$OUT_DIR/backups/.pithead-e2e-safety/pithead-backup-test.tar.gz" ] && echo yes || echo no)"
+        fi
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
 
+ORDER_TRACE=$(mktemp) || exit 1
+assert_eq "the dashboard probe runs before a failing Tari trial" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes tari-fails)" "1|1"
+assert_eq "Tari failure stops the later reset recovery" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari'
+: >"$ORDER_TRACE"
+assert_eq "a dashboard probe failure prevents the Tari trial" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes dashboard-probe-fails)" "1|1"
+assert_eq "a failed dashboard probe stops before Tari and reset" "$(cat "$ORDER_TRACE")" dashboard-probe
+: >"$ORDER_TRACE"
+assert_eq "healthy dashboard and Tari probes still reach reset recovery" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes)" "0|0"
+assert_eq "healthy probes keep the full recovery order" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari\nreset-restore'
+rm -f "$ORDER_TRACE"
+
+assert_eq "lifecycle removes the archive and its provenance record" "$(drive_restore yes cleanup-record)" "0|0|archive=no|marker=no"
 assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
 assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
 assert_eq "restore rejects a newly introduced marker" "$(drive_restore yes marker-introduced)" "1|1"
@@ -183,10 +240,27 @@ assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHEC
 assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
 LIFECYCLE_OUT="$(mktemp)"
 LIFECYCLE_TRACE_OUT="$(mktemp)"
+LIFECYCLE_UP_LOG="$(mktemp)"
+POST_OP_TRACE_OUT="$(mktemp)"
+POST_OP_TRACE_OUT="$POST_OP_TRACE_OUT" drive_restore yes >/dev/null
+assert_eq "lifecycle baselines before each step and checks user-visible health after it (#3402)" "$(cat "$POST_OP_TRACE_OUT")" $'post-op-begin\npost-op:after restart\npost-op-begin\npost-op:after restore'
+rm -f "$POST_OP_TRACE_OUT"
+unset POST_OP_TRACE_OUT
 SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null || it_fail "missing-image diagnostic fixture executes"
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
 assert_contains "a failed missing-image up captures Tor's first unhealthy state (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
 assert_eq "missing-image up captures Tor before the next image operation (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-up\npost-up-image-inspect'
+assert_eq "a long failed missing-image up fails lifecycle (#3345)" "$(SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" LIFECYCLE_ARTIFACT_OUT="$LIFECYCLE_UP_LOG" drive_restore yes up-long-fails)" "1|1"
+assert_contains "a long failed missing-image up keeps its early cause (#3345)" "$(cat "$LIFECYCLE_OUT")" "No such image"
+assert_contains "a long failed missing-image up keeps its final line (#3345)" "$(cat "$LIFECYCLE_OUT")" "final up diagnostic"
+assert_contains "a long failed missing-image up redacts credentials (#3345)" "$(cat "$LIFECYCLE_OUT")" "PROXY_AUTH_TOKEN=<redacted>"
+assert_contains "a long failed missing-image up redacts the password announcement (#3345)" "$(cat "$LIFECYCLE_OUT")" "Stratum password: <redacted>"
+assert_contains "a long failed missing-image up redacts the rig instructions (#3345)" "$(cat "$LIFECYCLE_OUT")" "connect with pass <redacted>"
+assert_eq "a long failed missing-image up never prints credentials (#3345)" "$(grep -c fixture-secret "$LIFECYCLE_OUT" || true)" "0"
+for expected in "No such image" "final up diagnostic" "PROXY_AUTH_TOKEN=<redacted>" "Stratum password: <redacted>" "connect with pass <redacted>"; do
+    assert_contains "missing-image artifact retains $expected (#3345)" "$(cat "$LIFECYCLE_UP_LOG")" "$expected"
+done
+assert_eq "missing-image artifact never saves credentials (#3345)" "$(grep -c fixture-secret "$LIFECYCLE_UP_LOG" || true)" "0"
 : >"$LIFECYCLE_TRACE_OUT"
 LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-apply-fails >/dev/null || it_fail "carry apply diagnostic fixture executes"
 assert_contains "a failed carry captures Tor before cleanup (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
@@ -196,7 +270,7 @@ LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-health-fails >/dev/null |
 assert_contains "a carry health timeout captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
 SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore no >/dev/null || it_fail "missing-image health diagnostic fixture executes"
 assert_contains "a later missing-image health failure captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
-rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT"
+rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT" "$LIFECYCLE_UP_LOG"
 
 eval "$(grep '^carried_rows()' "$HERE/../lib/live-state-support.sh")"
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"

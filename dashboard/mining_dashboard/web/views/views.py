@@ -27,13 +27,13 @@ from mining_dashboard.helper.utils import (
     format_time_abs,
 )
 from mining_dashboard.service.health.update_checker import parse_semver
+from mining_dashboard.service.host_resources import build_host_resources
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
+from mining_dashboard.service.pool_tier import suggest_pool_tier
+from mining_dashboard.service.workers.donation import fleet_donation
 from mining_dashboard.version import resolve_version
-
-# The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two
-# are re-exported unused so `server.py`'s existing `from ...web.views import` keeps resolving.
 from mining_dashboard.web.miner_connection import stratum_state
 from mining_dashboard.web.views.charts import (
     _filter_events,  # noqa: F401 — re-export for worker_detail.py
@@ -230,20 +230,10 @@ def read_os_update_state() -> dict | None:
 
 
 def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASHRATE_WINDOW):
-    """Assemble the full ``/api/state`` payload — the contract the client renders against.
-
-    ``window`` is an optional ``(from, to)`` epoch-second manual-zoom window (Issue #47) that
-    overrides ``range_arg`` for the chart. ``avg_window`` (#168) picks which hashrate-averaging
-    window the chart plots. Computes domain values once (``build_metrics``), then
-    formats each section. Every value is a JSON-serializable primitive, list or dict. May raise
-    (e.g. ``state_mgr.get_history`` failing); the caller turns that into a sanitized 500."""
     data = data or {}
     history = state_mgr.get_history()
-    share_stats = state_mgr.get_share_stats()  # per-poll share-health deltas (#116)
-    raffle_wins = state_mgr.get_raffle_wins()  # rounds this wallet won, from XvB's winners file
-    # Confirmed on-chain payouts (#381): fetched once when the view-only wallet feature is on (else
-    # None), fed to both the earnings totals and the chart markers. config read at call time so
-    # tests can flip the flag per-app.
+    share_stats = state_mgr.get_share_stats()
+    raffle_wins = state_mgr.get_raffle_wins()
     monero_payouts = state_mgr.get_payouts("monero") if config.PAYOUT_CONFIRM_ENABLED else None
     metrics = build_metrics(data, state_mgr, history)
     db_healthy = state_mgr.is_db_healthy()
@@ -301,6 +291,8 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         data, metrics, mode_tok, db_healthy, wallet_change=recent_wallet_change(state_mgr)
     )
     badges.append(_egress_badge(egress["summary"]))
+
+    disk_growth = state_mgr.get_disk_growth()
     return {
         "overview": build_overview(data, metrics, monero_payouts, history),
         "overview_activity": build_mining_activity(
@@ -330,11 +322,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # routes 404 when off, so this is display gating only, not a security control. Read at
         # call time (module attribute, not from-import) so tests can flip the flag per-app.
         "control_enabled": config.DASHBOARD_CONTROL_ENABLED,
-        # Appliance OS-update state (step + verdict) | None off an appliance. Presence swaps the
-        # header's tarball Upgrade button for the OS update control.
         "os_update": read_os_update_state(),
-        # #559: use the snapshot's own timestamp, not now — a restored stale snapshot must
-        # report its true age; falls back to now only when timestamp is missing/0.
         "last_update": format_time_abs(data.get("timestamp") or time.time()),
         "range": range_arg,
         "window": {"from": window[0], "to": window[1]} if window else None,
@@ -344,9 +332,14 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "db_healthy": db_healthy,
         "hashrate": build_hashrate(metrics, mode_tok, p2p_tok, xvb_tok),
         "system": build_system(data),
+        "host_resources": build_host_resources(
+            data.get("system", {}).get("host_resources", {}), disk_growth
+        ),
         "sync": build_sync(metrics, pool_net["monero"]["db_size"]),
+        "sync_status": data.get("sync_status"),
         "stratum": pool_net["stratum"],
         "pool": pool_net["pool"],
+        "pool_tier_suggestion": suggest_pool_tier(history, metrics.pool_type),
         "network": pool_net["network"],
         "monero": pool_net["monero"],
         "shares_window": pool_net["shares_window"],
@@ -367,23 +360,14 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "xvb_standby": state_mgr.get_xvb_standby(),
         "tari": build_tari(data),
         "workers": build_workers(data.get("workers", []), data.get("rigforge_release")),
-        # Fleet power draw / efficiency and (once a price is set) net profit after power (#260),
-        # with live feed prices (#520) when dashboard.energy.price_feed is on.
+        "xmrig_donation": fleet_donation(data.get("workers", [])),
         "energy": build_energy(data.get("workers", []), data.get("prices")),
         "proxy_summary": build_proxy_summary(data),
-        # Persisted per-poll share-health deltas + trailing 24h reject rate (#116). Kept out of
-        # proxy_summary so its (cumulative) shape stays unchanged for existing clients.
         "share_stats": build_share_stats(share_stats, range_arg, window),
         "reject_pct_24h": _window_reject_pct(share_stats, 24 * 3600),
-        # #196 Tier-1 telemetry backbone exposure: block-found events, hourly disk-growth
-        # samples, and ~5-min XvB-credited samples. No chart renders these yet — that's the
-        # deliberate next slice — the payload just carries the persisted series.
         "blocks": build_blocks(state_mgr.get_blocks(), range_arg, window),
-        # Confirmed payouts per chain as timeline points ({x: ms, amount: atomic}), same
-        # range/window bounds as blocks. Feeds the mine cart train's Tari marker; empty lists
-        # while payout confirmation is off.
         "payouts": build_payouts(state_mgr, range_arg, window),
-        "disk_growth": build_disk_growth(state_mgr.get_disk_growth(), range_arg, window),
+        "disk_growth": build_disk_growth(disk_growth, range_arg, window),
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,

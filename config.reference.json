@@ -26,6 +26,11 @@
       "source": ""
     }
   },
+  "donation": {
+    "enabled": false,
+    "percent": 0,
+    "tor": true
+  },
   "monero": {
     "wallet_address": "your_monero_wallet_address",
     "view_key": "",
@@ -151,10 +156,11 @@
   },
   "tor": {
     "data_dir": "auto",
-    "auto_heal": false
+    "auto_heal": true
   },
   "network": {
     "subnet": "172.28.0.0/24",
     "tor_egress_firewall": true
-  }
+  },
+  "profile": "balance"
 }

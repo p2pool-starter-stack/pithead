@@ -324,8 +324,9 @@ cryptographically random token of at least 32 ASCII characters; generate one wit
 read bearer, because the bearer would make guessing that token offline practical.
 
 Appliance rigs run stock XMRig, which ignores a `DONATION` below 1 and donates at least 1%. A
-RigForge-built rig has the same floor at the level it was compiled with; lowering it needs a rebuild.
-Worker Inspect shows the configured value, not the rate the miner runs.
+RigForge-built rig applies a lower `DONATION` without a rebuild, except builds older than 1.18.1, which need a RigForge upgrade first.
+Machines › rig shows the level the miner reports and, when it differs, the configured one with
+the reason ([XMRig developer donation](donation.md#xmrig-developer-donation)).
 
 ! The control token is **write-capable** and travels in **cleartext HTTP** over the LAN (like the
 stratum password): a change can alter a rig's pools or its thermal `watchdog`/`max_temp_c`, so anyone
@@ -452,9 +453,36 @@ polls the rig to a terminal outcome with a hard cap; past the cap the panel repo
 still running. Once the runner reports the rig rebuilt (or is still rebuilding), the dashboard
 re-reads that one rig's status itself — a few bounded tries, not a new steady-state poll — instead
 of waiting out the normal 30-second cycle, so the version and the badge usually clear within
-seconds of the rebuild finishing rather than up to a full cycle later. Upgrades are per-rig only —
-there is deliberately no "upgrade all" button, so one click can never stagger rebuilds across the
-whole farm.
+seconds of the rebuild finishing rather than up to a full cycle later.
+
+#### Update all rigs
+
+`GET /api/control/worker-upgrade-all` lists what an update-all run would do, and `POST` starts it.
+The plan names the target version (the cached latest RigForge release), the managed rigs that are
+behind it, and the rigs that cannot take the upgrade with the reason: offline or stale telemetry, an
+unrecognised version, not adopted, control API unreachable, or an appliance rig that updates with its
+Pithead OS image instead. A rig already on the latest release is not listed. The control
+channel and its editor must be on, as for the single-rig upgrade.
+
+The start request carries only the version the operator reviewed. The dashboard derives the rig
+names itself and refuses with a conflict when the latest release changed, when no managed rig is
+behind, or when a run is already in progress (including one just started from another click). The host-side `worker-upgrade-all` action then runs
+the single-rig upgrade for each rig in turn, so every guard above applies per rig: the host
+re-derives the target, resolves each rig's address and bearer from `config.json`, and polls to a
+terminal outcome. One rig's failure never stops the others.
+
+The run's result file lists every rig with its settled outcome (`applied`, `noop`, `throttled`,
+`rolled_back`, `rejected`, `failed`, or `accepted` while the rig is still rebuilding) as it lands, and
+`GET` returns the newest run, including a run the host rejected whole (for example inside the cooldown), so progress and refusals survive navigation and reload. An accepted request is not
+reported as done. Each outcome is also recorded in the rig's change history, and one Telegram (and
+webhook or ntfy) summary is sent when the run settles. It names each rig that did not finish cleanly
+with its outcome only: the rig's own reason text stays in the change history and is never sent to a sink.
+It goes to every enabled sink, with no per-event toggle, so it is silent only when notifications are off.
+
+The runner handles one request at a time, so a run holds it for up to about two minutes per rig,
+and one run takes at most 20 rigs. Rigs beyond that report `not_started`; start another run for
+them once the five-minute cooldown after a run has passed. Other control requests wait behind a run. If the dashboard restarts mid-run, the host
+finishes the run, but the history rows and the summary are not written.
 
 ---
 
@@ -468,7 +496,7 @@ runs it as a managed service. During setup it asks for your stack's hostname and
 `3333` connection.
 
 ```bash
-git clone https://github.com/p2pool-starter-stack/rigforge.git
+git clone --branch v1.18.0 https://github.com/p2pool-starter-stack/rigforge.git
 cd rigforge
 chmod +x rigforge.sh
 sudo ./rigforge.sh

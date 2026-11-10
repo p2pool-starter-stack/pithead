@@ -217,10 +217,9 @@ async def test_form_fields_still_work_without_the_pane(client, seeded):
 
 
 def test_an_unanswered_tari_question_is_written_off_explicitly():
-    # Off is what a new machine gets (#1855, #3333), written EXPLICITLY because an omitted key
-    # still parses as local.
     cfg = wizard.build_config({"monero_wallet": "4" + "A" * 94, "tari_wallet": ""})
-    assert cfg["tari"] == {"mode": "off", "clearnet_initial_sync": False}
+    assert cfg["tari"] == {"mode": "off"}
+    assert cfg["profile"] == "balance"
 
 
 def test_remote_monero_carries_ports_and_defaults_them():

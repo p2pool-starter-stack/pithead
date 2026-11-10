@@ -150,13 +150,19 @@ class TestNewWorkerEntries:
         live = {"workers": {"list": [VALID_ENTRY]}}
         assert new_worker_entries(live, dict(live)) == []
 
-    def test_edited_existing_entry_is_not_new(self):
-        # A repoint of rig1's host is NOT a "new entry" to validate — it's a non-append change the
-        # host's own add-only gate refuses outright. Misclassifying it as "new" would validate its
-        # SHAPE (which can pass) and never flag that it touches an existing descriptor at all.
+    def test_repointed_existing_entry_is_returned_for_validation(self):
         live = {"workers": {"list": [VALID_ENTRY]}}
-        staged = {"workers": {"list": [{**VALID_ENTRY, "host": "ATTACKER"}]}}
+        repointed = {**VALID_ENTRY, "host": "10.0.0.77"}
+        assert new_worker_entries(live, {"workers": {"list": [repointed]}}) == [repointed]
+
+    def test_credential_only_edit_is_not_returned(self):
+        live = {"workers": {"list": [VALID_ENTRY]}}
+        staged = {"workers": {"list": [{**VALID_ENTRY, "token": "other-token"}]}}
         assert new_worker_entries(live, staged) == []
+
+    def test_non_object_staged_entry_is_returned_for_validation(self):
+        live = {"workers": {"list": [VALID_ENTRY]}}
+        assert new_worker_entries(live, {"workers": {"list": ["junk"]}}) == ["junk"]
 
     def test_removed_entry_is_not_new(self):
         rig2 = {"name": "rig2", "host": "10.0.0.10", "token": "tok-456"}
@@ -214,6 +220,16 @@ class TestValidateNewWorkerEntries:
             "network": {"subnet": "172.28.0.0/24"},
         }
         assert validate_new_worker_entries(live, staged) != ""
+
+    def test_repoint_onto_loopback_refused(self):
+        live = {"workers": {"list": [VALID_ENTRY]}}
+        staged = {"workers": {"list": [{**VALID_ENTRY, "host": "127.0.0.1"}]}}
+        assert "resolves inside" in validate_new_worker_entries(live, staged)
+
+    def test_repoint_with_a_masked_token_is_refused(self):
+        live = {"workers": {"list": [VALID_ENTRY]}}
+        masked = {**VALID_ENTRY, "host": "10.0.0.77", "token": {"__secret__": True}}
+        assert "token" in validate_new_worker_entries(live, {"workers": {"list": [masked]}})
 
     def test_new_entry_on_ordinary_lan_address_is_unaffected(self):
         # The fix must not break the feature: a real rig at a real LAN address still adopts fine.
