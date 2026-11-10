@@ -175,5 +175,70 @@ assert_rc "rotation without a controller transport fails closed" "$(
     echo $?
 )" 1
 
+echo "== the borrow moves a root-run rig and the worker gate names it (#3972) =="
+reload_rc() { # <restart-ok> <stopstart-ok> <pid-moves> <user-ok> <pkill-ok>
+    (
+        source "$HERE/../lib/borrow-fixture.sh"
+        pid=100 restart_ok="$1" stopstart_ok="$2" moves="$3" user_ok="$4" pkill_ok="$5" pkill_args=""
+        on_miner() { eval "$1"; }
+        sleep() { :; }
+        systemctl() {
+            case "$*" in
+            *"show -p MainPID"*) echo "$pid" ;;
+            "--user restart xmrig") [ "$user_ok" = 1 ] ;;
+            esac
+        }
+        sudo() {
+            shift
+            case "$2" in
+            restart) [ "$restart_ok" = 1 ] ;;
+            stop) [ "$stopstart_ok" = 1 ] ;;
+            start) [ "$stopstart_ok" = 1 ] && { [ "$moves" = 1 ] && pid=200; true; } ;;
+            esac
+        }
+        pkill() { pkill_args="$*"; [ "$pkill_ok" = 1 ]; }
+        miner_reload
+        rc=$?
+        echo "$rc $pkill_args"
+    )
+}
+assert_eq "stop then start reloads a root-run xmrig when restart is refused" "$(reload_rc 0 1 1 0 0)" "0 "
+assert_eq "a start that leaves the same MainPID is not a reload" "$(reload_rc 0 1 0 0 0)" "1 "
+assert_eq "refused restart, failed signal and no user unit fail loudly" "$(reload_rc 0 0 0 0 0)" "1 -HUP -u $(id -u) -x xmrig"
+assert_eq "the signal fallback only targets the caller's own xmrig" "$(reload_rc 0 0 0 0 1)" "0 -HUP -u $(id -u) -x xmrig"
+
+worker_gate() { # <worker rows json> <name>
+    (
+        source "$HERE/../lib/borrow-fixture.sh"
+        rows="$1"
+        ok() { :; }
+        warn() { :; }
+        FAKE_NOW=0
+        sleep() { FAKE_NOW=$((FAKE_NOW + 100)); }
+        date() { echo "$FAKE_NOW"; }
+        curl() { printf '{"proxy_workers":1,"workers":%s}' "$rows"; }
+        on_bench() { eval "$1"; }
+        wait_workers 1 5 "$2" >/dev/null
+        echo $?
+    )
+}
+assert_eq "another online worker does not satisfy the named-rig gate" \
+    "$(worker_gate '[{"name":"other","status":"online"}]' pithead-e2e)" 1
+assert_eq "an offline worker of the borrowed name does not satisfy the gate" \
+    "$(worker_gate '[{"name":"pithead-e2e","status":"offline"}]' pithead-e2e)" 1
+assert_eq "the borrowed rig online satisfies the gate" \
+    "$(worker_gate '[{"name":"other","status":"online"},{"name":"pithead-e2e","status":"online"}]' pithead-e2e)" 0
+assert_eq "the bench's own rig-id tags the pool even when the pool pre-exists" "$(
+    d2="$(mktemp -d)"
+    printf '%s' '{"pools":[{"url":"bench.example:3333","user":"w"}]}' >"$d2/c.json"
+    BENCH_HOST=bench.example MINER_XMRIG_CONFIG="$d2/c.json"
+    on_miner() { eval "$1"; }
+    step() { :; }
+    miner_reload() { :; }
+    repoint_miner
+    jq -r '.pools[0]["rig-id"]' "$d2/c.json"
+    rm -rf "$d2"
+)" pithead-e2e
+
 echo "selftest-borrow-rearm: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

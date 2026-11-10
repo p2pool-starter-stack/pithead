@@ -43,7 +43,7 @@ lib/pithead/28-parse-and-validate-config.sh	464
 lib/pithead/33-render-env.sh	481
 lib/pithead/36-quadlet-units.sh	406
 scripts/watch/trivyignore-watch.sh	599
-tests/integration/e2e.sh	663
+tests/integration/e2e.sh	639
 tests/integration/lib/run-cli.sh	410
 tests/integration/fakes/test_contract.py	437
 tests/integration/lib.sh	686
@@ -54,7 +54,7 @@ tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest-zmq-probe.sh	431
 tests/integration/selftest/selftest.sh	685
 tests/os/appliance-approval-verdict.sh	449
-tests/os/appliance-node-runtime-leg.sh	448
+tests/os/appliance-node-runtime-leg.sh	440
 tests/os/failure-evidence.sh	567
 tests/os/phases/install-restore.sh	414
 tests/os/phases/update.sh	413
