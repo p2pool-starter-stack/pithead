@@ -142,7 +142,7 @@ unset AWV_OK AWV_BAD awv
 
 echo "== unit: address_watch_converge reruns the service until the certificate carries the address (#3939) =="
 AWC_SAN="IP Address:FD00:2463:0:0:0:0:0:1"
-awc() { # <starts before the SAN appears> <start exit code>
+awc() {
     AWC_STARTS=0
     AWC_MINT_AT=$1
     AWC_RC=$2

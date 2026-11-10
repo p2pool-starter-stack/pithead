@@ -117,7 +117,7 @@ address_watch_verdict() { # <timer-enabled> <timer-active> <doctor-json> <servic
     echo "the address watch timer is enabled and active, and a service run re-minted the certificate for an address added after provisioning; doctor's certificate row is green"
 }
 
-address_watch_converge() { # <san-entry>
+address_watch_converge() {
     local attempt
     ADDRESS_WATCH_RC=1
     ADDRESS_WATCH_SANS=""
