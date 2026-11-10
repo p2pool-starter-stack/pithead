@@ -39,7 +39,7 @@
   "monero": {
     "clearnet_initial_sync": false,
     "data_dir": "auto",
-    "mem_limit": "auto",
+    "mem_limit": "4g",
     "mode": "local",
     "node_password": "fixture-rpc-password",
     "node_username": "fixture",
@@ -87,7 +87,7 @@
     "data_dir": "auto",
     "explorer_url": "https://textexplore.tari.com/?json",
     "grpc_lan_access": false,
-    "mem_limit": "auto",
+    "mem_limit": "8g",
     "mode": "local",
     "payout_scan_birthday": "auto",
     "remote": {
