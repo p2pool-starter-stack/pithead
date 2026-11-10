@@ -135,6 +135,19 @@ assert_quadlet_parity payout "$ROOT/os/quadlet/payout" "$QPAY" \
     caddy.container docker-proxy.container docker-control.container dashboard.container
 assert_eq "#2657: tari-wallet runs under podman's init (RunInit)" "$(grep -c '^RunInit=true$' "$QPAY/tari-wallet.container")" "1"
 assert_eq "#2899: tari-wallet has the same 10 s container stop timeout as Compose" "$(awk '/^\[Container\]$/{in_container=1;next} /^\[/{in_container=0} in_container && /^StopTimeout=10$/{n++} END{print n+0}' "$QPAY/tari-wallet.container")" "1"
+sed -e 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=payout_confirm/' -e 's/^TOR_COMPOSE_PROFILES=.*/TOR_COMPOSE_PROFILES=/' \
+    -e 's/^MONERO_NODE_HOST=.*/MONERO_NODE_HOST=192.0.2.10/' -e 's/^MONERO_RPC_PORT=.*/MONERO_RPC_PORT=28081/' \
+    "$ROOT/os/quadlet/payout/fixture.env" >"$SANDBOX/remote-payout.env"
+printf 'PAYOUT_NODE_REMOTE=true\nPAYOUT_NODE_PROXY=172.28.0.25:9050\n' >>"$SANDBOX/remote-payout.env"
+QREMOTE="$SANDBOX/quadlet-remote-payout-out"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/remote-payout.env" "$QREMOTE" >/dev/null
+assert_eq "#2866: a remote node renders no local Monero unit" "$([ -e "$QREMOTE/monerod.container" ] && echo present || echo absent)" "absent"
+assert_eq "#2866: the remote wallet unit does not wait for a local Monero unit" "$(grep -cE '^(After|Requires)=monerod.service$' "$QREMOTE/wallet-rpc.container")" "0"
+assert_contains "#2866: the remote wallet unit scans the configured node through the rendered proxy" \
+    "$(sed -n 's/^Environment=//p' "$QREMOTE/wallet-rpc.container")" \
+    '"MONERO_NODE_HOST=192.0.2.10" "MONERO_RPC_PORT=28081" PAYOUT_NODE_REMOTE=true "PAYOUT_NODE_PROXY=172.28.0.25:9050"'
+assert_contains "#2866: the local wallet unit keeps its bundled node endpoint" \
+    "$(sed -n 's/^Environment=//p' "$QPAY/wallet-rpc.container")" 'MONERO_NODE_HOST=172.28.0.26 MONERO_RPC_PORT=18081'
 assert_eq "payout profiles keep Tor's quadlet unchanged (#2859)" "$(diff -u "$QLOCAL/tor.container" "$QPAY/tor.container" 2>&1)" ""
 # The appliance must run the Tari the compose stack runs: #2604 moved compose to v6.0.1-pre.0 and
 # the quadlet pins stayed on 6.0.0 with an amd64-only wallet digest (#2624). Read each compose

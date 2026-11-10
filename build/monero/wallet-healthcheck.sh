@@ -31,11 +31,15 @@ wallet_rpc() {
 }
 
 daemon_block_count() {
-    curl -fsS --digest --max-time 1 \
+    node_host="${MONERO_NODE_HOST:-127.0.0.1}"
+    case "$node_host" in *:*) node_host="[$node_host]" ;; esac
+    node_timeout=1
+    [ -z "${PAYOUT_NODE_PROXY:-}" ] || node_timeout=2
+    curl -fsS --digest --max-time "$node_timeout" ${PAYOUT_NODE_PROXY:+--socks5-hostname "$PAYOUT_NODE_PROXY"} \
         -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
         -H 'Content-Type: application/json' \
         -d '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}' \
-        "http://${MONERO_NODE_HOST:-127.0.0.1}:${MONERO_RPC_PORT:-18081}/json_rpc"
+        "http://$node_host:${MONERO_RPC_PORT:-18081}/json_rpc"
 }
 
 # $1 = JSON field; prints its first integer value from stdin, or nothing.

@@ -39,10 +39,6 @@ render_env() {
     tari_grpc_lan=$(jq -r '.tari.grpc_lan_access // false' "$CONFIG_FILE")
     if [ "$tari_grpc_lan" == "true" ]; then tari_grpc_bind="0.0.0.0"; else tari_grpc_bind="127.0.0.1"; fi
 
-    # On-chain payout confirmation (#381): the view-only wallet-rpc service only starts when its
-    # compose profile is active, which is only when a view key is set on a local node. Off = no
-    # container, dashboard unchanged. PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config
-    # (which also refuses a view key on a remote node and validates the key/height).
     if [ "${PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
         profiles="${profiles:+$profiles,}payout_confirm"
     fi
@@ -319,6 +315,8 @@ MONERO_WALLET_ADDRESS=$(dotenv_render_value "$MONERO_WALLET")
 MONERO_VIEW_KEY=$(dotenv_render_value "$MONERO_VIEW_KEY")
 PAYOUT_SCAN_HEIGHT=$(dotenv_render_value "$PAYOUT_SCAN_HEIGHT")
 PAYOUT_CONFIRM_ENABLED=$(dotenv_render_value "$PAYOUT_CONFIRM_ENABLED")
+PAYOUT_NODE_REMOTE=$(dotenv_render_value "${PAYOUT_NODE_REMOTE:-false}")
+PAYOUT_NODE_PROXY=$(dotenv_render_value "${PAYOUT_NODE_PROXY:-}")
 WALLET_RPC_USERNAME=wallet
 WALLET_RPC_PASSWORD=$(dotenv_render_value "$WALLET_RPC_PASSWORD")
 MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc

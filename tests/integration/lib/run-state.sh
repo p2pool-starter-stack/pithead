@@ -316,10 +316,16 @@ assert_running_state() {
 
     # 8e. Live payout wallets: enabled, reachable, and matched to the configured address.
     # A new Monero payout needs days of chain time, so an empty total is valid.
-    if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.monero.view_key')" ]; then
+    if [ -n "$(jq_get "$config" '.monero.view_key')" ]; then
         assert_eq "PAYOUT_CONFIRM_ENABLED matches config (#381/#942)" "$(env_on_box PAYOUT_CONFIRM_ENABLED)" "true"
         assert_eq "dashboard confirms Monero payout tracking is live (#381/#942)" "$(jq_get "$st" '.earnings.confirmed.enabled')" "true"
         assert_payout_wallet_ready confirmed Monero
+    fi
+    if [ "$mode" = "remote" ] && [ -n "$(jq_get "$config" '.monero.view_key')" ]; then
+        assert_eq "remote payout wallet scans the configured node (#2866)" \
+            "$(rx "docker exec wallet-rpc printenv MONERO_NODE_HOST PAYOUT_NODE_REMOTE | tr '\n' ' '")" "$(jq_get "$config" '.monero.remote.host') true "
+        assert_eq "remote payout starts no local monerod (#2866)" "$(rx "docker ps -a --format '{{.Names}}' | grep -c '^monerod$' || true")" "0"
+        assert_eq "remote payout tracking is complete (#2866)" "$(jq_get "$st" '.earnings.confirmed.tracking.complete')" "true"
     fi
     if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.tari.view_key')" ]; then
         assert_tari_payout_scan "$config" "$st"

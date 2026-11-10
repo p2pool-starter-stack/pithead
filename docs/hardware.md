@@ -273,9 +273,10 @@ Either way it must be a node you control, and the requirements differ per chain.
 [Remote Tari node](configuration.md#remote-tari-node) — including how to make *this* stack the
 serving side for another one.
 
-> NOTE: on-chain payout confirmation scans against local nodes only, so `monero.view_key` is refused
-> with `monero.mode: remote` and `tari.view_key` with `tari.mode: remote`. Setup fails with that
-> reason rather than scanning through someone else's daemon.
+> NOTE: on-chain payout confirmation through a remote node is supported for Monero only, with the
+> trust and routing rules in [Dashboard › Payout confirmation through a remote Monero node](dashboard.md#payout-confirmation-through-a-remote-monero-node).
+> `tari.view_key` is refused with `tari.mode: remote`. Setup fails with that reason rather than
+> scanning through someone else's daemon.
 
 ---
 

@@ -4,6 +4,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/lib.sh"
+# shellcheck source=tests/integration/scenarios.sh
+source "$HERE/scenarios.sh"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh"
@@ -64,6 +66,17 @@ for currency in monero tari; do
     assert_eq "$currency teardown applies once" "$apply_calls" 1
     assert_eq "$currency teardown checks health once" "$health_calls" 1
 done
+
+echo "== remote Monero payout scenario keeps its view key (#2866) =="
+IT_MONERO_VIEW_KEY=feedface resolve_overrides "$(scenario_overrides remote-main-payout-confirm)"
+assert_rc "remote payout scenario resolves with a view key" "$?" 0
+# shellcheck disable=SC2086
+rendered="$(render_scenario_config "$BASELINE_CONFIG" $RESOLVED)"
+assert_eq "remote payout scenario keeps the Monero view key" "$(jq -r '.monero.view_key' <<<"$rendered")" feedface
+assert_eq "remote payout scenario targets the remote node" "$(jq -r '.monero.mode + " " + .monero.remote.host' <<<"$rendered")" "remote monero.example"
+assert_eq "remote payout scenario turns Tari off and clears its keys" "$(jq -r '.tari.mode + "|" + .tari.view_key + "|" + .tari.spend_public_key' <<<"$rendered")" "off||"
+resolve_overrides "$(scenario_overrides remote-main-payout-confirm)"
+assert_rc "remote payout scenario skips without a view key" "$?" 1
 
 echo "selftest-remote-payout: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]

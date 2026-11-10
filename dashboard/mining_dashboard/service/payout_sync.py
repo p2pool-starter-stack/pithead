@@ -25,11 +25,16 @@ import asyncio
 import logging
 import time
 
-from mining_dashboard.config.config import MONERO_WALLET_ADDRESS, TARI_WALLET_ADDRESS
+from mining_dashboard.config.config import (
+    MONERO_WALLET_ADDRESS,
+    TARI_WALLET_ADDRESS,
+    monero_is_local,
+)
 
 logger = logging.getLogger("DataService")
 
 DOWN_ALERT_ATTEMPTS = 3
+SCAN_LAG_BLOCKS = 10
 
 
 async def run_isolated(label, step):
@@ -101,8 +106,29 @@ async def sync_tari(state_manager, tari_wallet_client, alert_service):
     return answered
 
 
+def remote_tracking(reachable, scan_answered, wallet_height, node):
+    """Say whether a remote-node scan is complete, and why not when it is not."""
+    reason = None
+    node_height = (node or {}).get("height") or (node or {}).get("target") or 0
+    if not (node or {}).get("reachable"):
+        reason = "the remote node is unreachable"
+    elif node.get("is_syncing"):
+        reason = "the remote node is still syncing"
+    elif not reachable:
+        reason = "the payout wallet is not answering"
+    elif scan_answered is False:
+        reason = "the payout scan failed"
+    elif wallet_height is None:
+        reason = "the wallet height is unavailable"
+    elif node_height <= 0:
+        reason = "the remote node height is unavailable"
+    elif wallet_height + SCAN_LAG_BLOCKS < node_height:
+        reason = f"the wallet has scanned {wallet_height} of {node_height} blocks"
+    return {"complete": reason is None, "reason": reason}
+
+
 async def observe_wallet(
-    chain, client, monitor, expected, previous, alert_service, scan_answered=None
+    chain, client, monitor, expected, previous, alert_service, scan_answered=None, node=None
 ):
     """Probe each cycle; payout scans remain on their slower cadence."""
     if chain == "tari":
@@ -136,7 +162,7 @@ async def observe_wallet(
                 DOWN_ALERT_ATTEMPTS,
                 e,
             )
-    return {
+    status = {
         "reachable": reachable,
         "down": monitor.down,
         "since": since,
@@ -145,18 +171,24 @@ async def observe_wallet(
         "wallet_address": addresses[0] if match is False else None,
         "down_alert_failures": failures,
     }
+    if node is not None:
+        wallet_height = await asyncio.to_thread(client.height) if addresses is not None else None
+        status["tracking"] = remote_tracking(reachable, scan_answered, wallet_height, node)
+    return status
 
 
 async def observe_enabled_wallets(service):
     """Fast wallet checks run every data cycle, separately from the five-minute payout scan."""
     health = service.latest_data.setdefault("payout_wallet", {})
-    for chain, client, monitor, expected, scan_answered in (
+    monero_node = None if monero_is_local() else service.latest_data.get("monero_sync") or {}
+    for chain, client, monitor, expected, scan_answered, node in (
         (
             "monero",
             service.wallet_client,
             service.monero_wallet_health,
             MONERO_WALLET_ADDRESS,
             service.monero_wallet_scan_answered,
+            monero_node,
         ),
         (
             "tari",
@@ -164,6 +196,7 @@ async def observe_enabled_wallets(service):
             service.tari_wallet_health,
             TARI_WALLET_ADDRESS,
             service.tari_wallet_scan_answered,
+            None,
         ),
     ):
         if client is None:
@@ -178,6 +211,7 @@ async def observe_enabled_wallets(service):
                 health.get(chain),
                 service.alert_service,
                 scan_answered,
+                node,
             )
         except Exception as e:  # noqa: BLE001 — one wallet must not skip the other or the poll
             logger.error("%s payout wallet probe failed: %s", chain, e)

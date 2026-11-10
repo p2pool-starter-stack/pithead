@@ -54,6 +54,7 @@ test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
 	bash tests/stack/standalone/test_tari_wallet_permissions.sh
 	bash tests/stack/standalone/test_caddyfile.sh
+	bash tests/stack/standalone/test_compose_remote_payout.sh
 
 test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
 	@result=0; home=$$(mktemp -d); trap 'rm -rf "$$home"' EXIT; for t in tests/integration/selftest/*.sh tests/os/selftest*.sh; do \

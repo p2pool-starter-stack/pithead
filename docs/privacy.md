@@ -186,6 +186,7 @@ What the running stack sends to the internet, connection by connection.
 | **Tari** P2P | Tari network | — | `performance`: direct TCP; `balance`/`privacy`: Tor SOCKS (`type = "socks5"`) | on | profile and explicit sync flags govern local nodes; remote or off mode forces sync false |
 | **Tari** DNS seeds + Pulse (`seeds.tari.com`, `checkpoints.tari.com`) | DNS resolvers | "this IP runs Tari" | ✅ **closed** — `dns_seeds = []` and onion `peer_seeds` prevent seed lookups; Pulse's advisory lookup fails at the isolated loopback resolver, so no DNS packet leaves the host (#162) | n/a | `performance` or an explicit clearnet sync override re-enables the `seeds.tari.com` DNS seed |
 | **P2Pool** merge-mine gRPC to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — same posture as monerod's own remote-node RPC above | **off** — the bundled local Tari node is the default and this leg only exists in remote mode | use a node on your LAN or reachable over WireGuard; a `.onion` remote isn't supported yet (see [Configuration › Remote Tari node](configuration.md#remote-tari-node)) |
+| **Payout wallet** scan through a remote Monero node (only if `monero.mode: remote` and `monero.view_key` is set) | the node you configured | the wallet's scan requests and timing, to that node's operator; the view key is never sent | `privacy`: ✅ Tor SOCKS, refused for a node Tor cannot reach; `balance`/`performance`: ❌ direct | **off** — needs a view key and a remote node | leave `monero.view_key` empty. Only the configured node is dialled, and the egress firewall stays as set; Balance admits private-network addresses only |
 | **Dashboard** sync poll to a remote Monero node (only if `monero.mode: remote`) | the configured RPC | **your real IP**, to that node's operator | ❌ direct HTTP with configured RPC digest auth | **off** — local Monero is the default | use a node on your LAN or reachable over WireGuard; polling detects outages so workers fail over |
 | **Dashboard** sync poll to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — a plaintext gRPC dial, and the host-networked dashboard sits outside the Tor-egress firewall | **off** — only exists in remote mode | same as the p2pool leg above: LAN or WireGuard |
 | **P2Pool** inbound peers | reach you via onion | — | ✅ onion hidden service | on | — |
@@ -470,7 +471,10 @@ single-purpose appliance. One consequence is worth recording explicitly:
   path — can substitute a different payout, and nothing in the stack would catch it. A remote Monero
   node is the milder version of the same shape: it decides what chain state you mine on. Use nodes
   you run yourself or trust, on your LAN or over WireGuard. Only Tari yield is exposed this way;
-  Monero mining runs on a separate path. See
+  Monero mining runs on a separate path.
+  With a view key on a remote Monero node the wallet's scan requests reach that node too: its
+  operator sees their timing and can hide or misreport payouts, so treat confirmed payouts as the
+  node's word, not the chain's. See
   [Configuration › Trust boundary](configuration.md#trust-boundary).
 
 ## Maximum-privacy checklist

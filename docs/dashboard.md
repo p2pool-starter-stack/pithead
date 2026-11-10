@@ -545,7 +545,7 @@ wins row tracks only that wins keep landing.
 
 Rows degrade honestly rather than guess: a stream with [payout confirmation](#payout-confirmation)
 off shows a link into Configuration instead of a zero that would read as "earned nothing" — except
-Tari under a remote node, where the view key that link points at is one `tari.mode: remote` rejects,
+Tari under a remote node, where `tari.mode: remote` rejects the view key that link points at,
 so the Tari row instead says confirmation isn't available there; the XvB row disappears when XvB is
 off; a `*` marks a window that reaches back past the oldest recorded payout.
 
@@ -1034,7 +1034,8 @@ feed (with age) or config.json — so no fiat figure is ever unattributed.
 Everything above is a **model**. The earnings card also shows what actually landed in your wallet,
 when you give the stack a way to check the chain. Set `monero.view_key` (the private **view** key
 for your payout address) and the stack runs a **view-only** `monero-wallet-rpc` against your local
-node, scanning for confirmed incoming payouts. P2Pool pays each miner's share directly in a Monero
+node or, with `monero.mode: remote`, the remote node you configured (see
+[Payout confirmation through a remote Monero node](#payout-confirmation-through-a-remote-monero-node)), scanning for confirmed incoming payouts. P2Pool pays each miner's share directly in a Monero
 block's coinbase, so the wallet is the only ground truth that a payout arrived. The Monero tab of
 the earnings card then shows a **Confirmed on-chain** block under the estimate — and a
 `payout_confirmed` alert fires once per payout (Telegram and the other sinks). The Tari tab carries
@@ -1093,8 +1094,7 @@ health grace does not delay the card or alert.
 > backend process. It stays on the box: the view-only `monero-wallet-rpc` is published only to the
 > host loopback (`127.0.0.1:18082`), runs
 > non-root with a read-only root filesystem, and authenticates the dashboard with a generated
-> password. **Phase 1 is local node only** — scanning through a third-party daemon would change the
-> trust story, so a view key set with `monero.mode: remote` is refused. To change payout wallets, replace
+> password. To change payout wallets, replace
 > the address and its matching `monero.view_key`; apply rejects a mismatched pair. Leave `monero.view_key` empty (the
 > default) and none of this runs — the card shows only the estimate.
 
@@ -1117,6 +1117,31 @@ and provide readable logs with no database-integrity errors before the forced st
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
 2022-01-01, as Tari Universe's `wallet_birthday`), not a block height. The wallet scans only through
 the local node's wallet HTTP service on the internal network, never Tari's public fallback node. Leave `tari.view_key` empty and none of the Tari half runs.
+
+#### Payout confirmation through a remote Monero node
+
+With `monero.mode: remote`, setting `monero.view_key` starts the same view-only wallet without a local
+`monerod` and points it at `monero.remote.host`, `rpc_port` and the node login. Nothing else changes:
+leave the key empty and no wallet is rendered. It is opt-in and adds no configuration key.
+
+- **Trust.** The remote node's operator sees the wallet's scan requests and their timing, and can hide
+  or misreport payouts. The wallet runs with `--untrusted-daemon`. The view key is never sent to the node. The change
+  preview names the node and the route and needs typed `APPLY`.
+- **Route by profile.** Privacy scans only through Tor, and apply refuses a node Tor cannot reach
+  (a private, loopback, link-local or CGNAT address, or an unqualified or `.local` name) with a one-line
+  reason. Balance and Performance connect directly. Under Balance the egress firewall stays on and
+  admits only private-network addresses, so Balance reaches a remote node on your LAN or over WireGuard,
+  not a public one. Performance has no firewall.
+- **Failure is visible.** The Earnings page says "Tracking may be incomplete" with the reason when the
+  node is unreachable or still syncing, the wallet is not answering, a scan failed, or the wallet has
+  scanned more than 10 blocks fewer than the node reports. An empty history is never shown as
+  complete, and nothing falls back to a local node.
+- **Tari is not supported.** `tari.view_key` with `tari.mode: remote` is refused and the message says
+  payout confirmation through a remote node is Monero only. The pinned Tari wallet scans only through the local node's
+  wallet HTTP service.
+- **Same secrets.** The view key reaches the wallet the same way as with a local node, as an environment
+  value of the wallet container and an owner-only `.env`; it appears in no log or command line. No spend
+  key is read, stored or rendered.
 
 Each address/view-key pair keeps a separate view-only wallet. Changing the pair opens its wallet
 and keeps the previous one; reverting reopens the saved scan progress. Apply verifies that each
