@@ -105,7 +105,6 @@ class TestFleetUpgradeStart:
         req = json.loads((fleet_client.spool / "requests" / f"{rid}.json").read_text())
         assert req["action"] == "worker-upgrade-all"
         assert req["workers"] == ["rig-a", "rig-b"] and req["version"] == "v1.15.0"
-        assert "appliance-rig" not in req["workers"]
         assert set(req) == {"id", "action", "actor", "workers", "version"}
         for t in list(fleet_client.app["_bg_tasks"]):
             t.cancel()
