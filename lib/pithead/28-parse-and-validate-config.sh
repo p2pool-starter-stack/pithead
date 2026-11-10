@@ -1,6 +1,7 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
+    migrate_config_to_2_1
     validate_webhook_config
     case "$(profile_name)" in
     performance | balance | privacy) ;;

@@ -1,0 +1,74 @@
+import re
+from copy import deepcopy
+
+from mining_dashboard.config.defaults import TABLE, effective_defaults
+
+PROFILE_ORDER = ("balance", "performance", "privacy")
+TARGET = "2.1.0"
+
+
+def _split(path: str) -> list[str]:
+    return path.split(".")
+
+
+def _get(cfg: dict, path: str):
+    value = cfg
+    for key in _split(path):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def _set(cfg: dict, path: str, value) -> None:
+    *blocks, leaf = _split(path)
+    node = cfg
+    for key in blocks:
+        if not isinstance(node.get(key), dict):
+            node[key] = {}
+        node = node[key]
+    node[leaf] = value
+
+
+def _version(stamp) -> tuple[int, int, int]:
+    match = (
+        re.fullmatch(r"(\d{1,4})\.(\d{1,4})\.(\d{1,4})", stamp) if isinstance(stamp, str) else None
+    )
+    return tuple(int(part) for part in match.groups()) if match else (2, 0, 0)
+
+
+def migration_due(cfg: dict) -> bool:
+    stamp = _version(cfg.get("config_version", "2.0.0"))
+    return stamp < _version(TARGET) and cfg.get("profile") is None
+
+
+def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
+    rows = TABLE["profiles"]
+    governed = list(rows["balance"])
+    conflicts = {
+        name: sum(
+            1
+            for path in governed
+            if _get(cfg, path) is not None and _get(cfg, path) != rows[name][path]
+        )
+        for name in PROFILE_ORDER
+    }
+    chosen = min(PROFILE_ORDER, key=lambda name: conflicts[name])
+    defaults = effective_defaults(platform)
+    v2 = {
+        entry["path"]: entry["value"]
+        for entry in TABLE["migrations"][TARGET]["v2_absent"]
+        if entry.get("platform", platform) == platform
+    }
+    migrated = deepcopy(cfg)
+    migrated["profile"] = chosen
+    changes = [f"profile → {chosen}"]
+    for path in sorted({*governed, *v2}):
+        if _get(cfg, path) is not None:
+            continue
+        old = v2[path] if path in v2 else _get(defaults, path)
+        new = rows[chosen][path] if path in rows[chosen] else _get(defaults, path)
+        if old != new:
+            _set(migrated, path, old)
+            changes.append(f"{path} → pinned")
+    return migrated, changes

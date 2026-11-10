@@ -325,7 +325,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         if [ -n "$worker_new" ]; then
             result=$(printf '%s' "$result" | jq --arg rigs "$(printf '%s' "$worker_new" | paste -sd, - | sed 's/,/, /g')" '.changes += [{flag:"CONFIRM",key:"workers.list",msg:"Changing rigs: \($rigs). The dashboard sends each rig'"'"'s control token to its address and can change its pools and thermal limits, so check every address is the rig itself. A removed rig stops being managed from the dashboard; its miner keeps running."}] | .destructive = true')
         fi
-        if ! jq -e --argjson fallback "$(default_of local_miner.enabled legacy)" --slurpfile live "$CONFIG_FILE" '
+        if ! jq -e --argjson fallback "$(default_of local_miner.enabled)" --slurpfile live "$CONFIG_FILE" '
             (if .local_miner.enabled == null then $fallback else .local_miner.enabled end)
             == (if $live[0].local_miner.enabled == null then $fallback else $live[0].local_miner.enabled end)' "$staged" >/dev/null 2>&1; then
             result=$(printf '%s' "$result" | jq '.changes += [{flag:"INFO",key:"local_miner.enabled",msg:"The co-located local miner toggle changed."}]')

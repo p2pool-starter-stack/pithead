@@ -17,7 +17,7 @@
     "enabled": false
   },
   "xvb": {
-    "enabled": true,
+    "enabled": false,
     "url": "na.xmrvsbeast.com:4247",
     "donor_id": "auto",
     "donation_level": "auto",
@@ -52,7 +52,7 @@
     "view_key": "",
     "spend_public_key": "",
     "payout_scan_birthday": "auto",
-    "mode": "local",
+    "mode": "off",
     "grpc_lan_access": false,
     "clearnet_initial_sync": false,
     "remote": {
@@ -95,7 +95,7 @@
     },
     "hashrate_drop_threshold": 50,
     "hashrate_drop_minutes": 10,
-    "tari_required": true,
+    "tari_required": false,
     "fail_closed": false,
     "check_for_updates": true,
     "data_dir": "auto"

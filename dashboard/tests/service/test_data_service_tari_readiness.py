@@ -9,6 +9,11 @@ from mining_dashboard.service import data_service as ds
 from mining_dashboard.service.data_service import DataService
 
 
+@pytest.fixture(autouse=True)
+def tari_local(monkeypatch):
+    monkeypatch.setattr("mining_dashboard.service.data_setup.TARI_MODE", "local")
+
+
 @pytest.mark.parametrize("phase", ["starting", "migrating", "syncing"])
 @pytest.mark.parametrize("required", [True, False])
 async def test_live_progress_never_rejects_but_alerts(phase, required):

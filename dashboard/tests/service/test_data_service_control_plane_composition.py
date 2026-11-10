@@ -1,5 +1,12 @@
 # ruff: noqa: F403, F405
+import pytest
+
 from tests.service._data_service_support import *  # noqa: F403
+
+
+@pytest.fixture(autouse=True)
+def tari_local(monkeypatch):
+    monkeypatch.setattr("mining_dashboard.service.data_setup.TARI_MODE", "local")
 
 
 class TestControlPlaneComposition:

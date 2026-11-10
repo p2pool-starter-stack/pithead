@@ -12,6 +12,7 @@ source "$script"
 hostname() { printf legacy-machine; }
 nproc() { printf 8; }
 chown() { return 0; }
+caddy_hash_password_b64() { printf 'fixture-hash' | base64; }
 detect_host_timezone() { printf UTC; }
 MONERO_ONION=monero.onion TARI_ONION=tari.onion P2POOL_ONION=p2pool.onion
 DASHBOARD_ONION="" DASHBOARD_ONION_CLIENT_PUBKEY="" DASHBOARD_ONION_CLIENT_PRIVKEY=""
