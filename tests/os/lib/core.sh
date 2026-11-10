@@ -22,6 +22,7 @@ ip=""
 # LAST attempt's error text, so a caller that just gave up can classify why without another round
 # trip. See _ssh_unreachable_reason.
 SSH_ERR="/tmp/pithead-os-ssh.err"
+HOST_SCRATCH="${TMPDIR:-/tmp}/pithead-os-scratch.$$"
 # A fresh run must not inherit the last run's preserved console: the cleanup copy below is
 # no-clobber (the at-assertion copy is the authoritative one), so clear the slate here.
 rm -f "$SERIAL.failed"
@@ -358,6 +359,7 @@ cleanup() {
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi
+    rm -rf -- "$HOST_SCRATCH" || approval_cleanup_rc=1
     case "${IMAGE_UPGRADE_HOST_STAGE:-}" in
     /tmp/pithead-os-image-upgrade.*) rm -rf -- "$IMAGE_UPGRADE_HOST_STAGE" || approval_cleanup_rc=1 ;;
     esac
