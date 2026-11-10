@@ -143,7 +143,7 @@ for credential_path in preseed browser; do
         if [ "$credential_fault" = openssl ]; then
             credential_stub='openssl() { return 9; }'
         else
-            credential_stub='jq() { case "$*" in *".dashboard.auth.password = "*) return 9 ;; *) command jq "$@" ;; esac; }'
+            credential_stub='jq() { case "$*" in *".dashboard.auth = "*) return 9 ;; *) command jq "$@" ;; esac; }'
         fi
         echo "== firstboot credential failure: $credential_path / $credential_fault =="
         out=$(PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \

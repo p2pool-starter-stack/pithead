@@ -1,7 +1,6 @@
 import secrets
 
-from mining_dashboard.config.defaults import default_of, select_profile
-from mining_dashboard.wizard.defaults import automatic_setup_defaults
+from mining_dashboard.config.defaults import automatic_setup_defaults, default_of, select_profile
 
 
 def build_config(

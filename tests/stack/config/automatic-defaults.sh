@@ -78,6 +78,7 @@ build_val_sandbox
 seed_env
 dashboard_pass="$(run_sourced "$V" generate_node_password)"
 assert_eq "diagnostic fixture uses a generated password" "$(printf %s "$dashboard_pass" | wc -c | tr -d ' ')" 32
+cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml"
 jq --arg p "$dashboard_pass" '.dashboard.auth={username:"admin",password:$p}' "$AD/base.json" >"$V/config.json"
 (cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y >"$V/apply.log" 2>&1)
 assert_rc "password-bearing diagnostics fixture applies" "$?" 0
@@ -127,8 +128,12 @@ for parity_platform in diy appliance; do
         python3 - "$ROOT/dashboard" "$parity_platform" "$parity_kind" "$VALID_PRIMARY" >"$parity_dir/$parity_kind/config.json" <<'PYTHON'
 import json
 import sys
+import types
 
 sys.path.insert(0, sys.argv[1])
+package = types.ModuleType("mining_dashboard.wizard")
+package.__path__ = [sys.argv[1] + "/mining_dashboard/wizard"]
+sys.modules["mining_dashboard.wizard"] = package
 from mining_dashboard.config.defaults import effective_defaults, merge
 from mining_dashboard.wizard.defaults import explicit_wizard_config, new_machine_answers
 from mining_dashboard.wizard.form import build_config
@@ -150,6 +155,7 @@ PYTHON
     done
     for parity_kind in cli browser form; do
         make_stubs "$parity_dir/$parity_kind/bin"
+        cp "$ROOT/docker-compose.yml" "$parity_dir/$parity_kind/docker-compose.yml"
         PATH="$parity_dir/$parity_kind/bin:$PATH" PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/$parity_kind" parity_finalize >"$parity_dir/$parity_kind.finalize.log" 2>&1
         assert_rc "$parity_platform $parity_kind defaults validate" "$?" 0
         parity_defaults=$(PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/$parity_kind" config_defaults legacy)
