@@ -315,8 +315,6 @@ MONERO_WALLET_ADDRESS=$(dotenv_render_value "$MONERO_WALLET")
 MONERO_VIEW_KEY=$(dotenv_render_value "$MONERO_VIEW_KEY")
 PAYOUT_SCAN_HEIGHT=$(dotenv_render_value "$PAYOUT_SCAN_HEIGHT")
 PAYOUT_CONFIRM_ENABLED=$(dotenv_render_value "$PAYOUT_CONFIRM_ENABLED")
-PAYOUT_NODE_REMOTE=$(dotenv_render_value "${PAYOUT_NODE_REMOTE:-false}")
-PAYOUT_NODE_PROXY=$(dotenv_render_value "${PAYOUT_NODE_PROXY:-}")
 WALLET_RPC_USERNAME=wallet
 WALLET_RPC_PASSWORD=$(dotenv_render_value "$WALLET_RPC_PASSWORD")
 MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc
@@ -441,6 +439,8 @@ PITHEAD_TLS_DIR=$(dotenv_render_value "$(appliance_tls_dir)")
 HOST_PORT=$(dotenv_render_value "$HOST_PORT")
 DEPLOYMENT_COMPLETED=$(dotenv_render_value "${DEPLOYMENT_COMPLETED:-false}")
 EOF
+        [ "${PAYOUT_NODE_REMOTE:-false}" != true ] ||
+            printf 'PAYOUT_NODE_REMOTE=true\nPAYOUT_NODE_PROXY=%s\n' "$(dotenv_render_value "${PAYOUT_NODE_PROXY:-}")" >>"$target"
     )
     # Contains the node RPC password; keep it owner-only (belt-and-braces — the umask above
     # already created it 600; a chmod failure now aborts loudly instead of passing silently).

@@ -22,7 +22,7 @@ describe_payout_change() {
             msg="Payout confirmation view key SET — a view-only monero-wallet-rpc starts and scans for confirmed payouts through $(payout_scan_target) (it can see incoming amounts, never spend)."
         else
             flag=DEST
-            msg="Payout confirmation view key CHANGED — a new view-only wallet is opened for this address and scans through $(payout_scan_target) (the previous one is kept)."
+            msg="Payout confirmation view key CHANGED — a new view-only wallet is opened for this address (the previous one is kept). It scans through $(payout_scan_target)."
         fi
         ;;
     PAYOUT_NODE_REMOTE)

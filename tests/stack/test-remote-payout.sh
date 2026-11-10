@@ -62,7 +62,7 @@ seed_env
 rp_config privacy remote 192.168.1.5 ""
 out="$(rp_apply)"
 assert_rc "Privacy without a view key keeps a LAN remote node working" "$?" 0
-assert_eq "remote node without a view key renders no wallet" "$(rp_env PAYOUT_CONFIRM_ENABLED)|$(rp_env PAYOUT_NODE_REMOTE)|$(rp_env COMPOSE_PROFILES)" "false|false|"
+assert_eq "remote node without a view key renders no wallet" "$(rp_env PAYOUT_CONFIRM_ENABLED)|$(rp_env PAYOUT_NODE_REMOTE)|$(rp_env COMPOSE_PROFILES)" "false||"
 
 seed_env
 rp_config balance local "" ""
@@ -71,7 +71,7 @@ assert_eq "local node without a view key renders no wallet" "$(rp_env PAYOUT_CON
 seed_env
 rp_config balance local ""
 out="$(rp_apply)"
-assert_eq "local node with a view key keeps the bundled node route" "$(rp_env PAYOUT_NODE_REMOTE)|$(rp_env PAYOUT_NODE_PROXY)|$(rp_env COMPOSE_PROFILES)" "false||local_node,payout_confirm"
+assert_eq "local node with a view key keeps the bundled node route" "$(rp_env PAYOUT_NODE_REMOTE)|$(rp_env PAYOUT_NODE_PROXY)|$(rp_env COMPOSE_PROFILES)" "||local_node,payout_confirm"
 
 seed_env
 rp_config balance local "" ""
