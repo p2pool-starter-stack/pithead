@@ -19,11 +19,6 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - The appliance rootfs raises golang.org/x/net to 0.62.0 in the Cosign and Docker Compose it
   builds, clearing CVE-2026-78661 in both binaries (#3931).
 
-### Fixed
-
-- Worker Inspect keeps the upgrade result line and unsaved edits after a one-click RigForge upgrade, and
-  re-reads the rig until it reports the new version instead of showing the pre-upgrade state (#3947).
-
 ### Changed
 
 - The appliance image bakes RigForge 1.18.1. Its prebuilt XMRig carries RigForge's donation
@@ -33,6 +28,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- Worker Inspect keeps the upgrade result line and unsaved edits after a one-click RigForge upgrade, and
+  re-reads the rig until it reports the new version instead of showing the pre-upgrade state (#3947).
 - The dashboard no longer asks for a second reboot while an installed update is still being
   verified. After the reboot, the new copy of the system moves the stored update status to
   verifying before its health checks finish, the header shows the verification window, and a
