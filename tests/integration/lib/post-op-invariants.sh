@@ -1,4 +1,4 @@
-# shellcheck shell=bash disable=SC2034 # POI_* state is read across calls
+# shellcheck shell=bash disable=SC2034
 POI_WORKERS=""
 POI_FAILURES=""
 
@@ -7,7 +7,8 @@ poi_workers_missing() {
 }
 
 poi_failures_unchanged() {
-    case "$1$2" in '' | *[!0-9]*) return 1 ;; esac
+    case "$1" in '' | *[!0-9]*) return 1 ;; esac
+    case "$2" in '' | *[!0-9]*) return 1 ;; esac
     [ "$2" -ge "$1" ] && [ $(($2 - $1)) -le "${3:-0}" ]
 }
 

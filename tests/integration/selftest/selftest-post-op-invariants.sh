@@ -7,7 +7,7 @@ echo "== post-operation user-visible health invariants (#3402) =="
 
 SNAP_OK=$'caddy c1 0 t1 true healthy\ndashboard d1 0 t2 true healthy\nxmrig-proxy x1 0 t3 true none'
 
-drive() ( # <fault> -> failing row labels, one per line
+drive() (
     local fault="$1"
     IT_FAIL=0 IT_PASS=0
     failed=""
