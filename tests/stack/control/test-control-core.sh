@@ -72,7 +72,7 @@ build_control_sandbox
 # Fail-closed: enabling the control channel without a dashboard password must not validate.
 seed_control_env
 printf '{ "monero":{"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"},
-          "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"},
+          "tari":{"mode":"local","wallet_address":"'"$VALID_TARI"'"}, "profile":"balance", "p2pool":{"pool":"main"},
           "dashboard":{"secure":true,"host":"box.lan","control":{"enabled":true}} }\n' "$WALLET" >"$C/config.json"
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
@@ -168,7 +168,7 @@ echo "== black-box: apply --dry-run is read-only re: node credential generation 
 # config.json rewritten by a --dry-run preview — the read-only contract #556 reported broken
 # (persist_node_credentials was writing the freshly-generated creds back to disk).
 printf '{ "monero":{"mode":"local","wallet_address":"%s","node_username":"","node_password":""},
-          "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"},
+          "tari":{"mode":"local","wallet_address":"'"$VALID_TARI"'"}, "profile":"balance", "p2pool":{"pool":"main"},
           "dashboard":{"secure":true,"host":"box.lan",
                        "auth":{"username":"admin","password":"a control passphrase"},
                        "control":{"enabled":true}} }\n' "$WALLET" >"$C/config.json"
@@ -369,6 +369,7 @@ echo "== black-box: reserved-node preview is CONFIRM-tier, not approval-tier (#1
 # set approval_required for an unrelated reason and defeat this measurement.
 UUID3="33333333-3333-4333-8333-333333333333"
 jq -n --arg w "$WALLET" '{
+    profile:"balance",
     monero:{mode:"remote",wallet_address:$w,node_username:"u",node_password:"p",
             remote:{host:"baseline-monero.example",rpc_port:18081,zmq_port:18083}},
     tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"baseline-tari.example",grpc_port:18142}},
