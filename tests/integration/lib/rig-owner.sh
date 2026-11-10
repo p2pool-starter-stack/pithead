@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 RIG_OWNER_SSH_PID=""
+RIG_OWNER_HOLD_PID=""
 
 rig_owner_hold() {
     local d ack=""
@@ -10,7 +11,11 @@ rig_owner_hold() {
     }
     ssh "${SSH_OPTS[@]}" "$MINER_HOST" 'm=${RIGFORGE_RIG_OWNER_MARKER:-/run/rigforge-rig-owner}; trap "sudo -n rm -f \"\$m\"" EXIT; printf "%s\n" "$$" | sudo -n tee "$m" >/dev/null || exit 1; echo RIG_OWNER_OK; cat >/dev/null' <"$d/in" >"$d/out" &
     RIG_OWNER_SSH_PID=$!
-    exec 7>"$d/in"
+    (
+        exec >"$d/in"
+        exec sleep 2147483647
+    ) &
+    RIG_OWNER_HOLD_PID=$!
     IFS= read -r ack <"$d/out" || true
     rm -rf "$d"
     if [ "$ack" != "RIG_OWNER_OK" ]; then
@@ -22,7 +27,10 @@ rig_owner_hold() {
 
 rig_owner_release() {
     [ -n "$RIG_OWNER_SSH_PID" ] || return 0
-    exec 7>&-
-    wait "$RIG_OWNER_SSH_PID" 2>/dev/null || true
-    RIG_OWNER_SSH_PID=""
+    kill "$RIG_OWNER_HOLD_PID" 2>/dev/null
+    wait "$RIG_OWNER_HOLD_PID" 2>/dev/null
+    kill "$RIG_OWNER_SSH_PID" 2>/dev/null
+    wait "$RIG_OWNER_SSH_PID" 2>/dev/null
+    RIG_OWNER_SSH_PID="" RIG_OWNER_HOLD_PID=""
+    ssh "${SSH_OPTS[@]}" "$MINER_HOST" 'sudo -n rm -f "${RIGFORGE_RIG_OWNER_MARKER:-/run/rigforge-rig-owner}"' </dev/null || true
 }

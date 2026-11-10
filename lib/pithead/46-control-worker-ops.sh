@@ -304,7 +304,7 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
     # rigforge#320 (v1.12.0) the rig writes an in-progress "started" plus first-class noop
     # (already on the target) and throttled (its own 6h anti-beacon window) terminals; "started",
     # like a non-matching change_id, just means keep polling. Terminals are applied / noop /
-    # throttled / rolled_back / failed. The cap is overridable (CONTROL_WU_POLL_CAP) so the stack
+    # throttled / busy / rolled_back / failed. The cap is overridable (CONTROL_WU_POLL_CAP) so the stack
     # tests can prove the timeout→accepted fallback in seconds.
     local sbody scode status reason deadline=$((SECONDS + ${CONTROL_WU_POLL_CAP:-90}))
     while [ "$SECONDS" -lt "$deadline" ]; do

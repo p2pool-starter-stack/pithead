@@ -26,6 +26,10 @@ assert_eq "the extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$HARNESS_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_harness() { } "
 assert_contains "the extracted function still composes the rigforge phases" \
     "$HARNESS_SRC" '--rigforge-control'
+assert_contains "run_harness marks the borrowed rig as owned before the harness launches (#3985)" \
+    "$HARNESS_SRC" 'rig_owner_hold'
+assert_contains "restore_all drops the rig owner marker (#3985)" \
+    "$(sed -n '/^restore_all() {$/,/^}$/p' "$E2E_SRC")" 'rig_owner_release'
 drive_harness() {
     local launch lf sf pf
     lf="$(mktemp)" sf="$(mktemp)" pf="$(mktemp)"
@@ -45,6 +49,8 @@ drive_harness() {
         step() { :; }
         warn() { :; }
         ok() { :; }
+        rig_owner_hold() { :; }
+        rig_owner_release() { :; }
         harness_prepare() { HARNESS_STATE=/test/state; }
         harness_finished() { :; }
         die() {
