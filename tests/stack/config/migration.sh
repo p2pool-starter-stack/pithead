@@ -2,6 +2,7 @@
 : "${STACK_SUITE:?source through tests/stack/run.sh}"
 echo "== unit: 2.0.0 configuration migration (#3576) =="
 MG_FX="$ROOT/tests/stack/fixtures/config-2.0.0"
+MG_DATA="$ROOT/dashboard/tests/fixtures/config-2.0.0"
 MG="$SANDBOX/config-migration"
 mkdir -p "$MG"
 
@@ -29,7 +30,7 @@ mg_render() {
 }
 
 mg_checked=0
-for mg_input in "$MG_FX"/inputs/*.json; do
+for mg_input in "$MG_DATA"/inputs/*.json; do
     mg_name=$(basename "$mg_input" .json)
     for mg_platform in diy appliance; do
         mg_flag=0
@@ -41,7 +42,7 @@ for mg_input in "$MG_FX"/inputs/*.json; do
         mg_out=$(PITHEAD_APPLIANCE="$mg_flag" run_sourced "$mg_dir" migrate_config_to_2_1 2>&1)
         assert_rc "$mg_name $mg_platform migrates" "$?" 0
         assert_eq "$mg_name $mg_platform migrated settings" \
-            "$(jq -S 'del(.config_version)' "$mg_dir/config.json")" "$(cat "$MG_FX/migrated/$mg_name.$mg_platform.json")"
+            "$(jq -S 'del(.config_version)' "$mg_dir/config.json")" "$(cat "$MG_DATA/migrated/$mg_name.$mg_platform.json")"
         cmp -s "$mg_input" "$mg_dir/config.json.bak-2.0" && ok "$mg_name $mg_platform keeps the 2.0.0 bytes" || bad "$mg_name $mg_platform keeps the 2.0.0 bytes" "backup differs"
         assert_eq "$mg_name $mg_platform migrated mode" "$(file_mode "$mg_dir/config.json")" 600
         cp "$mg_dir/config.json" "$mg_dir/once"
@@ -66,7 +67,7 @@ done
 
 MG_DRY="$MG/dry"
 mkdir -p "$MG_DRY"
-cp "$MG_FX/inputs/diy-login.json" "$MG_DRY/config.json"
+cp "$MG_DATA/inputs/diy-login.json" "$MG_DRY/config.json"
 cp "$MG_DRY/config.json" "$MG_DRY/before"
 PITHEAD_APPLIANCE=0 run_sourced "$MG_DRY" eval 'PITHEAD_DRY_RUN=1; migrate_config_to_2_1' >/dev/null 2>&1
 assert_rc "dry migration succeeds" "$?" 0
@@ -75,7 +76,7 @@ cmp -s "$MG_DRY/config.json" "$MG_DRY/before" && ok "dry migration leaves the by
 
 MG_FUTURE="$MG/future"
 mkdir -p "$MG_FUTURE"
-jq '.config_version="9.9.9"' "$MG_FX/inputs/workers-tokens.json" >"$MG_FUTURE/config.json"
+jq '.config_version="9.9.9"' "$MG_DATA/inputs/workers-tokens.json" >"$MG_FUTURE/config.json"
 cp "$ROOT/VERSION" "$MG_FUTURE/VERSION"
 cp "$MG_FUTURE/config.json" "$MG_FUTURE/before"
 mg_out=$(PITHEAD_APPLIANCE=0 run_sourced "$MG_FUTURE" parse_and_validate_config 2>&1)
@@ -86,27 +87,27 @@ MG_INFER="$MG/infer"
 mkdir -p "$MG_INFER"
 for mg_case in 'clearnet-performance performance' 'privacy-shaped privacy' 'diy-login balance'; do
     read -r mg_fixture mg_expected <<<"$mg_case"
-    cp "$MG_FX/inputs/$mg_fixture.json" "$MG_INFER/config.json"
+    cp "$MG_DATA/inputs/$mg_fixture.json" "$MG_INFER/config.json"
     PITHEAD_APPLIANCE=0 run_sourced "$MG_INFER" migrate_config_to_2_1 >/dev/null 2>&1
     assert_eq "$mg_fixture infers $mg_expected" "$(jq -r .profile "$MG_INFER/config.json")" "$mg_expected"
 done
-jq '.p2pool.clearnet=true | .tor.auto_heal=true' "$MG_FX/inputs/diy-login.json" >"$MG_INFER/config.json"
+jq '.p2pool.clearnet=true | .tor.auto_heal=true' "$MG_DATA/inputs/diy-login.json" >"$MG_INFER/config.json"
 PITHEAD_APPLIANCE=0 run_sourced "$MG_INFER" migrate_config_to_2_1 >/dev/null 2>&1
 assert_eq "a tied config migrates to balance" "$(jq -r .profile "$MG_INFER/config.json")" balance
 assert_eq "a tied config keeps its explicit override" "$(jq -r .p2pool.clearnet "$MG_INFER/config.json")" true
 
 MG_BAK="$MG/backup-failure"
 mkdir -p "$MG_BAK"
-cp "$MG_FX/inputs/diy-login.json" "$MG_BAK/config.json"
+cp "$MG_DATA/inputs/diy-login.json" "$MG_BAK/config.json"
 mg_out=$(PITHEAD_APPLIANCE=0 run_sourced "$MG_BAK" eval 'cp() { return 1; }; migrate_config_to_2_1' 2>&1)
 assert_rc "a failed backup refuses the migration" "$?" 1
-cmp -s "$MG_BAK/config.json" "$MG_FX/inputs/diy-login.json" && ok "a failed backup leaves the config untouched" || bad "a failed backup leaves the config untouched" changed
+cmp -s "$MG_BAK/config.json" "$MG_DATA/inputs/diy-login.json" && ok "a failed backup leaves the config untouched" || bad "a failed backup leaves the config untouched" changed
 
 build_backup_sandbox
 cp "$ROOT/VERSION" "$BK/VERSION"
 MG_TREE="$MG/restore-tree"
 mkdir -p "$MG_TREE/${BK#/}"
-cp "$MG_FX/inputs/workers-tokens.json" "$MG_TREE/${BK#/}/config.json"
+cp "$MG_DATA/inputs/workers-tokens.json" "$MG_TREE/${BK#/}/config.json"
 cp "$BK/.env" "$MG_TREE/${BK#/}/.env"
 tar -czf "$MG/v2.tar.gz" -C "$MG_TREE" "${BK#/}/config.json" "${BK#/}/.env"
 out=$(run_sourced "$BK" restore_apply "$MG/v2.tar.gz" "" "$MG/restore-error" "$MG/restored" "" "$MG/restore-stage" 2>&1)

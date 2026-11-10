@@ -25,7 +25,7 @@ UUID5="55555555-5555-4555-8555-555555555555"
 # Baseline: nano pool + stratum password + telegram bot + control, applied from the host CLI.
 jq -n --arg w "$WALLET" \
     '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"nano",stratum_password:"s3cretpw"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"nano",stratum_password:"s3cretpw"},
     telegram:{enabled:true,bot_token:"123456:legit-ABC_def",chat_id:"1111"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},
                control:{enabled:true}}}' >"$C/config.json"

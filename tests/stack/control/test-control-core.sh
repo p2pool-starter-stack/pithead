@@ -193,7 +193,7 @@ STAGED0="$C/data/control/staged"
 RESULTS0="$C/data/control/results"
 jq -n --arg w "$WALLET" --arg id "$UUID0" '{id:$id, action:"preview", actor:"admin", config:{
     monero:{mode:"local",wallet_address:$w,node_username:"",node_password:""},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS0/$UUID0.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead control-run-pending >/dev/null 2>&1)
 # The owner's #2333/#2367 ruling (2026-09-19) moved the RPC login onto the CONFIRM tier, so the
@@ -226,7 +226,7 @@ jq '.ssh={enabled:true,authorized_key:"ssh-ed25519 AAAATEST carried@test"}' "$C/
 # Preview: a valid typed intent (pool main -> mini) → previewed result + a host-side staged copy.
 jq -n --arg w "$WALLET" --arg id "$UUID1" '{id:$id, action:"preview", actor:"admin", config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID1.json"
 out="$(run_pending)"
 assert_rc "runner exits 0 on a valid preview" "$?" "0"
@@ -288,7 +288,7 @@ printf '{"id":"%s","action":"preview","actor":"x","config":{},"cmd":"rm -rf /"}\
 run_pending >/dev/null
 assert_contains "extra request keys are rejected" "$(jq -r '.error' "$RESULTS/$UUID2.json" 2>/dev/null)" "unexpected keys"
 jq -n --arg w "$WALLET" --arg id "$UUID2" '{id:$id, action:"preview", actor:"x", config:{
-    monero:{mode:"local",wallet_address:$w}, tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"banana"},
+    monero:{mode:"local",wallet_address:$w}, tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"banana"},
     dashboard:{auth:{password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID2.json"
 run_pending >/dev/null
 assert_eq "invalid candidate config is rejected" "$(jq -r '.status' "$RESULTS/$UUID2.json" 2>/dev/null)" "rejected"
@@ -371,7 +371,7 @@ UUID3="33333333-3333-4333-8333-333333333333"
 jq -n --arg w "$WALLET" '{
     monero:{mode:"remote",wallet_address:$w,node_username:"u",node_password:"p",
             remote:{host:"baseline-monero.example",rpc_port:18081,zmq_port:18083}},
-    tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"baseline-tari.example",grpc_port:18142}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"baseline-tari.example",grpc_port:18142}},
     p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
@@ -379,7 +379,7 @@ jq -n --arg w "$WALLET" '{
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id, action:"preview", actor:"admin", config:{
     monero:{mode:"remote",wallet_address:$w,node_username:"u",node_password:"p",
             remote:{host:"reserved-monero.example",rpc_port:18089,zmq_port:18090}},
-    tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"reserved-tari.example",grpc_port:18142}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"reserved-tari.example",grpc_port:18142}},
     p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"

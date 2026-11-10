@@ -3,12 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from mining_dashboard.config.defaults import TABLE
+from mining_dashboard.config.defaults import TABLE, effective_defaults
 from mining_dashboard.wizard_config import prepare_config
 
-ROOT = Path(__file__).resolve().parents[3]
-FIXTURES = ROOT / "tests/stack/fixtures/config-2.0.0"
-REFERENCE = json.loads((ROOT / "config.reference.json").read_text())
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/config-2.0.0"
+REFERENCE = effective_defaults()
 INPUTS = sorted((FIXTURES / "inputs").glob("*.json"))
 TIERS = TABLE["tiers"]
 
@@ -85,16 +84,14 @@ def test_every_reference_leaf_has_one_tier_and_every_tier_path_exists():
             assert any(leaf == path or leaf.startswith(path + ".") for leaf in found), (name, path)
 
 
-def test_essentials_stay_within_the_cap_and_feed_the_core_keys_file():
+def test_essentials_stay_within_the_cap():
     assert len(TIERS["essential"]) <= 15
-    assert json.loads((ROOT / "config.core-keys.json").read_text()) == TIERS["essential"]
 
 
 @pytest.mark.parametrize("stamped", [True, False])
 async def test_wizard_submit_migrates_only_a_stamped_2_0_0_config(tmp_path, monkeypatch, stamped):
     from aiohttp.test_utils import TestClient, TestServer
 
-    from mining_dashboard.config.defaults import effective_defaults
     from mining_dashboard.wizard import server as wizard
 
     monkeypatch.setenv("WIZARD_SPOOL", str(tmp_path))
