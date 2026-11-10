@@ -132,8 +132,8 @@ bake and the config stamp deferral are appliance only.
   until apply succeeds, and the dashboard commit and the CLI use the same recovery (#3899, #3883).
 - A dashboard configuration commit holds the mutation lock from preview validation through apply,
   so a concurrent command-line apply waits for it instead of interleaving with the copy of the
-  staged configuration and the apply. A lock timeout rejects the commit and is audited (#3892,
-  #3884).
+  staged configuration and the apply. A lock timeout rejects the commit and is audited
+  (#3892, #3884).
 - `pithead apply` no longer replaces the live Tari wallet secret before you confirm. The new
   secret is staged and published only after you confirm, so declining the wallet prompt cannot
   leave the old environment paired with new secret material (#3893, #3875).
@@ -151,8 +151,8 @@ bake and the config stamp deferral are appliance only.
 - The coordinator no longer offers **Upgrade rig…** for a rig whose RigForge reports being an
   appliance, and a worker upgrade request for one is refused before any lookup or connection. An
   appliance rig updates with its own signed OS image. The report needs a RigForge newer than the
-  1.18.1 baked into this release, so until a rig runs one, the offer still appears for it (#3968,
-  #3961).
+  1.18.1 baked into this release, so until a rig runs one, the offer still appears for it
+  (#3968, #3961).
 - With the Tor egress firewall on, a remote Monero or Tari node entered by a dual-stack LAN name is
   now accepted on its private IPv4 answer, in the first-boot wizard and in a day-two configuration
   commit, instead of being refused with the egress-firewall message (#2351, #2419).
@@ -160,8 +160,8 @@ bake and the config stamp deferral are appliance only.
 ### Known issues in 2.0.3
 
 The [known issues listed for 2.0.2](https://github.com/p2pool-starter-stack/pithead/blob/main/CHANGELOG.md#known-issues-in-202),
-including those it carries over from 2.0.1 and 2.0.0, still apply, except #3623, #3431, #2351 and
-#3761, which are fixed above, and #3375, which is mitigated above. The RigForge pool-edit issue
+including those it carries over from 2.0.1 and 2.0.0, still apply, except #3623, #3431, #2351
+and #3761, which are fixed above, and #3375, which is mitigated above. The RigForge pool-edit issue
 from 2.0.0 (rigforge#583) is fixed on the appliance by the RigForge 1.18.1 entry above. The
 `threads` issue (rigforge#588) is not: 2.0.3 still runs a RigForge that ignores `threads`. These
 three remain open and are planned for 2.0.4:
