@@ -146,6 +146,40 @@ class TestRefreshWorkerAfterUpgrade:
         assert entry["rigforge"]["stale"] is True
 
 
+class TestRefreshSurvivesMainLoopSwap:
+    async def test_write_lands_in_the_current_entry_after_a_swap(self):
+        old = {"name": "rig1", "ip": "10.0.0.5"}
+        data = {"workers": [old]}
+        fresh = {"name": "rig1", "ip": "10.0.0.5"}
+
+        async def swap_sleep(_):
+            data["workers"] = [fresh]
+
+        client = FakeWorkerClient(["1.12.0"])
+        ok = await worker_refresh.refresh_worker_after_upgrade(
+            data, "rig1", "v1.12.0", worker_client=client, attempts=2, sleep=swap_sleep
+        )
+        assert ok is True
+        assert fresh["rigforge"]["version"] == "1.12.0"
+        assert "rigforge" not in old
+
+    async def test_worker_dropped_or_readdressed_mid_refresh_stops_without_writing(self):
+        entry = {"name": "rig1", "ip": "10.0.0.5"}
+        data = {"workers": [entry]}
+        moved = {"name": "rig1", "ip": "10.0.0.99"}
+
+        async def readdress_sleep(_):
+            data["workers"] = [moved]
+
+        client = FakeWorkerClient(["1.12.0"])
+        ok = await worker_refresh.refresh_worker_after_upgrade(
+            data, "rig1", "v1.12.0", worker_client=client, attempts=3, sleep=readdress_sleep
+        )
+        assert ok is False
+        assert "rigforge" not in moved
+        assert len(client.calls) == 1
+
+
 class TestMaybeRefreshAfterUpgrade:
     """The gate deciding WHICH worker-upgrade terminal results deserve the refresh above."""
 

@@ -453,7 +453,13 @@ polls the rig to a terminal outcome with a hard cap; past the cap the panel repo
 still running. Once the runner reports the rig rebuilt (or is still rebuilding), the dashboard
 re-reads that one rig's status itself — a few bounded tries, not a new steady-state poll — instead
 of waiting out the normal 30-second cycle, so the version and the badge usually clear within
-seconds of the rebuild finishing rather than up to a full cycle later. Upgrades are per-rig only —
+seconds of the rebuild finishing rather than up to a full cycle later. Each probe writes to the
+worker's current entry, so a main-loop cycle that lands mid-refresh does not orphan the result.
+
+Worker Inspect then re-reads the rig every three seconds, for up to 90 seconds, until it reports the
+target version; the upgrade result line and any unsaved edits stay put, and a "waiting for the rig
+to report" note shows meanwhile. If the rig has not reported by then the note says so and asks for a
+reload. A rejected or failed upgrade is re-read once and shows its message without waiting. Upgrades are per-rig only —
 there is deliberately no "upgrade all" button, so one click can never stagger rebuilds across the
 whole farm.
 
