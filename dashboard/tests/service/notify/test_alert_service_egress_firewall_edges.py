@@ -64,3 +64,12 @@ class TestEgressFirewallEdges:
             workers_expected=False,
         )
         assert notifier.sent_events == [EVT]
+
+
+def test_performance_opt_out_remains_silent(monkeypatch):
+    from mining_dashboard.config import config
+    from mining_dashboard.service.network.egress_status import live_firewall_state
+
+    monkeypatch.setattr(config, "TOR_EGRESS_FIREWALL", False)
+    assert live_firewall_state() is None
+    assert _ev(_svc(), egress_firewall=live_firewall_state()) == []

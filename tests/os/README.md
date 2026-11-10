@@ -28,13 +28,31 @@ install-to-disk, the rig role, and the update → commit → rollback cycle that
 exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
-`kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_lease_ip`,
-`vm_list_running` and `vm_destroy`. Shared SSH diagnostics, DHCP polling and the
+`kvm-preflight.sh` owns the libvirt lifecycle helpers: `vm_state`, `vm_start`,
+`vm_stop_abrupt`, `vm_lease_ip`, `vm_list_running`, `vm_destroy` and `vm_create`.
+The start and abrupt-stop helpers operate on the current test VM and preserve
+the backend's output and exit status; `vm_state --reason` adds diagnostic detail.
+The fault phase uses these helpers for power cuts, restarts and state diagnostics.
+It retries an abrupt stop up to six times, ten seconds apart, and requires a
+successful state read of `shut off` before resetting the console or restarting.
+A failed or empty state read stops the leg without judging another boot.
+`selftest-fault-power-cut.sh` checks these contracts and the retry order;
+`selftest-fault-lifecycle.sh` checks the fault sequence and its refusal paths
+without a guest. Acceptance still requires a successful current-head `tier4-kvm`
+`fault` job covering A1/A2/A3, C, B, rollback, the subsequent update and D.
+Shared SSH diagnostics, DHCP polling and the
 stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
 failure handling, teardown order and caller routing using a temporary `virsh` executable
 without a guest; the tier-1
-`make test-integration-selftest` target discovers it. Libvirt remains the only backend;
-the battery still requires the Linux bench and does not run on macOS.
+`make test-integration-selftest` target discovers it. The ordinary boot, Secure Boot and
+shared disk-boot paths call `vm_create DISK SERIAL SECURE_BOOT`, where `SECURE_BOOT`
+is `no` or `yes`. Callers retain disk preparation and the host memory preflight;
+the helper preserves the libvirt firmware, CPU, disk, network and serial settings.
+`selftest-boot-lifecycle.sh` checks those settings, caller routing, ordering and failure
+handling without a guest. Changes to these creation paths require a successful
+current-head `tier4-kvm` boot job before merging. Libvirt remains the only backend;
+the authoritative battery requires the Linux bench and does not run on macOS.
+No software-emulation smoke mode is supported by this harness.
 `selftest-eventual-core.sh` drives the real control-drain, SSH, new-boot, reboot,
 dashboard-marker, DHCP, setup-page and serial waits with delayed, never-ready and
 flapping responses. `selftest-eventual-approval.sh` exercises password commit
@@ -425,7 +443,9 @@ the configured test registry fail before the image build. Release builds do not 
   legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
   with local chains and the non-default nano pool. The authenticated wizard must name the saved
-  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  coordinator role (`pithead`, or `both` for an appliance whose own miner the 2.1.0 defaults enable)
+  and prefill its answers with secrets blank; the on-disk role marker must equal the named role.
+  POST **Keep it** through the wizard;
   require the original dashboard login, unchanged configuration and host identity, both chain
   sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
   the served config; require the credentials card's login and the same chains and identity.

@@ -3,7 +3,9 @@
 
 coordinator_saved_state_valid() {
     printf '%s' "$1" | jq -e --argjson expected "$2" '
-        .stage == "setup" and .saved_role == {role: "pithead"} and
+        .stage == "setup" and
+        (.saved_role | type == "object" and keys == ["role"] and
+          (.role == "pithead" or .role == "both")) and
         .new_machine == false and
         (.config as $config | all($expected | paths(scalars);
           . as $p | ($config | getpath($p)) == ($expected | getpath($p)))) and
@@ -68,34 +70,100 @@ _coordinator_setup_prefill() {
         report=$(printf '%s' "$WIZ_STATE" | jq -c --argjson expected "$coord_answers" '
             .config as $config | {
               setup: (.stage == "setup"),
-              coordinator: (.saved_role == {role: "pithead"}),
+              coordinator: (.saved_role | type == "object" and keys == ["role"] and
+                (.role == "pithead" or .role == "both")),
               saved: (.new_machine == false),
               changed_answers: ([$expected | paths(scalars) | . as $p |
                 select(($config | getpath($p)) != ($expected | getpath($p)))] | length)
             }' 2>/dev/null) || report=unreadable
         info "coordinator setup-again prefill checks: $report"
-        bad "coordinator setup-again: saved pithead role and safe prefill did not match the saved answers"
+        bad "coordinator setup-again: saved coordinator role and safe prefill did not match the saved answers"
         return 1
     }
-    ok "coordinator setup-again: saved pithead role and prefilled answers carry no secrets"
+    coord_saved_role=$(printf '%s' "$WIZ_STATE" | jq -er '.saved_role.role') || return 1
+    info "coordinator setup-again: the page names the saved role $coord_saved_role"
+    ok "coordinator setup-again: saved coordinator role and prefilled answers carry no secrets"
 }
 
 _coordinator_setup_preserved() {
     local identity answers
-    identity=$(_coordinator_setup_identity) || return 1
-    answers=$(_coordinator_setup_answers) || return 1
-    [ "$answers" = "$coord_answers" ] && [ -n "$identity" ] && [ "$identity" = "$coord_identity" ] &&
-        _ssh 'cd /data/pithead && test "$(cat data/monero/.kvm-setup-again)" = coordinator-chain && test "$(cat data/tari/.kvm-setup-again)" = coordinator-chain && test "$(cat machine-role)" = pithead' >/dev/null 2>&1
+    identity=$(_coordinator_setup_identity) || {
+        info "coordinator setup-again preserved: the onion identity could not be read"
+        return 1
+    }
+    answers=$(_coordinator_setup_answers) || {
+        info "coordinator setup-again preserved: the saved answers could not be read"
+        return 1
+    }
+    [ "$answers" = "$coord_answers" ] || {
+        info "coordinator setup-again preserved: the saved answers drifted"
+        return 1
+    }
+    [ -n "$identity" ] && [ "$identity" = "$coord_identity" ] || {
+        info "coordinator setup-again preserved: the machine identity changed"
+        return 1
+    }
+    [ -n "$coord_saved_role" ] || {
+        info "coordinator setup-again preserved: no saved role was named this stage"
+        return 1
+    }
+    _ssh "cd /data/pithead && test \"\$(cat data/monero/.kvm-setup-again)\" = coordinator-chain && test \"\$(cat data/tari/.kvm-setup-again)\" = coordinator-chain && test \"\$(cat machine-role)\" = '$coord_saved_role'" >/dev/null 2>&1 || {
+        info "coordinator setup-again preserved: a chain sentinel or the role marker drifted"
+        return 1
+    }
+}
+
+_coordinator_setup_env_map() {
+    _ssh 'cd /data/pithead && while IFS= read -r line; do key=${line%%=*}; case "$key" in [A-Z]*) val=${line#*=}; printf "%s %s\n" "$key" "$(printf "%s" "$val" | sha256sum | cut -d" " -f1)";; esac; done < .env' 2>/dev/null
+}
+
+_coordinator_setup_env_drift() {
+    local current_map drift tmpf
+    if [ -z "${coord_env_map:-}" ]; then
+        info "coordinator setup-again: .env baseline key map was unavailable"
+        return 0
+    fi
+    current_map=$(_coordinator_setup_env_map)
+    if [ -z "$current_map" ]; then
+        info "coordinator setup-again: .env keys could not be read for the drift diff"
+        return 0
+    fi
+    tmpf=$(mktemp) || {
+        info "coordinator setup-again: .env key diff could not be staged"
+        return 0
+    }
+    drift=$(printf '%s\n' "$coord_env_map" >"$tmpf" &&
+        printf '%s\n' "$current_map" |
+        awk 'NR == FNR { a[$1] = $2; next }
+                { seen[$1] = 1; if (!($1 in a)) printf "+%s ", $1; else if (a[$1] != $2) printf "%s ", $1 }
+                END { for (k in a) if (!(k in seen)) printf "-%s ", k }' "$tmpf" -)
+    rm -f "$tmpf"
+    info "coordinator setup-again: .env keys moved: ${drift:-none}"
+}
+
+_coordinator_setup_snapshot_drift() {
+    local matched=0 name a b
+    for name in config.json .env Caddyfile machine-role; do
+        a=$(printf '%s\n' "$coord_snapshot" | awk -v n="$name" '$2 == n { print $1; exit }')
+        b=$(printf '%s\n' "${current:-}" | awk -v n="$name" '$2 == n { print $1; exit }')
+        if [ -n "$a" ] && [ "$a" != "$b" ]; then
+            info "coordinator setup-again: $name changed across the boot"
+            [ "$name" = ".env" ] && _coordinator_setup_env_drift
+            matched=1
+        fi
+    done
+    [ "$matched" -eq 1 ] || info "coordinator setup-again: boot snapshot differs from baseline"
 }
 
 _coordinator_setup_again_body() {
-    local coord_answers coord_snapshot coord_identity coord_height="" deadline handoff code current
+    local coord_answers coord_snapshot coord_identity coord_env_map="" coord_saved_role="" coord_height="" deadline handoff code current
     local DASH_USER="$1" DASH_PASS="$2"
     coord_stage=baseline
     coord_answers=$(_coordinator_setup_answers) || return 1
     printf '%s' "$coord_answers" | jq -e 'type == "object" and (.monero.wallet_address | length > 0)' >/dev/null 2>&1 || return 1
     _ssh 'cd /data/pithead && jq -e ".p2pool.stratum_password | type == \"string\" and length > 0" config.json >/dev/null' || return 1
     coord_snapshot=$(_coordinator_setup_snapshot) || return 1
+    coord_env_map=$(_coordinator_setup_env_map)
     coord_identity=$(_coordinator_setup_identity) || return 1
     [ -n "$coord_snapshot" ] && [ -n "$coord_identity" ] || return 1
     deadline=$((SECONDS + 300))
@@ -118,6 +186,11 @@ _coordinator_setup_again_body() {
         _ssh 'test ! -e /data/pithead/data/firstboot/keep-role && systemctl is-active --quiet pithead-setup-again' >/dev/null 2>&1; then
         ok "coordinator Keep it: original login, configuration, chains and onion identity survive"
     else
+        [ -z "${current:-}" ] || [ "${current:-}" = "$coord_snapshot" ] || _coordinator_setup_snapshot_drift
+        _ssh 'test ! -e /data/pithead/data/firstboot/keep-role' >/dev/null 2>&1 ||
+            info "coordinator setup-again: the keep-role marker survived the boot"
+        _ssh 'systemctl is-active --quiet pithead-setup-again' >/dev/null 2>&1 ||
+            info "coordinator setup-again: the setup-again unit is not active after the boot"
         bad "coordinator Keep it: original login, configuration, chains or identity changed"
         return 1
     fi

@@ -214,7 +214,7 @@ async def test_submit_spools_only_known_names_and_keeps_known_credentials(client
     assert attempt["dashboard"]["auth"]["password"] == "fixture-login-password"
     assert attempt["xvb"]["enabled"] is False
     assert "xmrig_proxy" not in attempt
-    assert written == attempt
+    assert written == {**attempt, "profile": "balance"}
     summary = json.loads(spool.joinpath("config-changes.json").read_text())["changes"]
     assert summary == [
         "xmrig_proxy.enabled → xvb.enabled",

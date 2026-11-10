@@ -1,9 +1,6 @@
-# Host-owned clearnet sync transition: claim the marker, close and verify the firewall,
-# then attest the restarted daemon on Tor. Sourced after 02b by the generated CLI.
-# A host request closes its chain's exemption even when a malformed marker cannot be claimed. The
-# readback uses the same desired-rule predicate as apply/doctor (#2059/#2678).
 egress_sync_refresh() { # <monero|tari>
     case "$1" in monero | tari) ;; *) return 1 ;; esac
+    [ "$(env_get PITHEAD_PROFILE 2>/dev/null)" != performance ] || return 1
     mutation_lock_acquire egress-sync
     # shellcheck disable=SC2034  # read dynamically by tor_egress_sync_ips in the preceding slice
     local rc=0 EGRESS_SYNC_CLOSE_CHAIN="$1"
