@@ -119,7 +119,7 @@ unset -f preview_only previewed_with preview_without exposure_previews
 exposure_previews "donation enabling names project routing" '.donation.enabled=true' "Project donation set to true"
 exposure_previews "donation percentage change names the percentage" '.donation.percent=5' "5 percent"
 exposure_previews "donation off Tor names IP exposure" '.donation.tor=false' "project endpoint sees this host's IP"
-jq '.donation.enabled=true' "$C/config.json" >"$C/cand.json"
+jq '.donation.enabled=true | .donation.percent=0.1' "$C/config.json" >"$C/cand.json"
 preview_only "$C/cand.json"
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
 run_pending >/dev/null
