@@ -368,8 +368,7 @@ echo "== black-box: reserved-node preview is CONFIRM-tier, not approval-tier (#1
 # switch is a DIFFERENT, DEST-flagged row (COMPOSE_PROFILES in 39-describe-change.sh) that would
 # set approval_required for an unrelated reason and defeat this measurement.
 UUID3="33333333-3333-4333-8333-333333333333"
-jq -n --arg w "$WALLET" '{
-    profile:"balance",
+jq -n --arg w "$WALLET" '{profile:"balance",
     monero:{mode:"remote",wallet_address:$w,node_username:"u",node_password:"p",
             remote:{host:"baseline-monero.example",rpc_port:18081,zmq_port:18083}},
     tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"baseline-tari.example",grpc_port:18142}},

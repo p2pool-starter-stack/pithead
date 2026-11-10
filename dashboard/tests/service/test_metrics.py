@@ -9,8 +9,6 @@ read these, so the logic is covered thoroughly here rather than through rendered
 import time
 from unittest.mock import MagicMock
 
-import pytest
-
 import mining_dashboard.service.metrics as metrics
 from mining_dashboard.config.config import TIER_DEFAULTS, XVB_STATS_STALE_AFTER_S
 from mining_dashboard.service.metrics import (
@@ -170,11 +168,6 @@ class TestHashrate:
         m = build_metrics(_data(total_live_h15=40_000), _mgr())
         assert m.xvb_routed_1h == 0.0
         assert m.xvb_routed_24h == 0.0
-
-
-@pytest.fixture(autouse=True)
-def xvb_enabled(monkeypatch):
-    monkeypatch.setattr(metrics, "ENABLE_XVB", True)
 
 
 class TestModeAndTiers:

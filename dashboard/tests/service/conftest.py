@@ -164,3 +164,8 @@ def _no_tari_explorer_fetch(monkeypatch):
     from mining_dashboard.service.health import tari_health
 
     monkeypatch.setattr(tari_health, "TARI_EXPLORER_URL", "")
+
+
+@pytest.fixture(autouse=True)
+def xvb_enabled(monkeypatch):
+    monkeypatch.setattr("mining_dashboard.service.metrics.ENABLE_XVB", True)
