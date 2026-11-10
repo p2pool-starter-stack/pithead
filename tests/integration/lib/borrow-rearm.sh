@@ -24,7 +24,7 @@ wait_borrow_rearm() { # [action]
         it_fail "borrowed-pool re-arm requested after RigForge control (#1994)" "could not write request marker"
         return 1
     }
-    if wait_for 120 2 "the e2e controller to re-arm the borrowed miner pool" _borrow_rearm_ack_matches "$action"; then
+    if wait_for 300 2 "the e2e controller to re-arm the borrowed miner pool" _borrow_rearm_ack_matches "$action"; then
         it_pass "borrowed miner $action verified by the controller"
         return 0
     fi

@@ -26,8 +26,18 @@ import {
   fieldNote,
   jsonSyntaxError,
   parseJsonChanges,
+  rigforgeReportsTarget,
 } from "./workerlogic.mjs";
-import { CONTROL_HEADERS, pollWorkerResult, RigUpgrade, StatusLine } from "./workerupgrade.mjs";
+import {
+  CONTROL_HEADERS,
+  pollWorkerResult,
+  REPORT_POLL_MS,
+  REPORT_WAIT_ATTEMPTS,
+  REPORT_WAIT_STATUSES,
+  ReportWait,
+  RigUpgrade,
+  StatusLine,
+} from "./workerupgrade.mjs";
 
 // One row of the hashrate-by-config table (#492): a config version + the measured hashrate
 // (worker_history) aggregated over that version's active window, so an operator can compare
@@ -51,6 +61,12 @@ function HashrateByConfigRow({ row }) {
 function fieldValue(field, edits) {
   if (field.key in edits) return edits[field.key];
   return field.type === "boolean" ? String(field.value) : field.value;
+}
+
+async function fetchDetail(name, range) {
+  const res = await fetch(`/api/worker?name=${encodeURIComponent(name)}&range=${range}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 function WorkerField({ field, edits, onEdit, busy }) {
@@ -94,9 +110,15 @@ export class WorkerInspect extends Component {
       // (loadChart), never the full load(), so it can't wipe an in-progress config edit.
       chartRange: loadPref("dashboardWorkerChartRange", ["24h", "1w", "all"], "24h"),
       chartLoading: false,
+      waitVersion: null,
+      waitTimedOut: false,
     };
     this.dialogRef = createRef();
     this.titleRef = createRef();
+  }
+
+  componentWillUnmount() {
+    this.unmounted = true;
   }
 
   componentDidMount() {
@@ -121,11 +143,7 @@ export class WorkerInspect extends Component {
   async load() {
     this.setState({ phase: "loading", error: null });
     try {
-      const res = await fetch(
-        `/api/worker?name=${encodeURIComponent(this.props.name)}&range=${this.state.chartRange}`,
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const detail = await res.json();
+      const detail = await fetchDetail(this.props.name, this.state.chartRange);
       // Same rig-first value the table renders from (#1235) — both modes need one starting point.
       const editText = JSON.stringify(detailSnapshot(detail), null, 2);
       this.setState({ phase: "ready", detail, editText, tableEdits: {}, jsonError: null });
@@ -140,11 +158,7 @@ export class WorkerInspect extends Component {
   async loadChart(range) {
     this.setState({ chartLoading: true });
     try {
-      const res = await fetch(
-        `/api/worker?name=${encodeURIComponent(this.props.name)}&range=${range}`,
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const detail = await res.json();
+      const detail = await fetchDetail(this.props.name, range);
       this.setState((s) => ({
         chartLoading: false,
         detail: { ...s.detail, hashrate_history: detail.hashrate_history },
@@ -158,6 +172,37 @@ export class WorkerInspect extends Component {
     savePref("dashboardWorkerChartRange", range);
     this.setState({ chartRange: range });
     return this.loadChart(range);
+  }
+
+  async refreshWorker() {
+    const detail = await fetchDetail(this.props.name, this.state.chartRange);
+    if (this.unmounted) return detail;
+    this.setState((s) => {
+      const wasPristine =
+        !s.detail || s.editText === JSON.stringify(detailSnapshot(s.detail), null, 2);
+      return wasPristine
+        ? { detail, editText: JSON.stringify(detailSnapshot(detail), null, 2) }
+        : { detail };
+    });
+    return detail;
+  }
+
+  async afterUpgrade(outcome, pollMs = REPORT_POLL_MS, attempts = REPORT_WAIT_ATTEMPTS) {
+    const target = (this.state.detail || {}).rigforge_update?.latest;
+    let detail = await this.refreshWorker().catch(() => null);
+    if (!REPORT_WAIT_STATUSES.includes((outcome || {}).status) || !target) return;
+    if (rigforgeReportsTarget(detail, target)) return;
+    this.setState({ waitVersion: target, waitTimedOut: false });
+    for (let i = 0; i < attempts && !this.unmounted; i++) {
+      await new Promise((r) => setTimeout(r, pollMs));
+      if (this.unmounted) return;
+      detail = await this.refreshWorker().catch(() => null);
+      if (rigforgeReportsTarget(detail, target)) {
+        this.setState({ waitVersion: null, waitTimedOut: false });
+        return;
+      }
+    }
+    if (!this.unmounted) this.setState({ waitTimedOut: true });
   }
 
   onJsonInput(text) {
@@ -245,7 +290,8 @@ export class WorkerInspect extends Component {
                 <${InfoCard} label="RigForge" value=${detail.rigforge ? detail.rigforge.version || "yes" : "—"} />
             </div>
             <${RigUpgrade} name=${this.props.name} update=${detail.rigforge_update}
-                canEdit=${canEdit} busy=${busy} onDone=${() => this.load()} />
+                canEdit=${canEdit} busy=${busy} onDone=${(out) => this.afterUpgrade(out)} />
+            <${ReportWait} version=${this.state.waitVersion} timedOut=${this.state.waitTimedOut} />
             ${detail.rigforge ? html`<${StatsTable} stats=${detail.rigforge.stats} />` : null}
 
             <h3 class="card-subhead mt-2">Hashrate${chartLoading ? html` <span class="text-muted text-small">refreshing…</span>` : null}</h3>

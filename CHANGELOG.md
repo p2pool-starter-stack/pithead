@@ -28,6 +28,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- Worker Inspect keeps the upgrade result line and unsaved edits after a one-click RigForge upgrade, and
+  re-reads the rig until it reports the new version instead of showing the pre-upgrade state (#3947).
 - The dashboard no longer asks for a second reboot while an installed update is still being
   verified. After the reboot, the new copy of the system moves the stored update status to
   verifying before its health checks finish, the header shows the verification window, and a
@@ -35,6 +37,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   reboot then would have returned the machine to the previous version before the update was
   ever decided. An update interrupted before its verification reached a verdict is now reported
   as interrupted, not as failed health checks (#3909).
+- With the Tor egress firewall on, a remote Monero or Tari node entered by a dual-stack LAN name is
+  now accepted on its private IPv4 answer, in the first-boot wizard and in a day-two configuration
+  commit, instead of being refused with the egress-firewall message (#2351).
 
 ## [2.0.2] - 2026-10-31
 

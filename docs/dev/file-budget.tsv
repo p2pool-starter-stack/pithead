@@ -33,6 +33,7 @@ dashboard/tests/service/test_control_service.py	495
 dashboard/tests/service/test_data_helpers.py	618
 dashboard/tests/service/test_metrics.py	463
 dashboard/tests/service/test_storage_worker.py	451
+dashboard/tests/web/test_wizard_node_probe.py	446
 dashboard/tests/web/test_worker_detail_meta.py	425
 dashboard/tests/web/views/test_infra_views.py	580
 dashboard/tests/web/views/test_views.py	750
@@ -51,6 +52,7 @@ tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/lib/wallet-fixture.py	442
 tests/integration/selftest/selftest-abort-traps.sh	408
 tests/integration/selftest/selftest-e2e-phases.sh	501
+tests/integration/selftest/selftest-lifecycle-miners.sh	424
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest-zmq-probe.sh	431
 tests/integration/selftest/selftest.sh	685

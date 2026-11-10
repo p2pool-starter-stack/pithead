@@ -229,6 +229,10 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
         _wu_reject "malformed or missing 'version' in the upgrade request."
         return 0
     fi
+    if [ "$(jq -r '.appliance // false' "$file")" = "true" ]; then
+        _wu_reject "worker '$worker' is an appliance rig — it updates with its Pithead OS image, not with a RigForge upgrade."
+        return 0
+    fi
     # Per-drain budget: an upgrade blocks the single-threaded root runner on the rig's build
     # (minutes, vs seconds for worker-apply), so exactly ONE dials per drain. v1 is per-worker
     # only — no "upgrade all" — and a real fleet upgrade is one rig at a time by design.

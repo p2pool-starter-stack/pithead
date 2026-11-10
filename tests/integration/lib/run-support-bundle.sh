@@ -15,7 +15,7 @@ run_support_bundle() {
     [ -n "$before" ] || return 1
     snapshot=$(rx 'set -e; umask 077; export TMPDIR="${TMPDIR:-/tmp}"; d=$(mktemp -d "$TMPDIR/support-bundle.XXXXXX"); if cp -p config.json "$d/config.json" && cp -p .env "$d/env"; then printf "%s" "$d"; else rm -f "$d/config.json" "$d/env"; rmdir "$d"; exit 1; fi') || return 1
     [ -n "$snapshot" ] || return 1
-    if push_config "$changed" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
+    if push_config "$changed" && LIFECYCLE_MINING_ACTIVE=0 pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
         it_pass "support-bundle credential fixture applied to a healthy stack"
         if rx "set -e
             umask 077
@@ -34,7 +34,9 @@ run_support_bundle() {
     else
         it_fail "support-bundle credential fixture applied to a healthy stack" "config, apply or bounded health check failed"
     fi
-    if rx "cp -p $(quote_arg "$snapshot")/config.json config.json && cp -p $(quote_arg "$snapshot")/env .env" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
+    if rx "cp -p $(quote_arg "$snapshot")/config.json config.json && cp -p $(quote_arg "$snapshot")/env .env" &&
+        LIFECYCLE_MINING_ACTIVE=0 pithead apply -y >/dev/null 2>&1 && LIFECYCLE_MINING_ACTIVE=0 pithead up >/dev/null 2>&1 &&
+        wait_status_ok 240; then
         after=$(upgrade_secret_fingerprints) || after=""
         if [ "$before" != "$after" ] || ! rx "cmp -s config.json $(quote_arg "$snapshot")/config.json && cmp -s .env $(quote_arg "$snapshot")/env"; then
             it_fail "support-bundle restores its starting configuration and stack health" "configuration or secret fingerprints changed"
@@ -45,6 +47,9 @@ run_support_bundle() {
     else
         it_fail "support-bundle restores its starting configuration and stack health" "restoration failed"
         restoration_ok=0
+    fi
+    if [ "$restoration_ok" -eq 1 ] && [ -n "${RIG_NAME:-}" ]; then
+        wait_borrow_rearm || restoration_ok=0
     fi
     rx "rm -f $(quote_arg "$snapshot")/config.json $(quote_arg "$snapshot")/env && rmdir $(quote_arg "$snapshot")" || return 1
     [ "$restoration_ok" -eq 1 ] && [ "$IT_FAIL" -eq "$failures" ]

@@ -109,10 +109,31 @@ assert_eq "a credential-rotation request names its action without the secret" "$
 
 HANDLER_SRC="$(sed -n '/^handle_borrow_rearm() {/,/^}$/p' "$HERE/../lib/borrow-fixture.sh")"
 controller_rearm_line="$(printf '%s\n' "$HANDLER_SRC" | grep -n 'repoint_miner ||' | cut -d: -f1)"
-controller_workers_line="$(printf '%s\n' "$HANDLER_SRC" | grep -n 'wait_workers "$WORKERS"' | cut -d: -f1)"
+controller_workers_line="$(printf '%s\n' "$HANDLER_SRC" | grep -n 'wait_workers "$WORKERS"' | head -n1 | cut -d: -f1)"
 controller_ack_line="$(printf '%s\n' "$HANDLER_SRC" | grep -n "cat > '\$ack.tmp'" | tail -n1 | cut -d: -f1)"
 assert_eq "controller reloads and observes the worker before acknowledging re-arm" \
     "$([ "$controller_rearm_line" -lt "$controller_workers_line" ] && [ "$controller_workers_line" -le "$controller_ack_line" ] && echo yes)" "yes"
+
+rearm_attempts() { # <attempt that finds the worker, or 0 for never>
+    local t
+    t="$(mktemp -d)"
+    (
+        eval "$HANDLER_SRC"
+        on_bench() { case "$1" in "cat '"*) printf 'run-9 rearm 1' ;; *) cat >"$t/ack" ;; esac }
+        repoint_miner() { echo x >>"$t/repoints"; }
+        wait_workers() { [ "$(wc -l <"$t/repoints")" -eq "$1" ]; }
+        step() { :; }
+        warn() { :; }
+        export WORKERS="$1"
+        handle_borrow_rearm "$t/req" "$t/ack" run-9 >/dev/null 2>&1
+        echo "rc=$? repoints=$(wc -l <"$t/repoints" | tr -d ' ') ack=$(cat "$t/ack" 2>/dev/null || echo none)"
+    )
+    rm -rf "$t"
+}
+assert_eq "re-arm restarts the rig again when the first attempt finds no worker" \
+    "$(rearm_attempts 2)" "rc=0 repoints=2 ack=run-9 rearm 1"
+assert_eq "re-arm gives up without acknowledging after four attempts" \
+    "$(rearm_attempts 0)" "rc=1 repoints=4 ack=none"
 
 d="$(mktemp -d)"
 trap 'rm -rf "$d"' EXIT

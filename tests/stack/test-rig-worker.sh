@@ -330,6 +330,13 @@ PATH="$WUT/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$WUT/config.json"
 assert_contains "upgrade inside the 10-min lookup window (no cached tag) is rejected" \
     "$(jq -r '.error // ""' "$WUT/results/$w6.json")" "retry in a few minutes"
 assert_eq "the throttled upgrade made NO network dial" "$(cat "$WUT/dials.log" 2>/dev/null)" ""
+wua="a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0"
+printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v1.11.2","appliance":true}\n' "$wua" >"$WUT/appliance.json"
+PATH="$WUT/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$WUT/config.json" \
+    run_sourced_e "$SANDBOX" control_process_request "$WUT/appliance.json" "$WUT" >/dev/null 2>&1
+assert_contains "upgrade of an appliance rig is rejected with the OS-image message" \
+    "$(jq -r '.error // ""' "$WUT/results/$wua.json")" "OS image"
+assert_eq "the appliance rejection makes no network dial" "$(cat "$WUT/dials.log" 2>/dev/null)" ""
 
 echo "== control channel: worker upgrade drives the rig to each terminal (#597) =="
 # A stub curl stands in for the rig's control API (and would catch any unexpected GitHub dial: the

@@ -1,4 +1,4 @@
-FROM golang:1.26.10-trixie@sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4 AS gobuild
+FROM golang:1.26.10-trixie@sha256:a050dcceee6eb9bf110151662dfac7662f3bec40927c7dee48731e3d92083d42 AS gobuild
 
 ARG COMPOSE_VERSION=v5.5.1
 ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
@@ -40,7 +40,7 @@ RUN /out/docker-compose version && /out/cosign version \
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
 # bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
 # box — every Debian package here is frozen until the next bake.
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -218,8 +218,8 @@ COPY os/overlay/pithead-sync.service /etc/systemd/system/pithead-sync.service
 COPY os/overlay/pithead-sync /usr/local/sbin/pithead-sync
 # State mounts derive from the boot disk every boot, never labels: every pithead disk carries the same labels, and two at once made LABEL= mount the wrong /data.
 COPY os/overlay/pithead-mount-generator /usr/lib/systemd/system-generators/pithead-mount-generator
-COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer /etc/systemd/system/
-COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch /usr/local/sbin/
+COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer os/overlay/pithead-miner-recovery.service os/overlay/pithead-miner-recovery.timer /etc/systemd/system/
+COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery /usr/local/sbin/
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config
 # Hugepages sizing (#977): the sysctl.d reservation above is sized for the supported 16 GB machine;
@@ -268,7 +268,7 @@ RUN mkdir -p /etc/ssh/sshd_config.d \
 RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
     && systemctl mask systemd-firstboot.service
-RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
+RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-miner-recovery /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
 # The updater is chosen per image. The package install above includes RAUC only when selected;
 # leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even
@@ -299,7 +299,7 @@ RUN systemctl enable podman.socket pithead-boot.service pithead-cpu-governor.ser
         systemd-networkd systemd-networkd-wait-online pithead-sync.service pithead-firstboot.service \
         pithead-data-reset.service pithead-machine-id.service pithead-hugepages.service \
         pithead-journal-persist.service pithead-setup-again.service pithead-boot-version.service \
-        pithead-address-watch.timer \
+        pithead-address-watch.timer pithead-miner-recovery.timer \
     && systemctl disable ssh
 # systemd-repart.service is static — it is pulled in by sysinit.target, and `systemctl enable` on a
 # static unit is an error that would fail the build. Assert it is present instead.

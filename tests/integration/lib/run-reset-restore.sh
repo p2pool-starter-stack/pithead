@@ -43,7 +43,7 @@ run_reset_restore() {
         it_fail "reset recovery captures configuration and secrets" "snapshot unreadable"
         return 1
     }
-    if ! rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD backup -y" 2>&1 |
+    if ! lifecycle_mining_step backup rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD backup -y" 2>&1 |
         redact >"$OUT_DIR/reset-restore.backup.log"; then
         it_fail "reset recovery creates encrypted backup" "backup failed; see reset-restore.backup.log"
         return 1
@@ -99,7 +99,7 @@ run_reset_restore() {
         it_fail "boot id is readable before config-reset" "the reboot wait needs a baseline"
         return 1
     fi
-    rx "$IT_PITHEAD config-reset -y" 2>&1 |
+    lifecycle_mining_step config-reset rx "$IT_PITHEAD config-reset -y" 2>&1 |
         redact >"$OUT_DIR/reset-restore.reset.log"
     if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log" && ! reset_restore_wait_reboot "$boot_before" 300; then
         it_fail "guest returns after the config-reset reboot" "no new boot reached the target within 300s"
@@ -151,7 +151,7 @@ run_reset_restore() {
         printf '%s\n' "$out" | redact >"$OUT_DIR/reset-restore.prompt.log"
         return 1
     fi
-    if ! rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$archive")" 2>&1 |
+    if ! lifecycle_mining_step restore rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$archive")" 2>&1 |
         redact >"$OUT_DIR/reset-restore.restore.log"; then
         it_fail "encrypted restore after config-reset starts the stack" "restore failed; see reset-restore logs"
         return 1
@@ -183,6 +183,7 @@ run_reset_restore() {
         it_fail "reset recovery removes its encrypted fixture archive" "cleanup failed"
         return 1
     }
+    lifecycle_mining_flush
     [ "$IT_FAIL" -le "$failures_before" ]
 }
 
