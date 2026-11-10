@@ -79,7 +79,16 @@ handle_borrow_rearm() { # <request> <ack> <run-id>
         ;;
     rearm)
         step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
-        repoint_miner || return 1
+        # A restart that meets a still-refusing proxy fails over again, so each attempt restarts.
+        local attempt
+        for attempt in 1 2 3 4; do
+            repoint_miner || return 1
+            wait_workers "$WORKERS" 60 && break
+            [ "$attempt" = 4 ] && return 1
+            warn "re-arm attempt $attempt: the borrowed rig did not reach the test bench; restarting it again"
+        done
+        printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
+        return
         ;;
     *) return 1 ;;
     esac
