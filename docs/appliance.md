@@ -521,6 +521,26 @@ install-then-fall-back protection as any other update. The practical consequence
 an old image keeps running fine, but it keeps the old image's known holes too. The base
 system is Debian 13, which receives security support upstream into 2030.
 
+### Updating a rig
+
+A rig takes updates with its own signed OS image, not with a worker upgrade from the
+dashboard: an appliance rig keeps RigForge's remote upgrade off, and the coordinator
+does not offer **Upgrade rig…** to rigs that report being appliances. An appliance rig
+whose RigForge is too old to report itself still shows the offer until it runs a newer
+image; taking that image is the fix. How the image reaches a rig depends on how it
+boots:
+
+- **Installed to its disk:** boot the rig from a newer USB stick and choose **Keep
+  everything**. The installer replaces the system and keeps the data partition, so the
+  rig comes back with the same role, the same `rig.json` and the same access token,
+  starts mining again, and a coordinator that had adopted the rig keeps reading it
+  with no adopting to redo. No leg has run that pass on an adopted coordinated rig
+  yet: manual QA row M13 is the proof still owed (#3961).
+- **Running from its USB stick:** re-flash the stick with the newer image. Re-flashing
+  replaces the whole stick, data included, so the rig comes back with a fresh setup
+  and a new token, and the coordinator adopts it again. Delivering image updates to
+  rigs over the network is planned (#1837).
+
 ## The boot menu
 
 Every start shows a short menu for five seconds, then boots by itself. You never need to

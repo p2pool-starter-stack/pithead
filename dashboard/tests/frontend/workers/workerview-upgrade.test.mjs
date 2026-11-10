@@ -86,6 +86,118 @@ test("terminal statuses render their calm/red variants (#597)", () => {
   assert.match(renderToString(inst.render()), /Rolled back/);
 });
 
+function afterUpgradeFixture(reports) {
+  const inst = readyInstance(UPG_DETAIL);
+  let i = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const rigforge = reports[Math.min(i++, reports.length - 1)];
+    return { ok: true, json: async () => ({ ...UPG_DETAIL, rigforge }) };
+  };
+  return { inst, restore: () => (globalThis.fetch = realFetch), calls: () => i };
+}
+
+test("afterUpgrade keeps re-reading the worker until the rig reports the target (#3947)", async () => {
+  const old = { version: "1.11.1", stats: [] };
+  const stale = { version: "yes", stale: true, stats: [] };
+  const fresh = { version: "1.11.2", stats: [] };
+  const fx = afterUpgradeFixture([old, stale, fresh]);
+  try {
+    await fx.inst.afterUpgrade({ status: "applied" }, 0, 5);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.inst.state.detail.rigforge.version, "1.11.2");
+  assert.equal(fx.inst.state.waitVersion, null);
+  assert.equal(fx.inst.state.phase, "ready");
+  assert.equal(fx.calls(), 3);
+});
+
+test("afterUpgrade keeps unsaved edits and says it is still waiting when the rig never reports (#3947)", async () => {
+  const fx = afterUpgradeFixture([{ version: "1.11.1", stats: [] }]);
+  fx.inst.state.editText = '{"DONATION": 9}';
+  try {
+    await fx.inst.afterUpgrade({ status: "accepted" }, 0, 3);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.inst.state.editText, '{"DONATION": 9}');
+  assert.equal(fx.inst.state.waitVersion, "v1.11.2");
+  assert.equal(fx.inst.state.waitTimedOut, true);
+  assert.match(renderToString(fx.inst.render()), /has not reported v1\.11\.2 yet/);
+  assert.equal(fx.calls(), 4);
+});
+
+test("afterUpgrade on a rejected result refreshes once and never waits (#3947)", async () => {
+  const fx = afterUpgradeFixture([{ version: "1.11.1", stats: [] }]);
+  try {
+    await fx.inst.afterUpgrade({ status: "rejected", error: "Tor exit spent the budget" }, 0, 3);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.calls(), 1);
+  assert.equal(fx.inst.state.waitVersion, null);
+  assert.equal(fx.inst.state.phase, "ready");
+});
+
+test("afterUpgrade stops re-reading once the dialog unmounts mid-wait (#3947)", async () => {
+  const fx = afterUpgradeFixture([{ version: "1.11.1", stats: [] }]);
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    const out = await inner(...args);
+    if (fx.calls() === 2) fx.inst.componentWillUnmount();
+    return out;
+  };
+  try {
+    await fx.inst.afterUpgrade({ status: "applied" }, 0, 10);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.calls(), 2);
+  assert.equal(fx.inst.state.waitTimedOut, false);
+});
+
+function findElement(node, type) {
+  if (!node || typeof node !== "object") return null;
+  if (node.type === type) return node;
+  const kids = [].concat(node.props?.children ?? []);
+  for (const k of kids) {
+    const hit = findElement(k, type);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+test("WorkerInspect wires RigUpgrade's onDone to afterUpgrade with the outcome (#3947)", () => {
+  const inst = readyInstance(UPG_DETAIL);
+  const seen = [];
+  inst.afterUpgrade = (out) => seen.push(out);
+  const el = findElement(inst.render(), RigUpgrade);
+  assert.ok(el, "RigUpgrade not found in the rendered tree");
+  el.props.onDone({ status: "rejected" });
+  assert.deepEqual(seen, [{ status: "rejected" }]);
+});
+
+test("RigUpgrade keeps a rejected result line after onDone (#3947)", async () => {
+  const inst = upgradeInstance();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    status: 200,
+    json: async () => ({ status: "rejected", error: "run ./pithead restart tor" }),
+  });
+  let seen = null;
+  inst.props.onDone = (out) => {
+    seen = out;
+  };
+  try {
+    await inst.upgrade();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(seen.status, "rejected");
+  assert.match(renderToString(inst.render()), /run \.\/pithead restart tor/);
+});
+
 // --- RigForge new-release callout (#596) ----------------------------------------------------
 
 test("Inspect surfaces the RigForge new-release callout only when the server derived one (#596)", () => {
