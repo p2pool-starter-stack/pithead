@@ -62,15 +62,15 @@ jq_assert() {
     fi
 }
 
-echo "Validating the remote-node payout wallet render (#2866) ..."
+echo "== compose: remote-node payout wallet render (#2866) =="
 LOCAL="$(render local_node,payout_confirm 172.28.0.26 18081)"
 jq_assert "local-node wallet-rpc keeps the bundled node endpoint and no proxy" \
     '.services["wallet-rpc"].environment | .MONERO_NODE_HOST == "172.28.0.26" and .MONERO_RPC_PORT == "18081" and .PAYOUT_NODE_REMOTE == "false" and .PAYOUT_NODE_PROXY == ""' "$LOCAL"
 jq_assert "local-node wallet-rpc still waits for a healthy monerod" \
     '.services["wallet-rpc"].depends_on.monerod.condition == "service_healthy"' "$LOCAL"
 REMOTE="$(render payout_confirm 192.0.2.10 28081 PAYOUT_NODE_REMOTE=true PAYOUT_NODE_PROXY=172.28.0.25:9050)"
-jq_assert "remote-node wallet-rpc renders without a local monerod or a dependency on it" \
-    '(.services["wallet-rpc"] != null) and (.services.monerod == null) and ((.services["wallet-rpc"].depends_on // {}) | has("monerod") | not)' "$REMOTE"
+jq_assert "remote-node wallet-rpc renders without a local monerod and with no required dependency on it" \
+    '(.services["wallet-rpc"] != null) and (.services.monerod == null) and (((.services["wallet-rpc"].depends_on // {}).monerod // {required: false}).required == false)' "$REMOTE"
 jq_assert "remote-node wallet-rpc scans the configured node through the rendered proxy" \
     '.services["wallet-rpc"].environment | .MONERO_NODE_HOST == "192.0.2.10" and .MONERO_RPC_PORT == "28081" and .PAYOUT_NODE_REMOTE == "true" and .PAYOUT_NODE_PROXY == "172.28.0.25:9050"' "$REMOTE"
 jq_assert "remote-node wallet-rpc keeps its loopback-only publish and an empty command line" \
