@@ -173,7 +173,7 @@ control_worker_apply() { # <claimed-file> <id> <actor> <control-dir>
         fi
         status=$(jq -r '.status // ""' "$sbody")
         case "$status" in
-        applied | rejected | rolled_back | failed)
+        applied | rejected | rolled_back | failed | busy)
             # reason is rig-supplied (attacker-influenceable); cap it before it is stored/rendered.
             if ! reason=$(jq -r '(.reason // "") | tostring | .[:500]' "$sbody") ||
                 ! ckeys=$(jq -c '.changed_keys // []' "$sbody"); then
@@ -332,7 +332,7 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
         fi
         status=$(jq -r '.status // ""' "$sbody")
         case "$status" in
-        applied | noop | throttled | rolled_back | failed)
+        applied | noop | throttled | busy | rolled_back | failed)
             # reason is rig-supplied (attacker-influenceable); cap it before it is stored/rendered.
             if ! reason=$(jq -r '(.reason // "") | tostring | .[:500]' "$sbody"); then
                 rm -f "$sbody"

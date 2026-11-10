@@ -10,6 +10,8 @@ source "$HERE/../lib.sh"
 # The REAL rig_supply, not a re-spelling of it — same reason run_harness is extracted below (#1378).
 # shellcheck source=tests/integration/lib/rig-supply.sh
 source "$HERE/../lib/rig-supply.sh"
+# shellcheck source=tests/integration/lib/rig-owner.sh
+source "$HERE/../lib/rig-owner.sh"
 # shellcheck source=tests/integration/lib/detached-harness.sh  # run_harness's REAL collaborators
 source "$HERE/../lib/detached-harness.sh"
 

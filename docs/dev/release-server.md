@@ -431,6 +431,14 @@ is a display-only sidecar naming the holder — the flock is authoritative, and 
 is harmless. The bench runner sets that wait during its reserved-lock handoff, and the harness
 forwards it to both pre-gates and its detached run; other callers keep the opt-in exit-75 default.
 
+While a lent rig is locked, RigForge answers a remote upgrade or apply with the terminal status
+`busy` (rigforge#670). A harness that owns the rig marks that with a root-owned
+`/run/rigforge-rig-owner` file holding a live pid, and RigForge honours the file only while the
+pid is alive. `e2e.sh` writes it over SSH on the borrowed rig (`lib/rig-owner.sh`), keeps it alive
+with the SSH session that wrote it, and removes it when the harness finishes or the restore runs, so
+the `rigforge-upgrade` leg can upgrade the rig it borrowed. The dashboard records `busy` in the
+rig's change history with its reason.
+
 **CHECK** — and **FREE**, which is not a step for anyone. A harness frees the lock by dying:
 it holds it on an inherited descriptor, so the kernel drops it when the run ends, however it
 ends, and a holder that has to remember to free is a holder that eventually does not. An off-box

@@ -276,10 +276,6 @@ async def handle_control_backup(request):
     return web.json_response({"id": rid, "status": "pending"}, status=202)
 
 
-# Terminal-ish outcomes worth a history row — shared by worker-apply and worker-upgrade (#1014).
-# noop/throttled are upgrade-only; the rest are common to both. "accepted" is genuinely
-# non-terminal (still running past the wait budget) but IS the runner's final write for that
-# request id, so it's recorded too — the alternative is a change the dashboard never mentions again.
 _RECORDABLE_WORKER_STATUSES = (
     "applied",
     "rejected",
@@ -288,6 +284,7 @@ _RECORDABLE_WORKER_STATUSES = (
     "failed",
     "noop",
     "throttled",
+    "busy",
 )
 
 

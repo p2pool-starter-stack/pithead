@@ -45,17 +45,21 @@ class TestWorkerUpgradeRecordsHistory:
     ):
         # Distinct from the synchronous short-circuit noop above: this is the RIG's own /status
         # terminal for a dial that actually happened (rigforge#320's first-class noop/throttled).
-        for status in ("noop", "throttled"):
+        for status in ("noop", "throttled", "busy"):
             result = {
                 "status": status,
                 "change_id": f"cid-{status}",
                 "worker": "rig1",
                 "version": "v1.11.2",
-                "reason": "already current" if status == "noop" else "throttled: retry later",
+                "reason": f"{status} reason",
             }
             await self._upgrade(worker_client, control_spool, monkeypatch, result)
         statuses = {h["status"] for h in worker_client.sm.get_worker_config_history("rig1")}
-        assert statuses == {"noop", "throttled"}
+        assert statuses == {"noop", "throttled", "busy"}
+        reasons = {
+            h["status"]: h["reason"] for h in worker_client.sm.get_worker_config_history("rig1")
+        }
+        assert reasons["busy"] == "busy reason"
 
     async def test_pre_dial_rejection_recorded_with_the_requesters_worker_name(
         self, worker_client, control_spool, monkeypatch

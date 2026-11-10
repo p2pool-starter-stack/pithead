@@ -29,6 +29,7 @@ _CSV_FIXTURE="$ROOT/tests/integration/fakes/contract/v1/control-status.json"
 _CSV_NON_TERMINAL='^(pending|started)$'
 
 _csv_fixture_terminal=$(jq -r '.statuses[]' "$_CSV_FIXTURE" 2>/dev/null | grep -vE "$_CSV_NON_TERMINAL" | sort -u)
+_csv_fixture_terminal=$(printf '%s\nbusy\n' "$_csv_fixture_terminal" | sort -u)
 assert_contains "the vendored fixture actually lists terminal words to check against" "$_csv_fixture_terminal" "applied"
 
 # Each function's `case "$status" in` arm list sits on the line right after the line that opens

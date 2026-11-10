@@ -110,6 +110,7 @@ def test_a_control_change_our_history_says_did_not_hold_is_not_claimed_as_runnin
         # is exactly why the cautious answer is asserted here rather than assumed.
         "noop",
         "throttled",
+        "busy",
         # NOT reachable through today's writer: ``_record_worker_result`` filters on
         # ``_RECORDABLE_WORKER_STATUSES`` and ``reconcile_worker_config_status`` on
         # ``_RECONCILE_TERMINAL``, and no member of either is missing above. They are asserted
