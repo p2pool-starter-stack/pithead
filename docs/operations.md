@@ -356,11 +356,14 @@ To disable the channel, set `dashboard.control.enabled: false` and run `./pithea
 units are disabled and removed, the routes disappear from the dashboard (404), and the spool
 directory is left in place. To inspect or drain the queue by hand, run
 `./pithead control-run-pending`. A commit keeps the previous config at `config.json.bak-control`;
-a failed apply names it in the result and retries container recreation on the next apply, same as
-the CLI. The commit checks preview freshness and approval, publishes `config.json`, and
-runs its child `apply -y` under one mutation lock. A preview made against an older
-configuration is rejected after the wait, as is a commit that times out waiting for
-the lock; make a fresh preview before committing again.
+a failed apply names it in the result. Before publishing changed configuration, `apply` records
+a retry marker. If service configuration or container recreation fails, fix the reported error
+and re-run `./pithead apply`: it regenerates service configuration and retries container recreation
+even when the environment already matches. The marker and any pending sync-gate reset scope
+remain until apply succeeds. The dashboard and CLI use the same recovery path. The commit checks
+preview freshness and approval, publishes `config.json`, and runs its child `apply -y` under one
+mutation lock. A preview made against an older configuration is rejected after the wait, as is a
+commit that times out waiting for the lock; make a fresh preview before committing again.
 
 ---
 
