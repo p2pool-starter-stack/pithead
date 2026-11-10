@@ -414,7 +414,11 @@ async def _submit_locked(request: web.Request) -> web.Response:
     except (ValueError, TypeError):
         return web.json_response({"error": "Not valid JSON: enter a JSON object."}, status=400)
     try:
-        cfg, changes = prepare_config(cfg, ref, reject_legacy_conflicts=True)
+        host_platform = (_spool_read("platform.txt") or "appliance").strip()
+        host_platform = host_platform if "config_version" in cfg else None
+        cfg, changes = prepare_config(
+            cfg, ref, reject_legacy_conflicts=True, platform=host_platform
+        )
         if not _last_attempt():
             defaults, _ = prepare_config(
                 new_install_defaults((_spool_read("platform.txt") or "appliance").strip()), ref

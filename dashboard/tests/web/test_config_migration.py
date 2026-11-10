@@ -88,3 +88,25 @@ def test_every_reference_leaf_has_one_tier_and_every_tier_path_exists():
 def test_essentials_stay_within_the_cap_and_feed_the_core_keys_file():
     assert len(TIERS["essential"]) <= 15
     assert json.loads((ROOT / "config.core-keys.json").read_text()) == TIERS["essential"]
+
+
+@pytest.mark.parametrize("stamped", [True, False])
+async def test_wizard_submit_migrates_only_a_stamped_2_0_0_config(tmp_path, monkeypatch, stamped):
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from mining_dashboard.config.defaults import effective_defaults
+    from mining_dashboard.wizard import server as wizard
+
+    monkeypatch.setenv("WIZARD_SPOOL", str(tmp_path))
+    monkeypatch.setenv("WIZARD_TOKEN", "fixture-token")
+    tmp_path.joinpath("config.reference.json").write_text(json.dumps(effective_defaults()))
+    tmp_path.joinpath("platform.txt").write_text("diy")
+    payload = {"monero": {"wallet_address": "fixture-wallet"}}
+    if stamped:
+        payload["config_version"] = "2.0.0"
+    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+        await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
+        response = await client.post("/submit", data={"config": json.dumps(payload)})
+        assert response.status == 200
+    written = json.loads(tmp_path.joinpath("config.json").read_text())
+    assert written["tari"]["mode"] == ("local" if stamped else "off")

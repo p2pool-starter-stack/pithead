@@ -1,6 +1,6 @@
 {
   "values": {
-    "config_version": "2.0.0",
+    "config_version": "2.1.0",
     "p2pool": {
       "pool": "mini",
       "stratum_bind": "0.0.0.0",

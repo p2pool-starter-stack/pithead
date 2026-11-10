@@ -39,7 +39,8 @@ def _version(stamp) -> tuple[int, int, int]:
 
 def migration_due(cfg: dict) -> bool:
     stamp = _version(cfg.get("config_version", "2.0.0"))
-    return stamp < _version(TARGET) and cfg.get("profile") is None
+    profile = cfg.get("profile")
+    return stamp < _version(TARGET) and (profile is None or profile is False)
 
 
 def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
