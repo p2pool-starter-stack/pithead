@@ -128,26 +128,26 @@ unset INSPECT_FAIL PROXY_STARTED_AT
 for condition in active disabled rig busy custom-busy api http missing malformed string boolean negative connected; do
     tick 1000
     case "$condition" in
-        active) export MINER_ACTIVE=false ;;
-        disabled) printf '{"local_miner":{"enabled":false}}\n' >"$work/stack/config.json" ;;
-        rig) echo rig >"$work/stack/machine-role" ;;
-        busy)
-            exec 8>"$work/stack/.pithead.lock"
-            flock 8
-            ;;
-        custom-busy)
-            export PITHEAD_LOCK_FILE="$work/custom.lock"
-            exec 8>"$PITHEAD_LOCK_FILE"
-            flock 8
-            ;;
-        api) export API_FAIL=1 ;;
-        http) export HTTP_FAIL=1 ;;
-        missing) export PROXY_WORKERS='{}' ;;
-        malformed) export PROXY_WORKERS='invalid' ;;
-        string) export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture","0"]]}' ;;
-        boolean) export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",false]]}' ;;
-        negative) export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",-1]]}' ;;
-        connected) export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",1],["fixture-rig","fixture",1]]}' ;;
+    active) export MINER_ACTIVE=false ;;
+    disabled) printf '{"local_miner":{"enabled":false}}\n' >"$work/stack/config.json" ;;
+    rig) echo rig >"$work/stack/machine-role" ;;
+    busy)
+        exec 8>"$work/stack/.pithead.lock"
+        flock 8
+        ;;
+    custom-busy)
+        export PITHEAD_LOCK_FILE="$work/custom.lock"
+        exec 8>"$PITHEAD_LOCK_FILE"
+        flock 8
+        ;;
+    api) export API_FAIL=1 ;;
+    http) export HTTP_FAIL=1 ;;
+    missing) export PROXY_WORKERS='{}' ;;
+    malformed) export PROXY_WORKERS='invalid' ;;
+    string) export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture","0"]]}' ;;
+    boolean) export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",false]]}' ;;
+    negative) export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",-1]]}' ;;
+    connected) export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",1],["fixture-rig","fixture",1]]}' ;;
     esac
     tick 1400
     no_restart
@@ -229,9 +229,9 @@ mkdir "$T3375"
 TABLE=true
 nft() {
     case "$*" in
-        'list table ip pithead_t3375') [ "$TABLE" = true ] ;;
-        'delete table ip pithead_t3375') TABLE=false ;;
-        *) return 99 ;;
+    'list table ip pithead_t3375') [ "$TABLE" = true ] ;;
+    'delete table ip pithead_t3375') TABLE=false ;;
+    *) return 99 ;;
     esac
 }
 miner_cleanup
@@ -255,27 +255,27 @@ timeout() {
 }
 systemctl() {
     case "$*" in
-        *MainPID*) echo 123 ;;
-        *LoadState*) echo not-found ;;
-        *) return 0 ;;
+    *MainPID*) echo 123 ;;
+    *LoadState*) echo not-found ;;
+    *) return 0 ;;
     esac
 }
 ss() { echo 'LISTEN 0 8 127.0.0.1:3333 0.0.0.0:*'; }
 systemd-run() { touch "$T3375/ready" "$work/watcher-started"; }
 nft() {
     case "$*" in
-        '-f -')
-            cat >/dev/null
-            [ -e "$work/watcher-started" ] || return 99
-            touch "$work/table"
-            return 1
-            ;;
-        'list table ip pithead_t3375') [ -e "$work/table" ] ;;
-        'delete table ip pithead_t3375')
-            rm "$work/table"
-            touch "$work/deleted"
-            ;;
-        *) return 99 ;;
+    '-f -')
+        cat >/dev/null
+        [ -e "$work/watcher-started" ] || return 99
+        touch "$work/table"
+        return 1
+        ;;
+    'list table ip pithead_t3375') [ -e "$work/table" ] ;;
+    'delete table ip pithead_t3375')
+        rm "$work/table"
+        touch "$work/deleted"
+        ;;
+    *) return 99 ;;
     esac
 }
 rm -f "$work/deleted"
@@ -299,11 +299,11 @@ touch "$T3375/watcher" "$T3375/leg.sh" "$work/table"
 echo pithead-miner-recovery.timer >"$T3375/paused"
 systemctl() {
     case "$*" in
-        *LoadState*) echo loaded ;;
-        'stop pithead-t3375-watcher.service') return 1 ;;
-        'is-active --quiet pithead-t3375-watcher.service') return 0 ;;
-        'start pithead-miner-recovery.timer') return 1 ;;
-        *) return 99 ;;
+    *LoadState*) echo loaded ;;
+    'stop pithead-t3375-watcher.service') return 1 ;;
+    'is-active --quiet pithead-t3375-watcher.service') return 0 ;;
+    'start pithead-miner-recovery.timer') return 1 ;;
+    *) return 99 ;;
     esac
 }
 if miner_cleanup; then
