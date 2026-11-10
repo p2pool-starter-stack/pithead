@@ -10,7 +10,7 @@ low_ram_floor_gb() {
 }
 
 host_memtotal_kb() {
-    awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null
+    awk '/^MemTotal:/ {print $2}' "${PITHEAD_MEMINFO:-/proc/meminfo}" 2>/dev/null
 }
 
 p2pool_needs_light_mode() {
