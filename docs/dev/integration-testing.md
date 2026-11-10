@@ -382,7 +382,9 @@ via an `EXIT` trap):
    the same wallet, secrets, onion keys, and shared `monero/tari/p2pool` data dirs — only the
    branch's code differs.
 3. Safety backup (`pithead backup`) as the rollback anchor.
-4. Borrows a miner (default the configured miner): backs up its xmrig config and repoints it at the
+4. Borrows a miner (default the configured miner): backs up its xmrig config into
+   `/opt/rigforge/data/e2e-backups/` (created mode 700, owned by the SSH login user — never inside
+   the RigForge worker build directory, which a worker upgrade archives away) and repoints it at the
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
    With `--no-miner` nothing is borrowed, and the harness runs with `--no-mining-asserts`: the
    workers-online and stratum-hashes assertions skip with a logged notice while every other
@@ -394,7 +396,11 @@ via an `EXIT` trap):
    has compared the bytes back into place. So a surviving backup means an un-restored borrow, and the
    oldest one holds the true pre-borrow config. Restoring from it first is what stops this run's
    backup from recording the borrowed state as "the original" and every later restore returning to it
-   ([#1178](https://github.com/p2pool-starter-stack/pithead/issues/1178)).
+   ([#1178](https://github.com/p2pool-starter-stack/pithead/issues/1178)). The scan reads both the
+   backup directory and the old location beside the live config, because backups were minted there
+   until a RigForge-control upgrade archived that build directory out from under the restore
+   ([#3955](https://github.com/p2pool-starter-stack/pithead/issues/3955)); "oldest" is taken across
+   both, ordered by the timestamp suffix.
 
    A rig that keeps a permanent bench pool of its own is the case that makes this necessary. There the
    repoint finds the bench already named, so it only reorders the pool list and tags nothing — the
@@ -995,7 +1001,7 @@ The control legs cover:
   each leg reads the original off the rig itself, derives a probe from it, asserts the **rig**
   reports the new value, and restores. No new environment variable or port is needed; the
   DONATION revert's diagnostic sample dials the rig directly, while the assertion reads the
-  dashboard. `DONATION` only ever moves toward zero (a rig already at 0 is nudged to RigForge's default 1), and
+  dashboard. `DONATION` only ever moves toward zero (a rig already at 0 is probed with a nonzero value), and
   `watchdog_interval_min` steps one minute away from wherever it sits, inside RigForge's 1–1440
   range. The restore runs whatever the assertions said, so a mid-leg failure cannot strand a
   borrowed rig on a probe value.

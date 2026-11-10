@@ -242,3 +242,46 @@ class TestTheReadFailsClosed:
 
         # The failed read changed nothing: the row is still there for the next poll to serve.
         assert state_manager.get_worker_revision_drift("rig1", "bbb") is not None
+
+
+class TestRigForgeVersionRebase:
+    def test_move_with_version_change_is_silent(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        assert state_manager.note_worker_revision("rig1", _meta("bbb"), "1.1.0") is None
+
+    def test_rebase_leaves_no_inspect_drift(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        state_manager.note_worker_revision("rig1", _meta("bbb"), "1.1.0")
+        assert state_manager.get_worker_revision_drift("rig1", "bbb") is None
+
+    def test_move_with_same_version_still_drifts(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        assert state_manager.note_worker_revision("rig1", _meta("bbb"), "1.0.0") == {
+            "worker": "rig1",
+            "before": "aaa",
+            "after": "bbb",
+        }
+
+    def test_edit_after_rebase_still_drifts(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        state_manager.note_worker_revision("rig1", _meta("bbb"), "1.1.0")
+        assert state_manager.note_worker_revision("rig1", _meta("ccc"), "1.1.0") is not None
+
+    def test_version_change_keeps_a_current_drift_line(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        state_manager.note_worker_revision("rig1", _meta("bbb"), "1.0.0")
+        state_manager.note_worker_revision("rig1", _meta("bbb"), "1.1.0")
+        assert state_manager.get_worker_revision_drift("rig1", "bbb") is not None
+
+    def test_unstored_version_row_is_a_rebase(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"))
+        assert state_manager.note_worker_revision("rig1", _meta("bbb"), "1.1.0") is None
+
+    def test_omitted_version_is_not_a_rebase(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        assert state_manager.note_worker_revision("rig1", _meta("bbb")) is not None
+
+    def test_omitted_version_keeps_the_stored_one(self, state_manager):
+        state_manager.note_worker_revision("rig1", _meta("aaa"), "1.0.0")
+        state_manager.note_worker_revision("rig1", _meta("aaa"))
+        assert state_manager.note_worker_revision("rig1", _meta("bbb"), "1.0.0") is not None

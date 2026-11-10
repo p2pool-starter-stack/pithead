@@ -130,6 +130,12 @@ another command is running comes back refused with nothing changed, instead of o
 install underneath it. Read-only commands — `status`, `doctor` and `logs` among them — never take
 it and never wait.
 
+`apply` holds the lock while it reads and renders the configuration, releases it for
+confirmation, then checks the configuration and live `.env` again after reacquiring it.
+If either changed, it discards the staged render and stops before publishing it or
+changing services. Re-run `./pithead apply` to review the current changes and confirm
+any payout-wallet redirect again. `apply -y` also rejects a stale render.
+
 The dashboard takes the same lock for each container start or stop it sends through its control
 proxy. This keeps the sync gate, node-down failover, clearnet-to-Tor transition and Tor self-heal
 from changing a container while a CLI mutation is recreating the stack. The dashboard receives a
@@ -351,7 +357,10 @@ units are disabled and removed, the routes disappear from the dashboard (404), a
 directory is left in place. To inspect or drain the queue by hand, run
 `./pithead control-run-pending`. A commit keeps the previous config at `config.json.bak-control`;
 a failed apply names it in the result and retries container recreation on the next apply, same as
-the CLI.
+the CLI. The commit checks preview freshness and approval, publishes `config.json`, and
+runs its child `apply -y` under one mutation lock. A preview made against an older
+configuration is rejected after the wait, as is a commit that times out waiting for
+the lock; make a fresh preview before committing again.
 
 ---
 
@@ -677,6 +686,21 @@ still there as regular files, then checks free space and prompts if it looks tig
 can refuse before the running stack is stopped for an archive that would fail anyway. On a
 source checkout, `backups/` is git-ignored — the archive carries `.env` and the onion private keys,
 and secret scanners can't see inside a tarball.
+
+Backup refuses when the resolved data directories in `config.json` disagree with the applied
+paths recorded in `.env`, even when blockchains are excluded. Revert an unapplied data-path edit
+to take a safety backup, or complete the intended apply before retrying. Backup checks again and
+rebuilds its file list under the mutation lock, before stopping services or creating an archive.
+
+The file list uses absolute paths, so a `PITHEAD_CONFIG_FILE` override that already names an
+absolute path is archived as given. The free-space estimate reads every item with `sudo du`
+(the Tor data directory is owned by UID 100) and adds a 5% margin. If `du` cannot read part of a
+tree, or the size or free space cannot be read at all, backup warns and proceeds without the
+check instead of aborting. The estimate covers the file list built before the prompts, because
+the space prompt must not wait for an answer while holding the mutation lock. `tar` gets one
+retry after five seconds, so a container finishing its last write during the stop does not fail
+the backup. Each failed attempt removes its partial archive. A second failure is fatal: backup
+prints the resolved state of every archived path, then starts the stack again if it stopped it.
 
 Encryption is `openssl enc -aes-256-cbc -pbkdf2` with 600,000 PBKDF2 iterations (`openssl` is
 already a stack dependency; AEAD modes like GCM are not available through `openssl enc`, so CBC is
