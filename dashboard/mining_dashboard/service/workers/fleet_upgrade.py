@@ -32,7 +32,7 @@ def plan(workers, release):
         rigforge = w.get("rigforge")
         if not name or not (isinstance(rigforge, dict) or w.get("adopted")):
             continue
-        if (rigforge or {}).get("appliance"):
+        if isinstance(rigforge, dict) and rigforge.get("appliance"):
             out["skipped"].append(
                 {
                     "name": name,
