@@ -86,8 +86,6 @@ test("terminal statuses render their calm/red variants (#597)", () => {
   assert.match(renderToString(inst.render()), /Rolled back/);
 });
 
-// --- Post-upgrade refresh (#3947) -----------------------------------------------------------
-
 function afterUpgradeFixture(reports) {
   const inst = readyInstance(UPG_DETAIL);
   let i = 0;

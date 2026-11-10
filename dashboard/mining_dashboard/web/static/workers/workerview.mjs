@@ -201,7 +201,7 @@ export class WorkerInspect extends Component {
         return;
       }
     }
-    this.setState({ waitTimedOut: true });
+    if (!this.unmounted) this.setState({ waitTimedOut: true });
   }
 
   onJsonInput(text) {
