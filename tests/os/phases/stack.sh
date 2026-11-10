@@ -275,6 +275,12 @@ phase_stack() {
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
     _stack_container_restart_leg || return 1
 
+    local miner_rc=0
+    miner_backup_trial || miner_rc=$?
+    if [ "$miner_rc" != 0 ] && [ "$miner_rc" != 77 ]; then
+        bad "local miner fails dashboard backup strand recovery (#3375)"
+    fi
+
     local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
     _stack_run_integration "check (non-destructive live-state assertion)" --check "${remote_extra[@]}"

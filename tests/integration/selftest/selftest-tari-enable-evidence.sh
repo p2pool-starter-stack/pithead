@@ -15,12 +15,16 @@ for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hash
     OUT_DIR="$fixture/$CASE"
     mkdir -p "$OUT_DIR"
     PHASE=0
+    export LIFECYCLE_MINING_ACTIVE=1
     FAILURE_COUNT=0
     CONTINUITY_PASSES=0
     printf '0\n' >"$OUT_DIR/polls"
     env_on_box() { printf local; }
     push_config() { PHASE=$((PHASE + 1)); }
-    pithead() { printf 'apply-completed\n'; }
+    pithead() {
+        printf '%s\n' "${LIFECYCLE_MINING_ACTIVE:-unset}" >>"$OUT_DIR/apply-active"
+        printf 'apply-completed\n'
+    }
     wait_stratum_hashes() { return 0; }
     wait_status_ok() { return 0; }
     now_s() { printf '%s' "$((1 + $(cat "$OUT_DIR/polls") * 30))"; }
@@ -80,6 +84,8 @@ for CASE in recreated stopped unchanged never-syncing loading-to-done stale-hash
     rc=0
     run_tari_background_sync || rc=$?
     [ "$PHASE" = 3 ] || bad=$((bad + 1))
+    [ "$(tail -n1 "$OUT_DIR/apply-active")" = 0 ] || bad=$((bad + 1))
+    [ "$(grep -c '^1$' "$OUT_DIR/apply-active")" = "$(($(wc -l <"$OUT_DIR/apply-active") - 1))" ] || bad=$((bad + 1))
     [ -s "$OUT_DIR/tari-enable/off.apply.log" ] && [ -s "$OUT_DIR/tari-enable/on.apply.log" ] || bad=$((bad + 1))
     grep -q 'phase=after-restore' "$OUT_DIR/tari-enable/snapshots.log" || bad=$((bad + 1))
     if grep -q must-not-be-retained "$OUT_DIR/tari-enable/snapshots.log"; then bad=$((bad + 1)); fi
