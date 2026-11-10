@@ -37,6 +37,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   reboot then would have returned the machine to the previous version before the update was
   ever decided. An update interrupted before its verification reached a verdict is now reported
   as interrupted, not as failed health checks (#3909).
+- With the Tor egress firewall on, a remote Monero or Tari node entered by a dual-stack LAN name is
+  now accepted on its private IPv4 answer, in the first-boot wizard and in a day-two configuration
+  commit, instead of being refused with the egress-firewall message (#2351).
 
 ## [2.0.2] - 2026-10-31
 
