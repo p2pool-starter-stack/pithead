@@ -17,6 +17,12 @@ assert_eq "new install XvB is off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" false
 assert_eq "DIY miner is off" "$(jq -r '.local_miner.enabled' <<<"$w1_cfg")" false
 assert_eq "new install records the balance profile" "$(jq -r '.profile' <<<"$w1_cfg")" balance
 assert_eq "private sync inherits Balance" "$(jq -r '.monero | has("clearnet_initial_sync")' <<<"$w1_cfg")" false
+assert_eq "local node RPC creds are auto-generated" \
+    "$([ -n "$(jq -r '.monero.node_username' <<<"$w1_cfg")" ] && [ -n "$(jq -r '.monero.node_password' <<<"$w1_cfg")" ] && echo yes)" yes
+assert_eq "no telegram block is written" "$(jq -r 'has("telegram")' <<<"$w1_cfg")" false
+assert_eq "stratum password stays off without opt-in" "$(jq -r '.p2pool.stratum_password // ""' <<<"$w1_cfg")" ""
+assert_eq "config.minimal.json ships no stratum password" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" ""
+assert_eq "written top-level keys are the answered sections" "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","local_miner","monero","p2pool","profile","tari","xvb"]'
 w1_pass=$(jq -r '.dashboard.auth.password' <<<"$w1_cfg")
 assert_eq "generated password has 32 characters" "${#w1_pass}" 32
 assert_eq "password is alphanumeric" "$(printf %s "$w1_pass" | tr -d 'A-Za-z0-9')" ""

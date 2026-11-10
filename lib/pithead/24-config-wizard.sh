@@ -10,8 +10,6 @@
 # per-rig objects, not a single answer, and the standard fleet needs no entries at all (see
 # docs/workers.md) — so it's covered by the closing pointer instead of a prompt, matching the
 # treatment #502 already prescribes for monero.view_key / dashboard.energy.cost_per_kwh.
-# dashboard.host is asked separately, by resolve_dashboard_host "interactive" (setup(), after this
-# function returns) — not duplicated here.
 ensure_config_exists() {
     [ -f "$CONFIG_FILE" ] && return 0
 

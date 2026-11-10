@@ -99,8 +99,8 @@ CLI, reference and minimal-config exports for drift.
 
 Existing sparse configs keep their 2.0.0 behavior. `LEGACY_ABSENT` preserves missing
 `tari.mode` as `local`, `xvb.enabled` as `true`, and `dashboard.tari_required` as `true`.
-On appliances it also preserves missing `local_miner.enabled` as `false` and
-`dashboard.host` as `auto`. Explicit values always win. The generated
+On appliances it also preserves missing `local_miner.enabled` as `false`. Explicit values
+always win. The generated
 [`config.reference.json`](../config.reference.json), which the dashboard editor merges
 under an existing config, retains those legacy values; saving another setting cannot
 start the miner or replace the machine's dashboard identity.

@@ -167,7 +167,8 @@ Setup walks through five stages. It's interactive on the first run and safe to r
    - **Required:** your Monero wallet address and whether you're running a local Monero node (the
      default — the stack runs its own) or connecting to a remote one. Local-node RPC credentials
      are generated automatically. Setup inherits the `mini` P2Pool sidechain default. It generates
-     a random 32-character alphanumeric dashboard password and shows it once in the final handoff.
+     a random 32-character alphanumeric dashboard password and shows it once in the final handoff; if setup stops before then, read
+     `dashboard.auth.password` from the owner-only `config.json`.
      To disable dashboard login, explicitly set `dashboard.auth.password` to an empty string in
      **Advanced** or `config.json`; there is no no-login prompt.
    - **Merge-mine Tari? (beta)** Three answers: no, run the bundled Tari node here, or use a Tari
