@@ -69,11 +69,20 @@ done
     saved=$(preserve_migration_bundle "$S/update.raucb")
     stamped=$(_build_bundle_stamped vfail 99.0.0 99.0.0)
     for f in "$saved" "$stamped"; do
-        [ -f "$f" ] || { echo "FAIL: $f was not created"; exit 1; }
-        [[ "$f" == "$HOST_SCRATCH/"* ]] || { echo "FAIL: $f is outside the owned scratch directory"; exit 1; }
+        [ -f "$f" ] || {
+            echo "FAIL: $f was not created"
+            exit 1
+        }
+        [[ "$f" == "$HOST_SCRATCH/"* ]] || {
+            echo "FAIL: $f is outside the owned scratch directory"
+            exit 1
+        }
     done
     cleanup
     [ -z "$(find "$S/tmp" -name 'pithead-migration-*' -o -name 'os-floor-fallback-*')" ] &&
-        [ ! -e "$HOST_SCRATCH" ] || { echo 'FAIL: cleanup left saved RAUC bundles behind'; exit 1; }
+        [ ! -e "$HOST_SCRATCH" ] || {
+        echo 'FAIL: cleanup left saved RAUC bundles behind'
+        exit 1
+    }
 )
 echo 'selftest-migration-bundle-preservation: PASS'
