@@ -1,4 +1,9 @@
-from mining_dashboard.config.defaults import default_of, merge, new_install_defaults, select_profile
+from mining_dashboard.config.defaults import (
+    automatic_setup_defaults,
+    default_of,
+    merge,
+    select_profile,
+)
 
 
 def tari_disk_default(budget: dict, disks: list[dict], target: str, wipe: str = "keep") -> str:
@@ -32,7 +37,7 @@ def fast_sync_warning(cfg: dict) -> str:
 
 def new_machine_answers(budget: dict, disks: list[dict], platform: str = "appliance") -> dict:
     return merge(
-        new_install_defaults(platform), {"tari": {"mode": tari_disk_default(budget, disks, "")}}
+        automatic_setup_defaults(platform), {"tari": {"mode": tari_disk_default(budget, disks, "")}}
     )
 
 
@@ -52,6 +57,9 @@ def explicit_wizard_config(cfg: dict, ref: dict, *, previous_profile: str = "bal
         block, key = path.split(".")
         if isinstance(cfg.get(block), dict) and key in cfg[block]:
             written.setdefault(block, {})[key] = cfg[block][key]
+    auth = cfg.get("dashboard", {}).get("auth")
+    if isinstance(auth, dict) and auth.get("password") == "":
+        written.setdefault("dashboard", {}).setdefault("auth", {})["password"] = ""
     return written
 
 
