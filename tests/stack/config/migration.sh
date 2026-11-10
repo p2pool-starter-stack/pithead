@@ -39,7 +39,7 @@ for mg_input in "$MG_DATA"/inputs/*.json; do
         mkdir -p "$mg_dir/render"
         cp "$mg_input" "$mg_dir/config.json"
         cp "$ROOT/VERSION" "$mg_dir/VERSION"
-        mg_out=$(PITHEAD_APPLIANCE="$mg_flag" run_sourced "$mg_dir" migrate_config_to_2_1 2>&1)
+        PITHEAD_APPLIANCE="$mg_flag" run_sourced "$mg_dir" migrate_config_to_2_1 >/dev/null 2>&1
         assert_rc "$mg_name $mg_platform migrates" "$?" 0
         assert_eq "$mg_name $mg_platform migrated settings" \
             "$(jq -S 'del(.config_version)' "$mg_dir/config.json")" "$(cat "$MG_DATA/migrated/$mg_name.$mg_platform.json")"
@@ -60,7 +60,6 @@ for mg_input in "$MG_DATA"/inputs/*.json; do
             bad "$mg_name $mg_platform renders" "$(tail -3 "$mg_dir/render/render.log")"
         fi
         mg_checked=$((mg_checked + 1))
-        : "$mg_out"
     done
 done
 [ "$mg_checked" -ge 30 ] && ok "migration covered $mg_checked fixture and platform pairs" || bad "migration covered every fixture" "$mg_checked"
@@ -99,7 +98,7 @@ assert_eq "a tied config keeps its explicit override" "$(jq -r .p2pool.clearnet 
 MG_BAK="$MG/backup-failure"
 mkdir -p "$MG_BAK"
 cp "$MG_DATA/inputs/diy-login.json" "$MG_BAK/config.json"
-mg_out=$(PITHEAD_APPLIANCE=0 run_sourced "$MG_BAK" eval 'cp() { return 1; }; migrate_config_to_2_1' 2>&1)
+PITHEAD_APPLIANCE=0 run_sourced "$MG_BAK" eval 'cp() { return 1; }; migrate_config_to_2_1' >/dev/null 2>&1
 assert_rc "a failed backup refuses the migration" "$?" 1
 cmp -s "$MG_BAK/config.json" "$MG_DATA/inputs/diy-login.json" && ok "a failed backup leaves the config untouched" || bad "a failed backup leaves the config untouched" changed
 
@@ -110,9 +109,9 @@ mkdir -p "$MG_TREE/${BK#/}"
 cp "$MG_DATA/inputs/workers-tokens.json" "$MG_TREE/${BK#/}/config.json"
 cp "$BK/.env" "$MG_TREE/${BK#/}/.env"
 tar -czf "$MG/v2.tar.gz" -C "$MG_TREE" "${BK#/}/config.json" "${BK#/}/.env"
-out=$(run_sourced "$BK" restore_apply "$MG/v2.tar.gz" "" "$MG/restore-error" "$MG/restored" "" "$MG/restore-stage" 2>&1)
+run_sourced "$BK" restore_apply "$MG/v2.tar.gz" "" "$MG/restore-error" "$MG/restored" "" "$MG/restore-stage" >/dev/null 2>&1
 assert_rc "a 2.0.0 backup restores" "$?" 0
 cp "$MG/restored" "$BK/config.json"
-out=$(PITHEAD_APPLIANCE=0 run_sourced "$BK" parse_and_validate_config 2>&1)
+PITHEAD_APPLIANCE=0 run_sourced "$BK" parse_and_validate_config >/dev/null 2>&1
 assert_rc "a restored 2.0.0 backup applies" "$?" 0
 assert_eq "a restored 2.0.0 backup ends migrated" "$(jq -r .profile "$BK/config.json")" privacy
