@@ -5,7 +5,7 @@ source "$ROOT/tests/integration/fixtures/payout-pairs.sh"
 
 echo "== remote-node payout confirmation: validation, routing and render (#2866) =="
 
-for host in 10.1.2.3 127.0.0.1 172.16.0.9 172.31.255.1 192.168.1.5 100.64.0.1 100.127.1.1 169.254.1.1 0.0.0.0 localhost nas.local box fd00::1 fe80::1 ::1; do
+for host in 10.1.2.3 127.0.0.1 172.16.0.9 172.31.255.1 192.168.1.5 100.64.0.1 100.127.1.1 169.254.1.1 0.0.0.0 localhost nas.local box fd00::1 fe80::1 ::1 :: ::ffff:192.168.1.5 0:0:0:0:0:0:0:1 node.lan. localhost.; do
     run_sourced "$SANDBOX" payout_host_off_tor "$host"
     assert_rc "Tor cannot reach a private, local or unqualified node" "$?" 0
 done
@@ -16,7 +16,7 @@ done
 
 build_val_sandbox
 RP_DIR="$SANDBOX/remote-payout"
-rp_config() { # <profile> <monero.mode> <host> [view key]
+rp_config() {
     jq -n --arg profile "$1" --arg mode "$2" --arg host "$3" --arg key "${4-$PAYOUT_VIEW1}" --arg m "$PAYOUT_MONERO1" --arg t "$PAYOUT_TARI1" \
         '{profile:$profile,
           monero:({mode:$mode,wallet_address:$m,node_username:"u",node_password:"p",view_key:$key}

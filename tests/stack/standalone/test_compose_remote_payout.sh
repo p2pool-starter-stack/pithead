@@ -8,7 +8,7 @@ fi
 ENV_FILE="$(mktemp)"
 trap 'rm -f "$ENV_FILE"' EXIT
 fails=0
-render() { # <profiles> <node host> <node port> [extra env lines...]
+render() {
     local profiles="$1" host="$2" port="$3"
     shift 3
     {
@@ -55,7 +55,7 @@ EOF
     } >"$ENV_FILE"
     docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null
 }
-jq_assert() { # <label> <filter> <json>
+jq_assert() {
     if jq -e "$2" <<<"$3" >/dev/null 2>&1; then echo "  ✓ $1"; else
         echo "  ✗ $1: failed [$2]"
         fails=$((fails + 1))

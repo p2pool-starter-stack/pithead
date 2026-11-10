@@ -27,10 +27,11 @@ esac
 # Fresh wallets start 100 blocks behind the local tip (about 200 minutes).
 # Never fall back to genesis when the node is unavailable: restart and retry instead.
 resolve_scan_height() {
-    local want="${PAYOUT_SCAN_HEIGHT:-auto}" count
+    local want="${PAYOUT_SCAN_HEIGHT:-auto}" count timeout=10
+    [ -z "${PAYOUT_NODE_PROXY:-}" ] || timeout=30
     case "$want" in
     '' | auto)
-        count=$(curl -fsS --digest --max-time 30 ${PAYOUT_NODE_PROXY:+--socks5-hostname "$PAYOUT_NODE_PROXY"} \
+        count=$(curl -fsS --digest --max-time "$timeout" ${PAYOUT_NODE_PROXY:+--socks5-hostname "$PAYOUT_NODE_PROXY"} \
             -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
             -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}' \

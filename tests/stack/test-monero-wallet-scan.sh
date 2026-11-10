@@ -78,10 +78,12 @@ ws_args() { (
     tr '\n' ' ' <"$d/args"
 ); }
 local_args="$(ws_args local MONERO_NODE_HOST=172.28.0.26)"
+assert_contains "the local wallet stub ran" "$local_args" "--rpc-bind-port 18082"
 assert_contains "local wallet keeps the trusted bundled daemon" "$local_args" "--trusted-daemon"
 assert_not_contains "local wallet adds no proxy" "$local_args" "--proxy"
 assert_contains "local wallet dials the bundled node" "$local_args" "--daemon-address 172.28.0.26:18081"
 direct_args="$(ws_args direct PAYOUT_NODE_REMOTE=true MONERO_NODE_HOST=192.0.2.10 MONERO_RPC_PORT=28081)"
+assert_contains "the remote wallet stub ran" "$direct_args" "--rpc-bind-port 18082"
 assert_contains "remote wallet distrusts the node" "$direct_args" "--untrusted-daemon"
 assert_not_contains "remote wallet never sets the trusted flag" "$direct_args" "--trusted-daemon"
 assert_contains "remote wallet dials the configured node and port" "$direct_args" "--daemon-address 192.0.2.10:28081"
@@ -90,7 +92,9 @@ tor_args="$(ws_args tor PAYOUT_NODE_REMOTE=true PAYOUT_NODE_PROXY=172.28.0.25:90
 assert_contains "a Privacy remote wallet scans through the Tor SOCKS port" "$tor_args" "--proxy 172.28.0.25:9050"
 v6_args="$(ws_args v6 PAYOUT_NODE_REMOTE=true MONERO_NODE_HOST=2001:db8::1)"
 assert_contains "an IPv6 node is bracketed for the wallet" "$v6_args" "--daemon-address [2001:db8::1]:18081"
-assert_not_contains "no wallet argument carries the view key" "$(ws_args key PAYOUT_NODE_REMOTE=true MONERO_VIEW_KEY=feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface)" "feedface"
+key_args="$(ws_args key PAYOUT_NODE_REMOTE=true MONERO_VIEW_KEY=feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface)"
+assert_contains "the view-key wallet stub ran" "$key_args" "--generate-from-json"
+assert_not_contains "no wallet argument carries the view key" "$key_args" "feedface"
 
 ws_curl_log() {
     cat >"$WS_BIN/curl" <<'EOS'
@@ -114,4 +118,13 @@ assert_contains "the healthcheck reads the configured remote node" "$(grep get_b
 : >"$CURL_LOG"
 : >"$WS_DIR/.payout-scanning"
 CURL_LOG="$CURL_LOG" MONERO_NODE_HOST=172.28.0.26 PATH="$WS_BIN:$PATH" WALLET_DIR="$WS_DIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
+assert_contains "the local healthcheck read the bundled node" "$(grep get_block_count "$CURL_LOG")" "http://172.28.0.26:18081/json_rpc"
 assert_not_contains "a local healthcheck dials without a proxy" "$(grep get_block_count "$CURL_LOG")" "socks5"
+: >"$CURL_LOG"
+: >"$WS_DIR/.payout-scanning"
+ws_curl 0 10
+CURL_LOG="$CURL_LOG" PAYOUT_NODE_REMOTE=true MONERO_NODE_HOST=192.0.2.10 PATH="$WS_BIN:$PATH" WALLET_DIR="$WS_DIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
+assert_eq "an unreadable remote node keeps the scan marker armed" "$([ -f "$WS_DIR/.payout-scanning" ] && echo kept || echo cleared)" kept
+: >"$WS_DIR/.payout-scanning"
+CURL_LOG="$CURL_LOG" MONERO_NODE_HOST=172.28.0.26 PATH="$WS_BIN:$PATH" WALLET_DIR="$WS_DIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
+assert_eq "an unreadable local node still clears the scan marker" "$([ -f "$WS_DIR/.payout-scanning" ] && echo kept || echo cleared)" cleared

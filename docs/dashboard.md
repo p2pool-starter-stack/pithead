@@ -1135,7 +1135,10 @@ leave the key empty and no wallet is rendered. It is opt-in and adds no configur
 - **Failure is visible.** The Earnings page says "Tracking may be incomplete" with the reason when the
   node is unreachable or still syncing, the wallet is not answering, a scan failed, or the wallet has
   scanned more than 10 blocks fewer than the node reports. An empty history is never shown as
-  complete, and nothing falls back to a local node.
+  complete, and nothing falls back to a local node. "Complete" means the wallet reached the height
+  the node reports, so it is the node's word: it cannot prove the node hid a payout.
+- **Plaintext hop.** The wallet's RPC login and requests reach a direct remote node unencrypted, like
+  the other remote-node legs, so use a LAN or WireGuard node, or Privacy's Tor route.
 - **Tari is not supported.** `tari.view_key` with `tari.mode: remote` is refused and the message says
   payout confirmation through a remote node is Monero only. The pinned Tari wallet scans only through the local node's
   wallet HTTP service.

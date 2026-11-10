@@ -85,8 +85,7 @@ parse_and_validate_config() {
     # merge-mine coinbase actually landed. The view key is a SECRET (reveals all incoming amounts and
     # timing) — handled like node_password: never logged or echoed, delivered to the container in a
     # read-only bind-mounted owner-only file, never the command line or `docker inspect`. Empty =
-    # feature off. Phase 1 is LOCAL NODE ONLY: a view key with a remote Tari node (#103) is refused,
-    # mirroring monero.mode — scanning through a third-party node changes the trust story.
+    # feature off. A view key with a remote Tari node (#103) is refused: only Monero scans through a remote node.
     # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE 2022-01-01 (#2731), so a fresh
     # wallet doesn't rescan from genesis. TARI_MODE was already parsed and validated above.
     TARI_VIEW_KEY=$(jq -r '.tari.view_key // empty' "$CONFIG_FILE")

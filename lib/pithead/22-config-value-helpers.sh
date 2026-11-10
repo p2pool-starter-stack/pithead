@@ -10,8 +10,9 @@ is_valid_host() {
 
 payout_host_off_tor() {
     local host="${1,,}"
+    host="${host%.}"
     case "$host" in
-    localhost | *.localhost | *.local | *.lan | *.internal | *.home.arpa | ::1 | fc*:* | fd*:* | fe[89ab]*:*) return 0 ;;
+    localhost | *.localhost | *.local | *.lan | *.internal | *.home.arpa | ::* | 0:* | fc*:* | fd*:* | fe[89ab]*:*) return 0 ;;
     esac
     if [[ "$host" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
         local a=$((10#${BASH_REMATCH[1]})) b=$((10#${BASH_REMATCH[2]}))

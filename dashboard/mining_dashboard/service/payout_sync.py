@@ -107,10 +107,12 @@ async def sync_tari(state_manager, tari_wallet_client, alert_service):
 
 
 def remote_tracking(reachable, scan_answered, wallet_height, node):
-    """Say whether a remote-node scan is complete, and why not when it is not."""
     reason = None
-    node_height = (node or {}).get("height") or (node or {}).get("target") or 0
-    if not (node or {}).get("reachable"):
+    node = node or {}
+    node_height = node.get("height") or node.get("target") or 0
+    if not node:
+        reason = "the remote node has not been read yet"
+    elif not node.get("reachable"):
         reason = "the remote node is unreachable"
     elif node.get("is_syncing"):
         reason = "the remote node is still syncing"

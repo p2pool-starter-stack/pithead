@@ -14,7 +14,8 @@ SYNCED = {"reachable": True, "is_syncing": False, "height": 3_000_000}
     ("reachable", "scan_answered", "wallet_height", "node", "reason"),
     [
         (True, True, 3_000_000, {"reachable": False}, "the remote node is unreachable"),
-        (True, True, 3_000_000, {}, "the remote node is unreachable"),
+        (True, True, 3_000_000, {}, "the remote node has not been read yet"),
+        (True, True, 3_000_000, None, "the remote node has not been read yet"),
         (
             True,
             True,
