@@ -164,7 +164,7 @@ including those it carries over from 2.0.1 and 2.0.0, still apply, except #3623,
 and #3761, which are fixed above, and #3375, which is mitigated above. The RigForge pool-edit issue
 from 2.0.0 (rigforge#583) is fixed on the appliance by the RigForge 1.18.1 entry above. The
 `threads` issue (rigforge#588) is not: 2.0.3 still runs a RigForge that ignores `threads`. These
-three remain open and are planned for 2.0.4:
+four remain open and are planned for 2.0.4:
 
 - On the appliance, a built-in miner that stalls after a dashboard backup or a recovery boot is
   now restarted automatically once the proxy has seen no connection from it for five minutes.
@@ -180,6 +180,10 @@ three remain open and are planned for 2.0.4:
   web server a second time up to five minutes later, and the log (`journalctl -u
   pithead-address-watch`) blames a change of the machine's addresses even if none changed. The
   dashboard is briefly unavailable each time; reload it. Mining is not affected (#3987).
+- On the appliance, if an update to 2.0.3 fails its health checks and falls back to 2.0.2, the
+  2.0.2 dashboard runs on the database 2.0.3 has already migrated. It does not record or alert
+  payouts confirmed while it runs, and its payout totals can read higher than they are.
+  Installing 2.0.3 again rescans and corrects both, and no receipts are lost (#3998).
 
 The 2.0.0 note on reopening System update after an update (#3430) still applies: reload the page
 before using System update again.
