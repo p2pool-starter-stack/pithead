@@ -12,6 +12,7 @@
   },
   "monero": {
     "clearnet_initial_sync": false,
+    "mem_limit": "4g",
     "mode": "remote",
     "node_password": "fixture-rpc-password",
     "node_username": "fixture",
@@ -28,6 +29,7 @@
   },
   "tari": {
     "clearnet_initial_sync": false,
+    "mem_limit": "8g",
     "mode": "remote",
     "remote": {
       "grpc_port": 18150,

@@ -8,6 +8,7 @@
   },
   "monero": {
     "clearnet_initial_sync": false,
+    "mem_limit": "4g",
     "mode": "local",
     "node_password": "fixture-rpc-password",
     "node_username": "fixture",
@@ -20,6 +21,7 @@
   "profile": "balance",
   "tari": {
     "clearnet_initial_sync": false,
+    "mem_limit": "8g",
     "mode": "off"
   },
   "tor": {

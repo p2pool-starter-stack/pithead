@@ -5,6 +5,8 @@ split out of it — the graph as data, plus the per-request marking of which nod
 machine's own.
 """
 
+import pytest
+
 from mining_dashboard.config import config
 from mining_dashboard.service.network import topology
 from mining_dashboard.service.network.topology_graph import (
@@ -70,6 +72,12 @@ def test_marking_never_mutates_the_shared_node_list():
     for mono, tari in _COMBOS:
         topology_nodes(monero_route=mono, tari_route=tari)
     assert all("remote" not in n for n in TOPOLOGY_NODES)
+
+
+@pytest.fixture(autouse=True)
+def tari_local(monkeypatch):
+    monkeypatch.setattr(config, "TARI_MODE", "local")
+    monkeypatch.setattr(config, "ENABLE_XVB", True)
 
 
 def test_the_served_graph_carries_each_node_s_real_location(monkeypatch):

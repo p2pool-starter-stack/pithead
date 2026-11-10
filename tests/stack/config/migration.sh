@@ -95,9 +95,9 @@ PITHEAD_APPLIANCE=0 run_sourced "$MG_INFER" migrate_config_to_2_1 >/dev/null 2>&
 assert_eq "a mixed config migrates to balance" "$(jq -r .profile "$MG_INFER/config.json")" balance
 assert_eq "a mixed config keeps its explicit override" "$(jq -r .p2pool.clearnet "$MG_INFER/config.json")" true
 
-jq '.monero.clearnet_initial_sync=true | .tari.clearnet_initial_sync=true' "$MG_DATA/inputs/diy-login.json" >"$MG_INFER/config.json"
+jq '.monero.clearnet_initial_sync=true | .tari.clearnet_initial_sync=true | .network.tor_egress_firewall=false' "$MG_DATA/inputs/diy-login.json" >"$MG_INFER/config.json"
 PITHEAD_APPLIANCE=0 run_sourced "$MG_INFER" migrate_config_to_2_1 >/dev/null 2>&1
-assert_eq "a fast-sync-only config stays balance" "$(jq -r .profile "$MG_INFER/config.json")" balance
+assert_eq "a partly Performance-shaped config stays balance" "$(jq -r .profile "$MG_INFER/config.json")" balance
 
 MG_BAK="$MG/backup-failure"
 mkdir -p "$MG_BAK"

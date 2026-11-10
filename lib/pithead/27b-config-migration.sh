@@ -10,9 +10,12 @@ def unset($c; $path): ($c | getpath($path | p)) == null;
     if unset($cfg; $path) then
         ($v2 | map(select(.path == $path)) | if length > 0 then .[0].value else ($defaults | getpath($path | p)) end)
     else ($cfg | getpath($path | p)) end;
+  def clash($path; $name):
+    ($table.profiles[$name][$path]) as $row
+    | if $row == "auto" then old($path) == "" else old($path) != $row end;
   (["balance", "performance", "privacy"]
-      | map(. as $name | {name: $name, conflicts: ([$governed[] as $k | select(old($k) != $table.profiles[$name][$k])] | length)})
-      | sort_by(.conflicts) | .[0].name) as $chosen
+      | map(select(. as $name | [$governed[] as $k | select(clash($k; $name))] | length == 0))
+      | .[0] // "balance") as $chosen
 | ($table.profiles[$chosen]) as $row
 | reduce (($governed + ($v2 | map(.path))) | unique)[] as $path (.profile = $chosen;
     if unset($cfg; $path) then
@@ -25,7 +28,7 @@ config_migration_2_1_due() {
     stamp=$(jq -r '.config_version // "2.0.0"' "$CONFIG_FILE" 2>/dev/null) || return 1
     config_version_ok "$stamp" || stamp=2.0.0
     semver_newer 2.1.0 "$stamp" || return 1
-    jq -e '(.profile // null) == null' "$CONFIG_FILE" >/dev/null 2>&1
+    jq -e 'if .profile == null or .profile == false then true else false end' "$CONFIG_FILE" >/dev/null 2>&1
 }
 
 migrate_config_to_2_1() {

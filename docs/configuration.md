@@ -115,10 +115,12 @@ a config stamped 2.1.0 or later, and a config that already has `profile` are nev
 the backup or the write fails, the apply stops and the original file is untouched.
 
 1. `profile` is inferred from the 2.0.0 effective value of every governed key (an explicit value,
-   or the 2.0.0 default when absent): the position with the fewest conflicts, ties to `balance`.
-   A config that sets the clearnet, firewall and Tor keys the way Performance does becomes
-   `performance`; one shaped like Privacy becomes `privacy`; fast initial sync alone stays
-   `balance`, because Performance would keep clearnet open after the sync finishes.
+   or the 2.0.0 default when absent). A profile is chosen only when every governed key matches
+   its row, with any non-empty stratum password or worker token matching `auto`: a config that
+   sets the clearnet, firewall and Tor keys the way Performance does becomes `performance`, one
+   shaped like Privacy becomes `privacy`, and anything else becomes `balance` with its explicit
+   values kept. A partial match is never promoted, because Performance keeps clearnet open after
+   an initial sync finishes and Privacy turns off clearnet inbound peering.
 2. Every governed or default-changed key that is absent and whose 2.0.0 value differs from the
    chosen profile or the new default is written out with its 2.0.0 value, so the running stack
    does not change: `tari.mode` `local`, `xvb.enabled` `true`, `dashboard.tari_required` `true`,

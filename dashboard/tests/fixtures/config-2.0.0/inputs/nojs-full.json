@@ -9,6 +9,7 @@
   },
   "monero": {
     "clearnet_initial_sync": false,
+    "mem_limit": "4g",
     "mode": "remote",
     "node_password": "rpcpass",
     "node_username": "rpcuser",
@@ -25,6 +26,7 @@
   },
   "tari": {
     "clearnet_initial_sync": false,
+    "mem_limit": "8g",
     "mode": "remote",
     "remote": {
       "grpc_port": 18150,

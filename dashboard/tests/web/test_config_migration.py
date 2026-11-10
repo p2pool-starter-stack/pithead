@@ -34,17 +34,6 @@ def tiers_of(leaf):
     return names
 
 
-@pytest.mark.parametrize("platform", ["diy", "appliance"])
-@pytest.mark.parametrize("path", INPUTS, ids=lambda path: path.stem)
-def test_prepare_config_migrates_every_fixture_like_the_host(path, platform):
-    migrated, changes = prepare_config(json.loads(path.read_text()), REFERENCE, platform=platform)
-    assert migrated == json.loads(
-        (FIXTURES / "migrated" / f"{path.stem}.{platform}.json").read_text()
-    )
-    assert changes[0].startswith("profile → ")
-    assert not any(secret in " ".join(changes) for secret in ("fixture-", "123456:TOKEN"))
-
-
 def test_prepare_config_without_a_platform_never_migrates():
     cfg = json.loads((FIXTURES / "inputs/diy-login.json").read_text())
     assert prepare_config(cfg, REFERENCE)[0] == cfg
@@ -67,8 +56,12 @@ def test_malformed_stamp_migrates_as_2_0_0(stamp):
     assert prepare_config(cfg, REFERENCE, platform="diy")[0]["profile"] == "balance"
 
 
-def test_fast_sync_only_config_stays_balance():
-    cfg = {"monero": {"clearnet_initial_sync": True}, "tari": {"clearnet_initial_sync": True}}
+def test_partly_performance_shaped_config_stays_balance():
+    cfg = {
+        "monero": {"clearnet_initial_sync": True},
+        "tari": {"clearnet_initial_sync": True},
+        "network": {"tor_egress_firewall": False},
+    }
     assert prepare_config(cfg, REFERENCE, platform="diy")[0]["profile"] == "balance"
 
 

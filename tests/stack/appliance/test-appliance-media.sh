@@ -132,7 +132,7 @@ rm -f "$merged"
 
 echo "== unit: media_validate_config (reuses the pre-seed validation engine) =="
 cat >"$MC/good.json" <<EOF
-{"config_version":"$(sed 's/[-+].*//' "$ROOT/VERSION")","monero":{"wallet_address":"$VALID_PRIMARY","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"}}
+{"config_version":"$(sed 's/[-+].*//' "$ROOT/VERSION")","profile":"balance","monero":{"wallet_address":"$VALID_PRIMARY","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"mode":"local","wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"}}
 EOF
 cat >"$MC/bad.json" <<'EOF'
 {"monero":{"wallet_address":"nope"},"tari":{"wallet_address":"t"}}

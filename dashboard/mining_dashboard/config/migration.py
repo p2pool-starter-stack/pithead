@@ -59,10 +59,14 @@ def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
             return value
         return v2[path] if path in v2 else _get(defaults, path)
 
-    conflicts = {
-        name: sum(1 for path in governed if old(path) != rows[name][path]) for name in PROFILE_ORDER
-    }
-    chosen = min(PROFILE_ORDER, key=lambda name: conflicts[name])
+    def clash(path, name):
+        row = rows[name][path]
+        return old(path) == "" if row == "auto" else old(path) != row
+
+    chosen = next(
+        (name for name in PROFILE_ORDER if not any(clash(path, name) for path in governed)),
+        "balance",
+    )
     migrated = deepcopy(cfg)
     migrated["profile"] = chosen
     changes = [f"profile → {chosen}"]

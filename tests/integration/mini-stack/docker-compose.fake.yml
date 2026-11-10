@@ -68,6 +68,7 @@ services:
       # deployment's p2pool/xmrig-proxy on the same host.
       SYNC_GATE_CONTAINERS: "itest-p2pool,itest-xmrig-proxy"
       REJECT_WORKERS_CONTAINER: "itest-xmrig-proxy"
+      TARI_MODE: "local"
       # Overridable (scenario 11, #562) since it's baked in at container boot — a live toggle
       # isn't possible, so that scenario recreates the stack with TARI_REQUIRED=false.
       TARI_REQUIRED: "${TARI_REQUIRED:-true}"
