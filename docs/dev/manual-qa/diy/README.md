@@ -36,3 +36,14 @@ Run the sessions in the order of the [Run sheet](../README.md#run-sheet). Where 
 | [12-upgrade-from-dashboard.md](12-upgrade-from-dashboard.md) | 12. Upgrade from the dashboard | A DIY box on the previous release (12.1, 12.2); an appliance on the previous release (12.3) | After publishing |
 
 The steps that destroy data (resets and uninstall) come last on purpose.
+
+## Covered by the guest lane
+
+`tier4-diy-kvm` with `scenario: lifecycle` runs `tests/diy/lifecycle.sh` on a fresh Ubuntu Server 24.04 guest and records one result per step (see [the lifecycle harness](../../testing-strategy.md#diy-lifecycle-on-a-stock-ubuntu-guest-3945)). A green run covers the parts of these checklist sections that do not need a synced chain, so the manual pass does not repeat them:
+
+| Section | Automated | Still manual |
+|---|---|---|
+| 1. Fresh DIY install | prerequisites, install, wizard defaults, setup from a prepared config, the first-boot sync gate holding P2Pool and xmrig-proxy | the sync itself, HugePages and MSR performance, the dashboard in a browser |
+| 2. Upgrade from the previous release | the previous release to the candidate: config kept, images replaced, gate still holding | 1.x migration, the Tari migration, synced chains |
+| 3. Everyday commands | `apply`, `doctor`, `rotate-secrets` before sync | commands that need a synced node or miners |
+| 11. Backup, restore and resets | `backup`, `restore` on the same host, `uninstall` and its residue, after a reboot once the lane supports it | resets, restore on a second machine, USB and NAS targets, power cuts, physical disks |
