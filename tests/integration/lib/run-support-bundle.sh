@@ -35,7 +35,10 @@ run_support_bundle() {
     else
         it_fail "support-bundle credential fixture applied to a healthy stack" "config, apply or bounded health check failed"
     fi
-    if rx "cp -p $(quote_arg "$snapshot")/config.json config.json && cp -p $(quote_arg "$snapshot")/env .env" && LIFECYCLE_MINING_ACTIVE=0 pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
+    # Apply sees the copied-back .env as unchanged, so up recreates services still on the fixture's env.
+    if rx "cp -p $(quote_arg "$snapshot")/config.json config.json && cp -p $(quote_arg "$snapshot")/env .env" &&
+        LIFECYCLE_MINING_ACTIVE=0 pithead apply -y >/dev/null 2>&1 && LIFECYCLE_MINING_ACTIVE=0 pithead up >/dev/null 2>&1 &&
+        wait_status_ok 240; then
         after=$(upgrade_secret_fingerprints) || after=""
         if [ "$before" != "$after" ] || ! rx "cmp -s config.json $(quote_arg "$snapshot")/config.json && cmp -s .env $(quote_arg "$snapshot")/env"; then
             it_fail "support-bundle restores its starting configuration and stack health" "configuration or secret fingerprints changed"
