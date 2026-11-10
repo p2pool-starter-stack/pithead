@@ -8,10 +8,16 @@ NET="pithead-socks-itest-$$"
 MONERO_ADDR=44yQXfkWZNmJ8QgRfFWTzmJ8QgRfFWTzmJ8QgRfFWTzmJ7suhUXwdrDJ8QgRfFWTzmJ8QgRfFWTzmJ8QgRfFWTzmCYrSgjJ
 VIEW1=0100000000000000000000000000000000000000000000000000000000000000
 fails=0
+SCRATCH="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-socks.XXXXXX")"
+export TARI_WALLET_SECRET_FILE="$SCRATCH/tari-wallet-secret.env" WALLET_RPC_PASSWORD=itest
+export TOR_DATA_DIR="$SCRATCH/tor" MONERO_DATA_DIR="$SCRATCH/monero" TARI_DATA_DIR="$SCRATCH/tari"
+export P2POOL_DATA_DIR="$SCRATCH/p2pool" DASHBOARD_DATA_DIR="$SCRATCH/dashboard"
+export PROXY_API_PORT=3344 PROXY_AUTH_TOKEN=itest
 
 cleanup() {
     docker rm -f "$NET-socks" "$NET-wallet-domain" "$NET-wallet-ipv4" >/dev/null 2>&1 || true
     docker network rm "$NET" >/dev/null 2>&1 || true
+    rm -rf "$SCRATCH"
 }
 trap cleanup EXIT
 
