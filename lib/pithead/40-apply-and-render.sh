@@ -191,7 +191,6 @@ apply() {
 
     local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
-    # Armed before .env commits, cleared when apply ends: a retry would otherwise keep the old login hash (#3332).
     local caddy_marker="${ENV_FILE}.caddy-restart-pending" caddy_pending=0
     [ -f "$caddy_marker" ] && caddy_pending=1
     grep -qx rearm-tari-only "$apply_marker" 2>/dev/null && rearm_sync_gate=2
@@ -274,7 +273,7 @@ apply() {
                 [ "$dashboard_data_dir_old" != "$DASHBOARD_DIR" ] && [ -f "$dashboard_data_dir_old/mining_data.db" ]; then
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 dashboard_carry_recovery=1
-                PITHEAD_DASHBOARD_CARRY_RECOVERY=("$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" 0 "$incomplete") # #2785: EXIT outlives apply's locals after errexit.
+                PITHEAD_DASHBOARD_CARRY_RECOVERY=("$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" 0 "$incomplete")
                 trap 'cleanup_env_staging; recover_dashboard_data_carry "${PITHEAD_DASHBOARD_CARRY_RECOVERY[@]}"' EXIT
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
@@ -308,13 +307,12 @@ apply() {
         warn "A previous apply updated the config but did not finish recreating containers — retrying."
     fi
 
-    # The retry branch reaches here without a hold; the changed branch already has one.
     if [ "$lock_held" -eq 0 ]; then
         apply_lock_revision "$revision"
         apply_publish_tari_secret
         lock_held=1
     fi
-    provision_node_onions # #103: a node that just went local needs its onion before it starts
+    provision_node_onions
     inject_service_configs
     if [ -f "Caddyfile" ]; then
         caddy_had=1
@@ -324,8 +322,6 @@ apply() {
     if [ "$caddy_pending" -eq 1 ] || { [ "$caddy_had" -eq 1 ] && [ "$caddy_before" != "$(cat "Caddyfile" 2>/dev/null)" ]; }; then
         caddy_changed=1
     fi
-    # Client-auth keys must be written before tor is recreated below, so an onion just turned on (or a
-    # client-auth toggle) takes effect on this apply rather than the next (#343).
     provision_onion_client_auth
     provision_control_runner
     provision_firewall_check_units || error "Firewall check units could not be provisioned."
@@ -335,18 +331,9 @@ apply() {
 
     log "Updating containers..."
     migrate_compose_project
-    # (Re)assert the Tor-only egress firewall BEFORE compose recreates anything — same ordering as
-    # up/upgrade (#276/#291), for the same reason: if it isn't already installed (e.g. `down` then
-    # `apply`), recreating containers first opens a startup window where a clearnet app dials out
-    # before the rules go in. Idempotent, so the common case
-    # (already installed from `up`) is a cheap re-assert; the .env it reads was committed just above.
     apply_tor_egress_firewall
     migrate_dashboard_data
-    # Write after data migration and before recreation. Tari-only resets retain the earned
-    # mining release; a full reset waits for both required chains. Atomic replacement does
-    # not follow a planted symlink; a directory fails closed and leaves the retry marker.
     if [ "$rearm_sync_gate" -ne 0 ]; then
-        # A stale marker can satisfy the file check, so one writer must report success.
         { rearm_sync_gate_marker "$DASHBOARD_DIR" "$rearm_sync_gate" 2>/dev/null ||
             sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\" \"\$2\"" _ "$DASHBOARD_DIR" "$rearm_sync_gate"; } &&
             [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
