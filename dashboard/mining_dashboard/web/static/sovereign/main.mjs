@@ -86,12 +86,12 @@ export function initSovereign({
     (page === "overview"
       ? html`<${Overview} ...${chartProps()} />`
       : page === "earnings"
-      ? html`<${EarningsPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
+        ? html`<${EarningsPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
         url=${win.location.href} onDirtyChange=${onDirtyChange} />`
-      : page === "machines"
-        ? html`<${MachinesPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
+        : page === "machines"
+          ? html`<${MachinesPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
         onDirtyChange=${onDirtyChange} />`
-        : null);
+          : null);
   const paint = () => {
     doc.title = `Pithead — ${PAGES[route.page][0]}`;
     render(
@@ -108,7 +108,10 @@ export function initSovereign({
       ) =>
         section === "maintenance" && data.snapshot?.os_update && data.snapshot?.control_enabled
           ? html`${renderSection?.(section, data.snapshot)}<${PowerControl} snapshot=${data.snapshot} />`
-          : renderSection?.(section, data.snapshot) || html`<${OverviewAdvanced} section=${section} ...${chartProps()} />`} />`,
+          : renderSection?.(section, data.snapshot) ||
+            (["activity", "inspect"].includes(section)
+              ? html`<${OverviewAdvanced} section=${section} ...${chartProps()} />`
+              : null)} />`,
       root,
     );
   };

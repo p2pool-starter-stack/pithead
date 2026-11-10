@@ -6,6 +6,7 @@ function healthy(ui) {
   ui.state.pool_tier_suggestion = null;
   ui.state.monero.health.level = "green";
   ui.state.badges = [];
+  ui.state.update = { ...ui.state.update, available: false };
   ui.state.db_healthy = true;
   ui.state.overview = {
     snapshot_ts: now / 1000,
@@ -97,7 +98,11 @@ for (const theme of ["light", "dark", "auto"]) {
     }
     await page.getByRole("link", { name: /^Confirmed payout ·/ }).click();
     await expect(page.getByRole("dialog", { name: "Advanced", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "Full Activity" })
+        .getByRole("heading", { name: "Activity" }),
+    ).toBeVisible();
   });
 }
 
