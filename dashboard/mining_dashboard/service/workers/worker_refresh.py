@@ -55,7 +55,8 @@ async def _poll_until_matched(
         current = next((w for w in latest_data.get("workers") or [] if w.get("name") == name), None)
         if current is None or current.get("ip") != ip:
             return False
-        if (current.get("rigforge") or {}).get("generated_at", "") > rf.get("generated_at", ""):
+        held = (current.get("rigforge") or {}).get("generated_at") or ""
+        if held > (rf.get("generated_at") or ""):
             continue
         current["rigforge"] = rf
         if rf.get("stale"):

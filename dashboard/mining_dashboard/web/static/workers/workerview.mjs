@@ -176,6 +176,7 @@ export class WorkerInspect extends Component {
 
   async refreshWorker() {
     const detail = await fetchDetail(this.props.name, this.state.chartRange);
+    if (this.unmounted) return detail;
     this.setState((s) => {
       const wasPristine =
         !s.detail || s.editText === JSON.stringify(detailSnapshot(s.detail), null, 2);

@@ -69,3 +69,14 @@ class TestRefreshKeepsNewerReport:
         )
         assert ok is False
         assert entry["rigforge"] is newer
+
+
+async def test_report_without_a_stamp_is_tolerated():
+    held = {"version": "1.11.0", "generated_at": None}
+    entry = {"name": "rig1", "ip": "10.0.0.5", "rigforge": held}
+    client = FakeWorkerClient(["1.12.0"])
+    ok = await worker_refresh.refresh_worker_after_upgrade(
+        {"workers": [entry]}, "rig1", "v1.12.0", worker_client=client, attempts=1, sleep=_fake_sleep
+    )
+    assert ok is True
+    assert entry["rigforge"]["version"] == "1.12.0"
