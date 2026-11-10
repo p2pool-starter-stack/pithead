@@ -20,11 +20,18 @@ appliance update from stamping the configuration of a slot that rolls back, keep
 separate for each payout wallet, hardens the setup wizard, stops setup and apply from printing the
 stratum password, makes support bundles owner-only, and clears the image-scan findings in apt,
 zlib, musl, golang.org/x/net and go-jose raised since 2.0.2. The miner restart is a mitigation:
-its root cause is not established (#3375 stays open). It adds no configuration keys. It changes
-one component version (RigForge 1.18.1 in the appliance image) and the dashboard's grpcio, and it
-runs one data migration: payout receipts saved without a wallet identity move to an `unknown`
-identity (see Fixed). Entries below apply to both channels unless they say otherwise; the
-built-in miner, the RigForge bake and the config stamp deferral are appliance only.
+its root cause is not established (#3375 stays open).
+
+It adds, removes and renames no Pithead configuration keys and changes no default of one. It
+changes component versions only in the appliance image, which bakes RigForge 1.18.1 and reseeds
+its prebuilt XMRig on first boot, and in the dashboard, whose grpcio moves to 1.85.1. Monero,
+P2Pool, Tari, Tor and xmrig-proxy are unchanged. On first start the dashboard migrates its
+database to keep payout history per wallet: receipts saved without a wallet identity stay under
+`unknown` and are not counted, the first scan of the configured wallet starts again from block
+zero, and confirmation alerts can repeat (#3901). No action is needed, except that an appliance
+`pithead-token.txt` pre-seed now needs at least 16 characters after an optional `pit-` (#3898).
+Entries below apply to both channels unless they say otherwise; the built-in miner, the RigForge
+bake and the config stamp deferral are appliance only.
 
 ### Security
 
@@ -56,6 +63,10 @@ built-in miner, the RigForge bake and the config stamp deferral are appliance on
   xmrig-proxy images (#3962), the appliance rootfs's pinned Go builder image (golang
   1.26.10-trixie) and Debian trixie-slim base digests (#3917), and grpcio 1.85.1 in the dashboard
   (#3918).
+- On the appliance, a `pithead-token.txt` pre-seed must hold at least 16 letters, digits or
+  dashes after an optional `pit-` prefix (it was 4). A shorter token is ignored without a message
+  and the setup page uses a new token shown only on the console, so a headless install needs a
+  longer pre-seeded token (#3898).
 
 ### Fixed
 
@@ -101,8 +112,7 @@ built-in miner, the RigForge bake and the config stamp deferral are appliance on
 - On the appliance, wrong setup-token attempts are counted per client. The fifth failure from one
   client starts a 60-second cooldown (HTTP 429 with Retry-After) for that client only, instead of
   stopping the wizard and discarding every operator's session, and the token no longer changes
-  after failures. A preseeded setup token must be at least 16 characters after the optional `pit-`
-  prefix (#3898).
+  after failures (#3898).
 - On the appliance, data recovery stops when it cannot allocate its read-only probe directory,
   instead of treating the failure as an unmountable data partition and going on to repair or
   reformat it without ever probing it. A requested factory reset still wipes the data partition,
@@ -154,21 +164,22 @@ including those it carries over from 2.0.1 and 2.0.0, still apply, except #3623,
 #3761, which are fixed above, and #3375, which is mitigated above. The RigForge pool-edit issue
 from 2.0.0 (rigforge#583) is fixed on the appliance by the RigForge 1.18.1 entry above. The
 `threads` issue (rigforge#588) is not: 2.0.3 still runs a RigForge that ignores `threads`. These
-four remain open and are planned for 2.0.4:
+three remain open and are planned for 2.0.4:
 
 - On the appliance, a built-in miner that stalls after a dashboard backup or a recovery boot is
   now restarted automatically once the proxy has seen no connection from it for five minutes.
   Until then the dashboard shows 0 H/s for it. The cause of the stall is not established, so it
   can recur; `sudo systemctl restart xmrig` recovers it at once (#3375).
-- On the appliance, when an update that migrates data commits and clearing the stack's migration
-  hold fails, the failure is not reported and the node, P2Pool and proxy services can stay
-  stopped, so nothing is mined. Rebooting the appliance clears it (#3983).
-- On the appliance, opening "Set up again" and then rebooting or powering off without choosing
-  anything can leave the machine booting the previous release after an update (#3960).
-- On the appliance, saving a setting that changes the dashboard certificate or the Caddyfile can
-  restart the dashboard's web server a second time up to five minutes later, and the log blames a
-  change of the machine's addresses. The dashboard is briefly unavailable each time. Mining is not
-  affected (#3987).
+- On the appliance, if you open "Set up again" in the boot menu and then reboot or power off
+  without choosing Keep it or accepting the form, the next boot can run the previous release
+  instead of the current one, and it can keep doing so on later boots until the next update
+  installs. Settings and data are not changed. Always finish the page with Keep it before
+  restarting. This applies only to a machine that has already taken an update (#3960).
+- On the appliance, saving a setting that changes the dashboard certificate or the Caddyfile (for
+  example the dashboard password, the secure toggle, port or hostname) can restart the dashboard's
+  web server a second time up to five minutes later, and the log (`journalctl -u
+  pithead-address-watch`) blames a change of the machine's addresses even if none changed. The
+  dashboard is briefly unavailable each time; reload it. Mining is not affected (#3987).
 
 The 2.0.0 note on reopening System update after an update (#3430) still applies: reload the page
 before using System update again.
