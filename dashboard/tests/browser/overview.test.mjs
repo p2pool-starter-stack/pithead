@@ -26,11 +26,15 @@ function healthy(ui) {
     p2pool: [
       { x: now - 3600000, y: 1500 },
       { x: now - 1800000, y: null },
+      { x: now - 900000, y: 1450 },
+      { x: now - 300000, y: 1450 },
       { x: now, y: 1400 },
     ],
     xvb: [
       { x: now - 3600000, y: 0 },
       { x: now - 1800000, y: null },
+      { x: now - 900000, y: 5 },
+      { x: now - 300000, y: 5 },
       { x: now, y: 0 },
     ],
     payouts: [{ x: now - 600000, y: 0.9 }],
