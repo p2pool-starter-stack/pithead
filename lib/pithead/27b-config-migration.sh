@@ -3,20 +3,21 @@ readonly CONFIG_MIGRATION_2_1_JQ='
 def p: split(".");
 def unset($c; $path): ($c | getpath($path | p)) == null;
 . as $cfg
-| ["balance", "performance", "privacy"] as $names
 | ($table.profiles.balance | keys) as $governed
-| ($names | map(. as $name | {name: $name, conflicts: ([$governed[] as $k
-      | select(unset($cfg; $k) | not)
-      | select(($cfg | getpath($k | p)) != $table.profiles[$name][$k])] | length)})
-      | sort_by(.conflicts) | .[0].name) as $chosen
-| ($table.profiles[$chosen]) as $row
 | ($table.values * (if $platform == "appliance" then $table.appliance else {} end)) as $defaults
 | ($table.migrations["2.1.0"].v2_absent | map(select((.platform // $platform) == $platform))) as $v2
+| def old($path):
+    if unset($cfg; $path) then
+        ($v2 | map(select(.path == $path)) | if length > 0 then .[0].value else ($defaults | getpath($path | p)) end)
+    else ($cfg | getpath($path | p)) end;
+  (["balance", "performance", "privacy"]
+      | map(. as $name | {name: $name, conflicts: ([$governed[] as $k | select(old($k) != $table.profiles[$name][$k])] | length)})
+      | sort_by(.conflicts) | .[0].name) as $chosen
+| ($table.profiles[$chosen]) as $row
 | reduce (($governed + ($v2 | map(.path))) | unique)[] as $path (.profile = $chosen;
     if unset($cfg; $path) then
-        ($v2 | map(select(.path == $path)) | if length > 0 then .[0].value else ($defaults | getpath($path | p)) end) as $old
-        | (if ($row | has($path)) then $row[$path] else ($defaults | getpath($path | p)) end) as $new
-        | if $old != $new then setpath($path | p; $old) else . end
+        (if ($row | has($path)) then $row[$path] else ($defaults | getpath($path | p)) end) as $new
+        | if old($path) != $new then setpath($path | p; old($path)) else . end
     else . end)'
 
 config_migration_2_1_due() {

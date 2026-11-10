@@ -35,7 +35,7 @@ STUB
 chmod +x "$V/bin/sudo"
 cp "$ROOT/VERSION" "$V/VERSION"
 fixture_version=$(sed 's/[-+].*//' "$V/VERSION" | tr -d ' \t\r\n')
-printf '{"config_version":"%s","monero":{"mode":"local","wallet_address":"%s","node_username":"fixture","node_password":"fixture"},"tari":{"mode":"off"},"p2pool":{"pool":"mini"},"dashboard":{"secure":false}}\n' "$fixture_version" "$VALID_PRIMARY" >"$V/config.json"
+printf '{"config_version":"%s","profile":"balance","monero":{"mode":"local","wallet_address":"%s","node_username":"fixture","node_password":"fixture"},"tari":{"mode":"off"},"p2pool":{"pool":"mini"},"dashboard":{"secure":false}}\n' "$fixture_version" "$VALID_PRIMARY" >"$V/config.json"
 chmod 600 "$V/config.json"
 cp "$V/config.json" "$V/config.before"
 export INTERRUPT_MARKER="$V/interrupted" DOCKER_LOG="$V/docker.log" SUDO_LOG="$V/sudo.log"

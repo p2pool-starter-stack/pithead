@@ -114,9 +114,11 @@ as `config.json.bak-2.0` (mode 600, same owner); the new file is written atomica
 a config stamped 2.1.0 or later, and a config that already has `profile` are never changed. If
 the backup or the write fails, the apply stops and the original file is untouched.
 
-1. `profile` is inferred from the explicit values of the governed keys: the position with the
-   fewest conflicts, ties to `balance`. A config that pins every governed key the way
-   Performance does becomes `performance`; one shaped like Privacy becomes `privacy`.
+1. `profile` is inferred from the 2.0.0 effective value of every governed key (an explicit value,
+   or the 2.0.0 default when absent): the position with the fewest conflicts, ties to `balance`.
+   A config that sets the clearnet, firewall and Tor keys the way Performance does becomes
+   `performance`; one shaped like Privacy becomes `privacy`; fast initial sync alone stays
+   `balance`, because Performance would keep clearnet open after the sync finishes.
 2. Every governed or default-changed key that is absent and whose 2.0.0 value differs from the
    chosen profile or the new default is written out with its 2.0.0 value, so the running stack
    does not change: `tari.mode` `local`, `xvb.enabled` `true`, `dashboard.tari_required` `true`,

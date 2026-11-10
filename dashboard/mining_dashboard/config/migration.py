@@ -46,30 +46,31 @@ def migration_due(cfg: dict) -> bool:
 def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
     rows = TABLE["profiles"]
     governed = list(rows["balance"])
-    conflicts = {
-        name: sum(
-            1
-            for path in governed
-            if _get(cfg, path) is not None and _get(cfg, path) != rows[name][path]
-        )
-        for name in PROFILE_ORDER
-    }
-    chosen = min(PROFILE_ORDER, key=lambda name: conflicts[name])
     defaults = effective_defaults(platform)
     v2 = {
         entry["path"]: entry["value"]
         for entry in TABLE["migrations"][TARGET]["v2_absent"]
         if entry.get("platform", platform) == platform
     }
+
+    def old(path):
+        value = _get(cfg, path)
+        if value is not None:
+            return value
+        return v2[path] if path in v2 else _get(defaults, path)
+
+    conflicts = {
+        name: sum(1 for path in governed if old(path) != rows[name][path]) for name in PROFILE_ORDER
+    }
+    chosen = min(PROFILE_ORDER, key=lambda name: conflicts[name])
     migrated = deepcopy(cfg)
     migrated["profile"] = chosen
     changes = [f"profile → {chosen}"]
     for path in sorted({*governed, *v2}):
         if _get(cfg, path) is not None:
             continue
-        old = v2[path] if path in v2 else _get(defaults, path)
         new = rows[chosen][path] if path in rows[chosen] else _get(defaults, path)
-        if old != new:
-            _set(migrated, path, old)
+        if old(path) != new:
+            _set(migrated, path, old(path))
             changes.append(f"{path} → pinned")
     return migrated, changes

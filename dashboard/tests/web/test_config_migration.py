@@ -67,7 +67,12 @@ def test_malformed_stamp_migrates_as_2_0_0(stamp):
     assert prepare_config(cfg, REFERENCE, platform="diy")[0]["profile"] == "balance"
 
 
-def test_tied_config_migrates_to_balance_and_keeps_its_override():
+def test_fast_sync_only_config_stays_balance():
+    cfg = {"monero": {"clearnet_initial_sync": True}, "tari": {"clearnet_initial_sync": True}}
+    assert prepare_config(cfg, REFERENCE, platform="diy")[0]["profile"] == "balance"
+
+
+def test_mixed_config_migrates_to_balance_and_keeps_its_override():
     cfg = {"p2pool": {"clearnet": True}, "tor": {"auto_heal": True}}
     migrated, _ = prepare_config(cfg, REFERENCE, platform="diy")
     assert migrated["profile"] == "balance"

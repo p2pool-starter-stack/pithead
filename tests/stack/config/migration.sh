@@ -92,8 +92,12 @@ for mg_case in 'clearnet-performance performance' 'privacy-shaped privacy' 'diy-
 done
 jq '.p2pool.clearnet=true | .tor.auto_heal=true' "$MG_DATA/inputs/diy-login.json" >"$MG_INFER/config.json"
 PITHEAD_APPLIANCE=0 run_sourced "$MG_INFER" migrate_config_to_2_1 >/dev/null 2>&1
-assert_eq "a tied config migrates to balance" "$(jq -r .profile "$MG_INFER/config.json")" balance
-assert_eq "a tied config keeps its explicit override" "$(jq -r .p2pool.clearnet "$MG_INFER/config.json")" true
+assert_eq "a mixed config migrates to balance" "$(jq -r .profile "$MG_INFER/config.json")" balance
+assert_eq "a mixed config keeps its explicit override" "$(jq -r .p2pool.clearnet "$MG_INFER/config.json")" true
+
+jq '.monero.clearnet_initial_sync=true | .tari.clearnet_initial_sync=true' "$MG_DATA/inputs/diy-login.json" >"$MG_INFER/config.json"
+PITHEAD_APPLIANCE=0 run_sourced "$MG_INFER" migrate_config_to_2_1 >/dev/null 2>&1
+assert_eq "a fast-sync-only config stays balance" "$(jq -r .profile "$MG_INFER/config.json")" balance
 
 MG_BAK="$MG/backup-failure"
 mkdir -p "$MG_BAK"
@@ -114,4 +118,4 @@ assert_rc "a 2.0.0 backup restores" "$?" 0
 cp "$MG/restored" "$BK/config.json"
 PITHEAD_APPLIANCE=0 run_sourced "$BK" parse_and_validate_config >/dev/null 2>&1
 assert_rc "a restored 2.0.0 backup applies" "$?" 0
-assert_eq "a restored 2.0.0 backup ends migrated" "$(jq -r .profile "$BK/config.json")" privacy
+assert_eq "a restored 2.0.0 backup ends migrated" "$(jq -r .profile "$BK/config.json")" balance
