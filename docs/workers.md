@@ -342,7 +342,8 @@ NOTE: a rig provisioned by the appliance (the setup page's RigForge choice) ship
 entry — pool, worker name, stratum password — plus an `ACCESS_TOKEN` minted at setup, `api:
 enabled` and `control: enabled` with `api_allow_from` set to that Pithead's IPv4 address.
 `control_upgrade` stays off: an appliance rig updates through its own signed image, never through
-RigForge's upgrade path. The token is shown once, on the setup page's rig card, beside the rig's
+RigForge's upgrade path, and the coordinator's **Upgrade rig…** offer does not apply to it — see
+[Updating a rig](appliance.md#updating-a-rig). The token is shown once, on the setup page's rig card, beside the rig's
 address. Until you adopt the rig — paste both into Worker Inspect's adopt form, or add its
 `host` + `token` entry to `workers.list[]` by hand — the dashboard's probe is refused (the feed
 wants the token) and the rig's row is badged `not adopted`, though it mines all the while. A rig
