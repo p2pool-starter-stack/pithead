@@ -1,10 +1,4 @@
 # --- OS update (appliance A/B slots) ---
-# The build variant stamp: debug images bake an SSH key (often the box's only management
-# channel), release images are shell-less by design. The running system carries the stamp at
-# /etc/pithead-variant; an update bundle carries it in its manifest's [meta.pithead] section.
-# os-update compares the two, because the failure this guards is silent and one-way: a debug
-# box that installs a release bundle drops SSH — the very channel driving the install — and
-# recovery needs a console.
 
 os_running_variant() { # echoes debug|release|unknown
     local v
@@ -56,27 +50,67 @@ os_data_floor() { # echoes the floor version, or empty
     [ -f "$f" ] && tr -d ' \t\r\n' <"$f" 2>/dev/null || true
 }
 
-os_raise_data_floor() { # $1: new floor — raise it, never lower (a migration only ever tightens)
-    local f cur
-    f=$(os_data_floor_file)
-    cur=$(os_data_floor)
-    mkdir -p "$(dirname "$f")" 2>/dev/null || true
-    # The record a fallback boot restores from (#1393): the floor as it stands BEFORE this raise,
-    # or `none`. Written first, so a crash between the two leaves a record equal to the live floor
-    # (restoring it is a no-op), and written even when the raise below is a no-op, so every
-    # migrating install leaves one. pithead-boot consumes it: the fallback boot puts the floor
-    # back from it, the commit removes it. Nothing here ever lowers the floor — only that boot,
-    # with this record, does.
-    printf '%s\n' "${cur:-none}" >"$f.prev"
-    if [ -z "$cur" ] || { os_semver_ok "$cur" && semver_newer "$1" "$cur"; }; then
-        printf '%s\n' "$1" >"$f"
+os_migration_write() {
+    local temporary
+    mkdir -p "$(dirname "$1")" || return 1
+    temporary=$(mktemp "$1.XXXXXX") || return 1
+    if ! { printf '%s\n' "$2" >"$temporary" && chmod 0644 "$temporary" &&
+        sync -f "$temporary" && mv -f "$temporary" "$1" && sync -f "$1"; }; then
+        rm -f "$temporary"
+        return 1
     fi
 }
 
-# Install leaves the bundle VERSION. Before starting anything, the candidate boot adds its
-# A/B slot: VERSION|A or VERSION|B. Even an older boot path sees that as a different version,
-# so a same-version fallback restores the floor instead of holding its own chain services.
+os_raise_data_floor() { # $1: new floor, $2: optional slot-specific install intent
+    local f cur
+    f=$(os_data_floor_file)
+    cur=$(os_data_floor)
+    os_migration_write "$f.prev" "${cur:-none}" || return 1
+    if [ -n "${2:-}" ]; then
+        os_migration_write "$(os_migration_marker_file)" "$2" || return 1
+    fi
+    if [ -z "$cur" ] || { os_semver_ok "$cur" && semver_newer "$1" "$cur"; }; then
+        os_migration_write "$f" "$1" || return 1
+    fi
+}
+
 os_migration_marker_file() { printf '%s' "${PITHEAD_MIGRATION_MARKER_FILE:-/data/pithead/.os-migration-pending}"; }
+
+os_migration_fingerprint() {
+    local marker
+    marker=$(os_migration_marker_file)
+    [ -f "$marker" ] || return 0
+    stat -Lc '%d:%i:%y:%z' "$marker" && cat "$marker"
+}
+
+os_restore_prepared_migration() {
+    local f marker prev
+    f=$(os_data_floor_file)
+    marker=$(os_migration_marker_file)
+    if [ -f "$f.prev" ]; then
+        prev=$(tr -d '[:space:]' <"$f.prev") || return 1
+        if [ "$prev" = none ]; then
+            rm -f "$f" && sync || return 1
+        else
+            os_semver_ok "$prev" && os_migration_write "$f" "$prev" || return 1
+        fi
+    fi
+    rm -f "$marker" "$f.prev" && sync
+}
+
+os_disarm_prepared_migration() {
+    local status marker slot
+    slot=$(os_booted_slot) || return 1
+    marker=$(tr -d '[:space:]' <"$(os_migration_marker_file)") || return 1
+    case "$marker" in
+    *'|'*) [ "${marker#*|}" != "$slot" ] || return 1 ;;
+    esac
+    status=$(rauc status --output-format=json) || return 1
+    jq -e --arg slot "$slot" \
+        '[.slots[] | .[] | select(.state == "booted" and .bootname == $slot and .boot_status == "good")] | length == 1' \
+        <<<"$status" >/dev/null || return 1
+    rauc status mark-bad other && sync && os_restore_prepared_migration
+}
 
 os_booted_slot() {
     tr ' ' '\n' <"${PITHEAD_CMDLINE:-/proc/cmdline}" | sed -n 's/^rauc\.slot=\([AB]\)$/\1/p'
@@ -96,27 +130,21 @@ os_migration_hold_active() {
         case "${v#*|}" in A | B) ;; *) return 2 ;; esac
         slot=$(os_booted_slot) || return 2
         case "$slot" in A | B) ;; *) return 2 ;; esac
-        [ "$v" = "$(os_running_version)|$slot" ]
+        [ "${v#*|}" = "$slot" ] || return 1
+        [ "${v%%|*}" = "$(os_running_version)" ] || return 2
         ;;
     *) [ "$v" = "$(os_running_version)" ] ;;
     esac
 }
 
 os_prepare_migration_hold() { # 0 hold, 1 fallback/absent, 2 cannot establish ownership
-    local rc slot marker temporary
+    local rc slot marker
     os_migration_hold_active && rc=0 || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     slot=$(os_booted_slot) || return 2
     case "$slot" in A | B) ;; *) return 2 ;; esac
     marker=$(os_migration_marker_file)
-    temporary=$(mktemp "$marker.XXXXXX") || return 2
-    # Publish without truncating the legacy marker. Flush both the content and rename before
-    # any boot action can fail: the previous slot must see its new owner after a power loss.
-    if ! { printf '%s|%s\n' "$(os_running_version)" "$slot" >"$temporary" &&
-        chmod 0644 "$temporary" && sync -f "$temporary" && mv -f "$temporary" "$marker" && sync -f "$marker"; }; then
-        rm -f "$temporary"
-        return 2
-    fi
+    os_migration_write "$marker" "$(os_running_version)|$slot" || return 2
     printf 'pithead-boot: migration marker claimed: %s|%s\n' "$(os_running_version)" "$slot"
 }
 
@@ -293,23 +321,36 @@ os_update() {
             fi
         fi
     fi
-    # Serialise the mutating half against every other pithead operation (#1482). Taken HERE and
-    # deliberately not at the top of the function: everything above is read-only checking, and the
-    # variant confirmation just above blocks on the operator's keystroke — holding the lock across
-    # that would park every other verb for as long as nobody answers. That is the same reason
-    # firstboot_wizard is not wrapped (#1391), applied one caller over. A timeout exits
-    # PITHEAD_EX_LOCK_TIMEOUT, which the CLI reports itself and the dashboard's os-install runner
-    # routes to a "rejected" rather than a failed install.
     mutation_lock_acquire os-update
+    local marker candidate migration_rc=0
+    marker=$(os_migration_marker_file)
+    if [ "$bundle_migrates" = true ]; then
+        os_semver_ok "$bundle_version" && os_semver_ok "$bundle_min" ||
+            error "A migrating bundle needs a valid version and minimum OS version; the OS update was not started."
+    fi
+    if [ "$bundle_migrates" = true ] || [ -f "$marker" ]; then
+        candidate=$(os_booted_slot) || candidate=""
+        case "$candidate" in
+        A) candidate=B ;;
+        B) candidate=A ;;
+        *) error "Cannot establish the booted A/B slot; the OS update was not started." ;;
+        esac
+    fi
+    if [ -f "$marker" ]; then
+        os_migration_hold_active || migration_rc=$?
+        [ "$migration_rc" = 1 ] || error "A migration is pending for this boot or its ownership is unreadable; finish the boot before installing another update."
+        os_disarm_prepared_migration || error "Could not disarm the previous migration candidate; its protection was retained and the OS update was not started."
+    fi
+    guard_reason=$(os_update_version_guard "$bundle_version" "$allow_downgrade")
+    [ -z "$guard_reason" ] || error "$guard_reason"
+    if [ "$bundle_migrates" = true ]; then
+        if ! os_raise_data_floor "$bundle_min" "$bundle_version|$candidate"; then
+            error "Could not persist migration protection; the OS update was not started and any prepared protection was retained."
+        fi
+        log "Recorded /data migration floor: OS >= $bundle_min required to read chain data after this update commits."
+        log "Marked a data migration pending: the candidate's chain services start only after its slot commits."
+    fi
     log "Installing OS update bundle: $bundle (running: $running, bundle: $target)"
-    # Tee'd like the wizard's fatal path (#1028's idiom): a bare `rauc install` let RAUC's own
-    # diagnosis (a signature mismatch, an incompatible bundle) vanish, leaving only the ERR
-    # trap's generic "aborted unexpectedly" — undiagnosable on a shell-less box where the
-    # console is the only output there is. The tee keeps rauc's progress on this process's own
-    # stdout (the dashboard's install poller reads the percentage off that same stream) while a
-    # copy lands in a scratch file this function can inspect on failure. No bundle path in the
-    # error text on purpose — that is a host staging detail, and the dashboard door whitelists
-    # this exact line straight into the container-visible result.
     local rauc_log
     rauc_log=$(mktemp)
     if rauc install "$bundle" 2>&1 | tee "$rauc_log"; then
@@ -318,6 +359,12 @@ os_update() {
             pithead-boot-version record-installed "$bundle_version" || warn "The update installed, but its boot-menu version could not be recorded; the new slot will repair it when it boots."
         fi
     else
+        rauc_rc=${PIPESTATUS[0]}
+        if [ "$bundle_migrates" = true ]; then
+            if [ "$rauc_rc" != 1 ] || ! os_disarm_prepared_migration; then
+                warn "The migration candidate could not be safely reconciled; its protection was retained until boot recovery."
+            fi
+        fi
         local rauc_detail
         rauc_detail=$(grep -aE '^LastError: |^\[ERROR\] |[Ff]ailed' "$rauc_log" 2>/dev/null |
             tail -1 | tr -d '[:cntrl:]' | head -c 300) || rauc_detail=""
@@ -325,24 +372,6 @@ os_update() {
         error "rauc install failed.${rauc_detail:+ rauc said: $rauc_detail}"
     fi
 
-    # A data_migration bundle raises the /data floor so a later rollback below it is refused. Armed
-    # at install (conservative: before the migration actually runs on the new slot's next boot) —
-    # the safe direction, and the only floor pithead can guarantee without executing the migration
-    # itself. The marker beside it is the other half of the deadlock rule (#851): the next boot
-    # reads it and withholds the chain services until the slot commits, so automatic A/B fallback
-    # always lands on pre-migration data. A NON-migrating install clears any stale marker — it
-    # supersedes a migrating install that never booted, and its own boot must not hold anything.
-    local marker
-    marker=$(os_migration_marker_file)
-    if [ "$bundle_migrates" = "true" ] && os_semver_ok "$bundle_min"; then
-        os_raise_data_floor "$bundle_min"
-        log "Recorded /data migration floor: OS >= $bundle_min required to read chain data after this update commits."
-        mkdir -p "$(dirname "$marker")" 2>/dev/null || true
-        printf '%s\n' "$bundle_version" >"$marker"
-        log "Marked a data migration pending: the next boot starts the chain services only after the new slot commits."
-    else
-        rm -f "$marker"
-    fi
     mutation_lock_release
 
     # #2382: 'succeeded' alone left a first-time operator guessing what to do next. The install

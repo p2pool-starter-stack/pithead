@@ -109,6 +109,13 @@ cat >"$td/boot/pithead" <<'EOF'
 #!/usr/bin/env bash
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
     os_prepare_migration_hold() { return "$BOOT_TEST_MIGRATION_RC"; }
+    os_migration_fingerprint() { printf 'fixture\n'; }
+    mutation_lock_acquire() { :; }
+    mutation_lock_release() { :; }
+    os_disarm_prepared_migration() { :; }
+    os_migration_marker_file() { printf '%s/.os-migration-pending\n' "$BOOT_TEST_ROOT"; }
+    os_data_floor_file() { printf '%s/.os-data-floor\n' "$BOOT_TEST_ROOT"; }
+    stamp_config_version() { :; }
     return 0
 fi
 case "$1" in
