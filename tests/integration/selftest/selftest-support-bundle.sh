@@ -8,7 +8,7 @@ source "$HERE/../lib.sh"
 INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-support-bundle.sh"
 
-for fault in none fixture apply health inspect collect restore drift telegram-drift; do
+for fault in none no-tmpdir fixture apply health inspect collect restore drift telegram-drift; do
     (
         IT_FAIL=0 IT_PASS=0 IT_PITHEAD=./pithead
         calls=0 applied=0 waited=0 inspected=0 restored=0
@@ -18,6 +18,10 @@ for fault in none fixture apply health inspect collect restore drift telegram-dr
         mkdir "$sandbox/stack" "$sandbox/scratch"
         export TMPDIR="$sandbox/scratch"
         IT_REMOTE_DIR="$sandbox/stack"
+        if [ "$fault" = no-tmpdir ]; then
+            unset TMPDIR
+            HOME="$sandbox/read-only-home"
+        fi
         printf '{"p2pool":{"stratum_password":"auto"}}\n' >"$IT_REMOTE_DIR/config.json"
         printf 'PROXY_STRATUM_PASSWORD=original-auto-seed\n' >"$IT_REMOTE_DIR/.env"
         cat >"$IT_REMOTE_DIR/pithead" <<'STUB'
@@ -66,6 +70,8 @@ STUB
                 inspected=1
             elif [[ "$1" == 'cp -p '* ]]; then
                 restored=1
+            elif [[ "$1" == 'rm -f '* ]]; then
+                printf '%s\n' "$1" >"$sandbox/cleanup"
             fi
             (cd "$IT_REMOTE_DIR" && bash -c "$1")
         }
@@ -98,8 +104,12 @@ STUB
         [ "$restored" -eq 1 ] || exit 1
         [ "$applied" -ge 1 ] || exit 1
         [ ! -e "$IT_REMOTE_DIR/support-bundle-fixture.tar.gz" ] || exit 1
-        [ -z "$(find "$TMPDIR" -mindepth 1 -print)" ] || exit 1
-        if [ "$fault" = none ]; then
+        [ -z "$(find "$sandbox/scratch" -mindepth 1 -print)" ] || exit 1
+        if [ "$fault" = no-tmpdir ]; then
+            snapshot=$(sed -n 's#^rm -f \(/tmp/support-bundle\.[^/]*\)/config\.json .*#\1#p' "$sandbox/cleanup")
+            [ -n "$snapshot" ] && [ ! -e "$snapshot" ] || exit 1
+        fi
+        if [ "$fault" = none ] || [ "$fault" = no-tmpdir ]; then
             [ "$result" -eq 0 ] && [ "$inspected" -eq 1 ] && [ "$waited" -eq 2 ] || exit 1
             [ "$(cat "$IT_REMOTE_DIR/.env")" = 'PROXY_STRATUM_PASSWORD=original-auto-seed' ] || exit 1
         else

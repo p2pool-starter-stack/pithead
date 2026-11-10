@@ -67,6 +67,7 @@ service_state() { echo 'running none'; }
 svc_state_of() { printf '%s' "${1%% *}"; }
 run_lifecycle
 [ "$IT_FAIL" = 0 ]
+[ -z "${IT_LC_STEP:-}" ]
 [ "$wallet_proof_calls" = 1 ]
 [ "$recovery_proof_calls" = 1 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = $'before-wizard-defaults\nbefore-restart\nafter-restart\nbefore-image-down\nafter-image-up\nbefore-source-image' ]
@@ -79,6 +80,7 @@ lifecycle_rc=0
 run_lifecycle || lifecycle_rc=$?
 [ "$lifecycle_rc" != 0 ]
 [ "$IT_FAIL" = 0 ]
+[ "$IT_LC_STEP" = prove_wallet_recovery ]
 [ "$recovery_proof_calls" = 1 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = before-wizard-defaults ]
 echo 'selftest-lifecycle-gate-wiring: a failed wallet recovery proof ends the phase before the first restart'

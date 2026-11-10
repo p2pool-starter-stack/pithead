@@ -7,16 +7,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
 run_lifecycle() {
+    lifecycle_stopped() {
+        IT_LC_STEP=$1
+        return 1
+    }
     IT_CURRENT_SCENARIO="lifecycle"
     local lifecycle_ok=1 reset_failed=0
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
-    run_cli_wizard_defaults || return 1
-    run_support_bundle || return 1
+    run_cli_wizard_defaults || lifecycle_stopped run_cli_wizard_defaults || return 1
+    run_support_bundle || lifecycle_stopped run_support_bundle || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
-    prove_wallet_recovery || return 1
+    prove_wallet_recovery || lifecycle_stopped prove_wallet_recovery || return 1
     lifecycle_gate_sample before-restart
     it_step "pithead restart…"
     pithead restart >/dev/null 2>&1
@@ -24,7 +28,7 @@ run_lifecycle() {
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
     lifecycle_gate_sample after-restart
-    run_connection_announcements || return 1
+    run_connection_announcements || lifecycle_stopped run_connection_announcements || return 1
     # Remove the socket-proxy image and prove up fetches a missing pinned image (#2654).
     if rx 'test -f dashboard/Dockerfile'; then
         local proxy_ref proxy_id proxy_fails="$IT_FAIL"
@@ -59,11 +63,11 @@ run_lifecycle() {
     else
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
-    run_source_image_reconcile || return 1
-    run_restore_dashboard_probe || return 1
-    run_tari_background_sync || return 1
+    run_source_image_reconcile || lifecycle_stopped run_source_image_reconcile || return 1
+    run_restore_dashboard_probe || lifecycle_stopped run_restore_dashboard_probe || return 1
+    run_tari_background_sync || lifecycle_stopped run_tari_background_sync || return 1
     local cur_pool fp_before other restore_tls_before
-    run_image_permissions || return 1
+    run_image_permissions || lifecycle_stopped run_image_permissions || return 1
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
     [ "$cur_pool" = "mini" ] && other="main" || other="mini"
