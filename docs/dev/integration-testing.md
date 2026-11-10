@@ -393,6 +393,11 @@ via an `EXIT` trap):
    `/opt/rigforge/data/e2e-backups/` (created mode 700, owned by the SSH login user — never inside
    the RigForge worker build directory, which a worker upgrade archives away) and repoints it at the
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
+   The borrowed pool carries `rig-id` `pithead-e2e`. The reload restarts the rig's `xmrig` unit (a
+   root-run unit may only be allowed `stop` then `start`) and fails unless the unit's MainPID changed;
+   the signal fallback only reaches an `xmrig` owned by the harness's own user. Every worker gate
+   after a borrow or re-arm waits for an online worker named `pithead-e2e`, so another worker on the
+   proxy cannot satisfy it ([#3972](https://github.com/p2pool-starter-stack/pithead/issues/3972)).
    With `--no-miner` nothing is borrowed, and the harness runs with `--no-mining-asserts`: the
    workers-online and stratum-hashes assertions skip with a logged notice while every other
    assertion stays binding ([#905](https://github.com/p2pool-starter-stack/pithead/issues/905)).
