@@ -291,5 +291,32 @@ assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)"
 assert_eq "fault injection runs after a lifecycle row failed with the stack intact (#3342)" "$(intact=1 drive_gate 1)" "yes"
 assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection "
 
+drive_abort() {
+    (
+        # shellcheck disable=SC2034
+        RUN_LIFECYCLE=1 RUN_RESET_DASHBOARD=0 RUN_ROTATE_SECRETS=0 RUN_FAULTS=0 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok=1 IT_FAIL=0 rows="" lc_rc="$1" lc_step="$2" lc_own="$3"
+        # shellcheck disable=SC2034
+        run_lifecycle() {
+            [ -z "$lc_step" ] || IT_LC_STEP="$lc_step"
+            [ "$lc_own" = 0 ] || it_fail "own row"
+            return "$lc_rc"
+        }
+        it_fail() {
+            IT_FAIL=$((IT_FAIL + 1))
+            rows="$rows$1|"
+        }
+        it_skip_phase() { :; }
+        gate() { eval "$MAIN_SRC"; }
+        gate >/dev/null 2>&1 || true
+        printf '%s' "$rows"
+    )
+}
+
+assert_eq "a lifecycle that stops silently gets a failure row naming the step (#3986)" "$(drive_abort 1 run_support_bundle 0)" "lifecycle phase stopped at run_support_bundle without recording a failure|"
+assert_eq "a lifecycle that fails its verdict silently still gets a failure row (#3986)" "$(drive_abort 1 '' 0)" "lifecycle phase stopped without recording a failure|"
+assert_eq "a lifecycle that recorded its own failure gets no second row (#3986)" "$(drive_abort 1 run_support_bundle 1)" "own row|"
+assert_eq "a passing lifecycle adds no failure row (#3986)" "$(drive_abort 0 '' 0)" ""
+
 echo "selftest-lifecycle-restore-health: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

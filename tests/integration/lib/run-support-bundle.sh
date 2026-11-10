@@ -13,13 +13,13 @@ run_support_bundle() {
         .telegram.bot_token = ("123456789:" + $nonce)') || return 1
     before=$(upgrade_secret_fingerprints) || return 1
     [ -n "$before" ] || return 1
-    snapshot=$(rx 'set -e; umask 077; export TMPDIR="${TMPDIR:-$HOME}"; d=$(mktemp -d "$TMPDIR/support-bundle.XXXXXX"); if cp -p config.json "$d/config.json" && cp -p .env "$d/env"; then printf "%s" "$d"; else rm -f "$d/config.json" "$d/env"; rmdir "$d"; exit 1; fi') || return 1
+    snapshot=$(rx 'set -e; umask 077; export TMPDIR="${TMPDIR:-/tmp}"; d=$(mktemp -d "$TMPDIR/support-bundle.XXXXXX"); if cp -p config.json "$d/config.json" && cp -p .env "$d/env"; then printf "%s" "$d"; else rm -f "$d/config.json" "$d/env"; rmdir "$d"; exit 1; fi') || return 1
     [ -n "$snapshot" ] || return 1
     if push_config "$changed" && LIFECYCLE_MINING_ACTIVE=0 pithead apply -y >/dev/null 2>&1 && wait_status_ok 240; then
         it_pass "support-bundle credential fixture applied to a healthy stack"
         if rx "set -e
             umask 077
-            export TMPDIR=\"\${TMPDIR:-\$HOME}\"
+            export TMPDIR=\"\${TMPDIR:-/tmp}\"
             marker=\$(mktemp \"\$TMPDIR/support-bundle-marker.XXXXXX\")
             trap 'find . -maxdepth 1 -name support-bundle-\\*.tar.gz -newer \"\$marker\" -exec rm -f {} +; rm -f \"\$marker\"' EXIT
             sleep 1

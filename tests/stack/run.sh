@@ -211,12 +211,6 @@ if in_block 2; then
 
     # shellcheck source=tests/stack/secrets/test-secrets-masking.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets-masking.sh" && domain_ran test-secrets-masking.sh "$_d0" "$?" || domain_ran test-secrets-masking.sh "$_d0" "$?"
-
-    # shellcheck source=tests/stack/test-confirm-approval.sh disable=SC2015
-    _d0=$((PASS + FAIL)) && source "$HERE/test-confirm-approval.sh" && domain_ran test-confirm-approval.sh "$_d0" "$?" || domain_ran test-confirm-approval.sh "$_d0" "$?"
-
-    # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
-    _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
 fi
 
 if in_block 3; then
@@ -265,6 +259,10 @@ if in_block 4; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 fi
 if in_block 5; then
+    # shellcheck source=tests/stack/test-confirm-approval.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-confirm-approval.sh" && domain_ran test-confirm-approval.sh "$_d0" "$?" || domain_ran test-confirm-approval.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-apply-retry.sh disable=SC2015
