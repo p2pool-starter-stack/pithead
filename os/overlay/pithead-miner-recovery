@@ -11,6 +11,7 @@ lock_file=${PITHEAD_LOCK_FILE:-.pithead.lock}
 (umask 022 && : >>"$lock_file") || reset_window
 exec 9>>"$lock_file"
 flock -n 9 || reset_window
+flock -u 9
 [ "$(cat machine-role 2>/dev/null || true)" != rig ] || reset_window
 jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
 systemctl is-active --quiet xmrig.service || reset_window
@@ -58,6 +59,7 @@ case "$start" in '' | *[!0-9]*) start=$now ;; esac
 if [ "$start" -gt "$now" ]; then start=$now; fi
 printf '%s\n' "$start" >"$STATE"
 [ "$((now - start))" -ge 300 ] || exit 0
+flock -n 9 || reset_window
 jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
 systemctl is-active --quiet xmrig.service || reset_window
 printf '%s\n' 'pithead-miner-recovery: active local miner disconnected for 300 seconds; restarting xmrig'

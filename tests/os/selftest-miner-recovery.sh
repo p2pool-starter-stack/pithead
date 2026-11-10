@@ -9,7 +9,11 @@ cat >"$work/bin/systemctl" <<'SH'
 #!/bin/bash
 case "$*" in
 'is-active --quiet xmrig.service') [ "$MINER_ACTIVE" = true ] ;;
-'--no-block try-restart xmrig.service') echo restart >>"$RECOVERY_CALLS"; exit "${RESTART_RC:-0}" ;;
+'--no-block try-restart xmrig.service')
+    flock -n "${PITHEAD_LOCK_FILE:-$PITHEAD_DIR/.pithead.lock}" true && echo restart-unlocked >>"$RECOVERY_CALLS"
+    echo restart >>"$RECOVERY_CALLS"
+    exit "${RESTART_RC:-0}"
+    ;;
 *) exit 99 ;;
 esac
 SH
@@ -17,6 +21,11 @@ cat >"$work/bin/podman" <<'SH'
 #!/bin/bash
 [ "$1 $2 $3 $4 $5 $6" = 'exec -i dashboard python - fixture-local' ] || exit 99
 shift 5
+flock -n "${PITHEAD_LOCK_FILE:-$PITHEAD_DIR/.pithead.lock}" true || echo lock-held-during-read >>"$RECOVERY_CALLS"
+if [ -e "${HOLD_FLAG:-/nonexistent}" ]; then
+    flock "$PITHEAD_DIR/.pithead.lock" bash -c 'touch "$1.ready"; while [ -e "$1" ]; do sleep 0.05; done' _ "$HOLD_FLAG" </dev/null >/dev/null 2>&1 &
+    until [ -e "$HOLD_FLAG.ready" ]; do sleep 0.05; done
+fi
 [ "${API_FAIL:-0}" = 0 ] || exit 1
 exec python3 - "$@"
 SH
@@ -140,6 +149,18 @@ if tick 2301; then
     exit 1
 fi
 [ -e "$work/state" ]
+unset RESTART_RC
+rm -f "$work/state" "$work/calls"
+tick 2500
+export HOLD_FLAG="$work/hold"
+touch "$HOLD_FLAG"
+printf '2800.00 0\n' >"$work/uptime"
+timeout 20 bash "$ROOT/os/overlay/pithead-miner-recovery" >"$work/output"
+no_restart
+[ ! -e "$work/state" ]
+rm "$HOLD_FLAG"
+until flock -n "$work/stack/.pithead.lock" true; do sleep 0.05; done
+unset HOLD_FLAG
 for name in pithead-miner-recovery.service pithead-miner-recovery.timer; do
     grep -Fq "$name" "$ROOT/os/rootfs/Dockerfile"
 done
