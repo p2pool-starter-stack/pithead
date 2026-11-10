@@ -395,7 +395,7 @@ via an `EXIT` trap):
    bench so the matrix has a real worker mining through this stack (1 worker → run with `--workers 1`).
    The borrowed pool carries `rig-id` `pithead-e2e`. The reload restarts the rig's `xmrig` unit (a
    root-run unit may only be allowed `stop` then `start`) and fails unless the unit's MainPID changed;
-   the signal fallback only reaches an `xmrig` owned by the harness's own user. Every worker gate
+   there is no signal fallback, since a signal proves no reload. Every worker gate
    after a borrow or re-arm waits for an online worker named `pithead-e2e`, so another worker on the
    proxy cannot satisfy it ([#3972](https://github.com/p2pool-starter-stack/pithead/issues/3972)).
    With `--no-miner` nothing is borrowed, and the harness runs with `--no-mining-asserts`: the
