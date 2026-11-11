@@ -17,9 +17,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   current files. When an apply, `up` or a control commit re-renders the dashboard certificate or the
   Caddyfile, it restarts Caddy itself, and the next five-minute watch tick now records those files
   and names them in its log instead of restarting a current Caddy and blaming an address change that
-  did not happen. The watch restarts Caddy only for an address change, and only while it holds the
-  stack mutation lock, so its restart no longer overlaps an apply, an `up` or a control operation; a
-  busy lock defers the render and the restart to the next tick (#3987).
+  did not happen. The watch restarts Caddy only when its own render moved the files it serves — or
+  for the restart a failed attempt of its own left owed — and only while it holds the stack mutation
+  lock, so its restart no longer overlaps an apply, an `up` or a control operation; a busy lock
+  defers the render and the restart to the next tick, and when an apply lands in the same tick gap
+  as an address change the apply's restart stands (#3987).
 
 ## [2.0.3] - 2026-11-10
 
