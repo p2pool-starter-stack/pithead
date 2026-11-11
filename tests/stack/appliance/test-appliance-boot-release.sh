@@ -16,12 +16,19 @@
 echo "== unit: release_held_chain_services — the post-commit up is retried, ordered, and alerted (#1684) =="
 RL="$SANDBOX/boot-release"
 rm -rf "$RL"
-mkdir -p "$RL"
+mkdir -p "$RL/bin"
+cp "$STACK" "$RL/pithead.real"
+printf '#!/bin/sh\nexit 0\n' >"$RL/bin/sync"
+chmod +x "$RL/bin/sync"
 # The stub fails its first N calls and succeeds after. Every call appends to the order file, which
 # also takes the function's stdout, so the file reads as the sequence of events.
 rl_stub() { # <fails-before-success>
     cat >"$RL/pithead" <<EOF
 #!/usr/bin/env bash
+if [ "\${BASH_SOURCE[0]}" != "\$0" ]; then
+    . "$RL/pithead.real"
+    return
+fi
 echo "up:\$*" >>"$RL/order"
 n=\$(cat "$RL/calls" 2>/dev/null || echo 0); n=\$((n + 1)); echo "\$n" >"$RL/calls"
 [ "\$n" -gt $1 ]
@@ -34,6 +41,7 @@ rl_run() { # <fails-before-success> <tries> -> "rc=N"; stdout lands in order, st
     touch "$RL/.os-migration-pending" "$RL/.os-data-floor.prev"
     (
         cd "$RL" || exit 1
+        export PATH="$RL/bin:$PATH" PITHEAD_LOCK_FILE="$RL/.pithead.lock"
         export PITHEAD_RELEASE_UP_TRIES="$2" PITHEAD_RELEASE_UP_PAUSE=0
         # shellcheck disable=SC1090
         source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
@@ -95,8 +103,14 @@ assert_eq "the shipped defaults are five tries, ten seconds apart" "$rl_defaults
 # `./pithead up || true` — the original defect — is back on the release path.
 BOOTSCRIPT="$ROOT/os/overlay/pithead-boot"
 assert_eq "the hold-chain commit block calls release_held_chain_services and tolerates its failure" \
-    "$(grep -cE '^\s*\[ "\$hold_chain" = 1 \] && \{ release_held_chain_services \|\| true; \}' "$BOOTSCRIPT" || true)" "1"
+    "$(grep -cE '^\s*\[ "\$hold_chain" = 1 \] && \{ release_held_chain_services "\$migration_fingerprint" \|\| true; \}' "$BOOTSCRIPT" || true)" "1"
 assert_eq "no bare, un-retried up remains on the release path" \
     "$(grep -cE '^\s*\./pithead up \|\| true' "$BOOTSCRIPT" || true)" "0"
+arm_line=$(grep -nE '^: >config\.json\.stamp-deferred$' "$BOOTSCRIPT" | cut -d: -f1)
+render_line=$(grep -nE '^\./pithead render' "$BOOTSCRIPT" | cut -d: -f1)
+assert_eq "the boot arms the stamp deferral before the first render" \
+    "$([ -n "$arm_line" ] && [ "$arm_line" -lt "$render_line" ] && echo before || echo wrong)" "before"
+assert_eq "the commit block stamps the config right after boot_gate_passed" \
+    "$(grep -A1 -E '^\s*boot_gate_passed$' "$BOOTSCRIPT" | grep -cE '^\s*commit_config_stamp$' || true)" "1"
 unset -f rl_stub rl_run
 unset RL rl_out rl_defaults BOOTSCRIPT

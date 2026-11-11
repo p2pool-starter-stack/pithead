@@ -262,6 +262,14 @@ rig_share_leg() {
     _rig_share_hosts_restore || _rig_share_abort "share leg: hosts fixture restoration failed (#3425)" || return 1
     ok "share leg: rig hosts restored and root verified read-only (#3425)"
     _rig_share_power_cut || _rig_share_abort || return 1
+    local miner_rc=0
+    local dash_user="$coord_user" dash_pass="$coord_pass"
+    ip="$coord_ip"
+    miner_backup_trial kvm-rig-share || miner_rc=$?
+    ip="$rig_ip"
+    if [ "$miner_rc" != 0 ] && [ "$miner_rc" != 77 ]; then
+        bad "connected rig cannot mask local miner backup recovery (#3375)"
+    fi
     rig_adopt_leg || _rig_share_abort "M12: dashboard adoption/config push did not complete (#3069)" || return 1
     _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
 }

@@ -56,7 +56,7 @@ async def test_new_install_submission_pins_disk_answer_raffle_and_private_sync(
     tmp_path.joinpath("disk-budget.json").write_text(
         json.dumps({**BUDGET, "tari_chain_held": held})
     )
-    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+    async with TestClient(TestServer(wizard.make_app())) as client:
         await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
         state = await (await client.get("/api/wizard-state")).json()
         assert state["config"]["tari"]["mode"] == mode
@@ -85,7 +85,7 @@ async def test_no_javascript_fast_sync_response_warns_for_both_local_networks(
 ):
     monkeypatch.setenv("WIZARD_SPOOL", str(tmp_path))
     monkeypatch.setenv("WIZARD_TOKEN", "fixture-token")
-    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+    async with TestClient(TestServer(wizard.make_app())) as client:
         await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
         response = await client.post(
             "/submit",
@@ -111,7 +111,7 @@ async def test_wrong_known_section_types_are_spooled_for_host_rejection_without_
     monkeypatch.setenv("WIZARD_TOKEN", "fixture-token")
     reference = {"monero": {"mode": "local"}, "tari": {"mode": "local"}, "xvb": {"enabled": True}}
     tmp_path.joinpath("config.reference.json").write_text(json.dumps(reference))
-    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+    async with TestClient(TestServer(wizard.make_app())) as client:
         await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
         response = await client.post("/submit", data={"config": json.dumps({block: invalid})})
         assert response.status == 200

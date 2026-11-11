@@ -13,6 +13,10 @@ run_case() (
     it_pass() { passes=$((passes + 1)); }
     it_fail() { failures=$((failures + 1)); }
     quote_arg() { printf "'%s'" "$1"; }
+    lifecycle_mining_step() {
+        shift
+        "$@"
+    }
     redact() { cat; }
     reset_restore_wait_reboot() { [ "$fault" != reboot ]; }
     wait_for() {

@@ -164,8 +164,9 @@ run_tari_background_sync() {
         fi
     fi
     tari_enable_snapshot before-restore >>"$evidence/snapshots.log"
-    if ! push_config "$saved_config" || ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
-        it_fail "Tari enable trial restores its original config (#3094)" "restoration failed"
+    local restore_out="" stage=push_config
+    if ! push_config "$saved_config" || ! { stage=apply && restore_out=$(LIFECYCLE_MINING_ACTIVE=0 pithead apply -y 2>&1); } || ! { stage=wait_status_ok && wait_status_ok 240; }; then
+        it_fail "Tari enable trial restores its original config (#3094)" "restoration failed at $stage: $(redact <<<"$restore_out")"
         return 1
     fi
     tari_enable_snapshot after-restore >>"$evidence/snapshots.log"

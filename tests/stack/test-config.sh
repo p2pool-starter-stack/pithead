@@ -32,21 +32,14 @@ esac
 # INFO — and the secret value must NEVER appear in the change preview.
 assert_contains "stratum pw enable is DEST" "$(run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD '' s3cr3t)" "DEST"
 assert_contains "stratum pw disable is INFO" "$(run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD s3cr3t '')" "INFO"
-# Appliance (#1139): the DIY hint points at .env / './pithead status' to recover the password —
-# neither exists without a shell, and the dashboard never round-trips a secret value either (#33),
-# so there is no remedy to name. The appliance-lane message drops the instruction instead of
-# inventing one.
-#
-# MUTATION PROOF: drop the is_appliance branch (always emit the DIY message) and the "names no CLI
-# verb" assertion below goes red; force the appliance branch unconditionally and the unchanged-DIY
-# assertion at line ~574's sibling below goes red — neither direction passes both.
 stratum_pw_appliance="$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD '' s3cr3t)"
 assert_contains "appliance stratum pw enable is still DEST" "$stratum_pw_appliance" "DEST"
+assert_contains "appliance stratum pw enable directs to the dashboard" "$stratum_pw_appliance" "Connect a miner"
 case "$stratum_pw_appliance" in
 *"./pithead"* | *".env"*) bad "appliance stratum pw enable names no CLI verb or .env" "still says: $stratum_pw_appliance" ;;
 *) ok "appliance stratum pw enable names no CLI verb or .env" ;;
 esac
-assert_contains "DIY stratum pw enable advice is unchanged" "$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD '' s3cr3t)" "find it in .env / './pithead status'"
+assert_contains "DIY stratum pw enable directs to the dashboard" "$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD '' s3cr3t)" "Connect a miner"
 case "$(run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD oldpw newpw)" in
 *oldpw* | *newpw*) bad "stratum pw change hides the secret" "value leaked into the change preview" ;;
 *DEST*) ok "stratum pw change hides the secret (DEST, no value shown)" ;;
