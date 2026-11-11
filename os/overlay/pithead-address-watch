@@ -35,18 +35,24 @@ if ! flock -n 9; then
     echo "pithead-address-watch: another pithead operation holds the lock; retrying on the next tick"
     exit 0
 fi
+render_ok=0
 if PITHEAD_LOCK_HELD=$$ ./pithead render >/dev/null 2>&1; then
-    printf '%s' "$addrs" >"$STATE"
+    render_ok=1
 else
     echo "pithead-address-watch: render failed; retrying on the next tick"
 fi
 now=$(sig)
+restarted=0
 if [ "$now" != "$served" ]; then
     echo "pithead-address-watch: the machine's addresses changed — re-rendered the dashboard certificate and Caddyfile, restarting Caddy"
     if ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1; then
         printf '%s' "$now" >"$STATE.served"
+        restarted=1
     else
         echo "pithead-address-watch: Caddy did not restart; retrying on the next tick"
     fi
+fi
+if [ "$render_ok" = 1 ] && { [ "$now" = "$served" ] || [ "$restarted" = 1 ]; }; then
+    printf '%s' "$addrs" >"$STATE"
 fi
 exit 0

@@ -151,6 +151,20 @@ assert_contains "…and the tick says it will retry" "$out" "retrying on the nex
 aw_run "192.168.1.5 fd1c::d" >/dev/null
 assert_eq "once the lock is free the deferred restart runs, under the lock" "$(tail -n 1 "$AW/lock-seen")" "held"
 assert_eq "…and it is the restart the busy tick owed" "$(aw_count restart "$AW/restarts")" "$((_x + 1))"
+cat >"$AW/bin/restart-caddy" <<'STUB'
+#!/bin/bash
+echo restart >>"$AW_RESTARTS"
+exit 1
+STUB
+chmod +x "$AW/bin/restart-caddy"
+before=$(aw_count render "$AW/log")
+_x=$(aw_count restart "$AW/restarts")
+out=$(aw_run "192.168.1.5 fd1c::e")
+assert_contains "a failed restart is named and retried on the next tick" "$out" "Caddy did not restart"
+aw_run "192.168.1.5 fd1c::e" >/dev/null
+assert_eq "…the address set stays unrecorded until the restart lands, so the next tick renders again" \
+    "$(aw_count render "$AW/log")" "$((before + 2))"
+assert_eq "…and attempts the restart again" "$(aw_count restart "$AW/restarts")" "$((_x + 2))"
 unset AW aw_run aw_count out before _x
 
 echo "== unit: address_watch_verdict — the KVM provision leg's discrimination (#2463) =="
