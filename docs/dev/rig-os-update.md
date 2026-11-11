@@ -10,7 +10,7 @@ The contract for delivering an OS bundle to an appliance rig (`machine-role` is 
 
 ## Design: the rig fetches its bundle itself over Tor
 
-One path for every appliance rig, paired or standalone: on request the rig downloads the signed bundle itself through a small Tor client it starts only for that fetch and stops afterwards (`/usr/local/sbin/pithead-tor`, #4008). The coordinator never serves bundle files, and nothing new listens on the rig beyond its existing token-scoped RigForge API.
+One path for every appliance rig, paired or standalone: on request the rig downloads the signed bundle itself through a small Tor client it starts only for that fetch and stops afterwards (`/usr/local/sbin/pithead-tor`, #4008). The coordinator never serves bundle files, and nothing new listens off-host on the rig: beyond its existing token-scoped RigForge API there is only Tor's SOCKS port, loopback-bound and alive for the duration of one fetch.
 
 - **No timers and no automatic checks.** A rig checks for an OS update and installs one only on request through the RigForge API (#4013, rigforge#684).
 - Tor is up only while the rig is fetching — the bundle, the release channel listing, any other non-pool fetch — and is stopped the moment the fetch ends. The steady-state network of a rig is its pool and, when paired, its coordinator: nothing else.
@@ -24,7 +24,7 @@ Nothing. It keeps no offer and serves no bundle file, no manifest and no version
 
 ### How the rig authenticates
 
-The rig authenticates nothing to receive a bundle: trust is the RAUC signature against the root baked into the image, so the download channel carries no credential and none crosses the network. The request side is authenticated by RigForge's token scopes (rigforge#684): only a caller holding the rig's `ACCESS_TOKEN` can ask that rig to check or update, and the token never leaves `/data`.
+The rig authenticates nothing to receive a bundle: trust is the RAUC signature against the root baked into the image, so the download channel carries no credential and none crosses the network. The request side is authenticated by RigForge's token scopes (rigforge#684): only a caller holding the rig's `ACCESS_TOKEN` can ask that rig to check or update. On the rig the token lives only on `/data`; the coordinator keeps its own copy in its worker record.
 
 ### Where the rig looks, and when
 

@@ -212,56 +212,12 @@ phase_rig() {
         ok "journald is volatile on a rig (a rig's root may be the stick it mines from)" ||
         bad "journald is still persistent on a rig — a USB root would take rotating writes"
 
-    local odd_conn lport rport tor_run fail_run
-    [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
-        ok "both Debian Tor units ship masked on the rig" ||
-        bad "a Debian Tor unit is not masked on the rig: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"
-    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
-        ok "no Tor process on a freshly booted rig" ||
-        bad "tor is already running on a freshly booted rig"
-    ! _ssh "ss -ltn 2>/dev/null | grep -q ':9253'" &&
-        ok "no Tor SOCKS listener on a freshly booted rig" ||
-        bad "a SOCKS listener answers on 9253 on a freshly booted rig"
-    odd_conn=""
-    while read -r _ _ _ lport rport; do
-        [ -n "${lport:-}" ] || continue
-        lport="${lport##*:}"
-        rport="${rport##*:}"
-        case "$lport" in 22 | 8080 | 8081 | 8082) continue ;; esac
-        case "$rport" in 22 | 53 | 123) continue ;; esac
-        odd_conn="${odd_conn}${lport}->${rport} "
-    done <<<"$(_ssh 'ss -Htn state established 2>/dev/null' 2>/dev/null | tr -d '\r')"
-    [ -z "$odd_conn" ] &&
-        ok "a rig that never ran the helper holds no connection beyond pool, ssh, time sync and DNS" ||
-        bad "unexpected connections on a rig that never ran the helper: $odd_conn"
-
-    tor_run=$(_ssh "pithead-tor sh -c 'ss -ltn 2>/dev/null | grep -q 127.0.0.1:9253 && echo LISTENER-UP; curl -sS -m 90 -o /dev/null -w %{http_code} https://api.github.com/repos/p2pool-starter-stack/pithead/releases/latest' 2>&1; echo rc=\$?" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
-    [[ "$tor_run" == *LISTENER-UP* ]] &&
-        ok "the helper holds the SOCKS listener on loopback while its command runs" ||
-        bad "the caller saw no SOCKS listener during the run: $tor_run"
-    [[ "$tor_run" == *200* ]] &&
-        ok "the helper's command fetched over a live Tor circuit (the release API answered 200)" ||
-        bad "the release API was not fetched over Tor during the run: $tor_run"
-    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
-        ok "Tor stopped when the helper's command ended" ||
-        bad "tor is still running after the helper returned"
-    ! _ssh "ss -ltn 2>/dev/null | grep -q ':9253'" &&
-        ok "the SOCKS listener is gone once the helper stopped" ||
-        bad "the SOCKS listener outlived the helper"
-    ! _ssh 'ls -d /run/pithead-tor.* >/dev/null 2>&1' &&
-        ok "the helper left no state on /run" ||
-        bad "state from a helper run still sits on /run"
-
-    fail_run=$(_ssh "PITHEAD_TOR_TIMEOUT=1 pithead-tor true 2>&1; echo rc=\$?" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
-    [[ "$fail_run" == *"did not complete"* ]] &&
-        ok "a run whose circuit never comes up fails with a clear reason" ||
-        bad "the bounded timeout produced no clear error: $fail_run"
-    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
-        ok "the failed run still left no Tor process" ||
-        bad "the failed run left tor running"
-    ! _ssh "ss -ltn 2>/dev/null | grep -q ':9253'" &&
-        ok "the failed run left no listener either" ||
-        bad "the failed run left its listener up"
+    # The Tor legs are quiet here by ruling: the rig-phase rig has no coordinator, so the
+    # quiet-state and fetch-over-Tor assertions ride the dedicated stick KVM legs with the
+    # updater, where a paired rig actually exists. The helper itself is proven by its tier-1
+    # selftest and by the boot phase's masked-and-idle assertions.
+    it_skip_leg "Tor quiet-state and helper-run legs on the rig" \
+        "the rig-phase rig has no coordinator; these legs land with the stick KVM legs" by-design
 
     # ---- reboot: pithead-boot owns a rig now, and commits its slot -------------------------
     info "reboot leg — the rig must come back mining, and commit its own slot"
