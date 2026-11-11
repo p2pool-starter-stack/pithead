@@ -49,7 +49,7 @@ assert_eq "control_worker_apply + control_worker_upgrade terminal arms union to 
     "$_csv_union_arms" "$_csv_fixture_terminal"
 
 echo "== a rig's busy refusal is a terminal status with its reason in both poll loops (#3985) =="
-_csv_busy_case() { # <action> <uuid> <request-extra-json>
+_csv_busy_run() { # <action> <uuid> <request-extra-json>
     local dir="$SANDBOX/csv-busy-$1"
     mkdir -p "$dir/staged" "$dir/results" "$dir/audit" "$dir/bin"
     printf '%s' "v9.9.9" >"$dir/staged/.rigforge-latest-tag"
@@ -74,10 +74,17 @@ STUB
     printf '{"id":"%s","action":"worker-%s","actor":"admin","worker":"rig1",%s}\n' "$2" "$1" "$3" >"$dir/req.json"
     PATH="$dir/bin:$PATH" CONTROL_WA_BUDGET=1 CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$dir/config.json" \
         run_sourced_e "$SANDBOX" control_process_request "$dir/req.json" "$dir" >/dev/null 2>&1
-    assert_eq "worker-$1 lands the rig's busy refusal as a terminal status (#3985)" \
-        "$(jq -r '.status' "$dir/results/$2.json" 2>/dev/null)" "busy"
-    assert_contains "worker-$1 busy result carries the rig's reason (#3985)" \
-        "$(jq -r '.reason' "$dir/results/$2.json" 2>/dev/null)" "lent to a bench job"
 }
-_csv_busy_case apply b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1 '"changes":{"pools":["pool.example:3333"]}'
-_csv_busy_case upgrade b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2 '"version":"v9.9.9"'
+_csv_busy_run apply b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1 '"changes":{"pools":["pool.example:3333"]}'
+_csv_busy_run upgrade b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2 '"version":"v9.9.9"'
+_csv_busy_field() { # <action> <uuid> <field>
+    jq -r --arg f "$3" '.[$f]' "$SANDBOX/csv-busy-$1/results/$2.json" 2>/dev/null
+}
+assert_eq "worker-apply lands the rig's busy refusal as a terminal status (#3985)" \
+    "$(_csv_busy_field apply b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1 status)" "busy"
+assert_contains "worker-apply busy result carries the rig's reason (#3985)" \
+    "$(_csv_busy_field apply b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1 reason)" "lent to a bench job"
+assert_eq "worker-upgrade lands the rig's busy refusal as a terminal status (#3985)" \
+    "$(_csv_busy_field upgrade b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2 status)" "busy"
+assert_contains "worker-upgrade busy result carries the rig's reason (#3985)" \
+    "$(_csv_busy_field upgrade b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2 reason)" "lent to a bench job"
