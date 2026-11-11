@@ -28,7 +28,7 @@ import logging
 import os
 import time
 
-from mining_dashboard.config.config import TOR_SOCKS_PROXY
+from mining_dashboard.config.config import OUTBOUND_TOR_PROXY as TOR_SOCKS_PROXY
 from mining_dashboard.helper.http import bounded_get
 
 logger = logging.getLogger("TariHealth")

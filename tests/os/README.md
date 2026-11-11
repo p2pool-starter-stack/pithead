@@ -443,7 +443,9 @@ the configured test registry fail before the image build. Release builds do not 
   legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
   with local chains and the non-default nano pool. The authenticated wizard must name the saved
-  `pithead` role and prefill its answers with secrets blank. POST **Keep it** through the wizard;
+  coordinator role (`pithead`, or `both` for an appliance whose own miner the 2.1.0 defaults enable)
+  and prefill its answers with secrets blank; the on-disk role marker must equal the named role.
+  POST **Keep it** through the wizard;
   require the original dashboard login, unchanged configuration and host identity, both chain
   sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
   the served config; require the credentials card's login and the same chains and identity.
@@ -480,7 +482,11 @@ the configured test registry fail before the image build. Release builds do not 
   it comes back to the wizard with the provisioned config and old container images gone, the
   seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep
   tier keeps nothing of the old owner's. Leg 2 corrupts the data partition's ext4 magic and
-  asserts the wedged-`/data` recovery reformats it rather than bricking.
+  requires repair with the survival sentinel intact and no additional ESP wipe record.
+  It polls `vm_state` before touching the stopped disk and calls `vm_start` only after
+  detaching the loop device. `selftest-reset-lifecycle.sh` checks lifecycle routing,
+  operation order and failure handling without a guest. A successful current-head
+  `tier4-kvm` reset job remains required to prove the boot and persisted-state paths.
 - **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
   reflinks under the disposable guest's writable data partition, verify and install the published
   v2.0.0 bundle without modifying it, then invoke the existing image-upgrade harness against the

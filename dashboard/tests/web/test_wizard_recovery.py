@@ -201,7 +201,6 @@ async def test_submit_spools_only_known_names_and_keeps_known_credentials(client
         "/submit",
         data={
             "config": json.dumps(submitted),
-            "auth_mode": "set",
             "disk": "sda",
             "confirm": "sda",
             "wipe": "data",
@@ -214,7 +213,7 @@ async def test_submit_spools_only_known_names_and_keeps_known_credentials(client
     assert attempt["dashboard"]["auth"]["password"] == "fixture-login-password"
     assert attempt["xvb"]["enabled"] is False
     assert "xmrig_proxy" not in attempt
-    assert written == attempt
+    assert written == {**attempt, "profile": "balance"}
     summary = json.loads(spool.joinpath("config-changes.json").read_text())["changes"]
     assert summary == [
         "xmrig_proxy.enabled → xvb.enabled",
@@ -246,7 +245,6 @@ async def test_failed_install_refresh_and_return_keep_safe_editable_fields(clien
         "/submit",
         data={
             "config": json.dumps(submitted),
-            "auth_mode": "set",
             "disk": "sda",
             "confirm": "sda",
             "wipe": "data",
@@ -261,7 +259,7 @@ async def test_failed_install_refresh_and_return_keep_safe_editable_fields(clien
     assert failed["config"]["monero"]["wallet_address"] == "4PAYOUT"
     assert failed["config"]["dashboard"]["auth"]["password"] == "fixture-login-password"
     assert failed["install_attempt"] == {"disk": "sda", "wipe": "data"}
-    assert failed["auth_mode"] == "set"
+    assert failed["auth_mode"] == "auto"
     assert "confirm" not in failed["install_attempt"]
 
     response = await client.post("/retry")

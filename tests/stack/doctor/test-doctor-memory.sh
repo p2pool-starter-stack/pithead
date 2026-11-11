@@ -147,3 +147,21 @@ assert_contains "doctor at 186 pages: WARN names the shortfall" "$out" "⚠ WARN
 assert_not_contains "doctor at 186 pages: no OK for the pool" "$out" "✓ OK   HugePages reserved"
 assert_eq "HugePages keeps its id across outcomes and surfaces" \
     "$(cut -f3 "$MEMD/ids" | sort -u)" "hugepages"
+
+echo "== unit: the HugePages carve-out of the Tari cap follows the machine decision (#3934) =="
+_tc() {
+    printf 'MemTotal:       16318412 kB\nHugePages_Total:    %s\nHugepagesize:       2048 kB\n' "$1" >"$MEMD/meminfo"
+    PITHEAD_MEMINFO="$MEMD/meminfo" PITHEAD_HUGEPAGES_MARKER="$MEMD/marker" \
+        run_sourced "$SANDBOX" hugepages_carveout_mb
+}
+rm -f "$MEMD/marker"
+assert_eq "healthy pool: carve-out is the 3072-page budget" "$(_tc 3072)" "6144"
+assert_eq "pool grown inside the #1103 race: carve-out stays at the budget" "$(_tc 5618)" "6144"
+assert_eq "pool at the ceiling: carve-out stays at the budget" "$(_tc 4608)" "6144"
+printf 'Reduced pool: only 2048 of the 3072 pages fitted\npages=2048\n' >"$MEMD/marker"
+assert_eq "reduced machine: carve-out is the recorded 2048 pages" "$(_tc 2048)" "4096"
+assert_eq "reduced machine with a grown pool: carve-out stays at the record" "$(_tc 3150)" "4096"
+rm -f "$MEMD/marker"
+assert_eq "no pool (--skip-optimize): carve-out is zero" "$(_tc 0)" "0"
+rm -f "$MEMD/meminfo"
+assert_eq "unreadable meminfo: carve-out is zero" "$(_tc 0)" "0"

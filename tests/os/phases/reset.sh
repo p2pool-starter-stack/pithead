@@ -257,11 +257,11 @@ phase_reset() {
     _ssh "systemctl poweroff" 2>/dev/null || true
     tries=0
     while [ "$tries" -lt 60 ]; do
-        [ "$(virsh domstate "$VM" 2>/dev/null)" = "shut off" ] && break
+        [ "$(vm_state 2>/dev/null)" = "shut off" ] && break
         sleep 5
         tries=$((tries + 1))
     done
-    [ "$(virsh domstate "$VM" 2>/dev/null)" = "shut off" ] || {
+    [ "$(vm_state 2>/dev/null)" = "shut off" ] || {
         bad "guest never powered off cleanly before corrupting the data partition"
         return
     }
@@ -293,7 +293,7 @@ phase_reset() {
     fi
     losetup -d "$loopdev" 2>/dev/null || true
 
-    virsh start "$VM" >/dev/null 2>&1 || {
+    vm_start >/dev/null 2>&1 || {
         bad "guest would not start after the corruption"
         return
     }
