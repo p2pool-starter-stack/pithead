@@ -4,6 +4,8 @@ import sqlite3
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from mining_dashboard.service.storage_service import StateManager
 
 
@@ -104,8 +106,11 @@ class TestSchemaMigrationHold:
         assert ("monero", "tx-new", 2000) in stored
 
 
+_BOOT = Path(__file__).resolve().parents[3] / "os" / "overlay" / "pithead-boot"
+
+
+@pytest.mark.skipif(not _BOOT.is_file(), reason="needs the repo checkout's os/overlay/pithead-boot")
 class TestSchemaHoldAcrossAFailedUpdate:
-    _BOOT = Path(__file__).resolve().parents[3] / "os" / "overlay" / "pithead-boot"
     _PREVIOUS_RELEASE_INSERT = (
         "INSERT OR IGNORE INTO payouts "
         "(chain, txid, height, ts, amount_atomic) VALUES (?, ?, ?, ?, ?)"
@@ -127,7 +132,7 @@ class TestSchemaHoldAcrossAFailedUpdate:
         )
         rauc.chmod(0o755)
         armed = subprocess.run(  # noqa: S603
-            [shutil.which("bash"), "-c", 'source "$1" && schema_hold_arm', "arm", str(self._BOOT)],
+            [shutil.which("bash"), "-c", 'source "$1" && schema_hold_arm', "arm", str(_BOOT)],
             cwd=run,
             env={
                 **os.environ,

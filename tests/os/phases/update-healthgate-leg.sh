@@ -124,7 +124,7 @@ _update_healthgate_leg_body() {
     else
         bad "leg 5: the served banner module has no 'Blocked by:' cause"
     fi
-    local xjournal fjournal="" rdeadline=$(($(date +%s) + 1200))
+    local xjournal fjournal rdeadline=$(($(date +%s) + 1200))
     xjournal=$(_ssh "journalctl -u pithead-boot -b -1 2>/dev/null" 2>/dev/null)
     if grep -qF 'dashboard schema hold armed' <<<"$xjournal" && ! grep -qF 'dashboard schema hold released' <<<"$xjournal"; then
         ok "leg 5: the failed candidate boot armed the dashboard schema hold and never released it"
@@ -132,10 +132,10 @@ _update_healthgate_leg_body() {
         bad "leg 5: the failed candidate boot's journal does not show the dashboard schema hold armed and left unreleased"
     fi
     while [ "$(date +%s)" -lt "$rdeadline" ]; do
-        fjournal=$(_ssh "journalctl -u pithead-boot -b 0 2>/dev/null" 2>/dev/null)
-        grep -qF 'dashboard schema hold released' <<<"$fjournal" && break
+        _ssh "journalctl -u pithead-boot -b 0 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null" && break
         sleep 15
     done
+    fjournal=$(_ssh "journalctl -u pithead-boot -b 0 2>/dev/null" 2>/dev/null)
     if grep -qF 'dashboard schema hold armed' <<<"$fjournal" && grep -qF 'dashboard schema hold released' <<<"$fjournal"; then
         ok "leg 5: the fallback boot armed the dashboard schema hold and released it once its own gate committed"
     else
