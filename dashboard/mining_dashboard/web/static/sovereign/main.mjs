@@ -90,7 +90,8 @@ export function initSovereign({
         url=${win.location.href} onDirtyChange=${onDirtyChange} />`
         : page === "machines"
           ? html`<${MachinesPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
-        onDirtyChange=${onDirtyChange} />`
+        onDirtyChange=${onDirtyChange}
+        worker=${route.page === "machines" ? new URL(win.location.href).searchParams.get("worker") : null} />`
           : null);
   const paint = () => {
     doc.title = `Pithead — ${PAGES[route.page][0]}`;
