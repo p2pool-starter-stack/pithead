@@ -103,6 +103,7 @@ new_fixture() {
     cat >"$dir/pithead" <<'EOF'
 #!/usr/bin/env bash
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    # shellcheck source=/dev/null
     source "${REAL_CLI:?}"
     return
 fi
@@ -125,6 +126,7 @@ ownership_case() (
     local dir="$1" slot="$2" block
     cd "$dir" || exit 99
     fixture_env "$dir" "$slot"
+    # shellcheck source=/dev/null
     source "$ROOT/os/overlay/pithead-boot"
     fail_boot() {
         printf 'fail %s\n' "$*" >>"$dir/calls"
@@ -162,6 +164,7 @@ gate_case() (
     export RAUC_MARK_BAD_RC="${CASE_MARK_BAD_RC:-0}"
     export SYNC_FAIL_COMMIT="${CASE_SYNC_FAIL_COMMIT:-0}"
     export SYNC_FAIL_FLOOR="${CASE_SYNC_FAIL_FLOOR:-0}"
+    # shellcheck source=/dev/null
     source "$dir/pithead"
     # shellcheck disable=SC2034 # read by the extracted production loop
     migration_fingerprint=$(os_migration_fingerprint)
@@ -224,6 +227,7 @@ set +e
 (
     cd "$EMPTY" || exit 99
     fixture_env "$EMPTY" A
+    # shellcheck source=/dev/null
     source "$ROOT/os/overlay/pithead-boot"
     clear_migration_hold ''
 )
@@ -254,12 +258,14 @@ if [ "$(uname -s)" = Linux ]; then
     OLD_FINGERPRINT=$(
         cd "$RACE" || exit 99
         fixture_env "$RACE" A
+        # shellcheck source=/dev/null
         source "$RACE/pithead"
         os_migration_fingerprint
     )
     (
         cd "$RACE" || exit 99
         fixture_env "$RACE" A
+        # shellcheck source=/dev/null
         source "$RACE/pithead"
         exec 8>"$PITHEAD_LOCK_FILE"
         flock 8
@@ -278,6 +284,7 @@ if [ "$(uname -s)" = Linux ]; then
     (
         cd "$RACE" || exit 99
         fixture_env "$RACE" A
+        # shellcheck source=/dev/null
         source "$ROOT/os/overlay/pithead-boot"
         : >cleanup-started
         restore_data_floor_after_fallback "$OLD_FINGERPRINT"
@@ -317,6 +324,7 @@ rig_case() (
     cd "$dir" || exit 99
     fixture_env "$dir" B
     printf 'rig\n' >machine-role
+    # shellcheck source=/dev/null
     source "$ROOT/os/overlay/pithead-boot"
     fail_boot() { exit 1; }
     boot_gate_passed() { printf 'gate-passed\n' >>"$dir/calls"; }
@@ -339,6 +347,7 @@ assert_call "$RIG" 'pithead local-miner'
 (
     cd "$RIG" || exit 99
     fixture_env "$RIG" B
+    # shellcheck source=/dev/null
     source "$RIG/pithead"
     set +e
     os_prepare_migration_hold
