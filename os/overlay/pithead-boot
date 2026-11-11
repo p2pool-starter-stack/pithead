@@ -212,37 +212,39 @@ os_update_rollback_verdict() {
     fi
 }
 
-# #1393: os-update raises the /data floor at INSTALL and records the floor it replaced (or `none`)
-# in .os-data-floor.prev; a fallback boot (marker naming another version) puts the floor back from
-# that record. NO record: the floor stays — never lowered without one. The stale marker goes either way.
+mutation_migration_cleanup() {
+    PITHEAD_DATA_FLOOR_FILE="$PWD/.os-data-floor" PITHEAD_MIGRATION_MARKER_FILE="$PWD/.os-migration-pending" \
+        bash -c '
+            . ./pithead
+            mutation_lock_acquire boot-migration >&2
+            trap mutation_lock_release EXIT
+            current=$(os_migration_fingerprint) || exit 1
+            [ -n "$current" ] || exit 3
+            if [ "$#" -gt 1 ] && [ "$current" != "$2" ]; then exit 3; fi
+            case "$1" in
+            restore) os_disarm_prepared_migration || exit 1 ;;
+            clear) rm -f "$(os_migration_marker_file)" "$(os_data_floor_file).prev" && sync || exit 1 ;;
+            esac
+        ' _ "$@"
+}
+
 restore_data_floor_after_fallback() { # cwd /data/pithead; prints one line when it restored
     [ -f .os-migration-pending ] || return 0
-    rm -f .os-migration-pending
-    local prev && prev=$(tr -d '[:space:]' 2>/dev/null <.os-data-floor.prev)
+    local prev rc=0
+    prev=$(tr -d '[:space:]' 2>/dev/null <.os-data-floor.prev) || prev=""
+    mutation_migration_cleanup restore "$@" || rc=$?
+    [ "$rc" != 3 ] || return 0
+    [ "$rc" = 0 ] || return 1
     [ -n "$prev" ] || return 0
-    if [ "$prev" = none ]; then rm -f .os-data-floor; else printf '%s\n' "$prev" >.os-data-floor; fi
-    rm -f .os-data-floor.prev
     echo "pithead-boot: the data migration never ran — the update fell back before it committed, so the /data floor is back to ${prev/#none/none (no earlier migration)}"
 }
 
-# Post-commit release of the held chain services (#851): the slot is committed, so a fallback can
-# no longer strand migrated data, and the forward migration runs NOW. Marker removal comes first:
-# if the chain start fails, the slot stays committed and the next boot takes the normal path —
-# re-holding would gate on a commit that has already happened.
-# The `up` is RETRIED (#1684). Compose aborts the WHOLE start when one container is mid-transition
-# at that instant — on the bench it was p2pool, started by the held `up` and stopping seconds
-# later — and a single swallowed `up` left every held service down until a reboot a committed
-# appliance has no reason to take, under a dashboard reporting `updated`. A passenger's transition
-# may delay the chain start by seconds; it must never veto it. After the last try the fault is
-# ALERTED, once, by name: a chain service that cannot start is never grounds to fail this boot.
-# A function above the boundary so tier 1 drives the retry, the order and the alert with a
-# stubbed `pithead`; the tier-4 migration leg's "monerod never came back" row is what found it.
+clear_migration_hold() { mutation_migration_cleanup clear "$@"; }
+
 RELEASE_UP_TRIES=${PITHEAD_RELEASE_UP_TRIES:-5}
 RELEASE_UP_PAUSE=${PITHEAD_RELEASE_UP_PAUSE:-10}
 release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 after the last try
-    rm -f .os-migration-pending .os-data-floor.prev
-    # Logged BEFORE the up: the release line marks the commit boundary for the journal (and the
-    # tier-4 battery), and the up that starts the chain can take minutes.
+    clear_migration_hold "$@" || return 1
     echo "pithead-boot: slot committed — chain services released, the data migration runs now"
     local try
     for try in $(seq "$RELEASE_UP_TRIES"); do
@@ -262,17 +264,23 @@ commit_config_stamp() { rm -f config.json.stamp-deferred && bash -c '. ./pithead
 export PITHEAD_DEFER_LOCAL_MINER=1
 cd /data/pithead || exit 1
 
-# Role fork (#797): a rig is not a small coordinator, it is a different machine. No compose
-# stack, no nodes, no dashboard — and no container images worth loading, which is why this comes
-# before the loader. Its whole boot is the miner, and its slot commits once that miner runs,
-# matching the coordinator's commit after its stack serves.
-# The gate is deliberately pool-INDEPENDENT: a rig whose pool is unreachable still starts, still
-# retries, and must still commit. Rolling a slot back cannot fix a switch nobody plugged in, and
-# a gate that punished it would flap the A/B pair every boot the LAN was late.
-# Existence first: `<machine-role` on a machine that has none is a REDIRECTION failure, and
-# the shell prints it itself — `2>/dev/null` on the inner command cannot suppress it.
-# Harmless, but it would put a "No such file or directory" in every coordinator boot journal,
-# which is the most common boot there is. An error nobody should read is an error nobody will.
+hold_chain=0
+migration_rc=0
+migration_fingerprint=$(bash -c '
+    . ./pithead
+    mutation_lock_acquire boot-migration >&2
+    trap mutation_lock_release EXIT
+    rc=0
+    os_prepare_migration_hold >&2 || rc=$?
+    os_migration_fingerprint || exit 2
+    exit "$rc"
+') || migration_rc=$?
+case "$migration_rc" in
+0) hold_chain=1 ;;
+1) ;;
+*) fail_boot "the migration marker could not be assigned to the booted slot" ;;
+esac
+
 if [ -f machine-role ] && [ "$(tr -d '[:space:]' <machine-role)" = "rig" ]; then
     # Same bounded clock as the coordinator's miner leg, for the same reason: the boot unit runs
     # with TimeoutStartSec=infinity, so a stalled native rebuild would leave it activating
@@ -280,8 +288,10 @@ if [ -f machine-role ] && [ "$(tr -d '[:space:]' <machine-role)" = "rig" ]; then
     timeout 1800 ./pithead local-miner || fail_boot "the rig's miner setup failed"
     for _ in $(seq 12); do
         if systemctl is-active --quiet xmrig.service; then
-            command -v rauc >/dev/null 2>&1 && rauc status mark-good
+            rauc status mark-good && sync || fail_boot "the booted slot could not be committed"
             boot_gate_passed
+            if [ "$hold_chain" = 1 ]; then clear_migration_hold "$migration_fingerprint"; else restore_data_floor_after_fallback "$migration_fingerprint"; fi ||
+                echo "pithead-boot: FAULT — migration protection could not be reconciled after commitment" >&2
             echo "pithead-boot: the rig's miner is running — booted slot committed"
             exit 0
         fi
@@ -291,17 +301,6 @@ if [ -f machine-role ] && [ "$(tr -d '[:space:]' <machine-role)" = "rig" ]; then
 fi
 
 : >config.json.stamp-deferred
-
-# Claim a legacy version-only marker before image loading/render can fail. The slot-qualified
-# marker also lets the previous slot's older boot code recognise a same-version fallback.
-hold_chain=0
-migration_rc=0
-bash -c '. ./pithead; os_prepare_migration_hold' || migration_rc=$?
-case "$migration_rc" in
-0) hold_chain=1 ;;
-1) restore_data_floor_after_fallback ;;
-*) fail_boot "the migration marker could not be assigned to the booted slot" ;;
-esac
 
 OS_INFLIGHT=data/os-update/in-flight.json
 OS_STATE_DIR=data/control/results
@@ -361,9 +360,10 @@ for gate_attempt in $(seq 90); do
         gate_cert_advisory_ready && gate_pass=1
     fi
     if [ "$gate_pass" = 1 ]; then
-        command -v rauc >/dev/null 2>&1 && rauc status mark-good
+        rauc status mark-good && sync || fail_boot "the booted slot could not be committed"
         boot_gate_passed
         commit_config_stamp
+        [ "$hold_chain" != 0 ] || restore_data_floor_after_fallback "$migration_fingerprint" || echo "pithead-boot: FAULT — the previous migration candidate remains protected" >&2
         echo "pithead-boot: stack is serving (HTTP $code) and doctor reports ${gate_advisory:-healthy}${gate_advisory:+ as its only failing check} — booted slot committed${gate_advisory:+ with that recorded as advisory; run './pithead apply' on the machine to re-mint}"
         # OS-update verdict, success half: this slot just committed while an in-flight flag names
         # exactly this version — the dashboard-driven update landed and can no longer fall back.
@@ -380,7 +380,7 @@ for gate_attempt in $(seq 90); do
         fi
         # Post-commit, the held chain services start and the forward migration runs NOW. Never
         # grounds to fail a boot the commit already accepted: the function alerts and returns.
-        [ "$hold_chain" = 1 ] && { release_held_chain_services || true; }
+        [ "$hold_chain" = 1 ] && { release_held_chain_services "$migration_fingerprint" || true; }
         # The on-box miner comes LAST, after the slot commit: it needs the stack's stratum
         # listening, and a miner that cannot start must never delay or block the commit — the
         # stack serving is the product's health, the miner is a passenger. Idempotent every boot

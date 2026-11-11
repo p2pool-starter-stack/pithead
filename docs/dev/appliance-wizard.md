@@ -154,9 +154,14 @@ and returns the report as `node_probe`; nothing writes a `config.json` candidate
 The server resolves a name once, dials that vetted address and stores its numeric form in the
 accepted candidate. Loopback, unspecified, link-local,
 multicast and reserved addresses are refused, including names that resolve to one (#1946). With
-the Tor egress firewall on, every answer must also be in the private LAN or VPN IPv4 ranges the
-mining container can dial. Credentials are used only for the RPC request and never enter the
-report.
+the Tor egress firewall on, a name must answer with at least one address in the private LAN or VPN
+IPv4 ranges the mining container can dial and with no public IPv4 at all; the lowest such address
+is the one pinned. Other IPv6 answers (global or unique-local) are ignored rather than refused:
+the firewall is an IPv4 allowlist and only the pinned address reaches the config, so a dual-stack
+LAN name is accepted on its A record instead of sending the operator back to typing the literal
+address (#2351). The host-side preflight a day-two configuration commit runs
+(`remote_node_address` in `lib/pithead/10-node-probe.sh`) applies the same acceptance rule.
+Credentials are used only for the RPC request and never enter the report.
 
 | Field | Meaning |
 |---|---|
@@ -532,7 +537,19 @@ Five steps, each answering a hardware-validated failure:
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
-   passenger (`|| true`). When enabled, this runs RigForge's setup in appliance mode from the
+   passenger (`|| true`). The appliance checks an active, enabled local miner every 30 seconds.
+   A successful proxy worker-list reading that finds the proxy container restarted since the
+   previous reading while the local miner still has no connection queues an immediate XMRig
+   restart — a proxy replaced underneath a live miner is the stall XMRig never recovers from
+   itself, so it does not wait out the window. Otherwise five minutes of successful proxy
+   worker-list readings with no connection for the local miner’s rendered identity queue an
+   XMRig restart, logged by `pithead-miner-recovery.service`.
+   Other connected rigs do not reset that window. Missing readings, a connected local miner, a stopped
+   miner, or a busy stack operation reset that window. The guard holds the mutation lock only for
+   that busy check and around the restart, never while it reads the proxy, so a zero-wait command
+   such as `pithead tor-recover` is not refused because of it. The guard honors `PITHEAD_LOCK_FILE`
+   when supplied to its service, matching the CLI mutation lock. This guard runs only on coordinators;
+   it does not start a disabled miner or change slot-commit policy. When enabled, this runs RigForge's setup in appliance mode from the
    tree `pithead-sync` keeps on `/data/rigforge`: its unit renders into `/run` with
    `--runtime` enablement (gone every boot, recreated here, like the control-runner units),
    and the cached XMRig build on `/data` makes the run a re-render rather than a recompile.

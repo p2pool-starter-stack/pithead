@@ -102,6 +102,14 @@ The DIY lifecycle support-bundle leg is `tests/integration/lib/run-support-bundl
 `check-support-bundle.py` in the same directory inspects archives without extraction.
 `tests/integration/selftest/selftest-support-bundle.sh` supplies archive and restoration
 failure controls through the integration selftest target.
+The leg's credential fixture rotates the stratum password, so borrowed rigs stay locked out
+until the restore. The lifecycle caller therefore gates the whole step, not each apply.
+The restore copies `config.json` and `.env` back, so `apply` finds no change. `pithead up`
+then recreates the services still running on the fixture's environment.
+A refused rig fails over to its next pool, and XMRig does not come back on its own. After a
+verified restore, the controller re-arms it (`borrow-fixture.sh`, `rearm`). It restarts the rig
+up to four times, 60 seconds apart, because a restart that meets a still-refusing proxy fails
+over again.
 
 Configless shutdown and the local reset destination record are in
 `lib/pithead/01a-configless-recovery.sh`; restore's active-stack and destination guards stay in
@@ -321,6 +329,23 @@ connection probe and lifecycle runner. The image fixture uses the shared
 Its diagnostic, readiness and image selftests use fake Docker I/O.
 The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
 both local-miner toggles converge without rebooting.
+The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconnected active
+local miner, restarting at once when the proxy container was recreated since its last reading;
+`tests/os/selftest-miner-recovery.sh` covers its decision window, recreation fast restart and refusals.
+`tests/os/appliance-miner-recovery{,-leg}.sh` proves per-worker accepted-share progress after
+dashboard backup on the stack phase’s synced guest, using a reversible loopback strand.
+Trial receipts distinguish backup completion, strand detection, unchanged proxy identity with
+changed start time, local reconnection, the fast-restart journal line (required whenever the
+installed watchdog carries that path) and accepted shares. They record the installed watchdog
+checksum and unit states; an absent-watchdog control requires both units to be absent and inactive.
+Failed guest verdicts print local worker counts and bounded watcher, recovery and miner journals
+before cleanup. A recovery-failure receipt requires an observed strand, valid proxy checks,
+readable workers and verified cleanup; injection, precondition and cleanup failures do not qualify.
+`tests/os/selftest-miner-recovery-diagnostics.sh` exercises these distinctions and diagnostic order.
+The watcher polls for the rig to reconnect before recording the strand; separate journal
+budgets retain its early failures alongside mining activity. `selftest-miner-recovery-watcher.sh`
+requires both a connected rig and a nonzero aggregate before the injection is removed.
+The rig share leg repeats the backup trial while a real rig stays connected.
 `tests/os/appliance-earnings-leg.sh` checks that the provisioned dashboard serves the checkout’s
 parser and earnings modules through authenticated Caddy; `selftest-earnings-assets.sh` rejects
 old, missing, redirected and unrelated responses without a guest.

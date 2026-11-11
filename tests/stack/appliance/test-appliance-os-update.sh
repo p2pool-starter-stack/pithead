@@ -67,15 +67,6 @@ mkdir -p "$OUSB/bin"
 # hatches for #1041's error-surfacing tests: RAUC_INFO_RC/RAUC_INFO_ERR fail `info` (a signature
 # verdict) with a chosen message on stderr, RAUC_INSTALL_RC/RAUC_INSTALL_ERR do the same for
 # `install`. Both default to a clean 0/no-output — every test above this one never sets them.
-#
-# RAUC_INFO_OUT_JSON (#1093): most callers below never set this, so `info` behaves exactly as
-# before — cat RAUC_INFO_OUT regardless of the `--output-format` the caller actually passed,
-# which is precisely the gap #1093 named: a caller that regressed to --output-format=json would
-# still get the hand-written shell-format fixture back, so the drift could never turn any
-# assertion red. The migration-floor real-fixture block below sets RAUC_INFO_OUT_JSON so `info`
-# answers format-honestly: shell gets RAUC_INFO_OUT, json gets RAUC_INFO_OUT_JSON — two REAL
-# `rauc info` captures of the same bundle (tests/stack/fixtures/rauc-info/), not two hand-written
-# stand-ins that already agree with the parser by construction.
 cat >"$OUSB/bin/rauc" <<'EOF'
 #!/usr/bin/env bash
 echo "[rauc] $*" >>"${RAUC_LOG:?}"
@@ -95,11 +86,15 @@ install)
     [ -n "${RAUC_INSTALL_ERR:-}" ] && echo "$RAUC_INSTALL_ERR" >&2
     exit "${RAUC_INSTALL_RC:-0}"
     ;;
+status)
+    [ "$2" != --output-format=json ] || printf '{"slots":[{"rootfs.0":{"bootname":"A","state":"booted","boot_status":"good"}}]}\n'
+    ;;
 esac
 exit 0
 EOF
 chmod +x "$OUSB/bin/rauc"
 touch "$OUSB/bundle.raucb"
+printf 'rauc.slot=A\n' >"$OUSB/cmdline"
 export RAUC_LOG="$OUSB/calls"
 
 printf 'debug\n' >"$OUSB/variant-debug"
@@ -268,13 +263,14 @@ unset -f ometa
 ourun_v() { # <running-version> <floor-file> <info-json> [os-update args...]
     local rv="$1" ff="$2" ij="$3"
     shift 3
+    [ -n "${MARKER_FILE:-}" ] || rm -f "$OUSB/marker-scratch"
     (
         cd "$OUSB" || exit
         PATH="$OUSB/bin:$PATH"
         # shellcheck disable=SC1090
         source "$STACK"
         set +e
-        PITHEAD_VERSION="$rv" PITHEAD_DATA_FLOOR_FILE="$ff" \
+        PITHEAD_VERSION="$rv" PITHEAD_DATA_FLOOR_FILE="$ff" PITHEAD_CMDLINE="$OUSB/cmdline" \
             PITHEAD_MIGRATION_MARKER_FILE="${MARKER_FILE:-$OUSB/marker-scratch}" \
             RAUC_INFO_OUT="$ij" PITHEAD_VARIANT_FILE="$OUSB/variant-release" os_update "$@" </dev/null
     )
@@ -373,13 +369,14 @@ unset -f rmeta
 ourun_v_realfixture() { # <running-version> <floor-file> <shell-fixture> <json-fixture> [os-update args...]
     local rv="$1" ff="$2" ijs="$3" ijj="$4"
     shift 4
+    rm -f "$OUSB/marker-scratch"
     (
         cd "$OUSB" || exit
         PATH="$OUSB/bin:$PATH"
         # shellcheck disable=SC1090
         source "$STACK"
         set +e
-        PITHEAD_VERSION="$rv" PITHEAD_DATA_FLOOR_FILE="$ff" \
+        PITHEAD_VERSION="$rv" PITHEAD_DATA_FLOOR_FILE="$ff" PITHEAD_CMDLINE="$OUSB/cmdline" \
             PITHEAD_MIGRATION_MARKER_FILE="${MARKER_FILE:-$OUSB/marker-scratch}" \
             RAUC_INFO_OUT="$ijs" RAUC_INFO_OUT_JSON="$ijj" \
             PITHEAD_VARIANT_FILE="$OUSB/variant-release" os_update "$@" </dev/null
@@ -395,13 +392,10 @@ assert_eq "the real bundle's own declared floor is recorded, not a stand-in valu
 unset -f ourun_v_realfixture
 unset RIS RIJ FWR
 
-# #851 marker lifecycle: a migrating install leaves the pending marker (stamped with the bundle's
-# version) for the next boot's chain hold; a non-migrating install clears a stale one — it
-# supersedes a migrating install that never booted.
 MK="$OUSB/marker-mig"
 rm -f "$MK"
 MARKER_FILE="$MK" ourun_v "1.10.0" "$OUSB/floor-scratch" "$OUSB/info-mig.txt" bundle.raucb >/dev/null 2>&1
-assert_eq "a data_migration install writes the pending marker with the bundle version" "$(tr -d ' \n' <"$MK" 2>/dev/null)" "1.17.0"
+assert_eq "a data_migration install writes the pending marker with the bundle version and spare slot" "$(tr -d ' \n' <"$MK" 2>/dev/null)" "1.17.0|B"
 MARKER_FILE="$MK" ourun_v "1.10.0" "$OUSB/floor-scratch" "$OUSB/info-1170.txt" bundle.raucb >/dev/null 2>&1
 assert_eq "a non-migrating install clears a stale pending marker" "$([ -f "$MK" ] && echo present || echo absent)" "absent"
 

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # The lifecycle's real prefix must sample every restart/image-fixture boundary in order.
 set -euo pipefail
+gated=
+lifecycle_mining_step() {
+    gated+="$1 "
+    shift
+    "$@"
+}
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 # shellcheck source=tests/integration/lib/run-source-image.sh
 source "$ROOT/tests/integration/lib/run-source-image.sh"
@@ -14,7 +20,7 @@ recovery_proof_calls=0
 recovery_proof_rc=0
 # Execute the original lifecycle prefix through the real source-image runner; later pool/wallet
 # legs do not concern these diagnostics and have their own complete lifecycle selftests.
-eval "$(sed -n '/^run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d')
+eval "$(sed -n '/^_run_lifecycle() {/,/    local cur_pool fp_before/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d;1s/^_run_lifecycle/run_lifecycle/')
 }"
 rx() {
     case "$1" in
@@ -67,10 +73,13 @@ service_state() { echo 'running none'; }
 svc_state_of() { printf '%s' "${1%% *}"; }
 run_lifecycle
 [ "$IT_FAIL" = 0 ]
+[ -z "${IT_LC_STEP:-}" ]
 [ "$wallet_proof_calls" = 1 ]
 [ "$recovery_proof_calls" = 1 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = $'before-wizard-defaults\nbefore-restart\nafter-restart\nbefore-image-down\nafter-image-up\nbefore-source-image' ]
+[ "$gated" = 'run_cli_wizard_defaults run_support_bundle run_source_image_reconcile run_restore_dashboard_probe run_tari_background_sync ' ]
 echo 'selftest-lifecycle-gate-wiring: all six lifecycle/image boundaries passed'
+echo 'selftest-lifecycle-gate-wiring: the wizard, support-bundle and image legs run inside the mining gate'
 wallet_proof_calls=0
 recovery_proof_calls=0
 recovery_proof_rc=1
@@ -79,6 +88,7 @@ lifecycle_rc=0
 run_lifecycle || lifecycle_rc=$?
 [ "$lifecycle_rc" != 0 ]
 [ "$IT_FAIL" = 0 ]
+[ "$IT_LC_STEP" = prove_wallet_recovery ]
 [ "$recovery_proof_calls" = 1 ]
 [ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = before-wizard-defaults ]
 echo 'selftest-lifecycle-gate-wiring: a failed wallet recovery proof ends the phase before the first restart'

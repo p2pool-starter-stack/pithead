@@ -284,7 +284,10 @@ main() {
         done
     fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
+        local lifecycle_fails="$IT_FAIL"
         run_lifecycle || lifecycle_ok=0
+        [ "$lifecycle_ok" = 1 ] || [ "$IT_FAIL" -gt "$lifecycle_fails" ] ||
+            it_fail "lifecycle phase stopped${IT_LC_STEP:+ at $IT_LC_STEP} without recording a failure" "the rows above show how far it got"
     fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
         if [ "$lifecycle_ok" = 1 ] || [ "$LIFECYCLE_STACK_INTACT" = 1 ]; then
