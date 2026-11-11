@@ -116,6 +116,11 @@ each added, repointed or removed rig, and apply only after typed APPLY; removing
 dashboard managing it and leaves the miner running. The configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
 from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
 upgrade is not held. Closing the inspector returns focus to the rig and keeps the list's scroll position.
+A `worker` destination from a link such as Overview's offline-rig attention item opens that rig's
+inspector when the page loads; a name no rig reports shows the list as normal. Closing an inspector
+that a destination link opened returns focus to the page title, and navigating away closes it —
+but while an edit is unsaved or an apply runs, the inspector counts as an unsaved change, so
+browser Back asks first and keeps the dialog, exactly like the inspector's own Close guards.
 The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
 no rig restart verb exists yet ([#3825](https://github.com/p2pool-starter-stack/pithead/issues/3825)).
 
@@ -137,7 +142,8 @@ Unavailable project or XMRig readings are disclosed rather than inferred as Off.
 Attention conditions use the approved display order: offline rigs, unsynced nodes, Tor
 under Balance or Privacy, disk, update, backup, wallet change, configuration, failed shares
 and pool-tier advice. This is display order, not a severity ranking. Duplicate rig names
-are ordered by their connection identity. Pool advice consumes the backend field owned by the automatic-defaults implementation:
+are ordered by their connection identity. The offline-rig item names the rig and links to
+Machines carrying a `worker` destination; following it opens that rig's inspector directly. Pool advice consumes the backend field owned by the automatic-defaults implementation:
 24 hours of measured hashrate, with provisional bands below 10 kH/s for nano, 10 to below
 100 kH/s for mini, and 100 kH/s or above for main. Insufficient history or an already
 suitable tier produces no suggestion. Overview never calculates a second policy or switches

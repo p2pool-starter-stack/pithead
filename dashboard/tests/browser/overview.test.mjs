@@ -1,5 +1,10 @@
 import { expect, test } from "./fixtures.mjs";
 
+const json = (body) => ({
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
 function healthy(ui) {
   const now = Date.now();
   ui.state.backup_status = { state: "success", last_success_at: now / 1000 };
@@ -122,6 +127,95 @@ test("stale partial fleet and off destinations do not look healthy", async ({ pa
   ).toBeVisible();
   await expect(page.getByRole("list", { name: "Where the hashrate went" })).toHaveCount(0);
   await expect(page.getByText("Everything is running normally", { exact: true })).toHaveCount(0);
+});
+
+test("the offline rig attention link opens that rig's inspector and no other destination rides along", async ({
+  page,
+  ui,
+}) => {
+  healthy(ui);
+  ui.state.workers.push({ name: "rig-beta", status: "offline", h60: null });
+  ui.responses.set(
+    "/api/worker?name=rig-beta&range=24h",
+    json({
+      name: "rig-beta",
+      found: true,
+      status: "offline",
+      control_enabled: true,
+      editable: true,
+      writable_keys: [],
+      last_applied: {},
+      rig_config: {},
+      rigforge: null,
+      rigforge_update: null,
+      hashrate_history: { hashrate: [], markers: [] },
+    }),
+  );
+  await ui.openPreview();
+  await page.getByRole("link", { name: "rig-beta: offline. Check its connection." }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("worker")).toBe("rig-beta");
+  const dialog = page.getByRole("dialog", { name: "rig-beta" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("Offline")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  expect(new URL(page.url()).searchParams.has("worker")).toBe(false);
+  await page.getByRole("link", { name: "Machines", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "rig-beta" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await page.getByRole("link", { name: "rig-beta: offline. Check its connection." }).click();
+  await expect(page.getByRole("dialog", { name: "rig-beta" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeFocused();
+  await page.getByRole("link", { name: "Machines", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Rigs", exact: true })).toBeVisible();
+});
+
+test("back asks before a deep-linked unsaved rig edit can leave the page and keeps it on refusal", async ({
+  page,
+  ui,
+}) => {
+  healthy(ui);
+  ui.state.workers.push({ name: "rig-beta", status: "offline", h60: null });
+  ui.responses.set(
+    "/api/worker?name=rig-beta&range=24h",
+    json({
+      name: "rig-beta",
+      found: true,
+      status: "offline",
+      control_enabled: true,
+      editable: true,
+      writable_keys: [],
+      last_applied: {},
+      rig_config: {},
+      rigforge: null,
+      rigforge_update: null,
+      hashrate_history: { hashrate: [], markers: [] },
+    }),
+  );
+  page.on("dialog", (message) => message.dismiss());
+  await ui.openPreview();
+  await page.getByRole("link", { name: "rig-beta: offline. Check its connection." }).click();
+  const inspector = page.getByRole("dialog", { name: "rig-beta" });
+  await expect(inspector).toBeVisible();
+  await inspector.locator(".rig-advanced summary").click();
+  await inspector
+    .getByRole("group", { name: "Configuration view" })
+    .getByRole("button", { name: "JSON" })
+    .click();
+  await inspector.locator("textarea").fill("{ unsaved edit");
+  await expect(inspector.getByText("Unsaved: apply before closing")).toBeVisible();
+  await page.goBack();
+  await expect(inspector).toBeVisible();
+  await expect.poll(() => new URL(page.url()).searchParams.get("worker")).toBe("rig-beta");
+  await expect(inspector.locator("textarea")).toHaveValue("{ unsaved edit");
+  page.removeAllListeners("dialog");
+  page.once("dialog", (message) => message.accept());
+  await page.goBack();
+  await expect(inspector).toHaveCount(0);
+  await expect.poll(() => new URL(page.url()).searchParams.has("worker")).toBe(false);
 });
 
 test("pending producer evidence stays unavailable while real pool suggestions and backup links route", async ({
