@@ -9,21 +9,23 @@ _control_apply_idle() { # [seconds]
         [ "$(date +%s)" -lt "$deadline" ] || break
         sleep 3
     done
-    CLEARNET_FIXTURE_DIAG="${CLEARNET_FIXTURE_DIAG:+$CLEARNET_FIXTURE_DIAG$'\n'}the control runner or the mutation lock stayed busy for the whole wait"
+    CLEARNET_FIXTURE_DIAG="${CLEARNET_FIXTURE_DIAG:+$CLEARNET_FIXTURE_DIAG$'\n'}the control runner or the mutation lock stayed busy or unreachable for the whole wait"
     return 1
 }
 
 reserved_node_clearnet_fixture() {
+    local out
     CLEARNET_FIXTURE_DIAG=""
     for _ in 1 2; do
         _control_requests_drained && _control_apply_idle || return 1
-        CLEARNET_FIXTURE_DIAG=$(approval_restore_step clearnet-apply _ssh 'set -euo pipefail
+        out=$(approval_restore_step clearnet-apply _ssh 'set -euo pipefail
 cd /data/pithead
 jq ".p2pool.clearnet = true" config.json >config.json.os2333-clearnet
 chmod 600 config.json.os2333-clearnet
 mv config.json.os2333-clearnet config.json
 ./pithead apply -y
 jq -e ".p2pool.clearnet == true" config.json >/dev/null') && return 0
+        CLEARNET_FIXTURE_DIAG="${CLEARNET_FIXTURE_DIAG:+$CLEARNET_FIXTURE_DIAG$'\n'}$out"
     done
     return 1
 }
@@ -59,6 +61,7 @@ _clearnet_fixture_self_test() (
     reserved_node_clearnet_fixture && f=$((f + 1))
     [ "$(wc -l <"$count")" -eq 2 ] || f=$((f + 1))
     case "$CLEARNET_FIXTURE_DIAG" in *'exit=1'*'[output redacted]'*'failed to apply'*) ;; *) f=$((f + 1)) ;; esac
+    [ "$(printf '%s\n' "$CLEARNET_FIXTURE_DIAG" | grep -c 'exit=1')" -eq 2 ] || f=$((f + 1))
     fail_calls=5
     : >"$count"
     _control_apply_idle() { [ "$(wc -l <"$count")" -eq 0 ]; }

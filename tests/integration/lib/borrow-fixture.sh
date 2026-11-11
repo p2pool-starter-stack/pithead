@@ -109,7 +109,7 @@ miner_reload() {
                 return
             fi
             if sudo -n systemctl stop xmrig >/dev/null 2>&1; then
-                sudo -n systemctl start xmrig >/dev/null 2>&1 && moved --system "$old"
+                sudo -n systemctl start xmrig >/dev/null 2>&1 || sudo -n systemctl start xmrig >/dev/null 2>&1 && moved --system "$old"
                 return
             fi
             old=$(mainpid --user)

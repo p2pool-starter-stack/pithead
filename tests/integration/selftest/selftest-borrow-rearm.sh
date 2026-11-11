@@ -193,10 +193,16 @@ reload_rc() { # <restart-ok> <stopstart-ok> <pid-moves> <user-ok> <pkill-ok>
             case "$2" in
             restart) [ "$restart_ok" = 1 ] ;;
             stop) [ "$stopstart_ok" != 0 ] ;;
-            start) [ "$stopstart_ok" = 1 ] && {
-                [ "$moves" = 1 ] && pid=200
-                true
-            } ;;
+            start)
+                [ "$stopstart_ok" = 3 ] && [ -z "${started_once:-}" ] && {
+                    started_once=1
+                    return 1
+                }
+                [ "$stopstart_ok" = 1 ] || [ "$stopstart_ok" = 3 ] && {
+                    [ "$moves" = 1 ] && pid=200
+                    true
+                }
+                ;;
             esac
         }
         pkill() { return 0; }
@@ -207,6 +213,7 @@ reload_rc() { # <restart-ok> <stopstart-ok> <pid-moves> <user-ok> <pkill-ok>
 assert_eq "stop then start reloads a root-run xmrig when restart is refused" "$(reload_rc 0 1 1 0 0)" 0
 assert_eq "a start that leaves the same MainPID is not a reload" "$(reload_rc 0 1 0 0 0)" 1
 assert_eq "a stop that succeeds with a failed start fails loudly" "$(reload_rc 0 2 1 1 0)" 1
+assert_eq "one failed start after a stop is retried and reloads" "$(reload_rc 0 3 1 0)" 0
 assert_eq "a user unit restart that moves its MainPID is a reload" "$(reload_rc 0 0 0 1 0)" 0
 assert_eq "refused restart, refused stop and no user unit fail loudly" "$(reload_rc 0 0 0 0 0)" 1
 assert_eq "a signal that would reach xmrig is never a fallback" "$(reload_rc 0 0 0 0 1)" 1
