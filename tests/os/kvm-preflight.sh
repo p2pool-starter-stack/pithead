@@ -41,7 +41,8 @@ vm_lease_ip() { virsh domifaddr "$VM" 2>/dev/null | awk '/ipv4/{print $4}' | cut
 vm_list_running() { virsh list --name; }
 
 vm_create() {
-    local disk="$1" serial="$2" secure_boot="$3"; shift 3
+    local disk="$1" serial="$2" secure_boot="$3"
+    shift 3
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
         --boot "uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=$secure_boot" \
