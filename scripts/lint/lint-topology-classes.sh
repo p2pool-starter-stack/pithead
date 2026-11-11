@@ -14,8 +14,9 @@
 #      wherever that exact default is referenced.
 #   5. user@host strings — allowed only for generic role placeholders, the RFC 2606 reserved
 #      example domains, and technical shapes that only look like an address (a SHA-pinned GitHub
-#      Action, a package@version, a Telegram bot mention, or an instantiated systemd service
-#      drop-in directory in a path).
+#      Action, a package@version, a Telegram bot mention, an instantiated systemd service
+#      drop-in directory in a path, or an instantiated unit named as a systemctl mask/enable/
+#      disable operand).
 #
 # Run with --self-test to check the scanners themselves against fixtures (including the
 # empty-enumeration guard below).
@@ -121,6 +122,20 @@ email_allow() {
         if [ "$context" = "$unit_dir$1/" ]; then
             return 0
         fi
+    fi
+    # The same unit name as a systemctl verb's operand (systemctl mask tor@default.service,
+    # which #1837's image does) is a command-line argument, not an SSH destination. Only the
+    # bytes before THIS match count, and they must be the verb plus plain .service names, so
+    # a host can hide behind the verb only if it too ends in .service — the drop-in check's
+    # strictness, moved from a path to an operand list.
+    if [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9_.:-]*\.service$ ]] &&
+        [ "$#" -ge 4 ] && [ "$4" -ge 15 ]; then # 15 = the shortest legal context, "systemctl mask "
+        local before start="$4"
+        start=$((start - 120))
+        [ "$start" -lt 0 ] && start=0
+        before=$(dd if="$2" bs=1 skip="$start" count=$(($4 - start)) 2>/dev/null | tail -n 1)
+        [[ $before =~ (^|[^A-Za-z0-9_.-])systemctl[[:space:]]+(mask|unmask|enable|disable)[[:space:]]+([A-Za-z0-9_.:%+-]+\.service[[:space:]]+)*$ ]] &&
+            return 0
     fi
     case "$local_part" in
     user | you | miner | root | operator) return 0 ;;
@@ -294,6 +309,16 @@ if [ "${1:-}" = "--self-test" ]; then
     printf 'TOKEN_FILE=/secrets/admin@node.service.d/key\n' >"$tmp/unit-unrelated-path-hit.txt"
     expect "an unrelated path does not get the systemd exception" hit \
         "$(scan "$EMAIL_RE" email_allow "$tmp/unit-unrelated-path-hit.txt")"
+    printf '    && systemctl mask systemd-firstboot.service tor.service tor@default.service\n' >"$tmp/unit-mask-clean.txt"
+    expect "a systemctl mask operand naming a unit instance is not an address" clean \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-mask-clean.txt")"
+    printf 'systemctl mask tor@default.service admin@evil.service\n' >"$tmp/unit-mask-hit.txt"
+    expect "a host among the systemctl verb's operands is still flagged" exact \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-mask-hit.txt")" \
+        "$tmp/unit-mask-hit.txt:1: admin@evil.service"
+    printf 'ssh admin@node.service and mine the box\n' >"$tmp/unit-bare-operand-hit.txt"
+    expect "a unit-shaped host outside a systemctl verb stays flagged" hit \
+        "$(scan "$EMAIL_RE" email_allow "$tmp/unit-bare-operand-hit.txt")"
 
     SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     emptyrepo="$tmp/emptyrepo"
