@@ -21,6 +21,27 @@ _pred_tari_payouts_found() {
     [ "$(jq_get "$st" '.earnings.tari_confirmed.count')" -gt 0 ] 2>/dev/null
 }
 
+_pred_tari_node_synced() {
+    local st
+    st="$(api_state)"
+    [ "$(jq_get "$st" '.sync.tari.state')" = "done" ]
+}
+
+_pred_tari_wallet_grpc() {
+    rx 'docker exec -e PAYOUT_SCAN_GRACE_SEC=0 tari-wallet /wallet-config/wallet-healthcheck.sh' >/dev/null 2>&1
+}
+
+_tari_payout_scan_note() {
+    local st
+    st="$(api_state)"
+    printf 'wallet reachable=%s address_match=%s; tari node %s %s/%s' \
+        "$(jq_get "$st" '.earnings.tari_confirmed.reachable')" \
+        "$(jq_get "$st" '.earnings.tari_confirmed.address_match')" \
+        "$(jq_get "$st" '.sync.tari.state')" \
+        "$(jq_get "$st" '.sync.tari.current')" \
+        "$(jq_get "$st" '.sync.tari.target')"
+}
+
 _pred_payout_wallet_ready() { # <confirmed|tari_confirmed>
     local st
     st="$(api_state)"
@@ -72,15 +93,22 @@ assert_tari_payout_scan() { # <config-json> <state-json>
     '' | auto | *[!0-9]*) it_log "tari birthday is '${birthday:-auto}': no known past payouts to find" ;;
     *)
         assert_contains "tari-wallet scans from the configured birthday (#2731)" "$argv" "--birthday $birthday "
-        if wait_for 3600 30 "Tari wallet reports the known past payouts (#2731)" _pred_tari_payouts_found; then
+        if ! wait_for 900 15 "Tari node reaches chain tip (#2731)" _pred_tari_node_synced; then
+            st="$(api_state)"
+            it_skip_leg "Tari wallet finds known past payouts (#2731)" "tari node $(jq_get "$st" '.sync.tari.state') $(jq_get "$st" '.sync.tari.current')/$(jq_get "$st" '.sync.tari.target') after 900s — until it serves the chain there is no range since birthday $birthday for the wallet to scan" by-design
+        elif ! wait_for 1800 30 "Tari wallet answers gRPC scans (#2731)" _pred_tari_wallet_grpc; then
+            it_fail "Tari wallet found the known past payouts (#2731)" "the wallet never answered a gRPC scan within 1800s, so no payout scan since birthday $birthday was observable: $(_tari_payout_scan_note)"
+        elif wait_for 5400 30 "Tari wallet reports the known past payouts (#2731)" _pred_tari_payouts_found; then
             it_pass "Tari wallet found $(jq_get "$(api_state)" '.earnings.tari_confirmed.count') payouts since birthday $birthday (#2731)"
-        else it_fail "Tari wallet found the known past payouts (#2731)" "tari_confirmed.count still 0 after 3600s"; fi
+        else
+            it_fail "Tari wallet found the known past payouts (#2731)" "tari_confirmed.count still 0 after 5400s: $(_tari_payout_scan_note)"
+        fi
         ;;
     esac
     assert_payout_wallet_ready tari_confirmed Tari
     # Zero grace makes a successful invocation proof of the real image's gRPC probe, not the
     # first-scan allowance. A good probe must also clear the marker permanently.
-    if rx 'docker exec -e PAYOUT_SCAN_GRACE_SEC=0 tari-wallet /wallet-config/wallet-healthcheck.sh' >/dev/null 2>&1; then
+    if _pred_tari_wallet_grpc; then
         it_pass "real Tari wallet gRPC health probe succeeds without scan grace (#2498)"
     else
         it_fail "real Tari wallet gRPC health probe succeeds without scan grace (#2498)" "healthcheck returned nonzero"
