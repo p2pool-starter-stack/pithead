@@ -25,10 +25,14 @@ printf '%s\n' "$*" >>"$WALLET_TEST_COMMANDS"
 case "$1" in
 inspect)
     case "$*" in
+    *tari-wallet*)
+        [ -z "${WALLET_TEST_TARI_ABSENT:-}" ] || exit 1
+        echo '{"Log":[{"Output":"tari_scan_height=0 PASSWORD=diagnostic-secret"}]}' ;;
     *'id={{.Id}}'*) echo 'id=abc started=now exit=0 oom_killed=false restarts=40 health={"Log":[{"Output":"wallet_rpc=answering wallet_height=10 daemon_height=1000"}]}' ;;
     *State.Health*) echo '{"Log":[{"Output":"wallet_rpc=unreachable scan_grace=active PASSWORD=diagnostic-secret"}]}' ;;
     *) echo 'id=abc started=now exit=0 oom_killed=false restarts=40' ;;
     esac ;;
+logs) echo 'ERROR base node connection failed PASSWORD=diagnostic-secret' ;;
 exec)
     case "$*" in
     *'test ! -e'*) exit "${WALLET_TEST_MARKER_RC:-1}" ;;
@@ -95,8 +99,12 @@ export IT_PITHEAD=true
 api_state() { echo '{}'; }
 capture_artifacts route "$TD/out" >/dev/null 2>&1
 assert_contains "failure capture routes wallet health into its artifact directory" "$(cat "$TD/out/route/wallet-health.json")" 'scan_grace=active'
+assert_contains "failure capture routes Tari wallet health into its artifact directory (#4031)" "$(cat "$TD/out/route/tari-wallet-health.json")" 'tari_scan_height=0'
 assert_contains "failure capture routes retained events into its artifact directory" "$(cat "$TD/out/route/wallet-memory-events.txt")" 'action=die exit=137'
 assert_contains "wallet health grace reason is retained" "$(cat "$TD/wallet-health.json")" 'scan_grace=active'
+assert_contains "Tari wallet health is captured when the profile is up (#4031)" "$(cat "$TD/tari-wallet-health.json")" 'tari_scan_height=0'
+assert_contains "Tari wallet startup log is captured (#4031)" "$(cat "$TD/tari-wallet-log.txt")" 'base node connection failed'
+assert_eq "Tari wallet captures pass through redaction (#4031)" "$(cat "$TD/tari-wallet-health.json" "$TD/tari-wallet-log.txt" | grep -c diagnostic-secret)" "0"
 assert_contains "wallet health output passes through redaction" "$(cat "$TD/wallet-health.json")" 'PASSWORD=<redacted>'
 assert_eq "raw diagnostic secret is absent" "$(grep -c diagnostic-secret "$TD/wallet-health.json")" 0
 body="$(_pred_monero_wallet_caught_up)"
@@ -193,5 +201,9 @@ fails="$(
     echo "$IT_FAIL"
 )"
 assert_eq "catch-up alone cannot bypass reachability and address checks" "$fails" 2
+mkdir -p "$TD/absent"
+WALLET_TEST_TARI_ABSENT=1 capture_wallet_diagnostics "$TD/absent" >/dev/null 2>&1
+assert_eq "absent Tari wallet writes no Tari artifacts (#4031)" "$(find "$TD/absent" -name 'tari-wallet-*' | wc -l | tr -d ' ')" "0"
+assert_contains "monero wallet health survives an absent Tari wallet (#4031)" "$(cat "$TD/absent/wallet-health.json")" 'scan_grace=active'
 printf 'selftest-wallet-diagnostics: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
