@@ -5,6 +5,7 @@ Description=Pithead hugepages sizing — fit the RandomX reservation to this mac
 # idle at this point, so resizing it never steals pages from a running miner.
 After=systemd-sysctl.service
 Before=pithead-boot.service pithead-firstboot.service
+RequiresMountsFor=/data
 
 [Service]
 Type=oneshot
