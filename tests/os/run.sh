@@ -89,6 +89,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/rig-control-off-leg.sh"
 # shellcheck source=tests/os/rig-share-leg.sh
 . "$SCRIPT_DIR/rig-share-leg.sh"
+# shellcheck source=tests/os/rig-small-guest-leg.sh
+. "$SCRIPT_DIR/rig-small-guest-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
 # shellcheck source=tests/os/fault-boot-verdict.sh
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
