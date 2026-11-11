@@ -278,6 +278,31 @@ test("a worker destination opens that rig once, an unknown name opens nothing, l
   assert.equal(gone.state.inspect, null);
 });
 
+test("the inspector reports unsaved or applying state to the guard that confirms before navigation", () => {
+  const reports = [];
+  const inspector = new RigInspector({
+    name: "rig-a",
+    worker: { name: "rig-a" },
+    shared: 1,
+    onDirtyChange: (key, dirty) => reports.push([key, dirty]),
+  });
+  inspector.componentDidUpdate(inspector.props);
+  assert.deepEqual(reports.at(-1), ["rig-inspector", false]);
+  inspector.state.detail = { writable_keys: ["DONATION"], last_applied: {}, rig_config: {} };
+  inspector.state.editText = JSON.stringify(detailSnapshot(inspector.state.detail), null, 2);
+  inspector.componentDidUpdate(inspector.props);
+  assert.deepEqual(reports.at(-1), ["rig-inspector", false]);
+  inspector.state.tableEdits = { DONATION: "2" };
+  inspector.componentDidUpdate(inspector.props);
+  assert.deepEqual(reports.at(-1), ["rig-inspector", true]);
+  inspector.state.tableEdits = {};
+  inspector.state.busy = true;
+  inspector.componentDidUpdate(inspector.props);
+  assert.deepEqual(reports.at(-1), ["rig-inspector", true]);
+  inspector.componentWillUnmount();
+  assert.deepEqual(reports.at(-1), ["rig-inspector", false]);
+});
+
 test("the local miner switch reads in plain words in the host review", () => {
   assert.equal(earningsWording("local_miner.enabled changed"), "Also mine on this box changed");
 });

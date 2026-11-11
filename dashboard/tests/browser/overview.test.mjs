@@ -173,6 +173,51 @@ test("the offline rig attention link opens that rig's inspector and no other des
   await expect(page.getByRole("heading", { name: "Rigs", exact: true })).toBeVisible();
 });
 
+test("back asks before a deep-linked unsaved rig edit can leave the page and keeps it on refusal", async ({
+  page,
+  ui,
+}) => {
+  healthy(ui);
+  ui.state.workers.push({ name: "rig-beta", status: "offline", h60: null });
+  ui.responses.set(
+    "/api/worker?name=rig-beta&range=24h",
+    json({
+      name: "rig-beta",
+      found: true,
+      status: "offline",
+      control_enabled: true,
+      editable: true,
+      writable_keys: [],
+      last_applied: {},
+      rig_config: {},
+      rigforge: null,
+      rigforge_update: null,
+      hashrate_history: { hashrate: [], markers: [] },
+    }),
+  );
+  page.on("dialog", (message) => message.dismiss());
+  await ui.openPreview();
+  await page.getByRole("link", { name: "rig-beta: offline. Check its connection." }).click();
+  const inspector = page.getByRole("dialog", { name: "rig-beta" });
+  await expect(inspector).toBeVisible();
+  await inspector.locator(".rig-advanced summary").click();
+  await inspector
+    .getByRole("group", { name: "Configuration view" })
+    .getByRole("button", { name: "JSON" })
+    .click();
+  await inspector.locator("textarea").fill("{ unsaved edit");
+  await expect(inspector.getByText("Unsaved: apply before closing")).toBeVisible();
+  await page.goBack();
+  await expect(inspector).toBeVisible();
+  await expect.poll(() => new URL(page.url()).searchParams.get("worker")).toBe("rig-beta");
+  await expect(inspector.locator("textarea")).toHaveValue("{ unsaved edit");
+  page.removeAllListeners("dialog");
+  page.once("dialog", (message) => message.accept());
+  await page.goBack();
+  await expect(inspector).toHaveCount(0);
+  await expect.poll(() => new URL(page.url()).searchParams.has("worker")).toBe(false);
+});
+
 test("pending producer evidence stays unavailable while real pool suggestions and backup links route", async ({
   page,
   ui,

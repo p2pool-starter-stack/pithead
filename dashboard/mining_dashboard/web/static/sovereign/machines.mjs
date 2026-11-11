@@ -145,7 +145,7 @@ export class MachinesPage extends Component {
         inspect
           ? html`<${RigInspector} name=${inspect.name} writable=${writable} earnings=${state.earnings}
             shared=${workers.filter((worker) => worker?.name === inspect.name).length}
-            worker=${findRig(workers, inspect.name, inspect.occurrence) || inspect.worker} onClose=${() => this.close()} />`
+            worker=${findRig(workers, inspect.name, inspect.occurrence) || inspect.worker} onDirtyChange=${onDirtyChange} onClose=${() => this.close()} />`
           : null
       }
     </div>`;
