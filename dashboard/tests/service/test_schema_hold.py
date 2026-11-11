@@ -1,4 +1,8 @@
+import os
+import shutil
 import sqlite3
+import subprocess
+from pathlib import Path
 
 from mining_dashboard.service.storage_service import StateManager
 
@@ -98,3 +102,63 @@ class TestSchemaMigrationHold:
         finally:
             conn.close()
         assert ("monero", "tx-new", 2000) in stored
+
+
+class TestSchemaHoldAcrossAFailedUpdate:
+    _BOOT = Path(__file__).resolve().parents[3] / "os" / "overlay" / "pithead-boot"
+    _PREVIOUS_RELEASE_INSERT = (
+        "INSERT OR IGNORE INTO payouts "
+        "(chain, txid, height, ts, amount_atomic) VALUES (?, ?, ?, ?, ?)"
+    )
+
+    def _arm_from_an_uncommitted_candidate(self, tmp_path, data_dir):
+        run = tmp_path / "run"
+        bin_dir = tmp_path / "bin"
+        run.mkdir()
+        bin_dir.mkdir()
+        (run / ".env").write_text(f"DASHBOARD_DATA_DIR={data_dir}\n")
+        cmdline = tmp_path / "cmdline"
+        cmdline.write_text("rootwait rauc.slot=B\n")
+        rauc = bin_dir / "rauc"
+        rauc.write_text(
+            "#!/usr/bin/env bash\n"
+            'echo \'{"slots":{"rootfs":{"B":{"state":"booted",'
+            '"bootname":"B","boot_status":"bad"}}}}\'\n'
+        )
+        rauc.chmod(0o755)
+        armed = subprocess.run(  # noqa: S603
+            [shutil.which("bash"), "-c", 'source "$1" && schema_hold_arm', "arm", str(self._BOOT)],
+            cwd=run,
+            env={
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                "PITHEAD_CMDLINE": str(cmdline),
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert armed.returncode == 0, armed.stderr
+        assert "dashboard schema hold armed" in armed.stdout
+
+    def test_previous_release_records_payouts_after_the_candidate_falls_back(self, tmp_path):
+        data_dir = tmp_path / "dashboard"
+        data_dir.mkdir()
+        db = str(data_dir / "mining_data.db")
+        TestSchemaMigrationHold()._seed_legacy_db(db)
+        self._arm_from_an_uncommitted_candidate(tmp_path, data_dir)
+        StateManager(db_path=db).close()
+        conn = sqlite3.connect(db)
+        try:
+            with conn:
+                conn.execute(
+                    self._PREVIOUS_RELEASE_INSERT, ("monero", "tx-fallback", 12, 12.0, 3000)
+                )
+            stored = conn.execute(
+                "SELECT chain, txid, height, ts, amount_atomic FROM payouts "
+                "WHERE chain = ? ORDER BY ts DESC",
+                ("monero",),
+            ).fetchall()
+        finally:
+            conn.close()
+        assert stored[0] == ("monero", "tx-fallback", 12, 12.0, 3000)
