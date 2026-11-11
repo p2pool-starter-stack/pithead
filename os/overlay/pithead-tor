@@ -37,9 +37,6 @@ statedir="$rundir/state"
 torlog="$rundir/tor.log"
 torpid=""
 
-# Tor runs as its own session (setsid) so cleanup can take the WHOLE process group: a child
-# Tor left behind would still hold the inherited lock fd, and the next caller would read
-# "another fetch is already running" while nothing fetches.
 cleanup() {
     local waited=0
     if [ -n "$torpid" ] && kill -0 -- "-${torpid}" 2>/dev/null; then
