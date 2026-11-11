@@ -91,6 +91,7 @@ test("chart query updates remain in navigation history and keep deep-link target
   navigation.go("overview");
   query = new URL(win.location.href).searchParams;
   assert.equal(query.has("from"), false);
+  assert.equal(query.has("worker"), false);
   assert.equal(query.get("range"), "24h");
   navigation.close();
 });

@@ -2,6 +2,7 @@ import { Component, html } from "../app/preact.mjs";
 import { EarningsControl } from "./earnings-control.mjs";
 import { RigInspector } from "./machines-inspector.mjs";
 import {
+  destinationRow,
   findRig,
   localMinerAvailable,
   rigRows,
@@ -60,6 +61,25 @@ export class ConnectCard extends Component {
 
 export class MachinesPage extends Component {
   state = { find: "", sort: "attention", shares: false, inspect: null };
+  componentDidMount() {
+    this.applyDestination();
+  }
+  componentDidUpdate() {
+    this.applyDestination();
+  }
+  applyDestination() {
+    const name = this.props.worker;
+    if (!name) {
+      this.destination = undefined;
+      return;
+    }
+    if (!this.props.state || name === this.destination) return;
+    this.destination = name;
+    if (this.state.inspect) return;
+    const row = destinationRow(this.props.state.workers, name);
+    if (!row) return;
+    this.setState({ inspect: { ...row, worker: this.props.state.workers[row.index] } });
+  }
   close() {
     const opener = this.opener;
     this.setState({ inspect: null });

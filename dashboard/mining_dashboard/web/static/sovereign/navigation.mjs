@@ -91,6 +91,7 @@ export function createNavigation({ win, preference, dirty = () => false, onChang
     go(page, advanced = null, query = {}) {
       if (!permitted()) return false;
       const next = routeUrl(current, page, advanced);
+      if (!Object.hasOwn(query, "worker")) next.searchParams.delete("worker");
       for (const [key, value] of Object.entries(query)) next.searchParams.set(key, value);
       index++;
       win.history.pushState({ pitheadIndex: index }, "", next);
