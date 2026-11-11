@@ -79,15 +79,6 @@ parse_and_validate_config() {
         PAYOUT_CONFIRM_ENABLED=true
     fi
 
-    # Tari on-chain payout confirmation (#462), the sibling of #381 for the merge-mine half. The
-    # operator supplies the PRIVATE VIEW KEY plus the PUBLIC SPEND KEY for the Tari payout address;
-    # the stack runs a view-only minotari_console_wallet against the LOCAL Tari node to confirm a
-    # merge-mine coinbase actually landed. The view key is a SECRET (reveals all incoming amounts and
-    # timing) — handled like node_password: never logged or echoed, delivered to the container in a
-    # read-only bind-mounted owner-only file, never the command line or `docker inspect`. Empty =
-    # feature off. A view key with a remote Tari node (#103) is refused: only Monero scans through a remote node.
-    # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE 2022-01-01 (#2731), so a fresh
-    # wallet doesn't rescan from genesis. TARI_MODE was already parsed and validated above.
     TARI_VIEW_KEY=$(jq -r '.tari.view_key // empty' "$CONFIG_FILE")
     TARI_SPEND_PUBLIC_KEY=$(jq -r '.tari.spend_public_key // empty' "$CONFIG_FILE")
     TARI_WALLET_BIRTHDAY=$(jq -r '.tari.payout_scan_birthday // "auto"' "$CONFIG_FILE")

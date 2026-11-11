@@ -147,10 +147,6 @@ services:
       retries: 3
       start_period: 60s
 
-  # --- Payout-confirmation wallet (monero-wallet-rpc, view-only) ---
-  # Only starts if the "payout_confirm" profile is active — pithead adds it to COMPOSE_PROFILES
-  # only when monero.view_key is set (#381). A view key can SCAN but never
-  # spend; it reveals all incoming amounts/timing, so it is handled like a secret (never logged).
   wallet-rpc:
     profiles: ["payout_confirm"]
     # Reuse the monero image (monerod + monero-wallet-rpc ship in the same verified tarball) with a

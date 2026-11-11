@@ -1,12 +1,4 @@
 #!/bin/bash
-# View-only payout-confirmation wallet (#381).
-#
-# Runs monero-wallet-rpc against the configured Monero node, scan-only: the wallet is generated from the
-# operator's PRIVATE VIEW KEY with NO spend key, so it can see incoming payouts but CANNOT
-# spend. The view key is written to a JSON file on tmpfs and handed to --generate-from-json — it is
-# NEVER put on the command line, where `docker inspect` / `ps` would expose it (#90 discipline,
-# same as monerod's RPC creds). Each address/key pair keeps a wallet in the named volume. Reverting a pair reopens
-# its saved scan progress. New wallets use PAYOUT_SCAN_HEIGHT or the node tip minus 100 blocks.
 set -eu
 umask 077
 
