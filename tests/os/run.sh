@@ -5,10 +5,6 @@
 #
 #   tests/os/run.sh --image PATH [--keep] [--require-complete] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
 #
-# --require-complete (#3996) fails the run when any row skipped for a MISSING input; by-design and
-# covered skips stay accepted. The release-gate rig job passes it with the node inputs so the
-# accepted-share row can never pass as a skip there (bench-ci: options.require_complete).
-#
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
 #   update  build a v2 bundle; install, boot the spare, auto-rollback uncommitted, commit, and
@@ -191,7 +187,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)

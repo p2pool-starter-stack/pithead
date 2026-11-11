@@ -65,8 +65,6 @@ user = "$auth"
 EOF
 }
 
-# M11's hashrate floor (#3996): the rig's sister feed (contract/v1/.hashrate.total[0], H/s) must
-# show a nonzero rate. $1 bounds the wait; the feed republishes on a 15 s timer.
 rig_share_hashrate_wait() {
     local token deadline=$(($(date +%s) + ${1:-120})) hs=""
     token=$(_ssh "jq -r '.ACCESS_TOKEN // \"\"' /data/rigforge/config.json" | tr -d '\r')
