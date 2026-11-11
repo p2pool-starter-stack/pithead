@@ -124,7 +124,7 @@ migration_release_wait() {
         if _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
             return 0
         fi
-        migration_release_line=$(_ssh "journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -m1 -E 'slot left uncommitted|never became healthy|this is failure|NOT a bad slot|migration marker could not be assigned'" | tr -d '\r')
+        migration_release_line=$(_ssh "journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -m1 -E 'slot left uncommitted|never became healthy|this is failure|NOT a bad slot|migration marker could not be assigned'" | tr -d '[:cntrl:]')
         if [ -n "$migration_release_line" ]; then
             return 1
         fi
