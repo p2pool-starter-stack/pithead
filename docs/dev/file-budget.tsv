@@ -32,7 +32,6 @@ dashboard/tests/service/test_collapsed_return_channels.py	402
 dashboard/tests/service/test_control_service.py	495
 dashboard/tests/service/test_data_helpers.py	618
 dashboard/tests/service/test_metrics.py	463
-dashboard/tests/service/test_storage_schema.py	491
 dashboard/tests/service/test_storage_worker.py	451
 dashboard/tests/web/test_wizard_node_probe.py	446
 dashboard/tests/web/test_worker_detail_meta.py	425
