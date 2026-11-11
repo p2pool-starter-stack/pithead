@@ -368,4 +368,12 @@ if [ -n "$TEST_REGISTRY" ]; then
         tar --append -f os/build/pithead-root.tar --owner=0 --group=0 --mode=0644 -C "$stage" -T -
     rm -r "$stage"
 fi
+rootfs_mib=$(($(stat -c %s os/build/pithead-root.tar) / 1048576))
+slot_mib=4096
+headroom_floor_mib=1536
+echo "==> rootfs headroom: ${rootfs_mib} MiB used of the ${slot_mib} MiB slot, $((slot_mib - rootfs_mib)) MiB margin"
+if [ "$rootfs_mib" -gt $((slot_mib - headroom_floor_mib)) ]; then
+    echo "build-image: rootfs of ${rootfs_mib} MiB leaves less than the ${headroom_floor_mib} MiB floor below the ${slot_mib} MiB slot" >&2
+    exit 1
+fi
 echo "==> rootfs: os/build/pithead-root.tar ($(du -h os/build/pithead-root.tar | cut -f1))"
