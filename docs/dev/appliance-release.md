@@ -294,8 +294,9 @@ a new one:
 ```sh
 PITHEAD_RAUC_CERT=<build>/os/rauc/certs/cert.pem \
 PITHEAD_RAUC_KEY=<build>/os/rauc/certs/key.pem \
-PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0 \
-  os/rauc/mkbundle.sh          # no --dev: naming the key IS the signal, so declare the migration fields
+PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION= \
+  os/rauc/mkbundle.sh   # no --dev: naming the key IS the signal, so declare the migration fields —
+                        # this bundle does not migrate; a migrating one declares true and X.Y.Z
 ```
 
 Confirm before copying anything, by comparing fingerprints — the target's trusted chain is at
@@ -544,11 +545,11 @@ channels share the final cut commit, one version and one GitHub Release.
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
-   submit the four bench-ci `tier4-kvm` jobs on this exact SHA from
+   submit the seven bench-ci `tier4-kvm` jobs on this exact SHA from
    [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not):
-   the boot and rig groups, the provision job against the seeded baseline and the crossupdate job
-   from the previous release. Record every job ID in the release issue. Follow the same section for
-   wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel any KVM
+   the boot group, the rig group as its four splits, the provision job against the seeded baseline
+   and the crossupdate job from the previous release. Record every job ID in the release issue.
+   Follow the same section for wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel any KVM
    job. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
@@ -573,8 +574,9 @@ channels share the final cut commit, one version and one GitHub Release.
    export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem
    export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem
    export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
-   # declare the data-migration contract above, migrating or not (2.0.0: true and 2.0.0)
-   export PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0
+   # declare the data-migration contract above for this release, migrating or not
+   # migrating:     export PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=X.Y.Z
+   # not migrating: export PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION=
    sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
    ```
 
