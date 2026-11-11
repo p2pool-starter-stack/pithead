@@ -65,25 +65,35 @@ export class MachinesPage extends Component {
     this.applyDestination();
   }
   componentDidUpdate() {
+    if (this.pendingFocus !== undefined && !this.state.inspect) {
+      const target = this.pendingFocus;
+      this.pendingFocus = undefined;
+      (target || globalThis.document?.getElementById("page-title"))?.focus();
+    }
     this.applyDestination();
   }
   applyDestination() {
     const name = this.props.worker;
     if (!name) {
       this.destination = undefined;
+      if (this.state.inspect && this.destinationOpened) this.close();
       return;
     }
-    if (!this.props.state || name === this.destination) return;
-    this.destination = name;
-    if (this.state.inspect) return;
+    if (!this.props.state || name === this.destination || this.state.inspect) return;
     const row = destinationRow(this.props.state.workers, name);
-    if (!row) return;
+    if (!row) {
+      this.destination = name;
+      return;
+    }
+    this.destination = name;
+    this.destinationOpened = true;
+    this.opener = null;
     this.setState({ inspect: { ...row, worker: this.props.state.workers[row.index] } });
   }
   close() {
-    const opener = this.opener;
+    this.pendingFocus = this.opener || null;
+    this.destinationOpened = false;
     this.setState({ inspect: null });
-    opener?.focus();
   }
   render(
     { state, connected = true, sessionExpired = false, onDirtyChange },

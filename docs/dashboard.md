@@ -117,7 +117,8 @@ dashboard managing it and leaves the miner running. The configuration editor fol
 from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
 upgrade is not held. Closing the inspector returns focus to the rig and keeps the list's scroll position.
 A `worker` destination from a link such as Overview's offline-rig attention item opens that rig's
-inspector when the page loads; a name no rig reports shows the list as normal.
+inspector when the page loads; a name no rig reports shows the list as normal. Closing an inspector
+that a destination link opened returns focus to the page title, and navigating away closes it.
 The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
 no rig restart verb exists yet ([#3825](https://github.com/p2pool-starter-stack/pithead/issues/3825)).
 

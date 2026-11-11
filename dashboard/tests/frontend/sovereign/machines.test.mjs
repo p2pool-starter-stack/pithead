@@ -263,6 +263,15 @@ test("a worker destination opens that rig once, an unknown name opens nothing, l
   page.props = { ...page.props, worker: "rig-b" };
   page.componentDidUpdate();
   assert.equal(page.state.inspect.name, "rig-b");
+  page.props = { ...page.props, worker: null };
+  page.componentDidUpdate();
+  assert.equal(page.state.inspect, null);
+  const clicked = new MachinesPage({ state, worker: null });
+  clicked.setState = (next) => Object.assign(clicked.state, next);
+  clicked.componentDidMount();
+  clicked.setState({ inspect: { name: "rig-a", index: 0, worker: state.workers[0] } });
+  clicked.componentDidUpdate();
+  assert.equal(clicked.state.inspect.name, "rig-a");
   const gone = new MachinesPage({ state, worker: "rig-z" });
   gone.setState = (next) => Object.assign(gone.state, next);
   gone.componentDidMount();

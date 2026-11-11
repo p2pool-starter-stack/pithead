@@ -163,6 +163,14 @@ test("the offline rig attention link opens that rig's inspector and no other des
   expect(new URL(page.url()).searchParams.has("worker")).toBe(false);
   await page.getByRole("link", { name: "Machines", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "rig-beta" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await page.getByRole("link", { name: "rig-beta: offline. Check its connection." }).click();
+  await expect(page.getByRole("dialog", { name: "rig-beta" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeFocused();
+  await page.getByRole("link", { name: "Machines", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Rigs", exact: true })).toBeVisible();
 });
 
 test("pending producer evidence stays unavailable while real pool suggestions and backup links route", async ({
