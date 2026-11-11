@@ -191,7 +191,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,53p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
