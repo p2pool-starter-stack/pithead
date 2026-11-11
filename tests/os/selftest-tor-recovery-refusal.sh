@@ -87,6 +87,7 @@ phase_wizard_redirect() { :; }
 phase_provision_registry_cut() { :; }
 phase_provision_registry_untouched() { :; }
 phase_provision_baked_stack() { :; }
+phase_provision_no_pull_before_load() { :; }
 stage_dashboard_exposure_addresses() { :; }
 provision_node_preflight() { :; }
 provision_setup_failure_recovery() { :; }

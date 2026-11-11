@@ -156,6 +156,7 @@ _phase_provision_initial_body() {
         ok "stack containers are running (podman: $names)"
         phase_provision_registry_untouched
         phase_provision_baked_stack
+        phase_provision_no_pull_before_load
         ;;
     *)
         bad "stack never came up within 25m — running: '${names:-none}'"

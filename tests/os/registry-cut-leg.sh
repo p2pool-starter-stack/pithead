@@ -39,6 +39,24 @@ phase_provision_registry_untouched() {
     fi
 }
 
+registry_cut_pull_filter() {
+    # shellcheck disable=SC2016
+    printf '%s' '$6 == "image" && $7 == "pull" { pulled[$8] = $9 } $6 == "image" && $7 == "loadfromarchive" && ($8 in pulled) { print pulled[$8] }'
+}
+
+phase_provision_no_pull_before_load() {
+    local pulled
+    if ! pulled=$(_ssh "journalctl -b --no-pager -t podman -o cat | awk '$(registry_cut_pull_filter)'" 2>/dev/null); then
+        bad "could not read the guest's podman events (#978)"
+        return 1
+    fi
+    if [ -z "$pulled" ]; then
+        ok "no baked image was pulled from a registry before its archive loaded (#978)"
+    else
+        bad "images pulled before their baked archive loaded: $(printf '%s' "$pulled" | tr '\n' ' ')"
+    fi
+}
+
 phase_provision_baked_stack() {
     local images service missing=""
     images=$(_ssh "podman images --format '{{.Repository}}'" 2>/dev/null | tr '\n' ' ')
