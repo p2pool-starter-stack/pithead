@@ -432,12 +432,12 @@ is harmless. The bench runner sets that wait during its reserved-lock handoff, a
 forwards it to both pre-gates and its detached run; other callers keep the opt-in exit-75 default.
 
 While a lent rig is locked, RigForge answers a remote upgrade or apply with the terminal status
-`busy` (rigforge#670). A harness that owns the rig marks that with a root-owned
-`/run/rigforge-rig-owner` file holding a live pid, and RigForge honours the file only while the
-pid is alive. `e2e.sh` writes it over SSH on the borrowed rig (`tests/integration/lib/rig-owner.sh`), keeps it alive
-with the SSH session that wrote it, and removes it when the harness finishes or the restore runs, so
-the `rigforge-upgrade` leg can upgrade the rig it borrowed. The dashboard records `busy` in the
-rig's change history with its reason.
+`busy` (rigforge#670), and the dashboard records `busy` in the rig's change history with its reason.
+RigForge exempts only a harness that holds the `/run/rigforge-rig-owner` marker after swapping in its
+own random token and a loopback-only `api_allow_from`. Pithead's `rigforge-upgrade` leg reaches the
+rig from the bench through the stack under test, never over loopback, so it does not write the marker,
+and on a lent rig running such a release the leg fails with `busy`. rigforge#687 tracks the contract
+for a remote borrowing stack.
 
 **CHECK** — and **FREE**, which is not a step for anyone. A harness frees the lock by dying:
 it holds it on an inherited descriptor, so the kernel drops it when the run ends, however it
