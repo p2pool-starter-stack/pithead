@@ -7,13 +7,13 @@ from mining_dashboard.web import fleet_upgrade_views
 from tests.web._server_support import *  # noqa: F403
 
 
-def _rig(name, version="1.14.0"):
+def _rig(name, version="1.14.0", appliance=False):
     return {
         "name": name,
         "status": "online",
         "adopted": True,
         "api_ok": True,
-        "rigforge": _fresh_version(version),
+        "rigforge": {**_fresh_version(version), "appliance": appliance},
     }
 
 
@@ -21,7 +21,12 @@ def _rig(name, version="1.14.0"):
 async def fleet_client(aiohttp_client, control_spool, monkeypatch):
     monkeypatch.setattr(worker_refresh, "REFRESH_ATTEMPTS", 0)
     data = {
-        "workers": [_rig("rig-b"), _rig("rig-a"), _rig("current", "1.15.0")],
+        "workers": [
+            _rig("rig-b"),
+            _rig("rig-a"),
+            _rig("current", "1.15.0"),
+            _rig("appliance-rig", appliance=True),
+        ],
         "rigforge_release": {"tag": "v1.15.0", "url": "https://example.invalid/r"},
     }
     sent = []
@@ -46,6 +51,12 @@ class TestFleetUpgradeState:
         assert body["version"] == "v1.15.0"
         assert [r["name"] for r in body["eligible"]] == ["rig-a", "rig-b"]
         assert body["run"] is None
+
+    async def test_the_plan_skips_appliance_rigs_and_says_why(self, fleet_client):
+        body = await (await fleet_client.get("/api/control/worker-upgrade-all")).json()
+        assert "appliance-rig" not in [r["name"] for r in body["eligible"]]
+        skipped = {s["name"]: s["reason"] for s in body["skipped"]}
+        assert "Pithead OS image" in skipped["appliance-rig"]
 
     async def test_reports_the_newest_run_so_progress_survives_a_reload(self, fleet_client):
         rid = str(uuid.uuid4())

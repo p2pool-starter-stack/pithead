@@ -11,6 +11,7 @@ test("coordinators ask for the machine name, rigs retain their worker field", ()
     app.state.cfg = { local_miner: { enabled }, dashboard: { host: "pithead" } };
     const out = renderToString(app.renderSetup());
     assert.match(out, /Name this machine/);
+    assert.doesNotMatch(out, /P2Pool sidechain|Dashboard login|auth-mode/);
     assert.match(out, /name="machine_name" value="pithead"/);
     assert.match(out, /maxlength="63"/);
     assert.match(out, /pattern="/);

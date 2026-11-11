@@ -43,8 +43,8 @@ cli_wizard_defaults_trial() {
         wizard_tari_disk_default local >/dev/null
         {
             printf 'garbage\\n%s\\n\\n2\\ngarbage\\n%s\\n' $(quote_arg "$monero") $(quote_arg "$tari")
-            printf '\\n\\n\\n\\n\\n\\n\\n'
-        } | { wizard_ask_core; wizard_ask_shape; wizard_write_config; }
+            printf '\\n\\n\\n\\n'
+        } | { wizard_ask_core; wizard_ask_shape; wizard_write_config; wizard_print_pointer; }
         jq -e '.profile == \"balance\" and .xvb.enabled == false and
             (.monero | has(\"clearnet_initial_sync\") | not) and
             .tari.mode == \"local\" and .dashboard.tari_required == false and

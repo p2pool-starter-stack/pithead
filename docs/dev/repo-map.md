@@ -54,6 +54,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. Quadlet golden units share `os/quadlet/common/`; `tests/stack/test-render-quadlet.sh` checks complete profile inventories and byte parity. `os/rootfs/fetch-go-source.sh` bounds pinned Go-source fetches; `tests/os/selftest-go-source-fetch.sh` runs its local Git transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--draft --dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; `broken-configs.tsv` and `tests/stack/test-manual-qa-oracle.sh` replay the documented dry-run refusals in shell block 5. The start page holds the run sheet, result rules and glossary. |
+| Donation endpoint | [Runbook](donation-endpoint.md) | Operator runbook for a Tor onion-only P2Pool mini endpoint and XMRig Proxy donation traffic. |
 
 The standalone [Monero LMDB tools](lmdb-tools.md) artifact is built by
 `scripts/tools/build-lmdb.py` and `.github/workflows/lmdb-tools.yml`.
@@ -157,6 +158,13 @@ Consecutive status censuses are in `tests/integration/lib/readiness-churn.sh`. D
 changing responses for integration and appliance selftests live in
 `tests/integration/lib/selftest/fake-eventual.sh`; `tests/integration/test_selftest_runner.py`
 guards their isolated Makefile discovery.
+
+`post_op_invariants` in `tests/integration/lib/post-op-invariants.sh` runs after the lifecycle restart,
+backup restore and reset recovery steps. It asserts what a user sees, not only process health: every
+worker online before the step is online again, `failures_24h` is unchanged (the reset-recovery step allows the one unauthenticated web probe its own check sends), the dashboard and not the
+setup page serves the web port with no wizard container, every running container keeps its Id,
+`StartedAt` and restart count for 60 seconds and is healthy, and on the appliance no pithead or xmrig
+unit has failed. A fault case per check is in `tests/integration/selftest/selftest-post-op-invariants.sh`.
 
 Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
@@ -392,7 +400,7 @@ both local-miner toggles converge without rebooting.
 parser and earnings modules through authenticated Caddy; `selftest-earnings-assets.sh` rejects
 old, missing, redirected and unrelated responses without a guest.
 The address-watch provision leg in `tests/os/appliance-address-watch-leg.sh` checks certificate
-SAN coverage and the deployed dashboard recovery assets through TLS, then executes the served
+SAN coverage (rerunning the watch service and rereading the SANs up to six times, and on failure printing the timer state and the service journal, read straight after the last run) and the deployed dashboard recovery assets through TLS, then executes the served
 fingerprint instruction over SSH. Its refusal controls are in `tests/os/selftest-dashboard-recovery.sh`.
 The shared dashboard request poller uses `tests/os/control-request-evidence.sh` for allowlisted
 transport metadata, failure snapshots and bounded control transport recovery; its selftest runs through
@@ -528,3 +536,9 @@ The wrapper safety-backup producer is `tests/integration/lib/safety-backup.sh`;
 its [versioned result](backup-window-results.md). The CLI samples the shared restart
 boundary through `lib/pithead/17b-backup-window.sh`. Fixture/selftests are in
 `tests/integration/selftest/selftest-backup-window.sh` and its Python test modules.
+
+The lean Overview lives in `dashboard/mining_dashboard/web/static/sovereign/overview.mjs`,
+with its chart and pure model alongside it. `dashboard/mining_dashboard/web/views/overview_views.py` supplies raw
+readings through the dashboard state. Frontend regressions are under
+`dashboard/tests/frontend/sovereign/`; `dashboard/tests/browser/overview.test.mjs` retains
+phone, tablet and desktop screenshots in the `sovereign-visual-proof` CI artifact.

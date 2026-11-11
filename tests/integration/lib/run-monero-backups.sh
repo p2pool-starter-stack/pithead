@@ -57,7 +57,11 @@ fault_monero_backups() {
                     }
                     sleep 5
                 done
-                assert_eq "worker listener stays admitted throughout backup failover" "$admitted" true
+                if [ "$admitted" = true ]; then
+                    it_pass "worker listener stays admitted throughout backup failover"
+                else
+                    it_fail "worker listener stays admitted throughout backup failover" "$backup_failure"
+                fi
             else
                 it_fail "P2Pool serves new chain data from its backup with primary down" "$backup_failure within 600s"
             fi
