@@ -123,6 +123,17 @@ _update_healthgate_leg_body() {
     else
         bad "leg 5: the served banner module has no 'Blocked by:' cause"
     fi
+    local rdeadline=$(($(date +%s) + 1200))
+    while [ "$(date +%s)" -lt "$rdeadline" ]; do
+        _ssh "journalctl -u pithead-boot -b 0 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null" && break
+        sleep 15
+    done
+    if _ssh "journalctl -u pithead-boot -b 0 2>/dev/null | grep -F 'dashboard schema hold armed' >/dev/null" &&
+        _ssh "journalctl -u pithead-boot -b 0 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null"; then
+        ok "leg 5: the fallback boot armed the dashboard schema hold and released it once its own gate committed"
+    else
+        bad "leg 5: the fallback boot's journal has no schema hold arm and release lines (20 min bound) — the hold never ran to completion on the surviving boot"
+    fi
 }
 
 phase_update_healthgate_leg() {
