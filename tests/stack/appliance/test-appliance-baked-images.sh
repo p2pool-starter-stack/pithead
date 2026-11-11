@@ -5,6 +5,7 @@ mk_tmpdir BKI
 mkdir -p "$BKI/images" "$BKI/bin" "$BKI/data"
 printf 'dashboard-archive' >"$BKI/images/dashboard.tar.gz"
 printf 'tor-archive' >"$BKI/images/tor.tar.gz"
+printf 'caddy-archive' >"$BKI/images/caddy.tar.gz"
 cat >"$BKI/bin/podman" <<'PODMAN'
 #!/usr/bin/env bash
 echo "[podman] $*" >>"${PODMAN_LOG:-/dev/null}"
@@ -15,15 +16,16 @@ PODMAN
 chmod +x "$BKI/bin/podman"
 export PODMAN_LOG="$BKI/podman.log" PITHEAD_IMAGES_DIR="$BKI/images"
 bki_load() { PITHEAD_ENGINE=podman PATH="$BKI/bin:$PATH" run_sourced "$BKI" load_baked_images; }
-PITHEAD_LOAD_ONLY=dashboard bki_load >/dev/null 2>&1
-assert_eq "PITHEAD_LOAD_ONLY loads just the named archive" "$(grep -c 'load -i' "$PODMAN_LOG")" "1"
-assert_contains "the named archive is the one loaded" "$(cat "$PODMAN_LOG")" "dashboard.tar.gz"
-[ -s "$BKI/data/.loaded-dashboard.tar.gz.sha" ] && [ ! -e "$BKI/data/.loaded-tor.tar.gz.sha" ] &&
-    ok "only the named archive is recorded as loaded" || bad "only the named archive is recorded as loaded" "records: $(ls -A "$BKI/data")"
+PITHEAD_LOAD_ONLY="dashboard caddy" bki_load >/dev/null 2>&1
+assert_eq "PITHEAD_LOAD_ONLY loads exactly the named archives" "$(grep -c 'load -i' "$PODMAN_LOG")" "2"
+assert_contains "the first named archive is loaded" "$(cat "$PODMAN_LOG")" "dashboard.tar.gz"
+assert_contains "the second named archive is loaded" "$(cat "$PODMAN_LOG")" "caddy.tar.gz"
+[ -s "$BKI/data/.loaded-dashboard.tar.gz.sha" ] && [ -s "$BKI/data/.loaded-caddy.tar.gz.sha" ] && [ ! -e "$BKI/data/.loaded-tor.tar.gz.sha" ] &&
+    ok "only the named archives are recorded as loaded" || bad "only the named archives are recorded as loaded" "records: $(ls -A "$BKI/data")"
 : >"$PODMAN_LOG"
 bki_load >/dev/null 2>&1
 assert_contains "an unfiltered load reaches the archives the wizard skipped" "$(cat "$PODMAN_LOG")" "tor.tar.gz"
-assert_eq "an unfiltered load does not reload the archive already recorded" "$(grep -c 'load -i' "$PODMAN_LOG")" "1"
+assert_eq "an unfiltered load does not reload the archives already recorded" "$(grep -c 'load -i' "$PODMAN_LOG")" "1"
 unset PODMAN_LOG PITHEAD_IMAGES_DIR
 unset -f bki_load
 rm -rf "$BKI"

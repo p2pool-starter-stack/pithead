@@ -113,7 +113,7 @@ firstboot_wizard() {
         warn "Booted from removable media with no internal disk to install onto."
         warn "Running the stack from a USB stick is unsupported — it is too slow for the chain and the stick will wear out."
     fi
-    PITHEAD_LOAD_ONLY=dashboard load_baked_images "$image"
+    PITHEAD_LOAD_ONLY="dashboard caddy" load_baked_images "$image"
     # Double quotes on purpose: $engine expands NOW, at trap definition. It is a local, and the
     # trap also fires after this function's locals are gone — where set -u would turn the trap
     # itself into the crash that masks whatever actually failed. The spool paths expand now for
