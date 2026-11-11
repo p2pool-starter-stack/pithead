@@ -112,8 +112,6 @@ DOCKER_LOG="$T/docker2.log" DOCKER_RC=1 schema_hold_release >"$T/release2.out" 2
 [ ! -e "$marker" ] || fail "the marker must drop even when the restart faults"
 grep -q 'FAULT' "$T/release2.out" || fail "a faulty restart must alert"
 
-# The wiring itself: pithead-boot's commit path calls boot_gate_passed, so the held slot's next
-# gate pass must clear the marker and restart the dashboard exactly once (#3998).
 RAUC_STATUS_FILE="$T/bad.json"
 schema_hold_arm
 [ -e "$marker" ] || fail "re-arm for the gate-pass wiring check"

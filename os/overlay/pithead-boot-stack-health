@@ -66,8 +66,6 @@ gate_probe_header() {
     printf 'X-Pithead-Boot-Probe: %s\n' "$capability"
 }
 
-# The gate-pass bookkeeping, living with the signal it answers: drop the failure counters and the
-# reset marker, then release the #3998 schema hold (marker out, dashboard restarted, migration runs).
 boot_gate_passed() {
     rm -f "$BOOT_FAIL_COUNT" .config-reset-good-slot
     schema_hold_release

@@ -45,13 +45,6 @@ _WINDOW_EXTRA_COLUMNS = [
 # db_unhealthy path — retryable, not a reason to throw away history.
 _CORRUPTION_MARKERS = ("malformed", "not a database", "image is malformed", "file is encrypted")
 
-# OS↔dashboard schema handshake (#3998). pithead-boot writes this marker into the dashboard data dir
-# whenever the booted slot is still UNCOMMITTED — fallback to the previous OS is still armed — and
-# removes it, then restarts the dashboard, once the boot-health gate commits the slot. While it
-# stands the on-disk schema must stay readable by the previous OS, so the one forward-incompatible
-# migration (the payouts wallet_id rebuild) is deferred to the first open after release; every other
-# migration is additive and old-OS-safe. The data dir mounts as /data, so dirname(DB_FILE_PATH) is
-# exactly where boot writes it.
 _SCHEMA_HOLD_MARKER = ".os-schema-held"
 
 
@@ -84,9 +77,6 @@ _TELEMETRY_TABLES = ("blocks", "xvb_history", "network_history", "disk_growth", 
 
 
 class StorageSchemaMixin:
-    # Snapshot of the #3998 marker, taken in _apply_schema so one open cannot flip shape mid-run.
-    # _payouts_have_wallet (default on MiningStoreMixin, its reader) is recomputed here from the
-    # table as it turns out, not from the branch this open took.
     _db_schema_held = False
 
     def _apply_schema(self):
@@ -108,8 +98,6 @@ class StorageSchemaMixin:
             self._create_indexes()
         cursor = self._conn.cursor()
         cursor.execute("PRAGMA table_info(payouts)")
-        # PRAGMA reads the truth: a held open onto an already-migrated DB, or a released open whose
-        # rebuild another process already ran, both speak the wallet shape despite the branch taken.
         self._payouts_have_wallet = "wallet_id" in {info[1] for info in cursor.fetchall()}
 
     def _init_db(self):
@@ -292,8 +280,6 @@ class StorageSchemaMixin:
 
     def _create_payouts_table(self):
         if self._db_schema_held:
-            # A fresh DB born under hold (#3998) is created in the PREVIOUS release's shape —
-            # column for column what that OS writes — so a rollback still finds its own table.
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS payouts "
                 "(chain TEXT, txid TEXT, height INTEGER, ts REAL, amount_atomic INTEGER, "
@@ -308,8 +294,6 @@ class StorageSchemaMixin:
 
     def _migrate_payout_identity(self, cursor):
         if self._db_schema_held:
-            # The hold defers exactly this rebuild (#3998): it drops and renames onto a schema the
-            # previous OS cannot write. The release restart re-opens, re-runs _apply_schema, migrates.
             return
         cursor.execute("PRAGMA table_info(payouts)")
         if "wallet_id" in {info[1] for info in cursor.fetchall()}:

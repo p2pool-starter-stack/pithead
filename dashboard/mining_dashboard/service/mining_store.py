@@ -28,9 +28,6 @@ def _raffle_wins_max_rows():
 
 
 class MiningStoreMixin:
-    # Payout-table shape as found at open — StorageSchemaMixin._apply_schema reads it back from
-    # PRAGMA table_info. False only while the #3998 hold defers the wallet_id rebuild: payouts
-    # then carry no wallet column, and reads return the whole chain until the release restart.
     _payouts_have_wallet = True
 
     def add_payouts(
@@ -50,7 +47,6 @@ class MiningStoreMixin:
                             float(r.get("ts", 0) or 0),
                             int(r.get("amount_atomic", 0) or 0),
                         )
-                        # Both shapes alert once: rowcount==1 is the insert's own truth.
                         if self._payouts_have_wallet:
                             cur = self._conn.execute(
                                 "INSERT OR IGNORE INTO payouts "
@@ -82,10 +78,9 @@ class MiningStoreMixin:
                 if not self._conn:
                     return []
                 cursor = self._conn.cursor()
-                # Held (#3998): no wallet column — chain-wide, what the previous OS itself showed.
                 where = "chain = ? AND wallet_id = ?" if self._payouts_have_wallet else "chain = ?"
                 cursor.execute(
-                    "SELECT chain, txid, height, ts, amount_atomic FROM payouts "  # noqa: S608 — where is one of two literal clauses
+                    "SELECT chain, txid, height, ts, amount_atomic FROM payouts "  # noqa: S608
                     f"WHERE {where} ORDER BY ts DESC",
                     (chain, wallet_id) if self._payouts_have_wallet else (chain,),
                 )
@@ -104,7 +99,7 @@ class MiningStoreMixin:
                 cursor = self._conn.cursor()
                 where = "chain = ? AND wallet_id = ?" if self._payouts_have_wallet else "chain = ?"
                 cursor.execute(
-                    f"SELECT MAX(height) FROM payouts WHERE {where}",  # noqa: S608 — ditto
+                    f"SELECT MAX(height) FROM payouts WHERE {where}",  # noqa: S608
                     (chain, wallet_id) if self._payouts_have_wallet else (chain,),
                 )
                 row = cursor.fetchone()

@@ -327,7 +327,6 @@ fi
 /usr/local/sbin/pithead-media-config
 
 ./pithead render || fail_boot "the derived config could not be rendered"
-# #3998: arm before `up`; a missing marker = migrating on an uncommitted slot, so a failed write fails_boot.
 schema_hold_arm || fail_boot "the dashboard schema hold marker could not be written"
 if [ "$hold_chain" = 1 ]; then
     PITHEAD_HOLD_CHAIN=1 ./pithead up || boot_up_failed $?
