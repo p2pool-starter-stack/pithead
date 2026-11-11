@@ -310,7 +310,7 @@ drive_gate() {
         # shellcheck disable=SC2034
         RUN_LIFECYCLE=1 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
             RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 \
-            RUN_ROTATE_ONION="${4:-0}" RUN_TARI_STRANDED="${4:-0}" RUN_MONERO_STRANDED="${4:-0}" \
+            RUN_ROTATE_ONION="${4:-0}" RUN_TARI_TRANSPORT="${4:-0}" RUN_TARI_STRANDED="${4:-0}" RUN_MONERO_STRANDED="${4:-0}" \
             rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1" preview_rc="${3:-0}"
         run_p2pool_preview() { return "$preview_rc"; }
         run_lifecycle() {
@@ -337,12 +337,12 @@ assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)"
 assert_eq "fault injection runs after a lifecycle row failed with the stack intact (#3342)" "$(intact=1 drive_gate 1)" "yes"
 assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection "
 
-assert_eq "a failed rigforge-control names onion rotation and stranded-node phases (#2771)" "$(drive_gate 0 0 0 1)" \
-    "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection skipped:rotate-onion skipped:tari-stranded skipped:monero-stranded "
+assert_eq "a failed rigforge-control names onion rotation, Tari transport and stranded-node phases (#2771)" "$(drive_gate 0 0 0 1)" \
+    "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection skipped:rotate-onion skipped:tari-transport skipped:tari-stranded skipped:monero-stranded "
 
 GATED_SUMMARY="$(drive_gate 0 0 0 1 summary)"
-assert_eq "all six requested phases are counted after rigforge-control failure" "${GATED_SUMMARY%%|*}" "6"
-for phase in rotate-onion tari-stranded monero-stranded; do
+assert_eq "all seven requested phases are counted after rigforge-control failure" "${GATED_SUMMARY%%|*}" "7"
+for phase in rotate-onion tari-transport tari-stranded monero-stranded; do
     assert_contains "$phase has a named missing-phase record and reason" "$GATED_SUMMARY" \
         "[missing] PHASE    $phase — the rigforge-control phase failed, so the rig is not back on its baseline"
 done
