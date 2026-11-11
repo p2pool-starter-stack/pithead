@@ -418,7 +418,7 @@ cap, and so does the boot group with provision.
 
 - Boot group: boot, update, install.
 - Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases as
-  the four splits the nightly battery runs — rig, rigmedia and media; fault and reset;
+  the four splits the last three release gates ran — rig, rigmedia and media; fault and reset;
   image-upgrade; stack. In the 2.0.1 and 2.0.2 gates the combined seven-phase job failed one
   phase each time and reran all seven; the splits keep a rerun to its own phase.
 - Provision: provision and setup-defaults against the seeded baseline, pinned to the seeded bench.

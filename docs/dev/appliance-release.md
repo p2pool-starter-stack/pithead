@@ -472,9 +472,8 @@ internal disk and answers RigForge without installing, and asserts the rig mines
 no containers, volatile journald, an unaided reboot returns it mining, and the blank disk stays
 untouched; it does not touch the bootloader "Set up again" path (#1318), which stays whatever
 reaches the wizard again from a stick-run rig needs by hand. No bench release e2e scenario for the
-rig role exists yet. Converting M11–M13, and naming a bench e2e for what KVM cannot prove, is
-tracked as #1886's first gap; the numbering here stays stable so old release records still point
-at the same steps once that lands.
+rig role exists yet. Converting what is left of M11–M13 is tracked as #3994 and #3995; the
+numbering here stays stable so old release records still point at the same steps once those land.
 
 **M15 — backup and restore end to end.** On a provisioned machine, record the payout wallet,
 the dashboard's onion address, and the current time. From **Backup**, create a backup and save
