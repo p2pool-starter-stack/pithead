@@ -46,12 +46,18 @@ schema_hold_arm
 [ ! -e "$marker" ] || fail "a committed slot must leave no marker"
 
 RAUC_STATUS_FILE="$T/bad.json"
-schema_hold_arm
+schema_hold_arm >"$T/arm.out" 2>&1
 [ -e "$marker" ] || fail "an uncommitted slot must write the hold marker"
+grep -q 'dashboard schema hold armed' "$T/arm.out" || fail "arming the hold must report it"
 schema_hold_arm
 [ -e "$marker" ] || fail "re-arming must keep the hold marker"
-DOCKER_LOG="$T/docker.log" schema_hold_release || fail "a clean release must not fail the boot"
+DOCKER_LOG="$T/docker.log" schema_hold_release >"$T/rel.out" 2>&1 || fail "a clean release must not fail the boot"
 [ ! -e "$marker" ] || fail "release must remove the marker"
+grep -q 'dashboard schema hold released' "$T/rel.out" || fail "releasing the hold must report it"
+: >"$T/arm2.out"
+RAUC_STATUS_FILE="$T/good.json"
+schema_hold_arm >"$T/arm2.out" 2>&1
+grep -q 'dashboard schema hold' "$T/arm2.out" && fail "a committed boot must not report a hold"
 
 RAUC_STATUS_FILE="$T/other.json"
 schema_hold_arm

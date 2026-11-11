@@ -91,7 +91,8 @@ schema_hold_arm() {
         rm -f "$dir/$SCHEMA_HOLD_NAME" && sync
         return 0
     fi
-    mkdir -p "$dir" && : >"$dir/$SCHEMA_HOLD_NAME" && sync
+    mkdir -p "$dir" && : >"$dir/$SCHEMA_HOLD_NAME" && sync &&
+        echo "pithead-boot: dashboard schema hold armed — the booted slot is uncommitted, so the dashboard keeps its previous-release database schema until the gate commits"
 }
 
 schema_hold_release() {
@@ -100,6 +101,7 @@ schema_hold_release() {
     [ -n "$dir" ] || return 0
     [ -e "$dir/$SCHEMA_HOLD_NAME" ] || return 0
     rm -f "$dir/$SCHEMA_HOLD_NAME" && sync
+    echo "pithead-boot: dashboard schema hold released — restarting the dashboard to run its deferred database migrations"
     ${PITHEAD_DASHBOARD_RESTART_CMD:-docker compose restart dashboard} >/dev/null 2>&1 ||
         echo "pithead-boot: FAULT — the committed slot could not restart the dashboard to run its deferred database migrations; run 'docker compose restart dashboard' from /data/pithead" >&2
 }
