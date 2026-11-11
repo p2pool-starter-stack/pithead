@@ -114,7 +114,23 @@ address_watch_verdict() { # <timer-enabled> <timer-active> <doctor-json> <servic
         echo "doctor's certificate row is not green after the address watch ran"
         return 1
     }
-    echo "the address watch timer is enabled and active, and one service run re-minted the certificate for an address added after provisioning; doctor's certificate row is green"
+    echo "the address watch timer is enabled and active, and a service run re-minted the certificate for an address added after provisioning; doctor's certificate row is green"
+}
+
+address_watch_converge() {
+    local attempt
+    ADDRESS_WATCH_RC=1
+    ADDRESS_WATCH_SANS=""
+    for attempt in 1 2 3 4 5 6; do
+        _ssh "systemctl start pithead-address-watch.service" >/dev/null 2>&1
+        ADDRESS_WATCH_RC=$?
+        sleep "${ADDRESS_WATCH_SETTLE:-10}"
+        ADDRESS_WATCH_SANS=$(_ssh "openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -ext subjectAltName" 2>/dev/null) || ADDRESS_WATCH_SANS=""
+        ADDRESS_WATCH_SANS=${ADDRESS_WATCH_SANS//$'\n'/ }
+        [ "$ADDRESS_WATCH_RC" = 0 ] && [[ "$ADDRESS_WATCH_SANS" == *"$1"* ]] && break
+    done
+    ADDRESS_WATCH_ATTEMPTS=$attempt
+    ADDRESS_WATCH_JOURNAL=$(_ssh "systemctl list-timers pithead-address-watch.timer --all --no-pager; systemctl status pithead-address-watch.service --no-pager -n 0; journalctl -u pithead-address-watch.service -b --no-pager -n 200" 2>/dev/null | tr -d '\r') || ADDRESS_WATCH_JOURNAL=""
 }
 
 phase_provision_address_watch() {
@@ -135,12 +151,9 @@ phase_provision_address_watch() {
         sed 's/^/     before the watch: /'
     enabled=$(_ssh "systemctl is-enabled pithead-address-watch.timer" 2>/dev/null | tr -d '\r\n') || true
     active=$(_ssh "systemctl is-active pithead-address-watch.timer" 2>/dev/null | tr -d '\r\n') || true
-    _ssh "systemctl start pithead-address-watch.service" >/dev/null 2>&1
-    rc=$?
-    # Caddy restarts inside the service run; give the listener and doctor a moment to settle.
-    sleep 10
-    sans=$(_ssh "openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -ext subjectAltName" 2>/dev/null) || sans=""
-    sans=${sans//$'\n'/ }
+    address_watch_converge "$ADDRESS_WATCH_TEST_ULA_SAN"
+    rc=$ADDRESS_WATCH_RC
+    sans=$ADDRESS_WATCH_SANS
     for _ in 1 2 3 4; do
         doctor=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>/dev/null) || true
         printf '%s' "$doctor" | jq -e --arg m "$ADDRESS_WATCH_COVERED_OK" 'any(.checks[]?; .status == "ok" and .message == $m)' >/dev/null 2>&1 && break
@@ -151,9 +164,9 @@ phase_provision_address_watch() {
     else
         bad "$verdict"
         printf '%s' "$doctor" | jq -r '.checks[]? | select(.message | test("certificate")) | "\(.status): \(.message)"' 2>/dev/null | sed 's/^/     doctor: /'
-        # Colons swapped so the bench's address redaction leaves the two sets comparable.
         _ssh "echo hostname-I: \$(hostname -I); openssl x509 -in /data/pithead/data/tls/wizard.crt -noout -ext subjectAltName | tr '\n' ' '" 2>/dev/null | tr ':' '_' | sed 's/^/     /'
-        _ssh "journalctl -u pithead-address-watch.service --no-pager -n 20" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
+        echo "     address watch service runs: $ADDRESS_WATCH_ATTEMPTS"
+        printf '%s\n' "$ADDRESS_WATCH_JOURNAL" | sed 's/^/     | /'
         return 1
     fi
     phase_provision_dashboard_recovery "$1" "$2"
