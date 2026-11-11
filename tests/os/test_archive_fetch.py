@@ -166,10 +166,9 @@ class ArchiveLayerFetchTest(FetchTestBase):
     def test_dockerfile_copies_helper_in_the_stage_that_fetches(self):
         dockerfile = DOCKERFILE.read_text()
         stage = dockerfile[dockerfile.rindex("FROM debian") :]
-        self.assertIn(
-            "    && rm /usr/local/bin/fetch-archive\n",
-            stage[stage.index("RUN sh /usr/local/bin/fetch-archive") :],
-        )
+        run = stage[stage.index("RUN sh /usr/local/bin/fetch-archive") :]
+        run = run[: run.index("\n# ")]
+        self.assertIn("    && rm /usr/local/bin/fetch-archive", run)
         copied = stage.index("COPY os/rootfs/fetch-archive.sh /usr/local/bin/fetch-archive")
         self.assertLess(copied, stage.index("RUN sh /usr/local/bin/fetch-archive"))
 
