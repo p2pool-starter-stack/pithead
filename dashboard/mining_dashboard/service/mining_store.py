@@ -61,8 +61,6 @@ class MiningStoreMixin:
                                 "VALUES (?, ?, ?, ?, ?)",
                                 (chain, r["txid"], *tail),
                             )
-                        # rowcount == 1 means the row was actually inserted (not an ignored dup),
-                        # so it's a genuinely new payout worth alerting on exactly once.
                         if cur.rowcount == 1:
                             new_rows.append(r)
         except (sqlite3.Error, KeyError, ValueError, TypeError) as e:

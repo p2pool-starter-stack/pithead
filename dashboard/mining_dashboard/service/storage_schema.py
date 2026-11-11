@@ -80,21 +80,12 @@ class StorageSchemaMixin:
     _db_schema_held = False
 
     def _apply_schema(self):
-        """Set pragmas + create/migrate the schema on the open connection. Caller holds ``_db_lock``.
-
-        Split out of ``_init_db`` so the recovery path (#489) can rebuild the schema on a freshly
-        reconnected DB without re-entering the (non-reentrant) lock via ``_init_db``."""
-        # Enable WAL mode for better concurrency
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._db_schema_held = _schema_hold_active(self.db_path)
         with self._conn:
             self._create_tables()
             self._migrate_db()
-            # Indexes come AFTER migration: idx_ts is on history(timestamp), a column
-            # _migrate_db adds when upgrading a pre-timestamp DB. Creating it in
-            # _create_tables would throw "no such column: timestamp" on that old schema
-            # and abort the whole migration, leaving the DB half-upgraded.
             self._create_indexes()
         cursor = self._conn.cursor()
         cursor.execute("PRAGMA table_info(payouts)")
