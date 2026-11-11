@@ -26,6 +26,7 @@ rr_caddy_stable() {
     local before current deadline
     wait_for 60 5 "Caddy healthy" rr_caddy_snapshot >/dev/null || return 1
     before=$(rr_caddy_snapshot) || return 1
+    rx 'systemctl start pithead-address-watch.service >/dev/null 2>&1 || true' >/dev/null 2>&1 || true
     deadline=$(($(now_s) + 60))
     while :; do
         sleep 5

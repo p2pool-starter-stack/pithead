@@ -2,9 +2,11 @@
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # The address watch (#2463): an address that arrives after pithead-boot committed used to leave the
 # dashboard certificate and Caddy's bind list stale until the next apply or reboot. The script
-# re-renders when `hostname -I` differs from what the last render saw, and restarts Caddy only when
-# the certificate or Caddyfile actually changed. Driven with stubbed hostname/systemctl and a fake
-# ./pithead whose render "mints" from the current address list. Sourced by tests/stack/run.sh.
+# re-renders when `hostname -I` differs from what the last render saw, and restarts Caddy under the
+# mutation lock only for that address change; a files-only change (an apply or up that re-rendered
+# and restarted Caddy itself) is recorded, never restarted over (#3987). Driven with stubbed
+# hostname/systemctl and a fake ./pithead whose render "mints" from the current address list.
+# Sourced by tests/stack/run.sh.
 
 echo "== unit: pithead-address-watch — re-render when an address arrives after boot (#2463) =="
 AW="$SANDBOX/address-watch"
@@ -106,7 +108,50 @@ aw_run "192.168.1.5 fd1c::a" activating >/dev/null
 assert_eq "nothing renders while pithead-boot is still running" "$(aw_count render "$AW/log")" "$before"
 aw_run "192.168.1.5 fd1c::a" failed >/dev/null
 assert_eq "a failed pithead-boot (fallback boot) does not disable the watch" "$(aw_count render "$AW/log")" "$((before + 1))"
-unset AW aw_run aw_count out before
+# an apply re-rendered the files and restarted Caddy itself under the mutation lock (#3987)
+printf 'apply-crt\n' >"$AW/dir/data/tls/wizard.crt"
+printf 'apply-caddy\n' >"$AW/dir/Caddyfile"
+before=$(aw_count render "$AW/log")
+_x=$(aw_count restart "$AW/restarts")
+out=$(aw_run "192.168.1.5 fd1c::a")
+assert_eq "a files-only change does not make the watch render" "$(aw_count render "$AW/log")" "$before"
+assert_eq "the tick after an apply-owned re-render does not restart a Caddy that already serves the files" \
+    "$(aw_count restart "$AW/restarts")" "$_x"
+assert_contains "…and the log names the served files, not the addresses" "$out" "certificate or the Caddyfile changed"
+assert_not_contains "…without blaming the addresses" "$out" "addresses changed"
+assert_eq "the recorded signature makes the following tick quiet" "$(aw_run "192.168.1.5 fd1c::a")" ""
+# every restart runs while the mutation lock is held (#3987): the stub restart files whether a fresh
+# descriptor on the lock file could still be locked, which only succeeds when the watch is not holding it
+cat >"$AW/bin/restart-caddy" <<'STUB'
+#!/bin/bash
+echo restart >>"$AW_RESTARTS"
+if (exec 7>>"$AW/lock" && flock -n 7) 2>/dev/null; then echo free >>"$AW/lock-seen"; else echo held >>"$AW/lock-seen"; fi
+STUB
+chmod +x "$AW/bin/restart-caddy"
+cat >"$AW/dir/pithead" <<'STUB'
+#!/bin/bash
+echo render >>"$AW_LOG"
+cp "$AW_ADDRS" data/tls/wizard.crt
+cp "$AW_ADDRS" Caddyfile
+STUB
+_x=$(aw_count restart "$AW/restarts")
+aw_run "192.168.1.5 fd1c::c" >/dev/null
+assert_eq "an address change still restarts Caddy" "$(aw_count restart "$AW/restarts")" "$((_x + 1))"
+assert_eq "…and the restart runs while the mutation lock is held" "$(tail -n 1 "$AW/lock-seen")" "held"
+before=$(aw_count render "$AW/log")
+_x=$(aw_count restart "$AW/restarts")
+out=$(
+    exec 8>>"$AW/lock"
+    flock 8
+    aw_run "192.168.1.5 fd1c::d"
+)
+assert_eq "a busy lock means no render" "$(aw_count render "$AW/log")" "$before"
+assert_eq "…and no restart attempt" "$(aw_count restart "$AW/restarts")" "$_x"
+assert_contains "…and the tick says it will retry" "$out" "retrying on the next tick"
+aw_run "192.168.1.5 fd1c::d" >/dev/null
+assert_eq "once the lock is free the deferred restart runs, under the lock" "$(tail -n 1 "$AW/lock-seen")" "held"
+assert_eq "…and it is the restart the busy tick owed" "$(aw_count restart "$AW/restarts")" "$((_x + 1))"
+unset AW aw_run aw_count out before _x
 
 echo "== unit: address_watch_verdict — the KVM provision leg's discrimination (#2463) =="
 # shellcheck source=tests/os/appliance-address-watch-leg.sh
