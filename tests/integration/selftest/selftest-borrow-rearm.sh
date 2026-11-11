@@ -193,7 +193,10 @@ reload_rc() { # <restart-ok> <stopstart-ok> <pid-moves> <user-ok> <pkill-ok>
             case "$2" in
             restart) [ "$restart_ok" = 1 ] ;;
             stop) [ "$stopstart_ok" != 0 ] ;;
-            start) [ "$stopstart_ok" = 1 ] && { [ "$moves" = 1 ] && pid=200; true; } ;;
+            start) [ "$stopstart_ok" = 1 ] && {
+                [ "$moves" = 1 ] && pid=200
+                true
+            } ;;
             esac
         }
         pkill() { return 0; }

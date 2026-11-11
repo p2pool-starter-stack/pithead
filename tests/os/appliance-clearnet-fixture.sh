@@ -34,7 +34,10 @@ _clearnet_fixture_self_test() (
     trap 'rm -f "$count"' RETURN
     date() { echo "$now"; }
     sleep() { now=$((now + 3)); }
-    _ssh() { idle_probes=$((idle_probes + 1)); [ "$idle_probes" -gt "$busy_probes" ]; }
+    _ssh() {
+        idle_probes=$((idle_probes + 1))
+        [ "$idle_probes" -gt "$busy_probes" ]
+    }
     busy_probes=2
     _control_apply_idle 60 || f=$((f + 1))
     busy_probes=999 idle_probes=0 now=0
