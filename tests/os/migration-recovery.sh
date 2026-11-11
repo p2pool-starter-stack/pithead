@@ -109,6 +109,7 @@ migration_remote_recovery() {
 }
 
 MIGRATION_RELEASE_WAIT_ROUNDS=${MIGRATION_RELEASE_WAIT_ROUNDS:-240}
+MIGRATION_RELEASE_TERMINAL='slot left uncommitted|never became healthy|this is failure|NOT a bad slot|migration marker could not be assigned'
 migration_release_early=0
 migration_release_line=""
 migration_release_rounds=0
@@ -121,15 +122,17 @@ migration_release_wait() {
     local _
     for _ in $(seq "$MIGRATION_RELEASE_WAIT_ROUNDS"); do
         migration_release_rounds=$_
-        if _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
+        if SSH_TIMEOUT=20 _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
             return 0
         fi
-        migration_release_line=$(_ssh "journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -m1 -E 'slot left uncommitted|never became healthy|this is failure|NOT a bad slot|migration marker could not be assigned'" | tr -d '[:cntrl:]')
+        # The terminal lines also appear one boot back: fail_boot's fallback path reboots the guest
+        # before the next poll, and the journal is persistent by design.
+        migration_release_line=$(SSH_TIMEOUT=20 _ssh "journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -m1 -E '$MIGRATION_RELEASE_TERMINAL' || journalctl -u pithead-boot -b -1 -o cat 2>/dev/null | grep -m1 -E '$MIGRATION_RELEASE_TERMINAL'" | tr -d '[:cntrl:]')
         if [ -n "$migration_release_line" ]; then
             return 1
         fi
-        if _ssh "podman ps --format '{{.Names}}' 2>/dev/null | grep -qx monerod" &&
-            ! _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
+        if SSH_TIMEOUT=20 _ssh "podman ps --format '{{.Names}}' 2>/dev/null | grep -qx monerod" &&
+            ! SSH_TIMEOUT=20 _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
             migration_release_early=1
         fi
         sleep 5
@@ -139,12 +142,14 @@ migration_release_wait() {
 
 migration_release_deadline_evidence() {
     printf '     --- migration release deadline: guest state at the deadline (#3957) ---\n'
-    _ssh "echo '-- boot journal (last 25) --'
+    SSH_TIMEOUT=60 _ssh "echo '-- boot journal, current boot (last 25) --'
           journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -viE 'password|token|secret' | tail -25
+          echo '-- boot journal, previous boot — the candidate after an automatic fallback (last 25) --'
+          journalctl -u pithead-boot -b -1 -o cat 2>/dev/null | grep -viE 'password|token|secret' | tail -25
           echo '-- gate progress --'
           journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -E 'still starting|holding chain services|migration marker claimed' | tail -3
           echo '-- last doctor verdict --'
-          jq -c '[.checks[]? | select(.status != \"pass\")] | .[0:4]' /run/pithead-boot-doctor.json 2>/dev/null
+          jq -c '[.checks[]? | select(.status == \"fail\" or .status == \"warn\")] | .[0:4]' /run/pithead-boot-doctor.json 2>/dev/null
           echo '-- status record (blocking rows) --'
           grep -E '✗|⚠' /run/pithead-boot-status.log 2>/dev/null | head -8
           echo '-- slots --'
@@ -159,5 +164,5 @@ migration_release_deadline_evidence() {
           systemctl --failed --no-legend 2>/dev/null | head -10
           echo '-- containers --'
           podman ps -a --format '{{.Names}} {{.Status}}' 2>/dev/null | head -15" 2>/dev/null |
-        tr -d '\r' | sed 's/^/     · /'
+        tr -d '\r\033' | sed 's/^/     · /'
 }

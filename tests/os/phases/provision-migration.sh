@@ -151,7 +151,7 @@ _phase_provision_migration() {
         if [ -n "$migration_release_line" ]; then
             bad "the migrating slot never reached the post-commit release — the boot journal ended the wait at round $migration_release_rounds with [$migration_release_line] — read the guest evidence above before blaming the hold"
         else
-            bad "the migrating slot never reached the post-commit release — the hold deadlocked the gate it was built not to (waited $((migration_release_rounds * 5))s for the release line; guest evidence above)"
+            bad "the migrating slot never reached the post-commit release — the hold deadlocked the gate it was built not to (waited at least $((migration_release_rounds * 5))s of polls for the release line; guest evidence above)"
         fi
         return 1
     fi

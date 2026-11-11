@@ -19,14 +19,20 @@ _ssh() {
     *'-- slots --'*) cat "$T/evidence" ;;
     *'chain services released'*) grep -q 'chain services released' "$T/journal" ;;
     *'never became healthy'*)
-        grep -E 'slot left uncommitted|never became healthy|this is failure|NOT a bad slot|migration marker could not be assigned' "$T/journal" |
-            head -n1
+        line=$(grep -E "$RE" "$T/journal" 2>/dev/null | head -n1)
+        [ -n "$line" ] || line=$(grep -E "$RE" "$T/journal_prev" 2>/dev/null | head -n1)
+        printf '%s' "$line"
         ;;
     *'grep -qx monerod'*) grep -qx monerod "$T/podman" ;;
     *) return 0 ;;
     esac
 }
-journal_has() { printf '%s\n' "$1" >"$T/journal"; }
+RE='slot left uncommitted|never became healthy|this is failure|NOT a bad slot|migration marker could not be assigned'
+journal_has() {
+    printf '%s\n' "$1" >"$T/journal"
+    : >"$T/journal_prev"
+}
+journal_prev_has() { printf '%s\n' "$1" >"$T/journal_prev"; }
 
 : >"$T/journal"
 : >"$T/podman"
@@ -79,6 +85,16 @@ sleep_calls=0
 migration_release_early=9
 migration_release_wait || fail 'a released boot with monerod up must pass'
 [ "$migration_release_early" = 0 ] || fail 'monerod up after the release is not early'
+
+: >"$T/journal"
+journal_prev_has 'pithead-boot: the stack could not be brought up — slot left uncommitted so A/B fallback stays armed'
+: >"$T/podman"
+MIGRATION_RELEASE_WAIT_ROUNDS=240
+sleep_calls=0
+if migration_release_wait; then fail 'a fallback reboot must not report release'; fi
+[ "$migration_release_line" = 'pithead-boot: the stack could not be brought up — slot left uncommitted so A/B fallback stays armed' ] ||
+    fail 'the wait must name the candidate line from the previous boot after an automatic fallback'
+[ "$sleep_calls" -eq 0 ] || fail 'a terminal previous-boot line must end the wait in one round'
 
 printf 'booted slot=B\nRAUC_BOOT_PRIMARY=A\n' >"$T/evidence"
 out=$(migration_release_deadline_evidence)
