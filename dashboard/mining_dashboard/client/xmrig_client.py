@@ -223,9 +223,8 @@ def parse_worker_control_status(payload):
     routine poll can catch up.
 
     Returns ``{"change_id", "status", "reason"}`` only for a TERMINAL outcome: applied / rejected /
-    rolled_back / failed (rigforge#236), noop (already on the target)/throttled (the rig's own
-    anti-beacon window — retry-later, not a fault) from rigforge#320, or busy (the rig is lent to a
-    bench job — retry later). Returns ``None`` for a
+    rolled_back / failed (rigforge#236), or noop (already on the target)/throttled (the rig's own
+    anti-beacon window — retry-later, not a fault) from rigforge#320. Returns ``None`` for a
     still-in-flight change (``started``/``accepted``/``running``), a malformed block, or a rig that
     doesn't mirror this yet (older RigForge, plain xmrig) — so a #185 history row is never
     force-terminaled on bad or absent data.

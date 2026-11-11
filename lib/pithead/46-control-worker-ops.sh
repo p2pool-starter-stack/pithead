@@ -174,7 +174,6 @@ control_worker_apply() { # <claimed-file> <id> <actor> <control-dir>
         status=$(jq -r '.status // ""' "$sbody")
         case "$status" in
         applied | rejected | rolled_back | failed | busy)
-            # reason is rig-supplied (attacker-influenceable); cap it before it is stored/rendered.
             if ! reason=$(jq -r '(.reason // "") | tostring | .[:500]' "$sbody") ||
                 ! ckeys=$(jq -c '.changed_keys // []' "$sbody"); then
                 rm -f "$sbody"
@@ -295,17 +294,6 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
     local change_id
     change_id=$(jq -r '.change_id // ""' "$bodyf" 2>/dev/null | head -c 64) || change_id=""
     rm -f "$bodyf"
-    # Poll the rig's /status for THIS change_id's terminal outcome. The cap is a deliberate
-    # trade: a no-rebuild upgrade (the common case — git checkout + restart) reaches terminal in
-    # well under 90s, while a pin-change rebuild (~10 min) times out to "accepted" below and the
-    # badge (#596) clears on its own when the rig reports the new version. Polling the full build
-    # would hand a hostile/hung rig 12 minutes of the single-threaded root drain per intent
-    # (sec-review finding) — 90s keeps the stall bound in worker-apply's envelope. Since
-    # rigforge#320 (v1.12.0) the rig writes an in-progress "started" plus first-class noop
-    # (already on the target) and throttled (its own 6h anti-beacon window) terminals; "started",
-    # like a non-matching change_id, just means keep polling. Terminals are applied / noop /
-    # throttled / busy / rolled_back / failed. The cap is overridable (CONTROL_WU_POLL_CAP) so the stack
-    # tests can prove the timeout→accepted fallback in seconds.
     local sbody scode status reason deadline=$((SECONDS + ${CONTROL_WU_POLL_CAP:-90}))
     while [ "$SECONDS" -lt "$deadline" ]; do
         sleep 5
@@ -333,7 +321,6 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
         status=$(jq -r '.status // ""' "$sbody")
         case "$status" in
         applied | noop | throttled | busy | rolled_back | failed)
-            # reason is rig-supplied (attacker-influenceable); cap it before it is stored/rendered.
             if ! reason=$(jq -r '(.reason // "") | tostring | .[:500]' "$sbody"); then
                 rm -f "$sbody"
                 continue

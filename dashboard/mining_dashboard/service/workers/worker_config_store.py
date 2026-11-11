@@ -192,7 +192,7 @@ class WorkerConfigStoreMixin:
         row ``accepted`` forever otherwise — nothing re-polls it. This is the reconciler: called
         from the dashboard's regular per-rig read poll (data_service.py), never a new dial. The
         ``WHERE status = 'accepted'`` is the whole safety property — a row already terminal
-        (applied/rejected/rolled_back/failed/noop/throttled/busy) is never touched, even by a stale or
+        (applied/rejected/rolled_back/failed/noop/throttled) is never touched, even by a stale or
         duplicate report for the same ``change_id``. ``status`` is recorded as-is: it becomes the
         row's outcome verbatim, and the frontend's ``STATUS_META`` already renders every member of
         this vocabulary (``workerview.mjs``).
