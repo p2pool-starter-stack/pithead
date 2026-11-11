@@ -28,6 +28,11 @@ def _raffle_wins_max_rows():
 
 
 class MiningStoreMixin:
+    # Payout-table shape as found at open — StorageSchemaMixin._apply_schema reads it back from
+    # PRAGMA table_info. False only while the #3998 hold defers the wallet_id rebuild: payouts
+    # then carry no wallet column, and reads return the whole chain until the release restart.
+    _payouts_have_wallet = True
+
     def add_payouts(
         self, chain: str, wallet_id: str | None, rows: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -40,19 +45,26 @@ class MiningStoreMixin:
                     return []
                 with self._conn:
                     for r in rows:
-                        cur = self._conn.execute(
-                            "INSERT OR IGNORE INTO payouts "
-                            "(chain, wallet_id, txid, height, ts, amount_atomic) "
-                            "VALUES (?, ?, ?, ?, ?, ?)",
-                            (
-                                chain,
-                                wallet_id,
-                                r["txid"],
-                                int(r.get("height", 0) or 0),
-                                float(r.get("ts", 0) or 0),
-                                int(r.get("amount_atomic", 0) or 0),
-                            ),
+                        tail = (
+                            int(r.get("height", 0) or 0),
+                            float(r.get("ts", 0) or 0),
+                            int(r.get("amount_atomic", 0) or 0),
                         )
+                        # Both shapes alert once: rowcount==1 is the insert's own truth.
+                        if self._payouts_have_wallet:
+                            cur = self._conn.execute(
+                                "INSERT OR IGNORE INTO payouts "
+                                "(chain, wallet_id, txid, height, ts, amount_atomic) "
+                                "VALUES (?, ?, ?, ?, ?, ?)",
+                                (chain, wallet_id, r["txid"], *tail),
+                            )
+                        else:
+                            cur = self._conn.execute(
+                                "INSERT OR IGNORE INTO payouts "
+                                "(chain, txid, height, ts, amount_atomic) "
+                                "VALUES (?, ?, ?, ?, ?)",
+                                (chain, r["txid"], *tail),
+                            )
                         # rowcount == 1 means the row was actually inserted (not an ignored dup),
                         # so it's a genuinely new payout worth alerting on exactly once.
                         if cur.rowcount == 1:
@@ -70,10 +82,12 @@ class MiningStoreMixin:
                 if not self._conn:
                     return []
                 cursor = self._conn.cursor()
+                # Held (#3998): no wallet column — chain-wide, what the previous OS itself showed.
+                where = "chain = ? AND wallet_id = ?" if self._payouts_have_wallet else "chain = ?"
                 cursor.execute(
-                    "SELECT chain, txid, height, ts, amount_atomic FROM payouts "
-                    "WHERE chain = ? AND wallet_id = ? ORDER BY ts DESC",
-                    (chain, wallet_id),
+                    "SELECT chain, txid, height, ts, amount_atomic FROM payouts "  # noqa: S608 — where is one of two literal clauses
+                    f"WHERE {where} ORDER BY ts DESC",
+                    (chain, wallet_id) if self._payouts_have_wallet else (chain,),
                 )
                 return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
@@ -88,9 +102,10 @@ class MiningStoreMixin:
                 if not self._conn:
                     return 0
                 cursor = self._conn.cursor()
+                where = "chain = ? AND wallet_id = ?" if self._payouts_have_wallet else "chain = ?"
                 cursor.execute(
-                    "SELECT MAX(height) FROM payouts WHERE chain = ? AND wallet_id = ?",
-                    (chain, wallet_id),
+                    f"SELECT MAX(height) FROM payouts WHERE {where}",  # noqa: S608 — ditto
+                    (chain, wallet_id) if self._payouts_have_wallet else (chain,),
                 )
                 row = cursor.fetchone()
                 return int(row[0]) if row and row[0] is not None else 0
