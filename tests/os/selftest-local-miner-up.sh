@@ -44,7 +44,7 @@ probe() (
     is_appliance() { [ "$appliance" = 1 ]; }
     machine_role() { printf both; }
     rigforge_dir() { printf '%s' "$td"; }
-    config_bool() { printf '%s' "$enabled"; }
+    config_get() { printf '%s' "$enabled"; }
     local_miner_hugepages_blocked() { [ "${blocked:-0}" = 1 ]; }
     render_local_miner_config() {
         printf 'render\n'

@@ -49,7 +49,7 @@ manual_qa_oracle() {
     assert_eq "the full broken-config battery runs" "$count" 17
     out=$(awk '/^## New to mining\?/ {section=1; next} section && /^## / {exit} section {print}' "$ROOT/docs/workers.md")
     assert_contains "RigForge quick-start clones the owner's release pin" "$out" \
-        'git clone --branch v1.18.0 https://github.com/p2pool-starter-stack/rigforge.git'
+        'git clone --branch v1.18.1 https://github.com/p2pool-starter-stack/rigforge.git'
     assert_not_contains "RigForge quick-start never follows the moving default branch" "$out" \
         'git clone https://github.com/p2pool-starter-stack/rigforge.git'
 }

@@ -44,7 +44,7 @@ lib/pithead/33-render-env.sh	481
 lib/pithead/36-quadlet-units.sh	406
 os/overlay/pithead-boot	403
 scripts/watch/trivyignore-watch.sh	599
-tests/integration/e2e.sh	667
+tests/integration/e2e.sh	663
 tests/integration/fakes/test_contract.py	437
 tests/integration/lib.sh	686
 tests/integration/lib/live-upgrade-support.sh	413
@@ -73,7 +73,7 @@ tests/stack/appliance/test-appliance-restore.sh	404
 tests/stack/appliance/test-appliance-rig-miner.sh	466
 tests/stack/control/test-control-add-only-ssrf.sh	447
 tests/stack/control/test-control-editable-allowlist.sh	407
-tests/stack/control/test-control-core.sh	409
+tests/stack/control/test-control-core.sh	407
 tests/stack/control/test-control-upgrade.sh	795
 tests/stack/dashboard/test-dashboard-onion.sh	422
 tests/stack/dashboard/test-dashboard.sh	591

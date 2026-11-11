@@ -516,8 +516,6 @@ borrow_miner() {
     # Without one the pre-borrow state is gone — strip the tag, and say plainly that a pure reorder
     # cannot be undone. Not borrowed but leftovers present means RigForge regenerated the file since
     # (rigforge.sh:3979, on every apply — but NOT on a fast-path control-apply of watchdog_interval_min or max_temp_c, which skips _apply_runtime outright, rigforge.sh:4203/:4228): clear them, which keeps "oldest" meaning the original.
-    # Unreadable clears and restores NOTHING — a config half-written by a run that died mid-restore
-    # looks exactly like this, and must not cost the only copy of the original.
     local leftover borrowed verdict="the recovery above found no un-restored borrow to undo. Read as the rig's own permanent bench pool: the backup taken next records it and the restore returns to it."
     leftover="$(on_miner "ls -1 -- '$MINER_E2E_BACKUP_DIR'/*.e2e-orig.* '$MINER_XMRIG_CONFIG'.e2e-orig.* 2>/dev/null | awk '{k=\$0; sub(/^.*\\.e2e-orig\\./,\"\",k); print k \"\\t\" \$0}' | sort | cut -f2- | head -n1" || true)"
     borrowed="$(on_miner "jq -r --arg b '$BENCH_HOST' 'if (((.pools[0].url // \"\") | ascii_downcase | contains(\$b | ascii_downcase)) or any(.pools[]?; .[\"rig-id\"]? == \"pithead-e2e\")) then \"yes\" else \"no\" end' '$MINER_XMRIG_CONFIG' 2>/dev/null" || true)"
@@ -605,9 +603,7 @@ run_harness() {
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
     phases="$phases${HARNESS_SCENARIO_ARGS:-}$remote_args $no_mining"
-    case " ${HARNESS_PHASE_ARGS:-} " in
-    *" --fault-injection-ssh "*) phases="$phases --fault-ssh-dest $(quote_arg "$BENCH_HOST")" ;;
-    esac
+    [[ " ${HARNESS_PHASE_ARGS:-} " != *" --fault-injection-ssh "* ]] || phases="$phases --fault-ssh-dest $(quote_arg "$BENCH_HOST")"
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     harness_install_runner || die "Failed to install the detached harness runner."
