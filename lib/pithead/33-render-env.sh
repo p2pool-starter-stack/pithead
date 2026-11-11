@@ -96,16 +96,10 @@ render_env() {
     rpc_lan=$(jq -r '.monero.rpc_lan_access // false' "$CONFIG_FILE")
     if [ "$rpc_lan" == "true" ]; then rpc_bind="0.0.0.0"; else rpc_bind="127.0.0.1"; fi
 
-    # monerod ZMQ LAN exposure (#760). A separate key from rpc_lan_access on purpose: that key's
-    # documented use is wallets (RPC only), and widening it to also open ZMQ would change the
-    # exposure of existing deployments. A node SERVING remote stacks (#103's other half) needs
-    # both: rpc_lan_access for the RPC, zmq_lan_access for the block-notification feed p2pool
-    # requires. ZMQ pub has no auth — trusted LAN only.
     local zmq_bind zmq_lan
     zmq_lan=$(jq -r '.monero.zmq_lan_access // false' "$CONFIG_FILE")
     if [ "$zmq_lan" == "true" ]; then zmq_bind="0.0.0.0"; else zmq_bind="127.0.0.1"; fi
 
-    # P2Pool pool type → flags + p2p port
     local pool_type p2pool_flags p2pool_port
     pool_type=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
     p2pool_flags=""
@@ -116,6 +110,10 @@ render_env() {
     elif [ "$pool_type" == "nano" ]; then
         p2pool_flags="--nano"
         p2pool_port="37890"
+    fi
+
+    if p2pool_needs_light_mode; then
+        p2pool_flags="${p2pool_flags:+$p2pool_flags }--light-mode"
     fi
 
     local p2pool_socks
@@ -136,9 +134,13 @@ render_env() {
     case "$xvb_donor" in
     "" | auto | DYNAMIC_ID) xvb_donor="${MONERO_WALLET:0:8}" ;;
     esac
-    # Donation tier target: auto (default) / donor|vip|whale|mega
     xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
+
+    local donation_enabled donation_percent donation_tor
+    donation_enabled=$(config_get .donation.enabled)
+    donation_percent=$(config_get .donation.percent)
+    donation_tor=$(config_get .donation.tor)
 
     local tari_required
     tari_required=$(config_get .dashboard.tari_required)
@@ -313,6 +315,9 @@ XVB_POOL_URL=$(dotenv_render_value "$xvb_url")
 XVB_DONOR_ID=$(dotenv_render_value "$xvb_donor")
 XVB_ENABLED=$(dotenv_render_value "$xvb_enabled")
 XVB_TOR_ENABLED=$(dotenv_render_value "$xvb_tor")
+DONATION_ENABLED=$(dotenv_render_value "$donation_enabled")
+DONATION_PERCENT=$(dotenv_render_value "$donation_percent")
+DONATION_TOR_ENABLED=$(dotenv_render_value "$donation_tor")
 XVB_DONATION_LEVEL=$(dotenv_render_value "$xvb_donation_level")
 TARI_REQUIRED=$(dotenv_render_value "$tari_required")
 DASHBOARD_FAIL_CLOSED=$(dotenv_render_value "$fail_closed")

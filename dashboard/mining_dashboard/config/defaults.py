@@ -44,6 +44,13 @@ def new_install_defaults(platform: str = "diy") -> dict:
     return result
 
 
+def automatic_setup_defaults(platform: str = "appliance") -> dict:
+    return merge(
+        new_install_defaults(platform),
+        {"dashboard": {"auth": {"username": "admin", "password": None}}},
+    )
+
+
 def profile_config(config: dict) -> dict:
     result = deepcopy(config)
     name = config.get("profile")

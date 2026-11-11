@@ -7,16 +7,10 @@
 # membership of that class was drawn too narrowly until #1585; add to bundle_redact_log, not to a
 # second list.
 
-# The `.env` allowlist, ruled on #1630/#1631: a denylist over a population someone else keeps
-# extending fails silently and in the unsafe direction (it did, four times — #1596, #1609, #1611,
-# #1621). An allowlist inverts the failure mode — a key absent from PITHEAD_ENV_SURVIVOR_KEYS is
-# REDACTED, never printed, so a `render_env` addition nobody classified is safe by construction.
-# Measured against the full 127-key rendered population (33-render-env.sh) at the time of this
-# change; tests/integration/selftest/selftest-bundle-redact-env.sh re-derives that population and
-# fails BY NAME on any key this list and its own classification disagree on.
 PITHEAD_ENV_SURVIVOR_KEYS="CADDY_LOG_DIR CLEARNET_STATE_DIR COMPOSE_PROFILES CONTROL_DIR
 DASHBOARD_CHECK_UPDATES DASHBOARD_CONTROL_ENABLED DASHBOARD_DATA_DIR DASHBOARD_EXPOSE_PUBLIC_IP
 DASHBOARD_FAIL_CLOSED DASHBOARD_ONION_CLIENT_AUTH DASHBOARD_ONION_ENABLED DASHBOARD_SECURE
+DONATION_ENABLED DONATION_PERCENT DONATION_TOR_ENABLED
 DASHBOARD_TZ DEPLOYMENT_COMPLETED HASHRATE_DROP_MINUTES HASHRATE_DROP_THRESHOLD_PCT HOST_PORT
 MONERO_CLEARNET_SYNC MONERO_DATA_DIR MONERO_MEM_LIMIT MONERO_OUT_PEERS MONERO_PREP_THREADS
 MONERO_PRUNE MONERO_RPC_BIND MONERO_RPC_PORT MONERO_WALLET_RPC_URL MONERO_ZMQ_BIND MONERO_ZMQ_PORT

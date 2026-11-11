@@ -54,6 +54,7 @@ jobs:
           path: |
             dashboard/tests/browser/test-results/sovereign-*/shell-*.png
             dashboard/tests/browser/test-results/sovereign-*/drawer-*.png
+            dashboard/tests/browser/test-results/overview-*/overview-*.png
             dashboard/tests/browser/test-results/sovereign-*/earnings-*.png
             dashboard/tests/browser/test-results/sovereign-*/machines-*.png
           retention-days: 7

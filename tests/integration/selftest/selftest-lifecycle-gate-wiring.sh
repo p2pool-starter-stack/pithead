@@ -19,6 +19,8 @@ source_rc=0
 trace() { printf '%s\n' "$1" >>"$fixture/events"; }
 eval "$(sed -n '/^run_lifecycle() {/,/    restore_tls_before=/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d')
 }"
+post_op_begin() { :; }
+post_op_invariants() { :; }
 rx() {
     case "$1" in
     *lifecycle_gate_sample_target\ *)

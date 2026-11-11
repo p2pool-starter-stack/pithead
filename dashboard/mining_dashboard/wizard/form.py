@@ -1,6 +1,6 @@
 import secrets
 
-from mining_dashboard.config.defaults import default_of, new_install_defaults, select_profile
+from mining_dashboard.config.defaults import automatic_setup_defaults, default_of, select_profile
 
 
 def build_config(
@@ -13,7 +13,7 @@ def build_config(
         raw = s_(name)
         return int(raw) if raw.isdigit() else fallback
 
-    cfg = new_install_defaults(platform)
+    cfg = automatic_setup_defaults(platform)
     cfg["dashboard"]["host"] = s_("machine_name") or default_of("dashboard.host", platform)
     cfg["monero"].update(
         {
@@ -22,7 +22,6 @@ def build_config(
         }
     )
     cfg["p2pool"] = {
-        "pool": s_("pool") or default_of("p2pool.pool", platform),
         "stratum_password": secrets.token_hex(12)
         if form.get("stratum_password") == "true"
         else default_of("p2pool.stratum_password", platform),
