@@ -108,3 +108,51 @@ async def handle_onion_key(request):
         logger.exception("Error submitting onion-client-key request")
         return web.json_response({"error": "Failed to submit the request."}, status=500)
     return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
+async def handle_support_bundle(request):
+    """Ask the host for a redacted support bundle covering the last ``hours`` of journal (#4036).
+
+    Body: optional ``hours``. It is a request, not a bound — the host clamps it to its own window
+    the way it clamps log tails, collects only its own units, redacts every line through the one
+    redactor and enforces its own size cap before the archive lands in the results spool. The
+    client then polls /api/control/result and fetches the archive from the download route once
+    the result says applied."""
+    _require_control_header(request)
+    hours = None
+    if request.can_read_body:
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(text="Body must be JSON.") from None
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest(text="Body must be a JSON object.")
+        if "hours" in body:
+            hours = body.get("hours")
+            if isinstance(hours, bool) or not isinstance(hours, int) or hours < 1:
+                raise web.HTTPBadRequest(text="'hours' must be a positive integer.")
+    try:
+        rid = diagnostics_service.submit_support_bundle(
+            hours, request.headers.get("X-Auth-User", "")
+        )
+    except Exception:
+        logger.exception("Error submitting support-bundle request")
+        return web.json_response({"error": "Failed to submit the request."}, status=500)
+    return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
+def control_routes():
+    """This module's control-channel routes (plus the bundle's download leg, which belongs to
+    the ask the way the backup archive belongs to its backup), one expression so server.py stays
+    under its recorded line ceiling while these routes register."""
+    from mining_dashboard.web.views import download_views
+
+    return [
+        web.post("/api/control/diag-doctor", handle_diag_doctor),
+        web.post("/api/control/diag-logs", handle_diag_logs),
+        web.post("/api/control/onion-client-key", handle_onion_key),
+        web.post("/api/control/support-bundle", handle_support_bundle),
+        web.get(
+            "/api/control/support-bundle-download", download_views.handle_support_bundle_download
+        ),
+    ]

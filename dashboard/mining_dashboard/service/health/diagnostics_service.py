@@ -54,3 +54,15 @@ def submit_diag_logs(container: str, lines: int, actor: str = "") -> str:
             "lines": lines,
         }
     )
+
+
+def submit_support_bundle(hours=None, actor: str = "") -> str:
+    """Spool a redacted support-bundle request for the last ``hours`` of journal.
+
+    ``hours`` is a request, not a bound: the host clamps it the way it clamps log tails, defaults
+    it when absent, and redacts and size-caps the archive host-side before it lands in the
+    results spool. ``None`` omits the key and lets the host state its own default."""
+    intent = {"id": str(uuid.uuid4()), "action": "support-bundle", "actor": actor}
+    if hours is not None:
+        intent["hours"] = hours
+    return request_spool.write(intent)
