@@ -28,7 +28,7 @@ The rig authenticates nothing to receive a bundle: trust is the RAUC signature a
 
 ### Where the rig looks, and when
 
-On request only, never on a schedule. A request names no URL: the rig fetches the release channel itself over Tor, and #4011 fixes how the listing is read — untrusted, release-host allowlisted, size-capped, tag-validated, stale channels reported. A failed fetch or a refused bundle changes nothing: the rig keeps mining, the reason lands in the status file, and a later request may try again.
+On request only, never on a schedule. A request names no URL: the rig fetches the release channel itself over Tor, and the listing is read as untrusted data: release-host allowlisted, size-capped, tag-validated, stale or replayed channels reported, all enforced by the shared fetch helper `lib/pithead/47a-os-update-channel.sh` (#4011). A failed fetch or a refused bundle changes nothing: the rig keeps mining, the reason lands in the status file, and a later request may try again.
 
 ### Where the rig verifies
 
@@ -50,7 +50,7 @@ The rig keeps its last request time, verdict and reason in a status file on `/da
 
 ### Trust model
 
-The bundle's RAUC signature is the only trust in delivery. The channel listing is untrusted and its hardening belongs to #4011; the download is anonymous over Tor; the allowlist, size cap and tag validation bound what the rig fetches, and authenticate nothing. A rig that trusts only the baked keyring depends on its validity across time — release signing key rotation, certificate expiry and clock handling are #4012.
+The bundle's RAUC signature is the only trust in delivery. The channel listing is untrusted and hardened (#4011); the download is anonymous over Tor; the allowlist, size cap and tag validation bound what the rig fetches, and authenticate nothing. A rig that trusts only the baked keyring depends on its validity across time — release signing key rotation, certificate expiry and clock handling are #4012.
 
 ### Limits
 
