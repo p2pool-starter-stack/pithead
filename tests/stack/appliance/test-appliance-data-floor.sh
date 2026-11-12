@@ -16,13 +16,16 @@
 echo "== unit: os_raise_data_floor records the floor it replaces BEFORE raising (#1393) =="
 DF="$SANDBOX/data-floor"
 rm -rf "$DF"
-mkdir -p "$DF"
+mkdir -p "$DF/bin"
+printf '#!/bin/sh\nexit 0\n' >"$DF/bin/sync"
+chmod +x "$DF/bin/sync"
 raise() { # <existing floor, or ABSENT> <new floor> -> "floor=<v|absent> prev=<v|absent>"
     rm -rf "$DF/floor" "$DF/floor.prev"
     [ "$1" = ABSENT ] || printf '%s\n' "$1" >"$DF/floor"
     (
         # shellcheck disable=SC1090
         source "$STACK"
+        PATH="$DF/bin:$PATH"
         PITHEAD_DATA_FLOOR_FILE="$DF/floor" os_raise_data_floor "$2"
     ) 2>/dev/null
     printf 'floor=%s prev=%s' "$(tr -d ' \n' 2>/dev/null <"$DF/floor" || echo absent)" \
@@ -40,6 +43,7 @@ rm -f "$DF/floor-dir.prev"
 (
     # shellcheck disable=SC1090
     source "$STACK"
+    PATH="$DF/bin:$PATH"
     PITHEAD_DATA_FLOOR_FILE="$DF/floor-dir" os_raise_data_floor 1.17.0
 ) 2>/dev/null
 assert_eq "the record is written before the raise (floor unwritable, record present)" \
@@ -51,7 +55,19 @@ BD="$SANDBOX/data-floor-boot"
 fb() { # <marker: ABSENT|version> <record: ABSENT|EMPTY|none|version> <floor: ABSENT|version>
     #    -> "floor=.. prev=.. marker=.. said=<restored|nothing>"
     rm -rf "$BD"
-    mkdir -p "$BD"
+    mkdir -p "$BD/bin"
+    cp "$STACK" "$BD/pithead"
+    printf 'rauc.slot=A\n' >"$BD/cmdline"
+    printf '#!/bin/sh\nexit 0\n' >"$BD/bin/sync"
+    cat >"$BD/bin/rauc" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+'status --output-format=json') printf '{"slots":[{"rootfs.0":{"state":"booted","bootname":"A","boot_status":"%s"}}]}\n' "$FLOOR_BOOT_STATUS" ;;
+'status mark-bad other') exit "$FLOOR_DISARM_RC" ;;
+*) exit 1 ;;
+esac
+EOF
+    chmod +x "$BD/bin/rauc" "$BD/bin/sync"
     [ "$1" = ABSENT ] || printf '%s\n' "$1" >"$BD/.os-migration-pending"
     case "$2" in
     ABSENT) ;;
@@ -62,6 +78,8 @@ fb() { # <marker: ABSENT|version> <record: ABSENT|EMPTY|none|version> <floor: AB
     local out
     out=$(
         cd "$BD" || exit
+        export PATH="$BD/bin:$PATH" PITHEAD_CMDLINE="$BD/cmdline"
+        export FLOOR_BOOT_STATUS="${4:-good}" FLOOR_DISARM_RC="${5:-0}"
         # shellcheck disable=SC1090
         source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
         restore_data_floor_after_fallback
@@ -81,25 +99,33 @@ assert_eq "fallback with a 'none' record: the floor is removed (no earlier migra
 # record has none, and its floor is NOT lowered on a guess. The stale marker still goes.
 assert_eq "fallback with NO record: the floor stays exactly as it is, the stale marker goes" \
     "$(fb 1.17.0 ABSENT 1.17.0)" "floor=1.17.0 prev=absent marker=absent said=nothing"
-assert_eq "fallback with an EMPTY record: treated as no record — the floor stays" \
-    "$(fb 1.17.0 EMPTY 1.17.0)" "floor=1.17.0 prev=present marker=absent said=nothing"
+assert_eq "fallback with an EMPTY record: the floor and protection stay" \
+    "$(fb 1.17.0 EMPTY 1.17.0)" "floor=1.17.0 prev=present marker=present said=nothing"
+assert_eq "fallback before source commitment retains the floor and protection" \
+    "$(fb '1.17.0|B' 1.10.0 1.17.0 bad)" "floor=1.17.0 prev=present marker=present said=nothing"
+assert_eq "failed candidate disarm retains the floor and protection" \
+    "$(fb '1.17.0|B' 1.10.0 1.17.0 good 1)" "floor=1.17.0 prev=present marker=present said=nothing"
 assert_eq "no marker: not a fallback boot, nothing is touched" \
     "$(fb ABSENT 1.10.0 1.17.0)" "floor=1.17.0 prev=present marker=absent said=nothing"
 unset -f fb
 rm -rf "$BD"
 
-echo "== static: the restore is wired into the fallback branch, and the commit consumes the record (#1393) =="
-# Both call sites sit below pithead-boot's sourcing boundary, so they are asserted by the text
-# of the script rather than driven: the restore handles a non-matching marker result, and
-# the commit-side marker removal names the record too, so a consumed record cannot outlive its
-# migration. Text, not behaviour — said so here, and the battery's fallback leg is the tier above.
+echo "== static: fallback cleanup follows durable commitment and held commits consume both records =="
 BOOT="$ROOT/os/overlay/pithead-boot"
 hold_else=$(awk '/^case "\$migration_rc" in$/{f=1} f&&/^esac$/{print; exit} f' "$BOOT")
-assert_contains "the hold decision restores on a non-matching marker" "$hold_else" "restore_data_floor_after_fallback"
-assert_contains "the non-matching marker restores while a matching one sets hold_chain" "$hold_else" "0) hold_chain=1 ;;
-1) restore_data_floor_after_fallback ;;"
-assert_eq "the commit-side removal names the record beside the marker" \
-    "$(grep -c '^ *rm -f \.os-migration-pending \.os-data-floor\.prev$' "$BOOT")" "1"
+assert_not_contains "the hold decision defers fallback cleanup until commitment" "$hold_else" "restore_data_floor_after_fallback"
+assert_contains "a non-matching marker leaves chain services unheld" "$hold_else" "0) hold_chain=1 ;;
+1) ;;"
+commit_cleanup=$(awk '/^    if \[ "\$gate_pass" = 1 \]; then$/{f=1} f&&/stack is serving/{exit} f' "$BOOT")
+assert_contains "the coordinator commits durably before fallback cleanup" "$commit_cleanup" 'rauc status mark-good && sync || fail_boot'
+assert_contains "fallback cleanup is reached after the successful commit" "$commit_cleanup" 'boot_gate_passed
+        commit_config_stamp
+        [ "$hold_chain" != 0 ] || restore_data_floor_after_fallback "$migration_fingerprint"'
+assert_contains "the shared commit cleanup removes and syncs both records" "$(cat "$BOOT")" \
+    '            clear) rm -f "$(os_migration_marker_file)" "$(os_data_floor_file).prev" && sync || exit 1 ;;'
+assert_contains "held coordinator release uses durable record cleanup" "$(cat "$BOOT")" '    clear_migration_hold "$@" || return 1'
+assert_contains "the rig uses the same cleanup after commitment" "$(cat "$BOOT")" \
+    'if [ "$hold_chain" = 1 ]; then clear_migration_hold "$migration_fingerprint"; else restore_data_floor_after_fallback "$migration_fingerprint"; fi'
 
 echo "== unit: os_update_version_guard — a floor ABOVE the running version refuses with the true premise, and the forward route is open (#1393) =="
 guard() { # <running version> <floor, or ABSENT> <bundle version> -> the refusal, or empty
@@ -130,7 +156,7 @@ assert_contains "floor below the running version, bundle below the floor: the or
 assert_contains "unreadable running version: the original refusal, not a judgement it cannot make" "$(guard dev 2.0.0 1.10.0)" "migrated forward"
 assert_contains "a corrupt floor is still refused as unreadable, above or below" "$(guard 1.17.0 not-a-version 1.10.0)" "floor is unreadable"
 unset -f guard
-unset out hold_else BOOT
+unset out hold_else commit_cleanup BOOT
 rm -rf "$DF"
 unset DF BD
 

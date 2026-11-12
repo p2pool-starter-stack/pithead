@@ -341,21 +341,24 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     rm -f "$errf"
 }
 
-# Commit: apply the HOST-SIDE staged copy from the matching preview. A tampered second request
-# can't swap the config — commit carries only the id; the config it applies is the one previewed.
-control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
+control_commit() (
     local id="$1" actor="$2" cdir="$3" confirm="${4:-}" approval="${5:-null}"
     local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0 carried_ssh=0
     local basef="$cdir/staged/.$id.base"
-    control_commit_unusable "$id" "$actor" "$cdir" && return 0
-    # On refusal the gate's stdout is the reason; on approval it is the changed key names, which
-    # the audit entries below record — WHAT changed, by name only (#349).
+    trap 'control_commit_lock_exit "$?" "$id" "$actor" "$cdir"' EXIT
+    mutation_lock_acquire apply
+    trap - EXIT
+    if control_commit_unusable "$id" "$actor" "$cdir"; then
+        mutation_lock_release
+        return 0
+    fi
     local gate_out audit_keys=""
     if ! gate_out=$(control_approval_gate "$staged" "$confirm" "$id" "$actor" "$approval" "$cdir"); then
         [ -n "$gate_out" ] || gate_out="approval denied"
         rm -f "$staged" "$basef" "${staged}.confirmed"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$gate_out" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        mutation_lock_release
         return 0
     fi
     audit_keys="$gate_out"
@@ -371,9 +374,6 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
         audit_action="commit-confirmed"
         rm -f "${staged}.confirmed"
     fi
-    # Keep a pre-change backup; on failure it is named in the result and left in place. The
-    # `apply -y` below re-renders the pre-masked prefill copy (#440), so the dashboard's editor
-    # form reflects the committed config on the next load.
     control_carried_ssh "$staged" && carried_ssh=1
     cp "$CONFIG_FILE" "${CONFIG_FILE}.bak-control"
     cp "$staged" "$CONFIG_FILE"
@@ -389,4 +389,5 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$logf")" --arg b "${CONFIG_FILE}.bak-control" '{status:"failed",error:$e,backup:$b,ts:(now|floor)}')"
     fi
     rm -f "$staged" "$basef" "$logf" "${staged}.confirmed"
-}
+    mutation_lock_release
+)

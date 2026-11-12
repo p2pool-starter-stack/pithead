@@ -59,7 +59,7 @@ printf 'MONERO_RPC_BIND=0.0.0.0\nTARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env.new"
 assert_eq "transition protects the new bind and the old container publish" "$(lg "$lg_stale lan_guard_transition_ports '$LGD/.env.new'")" $'18142\n18081'
 lg_apply="$(run_sourced "$LGD" declare -f apply)"
 lg_prearm=missing
-case "$lg_apply" in *'lan_guard_arm_transition "$newenv"'*'mv "$newenv" "$ENV_FILE"'*) lg_prearm=before-commit ;; esac
+case "$lg_apply" in *'lan_guard_arm_transition "$newenv"'*'apply_publish_env'*) lg_prearm=before-commit ;; esac
 assert_eq "apply arms old and new ports before committing the new .env" "$lg_prearm" before-commit
 lg_rc=0
 lg_out=$(lg "docker() { case \"\$1\" in network) echo mining_net ;; esac; }; lan_guard_enforced() { return 4; }; provision_lan_guard_boot_unit() { :; }; lan_guard_arm_transition '$LGD/.env.new'" 2>&1) || lg_rc=$?

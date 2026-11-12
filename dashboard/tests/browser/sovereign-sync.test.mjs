@@ -64,14 +64,7 @@ for (const platform of ["appliance", "diy-login", "diy-readonly"]) {
     ui.state.sync_status.sampled_at += 30;
     await page.clock.fastForward(30000);
     await expect(view).toHaveCount(0);
-    await expect(
-      page
-        .getByText(
-          "This page is being built for the new interface. Continue using the current dashboard until cutover.",
-          { exact: true },
-        )
-        .first(),
-    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Mining status" })).toBeVisible();
     ui.state.sync_status.chains.monero.health = { level: "red", reasons: ["No peers"] };
     ui.state.sync_status.mining.workers_rejected = true;
     ui.state.sync_status.chains.monero.recovery_remaining = 45;
@@ -155,14 +148,7 @@ test("appliance waits for required remote Tari after Monero finishes, retains th
   ui.state.sync_status.sampled_at = await page.evaluate(() => Date.now() / 1000);
   await page.clock.fastForward(30000);
   await expect(view).toHaveCount(0);
-  await expect(
-    page
-      .getByText(
-        "This page is being built for the new interface. Continue using the current dashboard until cutover.",
-        { exact: true },
-      )
-      .first(),
-  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Mining status" })).toBeVisible();
 });
 
 for (const theme of ["light", "dark"]) {

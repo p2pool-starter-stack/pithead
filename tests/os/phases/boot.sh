@@ -214,6 +214,6 @@ _vm_boot_disk() {
     qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
-    vm_create "$DISK" "$SERIAL" no >/dev/null 2>&1 || return 1
+    vm_create "$DISK" "$SERIAL" no --video vga >/dev/null 2>&1 || return 1
     _wait_dhcp_ip 120
 }

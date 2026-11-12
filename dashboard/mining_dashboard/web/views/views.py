@@ -31,6 +31,7 @@ from mining_dashboard.service.host_resources import build_host_resources
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
+from mining_dashboard.service.payout_identity import configured_wallet_id
 from mining_dashboard.service.pool_tier import suggest_pool_tier
 from mining_dashboard.service.workers.donation import fleet_donation
 from mining_dashboard.version import resolve_version
@@ -41,9 +42,6 @@ from mining_dashboard.web.views.charts import (
     canonical_window,  # noqa: F401 — re-export for server.py
     parse_window,  # noqa: F401 — re-export for server.py
 )
-
-# The header's address block lives in web/views/header.py (#1853): the hostname/IP line and the
-# .onion URL under it are ways IN to the machine, not readings off it.
 from mining_dashboard.web.views.header import dashboard_onion, host_display_addr
 from mining_dashboard.web.views.infra_views import (
     _rigforge_display,  # noqa: F401 — re-export for worker_detail.py
@@ -56,15 +54,8 @@ from mining_dashboard.web.views.infra_views import (
     build_workers,
     rigforge_update_for,  # noqa: F401 — re-export for worker_detail.py
 )
-
-# The host/rig/node status sections live in web/views/infra_views.py (#1105). views.py stays the
-# facade: build_state assembles these sections, build_pool_network uses the address elider, and
-# the last two are re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
 from mining_dashboard.web.views.monero_view import build_monero
-
-# The time-series sections live in web/views/series_views.py (#1105). views.py stays the facade:
-# build_state assembles these sections and reads the palette and the window reject rate, and
-# _gauge_series is re-exported unused so web/views/worker_detail.py's existing import keeps resolving.
+from mining_dashboard.web.views.overview_views import build_mining_activity, build_overview
 from mining_dashboard.web.views.series_views import (
     _gauge_series,  # noqa: F401 — re-export for worker_detail.py
     _mode_palette,
@@ -244,7 +235,11 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     history = state_mgr.get_history()
     share_stats = state_mgr.get_share_stats()
     raffle_wins = state_mgr.get_raffle_wins()
-    monero_payouts = state_mgr.get_payouts("monero") if config.PAYOUT_CONFIRM_ENABLED else None
+    monero_payouts = (
+        state_mgr.get_payouts("monero", configured_wallet_id("monero"))
+        if config.PAYOUT_CONFIRM_ENABLED
+        else None
+    )
     metrics = build_metrics(data, state_mgr, history)
     db_healthy = state_mgr.is_db_healthy()
 
@@ -258,7 +253,9 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         metrics,
         payouts=monero_payouts,
         tari_payouts=(
-            state_mgr.get_payouts("tari") if config.TARI_PAYOUT_CONFIRM_ENABLED else None
+            state_mgr.get_payouts("tari", configured_wallet_id("tari"))
+            if config.TARI_PAYOUT_CONFIRM_ENABLED
+            else None
         ),
         xvb_day=xvb_current_tier_reward_day(metrics, state_mgr),
     )
@@ -304,6 +301,14 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
 
     disk_growth = state_mgr.get_disk_growth()
     return {
+        "overview": build_overview(data, metrics, monero_payouts, history),
+        "overview_activity": build_mining_activity(
+            data.get("shares", []),
+            state_mgr.get_events(),
+            state_mgr.get_blocks(),
+            monero_payouts,
+            raffle_wins,
+        ),
         "syncing": metrics.global_syncing,
         "tari_gates_sync": bool(config.TARI_REQUIRED and not data.get("sync_gate_monero_only")),
         "page_title": "Pithead Dashboard - Syncing"

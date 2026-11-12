@@ -81,3 +81,31 @@ test("a message that already ends in a period does not get a second one", () => 
     " Blocked by: cert coverage failed.",
   );
 });
+
+test("an interrupted verdict reads as an interruption, not as failed health checks", () => {
+  assert.equal(
+    verdictText({
+      outcome: "rolled_back",
+      from: "1.18.1",
+      to: "1.19.0",
+      interrupted: true,
+      blocking: ["interrupted before the update was verified"],
+    }),
+    "The update to v1.19.0 was interrupted before its verification finished and was rolled back automatically" +
+      " — still on v1.18.1. The new version's health checks never reached a verdict.",
+  );
+  assert.doesNotMatch(
+    verdictText({ outcome: "rolled_back", from: "1.18.1", to: "1.19.0", interrupted: true }),
+    /failed its health checks/,
+  );
+  assert.match(
+    verdictText({
+      outcome: "rolled_back",
+      from: "1.18.1",
+      to: "1.19.0",
+      interrupted: false,
+      blocking: [CERT],
+    }),
+    /failed its health checks.*Blocked by: the dashboard certificate/,
+  );
+});

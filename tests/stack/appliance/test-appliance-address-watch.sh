@@ -140,6 +140,40 @@ assert_rc "a certificate without the added address fails" "$(
 )" 1
 unset AWV_OK AWV_BAD awv
 
+echo "== unit: address_watch_converge reruns the service until the certificate carries the address (#3939) =="
+AWC_SAN="IP Address:FD00:2463:0:0:0:0:0:1"
+awc() {
+    AWC_STARTS=0
+    AWC_MINT_AT=$1
+    AWC_RC=$2
+    _ssh() {
+        case "$1" in
+        "systemctl start"*)
+            AWC_STARTS=$((AWC_STARTS + 1))
+            return "$AWC_RC"
+            ;;
+        "systemctl list-timers"*) echo "journal-at-failure" ;;
+        openssl*) [ "$AWC_STARTS" -ge "$AWC_MINT_AT" ] && printf 'X509v3 Subject Alternative Name:\n    DNS:x, %s\n' "$AWC_SAN" ;;
+        esac
+    }
+    ADDRESS_WATCH_SETTLE=0 address_watch_converge "$AWC_SAN"
+}
+awc 1 0
+assert_eq "a certificate re-minted by the first run needs one run" "$AWC_STARTS" 1
+assert_contains "…and its SANs are kept for the verdict" "$ADDRESS_WATCH_SANS" "$AWC_SAN"
+awc 3 0
+assert_eq "a run that left the certificate unchanged (lock held) is repeated" "$AWC_STARTS" 3
+assert_eq "…and the attempt count is kept for the failure report" "$ADDRESS_WATCH_ATTEMPTS" 3
+awc 99 0
+assert_eq "a certificate that never carries the address stops after six runs" "$AWC_STARTS" 6
+assert_eq "…with no SAN left for the verdict" "$ADDRESS_WATCH_SANS" ""
+awc 1 1
+assert_eq "a failing service start is repeated even when the SAN is present" "$AWC_STARTS" 6
+assert_eq "…and its exit code reaches the verdict" "$ADDRESS_WATCH_RC" 1
+assert_eq "the journal is read straight after the last run" "$ADDRESS_WATCH_JOURNAL" "journal-at-failure"
+unset -f awc _ssh
+unset AWC_SAN AWC_STARTS AWC_MINT_AT AWC_RC
+
 echo "== unit: appliance_mint_cert keeps a certificate that already carries an IPv6 address (#2463) =="
 # openssl stores and prints an IPv6 SAN expanded and upper-case; the mint compared that string with
 # `hostname -I`'s compressed spelling, so any IPv6 in the set re-minted the certificate on EVERY

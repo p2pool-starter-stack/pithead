@@ -356,7 +356,7 @@ rotate_secrets() {
     log "Secrets rotated. The old values are invalid; only the safety copies above still hold them."
     if [ "$rotate_stratum" -eq 1 ]; then
         announce_stratum_auth
-        warn "The stratum access-password CHANGED — every rig is rejected until its stratum 'pass' is updated to the value above."
+        warn "The stratum access-password CHANGED — every rig is rejected until its stratum 'pass' is updated to the password in the dashboard's Connect a miner panel."
     fi
     mutation_lock_release
 }

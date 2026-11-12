@@ -52,6 +52,8 @@ echo 'coordinator prefill: both coordinator roles accepted, 21 invalid states re
         done
         return 1
     }
+    _setup_again_journal_token() { SA_JOURNAL_TOKEN=pit-ABC123; }
+    _setup_again_console_proof() { :; }
     _setup_again_session
     [ "$token" = pit-ABC123 ]
     ! grep -q pit-ABC123 "$work/session-log"

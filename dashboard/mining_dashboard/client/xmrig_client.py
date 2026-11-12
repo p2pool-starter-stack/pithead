@@ -70,7 +70,6 @@ def parse_rigforge(payload, now=None):
     autotune = tune.get("autotune") or {}
     power = rf.get("power") or {}
     health = rf.get("health") or {}
-    firmware = health.get("firmware") or {}
     watchdog = rf.get("watchdog") or {}
     wd_on = watchdog.get("mode") == "enabled"
     return {
@@ -88,10 +87,11 @@ def parse_rigforge(payload, now=None):
         "health": {
             "governor": health.get("governor"),
             "throttling": health.get("throttling"),
-            "board": firmware.get("board"),
+            "board": (health.get("firmware") or {}).get("board"),
             "hugepages_total": health.get("hugepages_total"),
         },
-        # thermal_hold/temps are only meaningful while the watchdog is enabled.
+        "appliance": bool(rf.get("appliance")),
+        "stamp": rf.get("stamp"),
         "watchdog": {
             "enabled": wd_on,
             "thermal_hold": watchdog.get("thermal_hold") if wd_on else None,

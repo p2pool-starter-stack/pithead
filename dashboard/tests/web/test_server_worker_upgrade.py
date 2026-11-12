@@ -44,6 +44,22 @@ class TestWorkerUpgrade:
         assert req["worker"] == "rig1" and req["version"] == "v1.11.2"
         assert "host" not in req and "port" not in req and "token" not in req
         assert "changes" not in req
+        assert "appliance" not in req
+
+    async def test_appliance_rig_intent_carries_the_flag(
+        self, worker_client, control_spool, monkeypatch
+    ):
+        rid = str(uuid.uuid4())
+        monkeypatch.setattr(control_service.uuid, "uuid4", lambda: uuid.UUID(rid))
+        worker_client.app["latest_data"]["workers"][0]["rigforge"]["appliance"] = True
+        resp = await worker_client.post(
+            "/api/control/worker-upgrade",
+            json={"worker": "rig1", "version": "v1.11.2"},
+            headers=CONTROL_HEADERS,
+        )
+        assert resp.status == 202
+        req = json.loads((control_spool / "requests" / f"{rid}.json").read_text())
+        assert req["appliance"] is True
 
     async def test_non_json_body_is_a_400(self, worker_client):
         resp = await worker_client.post(

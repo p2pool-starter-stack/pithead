@@ -200,7 +200,7 @@ make test-browser
 ```
 
 On Linux, add `--with-deps` to the local install command. The separate `browser.yml` workflow
-runs Chromium, Firefox, WebKit and mobile Chromium in the digest-pinned Playwright 1.64.0
+runs Chromium, Firefox, WebKit and mobile Chromium in the digest-pinned Playwright 1.64.1
 Noble image, matching the npm lockfile. The image supplies browsers and their system libraries;
 CI installs only Make, unzip and the locked npm packages before running `make test-browser`.
 This job uses the image's Node 24 and a root-owned `HOME` so Firefox can launch as the container user.
