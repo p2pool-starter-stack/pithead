@@ -238,9 +238,6 @@ ProxyConnectionError = type("ProxyConnectionError", (Exception,), {})
 
 
 class TestFailureRecording:
-    # #4037: every failed ping attempt is recorded (reason + credential-free detail) through
-    # the recorder seam, and the ping URL never appears in what gets stored.
-
     URL = "https://hc-ping.com/secret-ping-token"
 
     def _client(self, recorder, **overrides):
@@ -271,7 +268,7 @@ class TestFailureRecording:
             assert c.ping() is True
         rows.clear()
         with patch.object(hc_mod, "bounded_get", return_value=_resp(200)):
-            assert c.ping() is False  # throttled — no attempt, so nothing to record
+            assert c.ping() is False
         assert rows == []
 
     def test_rejection_is_recorded_as_http_status_with_the_status_in_detail(self):
@@ -282,7 +279,7 @@ class TestFailureRecording:
         ts, reason, detail = rows[0]
         assert reason == "http_status"
         assert detail == "HTTP 404"
-        assert ts > 1_600_000_000  # wall-clock epoch, not monotonic
+        assert ts > 1_600_000_000
 
     def test_proxy_error_maps_to_tor_socks(self):
         rows, rec = self._recorder()
@@ -293,14 +290,18 @@ class TestFailureRecording:
 
     def test_wrapped_proxy_connection_error_maps_to_tor_socks(self):
         rows, rec = self._recorder()
-        err = self._wrapped(ProxyConnectionError("proxy refused"), requests.exceptions.ConnectionError)
+        err = self._wrapped(
+            ProxyConnectionError("proxy refused"), requests.exceptions.ConnectionError
+        )
         with patch.object(hc_mod, "bounded_get", side_effect=err):
             assert self._client(rec).ping() is False
         assert rows[0][1] == "tor_socks"
 
     def test_name_resolution_maps_to_dns(self):
         rows, rec = self._recorder()
-        err = self._wrapped(NameResolutionError("host not found"), requests.exceptions.ConnectionError)
+        err = self._wrapped(
+            NameResolutionError("host not found"), requests.exceptions.ConnectionError
+        )
         with patch.object(hc_mod, "bounded_get", side_effect=err):
             assert self._client(rec).ping() is False
         assert rows[0][1] == "dns"
@@ -340,7 +341,7 @@ class TestFailureRecording:
         with patch.object(hc_mod, "bounded_get", return_value=_resp(403)):
             assert c.ping() is False
         assert len(rows) == 4
-        for ts, reason, detail in rows:
+        for _ts, reason, detail in rows:
             assert self.URL not in str(detail)
             assert "secret-ping-token" not in f"{reason}{detail}"
 

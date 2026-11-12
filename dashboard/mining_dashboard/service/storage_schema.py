@@ -340,12 +340,6 @@ class StorageSchemaMixin:
     PING_FAILURES_KEPT = 50
 
     def record_ping_failure(self, ts: float, reason: str, detail: str = "") -> None:
-        """Append one failed Healthchecks.io ping (#4037) and ring-trim the table.
-
-        ``detail`` is a short, credential-free classification — the ping URL is itself a bearer
-        secret, so no caller may pass it, and nothing here derives from the URL. Never raises:
-        the recorder runs inside the data loop's ping path, and a full or locked DB must not
-        break the loop that keeps the box healthy."""
         try:
             with self._db_lock:
                 if not self._conn:
@@ -364,8 +358,6 @@ class StorageSchemaMixin:
             pass
 
     def get_ping_failures(self, limit: int = 10) -> list[dict]:
-        """The most recent failed pings, newest first. Empty on any DB error — the health
-        card renders an empty state and the next loop cycle retries."""
         try:
             with self._db_lock:
                 if not self._conn:

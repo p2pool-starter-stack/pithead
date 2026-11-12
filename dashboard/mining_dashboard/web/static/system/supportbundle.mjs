@@ -1,10 +1,3 @@
-// Support bundle card (#4036): collect the redacted diagnostics archive the support verb
-// produces, and hand it to the browser as a download — for a machine whose operator has no
-// shell. The host does all the work: it picks its own units, clamps the window, redacts every
-// line through the one redactor, caps its own size, and only then lands the archive in the
-// results spool where the download route streams it for exactly the id whose result says
-// applied. Nothing here reads archive contents.
-
 import { Component, html } from "../app/preact.mjs";
 import { pollResult } from "../config/configview.mjs";
 
@@ -98,9 +91,9 @@ export class SupportBundlePanel extends Component {
                    onInput=${(e) => this.setState({ hours: Number(e.target.value) || 0 })} />
         </label>${" "}
         <button class="btn-toggle active" disabled=${phase === "collecting"}
-                onClick=${() => this.run()}>${phase === "collecting"
-                  ? "Collecting…"
-                  : "Collect support bundle"}</button>
+                onClick=${() => this.run()}>${
+                  phase === "collecting" ? "Collecting…" : "Collect support bundle"
+                }</button>
     </div>`;
   }
 }

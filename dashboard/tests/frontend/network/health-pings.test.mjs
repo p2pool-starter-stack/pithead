@@ -1,6 +1,3 @@
-// #4037: the health page surfaces recent failed Healthchecks.io pings, with an empty state,
-// and never renders the ping URL (it is a bearer credential — the recorder stores only a
-// reason class and a status code; this checks the card does not invent a URL either).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

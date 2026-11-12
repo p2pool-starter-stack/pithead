@@ -1,12 +1,3 @@
-"""Support-bundle routes (#4036): the POST shape that reaches the spool and the rules the
-download route applies to the id it is given.
-
-What the host does with the intent — unit membership, clamping, redaction, the size cap — is
-proven in tests/stack against the real runner. What lives here: the CSRF gate, that only the
-stated window travels, and that the download answers for exactly one class of result (applied,
-naming an archive, that is still on disk) and 404s for everything else.
-"""
-
 import json
 import uuid
 
@@ -53,7 +44,9 @@ class TestSupportBundleDisabled:
                 "/api/control/support-bundle", headers=CONTROL_HEADERS, json={"hours": 24}
             )
             assert resp.status == 404
-            resp = await cli.get("/api/control/support-bundle-download", params={"id": str(uuid.uuid4())})
+            resp = await cli.get(
+                "/api/control/support-bundle-download", params={"id": str(uuid.uuid4())}
+            )
             assert resp.status == 404
         finally:
             sm.close()
@@ -84,7 +77,9 @@ class TestSupportBundleSubmit:
         assert spooled(spool)["hours"] == 9999
 
     @pytest.mark.parametrize("hours", [True, 0, -1, "24", None, [24]])
-    async def test_a_malformed_window_is_a_400_and_spools_nothing(self, bundle_client, spool, hours):
+    async def test_a_malformed_window_is_a_400_and_spools_nothing(
+        self, bundle_client, spool, hours
+    ):
         resp = await bundle_client.post(
             "/api/control/support-bundle", headers=CONTROL_HEADERS, json={"hours": hours}
         )
@@ -120,17 +115,13 @@ class TestSupportBundleDownload:
     async def test_a_result_that_is_not_applied_is_a_404(self, bundle_client, spool, payload):
         rid = str(uuid.uuid4())
         await self._result(spool, rid, payload)
-        resp = await bundle_client.get(
-            "/api/control/support-bundle-download", params={"id": rid}
-        )
+        resp = await bundle_client.get("/api/control/support-bundle-download", params={"id": rid})
         assert resp.status == 404
 
     async def test_applied_without_the_archive_on_disk_is_a_404(self, bundle_client, spool):
         rid = str(uuid.uuid4())
         await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.tar.gz"})
-        resp = await bundle_client.get(
-            "/api/control/support-bundle-download", params={"id": rid}
-        )
+        resp = await bundle_client.get("/api/control/support-bundle-download", params={"id": rid})
         assert resp.status == 404
 
     async def test_applied_streams_the_spool_archive_under_its_named_filename(
@@ -139,9 +130,9 @@ class TestSupportBundleDownload:
         rid = str(uuid.uuid4())
         await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.tar.gz"})
         (spool / "results" / f"{rid}.tar.gz").write_bytes(b"tarbytes")
-        resp = await bundle_client.get(
-            "/api/control/support-bundle-download", params={"id": rid}
-        )
+        resp = await bundle_client.get("/api/control/support-bundle-download", params={"id": rid})
         assert resp.status == 200
         assert await resp.read() == b"tarbytes"
-        assert 'attachment; filename="support-bundle-x.tar.gz"' in resp.headers["Content-Disposition"]
+        assert (
+            'attachment; filename="support-bundle-x.tar.gz"' in resp.headers["Content-Disposition"]
+        )

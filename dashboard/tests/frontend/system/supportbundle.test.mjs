@@ -1,6 +1,3 @@
-// Support bundle card (#4036): the POST + poll flow, the download href, and the card states.
-// The poll resilience itself is pollResult's, covered by configview.test.mjs; these tests check
-// SupportBundlePanel drives it correctly and that nothing but {hours} travels with the verb.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

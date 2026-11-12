@@ -31,9 +31,11 @@ function ComponentHealth({ topology, egress, ping_failures }) {
         </div>
         <div class=${"ping-summary c-" + (pingsOk ? "ok" : "warn")}>
             <span class="egress-name">Monitoring ping</span>${" "}
-            ${pingsOk
-              ? html`<span class="ping-empty">No failed pings recorded.</span>`
-              : html`<span class="ping-count">${pings.length} recent failure${pings.length === 1 ? "" : "s"}</span>`}
+            ${
+              pingsOk
+                ? html`<span class="ping-empty">No failed pings recorded.</span>`
+                : html`<span class="ping-count">${pings.length} recent failure${pings.length === 1 ? "" : "s"}</span>`
+            }
         </div>
         ${
           pingsOk

@@ -230,7 +230,7 @@ control_prune_results() { # <control-dir>
         case "$result" in os-update-state.json | tor-heal-outage.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
         [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
-        [ -f "$dir/$(basename "$result" .json).tar.gz" ] && continue     # a support bundle's own result
+        [ -f "$dir/$(basename "$result" .json).tar.gz" ] && continue
         n=$((n + 1))
         if [ "$n" -gt "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
             rm -f "$dir/$result"

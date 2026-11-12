@@ -1,12 +1,5 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Support-bundle control verb (#4036/#4038): the journal-only collector, its one redactor, the
-# host-side hour clamp, the size refusal, and the archive leg that mirrors backup.
-#
-# The journalctl stub seeds the four secret classes #4036 names — a Monero payout address, an
-# --rpc-login value, a 56-char .onion, and an --http-access-token value — and every assertion
-# below checks the RAW values are ABSENT from the extracted archive, not merely that a marker
-# is present, so a redactor that stopped firing fails the suite for the right reason.
 : "${SANDBOX:?}"
 
 SB="$SANDBOX/ctrl4036"
@@ -36,7 +29,7 @@ EOF
 chmod +x "$SB/bin/journalctl"
 export SB_JOURNAL_LOG="$SB/journal.log"
 
-sb_run() { # [keep-stamp=1 to leave the throttle stamp in place] <request-file>
+sb_run() {
     local keep=""
     [ "${1:-}" = "--keep-stamp" ] && {
         keep=1
@@ -50,7 +43,7 @@ sb_run() { # [keep-stamp=1 to leave the throttle stamp in place] <request-file>
     ) >/dev/null 2>&1
 }
 sb_req() {
-    printf '{"id":"%s","action":"support-bundle","actor":"admin"%s}\n' "$1" "$2" "${3:-}" >"$SB/req-$1.json"
+    printf '{"id":"%s","action":"%s","actor":"admin"%s}\n' "$1" "$2" "${3:-}" >"$SB/req-$1.json"
     printf '%s\n' "$SB/req-$1.json"
 }
 
@@ -61,7 +54,10 @@ assert_eq "support-bundle applies" "$(jq -r .status "$SB/results/$sid1.json")" "
 assert_eq "the applied result names the archive, the way backup does" \
     "$(jq -r '.archive | test("^support-bundle-[0-9T]+Z\\.tar\\.gz$")' "$SB/results/$sid1.json")" "true"
 assert_rc "the archive sits in the results spool under the request id" \
-    "$(ls "$SB/results/$sid1.tar.gz" >/dev/null 2>&1; echo $?)" "0"
+    "$(
+        ls "$SB/results/$sid1.tar.gz" >/dev/null 2>&1
+        echo $?
+    )" "0"
 assert_eq "the spool archive is mode 600" \
     "$(stat -f '%Lp' "$SB/results/$sid1.tar.gz" 2>/dev/null || stat -c '%a' "$SB/results/$sid1.tar.gz")" "600"
 assert_contains "support-bundle is audited applied" \
@@ -98,7 +94,10 @@ assert_eq "a widened window is clamped to the host cap, not trusted" \
 assert_contains "the journal was cut at the clamped window" "$(cat "$SB/journal.log")" "--since 168 hours ago"
 sid3="c403c403-0000-4000-8000-000000000003"
 rm -f "$SB/journal.log"
-sb_run "$(printf '{"id":"%s","action":"support-bundle","actor":"admin","hours":"12x"}\n' "$sid3" | tee "$SB/req-$sid3.json" >/dev/null; printf '%s' "$SB/req-$sid3.json")"
+sb_run "$(
+    printf '{"id":"%s","action":"support-bundle","actor":"admin","hours":"12x"}\n' "$sid3" | tee "$SB/req-$sid3.json" >/dev/null
+    printf '%s' "$SB/req-$sid3.json"
+)"
 assert_eq "a non-numeric window falls back to the stated default" \
     "$(jq -r .hours "$SB/results/$sid3.json")" "72"
 
@@ -110,7 +109,10 @@ sid4="c403c403-0000-4000-8000-000000000004"
 ) >/dev/null 2>&1
 assert_eq "exceeding the total cap fails the request" "$(jq -r .status "$SB/results/$sid4.json")" "failed"
 assert_rc "a refused bundle writes no archive" \
-    "$(ls "$SB/results/$sid4.tar.gz" >/dev/null 2>&1; echo $?)" "1"
+    "$(
+        ls "$SB/results/$sid4.tar.gz" >/dev/null 2>&1
+        echo $?
+    )" "1"
 
 echo "== control channel: a second bundle inside a minute is rejected outright =="
 sid5="c403c403-0000-4000-8000-000000000005"
@@ -124,7 +126,10 @@ rb=$(
     run_sourced_e "$SANDBOX" recovery_bundle --hours 24 2>/dev/null | tail -1 | sed 's/^Support bundle written: //'
 )
 assert_rc "recovery-bundle writes an archive on a journal-only host" \
-    "$(ls "$rb" >/dev/null 2>&1; echo $?)" "0"
+    "$(
+        ls "$rb" >/dev/null 2>&1
+        echo $?
+    )" "0"
 assert_contains "the archive lands under the stated directory" "$rb" "$SB/out/support-bundle-"
 assert_eq "the printed archive is mode 600" \
     "$(stat -f '%Lp' "$rb" 2>/dev/null || stat -c '%a' "$rb")" "600"

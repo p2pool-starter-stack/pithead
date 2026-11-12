@@ -41,12 +41,6 @@ async def handle_backup_download(request):
 
 
 async def handle_support_bundle_download(request):
-    """Stream the redacted support bundle an applied support-bundle request produced (#4036).
-
-    Same shape as the backup download: UUID id, an "applied" result naming an archive, and
-    FileResponse answering 404 itself if the file is gone. The bundle is plaintext and already
-    redacted host-side, so unlike the backup archive it needs no passphrase gate — but it still
-    holds full journal history, so it is served only for the exact id whose result is applied."""
     try:
         rid = str(uuid.UUID(request.query.get("id", "")))
     except ValueError:

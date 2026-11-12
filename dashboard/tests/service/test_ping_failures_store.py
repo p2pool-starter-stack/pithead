@@ -1,8 +1,3 @@
-"""ping_failures ring table (#4037): ring trim, newest-first read, and the never-raise contract.
-
-The recorder runs inside the data loop's ping path — a DB error there must cost a row, not the
-loop. That contract, not SQL, is what these tests pin."""
-
 from mining_dashboard.service.storage_service import StateManager
 
 

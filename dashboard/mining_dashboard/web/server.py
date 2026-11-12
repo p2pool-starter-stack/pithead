@@ -617,8 +617,6 @@ def create_app(state_manager, latest_data_ref):
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
                 # Appliance OS update: one route, a closed action set, every judgment host-side.
                 web.post("/api/control/os-update", handle_control_os_update),
-                # Service Diagnostics (#913/#943) + support bundle (#4036): read-only asks that
-                # poll /api/control/result above, registered as a set (see the views module).
                 *diagnostics_views.control_routes(),
             ]
         )

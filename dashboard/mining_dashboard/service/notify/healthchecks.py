@@ -83,11 +83,6 @@ class HealthchecksClient:
 
     @classmethod
     def from_config(cls, record_failure=None):
-        """Build a client from the module-level config (env-backed) values.
-
-        ``record_failure`` is an optional callable ``(ts, reason, detail)`` invoked once per
-        FAILED ping attempt (#4037). It must never raise — a recorder that touches the DB is
-        wrapped again below for good measure."""
         return cls(
             ping_url=HEALTHCHECKS_PING_URL,
             interval_seconds=_PING_INTERVAL_SEC,
@@ -149,27 +144,15 @@ class HealthchecksClient:
             return False
 
     def _record(self, reason, detail=""):
-        """Hand one failed attempt to the optional recorder (#4037).
-
-        Detail is a class name or status code, never a message: exception messages for these
-        failures interpolate the ping URL, and the URL is a bearer credential. The recorder must
-        never break the ping, so anything it raises dies right here."""
         if not self._record_failure:
             return
         try:
             self._record_failure(time.time(), reason, detail)
-        except Exception:
+        except Exception:  # noqa: S110 — the recorder must never break the ping
             pass
 
 
 def _failure_class(exc):
-    """Map a ping exception to one of tor_socks / dns / connect (#4037).
-
-    Walks the exception chain by CLASS, never by message text — the message interpolates the
-    ping URL, which is a bearer credential and must not be stored. Tor SOCKS failures surface as
-    requests' ProxyError or, one layer down, as a PySocks ``Proxy*`` error; name resolution as
-    urllib3's ``NameResolutionError`` or ``gaierror``; anything else the stack raised is a
-    connection failure."""
     if isinstance(exc, requests.exceptions.ProxyError):
         return "tor_socks"
     cause = exc.__cause__ or exc.__context__
