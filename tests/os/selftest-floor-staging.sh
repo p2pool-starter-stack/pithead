@@ -80,7 +80,7 @@ _floor_fallback_wait() {
     return 0
 }
 _floor_state() {
-    local seq=("99.0.0|1.0.0|99.0.0" "1.0.0||" "99.0.0|1.0.0|99.0.0" "99.0.0||")
+    local seq=("99.0.0|1.0.0|99.0.0|${MARKER_SLOT:-B}" "1.0.0||" "99.0.0|1.0.0|99.0.0|${MARKER_SLOT:-B}" "99.0.0||")
     echo x >>"$T/state-calls"
     printf '%s' "${seq[($(wc -l <"$T/state-calls") - 1) % 4]}"
 }
@@ -91,11 +91,15 @@ _ssh() {
         echo "a migrating update to 99.0.0 failed its gate and fell back before its migration ran"
         [ "$(wc -l <"$T/osupdate-calls")" -ne 4 ] || return 1
         ;;
+    *"cat /proc/cmdline"*) echo "quiet rauc.slot=${BOOTED_SLOT:-A}" ;;
     *.os-data-floor*) echo 1.0.0 ;;
+    *config_version*) sed 's/[-+].*//' VERSION ;;
     *"floor is back to'"*) return 1 ;;
     esac
     return 0
 }
+[ "$(_floor_target_slot)" = B ] || fail "booted A did not select spare B"
+[ "$(BOOTED_SLOT=B _floor_target_slot)" = A ] || fail "booted B did not select spare A"
 for n in 1 2 3 4; do
     ROWS=() STAGE_CALLS=0
     : >"$T/state-calls"
@@ -110,4 +114,14 @@ for n in 1 2 3 4; do
     [ "${#ROWS[@]}" -eq 1 ] || fail "stage failure $n: ${#ROWS[@]} failure rows: ${ROWS[*]}"
     case "${ROWS[0]}" in *'bundle staging failed'*) ;; *) fail "stage failure $n: wrong row: ${ROWS[0]}" ;; esac
 done
+ROWS=() MARKER_SLOT=A
+: >"$T/state-calls"
+: >"$T/osupdate-calls"
+_stage_bundle() { return 0; }
+phase_provision_floor_fallback_leg "$T/bundle" >/dev/null
+[ "${#ROWS[@]}" -eq 1 ] || fail "wrong-slot marker: ${#ROWS[@]} failure rows: ${ROWS[*]}"
+case "${ROWS[0]}" in
+*"want '99.0.0|1.0.0|99.0.0|B'"*) ;;
+*) fail "wrong-slot marker was accepted: ${ROWS[0]}" ;;
+esac
 printf 'selftest-floor-staging: ok\n'

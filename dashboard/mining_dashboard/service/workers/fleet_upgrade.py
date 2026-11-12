@@ -32,6 +32,14 @@ def plan(workers, release):
         rigforge = w.get("rigforge")
         if not name or not (isinstance(rigforge, dict) or w.get("adopted")):
             continue
+        if isinstance(rigforge, dict) and rigforge.get("appliance"):
+            out["skipped"].append(
+                {
+                    "name": name,
+                    "reason": "an appliance rig — it updates with its Pithead OS image",
+                }
+            )
+            continue
         version = None if feed_stale(rigforge) else (rigforge or {}).get("version")
         if version and parse_semver(version) and not compute_update(version, tag, None):
             continue

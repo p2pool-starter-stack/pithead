@@ -93,8 +93,8 @@ test("wizard section headings are h2s with the h3 appearance and a fixed top mar
     .filter((file) => file.endsWith(".mjs"))
     .flatMap((file) => readFileSync(new URL(file, WIZARD), "utf8").match(/<h[23](?=[\s>])/g) || []);
   assert.equal(headings.filter((tag) => tag === "<h3").length, 0, "wizard section headings must not skip h2");
-  assert.equal(headings.filter((tag) => tag === "<h2").length, 16, "expected every wizard section heading");
-  assert.equal((WIZARD_HTML.match(/<h1(?=[\s>])/g) || []).length + headings.length, 17, "expected one page heading and all 16 section headings");
+  assert.equal(headings.filter((tag) => tag === "<h2").length, 15, "expected every wizard section heading");
+  assert.equal((WIZARD_HTML.match(/<h1(?=[\s>])/g) || []).length + headings.length, 16, "expected one page heading and all 15 section headings");
   // `[,{]`, not `{`: #1859 added `.card h2` to this selector list when the dashboard's own card
   // titles moved h3 -> h2. The claim is that the wizard h2 is IN the rule, not that it is last.
   // No leading `h3,` any more (round 2 of #1859: that bare tag also caught every promoted h3

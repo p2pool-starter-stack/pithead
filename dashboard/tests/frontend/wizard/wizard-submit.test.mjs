@@ -315,8 +315,6 @@ test("a restore network failure shows an actionable error beside the retry", asy
   restore();
 });
 
-// --- the token gate: the lockout must read as actionable, not as a dead page -----------------
-
 test("gate errors are announced beside the Continue action", () => {
   const out = renderToString(html`<${Gate} error="Wrong token." onSubmit=${() => {}} />`);
   assert.match(out, /role="alert"/);
@@ -324,25 +322,33 @@ test("gate errors are announced beside the Continue action", () => {
   assert.ok(out.indexOf("Wrong token.") < out.indexOf("Continue"));
 });
 
-test("auth: a 429 (lockout) shows the console-token message, not the generic wrong-token one", async () => {
+test("auth: a 429 tells the operator when to retry the same token", async () => {
   const inst = new WizardApp({});
   stubSetState(inst);
   const real = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: false,
     status: 429,
-    json: async () => ({ error: "server-side lockout text" }),
+    headers: { get: (name) => (name === "Retry-After" ? "37" : null) },
   });
   await inst.auth({ preventDefault() {}, target: undefined });
   globalThis.fetch = real;
   assert.match(inst.state.error, /too many attempts/i);
-  assert.match(inst.state.error, /console/i);
+  assert.match(inst.state.error, /same token/i);
+  assert.match(inst.state.error, /37 seconds/i);
 });
 
-test("auth: a genuinely dropped connection reads the same as the 429 it raced", async () => {
-  // The exact bug: the lockout's exit used to race the response, so the fetch this app makes
-  // rejects instead of resolving 429. Uncaught, that was a silent unhandled rejection — the
-  // operator just saw the page do nothing.
+test("auth: a 429 without Retry-After uses the server's fixed cooldown", async () => {
+  const inst = new WizardApp({});
+  stubSetState(inst);
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 429, headers: { get: () => null } });
+  await inst.auth({ preventDefault() {}, target: undefined });
+  globalThis.fetch = real;
+  assert.match(inst.state.error, /60 seconds/i);
+});
+
+test("auth: a dropped connection is reported as a network failure", async () => {
   const inst = new WizardApp({});
   stubSetState(inst);
   const real = globalThis.fetch;
@@ -351,8 +357,8 @@ test("auth: a genuinely dropped connection reads the same as the 429 it raced", 
   };
   await inst.auth({ preventDefault() {}, target: undefined });
   globalThis.fetch = real;
-  assert.match(inst.state.error, /too many attempts/i);
-  assert.match(inst.state.error, /console/i);
+  assert.match(inst.state.error, /could not reach this machine/i);
+  assert.doesNotMatch(inst.state.error, /too many attempts/i);
 });
 
 test("auth: an ordinary wrong token still gets the plain message, not the lockout one", async () => {

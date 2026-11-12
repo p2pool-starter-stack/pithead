@@ -118,7 +118,7 @@ async def test_sparse_browser_submit_materializes_defaults_without_replacing_ans
         payload["xmrig_proxy"] = {"enabled": True}
     elif explicit:
         payload.update({"local_miner": {"enabled": False}, "dashboard": {"host": "chosen"}})
-    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+    async with TestClient(TestServer(wizard.make_app())) as client:
         await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
         response = await client.post("/submit", data={"config": json.dumps(payload)})
         assert response.status == 200
@@ -131,3 +131,18 @@ async def test_sparse_browser_submit_materializes_defaults_without_replacing_ans
         if explicit == "legacy" and path == "xvb.enabled":
             expected = True
         assert written[block][key] == expected
+
+
+@pytest.mark.parametrize("platform", ["diy", "appliance"])
+def test_donation_is_dark_on_all_new_install_paths(platform):
+    for cfg in (
+        new_install_defaults(platform),
+        build_config({}, platform=platform),
+        new_machine_answers({}, [], platform),
+    ):
+        effective = effective_defaults(platform)
+        effective.update(cfg)
+        assert effective["donation"] == {"enabled": False, "percent": 0, "tor": True}
+    reference = effective_defaults(platform)
+    assert "pool" not in build_config({}, platform=platform)["p2pool"]
+    assert reference["workers"]["api_port"] == 8080

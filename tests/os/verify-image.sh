@@ -205,9 +205,7 @@ chk "shim banner silenced" '[ -e "$ROOT/etc/containers/nodocker" ]'
 chk "docker short-name semantics restored" 'grep -q "docker.io" "$ROOT/etc/containers/registries.conf.d/pithead-docker-compat.conf"'
 chk "container storage on /data" 'grep -q "graphroot = \"/data/containers/storage\"" "$ROOT/etc/containers/storage.conf"'
 chk "wizard image baked (offline first boot)" '[ -s "$ROOT/opt/pithead/images/dashboard.tar.gz" ]'
-if grep -q '^file ' "$ROOT/opt/pithead/COMPOSE_SOURCE" 2>/dev/null; then
-    skip "the full service set is baked (#978)" "synthetic compose build: the harness supplies its own services"
-else
+if grep -q '^file ' "$ROOT/opt/pithead/COMPOSE_SOURCE" 2>/dev/null; then skip "the full service set is baked (#978)" "synthetic compose build"; else
     chk "every always-on service image is baked (provisioning pulls nothing, #978)" '[ "$(ls "$ROOT"/opt/pithead/images/{tor,monero,p2pool,xmrig-proxy,caddy,docker-socket-proxy}.tar.gz 2>/dev/null | wc -l)" = 6 ]'
 fi
 chk "installer + its whole toolset" '[ -x "$ROOT/usr/local/sbin/pithead-install" ] && [ -e "$ROOT/usr/sbin/sgdisk" ] && [ -e "$ROOT/usr/bin/jq" ]'
@@ -230,6 +228,7 @@ else
 fi
 chk "prebuilt xmrig baked (Tor-only box cannot clone)" '[ -x "$ROOT/opt/rigforge/prebuilt/xmrig/build/xmrig" ]'
 chk "prebuilt commit marker matches rigforge's pin" '[ "$(cat "$ROOT/opt/rigforge/prebuilt/xmrig/.rigforge-commit")" = "$(sed -n "s/^XMRIG_COMMIT=\"\${XMRIG_COMMIT:-\(.*\)}\"$/\1/p" "$ROOT/opt/rigforge/rigforge.sh")" ]'
+chk "prebuilt donate minimum marker is 0 (RigForge will not rebuild)" '[ "$(cat "$ROOT/opt/rigforge/prebuilt/xmrig/.rigforge-donate-min")" = "0" ]'
 chk "prebuilt sha record present (integrity check input)" '[ -s "$ROOT/opt/rigforge/prebuilt/xmrig/.rigforge-sha256" ]'
 chk "miner toolchain baked (compiler chain)" '[ -e "$ROOT/usr/bin/gcc" ] && [ -e "$ROOT/usr/bin/cmake" ] && [ -e "$ROOT/usr/bin/make" ] && [ -e "$ROOT/usr/bin/git" ]'
 chk "miner runtime tools baked (envsubst/cpupower/rdmsr)" '[ -e "$ROOT/usr/bin/envsubst" ] && [ -e "$ROOT/usr/bin/cpupower" ] && [ -e "$ROOT/usr/sbin/rdmsr" ]'

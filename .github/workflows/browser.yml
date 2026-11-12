@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      image: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
       options: --ipc=host
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -54,6 +54,7 @@ jobs:
           path: |
             dashboard/tests/browser/test-results/sovereign-*/shell-*.png
             dashboard/tests/browser/test-results/sovereign-*/drawer-*.png
+            dashboard/tests/browser/test-results/overview-*/overview-*.png
             dashboard/tests/browser/test-results/sovereign-*/earnings-*.png
             dashboard/tests/browser/test-results/sovereign-*/machines-*.png
           retention-days: 7
