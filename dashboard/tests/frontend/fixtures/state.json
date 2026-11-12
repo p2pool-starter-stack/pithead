@@ -329,6 +329,7 @@
     "monero": [],
     "tari": []
   },
+  "ping_failures": [],
   "pool": {
     "blocks": 0,
     "diff": "0.00 M",
