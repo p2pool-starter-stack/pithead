@@ -68,7 +68,9 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         post_op_begin() { :; }
         post_op_invariants() { :; }
         lifecycle_gate_sample() { :; }
+        run_support_bundle() { :; }
         run_source_image_reconcile() { :; }
+        run_image_permissions() { :; }
         run_restore_dashboard_probe() { :; }
         run_tari_background_sync() { :; }
         sync_gate_marker_state() { printf absent; }

@@ -68,10 +68,12 @@ boot_disk_part() { # $1: PARTLABEL ("esp" or "data") -> prints /dev/node, or not
     printf '%s' "$part"
 }
 
-# Read-only probe mount (so it never dirties the fs), cleaned up either way. rc mirrors the mount.
 try_mount_ro() { # $1: partition
     local mnt
-    mnt=$(mktemp -d) || return 1
+    mnt=$(mktemp -d) || {
+        log "could not allocate a read-only probe directory — refusing recovery"
+        return 2
+    }
     if mount -o ro "$1" "$mnt" 2>/dev/null; then
         umount "$mnt" 2>/dev/null || true
         rmdir "$mnt" 2>/dev/null || true
@@ -99,22 +101,23 @@ backup_superblocks() { # $1: partition -> block numbers, one per line, best firs
 # that used to reach `mkfs`. A corrupt primary superblock is the textbook case: `fsck -p` exits 8,
 # prints the very command that would have saved the partition, and we reformatted instead, taking
 # the wallets, the Tor onion keys and both chains with it.
-#
-# rc 0 = mountable (healthy or repaired), rc 1 = no repair could mount it.
 data_mountable() { # $1: data partition
     try_mount_ro "$1" && return 0
+    [ "$?" -eq 1 ] || return 2
     log "$1 did not mount — escalating repairs before deciding anything"
     fsck -p -t ext4 "$1" >/dev/null 2>&1 || true
     try_mount_ro "$1" && {
         log "preen repaired $1"
         return 0
     }
+    [ "$?" -eq 1 ] || return 2
     # -y answers yes to every question -p refuses to ask. Still only ever touches this partition.
     e2fsck -y "$1" >/dev/null 2>&1 || true
     try_mount_ro "$1" && {
         log "full e2fsck repaired $1"
         return 0
     }
+    [ "$?" -eq 1 ] || return 2
     local sb tried=0
     for sb in $(backup_superblocks "$1"); do
         # Two is enough: if the first two backups cannot rebuild it, the damage is not a lost
@@ -128,14 +131,11 @@ data_mountable() { # $1: data partition
             log "backup superblock $sb repaired $1"
             return 0
         }
+        [ "$?" -eq 1 ] || return 2
     done
     return 1
 }
 
-# The whole decision, isolated so it is testable with stubbed mount/fsck. Echoes exactly one of:
-#   skip                 healthy partition, no request — touch nothing (the fail-safe default)
-#   reformat-requested   the factory-reset marker is present
-#   reformat-wedged      the partition will not mount even after fsck
 data_reset_decision() { # $1: data partition, $2: marker file path
     if [ -f "$2" ]; then
         echo reformat-requested
@@ -144,6 +144,8 @@ data_reset_decision() { # $1: data partition, $2: marker file path
     if data_mountable "$1"; then
         echo skip
         return 0
+    else
+        [ "$?" -eq 1 ] || return 2
     fi
     echo reformat-wedged
 }
@@ -168,12 +170,16 @@ record_wipe() { # $1: esp mount dir (may be empty), $2: reason
 # reached from data_reset_decision's reformat verdicts.
 reformat_data() { # $1: data partition
     local part="$1" mnt d
+    mnt=$(mktemp -d) || {
+        log "could not allocate a data mount directory — refusing to reformat $part"
+        return 2
+    }
     log "reformatting $part (ext4, label 'data')"
     mkfs.ext4 -q -F -L data "$part" || {
         log "mkfs failed on $part — leaving it as-is"
+        rmdir "$mnt" 2>/dev/null || true
         return 1
     }
-    mnt=$(mktemp -d) || return 1
     if mount "$part" "$mnt" 2>/dev/null; then
         for d in $SEED_DIRS; do mkdir -p "$mnt$d"; done
         umount "$mnt" 2>/dev/null || true
@@ -182,7 +188,7 @@ reformat_data() { # $1: data partition
 }
 
 main() {
-    local data_part esp_part esp_mnt marker verdict
+    local data_part esp_part esp_mnt marker verdict rc=0
     data_part=$(boot_disk_part data) || {
         log "could not resolve the data partition from the boot disk — doing nothing"
         return 0
@@ -192,36 +198,46 @@ main() {
         return 0
     }
 
-    # Read (and later clear) the factory-reset marker on the ESP. The ESP is not mounted this early,
-    # so mount it ourselves; if it will not mount we simply have no marker to act on.
     esp_part=$(boot_disk_part esp) || esp_part=""
-    esp_mnt=$(mktemp -d)
+    esp_mnt=$(mktemp -d) || {
+        log "could not allocate an ESP mount directory — refusing recovery"
+        return 2
+    }
     marker=""
     if [ -n "$esp_part" ] && [ -b "$esp_part" ] && mount "$esp_part" "$esp_mnt" 2>/dev/null; then
         marker="$esp_mnt/$MARKER_NAME"
     fi
 
-    verdict=$(data_reset_decision "$data_part" "${marker:-/nonexistent}")
+    verdict=$(data_reset_decision "$data_part" "${marker:-/nonexistent}") || {
+        rc=$?
+        verdict=""
+    }
     case "$verdict" in
     skip)
         log "$data_part is healthy and no reset was requested — leaving it untouched"
         ;;
     reformat-requested)
         log "factory-reset requested — wiping $data_part"
-        reformat_data "$data_part" && record_wipe "${marker:+$esp_mnt}" "factory-reset requested"
-        # Consume the marker so the wipe is one-shot, never a reboot loop.
-        [ -n "$marker" ] && rm -f "$marker" 2>/dev/null || true
+        if reformat_data "$data_part"; then
+            record_wipe "${marker:+$esp_mnt}" "factory-reset requested"
+        else
+            [ "$?" -ne 2 ] || rc=2
+        fi
+        [ "$rc" -eq 2 ] || [ -z "$marker" ] || rm -f "$marker" 2>/dev/null || true
         ;;
     reformat-wedged)
         log "$data_part could not be mounted after every repair — reinitializing it so the box can recover"
-        reformat_data "$data_part" &&
+        if reformat_data "$data_part"; then
             record_wipe "${marker:+$esp_mnt}" "unrecoverable /data reinitialized — everything on it was lost"
+        else
+            [ "$?" -ne 2 ] || rc=2
+        fi
         ;;
     esac
 
     if mountpoint -q "$esp_mnt" 2>/dev/null; then umount "$esp_mnt" 2>/dev/null || true; fi
     rmdir "$esp_mnt" 2>/dev/null || true
-    return 0
+    return "$rc"
 }
 
 # Sourceable for the test suite (functions only); runs main only when executed directly.

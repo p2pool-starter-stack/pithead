@@ -1,0 +1,10 @@
+[Unit]
+Description=Check appliance local miner connectivity every 30 seconds
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

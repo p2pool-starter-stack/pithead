@@ -5,11 +5,6 @@
 #   (none)  every block in turn, each in its own bash process, then the summed verdict
 #   BLOCK   one block, 1..STACK_BLOCKS: what each leg of the Shell workflow's matrix runs
 #
-# The source order below is cut into STACK_BLOCKS contiguous blocks that CI runs in parallel
-# (#2631). Each block starts with lib.sh in a fresh process. Shared fixture builders also let the
-# nine #2048 prerequisite fragments run individually; CI proves those runs separately. The
-# no-argument run keeps the same process boundaries. stack_blocks_audit refuses missing or duplicate
-# stanzas, missing domain accounting, and a workflow matrix that does not list every block.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_BLOCKS=5
@@ -146,9 +141,11 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore-commit.sh" && domain_ran test-appliance-restore-commit.sh "$_d0" "$?" || domain_ran test-appliance-restore-commit.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-backup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-backup.sh" && domain_ran test-backup.sh "$_d0" "$?" || domain_ran test-backup.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/test-backup-data-paths.sh" && domain_ran test-backup-data-paths.sh "$_d0" "$?" || domain_ran test-backup-data-paths.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-backup-recovery.sh" && domain_ran test-backup-recovery.sh "$_d0" "$?" || domain_ran test-backup-recovery.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-backup-stop-scope.sh" && domain_ran test-backup-stop-scope.sh "$_d0" "$?" || domain_ran test-backup-stop-scope.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-cli-restore-hardening.sh" && domain_ran test-cli-restore-hardening.sh "$_d0" "$?" || domain_ran test-cli-restore-hardening.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/test-cli-restore-sqlite.sh" && domain_ran test-cli-restore-sqlite.sh "$_d0" "$?" || domain_ran test-cli-restore-sqlite.sh "$_d0" "$?"
     _d0=$((PASS + FAIL)) && source "$HERE/test-restore-configless.sh" && domain_ran test-restore-configless.sh "$_d0" "$?" || domain_ran test-restore-configless.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-install-verify.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-install-verify.sh" && domain_ran test-install-verify.sh "$_d0" "$?" || domain_ran test-install-verify.sh "$_d0" "$?"
@@ -156,6 +153,8 @@ fi
 if in_block 2; then
     # shellcheck source=tests/stack/secrets/test-secrets.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets.sh" && domain_ran test-secrets.sh "$_d0" "$?" || domain_ran test-secrets.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/secrets/test-apply-sidecar.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-apply-sidecar.sh" && domain_ran test-apply-sidecar.sh "$_d0" "$?" || domain_ran test-apply-sidecar.sh "$_d0" "$?"
 
     # shellcheck source=tests/stack/test-rig-worker.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig-worker.sh "$_d0" "$?" || domain_ran test-rig-worker.sh "$_d0" "$?"
@@ -212,12 +211,6 @@ if in_block 2; then
 
     # shellcheck source=tests/stack/secrets/test-secrets-masking.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets-masking.sh" && domain_ran test-secrets-masking.sh "$_d0" "$?" || domain_ran test-secrets-masking.sh "$_d0" "$?"
-
-    # shellcheck source=tests/stack/test-confirm-approval.sh disable=SC2015
-    _d0=$((PASS + FAIL)) && source "$HERE/test-confirm-approval.sh" && domain_ran test-confirm-approval.sh "$_d0" "$?" || domain_ran test-confirm-approval.sh "$_d0" "$?"
-
-    # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
-    _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
 fi
 if in_block 3; then
     # Approval gate (#33), add-only (#893), SSRF floor (#122, #2671); own sandbox (#1105 R13). POSITION-LOCKED: the next three read gate_try()/$UUID5.
@@ -264,8 +257,14 @@ if in_block 4; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 fi
 if in_block 5; then
+    # shellcheck source=tests/stack/test-confirm-approval.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-confirm-approval.sh" && domain_ran test-confirm-approval.sh "$_d0" "$?" || domain_ran test-confirm-approval.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-apply-retry.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-apply-retry.sh" && domain_ran test-apply-retry.sh "$_d0" "$?" || domain_ran test-apply-retry.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-dashboard-carry.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-dashboard-carry.sh" && domain_ran test-dashboard-carry.sh "$_d0" "$?" || domain_ran test-dashboard-carry.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-deploy-layout.sh disable=SC2015

@@ -19,14 +19,14 @@ def _svc():
     return DataService(sm, MagicMock(), MagicMock()), sm
 
 
-def _body(revision, change_id=None):
-    """An enriched worker body carrying the shape ``parse_config_meta`` returns."""
-    return {"rigforge": {"config_meta": {"revision": revision, "last_change_id": change_id}}}
+def _body(revision, change_id=None, version=None):
+    meta = {"revision": revision, "last_change_id": change_id}
+    return {"rigforge": {"version": version, "config_meta": meta}}
 
 
-def _poll(svc, worker, revision, change_id=None):
-    """One poll of one worker through the real caller, so the wiring is what is under test."""
-    asyncio.run(svc._reconcile_worker_config([{"name": worker}], [_body(revision, change_id)]))
+def _poll(svc, worker, revision, change_id=None, version=None):
+    body = _body(revision, change_id, version)
+    asyncio.run(svc._reconcile_worker_config([{"name": worker}], [body]))
 
 
 def _rig_edit(svc, worker, change_id):
@@ -38,6 +38,21 @@ def _rig_edit(svc, worker, change_id):
 
 def _rows(sm, action):
     return [e for e in sm.get_audit_events() if e["action"] == action]
+
+
+class TestRigForgeUpgradeRebase:
+    def test_only_a_move_at_an_unchanged_version_writes_a_drift_row(self):
+        svc, sm = _svc()
+        try:
+            _poll(svc, "rig1", "aaa", version="1.0.0")
+            _poll(svc, "rig1", "bbb", version="1.1.0")
+            assert _rows(sm, "rig-drift") == []
+            _poll(svc, "rig1", "ccc", version="1.1.0")
+            assert len(_rows(sm, "rig-drift")) == 1
+            _poll(svc, "rig1", "ddd", version="1.2\udcff")
+            assert len(_rows(sm, "rig-drift")) == 2
+        finally:
+            sm.close()
 
 
 class TestDriftIsRecorded:

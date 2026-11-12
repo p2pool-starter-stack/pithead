@@ -30,7 +30,7 @@ def spool(tmp_path, monkeypatch):
 
 @pytest.fixture
 async def client(spool):
-    value = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    value = TestClient(TestServer(wizard.make_app()))
     await value.start_server()
     yield value
     await value.close()
@@ -301,7 +301,7 @@ async def test_prefill_migration_notice_survives_submit_and_host_failure(client,
 
 
 async def test_retry_is_authenticated_and_only_opens_a_real_failure(client, spool):
-    unauth = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    unauth = TestClient(TestServer(wizard.make_app()))
     await unauth.start_server()
     try:
         assert (await unauth.post("/retry", allow_redirects=False)).status == 302
