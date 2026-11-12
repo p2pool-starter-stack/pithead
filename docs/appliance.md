@@ -547,7 +547,7 @@ boots:
   rig comes back with the same role, the same `rig.json` and the same access token,
   starts mining again, and a coordinator that had adopted the rig keeps reading it
   with no adopting to redo. No leg has run that pass on an adopted coordinated rig
-  yet: manual QA row M13 is the proof still owed (#3961).
+  yet: manual QA row M13 is the proof still owed (#3995).
 - **Running from its USB stick:** re-flash the stick with the newer image. Re-flashing
   replaces the whole stick, data included, so the rig comes back with a fresh setup
   and a new token, and the coordinator adopts it again. Delivering image updates to

@@ -11,10 +11,11 @@ This file lists the [rig](../README.md#glossary) checks that still need hands on
 - **Time.** About 2 hours, the Rigs session of the [Run sheet](../README.md#run-sheet).
 
 The battery is defined in [appliance-release.md](../../appliance-release.md). The `rig` KVM phase
-only proves the [wizard](../README.md#glossary)'s rig card, role select, a submit toward a faked pool listener, volatile
-journald, a plain reboot, a power cut, and the A/B update leg — so these three stay hands-on
-until #1886's first gap converts what it can and names a bench e2e for the rest. Each row below names the
-check that replaces it once that lands. M14 (run-from-USB) no longer needs a hand-run: the
+proves the [wizard](../README.md#glossary)'s rig card, role select, a submit toward a faked pool listener, volatile
+journald, a plain reboot, a power cut, and the A/B update leg; its share leg (#2063,
+`tests/os/rig-share-leg.sh`) boots a second guest as a remote-node coordinator and proves an
+accepted share on the appliance channel both ways. Each row below says what is automated and what
+a hand must still do. M14 (run-from-USB) no longer needs a hand-run: the
 `rigmedia` KVM phase (`tests/os/phases/rigmedia.sh`, #2069) covers it — see its row below for what
 it proves and what it still leaves out.
 
@@ -36,9 +37,13 @@ it proves and what it still leaves out.
 - `doctor` on the rig reports MSR applied and hugepages reserved.
 - Hashrate sits within the box's recorded baseline band.
 
-*Replaced by: the accepted-share and `doctor` MSR/hugepages checks #1886's gap 1 still has to add
-— the KVM phase fakes the pool listener and never accepts a share, and asserts nothing about MSR or
-hugepages.*
+*Covered by: the accepted-share check, automated as the `rig` phase's share leg (#2063,
+`tests/os/rig-share-leg.sh`) — the phase boots a second guest as a remote-node coordinator,
+re-points the already-proven rig at it, and reads the coordinator's own `/api/state` until the
+rig's worker and the coordinator's built-in miner each report an accepted share. Stays manual:
+`doctor` on real hardware reporting MSR applied and hugepages reserved (a KVM guest cannot take
+RandomX MSR writes), hashrate inside the box's recorded baseline band, and the rig card itself on
+a real loaner.*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -55,8 +60,11 @@ hugepages.*
 - The change reaches `applied`.
 - No pool credential was touched.
 
-*Replaced by: a dashboard-driven adopt/config push check, not yet written — a rig serves no
-dashboard of its own, so nothing in the KVM `rig` phase exercises this today.*
+*Manual on `develop`. The check exists — #3717's adopt leg (`rig_adopt_leg`, run in the `rig`
+phase after the share row) adopts a worker from the coordinator's dashboard, pushes one writable
+change to `applied`, and checks pool credentials are untouched — but it merged only to
+`develop-v2.1.0`, so no KVM row on this branch exercises it. #3994 backports it for 2.0.x; until
+that lands, a rig serving no dashboard of its own means this stays a hand-run row.*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -82,7 +90,7 @@ dashboard of its own, so nothing in the KVM `rig` phase exercises this today.*
 return-mining-unaided fact off a real `virsh destroy`, and the phase's existing update leg proves
 the install/self-commit half. What stays manual is Restore on AC Power Loss itself — a firmware
 setting a virtual disk cannot show — and the Keep-everything pass itself: no automated leg
-reinstalls a rig over its own `/data` yet (#3961).*
+reinstalls a rig over its own `/data` yet (#3995).*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
