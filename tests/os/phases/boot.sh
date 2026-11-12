@@ -83,6 +83,10 @@ phase_boot() {
 
     phase_wizard_redirect
 
+    local jt_early jb_early
+    jb_early=$(_ssh 'b=$(journalctl --no-pager -q 2>/dev/null | wc -c); printf "%s\n" "${b:-missing}"' 2>/dev/null | tr -d '\r\n ')
+    jt_early=$(date +%s)
+
     # Exercise the installed unit under systemd. The guest has a real emulated UART; a temporary
     # runtime drop-in gives the SAME ExecCondition a type-0 fixture, then is removed before reboot.
     # Keep the dead-port state for five minutes, long enough to expose the original 10 s loop.
@@ -193,7 +197,8 @@ GETTY_DROPIN
                 read -r jt_age
             } < <(_ssh "$JOURNAL_STATE_PROBE" 2>/dev/null | tr -d '\r')
             verdict=$(journal_config_verdict "$jt_st" "$jt_mu" "$jt_un") && ok "$verdict" || bad "$verdict"
-            verdict=$(journal_window_verdict "$kb0" "$jt_kb" "$((jt1 - jt0))" "$(journal_cap_kib "$jt_mu" 2>/dev/null || echo 0)" "$jt_age") && ok "$verdict" || bad "$verdict"
+            verdict=$(journal_window_verdict "$kb0" "$jt_kb" "$((jt1 - jt0))" "$(journal_cap_kib "$jt_mu" 2>/dev/null || echo 0)" "$jt_age" "boot reboot burst") && ok "$verdict" || bad "$verdict"
+            verdict=$(journal_window_verdict "$jb_early" "$kb0" "$((jt0 - jt_early))" "$(journal_cap_kib "$jt_mu" 2>/dev/null || echo 0)" "$jt_age" "settled idle load") && ok "$verdict" || bad "$verdict"
         else
             bad "guest never returned after the machine-id reboot check"
         fi

@@ -42,8 +42,15 @@ cap_refused garbage
 
 out=$(journal_window_verdict 0 1048576 3600 204800 100)
 [ "$?" -eq 0 ]
-case "$out" in *1048576\ bytes*204800\ KiB*100\ s*) : ;; *)
+case "$out" in *"journal measurement (boot load):"*1048576\ bytes*204800\ KiB*100\ s*) : ;; *)
     echo "measurement text: $out" >&2
+    exit 1
+    ;;
+esac
+out=$(journal_window_verdict 1048576 1085440 420 204800 100 "settled idle load")
+[ "$?" -eq 0 ]
+case "$out" in *"journal measurement (settled idle load):"*36864\ bytes*420\ s*) : ;; *)
+    echo "settled text: $out" >&2
     exit 1
     ;;
 esac

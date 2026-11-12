@@ -129,7 +129,7 @@ journal_config_verdict() {
 }
 
 journal_window_verdict() {
-    local before="$1" after="$2" secs="$3" cap="$4" age="$5" v grow rate horizon ages
+    local before="$1" after="$2" secs="$3" cap="$4" age="$5" load="${6:-boot load}" v grow rate horizon ages
     for v in "$before" "$after" "$secs" "$cap"; do
         case "$v" in '' | *[!0-9]*)
             echo "journal window unreadable (content ${before:-?} -> ${after:-?} bytes over ${secs:-?} s, cap ${cap:-?} KiB)"
@@ -153,5 +153,5 @@ journal_window_verdict() {
     rate=$((grow * 3600 / 1024 / secs))
     horizon=$((cap * 1024 * secs / grow / 3600))
     case "$age" in '' | *[!0-9]*) ages="unreadable" ;; *) ages="${age} s" ;; esac
-    echo "journal measurement: ${grow} bytes of content in ${secs} s at boot load — an upper bound of ${rate} KiB/h uncompressed, so the ${cap} KiB cap covers at least ${horizon} h at that load; oldest surviving entry ${ages}"
+    echo "journal measurement (${load}): ${grow} bytes of content in ${secs} s — an upper bound of ${rate} KiB/h uncompressed, so the ${cap} KiB cap covers at least ${horizon} h at that load; oldest surviving entry ${ages}"
 }
