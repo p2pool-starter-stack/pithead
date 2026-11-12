@@ -77,7 +77,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and . != "hours" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -143,6 +143,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # bounded host-side and the log tail is redacted by bundle_redact_log before it is written.
     diag-doctor) control_diag_doctor "$id" "$actor" "$cdir" ;;
     diag-logs) control_diag_logs "$file" "$id" "$actor" "$cdir" ;;
+    support-bundle) control_support_bundle "$file" "$id" "$actor" "$cdir" ;;
     # Also read-only, and the one that hands back a SECRET rather than a report (#1882): the Tor
     # client-auth line without which a client-auth'd dashboard onion cannot be opened at all. It is
     # a one-time kit with the backup kit's TTL and redaction, and every reveal lands in audit/.
@@ -209,6 +210,17 @@ control_prune_results() { # <control-dir>
         fi
     done
 
+    local kept_b=0
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz 2>/dev/null || true); do
+        [ -f "$dir/$archive" ] || continue
+        [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+        kept_b=$((kept_b + 1))
+        if [ "$kept_b" -gt "$max_archives" ]; then
+            id=$(basename "$archive" .tar.gz)
+            rm -f "$dir/$archive" "$dir/$id.json"
+        fi
+    done
+
     local result n=0
     # Age and count share one pass (and one skip list) so a backup's own result JSON is never
     # evicted here while its archive is still protected above — a separate age-only find/-delete
@@ -218,6 +230,7 @@ control_prune_results() { # <control-dir>
         case "$result" in os-update-state.json | tor-heal-outage.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
         [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
+        [ -f "$dir/$(basename "$result" .json).tar.gz" ] && continue     # a support bundle's own result
         n=$((n + 1))
         if [ "$n" -gt "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
             rm -f "$dir/$result"
@@ -236,6 +249,11 @@ control_prune_results() { # <control-dir>
             *.tar.gz.enc)
                 [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
                 id="${f%.tar.gz.enc}"
+                rm -f "$dir/$f" "$dir/$id.json"
+                ;;
+            *.tar.gz)
+                [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                id="${f%.tar.gz}"
                 rm -f "$dir/$f" "$dir/$id.json"
                 ;;
             # A backup's own result JSON: keep a fresh pair; evict an expired pair together.
