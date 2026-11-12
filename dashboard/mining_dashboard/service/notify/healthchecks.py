@@ -57,6 +57,7 @@ class HealthchecksClient:
         interval_seconds,
         tor_proxy=None,
         clock=time.monotonic,
+        record_failure=None,
     ):
         # A ping URL is the on/off switch: paste the full URL Healthchecks.io shows you (hosted or a
         # Tor-reachable self-hosted instance) to enable; leave it blank to keep the switch off.
@@ -70,6 +71,7 @@ class HealthchecksClient:
         # always injects it.
         self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
         self._clock = clock
+        self._record_failure = record_failure
         self._last_ping = None  # monotonic time of the last *successful* send
         self._last_ping_ok = None  # tri-state (None/True/False): logs only on state change
 
@@ -80,12 +82,17 @@ class HealthchecksClient:
             )
 
     @classmethod
-    def from_config(cls):
-        """Build a client from the module-level config (env-backed) values."""
+    def from_config(cls, record_failure=None):
+        """Build a client from the module-level config (env-backed) values.
+
+        ``record_failure`` is an optional callable ``(ts, reason, detail)`` invoked once per
+        FAILED ping attempt (#4037). It must never raise — a recorder that touches the DB is
+        wrapped again below for good measure."""
         return cls(
             ping_url=HEALTHCHECKS_PING_URL,
             interval_seconds=_PING_INTERVAL_SEC,
             tor_proxy=TOR_SOCKS_PROXY,
+            record_failure=record_failure,
         )
 
     def _due(self, now):
@@ -128,12 +135,51 @@ class HealthchecksClient:
             if self._last_ping_ok is not False:
                 logger.warning("Healthchecks ping rejected: HTTP %s.", resp.status_code)
             self._last_ping_ok = False
+            self._record("http_status", f"HTTP {resp.status_code}")
             return False
         except requests.RequestException as e:
             # Offline / Tor down / endpoint hiccup: the whole point is to survive these
             # silently — Healthchecks.io will alert on the missed ping. DEBUG, never noise.
             logger.debug("Healthchecks ping failed (offline?): %s", e)
+            self._record(_failure_class(e), type(e).__name__)
             return False
         except Exception as e:  # pragma: no cover - defensive; never break the loop
             logger.debug("Healthchecks unexpected error: %s", e)
+            self._record("connect", type(e).__name__)
             return False
+
+    def _record(self, reason, detail=""):
+        """Hand one failed attempt to the optional recorder (#4037).
+
+        Detail is a class name or status code, never a message: exception messages for these
+        failures interpolate the ping URL, and the URL is a bearer credential. The recorder must
+        never break the ping, so anything it raises dies right here."""
+        if not self._record_failure:
+            return
+        try:
+            self._record_failure(time.time(), reason, detail)
+        except Exception:
+            pass
+
+
+def _failure_class(exc):
+    """Map a ping exception to one of tor_socks / dns / connect (#4037).
+
+    Walks the exception chain by CLASS, never by message text — the message interpolates the
+    ping URL, which is a bearer credential and must not be stored. Tor SOCKS failures surface as
+    requests' ProxyError or, one layer down, as a PySocks ``Proxy*`` error; name resolution as
+    urllib3's ``NameResolutionError`` or ``gaierror``; anything else the stack raised is a
+    connection failure."""
+    if isinstance(exc, requests.exceptions.ProxyError):
+        return "tor_socks"
+    cause = exc.__cause__ or exc.__context__
+    hops = 0
+    while cause is not None and hops < 10:
+        name = type(cause).__name__
+        if name.startswith("Proxy"):
+            return "tor_socks"
+        if name in ("NameResolutionError", "gaierror"):
+            return "dns"
+        cause = cause.__cause__ or cause.__context__
+        hops += 1
+    return "connect"

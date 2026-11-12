@@ -172,7 +172,9 @@ class DataSetupMixin:
         # Healthchecks.io dead-man's switch (Issue #79). Disabled by default — when off this is
         # a no-op. When on, each cycle pings a unique URL; the alert fires externally on the
         # *absence* of a ping, so it survives a host death the in-stack notifier can't report.
-        self.healthchecks = HealthchecksClient.from_config()
+        self.healthchecks = HealthchecksClient.from_config(
+            record_failure=self.state_manager.record_ping_failure
+        )
 
         # Auto-transition a clearnet initial-sync node back to Tor once it's synced (#234). Reuses
         # the same docker control proxy as the #31 failover (start/stop only). on_transition surfaces

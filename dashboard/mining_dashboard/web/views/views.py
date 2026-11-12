@@ -386,6 +386,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,
+        "ping_failures": state_mgr.get_ping_failures(8),
         "chart": build_chart(
             history,
             data.get("shares", []),
