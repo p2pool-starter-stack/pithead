@@ -14,7 +14,7 @@ The RAM and chain-storage figures below size a coordinator, with or without a lo
 For worker-only, use [worker hardware requirements](hardware.md#choose-the-arrangement): it runs
 no chains. A **RigForge rig has no RAM or CPU floor of its own**: it runs no chains and reserves
 no memory for mining — RigForge sizes the pool for the machine it finds. Any machine that boots
-this image mines; a smaller one simply mines more slowly, dropping to RandomX's light mode when
+this image mines; a smaller one mines more slowly, dropping to RandomX's light mode when
 the RAM cannot hold the dataset, which is slower and not broken. UEFI, wired ethernet and
 boot/install media requirements still apply to both roles; a rig can
 [run from the USB stick](#the-disk) without an internal chain disk.
