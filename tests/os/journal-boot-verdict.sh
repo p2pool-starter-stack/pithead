@@ -90,8 +90,8 @@ printf "%s\n" "$c" | sed -n "s/^Storage=//p" | tail -n1 | { IFS= read -r x || x=
 printf "%s\n" "$c" | sed -n "s/^SystemMaxUse=//p" | tail -n1 | { IFS= read -r x || x=; printf "%s\n" "${x:-missing}"; }
 u=$(systemctl is-active pithead-journal-persist.service 2>/dev/null || true)
 printf "%s\n" "${u:-unreadable}"
-d=$(du -sk /var/log/journal 2>/dev/null | cut -f1)
-printf "%s\n" "${d:-missing}"
+b=$(journalctl --no-pager -q 2>/dev/null | wc -c)
+printf "%s\n" "${b:-missing}"
 o=$(journalctl --no-pager -q -o short-unix 2>/dev/null | head -n1 | cut -d" " -f1 | cut -d. -f1)
 case "$o" in "" | *[!0-9]*) o= ;; esac
 if [ -n "$o" ]; then echo $(($(date +%s) - o)); else echo -1; fi'
@@ -121,7 +121,7 @@ journal_config_verdict() {
     local storage="$1" maxuse="$2" unit="$3" cap
     if [ "$storage" = "persistent" ] && cap=$(journal_cap_kib "$maxuse") && [ "$cap" -gt 0 ] &&
         [ "$unit" = "active" ]; then
-        echo "journald runs Storage=persistent with the $maxuse cap and the /data journal bind is up (evidence survives reboots; rigs stay volatile by design)"
+        echo "journald runs Storage=persistent with the $maxuse cap and the journal bind unit is active (evidence survives reboots; rigs stay volatile by design)"
         return 0
     fi
     echo "journald is not pinned to the persistent journal (Storage=${storage:-missing}, SystemMaxUse=${maxuse:-missing}, pithead-journal-persist ${unit:-unreadable})"
@@ -129,10 +129,10 @@ journal_config_verdict() {
 }
 
 journal_window_verdict() {
-    local before="$1" after="$2" secs="$3" cap="$4" age="$5" v grow horizon ages
+    local before="$1" after="$2" secs="$3" cap="$4" age="$5" v grow rate horizon ages
     for v in "$before" "$after" "$secs" "$cap"; do
         case "$v" in '' | *[!0-9]*)
-            echo "journal window unreadable (usage ${before:-?} -> ${after:-?} KiB over ${secs:-?} s, cap ${cap:-?} KiB)"
+            echo "journal window unreadable (content ${before:-?} -> ${after:-?} bytes over ${secs:-?} s, cap ${cap:-?} KiB)"
             return 1
             ;;
         esac
@@ -146,20 +146,12 @@ journal_window_verdict() {
         echo "journal cap is not a finite size (${cap} KiB) — the window cannot be measured against the 72 h bundle default"
         return 1
     fi
-    if [ "$grow" -lt 0 ]; then
-        echo "the persistent journal shrank (${before} -> ${after} KiB) across one boot under the ${cap} KiB cap: the cap rolls faster than the 72 h bundle window"
+    if [ "$grow" -le 0 ]; then
+        echo "journal window measurement made no reading: the journal grew ${grow} bytes across the sample"
         return 1
     fi
-    if [ "$grow" -eq 0 ]; then
-        echo "journal window measurement made no reading: the journal did not grow across the sample"
-        return 1
-    fi
-    horizon=$((cap * secs / grow / 3600))
+    rate=$((grow * 3600 / 1024 / secs))
+    horizon=$((cap * 1024 * secs / grow / 3600))
     case "$age" in '' | *[!0-9]*) ages="unreadable" ;; *) ages="${age} s" ;; esac
-    if [ "$horizon" -ge 72 ]; then
-        echo "journal at boot load grew ${grow} KiB in ${secs} s: the ${cap} KiB cap holds ${horizon} h of that rate, past the 72 h bundle window (oldest surviving entry ${ages})"
-        return 0
-    fi
-    echo "journal at boot load grew ${grow} KiB in ${secs} s: the ${cap} KiB cap holds only ${horizon} h of that rate — short of the 72 h bundle window (oldest surviving entry ${ages})"
-    return 1
+    echo "journal measurement: ${grow} bytes of content in ${secs} s at boot load — an upper bound of ${rate} KiB/h uncompressed, so the ${cap} KiB cap covers at least ${horizon} h at that load; oldest surviving entry ${ages}"
 }

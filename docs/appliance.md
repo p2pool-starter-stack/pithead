@@ -430,7 +430,7 @@ client key. Without a console, reinstall with **Fresh start, keep the blockchain
 
 ## What the machine does on its own
 
-Two things the appliance sets for itself, that a machine you installed the stack on yourself
+Three things the appliance sets for itself, that a machine you installed the stack on yourself
 would not:
 
 - **It resets itself if it hangs.** The image arms the hardware watchdog built into the

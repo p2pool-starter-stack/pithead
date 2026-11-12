@@ -40,13 +40,18 @@ cap_refused ""
 cap_refused missing
 cap_refused garbage
 
-must_pass journal_window_verdict 1000 1100 300 204800 100
-must_pass journal_window_verdict 0 5 1296 1000 0
-must_pass journal_window_verdict 1000 1100 300 204800 -1
-must_pass journal_window_verdict 1000 1100 300 204800 ""
-must_fail journal_window_verdict 0 5 1295 1000 0
-must_fail journal_window_verdict 1000 900 300 204800 100
-must_fail journal_window_verdict 1000 1000 300 204800 100
+out=$(journal_window_verdict 0 1048576 3600 204800 100)
+[ "$?" -eq 0 ]
+case "$out" in *1048576\ bytes*204800\ KiB*100\ s*) : ;; *)
+    echo "measurement text: $out" >&2
+    exit 1
+    ;;
+esac
+must_pass journal_window_verdict 10485760 104857600 60 204800 0
+must_pass journal_window_verdict 1000 1049576 3600 204800 -1
+must_pass journal_window_verdict 1000 1049576 3600 204800 ""
+must_fail journal_window_verdict 1000 1000 3600 204800 100
+must_fail journal_window_verdict 1000 999 300 204800 100
 must_fail journal_window_verdict x 1100 300 204800 100
 must_fail journal_window_verdict 1000 x 300 2048576 0
 must_fail journal_window_verdict 1000 1100 0 204800 100

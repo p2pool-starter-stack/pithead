@@ -173,7 +173,7 @@ GETTY_DROPIN
     id_before=$(_ssh cat /etc/machine-id)
     jd_before=$(_ssh 'ls /var/log/journal | wc -l' | tr -d '\r\n ')
     jt0=$(date +%s)
-    kb0=$(_ssh 'du -sk /var/log/journal 2>/dev/null | cut -f1' 2>/dev/null | tr -d '\r\n ')
+    kb0=$(_ssh 'b=$(journalctl --no-pager -q 2>/dev/null | wc -c); printf "%s\n" "${b:-missing}"' 2>/dev/null | tr -d '\r\n ')
     if [ -n "$id_before" ]; then
         if _reboot_wait reboot 240; then
             id_after=$(_ssh cat /etc/machine-id)
