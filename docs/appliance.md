@@ -442,6 +442,12 @@ would not:
   node, the wallet and any built-in miner are never scheduled onto a CPU that has clocked itself
   down. This applies whether or not you mine on the machine — a dedicated appliance has no other
   workload to save power for. On hardware with no frequency scaling the step is skipped.
+- **It keeps its logs across reboots.** The system journal writes to the data partition, under a
+  200 MB cap, instead of to memory: a reboot — the usual first move in an incident — does not
+  erase the machine's own recent history, so what the stack, the node and the dashboard were
+  saying before the reboot is still there to be read or bundled afterwards, as far back as the
+  cap reaches. A rig is the deliberate exception: its journal stays volatile, because its system
+  may be the stick it runs from and nothing on a rig is worth wearing that stick out to keep.
 
 ## Updates
 
