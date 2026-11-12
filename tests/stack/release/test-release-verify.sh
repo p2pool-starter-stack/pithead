@@ -110,6 +110,22 @@ assert_rc "unreachable registry -> pull aborts (fail closed)" "$?" "1"
 assert_contains "unreachable registry is named as such" "$out" "could not complete for ghcr.io/test/pithead-tor@$TOR_DG — cosign reports a network error"
 assert_not_contains "unreachable registry is not called a key mismatch" "$out" "does not match the release key"
 
+out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_RC=1 \
+    COSIGN_STDERR='Error: Get "https://reg.invalid/v2/": read tcp 192.0.2.1:443: read: connection reset by peer' \
+    PITHEAD_REGISTRY="ghcr.io/test" STACK_VERSION="v9.9.9" run_sourced "$VRI" verify_release_images 2>&1)"
+assert_rc "read-reset registry -> pull aborts (fail closed, #4042)" "$?" "1"
+assert_contains "read-reset registry is named as a network error (#4042)" "$out" \
+    "could not complete for ghcr.io/test/pithead-tor@$TOR_DG — cosign reports a network error"
+assert_not_contains "read-reset registry is not called a key mismatch (#4042)" "$out" "does not match the release key"
+
+out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_RC=1 \
+    COSIGN_STDERR='Error: Get "https://reg.invalid/v2/": read tcp 192.0.2.1:443->198.51.100.7:443: read: connection timed out' \
+    PITHEAD_REGISTRY="ghcr.io/test" STACK_VERSION="v9.9.9" run_sourced "$VRI" verify_release_images 2>&1)"
+assert_rc "read-timeout registry -> pull aborts (fail closed, #4042)" "$?" "1"
+assert_contains "read-timeout registry is named as a network error (#4042)" "$out" \
+    "could not complete for ghcr.io/test/pithead-tor@$TOR_DG — cosign reports a network error"
+assert_not_contains "read-timeout registry is not called a key mismatch (#4042)" "$out" "does not match the release key"
+
 # cosign.pub present but the compose is NOT digest-pinned (a pre-#461 or tampered bundle): FAIL
 # CLOSED (#451). Without a digest there's nothing to bind verification to the pulled bytes, so the
 # verify-then-pull window can't be closed — refuse rather than fall back to verifying the tag.
