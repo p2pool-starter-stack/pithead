@@ -111,6 +111,8 @@ SHELLCHECK_VERSION := 0.11.0
 # is tied to one binary and fails loudly until it matches.
 SHFMT_VERSION := 3.13.1
 
+SHELLCHECK_FILE_BUDGET := 120
+
 print-shellcheck-version: ## Print the pinned shellcheck version (ci.yml's installer reads this)
 	@echo $(SHELLCHECK_VERSION)
 
@@ -148,7 +150,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \
 		tests/os/*.sh tests/os/*/*.sh tests/netwatch/*.sh \
-		| xargs -0 -n 1 -P 4 shellcheck -x --severity=warning
+		| xargs -0 -n 1 -P 4 bash scripts/lint/shellcheck-budget.sh $(SHELLCHECK_FILE_BUDGET)
 # CLI slices are checked through the generated pithead above: their semantic context
 # depends on concatenation order. Listing them separately duplicates a large analysis
 # and reports false unused-global warnings. shfmt checks every slice independently.
