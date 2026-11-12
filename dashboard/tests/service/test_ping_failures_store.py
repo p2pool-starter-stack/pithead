@@ -60,8 +60,6 @@ class TestPingFailuresStore:
         assert sm.get_ping_failures() == []
 
     def test_a_broken_store_costs_a_row_and_an_empty_read(self):
-        import sqlite3
-
         sm = _sm()
         try:
             sm._conn.execute("DROP TABLE ping_failures")
