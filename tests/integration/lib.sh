@@ -203,8 +203,7 @@ resolve_overrides() {
             SKIP_REASON="needs IT_MONERO_SUBADDRESS + IT_MONERO_VIEW_KEY from the same wallet"
             return 1
         }
-        out="$(printf '%s' "$out" | tr ' ' '\n' | grep -vx 'monero_subaddress=env' | tr '\n' ' ')"
-        out="${out% } monero.subaddress=$IT_MONERO_SUBADDRESS monero.view_key=$IT_MONERO_VIEW_KEY"
+        out="$(printf '%s' "$out" | tr ' ' '\n' | grep -vx 'monero_subaddress=env' | tr '\n' ' ')monero.subaddress=$IT_MONERO_SUBADDRESS monero.view_key=$IT_MONERO_VIEW_KEY"
     fi
 
     RESOLVED="$out"
