@@ -1,7 +1,6 @@
-from mining_dashboard.service import payout_sync
-
 # ruff: noqa: F403, F405
 from mining_dashboard.config import config
+from mining_dashboard.service import payout_sync
 from mining_dashboard.service.payout_identity import configured_wallet_id
 from tests.service._data_service_support import *  # noqa: F403
 

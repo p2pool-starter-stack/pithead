@@ -37,7 +37,10 @@ def test_payout_alert_receives_effective_subaddress():
     client.scan.return_value = ([{"txid": "tx"}], True)
     alerts = MagicMock(payout_confirmed_alert=AsyncMock())
 
-    with patch("mining_dashboard.service.payout_sync.MONERO_PAYOUT_ADDRESS", SUBADDRESS):
+    with (
+        patch("mining_dashboard.service.payout_sync.MONERO_PAYOUT_ADDRESS", SUBADDRESS),
+        patch("mining_dashboard.config.config.MONERO_WALLET_ADDRESS", PRIMARY),
+    ):
         asyncio.run(sync_monero(manager, client, alerts))
 
     alerts.payout_confirmed_alert.assert_awaited_once_with("monero", 1, "tx", SUBADDRESS)
