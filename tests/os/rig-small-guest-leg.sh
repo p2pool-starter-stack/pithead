@@ -22,7 +22,7 @@ _rig_small_guest_run() { # <img>
         return 1
     }
     qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
-    : >"$SERIAL"
+    : >"$SERIAL" && chmod 600 "$SERIAL"
     PITHEAD_KVM_MIN_AVAIL_MB=6144 kvm_preflight || return 1
     virt-install --name "$VM" --memory 2048 --vcpus 1 --cpu host-passthrough \
         --osinfo debian12 \
