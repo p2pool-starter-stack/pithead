@@ -6,18 +6,24 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit 
 source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 # shellcheck source=tests/integration/lib/lifecycle-pool.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lifecycle-pool.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-lifecycle-miners.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-miners.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
-run_lifecycle() {
+_run_lifecycle() {
+    lifecycle_stopped() {
+        IT_LC_STEP=$1
+        return 1
+    }
     IT_CURRENT_SCENARIO="lifecycle"
     local lifecycle_ok=1 reset_failed=0
-    echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
     lifecycle_gate_sample before-wizard-defaults
-    run_cli_wizard_defaults || return 1
+    lifecycle_mining_step run_cli_wizard_defaults run_cli_wizard_defaults || lifecycle_stopped run_cli_wizard_defaults || return 1
+    lifecycle_mining_step run_support_bundle run_support_bundle || lifecycle_stopped run_support_bundle || return 1
     tor_recovery_healthy_probe
     prove_wallet_supersession
-    prove_wallet_recovery || return 1
+    prove_wallet_recovery || lifecycle_stopped prove_wallet_recovery || return 1
     lifecycle_gate_sample before-restart
     post_op_begin
     it_step "pithead restart…"
@@ -27,7 +33,7 @@ run_lifecycle() {
     assert_rc "status OK after restart" "$?" "0"
     lifecycle_gate_sample after-restart
     post_op_invariants "after restart"
-    run_connection_announcements || return 1
+    run_connection_announcements || lifecycle_stopped run_connection_announcements || return 1
     local cur_pool fp_before pool_fp_after other pool_apply_ok=1 restore_tls_before
     cur_pool="$(lifecycle_pool_start)" || {
         it_fail "pool change starting sidechain established" "config or rendered flags unreadable or inconsistent"
@@ -65,12 +71,12 @@ run_lifecycle() {
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_step "stopping monerod to exercise node-down failover…"
-        rx "docker compose stop monerod" >/dev/null 2>&1
+        lifecycle_mining_step node-down rx "docker compose stop monerod >/dev/null 2>&1"
         wait_for 120 5 "status to report node down" _pred_status_down || true
         pithead status >/dev/null 2>&1
         assert_rc "status non-zero when node down" "$?" "1"
         it_step "starting monerod and waiting for readmit…"
-        rx "docker compose start monerod" >/dev/null 2>&1
+        lifecycle_mining_step node-recovery rx "docker compose start monerod >/dev/null 2>&1"
         wait_status_ok 240 || true
         pithead status >/dev/null 2>&1
         local node_recovery_rc=$?
@@ -114,9 +120,10 @@ run_lifecycle() {
     else
         it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
     fi
-    run_source_image_reconcile || return 1
-    run_restore_dashboard_probe || return 1
-    run_tari_background_sync || return 1
+    lifecycle_mining_step run_source_image_reconcile run_source_image_reconcile || lifecycle_stopped run_source_image_reconcile || return 1
+    lifecycle_mining_step run_restore_dashboard_probe run_restore_dashboard_probe || lifecycle_stopped run_restore_dashboard_probe || return 1
+    lifecycle_mining_step run_tari_background_sync run_tari_background_sync || lifecycle_stopped run_tari_background_sync || return 1
+    run_image_permissions || lifecycle_stopped run_image_permissions || return 1
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_step "backup → restore round-trip…"
     post_op_begin
@@ -185,38 +192,34 @@ run_lifecycle() {
         it_fail "pithead backup succeeded" "backup returned non-zero"
         lifecycle_ok=0
     fi
-    # Confirmed dashboard.data_dir carry (#2360): DASHBOARD_DATA_DIR is CONFIRM-class both from
-    # the dashboard (typed APPLY) and the host CLI (folded into the disruptive y/N, exercised here
-    # with -y) — same apply()-time carry either way. Without it the recreated dashboard would open
-    # an EMPTY DB at the new path and silently re-seed the payout-wallet tripwire baseline (#375)
-    # on the next observation. Local mode only: remote mode has no local data dir to move.
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         local carry_old carry_new carry_epoch rows_before rows_after
         carry_old="$(env_on_box DASHBOARD_DATA_DIR)"
         if [ -n "$carry_old" ]; then
             carry_epoch="$(rx 'date +%s')"
             carry_new="${carry_old}-carried-$carry_epoch"
-            # telemetry_rows_continue leaves the volatile kv_store shapes out (live-state-support.sh).
             rows_before="$(dashboard_durable_rows "$carry_epoch")"
-            it_step "confirmed dashboard.data_dir move: $carry_old -> ${carry_new}…"
-            push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
-            if pithead apply -y 2>&1 | redact >"$OUT_DIR/dashboard-carry.apply.log" && wait_status_ok 180; then
-                assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
-                rows_after="$(dashboard_durable_rows "$carry_epoch")"
-                if telemetry_rows_continue "$rows_before" "$rows_after"; then
-                    it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
+            if [ -z "$rows_before" ]; then
+                it_fail "pre-move dashboard rows readable" "the dashboard returned no rows before the data_dir move; the carry apply was skipped"
+                lifecycle_ok=0
+            else
+                it_step "confirmed dashboard.data_dir move: $carry_old -> ${carry_new}…"
+                push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
+                if pithead apply -y 2>&1 | redact >"$OUT_DIR/dashboard-carry.apply.log" && wait_status_ok 180; then
+                    assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
+                    rows_after="$(dashboard_durable_rows "$carry_epoch")"
+                    if telemetry_rows_continue "$rows_before" "$rows_after"; then
+                        it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
+                    else
+                        it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move ($(telemetry_rows_diff "$rows_before" "$rows_after"))"
+                        lifecycle_ok=0
+                    fi
                 else
-                    it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move ($(telemetry_rows_diff "$rows_before" "$rows_after"))"
+                    it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy; see $OUT_DIR/dashboard-carry.apply.log"
+                    capture_artifacts "lifecycle-carry" "$OUT_DIR"
                     lifecycle_ok=0
                 fi
-            else
-                it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy; see $OUT_DIR/dashboard-carry.apply.log"
-                capture_artifacts "lifecycle-carry" "$OUT_DIR"
-                lifecycle_ok=0
             fi
-            # The product correctly refuses to overwrite the old, still-complete directory on a
-            # reverse move. Stop first and remove only this test's verified copy, so suite cleanup
-            # can return to its original configuration without discarding the source database.
             if pithead down >/dev/null 2>&1 && rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1 &&
                 push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
                 it_pass "dashboard carry cleanup restored its baseline safely"
@@ -231,8 +234,8 @@ run_lifecycle() {
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
     run_password_tls_continuity || lifecycle_ok=0
-    run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
-    [ "$reset_failed" = 1 ] || run_uninstall_round_trip || lifecycle_ok=0
+    lifecycle_mining_step run_reset_restore run_reset_restore || reset_failed=$((1 + ${RESET_RESTORE_STACK_INTACT:-0}))
+    [ "$reset_failed" = 1 ] || lifecycle_mining_step run_uninstall_round_trip run_uninstall_round_trip || lifecycle_ok=0
     [ "$reset_failed$lifecycle_ok" != 21 ] || LIFECYCLE_STACK_INTACT=1
     [ "$lifecycle_ok$reset_failed" = 10 ]
 }
@@ -251,7 +254,6 @@ kept_chain_files_snippet() { # <path>...
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
     printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths -type f -name '*.mdb' -exec stat -c '%i %.9W %n' {} + | LC_ALL=C sort"
 }
-
 # uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
 # path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
 # re-provisions from what was kept (and the harness's own secrets). The stack is stopped before
@@ -355,7 +357,6 @@ run_uninstall_round_trip() {
     assert_eq "setup after uninstall keeps the Monero onion address" "$(env_on_box MONERO_ONION_ADDRESS)" "$onion_before"
     [ "$IT_FAIL" -le "$fails_before" ]
 }
-
 # Table names and counts only (never row values): which families lost rows, and whether either probe
 # came back empty — an empty snapshot is a probe failure, not a divergence.
 telemetry_rows_diff() { # <before-lines> <after-lines>

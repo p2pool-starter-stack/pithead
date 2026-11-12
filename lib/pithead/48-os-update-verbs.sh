@@ -358,7 +358,18 @@ control_os_reboot() { # <claimed-file> <id> <actor> <control-dir>
         control_os_refuse "$cdir" "$id" "$actor" "os-reboot" rejected "the installed update has been waiting more than a day and has expired — check for updates again; a fresh verify and install re-arms the reboot."
         return 0
     fi
-    # The result must land BEFORE the reboot order or the page never learns the reboot is real.
+    local running to step
+    running=$(os_running_version)
+    to=$(jq -r '.to // ""' "$(os_update_inflight_file)" 2>/dev/null) || to=""
+    step=$(jq -r '.step // ""' "$cdir/results/os-update-state.json" 2>/dev/null) || step=""
+    if [ -n "$to" ] && [ "$running" = "$to" ]; then
+        control_os_refuse "$cdir" "$id" "$actor" "os-reboot" rejected "this machine is already running v$to and the installed update is still being verified — a reboot now would take the machine back to the previous version. Leave it running; the dashboard reports the result when the verification finishes."
+        return 0
+    fi
+    if [ "$step" = "verifying" ]; then
+        control_os_refuse "$cdir" "$id" "$actor" "os-reboot" rejected "the installed update is being verified on this machine — a reboot now would interrupt it. Leave the machine running; the dashboard reports the result when the verification finishes."
+        return 0
+    fi
     control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rebooting",ts:(now|floor)}')"
     control_audit "$cdir/audit/control.log" "$id" "$actor" "os-reboot" "rebooting"
     systemctl reboot 2>/dev/null || true

@@ -26,14 +26,18 @@ for ca_enabled in true false; do
     assert_rc "local-miner-only apply ($ca_enabled) succeeds" "$?" 0
     assert_contains "local-miner-only apply ($ca_enabled) takes unchanged path" "$ca_out" "No configuration changes detected"
     assert_contains "local-miner-only apply ($ca_enabled) announces LAN pool" "$ca_out" "Pool URL: fixture-box:3333"
-    assert_contains "local-miner-only apply ($ca_enabled) announces password" "$ca_out" "Stratum password: fixture.pool-pass"
+    assert_contains "local-miner-only apply ($ca_enabled) announces authentication" "$ca_out" "Stratum authentication is ON"
+    assert_contains "local-miner-only apply ($ca_enabled) directs to the dashboard" "$ca_out" "Connect a miner"
+    assert_not_contains "local-miner-only apply ($ca_enabled) withholds password" "$ca_out" "fixture.pool-pass"
     assert_eq "local-miner-only apply ($ca_enabled) calls provisioning" "$(tail -n 1 "$V/miner-calls" 2>/dev/null)" "$ca_enabled"
     assert_eq "local-miner-only apply ($ca_enabled) preserves rendered env" "$(cat "$V/.env")" "$ca_env"
     assert_not_contains "local-miner-only apply ($ca_enabled) avoids container recreate" "$(cat "$V/docker.log")" "compose up"
 done
 ca_out="$(cd "$V" && PATH="$V/bin:$PATH" DOCKER_LOG="$V/docker.log" ./pithead apply -y 2>&1)"
 assert_contains "no-change apply announces LAN pool with miner off" "$ca_out" "Pool URL: fixture-box:3333"
-assert_contains "no-change apply announces password with miner off" "$ca_out" "Stratum password: fixture.pool-pass"
+assert_contains "no-change apply announces authentication with miner off" "$ca_out" "Stratum authentication is ON"
+assert_contains "no-change apply directs to the dashboard with miner off" "$ca_out" "Connect a miner"
+assert_not_contains "no-change apply withholds password with miner off" "$ca_out" "fixture.pool-pass"
 
 echo "== unit: coordinator connection details respect bind, port, authentication and TLS =="
 CA="$SANDBOX/connection-announce"
@@ -42,6 +46,9 @@ printf '{"local_miner":{"enabled":true}}\n' >"$CA/config.json"
 printf 'HOST_IP=fixture-box\nSTRATUM_BIND=0.0.0.0\nSTRATUM_PORT=4444\nPROXY_STRATUM_PASSWORD=fixture.pool-pass\n' >"$CA/.env"
 ca_out="$(run_sourced_e "$CA" announce_dashboard_url 2>&1)"
 assert_contains "wildcard bind advertises host and custom port" "$ca_out" "Pool URL: fixture-box:4444"
+assert_contains "configured password reports authentication on" "$ca_out" "Stratum authentication is ON"
+assert_contains "configured password directs to the dashboard" "$ca_out" "Connect a miner"
+assert_not_contains "configured password is withheld" "$ca_out" "fixture.pool-pass"
 assert_contains "local miner block remains present" "$ca_out" "Local miner opt-in is ON"
 assert_contains "local miner retains loopback connection" "$ca_out" "127.0.0.1:4444"
 printf 'HOST_IP=fixture-box\nSTRATUM_BIND=192.0.2.10\nSTRATUM_PORT=4444\nPROXY_STRATUM_PASSWORD=\n' >"$CA/.env"
@@ -70,7 +77,8 @@ cp "$V/config.json" "$CAS/config.json"
 ca_out="$(cd "$CAS" && printf 'n\n' | PATH="$CAS/bin:$PATH" DOCKER_LOG=/dev/null ./pithead setup --skip-deps --skip-optimize 2>&1)"
 assert_rc "setup with start declined succeeds" "$?" 0
 assert_contains "setup with start declined announces pool" "$ca_out" "Pool URL: fixture-box:3333"
-assert_contains "setup with start declined announces password" "$ca_out" "Stratum password: fixture.pool-pass"
+assert_contains "setup with start declined announces authentication" "$ca_out" "Stratum authentication is ON"
+assert_not_contains "setup with start declined withholds password" "$ca_out" "fixture.pool-pass"
 ca_setup_reboot() {
     is_deployed() { return 1; }
     # shellcheck disable=SC2034 # setup consumes this global from the sourced CLI.
@@ -84,11 +92,13 @@ ca_out="$(PATH="$CAS/bin:$PATH" DOCKER_LOG=/dev/null run_sourced_e "$CAS" ca_set
 assert_rc "setup requiring reboot succeeds" "$?" 0
 assert_contains "setup requiring reboot prints reboot notice" "$ca_out" "System optimization requires a reboot"
 assert_contains "setup requiring reboot announces pool" "$ca_out" "Pool URL: fixture-box:3333"
-assert_contains "setup requiring reboot announces password" "$ca_out" "Stratum password: fixture.pool-pass"
+assert_contains "setup requiring reboot announces authentication" "$ca_out" "Stratum authentication is ON"
+assert_not_contains "setup requiring reboot withholds password" "$ca_out" "fixture.pool-pass"
 ca_out="$(cd "$V" && PATH="$V/bin:$PATH" DOCKER_LOG=/dev/null ./pithead up 2>&1)"
 assert_rc "up succeeds" "$?" 0
 assert_contains "up announces pool" "$ca_out" "Pool URL: fixture-box:3333"
-assert_contains "up announces password" "$ca_out" "Stratum password: fixture.pool-pass"
+assert_contains "up announces authentication" "$ca_out" "Stratum authentication is ON"
+assert_not_contains "up withholds password" "$ca_out" "fixture.pool-pass"
 unset CA CAS ca_out ca_enabled ca_env ca_fp
 unset -f ca_apply ca_setup_reboot
 unset PITHEAD_MEMINFO

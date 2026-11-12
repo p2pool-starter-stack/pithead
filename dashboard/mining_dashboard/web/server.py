@@ -413,15 +413,15 @@ async def handle_worker_upgrade(request):
     data = request.app["latest_data"] or {}
     live = next((w for w in data.get("workers", []) if w.get("name") == worker), None)
     rigforge = (live or {}).get("rigforge") or {}
+    appliance = bool(rigforge.get("appliance"))
     running = None if feed_stale(rigforge) else rigforge.get("version")
-    # The rig reports bare "1.11.2", the badge proposes tag "v1.11.2" — compare parsed (#596).
     if running and parse_semver(running) and parse_semver(running) == parse_semver(version):
         return web.json_response(
             {"status": "noop", "worker": worker, "note": f"already on {version}"}
         )
     try:
         rid = control_service.submit_worker_upgrade(
-            worker, version, request.headers.get("X-Auth-User", "")
+            worker, version, request.headers.get("X-Auth-User", ""), appliance=appliance
         )
     except Exception:
         logger.exception("Error submitting worker-upgrade")

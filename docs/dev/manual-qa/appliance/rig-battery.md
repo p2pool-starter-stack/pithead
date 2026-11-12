@@ -75,16 +75,22 @@ token. The form and inspector clicks remain manual.*
 1. With the rig mining, cut power at the wall.
 2. Leave the rig alone.
 3. Install the release bundle on the rig.
+4. Update the rig the way its owner does: boot it from a newer USB stick and choose
+   **Keep everything**.
 
 **What you should see:**
 
 - After the power cut, the rig returns to mining unaided (Restore on AC power loss).
 - After the update, the rig comes back mining on the new [slot](../README.md#glossary) and self-commits.
+- The Keep-everything reinstall keeps the rig's data: same `machine-role`, same `rig.json`,
+  same access token. The rig mines on the new image, and a coordinator that had adopted the
+  rig reads it again with no adopting to redo.
 
 *Covered by: the `rig` phase's power-cut leg (#2067, `tests/os/phases/rig.sh`) proves the
 return-mining-unaided fact off a real `virsh destroy`, and the phase's existing update leg proves
 the install/self-commit half. What stays manual is Restore on AC Power Loss itself — a firmware
-setting a virtual disk cannot show.*
+setting a virtual disk cannot show — and the Keep-everything pass itself: no automated leg
+reinstalls a rig over its own `/data` yet (#3961).*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 

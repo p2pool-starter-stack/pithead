@@ -28,15 +28,10 @@ def _raffle_wins_max_rows():
 
 
 class MiningStoreMixin:
-    def add_payouts(self, chain: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Persist confirmed on-chain payouts (#381), idempotent on ``(chain, txid)``, and return
-        only the rows that were NEWLY inserted this call.
-
-        The returned "new" list is what drives the ``payout_confirmed`` alert: an already-stored
-        payout is silently ignored (INSERT OR IGNORE), so a dashboard restart re-fetching the tip
-        never re-alerts. Not held in memory (payouts are read straight from the DB by the view /
-        alert paths) — unlike the retention-pruned series, payout history is small and permanent."""
-        if not rows:
+    def add_payouts(
+        self, chain: str, wallet_id: str | None, rows: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        if not wallet_id or not rows:
             return []
         new_rows = []
         try:
@@ -47,9 +42,11 @@ class MiningStoreMixin:
                     for r in rows:
                         cur = self._conn.execute(
                             "INSERT OR IGNORE INTO payouts "
-                            "(chain, txid, height, ts, amount_atomic) VALUES (?, ?, ?, ?, ?)",
+                            "(chain, wallet_id, txid, height, ts, amount_atomic) "
+                            "VALUES (?, ?, ?, ?, ?, ?)",
                             (
                                 chain,
+                                wallet_id,
                                 r["txid"],
                                 int(r.get("height", 0) or 0),
                                 float(r.get("ts", 0) or 0),
@@ -65,40 +62,36 @@ class MiningStoreMixin:
             return []
         return new_rows
 
-    def get_payouts(self, chain: str | None = None) -> list[dict[str, Any]]:
-        """Return stored confirmed payouts, newest first. Filters to ``chain`` when given (the
-        dashboard's Monero card reads chain="monero"); omit it for the cross-chain total."""
+    def get_payouts(self, chain: str, wallet_id: str | None) -> list[dict[str, Any]]:
+        if not wallet_id:
+            return []
         try:
             with self._db_lock:
                 if not self._conn:
                     return []
                 cursor = self._conn.cursor()
-                if chain is None:
-                    cursor.execute(
-                        "SELECT chain, txid, height, ts, amount_atomic FROM payouts "
-                        "ORDER BY ts DESC"
-                    )
-                else:
-                    cursor.execute(
-                        "SELECT chain, txid, height, ts, amount_atomic FROM payouts "
-                        "WHERE chain = ? ORDER BY ts DESC",
-                        (chain,),
-                    )
+                cursor.execute(
+                    "SELECT chain, txid, height, ts, amount_atomic FROM payouts "
+                    "WHERE chain = ? AND wallet_id = ? ORDER BY ts DESC",
+                    (chain, wallet_id),
+                )
                 return [dict(row) for row in cursor.fetchall()]
         except sqlite3.Error as e:
             self.logger.error(f"Payout Read Error: {e}")
             return []
 
-    def get_payout_max_height(self, chain: str) -> int:
-        """Highest stored block height for ``chain`` (0 if none) — the wallet-poll seed. Fetching
-        transfers from this height forward re-scans only the tip; idempotent add_payouts drops the
-        overlap, so a restart replays nothing (#381)."""
+    def get_payout_max_height(self, chain: str, wallet_id: str | None) -> int:
+        if not wallet_id:
+            return 0
         try:
             with self._db_lock:
                 if not self._conn:
                     return 0
                 cursor = self._conn.cursor()
-                cursor.execute("SELECT MAX(height) FROM payouts WHERE chain = ?", (chain,))
+                cursor.execute(
+                    "SELECT MAX(height) FROM payouts WHERE chain = ? AND wallet_id = ?",
+                    (chain, wallet_id),
+                )
                 row = cursor.fetchone()
                 return int(row[0]) if row and row[0] is not None else 0
         except sqlite3.Error as e:

@@ -3,6 +3,16 @@ control_live_config_sum() {
     sha256sum "$CONFIG_FILE" 2>/dev/null | cut -d' ' -f1
 }
 
+control_commit_lock_exit() {
+    local rc="$1" id="$2" actor="$3" cdir="$4"
+    trap - EXIT
+    [ "$rc" -eq "$PITHEAD_EX_LOCK_TIMEOUT" ] || exit "$rc"
+    rm -f "$cdir/staged/$id.json" "$cdir/staged/.$id.base" "$cdir/staged/$id.json.confirmed"
+    control_audit "$cdir/audit/control.log" "$id" "$actor" commit rejected
+    control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"Timed out waiting for another operation. No configuration was published; preview again when it finishes.",ts:(now|floor)}')"
+    exit 0
+}
+
 # True when config.json moved since the preview recorded its digest in <base-file>. The preview was
 # a diff against one revision; if another tab or `pithead apply` changed it since, committing the
 # staged whole-document copy would silently replace that change. A staged copy with no digest file

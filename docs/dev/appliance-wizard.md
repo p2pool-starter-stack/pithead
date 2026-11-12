@@ -23,10 +23,26 @@ action — validation, disk installs, provisioning — happens host-side, the sa
 the [#33 control channel](../dashboard.md#configuration-view). A compromised container can
 write the spool and nothing more.
 
+## Authentication gate
+
+Failed tokens are counted per direct peer address from `request.remote`; forwarded-address
+headers do not select the bucket. Entries below the threshold expire 60 seconds after their
+latest failure. The fifth failure starts a fixed 60-second cooldown and returns `429` with
+`Retry-After`; blocked requests do not extend it, and even the correct token must wait. The
+wizard keeps running and keeps the same token, so the browser tells that peer when to retry it
+instead of asking for a replacement. Successful authentication clears only that
+peer's failures and creates its session. Existing authenticated cookies retain access,
+including for operators sharing the blocked peer. The failure map holds at most 1,024 peers and
+evicts the entry it began tracking first when full, even if that peer is still in cooldown. Guessing is bounded per peer (five tries a minute), not globally, and the token does not rotate, so several peers multiply the rate; the six-character token holds about 29.7 bits. A network failure is reported separately from throttling.
+
 ## The stage machine
 
 `wizard_stage()` in `wizard/server.py` derives the step from **spool files only**, and the client
 renders what it is told. The client must never infer the stage.
+
+`/status` exposes coarse progress without authentication. Stored `error.txt` details require
+the current wizard session; anonymous failed or rejected states use generic text. Status
+responses use `Cache-Control: no-store`, as does the authenticated `/api/wizard-state` payload.
 
 | Stage | True when | View |
 |---|---|---|
@@ -145,9 +161,14 @@ and returns the report as `node_probe`; nothing writes a `config.json` candidate
 The server resolves a name once, dials that vetted address and stores its numeric form in the
 accepted candidate. Loopback, unspecified, link-local,
 multicast and reserved addresses are refused, including names that resolve to one (#1946). With
-the Tor egress firewall on, every answer must also be in the private LAN or VPN IPv4 ranges the
-mining container can dial. Credentials are used only for the RPC request and never enter the
-report.
+the Tor egress firewall on, a name must answer with at least one address in the private LAN or VPN
+IPv4 ranges the mining container can dial and with no public IPv4 at all; the lowest such address
+is the one pinned. Other IPv6 answers (global or unique-local) are ignored rather than refused:
+the firewall is an IPv4 allowlist and only the pinned address reaches the config, so a dual-stack
+LAN name is accepted on its A record instead of sending the operator back to typing the literal
+address (#2351). The host-side preflight a day-two configuration commit runs
+(`remote_node_address` in `lib/pithead/10-node-probe.sh`) applies the same acceptance rule.
+Credentials are used only for the RPC request and never enter the report.
 
 | Field | Meaning |
 |---|---|
@@ -228,9 +249,13 @@ rig — keep means keep whatever the role says.
 `os/rauc/grub.cfg`'s fourth entry boots the slot the default would have booted and appends
 `pithead.setup=1` to that one boot's kernel cmdline. `pithead-setup-again.service`, the flag's
 only reader, runs `pithead firstboot-wizard` on a provisioned machine with `PITHEAD_SETUP_AGAIN=1`
-and `Before=pithead-boot.service`, so the role's normal boot waits behind the page. Under the
-switch (`lib/pithead/12a-setup-again.sh`) three things change and nothing else: the "already a
-rig" and "config.json present" short-circuits are skipped; `stage_wizard_spool` publishes
+and `Before=pithead-boot.service`, so the role's normal boot waits behind the page. Each
+announcement atomically publishes the URL, one-time token and certificate fingerprint to
+`/run/issue.d/pithead-setup.issue` with mode `0600`. The login prompts reload that file and
+print it again when either getty starts; the same text is copied directly to tty1 and ttyS0.
+A new round replaces the file. The wizard's exit trap and both units' `ExecStopPost` remove it.
+Under the switch (`lib/pithead/12a-setup-again.sh`) three things change and nothing else:
+the "already a rig" and "config.json present" short-circuits are skipped; `stage_wizard_spool` publishes
 `saved-role.json` and points the pre-fill at the saved answers (`rig-defaults.json` gets the saved
 pool + worker; `last-attempt.json` gets `config.json` through `strip_config_secrets`, unless a
 failed retry's context is already there); and the inner loop honours `keep-role`. The page shows
@@ -519,7 +544,19 @@ Five steps, each answering a hardware-validated failure:
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
-   passenger (`|| true`). When enabled, this runs RigForge's setup in appliance mode from the
+   passenger (`|| true`). The appliance checks an active, enabled local miner every 30 seconds.
+   A successful proxy worker-list reading that finds the proxy container restarted since the
+   previous reading while the local miner still has no connection queues an immediate XMRig
+   restart — a proxy replaced underneath a live miner is the stall XMRig never recovers from
+   itself, so it does not wait out the window. Otherwise five minutes of successful proxy
+   worker-list readings with no connection for the local miner’s rendered identity queue an
+   XMRig restart, logged by `pithead-miner-recovery.service`.
+   Other connected rigs do not reset that window. Missing readings, a connected local miner, a stopped
+   miner, or a busy stack operation reset that window. The guard holds the mutation lock only for
+   that busy check and around the restart, never while it reads the proxy, so a zero-wait command
+   such as `pithead tor-recover` is not refused because of it. The guard honors `PITHEAD_LOCK_FILE`
+   when supplied to its service, matching the CLI mutation lock. This guard runs only on coordinators;
+   it does not start a disabled miner or change slot-commit policy. When enabled, this runs RigForge's setup in appliance mode from the
    tree `pithead-sync` keeps on `/data/rigforge`: its unit renders into `/run` with
    `--runtime` enablement (gone every boot, recreated here, like the control-runner units),
    and the cached XMRig build on `/data` makes the run a re-render rather than a recompile.

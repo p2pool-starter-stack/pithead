@@ -1,5 +1,5 @@
 # Pinned by digest (#135) so the ubuntu:24.04 tag can't be silently re-pointed.
-FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
 # Define XMRig Proxy version and SHA256 hash for binary verification
 # Refer to https://github.com/xmrig/xmrig-proxy/releases for validation
@@ -19,19 +19,12 @@ RUN wget -O xmrig-proxy.tar.gz https://github.com/xmrig/xmrig-proxy/releases/dow
     && chmod +x /usr/local/bin/xmrig-proxy \
     && rm -rf xmrig-proxy*
 
-# Wrapper entrypoint: appends the optional stratum-auth flag (#152) from an env var so an unset
-# password emits NO arg (a compose `${VAR:+..}` command item would leave a stray '' — see script).
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
 
-# Control-API liveness healthcheck (#904) — reads the port from env so nothing rides the compose
-# command line (#90).
 COPY healthcheck.sh /usr/local/bin/xmrig-proxy-healthcheck.sh
-RUN chmod +x /usr/local/bin/xmrig-proxy-healthcheck.sh
+RUN chmod 755 /usr/local/bin/xmrig-proxy-healthcheck.sh
 
-# Run non-root (#255) — the easy win: pure network proxy, no bind-mounts, already cap_drop:[ALL]
-# + no-new-privileges in compose. Reuse ubuntu:24.04's 'ubuntu' user (uid 1000) and give it a
-# writable home as the cwd in case xmrig-proxy drops a config/log there.
 RUN install -d -o ubuntu -g ubuntu /home/ubuntu
 WORKDIR /home/ubuntu
 USER ubuntu

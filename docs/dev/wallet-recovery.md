@@ -90,12 +90,10 @@ is reachable only from `READY`.
 
 Stdout carries one JSON object and nothing else. The shell steps and the restore log to stderr, which can
 name containers and, when the wallet fails to stop, carry its last log lines. For a bundle baseline the
-start step runs `pithead apply -y` and `pithead up`, which print the stratum access password in clear
-when one is set (`announce_stratum_auth` in `lib/pithead/13-announce.sh`). `redact` in
-`tests/integration/lib.sh` does not mask that line, so stderr must stay private: send it to an owner-only
-file, never to a job log or any other stream the runner publishes. A source-checkout baseline starts with
-`pithead upgrade`, which prints no password; the lifecycle leg's baseline is a source checkout, so the
-log tail it prints through `redact` on a failure carries none.
+start step runs `pithead apply -y` and `pithead up`, which report stratum authentication state without
+printing the configured password. Stderr must still stay private: send it to an owner-only file, never to
+a job log or any other stream the runner publishes. A source-checkout baseline starts with `pithead
+upgrade`; the lifecycle leg's baseline is a source checkout.
 
 A refusal adds one stderr line with its reason and the exception class, never the message. Success
 exits 0:

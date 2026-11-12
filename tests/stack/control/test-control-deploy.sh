@@ -291,3 +291,11 @@ apply2360 >/dev/null 2>&1
 assert_rc "apply: retry after recreation failure is green" "$?" "0"
 assert_not_contains "apply: recreation retry does not repeat the carry" "$(cat "$APPLY2360_LOG")" "carry:"
 if [ -e "$APPLY2360/.env.apply-incomplete" ]; then bad "apply: successful recreation retry clears its marker" "marker remains"; else ok "apply: successful recreation retry clears its marker"; fi
+
+for scope in rearm-tari-only rearm-sync-gate; do
+    reset_apply2360
+    printf '%s\n' "$scope" >"$APPLY2360/.env.apply-incomplete"
+    FAIL_STEP=carry apply2360 >/dev/null 2>&1
+    assert_rc "apply: failed carry with $scope remains red" "$?" "1"
+    assert_eq "apply: failed carry preserves $scope payload" "$(cat "$APPLY2360/.env.apply-incomplete")" "$scope"
+done
