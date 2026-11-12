@@ -28,7 +28,7 @@ The rig authenticates nothing to receive a bundle: trust is the RAUC signature a
 
 ### Where the rig looks, and when
 
-On request only, never on a schedule. A request names no URL: the rig fetches the release channel itself over Tor, and the listing is read as untrusted data: release-host allowlisted, size-capped, tag-validated, stale or replayed channels reported, all enforced by the shared fetch helper `lib/pithead/47a-os-update-channel.sh` (#4011). A failed fetch or a refused bundle changes nothing: the rig keeps mining, the reason lands in the status file, and a later request may try again.
+On request only, never on a schedule. A request names no URL: the rig fetches the release channel itself over Tor, and the listing is read as untrusted data: release-host allowlisted, size-capped, tag-validated, stale or replayed channels reported — enforced at fetch time by the shared channel helper `lib/pithead/47a-os-update-channel.sh` and the release lookup (#4011). A failed fetch or a refused bundle changes nothing: the rig keeps mining, the reason lands in the status file, and a later request may try again.
 
 ### Where the rig verifies
 

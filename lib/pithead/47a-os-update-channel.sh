@@ -79,7 +79,7 @@ os_channel_fetch() { # <get|head> <url> <out-file> <cap-bytes> [socks]
             ;;
         esac
         code="$probe"
-        redir=$(sed -n 's/^[Ll]ocation:[[:space:]]*//p' "$hdr" 2>/dev/null | tr -d '\r' | tail -1)
+        redir=$(sed -n 's/^[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:[[:space:]]*//p' "$hdr" 2>/dev/null | tr -d '\r' | tail -1)
         case "$code" in
         2??)
             rm -f "$hdr"

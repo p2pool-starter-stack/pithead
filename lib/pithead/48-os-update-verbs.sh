@@ -174,7 +174,7 @@ control_os_download() { # <claimed-file> <id> <actor> <control-dir>
     os_state_write "$cdir" "$(jq -n --arg v "$tag" '{step:"downloading",version:$v}')"
     # Bounded attempt in the background; the loop surfaces live progress into the result the
     # dashboard is polling. curl -C - resumes from whatever the partial file already holds.
-    local attempt="${PITHEAD_OS_DL_ATTEMPT:-600}" pid rc=0 bytes
+    local attempt="${PITHEAD_OS_DL_ATTEMPT:-600}" pid rc=0 bytes fail
     if [ -n "$socks" ]; then
         curl -fS -C - --max-time "$attempt" --max-filesize "$CURL_CAP_OS_BUNDLE" \
             --proto =https --socks5-hostname "$socks" -o "$part" -w '%{http_code}\n' \
@@ -188,6 +188,7 @@ control_os_download() { # <claimed-file> <id> <actor> <control-dir>
         sleep 5
         bytes=0
         [ -f "$part" ] && bytes=$(wc -c <"$part" | tr -d ' ')
+        [ "$bytes" -gt "$size" ] && kill "$pid" 2>/dev/null
         control_write_result "$cdir/results" "$id" "$(jq -n --arg v "$tag" --argjson b "$bytes" --argjson t "$size" --argjson r "$have" \
             '{status:"downloading",version:$v,bytes:$b,total:$t,resumed_from:$r,ts:(now|floor)}')"
     done
@@ -198,9 +199,12 @@ control_os_download() { # <claimed-file> <id> <actor> <control-dir>
     rm -f "$part.code"
     bytes=0
     [ -f "$part" ] && bytes=$(wc -c <"$part" | tr -d ' ')
-    if [ "$rc" -eq 0 ] && [ "${http_code#2}" = "$http_code" ]; then
+    fail=""
+    [ "$bytes" -gt "$size" ] && fail="the bundle stream exceeded its announced $size-byte size"
+    [ -z "$fail" ] && [ "$rc" -eq 0 ] && [ "${http_code#2}" = "$http_code" ] && fail="the bundle URL answered HTTP ${http_code:-none}"
+    if [ -n "$fail" ]; then
         rm -f "$part"
-        control_os_refuse "$cdir" "$id" "$actor" "os-download" failed "the bundle URL answered HTTP ${http_code:-none} — the partial file was discarded and nothing was installed."
+        control_os_refuse "$cdir" "$id" "$actor" "os-download" failed "$fail — the partial file was discarded and nothing was installed."
         return 0
     fi
     if [ "$rc" -eq 0 ] && [ "$bytes" -eq "$size" ]; then
