@@ -41,15 +41,18 @@ os_update_test_base() {
 # caller must run it as a plain command — a command substitution is a subshell and would discard
 # both. rc 2 = never reached the server at all, same convention as gh_release_fetch (#1050).
 os_release_fetch() {
-    local base
+    local base tmp
+    GH_RELEASE_HINT=""
+    GH_RELEASE_JSON=""
     if base=$(os_update_test_base); then
-        GH_RELEASE_HINT=""
-        GH_RELEASE_JSON=""
-        if ! GH_RELEASE_JSON=$(curl -fsS --max-time 60 --max-filesize "$CURL_CAP_SMALL" \
-            "$base/releases-latest.json" 2>/dev/null); then
+        tmp=$(mktemp "${TMPDIR:-/tmp}/pithead-seam.XXXXXX") || return 2
+        if ! os_channel_fetch get "$base/releases-latest.json" "$tmp" "$CURL_CAP_SMALL"; then
             GH_RELEASE_HINT="could not reach the release API — nothing was changed."
+            rm -f "$tmp"
             return 2
         fi
+        GH_RELEASE_JSON=$(cat "$tmp")
+        rm -f "$tmp"
         return 0
     fi
     gh_release_fetch p2pool-starter-stack/pithead
