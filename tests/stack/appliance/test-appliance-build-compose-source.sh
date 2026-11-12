@@ -380,3 +380,13 @@ assert_not_contains "the appliance excludes Monero image-build sources" "$CS_DF"
 assert_not_contains "the Dockerfile no longer copies the tree's compose file" "$CS_DF" 'VERSION docker-compose.yml'
 assert_contains "verify-image compares against what the stamp resolves to, not the tree" "$CS_VI" 'compose_reference "$ROOT" "$COMPOSE_REF"'
 assert_not_contains "verify-image's old tree comparison is gone" "$CS_VI" 'docker-compose.yml" ./docker-compose.yml'
+
+rigforge_pin_ref="8f06cb8df791f3cb16d47bbee85fde92103cbe0b"
+assert_contains "the appliance pins RigForge v1.18.1 by commit" "$CS_DF" "ARG RIGFORGE_REF=$rigforge_pin_ref"
+assert_contains "the RigForge pin comment names v1.18.1" "$CS_DF" "v1.18.1"
+assert_contains "the XMRig prebuild patches the default donate level like RigForge" "$CS_DF" "s/kDefaultDonateLevel = 1;/kDefaultDonateLevel = 0;/"
+assert_contains "the XMRig prebuild patches the minimum donate level like RigForge" "$CS_DF" "s/kMinimumDonateLevel = 1;/kMinimumDonateLevel = 0;/"
+assert_contains "the XMRig prebuild verifies the patched donate header" "$CS_DF" "grep -Fxq 'constexpr const int kMinimumDonateLevel = 0;' /tmp/xmrig/src/donate.h"
+assert_contains "the XMRig prebuild writes the donate minimum marker RigForge checks" "$CS_DF" ">/opt/rigforge/prebuilt/xmrig/.rigforge-donate-min"
+assert_contains "the XMRig prebuild patches before it configures the build" "$(printf '%s' "${CS_DF%%cmake -S /tmp/xmrig*}")" "kMinimumDonateLevel = 0;"
+unset rigforge_pin_ref

@@ -308,36 +308,9 @@ class WorkerConfigStoreMixin:
             self.logger.error(f"Worker Config Lookup Error: {e}")
             return True  # fail toward NOT flagging a false rig-edit on a DB read hiccup
 
-    def note_worker_revision(self, worker: str, meta: dict | None) -> dict | None:
-        """Record the config revision ``worker`` is serving NOW and report an edit that nothing
-        recorded (#1551) — the one door #1542 leaves open. Takes the ALREADY-VALIDATED meta from
-        ``client/rig_config_meta.parse_config_meta``, never a raw rig body: parsing a remote feed
-        is the client layer's job, and this stays a store.
-
-        Read-then-write under the one ``_db_lock``, in a single method, because the comparison IS
-        the read: two polls of the same rig interleaving a read and a write would both see the same
-        "previous" and one of the two moves would go unreported.
-
-        Returns ``None`` for the ordinary case — nothing to compare (a rig seen for the first time,
-        or one serving no revision), a revision that has not moved, or a move that WAS recorded.
-        A dict ``{worker, before, after}`` means the rig's config changed with no new
-        ``last_change_id`` beside it: a hand-edit underneath RigForge, which moves the revision and
-        stamps nothing, so neither #1345's provenance line nor #1367's ``config_drift`` can see it.
-
-        The same write maintains ``drift_from`` for ``get_worker_revision_drift`` (#1564), so the
-        Inspect line costs no second query or lock scope. ``_next_drift_from`` carries that rule.
-
-        It fails CLOSED like ``get_worker_config_change``: any read/write error returns ``None`` and
-        accuses nobody — a missed detection is a poll's delay, whereas a false accusation is a
-        permanent audit row naming an operator's rig for something it did not do.
-
-        ``worker`` is the one field here a rig still chooses freely, checked by ``_bindable``
-        (#1696): a name sqlite cannot bind says nothing, since we can't compare against what we
-        can't store — disclosed rather than fixed.
-
-        Prunes its own table by ``ts`` on a 5% sample (#1811): ``ts`` refreshes on every live poll,
-        so only a name gone silent the full retention window is ever the row removed.
-        """
+    def note_worker_revision(
+        self, worker: str, meta: dict | None, rigforge_version: str | None = None
+    ) -> dict | None:
         revision = (meta or {}).get("revision")
         if not worker or not revision or not _bindable(worker):
             return None
@@ -348,17 +321,26 @@ class WorkerConfigStoreMixin:
                     return None
                 cursor = self._conn.cursor()
                 cursor.execute(
-                    "SELECT revision, last_change_id, drift_from FROM worker_config_revision "
-                    "WHERE worker = ?",
+                    "SELECT revision, last_change_id, drift_from, rigforge_version "
+                    "FROM worker_config_revision WHERE worker = ?",
                     (worker,),
                 )
                 row = cursor.fetchone()
-                drift_from = _next_drift_from(row, revision, last_change_id)
+                rebased = (
+                    row is not None
+                    and row["revision"] != revision
+                    and rigforge_version is not None
+                    and row["rigforge_version"] != rigforge_version
+                )
+                if row is not None and rigforge_version is None:
+                    rigforge_version = row["rigforge_version"]
+                drift_from = _next_drift_from(None if rebased else row, revision, last_change_id)
                 now = time.time()
                 self._conn.execute(
                     "INSERT OR REPLACE INTO worker_config_revision "
-                    "(worker, revision, last_change_id, ts, drift_from) VALUES (?, ?, ?, ?, ?)",
-                    (worker, revision, last_change_id, now, drift_from),
+                    "(worker, revision, last_change_id, ts, drift_from, rigforge_version) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (worker, revision, last_change_id, now, drift_from, rigforge_version),
                 )
                 if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
                     self._conn.execute(
@@ -369,27 +351,19 @@ class WorkerConfigStoreMixin:
         except sqlite3.Error as e:
             self._db_error("Worker Revision Write Error", e)
             return None
-        if row is None or row["revision"] == revision:
+        if row is None or rebased or row["revision"] == revision:
             return None
-        # The revision moved. A new last_change_id beside it means something DID record the change
-        # (ours via #185, or a rig-local apply #530 already flags), so only an unchanged id — including
-        # None on both sides, a rig that has never recorded one — is the case nothing else can see.
         if row["last_change_id"] != last_change_id:
             return None
         return {"worker": worker, "before": row["revision"], "after": revision}
 
     def _migrate_worker_config_revision(self, cursor: sqlite3.Cursor) -> None:
-        """Adds ``worker_config_revision.drift_from`` to a database created before #1564.
-
-        Called by ``storage_service._migrate_db`` (#1369). ``CREATE TABLE IF NOT EXISTS`` means
-        an existing install never gains the column from the create path — the feature would be
-        silently absent on exactly the installs that have run long enough to drift. Pre-existing
-        rows get NULL: "no drift recorded", the same thing a first sighting says.
-        """
         cursor.execute("PRAGMA table_info(worker_config_revision)")
-        if "drift_from" not in {info[1] for info in cursor.fetchall()}:
-            self.logger.info("Migrating DB: Adding drift_from column to worker_config_revision")
-            self._conn.execute("ALTER TABLE worker_config_revision ADD COLUMN drift_from TEXT")
+        columns = {info[1] for info in cursor.fetchall()}
+        for column in ("drift_from", "rigforge_version"):
+            if column not in columns:
+                self.logger.info(f"Migrating DB: Adding {column} column to worker_config_revision")
+                self._conn.execute(f"ALTER TABLE worker_config_revision ADD COLUMN {column} TEXT")
 
     def get_worker_revision_drift(self, worker: str, revision: str | None) -> dict | None:
         """The unrecorded config edit the Inspect provenance line should still be reporting for

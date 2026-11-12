@@ -358,7 +358,7 @@ echo "== unit: boot gate progress — elapsed minutes every sixth failed pass ==
 boot_progress_case() (
     unset SECONDS
     SECONDS=600
-    gate_doctor_ran=0 gate_advisory="" hold_chain=0 OS_INFLIGHT="$SANDBOX/absent-inflight"
+    gate_doctor_ran=0 gate_advisory="" hold_chain=0 migration_fingerprint="" OS_INFLIGHT="$SANDBOX/absent-inflight"
     gate_target=fixture gate_resolve_args=()
     probe_seconds="$2"
     gate_probe_header() { :; }
@@ -368,6 +368,8 @@ boot_progress_case() (
     sleep() { SECONDS=$((SECONDS + $1)); }
     boot_gate_passed() { :; }
     rauc() { :; }
+    sync() { :; }
+    restore_data_floor_after_fallback() { :; }
     timeout() { :; }
     gate_loop=$(sed -n '/^gate_wait_started=/,/^done$/p' "$ROOT/os/overlay/pithead-boot")
     gate_loop=${gate_loop//\/dev\/tty1/${3:-$SANDBOX/boot-progress-vga}}

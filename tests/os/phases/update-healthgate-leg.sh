@@ -10,7 +10,7 @@
 # all. This leg reproduces exactly that shape, and needs leg 4's provisioned, committed guest
 # (pithead-boot.service is conditioned on config.json/machine-role, neither of which legs 1-3 ever
 # write — see phase_update's #2055 G1 note) to have something for the new gate to hold.
-phase_update_healthgate_leg() {
+_update_healthgate_leg_body() {
     info "leg 5 — a container whose OWN healthcheck fails must hold the gate (#2383, manual battery M9)"
     if [ "${LEG4_PITHEAD_BOOT_PROVED:-0}" != "1" ]; then
         it_skip_leg "unhealthy-container gate refusal (#2383)" \
@@ -29,17 +29,50 @@ phase_update_healthgate_leg() {
         return
     fi
     ok "leg 5: built the fault bundle: $(basename "$fbundle")"
-    _stage_bundle "$fbundle" && _install_or_fail "leg 5" && ok "leg 5: fault bundle installed into the spare slot" || {
-        bad "leg 5: could not stage or install the fault bundle"
+    local tag srv srv_pid host_addr port=8931 aged out before
+    tag="v$(tr -d ' \t\r\n' <VERSION)"
+    srv=$(mktemp -d)
+    cp "$fbundle" "$srv/pithead-os-$tag.raucb"
+    printf '{"tag_name":"%s","html_url":"http://bench.invalid/rel","assets":[{"name":"pithead-os-%s.raucb","size":%s}]}' \
+        "$tag" "$tag" "$(wc -c <"$srv/pithead-os-$tag.raucb" | tr -d ' ')" >"$srv/releases-latest.json"
+    host_addr=$(ip -4 -o addr show virbr0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
+    [ -n "$host_addr" ] || host_addr="192.168.122.1"
+    if ! srv_pid=$(_serve_update_dir "$srv" "$port"); then
+        rm -rf "$srv"
+        bad "leg 5: the bench release server never answered on :$port — the harness, not the product"
         return
-    }
-    # No mark-good here, deliberately: a plain reboot into the freshly installed slot, the same
-    # shape an automatic A/B boot takes with nobody watching. pithead-boot's own gate decides this.
+    fi
+    if ! aged=$(aged_version "${tag#v}") || ! _ssh "printf 'http://$host_addr:$port' > /data/pithead/os-update-test-base && printf '%s\n' '$aged' > /data/pithead/VERSION"; then
+        kill "$srv_pid" 2>/dev/null
+        rm -rf "$srv"
+        bad "leg 5: could not age the guest or plant the update-server seam"
+        return
+    fi
+    _ssh 'rm -f /data/pithead/data/os-update/.check-stamp /data/pithead/data/os-update/.check-stamp-short'
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.status')" = "checked" ]; then
+        out=$(_os_step "{\"action\":\"download\",\"version\":\"$tag\"}" 900)
+        [ "$(printf '%s' "$out" | jq -r '.status')" = "downloaded" ] && out=$(_os_step '{"action":"verify"}' 180)
+        [ "$(printf '%s' "$out" | jq -r '.status')" = "verified" ] && out=$(_os_step '{"action":"install"}' 900)
+    fi
+    kill "$srv_pid" 2>/dev/null
+    rm -rf "$srv"
+    if [ "$(printf '%s' "$out" | jq -r '.status')" = "installed" ]; then
+        ok "leg 5: fault bundle installed into the spare slot through the dashboard action"
+    else
+        bad "leg 5: the dashboard could not check, download, verify and install the fault bundle (got: $(printf '%s' "$out" | cut -c1-200))"
+        return
+    fi
     fserial_mark=$(wc -c <"$SERIAL") || {
         bad "leg 5: could not mark the serial console before the fault boot"
         return
     }
-    _reboot_wait reboot 300 || {
+    before=$(_boot_id) || {
+        bad "leg 5: could not read the boot id before the reboot intent"
+        return
+    }
+    _os_step '{"action":"reboot"}' 30 >/dev/null 2>&1 || true
+    _wait_new_boot "$before" 420 || {
         bad "leg 5: guest never returned after booting the fault slot"
         return
     }
@@ -76,5 +109,28 @@ phase_update_healthgate_leg() {
         ok "leg 5: the fault boot's journal names the dashboard container that held the gate"
     else
         bad "leg 5: no 'container dashboard' line in the fault boot's journal — the gate did not name the cause"
+    fi
+    local flag
+    flag=$(_ssh "cat /data/pithead/data/os-update/in-flight.json" 2>/dev/null)
+    if out=$(rollback_blocking_check "$flag" . "container dashboard"); then
+        ok "leg 5: the in-flight record the fallback boot read carries a blocking list naming the dashboard container"
+    else
+        bad "leg 5: in-flight record after the fallback: $out"
+    fi
+    # shellcheck disable=SC2154
+    if rollback_banner_served "$ip" "$DASH_USER:$DASH_PASS" 300; then
+        ok "leg 5: the dashboard serves a banner that names the blocking check ('Blocked by:')"
+    else
+        bad "leg 5: the served banner module has no 'Blocked by:' cause"
+    fi
+}
+
+phase_update_healthgate_leg() {
+    local fail_before=$FAIL
+    _update_healthgate_leg_body
+    if [ "$FAIL" -gt "$fail_before" ]; then
+        rollback_evidence "$SERIAL.leg5-evidence"
+        info "leg 5 failure evidence (boot journal, verdict, grubenv, doctor) kept at $SERIAL.leg5-evidence"
+        bash scripts/sanitize-test-log.sh --lines 200 "$SERIAL.leg5-evidence"
     fi
 }
