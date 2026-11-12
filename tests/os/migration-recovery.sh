@@ -125,8 +125,6 @@ migration_release_wait() {
         if SSH_TIMEOUT=20 _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
             return 0
         fi
-        # The terminal lines also appear one boot back: fail_boot's fallback path reboots the guest
-        # before the next poll, and the journal is persistent by design.
         migration_release_line=$(SSH_TIMEOUT=20 _ssh "journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -m1 -E '$MIGRATION_RELEASE_TERMINAL' || journalctl -u pithead-boot -b -1 -o cat 2>/dev/null | grep -m1 -E '$MIGRATION_RELEASE_TERMINAL'" | tr -d '[:cntrl:]')
         if [ -n "$migration_release_line" ]; then
             return 1
