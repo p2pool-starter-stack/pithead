@@ -223,11 +223,12 @@ bundle_support_clamp_hours() {
         printf '%s' "$PITHEAD_SUPPORT_DEFAULT_HOURS"
         return 0
         ;;
+    *[!0]*)
+        h=${h#"${h%%[!0]*}"}
+        ;;
+    *) h=0 ;;
     esac
-    h=$(printf '%d' "10#$h" 2>/dev/null) || {
-        printf '%s' "$PITHEAD_SUPPORT_DEFAULT_HOURS"
-        return 0
-    }
+    [ "${#h}" -gt "${#PITHEAD_SUPPORT_MAX_HOURS}" ] && h="$PITHEAD_SUPPORT_MAX_HOURS"
     [ "$h" -lt 1 ] && h="$PITHEAD_SUPPORT_DEFAULT_HOURS"
     [ "$h" -gt "$PITHEAD_SUPPORT_MAX_HOURS" ] && h="$PITHEAD_SUPPORT_MAX_HOURS"
     printf '%s' "$h"
