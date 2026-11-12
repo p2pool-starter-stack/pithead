@@ -413,11 +413,14 @@ budget can then evict the unprotected baseline. Keep other KVM jobs off that ben
 reports the pin held, and confirm the image cache still lists the commit right before submitting
 provision. The cut cannot seed itself: `old_image` needs a strictly older build.
 
-Submit four KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
+Submit seven KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
 cap, and so does the boot group with provision.
 
 - Boot group: boot, update, install.
-- Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases.
+- Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases as
+  the four splits the last three release gates ran — rig, rigmedia and media; fault and reset;
+  image-upgrade; stack. In the 2.0.1 and 2.0.2 gates the combined seven-phase job failed one
+  phase each time and reran all seven; the splits keep a rerun to its own phase.
 - Provision: provision and setup-defaults against the seeded baseline, pinned to the seeded bench.
 - Crossupdate: the update from the previous release, which is the path existing installs take,
   pinned to a bench that keeps that release's image.
@@ -442,9 +445,24 @@ KVM_BOOT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_BOOT_KEY" 
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["boot","update","install"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM boot group",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
 KVM_RIG_KEY=$(uuidgen)
-printf 'KVM rig group idempotency key: %s\n' "$KVM_RIG_KEY"
+printf 'KVM rig/rigmedia/media split idempotency key: %s\n' "$KVM_RIG_KEY"
 KVM_RIG_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIG_KEY" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media","fault","reset","image-upgrade","stack"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig group",idempotency_key:$key}' \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_FAULT_KEY=$(uuidgen)
+printf 'KVM fault/reset split idempotency key: %s\n' "$KVM_FAULT_KEY"
+KVM_FAULT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_FAULT_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["fault","reset"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM fault/reset split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_IMGUP_KEY=$(uuidgen)
+printf 'KVM image-upgrade split idempotency key: %s\n' "$KVM_IMGUP_KEY"
+KVM_IMGUP_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_IMGUP_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["image-upgrade"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM image-upgrade split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_STACK_KEY=$(uuidgen)
+printf 'KVM stack split idempotency key: %s\n' "$KVM_STACK_KEY"
+KVM_STACK_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_STACK_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["stack"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM stack split",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
 KVM_PROV_KEY=$(uuidgen)
 printf 'KVM provision idempotency key: %s\n' "$KVM_PROV_KEY"
@@ -456,18 +474,19 @@ printf 'KVM crossupdate idempotency key: %s\n' "$KVM_CROSS_KEY"
 KVM_CROSS_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_CROSS_KEY" --arg prev "$PREVIOUS_RELEASE_SHA" \
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["crossupdate"],old_image_commit:$prev},local_only:true,timeout_minutes:240,submitted_by:"release/devops",note:"release KVM crossupdate",idempotency_key:$key}' \
   | curl -fsS -X POST "$CROSSUPDATE_BENCH_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
-printf 'KVM jobs: %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
+printf 'KVM jobs: %s %s %s %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_FAULT_ID" \
+  "$KVM_IMGUP_ID" "$KVM_STACK_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
 ```
 
-Read all four completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
+Read all seven completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
 
 Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be tagged; a job whose
 `commit` differs from it is not evidence for the release, however recently it passed. Any change
 after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
-rerun the boot, rig, provision and crossupdate jobs on the new SHA and read them again before
-submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
+rerun the boot group, the four rig-group splits, provision and crossupdate on the new SHA and
+read them again before submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
 `bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
 release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
 `scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
@@ -501,9 +520,9 @@ Use `targeted` until the frozen SHA includes the harness fix from
 [#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026); then set `E2E_MODE=matrix`.
 Keep the real rig in the run. Only the owner may authorize `no_rig` after reviewing failures
 confined to rigforge-control harness rows. The final e2e job alone requests the aggregate status,
-with the two group jobs in `after`. A bench resolves `after` only against its own jobs, and the
-provision and crossupdate jobs belong to their pinned benches, so the block first refuses to
-submit unless both of those completed with `success`:
+with the boot group and the four rig-group splits in `after`. A bench resolves `after` only
+against its own jobs, and the provision and crossupdate jobs belong to their pinned benches, so
+the block first refuses to submit unless both of those completed with `success`:
 
 ```bash
 for leg in "$PROVISION_BENCH_URL/jobs/$KVM_PROV_ID" "$CROSSUPDATE_BENCH_URL/jobs/$KVM_CROSS_ID"; do
@@ -513,16 +532,17 @@ E2E_MODE=targeted
 E2E_KEY=$(uuidgen)
 printf 'e2e idempotency key: %s\n' "$E2E_KEY"
 jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MODE" \
-  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
+  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" --argjson fault "$KVM_FAULT_ID" \
+  --argjson imgup "$KVM_IMGUP_ID" --argjson stack "$KVM_STACK_ID" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig,$fault,$imgup,$stack],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
 ```
 
-Read the completed e2e job's full status, log, artifacts and evidence. All five jobs must carry the same
-SHA and ref. A failed or cancelled leg cannot yield a
+Read the completed e2e job's full status, log, artifacts and evidence. All eight jobs must carry
+the same SHA and ref. A failed or cancelled leg cannot yield a
 successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
 `success` and its creator is the configured bench-ci App before running `release.sh`; record all
-five job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
+eight job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
 status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
 bench-ci; retain its printed idempotency key for a retry.
 
