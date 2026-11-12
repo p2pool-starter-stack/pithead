@@ -63,6 +63,7 @@ RUN set -e; \
         fdisk gdisk parted e2fsprogs xfsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
+        tor \
         squashfs-tools \
         openssh-server sudo less nano htpdate \
         git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
@@ -231,6 +232,7 @@ COPY os/overlay/pithead-cpu-governor.service /etc/systemd/system/pithead-cpu-gov
 # generates (once) and persists both on /data, the single persistence root, fixes the rest.
 COPY os/overlay/pithead-ssh-host-keys.conf /etc/systemd/system/ssh.service.d/pithead-host-keys.conf
 COPY os/overlay/pithead-ssh-host-keys /usr/local/sbin/pithead-ssh-host-keys
+COPY os/overlay/pithead-tor /usr/local/sbin/pithead-tor
 COPY os/overlay/pithead-machine-id.service /etc/systemd/system/pithead-machine-id.service
 COPY os/overlay/pithead-machine-id /usr/local/sbin/pithead-machine-id
 COPY os/overlay/pithead-boot-version.service os/overlay/pithead-journal-persist.service /etc/systemd/system/
@@ -250,8 +252,8 @@ RUN mkdir -p /etc/ssh/sshd_config.d \
 # masked: this image bakes its own locale/timezone, and the console password is pithead's.
 RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
-    && systemctl mask systemd-firstboot.service
-RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-miner-recovery /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
+    && systemctl mask systemd-firstboot.service tor.service tor@default.service
+RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-miner-recovery /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/local/sbin/pithead-tor /usr/lib/systemd/system-generators/pithead-mount-generator
 # The updater is chosen per image. The package install above includes RAUC only when selected;
 # leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even
