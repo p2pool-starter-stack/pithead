@@ -19,6 +19,12 @@ esac
 SH
 cat >"$work/bin/podman" <<'SH'
 #!/bin/bash
+if [ "$1" = inspect ]; then
+    [ "${INSPECT_FAIL:-0}" = 0 ] || exit 1
+    [ -n "${PROXY_STARTED_AT:-}" ] || exit 1
+    printf '%s\n' "$PROXY_STARTED_AT"
+    exit 0
+fi
 [ "$1 $2 $3 $4 $5 $6" = 'exec -i dashboard python - fixture-local' ] || exit 99
 shift 5
 flock -n "${PITHEAD_LOCK_FILE:-$PITHEAD_DIR/.pithead.lock}" true || echo lock-held-during-read >>"$RECOVERY_CALLS"
@@ -72,6 +78,53 @@ tick 401
 tick 700
 no_restart
 rm -f "$work/state"
+export PROXY_STARTED_AT=1000
+tick 1100
+[ "$(cat "$work/state")" = 1100 ]
+[ "$(cat "$work/state.proxy")" = 1000 ]
+tick 1249
+tick 1250
+no_restart
+export PROXY_STARTED_AT=2000
+export HOLD_FLAG="$work/hold"
+touch "$HOLD_FLAG"
+printf '1255.00 0\n' >"$work/uptime"
+timeout 20 bash "$ROOT/os/overlay/pithead-miner-recovery" >"$work/output"
+no_restart
+[ "$(cat "$work/state.proxy")" = 1000 ]
+rm "$HOLD_FLAG"
+until flock -n "$work/stack/.pithead.lock" true; do sleep 0.05; done
+unset HOLD_FLAG
+tick 1260
+[ "$(cat "$work/calls")" = restart ]
+grep -Fq 'proxy was recreated while the miner was disconnected; restarting xmrig' "$work/output"
+[ ! -e "$work/state" ]
+[ "$(cat "$work/state.proxy")" = 2000 ]
+rm "$work/calls"
+export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",1]]}'
+tick 1300
+no_restart
+[ ! -e "$work/state" ]
+export PROXY_STARTED_AT=3000
+tick 1310
+no_restart
+[ "$(cat "$work/state.proxy")" = 3000 ]
+export PROXY_WORKERS='{"mode":"rig_id","workers":[]}'
+tick 1320
+no_restart
+[ "$(cat "$work/state")" = 1320 ]
+export INSPECT_FAIL=1
+rm -f "$work/state" "$work/state.proxy"
+tick 1400
+[ ! -e "$work/state.proxy" ]
+[ "$(cat "$work/state")" = 1400 ]
+tick 1699
+no_restart
+tick 1700
+[ "$(cat "$work/calls")" = restart ]
+grep -Fq 'disconnected for 300 seconds; restarting xmrig' "$work/output"
+rm -f "$work/state" "$work/state.proxy" "$work/calls"
+unset INSPECT_FAIL PROXY_STARTED_AT
 for condition in active disabled rig busy custom-busy api http missing malformed string boolean negative connected; do
     tick 1000
     case "$condition" in
@@ -167,7 +220,7 @@ done
 grep -Fq '/usr/local/sbin/pithead-miner-recovery' "$ROOT/os/rootfs/Dockerfile"
 grep -Fq 'ExecStart=/usr/local/sbin/pithead-miner-recovery' "$ROOT/os/overlay/pithead-miner-recovery.service"
 grep -Fq 'OnUnitInactiveSec=30s' "$ROOT/os/overlay/pithead-miner-recovery.timer"
-printf '%s\n' 'PASS: miner recovery debounce, refusals, decoder, failure and image wiring'
+printf '%s\n' 'PASS: miner recovery debounce, proxy-recreation fast restart, refusals, decoder, failure and image wiring'
 
 # shellcheck source=tests/os/appliance-miner-recovery-leg.sh
 source "$ROOT/tests/os/appliance-miner-recovery-leg.sh"

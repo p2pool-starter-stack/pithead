@@ -330,11 +330,13 @@ Its diagnostic, readiness and image selftests use fake Docker I/O.
 The provision phase streams `tests/os/appliance-local-miner-leg.sh` to the guest to prove
 both local-miner toggles converge without rebooting.
 The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconnected active
-local miner; `tests/os/selftest-miner-recovery.sh` covers its decision window and refusals.
+local miner, restarting at once when the proxy container was recreated since its last reading;
+`tests/os/selftest-miner-recovery.sh` covers its decision window, recreation fast restart and refusals.
 `tests/os/appliance-miner-recovery{,-leg}.sh` proves per-worker accepted-share progress after
 dashboard backup on the stack phase’s synced guest, using a reversible loopback strand.
 Trial receipts distinguish backup completion, strand detection, unchanged proxy identity with
-changed start time, local reconnection and accepted shares. They record the installed watchdog
+changed start time, local reconnection, the fast-restart journal line (required whenever the
+installed watchdog carries that path) and accepted shares. They record the installed watchdog
 checksum and unit states; an absent-watchdog control requires both units to be absent and inactive.
 Failed guest verdicts print local worker counts and bounded watcher, recovery and miner journals
 before cleanup. A recovery-failure receipt requires an observed strand, valid proxy checks,

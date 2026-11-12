@@ -11,7 +11,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
-## [2.0.3] - Unreleased
+## [2.0.3] - 2026-11-10
 
 Pithead 2.0.3 is a patch release after 2.0.2. It bakes RigForge 1.18.1 into the appliance image,
 keeps the appliance's built-in miner running (it restarts one that has lost its connection to the
