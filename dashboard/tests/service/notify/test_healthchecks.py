@@ -313,6 +313,16 @@ class TestFailureRecording:
             assert self._client(rec).ping() is False
         assert rows[0][1] == "dns"
 
+    def test_a_class_two_hops_down_the_chain_still_maps(self):
+        rows, rec = self._recorder()
+        inner = NameResolutionError("host not found")
+        middle = OSError(f"SSLError while reaching {self.URL}")
+        middle.__cause__ = inner
+        err = self._wrapped(middle, requests.exceptions.ConnectionError)
+        with patch.object(hc_mod, "bounded_get", side_effect=err):
+            assert self._client(rec).ping() is False
+        assert rows[0][1] == "dns"
+
     def test_plain_connection_error_and_timeout_map_to_connect(self):
         rows, rec = self._recorder()
         with patch.object(

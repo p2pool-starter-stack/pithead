@@ -4,6 +4,7 @@ import uuid
 import pytest
 
 from mining_dashboard.service import control_service
+from mining_dashboard.service.health import diagnostics_service
 from mining_dashboard.service.storage_service import StateManager
 from mining_dashboard.web.server import create_app
 
@@ -93,6 +94,28 @@ class TestSupportBundleSubmit:
             headers={**CONTROL_HEADERS, "Content-Type": "application/json"},
         )
         assert resp.status == 400
+
+    async def test_a_malformed_json_body_is_a_400_and_spools_nothing(self, bundle_client, spool):
+        resp = await bundle_client.post(
+            "/api/control/support-bundle",
+            data="{oops",
+            headers={**CONTROL_HEADERS, "Content-Type": "application/json"},
+        )
+        assert resp.status == 400
+        assert not list((spool / "requests").glob("*.json"))
+
+    async def test_a_failing_submit_is_a_500_and_spools_nothing(
+        self, bundle_client, monkeypatch, spool
+    ):
+        def boom(*args, **kwargs):
+            raise RuntimeError("the spool is on fire")
+
+        monkeypatch.setattr(diagnostics_service, "submit_support_bundle", boom)
+        resp = await bundle_client.post(
+            "/api/control/support-bundle", headers=CONTROL_HEADERS, json={"hours": 24}
+        )
+        assert resp.status == 500
+        assert not list((spool / "requests").glob("*.json"))
 
 
 class TestSupportBundleDownload:

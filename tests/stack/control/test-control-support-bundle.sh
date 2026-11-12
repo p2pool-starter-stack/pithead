@@ -6,7 +6,7 @@ SB="$SANDBOX/ctrl4036"
 mkdir -p "$SB/results" "$SB/audit" "$SB/bin" "$SB/out"
 
 SB_ONION="abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
-SB_ADDR="4AaleJ8mN3GnBv9tQ7fYk2hK6pL5rT1uW3xZ8cD0eF4gH7jK9mN2pQ5sV8wX1yB4dE6fG0hI3jL5nO7qS9uW2yA4cE6gI0kM2oQ4sU6wY0b4dF6hJ8lN0"
+SB_ADDR="44nep4y8xiQPH96nSQgkChrvUXLrLb73HK5sSGa6hVt3thisdUwb9BtFKdw9iQ89GE7yWW8xvRqG6HZrAro79hPDvYSrqCG"
 assert_eq "the Monero fixture is the 95-char shape the redactor keys on" "${#SB_ADDR}" "95"
 
 cat >"$SB/bin/journalctl" <<EOF
@@ -59,7 +59,7 @@ assert_rc "the archive sits in the results spool under the request id" \
         echo $?
     )" "0"
 assert_eq "the spool archive is mode 600" \
-    "$(stat -f '%Lp' "$SB/results/$sid1.tar.gz" 2>/dev/null || stat -c '%a' "$SB/results/$sid1.tar.gz")" "600"
+    "$(stat -c '%a' "$SB/results/$sid1.tar.gz")" "600"
 assert_contains "support-bundle is audited applied" \
     "$(cat "$SB/audit/control.log")" '"action":"support-bundle","status":"applied"'
 
@@ -67,7 +67,7 @@ echo "== control channel: the archive carries the unit journals and hides every 
 mkdir -p "$SB/extract1"
 tar -xzf "$SB/results/$sid1.tar.gz" -C "$SB/extract1"
 assert_contains "the default window is 72 hours when the intent states none" \
-    "$(cat "$SB/journal.log")" -- '--since 72 hours ago'
+    "$(cat "$SB/journal.log")" "--since 72 hours ago"
 assert_rc "every Pithead unit is asked for by exact membership" \
     "$(grep -c -- '--no-pager' "$SB/journal.log")" "15"
 assert_contains "monerod journal lines land in the archive" \
@@ -88,7 +88,7 @@ assert_contains "the redactor fired rather than the lines vanishing: the marker 
 echo "== control channel: the hours window is a request, and the host clamps it (#4036) =="
 sid2="c403c403-0000-4000-8000-000000000002"
 rm -f "$SB/journal.log"
-sb_run "$(sb_req "$sid2" support-bundle ',"hours":9999)')"
+sb_run "$(sb_req "$sid2" support-bundle ',"hours":9999')"
 assert_eq "a widened window is clamped to the host cap, not trusted" \
     "$(jq -r .hours "$SB/results/$sid2.json")" "168"
 assert_contains "the journal was cut at the clamped window" "$(cat "$SB/journal.log")" "--since 168 hours ago"
@@ -103,36 +103,32 @@ assert_eq "a non-numeric window falls back to the stated default" \
 
 echo "== control channel: a bundle over the host cap is refused, not truncated onto the wire =="
 sid4="c403c403-0000-4000-8000-000000000004"
+rm -f "$SB/staged/.support-bundle-stamp"
 (
     export PATH="$SB/bin:$PATH" PITHEAD_SUPPORT_MAX_TOTAL_BYTES=0
     run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sid4" support-bundle)" "$SB"
 ) >/dev/null 2>&1
 assert_eq "exceeding the total cap fails the request" "$(jq -r .status "$SB/results/$sid4.json")" "failed"
 assert_rc "a refused bundle writes no archive" \
-    "$(
-        ls "$SB/results/$sid4.tar.gz" >/dev/null 2>&1
-        echo $?
-    )" "1"
+    "$([ -e "$SB/results/$sid4.tar.gz" ] && echo 0 || echo 1)" "1"
 
 echo "== control channel: a second bundle inside a minute is rejected outright =="
 sid5="c403c403-0000-4000-8000-000000000005"
 sb_run "$(sb_req "$sid5" support-bundle)"
+sb_run --keep-stamp "$(sb_req "$sid5" support-bundle)"
 assert_eq "the throttle rejects the immediate second collect" \
     "$(jq -r .status "$SB/results/$sid5.json")" "rejected"
 
 echo "== host CLI: recovery-bundle shares the one collector and prints a 600 archive (#4038) =="
 rb=$(
     export PATH="$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
-    run_sourced_e "$SANDBOX" recovery_bundle --hours 24 2>/dev/null | tail -1 | sed 's/^Support bundle written: //'
+    run_sourced_e "$SANDBOX" recovery_bundle --hours 24 2>/dev/null |
+        sed -n 's/.*Support bundle written: //p' | tail -1
 )
 assert_rc "recovery-bundle writes an archive on a journal-only host" \
-    "$(
-        ls "$rb" >/dev/null 2>&1
-        echo $?
-    )" "0"
+    "$([ -e "$rb" ] && echo 0 || echo 1)" "0"
 assert_contains "the archive lands under the stated directory" "$rb" "$SB/out/support-bundle-"
-assert_eq "the printed archive is mode 600" \
-    "$(stat -f '%Lp' "$rb" 2>/dev/null || stat -c '%a' "$rb")" "600"
+assert_eq "the printed archive is mode 600" "$(stat -c '%a' "$rb")" "600"
 mkdir -p "$SB/extract2"
 tar -xzf "$rb" -C "$SB/extract2"
 assert_contains "the journal-only archive carries journal lines" \

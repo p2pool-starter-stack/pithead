@@ -237,7 +237,7 @@ control_prune_results() { # <control-dir>
         fi
     done
 
-    local total f
+    local total f pair
     total=$(du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}')
     [ -n "$total" ] || total=0
     if [ "$total" -gt "$max_bytes" ]; then
@@ -259,9 +259,11 @@ control_prune_results() { # <control-dir>
             # A backup's own result JSON: keep a fresh pair; evict an expired pair together.
             *.json)
                 id="${f%.json}"
-                if [ -f "$dir/$id.tar.gz.enc" ]; then
-                    [ -n "$(find "$dir/$id.tar.gz.enc" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
-                    rm -f "$dir/$f" "$dir/$id.tar.gz.enc"
+                pair="$dir/$id.tar.gz.enc"
+                [ -f "$pair" ] || pair="$dir/$id.tar.gz"
+                if [ -f "$pair" ]; then
+                    [ -n "$(find "$pair" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                    rm -f "$dir/$f" "$pair"
                 else
                     rm -f "$dir/$f"
                 fi
