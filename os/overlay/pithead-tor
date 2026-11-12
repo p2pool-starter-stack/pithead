@@ -41,8 +41,8 @@ cleanup() {
     local waited=0
     if [ -n "$torpid" ] && kill -0 -- "-${torpid}" 2>/dev/null; then
         kill -TERM -- "-${torpid}" 2>/dev/null
-        while kill -0 -- "-${torpid}" 2>/dev/null && [ "$waited" -lt 10 ]; do
-            sleep 1
+        while kill -0 -- "-${torpid}" 2>/dev/null && [ "$waited" -lt 50 ]; do
+            sleep 0.2
             waited=$((waited + 1))
         done
         kill -KILL -- "-${torpid}" 2>/dev/null

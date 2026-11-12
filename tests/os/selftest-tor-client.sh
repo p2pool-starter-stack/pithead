@@ -103,6 +103,23 @@ rc=$?
 [ "$rc" -ne 0 ] && [[ "$out" == *"did not complete a circuit"* && "$out" == *"Socks listen failed"* ]] ||
     fail "a Tor that dies at once must fail with its log tail, got rc=$rc out=$out"
 
+env "${t_env[@]}" PITHEAD_TOR_TIMEOUT=10 PITHEAD_TOR_BIN="$tmp/fake-never" "$HELPER" true >"$tmp/sig.out" 2>&1 &
+sigpid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pgrep -f "setsid.*fake-never" >/dev/null 2>&1 && break
+    sleep 0.1
+done
+kill -TERM "$sigpid" 2>/dev/null
+rc=0
+wait "$sigpid" || rc=$?
+[ "$rc" -eq 143 ] ||
+    fail "a SIGTERM'd helper must stop Tor and exit 143, got rc=$rc out=$(cat "$tmp/sig.out" 2>/dev/null)"
+sleep 0.5
+[ -z "$(pgrep -f "$tmp/fake-never" 2>/dev/null)" ] ||
+    fail "a SIGTERM'd helper left its Tor process running"
+[ -z "$(find "$tmp" -maxdepth 1 -name 'run.*' -print -quit)" ] ||
+    fail "a SIGTERM'd helper left its /run state directory behind"
+
 flock "$tmp/lock" sleep 3 &
 holder=$!
 sleep 0.3

@@ -14,9 +14,8 @@
 #      wherever that exact default is referenced.
 #   5. user@host strings — allowed only for generic role placeholders, the RFC 2606 reserved
 #      example domains, and technical shapes that only look like an address (a SHA-pinned GitHub
-#      Action, a package@version, a Telegram bot mention, an instantiated systemd service
-#      drop-in directory in a path, or an instantiated unit named as a systemctl mask/enable/
-#      disable operand).
+#      Action, a package@version, a Telegram bot mention, or an instantiated systemd service
+#      drop-in directory in a path).
 #
 # Run with --self-test to check the scanners themselves against fixtures (including the
 # empty-enumeration guard below).
@@ -123,13 +122,8 @@ email_allow() {
             return 0
         fi
     fi
-    # The same unit name as a systemctl verb's operand (systemctl mask tor@default.service,
-    # which #1837's image does) is a command-line argument, not an SSH destination. Only the
-    # bytes before THIS match count, and they must be the verb plus plain .service names, so
-    # a host can hide behind the verb only if it too ends in .service — the drop-in check's
-    # strictness, moved from a path to an operand list.
     if [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9_.:-]*\.service$ ]] &&
-        [ "$#" -ge 4 ] && [ "$4" -ge 15 ]; then # 15 = the shortest legal context, "systemctl mask "
+        [ "$#" -ge 4 ] && [ "$4" -ge 15 ]; then
         local before start="$4"
         start=$((start - 120))
         [ "$start" -lt 0 ] && start=0

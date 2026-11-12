@@ -223,11 +223,11 @@ phase_rig() {
         ok "no Tor SOCKS listener on a freshly booted rig" ||
         bad "a SOCKS listener answers on 9253 on a freshly booted rig"
     odd_conn=""
-    while read -r _ _ _ laddr raddr; do
+    while read -r _ _ laddr raddr; do
         [ -n "${laddr:-}" ] || continue
         rhost="${raddr%:*}"
         case "$rhost" in
-            127.* | \[::1\] | ::1) continue ;;
+        127.* | \[::1\] | ::1) continue ;;
         esac
         case "${laddr##*:}" in 22 | 8080 | 8081 | 8082) continue ;; esac
         case "${raddr##*:}" in 22 | 53 | 123) continue ;; esac
