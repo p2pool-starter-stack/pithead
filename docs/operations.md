@@ -56,7 +56,7 @@ boot path drives most of them for you:
 |---|---|
 | `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A bundle that declares `data_migration` is refused when a local Tari node's data volume lacks free space of `data.mdb`'s size plus 5 GiB, the room its migration needs for the compacted copy; the refusal names the volume, the size needed and the size free, the same check `upgrade` makes (#2645). A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. On success it says the update is written to the spare slot, that this machine keeps running the current version until it reboots, that the reboot boots the new slot and commits it only if the stack comes up healthy (otherwise the next boot falls back), and the exact reboot command. `--reboot` reboots to finish the update once installed — it asks first unless `-y` is also given. |
 | `./pithead factory-reset` | **DESTRUCTIVE**, appliance only. Erase the whole data partition back to a blank machine — chains, wallets, Tor keys and settings all go — then reboot into the setup wizard. The resync that follows costs days, so reach for `config-reset` first. Type-to-confirm unless `-y`. |
-| `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console, and five wrong tries mint a fresh one. |
+| `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console. Five wrong tries from one network peer start a 60-second cooldown for that peer; retry the same token afterwards. |
 | `./pithead load-images` | Load the baked container-image archives from `/opt/pithead/images` into the engine when their content changed since the last load. The boot path runs this every boot, so a reinstall or update that ships new images converges with no wizard involvement. |
 | `./pithead local-miner` | Converge this machine's RigForge worker to what the machine is: on a coordinator it follows `local_miner.enabled` (RigForge setup in appliance mode when on, the miner stopped when off); on a rig it follows `rig.json`. Run every boot; a no-op outside the appliance. |
 | `./pithead render-quadlet` | Render Podman Quadlet units — the appliance runtime — from a rendered `.env`. Defaults to `--env .env` and `--out ./quadlet`. The `os/quadlet/` fixtures pin its output byte for byte. |
@@ -129,6 +129,12 @@ upgrade from the dashboard takes it before it writes over the install, so one th
 another command is running comes back refused with nothing changed, instead of overwriting the
 install underneath it. Read-only commands — `status`, `doctor` and `logs` among them — never take
 it and never wait.
+
+`apply` holds the lock while it reads and renders the configuration, releases it for
+confirmation, then checks the configuration and live `.env` again after reacquiring it.
+If either changed, it discards the staged render and stops before publishing it or
+changing services. Re-run `./pithead apply` to review the current changes and confirm
+any payout-wallet redirect again. `apply -y` also rejects a stale render.
 
 The dashboard takes the same lock for each container start or stop it sends through its control
 proxy. This keeps the sync gate, node-down failover, clearnet-to-Tor transition and Tor self-heal
@@ -248,7 +254,13 @@ nothing is written or recreated. `--porcelain` makes the output machine-readable
 **Changing the payout wallet:** `apply` asks you to type the last 8 characters of the new address
 (a bare `y` is not enough for the one change that redirects every future reward; `apply -y` skips
 the prompt for automation). Changing both the Monero and Tari addresses in one `apply` prompts
-once per address. The dashboard also watches the wallet p2pool actually mines to: any
+once per address. Cancelling keeps the live environment and Tari wallet secret file unchanged;
+unpublished staged files are removed. After confirmation, apply checks that the configuration
+and live environment still match the preview, then publishes under the mutation lock.
+If either changed while waiting, re-run `apply` to review the current changes.
+If sidecar publication fails, apply restores the previous environment; a failed restoration
+reports the saved environment file to use for recovery.
+The dashboard also watches the wallet p2pool actually mines to: any
 change raises a `wallet_changed` [Telegram alert](telegram.md) and a 72-hour top-bar banner —
 including a change you made yourself. Treat that pair as confirmation; if you didn't change it,
 your rewards are being redirected — check `config.json` and re-apply the correct address.
@@ -346,8 +358,14 @@ the routes disappear from the dashboard (404), and the spool directory is left i
 The units remain for Tor healing while `tor.auto_heal` is on; setting both flags off disables
 and removes the units. To inspect or drain the queue by hand, run
 `./pithead control-run-pending`. A commit keeps the previous config at `config.json.bak-control`;
-a failed apply names it in the result and retries container recreation on the next apply, same as
-the CLI.
+a failed apply names it in the result. Before publishing changed configuration, `apply` records
+a retry marker. If service configuration or container recreation fails, fix the reported error
+and re-run `./pithead apply`: it regenerates service configuration and retries container recreation
+even when the environment already matches. The marker and any pending sync-gate reset scope
+remain until apply succeeds. The dashboard and CLI use the same recovery path. The commit checks
+preview freshness and approval, publishes `config.json`, and runs its child `apply -y` under one
+mutation lock. A preview made against an older configuration is rejected after the wait, as is a
+commit that times out waiting for the lock; make a fresh preview before committing again.
 
 ---
 
@@ -674,6 +692,21 @@ can refuse before the running stack is stopped for an archive that would fail an
 source checkout, `backups/` is git-ignored — the archive carries `.env` and the onion private keys,
 and secret scanners can't see inside a tarball.
 
+Backup refuses when the resolved data directories in `config.json` disagree with the applied
+paths recorded in `.env`, even when blockchains are excluded. Revert an unapplied data-path edit
+to take a safety backup, or complete the intended apply before retrying. Backup checks again and
+rebuilds its file list under the mutation lock, before stopping services or creating an archive.
+
+The file list uses absolute paths, so a `PITHEAD_CONFIG_FILE` override that already names an
+absolute path is archived as given. The free-space estimate reads every item with `sudo du`
+(the Tor data directory is owned by UID 100) and adds a 5% margin. If `du` cannot read part of a
+tree, or the size or free space cannot be read at all, backup warns and proceeds without the
+check instead of aborting. The estimate covers the file list built before the prompts, because
+the space prompt must not wait for an answer while holding the mutation lock. `tar` gets one
+retry after five seconds, so a container finishing its last write during the stop does not fail
+the backup. Each failed attempt removes its partial archive. A second failure is fatal: backup
+prints the resolved state of every archived path, then starts the stack again if it stopped it.
+
 Encryption is `openssl enc -aes-256-cbc -pbkdf2` with 600,000 PBKDF2 iterations (`openssl` is
 already a stack dependency; AEAD modes like GCM are not available through `openssl enc`, so CBC is
 the portable choice). The tar stream pipes straight into `openssl` — no plaintext archive ever
@@ -725,7 +758,10 @@ health gate. If you restore from the shell instead of the wizard page, firstboot
 configuration that appears after its entry check, including while it prepares the page.
 It closes the page and frees ports 80 and 443 for Caddy; run `./pithead up` after that.
 A retry round that opened with a retained configuration does not automatically detect its
-replacement by a CLI restore.
+replacement by a CLI restore. On the appliance, `up` re-renders the miner's derived config
+from the restored stratum port and password and reinstates the enabled built-in miner; disabled
+local mining stays stopped. Boot-owned startup leaves miner provisioning to its bounded
+post-commit step, so miner setup cannot delay the A/B commit gate.
 
 Copy the archive back and run:
 
@@ -768,6 +804,11 @@ preserves the destination's file in `data/monero`, `data/tari`, and `data/p2pool
 install may already have synced chain data, and replacing it would force a resync. It still adds
 files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
 
+When the administrative archive contains `mining_data.db`, restore removes the destination's
+WAL, shared-memory and rollback-journal sidecars before copying the archived database and its
+sidecars. A crashed destination writer's committed rows cannot override the archived rows.
+Without an archived database, restore does not perform this sidecar cleanup.
+
 > NOTE: The archive stores the source box's absolute paths, and `restore` puts every file back
 > exactly where it came from, after validating the destinations. A different installation path
 > is refused rather than redirected into the old directory tree. Recreate the original
@@ -802,8 +843,8 @@ them (a brief restart; chain data and dashboard history are untouched):
   the stack, no follow-up needed. With `monero.mode: "remote"` the credential belongs to the
   remote node and is skipped.
 - **Stratum access-password** (`PROXY_STRATUM_PASSWORD`) — rotated only when
-  `p2pool.stratum_password` is `"auto"`. The new value is printed at the end. Every rig is
-  rejected until its stratum `pass` is updated to it — see
+  `p2pool.stratum_password` is `"auto"`. Get the new value from the dashboard's **Connect a miner**
+  block. Every rig is rejected until its stratum `pass` is updated to it — see
   [Workers › Authentication](workers.md#authentication). A literal password lives in
   `config.json`: change it there and run `./pithead apply`. When stratum auth is off there is
   nothing to rotate.

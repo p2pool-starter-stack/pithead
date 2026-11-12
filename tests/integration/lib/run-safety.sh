@@ -152,6 +152,7 @@ safety_rollback_if_failed() {
 # — e.g. the rig-key ledger's (#1379) — because `trap … EXIT` replaces rather than appends.
 safety_abort_restore() {
     local original_rc=$? restore_failed=0
+    [ -z "${RESET_DASHBOARD_DECOY_DASHBOARD:-}" ] || reset_dashboard_remove_blocker || restore_failed=1
     # config.json/.env backups do not include the onion identity directory.
     if [ "${ROTATE_ONION_RESTORE_ARMED:-0}" = "1" ] && ! rotate_onion_restore; then
         restore_failed=1
@@ -172,6 +173,7 @@ safety_abort_restore() {
         # archive still on it.
         it_warn "a rollback already failed this run — not retrying at exit; archive retained at ${SAFETY_ARCHIVE:-<none>}"
     fi
+    reset_dashboard_cleanup || restore_failed=1
     [ -z "$_SAFETY_FOREIGN_TRAP" ] || eval "$_SAFETY_FOREIGN_TRAP"
     [ "$restore_failed" = 0 ] || exit 1
     return "$original_rc"
@@ -189,8 +191,30 @@ arm_safety_abort_restore() {
     trap safety_abort_restore EXIT
 }
 
+reset_dashboard_remove_blocker() {
+    rx "ids=\$(docker ps -aq --filter label=pithead.itest=reset-dashboard-blocker) && { [ -z \"\$ids\" ] || docker rm -f \$ids; }" >/dev/null 2>&1 || {
+        it_fail "reset-dashboard name blocker removed" "could not remove the labelled p2pool blocker container"
+        return 1
+    }
+}
+
+reset_dashboard_cleanup() {
+    [ -n "${RESET_DASHBOARD_DECOY_DASHBOARD:-}" ] || return 0
+    if [ -n "${BASELINE_CONFIG:-}" ] && ! push_config "$BASELINE_CONFIG"; then
+        it_fail "reset-dashboard baseline config restored" "cleanup failed; decoy paths and safety archive retained"
+        return 1
+    fi
+    if ! rx "rm -rf -- $(quote_arg "$RESET_DASHBOARD_DECOY_DASHBOARD") $(quote_arg "$RESET_DASHBOARD_DECOY_P2POOL")" >/dev/null 2>&1; then
+        it_fail "reset-dashboard decoys removed" "cleanup failed; decoy paths and safety archive retained"
+        return 1
+    fi
+    RESET_DASHBOARD_DECOY_DASHBOARD=""
+    RESET_DASHBOARD_DECOY_P2POOL=""
+}
+
 # Remove the generated safety archive once we're done (kept on --keep, or if restore failed).
 safety_cleanup() {
+    reset_dashboard_cleanup || return 1
     [ -n "$SAFETY_ARCHIVE" ] || return 0
     if [ "$SAFETY_RESTORE_FAILED" != "0" ]; then
         it_warn "retaining the safety backup after a failed rollback: $SAFETY_ARCHIVE"

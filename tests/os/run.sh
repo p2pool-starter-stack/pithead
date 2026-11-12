@@ -31,6 +31,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/data-floor-fallback-leg.sh"
 # shellcheck source=tests/os/aged-version.sh
 . "$SCRIPT_DIR/aged-version.sh"
+# shellcheck source=tests/os/rollback-verdict.sh
+. "$SCRIPT_DIR/rollback-verdict.sh"
 # shellcheck source=tests/os/provision-browser-submit.sh
 . "$SCRIPT_DIR/provision-browser-submit.sh"
 . "$SCRIPT_DIR/image-upgrade-certificate-leg.sh"
@@ -77,16 +79,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/../integration/lib/skip-accounting.sh"
 # shellcheck source=tests/os/reinstall-prefill-submit-leg.sh
 . "$SCRIPT_DIR/reinstall-prefill-submit-leg.sh"
+# shellcheck source=tests/os/reserved-node-by-name-leg.sh
+. "$SCRIPT_DIR/reserved-node-by-name-leg.sh"
 # shellcheck source=tests/os/setup-failure-recovery-leg.sh
 . "$SCRIPT_DIR/setup-failure-recovery-leg.sh"
 # shellcheck source=tests/os/control-runner-recovery-leg.sh
 . "$SCRIPT_DIR/control-runner-recovery-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
+# shellcheck source=tests/os/wizard-console-leg.sh
+. "$SCRIPT_DIR/wizard-console-leg.sh"
 # shellcheck source=tests/os/rig-config-meta-wait.sh
 . "$SCRIPT_DIR/rig-config-meta-wait.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
 . "$SCRIPT_DIR/rig-control-off-leg.sh"
+# shellcheck source=tests/os/appliance-miner-recovery.sh
+. "$SCRIPT_DIR/appliance-miner-recovery.sh"
 # shellcheck source=tests/os/rig-share-leg.sh
 . "$SCRIPT_DIR/rig-share-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"

@@ -50,7 +50,6 @@ for ev in node_down node_recovered worker_offline worker_recovered worker_joined
     roundtrip_key "TELEGRAM_EVENT_$(printf '%s' "$ev" | tr 'a-z' 'A-Z')" \
         ".telegram.events.${ev}=false" ".telegram.events.${ev}" "false"
 done
-
 echo "== black-box: confirm-allowlist commit round-trip behind the typed APPLY (#1929) =="
 roundtrip_confirm() {
     COVERED="$COVERED $(printf '%s' "$1" | tr '/' ' ')"
@@ -62,7 +61,6 @@ roundtrip_confirm() {
     assert_eq "$1 landed in config.json" "$(jq -r "$3" "$C/config.json")" "$4"
 }
 env_now() { run_sourced "$C" env_get_file "$C/.env" "$1"; }
-
 # TARI_MODE, the #1929 subject: an operator turns merge-mining off and back on from the dashboard.
 # Asserted on the RENDERED .env rather than config.json alone — config.json is what the gate wrote,
 # .env shows the launched profile and sync-gate flag.
@@ -81,7 +79,6 @@ roundtrip_confirm "TARI_MODE" '.tari.mode="local"' '.tari.mode' "local"
 assert_eq "back on renders TARI_MODE=local" "$(env_now TARI_MODE)" "local"
 assert_contains "back on restores the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
 assert_contains "back on restores the Tari onion profile" "$(env_now TOR_COMPOSE_PROFILES)" "local_tari"
-
 # The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
 # ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.
 # This fake host keeps the installed firewall transaction for the live readback required when a
@@ -98,6 +95,22 @@ roundtrip_confirm "MONERO_DATA_DIR" '.monero.data_dir="'"$C"'/data/monero2"' '.m
 roundtrip_confirm "P2POOL_DATA_DIR" '.p2pool.data_dir="'"$C"'/data/p2pool2"' '.p2pool.data_dir' "$C/data/p2pool2"
 roundtrip_confirm "TOR_DATA_DIR" '.tor.data_dir="'"$C"'/data/tor2"' '.tor.data_dir' "$C/data/tor2"
 roundtrip_confirm "DASHBOARD_DATA_DIR" '.dashboard.data_dir="'"$C"'/data/dashboard2"' '.dashboard.data_dir' "$C/data/dashboard2"
+roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
+STRATUM_HOLD_PORT_FILE="$C/stratum-hold.port"
+python3 -c 'import socket,sys,time
+s=socket.socket(); s.bind(("0.0.0.0",0)); s.listen(1)
+open(sys.argv[1],"w").write(str(s.getsockname()[1])); time.sleep(60)' "$STRATUM_HOLD_PORT_FILE" &
+STRATUM_HOLD_PID=$!
+for _ in $(seq 50); do
+    [ -s "$STRATUM_HOLD_PORT_FILE" ] && break
+    sleep 0.1
+done
+STRATUM_HELD=$(cat "$STRATUM_HOLD_PORT_FILE")
+jq --argjson p "$STRATUM_HELD" '.p2pool.stratum_port=$p' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_eq "the stack harness stubs the stratum bind probe, so a held port does not refuse apply" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+kill "$STRATUM_HOLD_PID" 2>/dev/null || true
+wait "$STRATUM_HOLD_PID" 2>/dev/null || true
 roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
 # PRUNE STARTS OFF IN THE BASELINE ABOVE, and that is not tidiness. monero_prune_flag defaults to
 # TRUE (19-small-utilities.sh), so on a config with no monero.prune key the rendered MONERO_PRUNE is
@@ -158,12 +171,9 @@ rm -f "$C/bin/getent" "$C/bin/curl"
 cp "$C/local.before-login-preflight.json" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 
-jq '.monero.backup_nodes=[{host:"192.168.50.8",rpc_port:28081,zmq_port:28083,rpc_login:"backup:password"}]' "$C/config.json" >"$C/with-backup.json"
-cp "$C/with-backup.json" "$C/config.json"
-(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+roundtrip_confirm "MONERO_BACKUP_NODES add" '.monero.backup_nodes=[{host:"192.168.50.8",rpc_port:28081,zmq_port:28083,rpc_login:"backup:password"}]' '.monero.backup_nodes | length' "1"
 roundtrip_confirm "MONERO_BACKUP_NODES/P2POOL_BACKUP_ARGS_B64" '.monero.backup_nodes=[]' '.monero.backup_nodes | length' "0"
-assert_eq "backup removal renders an empty node list" "$(env_now MONERO_BACKUP_NODES)" "[]"
-assert_eq "backup removal clears P2Pool backup arguments" "$(env_now P2POOL_BACKUP_ARGS_B64)" ""
+assert_eq "backup removal clears the node list and P2Pool backup arguments" "$(env_now MONERO_BACKUP_NODES)|$(env_now P2POOL_BACKUP_ARGS_B64)" "[]|"
 
 echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="
 cp "$C/config.json" "$C/before-profile.json"
@@ -192,7 +202,6 @@ assert_eq "every CONTROL_DASHBOARD_CONFIRM_KEYS key round-trips (or is exempt by
 for k in $CONFIRM_TIER1_EXEMPT; do
     assert_contains "exempt key $k is a real confirm key" " $(allow_set CONTROL_DASHBOARD_CONFIRM_KEYS) " " $k "
 done
-
 echo "== black-box: node-endpoint keys ignore remote.* on a non-remote chain (#1924) =="
 # 43-control-approval-and-preview.sh decides WHETHER TO PROBE from the changed porcelain key;
 # preflight_remote_nodes decides WHETHER TO DIAL from the staged chain MODE. Those are different

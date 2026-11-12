@@ -172,6 +172,36 @@ _phase_install_initial() {
         return 1
     fi
 
+    local flood_jar flood_code flood_codes="" token=PiT-K7m2Qx
+    flood_jar=$(mktemp)
+    for _ in 1 2 3 4 5; do
+        flood_code=$(curl -sSk -o /dev/null -w '%{http_code}' -d "token=pit-WRONG0" "https://$ip/auth" 2>/dev/null)
+        flood_codes="$flood_codes $flood_code"
+    done
+    case "$flood_codes" in
+    " 403 403 403 403 429") ok "five bad tokens: four 403 then a 429 cooldown" ;;
+    *) bad "bad-token flood codes:$flood_codes (want 403 x4 then 429)" ;;
+    esac
+    flood_code=$(curl -sSk -c "$flood_jar" -o /dev/null -w '%{http_code}' -d "token=$token" "https://$ip/auth" 2>/dev/null)
+    if [ "$flood_code" = 429 ] && ! grep -q wizard_session "$flood_jar"; then
+        ok "the correct token waits out the cooldown from the throttled client"
+    else
+        bad "throttled client got $flood_code on the correct token (want 429, no session)"
+    fi
+    flood_code=$(curl -sSk -b "$jar" -o /dev/null -w '%{http_code}' "https://$ip/api/wizard-state" 2>/dev/null)
+    if [ "$flood_code" = 200 ]; then
+        ok "the authenticated session survives the flood; the wizard never restarted"
+    else
+        bad "authenticated session got $flood_code after the flood (want 200)"
+    fi
+    sleep 65
+    flood_code=$(curl -sSk -c "$flood_jar" -o /dev/null -w '%{http_code}' -d "token=$token" "https://$ip/auth" 2>/dev/null)
+    if [ "$flood_code" = 302 ] && grep -q wizard_session "$flood_jar"; then
+        ok "the same token authenticates after the cooldown expires"
+    else
+        bad "post-cooldown auth got $flood_code (want 302 with a session)"
+    fi
+    rm -f "$flood_jar"
     if headless_install_prefill_valid "$state_json" "$install_config"; then
         ok "first installer boot carries staged answers with no disk selected (#3071)"
     else

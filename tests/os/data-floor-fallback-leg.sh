@@ -109,8 +109,18 @@ _floor_os_update() {
     _ssh "cd /data/pithead && ./pithead os-update /data/update.bundle --yes 2>&1"
 }
 
+_floor_target_slot() {
+    local booted
+    booted=$(_ssh "cat /proc/cmdline" | tr ' ' '\n' | sed -n 's/^rauc\.slot=\([AB]\)$/\1/p' | tr -d '\r') || return 1
+    case "$booted" in
+    A) printf B ;;
+    B) printf A ;;
+    *) return 1 ;;
+    esac
+}
+
 phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration bundle at VERSION
-    local good_bundle="$1" vfail="$FLOOR_FALLBACK_VERSION" floor0 bundle out rc state
+    local good_bundle="$1" vfail="$FLOOR_FALLBACK_VERSION" floor0 bundle out rc state target_slot stamp want_stamp
     info "floor-fallback leg — a data_migration update that fails its gate must give the /data floor back (#1393)"
     floor0=$(_ssh "cat /data/pithead/.os-data-floor 2>/dev/null" | tr -d ' \r\n')
     if [ -z "$floor0" ]; then
@@ -130,6 +140,10 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
         bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
         return
     }
+    target_slot=$(_floor_target_slot) || {
+        bad "could not determine the spare slot before the failing update"
+        return
+    }
     out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -140,10 +154,10 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     # Issue step 2, taken BEFORE any boot: the raise armed the floor at the failed bundle's
     # minimum and left the record beside it; the marker names the bundle.
     state=$(_floor_state)
-    if [ "$state" = "$vfail|$floor0|$vfail" ]; then
-        ok "install raised the floor to $vfail and recorded $floor0 beside it (marker $vfail)"
+    if [ "$state" = "$vfail|$floor0|$vfail|$target_slot" ]; then
+        ok "install raised the floor to $vfail and recorded $floor0 beside it (marker $vfail|$target_slot)"
     else
-        bad "after the install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail'"
+        bad "after the install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail|$target_slot'"
         return
     fi
     if _floor_fallback_wait vfail 1800; then
@@ -170,6 +184,13 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     else
         bad "no 'floor is back to $floor0' line in the fallback boot's journal"
     fi
+    stamp=$(_ssh "jq -r .config_version /data/pithead/config.json" 2>/dev/null | tr -d ' \r\n')
+    want_stamp=$(sed 's/[-+].*//' VERSION | tr -d '[:space:]')
+    if [ "$stamp" = "$want_stamp" ]; then
+        ok "the failed $vfail slot left config_version at $want_stamp (#3910)"
+    else
+        bad "after the fallback config_version = '$stamp', want '$want_stamp' (#3910)"
+    fi
     # Issue step 3's last clause: a bundle at the restored floor installs again. Before the restore
     # this same install was below a $vfail floor — the negative case below proves that refusal.
     _floor_stage "$good_bundle" || {
@@ -190,6 +211,10 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
         bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
         return
     }
+    target_slot=$(_floor_target_slot) || {
+        bad "could not determine the spare slot before the failing update"
+        return
+    }
     out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -198,10 +223,10 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
         return
     fi
     state=$(_floor_state)
-    if [ "$state" = "$vfail|$floor0|$vfail" ]; then
-        ok "second install armed the same state (floor $vfail, record $floor0, marker $vfail)"
+    if [ "$state" = "$vfail|$floor0|$vfail|$target_slot" ]; then
+        ok "second install armed the same state (floor $vfail, record $floor0, marker $vfail|$target_slot)"
     else
-        bad "after the second install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail'"
+        bad "after the second install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail|$target_slot'"
         return
     fi
     _ssh "rm -f /data/pithead/.os-data-floor.prev"

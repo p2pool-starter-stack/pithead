@@ -22,7 +22,8 @@ async def test_wipe_is_normalized_to_keep_on_a_disk_with_nothing_to_wipe(client,
 async def test_status_narrates_setup(client, spool):
     assert "Waiting" in await (await client.get("/status")).text()
     spool.joinpath("error.txt").write_text("bad wallet")
-    assert "Rejected: bad wallet" in await (await client.get("/status")).text()
+    body = await (await client.get("/status")).text()
+    assert "Rejected" in body and "bad wallet" not in body
     spool.joinpath("error.txt").unlink()
     spool.joinpath("applied").write_text("1")
     assert "Provisioned" in await (await client.get("/status")).text()

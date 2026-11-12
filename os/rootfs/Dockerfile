@@ -1,4 +1,4 @@
-FROM golang:1.26.10-trixie@sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4 AS gobuild
+FROM golang:1.26.10-trixie@sha256:a050dcceee6eb9bf110151662dfac7662f3bec40927c7dee48731e3d92083d42 AS gobuild
 
 ARG COMPOSE_VERSION=v5.5.1
 ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
@@ -32,7 +32,7 @@ RUN /out/docker-compose version && /out/cosign version \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -95,8 +95,8 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # The built-in miner (#796): a pinned RigForge tree plus everything it needs, baked at image
 # build because nothing can be installed later — apt cannot run on the read-only root, and even
 # a rw-remount install leaves its /etc state (alternatives, ld.so.cache) on the volatile overlay
-# where the first reboot breaks the compiler. RIGFORGE_REF pins rigforge's develop commit
-# b2d4c3d9, the code that becomes v1.18.0 after the 2.0.0 soak; then pin releases by commit.
+# where the first reboot breaks the compiler. RIGFORGE_REF pins the commit of RigForge
+# v1.18.1 (8f06cb8d); pin releases by commit.
 # v1.16.0 is the floor for the HugePages pool ceiling: hugepages_pool_ceiling_mb (rigforge#398,
 # filed from #1103) is absent from v1.15.1's tree entirely, and declaring it into one fails OPEN —
 # parse_config never reads the key, so the rendered config would look capped and behave as today.
@@ -110,7 +110,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
-ARG RIGFORGE_REF=b2d4c3d9ca1da74d0e6d5ccce772d401acc8be03
+ARG RIGFORGE_REF=8f06cb8df791f3cb16d47bbee85fde92103cbe0b
 RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
     && mkdir -p /opt/rigforge \
@@ -122,9 +122,9 @@ RUN curl -fsSL -o /tmp/rigforge.tar.gz \
 # Prebuild XMRig at RigForge's own pin, read from the baked tree so the two cannot drift. The
 # appliance may be Tor-only, and RigForge's build step clones github over clearnet — so the
 # clone happens HERE, on the build host, and pithead-sync seeds the result into the workspace
-# where RigForge's "already built" check accepts it (binary + commit marker + sha record, the
-# exact format rigforge.sh writes). The donate-level source patch is skipped on purpose: the
-# default (1%) equals XMRig's own default, and the runtime config carries the value regardless.
+# where RigForge's "already built" check accepts it (binary + commit marker + sha record + donate
+# minimum marker, the exact format rigforge.sh writes). The donate patch matches compile_xmrig at
+# DONATION 0 (default and minimum level 0).
 # The sed anchors match rigforge.sh's exact NAME="${NAME:-value}" quoting; a cosmetic upstream
 # reformat extracts nothing, so the guard names the cause instead of failing mute mid-chain.
 RUN set -e \
@@ -135,11 +135,15 @@ RUN set -e \
             exit 1; }; } \
     && git clone --quiet --branch "$XMRIG_VERSION" --depth 1 https://github.com/xmrig/xmrig.git /tmp/xmrig \
     && test "$(git -C /tmp/xmrig rev-parse HEAD)" = "$XMRIG_COMMIT" \
+    && sed -i 's/kDefaultDonateLevel = 1;/kDefaultDonateLevel = 0;/; s/kMinimumDonateLevel = 1;/kMinimumDonateLevel = 0;/' /tmp/xmrig/src/donate.h \
+    && grep -Fxq 'constexpr const int kDefaultDonateLevel = 0;' /tmp/xmrig/src/donate.h \
+    && grep -Fxq 'constexpr const int kMinimumDonateLevel = 0;' /tmp/xmrig/src/donate.h \
     && cmake -S /tmp/xmrig -B /tmp/xmrig/build -DWITH_HWLOC=ON >/dev/null \
     && make -C /tmp/xmrig/build -j"$(nproc)" >/dev/null \
     && mkdir -p /opt/rigforge/prebuilt/xmrig/build \
     && install -m 755 /tmp/xmrig/build/xmrig /opt/rigforge/prebuilt/xmrig/build/xmrig \
     && printf '%s\n' "$XMRIG_COMMIT" >/opt/rigforge/prebuilt/xmrig/.rigforge-commit \
+    && printf '0\n' >/opt/rigforge/prebuilt/xmrig/.rigforge-donate-min \
     && sha256sum /opt/rigforge/prebuilt/xmrig/build/xmrig | awk '{print $1}' \
         >/opt/rigforge/prebuilt/xmrig/.rigforge-sha256 \
     && rm -rf /tmp/xmrig
@@ -197,8 +201,8 @@ COPY os/overlay/pithead-sync.service /etc/systemd/system/pithead-sync.service
 COPY os/overlay/pithead-sync /usr/local/sbin/pithead-sync
 # State mounts derive from the boot disk every boot, never labels: every pithead disk carries the same labels, and two at once made LABEL= mount the wrong /data.
 COPY os/overlay/pithead-mount-generator /usr/lib/systemd/system-generators/pithead-mount-generator
-COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer /etc/systemd/system/
-COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch /usr/local/sbin/
+COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/overlay/pithead-address-watch.service os/overlay/pithead-address-watch.timer os/overlay/pithead-miner-recovery.service os/overlay/pithead-miner-recovery.timer /etc/systemd/system/
+COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery /usr/local/sbin/
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config
 # Hugepages sizing (#977): the sysctl.d reservation above is sized for the supported 16 GB machine;
@@ -247,7 +251,7 @@ RUN mkdir -p /etc/ssh/sshd_config.d \
 RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
     && systemctl mask systemd-firstboot.service
-RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
+RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-miner-recovery /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
 # The updater is chosen per image. The package install above includes RAUC only when selected;
 # leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even
@@ -278,7 +282,7 @@ RUN systemctl enable podman.socket pithead-boot.service pithead-cpu-governor.ser
         systemd-networkd systemd-networkd-wait-online pithead-sync.service pithead-firstboot.service \
         pithead-data-reset.service pithead-machine-id.service pithead-hugepages.service \
         pithead-journal-persist.service pithead-setup-again.service pithead-boot-version.service \
-        pithead-address-watch.timer \
+        pithead-address-watch.timer pithead-miner-recovery.timer \
     && systemctl disable ssh
 # systemd-repart.service is static — it is pulled in by sysinit.target, and `systemctl enable` on a
 # static unit is an error that would fail the build. Assert it is present instead.
