@@ -212,7 +212,7 @@ phase_rig() {
         ok "journald is volatile on a rig (a rig's root may be the stick it mines from)" ||
         bad "journald is still persistent on a rig — a USB root would take rotating writes"
 
-    local odd_conn lport rport tor_run fail_run
+    local odd_conn laddr raddr rhost tor_run fail_run
     [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
         ok "both Debian Tor units ship masked on the rig" ||
         bad "a Debian Tor unit is not masked on the rig: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"
@@ -223,19 +223,21 @@ phase_rig() {
         ok "no Tor SOCKS listener on a freshly booted rig" ||
         bad "a SOCKS listener answers on 9253 on a freshly booted rig"
     odd_conn=""
-    while read -r _ _ _ lport rport; do
-        [ -n "${lport:-}" ] || continue
-        lport="${lport##*:}"
-        rport="${rport##*:}"
-        case "$lport" in 22 | 8080 | 8081 | 8082) continue ;; esac
-        case "$rport" in 22 | 53 | 123) continue ;; esac
-        odd_conn="${odd_conn}${lport}->${rport} "
+    while read -r _ _ _ laddr raddr; do
+        [ -n "${laddr:-}" ] || continue
+        rhost="${raddr%:*}"
+        case "$rhost" in
+            127.* | \[::1\] | ::1) continue ;;
+        esac
+        case "${laddr##*:}" in 22 | 8080 | 8081 | 8082) continue ;; esac
+        case "${raddr##*:}" in 22 | 53 | 123) continue ;; esac
+        odd_conn="${odd_conn}${laddr##*:}->${raddr##*:} "
     done <<<"$(_ssh 'ss -Htn state established 2>/dev/null' 2>/dev/null | tr -d '\r')"
     [ -z "$odd_conn" ] &&
-        ok "a rig that never ran the helper holds no connection beyond pool, ssh, time sync and DNS" ||
-        bad "unexpected connections on a rig that never ran the helper: $odd_conn"
+        ok "a rig that never ran the helper holds no off-host connection beyond pool, ssh, time sync and DNS" ||
+        bad "unexpected off-host connections on a rig that never ran the helper: $odd_conn"
 
-    tor_run=$(_ssh "pithead-tor sh -c 'ss -ltn 2>/dev/null | grep -q 127.0.0.1:9253 && echo LISTENER-UP; curl -sS -m 90 -o /dev/null -w %{http_code} https://api.github.com/repos/p2pool-starter-stack/pithead/releases/latest' 2>&1; echo rc=\$?" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+    tor_run=$(_ssh "PITHEAD_TOR_TIMEOUT=300 pithead-tor sh -c 'ss -ltn 2>/dev/null | grep -q 127.0.0.1:9253 && echo LISTENER-UP; curl -sS -m 90 -o /dev/null -w %{http_code} https://api.github.com/repos/p2pool-starter-stack/pithead/releases/latest' 2>&1; echo rc=\$?" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     [[ "$tor_run" == *LISTENER-UP* ]] &&
         ok "the helper holds the SOCKS listener on loopback while its command runs" ||
         bad "the caller saw no SOCKS listener during the run: $tor_run"

@@ -31,6 +31,11 @@ EOF
 cat >"$tmp/fake-never" <<'EOF'
 #!/bin/bash
 echo "Bootstrapped 5% (connecting)"
+echo "Bootstrapped 40% (loading statuses or descriptors)"
+for i in 1 2 3 4 5 6 7; do
+    echo "Monitored process 4242 is still alive."
+    sleep 0.4
+done
 sleep 60
 EOF
 cat >"$tmp/fake-dead" <<'EOF'
@@ -85,6 +90,10 @@ out="$(env "${t_env[@]}" PITHEAD_TOR_BIN="$tmp/fake-never" "$HELPER" true 2>&1)"
 rc=$?
 [ "$rc" -ne 0 ] && [[ "$out" == *"did not complete a circuit"* ]] ||
     fail "a Tor that never bootstraps must time out with a clear error, got rc=$rc out=$out"
+[[ "$out" == *"progress: Bootstrapped 40%"* ]] ||
+    fail "the timeout must name where bootstrap got stuck, got out=$out"
+[[ "$out" != *"Monitored process"* ]] ||
+    fail "the timeout tail must not be swamped by the owning-process heartbeat, got out=$out"
 sleep 0.5
 [ -z "$(pgrep -f "$tmp/fake-never" 2>/dev/null)" ] ||
     fail "the helper left the timed-out Tor process running"

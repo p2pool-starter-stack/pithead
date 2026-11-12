@@ -90,8 +90,9 @@ while :; do
     ticks=$((ticks + 1))
 done
 if [ "$ready" != 1 ]; then
-    tail_line="$(tail -n 3 "$torlog" 2>/dev/null | tr '\n' ' ')"
-    die "tor did not complete a circuit within ${timeout_s}s (last: ${tail_line:-no output})" 69
+    progress="$(grep -o 'Bootstrapped [0-9]*%' "$torlog" 2>/dev/null | tail -n 1)"
+    tail_line="$(grep -v 'Monitored process' "$torlog" 2>/dev/null | tail -n 3 | tr '\n' ' ')"
+    die "tor did not complete a circuit within ${timeout_s}s (progress: ${progress:-none}; last: ${tail_line:-no output})" 69
 fi
 
 export ALL_PROXY="socks5h://127.0.0.1:$socks_port"
