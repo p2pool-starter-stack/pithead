@@ -65,3 +65,43 @@ gate_probe_header() {
     capability=$(printf 'pithead-boot-health-v1:%s' "$(gate_env_val DASHBOARD_AUTH_HASH_B64)" | sha256sum | cut -d' ' -f1)
     printf 'X-Pithead-Boot-Probe: %s\n' "$capability"
 }
+
+boot_gate_passed() {
+    rm -f "$BOOT_FAIL_COUNT" .config-reset-good-slot
+    schema_hold_release
+}
+
+SCHEMA_HOLD_NAME=.os-schema-held
+booted_slot_committed() {
+    local slot status
+    slot=$(tr ' ' '\n' <"${PITHEAD_CMDLINE:-/proc/cmdline}" 2>/dev/null | sed -n 's/^rauc\.slot=\([AB]\)$/\1/p')
+    [ -n "$slot" ] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    status=$(rauc status --output-format=json 2>/dev/null) || return 1
+    jq -e --arg slot "$slot" \
+        '[.slots[] | .[] | select(.state == "booted" and .bootname == $slot and .boot_status == "good")] | length == 1' \
+        <<<"$status" >/dev/null 2>&1
+}
+
+schema_hold_arm() {
+    local dir
+    dir=$(gate_env_val DASHBOARD_DATA_DIR)
+    [ -n "$dir" ] || return 0
+    if booted_slot_committed; then
+        rm -f "$dir/$SCHEMA_HOLD_NAME" && sync
+        return 0
+    fi
+    mkdir -p "$dir" && : >"$dir/$SCHEMA_HOLD_NAME" && sync &&
+        echo "pithead-boot: dashboard schema hold armed — the booted slot is uncommitted, so the dashboard keeps its previous-release database schema until the gate commits"
+}
+
+schema_hold_release() {
+    local dir
+    dir=$(gate_env_val DASHBOARD_DATA_DIR)
+    [ -n "$dir" ] || return 0
+    [ -e "$dir/$SCHEMA_HOLD_NAME" ] || return 0
+    rm -f "$dir/$SCHEMA_HOLD_NAME" && sync
+    echo "pithead-boot: dashboard schema hold released — restarting the dashboard to run its deferred database migrations"
+    ${PITHEAD_DASHBOARD_RESTART_CMD:-docker compose restart dashboard} >/dev/null 2>&1 ||
+        echo "pithead-boot: FAULT — the committed slot could not restart the dashboard to run its deferred database migrations; run 'docker compose restart dashboard' from /data/pithead" >&2
+}
