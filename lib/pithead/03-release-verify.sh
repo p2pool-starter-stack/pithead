@@ -118,7 +118,7 @@ verify_release_images() {
             # inject ANSI escapes into the operator's terminal (#376 review).
             said=$(printf '%s' "$out" | tr -d '[:cntrl:]' | tail -c 300)
             case "$out" in
-            *"dial tcp "*": connect: "* | *"dial tcp "*": i/o timeout"* | *"dial tcp: lookup "* | *"read tcp "*": read: connection reset by peer"* | *"read tcp "*": read: connection timed out"*)
+            *"dial tcp "*": connect: "* | *"dial tcp "*": i/o timeout"* | *"dial tcp: lookup "* | *"read tcp "*": i/o timeout"* | *"read tcp "*": read: connection reset by peer"* | *"read tcp "*": read: connection timed out"*)
                 error "Signature verification could not complete for $image — cosign reports a network error reaching the registry, so the image is UNVERIFIED; refusing to pull or restart, nothing was changed. Check this machine's network path to the registry and retry. cosign said: $said"
                 ;;
             esac
