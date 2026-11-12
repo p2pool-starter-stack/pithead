@@ -47,7 +47,7 @@ os_release_fetch() {
     if base=$(os_update_test_base); then
         tmp=$(mktemp "${TMPDIR:-/tmp}/pithead-seam.XXXXXX") || return 2
         if ! os_channel_fetch get "$base/releases-latest.json" "$tmp" "$CURL_CAP_SMALL"; then
-            GH_RELEASE_HINT="could not reach the release API — nothing was changed."
+            GH_RELEASE_HINT="${OS_CHANNEL_HINT:-could not reach the release API — nothing was changed.}"
             rm -f "$tmp"
             return 2
         fi
