@@ -649,6 +649,7 @@ assert_eq "tor entrypoint keeps /tmp/torrc as its container default (#1104)" \
 assert_eq "tor entrypoint writes NO bare /tmp/torrc outside that default (#1104)" \
     "$(grep -vE '^\s*#' "$TOR_ENTRY" | grep -cF '/tmp/torrc')" "1"
 tor_onion_on="$(tor_torrc true)"
+assert_contains "torrc raises MaxClientCircuitsPending to 64 (#4078)" "$tor_onion_on" "MaxClientCircuitsPending 64"
 assert_contains "tor entrypoint: dashboard HiddenService appended when enabled (#343)" \
     "$tor_onion_on" "HiddenServiceDir /var/lib/tor/dashboard/"
 assert_contains "tor entrypoint: onion vhost targets the bridge gateway .1 (#343)" \

@@ -37,6 +37,10 @@ CookieAuthFile /var/lib/tor/control_auth_cookie
 CookieAuthFileGroupReadable 1
 DataDirectoryGroupReadable 1
 
+# --- Circuit Limits ---
+# Default 32 pending client circuits was reached 12 s after bootstrap by monerod out-peers + Tari + P2Pool dials (#4078).
+MaxClientCircuitsPending 64
+
 # --- Logging ---
 # Output logs to stdout for integration with Docker logging drivers
 Log notice stdout

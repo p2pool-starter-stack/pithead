@@ -14,8 +14,7 @@ CLEARNET_MARKER="${CLEARNET_MARKER:-/clearnet-state/monero.synced}"
 #   - strip the single `proxy=` line that forces ALL P2P over Tor → monerod dials its compiled-in
 #     clearnet seed nodes (and the priority nodes below) directly, at clearnet speed instead of
 #     crawling over bandwidth-capped Tor circuits.
-#   - out-peers → 32 (P2Pool v4.18's clearnet recommendation; the Tor render uses 48, a circuit-
-#     bandwidth workaround). in-peers stays 64 — the open-files cap, which is the rec we always honor.
+#   - out-peers → 32 (P2Pool v4.18's clearnet recommendation; the Tor render uses 24). in-peers stays 64 — the open-files cap, which is the rec we always honor.
 #   - add P2Pool's recommended priority nodes for guaranteed-good peers + block templates. These are
 #     CLEARNET hostnames, so they're added ONLY here: in Tor mode their resolution would leak a
 #     clearnet DNS lookup tied to this host's IP (#161). Connections still arrive over clearnet,
