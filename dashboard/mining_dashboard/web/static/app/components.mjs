@@ -6,6 +6,7 @@ import { DiagnosticsPanel } from "../system/diagview.mjs";
 import { NodeAlertBanner } from "../system/nodealert.mjs";
 import { OsVerdictBanner } from "../system/osupdate.mjs";
 import { SecurityPanel } from "../system/securityview.mjs";
+import { SupportBundlePanel } from "../system/supportbundle.mjs";
 import { SyncView } from "../system/syncview.mjs";
 import { MinerConnection } from "../workers/minerconnection.mjs";
 import { WorkersTable } from "../workers/workertable.mjs";
@@ -104,7 +105,7 @@ class DashboardView extends Component {
         }
         ${
           backupView
-            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} active=${!suspended} /></div>`
+            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} active=${!suspended} /><${SupportBundlePanel} enabled=${state.control_enabled} /></div>`
             : null
         }
         ${
@@ -135,7 +136,7 @@ class DashboardView extends Component {
         <div class="grid grid-columns">
             <${GlobalStats} state=${state} />
             <${NetworkCard} state=${state} />
-            <${ComponentHealth} topology=${state.topology} egress=${state.egress} />
+            <${ComponentHealth} topology=${state.topology} egress=${state.egress} ping_failures=${state.ping_failures} />
         </div>`
         }
     </div>`;
