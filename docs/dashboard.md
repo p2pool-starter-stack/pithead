@@ -283,7 +283,7 @@ clear before it releases:
 | Monero node unhealthy | the Monero card is red: out of sync for 10 minutes (`NODE_STALE_AFTER_SEC`), 0 outgoing peers for 10 minutes, or no new height for 30 minutes | already debounced by the card |
 | Monero node has 0 outgoing peers | the current reading shows 0 outgoing peers | `MINING_GUARD_GRACE_SEC`, default 600 s |
 | Monero node not synchronized | monerod's own `synchronized` flag is false | `MINING_GUARD_GRACE_SEC` |
-| Monero node behind P2Pool's peers | P2Pool logged a peer at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead in the last 5 minutes, and monerod's height has not moved for 10 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
+| Monero node behind P2Pool's peers | at least two different peers appear in P2Pool's log in the last 5 minutes as at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead, and monerod's height has not moved for 15 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
 | P2Pool has no sidechain peers | P2Pool reports 0 outgoing and 0 incoming connections | `MINING_GUARD_GRACE_SEC` |
 | P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | `NODE_DOWN_AFTER_SEC` |
 | `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |
@@ -297,8 +297,8 @@ when the trigger began holding, not when it fired. A trigger clears after 60 sec
 dashboard stops only `xmrig-proxy`: the stratum port closes, connected rigs get a disconnect, and
 P2Pool keeps running. The built-in local miner is a rig on the same stratum, so it stops with them.
 
-The lag row reads P2Pool's own `peer ... is ahead on mainchain` log line. It also needs monerod's
-height to be stalled, because a hostile peer can make P2Pool log that line, and it is not used for a
+The lag row reads P2Pool's own `peer ... is ahead on mainchain` log line. It also needs two peers and
+a stalled monerod height, because a hostile peer can make P2Pool log that line, and it is not used for a
 remote node, which has no height-progress verdict. Limits: after a dashboard restart the "no new
 height for 30 minutes" clock starts again.
 

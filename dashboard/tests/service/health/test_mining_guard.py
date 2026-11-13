@@ -132,7 +132,9 @@ class TestLagTrigger:
         holds, label, _ = lag_trigger(480, 900)["p2pool_lag"]
         assert holds and "480 blocks behind" in label
 
-    @pytest.mark.parametrize("lag,age", [(4, 900), (480, 120), (480, None), (None, 900), (0, 900)])
+    @pytest.mark.parametrize(
+        "lag,age", [(4, 900), (480, 120), (480, 899), (480, None), (None, 900), (0, 900)]
+    )
     def test_no_hold_without_both_lag_and_a_stalled_tip(self, lag, age):
         assert lag_trigger(lag, age)["p2pool_lag"][0] is False
 

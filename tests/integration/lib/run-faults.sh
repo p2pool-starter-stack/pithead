@@ -15,7 +15,7 @@ _rig_pool_leg() {
     if wait_for "$1" 10 "$3" "$2"; then
         it_pass "$3"
     else
-        it_fail "$3" "rig reports pool '$(_rig_active_pool)' (was '$RIG_POOL_BEFORE')"
+        it_fail "$3" "the rig's active pool did not change as expected within $1s"
     fi
 }
 fault_node_down() {

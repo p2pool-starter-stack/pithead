@@ -8,7 +8,7 @@ from mining_dashboard.config.config import (
     P2POOL_ZMQ_STALE_SEC,
 )
 
-LAG_STALL_SEC = 600
+LAG_STALL_SEC = 900
 GUARDED_CONTAINERS = (("monerod", "Monero node"), ("p2pool", "P2Pool"), ("tor", "Tor"))
 
 
