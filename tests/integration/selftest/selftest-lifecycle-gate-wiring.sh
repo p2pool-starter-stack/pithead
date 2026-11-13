@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+gated=
+lifecycle_mining_step() {
+    gated+="$1 "
+    shift
+    "$@"
+}
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 # shellcheck source=tests/integration/lib/run-source-image.sh
 source "$ROOT/tests/integration/lib/run-source-image.sh"
@@ -17,7 +23,7 @@ monero_running=1
 image_up_rc=0
 source_rc=0
 trace() { printf '%s\n' "$1" >>"$fixture/events"; }
-eval "$(sed -n '/^run_lifecycle() {/,/    restore_tls_before=/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d')
+eval "$(sed -n '/^_run_lifecycle() {/,/    restore_tls_before=/p' "$ROOT/tests/integration/lib/run-lifecycle.sh" | sed '$d;1s/^_run_lifecycle/run_lifecycle/')
 }"
 post_op_begin() { :; }
 post_op_invariants() { :; }
@@ -37,11 +43,11 @@ rx() {
             'source-image: guarded recreate matches declared image and Compose owner' \
             'source-image: original image restored'
         ;;
-    'docker compose stop monerod')
+    'docker compose stop monerod'*)
         monero_running=0
         trace node-down
         ;;
-    'docker compose start monerod')
+    'docker compose start monerod'*)
         monero_running=1 node_recovered=1
         trace node-start
         ;;
@@ -99,9 +105,11 @@ prove_wallet_recovery() {
     return "$recovery_proof_rc"
 }
 run_connection_announcements() { :; }
+run_support_bundle() { :; }
 run_cli_wizard_defaults() { :; }
 run_restore_dashboard_probe() { :; }
 run_tari_background_sync() { :; }
+run_image_permissions() { :; }
 assert_mining_probe_ready() {
     [ "$1" = "source image fixture (bench-ci#1276)" ]
     trace source-ready
@@ -112,6 +120,7 @@ lifecycle_rc=0
 run_lifecycle || lifecycle_rc=$?
 [ "$lifecycle_rc" = 0 ]
 [ "$IT_FAIL" = 0 ]
+[ -z "${IT_LC_STEP:-}" ]
 [ "$wallet_proof_calls" = 1 ]
 [ "$recovery_proof_calls" = 1 ]
 [ "$(cat "$fixture/events")" = $'before-wizard-defaults\nbefore-restart\nafter-restart\npool-start-main\npool-ready-mini\npool-observed-mini\nnode-down\nnode-start\nbefore-image-down\nafter-image-up\nbefore-source-image\nsource-ready\nsource-fixture' ] || {
@@ -120,11 +129,15 @@ run_lifecycle || lifecycle_rc=$?
     exit 1
 }
 echo 'selftest-lifecycle-gate-wiring: Main-to-Mini and node recovery precede both image fixtures'
+[ "$(awk '{print $2}' "$fixture/lifecycle-gate.log")" = $'before-wizard-defaults\nbefore-restart\nafter-restart\nbefore-image-down\nafter-image-up\nbefore-source-image' ]
+[ "$gated" = 'run_cli_wizard_defaults run_support_bundle node-down node-recovery run_source_image_reconcile run_restore_dashboard_probe run_tari_background_sync ' ]
+echo 'selftest-lifecycle-gate-wiring: the wizard, support-bundle and image legs run inside the mining gate'
 for failure in wallet node image source; do
     IT_FAIL=0 wallet_proof_calls=0 recovery_proof_calls=0 recovery_proof_rc=0
     node_recovered=0 node_recovery_rc=0 monero_running=1 image_up_rc=0 source_rc=0
     : >"$fixture/lifecycle-gate.log"
     : >"$fixture/events"
+    IT_LC_STEP=
     case "$failure" in
     wallet) recovery_proof_rc=1 ;;
     node) node_recovery_rc=1 ;;
@@ -136,6 +149,7 @@ for failure in wallet node image source; do
     case "$failure" in
     wallet)
         [ "$lifecycle_rc" != 0 ] && [ "$IT_FAIL" = 0 ] && [ "$recovery_proof_calls" = 1 ]
+        [ "$IT_LC_STEP" = prove_wallet_recovery ]
         [ "$(cat "$fixture/events")" = before-wizard-defaults ]
         ;;
     node)

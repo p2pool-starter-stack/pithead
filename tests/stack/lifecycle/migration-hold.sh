@@ -55,3 +55,6 @@ up_line2=$(grep "compose up" "$HOLD_LOG2" | tail -1)
 assert_eq "normal up preserves the earned latch without a reset" "$([ -e "$hold_dashboard/sync-gate-reset" ] && echo present || echo absent)" absent
 assert_not_contains "a plain up names no service subset" "$up_line2" "p2pool"
 rm -f "$HOLD_LOG" "$HOLD_LOG2"
+
+bash "$ROOT/tests/os/selftest-local-miner-up.sh"
+assert_rc "up converges the appliance miner under its lifecycle lock" "$?" 0

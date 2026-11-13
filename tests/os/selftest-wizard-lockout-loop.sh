@@ -44,6 +44,7 @@ trap 'rm -rf "$scratch"' EXIT
     wizard_host_addresses() { printf 192.0.2.10; }
     reset_slot_restore_good() { :; }
     wizard_announce_setup() { printf '%s %s\n' "$2" "$3" >>announcements; }
+    wizard_clear_announcement() { :; }
     wizard_keep_requested() { [ "$runs" -eq 2 ]; }
     firstboot_consume_rig() { return 2; }
     firstboot_consume_restore() { return 2; }
