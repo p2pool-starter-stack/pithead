@@ -333,6 +333,17 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     else
         bad "leg 4: no 'updated' verdict after the reboot (got '${verdict:-none}') — commit or verdict is broken"
     fi
+    local shdeadline=$(($(date +%s) + 300))
+    while [ "$(date +%s)" -lt "$shdeadline" ]; do
+        _ssh "journalctl -u pithead-boot 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null" && break
+        sleep 10
+    done
+    if _ssh "journalctl -u pithead-boot 2>/dev/null | grep -F 'dashboard schema hold armed' >/dev/null" &&
+        _ssh "journalctl -u pithead-boot 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null"; then
+        ok "leg 4: pithead-boot's journal armed the dashboard schema hold on the uncommitted boot and released it at the commit"
+    else
+        bad "leg 4: pithead-boot's journal lacks the schema hold arm and release lines — the hold never ran on the real boot"
+    fi
     if curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.verdict.outcome == "updated"' >/dev/null 2>&1; then
         ok "leg 4: the success banner's verdict reaches /api/state"

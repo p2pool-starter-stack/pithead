@@ -94,6 +94,7 @@ _update_healthgate_leg_body() {
         ok "leg 5: FALLBACK — the unhealthy dashboard held the gate and the guest fell back to v2"
     else
         bad "leg 5: expected the guest back on v2 after the fault boot's gate refusal, got '${fmarker:-none}' (30 min bound)"
+        return
     fi
     if tail -c "+$((fserial_mark + 1))" "$SERIAL" | grep -F 'Pithead is still starting (' | grep -F 'of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself.' >/dev/null; then
         ok "leg 5: the fault boot's serial console reports health-gate progress and automatic update fallback"
@@ -122,6 +123,23 @@ _update_healthgate_leg_body() {
         ok "leg 5: the dashboard serves a banner that names the blocking check ('Blocked by:')"
     else
         bad "leg 5: the served banner module has no 'Blocked by:' cause"
+    fi
+    local xjournal fjournal rdeadline=$(($(date +%s) + 1200))
+    xjournal=$(_ssh "journalctl -u pithead-boot -b -1 2>/dev/null" 2>/dev/null)
+    if grep -qF 'dashboard schema hold armed' <<<"$xjournal" && ! grep -qF 'dashboard schema hold released' <<<"$xjournal"; then
+        ok "leg 5: the failed candidate boot armed the dashboard schema hold and never released it"
+    else
+        bad "leg 5: the failed candidate boot's journal does not show the dashboard schema hold armed and left unreleased"
+    fi
+    while [ "$(date +%s)" -lt "$rdeadline" ]; do
+        _ssh "journalctl -u pithead-boot -b 0 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null" && break
+        sleep 15
+    done
+    fjournal=$(_ssh "journalctl -u pithead-boot -b 0 2>/dev/null" 2>/dev/null)
+    if grep -qF 'dashboard schema hold armed' <<<"$fjournal" && grep -qF 'dashboard schema hold released' <<<"$fjournal"; then
+        ok "leg 5: the fallback boot armed the dashboard schema hold and released it once its own gate committed"
+    else
+        bad "leg 5: the fallback boot's journal has no schema hold arm and release lines (20 min bound) — the hold never ran to completion on the surviving boot"
     fi
 }
 
