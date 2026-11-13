@@ -380,7 +380,7 @@ def test_every_pinned_control_status_is_classified():
     # Words we deliberately class as NOT terminal: the rig has begun a change and has not said how
     # it ended. Listed, not inferred, so adding one is deliberate. `pinned` must be non-empty — a
     # difference against an empty left side is empty, so an emptied `statuses` checks nothing.
-    non_terminal = {"pending", "started"}
+    non_terminal = {"busy", "pending", "started"}
     assert pinned and pinned - set(_CONTROL_TERMINAL) - non_terminal == set()
 
 
