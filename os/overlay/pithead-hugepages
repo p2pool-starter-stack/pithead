@@ -58,7 +58,6 @@ set -uo pipefail
 MEMINFO="${PITHEAD_MEMINFO:-/proc/meminfo}"
 NR_HUGEPAGES_FILE="${PITHEAD_NR_HUGEPAGES_FILE:-/proc/sys/vm/nr_hugepages}"
 MARKER="${PITHEAD_HUGEPAGES_MARKER:-/run/pithead-hugepages-degraded}"
-ROLE_FILE="${PITHEAD_MACHINE_ROLE_FILE:-/data/pithead/machine-role}"
 
 # Same value as the CLI's PITHEAD_HUGEPAGES and the baked sysctl.d line; the stack suite pins
 # all three together so they cannot drift.
@@ -106,12 +105,6 @@ _console() { # lines...
 
 main() {
     local want mem_gib
-    if [ -r "$ROLE_FILE" ] && [ "$(tr -d '[:space:]' <"$ROLE_FILE" 2>/dev/null)" = "rig" ]; then
-        echo 0 >"$NR_HUGEPAGES_FILE" 2>/dev/null ||
-            _console "could not release the hugepage pool (writing $NR_HUGEPAGES_FILE failed)"
-        _console "rig role: the baked hugepage reservation is released — RigForge sizes the pool for the miner this machine can run. Lower RAM means a lighter mining mode, not a machine that cannot mine."
-        return 0
-    fi
     want=$(hugepages_want "$MEMINFO")
     # The supported machine: the baked sysctl already reserved the full pool. Say nothing.
     [ "$want" -ge "$FULL_PAGES" ] && return 0
