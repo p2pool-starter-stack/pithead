@@ -154,8 +154,7 @@ phase_rig() {
         bad "the rig never started mining (unit: $(_ssh 'systemctl is-active xmrig' 2>/dev/null || echo unknown))"
         info "  firstboot journal tail: $(_ssh "journalctl -u pithead-firstboot -n 8 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
     fi
-    [ "$(_ssh 'cat /data/pithead/machine-role' | tr -d '\r\n')" = "rig" ] &&
-        ok "the role marker says rig" || bad "the role marker is not rig"
+    [ "$(_ssh 'cat /data/pithead/machine-role' | tr -d '\r\n')" = "rig" ] && ok "the role marker says rig" || bad "the role marker is not rig"
     [ "$(_ssh 'hostnamectl --static; hostname' | tr -d '\r' | uniq)" = "kvm-rig" ] && ok "the rig's worker name is its static and live hostname" || bad "the rig's hostname is not its worker name"
     [ -z "$(_ssh 'ls /data/pithead/config.json 2>/dev/null')" ] &&
         ok "no coordinator config was ever written (a rig has none)" ||
