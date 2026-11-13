@@ -13,6 +13,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
+  changed version or the first successful refresh after the disconnected banner, shows "Pithead was
+  updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2
+  minutes (#4057). OS-update and Configuration requests from a stale tab show "Pithead restarted or
+  the page is out of date. Reloading…" instead of `HTTP 401`, `HTTP 403` or the browser's own network
+  error, show the server's text for other failures, and a plain-text error no longer surfaces as a
+  JSON `SyntaxError` (#4058). An unsaved Configuration draft survives the reload in the tab's
+  `sessionStorage`, without any secret you typed (#4060).
 - On the appliance, the dashboard's own schema migrations no longer run before the booted A/B slot
   commits. `pithead-boot` defers them while the slot is uncommitted, so an update that falls back
   leaves the previous release on the schema it understands, still recording payouts (#3998).
