@@ -1578,7 +1578,10 @@ instead: `pithead recovery-bundle` in [Operations](operations.md).
 
 **Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that
-window, only the 3 most recent archives are kept. Ordinary control-request results (config
+window, only the 3 most recent archives are kept, backups and support bundles alike. An expired
+archive past those 3 is removed with its result; the 3 that remain stay downloadable until a newer
+one displaces them or the byte cap evicts them, so a support bundle can outlive the hour the card
+quotes. Ordinary control-request results (config
 previews, applies, upgrades) age out after a day or once more than 200 accumulate. Whatever these
 limits leave behind is capped at 512 MiB total, oldest first, unless the files that must remain
 (`os-update-state.json`, the result of a request still in flight, or a fresh backup pair) alone

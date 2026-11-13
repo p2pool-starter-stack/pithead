@@ -121,22 +121,16 @@ class HealthchecksClient:
                         "Healthchecks ping recovered (was failing, now %s).", resp.status_code
                     )
                 self._last_ping_ok = True
-                # Advance the throttle only on success so a transient outage keeps retrying.
                 self._last_ping = now
                 return True
-            # A revoked/typo'd URL still passes the scheme check but never counts as accepted;
-            # don't advance the throttle so the next cycle retries. Warn once on the transition
-            # so a dead URL doesn't spam every cycle.
             if self._last_ping_ok is not False:
                 logger.warning("Healthchecks ping rejected: HTTP %s.", resp.status_code)
             self._last_ping_ok = False
             self._record("http_status", f"HTTP {resp.status_code}")
             return False
         except requests.RequestException as e:
-            # Offline / Tor down / endpoint hiccup: the whole point is to survive these
-            # silently — Healthchecks.io will alert on the missed ping. DEBUG, never noise.
             logger.debug("Healthchecks ping failed (offline?): %s", e)
-            self._record(_failure_class(e), type(e).__name__)
+            self._record(_failure_class(e, self._proxies is not None), type(e).__name__)
             return False
         except Exception as e:  # pragma: no cover - defensive; never break the loop
             logger.debug("Healthchecks unexpected error: %s", e)
@@ -152,7 +146,7 @@ class HealthchecksClient:
             pass
 
 
-def _failure_class(exc):
+def _failure_class(exc, via_proxy=False):
     if isinstance(exc, requests.exceptions.ProxyError):
         return "tor_socks"
     cause = exc.__cause__ or exc.__context__
@@ -165,4 +159,7 @@ def _failure_class(exc):
             return "dns"
         cause = cause.__cause__ or cause.__context__
         hops += 1
+    if via_proxy and isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        if not isinstance(exc, requests.exceptions.SSLError):
+            return "tor_socks"
     return "connect"
