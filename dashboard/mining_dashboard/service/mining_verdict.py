@@ -1,5 +1,8 @@
+import ipaddress
+import socket
+
 from mining_dashboard.config import config
-from mining_dashboard.helper.utils import detect_host_ipv4
+from mining_dashboard.helper.utils import detect_host_ipv4, is_ip_address
 
 HERE = "mining_here"
 BACKUP = "on_backup"
@@ -8,6 +11,7 @@ UNKNOWN = "unknown"
 ELSEWHERE = (BACKUP, NOT_CONNECTED)
 
 _UNCONFIGURED_HOST = "Unknown Host"
+_LOOPBACK = ("127.0.0.1", "::1", "localhost")
 
 
 def _strip_host(host):
@@ -15,7 +19,8 @@ def _strip_host(host):
 
 
 def local_stratum_hosts():
-    hosts = {config.HOST_IP, detect_host_ipv4()}
+    name = socket.gethostname()
+    hosts = {config.HOST_IP, detect_host_ipv4(), name, f"{name}.local", *_LOOPBACK}
     if config.STRATUM_BIND != "0.0.0.0":
         hosts.add(config.STRATUM_BIND)
     return {_strip_host(h) for h in hosts if h and h != _UNCONFIGURED_HOST}
@@ -26,6 +31,10 @@ def _split_pool(pool):
     if not sep or not (port.isascii() and port.isdigit()):
         return None
     return _strip_host(host), int(port)
+
+
+def _knows_own_address(local_hosts):
+    return any(is_ip_address(h) and not ipaddress.ip_address(h).is_loopback for h in local_hosts)
 
 
 def _is_number(value):
@@ -44,13 +53,17 @@ def mining_verdict(payload, local_hosts, stratum_port):
         return unknown
     if uptime <= 0:
         return {"state": NOT_CONNECTED, "pool": None}
-    if not isinstance(pool, str) or not pool.strip() or not local_hosts:
+    if not isinstance(pool, str) or not pool.strip():
         return unknown
     pool = pool.strip()
     parsed = _split_pool(pool)
-    if parsed is not None and parsed[1] == stratum_port and parsed[0] in local_hosts:
-        return {"state": HERE, "pool": pool}
-    return {"state": BACKUP, "pool": pool}
+    if parsed is None:
+        return {"state": UNKNOWN, "pool": pool}
+    host, port = parsed
+    if host in local_hosts:
+        return {"state": HERE if port == stratum_port else BACKUP, "pool": pool}
+    foreign = is_ip_address(host) and _knows_own_address(local_hosts)
+    return {"state": BACKUP if foreign else UNKNOWN, "pool": pool}
 
 
 def mines_elsewhere(worker):

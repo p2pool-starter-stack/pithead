@@ -10,7 +10,7 @@ def _local_node(monkeypatch):
 
 
 def _rigs(*verdicts):
-    return {"workers": [{"mining_verdict": v} for v in verdicts]}
+    return {"workers": [{"mining": {"state": v, "pool": None}} for v in verdicts]}
 
 
 def test_absent_while_serving(_metrics):
