@@ -31,8 +31,9 @@ export function createFreshness({
 
   function recentlyReloaded() {
     try {
-      const elapsed = now() - (Number(store.getItem(GUARD_KEY)) || 0);
-      return elapsed >= 0 && elapsed < RELOAD_GUARD_MS;
+      const stamp = Number(store.getItem(GUARD_KEY));
+      const elapsed = now() - stamp;
+      return stamp > 0 && elapsed >= 0 && elapsed < RELOAD_GUARD_MS;
     } catch {
       return false;
     }

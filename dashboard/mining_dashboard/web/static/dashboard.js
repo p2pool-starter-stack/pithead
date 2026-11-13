@@ -151,6 +151,7 @@ export function initDashboard({
   async function tick() {
     if (inflight) return;
     inflight = true;
+    let fresh = null;
     try {
       const base = ui.window
         ? "from=" + ui.window.from + "&to=" + ui.window.to
@@ -166,7 +167,7 @@ export function initDashboard({
       connected = true;
       disconnectedSince = null;
       if (state.page_title) doc.title = state.page_title;
-      freshness.goodPoll(state.version?.text, recovered);
+      fresh = { version: state.version?.text, recovered };
     } catch (e) {
       connected = false;
       if (disconnectedSince === null) disconnectedSince = now();
@@ -175,6 +176,7 @@ export function initDashboard({
       inflight = false;
       rerender();
     }
+    if (fresh) freshness.goodPoll(fresh.version, fresh.recovered);
   }
 
   function setRange(r) {

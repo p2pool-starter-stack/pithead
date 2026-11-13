@@ -9,7 +9,11 @@ test("sustained failures show recovery advice at 60 seconds, clear on success, a
   let time = 0;
   let fail = false;
   let painted;
+  let reloads = 0;
   const d = initDashboard({
+    reload: () => reloads++,
+    store: { getItem: () => null, setItem() {} },
+    onWindowEvent() {},
     doc: { getElementById: () => null, documentElement: { setAttribute() {} } },
     storage: { getItem: () => null },
     href: "https://pithead.test/",
@@ -38,6 +42,7 @@ test("sustained failures show recovery advice at 60 seconds, clear on success, a
   await d.tick();
   assert.equal(painted.connected, true);
   assert.equal(painted.recoveryNeeded, false);
+  assert.equal(reloads, 1);
   fail = true;
   time = 120000;
   await d.tick();

@@ -166,3 +166,9 @@ test('a guard timestamp in the future (clock moved back) does not block reloads'
     t.f.goodPoll('v1', true);
     assert.equal(t.reloads.length, 1);
 });
+
+test('a tab that never auto-reloaded is not blocked, whatever the clock reads', () => {
+    const t = make({ clock: 1000 });
+    t.f.goodPoll('v1', true);
+    assert.equal(t.reloads.length, 1);
+});
