@@ -1,10 +1,12 @@
-import os
 import time
 
-from mining_dashboard.config.config import NODE_RECOVERY_AFTER_SEC
+from mining_dashboard.config.config import (
+    MINING_GUARD_GRACE_SEC,
+    NODE_RECOVERY_AFTER_SEC,
+    P2POOL_ZMQ_STALE_SEC,
+)
 
-MINING_GUARD_GRACE_SEC = int(os.environ.get("MINING_GUARD_GRACE_SEC", 600))
-P2POOL_ZMQ_STALE_SEC = int(os.environ.get("P2POOL_ZMQ_STALE_SEC", 600))
+ZMQ_GRACE_SEC = 60
 
 
 def monero_trigger(health):
@@ -30,7 +32,7 @@ def p2pool_triggers(p2p):
         "p2pool_zmq": (
             zmq_age > P2POOL_ZMQ_STALE_SEC,
             f"P2Pool has received no ZMQ messages for {int(zmq_age // 60)} min",
-            0,
+            ZMQ_GRACE_SEC,
         ),
     }
 
@@ -46,6 +48,7 @@ class MiningGuard:
         self._wall = wall
         self._recovery_after = recovery_after
         self._holding_since = {}
+        self._holding_wall = {}
         self._clear_since = {}
         self.active = {}
 
@@ -56,12 +59,14 @@ class MiningGuard:
             if holds:
                 self._clear_since.pop(key, None)
                 first = self._holding_since.setdefault(key, now)
+                since = self._holding_wall.setdefault(key, self._wall())
                 if key in self.active:
                     self.active[key]["label"] = label
                 elif now - first >= grace:
-                    self.active[key] = {"label": label, "since": self._wall()}
+                    self.active[key] = {"label": label, "since": since}
                 continue
             self._holding_since.pop(key, None)
+            self._holding_wall.pop(key, None)
             if key in self.active:
                 first = self._clear_since.setdefault(key, now)
                 if now - first >= self._recovery_after:

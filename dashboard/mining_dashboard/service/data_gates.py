@@ -83,14 +83,6 @@ class DataGateMixin:
         self.mining_guard.update(triggers)
 
     async def _apply_worker_rejection(self, monero_down, tari_down=False):
-        """Stop the proxy on a debounced required-node outage or an invalid-work trigger from
-        the mining guard; readmit only after every trigger has cleared and every required node
-        is confirmed healthy. Tari is required by default; opting out preserves Monero mining
-        through a Tari-only outage.
-
-        Act only on transitions. Failed Docker operations leave the flag unchanged
-        so the next cycle retries; repeat operations are safe (HTTP 304).
-        """
         required_down = (
             monero_down
             or (_runtime().TARI_REQUIRED and tari_down)

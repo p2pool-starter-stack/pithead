@@ -44,7 +44,7 @@ class TestGuard:
         guard.update(trig(True, label="P2Pool has no sidechain peers"))
         clock.now = 600
         guard.update(trig(True, label="P2Pool has no sidechain peers"))
-        assert guard.pause == {"reason": "P2Pool has no sidechain peers", "since": 1600}
+        assert guard.pause == {"reason": "P2Pool has no sidechain peers", "since": 1000}
 
     def test_zero_grace_activates_immediately(self, guard):
         guard.update(trig(True, grace=0))
@@ -92,6 +92,13 @@ class TestGuard:
         guard.update({"a": (True, "first", 0), "b": (True, "second", 0)})
         assert guard.pause == {"reason": "first; second", "since": 1000}
 
+    def test_since_is_the_onset_not_the_activation(self, guard, clock):
+        clock.now = 100
+        guard.update(trig(True, grace=300))
+        clock.now = 400
+        guard.update(trig(True, grace=300))
+        assert guard.pause["since"] == 1100
+
 
 class TestMoneroTrigger:
     def test_red_verdict_holds_with_its_reasons(self):
@@ -129,6 +136,12 @@ class TestP2PoolTriggers:
         holds, label, _ = p2pool_triggers(self.base(zmq_active=3600))["p2pool_zmq"]
         assert holds and "no ZMQ messages for 60 min" in label
 
+    def test_zmq_waits_for_its_grace(self):
+        assert (
+            p2pool_triggers(self.base(zmq_active=3600))["p2pool_zmq"][2]
+            == mining_guard.ZMQ_GRACE_SEC
+        )
+
     def test_zmq_at_the_bound_is_fine(self):
         zmq = self.base(zmq_active=mining_guard.P2POOL_ZMQ_STALE_SEC)
         assert not p2pool_triggers(zmq)["p2pool_zmq"][0]
@@ -136,3 +149,27 @@ class TestP2PoolTriggers:
     @pytest.mark.parametrize("p2p", [{}, {"uptime": 0, "out_peers": 0, "in_peers": 0}])
     def test_absent_stats_are_no_verdict(self, p2p):
         assert p2pool_triggers(p2p) == {}
+
+
+class TestRealSources:
+    def test_monero_trigger_reads_a_real_peerless_verdict(self):
+        from mining_dashboard.service.health.monero_health import MoneroChainHealth
+
+        now = [0]
+        chain = MoneroChainHealth(clock=lambda: now[0])
+        sync = {"reachable": True, "height": 10, "peers_out": 0, "peers_in": 0, "is_syncing": False}
+        chain.observe(sync)
+        assert monero_trigger(chain.verdict)[0] is False
+        now[0] = 700
+        holds, label, _ = monero_trigger(chain.observe(sync))
+        assert holds and "0 outgoing peers" in label
+
+    def test_tor_healer_failing_follows_its_failure_streak(self):
+        from mining_dashboard.service.health.tor_heal import TorEgressHealer
+
+        healer = TorEgressHealer(None, enabled=True, restart_monerod=False)
+        assert healer.failing is False
+        healer.decide(False, 0)
+        assert healer.failing is True
+        healer.decide(True, 1)
+        assert healer.failing is False

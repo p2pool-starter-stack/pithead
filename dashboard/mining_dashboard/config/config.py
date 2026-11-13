@@ -366,6 +366,8 @@ NODE_RECOVERY_AFTER_SEC = int(os.environ.get("NODE_RECOVERY_AFTER_SEC", 60))
 # only a node that genuinely failed to re-peer alarms. Env-only (tests/mini-stack), not a
 # config.json knob — nobody should have to tune a detector.
 NODE_STALE_AFTER_SEC = int(os.environ.get("NODE_STALE_AFTER_SEC", 600))
+MINING_GUARD_GRACE_SEC = int(os.environ.get("MINING_GUARD_GRACE_SEC", 600))
+P2POOL_ZMQ_STALE_SEC = int(os.environ.get("P2POOL_ZMQ_STALE_SEC", 600))
 
 # --- Healthchecks.io dead-man's switch (Issue #79) ---
 # Optional external liveness monitor. Set a ping URL and the dashboard loop pings it every cycle;

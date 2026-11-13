@@ -264,18 +264,18 @@ does not trust that flag. Each trigger below must hold, then clear, before it ac
 |---|---|---|
 | Monero node unhealthy | the Monero card is red: out of sync for 10 minutes (`NODE_STALE_AFTER_SEC`), 0 outgoing peers for 10 minutes, or no new height for 30 minutes | already debounced by the card |
 | P2Pool has no sidechain peers | P2Pool reports 0 outgoing and 0 incoming connections | `MINING_GUARD_GRACE_SEC`, default 600 s |
-| P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | none beyond that age |
+| P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | 60 s |
 | Tor egress is failing | the [Tor self-heal](configuration.md) probe is failing (needs `tor.auto_heal`) | `MINING_GUARD_GRACE_SEC` |
 
 A monerod that is unreachable or not running is the existing outage above. A brief dip inside
 the wait stops nothing. The `Workers rejected` badge names the active trigger and when it began,
-and `/api/state` carries the same as `mining_pause`. A trigger clears after 60 seconds
+and `/api/state` carries the same as `mining_pause`; the time is when the trigger began holding, not when it fired. A dashboard restart restarts that clock. A trigger clears after 60 seconds
 (`NODE_RECOVERY_AFTER_SEC`) without it, and readmission waits for every trigger to clear. The
 dashboard stops only `xmrig-proxy`: the stratum port closes, connected rigs get a disconnect, and
 P2Pool keeps running. The built-in local miner is a rig on the same stratum, so it stops with them.
 Shortcuts: P2Pool exposes no peer mainchain height, so "monerod lags the peers' chain" is covered
 by the card's stalled and out-of-sync verdicts rather than a direct comparison, and a failing
-container healthcheck is not a trigger of its own.
+container healthcheck, a stopped P2Pool and Tor still bootstrapping are not triggers of their own.
 
 xmrig keeps retrying its first pool while it mines on a backup and switches back by itself
 when the login succeeds (`FailoverStrategy` in the xmrig source), so rigs return once

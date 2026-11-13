@@ -221,12 +221,14 @@ class TestMiningGuardRejection:
         svc.mining_guard._clock = lambda: clock[0]
         zmq_stale = {"p2p": {"uptime": 9, "out_peers": 1, "zmq_active": 900}}
         await self._cycle(svc, p2pool=zmq_stale)
+        clock[0] = 100
+        await self._cycle(svc, p2pool=zmq_stale)
         assert svc.workers_rejected is True
-        for at in (10, 69):
+        for at in (110, 169):
             clock[0] = at
             await self._cycle(svc)
             assert svc.workers_rejected is True
-        clock[0] = 70
+        clock[0] = 170
         await self._cycle(svc)
         assert svc.workers_rejected is False
         svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
