@@ -97,6 +97,7 @@ run_suite() (
 suite_failures=0
 run_suite "$ROOT/tests/stack/dashboard/test-dashboard.sh" || ((suite_failures += 1))
 run_suite "$ROOT/tests/stack/dashboard/test-dashboard-onion.sh" || ((suite_failures += 1))
+run_suite "$ROOT/tests/stack/dashboard/test-dashboard-login.sh" || ((suite_failures += 1))
 run_suite "$ROOT/tests/stack/appliance/test-appliance-caddyfile-optional-env.sh" || ((suite_failures += 1))
 run_suite "$ROOT/tests/stack/appliance/test-appliance-identity.sh" || ((suite_failures += 1))
 
