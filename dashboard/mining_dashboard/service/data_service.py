@@ -586,10 +586,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     if self.healthchecks.enabled:
                         await asyncio.to_thread(self.healthchecks.ping)
 
-                    # 6c. Tor guard self-heal (#424): when opted in, probe Tor clearnet egress
-                    # (self-throttled) and restart tor if it's stuck on a failing guard —
-                    # bounded, cooled-down, loud. Off (the default) this is a plain no-op.
                     await self.tor_healer.check()
+                    await self.p2pool_healer.check(p2pool_stats)
 
                     # 7. External XvB stats sync over Tor (#163), throttled to every 10th iteration,
                     # and ONLY when XvB is enabled — disabling XvB must stop the egress entirely.

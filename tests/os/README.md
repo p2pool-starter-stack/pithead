@@ -33,6 +33,11 @@ no unexpected-abort message or debug advice. `selftest-tor-recovery-refusal.sh` 
 this guest script against the generated CLI and a pre-fix dispatch negative control,
 without a container or guest. The live result requires a KVM job on the PR head.
 
+The opt-in `p2pool-heal` phase (#4077) provisions a guest and observes its own peerless P2Pool for up to
+50 minutes: the dashboard must restart it, keep at least 20 minutes between restarts, stay within three, and
+leave P2Pool running. A guest P2Pool that holds peers or never starts records a `missing` skip, not a pass.
+`selftest-pool-heal.sh` exercises the phase wrapper without a guest.
+
 The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
 It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
 with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery
