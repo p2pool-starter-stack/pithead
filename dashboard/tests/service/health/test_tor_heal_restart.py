@@ -125,4 +125,4 @@ async def test_confirmed_stop_starts_without_waiting():
     health = AsyncMock(return_value={"tor": {"running": True}})
     await _heal_to_restart(docker, health)
     assert docker.calls == [("stop", "tor"), ("start", "tor")]
-    assert health.await_count == 5  # only the per-check start-time reads; no settle polls
+    assert health.await_count == 5

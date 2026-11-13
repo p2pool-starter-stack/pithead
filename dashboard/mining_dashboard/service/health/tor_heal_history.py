@@ -50,6 +50,7 @@ class TorHistoryMixin:
                 self._clear_history = False
             return
         if result.get("status") != "applied":
+            self.circuits_wedged = False
             logger.warning("Tor circuit-history reading was refused or unavailable")
             return
         pending = result.get("pending_circuits")

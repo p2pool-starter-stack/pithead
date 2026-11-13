@@ -91,6 +91,7 @@ class TorEgressHealer(TorHistoryMixin):
         self._failure_evidence = ""
         self._recovery_step = None
         self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._newnym_retried = False
         self._history_since = None
         self._history_outage = None
         self._clear_history = False
@@ -127,9 +128,6 @@ class TorEgressHealer(TorHistoryMixin):
 
     def decide(self, ok, now):
         if ok:
-            if self.circuits_wedged and self._attempts:
-                self._ok_streak = 0
-                return None
             if self._attempts == 0 and not self._newnym_unconfirmed and not self.saturated_history:
                 self._failing_since = None
                 self._ok_streak = 0
@@ -161,15 +159,10 @@ class TorEgressHealer(TorHistoryMixin):
             self._disruptive.append(now)
         self._attempts += 1
         self._last_attempt = now
+        self._warned_exhausted = False
         return "heal"
 
     async def _observe_tor_start(self) -> None:
-        """Start a fresh outage window when Tor restarted without the healer's doing.
-
-        A restart by the operator, ``./pithead`` or Docker is a recovery the healer did not
-        perform, so the old clock, budget and cooldown no longer describe the Tor that is running.
-        A restart the healer issued itself is adopted into the baseline and keeps counting. A Tor that
-        restarts more often than BROKEN_AFTER_SEC (a crash loop) therefore never reaches an action."""
         started = (await get_container_health()).get(self.CONTAINER, {}).get("started_at")
         if started is None:
             return
@@ -181,11 +174,12 @@ class TorEgressHealer(TorHistoryMixin):
             self._ok_streak = 0
             self._warned_exhausted = False
             self._newnym_unconfirmed = False
+            self._newnym_retried = False
+            self.circuits_wedged = False
         self._tor_started = started
         self._own_restart = False
 
     def refund_attempt(self):
-        """Refund an unconfirmed NEWNYM; keep the ongoing outage clock."""
         if self._attempts > 0:
             self._attempts -= 1
         self._last_attempt = None
@@ -247,6 +241,9 @@ class TorEgressHealer(TorHistoryMixin):
                 if result.get("status") != "applied":
                     if result.get("status") == "rejected":
                         self._attempts = max(self._attempts, NEWNYM_ATTEMPTS)
+                    elif not self._newnym_retried:
+                        self._newnym_retried = True
+                        self.refund_attempt()
                     self._last_attempt = now
                     self._newnym_unconfirmed = True
                     logger.warning(
@@ -377,6 +374,7 @@ class TorEgressHealer(TorHistoryMixin):
                     evidence,
                 )
                 self._newnym_unconfirmed = False
+                self._newnym_retried = False
                 self._warned_saturated = False
                 self._pending_history = None
                 self.saturated_history = False

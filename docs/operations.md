@@ -935,7 +935,7 @@ own within minutes; monerod does **not** — it keeps its dead SOCKS connections
 right after tor is healthy again and re-dials in about a minute. Re-run `./pithead doctor` to
 confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_heal: true` in `config.json` and run
 `./pithead apply`. Its circuit refreshes and state recovery go through the host control runner,
-and a refresh must be confirmed before the final restart, so the heal also needs
+so the heal also needs
 `dashboard.control.enabled: true` (the appliance sets it only when a dashboard login exists);
 without it the heal only probes and logs warnings, and sends a recovery note when egress returns.
 Doctor reports this configuration as INFO and names the login and control prerequisite or manual Tor restart. The dashboard probes every five minutes with a new SOCKS circuit per request.
@@ -958,7 +958,8 @@ local Monero; a stopped or remote node stays untouched. Logs record each control
 retain the distinction between a confirmed restart, a confirmed start with an unconfirmed stop,
 and an unconfirmed restart in the recovery note. A NEWNYM the host rejects
 (budget or cooldown) spends its rung and skips the second one: the next round requests the state
-reset, then the restart, instead of repeating NEWNYM. Each step and its probe
+reset, then the restart, instead of repeating NEWNYM. A NEWNYM that fails or times out is retried
+once per outage before it counts as spent. Each step and its probe
 evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
 circuits, duration and preceding action into the Telegram note; the action is not credited as the
 cause of recovery. On the first heal round, 15 minutes into sustained failure, the
@@ -970,7 +971,8 @@ on each such round, sent once per outage to the alert sinks (failed delivery ret
 Tor (`status/circuit-established` and the number of pending circuits). No established circuit, or
 32 or more pending circuits (Tor's default `MaxClientCircuitsPending`), counts as a failed probe for
 the outage even when an HTTP probe answers. The action budget is four per outage, and the reset and
-restart together are capped at four per rolling 24 hours; at either limit the monitor logs once,
+restart together are capped at four per rolling 24 hours, a count held in the dashboard's memory
+(a dashboard restart clears it; the host's six-hour reset cooldown persists); at either limit the monitor logs once,
 asks the host to write a `tor-heal-exhausted` entry to its audit log, and warns until egress
 recovers. A Tor start the monitor did not cause (an operator, `./pithead` or
 Docker restart) opens a fresh outage window and resets the clock, budget and cooldown, so a Tor that

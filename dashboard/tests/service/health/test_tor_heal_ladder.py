@@ -4,6 +4,7 @@ import pytest
 
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
+    COOLDOWN_SEC,
     DISRUPTIVE_WINDOW_SEC,
     MAX_DISRUPTIVE_PER_DAY,
     NEWNYM_ATTEMPTS,
@@ -99,3 +100,27 @@ async def test_wedged_control_port_counts_a_responding_probe_as_failed():
     healer.circuits_wedged = False
     assert healer.decide(True, now[0]) is None
     assert healer.decide(True, now[0]) == "recovered"
+
+
+async def test_lost_newnym_transport_is_retried_once_then_the_ladder_advances():
+    now = [100000.0]
+    docker = AsyncMock()
+    docker.stop.return_value = docker.start.return_value = True
+    healer = _healer(now)
+    healer._docker = docker
+    submits = []
+    with (
+        patch(
+            f"{TARGET}.control_service.submit",
+            side_effect=lambda action, **_: submits.append(action) or action,
+        ),
+        patch(f"{TARGET}.control_service.result", return_value={"status": "failed"}),
+        patch(f"{TARGET}.get_container_health", AsyncMock(return_value={})),
+        patch("mining_dashboard.service.request_spool.write", return_value="history"),
+    ):
+        for _ in range(14):
+            await healer.check()
+            now[0] += COOLDOWN_SEC
+    assert submits.count("tor-newnym") == 3
+    assert submits.count("tor-recover") == 1
+    docker.stop.assert_awaited_once()

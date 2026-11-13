@@ -83,7 +83,7 @@ async def test_pending_newnym_times_out_without_probing_or_restarting():
         now[0] += PROBE_INTERVAL_SEC
         await healer.check()
     assert healer._pending_refresh is None
-    assert healer._attempts == 1
+    assert healer._attempts == 0
     assert healer._last_attempt == now[0]
     assert not probes
     docker.stop.assert_not_awaited()
@@ -214,7 +214,7 @@ async def test_second_outage_alerts_again_and_late_reading_is_dropped_on_recover
         await _run_rounds(healer, now, 4)
         assert notify.await_count == 1
         # Recover, with a history request still unanswered: the late reading must stay silent.
-        assert healer._attempts == 2
+        assert healer._attempts == 1
         ok[0] = True
         healer._pending_history = "tor-history"
         results["tor-history"] = None
