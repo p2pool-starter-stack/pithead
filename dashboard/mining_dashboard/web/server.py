@@ -123,7 +123,7 @@ async def handle_metrics(request):
 # Registered only when DASHBOARD_CONTROL_ENABLED (absent routes 404 when the feature is off).
 # Every mutating POST must carry this custom header: a cross-site header forces a CORS preflight,
 # which the self-only CSP origin never grants (a cheap CSRF guard, same spirit as the CSP below).
-# The actor is Caddy's authenticated X-Auth-User (header_up overwrites any client value).
+# The actor is the X-Auth-User the Caddy login gate sets (client-supplied values are stripped).
 
 CONTROL_HEADER = "X-Pithead-Control"
 

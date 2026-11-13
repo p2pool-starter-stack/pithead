@@ -507,7 +507,8 @@ the page is served over HTTPS.
   `dashboard.auth.username` and running `apply` ends every session, this one included.
 - **Wrong passwords:** five failures from one address in a minute lock sign-in from that address
   for the rest of the minute. Each attempt appears in the access log shown in the Security panel.
-  Basic-auth requests are not rate-limited.
+  Basic-auth requests are not rate-limited. On the onion address every visitor reaches the
+  dashboard from the Tor container, so they share one failure count.
 - **Scripts and API clients** keep sending the username and password as HTTP basic auth, for
   example `curl -u admin:PASSWORD`. Local callers on `127.0.0.1:8000` are unaffected.
 - **After an upgrade from 2.0.3** the password is unchanged. A browser that remembered the old

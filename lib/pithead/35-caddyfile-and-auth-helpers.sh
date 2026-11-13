@@ -63,10 +63,11 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
             '    @pithead_public path /login /api/auth/login /api/auth/logout /static/login.js /static/login-next.mjs /static/dashboard.css /static/styles/* /static/theme-init.js /static/pithead-mark.svg' \
             '    reverse_proxy @pithead_public 127.0.0.1:8000 {' \
             "        header_up X-Pithead-Auth-Epoch \"$epoch\"" \
+            '        header_up X-Forwarded-For {http.request.remote.host}' \
             '        header_up -X-Pithead-Boot-Probe' \
             '    }' \
-            '    @pithead_basic header Authorization "Basic *"' \
-            '    @pithead_session not header Authorization "Basic *"' \
+            '    @pithead_basic header_regexp Authorization (?i)^basic\s' \
+            '    @pithead_session not header_regexp Authorization (?i)^basic\s' \
             "$auth" \
             '    request_header @pithead_basic X-Auth-User {http.auth.user.id}' \
             '    forward_auth @pithead_session 127.0.0.1:8000 {' \

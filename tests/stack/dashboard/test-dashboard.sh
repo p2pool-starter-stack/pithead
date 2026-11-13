@@ -89,6 +89,8 @@ assert_contains "login: basic auth still gates scripts and API clients" "$caddy_
 assert_contains "login: the basic-auth actor reaches the dashboard" "$caddy_on" "request_header @pithead_basic X-Auth-User {http.auth.user.id}"
 assert_contains "login: client-supplied actor header is stripped first" "$caddy_on" "request_header -X-Auth-User"
 assert_contains "login: the sign-in endpoints skip the gate" "$caddy_on" "@pithead_public path /login /api/auth/login /api/auth/logout"
+assert_contains "login: basic auth is matched case-insensitively (RFC 7617)" "$caddy_on" "@pithead_basic header_regexp Authorization (?i)^basic\\s"
+assert_contains "login: the sign-in route sets the client address itself" "$caddy_on" "header_up X-Forwarded-For {http.request.remote.host}"
 assert_contains "login: a loopback-only verifier site exists" "$caddy_on" "http://127.0.0.1:8001 {"
 assert_not_contains "login: the actor is no longer overwritten by the proxy" "$caddy_on" "header_up X-Auth-User"
 epoch_on="$(printf '%s\n' "$caddy_on" | sed -n 's/.*header_up X-Pithead-Auth-Epoch "\([0-9a-f]*\)".*/\1/p' | sort -u)"

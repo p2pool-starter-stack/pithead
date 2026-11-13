@@ -8,6 +8,10 @@ test("a same-site path is kept, with its query", () => {
   assert.equal(safeNext("?next=/config?a%3D1"), "/config?a=1");
 });
 
+test("a relative word stays on the site", () => {
+  assert.equal(safeNext("?next=evil"), "/evil");
+});
+
 test("no next goes to the dashboard", () => {
   assert.equal(safeNext(""), "/");
   assert.equal(safeNext("?next="), "/");
@@ -19,7 +23,10 @@ test("an off-site or scheme-relative target is refused", () => {
     "//evil.example/",
     "/\\evil.example",
     "javascript:alert(1)",
-    "evil",
+    "/\t/evil.example",
+    "/\n/evil.example",
+    "/\r/evil.example",
+    "\t//evil.example",
   ]) {
     assert.equal(safeNext(`?next=${encodeURIComponent(next)}`), "/", next);
   }
