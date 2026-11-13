@@ -154,7 +154,7 @@ def test_reply_for_earnings_rolls_up_stored_payouts(monkeypatch):
         "tari": [{"ts": yday, "amount_atomic": 2_000_000}],  # 2 XTM
     }
     bot = _bot(monkeypatch, latest_data={"network": {"reward": 600_000_000_000}}, p2pool_1h=8000.0)
-    bot.data_service.state_manager.get_payouts = stored.get
+    bot.data_service.state_manager.get_payouts = lambda chain, wallet_id: stored.get(chain)
     reply = bot.reply_for("/earnings")
     assert "Confirmed XMR: yesterday 1.0000 XMR" in reply  # piconero divisor
     assert "Confirmed XTM: yesterday 2.0000 XTM" in reply  # microTari divisor
@@ -166,7 +166,7 @@ def test_reply_for_earnings_skips_the_chain_whose_wallet_is_off(monkeypatch):
     monkeypatch.setattr(tc.config, "TARI_PAYOUT_CONFIRM_ENABLED", False)
     asked = []
 
-    def _payouts(chain):
+    def _payouts(chain, wallet_id):
         asked.append(chain)
         return []
 

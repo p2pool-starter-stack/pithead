@@ -129,11 +129,11 @@ assert_eq "matrix still requests the rigforge-control WRITE phase" \
     "$(has_phase "$MATRIX" --rigforge-control)" "yes"
 assert_eq "matrix launches EXACTLY its documented phases, and nothing else" \
     "$(phase_set "$MATRIX")" \
-    "--auth-fail-closed --fault-injection --hardening --lifecycle --rig-control-port --rig-host --rig-name --rigforge --rigforge-control --safety-backup --subnet 8082 rig1 rig1 "
+    "--auth-fail-closed --fault-injection --hardening --lifecycle --reset-dashboard --rig-control-port --rig-host --rig-name --rigforge --rigforge-control --safety-backup --subnet 8082 rig1 rig1 "
 FOCUSED_MATRIX="$(compose_phases matrix 1 s3cr3t-tok3n local-pruned-main-secure-tari v1.17.2)"
 assert_eq "matrix accepts one scenario and explicit bootstrap target without dropping its phases" \
     "$(phase_set "$FOCUSED_MATRIX")" \
-    "--auth-fail-closed --fault-injection --hardening --lifecycle --rig-control-port --rig-host --rig-name --rigforge --rigforge-bootstrap-version --rigforge-control --safety-backup --scenario --subnet 8082 local-pruned-main-secure-tari rig1 rig1 v1.17.2 "
+    "--auth-fail-closed --fault-injection --hardening --lifecycle --reset-dashboard --rig-control-port --rig-host --rig-name --rigforge --rigforge-bootstrap-version --rigforge-control --safety-backup --scenario --subnet 8082 local-pruned-main-secure-tari rig1 rig1 v1.17.2 "
 
 echo "== --mode check stays non-destructive (pure reads) =="
 CHECK="$(compose_phases check 1)"
@@ -449,7 +449,7 @@ drive_recovery() { # <pools-json> <n-backups> -> $OUT (the warn lines), $CFGDIR 
         # SC2034/SC2329: the config vars and the stubs are read and called by the eval'd block,
         # which shellcheck cannot follow into.
         # shellcheck disable=SC2034,SC2329
-        MINER_HOST=rig1 BENCH_HOST=bench.example MINER_XMRIG_CONFIG="$CFGDIR/config.json"
+        MINER_HOST=rig1 BENCH_HOST=bench.example MINER_XMRIG_CONFIG="$CFGDIR/config.json" MINER_E2E_BACKUP_DIR="$CFGDIR/e2e-backups"
         on_miner() { eval "$1"; }
         warn() { echo "WARN $*"; }
         die() { echo "DIE $*" && exit 1; }

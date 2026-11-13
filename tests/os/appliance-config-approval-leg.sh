@@ -370,6 +370,8 @@ _approval_self_test() {
     }
     printf 'appliance-config-approval-leg self-test passed\n'
 }
+# shellcheck source=tests/os/preview-endpoint.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/preview-endpoint.sh"
 # shellcheck source=tests/os/appliance-node-runtime-leg.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-node-runtime-leg.sh"
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = --self-test ]; then

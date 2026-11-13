@@ -16,6 +16,10 @@ const POLL_MAX = 40; // ~80s — the host dials the rig then polls its /status
 // new version, so polling longer here buys nothing.
 const UPGRADE_POLL_MAX = 150;
 
+export const REPORT_WAIT_STATUSES = ["applied", "accepted"];
+export const REPORT_POLL_MS = 3000;
+export const REPORT_WAIT_ATTEMPTS = 30;
+
 // Poll the shared control-result endpoint until a terminal outcome lands, skipping the interim
 // "running". The apply can briefly out-run the dashboard, so tolerate a transient fetch failure.
 export async function pollWorkerResult(id, max = POLL_MAX) {
@@ -46,6 +50,15 @@ export function StatusLine({ result }) {
     </p>`;
 }
 
+export function ReportWait({ version, timedOut }) {
+  if (!version) return null;
+  return html`<p class="text-muted text-small" role="status" aria-live="polite">${
+    timedOut
+      ? `The rig has not reported ${version} yet — it may still be rebuilding. Reload this panel once it has.`
+      : `Waiting for the rig to report ${version}…`
+  }</p>`;
+}
+
 export class RigUpgrade extends Component {
   constructor(props) {
     super(props);
@@ -69,7 +82,7 @@ export class RigUpgrade extends Component {
       let out = await res.json();
       if (res.status === 202 && out.id) out = await pollWorkerResult(out.id, UPGRADE_POLL_MAX);
       this.setState({ upgBusy: false, upgResult: out });
-      this.props.onDone(); // an applied upgrade clears the badge once the rig reports the new version
+      this.props.onDone(out);
     } catch (e) {
       this.setState({ upgBusy: false, upgResult: { status: "error", error: String(e) } });
     }

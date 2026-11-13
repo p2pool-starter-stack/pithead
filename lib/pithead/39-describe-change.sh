@@ -125,16 +125,7 @@ describe_change() {
             msg="Stratum access-password DISABLED — any rig that can reach :3333 may mine again."
         elif [ -z "$old" ]; then
             flag=DEST
-            # The DIY hint points at .env / 'status' to recover an auto-generated password; the
-            # appliance has neither a shell nor a dashboard surface that reveals a secret value
-            # (#33's own trust boundary — masked config never round-trips a secret to the
-            # container), so there is no remedy to name here. Drop the instruction rather than
-            # invent one (#1139).
-            if is_appliance; then
-                msg="Stratum access-password ENABLED — rigs must now send the matching 'pass' or they're rejected; the xmrig-proxy container is recreated."
-            else
-                msg="Stratum access-password ENABLED — rigs must now send the matching 'pass' (find it in .env / './pithead status') or they're rejected; the xmrig-proxy container is recreated."
-            fi
+            msg="Stratum access-password ENABLED — rigs must now send the matching 'pass' (find it in the dashboard's Connect a miner panel) or they're rejected; the xmrig-proxy container is recreated."
         else
             flag=DEST
             msg="Stratum access-password CHANGED — update every rig's 'pass' to match or they're rejected; the xmrig-proxy container is recreated."

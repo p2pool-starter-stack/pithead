@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+source "${BASH_SOURCE[0]%/*}/onion-baseline-diagnostics.sh" || return $?
 # Read the live Tor mapping and dial each local target from Tor's network namespace.
 assert_onion_targets() { # <monero mode> <pool name>
     local mode="$1" pool="$2"
@@ -44,13 +45,23 @@ assert_onion_targets() { # <monero mode> <pool name>
     fi
 }
 
-# Probe from outside the stack so a pass proves the real inbound path; exits follow tor-client/probe.sh, 3 on error.
 _onion_reachable_external() {
-    local onion="${1:-}" saved_env="${2:-}" out rc snippet
+    local onion="${1:-}" saved_env="${2:-}" out rc snippet verdict
+    # shellcheck disable=SC2034
+    ONION_PROBE_STARTED="$(now_s)"
     [ -n "$onion" ] || onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
-    [ -n "$onion" ] && [ "$onion" != "placeholder" ] || return 2
-    printf '%s\n' "$onion" | grep -Eq '^[a-z2-7]{56}\.onion$' || return 3
-    rx "docker build -q -t pithead-tor-client-test tests/integration/tor-client/ >/dev/null 2>&1" || return 3
+    if [ -z "$onion" ] || [ "$onion" = "placeholder" ]; then
+        onion_probe_note input "" ""
+        return 2
+    fi
+    if ! printf '%s\n' "$onion" | grep -Eq '^[a-z2-7]{56}\.onion$'; then
+        onion_probe_note input "" ""
+        return 3
+    fi
+    if ! rx "docker build -q -t pithead-tor-client-test tests/integration/tor-client/ >/dev/null 2>&1"; then
+        onion_probe_note build "" ""
+        return 3
+    fi
     if [ -n "$saved_env" ]; then
         snippet="priv=\$(sudo -n awk -F= '\$1 == \"DASHBOARD_ONION_CLIENT_PRIVKEY\" { print substr(\$0, index(\$0, \"=\") + 1) }' $(quote_arg "$saved_env"));"
         snippet="$snippet [ -n \"\$priv\" ] || exit 4; line=$(quote_arg "${onion%.onion}:descriptor:x25519:")\$priv;"
@@ -64,10 +75,14 @@ _onion_reachable_external() {
     else
         rc=$?
     fi
-    case "$rc:$out" in
-    0:*PROBE-OK:*) return 0 ;;
-    1:*PROBE-FAIL:*"HTTP 000"*) return 1 ;;
-    2:*PROBE-FAIL:*) return 2 ;;
+    verdict="$(onion_probe_classify "$rc" "$out")"
+    # shellcheck disable=SC2086
+    set -- $verdict
+    onion_probe_note "$1" "$rc" "${2:-}"
+    case "$1" in
+    ok) return 0 ;;
+    http-reachability) return 1 ;;
+    client-bootstrap) return 2 ;;
     *) return 3 ;;
     esac
 }
