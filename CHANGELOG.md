@@ -11,6 +11,16 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- Tor's `MaxClientCircuitsPending` is raised to 64 and `monero.out_peers` now defaults to 24 (was 48),
+  so monerod, Tari and P2Pool onion dials no longer sit at Tor's pending-circuit ceiling right after
+  boot. A `config.json` without `monero.out_peers` re-renders at 24 on the next apply; an explicit value
+  is kept (#4078).
+- On the appliance, the dashboard's own schema migrations no longer run before the booted A/B slot
+  commits. `pithead-boot` defers them while the slot is uncommitted, so an update that falls back
+  leaves the previous release on the schema it understands, still recording payouts (#3998).
+
 ## [2.0.3] - 2026-11-10
 
 Pithead 2.0.3 is a patch release after 2.0.2. It bakes RigForge 1.18.1 into the appliance image,

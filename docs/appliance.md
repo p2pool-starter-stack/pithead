@@ -547,7 +547,7 @@ boots:
   rig comes back with the same role, the same `rig.json` and the same access token,
   starts mining again, and a coordinator that had adopted the rig keeps reading it
   with no adopting to redo. No leg has run that pass on an adopted coordinated rig
-  yet: manual QA row M13 is the proof still owed (#3961).
+  yet: manual QA row M13 is the proof still owed (#3995).
 - **Running from its USB stick:** re-flash the stick with the newer image. Re-flashing
   replaces the whole stick, data included, so the rig comes back with a fresh setup
   and a new token, and the coordinator adopts it again. Delivering image updates to
@@ -586,7 +586,11 @@ rig mining at a pool as a worker, or a Pithead coordinator. Two choices:
 
 - **Keep it** closes the page and starts the machine exactly as it was. Nothing changes,
   and the same holds for a page you never touch or a machine switched off part way: the
-  saved settings are replaced only when you accept new ones.
+  saved settings are replaced only when you accept new ones, and the machine comes back to
+  the release it was already running. The exception is an update from the dashboard that
+  has not finished committing: switching off with the page open falls back to the previous
+  release, exactly as it would have with the page never opened. An update installed with
+  `pithead os-update` leaves no such record, so opening the page on its first boot commits it.
 - **Set up again** opens the form filled in with the saved answers and the secrets left
   out: a stratum password, and for a coordinator the dashboard login and node credentials,
   are typed again. Accept the form and the machine provisions itself with the new answers.

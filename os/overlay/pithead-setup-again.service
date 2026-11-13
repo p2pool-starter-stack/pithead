@@ -6,14 +6,6 @@ Description=Pithead setup wizard beside the saved role (the boot menu's "Set up 
 # PROVISIONED machine, the same two triggering shapes pithead-boot.service keys on: before a role
 # exists pithead-firstboot owns the boot whatever the cmdline says, so the two units are
 # mutually exclusive by construction rather than by ordering.
-#
-# Before pithead-boot: the role's normal boot — the stack, or a rig's miner — waits behind the
-# page. "Keep it" ends this unit with nothing on /data touched, and pithead-boot then runs the
-# boot the machine would have taken from the default entry. A new role accepted on the page is
-# provisioned by the wizard exactly as on a first boot; pithead-boot's pass after it is the same
-# idempotent every-boot pass it always is. The booted slot is not committed while the page is
-# open, so a freshly updated slot that is never confirmed here falls back exactly as one that
-# never served would — that is the A/B promise, not a gap.
 ConditionKernelCommandLine=pithead.setup=1
 ConditionPathExists=|/data/pithead/config.json
 ConditionPathExists=|/data/pithead/machine-role

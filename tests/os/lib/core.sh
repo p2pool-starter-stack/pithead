@@ -18,12 +18,8 @@ it_err() { printf '  \033[1;31m!\033[0m %s\n' "$1" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 KEY="$HOME/.ssh/pithead-os-test"
 ip=""
-# Overwritten by every _ssh call with that call's stderr (empty on success). Not a log — just the
-# LAST attempt's error text, so a caller that just gave up can classify why without another round
-# trip. See _ssh_unreachable_reason.
 SSH_ERR="/tmp/pithead-os-ssh.err"
-# A fresh run must not inherit the last run's preserved console: the cleanup copy below is
-# no-clobber (the at-assertion copy is the authoritative one), so clear the slate here.
+HOST_SCRATCH="${TMPDIR:-/tmp}/pithead-os-scratch.$$"
 rm -f "$SERIAL.failed"
 # The wallet every phase submits. It must be checksum-VALID: p2pool refuses a well-formed but
 # checksum-invalid address at startup with a SIGABRT and crash-loops (#829), which killed the
@@ -358,6 +354,7 @@ cleanup() {
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi
+    rm -rf -- "$HOST_SCRATCH" || approval_cleanup_rc=1
     case "${IMAGE_UPGRADE_HOST_STAGE:-}" in
     /tmp/pithead-os-image-upgrade.*) rm -rf -- "$IMAGE_UPGRADE_HOST_STAGE" || approval_cleanup_rc=1 ;;
     esac

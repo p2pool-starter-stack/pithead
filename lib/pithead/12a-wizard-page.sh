@@ -20,5 +20,6 @@ wizard_start_page() {
         error "Could not start the wizard container ($engine, $image). Pre-seed config.json or run '$0 firstboot-wizard --cli'."
     }
     [ "$installer" -eq 1 ] || reset_slot_restore_good "$engine" || warn "Could not restore the reset slot's good state; reboot may fall back."
+    [ "$installer" -eq 1 ] || setup_again_commit_slot "$engine" || warn "Could not commit the set-up-again slot; reboot may fall back."
     wizard_announce_setup "$host_addresses" "$token" "$cert_fp" || error "Could not publish the setup console announcement."
 }

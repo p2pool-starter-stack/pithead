@@ -107,3 +107,60 @@ migration_remote_recovery() {
     sensitive_preview "$(dashboard_config_body "$proposed")" || return 1
     result=$(approval_commit "$APPROVAL_REQUEST_ID") && tari_commit_verdict "$result"
 }
+
+MIGRATION_RELEASE_WAIT_ROUNDS=${MIGRATION_RELEASE_WAIT_ROUNDS:-240}
+MIGRATION_RELEASE_TERMINAL='slot left uncommitted|never became healthy|this is failure|NOT a bad slot|migration marker could not be assigned'
+migration_release_early=0
+migration_release_line=""
+migration_release_rounds=0
+
+# shellcheck disable=SC2034 # migration_release_rounds and migration_release_early are read by the phase leg
+migration_release_wait() {
+    migration_release_early=0
+    migration_release_line=""
+    migration_release_rounds=0
+    local _
+    for _ in $(seq "$MIGRATION_RELEASE_WAIT_ROUNDS"); do
+        migration_release_rounds=$_
+        if SSH_TIMEOUT=20 _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
+            return 0
+        fi
+        migration_release_line=$(SSH_TIMEOUT=20 _ssh "journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -m1 -E '$MIGRATION_RELEASE_TERMINAL' || journalctl -u pithead-boot -b -1 -o cat 2>/dev/null | grep -m1 -E '$MIGRATION_RELEASE_TERMINAL'" | tr -d '[:cntrl:]')
+        if [ -n "$migration_release_line" ]; then
+            return 1
+        fi
+        if SSH_TIMEOUT=20 _ssh "podman ps --format '{{.Names}}' 2>/dev/null | grep -qx monerod" &&
+            ! SSH_TIMEOUT=20 _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'chain services released'"; then
+            migration_release_early=1
+        fi
+        sleep 5
+    done
+    return 1
+}
+
+migration_release_deadline_evidence() {
+    printf '     --- migration release deadline: guest state at the deadline (#3957) ---\n'
+    SSH_TIMEOUT=60 _ssh "echo '-- boot journal, current boot (last 25) --'
+          journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -viE 'password|token|secret' | tail -25
+          echo '-- boot journal, previous boot — the candidate after an automatic fallback (last 25) --'
+          journalctl -u pithead-boot -b -1 -o cat 2>/dev/null | grep -viE 'password|token|secret' | tail -25
+          echo '-- gate progress --'
+          journalctl -u pithead-boot -b -o cat 2>/dev/null | grep -E 'still starting|holding chain services|migration marker claimed' | tail -3
+          echo '-- last doctor verdict --'
+          jq -c '[.checks[]? | select(.status == \"fail\" or .status == \"warn\")] | .[0:4]' /run/pithead-boot-doctor.json 2>/dev/null
+          echo '-- status record (blocking rows) --'
+          grep -E '✗|⚠' /run/pithead-boot-status.log 2>/dev/null | head -8
+          echo '-- slots --'
+          sed -n 's/.*rauc.slot=\([AB]\).*/booted slot=\1/p' /proc/cmdline
+          rauc status --detailed --output-format=shell 2>/dev/null | grep -E '^RAUC_(BOOT_PRIMARY|SLOT)' | head -20
+          grub-editenv /boot/efi/grub/grubenv list 2>/dev/null | grep -E '_OK=|_TRY_COUNT' | head -8
+          echo '-- migration and update state --'
+          echo marker=\$(cat /data/pithead/.os-migration-pending 2>/dev/null)
+          echo boot-failures=\$(cat /data/pithead/.boot-gate-failures 2>/dev/null)
+          cat /data/pithead/data/os-update/in-flight.json 2>/dev/null
+          echo '-- failed units --'
+          systemctl --failed --no-legend 2>/dev/null | head -10
+          echo '-- containers --'
+          podman ps -a --format '{{.Names}} {{.Status}}' 2>/dev/null | head -15" 2>/dev/null |
+        tr -d '\r\033' | sed 's/^/     · /'
+}

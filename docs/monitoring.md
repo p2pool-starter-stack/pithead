@@ -93,6 +93,11 @@ the whole host) and, once the period + grace elapses, Healthchecks.io alerts you
   endpoint only ever sees a Tor exit, not your host IP — it's never a clearnet beacon. This means
   your ping URL must be reachable over Tor (hosted `hc-ping.com` is; a self-hosted instance must be
   public or an onion service — a LAN-only address won't work). See the [Privacy note](#privacy-note).
+  Because the ping needs Tor, a Tor outage stops it and trips the check: the alert is evaluated on
+  Healthchecks.io's servers, so it reaches you even though the stack's own Telegram alerts, which
+  also travel over Tor, cannot leave the box. Healthchecks.io going quiet is the backstop for that
+  outage. For the detail the silence cannot give, open the dashboard over the LAN: it shows
+  **Monero node offline** with the auto-heal state, and needs no Tor.
 - **Fails quietly, rejects loudly.** A ping that can't get out — you're offline, or Tor is
   momentarily down — is logged at debug level only; Healthchecks.io alerts on the missed ping
   regardless, which is the point. A ping the endpoint *answers* with a non-2xx status is different:
@@ -151,9 +156,10 @@ so the endpoint sees a **Tor exit**, not your host's IP, and the DNS lookup goes
 Two things to know:
 
 - **Tor is part of the ping path.** If the Tor container is down while the host is up, the ping
-  can't get out and the check will eventually alert — a *false* "host down". The 5-minute grace
-  absorbs brief Tor blips, and pings retry every cycle, so only a sustained Tor outage trips it.
-  That's usually what you want (Tor down *is* a problem worth knowing about). One such outage is
+  can't get out and the check will eventually alert, reading as "host down" while the host is up.
+  The 5-minute grace absorbs brief Tor blips, and pings retry every cycle, so only a sustained Tor
+  outage trips it. That's usually what you want (Tor down *is* a problem worth knowing about, and
+  it silences the [Telegram alerts](telegram.md#privacy-and-secrets) too). One such outage is
   Tor stuck on a **failing guard** — bootstrapped, mining fine, but clearnet exits dead (#424):
   `./pithead doctor` diagnoses it. `tor.auto_heal: true` tries bounded circuit
   refresh before one possible Tor restart; `./pithead restart tor` is the manual restart. See

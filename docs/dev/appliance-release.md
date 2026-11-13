@@ -214,6 +214,26 @@ ignores the slot-qualified marker). A non-migrating install clears any stale mar
 The `db_schema` field the plan also lists stays out until something reads it — an
 unread manifest field is a claim, not a contract.
 
+**Where the dashboard's own migrations run (#3998).** The `data_migration` hold covers chain
+data only, and every candidate boot can fall back before it commits, migrating or not. So
+`pithead-boot` defers the dashboard's SQLite migrations relative to the commit as well. After
+rendering, it reads the booted slot's good state from `rauc status --output-format=json`;
+until the slot is marked good it writes `.os-schema-held` into the dashboard's data directory.
+While that marker stands the dashboard keeps the `payouts` table in the previous release's
+shape — created that way on a fresh database, with the payout identity rebuild skipped, and
+read and written through that shape — so a fallback into the previous release finds the schema
+it can write and keeps recording payouts. When the health gate passes, `mark-good` runs first;
+the boot then removes the marker and restarts the dashboard, and the deferred migration runs
+there — after the commit, on a slot no fallback can leave. A boot onto a slot that is already
+committed removes a stale marker instead. An unknown slot state (no `rauc.slot` boot
+argument, a failing or unparseable `rauc status`, no `jq`) defers, a marker that cannot be written
+fails the boot with the slot left uncommitted, and a restart that faults after commit logs a `FAULT`
+line without uncommitting the slot. This deferral needs no bundle
+declaration: it arms on every uncommitted appliance boot. It currently holds one migration,
+the 2.0.3 payout identity rebuild; a release that ships a different schema change an earlier
+release cannot read safely must add it to the same hold in `storage_schema.py` — additive
+changes alone may stay outside it.
+
 ## Development loop
 
 Everything runs from the repo root on a Linux box with docker, KVM and libvirt. The
@@ -294,8 +314,9 @@ a new one:
 ```sh
 PITHEAD_RAUC_CERT=<build>/os/rauc/certs/cert.pem \
 PITHEAD_RAUC_KEY=<build>/os/rauc/certs/key.pem \
-PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0 \
-  os/rauc/mkbundle.sh          # no --dev: naming the key IS the signal, so declare the migration fields
+PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION= \
+  os/rauc/mkbundle.sh   # no --dev: naming the key IS the signal, so declare the migration fields —
+                        # this bundle does not migrate; a migrating one declares true and X.Y.Z
 ```
 
 Confirm before copying anything, by comparing fingerprints — the target's trusted chain is at
@@ -471,9 +492,8 @@ internal disk and answers RigForge without installing, and asserts the rig mines
 no containers, volatile journald, an unaided reboot returns it mining, and the blank disk stays
 untouched; it does not touch the bootloader "Set up again" path (#1318), which stays whatever
 reaches the wizard again from a stick-run rig needs by hand. No bench release e2e scenario for the
-rig role exists yet. Converting M11–M13, and naming a bench e2e for what KVM cannot prove, is
-tracked as #1886's first gap; the numbering here stays stable so old release records still point
-at the same steps once that lands.
+rig role exists yet. Converting what is left of M11–M13 is tracked as #3994 and #3995; the
+numbering here stays stable so old release records still point at the same steps once those land.
 
 **M15 — backup and restore end to end.** On a provisioned machine, record the payout wallet,
 the dashboard's onion address, and the current time. From **Backup**, create a backup and save
@@ -544,11 +564,11 @@ channels share the final cut commit, one version and one GitHub Release.
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
-   submit the four bench-ci `tier4-kvm` jobs on this exact SHA from
+   submit the seven bench-ci `tier4-kvm` jobs on this exact SHA from
    [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not):
-   the boot and rig groups, the provision job against the seeded baseline and the crossupdate job
-   from the previous release. Record every job ID in the release issue. Follow the same section for
-   wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel any KVM
+   the boot group, the rig group as its four splits, the provision job against the seeded baseline
+   and the crossupdate job from the previous release. Record every job ID in the release issue.
+   Follow the same section for wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel any KVM
    job. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
@@ -573,8 +593,9 @@ channels share the final cut commit, one version and one GitHub Release.
    export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem
    export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem
    export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
-   # declare the data-migration contract above, migrating or not (2.0.0: true and 2.0.0)
-   export PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0
+   # declare the data-migration contract above for this release, migrating or not
+   # migrating:     export PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=X.Y.Z
+   # not migrating: export PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION=
    sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
    ```
 
