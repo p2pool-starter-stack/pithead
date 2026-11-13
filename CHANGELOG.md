@@ -18,6 +18,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - The appliance update channel is read as untrusted data: https-only fetches to the release hosts
   over Tor with remote DNS, response size caps, release-tag validation before any URL or path, and
   stale or replayed channel reporting in Check for updates (#4011).
+- Rigs take OS updates themselves: `pithead rig-update check` reads the release channel through the
+  image's on-demand Tor client, and `pithead rig-update install` downloads the signed bundle over Tor,
+  verifies it against the baked keyring with every shared refusal, writes the spare slot and reboots;
+  the intent lands in `rig-update.json` on `/data` and the boot settles the verdict — self-commit and
+  `updated`, or fallback with the failed slot marked bad and a `rolled_back` record (#4013).
 
 ### Fixed
 
