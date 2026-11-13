@@ -26,6 +26,7 @@ from mining_dashboard.helper.utils import (
     format_hashrate,
     format_time_abs,
 )
+from mining_dashboard.service.health.node_alert import build_node_alert
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
@@ -388,6 +389,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,
+        "node_alert": build_node_alert(data),
         "chart": build_chart(
             history,
             data.get("shares", []),
