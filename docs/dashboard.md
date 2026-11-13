@@ -132,6 +132,13 @@ reply. An `XMR Pruned` / `XMR Full` badge sits with the other badges beside the 
 the bundled node's blockchain mode. It appears for a local node only — with `monero.mode: remote`
 the pruning state is unknown, so neither badge is shown.
 
+A red `Mining paused here: <reason>` badge leads the badges whenever this Pithead is not serving
+work. The reason is the first that holds of: `stratum closed`, `node out of sync` (the local
+Monero health verdict is red), `node syncing`, and `P2Pool isolated` (P2Pool is running with no
+peers). When rigs have moved to a backup pool the line ends with `, N rigs on backup pool`, counted
+from the workers whose mining verdict is `on_backup`; the clause is omitted at zero. The line
+clears on the next poll once the condition ends.
+
 When the dashboard host is a name (not already an IP), the machine's IP shows beside it as
 `hostname @ ip` (e.g. `pithead.local @ 192.168.1.42`), a way back in when the hostname doesn't
 resolve from a phone or another LAN machine.
