@@ -254,10 +254,8 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     )
     metrics = build_metrics(data, state_mgr, history)
     db_healthy = state_mgr.is_db_healthy()
-
     mode_tok, p2p_tok, xvb_tok = _mode_palette(metrics.mode)
     pool_net = build_pool_network(data, metrics)
-
     # Built once, consumed twice: the Earnings card reads the full payload, the expected-vs-actual
     # summary (#808) rolls the same figures up — one build, so the two can't disagree.
     earnings = build_earnings(
