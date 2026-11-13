@@ -323,12 +323,14 @@
     "reward": "0.0000 XMR",
     "ts": "Never"
   },
+  "node_alert": null,
   "os_update": null,
   "page_title": "Pithead Dashboard",
   "payouts": {
     "monero": [],
     "tari": []
   },
+  "ping_failures": [],
   "pool": {
     "blocks": 0,
     "diff": "0.00 M",

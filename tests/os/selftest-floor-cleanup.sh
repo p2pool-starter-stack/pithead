@@ -60,6 +60,8 @@ tar -c -C "$T/tree" .
 EOF
 chmod +x "$T/bin/docker" "$T/bin/git" "$T/tree/os/build-image.sh" "$T/tree/os/rauc/mkbundle.sh"
 
+HOST_SCRATCH="$T/scratch"
+
 resolve_signing_material() {
     : >"$T/fake.crt"
     : >"$T/fake.key"

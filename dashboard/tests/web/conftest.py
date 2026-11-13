@@ -136,6 +136,7 @@ def _state_mgr():
         sm.get_blocks.return_value = blocks or []
         sm.get_disk_growth.return_value = disk_growth or []
         sm.get_xvb_history.return_value = xvb_history or []
+        sm.get_ping_failures.return_value = []
         return sm
 
     return _state_mgr

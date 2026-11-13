@@ -44,8 +44,9 @@ _build_bundle_stamped() {
     cert="$(cd "$(dirname "$RAUC_CERT")" && pwd -P)/$(basename "$RAUC_CERT")" || return 1
     key="$(cd "$(dirname "$RAUC_KEY")" && pwd -P)/$(basename "$RAUC_KEY")" || return 1
     keyring="$(cd "$(dirname "$RAUC_KEYRING")" && pwd -P)/$(basename "$RAUC_KEYRING")" || return 1
-    wt=$(mktemp -d /tmp/pithead-floor-fallback.XXXXXX) || return 1
-    out="$FLOOR_LEG_TMP/os-floor-fallback-$marker.raucb"
+    mkdir -p "$HOST_SCRATCH" || return 1
+    wt=$(mktemp -d "$HOST_SCRATCH/floor-fallback.XXXXXX") || return 1
+    out="${FLOOR_LEG_TMP:-$HOST_SCRATCH}/os-floor-fallback-$marker.raucb"
     {
         git archive HEAD | tar -x -C "$wt" &&
             printf '%s\n' "$version" >"$wt/VERSION" &&
@@ -59,7 +60,7 @@ _build_bundle_stamped() {
                         os/rauc/mkbundle.sh --dev
             ) &&
             cp "$wt/os/rauc/build/update.raucb" "$out"
-    } >>"$FLOOR_LEG_TMP/build.log" 2>&1
+    } >>"${FLOOR_LEG_TMP:-$HOST_SCRATCH}/build.log" 2>&1
     local rc=$?
     rm -rf "$wt"
     docker rmi "pithead-os-rootfs-$marker" >/dev/null 2>&1 || true
@@ -271,8 +272,12 @@ _floor_fallback_leg_body() {
 }
 
 phase_provision_floor_fallback_leg() {
-    local rc=0
-    FLOOR_LEG_TMP=$(mktemp -d /tmp/pithead-floor-fallback-leg.XXXXXX) || {
+    local rc=0 scratch="${HOST_SCRATCH:-${TMPDIR:-/tmp}}"
+    mkdir -p "$scratch" || {
+        bad "could not create the floor-fallback leg's scratch directory"
+        return 1
+    }
+    FLOOR_LEG_TMP=$(mktemp -d "$scratch/pithead-floor-fallback-leg.XXXXXX") || {
         bad "could not create a temporary directory for the floor-fallback leg"
         return 1
     }
