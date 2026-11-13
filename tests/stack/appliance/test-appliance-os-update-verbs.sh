@@ -95,7 +95,7 @@ url="${*: -1}"
 out=""
 prev=""
 for a in "$@"; do
-    [ "$prev" = "-o" ] && out="$a"
+    [ "$prev" = "-o" ] && out="$a"; [ "$prev" = "-w" ] && wfmt="$a"
     prev="$a"
 done
 case "$url" in
@@ -106,14 +106,14 @@ case "$url" in
     cat "${CURL_API_RESPONSE:?}"
     printf '\n%s' "${GH_STUB_CODE:-200}"
     ;;
-*releases/download/*)
+*releases/download/*) [ "$wfmt" = "%{http_code}" ] && { printf '200'; exit 0; }
     if [ "${CURL_RC:-0}" = "28" ]; then
         head -c "${CURL_PARTIAL_BYTES:-300}" "${CURL_BUNDLE:?}" >"$out"
         exit 28
     fi
     have=0
     [ -f "$out" ] && have=$(wc -c <"$out" | tr -d ' ')
-    tail -c "+$((have + 1))" "${CURL_BUNDLE:?}" >>"$out"
+    tail -c "+$((have + 1))" "${CURL_BUNDLE:?}" >>"$out"; printf '\n200'
     ;;
 *) exit 22 ;;
 esac
