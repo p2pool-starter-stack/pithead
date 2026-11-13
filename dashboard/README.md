@@ -66,7 +66,8 @@ mining_dashboard/
 ├── web/               # server.py (transport: / shell + /api/state + middleware),
 │                      #   views.py (build_state: the JSON state object), charts.py (the chart
 │                      #   window/range hub views.py re-exports), xvb_views.py (XvB, earnings
-│                      #   and top-bar badges), infra_views.py (host, rig, energy, proxy,
+│                      #   and top-bar badges), paused_badge.py (the "Mining paused here" line),
+│                      #   infra_views.py (host, rig, energy, proxy,
 │                      #   Tari and sync sections), series_views.py (share health, blocks,
 │                      #   payouts, disk growth, XvB history, hashrate and cadence),
 │                      #   templates/index.html (static shell),
