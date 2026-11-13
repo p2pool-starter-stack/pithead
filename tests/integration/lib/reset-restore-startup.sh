@@ -31,7 +31,7 @@ rr_startup_ports_free() {
 rr_startup_restore_body() {
     local boot_before
     boot_before=$(rx 'cat /proc/sys/kernel/random/boot_id') || return 1
-    rx "printf 'config-reset\n' | $IT_PITHEAD config-reset" 2>&1 |
+    lifecycle_mining_step config-reset rx "$IT_PITHEAD config-reset -y" 2>&1 |
         redact >"$OUT_DIR/startup-restore.reset.log" || true
     if ! reset_restore_wait_reboot "$boot_before" 300; then
         it_fail "startup restore returns from config-reset" "new boot unavailable after 300s"
@@ -50,7 +50,7 @@ systemctl start --no-block pithead-firstboot.service' ||
         return 1
     fi
     it_pass "CLI restore starts between the wizard entry check and round opening"
-    if ! rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$1")" 2>&1 |
+    if ! lifecycle_mining_step restore rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$1")" 2>&1 |
         redact >"$OUT_DIR/startup-restore.restore.log" || ! rx 'test -s config.json && touch .wizard-startup-release'; then
         it_fail "CLI restore lands configuration before the wizard round opens" "restore failed"
         return 1

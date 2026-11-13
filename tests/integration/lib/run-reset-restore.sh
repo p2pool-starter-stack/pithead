@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 source "${BASH_SOURCE[0]%/*}/reset-restore-startup.sh"
+# shellcheck source=tests/integration/lib/reset-restore-miner.sh
+source "$(dirname "${BASH_SOURCE[0]}")/reset-restore-miner.sh" || exit $?
 
 run_restore_dashboard_probe() {
     local before_config before_secrets before_tari after_config after_secrets after_tari probe_rc=0
@@ -114,14 +116,18 @@ run_reset_restore() {
 run_reset_restore_fixture() {
     RESET_RESTORE_STACK_INTACT=0
     local before_config before_secrets archive out rc after_config after_secrets
-    local failures_before="$IT_FAIL"
+    local failures_before="$IT_FAIL" RR_MINER_NAMES='[]' RR_MINER_ENABLED=0 RR_MINER_LOCAL='' RR_MINER_BASELINE='[]'
+    rr_miner_prepare || {
+        it_fail "reset recovery captures online local miner and worker set" "enabled local miner or proxy worker census unavailable"
+        return 1
+    }
     it_step "encrypted backup → config-reset → restore without rendered configuration…"
     post_op_begin
     before_config=$(rx 'sha256sum config.json') && before_secrets=$(upgrade_secret_fingerprints) || {
         it_fail "reset recovery captures configuration and secrets" "snapshot unreadable"
         return 1
     }
-    if ! rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD backup -y" 2>&1 |
+    if ! lifecycle_mining_step backup rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD backup -y" 2>&1 |
         redact >"$OUT_DIR/reset-restore.backup.log"; then
         it_fail "reset recovery creates encrypted backup" "backup failed; see reset-restore.backup.log"
         return 1
@@ -177,7 +183,7 @@ run_reset_restore_fixture() {
         it_fail "boot id is readable before config-reset" "the reboot wait needs a baseline"
         return 1
     fi
-    rx "printf 'config-reset\\n' | $IT_PITHEAD config-reset" 2>&1 |
+    lifecycle_mining_step config-reset rx "$IT_PITHEAD config-reset -y" 2>&1 |
         redact >"$OUT_DIR/reset-restore.reset.log"
     if grep -q 'Rebooting into first-boot' "$OUT_DIR/reset-restore.reset.log" && ! reset_restore_wait_reboot "$boot_before" 300; then
         it_fail "guest returns after the config-reset reboot" "no new boot reached the target within 300s"
@@ -230,12 +236,18 @@ run_reset_restore_fixture() {
         printf '%s\n' "$out" | redact >"$OUT_DIR/reset-restore.prompt.log"
         return 1
     fi
-    if ! rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$archive")" 2>&1 |
-        redact >"$OUT_DIR/reset-restore.restore.log" || ! pithead up 2>&1 |
-        redact >"$OUT_DIR/reset-restore.up.log"; then
+    if ! lifecycle_mining_step restore rx "PITHEAD_BACKUP_PASSPHRASE='reset recovery fixture' $IT_PITHEAD restore -y $(quote_arg "$archive")" 2>&1 |
+        redact >"$OUT_DIR/reset-restore.restore.log"; then
+        it_fail "encrypted restore after config-reset starts the stack" "restore failed; see reset-restore logs"
+        return 1
+    fi
+    rr_miner_state before-up || return 1
+    if ! pithead up 2>&1 | redact >"$OUT_DIR/reset-restore.up.log"; then
+        rr_miner_state failed-up || true
         it_fail "encrypted restore after config-reset starts the stack" "restore or up failed; see reset-restore logs"
         return 1
     fi
+    rr_miner_recovered || return 1
     rr_web_ports_owned_by_dashboard "reset recovery" || return 1
     if wait_status_ok 600; then
         it_pass "stack healthy after encrypted restore following config-reset"
@@ -257,6 +269,7 @@ run_reset_restore_fixture() {
         it_fail "reset recovery removes its encrypted fixture archive" "cleanup failed"
         return 1
     }
+    lifecycle_mining_flush
     [ "$IT_FAIL" -le "$failures_before" ]
 }
 

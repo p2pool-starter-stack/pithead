@@ -229,6 +229,10 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
         _wu_reject "malformed or missing 'version' in the upgrade request."
         return 0
     fi
+    if [ "$(jq -r '.appliance // false' "$file")" = "true" ]; then
+        _wu_reject "worker '$worker' is an appliance rig — it updates with its Pithead OS image, not with a RigForge upgrade."
+        return 0
+    fi
     if [ "${CONTROL_WU_BUDGET:-0}" -le 0 ]; then
         _wu_reject "another worker upgrade is already in this cycle — retry in a moment."
         return 0

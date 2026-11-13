@@ -56,7 +56,7 @@ def installer(spool):
 
 @pytest.fixture
 async def client(spool):
-    c = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None, restore_enabled=True)))
+    c = TestClient(TestServer(wizard.make_app(restore_enabled=True)))
     await c.start_server()
     yield c
     await c.close()

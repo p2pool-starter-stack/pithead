@@ -11,6 +11,7 @@ cp "$(dirname "$script")/VERSION" VERSION
 source "$script"
 hostname() { printf legacy-machine; }
 nproc() { printf 8; }
+host_memtotal_kb() { printf 67108864; }
 chown() { return 0; }
 detect_host_timezone() { printf UTC; }
 MONERO_ONION=monero.onion TARI_ONION=tari.onion P2POOL_ONION=p2pool.onion

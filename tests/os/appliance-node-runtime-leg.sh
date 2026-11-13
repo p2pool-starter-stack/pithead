@@ -209,8 +209,8 @@ _reserved_node_regressions() {
     status=$(printf '%s' "$preview" | jq -r '.status // "unreadable"')
     destructive=$(printf '%s' "$preview" | jq -r '.destructive // false')
     approval_required=$(printf '%s' "$preview" | jq -r '.approval_required // false')
-    mh_shown=$(printf '%s' "$preview" | jq -e --arg mh "$mh" 'any(.preview_values[]?; .key == "monero.remote.host" and .new == $mh)' >/dev/null 2>&1 && echo true || echo false)
-    th_shown=$(printf '%s' "$preview" | jq -e --arg th "$th" 'any(.preview_values[]?; .key == "tari.remote.host" and .new == $th)' >/dev/null 2>&1 && echo true || echo false)
+    mh_shown=$(endpoint_shown "$preview" "$live" monero "$mh" && echo true || echo false)
+    th_shown=$(endpoint_shown "$preview" "$live" tari "$th" && echo true || echo false)
     login_warned=true
     if [ -n "$mu" ] && ! printf '%s' "$preview" | jq -e 'any(.changes[]?; .key == "MONERO_NODE_USERNAME" and .flag == "CONFIRM")' >/dev/null 2>&1; then
         login_warned=false
@@ -257,9 +257,7 @@ _reserved_node_regressions() {
         bad "reserved-node audit did not bind the current request and applied status, or carried an approver"
         node_ok=0
     }
-    if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
-        any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
-        any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
+    if ! endpoint_shown "$preview" "$live" monero "$mh" || ! endpoint_shown "$preview" "$live" tari "$th"; then
         bad "reserved-node preview omitted an endpoint the operator must see before confirming ($(reserved_node_preview_payload "$preview"))"
         node_ok=0
     fi

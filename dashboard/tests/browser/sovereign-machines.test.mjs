@@ -102,3 +102,43 @@ for (const theme of ["light", "dark"]) {
     await expect(main.getByText("10 of 101 rigs match.")).toBeVisible();
   });
 }
+
+test("a destination link opens that rig's inspector and an unknown name lists normally", async ({
+  page,
+  ui,
+}) => {
+  ui.state.control_enabled = true;
+  ui.state.os_update = null;
+  ui.state.workers = [
+    { name: "rig-a", status: "online", h60: 1000, adopted: true },
+    { name: "rig-b", status: "offline", h60: null },
+  ];
+  ui.responses.set(
+    "/api/worker?name=rig-a&range=24h",
+    json({
+      name: "rig-a",
+      found: true,
+      status: "online",
+      control_enabled: true,
+      editable: true,
+      writable_keys: [],
+      last_applied: {},
+      rig_config: {},
+      rigforge: { version: "1.0.0" },
+      rigforge_update: null,
+      hashrate_history: { hashrate: [{ x: 1735689600000, y: 1370 }], markers: [] },
+    }),
+  );
+  await ui.openPreview("?page=machines&worker=rig-a");
+  const dialog = page.getByRole("dialog", { name: "rig-a" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("RigForge 1.0.0 · latest")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toHaveCount(0);
+  await ui.openPreview("?page=machines&worker=rig-gone");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".rig-row")).toHaveCount(2);
+  await ui.openPreview("?page=overview&worker=rig-a");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+});

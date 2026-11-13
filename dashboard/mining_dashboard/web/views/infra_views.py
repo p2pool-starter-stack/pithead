@@ -123,6 +123,8 @@ def rigforge_update_for(worker, release):
     if not worker or not release:
         return None
     rigforge = worker.get("rigforge") or {}
+    if rigforge.get("appliance"):
+        return None
     if feed_stale(rigforge):
         return None
     version = rigforge.get("version")

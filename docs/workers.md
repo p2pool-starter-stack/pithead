@@ -8,8 +8,10 @@ before sizing the machines. The appliance's [role chooser](appliance.md#what-is-
 sets that arrangement; a worker-only machine holds no chain data or payout wallet configuration.
 
 The endpoint is the `xmrig-proxy` service on port `3333` by default. Every successful coordinator
-`setup`, `up`, and `apply` prints the pool URL and stratum password, or states that no password is
-set. This includes an `apply` with no configuration changes and a host with local mining enabled.
+`setup`, `up`, and `apply` prints the pool URL and says whether stratum authentication is on, or
+states that no password is set. When authentication is on, get the password from the
+dashboard's **Connect a miner** block. This includes an `apply` with no configuration changes and a
+host with local mining enabled.
 When stratum TLS is enabled, the output also includes the certificate fingerprint to pin on rigs.
 The pool URL uses the dashboard hostname for an all-interface bind, or the configured stratum
 bind address; a loopback bind permits local connections only. The dashboard's Connect a miner card
@@ -153,12 +155,12 @@ New installs have **no stratum password**. The CLI and appliance setup wizards a
 configurations retain their password setting; `"auto"` continues to reuse its saved secret.
 The proxy rejects a miner whose `pass` does not match a configured password.
 
-`setup`, `up` and `apply` print the connection details. The appliance setup hand-off shows the
-password before provisioning. The dashboard's **Connect a miner** block shows the LAN pool URL,
-password with Reveal and Copy, and the TLS fingerprint when enabled. A dashboard without a
-login also shows the password: anyone on that LAN can retrieve it. Enable dashboard authentication
-before sharing access. When no password is set, all these surfaces say so and miners connect
-without one.
+`setup`, `up` and `apply` print the connection details and authentication state. The appliance setup
+hand-off shows the password before provisioning. The dashboard's **Connect a miner**
+block shows the LAN pool URL, password with Reveal and Copy, and the TLS fingerprint when enabled.
+A dashboard without a login also shows the password: anyone on that LAN can retrieve it. Enable
+dashboard authentication before sharing access. When no password is set, all these surfaces say so
+and miners connect without one.
 
 To adopt it on an existing fleet, update
 the rigs first (set each rig's `pass`, or push it over the rigs' control API from the dashboard's
@@ -170,8 +172,9 @@ moment the stack enforces it.
 "p2pool": { "stratum_password": "auto" }
 ```
 
-After `pithead apply`, the stack prints the password (it's also saved in `.env` as
-`PROXY_STRATUM_PASSWORD`). Add it as the `pass` field on every rig; rigs without it are rejected:
+After `pithead apply`, get the password from the dashboard's **Connect a miner** block
+(it's also saved in `.env` as `PROXY_STRATUM_PASSWORD`). Add it as the `pass` field on every rig;
+rigs without it are rejected:
 
 ```json
 {
@@ -323,10 +326,10 @@ cryptographically random token of at least 32 ASCII characters; generate one wit
 `openssl rand -hex 16`. A shorter legacy token still works for raw host control but gets no derived
 read bearer, because the bearer would make guessing that token offline practical.
 
-Appliance rigs run stock XMRig, which ignores a `DONATION` below 1 and donates at least 1%. A
-RigForge-built rig applies a lower `DONATION` without a rebuild, except builds older than 1.18.1, which need a RigForge upgrade first.
-Machines › rig shows the level the miner reports and, when it differs, the configured one with
-the reason ([XMRig developer donation](donation.md#xmrig-developer-donation)).
+An appliance rig defaults `DONATION` to 0 and honours any value from 0 up: the XMRig it runs is
+patched with a minimum donate level of 0 (RigForge 1.18.1 and later compile the same minimum; an older
+RigForge-built rig needs a RigForge upgrade first). Machines › rig shows the level the miner reports and,
+when it differs, the configured one with the reason ([XMRig developer donation](donation.md#xmrig-developer-donation)).
 
 ! The control token is **write-capable** and travels in **cleartext HTTP** over the LAN (like the
 stratum password): a change can alter a rig's pools or its thermal `watchdog`/`max_temp_c`, so anyone
@@ -342,7 +345,8 @@ NOTE: a rig provisioned by the appliance (the setup page's RigForge choice) ship
 entry — pool, worker name, stratum password — plus an `ACCESS_TOKEN` minted at setup, `api:
 enabled` and `control: enabled` with `api_allow_from` set to that Pithead's IPv4 address.
 `control_upgrade` stays off: an appliance rig updates through its own signed image, never through
-RigForge's upgrade path. The token is shown once, on the setup page's rig card, beside the rig's
+RigForge's upgrade path, and the coordinator's **Upgrade rig…** offer does not apply to it — see
+[Updating a rig](appliance.md#updating-a-rig). The token is shown once, on the setup page's rig card, beside the rig's
 address. Until you adopt the rig — paste both into Worker Inspect's adopt form, or add its
 `host` + `token` entry to `workers.list[]` by hand — the dashboard's probe is refused (the feed
 wants the token) and the rig's row is badged `not adopted`, though it mines all the while. A rig
@@ -453,14 +457,21 @@ polls the rig to a terminal outcome with a hard cap; past the cap the panel repo
 still running. Once the runner reports the rig rebuilt (or is still rebuilding), the dashboard
 re-reads that one rig's status itself — a few bounded tries, not a new steady-state poll — instead
 of waiting out the normal 30-second cycle, so the version and the badge usually clear within
-seconds of the rebuild finishing rather than up to a full cycle later.
+seconds of the rebuild finishing rather than up to a full cycle later. Each probe writes to the
+worker's current entry, so a main-loop cycle that lands mid-refresh does not orphan the result.
+
+Worker Inspect then re-reads the rig every three seconds, for up to 90 seconds, until it reports the
+target version; the upgrade result line and any unsaved edits stay put, and a "waiting for the rig
+to report" note shows meanwhile. If the rig has not reported by then the note says so and asks for a
+reload. A rejected or failed upgrade is re-read once and shows its message without waiting.
 
 #### Update all rigs
 
 `GET /api/control/worker-upgrade-all` lists what an update-all run would do, and `POST` starts it.
 The plan names the target version (the cached latest RigForge release), the managed rigs that are
 behind it, and the rigs that cannot take the upgrade with the reason: offline or stale telemetry, an
-unrecognised version, not adopted, or control API unreachable. A rig already on the latest release is not listed. The control
+unrecognised version, not adopted, control API unreachable, or an appliance rig that updates with its
+Pithead OS image instead. A rig already on the latest release is not listed. The control
 channel and its editor must be on, as for the single-rig upgrade.
 
 The start request carries only the version the operator reviewed. The dashboard derives the rig
@@ -495,7 +506,7 @@ runs it as a managed service. During setup it asks for your stack's hostname and
 `3333` connection.
 
 ```bash
-git clone --branch v1.18.0 https://github.com/p2pool-starter-stack/rigforge.git
+git clone --branch v1.18.1 https://github.com/p2pool-starter-stack/rigforge.git
 cd rigforge
 chmod +x rigforge.sh
 sudo ./rigforge.sh
@@ -521,8 +532,13 @@ appliance mode after the stack is up, and repeats that on every boot — the min
 in `/run` and is re-created each time, like every other
 derived thing on the appliance. The worker appears in the dashboard's Workers Alive table; toggle
 `local_miner.enabled` from the dashboard's configuration view to turn it off or on again. Apply
-starts or stops the built-in miner without rebooting, even when this is the only setting changed. The
-rest of this section is the DIY flow.
+starts or stops the built-in miner without rebooting, even when this is the only setting changed.
+`up` also converges the built-in miner after starting the stack, including after a shell restore
+following config-reset and reboot. Boot-owned startup defers miner setup until after the A/B
+slot commits, including when migration releases the held chain services. The boot then runs miner
+setup once with a 30-minute timeout; a slow or failed miner cannot delay the commit. Interactive
+setup also provisions the miner once, after its stack-start prompt. Miner setup failures warn
+without failing stack startup. The rest of this section is the DIY flow.
 
 Opt in during `./pithead setup` (the prompt "Also mine on this machine with its spare CPU?", off by
 default), or set it in `config.json`:
@@ -535,12 +551,13 @@ default), or set it in `config.json`:
 }
 ```
 
-Run `./pithead apply`. Setup, up, and apply print the two values a RigForge install needs — the local pool
+Run `./pithead apply`. Setup, up, and apply print the local pool
 URL (`127.0.0.1:3333` by default, or your `p2pool.stratum_bind` address and `p2pool.stratum_port`)
-and the stratum password (the `PROXY_STRATUM_PASSWORD` already in `.env`, or an explicit
-“none set” when authentication is off). Install [RigForge](https://github.com/p2pool-starter-stack/rigforge)
-on the same host and enter those two values when it asks; the worker self-registers and appears in
-the dashboard's Workers Alive table like any other rig.
+and authentication state, including an explicit “none set” when authentication is off.
+Get a configured password from the dashboard's **Connect a miner** block.
+Install [RigForge](https://github.com/p2pool-starter-stack/rigforge) on the same host and enter the pool
+URL and password when it asks; the worker self-registers and appears in the dashboard's Workers Alive
+table like any other rig.
 
 On DIY, Pithead does not install, run, or tune the miner. RigForge owns all host-level tuning —
 HugePages, GRUB, MSR, the CPU governor, and the miner service. Two things to know before enabling

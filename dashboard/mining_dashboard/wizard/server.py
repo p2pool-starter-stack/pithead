@@ -20,18 +20,17 @@ Env contract (set by ``pithead firstboot-wizard``):
   WIZARD_BIND      plain bind host:port (default 0.0.0.0:8000)
   WIZARD_BIND_TLS  TLS bind (default 0.0.0.0:8443), used when WIZARD_TLS_CERT/KEY exist; restore
                    uploads and the Secure session cookie are enabled only on that TLS site
-
-After ``MAX_FAILURES`` bad tokens the process exits 3; the host re-mints a fresh token and
-restarts the container — the re-mint loop lives host-side on purpose.
 """
 
 import asyncio
 import hmac
 import json
+import math
 import mimetypes
 import os
 import ssl
 import sys
+from time import monotonic
 
 from aiohttp import web
 
@@ -66,11 +65,8 @@ from mining_dashboard.wizard_transaction import (
 )
 
 MAX_FAILURES = 5
-EXIT_TOKEN_LOCKOUT = 3
-# Restore-at-setup upload cap (#909): a Pithead backup holds only config, keys and the
-# dashboard database, never the blockchains — 64 MiB is generous headroom over that. Mirrored
-# in the pithead script's own RESTORE_MAX_BYTES (client + server, per the spool contract); the
-# two can't share a literal across languages, so keep the VALUE in step by hand.
+AUTH_COOLDOWN_SECONDS = 60
+MAX_AUTH_CLIENTS = 1024
 RESTORE_MAX_BYTES = 64 * 1024 * 1024
 
 COOKIE = "wizard_session"
@@ -91,9 +87,6 @@ def _spool_clear_host_verdict() -> None:
 
 
 def _canon_token(t: str) -> str:
-    """The operator is transcribing from a console, often on a phone that autocapitalizes.
-    Case and the pit- prefix carry no entropy — the six-character suffix does — so neither
-    should be able to fail a correct transcription."""
     t = t.strip().upper()
     return t.removeprefix("PIT-")
 
@@ -211,11 +204,29 @@ async def index(request: web.Request) -> web.Response:
     return web.Response(text=_shell_html(), content_type="text/html")
 
 
+def _auth_throttled(remaining: float) -> web.Response:
+    return web.json_response(
+        {"error": "Too many attempts — wait, then try again with the same token."},
+        status=429,
+        headers={"Retry-After": str(max(1, math.ceil(remaining)))},
+    )
+
+
 async def auth(request: web.Request) -> web.Response:
     form = await request.post()
+    now = monotonic()
+    failures = request.app["failures"]
+    for peer, (_, until) in list(failures.items()):
+        if until <= now:
+            del failures[peer]
+    peer = request.remote
+    count, until = failures.get(peer, (0, now + AUTH_COOLDOWN_SECONDS))
+    if count >= MAX_FAILURES:
+        return _auth_throttled(until - now)
     tok = os.environ.get("WIZARD_TOKEN", "")
     supplied = str(form.get("token", "")).strip()
     if tok and hmac.compare_digest(_canon_token(supplied), _canon_token(tok)):
+        failures.pop(peer, None)
         resp = web.HTTPFound("/")
         resp.set_cookie(
             COOKIE,
@@ -225,24 +236,11 @@ async def auth(request: web.Request) -> web.Response:
             samesite="Strict",
         )
         raise resp
-    request.app["failures"] += 1
-    if request.app["failures"] >= MAX_FAILURES:
-        resp = web.json_response(
-            {
-                "error": "Too many attempts — this machine printed a fresh token on its "
-                "console; enter that one."
-            },
-            status=429,
-        )
-        # Flush the refusal to the browser BEFORE the host restarts the container for a
-        # re-mint. prepare/write_eof are idempotent, so aiohttp's own finish step (which
-        # runs them again once this handler returns) is a no-op — this just moves the bytes
-        # onto the wire ahead of the exit, instead of the process tearing down mid-request.
-        await resp.prepare(request)
-        await resp.write_eof()
-        print("wizard: token failure limit reached — exiting for a re-mint", flush=True)
-        request.app["exit"](EXIT_TOKEN_LOCKOUT)
-        return resp
+    if peer not in failures and len(failures) >= MAX_AUTH_CLIENTS:
+        del failures[next(iter(failures))]
+    failures[peer] = (count + 1, now + AUTH_COOLDOWN_SECONDS)
+    if count + 1 >= MAX_FAILURES:
+        return _auth_throttled(AUTH_COOLDOWN_SECONDS)
     return web.json_response({"error": "wrong token"}, status=403)
 
 
@@ -424,11 +422,9 @@ async def _submit_locked(request: web.Request) -> web.Response:
     except ValueError as exc:
         return web.json_response({"error": f"Invalid configuration: {exc}"}, status=400)
     clear_submission_sidecars()
-    mode = str(form.get("auth_mode", "")).strip()
-    if mode in ("auto", "set", "none"):
-        _spool_write_text("auth-mode", mode)
-    # On the installation medium, config and disk arrive TOGETHER — one page, one submission,
-    # validated without side effects; the trigger is published only after the candidate.
+    auth = cfg.get("dashboard", {}).get("auth", {})
+    mode = "none" if raw and isinstance(auth, dict) and auth.get("password") == "" else "auto"
+    _spool_write_text("auth-mode", mode)
     install = None
     if installer_mode():
         try:
@@ -563,43 +559,39 @@ async def keep_role(request: web.Request) -> web.Response:
 
 
 async def status(request: web.Request) -> web.Response:
+    authed = _authed(request)
     if installer_mode() and _spool_read("stick") != "1":
         if _spool_read("installed") is not None:
-            return web.Response(
-                text="Installed — the machine is switching itself off. "
+            text = (
+                "Installed — the machine is switching itself off. "
                 "Wait for it to go dark, then remove the USB stick and power it back on."
             )
-        err = _spool_read("error.txt")
-        if err is not None:
-            return web.Response(text=f"Install failed: {err}")
-        return web.Response(text="Copying the system to the disk…")
-    if _spool_read("applied") is not None:
+        elif (err := _spool_read("error.txt")) is not None:
+            text = f"Install failed: {err}" if authed else "Install failed."
+        else:
+            text = "Copying the system to the disk…"
+    elif _spool_read("applied") is not None:
         if _spool_read("role") == "rig":
-            # A rig serves no dashboard, so this page is the last thing it will ever show:
-            # say where the machine went rather than promising a link that does not exist.
-            return web.Response(
-                text="Rig settings saved. The miner is starting on this machine now — "
+            text = (
+                "Rig settings saved. The miner is starting on this machine now — "
                 "it appears in your Pithead's Workers view once it connects."
             )
-        return web.Response(text="Provisioned — the dashboard is coming up now.")
-    err = _spool_read("error.txt")
-    if err is not None:
-        return web.Response(text=f"Rejected: {err} — go back and correct the form.")
-    return web.Response(text="Waiting for this machine to validate and apply…")
+        else:
+            text = "Provisioned — the dashboard is coming up now."
+    elif (err := _spool_read("error.txt")) is not None:
+        text = f"Rejected: {err} — go back and correct the form." if authed else "Rejected."
+    else:
+        text = "Waiting for this machine to validate and apply…"
+    return web.Response(text=text, headers={"Cache-Control": "no-store"})
 
 
-def make_app(exit_fn=sys.exit, restore_enabled=False, secure_cookie=False) -> web.Application:
+def make_app(restore_enabled=False, secure_cookie=False) -> web.Application:
     if not clear_page_temps():
         raise RuntimeError("temporary wizard files could not be cleared safely")
-    # Hosts without /etc/mime.types mislabel ES modules as application/octet-stream.
-    # Use the dashboard fix for the same static tree so browsers can execute them.
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("text/javascript", ".js")
-    # aiohttp's default (1 MiB) refuses a restore upload before submit_restore's own, clearer
-    # cap gets a chance to run; a little slack over RESTORE_MAX_BYTES covers multipart overhead.
     app = web.Application(client_max_size=RESTORE_MAX_BYTES + 1_048_576)
-    app["failures"] = 0
-    app["exit"] = exit_fn
+    app["failures"] = {}
     app["restore_enabled"] = restore_enabled
     app["secure_cookie"] = secure_cookie
     app["submission_lock"] = asyncio.Lock()
