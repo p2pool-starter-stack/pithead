@@ -32,7 +32,7 @@ rm "$fixture/probe/merge_mining"
 probe_sample="$(tari_enable_mining_sample)"
 jq -e '.workers == 2 and .hashes == 7 and .template_updated == null and .receipt_state == null and .receipt_height == null' <<<"$probe_sample" >/dev/null || bad=$((bad + 1))
 unset -f rx
-for CASE in recreated stopped unchanged same-height never-syncing loading-to-done stale-hashes decreasing-hashes no-workers workers-regrace workers-late-drop null-workers workers-zero-hashing late-stall probe-error missing-hashes sync-timeout disconnected stale-template missing-template null-template invalid-template stale-stats missing-stats invalid-stats malformed-stats receipt-disconnected receipt-mismatch missing-current invalid-current zero-current; do
+for CASE in recreated stopped unchanged same-height never-syncing loading-to-done stale-hashes decreasing-hashes no-workers workers-regrace workers-late-drop null-workers workers-zero-hashing hashing-without-workers late-stall probe-error missing-hashes sync-timeout disconnected stale-template missing-template null-template invalid-template stale-stats missing-stats invalid-stats malformed-stats receipt-disconnected receipt-mismatch missing-current invalid-current zero-current; do
     OUT_DIR="$fixture/$CASE"
     mkdir -p "$OUT_DIR"
     PHASE=0
@@ -83,9 +83,13 @@ for CASE in recreated stopped unchanged same-height never-syncing loading-to-don
             [ "$CASE" != stale-hashes ] || hashes=100
             [ "$CASE" != decreasing-hashes ] || hashes=$((10000 - poll * 100))
             [ "$CASE" != no-workers ] || workers=0
-            if [ "$CASE" = workers-regrace ] && [ "$poll" -ge 1 ] && [ "$poll" -le 2 ]; then workers=0; fi
+            if [ "$CASE" = workers-regrace ] && [ "$poll" -ge 1 ] && [ "$poll" -le 3 ]; then workers=0; fi
             if [ "$CASE" = workers-late-drop ] && [ "$poll" -ge 4 ]; then workers=0; fi
             [ "$CASE" != workers-zero-hashing ] || workers=0
+            if [ "$CASE" = hashing-without-workers ]; then
+                [ "$poll" -gt 3 ] || workers=0
+                [ "$poll" -le 3 ] || hashes=300
+            fi
             [ "$CASE" != null-workers ] || workers=null
             if [ "$CASE" = late-stall ] && [ "$poll" -ge 3 ]; then hashes=300; fi
             if [ "$CASE" = missing-stats ]; then
@@ -198,6 +202,7 @@ for CASE in recreated stopped unchanged same-height never-syncing loading-to-don
         case "$CASE" in
         workers-late-drop) jq -e -s 'length == 3 and .[-1].workers == 0 and .[-1].observed - .[0].observed >= 60 and all(.[:-1][]; .workers == 1)' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1)) ;;
         null-workers) jq -e -s 'length == 1 and .[0].workers == null' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1)) ;;
+        hashing-without-workers) jq -e -s 'length == 6 and .[0].workers == 0 and .[-1].workers == 1' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1)) ;;
         workers-zero-hashing) jq -e -s 'length == 3 and all(.[]; .workers == 0)' "$OUT_DIR/tari-enable/samples.jsonl" >/dev/null || bad=$((bad + 1)) ;;
         esac
         if [ "$CASE" != recreated ] && [ "$CASE" != stopped ]; then
