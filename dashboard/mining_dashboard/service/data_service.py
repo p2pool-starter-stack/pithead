@@ -490,10 +490,10 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                                 "host_resources": get_host_resource_samples(),
                             },
                             "stratum": stratum_raw,
+                            "tor_health": container_states.get("tor"),
                             "timestamp": time.time(),
                         }
                     )
-
                     is_xvb = "XVB" in current_mode
                     p2pool_hr = 0 if is_xvb else total_hr
                     xvb_hr = total_hr if is_xvb else 0

@@ -119,8 +119,10 @@ Maintenance:
                             token-gated form on http://<this-host>/ (the dashboard image in
                             wizard mode), validates the answers host-side, then runs setup.
                             A pre-seeded config.json skips the form; --cli runs the terminal
-                            wizard instead. The one-time token prints here; five wrong tries
-                            mint a fresh one. See $DOCS_URL/docs/appliance.md.
+                            wizard instead. The one-time token prints here. Five wrong tries
+                            from one network peer pause new authentication for 60 seconds;
+                            retry the same token. The wizard and authenticated sessions keep
+                            running. See $DOCS_URL/docs/appliance.md.
 
   load-images               Load the baked container-image archives (/opt/pithead/images)
                             into the engine when their content changed since the last load.

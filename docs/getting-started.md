@@ -17,7 +17,7 @@ For a new worker, use [RigForge's supported installation](workers.md#new-to-mini
 or the appliance's **RigForge** role. Released RigForge supports Ubuntu 22.04+ or Debian 12
 on x86-64 with AVX2; allow about 2.3 GB free RAM for RandomX fast mode plus OS headroom and
 about 2 MB L3 cache per mining thread. Check its
-[worker requirements](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.0/docs/hardware.md#requirements).
+[worker requirements](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.1/docs/hardware.md#requirements).
 For a coordinator that also mines, read
 [local-worker setup](workers.md#mine-on-the-stack-host-itself) before enabling it: CPU, RAM,
 cache and memory bandwidth are shared with the nodes and other applications. Coordinator-only
@@ -345,7 +345,7 @@ No hashrate or accepted-share count establishes profit; electricity, fees and ac
 ## 8. Limit, stop, disable or remove
 
 - **Limit a worker:** use your miner's released thread controls. For RigForge, follow its released
-  [thread ceiling](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.0/docs/configuration.md#configuration-reference). A thread count is not an enforced CPU percentage or memory budget;
+  [thread ceiling](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.1/docs/configuration.md#configuration-reference). A thread count is not an enforced CPU percentage or memory budget;
   leave headroom for RandomX and other workloads. RigForge's dedicated-host tuning can alter
   HugePages, GRUB, MSR and the governor; review [local-miner ownership](workers.md#mine-on-the-stack-host-itself).
 - **Stop mining:** stop the miner on each worker, including any local worker. Stopping the
@@ -353,7 +353,7 @@ No hashrate or accepted-share count establishes profit; electricity, fees and ac
 - **Stop or disable a DIY RigForge worker:** from its installed kit, run `sudo ./rigforge.sh stop`.
   Run `sudo ./rigforge.sh disable` to prevent boot startup; use both when you want it stopped now
   and after reboot. `sudo ./rigforge.sh start` starts it again and `sudo ./rigforge.sh enable`
-  restores boot startup. Review the released [service commands and uninstall](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.0/docs/operations.md#commands)
+  restores boot startup. Review the released [service commands and uninstall](https://github.com/p2pool-starter-stack/rigforge/blob/v1.18.1/docs/operations.md#commands)
   before removing a worker; these commands do not remove the appliance OS.
 - **Stop a DIY coordinator:** run `./pithead down`; run `./pithead up` to start it again.
   This preserves its configuration and chain data.

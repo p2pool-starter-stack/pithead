@@ -13,6 +13,8 @@ source "$HERE/lifecycle/pull-policy.sh" || return $?
 source "$HERE/lifecycle/lock-core.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/lock-wiring.sh
 source "$HERE/lifecycle/lock-wiring.sh" || return $?
+# shellcheck source=tests/stack/lifecycle/apply-config-revision.sh
+source "$HERE/lifecycle/apply-config-revision.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/appliance-lock.sh
 source "$HERE/lifecycle/appliance-lock.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/recreate-names.sh

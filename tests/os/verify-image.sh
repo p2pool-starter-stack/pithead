@@ -225,6 +225,7 @@ else
 fi
 chk "prebuilt xmrig baked (Tor-only box cannot clone)" '[ -x "$ROOT/opt/rigforge/prebuilt/xmrig/build/xmrig" ]'
 chk "prebuilt commit marker matches rigforge's pin" '[ "$(cat "$ROOT/opt/rigforge/prebuilt/xmrig/.rigforge-commit")" = "$(sed -n "s/^XMRIG_COMMIT=\"\${XMRIG_COMMIT:-\(.*\)}\"$/\1/p" "$ROOT/opt/rigforge/rigforge.sh")" ]'
+chk "prebuilt donate minimum marker is 0 (RigForge will not rebuild)" '[ "$(cat "$ROOT/opt/rigforge/prebuilt/xmrig/.rigforge-donate-min")" = "0" ]'
 chk "prebuilt sha record present (integrity check input)" '[ -s "$ROOT/opt/rigforge/prebuilt/xmrig/.rigforge-sha256" ]'
 chk "miner toolchain baked (compiler chain)" '[ -e "$ROOT/usr/bin/gcc" ] && [ -e "$ROOT/usr/bin/cmake" ] && [ -e "$ROOT/usr/bin/make" ] && [ -e "$ROOT/usr/bin/git" ]'
 chk "miner runtime tools baked (envsubst/cpupower/rdmsr)" '[ -e "$ROOT/usr/bin/envsubst" ] && [ -e "$ROOT/usr/bin/cpupower" ] && [ -e "$ROOT/usr/sbin/rdmsr" ]'

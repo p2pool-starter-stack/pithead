@@ -351,3 +351,13 @@ export function configRevisionDriftNote(drift) {
     title: `config revision ${drift.before || "unknown"} → ${drift.after}, with no new change id`,
   };
 }
+
+export function rigforgeReportsTarget(detail, version) {
+  const norm = (v) =>
+    String(v || "")
+      .trim()
+      .replace(/^v/i, "");
+  const target = norm(version);
+  const rf = (detail || {}).rigforge;
+  return Boolean(target && rf && !rf.stale && norm(rf.version) === target);
+}

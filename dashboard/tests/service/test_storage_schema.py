@@ -339,7 +339,7 @@ class TestSchemaMigration:
         sm = StateManager(db_path=db)
         try:
             info = sm._conn.execute("PRAGMA table_info(worker_config_revision)").fetchall()
-            assert "drift_from" in {c[1] for c in info}
+            assert {"drift_from", "rigforge_version"} <= {c[1] for c in info}
             # The backfilled NULL accuses nobody, and the row it carried is still the one the next
             # poll compares against — an upgrade must not read as a first sighting.
             assert sm.get_worker_revision_drift("rig1", "aaa") is None

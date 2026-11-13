@@ -5,7 +5,7 @@ import { detailSnapshot } from "../../../mining_dashboard/web/static/workers/wor
 import { earningsWording } from "../../../mining_dashboard/web/static/sovereign/earnings-control.mjs";
 import { ConnectCard, MachinesPage } from "../../../mining_dashboard/web/static/sovereign/machines.mjs";
 import { RigInspector } from "../../../mining_dashboard/web/static/sovereign/machines-inspector.mjs";
-import { findRig, localMinerAvailable, rigHealth, rigRows, rigSettings, rigSummary, rigView } from "../../../mining_dashboard/web/static/sovereign/machines-model.mjs";
+import { destinationRow, findRig, localMinerAvailable, rigHealth, rigRows, rigSettings, rigSummary, rigView } from "../../../mining_dashboard/web/static/sovereign/machines-model.mjs";
 import { rigFleet } from "../fixtures/rigs.mjs";
 import { render, renderToString } from "../helpers/render.mjs";
 
@@ -225,6 +225,82 @@ test("a poll refreshes the inspector quietly, never over an edit, and an adopt k
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("a destination names one rig: first match wins, unknown and empty name nothing", () => {
+  const workers = [
+    { name: "zeta", status: "online", h60: 10, adopted: true },
+    { name: "dup", status: "online", h60: 30, adopted: true },
+    { name: "alpha", status: "offline", h60: 0 },
+    { name: "dup", status: "online", h60: 20, adopted: true },
+  ];
+  assert.equal(destinationRow(workers, "alpha").index, 2);
+  assert.equal(destinationRow(workers, "dup").index, 1);
+  assert.equal(destinationRow(workers, "missing"), undefined);
+  assert.equal(destinationRow(workers, ""), undefined);
+  assert.equal(destinationRow(workers, null), undefined);
+  assert.equal(destinationRow(null, "alpha"), undefined);
+});
+
+test("a worker destination opens that rig once, an unknown name opens nothing, leaving re-arms it", () => {
+  const state = { control_enabled: true, os_update: null, workers: [
+    { name: "rig-a", status: "online", h60: 1000, adopted: true },
+    { name: "rig-b", status: "offline", h60: null },
+  ] };
+  const page = new MachinesPage({ state: null, worker: "rig-b" });
+  page.setState = (next) => Object.assign(page.state, next);
+  page.componentDidMount();
+  assert.equal(page.state.inspect, null);
+  page.props = { ...page.props, state };
+  page.componentDidUpdate();
+  assert.equal(page.state.inspect.name, "rig-b");
+  assert.equal(page.state.inspect.worker, state.workers[1]);
+  page.setState({ inspect: null });
+  page.componentDidUpdate();
+  assert.equal(page.state.inspect, null);
+  page.props = { ...page.props, worker: null };
+  page.componentDidUpdate();
+  page.props = { ...page.props, worker: "rig-b" };
+  page.componentDidUpdate();
+  assert.equal(page.state.inspect.name, "rig-b");
+  page.props = { ...page.props, worker: null };
+  page.componentDidUpdate();
+  assert.equal(page.state.inspect, null);
+  const clicked = new MachinesPage({ state, worker: null });
+  clicked.setState = (next) => Object.assign(clicked.state, next);
+  clicked.componentDidMount();
+  clicked.setState({ inspect: { name: "rig-a", index: 0, worker: state.workers[0] } });
+  clicked.componentDidUpdate();
+  assert.equal(clicked.state.inspect.name, "rig-a");
+  const gone = new MachinesPage({ state, worker: "rig-z" });
+  gone.setState = (next) => Object.assign(gone.state, next);
+  gone.componentDidMount();
+  assert.equal(gone.state.inspect, null);
+});
+
+test("the inspector reports unsaved or applying state to the guard that confirms before navigation", () => {
+  const reports = [];
+  const inspector = new RigInspector({
+    name: "rig-a",
+    worker: { name: "rig-a" },
+    shared: 1,
+    onDirtyChange: (key, dirty) => reports.push([key, dirty]),
+  });
+  inspector.componentDidUpdate(inspector.props);
+  assert.deepEqual(reports.at(-1), ["rig-inspector", false]);
+  inspector.state.detail = { writable_keys: ["DONATION"], last_applied: {}, rig_config: {} };
+  inspector.state.editText = JSON.stringify(detailSnapshot(inspector.state.detail), null, 2);
+  inspector.componentDidUpdate(inspector.props);
+  assert.deepEqual(reports.at(-1), ["rig-inspector", false]);
+  inspector.state.tableEdits = { DONATION: "2" };
+  inspector.componentDidUpdate(inspector.props);
+  assert.deepEqual(reports.at(-1), ["rig-inspector", true]);
+  inspector.state.tableEdits = {};
+  inspector.state.busy = true;
+  inspector.componentDidUpdate(inspector.props);
+  assert.deepEqual(reports.at(-1), ["rig-inspector", true]);
+  inspector.componentWillUnmount();
+  assert.deepEqual(reports.at(-1), ["rig-inspector", false]);
 });
 
 test("the local miner switch reads in plain words in the host review", () => {

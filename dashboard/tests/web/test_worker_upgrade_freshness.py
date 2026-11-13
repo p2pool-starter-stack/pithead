@@ -37,7 +37,9 @@ async def test_stale_version_cannot_short_circuit_worker_upgrade(monkeypatch):
     monkeypatch.setattr(
         server.control_service,
         "submit_worker_upgrade",
-        lambda worker, version, actor: submitted.append((worker, version)) or "request-id",
+        lambda worker, version, actor, appliance=False: (
+            submitted.append((worker, version)) or "request-id"
+        ),
     )
 
     def fake_task(coro):
