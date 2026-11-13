@@ -6,7 +6,7 @@ control_os_check() { # <claimed-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
     control_os_gate "$cdir" "$id" "$actor" "os-check" || return 0
     control_audit "$cdir/audit/control.log" "$id" "$actor" "os-check" "started"
-    local osdir tagf stampf shortstampf tag size notes rel
+    local osdir tagf stampf shortstampf tag size notes rel chan
     osdir=$(os_update_staging_dir)
     mkdir -p "$osdir"
     tagf=$(os_update_target_file)
@@ -49,7 +49,7 @@ control_os_check() { # <claimed-file> <id> <actor> <control-dir>
         touch "$stampf"
         rel=$GH_RELEASE_JSON
         tag=$(printf '%s' "$rel" | jq -r '.tag_name // ""' 2>/dev/null)
-        if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+        if ! os_release_tag_valid "$tag"; then
             control_os_refuse "$cdir" "$id" "$actor" "os-check" rejected "the release API returned no usable release tag — nothing was changed."
             return 0
         fi
@@ -60,13 +60,15 @@ control_os_check() { # <claimed-file> <id> <actor> <control-dir>
             control_os_refuse "$cdir" "$id" "$actor" "os-check" rejected "the latest release ($tag) publishes no appliance OS bundle — nothing to download."
             return 0
         fi
-        jq -n --arg t "$tag" --argjson s "$size" --arg n "$notes" \
-            '{tag:$t,size:$s,notes:$n,ts:(now|floor)}' >"$tagf.tmp" && mv "$tagf.tmp" "$tagf"
+        chan=$(os_channel_record "$tag") || chan='{}'
+        jq -n --arg t "$tag" --argjson s "$size" --arg n "$notes" --argjson c "$chan" \
+            '{tag:$t,size:$s,notes:$n,channel:$c,ts:(now|floor)}' >"$tagf.tmp" && mv "$tagf.tmp" "$tagf"
     fi
     tag=$(jq -r '.tag // ""' "$tagf" 2>/dev/null) || tag=""
     size=$(jq -r '.size // 0' "$tagf" 2>/dev/null) || size=0
     notes=$(jq -r '.notes // ""' "$tagf" 2>/dev/null) || notes=""
-    if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    chan=$(jq -c '.channel // {}' "$tagf" 2>/dev/null) || chan='{}'
+    if ! os_release_tag_valid "$tag"; then
         rm -f "$tagf"
         control_os_refuse "$cdir" "$id" "$actor" "os-check" failed "the cached update target is unreadable — it was cleared; check again in a few minutes."
         return 0
@@ -81,8 +83,8 @@ control_os_check() { # <claimed-file> <id> <actor> <control-dir>
         [ "$(jq -r '.step // "idle"' "$cdir/results/os-update-state.json" 2>/dev/null)" = "idle" ]; then
         os_state_write "$cdir" '{"step":"idle"}'
     fi
-    control_write_result "$cdir/results" "$id" "$(jq -n --arg v "$tag" --argjson s "$size" --arg n "$notes" --argjson nw "$newer" \
-        '{status:"checked",version:$v,size:$s,notes:$n,newer:$nw,ts:(now|floor)}')"
+    control_write_result "$cdir/results" "$id" "$(jq -n --arg v "$tag" --argjson s "$size" --arg n "$notes" --argjson nw "$newer" --argjson c "$chan" \
+        '{status:"checked",version:$v,size:$s,notes:$n,newer:$nw,channel:$c,ts:(now|floor)}')"
     control_audit "$cdir/audit/control.log" "$id" "$actor" "os-check" "checked"
 }
 
@@ -99,7 +101,7 @@ control_os_download() { # <claimed-file> <id> <actor> <control-dir>
     tagf=$(os_update_target_file)
     tag=$(jq -r '.tag // ""' "$tagf" 2>/dev/null) || tag=""
     size=$(jq -r '.size // 0' "$tagf" 2>/dev/null) || size=0
-    if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    if ! os_release_tag_valid "$tag"; then
         control_os_refuse "$cdir" "$id" "$actor" "os-download" rejected "no update target is known — check for updates first."
         return 0
     fi
@@ -142,43 +144,69 @@ control_os_download() { # <claimed-file> <id> <actor> <control-dir>
         control_os_refuse "$cdir" "$id" "$actor" "os-download" rejected "not enough free space on /data for the update bundle (need about $((need / 1024)) MiB free, have $((${avail_kb:-0} / 1024)) MiB) — free space and retry."
         return 0
     fi
-    local url socks="" base prefix
+    local url socks="" base prefix final_url final_urlf http_code
+    final_urlf=$(mktemp "${TMPDIR:-/tmp}/pithead-final.XXXXXX") || {
+        control_os_refuse "$cdir" "$id" "$actor" "os-download" rejected "the bundle URL could not be resolved — nothing was changed."
+        return 0
+    }
     if base=$(os_update_test_base); then
         url="$base/pithead-os-$tag.raucb"
+        printf '%s' "$url" >"$final_urlf"
     else
         prefix=$(env_get NETWORK_PREFIX 2>/dev/null) || true
         [ -n "$prefix" ] || prefix="172.28.0"
         socks="${prefix}.25:9050"
         url="https://github.com/p2pool-starter-stack/pithead/releases/download/$tag/pithead-os-$tag.raucb"
+        if ! os_channel_fetch head "$url" /dev/null "$CURL_CAP_OS_BUNDLE" "$socks" >"$final_urlf"; then
+            rm -f "$final_urlf"
+            control_os_refuse "$cdir" "$id" "$actor" "os-download" rejected "the update bundle URL could not be resolved over Tor — ${OS_CHANNEL_HINT:-nothing was changed.}"
+            return 0
+        fi
+    fi
+    final_url=$(cat "$final_urlf")
+    rm -f "$final_urlf"
+    if [ -n "$socks" ] && ! os_release_host_ok "$final_url"; then
+        control_os_refuse "$cdir" "$id" "$actor" "os-download" rejected "the bundle URL redirected off the release hosts — nothing was installed."
+        return 0
     fi
     control_write_result "$cdir/results" "$id" "$(jq -n --arg v "$tag" --argjson b "$have" --argjson t "$size" \
         '{status:"downloading",version:$v,bytes:$b,total:$t,ts:(now|floor)}')"
     os_state_write "$cdir" "$(jq -n --arg v "$tag" '{step:"downloading",version:$v}')"
     # Bounded attempt in the background; the loop surfaces live progress into the result the
     # dashboard is polling. curl -C - resumes from whatever the partial file already holds.
-    # (Two invocations, not a conditional argument array — macOS's bash 3.2 rejects an empty
-    # array expansion under set -u, and the tier-1 suite runs this function there.)
-    local attempt="${PITHEAD_OS_DL_ATTEMPT:-600}" pid rc=0 bytes
+    local attempt="${PITHEAD_OS_DL_ATTEMPT:-600}" pid rc=0 bytes fail
     if [ -n "$socks" ]; then
-        curl -fSL -C - --max-time "$attempt" --max-filesize "$CURL_CAP_OS_BUNDLE" \
-            --socks5-hostname "$socks" -o "$part" "$url" >/dev/null 2>&1 &
+        curl -fS -C - --max-time "$attempt" --max-filesize "$CURL_CAP_OS_BUNDLE" \
+            --proto =https --socks5-hostname "$socks" -o "$part" -w '%{http_code}\n' \
+            "$final_url" >"$part.code" 2>/dev/null &
     else
-        curl -fSL -C - --max-time "$attempt" --max-filesize "$CURL_CAP_OS_BUNDLE" \
-            -o "$part" "$url" >/dev/null 2>&1 &
+        curl -fS -C - --max-time "$attempt" --max-filesize "$CURL_CAP_OS_BUNDLE" \
+            -o "$part" -w '%{http_code}\n' "$final_url" >"$part.code" 2>/dev/null &
     fi
     pid=$!
     while kill -0 "$pid" 2>/dev/null; do
         sleep 5
         bytes=0
         [ -f "$part" ] && bytes=$(wc -c <"$part" | tr -d ' ')
+        [ "$bytes" -gt "$size" ] && kill "$pid" 2>/dev/null || true
         control_write_result "$cdir/results" "$id" "$(jq -n --arg v "$tag" --argjson b "$bytes" --argjson t "$size" --argjson r "$have" \
             '{status:"downloading",version:$v,bytes:$b,total:$t,resumed_from:$r,ts:(now|floor)}')"
     done
     # Not `if ! wait`: inside that branch $? is the negation's status (always 0), which silently
     # ate every curl exit code the first time the tier-1 suite ran this.
     wait "$pid" && rc=0 || rc=$?
+    http_code=$(tr -d '[:space:]' <"$part.code" 2>/dev/null) || http_code=""
+    rm -f "$part.code"
     bytes=0
     [ -f "$part" ] && bytes=$(wc -c <"$part" | tr -d ' ')
+    fail=""
+    [ "$bytes" -gt "$size" ] && fail="the bundle stream exceeded its announced $size-byte size"
+    [ -z "$fail" ] && [ "$rc" -eq 0 ] && [ "${http_code#2}" = "$http_code" ] && fail="the bundle URL answered HTTP ${http_code:-none}"
+    if [ -n "$fail" ]; then
+        rm -f "$part"
+        control_os_refuse "$cdir" "$id" "$actor" "os-download" failed "$fail — the partial file was discarded and nothing was installed."
+        return 0
+    fi
     if [ "$rc" -eq 0 ] && [ "$bytes" -eq "$size" ]; then
         mv "$part" "$final"
         control_write_result "$cdir/results" "$id" "$(jq -n --arg v "$tag" --argjson b "$bytes" --argjson r "$have" \
@@ -216,7 +244,7 @@ control_os_verify() { # <claimed-file> <id> <actor> <control-dir>
     osdir=$(os_update_staging_dir)
     tag=$(jq -r '.tag // ""' "$(os_update_target_file)" 2>/dev/null) || tag=""
     bundle="$osdir/pithead-os-$tag.raucb"
-    if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || [ ! -f "$bundle" ]; then
+    if ! os_release_tag_valid "$tag" || [ ! -f "$bundle" ]; then
         control_os_refuse "$cdir" "$id" "$actor" "os-verify" rejected "no fully downloaded update bundle is staged — download it first."
         return 0
     fi
@@ -249,7 +277,7 @@ control_os_install() { # <claimed-file> <id> <actor> <control-dir>
     osdir=$(os_update_staging_dir)
     tag=$(jq -r '.tag // ""' "$(os_update_target_file)" 2>/dev/null) || tag=""
     bundle="$osdir/pithead-os-$tag.raucb"
-    if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || [ ! -f "$bundle" ]; then
+    if ! os_release_tag_valid "$tag" || [ ! -f "$bundle" ]; then
         control_os_refuse "$cdir" "$id" "$actor" "os-install" rejected "no fully downloaded update bundle is staged — download and verify it first."
         return 0
     fi
