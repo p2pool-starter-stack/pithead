@@ -2,7 +2,7 @@ os_release_tag_valid() { printf '%s' "${1:-}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9
 
 os_release_host_ok() {
     case "$1" in
-    https://api.github.com/* | https://github.com/* | https://objects.githubusercontent.com/*) return 0 ;;
+    https://api.github.com/* | https://github.com/* | https://objects.githubusercontent.com/* | https://release-assets.githubusercontent.com/*) return 0 ;;
     esac
     return 1
 }
@@ -11,7 +11,7 @@ os_channel_www_at() {
     awk -v t="${1:-0}" 'BEGIN { print strftime("%Y-%m-%dT%H:%M:%SZ", t) }' 2>/dev/null || printf 'epoch %s' "${1:-0}"
 }
 
-os_channel_fetch() { # <get|head> <url> <out-file> <cap-bytes> [socks]
+os_channel_fetch() {
     local mode="$1" url="$2" out="$3" cap="$4" socks="${5:-}"
     local base tmp="" hdr hop=0 probe rc code redir curl_out
     OS_CHANNEL_HINT=""
@@ -49,7 +49,16 @@ os_channel_fetch() { # <get|head> <url> <out-file> <cap-bytes> [socks]
         else
             curl_out="$tmp"
         fi
-        if [ -n "$socks" ]; then
+        if [ "$mode" = head ]; then
+            if [ -n "$socks" ]; then
+                probe=$(curl -sS -I --max-time "${PITHEAD_OS_CHANNEL_TIMEOUT:-60}" --max-filesize "$cap" \
+                    --proto =https --socks5-hostname "$socks" -D "$hdr" \
+                    -w '%{http_code}' "$url" 2>/dev/null) && rc=0 || rc=$?
+            else
+                probe=$(curl -sS -I --max-time "${PITHEAD_OS_CHANNEL_TIMEOUT:-60}" --max-filesize "$cap" \
+                    -D "$hdr" -w '%{http_code}' "$url" 2>/dev/null) && rc=0 || rc=$?
+            fi
+        elif [ -n "$socks" ]; then
             probe=$(curl -sS --max-time "${PITHEAD_OS_CHANNEL_TIMEOUT:-60}" --max-filesize "$cap" \
                 --proto =https --socks5-hostname "$socks" -D "$hdr" -o "$curl_out" \
                 -w '%{http_code}' "$url" 2>/dev/null) && rc=0 || rc=$?
@@ -122,7 +131,7 @@ os_channel_fetch() { # <get|head> <url> <out-file> <cap-bytes> [socks]
 
 os_channel_state_file() { printf '%s/channel.json' "$(os_update_staging_dir)"; }
 
-os_channel_record() { # <tag> [epoch] — one jq object: what the channel offers and whether it moved
+os_channel_record() {
     local f tag="$1" now prev high moved_at seen moved regressed note
     f=$(os_channel_state_file)
     now="${2:-$(date +%s)}"

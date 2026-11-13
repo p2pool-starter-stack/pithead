@@ -90,7 +90,7 @@ case "$url" in
     cat "${CH_API_RESPONSE:?}" >"$out"
     emit 200
     ;;
-*objects.githubusercontent.com*)
+*objects.githubusercontent.com* | *release-assets.githubusercontent.com*)
     if [ "${CH_STUB_RC:-0}" != "0" ]; then exit "$CH_STUB_RC"; fi
     if [ "$wfmt" != "%{http_code}\n" ]; then emit 200; exit 0; fi
     have=0
@@ -104,13 +104,19 @@ case "$url" in
         case "${CH_REDIRECT:-}" in
         offhost) redirect 302 http://evil.invalid/b ;;
         loop) redirect 302 "https://github.com/next-hop/$(basename "$url")" ;;
-        asset) redirect 302 https://objects.githubusercontent.com/asset.bin ;;
+        asset) redirect 302 https://release-assets.githubusercontent.com/asset.bin ;;
+        oldasset) redirect 302 https://objects.githubusercontent.com/old.bin ;;
         *) emit 200 ;;
         esac
         exit 0
     fi
     if [ "${CH_FINAL_CODE:-200}" != "200" ]; then
         emit "$CH_FINAL_CODE"
+        exit 0
+    fi
+    if [ "${CH_OVERSIZE:-0}" = "1" ]; then
+        head -c 1500 /dev/zero >>"$out"
+        emit 200
         exit 0
     fi
     have=0
@@ -191,9 +197,21 @@ check "the loop stops at the hop cap" "$(($(grep -c 'pithead-os-v9.9.9.raucb' "$
 ch_intent "$UC" os-download "v9.9.9"
 chrun CH_REDIRECT=asset >/dev/null
 check "the asset host hop resolves and completes" "$(chresult .status)" "downloaded"
-check_has "bytes are fetched from the terminal URL" "$(grep 'objects.githubusercontent.com' "$SB/curl.log" | tail -1)" "objects.githubusercontent.com/asset.bin"
+check_has "bytes are fetched from the live asset host" "$(grep 'release-assets.githubusercontent.com' "$SB/curl.log" | tail -1)" "release-assets.githubusercontent.com/asset.bin"
 check "the staged bundle is complete" "$(wc -c <"$DIR/pithead-os-v9.9.9.raucb" | tr -d ' ')" "1000"
+check "the resolve step requests no body" "$(grep -F ' -w %{http_code} ' "$SB/curl.log" | grep -cF 'pithead-os-' | tr -d ' ')" "$(grep -F ' -w %{http_code} ' "$SB/curl.log" | grep -F 'pithead-os-' | grep -cF ' -I ' | tr -d ' ')"
+check "production dials pin https over the Tor proxy" "$(grep -F ' --proto =https ' "$SB/curl.log" | grep -cF -- '--socks5-hostname 10.9.0.25:9050' | tr -d ' ')" "$(grep -F -- '--socks5-hostname 10.9.0.25:9050' "$SB/curl.log" | wc -l | tr -d ' ')"
 rm -f "$DIR/pithead-os-v9.9.9.raucb"
+ch_intent "$UC" os-download "v9.9.9"
+chrun CH_REDIRECT=oldasset >/dev/null
+check "the retired asset host still resolves and completes" "$(chresult .status)" "downloaded"
+check "the old-host bundle is complete" "$(wc -c <"$DIR/pithead-os-v9.9.9.raucb" | tr -d ' ')" "1000"
+rm -f "$DIR/pithead-os-v9.9.9.raucb"
+ch_intent "$UC" os-download "v9.9.9"
+chrun CH_OVERSIZE=1 >/dev/null
+check "a stream past the announced size fails the download" "$(chresult .status)" "failed"
+check_has "the failure names the announced size" "$(chresult .error)" "announced 1000-byte size"
+check "the oversize partial is discarded" "$([ -f "$DIR/pithead-os-v9.9.9.raucb.partial" ] && echo present || echo absent)" "absent"
 ch_intent "$UC" os-download "v9.9.9"
 chrun CH_FINAL_CODE=302 >/dev/null
 check "a non-2xx final answer fails the download" "$(chresult .status)" "failed"

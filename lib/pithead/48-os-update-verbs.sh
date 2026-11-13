@@ -188,7 +188,7 @@ control_os_download() { # <claimed-file> <id> <actor> <control-dir>
         sleep 5
         bytes=0
         [ -f "$part" ] && bytes=$(wc -c <"$part" | tr -d ' ')
-        [ "$bytes" -gt "$size" ] && kill "$pid" 2>/dev/null
+        [ "$bytes" -gt "$size" ] && kill "$pid" 2>/dev/null || true
         control_write_result "$cdir/results" "$id" "$(jq -n --arg v "$tag" --argjson b "$bytes" --argjson t "$size" --argjson r "$have" \
             '{status:"downloading",version:$v,bytes:$b,total:$t,resumed_from:$r,ts:(now|floor)}')"
     done
