@@ -70,9 +70,12 @@ assert_contains "the default window is 72 hours when the intent states none" \
     "$(cat "$SB/journal.log")" "--since 72 hours ago"
 assert_rc "every Pithead unit is asked for by exact membership" \
     "$(grep -c -- '--no-pager' "$SB/journal.log")" "15"
+sb_missing=""
 for unit in pithead-boot.service pithead-boot-version.service pithead-address-watch.service pithead-miner-recovery.service dashboard.service caddy.service tor.service monerod.service tari.service p2pool.service xmrig-proxy.service docker-proxy.service docker-control.service xmrig.service rauc.service; do
-    assert_contains "journal is asked for $unit" "$(cat "$SB/journal.log")" "-u $unit"
+    grep -qF -- "-u $unit " "$SB/journal.log" || sb_missing="$sb_missing $unit"
 done
+assert_eq "the journal is asked for every Pithead unit by name" "$sb_missing" ""
+unset sb_missing unit
 assert_contains "monerod journal lines land in the archive" \
     "$(cat "$SB/extract1/bundle/logs/monerod.service.log")" "monerod:"
 assert_contains "tor bootstrap state is collected" \
