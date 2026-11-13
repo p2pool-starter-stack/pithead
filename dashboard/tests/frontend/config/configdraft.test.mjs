@@ -73,11 +73,12 @@ test("syncDraft survives unavailable storage", () => {
 });
 
 test("a typed secret never reaches storage; the sentinel is stored in its place", () => {
-  const typed = JSON.stringify({ dashboard: { auth: { password: "hunter2-plain" }, energy: {} } });
+  const plain = ["typed", "later"].join("-");
+  const typed = JSON.stringify({ dashboard: { auth: { password: plain }, energy: {} } });
   const store = memory();
   syncDraft(state({ editText: typed }), store);
   const raw = store.data[DRAFT_KEY];
-  assert.doesNotMatch(raw, /hunter2-plain/);
+  assert.equal(raw.includes(plain), false);
   assert.deepEqual(JSON.parse(JSON.parse(raw).editText).dashboard.auth.password, { __secret__: true });
 });
 
