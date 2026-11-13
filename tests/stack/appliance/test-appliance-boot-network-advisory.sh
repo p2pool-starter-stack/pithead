@@ -305,7 +305,7 @@ _bnv_publish x '' >/dev/null
 assert_rc "no in-flight flag is a silent no-op" "$?" "0"
 rm -rf "$_BNV3"
 
-echo "== wiring: both fail paths consult the network advisory before spending the fallback (#4049) =="
+echo "== wiring: only the window end consults the network advisory before spending the fallback (#4049) =="
 _BNV_TAIL=$(tail -n 2 "$ROOT/os/overlay/pithead-boot")
 assert_eq "the 16-minute window ends in the classifier, and only then in fail_boot" \
     "$_BNV_TAIL" \
@@ -313,16 +313,15 @@ assert_eq "the 16-minute window ends in the classifier, and only then in fail_bo
 fail_boot "the stack never became healthy (serving + doctor + status)"'
 _BNV_UPF=$(sed -n '/^boot_up_failed()/,/^}/p' "$ROOT/os/overlay/pithead-boot")
 _BNV_L1=$(printf '%s\n' "$_BNV_UPF" | grep -n fail_boot_contended | head -1 | cut -d: -f1)
-_BNV_L2=$(printf '%s\n' "$_BNV_UPF" | grep -n gate_network_advisory_commit | head -1 | cut -d: -f1)
 _BNV_L3=$(printf '%s\n' "$_BNV_UPF" | grep -n '    fail_boot ' | head -1 | cut -d: -f1)
 assert_eq "an up failure still exits for contention before anything else" \
-    "$([ "$_BNV_L1" -lt "$_BNV_L2" ] && echo before)" "before"
-assert_eq "an up failure consults the wedge before fail_boot" \
-    "$([ "$_BNV_L2" -lt "$_BNV_L3" ] && echo before)" "before"
+    "$([ "$_BNV_L1" -lt "$_BNV_L3" ] && echo before)" "before"
+assert_eq "an up failure spends the fallback on the spot — only the end of the window classifies, so a dead image cannot commit while tor is merely starting" \
+    "$(printf '%s\n' "$_BNV_UPF" | grep -c gate_network_advisory_commit)" "0"
 assert_eq "the healthy pass publishes its verdict through the shared function, so both halves cannot drift" \
     "$(grep -c 'boot_publish_os_update_verdict "\$gate_advisory"' "$ROOT/os/overlay/pithead-boot")" "1"
-assert_eq "both gate exits, up-failure and window-timeout, carry the classifier" \
-    "$(grep -c 'gate_network_advisory_commit' "$ROOT/os/overlay/pithead-boot")" "2"
+assert_eq "the window-timeout exit carries the classifier exactly once" \
+    "$(grep -c 'gate_network_advisory_commit' "$ROOT/os/overlay/pithead-boot")" "1"
 assert_eq "the certificate-only trigger stays exactly as #1265 wrote it (this change adds no other mid-loop advisory)" \
     "$(grep -c 'gate_blocked_only_by_cert; then' "$ROOT/os/overlay/pithead-boot")" "1"
 assert_eq "the boot gate's three-signal pass path is unchanged by this change (regression pin)" \

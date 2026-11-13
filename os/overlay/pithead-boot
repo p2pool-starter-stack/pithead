@@ -91,7 +91,6 @@ fail_boot_contended() { # <what could not be started>
 # repeated at both call sites below, so the hold-chain and the ordinary boot cannot drift apart.
 boot_up_failed() { # <exit status of ./pithead up>
     [ "$1" = "$PITHEAD_EX_LOCK_TIMEOUT" ] && fail_boot_contended "the stack could not be brought up"
-    if [ "$(gate_tor_transport_verdict)" = wedged ] && gate_network_advisory_commit; then exit 0; fi
     fail_boot "the stack could not be brought up"
 }
 

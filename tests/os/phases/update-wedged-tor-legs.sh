@@ -60,6 +60,8 @@ _update_wedged_tor_reboot_leg() {
         bad "leg 6: guest never returned after the plain reboot"
         return
     }
+    local booted
+    booted=$(_boot_id) || booted=""
     marker=$(SSH_TIMEOUT=20 _ssh cat /etc/pithead-test-marker 2>/dev/null)
     [ "$marker" = "v2" ] && ok "leg 6: the wedged box booted back onto its committed slot (v2)" ||
         bad "leg 6: expected v2 to boot after the reboot, got '${marker:-none}'"
@@ -94,15 +96,19 @@ _update_wedged_tor_reboot_leg() {
     fi
     local after
     after=$(_boot_id) || after=""
-    [ -n "$after" ] && [ "$after" = "$before" ] &&
+    [ -n "$after" ] && [ -n "$booted" ] && [ "$after" = "$booted" ] &&
         ok "leg 6: the machine rebooted exactly for the plain reboot — fail_boot never fired behind the commit" ||
-        bad "leg 6: the boot id changed again during the leg — something rebooted this box behind the gate"
+        bad "leg 6: the boot id changed after the wedge boot — something rebooted this box behind the gate"
     marker=$(SSH_TIMEOUT=20 _ssh cat /etc/pithead-test-marker 2>/dev/null)
     [ "$marker" = "v2" ] && ok "leg 6: still v2 at the end of the window — no GRUB fallback" ||
         bad "leg 6: the guest left v2 during the window (marker '${marker:-none}')"
 }
 _update_wedged_tor_update_leg() {
     info "leg 7 — an OS update while Tor stays wedged must commit, with the fault recorded as advisory (#4049)"
+    if ! _wedged_tor_still_wedged >/dev/null; then
+        bad "leg 7: no live wedge to update through — the rest of this leg would prove nothing about a wedge commit"
+        return
+    fi
     local fbundle fbrc tag srv srv_pid host_addr port=8932 aged out before marker
     info "leg 7: building the v3wedge bundle (the wedge is still planted; nothing about this bundle is special)"
     fbundle=$(_build_bundle v3wedge)
