@@ -156,9 +156,7 @@ phase_rig() {
     fi
     [ "$(_ssh 'cat /data/pithead/machine-role' | tr -d '\r\n')" = "rig" ] &&
         ok "the role marker says rig" || bad "the role marker is not rig"
-    [ "$(_ssh 'hostnamectl --static' | tr -d '\r\n')" = "kvm-rig" ] && [ "$(_ssh 'hostname' | tr -d '\r\n')" = "kvm-rig" ] &&
-        ok "the rig's worker name is its static and live hostname" ||
-        bad "the rig's hostname is not its worker name ($(_ssh 'hostnamectl --static' 2>/dev/null | tr -d '\r\n'))"
+    [ "$(_ssh 'hostnamectl --static; hostname' | tr -d '\r' | uniq)" = "kvm-rig" ] && ok "the rig's worker name is its static and live hostname" || bad "the rig's hostname is not its worker name"
     [ -z "$(_ssh 'ls /data/pithead/config.json 2>/dev/null')" ] &&
         ok "no coordinator config was ever written (a rig has none)" ||
         bad "a config.json appeared on a rig — the coordinator contract leaked into the rig role"
