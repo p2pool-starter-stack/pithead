@@ -23,8 +23,6 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
   bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
   instead of staying at 0 peers when compose did not cycle it (#4063).
-
-
 - Tor's `MaxClientCircuitsPending` is raised to 64 and `monero.out_peers` now defaults to 24 (was 48),
   so monerod, Tari and P2Pool onion dials no longer sit at Tor's pending-circuit ceiling right after
   boot. A `config.json` without `monero.out_peers` re-renders at 24 on the next apply; an explicit value
