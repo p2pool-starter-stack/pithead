@@ -1,13 +1,17 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+_container_started_ns() { # <container>
+    rx "date -d \"\$(docker inspect $1 --format '{{.State.StartedAt}}')\" +%s%N"
+}
+
 _monerod_started_after_tor() { # <label>
     local tor_at monerod_at
-    tor_at="$(rx "docker inspect tor --format '{{.State.StartedAt}}'")"
-    monerod_at="$(rx "docker inspect monerod --format '{{.State.StartedAt}}'")"
-    if [[ "$monerod_at" > "$tor_at" ]]; then
+    tor_at="$(_container_started_ns tor)"
+    monerod_at="$(_container_started_ns monerod)"
+    if [ "$monerod_at" -gt "$tor_at" ] 2>/dev/null; then
         it_pass "$1"
     else
-        it_fail "$1" "monerod started $monerod_at, tor started $tor_at"
+        it_fail "$1" "monerod started at $monerod_at ns, tor at $tor_at ns"
     fi
 }
 
@@ -24,7 +28,7 @@ _hardening_stack_action_rows() { # <control-dir>
     assert_contains "Restart all audited with actor, action and status (#4064)" \
         "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"actor":"itest","action":"restart","status":"applied"'
     _monerod_started_after_tor "after Restart all monerod is re-dialled: restarted after tor (#4064)"
-    tor_started_before="$(rx "docker inspect tor --format '{{.State.StartedAt}}'")"
+    tor_started_before="$(_container_started_ns tor)"
     tor_reset_id="$(_uuid4)"
     _spool_write "$cdir/requests/$tor_reset_id.json" "$(jq -nc --arg id "$tor_reset_id" '{id:$id,action:"tor-reset",actor:"itest"}')"
     st="$(_wait_control_status "$cdir" "$tor_reset_id" "" 300 || echo timeout)"
@@ -33,10 +37,10 @@ _hardening_stack_action_rows() { # <control-dir>
     rejected | failed) it_pass "a healthy Tor refuses the dashboard Tor state reset (#4063) [$st]" ;;
     *) it_fail "a healthy Tor refuses the dashboard Tor state reset (#4063)" "status=$st (expected rejected or failed)" ;;
     esac
-    assert_eq "the refusal carries the gate's reason (#4063)" \
-        "$(printf '%s' "$tor_reset_result" | jq -r '(.error // "") | length > 0')" "true"
+    assert_eq "the refusal carries a gate's own reason (#4063)" \
+        "$(printf '%s' "$tor_reset_result" | jq -r '(.error // "") | test("not saturated|TOR_AUTO_HEAL|cooldown|not corroborated|lock is unavailable")')" "true"
     assert_eq "a refused reset leaves Tor running untouched (#4063)" \
-        "$(rx "docker inspect tor --format '{{.State.StartedAt}}'")" "$tor_started_before"
+        "$(_container_started_ns tor)" "$tor_started_before"
     assert_contains "Tor reset audited with actor, action and status (#4063)" \
         "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"actor":"itest","action":"tor-reset"'
 }

@@ -1023,7 +1023,7 @@ check) WARNs on the live state. Fix:
 ```
 
 Stack operations don't need the manual step: compose restarts monerod automatically whenever it
-restarts or recreates tor (`up`, `apply`, `upgrade`), and `restart tor`, a bare `restart` (and so the dashboard's Restart all) and the final `tor.auto_heal` container restart each wait for Tor to report bootstrapped and then restart a running monerod themselves, whether or not compose already cycled it. NEWNYM does not restart monerod. (#972, #4063)
+restarts or recreates tor (`up`, `apply`, `upgrade`), and `restart tor` and a bare `restart` (and so the dashboard's Restart all) wait for Tor to report bootstrapped and then restart a running monerod themselves, whether or not compose already cycled it; the final `tor.auto_heal` container restart restarts monerod itself once Tor is running. NEWNYM does not restart monerod. (#972, #4063)
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.

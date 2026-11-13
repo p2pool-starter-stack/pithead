@@ -4,10 +4,6 @@
 # action set. The runner dispatches each accepted verb to a FIXED pithead command and audits it; an
 # unknown verb is rejected, and no host command runs on the rejection path.
 #
-# These verbs reached the spool from the Telegram control commands (#338) until #2076 removed them,
-# so `apply` currently has no producer; `restart` is submitted by the dashboard's Restart all
-# (#4064). The dispatch table is still the place "a spool writer cannot run an arbitrary host
-# command" is proven. The actor below is a plain test tag, not a Telegram user id.
 # Sourced by tests/stack/run.sh.
 #
 # This domain IS standalone-sourceable once tests/stack/lib.sh has been sourced, and it needs
@@ -93,6 +89,7 @@ restart_refusal_case() { # <label> <substring of the reason>; the caller sets up
         "$(cat "$CC/audit/control.log")" '"actor":"tester","action":"restart","status":"rejected"'
 }
 for step in downloading installing verifying reboot-pending; do
+    rm -f "$CC/restart-at"
     printf '{"step":"%s","version":"v9.9.9"}\n' "$step" >"$CC/results/os-update-state.json"
     restart_refusal_case "restart during OS update step $step" "OS update is in progress ($step)"
 done
@@ -100,9 +97,24 @@ printf '{"step":"idle"}\n' >"$CC/results/os-update-state.json"
 mkdir -p "$CC/os"
 printf '{"to":"9.9.9"}\n' >"$CC/os/in-flight.json"
 export PITHEAD_OS_UPDATE_DIR="$CC/os" PITHEAD_VERSION="9.9.9"
+rm -f "$CC/restart-at"
 restart_refusal_case "restart in the uncommitted-slot window" "still being committed"
 unset PITHEAD_OS_UPDATE_DIR PITHEAD_VERSION
 rm -f "$CC/results/os-update-state.json"
+date +%s >"$CC/restart-at"
+restart_refusal_case "a second restart inside the cooldown" "already requested"
+rm -f "$CC/restart-at"
+: >"$SELF_LOG"
+export SELF_RC=75
+printf '{"id":"%s","action":"restart","actor":"tester"}\n' "$uid_n" >"$CC/req_n.run.json"
+rm -f "$CC/results/$uid_n.json"
+run_sourced_e "$SANDBOX" control_process_request "$CC/req_n.run.json" "$CC" >/dev/null 2>&1
+assert_eq "a lock taken after the probe is a rejected busy restart, not a failure" \
+    "$(jq -r .status "$CC/results/$uid_n.json")" "rejected"
+assert_contains "the late busy reason says nothing was restarted" \
+    "$(jq -r .error "$CC/results/$uid_n.json")" "took the lock first"
+unset SELF_RC
+rm -f "$CC/restart-at"
 : >"$SELF_LOG"
 rm -f "$CC/results/$uid_n.json"
 cp "$CC/req_n.json" "$CC/req_n.run.json"

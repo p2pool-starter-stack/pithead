@@ -14,7 +14,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ### Added
 
 - The Service diagnostics card has a **Restart all** button (typed `RESTART`, refused during an OS
-  update, an uncommitted slot or a held host lock, and riding out the dashboard's own restart) and a
+  update, an uncommitted slot, a held host lock or a restart in the last two minutes, and riding out the dashboard's own restart) and a
   **Reset Tor state** button on the Tor card that runs the existing gated Tor recovery with its own
   30-minute budget and returns the gate's refusal reason (#4064, #4063).
 

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Dashboard-triggered Tor state reset (#4063): every 02e gate still applies, the refusal reason
-# reaches the result verbatim, the reset has its own cooldown, and tor-heal's path is unchanged.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-reset.XXXXXX")
@@ -75,11 +73,14 @@ AUTO_HEAL=false request tor-reset alice
 [ -e "$WORK/tor/state" ]
 [ "$(tail -1 "$WORK/audit")" = "alice tor-reset rejected" ]
 
-echo "== reset rejects unexpected request keys =="
+echo "== reset rejects unexpected request keys and the tor-heal actor =="
 reset_state
 request tor-reset alice ',confirm:"x"'
 [ "$(status)" = rejected ]
 [ -e "$WORK/tor/state" ]
+request tor-reset tor-heal
+[ "$(status)" = rejected ]
+[ ! -e "$WORK/stopped" ]
 
 echo "== each 02e gate refuses the dashboard reset with its own reason =="
 reset_state
@@ -131,6 +132,11 @@ request tor-reset alice
 [ ! -e "$WORK/actions" ]
 [ -e "$WORK/tor/state" ]
 [ "$(tail -1 "$WORK/audit")" = "alice tor-reset rejected" ]
+printf '%s\n' "$(($(date +%s) + 5000))" >"$WORK/control/tor-reset-at"
+request tor-reset alice
+[ "$(status)" = applied ]
+rm -f "$WORK/control/tor-recovery-at"
+printf "$SATURATED" >"$WORK/tor/state"
 printf '%s\n' "$(($(date +%s) - 2000))" >"$WORK/control/tor-reset-at"
 request tor-reset alice
 [ "$(status)" = applied ]

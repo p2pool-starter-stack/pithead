@@ -153,8 +153,17 @@ os_verify_bundle_reason() { # <bundle> <target-tag>
     return 0
 }
 
+CONTROL_RESTART_COOLDOWN_S=120
+
 control_restart_refusal() { # <control-dir>; echoes the reason, empty = proceed
-    local step to
+    local step to last=0 now
+    now=$(date +%s)
+    [ ! -f "$1/restart-at" ] || [ -L "$1/restart-at" ] || read -r last <"$1/restart-at" || last=0
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0
+    if [ "$last" -le "$now" ] && [ $((now - last)) -lt "$CONTROL_RESTART_COOLDOWN_S" ]; then
+        printf 'a restart was already requested %s seconds ago — nothing was restarted; try again in %s seconds.' "$((now - last))" "$((CONTROL_RESTART_COOLDOWN_S - (now - last)))"
+        return 0
+    fi
     step=$(jq -r '.step // ""' "$1/results/os-update-state.json" 2>/dev/null) || step=""
     to=$(jq -r '.to // ""' "$(os_update_inflight_file)" 2>/dev/null) || to=""
     case "$step" in

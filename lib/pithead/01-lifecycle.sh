@@ -347,7 +347,7 @@ stack_redial_monerod() {
         [ "$tor_health" = healthy ] && break
         [ "$i" -lt "$polls" ] && sleep "${PITHEAD_TOR_REDIAL_POLL_S:-5}"
     done
-    [ "$tor_health" = healthy ] || error "Tor did not report bootstrapped within the wait, so monerod was not restarted and may hold dead peer connections. Once Tor is healthy, run './pithead restart monerod'."
+    [ "$tor_health" = healthy ] || error "Tor did not report bootstrapped within the wait (or its health could not be read), so monerod was not restarted and may hold dead peer connections. Once Tor is healthy, run './pithead restart monerod'."
     if [ "$(docker inspect monerod --format '{{.State.Running}}' 2>/dev/null)" = true ]; then
         log "Tor is bootstrapped; restarting monerod so it re-dials its peers through Tor..."
         docker compose restart monerod

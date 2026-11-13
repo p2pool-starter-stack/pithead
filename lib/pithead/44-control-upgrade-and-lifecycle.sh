@@ -367,6 +367,7 @@ control_lifecycle() { # <verb: restart|apply> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "rejected"
         return 0
     fi
+    [ "$verb" != restart ] || date +%s >"$cdir/restart-at"
     control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "started"
     # ${PITHEAD_SELF:-$0} is this script (run_chain uses the same handle); the verb is a FIXED
     # literal picked by the case, never a string from the request.
@@ -376,7 +377,10 @@ control_lifecycle() { # <verb: restart|apply> <id> <actor> <control-dir>
     apply) "$self" apply -y >"$logf" 2>&1 || rc=$? ;;
     *) return 0 ;; # unreachable: the dispatch already gated the verb
     esac
-    if [ "$rc" -eq 0 ]; then
+    if [ "$verb" = restart ] && [ "$rc" -eq "$PITHEAD_EX_LOCK_TIMEOUT" ]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg a "$verb" '{status:"rejected",action:$a,error:"another host operation took the lock first — nothing was restarted; try again once it has finished.",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "rejected"
+    elif [ "$rc" -eq 0 ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n --arg a "$verb" '{status:"applied",action:$a,ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "applied"
     else

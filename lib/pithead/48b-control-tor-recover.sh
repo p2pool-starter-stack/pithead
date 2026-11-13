@@ -24,7 +24,7 @@ control_tor_reset() { # <control-dir> <id> <actor>
     fi
     if ! [[ "$last" =~ ^[0-9]+$ ]]; then
         error="the Reset Tor state record is invalid, so the reset was not attempted"
-    elif [ $((now - last)) -lt "$CONTROL_TOR_RESET_COOLDOWN_S" ]; then
+    elif [ "$last" -le "$now" ] && [ $((now - last)) -lt "$CONTROL_TOR_RESET_COOLDOWN_S" ]; then
         error="Reset Tor state was already requested $(((now - last) / 60)) minutes ago — wait $(((CONTROL_TOR_RESET_COOLDOWN_S - (now - last) + 59) / 60)) more minutes before asking again"
     fi
     if [ -n "$error" ]; then
