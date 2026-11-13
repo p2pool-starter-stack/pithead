@@ -466,14 +466,15 @@ by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig 
 `--phase rig` prints that row alone, and `--phase provision` prints only the reserved-node row,
 and only on a credentialed bench.
 
-`--require-complete` (#3996) turns `missing` into failure material: the release-gate rig job
-passes it together with the node inputs (bench-ci `options.require_complete`), and the run then
-prints a failed row and exits non-zero when any row skipped for a missing input, so the
-accepted-share row can never pass as a skip on the job that gates a release. `by-design` and
-`covered` skips stay accepted — the flag asks one question: did the job get every input it
-said it would run with? The verdict is the pure
-`require_complete_verdict` in `tests/os/require-complete-verdict.sh`, covered by
-`selftest-require-complete.sh`.
+`--require-complete` (#3996) turns `missing` into failure material: the release rig/rigmedia/media
+split is submitted with it (`options.require_complete`, `docs/dev/releasing.md`; bench-ci appends
+the flag to each phase of that split), and the run then prints a failed row and exits non-zero when
+any row skipped for a missing input, so the accepted-share row can never pass as a skip on the job
+that gates a release. Until bench-ci#2480 puts `node` on the tier4-kvm harness host, the rig
+phase's #1867 card-render row is itself one of those missing skips, so that split fails closed on
+it by design. `by-design` and `covered` skips stay accepted — the flag asks one question: did the
+job get every input it said it would run with? The verdict is the pure `require_complete_verdict`
+in `tests/os/require-complete-verdict.sh`, covered by `selftest-require-complete.sh`.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer

@@ -42,8 +42,9 @@ it proves and what it still leaves out.
 *Automated (partially, #2063 + #3996): the `rig` phase's share leg (`tests/os/rig-share-leg.sh`)
 re-points the already-proven rig guest at a coordinator guest the battery itself boots, asserts a
 nonzero hashrate on the rig's own RigForge feed (the M11 floor), and fails unless the rig's worker
-AND the coordinator's built-in miner both show an accepted share — with `--require-complete` that
-leg can no longer pass as a skip on the release job. Stays manual: the physical half (flash the
+AND the coordinator's built-in miner both show an accepted share — the release rig/rigmedia/media
+split is submitted with `--require-complete` (`docs/dev/releasing.md`), so that leg can no longer
+pass as a skip there. Stays manual: the physical half (flash the
 stick, firmware-boot the loaner and read its rig card, real `pithead.local` discovery), the
 `doctor` MSR check — a KVM guest's `/dev/cpu/*/msr` is the guest's virtual MSRs, so a write there
 proves the path works but moves nothing a virtual CPU can measure, and the RandomX MSR hashrate
