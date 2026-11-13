@@ -239,6 +239,31 @@ has a0a0a0a0-0000-4000-8000-000000000801 &&
     ok "byte eviction spares the in-window support bundle" ||
     bad "byte eviction spares the in-window support bundle" "in-window bundle lost"
 unset CONTROL_RESULTS_MAX_BYTES CONTROL_BACKUP_MAX_COUNT CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S
+PRZ="$SANDBOX/ctrl4036pairing"
+mkdir -p "$PRZ/results"
+echo '{"step":"idle"}' >"$PRZ/results/os-update-state.json"
+bundle a0a0a0a0-0000-4000-8000-000000000811 120
+export CONTROL_BACKUP_MAX_COUNT=3 CONTROL_RESULT_MAX_COUNT=100 CONTROL_RESULT_MAX_AGE_S=60 CONTROL_BACKUP_DOWNLOAD_WINDOW_S=3600
+unset CONTROL_RESULTS_MAX_BYTES
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+has a0a0a0a0-0000-4000-8000-000000000811 &&
+    ok "a kept support bundle's result JSON outlives the plain-result age cap with its archive" ||
+    bad "a kept support bundle's result JSON outlives the plain-result age cap with its archive" "json: $([ -f "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000811.json" ] && echo present || echo missing)"
+rm -f "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000811".*
+bundle a0a0a0a0-0000-4000-8000-000000000812 1
+backdate "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000812.json" 240
+bz_before=$(du -sk "$PRZ/results" | awk '{print $1 * 1024}')
+export CONTROL_RESULTS_MAX_BYTES=$((bz_before - 1)) CONTROL_RESULT_MAX_AGE_S=100000
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+has a0a0a0a0-0000-4000-8000-000000000812 &&
+    ok "byte eviction that reaches an in-window support bundle's JSON first keeps the pair" ||
+    bad "byte eviction that reaches an in-window support bundle's JSON first keeps the pair" "json: $([ -f "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000812.json" ] && echo present || echo missing)"
+backdate "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000812.tar.gz" 120
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+gone a0a0a0a0-0000-4000-8000-000000000812 &&
+    ok "byte eviction that reaches an expired support bundle's JSON first removes the pair" ||
+    bad "byte eviction that reaches an expired support bundle's JSON first removes the pair" "archive: $([ -f "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000812.tar.gz" ] && echo present || echo missing)"
+unset CONTROL_RESULTS_MAX_BYTES CONTROL_BACKUP_MAX_COUNT CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S
 unset -f bundle has gone
 unset PRZ bz_before
 

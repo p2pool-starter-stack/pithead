@@ -142,7 +142,7 @@ class HealthchecksClient:
             return
         try:
             self._record_failure(time.time(), reason, detail)
-        except Exception:  # noqa: S110 — the recorder must never break the ping
+        except Exception:  # noqa: S110
             pass
 
 
