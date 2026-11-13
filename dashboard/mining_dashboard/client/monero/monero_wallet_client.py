@@ -108,18 +108,6 @@ class MoneroWalletClient:
         return major, minor
 
     def scan(self, min_height=0):
-        """Return confirmed incoming transfers at or above ``min_height`` as normalized dicts.
-
-        Seeds ``min_height`` from the highest payout already stored so a restart re-fetches only
-        the tip (and idempotent storage drops the overlap) rather than replaying history. Each row
-        is ``{"txid", "height", "ts", "amount_atomic", "amount_xmr"}``; the caller records atomic
-        and converts to XMR only at the display edge. Returns ``(transfers, answered)``:
-        an empty successful scan has ``answered=True``; an RPC failure has ``answered=False``.
-
-        For a configured subaddress, only ``type: "block"`` rows are mining payouts; ordinary
-        incoming transfers are excluded after wallet-rpc applies the account/subaddress filter.
-        Coinbase outputs unlock only after 60 blocks; confirmation records them before unlock.
-        """
         params = {
             "in": True,
             "coinbase": True,

@@ -1,17 +1,3 @@
-#
-# Shape (prefix + length) alone is not enough: a well-shaped address with one mistyped character
-# passes it, and p2pool then dies on the address at startup (SIGABRT/SIGSEGV) — a crash-looping
-# stack that looks healthy from outside (#829). So after the shape gate, verify the address the
-# way a wallet does: block-wise base58 decode, the network byte, and the 4-byte checksum — the
-# first 4 bytes of the LEGACY Keccak-256 of the payload (Monero predates NIST SHA3; the padding
-# differs, so sha3 tools give wrong digests and the hash is vendored below). "checksum" means
-# exactly one thing: a character in the address is wrong.
-#
-# python3 does the math (bash has no 64-bit rotate worth writing): baked into the appliance
-# rootfs, present on effectively every host that can run docker. Without it the shape verdict
-# stands alone — the pre-#829 behaviour, degraded, not broken. Every config path routes through
-# here (setup/apply, the appliance wizard spool, the dashboard control runner), so this is the
-# one checksum gate for all of them.
 monero_address_type() {
     local shape
     case "$1" in
