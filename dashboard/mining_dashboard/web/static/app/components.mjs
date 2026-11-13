@@ -3,6 +3,7 @@ import { ComponentHealth } from "../network/health.mjs";
 import { MineCartTrain } from "../network/minecart.mjs";
 import { BackupPanel } from "../system/backupview.mjs";
 import { DiagnosticsPanel } from "../system/diagview.mjs";
+import { NodeAlertBanner } from "../system/nodealert.mjs";
 import { OsVerdictBanner } from "../system/osupdate.mjs";
 import { SecurityPanel } from "../system/securityview.mjs";
 import { SyncView } from "../system/syncview.mjs";
@@ -186,6 +187,7 @@ export function App({
   return html`<${Fragment}>
         <${Header} state=${state} theme=${ui.theme} onTheme=${onTheme} />
         <main id="dashboard-main">
+            <${NodeAlertBanner} alert=${state.node_alert} />
             <${OsVerdictBanner} os=${state.os_update} />
             ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…${recoveryNeeded ? html`<${ConnectionRecovery} />` : null}</div>` : null}
             <${MinerConnection} />
