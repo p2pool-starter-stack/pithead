@@ -16,6 +16,19 @@ The server is a data API; the browser renders the UI. There is no server-side te
   strings and semantic tokens (`variant: "ok"`, `level: "high"`) and emits no HTML. The same
   `Metrics` is meant to back future consumers (Telegram #45, calculator #12) without re-deriving
   from the raw dict.
+- Each `workers[]` row carries `mining`, the rig's own connection verdict (#4071):
+  `{"state", "pool"}` with `state` one of `mining_here`, `on_backup`, `not_connected` or
+  `unknown`. It is read from the `connection` block (`pool` as `host:port`, `uptime`) of the rig's
+  summary feed, the shape rigforge's `tests/contract/v1/feed.json` pins. `mining_here` needs the
+  reported pool to match this host's address (`HOST_IP`, the detected host IPv4 or a specific
+  `STRATUM_BIND`) and `STRATUM_PORT`; a rig pointed at this host by DNS name reads `on_backup`.
+  Any other live pool is `on_backup` and carries the reported string in `pool`. A rig with no
+  live connection (`uptime` 0) is `not_connected`. A rig that answers without a `connection`
+  block, or a host with no known address, is `unknown`, never `mining_here`. "Workers Alive"
+  (`proxy_workers`), the total hashrate and the per-window totals count only stratum-side values
+  of online rows that are not `on_backup` or `not_connected`. The rig's own hashrate is the
+  separate `telemetry_h10`, `telemetry_h60` and `telemetry_h15` fields (H/s, `null` when not
+  probed); it is never summed into a total, and `h60`/`h15` stay the proxy's figures.
 - The client (`static/dashboard.js` + `components.mjs`) is a small Preact app, rendered with `htm`
   tagged templates (no JSX, no build step). It polls `/api/state` every 30s and renders
   declaratively, so the chart instance, table sort, selected range, and the simple/advanced view
