@@ -66,14 +66,14 @@ class MonerodRedial:
         if monerod_started != self._monerod_started:
             self._monerod_started = monerod_started
             self._settle_since = None
+        tor_ready = bool(tor.get("running")) and tor.get("health") == "healthy"
+        if not tor_ready:
+            self._reset_clocks()
+            return
         if verdict.get("peerless"):
             self._peerless_since = self._peerless_since if self._peerless_since is not None else now
         else:
             self._peerless_since = None
-        tor_ready = bool(tor.get("running")) and tor.get("health") == "healthy"
-        if not tor_ready:
-            self._settle_since = None
-            return
         if self._pending_tor_start is not None and peers == 0:
             self._settle_since = self._settle_since if self._settle_since is not None else now
         else:

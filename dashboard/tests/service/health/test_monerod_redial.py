@@ -169,17 +169,21 @@ async def test_peerless_watchdog_waits_for_a_healthy_tor(monkeypatch):
     assert rig.restarts == 0
     rig.tor["health"] = "healthy"
     await rig.step(peers_out=0, peerless=True)
+    assert rig.restarts == 0
+    await rig.run(mr.WATCHDOG_GRACE_SEC + mr.CHECK_INTERVAL_SEC, peers_out=0, peerless=True)
     assert rig.restarts == 1
 
 
 @pytest.mark.asyncio
-async def test_tor_health_flapping_does_not_restart_the_peerless_clock(monkeypatch):
+async def test_tor_health_flap_restarts_the_peerless_grace(monkeypatch):
     rig = _Rig(monkeypatch)
     await rig.run(mr.WATCHDOG_GRACE_SEC - mr.CHECK_INTERVAL_SEC, peers_out=0, peerless=True)
     rig.tor["health"] = "starting"
     await rig.step(peers_out=0, peerless=True)
     rig.tor["health"] = "healthy"
     await rig.step(peers_out=0, peerless=True)
+    assert rig.restarts == 0
+    await rig.run(mr.WATCHDOG_GRACE_SEC + mr.CHECK_INTERVAL_SEC, peers_out=0, peerless=True)
     assert rig.restarts == 1
 
 
