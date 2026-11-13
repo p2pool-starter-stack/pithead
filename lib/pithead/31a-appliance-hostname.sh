@@ -29,6 +29,11 @@ appliance_mdns_name_in_use() {
     return 1
 }
 
+machine_name_warning() {
+    is_machine_name_label "$1" && appliance_mdns_name_in_use "$1" || return 0
+    printf 'Another machine on this network already answers %s.local — give this %s a different name if both must be reachable.' "$1" "$2"
+}
+
 reconcile_rig_hostname() {
     local DASHBOARD_HOST
     DASHBOARD_HOST=$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)

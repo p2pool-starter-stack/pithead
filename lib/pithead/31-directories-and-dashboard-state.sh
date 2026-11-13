@@ -276,9 +276,6 @@ update_current_symlink() {
     return 0
 }
 
-# Decide the hostname the dashboard is reached at: an explicit dashboard.host wins; otherwise
-# "auto"/unset means this machine's hostname, re-derived each run (so reverting to "auto" takes
-# effect). Interactive setup prompts, defaulting to any previously-set value then the hostname.
 resolve_dashboard_host() {
     local allow_prompt="${1:-}"
     # An interactive ask with no terminal is an EOF that silently picks the bare hostname —

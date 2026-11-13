@@ -267,17 +267,34 @@ nm_run() {
             hostname() { printf '192.168.1.10 10.0.0.5\n'; }
             if appliance_mdns_name_in_use box; then printf in-use; else printf free; fi
             ;;
-        diy-ask)
-            python3 - "$STACK" <<'PY'
-import os, pty, select, subprocess, sys
+        warn)
+            is_appliance() { return 0; }
+            getent() { printf '%s\n' "$FAKE_ANSWERS"; }
+            hostname() { printf '192.168.1.10\n'; }
+            machine_name_warning box rig
+            ;;
+        ask)
+            printf '{}\n' >cfg.json
+            [ -z "${NOCFG:-}" ] || rm -f cfg.json
+            python3 - "$STACK" "$PWD/cfg.json" "$2" "$3" <<'PY'
+import os, pty, re, select, subprocess, sys
+stack, cfg, appliance, answers = sys.argv[1:5]
 master, slave = pty.openpty()
-script = 'source "$1"; unset DASHBOARD_HOST HOST_IP PRESERVED_HOST_IP; is_appliance() { return 1; }; resolve_dashboard_host interactive; printf "host=%s\n" "$HOST_IP"'
-proc = subprocess.Popen(["bash", "-c", script, "bash", sys.argv[1]], stdin=slave, stdout=slave, stderr=slave)
-os.write(master, b"evil-name\n")
+script = (
+    'kind=$3; source "$1"; unset DASHBOARD_HOST HOST_IP PRESERVED_HOST_IP; '
+    'hostname() { echo box; }; '
+    'is_appliance() { [ "$kind" = 1 ]; }; resolve_dashboard_host interactive; '
+    'printf "host=%s\\n" "$HOST_IP"'
+)
+proc = subprocess.Popen(["bash", "-c", script, "bash", stack, cfg, appliance], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, "PITHEAD_CONFIG_FILE": cfg})
+os.write(master, answers.encode().decode("unicode_escape").encode())
 out = b""
 while select.select([master], [], [], 0.2)[0] or proc.poll() is None:
     out += os.read(master, 4096)
-print([line for line in out.decode().splitlines() if line.startswith("host=")][0].strip())
+text = out.decode()
+host = re.search(r"host=\S+", text)[0]
+saved = subprocess.run(["jq", "-r", ".dashboard.host // \"none\"", cfg], capture_output=True, text=True).stdout.strip()
+print(f"{host} saved={saved} rule={text.count('lowercase letters, digits or hyphens')} unsaved={text.count('applies to this run only')}")
 PY
             ;;
         esac
@@ -303,5 +320,11 @@ assert_eq "a name also answered by another machine is in use" \
 assert_eq "a name another machine answers is in use" "$(FAKE_ANSWERS='192.0.2.5' nm_run inuse)" in-use
 assert_eq "an unanswered name is free" "$(FAKE_ANSWERS='' nm_run inuse)" free
 assert_eq "off the appliance nothing is ever announced" "$(FAKE_APPLIANCE=0 FAKE_ANSWERS='192.0.2.5' nm_run inuse)" free
-assert_eq "DIY setup reads no hostname input" "$(nm_run diy-ask)" \
-    "host=$(hostname)"
+assert_eq "DIY setup reads no hostname input" "$(nm_run ask 0 'evil-name\n')" "host=box saved=none rule=0 unsaved=0"
+assert_eq "an appliance refuses a bad name, explains the rule, then keeps the good one" \
+    "$(nm_run ask 1 'Bad_Name\ngarden-box\n')" "host=garden-box.local saved=garden-box rule=1 unsaved=0"
+assert_eq "an empty answer keeps the default name and saves nothing" "$(nm_run ask 1 '\n')" "host=box.local saved=none rule=0 unsaved=0"
+assert_eq "an unsaved name is reported, not swallowed" "$(NOCFG=1 nm_run ask 1 'garden-box\n')" "host=garden-box.local saved= rule=0 unsaved=1"
+assert_eq "an in-use name carries the warning text and a free one carries none" \
+    "$(FAKE_ANSWERS='192.0.2.5' nm_run warn)|$(FAKE_ANSWERS='' nm_run warn)" \
+    "Another machine on this network already answers box.local — give this rig a different name if both must be reachable.|"

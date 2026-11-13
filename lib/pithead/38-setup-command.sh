@@ -28,9 +28,9 @@ setup_confirmed() {
     check_stratum_exposure setup
     load_preserved_state
     resolve_dashboard_host "interactive"
-    if is_appliance && is_machine_name_label "${DASHBOARD_HOST:-}" && appliance_mdns_name_in_use "$DASHBOARD_HOST"; then
-        warn "Another machine on this network already answers ${DASHBOARD_HOST}.local — give this machine a different name if both must be reachable."
-    fi
+    local name_warning
+    name_warning=$(machine_name_warning "${DASHBOARD_HOST:-}" machine)
+    [ -z "$name_warning" ] || warn "$name_warning"
     reconcile_appliance_hostname
     prepare_directories
     render_env
