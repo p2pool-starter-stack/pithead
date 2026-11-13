@@ -8,7 +8,7 @@ from mining_dashboard.service import control_service, request_spool
 
 logger = logging.getLogger("TorHeal")
 
-PENDING_CIRCUIT_LIMIT = 32
+PENDING_CIRCUIT_LIMIT = 64
 
 
 class TorHistoryMixin:

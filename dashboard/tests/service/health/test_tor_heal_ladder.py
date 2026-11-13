@@ -63,8 +63,8 @@ async def test_failed_audit_submission_is_logged_not_raised(caplog):
     "reading,wedged",
     [
         ({"circuit_established": False}, True),
-        ({"circuit_established": True, "pending_circuits": 32}, True),
-        ({"circuit_established": True, "pending_circuits": 31}, False),
+        ({"circuit_established": True, "pending_circuits": 64}, True),
+        ({"circuit_established": True, "pending_circuits": 63}, False),
         ({"circuit_established": True, "pending_circuits": True}, False),
         ({}, False),
     ],

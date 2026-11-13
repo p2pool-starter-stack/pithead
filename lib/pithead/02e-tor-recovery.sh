@@ -1,5 +1,5 @@
 TOR_RECOVERY_COOLDOWN_SEC=21600
-TOR_RECOVERY_PENDING_LIMIT=32
+TOR_RECOVERY_PENDING_LIMIT=64
 
 # monerod's get_info with the REAL outgoing count (#2921). The published RPC is restricted and answers 0
 # for the connection counts, so the count is taken from the in-container helper (which reads the admin

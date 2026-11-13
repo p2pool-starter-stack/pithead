@@ -141,9 +141,9 @@ printf 'CircuitBuildAbandonedCount 3\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .saturated "$WORK/result")" = false ]
 [ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[null,null]' ]
-tor_recovery_circuit_status() { printf 'circuit-established=0 pending=33\n'; }
+tor_recovery_circuit_status() { printf 'circuit-established=0 pending=65\n'; }
 control_process_request "$WORK/request.json" "$WORK/control"
-[ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[false,33]' ]
+[ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[false,65]' ]
 tor_recovery_circuit_status() { printf 'circuit-established=1 pending=2\n'; }
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[true,2]' ]
