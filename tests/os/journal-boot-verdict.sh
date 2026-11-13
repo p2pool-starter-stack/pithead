@@ -85,13 +85,15 @@ journal_home_verdict() {
 }
 
 # shellcheck disable=SC2034
+JOURNAL_BYTES_PROBE='b=$(journalctl --no-pager -q 2>/dev/null | wc -c); printf "%s\n" "${b:-missing}"'
+
+# shellcheck disable=SC2034
 JOURNAL_STATE_PROBE='c=$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null)
 printf "%s\n" "$c" | sed -n "s/^Storage=//p" | tail -n1 | { IFS= read -r x || x=; printf "%s\n" "${x:-missing}"; }
 printf "%s\n" "$c" | sed -n "s/^SystemMaxUse=//p" | tail -n1 | { IFS= read -r x || x=; printf "%s\n" "${x:-missing}"; }
 u=$(systemctl is-active pithead-journal-persist.service 2>/dev/null || true)
 printf "%s\n" "${u:-unreadable}"
-b=$(journalctl --no-pager -q 2>/dev/null | wc -c)
-printf "%s\n" "${b:-missing}"
+'"$JOURNAL_BYTES_PROBE"'
 o=$(journalctl --no-pager -q -o short-unix 2>/dev/null | head -n1 | cut -d" " -f1 | cut -d. -f1)
 case "$o" in "" | *[!0-9]*) o= ;; esac
 if [ -n "$o" ]; then echo $(($(date +%s) - o)); else echo -1; fi'
