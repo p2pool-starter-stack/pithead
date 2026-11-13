@@ -77,7 +77,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and . != "hours" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -154,6 +154,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # bounded host-side and the log tail is redacted by bundle_redact_log before it is written.
     diag-doctor) control_diag_doctor "$id" "$actor" "$cdir" ;;
     diag-logs) control_diag_logs "$file" "$id" "$actor" "$cdir" ;;
+    support-bundle) control_support_bundle "$file" "$id" "$actor" "$cdir" ;;
     # Also read-only, and the one that hands back a SECRET rather than a report (#1882): the Tor
     # client-auth line without which a client-auth'd dashboard onion cannot be opened at all. It is
     # a one-time kit with the backup kit's TTL and redaction, and every reveal lands in audit/.
@@ -206,12 +207,8 @@ control_prune_results() { # <control-dir>
     # backup kit's plaintext passphrase; remove it only after the download window, never while a
     # normal atomic rename can still be in flight.
     find "$dir" -maxdepth 1 -type f -name '.*.tmp' -mmin +"$window_min" -delete 2>/dev/null || true
-    # A listing that matches nothing makes ls exit 2. Inside the loop-list substitution that fires the
-    # inherited ERR trap ("pithead aborted unexpectedly (exit 2)", #3047) although the run carries on,
-    # so each listing swallows its own status.
     for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null || true); do
         [ -f "$dir/$archive" ] || continue
-        # Still inside its download window: untouchable, and does not count against the cap below.
         [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
         kept=$((kept + 1))
         if [ "$kept" -gt "$max_archives" ]; then
@@ -220,22 +217,31 @@ control_prune_results() { # <control-dir>
         fi
     done
 
+    local kept_b=0
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz 2>/dev/null || true); do
+        [ -f "$dir/$archive" ] || continue
+        [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+        kept_b=$((kept_b + 1))
+        if [ "$kept_b" -gt "$max_archives" ]; then
+            id=$(basename "$archive" .tar.gz)
+            rm -f "$dir/$archive" "$dir/$id.json"
+        fi
+    done
+
     local result n=0
-    # Age and count share one pass (and one skip list) so a backup's own result JSON is never
-    # evicted here while its archive is still protected above — a separate age-only find/-delete
-    # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
     [ -n "$active_result" ] && [ -f "$dir/$active_result" ] && n=1
     for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null || true); do
         case "$result" in os-update-state.json | tor-heal-outage.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
         [ "$result" == "$active_result" ] && continue
-        [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
+        [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue
+        [ -f "$dir/$(basename "$result" .json).tar.gz" ] && continue
         n=$((n + 1))
         if [ "$n" -gt "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
             rm -f "$dir/$result"
         fi
     done
 
-    local total f
+    local total f pair
     total=$(du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}')
     [ -n "$total" ] || total=0
     if [ "$total" -gt "$max_bytes" ]; then
@@ -249,12 +255,18 @@ control_prune_results() { # <control-dir>
                 id="${f%.tar.gz.enc}"
                 rm -f "$dir/$f" "$dir/$id.json"
                 ;;
-            # A backup's own result JSON: keep a fresh pair; evict an expired pair together.
+            *.tar.gz)
+                [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                id="${f%.tar.gz}"
+                rm -f "$dir/$f" "$dir/$id.json"
+                ;;
             *.json)
                 id="${f%.json}"
-                if [ -f "$dir/$id.tar.gz.enc" ]; then
-                    [ -n "$(find "$dir/$id.tar.gz.enc" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
-                    rm -f "$dir/$f" "$dir/$id.tar.gz.enc"
+                pair="$dir/$id.tar.gz.enc"
+                [ -f "$pair" ] || pair="$dir/$id.tar.gz"
+                if [ -f "$pair" ]; then
+                    [ -n "$(find "$pair" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                    rm -f "$dir/$f" "$pair"
                 else
                     rm -f "$dir/$f"
                 fi

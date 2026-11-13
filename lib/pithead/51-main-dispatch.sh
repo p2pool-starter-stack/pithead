@@ -126,6 +126,7 @@ main() {
         esac
         ;;
     support-bundle) stack_support_bundle "$@" ;;
+    recovery-bundle) recovery_bundle "$@" ;;
     reset-dashboard)
         require_deployed
         reset_dashboard "$@"
