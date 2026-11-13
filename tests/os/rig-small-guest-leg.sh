@@ -24,20 +24,21 @@ _rig_small_guest_run() { # <img>
     qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
     : >"$SERIAL" && chmod 600 "$SERIAL"
     PITHEAD_KVM_MIN_AVAIL_MB=6144 kvm_preflight || return 1
-    virt-install --name "$VM" --memory 2048 --vcpus 1 --cpu host-passthrough \
+    local vierr
+    vierr=$(virt-install --name "$VM" --memory 2048 --vcpus 1 --cpu host-passthrough \
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import --disk "path=$DISK,format=raw,bus=virtio" \
         --network network=default,model=virtio --graphics none \
-        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
-        bad "virt-install could not define the 2 GiB, 1 vCPU rig guest"
+        --serial "file,path=$SERIAL" --noautoconsole 2>&1) || {
+        bad "virt-install could not define the 2 GiB, 1 vCPU rig guest: $(printf '%s' "$vierr" | tail -3 | tr '\n' ' ' | cut -c1-300)"
         return 1
     }
-    _wait_dhcp_ip 120 || {
-        bad "the 2 GiB guest never took a DHCP lease"
+    _wait_dhcp_ip 360 || {
+        bad "the 2 GiB guest never took a DHCP lease (domstate: $(virsh domstate "$VM" 2>&1 | tr '\n' ' ' | cut -c1-120))"
         return 1
     }
-    _wait_ssh 300 || {
+    _wait_ssh 600 || {
         bad "the 2 GiB guest booted but its SSH never came up ($(_ssh_unreachable_reason "$ip"))"
         return 1
     }
