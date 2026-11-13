@@ -13,6 +13,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- On the appliance, the dashboard's own schema migrations no longer run before the booted A/B slot
+  commits. `pithead-boot` defers them while the slot is uncommitted, so an update that falls back
+  leaves the previous release on the schema it understands, still recording payouts (#3998).
 - On the appliance, the address watch no longer restarts a dashboard Caddy that already serves the
   current files. When an apply, `up` or a control commit re-renders the dashboard certificate or the
   Caddyfile, it restarts Caddy itself, and the next five-minute watch tick now records those files

@@ -674,7 +674,12 @@ Two host-level constraints apply to the container itself:
   sampled 2.7 GiB in total. The symptom of a shortfall is a bare `Killed` after the shellcheck
   line, naming neither memory nor a file, so raise the allocation before running the full
   `make test` in the container. Every other target measured here fits comfortably;
-  `test-container` warns when the engine is below the bar.
+  `test-container` warns when the engine is below the bar. No single file may hold a check past
+  `SHELLCHECK_FILE_BUDGET` seconds (120): `scripts/lint/shellcheck-budget.sh` kills it at the
+  budget and names the file (#4026). A test that sources a variable path like `"$ROOT/pithead"`
+  is followed by `-x` and re-analyses the sourced file once per source line, so such a suite
+  puts `# shellcheck source=/dev/null` above those lines when the sourced file is linted on
+  its own.
 - **The Docker socket.** Tiers 1 (netwatch), 3, `test-compose` and `lint-proto` all shell out to
   Docker, so the container is given the host's socket. That is host-root-equivalent access by
   itself; it is the same trust the tiers already need when run directly on the host.

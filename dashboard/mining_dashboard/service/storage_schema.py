@@ -44,6 +44,16 @@ _WINDOW_EXTRA_COLUMNS = [
 # write cycle forever. A transient error (locked, disk full, permissions) is NOT here: those are the
 # db_unhealthy path — retryable, not a reason to throw away history.
 _CORRUPTION_MARKERS = ("malformed", "not a database", "image is malformed", "file is encrypted")
+
+_SCHEMA_HOLD_MARKER = ".os-schema-held"
+
+
+def _schema_hold_active(db_path: str) -> bool:
+    if db_path == ":memory:":
+        return False
+    return os.path.exists(os.path.join(os.path.dirname(db_path) or ".", _SCHEMA_HOLD_MARKER))
+
+
 # How many quarantined copies of a corrupt DB to keep for post-mortem before pruning the oldest.
 _CORRUPT_KEEP = 3
 
@@ -67,22 +77,19 @@ _TELEMETRY_TABLES = ("blocks", "xvb_history", "network_history", "disk_growth", 
 
 
 class StorageSchemaMixin:
-    def _apply_schema(self):
-        """Set pragmas + create/migrate the schema on the open connection. Caller holds ``_db_lock``.
+    _db_schema_held = False
 
-        Split out of ``_init_db`` so the recovery path (#489) can rebuild the schema on a freshly
-        reconnected DB without re-entering the (non-reentrant) lock via ``_init_db``."""
-        # Enable WAL mode for better concurrency
+    def _apply_schema(self):
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._db_schema_held = _schema_hold_active(self.db_path)
         with self._conn:
             self._create_tables()
             self._migrate_db()
-            # Indexes come AFTER migration: idx_ts is on history(timestamp), a column
-            # _migrate_db adds when upgrading a pre-timestamp DB. Creating it in
-            # _create_tables would throw "no such column: timestamp" on that old schema
-            # and abort the whole migration, leaving the DB half-upgraded.
             self._create_indexes()
+        cursor = self._conn.cursor()
+        cursor.execute("PRAGMA table_info(payouts)")
+        self._payouts_have_wallet = "wallet_id" in {info[1] for info in cursor.fetchall()}
 
     def _init_db(self):
         """Initializes the SQLite database schema and handles migrations.
@@ -263,6 +270,13 @@ class StorageSchemaMixin:
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts)")
 
     def _create_payouts_table(self):
+        if self._db_schema_held:
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS payouts "
+                "(chain TEXT, txid TEXT, height INTEGER, ts REAL, amount_atomic INTEGER, "
+                "PRIMARY KEY (chain, txid))"
+            )
+            return
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS payouts "
             "(chain TEXT, wallet_id TEXT NOT NULL, txid TEXT, height INTEGER, ts REAL, "
@@ -270,6 +284,8 @@ class StorageSchemaMixin:
         )
 
     def _migrate_payout_identity(self, cursor):
+        if self._db_schema_held:
+            return
         cursor.execute("PRAGMA table_info(payouts)")
         if "wallet_id" in {info[1] for info in cursor.fetchall()}:
             return
