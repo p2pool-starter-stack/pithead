@@ -1,4 +1,5 @@
 import { html } from "../app/preact.mjs";
+import { validNumber } from "./configfield.mjs";
 import {
   editableCandidate,
   isSecretSentinel,
@@ -24,66 +25,17 @@ export const SECRET_PATHS = [
   ["xvb", "standby", "source"],
 ];
 const WORKER_TOKENS = ["token", "api_token"];
-const SENTINEL_TEXT = '{"__secret__": true}';
-const TOKEN = /"(?:[^"\\\n]|\\.)*(?:"|$)|[{}[\]:,]|[^\s{}[\]:,"]+/gm;
-const isWord = (t) => !/^[{}[\]:,]$/.test(t);
-const decode = (t) => {
-  try {
-    return JSON.parse(t);
-  } catch {
-    return t.replace(/^"/, "").replace(/"$/, "");
-  }
-};
-const secretKey = (name, parent) =>
-  [...SECRET_PATHS, ["workers", "list", "token"], ["workers", "list", "api_token"]].some(
-    (path) =>
-      path[path.length - 1] === name &&
-      (parent === undefined || parent === null || path[path.length - 2] === parent),
-  );
+const MAX_DRAFT_CHARS = 500000;
 
-function scrubText(text) {
-  const tokens = [...text.matchAll(TOKEN)];
-  const stack = [];
-  const edits = [];
-  let lastKey = null;
-  let hooks = -1;
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i][0];
-    const at = tokens[i].index;
-    if (t === "{" || t === "[") {
-      stack.push(lastKey);
-      if (t === "[" && lastKey === "webhooks") hooks = stack.length;
-    } else if (t === "}" || t === "]") {
-      if (stack.length === hooks) hooks = -1;
-      stack.pop();
-    } else if (isWord(t)) {
-      const next = tokens[i + 1]?.[0];
-      if (next === ":") lastKey = decode(t);
-      if (hooks === stack.length && next !== ":") {
-        edits.push([at, t.length, '""']);
-        continue;
-      }
-      if (!secretKey(decode(t), stack[stack.length - 1])) continue;
-      const j = next === ":" ? i + 2 : i + 1;
-      if (tokens[j] && isWord(tokens[j][0]))
-        edits.push([tokens[j].index, tokens[j][0].length, SENTINEL_TEXT]);
-    }
-  }
-  return edits.reduceRight(
-    (out, [at, length, value]) => out.slice(0, at) + value + out.slice(at + length),
-    text,
-  );
-}
-
-const keep = (fetched) => (isSecretSentinel(fetched) ? fetched : "");
-const typed = (v) => Boolean(v) && !isSecretSentinel(v);
+const keep = (fetched) => (plainSentinel(fetched) ? fetched : "");
+const plainSentinel = (v) =>
+  isSecretSentinel(v) && Object.values(v).every((x) => x === true || typeof x === "number");
+const typed = (v) => Boolean(v) && !plainSentinel(v);
 
 function scrubDocument(doc, cfg) {
-  let changed = false;
   const reset = (parent, key, fetchedParent) => {
     if (!parent || typeof parent !== "object" || !typed(parent[key])) return;
     parent[key] = keep(fetchedParent?.[key]);
-    changed = true;
   };
   const at = (root, path) =>
     path.reduce((node, key) => (isObject(node) ? node[key] : undefined), root);
@@ -96,25 +48,27 @@ function scrubDocument(doc, cfg) {
   const fetchedWorkers = at(cfg, ["workers", "list"]);
   for (let i = 0; Array.isArray(workers) && i < workers.length; i++)
     for (const key of WORKER_TOKENS) reset(workers[i], key, fetchedWorkers?.[i]);
-  return changed;
 }
 
 export function redactDraft(text, cfg) {
-  let doc;
-  try {
-    doc = JSON.parse(text);
-  } catch {
-    return scrubText(text);
-  }
-  return scrubDocument(doc, cfg) ? JSON.stringify(doc, null, 2) : text;
+  const doc = JSON.parse(text);
+  scrubDocument(doc, cfg);
+  return JSON.stringify(doc, null, 2);
 }
 
-export function syncDraft({ candidate, cfg, pristine, editText, drafts }, store) {
+export function syncDraft({ candidate, cfg, pristine, editText, drafts, jsonError }, store) {
   if (!candidate) return;
   try {
     store ??= sessionStorage;
-    if (editText === pristine) store.removeItem(DRAFT_KEY);
-    else store.setItem(DRAFT_KEY, JSON.stringify({ editText: redactDraft(editText, cfg), drafts }));
+    if (
+      (editText === pristine && Object.values(drafts).every(validNumber)) ||
+      editText.length > MAX_DRAFT_CHARS
+    ) {
+      store.removeItem(DRAFT_KEY);
+      return;
+    }
+    const text = jsonError ? JSON.stringify(candidate, null, 2) : editText;
+    store.setItem(DRAFT_KEY, JSON.stringify({ editText: redactDraft(text, cfg), drafts }));
   } catch {
     return;
   }
@@ -128,8 +82,7 @@ export function restoreDraft(fetchedText, store) {
   } catch {
     return null;
   }
-  if (!isObject(stash) || typeof stash.editText !== "string" || stash.editText === fetchedText)
-    return null;
+  if (!isObject(stash) || typeof stash.editText !== "string") return null;
   const drafts = Object.fromEntries(
     Object.entries(isObject(stash.drafts) ? stash.drafts : {}).filter(
       ([, raw]) => typeof raw === "string",
@@ -144,7 +97,8 @@ export function restoreDraft(fetchedText, store) {
     JSON.stringify(candidate) === JSON.stringify(staged.config)
       ? stash.editText
       : JSON.stringify(candidate, null, 2);
-  if (editText === fetchedText) return null;
+  if (editText === fetchedText)
+    return Object.keys(drafts).length ? { drafts, draftRestored: true } : null;
   return { candidate, editText, drafts, jsonError: null, draftRestored: true };
 }
 

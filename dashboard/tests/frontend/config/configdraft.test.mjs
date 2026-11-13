@@ -46,7 +46,9 @@ test("syncDraft stores only a draft that differs from pristine and removes it wh
   syncDraft(state(), store);
   assert.equal(DRAFT_KEY in store.data, false);
   syncDraft(state({ editText: '{"a":2}', drafts: { "x.y": "1." } }), store);
-  assert.deepEqual(JSON.parse(store.data[DRAFT_KEY]), { editText: '{"a":2}', drafts: { "x.y": "1." } });
+  const stored = JSON.parse(store.data[DRAFT_KEY]);
+  assert.deepEqual(JSON.parse(stored.editText), { a: 2 });
+  assert.deepEqual(stored.drafts, { "x.y": "1." });
   syncDraft(state(), store);
   assert.equal(DRAFT_KEY in store.data, false);
 });
@@ -79,13 +81,6 @@ test("a typed secret never reaches storage; the sentinel is stored in its place"
   assert.deepEqual(JSON.parse(JSON.parse(raw).editText).dashboard.auth.password, { __secret__: true });
 });
 
-test("a typed secret inside invalid JSON is redacted too", () => {
-  const broken = '{"dashboard": {"auth": {"password": "hunter2-plain", "x": }';
-  const out = redactDraft(broken, CFG);
-  assert.doesNotMatch(out, /hunter2-plain/);
-  assert.match(out, /"password": \{"__secret__": true\}/);
-});
-
 const LEAKS = [
   ["a typed worker token", '{"workers":{"list":[{"token":"LEAK"}]}}'],
   ["a typed worker api_token", '{"workers":{"list":[{"api_token":"LEAK"}]}}'],
@@ -93,13 +88,10 @@ const LEAKS = [
   ["a typed value for an unset secret", '{"monero":{"node_password":"LEAK"}}'],
   ["a typed ntfy token", '{"notifications":{"ntfy":{"token":"LEAK"}}}'],
   ["a typed view key", '{"tari":{"view_key":"LEAK"}}'],
-  ["an unterminated string", '{"monero":{"node_password":"LEAK'],
-  ["an unquoted value", '{"monero":{"node_password": LEAK, "x": 1}'],
-  ["an escaped key", '{"monero":{"node\\u005fpassword":"LEAK"}'],
-  ["a missing colon", '{"monero":{"node_password" "LEAK" }'],
-  ["a typed webhook in broken JSON", '{"notifications":{"webhooks":["LEAK", "b"],"x":'],
-  ["a typed worker token in broken JSON", '{"workers":{"list":[{"token": "LEAK"}, {'],
-  ["an unquoted key", "{monero: {node_password: LEAK}"],
+  ["a duplicate key", '{"telegram":{"bot_token":"LEAK"},"telegram":{}}'],
+  ["a sentinel with extra properties", '{"telegram":{"bot_token":{"__secret__":true,"v":"LEAK"}}}'],
+  ["a webhook sentinel with a text slot", '{"notifications":{"webhooks":[{"__secret__":true,"slot":"LEAK"}]}}'],
+  ["a typed object where a secret goes", '{"telegram":{"bot_token":{"x":"LEAK"}}}'],
 ];
 for (const [name, text] of LEAKS) {
   test(`redactDraft never keeps ${name}`, () => {
@@ -116,11 +108,41 @@ test("redactDraft resets a typed secret to what the server sent: its marker, or 
   assert.equal(out.monero.node_password, "");
 });
 
-test("redactDraft leaves same-named non-secret keys alone, even in broken JSON", () => {
-  assert.equal(
-    redactDraft('{"xvb":{"url":"na.example:4247"},"monero":{"source":"x"},"label":"password"', CFG),
-    '{"xvb":{"url":"na.example:4247"},"monero":{"source":"x"},"label":"password"',
+test("redactDraft leaves same-named non-secret keys alone", () => {
+  const text = '{"xvb":{"url":"na.example:4247"},"monero":{"source":"x"},"label":"password"}';
+  assert.deepEqual(JSON.parse(redactDraft(text, CFG)), JSON.parse(text));
+});
+
+test("an invalid-JSON draft stores the last valid candidate, never the broken text", () => {
+  const store = memory();
+  const broken = '{"monero": {"node_password": "LEAK';
+  syncDraft(
+    state({ candidate: { a: 2 }, editText: broken, jsonError: "Unexpected end of JSON input" }),
+    store,
   );
+  const raw = store.data[DRAFT_KEY];
+  assert.doesNotMatch(raw, /LEAK/);
+  assert.deepEqual(JSON.parse(JSON.parse(raw).editText), { a: 2 });
+});
+
+test("an invalid numeric field draft alone is kept and restored without a marker", () => {
+  const store = memory();
+  syncDraft(state({ drafts: { "dashboard.energy.cost_per_kwh": "-" } }), store);
+  assert.ok(DRAFT_KEY in store.data);
+  const out = restoreDraft(JSON.stringify({ a: 1 }, null, 2), store);
+  assert.deepEqual(out, { drafts: { "dashboard.energy.cost_per_kwh": "-" }, draftRestored: true });
+});
+
+test("a valid numeric field draft alone is not a draft", () => {
+  const store = memory({ [DRAFT_KEY]: "old" });
+  syncDraft(state({ drafts: { "dashboard.energy.cost_per_kwh": "0.3" } }), store);
+  assert.equal(DRAFT_KEY in store.data, false);
+});
+
+test("a draft too large to store is dropped", () => {
+  const store = memory({ [DRAFT_KEY]: "old" });
+  syncDraft(state({ editText: "x".repeat(600000) }), store);
+  assert.equal(DRAFT_KEY in store.data, false);
 });
 
 test("the client's secret paths match the server's SECRET_PATHS", () => {
@@ -136,9 +158,9 @@ test("the client's secret paths match the server's SECRET_PATHS", () => {
   assert.deepEqual(SECRET_PATHS, server);
 });
 
-test("redactDraft keeps text untouched when no secret was replaced", () => {
+test("redactDraft keeps the document when no secret was typed", () => {
   const text = '{ "dashboard": {"auth": {"password": {"__secret__": true}}} }';
-  assert.equal(redactDraft(text, CFG), text);
+  assert.deepEqual(JSON.parse(redactDraft(text, CFG)), JSON.parse(text));
 });
 
 test("restoreDraft returns the draft with its text, drafts and a restored flag", () => {

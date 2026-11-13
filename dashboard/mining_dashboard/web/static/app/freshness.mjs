@@ -31,7 +31,8 @@ export function createFreshness({
 
   function recentlyReloaded() {
     try {
-      return now() - (Number(store.getItem(GUARD_KEY)) || 0) < RELOAD_GUARD_MS;
+      const elapsed = now() - (Number(store.getItem(GUARD_KEY)) || 0);
+      return elapsed >= 0 && elapsed < RELOAD_GUARD_MS;
     } catch {
       return false;
     }
@@ -61,6 +62,7 @@ export function createFreshness({
   function goodPoll(version, recovered) {
     if (firstVersion === null && version) firstVersion = version;
     if (recovered || (version && version !== firstVersion)) request(UPDATED_MESSAGE);
+    else if (wanted) attempt();
   }
 
   async function reportPageStale() {

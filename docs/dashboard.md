@@ -1234,7 +1234,8 @@ unmounted, so the draft and the marker are still there when the dashboard return
 shows the loading screen before its first state response, when no editor exists yet. An unsaved
 draft is also kept in the tab's `sessionStorage`, so it survives a reload, automatic or manual: the
 reloaded editor shows the draft, the **Unsaved changes** marker and a line saying the draft was
-restored. An invalid-JSON draft is restored with its error. **Discard edits**, **Discard draft and
+restored. Text that is not valid JSON is never stored: after a reload the editor shows the last
+valid state of the draft, without the broken edit. **Discard edits**, **Discard draft and
 reload from host** and a successful apply clear it; closing the tab drops it. The stored copy never
 holds a secret you typed: every secret field the server masks (the API tokens and passwords, the
 Monero and Tari view keys, the ping, ntfy and standby URLs, the webhook list and each worker token)

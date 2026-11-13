@@ -146,3 +146,23 @@ test('the module-level functions drive the installed instance; holdWhile is edge
     holdAutoReload();
     releaseAutoReload();
 });
+
+test('a guard-blocked reconnect reload is retried on a later good poll once the window passed', () => {
+    let clock = 1e12;
+    const t = make({ session: { [GUARD_KEY]: String(clock - 1000) } });
+    const f = createFreshness({ ...t.deps, now: () => clock });
+    f.goodPoll('v1', true);
+    f.goodPoll('v1', false);
+    assert.equal(t.reloads.length, 0);
+    clock += RELOAD_GUARD_MS;
+    f.goodPoll('v1', false);
+    assert.equal(t.reloads.length, 1);
+    f.goodPoll('v1', false);
+    assert.equal(t.reloads.length, 1);
+});
+
+test('a guard timestamp in the future (clock moved back) does not block reloads', () => {
+    const t = make({ session: { [GUARD_KEY]: String(1e12 + 5 * RELOAD_GUARD_MS) } });
+    t.f.goodPoll('v1', true);
+    assert.equal(t.reloads.length, 1);
+});

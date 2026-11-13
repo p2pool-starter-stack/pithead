@@ -60,12 +60,8 @@ draw();
   await page.reload();
   await marker().waitFor();
   await openPane();
-  assert.equal(await editor.inputValue(), '{"dashboard":');
-  await expect(page.locator(".config-view .status-bad")).toBeVisible();
-  assert.equal(
-    await page.getByRole("button", { name: "Save & preview changes" }).isEnabled(),
-    false,
-  );
+  assert.equal(await cost(), 0.18);
+  await expect(page.locator(".config-view .status-bad")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Discard edits", exact: true }).click();
   await marker().waitFor({ state: "detached" });
