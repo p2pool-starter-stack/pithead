@@ -43,6 +43,8 @@ source "$HERE/phases/update.sh" || exit $?
 source "$HERE/phases/update-dashboard.sh" || exit $?
 # shellcheck source=tests/os/phases/update-healthgate-leg.sh
 source "$HERE/phases/update-healthgate-leg.sh" || exit $?
+# shellcheck source=tests/os/phases/update-wedged-tor-legs.sh
+source "$HERE/phases/update-wedged-tor-legs.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$HERE/phases/install.sh" || exit $?
 source "$HERE/phases/provision.sh" || exit $?
@@ -239,7 +241,7 @@ else
     echo "image-upgrade left staged guest inputs after a staging failure" >&2
     exit 1
 fi
-if (
+if ! (
     td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
     PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083
     PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example IMAGE=fixture
@@ -270,8 +272,6 @@ if (
         grep -Fx 'deployed image upgrade gate failed (stage=baseline-setup exit=17)' "$td/verdict" >/dev/null &&
         [ "$guest_inputs_cleared" -eq 1 ]
 ); then
-    :
-else
     echo "image-upgrade did not capture its fixed guest marker before cleanup" >&2
     exit 1
 fi
