@@ -17,7 +17,7 @@ MONERO_STRAND_TAG="pithead-e2e-fault-monero-stranded"
 MONERO_POLL_SLACK=180 # a dashboard poll, the healthcheck's 30 s x 3 retries, and the harness's sampling
 MONERO_DISCONNECT_MAX=1500
 MONERO_WATCHDOG_MAX=900
-MONERO_TOR_REDIAL_MAX=900
+MONERO_TOR_REDIAL_MAX=2400
 MONERO_HOOK_PORT=18198
 MONERO_HOOK_LOG=/tmp/pithead-e2e-monero-alerts.log
 
@@ -271,6 +271,7 @@ run_monero_stranded() {
     else
         it_fail "monero-stranded: the peerless alert left the dashboard" "nothing at the loopback sink"
     fi
+    assert_eq "monero-stranded: red alone does not restart monerod" "$(monero_started_at)" "$started"
 
     it_step "recover: nobody restarts monerod; the dashboard watchdog must re-dial it unattended (#4076)…"
     t0=$(now_s)

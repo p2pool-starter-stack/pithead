@@ -20,6 +20,10 @@ class _Docker:
         return self.ok
 
 
+async def _no_sleep(_):
+    return None
+
+
 class _Rig:
     def __init__(self, monkeypatch, enabled=True, ok=True):
         self.t = 1000.0
@@ -91,13 +95,43 @@ async def test_monerod_that_recovers_by_itself_is_left_alone(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_monerod_started_after_tor_is_not_cycled_again(monkeypatch):
+async def test_monerod_restarted_after_tor_gets_its_own_settle_window(monkeypatch):
+    rig = _Rig(monkeypatch)
+    await rig.step(peers_out=8)
+    rig.tor["started_at"] = 900.0
+    await rig.run(mr.REDIAL_SETTLE_SEC - mr.CHECK_INTERVAL_SEC * 2, peers_out=0)
+    rig.monerod["started_at"] = 950.0
+    await rig.run(mr.REDIAL_SETTLE_SEC - mr.CHECK_INTERVAL_SEC, peers_out=0)
+    assert rig.restarts == 0
+    await rig.run(mr.CHECK_INTERVAL_SEC * 3, peers_out=0)
+    assert rig.restarts == 1
+
+
+@pytest.mark.asyncio
+async def test_monerod_restarted_after_tor_that_gets_peers_is_left_alone(monkeypatch):
     rig = _Rig(monkeypatch)
     await rig.step(peers_out=8)
     rig.tor["started_at"] = 900.0
     rig.monerod["started_at"] = 950.0
-    await rig.run(mr.REDIAL_SETTLE_SEC * 3, peers_out=0)
+    await rig.step(peers_out=0)
+    await rig.run(mr.REDIAL_SETTLE_SEC * 3, peers_out=4)
     assert rig.restarts == 0
+
+
+@pytest.mark.asyncio
+async def test_start_that_fails_is_retried(monkeypatch):
+    rig = _Rig(monkeypatch)
+    starts = iter([False, False, True])
+
+    async def start(container, **kwargs):
+        rig.docker.calls.append(("start", container))
+        return next(starts)
+
+    rig.docker.start = start
+    monkeypatch.setattr(f"{TARGET}.asyncio.sleep", _no_sleep)
+    await rig.run(mr.WATCHDOG_GRACE_SEC + mr.CHECK_INTERVAL_SEC * 2, peers_out=0, peerless=True)
+    assert rig.docker.calls.count(("start", "monerod")) == 3
+    assert rig.audits == [("peerless", "applied")]
 
 
 @pytest.mark.asyncio
@@ -133,6 +167,20 @@ async def test_peerless_watchdog_waits_for_a_healthy_tor(monkeypatch):
     rig.tor["health"] = "unhealthy"
     await rig.run(mr.WATCHDOG_GRACE_SEC * 3, peers_out=0, peerless=True)
     assert rig.restarts == 0
+    rig.tor["health"] = "healthy"
+    await rig.step(peers_out=0, peerless=True)
+    assert rig.restarts == 1
+
+
+@pytest.mark.asyncio
+async def test_tor_health_flapping_does_not_restart_the_peerless_clock(monkeypatch):
+    rig = _Rig(monkeypatch)
+    await rig.run(mr.WATCHDOG_GRACE_SEC - mr.CHECK_INTERVAL_SEC, peers_out=0, peerless=True)
+    rig.tor["health"] = "starting"
+    await rig.step(peers_out=0, peerless=True)
+    rig.tor["health"] = "healthy"
+    await rig.step(peers_out=0, peerless=True)
+    assert rig.restarts == 1
 
 
 @pytest.mark.asyncio
@@ -155,5 +203,7 @@ async def test_cap_warning_is_logged_once(monkeypatch, caplog):
 @pytest.mark.asyncio
 async def test_unconfirmed_restart_is_audited_failed(monkeypatch):
     rig = _Rig(monkeypatch, ok=False)
+    monkeypatch.setattr(f"{TARGET}.asyncio.sleep", _no_sleep)
     await rig.run(mr.WATCHDOG_GRACE_SEC + mr.CHECK_INTERVAL_SEC * 2, peers_out=0, peerless=True)
     assert rig.audits == [("peerless", "failed")]
+    assert rig.docker.calls.count(("start", "monerod")) == mr.MONEROD_START_ATTEMPTS

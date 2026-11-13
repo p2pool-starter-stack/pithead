@@ -1027,8 +1027,9 @@ restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the fin
 
 The dashboard also covers a Tor start it did not see happen, with or without `tor.auto_heal`
 (#4076). It notes every start of the tor container (an operator, `./pithead`, Docker or an
-update). Once Tor reports bootstrapped, a monerod that has held 0 outgoing peers for two minutes
-and was not itself started after that Tor start is restarted, once per Tor start.
+update). Once Tor reports healthy (bootstrapped), a monerod that has held 0 outgoing peers for five
+minutes is restarted, once per Tor start. A monerod that was itself restarted in the meantime (by
+compose or the Tor heal) gets its own five minutes first.
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
@@ -1063,8 +1064,8 @@ alerts and recovers even while peer counts are unavailable; only the peerless ed
 counts. Remote and unreachable nodes have no chain verdict. The container's `docker inspect`
 health becomes `unhealthy` after 600 seconds without outgoing peers
 (`MONERO_HEALTH_PEERLESS_SEC`) or 30 minutes without height progress; it still prints its peer
-counts, so the card keeps reading them. A local monerod that stays peerless for five minutes
-past the red verdict, while Tor reports bootstrapped, is restarted by the dashboard (#4076).
+counts, so the card keeps reading them. A local monerod whose verdict stays peerless for five more
+minutes, while Tor reports healthy, is restarted by the dashboard (#4076).
 Restarts are spaced at least 30 minutes apart, capped at three per rolling 24 hours, logged
 (`Restarting monerod to re-dial its peers through Tor`) and recorded in the audit log. At the cap
 the dashboard logs once that it has stopped, and the manual fix stays:

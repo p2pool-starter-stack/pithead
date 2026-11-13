@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 
@@ -6,7 +7,7 @@ from mining_dashboard.collector.containers import get_container_health
 logger = logging.getLogger("MonerodRedial")
 
 CHECK_INTERVAL_SEC = 60
-REDIAL_SETTLE_SEC = 120
+REDIAL_SETTLE_SEC = 300
 WATCHDOG_GRACE_SEC = 300
 COOLDOWN_SEC = 30 * 60
 DAILY_CAP = 3
@@ -14,6 +15,8 @@ DAY_SEC = 24 * 60 * 60
 MONEROD_STOP_GRACE_SEC = 60
 MONEROD_STOP_REQUEST_TIMEOUT_SEC = 90
 MONEROD_START_REQUEST_TIMEOUT_SEC = 60
+MONEROD_START_ATTEMPTS = 3
+MONEROD_START_RETRY_DELAY_SEC = 5
 
 
 class MonerodRedial:
@@ -24,6 +27,7 @@ class MonerodRedial:
         self._clock = clock
         self._last_check = None
         self._tor_started = None
+        self._monerod_started = None
         self._pending_tor_start = None
         self._settle_since = None
         self._peerless_since = None
@@ -40,7 +44,7 @@ class MonerodRedial:
         try:
             await self._cycle(now, verdict or {})
         except Exception as exc:
-            logger.debug("monerod re-dial cycle failed (%s)", type(exc).__name__)
+            logger.warning("monerod re-dial cycle failed (%s)", type(exc).__name__)
 
     async def _cycle(self, now, verdict) -> None:
         states = await get_container_health()
@@ -58,20 +62,22 @@ class MonerodRedial:
         peers = verdict.get("peers_out") if verdict.get("peers_visible") else None
         if peers:
             self._pending_tor_start = None
-        if (monerod.get("started_at") or 0) >= (self._pending_tor_start or float("inf")):
-            self._pending_tor_start = None
-        tor_ready = bool(tor.get("running")) and tor.get("health") == "healthy"
-        if not tor_ready:
-            self._reset_clocks()
-            return
-        if self._pending_tor_start is not None and peers == 0:
-            self._settle_since = self._settle_since if self._settle_since is not None else now
-        else:
+        monerod_started = monerod.get("started_at")
+        if monerod_started != self._monerod_started:
+            self._monerod_started = monerod_started
             self._settle_since = None
         if verdict.get("peerless"):
             self._peerless_since = self._peerless_since if self._peerless_since is not None else now
         else:
             self._peerless_since = None
+        tor_ready = bool(tor.get("running")) and tor.get("health") == "healthy"
+        if not tor_ready:
+            self._settle_since = None
+            return
+        if self._pending_tor_start is not None and peers == 0:
+            self._settle_since = self._settle_since if self._settle_since is not None else now
+        else:
+            self._settle_since = None
         if self._settle_since is not None and now - self._settle_since >= REDIAL_SETTLE_SEC:
             await self._restart(now, "tor-start")
         elif self._peerless_since is not None and now - self._peerless_since >= WATCHDOG_GRACE_SEC:
@@ -112,9 +118,15 @@ class MonerodRedial:
             stop_timeout=MONEROD_STOP_GRACE_SEC,
             request_timeout=MONEROD_STOP_REQUEST_TIMEOUT_SEC,
         )
-        started = await self._docker.start(
-            "monerod", request_timeout=MONEROD_START_REQUEST_TIMEOUT_SEC
-        )
+        started = False
+        for attempt in range(MONEROD_START_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(MONEROD_START_RETRY_DELAY_SEC)
+            started = await self._docker.start(
+                "monerod", request_timeout=MONEROD_START_REQUEST_TIMEOUT_SEC
+            )
+            if started:
+                break
         if not (stopped and started):
             logger.warning(
                 "monerod restart could not be fully issued; if the node stays peerless, run "
