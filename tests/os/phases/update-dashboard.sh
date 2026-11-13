@@ -351,4 +351,5 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         bad "leg 4: /api/state does not carry the updated verdict — the banner would never show"
     fi
     _leg4_srv_stop
+    phase_update_power_leg
 }

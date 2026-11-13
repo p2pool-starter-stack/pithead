@@ -166,6 +166,9 @@ the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
 The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
 the same host-gated recovery as the CLI.
+The appliance `power-reboot` and `power-shutdown` control verbs are in `48b-control-power-verbs.sh`;
+their host tests are `tests/stack/appliance/test-appliance-power-verbs.sh` and KVM leg 4b
+(`tests/os/phases/update-power-leg.sh`).
 
 ## Dashboard feature folders
 

@@ -1716,6 +1716,32 @@ and the named cause is what tells the two apart before you retry. Either way the
 a working system; wallets, settings, and chain data live on the data partition and are never part
 of an update.
 
+### Rebooting and shutting down the appliance
+
+The control channel carries two host power actions, `power-reboot` and `power-shutdown`, for an
+appliance with no SSH. They are separate from the update flow's `os-reboot`, which still works only
+for an installed update. Each request carries exactly the keys `action`, `actor`, `confirm` and
+`id`; the host checks the typed word itself, `REBOOT` for a reboot and `SHUTDOWN` for a shutdown,
+so a missing or wrong word is rejected whatever the page sent. A shutdown leaves the machine off
+until someone presses its power button; there is no Wake-on-LAN. Mining and payouts stop while it
+is off.
+
+The host refuses, with a reason in the result and a line in the control log, when:
+
+- the install is not a Pithead OS appliance;
+- the saved update step is downloading, installing, verifying or reboot-pending;
+- an update check or an earlier power result is still in flight;
+- the machine already runs the version of an installed update that is still being verified, because
+  a restart then falls back to the previous version (#3909);
+- another operation (apply, backup, restore, upgrade, reset or an update step) holds the host lock;
+- another power or OS-update step already ran in the same drain, or a power action ran in the
+  last 5 minutes.
+
+An accepted request writes its `rebooting` or `shutting-down` result and its audit line first, then
+stops the stack (`docker compose stop`, bounded at 5 minutes and honouring each service's grace
+period), then runs `systemctl reboot` or `systemctl poweroff`. A stack that does not stop, or a
+failed `systemctl`, writes a `failed` result instead.
+
 ## Tips
 
 - **First visit certificate warning.** With `dashboard.secure: true` (the default), DIY installs

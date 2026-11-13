@@ -11,6 +11,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Added
+
+- The host control channel has `power-reboot` and `power-shutdown` actions for an appliance. The host
+  checks the typed `REBOOT` or `SHUTDOWN` word, refuses during an OS update or its uncommitted-slot
+  window, stops the stack cleanly, then runs `systemctl reboot` or `poweroff` (#4084, host half of #4052).
+
 ### Fixed
 
 - On the appliance, the dashboard's own schema migrations no longer run before the booted A/B slot

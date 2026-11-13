@@ -64,16 +64,17 @@ control_os_refuse() { # <cdir> <id> <actor> <action> <status rejected|failed> <r
 # The gate every os-* verb opens with: appliance only, and at most ONE os verb per drain — a
 # download or install holds the single-threaded root runner for minutes, so a compromised
 # container queueing a flood must not starve commit/restart intents (the worker-upgrade lesson).
-control_os_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget consumed)
+control_os_gate() { # <cdir> <id> <actor> <action> [budget-variable] — rc 0 = proceed (budget consumed)
+    local budget="${5:-CONTROL_OS_BUDGET}"
     if ! is_appliance; then
         control_os_refuse "$1" "$2" "$3" "$4" rejected "OS updates apply only to a Pithead OS appliance — this install updates through release tarballs (the header upgrade button). Nothing was changed."
         return 1
     fi
-    if [ "${CONTROL_OS_BUDGET:-0}" -le 0 ]; then
-        control_os_refuse "$1" "$2" "$3" "$4" rejected "another OS-update step is already running in this cycle — retry in a moment."
+    if [ "${!budget:-0}" -le 0 ]; then
+        control_os_refuse "$1" "$2" "$3" "$4" rejected "another OS-update or power step is already running in this cycle — retry in a moment."
         return 1
     fi
-    CONTROL_OS_BUDGET=$((CONTROL_OS_BUDGET - 1))
+    printf -v "$budget" %s $((${!budget} - 1))
     return 0
 }
 
