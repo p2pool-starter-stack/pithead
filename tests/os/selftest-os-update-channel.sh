@@ -52,14 +52,19 @@ url="${*: -1}"
 out=""
 hdr=""
 wfmt=""
+head_req=""
 prev=""
 for a in "$@"; do
     [ "$prev" = "-o" ] && out="$a"
     [ "$prev" = "-D" ] && hdr="$a"
     [ "$prev" = "-w" ] && wfmt="$a"
+    [ "$a" = "-I" ] && head_req=1
     prev="$a"
 done
 emit() {
+    if [ -n "$head_req" ] && [ -z "$out" ]; then
+        if [ -n "$hdr" ] && [ -s "$hdr" ]; then cat "$hdr"; else printf 'HTTP/1.1 %s OK\r\n' "$1"; fi
+    fi
     case "$wfmt" in
     '\n%{http_code}') printf '\n%s' "$1" ;;
     '%{http_code}') printf '%s' "$1" ;;

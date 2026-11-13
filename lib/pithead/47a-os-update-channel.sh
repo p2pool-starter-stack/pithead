@@ -14,6 +14,7 @@ os_channel_www_at() {
 os_channel_fetch() {
     local mode="$1" url="$2" out="$3" cap="$4" socks="${5:-}"
     local base tmp="" hdr hop=0 probe rc code redir curl_out
+    local -a argv
     OS_CHANNEL_HINT=""
     base=$(os_update_test_base) || base=""
     if [ -n "$base" ]; then
@@ -49,23 +50,16 @@ os_channel_fetch() {
         else
             curl_out="$tmp"
         fi
+        argv=(curl -sS --max-time "${PITHEAD_OS_CHANNEL_TIMEOUT:-60}" --max-filesize "$cap" -D "$hdr" -w '%{http_code}')
         if [ "$mode" = head ]; then
-            if [ -n "$socks" ]; then
-                probe=$(curl -sS -I --max-time "${PITHEAD_OS_CHANNEL_TIMEOUT:-60}" --max-filesize "$cap" \
-                    --proto =https --socks5-hostname "$socks" -D "$hdr" \
-                    -w '%{http_code}' "$url" 2>/dev/null) && rc=0 || rc=$?
-            else
-                probe=$(curl -sS -I --max-time "${PITHEAD_OS_CHANNEL_TIMEOUT:-60}" --max-filesize "$cap" \
-                    -D "$hdr" -w '%{http_code}' "$url" 2>/dev/null) && rc=0 || rc=$?
-            fi
-        elif [ -n "$socks" ]; then
-            probe=$(curl -sS --max-time "${PITHEAD_OS_CHANNEL_TIMEOUT:-60}" --max-filesize "$cap" \
-                --proto =https --socks5-hostname "$socks" -D "$hdr" -o "$curl_out" \
-                -w '%{http_code}' "$url" 2>/dev/null) && rc=0 || rc=$?
-        else
-            probe=$(curl -sS --max-time "${PITHEAD_OS_CHANNEL_TIMEOUT:-60}" --max-filesize "$cap" \
-                -D "$hdr" -o "$curl_out" -w '%{http_code}' "$url" 2>/dev/null) && rc=0 || rc=$?
+            argv+=(-I)
         fi
+        argv+=(-o "$curl_out")
+        if [ -n "$socks" ]; then
+            argv+=(--proto "=https" --socks5-hostname "$socks")
+        fi
+        argv+=("$url")
+        probe=$("${argv[@]}" 2>/dev/null) && rc=0 || rc=$?
         case "$rc" in
         0) ;;
         28)
