@@ -38,6 +38,41 @@ def request(path, auth=None, method="GET", headers=None):
         return response.status, response.read()
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+raw_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
+
+
+def call(path, method="GET", headers=None, body=None, auth=None):
+    hdrs = {"Host": "panel.example:8080", **(headers or {})}
+    if auth:
+        hdrs["Authorization"] = auth
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        hdrs["Content-Type"] = "application/json"
+    req = urllib.request.Request(f"http://{host}:{PORT}{path}", data=data, headers=hdrs, method=method)
+    try:
+        response = raw_opener.open(req, timeout=10)
+    except urllib.error.HTTPError as error:
+        response = error
+    with response:
+        return response.status, response.headers, response.read()
+
+
+def sign_in(password, remember=False):
+    return call(
+        "/api/auth/login", "POST", body={"username": "admin", "password": password, "remember": remember}
+    )
+
+
+def session_cookie(headers):
+    return headers["Set-Cookie"].split(";", 1)[0]
+
+
 def summary(failures, warning):
     # Access logging is asynchronous; wait for the exact count, never accept an empty log.
     for _ in range(50):
@@ -112,8 +147,65 @@ elif mode == "final":
         headers = {} if value is None else {"X-Pithead-Boot-Probe": value}
         require(request(PROBE, headers=headers)[0] == 401)
     summary(23, True)
+elif mode == "login":
+    status, _, body = call("/login")
+    require(status == 200 and b'id="login-form"' in body, status)
+    for asset in ("/static/login.js", "/static/login-next.mjs", "/static/dashboard.css"):
+        require(call(asset)[0] == 200, asset)
+    require(call("/static/dashboard.js")[0] == 401)
+    status, headers, _ = call("/", headers={"Accept": "text/html"})
+    require(status == 303 and headers["Location"].startswith("/login"), (status, headers))
+    require(call("/api/state")[0] == 401)
+    require(call("/api/auth/check")[0] == 401)
+    status, headers, _ = sign_in("wrong-password")
+    require(status == 401 and "Set-Cookie" not in headers, status)
+
+    status, headers, _ = sign_in("fixture-password")
+    require(status == 200, status)
+    set_cookie = headers["Set-Cookie"]
+    require("HttpOnly" in set_cookie and "SameSite=Strict" in set_cookie, set_cookie)
+    require("Max-Age" not in set_cookie, set_cookie)
+    cookie = session_cookie(headers)
+    status, _, body = call("/api/state", headers={"Cookie": cookie, "X-Auth-User": "evil"})
+    state = json.loads(body)
+    require(status == 200 and state["auth_user"] == "admin", (status, state.get("auth_user")))
+    require(state["auth_session"] is True)
+    status, _, body = call("/api/state", auth=GOOD_AUTH, headers={"X-Auth-User": "evil"})
+    require(status == 200 and json.loads(body)["auth_user"] == "admin")
+    require(call("/api/state", headers={"X-Auth-User": "admin"})[0] == 401)
+
+    status, headers, _ = sign_in("fixture-password", remember=True)
+    require(status == 200 and "Max-Age=2592000" in headers["Set-Cookie"], headers["Set-Cookie"])
+    remembered = session_cookie(headers)
+    require(call("/api/state", headers={"Cookie": remembered})[0] == 200)
+
+    require(call("/api/auth/logout", "POST", headers={"Cookie": cookie})[0] == 200)
+    require(call("/api/state", headers={"Cookie": cookie})[0] == 401)
+    require(call("/api/state", headers={"Cookie": remembered})[0] == 200)
+    print("COOKIE=" + remembered)
+elif mode == "rotated":
+    old = os.environ["OLD_COOKIE"]
+    require(call("/api/state", headers={"Cookie": old})[0] == 401)
+    require(call("/api/state", auth=GOOD_AUTH)[0] == 401)
+    status, headers, _ = sign_in("rotated-password")
+    require(status == 200, status)
+    fresh = session_cookie(headers)
+    require(call("/api/state", headers={"Cookie": fresh})[0] == 200)
+    statuses = [sign_in("wrong-password")[0] for _ in range(7)]
+    require(statuses[0] == 401 and statuses[-1] == 429 and 429 in statuses, statuses)
+    status, headers, _ = sign_in("rotated-password")
+    require(status == 429 and int(headers["Retry-After"]) >= 1, status)
+    for _ in range(50):
+        entries = json.loads(call("/api/access", headers={"Cookie": fresh})[2])["entries"]
+        seen = {e["status"] for e in entries if e["uri"] == "/api/auth/login"}
+        if {200, 401, 429} <= seen:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(seen)
 elif mode == "unlocked":
     status, body = request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})
     require(status == 200 and b"<html" in body.lower(), (status, body[:200]))
+    require(call("/login")[0] == 404 and call("/api/auth/login", "POST", body={})[0] == 404)
 else:
     raise AssertionError(mode)

@@ -37,6 +37,8 @@ caddy_onion="$(
 )"
 assert_contains "onion vhost bound to the bridge gateway" "$caddy_onion" "http://172.28.0.1 {"
 assert_contains "onion vhost carries basic_auth" "$caddy_onion" "basic_auth"
+assert_contains "onion vhost carries the session gate" "${caddy_onion#*172.28.0.1}" "forward_auth @pithead_session 127.0.0.1:8000"
+assert_contains "onion vhost serves the sign-in endpoints" "${caddy_onion#*172.28.0.1}" "@pithead_public path /login"
 # The onion site (everything after the gateway address) must not get a TLS directive.
 onion_site="${caddy_onion#*172.28.0.1}"
 case "$onion_site" in

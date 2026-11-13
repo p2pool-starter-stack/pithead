@@ -51,18 +51,35 @@ caddy_hash_password_b64() {
 
 generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
-    # Every vhost forwards the authenticated basic_auth username as X-Auth-User (#33) — the audit
-    # `actor` for control-channel requests. header_up SETS the header, so a client-supplied
-    # X-Auth-User can never spoof it; with auth off the placeholder renders empty.
-    #
-    # Optional basic_auth block (#8), rendered only when a dashboard password is configured. The
-    # hash is decoded from its base64 .env form back to the raw bcrypt string Caddy expects; it
-    # protects every route, so the dashboard prompts for login before anything is served.
-    local auth=""
+    local auth="" gate verify_site="" proxy_user_hdr="" epoch
     if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
         local hash
         hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
-        auth=$(printf '    basic_auth {\n        %s %s\n    }' "$DASHBOARD_AUTH_USER" "$hash")
+        auth=$(printf '    basic_auth @pithead_basic {\n        %s %s\n    }' "$DASHBOARD_AUTH_USER" "$hash")
+        epoch=$(printf 'pithead-session-epoch-v1:%s:%s' "$DASHBOARD_AUTH_USER" "$DASHBOARD_AUTH_HASH_B64" | sha256_hex)
+        gate=$(printf '%s\n' \
+            '    request_header -X-Auth-User' \
+            '    request_header -X-Pithead-Session-Refresh' \
+            '    @pithead_public path /login /api/auth/login /api/auth/logout /static/login.js /static/login-next.mjs /static/dashboard.css /static/styles/* /static/theme-init.js /static/pithead-mark.svg' \
+            '    reverse_proxy @pithead_public 127.0.0.1:8000 {' \
+            "        header_up X-Pithead-Auth-Epoch \"$epoch\"" \
+            '        header_up -X-Pithead-Boot-Probe' \
+            '    }' \
+            '    @pithead_basic header Authorization "Basic *"' \
+            '    @pithead_session not header Authorization "Basic *"' \
+            "$auth" \
+            '    request_header @pithead_basic X-Auth-User {http.auth.user.id}' \
+            '    forward_auth @pithead_session 127.0.0.1:8000 {' \
+            '        uri /api/auth/check' \
+            "        header_up X-Pithead-Auth-Epoch \"$epoch\"" \
+            '        copy_headers X-Auth-User X-Pithead-Session-Refresh' \
+            '    }')
+        verify_site=$(printf 'http://127.0.0.1:8001 {\n    bind 127.0.0.1\n    route {\n        basic_auth {\n            %s %s\n        }\n        respond 204\n    }\n}\n' "$DASHBOARD_AUTH_USER" "$hash")
+    else
+        gate=$(printf '%s\n' \
+            '    @pithead_auth_paths path /login /api/auth/*' \
+            '    respond @pithead_auth_paths 404')
+        proxy_user_hdr='            header_up X-Auth-User {http.auth.user.id}'
     fi
     # Access log (#349): every vhost writes a JSON line per request (timestamp, status, method,
     # URI, authenticated user) to one shared file under the host-mounted CADDY_LOG_DIR; the
@@ -314,14 +331,15 @@ $logblk
     route {
 $boot_marker
         rewrite @boot_health /
-$auth
+$gate
         reverse_proxy 127.0.0.1:8000 {
-            header_up X-Auth-User {http.auth.user.id}
+$proxy_user_hdr
             header_up -X-Pithead-Boot-Probe
         }
     }
 }
 EOF
+    [ -z "$verify_site" ] || printf '\n%s' "$verify_site" >>"$target"
 
     # Onion vhost (#343): a second site reachable ONLY from the tor container, via the bridge gateway
     # (NETWORK_PREFIX.1 — the /24's first host, where host-networked Caddy binds and bridge containers
@@ -337,11 +355,12 @@ EOF
 
 http://${NETWORK_PREFIX}.1 {
 $(_onion_bind_line)
-$auth
 $logblk
-    reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
-        header_up -X-Pithead-Boot-Probe
+    route {
+$gate
+        reverse_proxy 127.0.0.1:8000 {
+            header_up -X-Pithead-Boot-Probe
+        }
     }
 }
 EOF
@@ -360,11 +379,12 @@ EOF
 https://${DASHBOARD_ONION} {
     tls internal
 $(_onion_bind_line)
-$auth
 $logblk
-    reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
-        header_up -X-Pithead-Boot-Probe
+    route {
+$gate
+        reverse_proxy 127.0.0.1:8000 {
+            header_up -X-Pithead-Boot-Probe
+        }
     }
 }
 EOF

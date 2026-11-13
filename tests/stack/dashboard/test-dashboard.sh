@@ -81,6 +81,34 @@ case "$caddy_off" in
 *) ok "caddy stays open when no login set (no basic_auth)" ;;
 esac
 
+echo "== unit: generate_caddyfile session gate =="
+assert_contains "login: session check goes through forward_auth" "$caddy_on" "forward_auth @pithead_session 127.0.0.1:8000"
+assert_contains "login: forward_auth targets the dashboard check endpoint" "$caddy_on" "uri /api/auth/check"
+assert_contains "login: forward_auth copies the actor from the session" "$caddy_on" "copy_headers X-Auth-User X-Pithead-Session-Refresh"
+assert_contains "login: basic auth still gates scripts and API clients" "$caddy_on" "basic_auth @pithead_basic"
+assert_contains "login: the basic-auth actor reaches the dashboard" "$caddy_on" "request_header @pithead_basic X-Auth-User {http.auth.user.id}"
+assert_contains "login: client-supplied actor header is stripped first" "$caddy_on" "request_header -X-Auth-User"
+assert_contains "login: the sign-in endpoints skip the gate" "$caddy_on" "@pithead_public path /login /api/auth/login /api/auth/logout"
+assert_contains "login: a loopback-only verifier site exists" "$caddy_on" "http://127.0.0.1:8001 {"
+assert_not_contains "login: the actor is no longer overwritten by the proxy" "$caddy_on" "header_up X-Auth-User"
+epoch_on="$(printf '%s\n' "$caddy_on" | sed -n 's/.*header_up X-Pithead-Auth-Epoch "\([0-9a-f]*\)".*/\1/p' | sort -u)"
+assert_eq "login: one 64-hex epoch is sent on every gated route" "$(printf '%s' "$epoch_on" | grep -cE '^[0-9a-f]{64}$')" "1"
+auth_hb64_other="$(printf '%s' '$2y$14$UNITTESTbcrypthashvalue000000000000000000000000000001' | openssl base64 -A)"
+# shellcheck disable=SC1090  # STACK path is dynamic by design
+caddy_other="$(
+    cd "$SANDBOX" && source "$STACK" 2>/dev/null
+    set +e
+    DASHBOARD_SECURE=true HOST_IP=box.lan DASHBOARD_AUTH_USER=admin DASHBOARD_AUTH_HASH_B64="$auth_hb64_other" \
+        generate_caddyfile >/dev/null 2>&1
+    cat Caddyfile
+)"
+assert_not_contains "login: a new password changes the epoch" "$caddy_other" "$epoch_on"
+assert_not_contains "no login: no session gate" "$caddy_off" "forward_auth"
+assert_not_contains "no login: no verifier site" "$caddy_off" "127.0.0.1:8001"
+assert_not_contains "no login: no epoch" "$caddy_off" "X-Pithead-Auth-Epoch"
+assert_contains "no login: the sign-in paths are 404, as before" "$caddy_off" "respond @pithead_auth_paths 404"
+assert_contains "no login: the actor placeholder still renders empty" "$caddy_off" "header_up X-Auth-User {http.auth.user.id}"
+
 echo "== unit: generate_caddyfile scheme (#140) =="
 # The HTTPS-vs-HTTP choice is security-relevant: secure -> https:// + `tls internal`; insecure ->
 # plain http:// and no TLS directive. (Auth on/off is covered in the dashboard-auth block above.)
@@ -233,7 +261,7 @@ caddy_onion="$(
     cat Caddyfile
 )"
 assert_eq "insecure+onion: both vhosts bind, never one wildcard and one specific" \
-    "$(printf '%s' "$caddy_onion" | grep -c '^    bind ')" "2"
+    "$(printf '%s' "$caddy_onion" | grep -c '^    bind ')" "3"
 
 # The invariant, checked by counting rather than by naming the blocks: EVERY site block in the
 # rendered file carries a bind, or none does. A hardcoded count only proves the blocks that
@@ -259,12 +287,12 @@ caddy_onion_https="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-# Six blocks since #1123 took :80 over and #1132 took :443's own empty-200 default: the two LAN
+# Seven blocks (the sixth being the loopback sign-in verifier) since #1123 took :80 over and #1132 took :443's own empty-200 default: the two LAN
 # vhosts (the known-host :80 redirect and the HTTPS one), the :80 catch-all, the :443 catch-all,
 # and the two onion vhosts. The number is worth pinning rather than deriving — it is what caught
 # the redirect blocks arriving without anyone re-counting.
-assert_eq "secure+onion+provisioned: the HTTPS onion vhost renders (6 site blocks)" \
-    "$(_site_count "$caddy_onion_https")" "6"
+assert_eq "secure+onion+provisioned: the HTTPS onion vhost renders (7 site blocks)" \
+    "$(_site_count "$caddy_onion_https")" "7"
 assert_eq "secure+onion+provisioned: every site block binds — no unbound wildcard on :443" \
     "$(_bind_count "$caddy_onion_https")" "$(_site_count "$caddy_onion_https")"
 
@@ -292,8 +320,8 @@ caddy_onion_https_diy="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-assert_eq "DIY secure+onion+provisioned: no site block binds" \
-    "$(_bind_count "$caddy_onion_https_diy")" "0"
+assert_eq "DIY secure+onion+provisioned: only the loopback verifier binds" \
+    "$(_bind_count "$caddy_onion_https_diy")" "1"
 
 # No two site blocks may name the same scheme://address. Caddy rejects the WHOLE file with
 # "ambiguous site definition" and, under Restart=always, crash-loops — dashboard and onion down
@@ -344,8 +372,8 @@ caddy_onion_off="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-assert_eq "DIY insecure+onion: neither vhost binds — no wildcard/specific clash" \
-    "$(printf '%s' "$caddy_onion_off" | grep -c '^    bind ')" "0"
+assert_eq "DIY insecure+onion: neither vhost binds — only the loopback verifier does" \
+    "$(printf '%s' "$caddy_onion_off" | grep -c '^    bind ')" "1"
 unset -f _caddy_appliance
 unset -f _site_count _bind_count
 unset -f _dupe_sites

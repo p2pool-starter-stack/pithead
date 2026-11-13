@@ -6,6 +6,20 @@ import { Badges, cVar, HighUsage, ThemeSwitcher, UpdateBadge, VersionBadge } fro
 
 // --- Top bar -------------------------------------------------------------------------
 
+async function signOut() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } finally {
+    location.assign("/login");
+  }
+}
+
+function SignOut({ state }) {
+  if (!state.auth_session) return null;
+  return html`<button type="button" class="btn-toggle signout-btn" title=${"Signed in as " + state.auth_user}
+      onClick=${signOut}>Sign out</button>`;
+}
+
 function Header({ state, theme, onTheme }) {
   const s = state.system,
     hr = state.hashrate,
@@ -24,6 +38,7 @@ function Header({ state, theme, onTheme }) {
                         <${VersionBadge} version=${state.version} />
                         <${UpdateBadge} update=${state.update} />
                         <${ThemeSwitcher} theme=${theme} onTheme=${onTheme} />
+                        <${SignOut} state=${state} />
                         <${UpgradeControl} update=${state.update}
                             enabled=${state.control_enabled && !appliance} appliance=${appliance} />
                         ${

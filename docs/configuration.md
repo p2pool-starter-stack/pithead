@@ -248,7 +248,7 @@ the desired value is not presented as proof of what the still-running services u
 | `dashboard.expose_public_ip` | `false` | Appliance only. The appliance serves the dashboard on the addresses it holds, and on a network that passes IPv6 through, one of those is a globally-routable address — which would put the control panel on the open internet, gated only by your router. By default those addresses are left out of the site list _and_ out of Caddy's listener, so the dashboard answers on LAN, ULA and loopback addresses only. Reach it from outside over the onion service instead. Set `true` only if you deliberately want it published on a routable address and have your own protection in front of it. |
 | `dashboard.port` | `auto` | Host port Caddy binds the dashboard on. `auto` = the scheme default (443 with `dashboard.secure: true`, 80 without). Set a number (e.g. `8443`) to move it — for a host already running another reverse proxy on 80/443, so that proxy can front the stack. In HTTPS mode a custom port also drops Caddy's automatic HTTP→HTTPS redirect (which would otherwise hold port 80), so the fronting proxy owns any redirect. See [Co-hosting on a shared server](#co-hosting-on-a-shared-server). |
 | `dashboard.auth.username` | `admin` | Login name for the dashboard when a password is set (see below). Letters, digits, and `. _ @ -`, 1–64 chars. Ignored while `dashboard.auth.password` is empty. |
-| `dashboard.auth.password` | `""` _(off)_ | Optional password to open the dashboard. Turns on a Caddy [HTTP basic-auth](https://caddyserver.com/docs/caddyfile/directives/basic_auth) prompt in front of every page. `""` (default) = no login, anyone who can reach the dashboard sees it. Both setup wizards generate a password by default; the empty reference value remains unchanged for upgraded and restored configs. Any 8–128-character string (no double-quotes) turns the prompt on. The plaintext lives only in your owner-only `config.json`; pithead bcrypt-hashes it with the pinned Caddy image and stores only the hash in `.env`, so the password itself is never persisted in rendered state. The hashing container disables runtime logging to keep its credential hash out of the system journal. Basic-auth credentials travel in cleartext over HTTP, so keep `dashboard.secure: true` (the default); pithead warns if you set a password with `secure: false`. See [Exposing the dashboard safely](#exposing-the-dashboard-safely). |
+| `dashboard.auth.password` | `""` _(off)_ | Optional password to open the dashboard. Turns on a sign-in page in front of every dashboard page, with a "Remember me" box and a "Sign out" button. Scripts and API clients can still send the same username and password as HTTP [basic auth](https://caddyserver.com/docs/caddyfile/directives/basic_auth). `""` (default) = no login, anyone who can reach the dashboard sees it. Both setup wizards generate a password by default; the empty reference value remains unchanged for upgraded and restored configs. Any 8–128-character string (no double-quotes) turns the prompt on. The plaintext lives only in your owner-only `config.json`; pithead bcrypt-hashes it with the pinned Caddy image and stores only the hash in `.env`, so the password itself is never persisted in rendered state. The hashing container disables runtime logging to keep its credential hash out of the system journal. The password travels in cleartext over HTTP, so keep `dashboard.secure: true` (the default); pithead warns if you set a password with `secure: false`. See [Exposing the dashboard safely](#exposing-the-dashboard-safely). |
 | `dashboard.onion.enabled` | `false` _(off)_ | Privacy-relevant, default off. `true` publishes the dashboard as a Tor v3 onion service so you can reach it remotely over Tor — no port-forward, no VPN, no public IP. It fronts the authenticated Caddy login on the internal bridge, never the LAN. pithead **fails closed**: if no `dashboard.auth.password` is set it generates a strong one (saved to `config.json`, login `admin`); a password you set yourself must be at least 16 characters. See [Remote access over Tor](#remote-access-over-tor-onion-service). |
 | `dashboard.onion.client_auth` | `true` _(on)_ | Only applies when `dashboard.onion.enabled` is `true`. Keeps Tor v3 **client authorization** on: the onion does not respond at all without your client key, so the address can't be scanned or brute-forced — the password becomes a second factor behind it. pithead generates the keypair; get the client line from the dashboard header's **Show client key** button, or with `./pithead onion-client-key` on a machine you can log in to. Set to `false` for a deliberately password-only onion — but not alongside `dashboard.control.enabled: true`: `apply` refuses that pairing, since a root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable address. Because an appliance turns the config editor on for itself, an appliance onion is always client-authorized. |
 | `dashboard.control.enabled` | `false` _(off)_ | Security-relevant, default off. `true` turns on the dashboard's **Configuration view**: edit `config.json` from the browser, preview the changes, and apply them. The dashboard container never runs `pithead` itself — it writes a typed change request into a spool directory and a root systemd unit on the host (`pithead-control`) validates and applies it (see [Dashboard › Configuration view](dashboard.md#configuration-view)). Fails closed twice: enabling it without a `dashboard.auth.password` is a validation error, because this channel can change the payout wallet; and enabling it on a published onion (`dashboard.onion.enabled`) with `dashboard.onion.client_auth: false` is refused too, since a password alone is brute-forceable over Tor. |
@@ -497,8 +497,28 @@ or the whole CA directory. Normal leaf renewals retain the root in `caddy_data`;
 deletes that volume and requires a new export and trust decision. The appliance uses its own
 certificate; this procedure is for DIY installs.
 
+**Signing in.** With a password set, the dashboard opens a sign-in page: a username, the password
+and a "Remember me" box. The session cookie is `HttpOnly` and `SameSite=Strict`, and `Secure` when
+the page is served over HTTPS.
+
+- **Remember me off:** the session ends when the browser closes, or after 8 hours without use.
+- **Remember me on:** the session lasts 30 days and renews while you use the dashboard.
+- **Sign out** ends the session at once. Changing `dashboard.auth.password` or
+  `dashboard.auth.username` and running `apply` ends every session, this one included.
+- **Wrong passwords:** five failures from one address in a minute lock sign-in from that address
+  for the rest of the minute. Each attempt appears in the access log shown in the Security panel.
+  Basic-auth requests are not rate-limited.
+- **Scripts and API clients** keep sending the username and password as HTTP basic auth, for
+  example `curl -u admin:PASSWORD`. Local callers on `127.0.0.1:8000` are unaffected.
+- **After an upgrade from 2.0.3** the password is unchanged. A browser that remembered the old
+  basic-auth login lands on the sign-in page once.
+- The sign-in page checks the password through a Caddy listener that binds `127.0.0.1:8001` only,
+  so the dashboard never holds the password hash. Following a link to the dashboard from another
+  site shows the sign-in page once, because `SameSite=Strict` withholds the cookie from that first
+  request.
+
 To remove the login again, clear the password (`"password": ""`) and `apply`. pithead drops the
-`basic_auth` block and the dashboard is open on the LAN as before.
+login and the dashboard is open on the LAN as before.
 
 ### Co-hosting on a shared server
 
@@ -525,8 +545,9 @@ A couple of things to know:
   and redirects to HTTPS. On a custom port that redirect is switched off (it would otherwise keep
   holding port 80, defeating the point). Your fronting proxy owns the http→https bounce.
 - **This does not remove Caddy or its login.** `dashboard.port` only moves the port. The dashboard
-  itself still binds `127.0.0.1:8000` with no authentication of its own — the `dashboard.auth` login
-  lives in Caddy — so keep Caddy in the path and set a password before your proxy exposes it.
+  itself still binds `127.0.0.1:8000` with no authentication of its own — Caddy checks the
+  `dashboard.auth` login before a request reaches it — so keep Caddy in the path and set a password
+  before your proxy exposes it.
 
 ### Remote access over Tor (onion service)
 

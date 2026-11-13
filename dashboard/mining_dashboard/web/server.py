@@ -14,6 +14,7 @@ from mining_dashboard.service import audit_service, control_service
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
+from mining_dashboard.web import auth
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import diagnostics_views, download_views
@@ -40,19 +41,17 @@ async def handle_index(request):
 
 
 async def handle_state(request):
-    """The dashboard's data API. Pull shared state, delegate to the view layer, and return
-    the assembled state object as JSON (or a sanitized 500 on failure)."""
     app = request.app
     data = app["latest_data"]
     state_mgr = app["state_manager"]
     range_arg = request.query.get("range", "all")
-    # Optional manual-zoom window (Issue #47); malformed from/to falls back to the preset range.
     window = parse_window(request.query.get("from"), request.query.get("to"))
-    # Hashrate-averaging window for the chart (#168); unknown/missing falls back to the default.
     avg_window = canonical_window(request.query.get("avg"))
 
     try:
-        return web.json_response(build_state(data, state_mgr, range_arg, window, avg_window))
+        return web.json_response(
+            auth.annotate(request, build_state(data, state_mgr, range_arg, window, avg_window))
+        )
     except Exception:
         # Log the full error server-side; never leak exception details to the browser.
         logger.exception("Error building dashboard state")
@@ -575,13 +574,14 @@ async def _cancel_bg_tasks(app):
 
 def create_app(state_manager, latest_data_ref):
     """Factory to create the web app instance."""
-    app = web.Application(middlewares=[security_headers_middleware])
+    app = web.Application(middlewares=[security_headers_middleware, auth.refresh_middleware])
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
     # Fire-and-forget recorder tasks (worker-upgrade, #1014) — tracked so they can't be
     # garbage-collected mid-flight and so shutdown can cancel any still in progress.
     app["_bg_tasks"] = set()
     app.on_cleanup.append(_cancel_bg_tasks)
+    auth.setup(app)
 
     app.add_routes(
         [

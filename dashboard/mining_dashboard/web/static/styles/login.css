@@ -1,0 +1,51 @@
+.login-container {
+  max-width: 380px;
+  margin-top: 12vh;
+}
+.login-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.login-form label {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.login-form input[type="text"],
+.login-form input[type="password"] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 1rem;
+}
+.login-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.login-form .btn-toggle {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 16px;
+}
+.login-form .btn-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.signout-btn {
+  margin-left: 8px;
+}
