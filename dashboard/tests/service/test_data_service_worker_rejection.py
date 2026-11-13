@@ -1,5 +1,5 @@
 # ruff: noqa: F403, F405
-from mining_dashboard.service import data_gates as gates
+from mining_dashboard.collector import pools as pools_collector
 from tests.service._data_service_support import *  # noqa: F403
 
 
@@ -167,11 +167,9 @@ class TestMiningGuardRejection:
     async def _cycle(self, svc, p2pool=None, health=None, sync=None, containers=None, signals=None):
         monero_sync = {"health": health or {"level": "green"}, **(sync or {})}
         with (
+            patch.object(ds_mod, "get_container_health", AsyncMock(return_value=containers or {})),
             patch.object(
-                gates.containers, "get_container_health", AsyncMock(return_value=containers or {})
-            ),
-            patch.object(
-                gates.pools,
+                pools_collector,
                 "get_p2pool_log_signals",
                 AsyncMock(return_value=signals or {"lag": 0, "monerod_unsynced": False}),
             ),

@@ -2,7 +2,6 @@ import logging
 import os
 import stat
 
-from mining_dashboard.collector import containers, pools
 from mining_dashboard.config.config import DISK_PATH
 from mining_dashboard.service.health.mining_guard import (
     container_triggers,
@@ -73,10 +72,12 @@ class DataGateMixin:
         self.latest_data["sync_gate_monero_only"] = self.sync_gate_monero_only
 
     async def _update_mining_guard(self, monero_sync, p2pool_stats):
+        from mining_dashboard.collector import pools
+
         health = monero_sync.get("health") or {}
         triggers = monero_triggers(health, monero_sync)
         triggers.update(p2pool_triggers(p2pool_stats.get("p2p") or {}))
-        triggers.update(container_triggers(await containers.get_container_health()))
+        triggers.update(container_triggers(await _runtime().get_container_health()))
         triggers.update(
             log_triggers(await pools.get_p2pool_log_signals(), health.get("advance_age_sec"))
         )
