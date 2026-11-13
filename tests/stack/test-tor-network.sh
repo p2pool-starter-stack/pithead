@@ -446,7 +446,6 @@ assert_contains "monero clearnet: xmrvsbeast priority node (v4.18)" "$(cat "$MON
 assert_contains "monero clearnet: hashvault priority node (v4.18)" "$(cat "$MONT")" "add-priority-node=nodes.hashvault.pro:18080"
 # The committed template (the Tor-only default) keeps the proxy line + the Tor-tuned out-peers.
 assert_contains "monero default: Tor P2P proxy present (#183)" "$(cat "$ROOT/build/monero/bitmonero.conf.template")" 'proxy=${NETWORK_PREFIX}.25:9050'
-# #595: the template's out-peers is now config-driven (monero.out_peers, default 48 in the render).
 assert_contains "monero default: out-peers config-driven for Tor (#183/#595)" "$(cat "$ROOT/build/monero/bitmonero.conf.template")" 'out-peers=${MONERO_OUT_PEERS}'
 # Compose wires both flags into container env: monerod reads MONERO_CLEARNET_SYNC in its entrypoint;
 # TARI_CLEARNET_SYNC is inert in the container but its presence makes a flag change recreate tari so
