@@ -83,7 +83,7 @@ phase_update_power_leg() {
     fi
     audit=$(_ssh "cat $cdir/audit/control.log" 2>/dev/null)
     case "$audit" in
-    *'"actor":"admin","action":"power-shutdown","status":"shutting-down"'*) ok "leg 4b: the power-shutdown audit line was written before power-off" ;;
+    *'"actor":"admin","action":"power-shutdown","status":"shutting-down"'*) ok "leg 4b: the power-shutdown audit line is in the control log after the power-off" ;;
     *) bad "leg 4b: no power-shutdown audit line in the control log" ;;
     esac
     if _ssh "journalctl -b -1 -u pithead-control.service --no-pager | grep -F 'Stack stopped before power-shutdown'" >/dev/null 2>&1; then

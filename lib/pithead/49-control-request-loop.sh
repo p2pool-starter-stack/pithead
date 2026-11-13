@@ -310,6 +310,7 @@ control_run_pending() {
     # too, so exactly one os-* verb runs per drain; the rest reject with a retry hint.
     CONTROL_OS_BUDGET=1
     CONTROL_POWER_BUDGET=1
+    CONTROL_POWER_ORDERED=0
     names=$(cd "$cdir/requests" 2>/dev/null && ls -1tr -- *.json 2>/dev/null) || true
     if [ -z "$names" ]; then
         log "No pending control requests."
@@ -353,6 +354,7 @@ control_run_pending() {
         rm -f "$claim"
         control_prune_results "$cdir"
         n=$((n + 1))
+        [ "$CONTROL_POWER_ORDERED" -eq 0 ] || break
     done <<<"$names"
     log "Processed $n control request(s)."
 }

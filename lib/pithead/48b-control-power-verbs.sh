@@ -1,7 +1,7 @@
 control_power_inflight_result() { # <control-dir> — rc 0 = an OS check or power result is still in flight
     local f
     while IFS= read -r f; do
-        case "$(jq -r '.status // ""' "$f" 2>/dev/null)" in
+        case "$(jq -r '.status // ""' "$f" 2>/dev/null || true)" in
         checking | rebooting | shutting-down) return 0 ;;
         esac
     done < <(find "$1/results" -maxdepth 1 -type f -name '*.json' -mmin -5 2>/dev/null)
@@ -11,6 +11,10 @@ control_power_inflight_result() { # <control-dir> — rc 0 = an OS check or powe
 control_power_refusal() { # <control-dir> — echoes the reason a power verb must not run now; empty = clear
     local cdir="$1" running to step
     step=$(jq -r '.step // ""' "$cdir/results/os-update-state.json" 2>/dev/null) || step=""
+    if [ -f "$(os_update_inflight_file)" ] && ! jq -e . "$cdir/results/os-update-state.json" >/dev/null 2>&1; then
+        printf '%s' "the OS update state is unreadable while an update is armed — a power action now could interrupt it. Check for updates again, then try again."
+        return 0
+    fi
     case "$step" in
     downloading | installing | verifying | reboot-pending)
         printf '%s' "an appliance OS update is in progress ($step) — a power action now could interrupt it. Wait for it to finish, then try again."
@@ -47,9 +51,13 @@ control_power() { # <claimed-file> <id> <actor> <control-dir> <action>
         return 0
     fi
     control_os_gate "$cdir" "$id" "$actor" "$action" CONTROL_POWER_BUDGET || return 0
-    if ! control_power_run "$cdir" "$id" "$actor" "$action"; then
-        control_os_refuse "$cdir" "$id" "$actor" "$action" rejected "host mutation lock unavailable — nothing was changed."
-    fi
+    local rc=0
+    control_power_run "$cdir" "$id" "$actor" "$action" || rc=$?
+    case "$rc" in
+    0) ;;
+    3) CONTROL_POWER_ORDERED=1 ;;
+    *) control_os_refuse "$cdir" "$id" "$actor" "$action" rejected "host mutation lock unavailable — nothing was changed." ;;
+    esac
 }
 
 control_power_run() ( # <control-dir> <id> <actor> <action> — isolate the lock's exit-on-contention path
@@ -64,16 +72,10 @@ control_power_run() ( # <control-dir> <id> <actor> <action> — isolate the lock
         return 0
     fi
     now=$(date +%s)
-    if [ -L "$stamp" ]; then
-        last=invalid
-    elif [ -f "$stamp" ]; then
-        read -r last <"$stamp" || last=invalid
-    fi
-    if ! [[ "$last" =~ ^[0-9]+$ ]]; then
-        control_os_refuse "$cdir" "$id" "$actor" "$action" rejected "the power cooldown record is unreadable — nothing was changed."
-        return 0
-    fi
-    if [ $((now - last)) -lt "${CONTROL_POWER_COOLDOWN_S:-300}" ]; then
+    [ ! -L "$stamp" ] || rm -f "$stamp"
+    [ ! -f "$stamp" ] || read -r last <"$stamp" || last=0
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0
+    if [ "$last" -le "$now" ] && [ $((now - last)) -lt "${CONTROL_POWER_COOLDOWN_S:-300}" ]; then
         control_os_refuse "$cdir" "$id" "$actor" "$action" rejected "a power action ran less than $((${CONTROL_POWER_COOLDOWN_S:-300} / 60)) minutes ago — retry in a few minutes."
         return 0
     fi
@@ -91,4 +93,5 @@ control_power_run() ( # <control-dir> <id> <actor> <action> — isolate the lock
         control_os_refuse "$cdir" "$id" "$actor" "$action" failed "systemctl $target failed — the machine is still running with its stack stopped; restart the stack from the dashboard."
         return 0
     fi
+    return 3
 )

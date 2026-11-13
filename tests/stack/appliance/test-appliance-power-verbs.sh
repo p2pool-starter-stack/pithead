@@ -104,13 +104,16 @@ pwrun >/dev/null
 assert_eq "an expired cooldown lets the next verb run" "$(pwstatus "$UP2")" "rebooting"
 pwreset
 
+printf '{"step":"downloading"}\n' >"$PWRES/os-update-state.json"
 pwintent "$UP1" power-reboot REBOOT
 sleep 1
 pwintent "$UP2" power-shutdown SHUTDOWN
 pwrun >/dev/null
-assert_eq "the first power verb in a drain runs" "$(pwstatus "$UP1")" "rebooting"
+assert_contains "the first power verb in a drain gets its own verdict" "$(pwerror "$UP1")" "update"
 assert_eq "the second power verb in the same drain is rejected" "$(pwstatus "$UP2")" "rejected"
 assert_contains "the budget refusal says retry" "$(pwerror "$UP2")" "retry"
+assert_contains "the budget refusal names a power step" "$(pwerror "$UP2")" "power step"
+rm -f "$PWRES/os-update-state.json"
 pwreset
 
 for step in downloading installing verifying reboot-pending; do
@@ -143,6 +146,7 @@ assert_eq "an OS check in flight rejects the verb" "$(pwstatus "$UP1")" "rejecte
 pwreset
 
 printf '{"to":"1.3.1","ts":%s}\n' "$(date +%s)" >"$PWOS/in-flight.json"
+printf '{"step":"idle"}\n' >"$PWRES/os-update-state.json"
 pwintent "$UP1" power-reboot REBOOT
 pwrun >/dev/null
 assert_eq "the uncommitted-slot window rejects the verb" "$(pwstatus "$UP1")" "rejected"
@@ -151,6 +155,7 @@ assert_eq "no power command in the uncommitted-slot window" "$(pwpower)" "0"
 pwreset
 
 printf '{"to":"9.9.9","ts":%s}\n' "$(date +%s)" >"$PWOS/in-flight.json"
+printf '{"step":"idle"}\n' >"$PWRES/os-update-state.json"
 pwintent "$UP1" power-reboot REBOOT
 pwrun >/dev/null
 assert_eq "an armed update for a different version does not block the verb" "$(pwstatus "$UP1")" "rebooting"
@@ -158,7 +163,7 @@ pwreset
 
 (
     flock 9
-    sleep 20
+    exec sleep 20
 ) 9>>"$PWC/.pithead.lock" &
 PWHOLDER=$!
 sleep 1
@@ -169,6 +174,29 @@ wait "$PWHOLDER" 2>/dev/null || true
 assert_eq "a held mutation lock rejects the verb" "$(pwstatus "$UP1")" "rejected"
 assert_contains "the lock refusal says so" "$(pwerror "$UP1")" "lock"
 assert_eq "no power command while the lock is held" "$(pwpower)" "0"
+pwreset
+
+pwintent "$UP1" power-reboot REBOOT
+sleep 1
+pwintent "$UP2" restart
+pwrun >/dev/null
+assert_eq "an ordered power command ends the drain" "$([ -f "$PWREQS/$UP2.json" ] && echo waiting || echo processed)" "waiting"
+rm -f "$PWREQS/$UP2.json"
+pwreset
+
+printf '%s\n' "$(($(date +%s) + 86400))" >"$PWC/data/control/power-cooldown"
+pwintent "$UP1" power-reboot REBOOT
+pwrun >/dev/null
+assert_eq "a cooldown stamp from the future does not lock the verb out" "$(pwstatus "$UP1")" "rebooting"
+pwreset
+
+printf '{"to":"9.9.9","ts":%s}\n' "$(date +%s)" >"$PWOS/in-flight.json"
+printf 'not json' >"$PWRES/os-update-state.json"
+pwintent "$UP1" power-reboot REBOOT
+pwrun >/dev/null
+assert_eq "an unreadable update state with an armed update rejects the verb" "$(pwstatus "$UP1")" "rejected"
+assert_contains "the refusal names the unreadable state" "$(pwerror "$UP1")" "unreadable"
+rm -f "$PWRES/os-update-state.json"
 pwreset
 
 pwintent "$UP1" power-reboot REBOOT
