@@ -229,7 +229,7 @@ check "the failed install kept nothing staged" "$(staged)" "0"
 rauc_n=$(grep -c "rauc install $STAGE/pithead-os-v9.9.9.raucb" "$SB/rauc.log")
 out=$(rig install)
 check_has "the good install reboots to the spare slot" "$(cat "$tmp/reboot.log")" "reboot"
-check "the install ran rauc install once" "$(( $(grep -c "rauc install $STAGE/pithead-os-v9.9.9.raucb" "$SB/rauc.log") - rauc_n ))" "1"
+check "the install ran rauc install once" "$(($(grep -c "rauc install $STAGE/pithead-os-v9.9.9.raucb" "$SB/rauc.log") - rauc_n))" "1"
 check "the pending record names the intent" "$(state .state)" "pending"
 check "the pending record carries the target version" "$(state .to)" "9.9.9"
 check "the bundle is deleted after the install" "$(staged)" "0"
