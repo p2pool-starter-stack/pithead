@@ -1,5 +1,3 @@
-"""Tor SOCKS failure classification for the Healthchecks ping (#4037)."""
-
 from unittest.mock import patch
 
 import requests
