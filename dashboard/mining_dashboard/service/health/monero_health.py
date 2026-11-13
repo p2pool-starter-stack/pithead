@@ -11,8 +11,8 @@ restricted ``get_info``; peer counts come from the current container's health ob
 - **stalled**   best height unchanged for :data:`STALLED_SEC`. Monero targets 2-minute blocks, so
   30 minutes without one is a stuck node, not a slow interval.
 
-Either is ``red`` with the numbers in the reason. This monitor detects and alerts; it restarts
-nothing. A remote node (``monero.mode: remote``) has no peer or sync verdict we can trust, so its
+Either is ``red`` with the numbers in the reason. This monitor detects and alerts; ``monerod_redial`` restarts
+a peerless node. A remote node (``monero.mode: remote``) has no peer or sync verdict we can trust, so its
 verdict says peers are not visible rather than guessing.
 """
 

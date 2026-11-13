@@ -24,6 +24,7 @@ from mining_dashboard.service.data_helpers import (
 )
 from mining_dashboard.service.health.degradation import DegradationMonitor
 from mining_dashboard.service.health.monero_health import MoneroChainHealth
+from mining_dashboard.service.health.monerod_redial import MonerodRedial
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.health.tari_health import TariChainHealth
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
@@ -211,6 +212,9 @@ class DataSetupMixin:
         self.tor_healer = TorEgressHealer(
             self.docker_control, notify=self.alert_service.tor_heal_alert
         )
+        self.monerod_redial = MonerodRedial(
+            self.docker_control, audit=self._audit_monerod_restart, enabled=monero_is_local()
+        )
         # Tari chain health (#2464): a live, reachable node that stopped following the chain (stale
         # tip, no peers, behind the explorer). Detection and alert only; the alert rides the same
         # always-on sender as the tor-heal note.
@@ -260,6 +264,11 @@ class DataSetupMixin:
             self.workers_rejected = bool(self.latest_data.get("workers_rejected", False))
             self.miner_released = bool(self.latest_data.get("miner_released", False))
         self._restore_sync_gate()
+
+    async def _audit_monerod_restart(self, reason, status):
+        await self._record_audit_event(
+            "health", "monerod-redial", "restart", status, f"monerod {reason}"
+        )
 
     def _observe_monero(self, monero_sync):
         """Attach the monerod peers-and-tip verdict (#2499) as ``monero_sync["health"]`` for the
