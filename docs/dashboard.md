@@ -176,9 +176,9 @@ the bot's `/status` reply.
 
 ### Monero node offline banner
 
-When monerod is red (no outgoing peers, or a height that has stopped moving) or Tor clearnet egress
-has failed past the auto-heal's 15-minute broken window, a red banner above the dashboard reads
-**Monero node offline** and lists the reasons. With `tor.auto_heal` on it adds the heal state: the
+When monerod is red (no outgoing peers, or a height that has stopped moving) or, with `tor.auto_heal`
+on, Tor clearnet egress has failed past the auto-heal's 15-minute broken window, a red banner above the dashboard reads
+**Monero node offline** and lists the reasons. With auto-heal on it also adds the heal state: the
 last action and its age, the cooldown before the next one, and, once the three attempts of an outage
 are spent, a line saying the auto-heal has stopped and to run `./pithead doctor`. The banner is
 computed from the dashboard's existing health verdicts and served over the LAN, so it needs no Tor
