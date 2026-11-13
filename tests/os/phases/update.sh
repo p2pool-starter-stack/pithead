@@ -211,7 +211,7 @@ phase_update() {
         "legs 1-3 never provision, so no floor is ever raised or put back here — phase_provision_floor_fallback_leg proves it under --phase provision or --phase all" missing
 
     phase_update_dashboard "$bundle" "${serial_mark:-0}"
-    phase_update_healthgate_leg # leg 5, split out (file budget): phases/update-healthgate-leg.sh
+    phase_update_healthgate_leg; phase_update_wedged_tor_legs
 
     # Recorded AFTER leg 4, and classed on what leg 4 actually did. Claiming "covered by leg 4"
     # before leg 4 runs would let a red run assert its own proof: leg 4 returns early at any of a

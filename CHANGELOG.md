@@ -13,6 +13,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
+  on the data partition is saturated — no longer costs the committed slot its fallback. The boot
+  health gate commits when the dashboard answers and every failing check is that network fault,
+  names the fault in the boot log and in the update's recorded outcome, and leaves the return to the
+  previous version unspent for a copy that is genuinely broken (#4049).
 - On the appliance, the dashboard's own schema migrations no longer run before the booted A/B slot
   commits. `pithead-boot` defers them while the slot is uncommitted, so an update that falls back
   leaves the previous release on the schema it understands, still recording payouts (#3998).
