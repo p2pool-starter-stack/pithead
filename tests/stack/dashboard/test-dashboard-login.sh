@@ -46,4 +46,3 @@ assert_not_contains "no login: no verifier site" "$caddy_off" "127.0.0.1:8001"
 assert_not_contains "no login: no epoch" "$caddy_off" "X-Pithead-Auth-Epoch"
 assert_contains "no login: the sign-in paths are 404, as before" "$caddy_off" "respond @pithead_auth_paths 404"
 assert_contains "no login: the actor placeholder still renders empty" "$caddy_off" "header_up X-Auth-User {http.auth.user.id}"
-

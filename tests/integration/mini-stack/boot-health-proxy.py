@@ -54,7 +54,9 @@ def call(path, method="GET", headers=None, body=None, auth=None):
     if body is not None:
         data = json.dumps(body).encode()
         hdrs["Content-Type"] = "application/json"
-    req = urllib.request.Request(f"http://{host}:{PORT}{path}", data=data, headers=hdrs, method=method)
+    req = urllib.request.Request(
+        f"http://{host}:{PORT}{path}", data=data, headers=hdrs, method=method
+    )
     try:
         response = raw_opener.open(req, timeout=10)
     except urllib.error.HTTPError as error:
@@ -65,7 +67,9 @@ def call(path, method="GET", headers=None, body=None, auth=None):
 
 def sign_in(password, remember=False):
     return call(
-        "/api/auth/login", "POST", body={"username": "admin", "password": password, "remember": remember}
+        "/api/auth/login",
+        "POST",
+        body={"username": "admin", "password": password, "remember": remember},
     )
 
 
