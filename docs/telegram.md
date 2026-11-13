@@ -252,8 +252,8 @@ reply, so the bot can't be used by anyone you haven't put in that chat. The bot 
 Telegram (`getUpdates`) rather than exposing a webhook, so it needs **no inbound port** and rides
 the same outbound path as the alerts — nothing about your host is exposed to receive commands.
 
-> **Tor-only host.** Like alerts, commands reach `api.telegram.org` over clearnet. With no clearnet
-> egress the poll just fails silently and the bot answers nothing — see
+> **Tor-dependent.** Like alerts, commands reach `api.telegram.org` through Tor. While Tor is down
+> the poll just fails silently and the bot answers nothing — see
 > [Privacy and secrets](#privacy-and-secrets).
 
 ---
@@ -387,7 +387,11 @@ it; that sends directly, and the LAN server seeing your host IP is expected on y
   same routing as the Healthchecks.io pinger and the XvB fetch. Telegram sees a **Tor exit, not your
   host IP**, so enabling the bot doesn't expose where your stack runs. If Tor is momentarily down (or
   Telegram is blocking that exit), sends and polls **fail silently** — no errors, no log spam, the
-  rest of the stack is unaffected — and resume on their own.
+  rest of the stack is unaffected — and resume on their own. So a Tor outage, the very failure that
+  can leave a Monero node offline, also silences every Telegram alert about it. Two surfaces do not
+  depend on Telegram: the Healthchecks.io dead-man's switch, which alerts when the pings stop (see
+  [Monitoring](monitoring.md#how-it-works)), and the dashboard's
+  **Monero node offline** banner, served over the LAN.
 
 ---
 
