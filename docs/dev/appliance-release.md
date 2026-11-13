@@ -214,6 +214,26 @@ ignores the slot-qualified marker). A non-migrating install clears any stale mar
 The `db_schema` field the plan also lists stays out until something reads it — an
 unread manifest field is a claim, not a contract.
 
+**Where the dashboard's own migrations run (#3998).** The `data_migration` hold covers chain
+data only, and every candidate boot can fall back before it commits, migrating or not. So
+`pithead-boot` defers the dashboard's SQLite migrations relative to the commit as well. After
+rendering, it reads the booted slot's good state from `rauc status --output-format=json`;
+until the slot is marked good it writes `.os-schema-held` into the dashboard's data directory.
+While that marker stands the dashboard keeps the `payouts` table in the previous release's
+shape — created that way on a fresh database, with the payout identity rebuild skipped, and
+read and written through that shape — so a fallback into the previous release finds the schema
+it can write and keeps recording payouts. When the health gate passes, `mark-good` runs first;
+the boot then removes the marker and restarts the dashboard, and the deferred migration runs
+there — after the commit, on a slot no fallback can leave. A boot onto a slot that is already
+committed removes a stale marker instead. An unknown slot state (no `rauc.slot` boot
+argument, a failing or unparseable `rauc status`, no `jq`) defers, a marker that cannot be written
+fails the boot with the slot left uncommitted, and a restart that faults after commit logs a `FAULT`
+line without uncommitting the slot. This deferral needs no bundle
+declaration: it arms on every uncommitted appliance boot. It currently holds one migration,
+the 2.0.3 payout identity rebuild; a release that ships a different schema change an earlier
+release cannot read safely must add it to the same hold in `storage_schema.py` — additive
+changes alone may stay outside it.
+
 ## Development loop
 
 Everything runs from the repo root on a Linux box with docker, KVM and libvirt. The
