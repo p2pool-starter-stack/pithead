@@ -280,16 +280,19 @@ clear before it releases:
 
 | Trigger | Holds when | Waits before stopping |
 |---|---|---|
-| Monero node unhealthy | the Monero card is red: out of sync for 10 minutes (`NODE_STALE_AFTER_SEC`), 0 outgoing peers for 10 minutes, or no new height for 30 minutes | already debounced by the card |
+| Monero node unhealthy | the Monero card is red: out of sync for 10 minutes (`NODE_STALE_AFTER_SEC`), 0 outgoing peers for 10 minutes, or no new height for 30 minutes | the card's own clocks: 10 minutes out of sync or peerless, 30 minutes without a new height |
 | Monero node has 0 outgoing peers | the current reading shows 0 outgoing peers | `MINING_GUARD_GRACE_SEC`, default 600 s |
 | Monero node not synchronized | monerod's own `synchronized` flag is false | `MINING_GUARD_GRACE_SEC` |
-| Monero node behind P2Pool's peers | at least two different peers appear in P2Pool's log in the last 5 minutes as at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead, and monerod's height has not moved for 15 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
+| Monero node behind P2Pool's peers | at least two different peers appear in P2Pool's log in the last 2 minutes as at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead, and monerod's height has not moved for 15 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
+| P2Pool reports monerod is not synchronized | P2Pool logged `monerod is not synchronized` in the last 2 minutes | `NODE_DOWN_AFTER_SEC` |
 | P2Pool has no sidechain peers | P2Pool reports 0 outgoing and 0 incoming connections | `MINING_GUARD_GRACE_SEC` |
 | P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | `NODE_DOWN_AFTER_SEC` |
 | `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |
 
 The current-reading rows exist so that a dashboard restart during a pause cannot readmit rigs onto
-a node that is still peerless or unsynchronized. A monerod that is unreachable is the existing
+a node that is still peerless or unsynchronized. A trigger whose input cannot be read (the Docker
+proxy, P2Pool's stats or its logs) keeps its current state for 10 minutes, then drops out. A failed
+read alone never ends a pause sooner. A monerod that is unreachable is the existing
 outage above. A brief dip inside the wait stops nothing. The `Workers rejected` badge names the
 active trigger and when it began, and `/api/state` carries the same as `mining_pause`; the time is
 when the trigger began holding, not when it fired. A trigger clears after 60 seconds

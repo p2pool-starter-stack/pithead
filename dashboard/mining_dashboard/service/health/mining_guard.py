@@ -9,6 +9,7 @@ from mining_dashboard.config.config import (
 )
 
 LAG_STALL_SEC = 900
+UNKNOWN_AFTER_SEC = 600
 GUARDED_CONTAINERS = (("monerod", "Monero node"), ("p2pool", "P2Pool"), ("tor", "Tor"))
 
 
@@ -52,14 +53,23 @@ def p2pool_triggers(p2p):
     }
 
 
-def lag_trigger(lag, advance_age):
-    return {
-        "p2pool_lag": (
-            lag is not None and lag >= P2POOL_LAG_BLOCKS and (advance_age or 0) >= LAG_STALL_SEC,
-            f"Monero node is {lag} blocks behind P2Pool's peers",
+def log_triggers(signals, advance_age):
+    if signals is None:
+        return {}
+    triggers = {
+        "p2pool_monerod": (
+            signals["monerod_unsynced"],
+            "P2Pool reports monerod is not synchronized",
             NODE_DOWN_AFTER_SEC,
         )
     }
+    if advance_age is not None:
+        triggers["p2pool_lag"] = (
+            signals["lag"] >= P2POOL_LAG_BLOCKS and advance_age >= LAG_STALL_SEC,
+            f"Monero node is {signals['lag']} blocks behind P2Pool's peers",
+            NODE_DOWN_AFTER_SEC,
+        )
+    return triggers
 
 
 def container_triggers(states):
@@ -97,12 +107,30 @@ class MiningGuard:
         self._holding_since = {}
         self._holding_wall = {}
         self._clear_since = {}
+        self._unknown_since = {}
         self.active = {}
+
+    def _forget(self, key):
+        for table in (
+            self._holding_since,
+            self._holding_wall,
+            self._clear_since,
+            self._unknown_since,
+            self.active,
+        ):
+            table.pop(key, None)
 
     def update(self, triggers):
         now = self._clock()
         for key in set(self._holding_since) | set(self.active) | set(triggers):
-            holds, label, grace = triggers.get(key, (False, "", 0))
+            if key not in triggers:
+                if key in self._holding_since or key in self.active:
+                    unknown = self._unknown_since.setdefault(key, now)
+                    if now - unknown >= UNKNOWN_AFTER_SEC:
+                        self._forget(key)
+                continue
+            self._unknown_since.pop(key, None)
+            holds, label, grace = triggers[key]
             if holds:
                 self._clear_since.pop(key, None)
                 first = self._holding_since.setdefault(key, now)

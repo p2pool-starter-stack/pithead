@@ -4,7 +4,7 @@ from mining_dashboard.service.health import mining_guard
 from mining_dashboard.service.health.mining_guard import (
     MiningGuard,
     container_triggers,
-    lag_trigger,
+    log_triggers,
     monero_triggers,
     p2pool_triggers,
 )
@@ -79,14 +79,25 @@ class TestGuard:
         guard.update(trig(False))
         assert guard.active == {}
 
-    def test_omitted_trigger_counts_as_clear(self, guard, clock):
+    def test_omitted_trigger_keeps_the_hold_until_the_unknown_window_passes(self, guard, clock):
         guard.update(trig(True, grace=0))
-        clock.now = 60
+        for at in (60, 659):
+            clock.now = at
+            guard.update({})
+            assert guard.active
+        clock.now = 660
         guard.update({})
+        assert guard.active == {} and not guard.holding
+
+    def test_a_returning_reading_resets_the_unknown_clock(self, guard, clock):
+        guard.update(trig(True, grace=0))
+        clock.now = 500
         guard.update({})
-        clock.now = 120
+        clock.now = 550
+        guard.update(trig(True, grace=0))
+        clock.now = 1000
         guard.update({})
-        assert guard.active == {}
+        assert guard.active
 
     def test_pause_joins_reasons_oldest_first(self, guard, clock):
         guard.update({"a": (True, "first", 0)})
@@ -127,16 +138,26 @@ class TestMoneroTriggers:
         assert monero_triggers({}, sync)["monero_unsynced"][0] is holds
 
 
-class TestLagTrigger:
+class TestLogTriggers:
+    def signals(self, lag=0, unsynced=False):
+        return {"lag": lag, "monerod_unsynced": unsynced}
+
     def test_lag_with_a_stalled_tip_holds(self):
-        holds, label, _ = lag_trigger(480, 900)["p2pool_lag"]
+        holds, label, _ = log_triggers(self.signals(480), 900)["p2pool_lag"]
         assert holds and "480 blocks behind" in label
 
-    @pytest.mark.parametrize(
-        "lag,age", [(4, 900), (480, 120), (480, 899), (480, None), (None, 900), (0, 900)]
-    )
+    @pytest.mark.parametrize("lag,age", [(4, 900), (480, 120), (480, 899), (0, 900)])
     def test_no_hold_without_both_lag_and_a_stalled_tip(self, lag, age):
-        assert lag_trigger(lag, age)["p2pool_lag"][0] is False
+        assert log_triggers(self.signals(lag), age)["p2pool_lag"][0] is False
+
+    def test_unknown_tip_age_leaves_the_lag_trigger_out(self):
+        assert "p2pool_lag" not in log_triggers(self.signals(480), None)
+
+    def test_monerod_not_synchronized_line_holds(self):
+        assert log_triggers(self.signals(unsynced=True), None)["p2pool_monerod"][0] is True
+
+    def test_unreadable_logs_give_no_triggers(self):
+        assert log_triggers(None, 900) == {}
 
 
 def state(running=True, restarting=False, health="healthy"):

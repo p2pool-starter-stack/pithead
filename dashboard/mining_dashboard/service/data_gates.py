@@ -6,7 +6,7 @@ from mining_dashboard.collector import containers, pools
 from mining_dashboard.config.config import DISK_PATH
 from mining_dashboard.service.health.mining_guard import (
     container_triggers,
-    lag_trigger,
+    log_triggers,
     monero_triggers,
     p2pool_triggers,
 )
@@ -78,7 +78,7 @@ class DataGateMixin:
         triggers.update(p2pool_triggers(p2pool_stats.get("p2p") or {}))
         triggers.update(container_triggers(await containers.get_container_health()))
         triggers.update(
-            lag_trigger(await pools.get_p2pool_mainchain_lag(), health.get("advance_age_sec"))
+            log_triggers(await pools.get_p2pool_log_signals(), health.get("advance_age_sec"))
         )
         self.mining_guard.update(triggers)
 

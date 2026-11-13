@@ -164,13 +164,17 @@ class TestMiningGuardRejection:
     def _p2p(**kw):
         return {"p2p": {"uptime": 900, "out_peers": 2, "in_peers": 0, "zmq_active": 3, **kw}}
 
-    async def _cycle(self, svc, p2pool=None, health=None, sync=None, containers=None, lag=0):
+    async def _cycle(self, svc, p2pool=None, health=None, sync=None, containers=None, signals=None):
         monero_sync = {"health": health or {"level": "green"}, **(sync or {})}
         with (
             patch.object(
                 gates.containers, "get_container_health", AsyncMock(return_value=containers or {})
             ),
-            patch.object(gates.pools, "get_p2pool_mainchain_lag", AsyncMock(return_value=lag)),
+            patch.object(
+                gates.pools,
+                "get_p2pool_log_signals",
+                AsyncMock(return_value=signals or {"lag": 0, "monerod_unsynced": False}),
+            ),
         ):
             await svc._update_mining_guard(monero_sync, p2pool or self._p2p())
         await svc._apply_worker_rejection(False, False)
@@ -206,8 +210,15 @@ class TestMiningGuardRejection:
             ({"p2pool": {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}}, "no sidechain"),
             ({"p2pool": {"p2p": {"uptime": 9, "out_peers": 1, "zmq_active": 900}}}, "ZMQ"),
             (
-                {"health": {"advance_age_sec": 900}, "lag": 480},
+                {
+                    "health": {"advance_age_sec": 900},
+                    "signals": {"lag": 480, "monerod_unsynced": False},
+                },
                 "480 blocks behind",
+            ),
+            (
+                {"signals": {"lag": 0, "monerod_unsynced": True}},
+                "P2Pool reports monerod is not synchronized",
             ),
             (
                 {"containers": {"p2pool": {"running": False, "restarting": False, "health": None}}},
@@ -271,4 +282,15 @@ class TestMiningGuardRejection:
         svc.workers_rejected = True
         await self._cycle(svc, health={"level": "unknown", "peers_out": 0})
         assert svc.workers_rejected is True
+        svc.docker_control.start.assert_not_called()
+
+    async def test_a_failed_read_keeps_the_pause_instead_of_clearing_it(self):
+        svc = self._svc()
+        down = {"p2pool": {"running": False, "restarting": False, "health": None}}
+        now = await self._hold_past_grace(svc, containers=down)
+        assert svc.workers_rejected is True
+        for at in (10_100, 10_500):
+            now[0] = at
+            await self._cycle(svc, containers={})
+            assert svc.workers_rejected is True
         svc.docker_control.start.assert_not_called()
