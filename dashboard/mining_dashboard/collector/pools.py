@@ -1,6 +1,9 @@
 import json
 import os
+import re
+import time
 
+from mining_dashboard.collector.logs import fetch_docker_logs
 from mining_dashboard.config.config import (
     NETWORK_STATS_PATH,
     P2P_STATS_PATH,
@@ -9,6 +12,8 @@ from mining_dashboard.config.config import (
     STRATUM_STATS_PATH,
     TARI_STATS_PATH,
 )
+
+_AHEAD_RE = re.compile(r"is ahead on mainchain \(height (\d+), your height (\d+)\)")
 
 # Last-good parse per stats-file path, mirroring how `_merge_proxy_summary` keeps the last-good
 # proxy totals (#141). p2pool rewrites these files in place, so a poll can catch one mid-write;
@@ -169,3 +174,13 @@ def get_tari_stats():
             "difficulty": t.get("difficulty", 0),
         }
     return {"active": False}
+
+
+async def get_p2pool_mainchain_lag(window_sec=300):
+    lines = await fetch_docker_logs("p2pool", tail=500, since=time.time() - window_sec)
+    if not lines or lines[0].startswith("Error"):
+        return None
+    return max(
+        (int(m[1]) - int(m[2]) for m in map(_AHEAD_RE.search, lines) if m),
+        default=0,
+    )

@@ -1,11 +1,33 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+_rig_active_pool() {
+    printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "${IT_RIG_TOKEN:-}" | jq -Rs .)" |
+        rx "curl -fsS --max-time 10 -K - $(quote_arg "http://$RIG_HOST:8081/1/summary")" --stdin 2>/dev/null |
+        jq -r '.connection.pool // empty' 2>/dev/null
+}
+_pred_rig_pool_differs() {
+    local pool
+    pool="$(_rig_active_pool)"
+    [ -n "$pool" ] && [ "$pool" != "$RIG_POOL_BEFORE" ]
+}
+_pred_rig_pool_returned() { [ "$(_rig_active_pool)" = "$RIG_POOL_BEFORE" ]; }
 fault_node_down() {
     if wait_for 180 5 "dashboard to observe monerod before failover fault" _pred_failover_armed; then
         it_pass "node-down failover armed from a live monerod observation"
     else
         it_fail "node-down failover armed before fault" "dashboard never reported reachable monerod with the miner released and proxy admitted — fault not injected"
         return
+    fi
+    RIG_POOL_BEFORE=""
+    if [ -n "${RIG_HOST:-}" ] && [ -n "${IT_RIG_TOKEN:-}" ]; then
+        RIG_POOL_BEFORE="$(_rig_active_pool)"
+        if [ -n "$RIG_POOL_BEFORE" ]; then
+            it_pass "borrowed rig is mining on a pool before the fault"
+        else
+            it_fail "borrowed rig reports its active pool before the fault" "no connection.pool in the rig's /1/summary"
+        fi
+    else
+        it_skip_leg "rig pool failover and fail-back (#4046)" "no rig host or token" "missing"
     fi
     it_step "fault: stop monerod (required node down)…"
     rx "docker compose stop monerod" >/dev/null 2>&1
@@ -15,6 +37,13 @@ fault_node_down() {
     # After the node-health debounce, stopping xmrig-proxy sends workers to backup pools (#31).
     wait_for 180 10 "xmrig-proxy stopped by failover" _pred_proxy_stopped || true
     assert_eq "xmrig-proxy stopped for failover" "$(svc_state_of "$(service_state xmrig-proxy)")" "exited"
+    if [ -n "$RIG_POOL_BEFORE" ]; then
+        if wait_for 180 10 "rig to leave the stack's pool for its backup" _pred_rig_pool_differs; then
+            it_pass "borrowed rig failed over to its backup pool when the stratum closed (#4046)"
+        else
+            it_fail "borrowed rig failed over to its backup pool when the stratum closed (#4046)" "rig still reports pool '$(_rig_active_pool)' (was '$RIG_POOL_BEFORE')"
+        fi
+    fi
     it_step "recover: start monerod…"
     rx "docker compose start monerod" >/dev/null 2>&1
     wait_for 240 5 "monerod healthy" _pred_monerod_healthy || true
@@ -22,6 +51,13 @@ fault_node_down() {
     pithead status >/dev/null 2>&1
     assert_rc "status OK after monerod recovery" "$?" "0"
     wait_for 120 5 "readmission after the 60s node-health debounce (#31)" _pred_failover_armed && it_pass "xmrig-proxy readmitted after node-down recovery (#31)" || it_fail "xmrig-proxy readmitted after node-down recovery (#31)" "not readmitted within 120s"
+    if [ -n "$RIG_POOL_BEFORE" ]; then
+        if wait_for 300 10 "rig to return to the stack's pool" _pred_rig_pool_returned; then
+            it_pass "borrowed rig returned to the stack's pool on its own after readmission (#4046)"
+        else
+            it_fail "borrowed rig returned to the stack's pool on its own after readmission (#4046)" "rig reports pool '$(_rig_active_pool)', expected '$RIG_POOL_BEFORE'"
+        fi
+    fi
 }
 
 fault_unhealthy() {

@@ -2,20 +2,35 @@ import time
 
 from mining_dashboard.config.config import (
     MINING_GUARD_GRACE_SEC,
+    NODE_DOWN_AFTER_SEC,
     NODE_RECOVERY_AFTER_SEC,
+    P2POOL_LAG_BLOCKS,
     P2POOL_ZMQ_STALE_SEC,
 )
 
-ZMQ_GRACE_SEC = 60
+LAG_STALL_SEC = 600
+GUARDED_CONTAINERS = (("monerod", "Monero node"), ("p2pool", "P2Pool"), ("tor", "Tor"))
 
 
-def monero_trigger(health):
+def monero_triggers(health, sync):
     reasons = health.get("reasons") or []
-    return (
-        health.get("level") == "red" and bool(reasons),
-        "Monero node unhealthy: " + "; ".join(reasons),
-        0,
-    )
+    return {
+        "monero_unhealthy": (
+            health.get("level") == "red" and bool(reasons),
+            "Monero node unhealthy: " + "; ".join(reasons),
+            0,
+        ),
+        "monero_peers": (
+            health.get("peers_out") == 0,
+            "Monero node has 0 outgoing peers",
+            MINING_GUARD_GRACE_SEC,
+        ),
+        "monero_unsynced": (
+            sync.get("synchronized") is False,
+            "Monero node reports it is not synchronized",
+            MINING_GUARD_GRACE_SEC,
+        ),
+    }
 
 
 def p2pool_triggers(p2p):
@@ -32,9 +47,41 @@ def p2pool_triggers(p2p):
         "p2pool_zmq": (
             zmq_age > P2POOL_ZMQ_STALE_SEC,
             f"P2Pool has received no ZMQ messages for {int(zmq_age // 60)} min",
-            ZMQ_GRACE_SEC,
+            NODE_DOWN_AFTER_SEC,
         ),
     }
+
+
+def lag_trigger(lag, advance_age):
+    return {
+        "p2pool_lag": (
+            lag is not None and lag >= P2POOL_LAG_BLOCKS and (advance_age or 0) >= LAG_STALL_SEC,
+            f"Monero node is {lag} blocks behind P2Pool's peers",
+            NODE_DOWN_AFTER_SEC,
+        )
+    }
+
+
+def container_triggers(states):
+    triggers = {}
+    for name, label in GUARDED_CONTAINERS:
+        state = states.get(name)
+        if state is None:
+            continue
+        if not state["running"]:
+            problem = "is not running"
+        elif state["restarting"]:
+            problem = "is restarting"
+        elif state["health"] in ("starting", "unhealthy"):
+            problem = f"is {state['health']}"
+        else:
+            problem = None
+        triggers[f"{name}_container"] = (
+            problem is not None,
+            f"{label} container {problem}",
+            NODE_DOWN_AFTER_SEC,
+        )
+    return triggers
 
 
 class MiningGuard:

@@ -1,5 +1,5 @@
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import mining_dashboard.collector.pools as pools
 from mining_dashboard.collector.pools import (
@@ -224,3 +224,26 @@ class TestPollSequenceReplay:
         assert "pplns_window" not in s["pool"]
         recorded, baseline = _shares_to_record(None, s["pool"]["shares_found"])
         assert (recorded, baseline) == (0, 0)
+
+
+class TestMainchainLag:
+    AHEAD = "NOTICE  P2PServer peer 1.2.3.4:37889 is ahead on mainchain (height {}, your height {}). Is your monerod stuck or lagging?"
+
+    async def _lag(self, lines):
+        with patch.object(pools, "fetch_docker_logs", AsyncMock(return_value=lines)) as fetch:
+            lag = await pools.get_p2pool_mainchain_lag(300)
+        return lag, fetch
+
+    async def test_largest_lag_in_the_window(self):
+        lines = [self.AHEAD.format(3500480, 3500000), "other", self.AHEAD.format(3500010, 3500000)]
+        lag, fetch = await self._lag(lines)
+        assert lag == 480
+        assert fetch.await_args.args == ("p2pool",)
+        assert fetch.await_args.kwargs["since"] > 0
+
+    async def test_no_ahead_lines_is_zero_lag(self):
+        assert (await self._lag(["sent new job to 9/9 clients"]))[0] == 0
+
+    async def test_unreadable_logs_are_no_verdict(self):
+        assert (await self._lag(["Error: Could not retrieve logs (Status 404)"]))[0] is None
+        assert (await self._lag([]))[0] is None

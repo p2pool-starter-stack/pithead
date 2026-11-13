@@ -1,4 +1,5 @@
 # ruff: noqa: F403, F405
+from mining_dashboard.service import data_gates as gates
 from tests.service._data_service_support import *  # noqa: F403
 
 
@@ -156,7 +157,6 @@ class TestMiningGuardRejection:
         svc.docker_control = MagicMock()
         svc.docker_control.stop = AsyncMock(return_value=True)
         svc.docker_control.start = AsyncMock(return_value=True)
-        svc.tor_healer = MagicMock(failing=False)
         svc.monero_health.healthy = svc.tari_health.healthy = True
         return svc
 
@@ -164,10 +164,29 @@ class TestMiningGuardRejection:
     def _p2p(**kw):
         return {"p2p": {"uptime": 900, "out_peers": 2, "in_peers": 0, "zmq_active": 3, **kw}}
 
-    def _cycle(self, svc, p2pool=None, health=None, tor=False):
-        svc.tor_healer.failing = tor
-        svc._update_mining_guard({"health": health or {"level": "green"}}, p2pool or self._p2p())
-        return svc._apply_worker_rejection(False, False)
+    async def _cycle(self, svc, p2pool=None, health=None, sync=None, containers=None, lag=0):
+        monero_sync = {"health": health or {"level": "green"}, **(sync or {})}
+        with (
+            patch.object(
+                gates.containers, "get_container_health", AsyncMock(return_value=containers or {})
+            ),
+            patch.object(gates.pools, "get_p2pool_mainchain_lag", AsyncMock(return_value=lag)),
+        ):
+            await svc._update_mining_guard(monero_sync, p2pool or self._p2p())
+        await svc._apply_worker_rejection(False, False)
+
+    @staticmethod
+    def _clock(svc):
+        now = [0]
+        svc.mining_guard._clock = lambda: now[0]
+        return now
+
+    async def _hold_past_grace(self, svc, **kwargs):
+        now = self._clock(svc)
+        await self._cycle(svc, **kwargs)
+        now[0] = 10_000
+        await self._cycle(svc, **kwargs)
+        return now
 
     async def test_healthy_node_never_rejects(self):
         svc = self._svc()
@@ -182,53 +201,59 @@ class TestMiningGuardRejection:
                 {"health": {"level": "red", "reasons": ["0 outgoing peers for 10 min"]}},
                 "0 outgoing peers",
             ),
+            ({"health": {"peers_out": 0}}, "0 outgoing peers"),
+            ({"sync": {"synchronized": False}}, "not synchronized"),
             ({"p2pool": {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}}, "no sidechain"),
             ({"p2pool": {"p2p": {"uptime": 9, "out_peers": 1, "zmq_active": 900}}}, "ZMQ"),
+            (
+                {"health": {"advance_age_sec": 900}, "lag": 480},
+                "480 blocks behind",
+            ),
+            (
+                {"containers": {"p2pool": {"running": False, "restarting": False, "health": None}}},
+                "P2Pool container is not running",
+            ),
+            (
+                {
+                    "containers": {
+                        "tor": {"running": True, "restarting": False, "health": "starting"}
+                    }
+                },
+                "Tor container is starting",
+            ),
         ],
     )
     async def test_invalid_work_stops_the_proxy_and_names_the_trigger(self, kwargs, needle):
         svc = self._svc()
-        clock = [0]
-        svc.mining_guard._clock = lambda: clock[0]
-        await self._cycle(svc, **kwargs)
-        clock[0] = 10_000
-        await self._cycle(svc, **kwargs)
+        await self._hold_past_grace(svc, **kwargs)
         assert svc.workers_rejected is True
         svc.docker_control.stop.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
         assert needle in svc.mining_guard.pause["reason"]
 
-    async def test_p2pool_isolation_inside_grace_does_not_stop_the_proxy(self):
+    async def test_isolation_inside_grace_does_not_stop_the_proxy(self):
         svc = self._svc()
         isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
         await self._cycle(svc, p2pool=isolated)
         assert svc.workers_rejected is False
         svc.docker_control.stop.assert_not_called()
 
-    async def test_tor_failure_past_grace_stops_the_proxy(self):
+    async def test_default_config_tor_failure_stops_the_proxy(self):
         svc = self._svc()
-        clock = [0]
-        svc.mining_guard._clock = lambda: clock[0]
-        await self._cycle(svc, tor=True)
-        assert svc.workers_rejected is False
-        clock[0] = 10_000
-        await self._cycle(svc, tor=True)
+        assert svc.tor_healer.enabled is False
+        tor = {"tor": {"running": True, "restarting": False, "health": "unhealthy"}}
+        await self._hold_past_grace(svc, containers=tor)
         assert svc.workers_rejected is True
-        assert "Tor" in svc.mining_guard.pause["reason"]
 
     async def test_readmits_only_after_every_trigger_clears_and_recovers(self):
         svc = self._svc()
-        clock = [0]
-        svc.mining_guard._clock = lambda: clock[0]
         zmq_stale = {"p2p": {"uptime": 9, "out_peers": 1, "zmq_active": 900}}
-        await self._cycle(svc, p2pool=zmq_stale)
-        clock[0] = 100
-        await self._cycle(svc, p2pool=zmq_stale)
+        now = await self._hold_past_grace(svc, p2pool=zmq_stale)
         assert svc.workers_rejected is True
-        for at in (110, 169):
-            clock[0] = at
+        for at in (10_010, 10_069):
+            now[0] = at
             await self._cycle(svc)
             assert svc.workers_rejected is True
-        clock[0] = 170
+        now[0] = 10_070
         await self._cycle(svc)
         assert svc.workers_rejected is False
         svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
@@ -238,5 +263,12 @@ class TestMiningGuardRejection:
         svc.workers_rejected = True
         isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
         await self._cycle(svc, p2pool=isolated)
+        assert svc.workers_rejected is True
+        svc.docker_control.start.assert_not_called()
+
+    async def test_restart_mid_pause_does_not_readmit_onto_a_peerless_node(self):
+        svc = self._svc()
+        svc.workers_rejected = True
+        await self._cycle(svc, health={"level": "unknown", "peers_out": 0})
         assert svc.workers_rejected is True
         svc.docker_control.start.assert_not_called()

@@ -2,10 +2,12 @@ import logging
 import os
 import stat
 
+from mining_dashboard.collector import containers, pools
 from mining_dashboard.config.config import DISK_PATH
 from mining_dashboard.service.health.mining_guard import (
-    MINING_GUARD_GRACE_SEC,
-    monero_trigger,
+    container_triggers,
+    lag_trigger,
+    monero_triggers,
     p2pool_triggers,
 )
 
@@ -70,16 +72,14 @@ class DataGateMixin:
         self.latest_data["miner_released"] = self.miner_released
         self.latest_data["sync_gate_monero_only"] = self.sync_gate_monero_only
 
-    def _update_mining_guard(self, monero_sync, p2pool_stats):
-        triggers = {
-            "monero_unhealthy": monero_trigger(monero_sync.get("health") or {}),
-            "tor_down": (
-                self.tor_healer.failing,
-                "Tor egress is failing",
-                MINING_GUARD_GRACE_SEC,
-            ),
-        }
+    async def _update_mining_guard(self, monero_sync, p2pool_stats):
+        health = monero_sync.get("health") or {}
+        triggers = monero_triggers(health, monero_sync)
         triggers.update(p2pool_triggers(p2pool_stats.get("p2p") or {}))
+        triggers.update(container_triggers(await containers.get_container_health()))
+        triggers.update(
+            lag_trigger(await pools.get_p2pool_mainchain_lag(), health.get("advance_age_sec"))
+        )
         self.mining_guard.update(triggers)
 
     async def _apply_worker_rejection(self, monero_down, tari_down=False):

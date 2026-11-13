@@ -325,7 +325,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         and (tari_synced or not TARI_REQUIRED or self.sync_gate_monero_only)
                     )
                     if self.miner_released:
-                        self._update_mining_guard(monero_sync, p2pool_stats)
+                        await self._update_mining_guard(monero_sync, p2pool_stats)
                         await self._apply_worker_rejection(monero_down, tari_down)
 
                     # 5. Operator alerts (Issues #121/#45): push debounced node/worker/sync/host

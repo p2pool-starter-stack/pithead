@@ -324,7 +324,21 @@ p2pool_stats "$P2P_ISOLATED"
 assert_state "rejected on P2Pool with no sidechain peers: itest-xmrig-proxy stopped" itest-xmrig-proxy exited 90
 p2pool_stats "$P2P_OK"
 assert_state "readmitted after P2Pool regains peers: itest-xmrig-proxy running" itest-xmrig-proxy running 90
+p2pool_stats '{"connections":3,"incoming_connections":1,"peer_list_size":9,"uptime":900,"zmq_last_active":900}'
+assert_state "rejected on P2Pool with no ZMQ messages: itest-xmrig-proxy stopped" itest-xmrig-proxy exited 90
+p2pool_stats "$P2P_OK"
+assert_state "readmitted after P2Pool ZMQ resumes: itest-xmrig-proxy running" itest-xmrig-proxy running 90
 docker exec itest-p2pool rm -f /stats/local/p2p
+
+log "scenario 9c: a monerod that reports not synchronized past the grace rejects workers"
+set_monerod syncing
+sleep 3
+set_monerod synced
+assert_stays "a monerod sync dip shorter than the grace does not reject workers" itest-xmrig-proxy running 10
+set_monerod syncing
+assert_state "rejected on monerod not synchronized: itest-xmrig-proxy stopped" itest-xmrig-proxy exited 90
+set_monerod synced
+assert_state "readmitted after monerod synchronizes: itest-xmrig-proxy running" itest-xmrig-proxy running 90
 
 # 10. Dashboard restart after release → the one-way latch is persisted, so the miner is NOT
 #     re-held: both containers stay running across the restart. (#35 persistence)
