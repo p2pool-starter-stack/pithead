@@ -225,7 +225,8 @@ Per #3096 and #2732:
 1. Add `"local_miner": { "enabled": true }` to `config.json` as a top-level block.
 2. Run `./pithead apply`.
 3. Run `./pithead apply` again, with nothing changed.
-4. Optional: install RigForge on this machine with the pool URL and stratum password that apply printed (see [Connecting Miners](../../../workers.md)).
+4. Optional: install RigForge on this machine with the pool URL from apply and the stratum password
+   from the dashboard's **Connect a miner** block (see [Connecting Miners](../../../workers.md)).
 5. Afterwards, remove the `local_miner` block and run `./pithead apply` again.
 
 **What you should see:**
@@ -233,8 +234,10 @@ Per #3096 and #2732:
 Per #3090:
 
 - The first apply changes no rendered setting, yet it still announces the local miner.
-- The first apply prints the LAN pool URL and the stratum password (or `none set`) that a RigForge install on this machine needs.
-- The second apply reports no configuration changes, and still prints the pool URL and the stratum password (or `none set`).
+- The first apply prints the LAN pool URL and reports whether stratum authentication is on, or says
+  `none set`.
+- The second apply reports no configuration changes and still prints the pool URL and authentication
+  state without printing a configured password.
 - If you installed RigForge with those values, the worker appears in Workers Alive.
 - Removing the block does not uninstall RigForge. If you installed it, it stays as an extra worker in later sections.
 

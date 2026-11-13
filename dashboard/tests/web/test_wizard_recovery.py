@@ -30,7 +30,7 @@ def spool(tmp_path, monkeypatch):
 
 @pytest.fixture
 async def client(spool):
-    value = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    value = TestClient(TestServer(wizard.make_app()))
     await value.start_server()
     yield value
     await value.close()
@@ -201,7 +201,6 @@ async def test_submit_spools_only_known_names_and_keeps_known_credentials(client
         "/submit",
         data={
             "config": json.dumps(submitted),
-            "auth_mode": "set",
             "disk": "sda",
             "confirm": "sda",
             "wipe": "data",
@@ -246,7 +245,6 @@ async def test_failed_install_refresh_and_return_keep_safe_editable_fields(clien
         "/submit",
         data={
             "config": json.dumps(submitted),
-            "auth_mode": "set",
             "disk": "sda",
             "confirm": "sda",
             "wipe": "data",
@@ -261,7 +259,7 @@ async def test_failed_install_refresh_and_return_keep_safe_editable_fields(clien
     assert failed["config"]["monero"]["wallet_address"] == "4PAYOUT"
     assert failed["config"]["dashboard"]["auth"]["password"] == "fixture-login-password"
     assert failed["install_attempt"] == {"disk": "sda", "wipe": "data"}
-    assert failed["auth_mode"] == "set"
+    assert failed["auth_mode"] == "auto"
     assert "confirm" not in failed["install_attempt"]
 
     response = await client.post("/retry")
@@ -303,7 +301,7 @@ async def test_prefill_migration_notice_survives_submit_and_host_failure(client,
 
 
 async def test_retry_is_authenticated_and_only_opens_a_real_failure(client, spool):
-    unauth = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    unauth = TestClient(TestServer(wizard.make_app()))
     await unauth.start_server()
     try:
         assert (await unauth.post("/retry", allow_redirects=False)).status == 302

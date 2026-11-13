@@ -83,8 +83,22 @@ out=$(
     printf '|%s|%s' "$?" "$NODE_PROBE_REASON"
 )
 assert_contains "the restore-safe address floor refuses a link-local remote node" "$out" "|1|address"
-# The other rc-2 arm, on the Tari leg: the resolver itself failed or timed out rather than
-# answering NXDOMAIN. Same cause, so it must reach the same word.
+rna() {
+    (
+        cd "$PFSB" || exit
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        RNA_ANSWERS=$(printf '%s\n' "$@")
+        _resolve_host_ips() { printf '%s\n' "$RNA_ANSWERS"; }
+        a=$(remote_node_address "$PFSB/dns.json" nodee.lan)
+        printf '|%s|%s' "$?" "$a"
+    )
+}
+assert_eq "a dual-stack private name is accepted and pinned to its IPv4" "$(rna 192.168.1.20 fd00::20)" "|0|192.168.1.20"
+assert_eq "a name answering only over IPv6 keeps the egress refusal" "$(rna fd00::20)" "|1|"
+assert_eq "a private plus public IPv4 mix keeps the egress refusal" "$(rna 192.168.1.20 8.8.8.8 fd00::20)" "|1|"
+assert_eq "a loopback AAAA beside a private A record is still refused" "$(rna 192.168.1.20 ::1)" "|1|"
 printf '{"monero":{"mode":"local"},"tari":{"mode":"remote","remote":{"host":"tarii.lan","grpc_port":18142}}}' >"$PFSB/dnstari.json"
 out=$(
     cd "$PFSB" || exit
@@ -286,12 +300,20 @@ PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" apply_appliance_defa
 assert_eq "\"No login\" leaves the password empty, as asked" "$(jq -r '.dashboard.auth.password // ""' "$ADSB/config.json")" ""
 assert_eq "\"No login\" never produces the pair the validator refuses (#1066)" \
     "$(jq -r 'if (.dashboard.control.enabled == true) and ((.dashboard.auth.password // "") == "") then "forbidden-pair" else "ok" end' "$ADSB/config.json")" "ok"
-# ...and the same sequence WITH a login still ends up configurable, which is the whole reason the
-# appliance turns the channel on: no shell, no ssh, no other way to change a payout address.
 rm -f "$ADSB/spool/auth-mode"
 printf '{"monero":{"wallet_address":"x"},"dashboard":{"auth":{"username":"admin"}}}' >"$ADSB/config.json"
-PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" ensure_appliance_dashboard_password "$ADSB/spool" >/dev/null 2>&1
+capture_generated_login_notice() {
+    _console() { printf '%s\n' "$@"; }
+    ensure_appliance_dashboard_password "$1"
+}
+login_notice=$(PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" capture_generated_login_notice "$ADSB/spool" 2>&1)
+assert_rc "automatic appliance login generation succeeds" "$?" 0
+assert_contains "console receives a non-secret handoff notice" "$login_notice" "authenticated setup page"
+assert_not_contains "generated password never reaches console or journal" "$login_notice" "$(jq -r .dashboard.auth.password "$ADSB/config.json")"
+unset -f capture_generated_login_notice
 PITHEAD_CONFIG_FILE="$ADSB/config.json" run_sourced "$ADSB" apply_appliance_defaults >/dev/null 2>&1
+assert_eq "generated browser login uses admin" "$(jq -r .dashboard.auth.username "$ADSB/config.json")" admin
+assert_eq "generated browser password has 32 characters" "$(jq -r '.dashboard.auth.password | length' "$ADSB/config.json")" 32
 assert_eq "a generated login leaves the machine configurable" "$(jq -r '.dashboard.control.enabled' "$ADSB/config.json")" "true"
 rm -rf "$ADSB"
 unset ADSB

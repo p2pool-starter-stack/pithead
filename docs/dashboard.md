@@ -32,7 +32,7 @@ The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
 and asks the operator to sign in again when the session expires. Earnings shows recorded payouts
-and Machines lists the rigs; the Overview and Settings bodies are still being built. The preview does not
+and Machines lists the rigs; Overview is described below and the Settings bodies are still being built. The preview does not
 announce a cutover from the legacy UI. The
 drawer supplies its container and Appearance controls. Advanced > Maintenance offers **Reboot**
 and **Power off** on an appliance with dashboard control enabled; these controls are absent on DIY.
@@ -116,8 +116,56 @@ each added, repointed or removed rig, and apply only after typed APPLY; removing
 dashboard managing it and leaves the miner running. The configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
 from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
 upgrade is not held. Closing the inspector returns focus to the rig and keeps the list's scroll position.
+A `worker` destination from a link such as Overview's offline-rig attention item opens that rig's
+inspector when the page loads; a name no rig reports shows the list as normal. Closing an inspector
+that a destination link opened returns focus to the page title, and navigating away closes it —
+but while an edit is unsaved or an apply runs, the inspector counts as an unsaved change, so
+browser Back asks first and keeps the dialog, exactly like the inspector's own Close guards.
 The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
 no rig restart verb exists yet ([#3825](https://github.com/p2pool-starter-stack/pithead/issues/3825)).
+
+## Overview in the lean preview
+
+Overview shows the last reported hashrate, its 24-hour average, P2Pool shares found since
+that process started, and the most recent confirmed Monero payout. No earnings estimate
+appears until the dynamic PPLNS-window correction is available. Missing readings say
+Unavailable; disconnected or old snapshots remain labelled as last recorded data.
+
+The single Chart range control selects Day, Week or Month. Drag or pinch to zoom,
+Shift-drag or the arrow keys to pan, and use + or − to zoom from the keyboard. Double tap,
+double click or Home resets the zoom. Ordinary scrolling still scrolls the page.
+Real timestamps and missing-data gaps are retained. Confirmed payout links open Activity.
+When donation readings exist, the strip below the chart uses the same time axis and the
+legend distinguishes sampled routed shares from configured shares with estimated timing.
+Unavailable project or XMRig readings are disclosed rather than inferred as Off.
+
+Attention conditions use the approved display order: offline rigs, unsynced nodes, Tor
+under Balance or Privacy, disk, update, backup, wallet change, configuration, failed shares
+and pool-tier advice. This is display order, not a severity ranking. Duplicate rig names
+are ordered by their connection identity. The offline-rig item names the rig and links to
+Machines carrying a `worker` destination; following it opens that rig's inspector directly. Pool advice consumes the backend field owned by the automatic-defaults implementation:
+24 hours of measured hashrate, with provisional bands below 10 kH/s for nano, 10 to below
+100 kH/s for mini, and 100 kH/s or above for main. Insufficient history or an already
+suitable tier produces no suggestion. Overview never calculates a second policy or switches
+the tier. An absent or malformed field is unavailable.
+
+Backup evidence belongs to Settings. The proposed durable contract is
+`backup_status.state` with `success` plus `last_success_at` in epoch seconds, or `unknown`
+with a null timestamp. Only the host-confirmed successful backup flow may establish success;
+queued, accepted or running work does not. Missing, unreadable or unmigrated records remain
+unknown, with a link to Backup. Missing or rotated audit logs never mean no backup exists.
+This consumer contract is awaiting the Settings producer and integration proof. Configuration
+warnings remain explicitly unavailable until their producer reports them.
+
+Activity combines up to 1,000 retained mining events, independently of chart zoom, with separately fetched settings
+and access records. Only timestamps, source categories and fixed outcome descriptions
+appear; actor names, request paths, configuration values and secrets do not. Authenticated
+dashboard visits are access records, not distinct session sign-ins. Unavailable or rotated
+sources have an empty-state explanation. Advanced › Activity has Day, Week, Month and All
+retained presets. Advanced › Inspect holds extra chart series, node detail, pool-wide
+statistics, network readings, the XvB tier when enabled and configured topology.
+
+The legacy dashboard remains available until cutover; its documentation below applies to it.
 
 ---
 
@@ -642,11 +690,13 @@ doesn't come back to a live hashrate — rolls it back on its own. The panel sho
 (applied / rejected / rolled back — or failed with the rig's reason, when its own rollback
 path broke) and appends it to the history.
 
-> NOTE: `DONATION` below the rig's built-in minimum has no effect. Appliance rigs run stock XMRig,
-> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig applies a lower level
-> without a rebuild, except builds older than 1.18.1, which need an upgrade first. Worker Inspect shows the
-> value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
-> report XMRig's live donate level.
+> NOTE: An appliance rig defaults `DONATION` to 0 and honours any value from 0 up; the compiled
+> minimum is 0 from RigForge 1.18.1, and a RigForge build older than that needs an upgrade first. Worker
+> Inspect shows the value in the rig's `config.json`, not the rate the miner runs, because the rig's feed
+> does not report XMRig's live donate level.
+>
+> A `pools` edit from Worker Inspect on an appliance rig is refused with `appliance-pools-read-only`;
+> change the pool in Pithead configuration instead.
 
 > **Remote rig control is beta in 2.0.0.** An appliance rig listens for control at every boot,
 > pinned to the coordinator and gated by its token; dashboard writes need the rig adopted first.
@@ -761,6 +811,10 @@ dashboard can account for — because someone applied a change through it, or th
 its own — the line goes quiet, even though the earlier move stands. The durable record is the
 `rig-drift` row in the Security panel, which is written once and never withdrawn; this line is a
 statement about the config in front of you.
+
+A revision that moves in the same poll that shows a different RigForge version is a re-base by the
+upgrade, not an edit, so it writes no `rig-drift` row and raises no line. A dashboard upgraded
+past a rig's last seen version has no stored version for it and treats its first move the same way.
 
 Neither check has an all-clear. Both either report a disagreement or say nothing at all, and their
 silence is not evidence: a clear line would be a reassurance bounded by everything listed above,
@@ -1042,13 +1096,24 @@ the earnings card then shows a **Confirmed on-chain** block under the estimate �
 the same **Confirmed on-chain** block in XTM once Tari payout confirmation is on (see the Tari note
 below).
 
+Receipt history and scan progress are separate for each configured wallet on each chain.
+Switching from wallet A to B starts B's history independently; switching back restores A's
+receipts and cursor. Dashboard totals, chart markers, Telegram earnings and completeness
+markers use only the current wallet. Equivalent Tari address encodings share one identity.
+
+On upgrade, receipts saved without a wallet identity remain in the database under `unknown`.
+They do not contribute to current totals or scan progress. The first scan for each wallet
+starts from height zero and records the receipts it finds under that wallet's identity;
+rediscovered legacy receipts can therefore trigger confirmation alerts again. No receipts
+are assigned to a wallet merely because it is configured during the upgrade.
+
 | Figure | What it sums |
 |---|---|
 | **Yesterday** | The previous full calendar day, midnight to midnight in the dashboard's timezone (`dashboard.timezone`) — the same clock the daily summary fires on. Not a trailing 24 hours. |
 | **Confirmed 24h** | The trailing 24 hours from now. Deliberately a different span from **Yesterday**, so the two disagree during the day. |
 | **Running 7d** | The trailing 7 days from now. |
 | **Running 30d** | The trailing 30 days from now. |
-| **Confirmed all-time** | Every payout recorded, however far back. |
+| **Confirmed all-time** | Every payout recorded for the current wallet, however far back. |
 | **Last payout** | Time since the most recent confirmed payout, hover for the payout count. |
 
 A running window is marked with a `*` when it reaches back further than the oldest payout on
@@ -1900,10 +1965,16 @@ when there is a target to download.
    or reboot at the console. Reboot pauses mining — typically under five minutes. The page
    waits and reconnects when the dashboard returns.
 
-After the reboot the machine health-checks itself before committing the new version — the same
-gate every appliance boot runs. A banner reports the outcome: updated to the new version, or
-rolled back to the previous one automatically because a check did not pass inside the window.
-When the host records which check held the gate, the banner names it. A rollback on its own is
+After the reboot the machine is already running the new version, and it health-checks itself
+before committing it — the same gate every appliance boot runs. While that verification is in
+progress the header says **"Verifying the update to vX — leave the machine running"**, and
+nothing on the page asks for a second reboot: a reboot now would fall back to the previous
+version before the update ever had its checks decided, so the host refuses one and says why,
+in the message and in the control log. A banner reports the outcome: updated to the new
+version, or rolled back to the previous one automatically because a check did not pass inside
+the window. When the host records which check held the gate, the banner names it. An update
+interrupted before its verification reached a verdict — a power cut mid-verification, say — is
+reported as interrupted, not as failed health checks. A rollback on its own is
 not evidence that the release was faulty: a check can fail for a reason the update did not cause,
 and the named cause is what tells the two apart before you retry. Either way the machine ends on
 a working system; wallets, settings, and chain data live on the data partition and are never part

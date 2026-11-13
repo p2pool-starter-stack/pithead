@@ -92,16 +92,10 @@ render_env() {
     rpc_lan=$(jq -r '.monero.rpc_lan_access // false' "$CONFIG_FILE")
     if [ "$rpc_lan" == "true" ]; then rpc_bind="0.0.0.0"; else rpc_bind="127.0.0.1"; fi
 
-    # monerod ZMQ LAN exposure (#760). A separate key from rpc_lan_access on purpose: that key's
-    # documented use is wallets (RPC only), and widening it to also open ZMQ would change the
-    # exposure of existing deployments. A node SERVING remote stacks (#103's other half) needs
-    # both: rpc_lan_access for the RPC, zmq_lan_access for the block-notification feed p2pool
-    # requires. ZMQ pub has no auth — trusted LAN only.
     local zmq_bind zmq_lan
     zmq_lan=$(jq -r '.monero.zmq_lan_access // false' "$CONFIG_FILE")
     if [ "$zmq_lan" == "true" ]; then zmq_bind="0.0.0.0"; else zmq_bind="127.0.0.1"; fi
 
-    # P2Pool pool type → flags + p2p port
     local pool_type p2pool_flags p2pool_port
     pool_type=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
     p2pool_flags=""
@@ -112,6 +106,10 @@ render_env() {
     elif [ "$pool_type" == "nano" ]; then
         p2pool_flags="--nano"
         p2pool_port="37890"
+    fi
+
+    if p2pool_needs_light_mode; then
+        p2pool_flags="${p2pool_flags:+$p2pool_flags }--light-mode"
     fi
 
     local p2pool_socks
@@ -132,9 +130,13 @@ render_env() {
     case "$xvb_donor" in
     "" | auto | DYNAMIC_ID) xvb_donor="${MONERO_WALLET:0:8}" ;;
     esac
-    # Donation tier target: auto (default) / donor|vip|whale|mega
     xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
+
+    local donation_enabled donation_percent donation_tor
+    donation_enabled=$(config_get .donation.enabled)
+    donation_percent=$(config_get .donation.percent)
+    donation_tor=$(config_get .donation.tor)
 
     local tari_required
     tari_required=$(config_get .dashboard.tari_required)
@@ -281,11 +283,8 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    # Tari view-only wallet secret delivery (#462): the view key, spend key and wallet password ride an
-    # owner-only data/ file bind-mounted at /run/secrets (never `environment:`, which `docker inspect`
-    # shows). The mount keeps its owner, so it must be the container's APP_UID (#2731). Built as a temp
-    # file then renamed, so a planted symlink is replaced, not followed. REAL .env target only.
     local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
+    local tari_secret_target="${2:-$tari_secret_file}"
     if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
         tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
@@ -293,9 +292,9 @@ render_env() {
             "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp" &&
             tari_foreign=$(find "$tari_secret_tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
             { [ -z "$tari_foreign" ] || chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp"; } &&
-            mv -f "$tari_secret_tmp" "$tari_secret_file" && tari_secret_ok=true
+            mv -fT -- "$tari_secret_tmp" "$tari_secret_target" && tari_secret_ok=true
         # An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
-        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
+        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "$tari_secret_target" = "$tari_secret_file" ] && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
             error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
     fi
 
@@ -345,6 +344,9 @@ XVB_POOL_URL=$(dotenv_render_value "$xvb_url")
 XVB_DONOR_ID=$(dotenv_render_value "$xvb_donor")
 XVB_ENABLED=$(dotenv_render_value "$xvb_enabled")
 XVB_TOR_ENABLED=$(dotenv_render_value "$xvb_tor")
+DONATION_ENABLED=$(dotenv_render_value "$donation_enabled")
+DONATION_PERCENT=$(dotenv_render_value "$donation_percent")
+DONATION_TOR_ENABLED=$(dotenv_render_value "$donation_tor")
 XVB_DONATION_LEVEL=$(dotenv_render_value "$xvb_donation_level")
 TARI_REQUIRED=$(dotenv_render_value "$tari_required")
 DASHBOARD_FAIL_CLOSED=$(dotenv_render_value "$fail_closed")

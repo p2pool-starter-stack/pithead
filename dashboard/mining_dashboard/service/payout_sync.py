@@ -30,6 +30,7 @@ from mining_dashboard.config.config import (
     TARI_WALLET_ADDRESS,
     monero_is_local,
 )
+from mining_dashboard.service.payout_identity import configured_wallet_id
 
 logger = logging.getLogger("DataService")
 
@@ -55,19 +56,15 @@ async def run_isolated(label, step):
 
 
 async def sync_monero(state_manager, wallet_client, alert_service):
-    """Confirm on-chain payouts from the view-only wallet-rpc (#381), throttled by the caller.
-
-    Seeds the query from the highest stored Monero payout height, so a restart re-scans only
-    the tip; ``add_payouts`` is idempotent on ``(chain, txid)``, so the overlap is dropped and
-    nothing replays. Every genuinely-new confirmed payout fires exactly one ``payout_confirmed``
-    alert. Returns whether the wallet RPC answered; an empty scan returns true and an RPC
-    failure false. chain="monero" here; the Tari sibling (#462) reuses the same table."""
     chain = "monero"
-    min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain)
+    wallet_id = configured_wallet_id(chain)
+    if wallet_id is None:
+        return False
+    min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain, wallet_id)
     payouts, answered = await asyncio.to_thread(wallet_client.scan, min_height)
     if not answered or not payouts:
         return answered
-    new_rows = await asyncio.to_thread(state_manager.add_payouts, chain, payouts)
+    new_rows = await asyncio.to_thread(state_manager.add_payouts, chain, wallet_id, payouts)
     for r in new_rows:
         logger.info(
             "Payout confirmed on-chain: %.6f XMR (tx %s…) at height %d (#381)",
@@ -80,21 +77,15 @@ async def sync_monero(state_manager, wallet_client, alert_service):
 
 
 async def sync_tari(state_manager, tari_wallet_client, alert_service):
-    """Confirm Tari on-chain payouts from the view-only console wallet (#462), throttled by the
-    caller — the Tari sibling of :func:`sync_monero`.
-
-    Identical shape: seed from the highest stored Tari payout height, stream new confirmed
-    payouts, persist to the shared ``payouts`` table with chain="tari" (idempotent on
-    ``(chain, txid)`` so a restart replays nothing), and fire one ``payout_confirmed`` alert per
-    genuinely-new payout. ``amount_atomic`` is microTari here; the shared alert divides by the
-    Tari divisor. The Tari client is async (grpc.aio), so it's awaited directly rather than via
-    ``asyncio.to_thread``. Returns true for an empty answer and false for a failed RPC."""
     chain = "tari"
-    min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain)
+    wallet_id = configured_wallet_id(chain)
+    if wallet_id is None:
+        return False
+    min_height = await asyncio.to_thread(state_manager.get_payout_max_height, chain, wallet_id)
     payouts, answered = await tari_wallet_client.scan(min_height)
     if not answered or not payouts:
         return answered
-    new_rows = await asyncio.to_thread(state_manager.add_payouts, chain, payouts)
+    new_rows = await asyncio.to_thread(state_manager.add_payouts, chain, wallet_id, payouts)
     for r in new_rows:
         logger.info(
             "Tari payout confirmed on-chain: %.6f XTM (tx %s…) at height %d (#462)",

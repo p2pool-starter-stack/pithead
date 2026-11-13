@@ -161,9 +161,10 @@ The steps above need a display once, to read the token. You can skip that by wri
 USB stick **after flashing it** — the stick's small `PITHEAD` volume is readable on any
 Windows, macOS or Linux machine, so plug it into your laptop and drop a file on it:
 
-- **`pithead-token.txt`** — one line with a token you choose (letters, digits and dashes).
-  The machine uses that instead of printing its own, so you can open the setup page without
-  ever seeing its console.
+- **`pithead-token.txt`** — one line with a token you choose (letters, digits and dashes),
+  with at least 16 characters after an optional case-insensitive `pit-` prefix. The machine
+  sanitizes it to that alphabet, keeps at most 32 characters, and uses it instead of printing
+  its own, so you can open the setup page without ever seeing its console.
 - **`pithead-config.json`** — a complete configuration. First boot applies it and provisions
   itself; no setup page at all. Copy `config.json` from a machine you already set up, see
   [configuration](configuration.md), or build one in
@@ -312,18 +313,18 @@ Then a handful of choices, all with sensible defaults:
 | Question | Default | When to change it |
 |---|---|---|
 | Merge-mine Tari? (beta) | off | Tari merge-mining is an opt-in beta: Enter means no, because Tari runs on pre-release upstream software and a yes downloads and syncs a Tari chain over Tor, which takes days. The exception is a reinstall that keeps the data disk’s chains, where Enter keeps it on. The bundled node needs the whole stack to fit (528 GiB with local Monero, 208 GiB with remote Monero). A yes also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero mining. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. You can change the mode and payout address later from the Configuration view behind confirmation. |
-| P2Pool sidechain | mini | `nano` for a single low-power rig, `main` only for very large hashrate. Changeable later. |
+| P2Pool sidechain | mini | Setup inherits this default; it does not ask you to choose a pool tier. Change it later in **Advanced** or from the Configuration view. |
 | Telegram bot | — | Optional. Alerts and status commands; needs both the token and the chat id. |
 | Monero node | run it here | Point at a node you already run. It has to be on your own network — a private address (10.x, 172.16–31.x, 192.168.x) or one reached over a VPN — because the machine only lets the mining containers dial private ranges; everything else goes through Tor. |
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
 | First sync | private over Tor | Faster over clearnet: hours instead of days. This opts every local chain into fast sync and exposes your IP address to the Monero network and, if Tari runs locally, the Tari network until initial sync finishes. With the firewall on, only those local nodes are exempted. The host closes and verifies its exception before the Tor restart, then verifies the live daemon and rules before clearing the warning. The firewall and each clearnet option are confirmed settings in the Configuration view. |
-| Enable stratum password? | no | Yes generates a password every miner must send; it then appears on the hand-off card, in the dashboard's **Connect a miner** block and in the CLI output of `setup` and `apply`. With No, miners connect without one. Existing and restored configurations keep their current setting; the form-submit fallback (no JavaScript) follows the same rule. Change it later with `p2pool.stratum_password` ([configuration](configuration.md#configuration-reference)). |
-| Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
+| Enable stratum password? | no | Yes generates a password every miner must send; it then appears on the one-time hand-off card and in the dashboard's **Connect a miner** block. The CLI reports that authentication is on without printing the password. With No, miners connect without one. Existing and restored configurations keep their current setting; the form-submit fallback (no JavaScript) follows the same rule. Change it later with `p2pool.stratum_password` ([configuration](configuration.md#configuration-reference)). |
+| Dashboard login | generated password | Setup generates a random 32-character alphanumeric password and shows it once in the final handoff. It does not ask you to choose a password or offer a no-login option. To disable login, explicitly set `dashboard.auth.password` to an empty string in **Advanced** or `config.json`. |
 
 XvB is off on a new install and is not asked. Enable it later from the Configuration view.
 If the machine cannot generate or save its dashboard login, first boot stops before handing
-off credentials or provisioning. The explicit "No login" choice still bypasses generation.
+off credentials or provisioning.
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
 with a default that is right for almost every home rig lives one level down, in **Advanced**,
@@ -350,9 +351,9 @@ node must answer the base node's `GetTipInfo` gRPC call. A hostname that passes 
 the exact address the checks reached, so installation cannot resolve it to a different machine.
 Only when everything passes does the page show the things you must save:
 
-- the **dashboard login** (generated, or the one you chose)
-- the **dashboard address** (`https://pithead.local`)
-- where to **point your miners** (`stratum+tcp://pithead.local:3333`)
+- the **dashboard login** (generated and shown once)
+- the **dashboard address** (`https://<machine-name>.local`, `pithead` unless you named the machine)
+- where to **point your miners** (the advertised Stratum address and port)
 - the **stratum password**, or **No stratum password** when it is off
 - the **TLS fingerprint** when stratum TLS is enabled
 
@@ -363,10 +364,10 @@ endpoint with the staged login before it commits the pair
 local-node mode preserves its masked partner and applies the pair to the local services together. A changed endpoint needs explicit replacement
 credentials: a masked login never follows it to a new node.
 
-After provisioning, **Connect a miner** in the dashboard shows the LAN pool URL and the TLS
-fingerprint when enabled. The block offers Reveal and Copy for a configured stratum password,
-including on a dashboard without a login: anyone on that LAN can retrieve it. If it is off,
-the block says **No stratum password**.
+After provisioning, **Connect a miner** in the dashboard shows the LAN pool URL and
+the TLS fingerprint when enabled. The block offers Reveal and Copy for a configured stratum
+password, including on a dashboard without a login: anyone on that LAN can retrieve it. If it is
+off, the block says **No stratum password**.
 
 **Copy the login and any stratum password somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it
@@ -490,9 +491,14 @@ reboot, but **any reboot boots the update**, including a power cut, watchdog res
 **Set up again**. The dashboard reboot action expires after 24 hours; that does not disarm
 the installed slot. The downloaded bundle is deleted after a successful install. Confirm
 the dashboard reboot separately; mining pauses typically under five minutes, then the
-machine runs its normal health checks before keeping the new version. A banner reports the outcome, including an automatic return to the previous
+machine runs its normal health checks before keeping the new version. While those checks are
+still running the machine is already on the new copy, so the dashboard shows
+"Verifying the update to vX — leave the machine running" and offers no second reboot; a reboot
+asked for in that window is refused with its reason, because it would fall back before the
+update was ever decided. A banner reports the outcome, including an automatic return to the previous
 version if the new one failed — and, when those health checks were what held it back,
-which check it was, so a return is never mistaken for a bad release. One thing the machine
+which check it was, so a return is never mistaken for a bad release. A copy interrupted before
+its checks reached a verdict is reported as interrupted, not as a failed check. One thing the machine
 repairs on its own during that wait: a network address that arrived after the certificate
 was made gets a fresh certificate minted there and then, instead of failing the checks
 and returning to the previous version. If the certificate still does not match after that,
@@ -515,6 +521,18 @@ operation has finished. See
 step-by-step. The one-click tarball upgrade other installs offer refuses on the
 appliance on purpose — it would apply the wrong kind of update.
 
+For a chain data migration, installation first persists the previous data floor,
+the candidate version and A/B slot, and the new floor. The candidate holds chain
+services until RAUC successfully commits its slot. A failed or superseded install
+restores the previous floor only after confirming the running slot is committed
+and durably disabling the spare slot. If that cannot be confirmed, protection
+stays in place for boot recovery. A fallback boot keeps the candidate protected
+until its own slot commits, then disables the candidate and restores the previous
+floor. A committed candidate keeps the new floor. Rigs consume their migration
+intent after the miner starts and the slot commits. Another update cannot replace
+migration protection owned by the running slot before that boot finishes. Boot
+cleanup leaves a newer install's protection in place.
+
 Your data is never part of an update. Wallets, settings and the chain live on a separate
 partition that updates and rollbacks do not touch.
 
@@ -526,6 +544,26 @@ install-then-fall-back protection as any other update. The practical consequence
 **taking updates when they are offered is the security maintenance.** A machine left on
 an old image keeps running fine, but it keeps the old image's known holes too. The base
 system is Debian 13, which receives security support upstream into 2030.
+
+### Updating a rig
+
+A rig takes updates with its own signed OS image, not with a worker upgrade from the
+dashboard: an appliance rig keeps RigForge's remote upgrade off, and the coordinator
+does not offer **Upgrade rig…** to rigs that report being appliances. An appliance rig
+whose RigForge is too old to report itself still shows the offer until it runs a newer
+image; taking that image is the fix. How the image reaches a rig depends on how it
+boots:
+
+- **Installed to its disk:** boot the rig from a newer USB stick and choose **Keep
+  everything**. The installer replaces the system and keeps the data partition, so the
+  rig comes back with the same role, the same `rig.json` and the same access token,
+  starts mining again, and a coordinator that had adopted the rig keeps reading it
+  with no adopting to redo. No leg has run that pass on an adopted coordinated rig
+  yet: manual QA row M13 is the proof still owed (#3961).
+- **Running from its USB stick:** re-flash the stick with the newer image. Re-flashing
+  replaces the whole stick, data included, so the rig comes back with a fresh setup
+  and a new token, and the coordinator adopts it again. Delivering image updates to
+  rigs over the network is planned (#1837).
 
 ## The boot menu
 
@@ -661,6 +699,11 @@ nothing could mount it. When that does happen the setup page itself says so, dat
 shell. If you have a backup, restore it instead of setting up as a fresh machine — a
 factory reset you asked for never shows this notice.
 
+If recovery cannot allocate a temporary mount directory, it stops and reports the
+failure in the `pithead-data-reset` service journal. An unavailable read-only probe
+does not authorize further repairs or erasure. A reformat also requires its mount
+directory to be allocated before formatting starts.
+
 ## Recovering from a backup
 
 Fresh flash, restore, done — if the machine is gone (dead disk, stolen, dropped), a backup
@@ -773,8 +816,11 @@ try the IP the console prints as well as <https://pithead.local>; some networks 
 password. A release image does not provide SSH. Reinstall from the USB media to recover a broken
 appliance; a manually deployed debug image carries its own SSH key for development diagnostics.
 
-**"Wrong token."** The token changes each time the setup service restarts — read the
-current one from the console. After five wrong attempts it mints a new one on purpose.
+**"Wrong token."** A generated token changes each time the setup service restarts; a valid
+preseed token is reused. Read the current token from the console or your preseed file.
+Five wrong attempts from the same network peer start a 60-second
+cooldown. Wait for the time shown on the page, then retry the same token; the wizard stays open
+and other authenticated operators keep their sessions.
 
 **The address was rejected.** For Monero you most likely pasted a subaddress (starts with
 `8`) or an integrated address. Use your primary address, which starts with `4` and is 95

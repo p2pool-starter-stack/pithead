@@ -19,6 +19,7 @@ import {
   osBadgeLabel,
   rebootAskPane,
   rebootConfirmPane,
+  verifyingPane,
   vtag,
   waitForDashboard,
 } from "./osreboot.mjs";
@@ -134,8 +135,6 @@ export const OsVerdictBanner = ({ os }) => {
 export class OsUpdateControl extends Component {
   constructor(props) {
     super(props);
-    // phase: closed | idle | checking | downloading | verifying | verified | installing |
-    //        reboot-ask | reboot-pending | confirm-reboot | rebooting | error
     this.state = {
       phase: "closed",
       check: null,
@@ -156,12 +155,12 @@ export class OsUpdateControl extends Component {
     if (busy.includes(this.state.phase)) return;
     this.modalRef.current?.close();
   }
-  // What the host remembers across reloads/reboots: reopen the modal mid-flow honestly.
   stepPhase() {
     const step = (this.props.os && this.props.os.step) || "idle";
-    if (step === "downloaded") return "verified-pending"; // downloaded but not yet verified
+    if (step === "downloaded") return "verified-pending";
     if (step === "verified") return "verified";
     if (step === "reboot-pending") return "reboot-pending";
+    if (step === "verifying") return "slot-verifying";
     if (step === "downloading") return "resume-pending";
     return "idle";
   }
@@ -332,6 +331,7 @@ export class OsUpdateControl extends Component {
         onNotNow: () => this.cancel(),
         onReboot: () => this.setState({ phase: "reboot-pending" }),
       });
+    if (phase === "slot-verifying") return verifyingPane({ version });
     if (phase === "reboot-pending" || phase === "confirm-reboot")
       return rebootConfirmPane({
         version,
@@ -343,7 +343,6 @@ export class OsUpdateControl extends Component {
     if (phase === "rebooting")
       return html`<p>Rebooting — this page reconnects when the dashboard returns. This can't be
           interrupted; leave it open. The result appears as a banner after the restart.</p>`;
-    // idle: current version, what the host knows, and the next honest step.
     const stepPhase = this.stepPhase();
     const size = (check && check.size) || (passive && passive.raucb_size);
     const newer = check ? check.newer : !!(passive && passive.available);
@@ -351,7 +350,7 @@ export class OsUpdateControl extends Component {
       releaseNotesHref(check && check.notes) || releaseNotesHref(passive && passive.url);
     return html`<p>Running ${running || "this release"}.</p>
         ${
-          newer && version
+          newer && version && stepPhase !== "slot-verifying"
             ? html`<p>Update ${version} is available${size ? ` (${fmtMiB(size)} download)` : ""}.
                 ${
                   notes
@@ -371,7 +370,7 @@ export class OsUpdateControl extends Component {
                   ? html`<button class="btn-toggle active" onClick=${() => this.verify()}>Verify staged download</button>`
                   : stepPhase === "reboot-pending"
                     ? html`<button class="btn-toggle active" onClick=${() => this.setState({ phase: "reboot-pending" })}>Reboot to finish</button>`
-                    : newer && version
+                    : newer && version && stepPhase !== "slot-verifying"
                       ? html`<button class="btn-toggle active" onClick=${() => this.download()}>
                           ${stepPhase === "resume-pending" ? "Resume download" : "Download"}</button>`
                       : null
@@ -392,7 +391,7 @@ export class OsUpdateControl extends Component {
     const open = phase !== "closed";
     return html`<button class=${"badge version-badge ml-2" + attention}
             title="Check for and apply signed OS image updates"
-            onClick=${() => this.setState({ phase: open ? "closed" : this.stepPhase() === "reboot-pending" ? "reboot-pending" : "idle" })}>
+            onClick=${() => this.setState({ phase: open ? "closed" : ["reboot-pending", "slot-verifying"].includes(this.stepPhase()) ? this.stepPhase() : "idle" })}>
             ${label}
         </button>${
           open

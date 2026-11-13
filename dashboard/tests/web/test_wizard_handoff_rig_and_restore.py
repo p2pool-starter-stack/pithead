@@ -22,7 +22,8 @@ async def test_wipe_is_normalized_to_keep_on_a_disk_with_nothing_to_wipe(client,
 async def test_status_narrates_setup(client, spool):
     assert "Waiting" in await (await client.get("/status")).text()
     spool.joinpath("error.txt").write_text("bad wallet")
-    assert "Rejected: bad wallet" in await (await client.get("/status")).text()
+    body = await (await client.get("/status")).text()
+    assert "Rejected" in body and "bad wallet" not in body
     spool.joinpath("error.txt").unlink()
     spool.joinpath("applied").write_text("1")
     assert "Provisioned" in await (await client.get("/status")).text()
@@ -331,22 +332,6 @@ async def test_unauthed_rig_submit_writes_nothing(client, seeded):
     )
     assert r.status == 302
     assert not (seeded / "rig-request.json").exists()
-
-
-async def test_auth_mode_rides_beside_the_config(client, seeded):
-    # "no login" is an empty password, which is also what "not chosen" looks like — the choice
-    # cannot be encoded in the config without colliding with a real one.
-    await _auth(client)
-    cfg = {"monero": {"wallet_address": "4XYZ"}, "tari": {"wallet_address": "t"}}
-    await client.post("/submit", data={"config": json.dumps(cfg), "auth_mode": "none"})
-    assert (seeded / "auth-mode").read_text() == "none"
-
-
-async def test_an_unknown_auth_mode_is_ignored(client, seeded):
-    await _auth(client)
-    cfg = {"monero": {"wallet_address": "4XYZ"}, "tari": {"wallet_address": "t"}}
-    await client.post("/submit", data={"config": json.dumps(cfg), "auth_mode": "whatever"})
-    assert not (seeded / "auth-mode").exists()
 
 
 async def test_restore_writes_the_archive_and_passphrase_and_clears_a_previous_error(

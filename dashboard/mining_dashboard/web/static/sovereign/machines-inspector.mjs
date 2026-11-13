@@ -14,6 +14,7 @@ export class RigInspector extends WorkerInspect {
   }
 
   componentDidUpdate(previous) {
+    this.props.onDirtyChange?.("rig-inspector", this.state.busy || this.isDirty());
     if (previous.shared > 1 && !(this.props.shared > 1) && this.state.phase === "ready") {
       this.load();
       return;
@@ -27,6 +28,9 @@ export class RigInspector extends WorkerInspect {
       this.load(true);
   }
 
+  componentWillUnmount() {
+    this.props.onDirtyChange?.("rig-inspector", false);
+  }
   async load(passive = false) {
     if (this.state.phase !== "ready") return super.load();
     try {

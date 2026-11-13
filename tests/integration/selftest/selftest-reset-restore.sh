@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Failure controls for the real encrypted config-reset recovery leg; no engine is started here.
 set -uo pipefail
+lifecycle_mining_step() {
+    shift
+    "$@"
+}
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 # shellcheck disable=SC2034 # consumed by the sourced leg
@@ -74,6 +78,8 @@ drive_reset_restore() (
         return 0
     }
     curl() { [ "$fault" != page ] && printf 'Pithead setup'; }
+    post_op_begin() { :; }
+    post_op_invariants() { :; }
     rr_restore_during_wizard_startup() { :; }
     reset_restore_wait_reboot() { :; }
 
@@ -143,7 +149,7 @@ drive_reset_restore() (
                 ;;
             esac
             ;;
-        *"printf 'config-reset"*)
+        *' config-reset -y')
             [ "$fault" != reset ] || return 1
             touch "$OUT_DIR/reset"
             case "$fault" in
@@ -172,11 +178,17 @@ drive_reset_restore() (
             ;;
         esac
     }
-    pithead() { [ "$fault:$1" != down:down ] && [ "$fault:$1" != up:up ]; }
+    pithead() {
+        [ "$fault:$1" != down:down ] && [ "$fault:$1" != up:up ] || return 1
+        [ "$1" != up ] || touch "$OUT_DIR/up"
+    }
     upgrade_secret_fingerprints() {
         if [ "$fault" = secrets ] && [ -e "$OUT_DIR/restored" ]; then printf changed; else printf original; fi
     }
     wait_status_ok() { [ "$fault" != health ]; }
+    rr_miner_prepare() { touch "$OUT_DIR/miner-prepared"; }
+    rr_miner_state() { [ -e "$OUT_DIR/restored" ] && touch "$OUT_DIR/miner-state"; }
+    rr_miner_recovered() { [ -e "$OUT_DIR/miner-prepared" ] && [ -e "$OUT_DIR/miner-state" ] && [ -e "$OUT_DIR/up" ]; }
     run_reset_restore_fixture >"$OUT_DIR/output" 2>&1
     local rc=$?
     [ ! -e "$OUT_DIR/unhandled" ] || rc=127

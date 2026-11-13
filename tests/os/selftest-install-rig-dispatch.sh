@@ -33,6 +33,7 @@ load_baked_images() { :; }
 preseed_token() { printf pit-fixture; }
 wizard_host_addresses() { :; }
 wizard_announce_setup() { :; }
+wizard_clear_announcement() { :; }
 wizard_keep_requested() { return 1; }
 is_valid_host() { [ "$1" = example.test ]; }
 is_valid_port() { [ "$1" = 3333 ]; }

@@ -181,8 +181,8 @@ run_rigforge_writable_keys() { # <rig>
     fi
 
     # DONATION: the issue's headline key. Move it toward zero whenever it is non-zero, so the probe
-    # can only ever REDUCE what a borrowed rig donates; only a rig already at 0 is nudged to 1, which
-    # is RigForge's own default. Bounds are 0-100 (rigforge.sh:406), so both directions are valid.
+    # can only ever REDUCE what a borrowed rig donates; only a rig already at 0 gets a nonzero probe.
+    # Bounds are 0-100 (rigforge.sh:406), so both directions are valid.
     orig="$(_rig_config_key "$detail" DONATION)"
     if [ -z "$orig" ]; then
         it_skip_leg "DONATION write (#1236)" "rig '$rig' reports no DONATION in its writable config — can't read the original to restore it"

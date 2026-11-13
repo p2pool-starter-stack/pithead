@@ -93,7 +93,8 @@ rm -f "$WSS/restart-stage/.restore.escape"
 
 mk_tmpdir WBK
 mkdir -p "$WBK/preseed"
-WBK_STUBS='machine_role() { echo pithead; }; setup_again_mode() { return 1; }
+WBK_STUBS='wizard_issue_file() { printf "%s/console.issue" "$PWD"; }; agetty() { [ "$1" = --reload ]; }
+machine_role() { echo pithead; }; setup_again_mode() { return 1; }
 installer_mode_available() { return 1; }; consume_preseed_restore() { return 1; }; consume_preseed_config() { return 2; }
 boot_is_removable() { return 1; }; _console() { :; }; container_engine() { echo true; }
 export_build_provenance() { PITHEAD_REGISTRY=fixture; STACK_VERSION=dev; }; load_baked_images() { :; }
@@ -105,6 +106,7 @@ wizard_spool_publish() { :; }; warn() { :; }; log() { :; }; bash() { cp config.j
 sleep() { exit 7; }'
 PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBK_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "post-validation refusal reaches candidate cleanup" "$?" 7
+assert_eq "a refused setup round clears its console banner" "$([ -e "$WBK/console.issue" ] || echo gone)" gone
 assert_eq "post-validation refusal leaves no migration backup" "$([ -e "$WBK/config.json.bak-1x" ] || echo gone)" gone
 mkdir -p "$WBK/installed/preseed" "$WBK/installed/data/firstboot"
 printf live-config-sentinel >"$WBK/installed/config.json"
@@ -143,7 +145,7 @@ for credential_path in preseed browser; do
         if [ "$credential_fault" = openssl ]; then
             credential_stub='openssl() { return 9; }'
         else
-            credential_stub='jq() { case "$*" in *".dashboard.auth.password = "*) return 9 ;; *) command jq "$@" ;; esac; }'
+            credential_stub='jq() { case "$*" in *".dashboard.auth = "*) return 9 ;; *) command jq "$@" ;; esac; }'
         fi
         echo "== firstboot credential failure: $credential_path / $credential_fault =="
         out=$(PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \

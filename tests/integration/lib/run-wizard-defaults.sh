@@ -1,5 +1,13 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+wizard_restore_baseline() {
+    local out rc
+    push_config "${1-$BASELINE_CONFIG}" || return 1
+    out=$(LIFECYCLE_MINING_ACTIVE=0 pithead apply -y 2>&1)
+    rc=$?
+    [ "$rc" = 0 ] || it_err "CLI defaults restore apply exited $rc: $(redact <<<"$out")"
+    return "$rc"
+}
 run_cli_wizard_defaults() {
     local monero tari entry_config trial_rc=0 restore_rc=0 failures_before
     monero=$(jq -er '.monero.wallet_address | select(type == "string" and length > 0)' <<<"${BASELINE_CONFIG:-null}") || {
@@ -24,7 +32,7 @@ run_cli_wizard_defaults() {
         trial_rc=1
     fi
     lifecycle_gate_sample before-wizard-restore
-    push_config "$entry_config" && pithead apply -y >/dev/null 2>&1
+    wizard_restore_baseline "$entry_config"
     restore_rc=$?
     lifecycle_gate_sample after-wizard-restore-apply
     if [ "$restore_rc" -eq 0 ]; then
@@ -43,8 +51,8 @@ cli_wizard_defaults_trial() {
         wizard_tari_disk_default local >/dev/null
         {
             printf 'garbage\\n%s\\n\\n2\\ngarbage\\n%s\\n' $(quote_arg "$monero") $(quote_arg "$tari")
-            printf '\\n\\n\\n\\n\\n\\n\\n'
-        } | { wizard_ask_core; wizard_ask_shape; wizard_write_config; }
+            printf '\\n\\n\\n\\n'
+        } | { wizard_ask_core; wizard_ask_shape; wizard_write_config; wizard_print_pointer; }
         jq -e '.profile == \"balance\" and .xvb.enabled == false and
             (.monero | has(\"clearnet_initial_sync\") | not) and
             .tari.mode == \"local\" and .dashboard.tari_required == false and
