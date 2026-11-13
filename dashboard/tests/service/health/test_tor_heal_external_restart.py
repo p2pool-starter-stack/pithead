@@ -6,6 +6,7 @@ from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
     MAX_ATTEMPTS,
+    NEWNYM_ATTEMPTS,
     PROBE_INTERVAL_SEC,
     TorEgressHealer,
 )
@@ -78,8 +79,8 @@ class _Rig:
             await self.healer._observe_tor_start()
 
     async def exhaust(self):
-        """Two NEWNYMs, the healer's own adopted restart, then the give-up warning."""
         await self.spend_newnyms()
+        await self.spend_reset()
         await self.step(False, COOLDOWN_SEC)  # the healer's own Tor restart
         self.tor_started += 3600
         await self.step(False, COOLDOWN_SEC)  # adopts that start time; budget spent
@@ -92,7 +93,12 @@ class _Rig:
         await self.step(False)  # confirms NEWNYM 1
         await self.step(False, COOLDOWN_SEC)
         await self.step(False)  # confirms NEWNYM 2
-        assert self.healer._attempts == MAX_ATTEMPTS - 1
+        assert self.healer._attempts == NEWNYM_ATTEMPTS
+
+    async def spend_reset(self):
+        await self.step(False, COOLDOWN_SEC)  # submits tor-recover
+        assert self.healer._pending_recovery == "tor-recover"
+        await self.step(False)  # reads its result
 
 
 async def _spend_and_return():
@@ -126,7 +132,8 @@ async def test_failed_probe_after_external_restart_waits_for_fresh_threshold():
 async def test_healer_restart_keeps_counting():
     rig = _Rig()
     await rig.spend_newnyms()
-    await rig.step(False, COOLDOWN_SEC)  # third attempt: the healer's own Tor restart
+    await rig.spend_reset()
+    await rig.step(False, COOLDOWN_SEC)  # fourth attempt: the healer's own Tor restart
     assert ("stop", "tor") in rig.docker.calls
     rig.tor_started += 3600  # the start time its own restart produced
     await rig.step(False)
@@ -135,14 +142,12 @@ async def test_healer_restart_keeps_counting():
 
 
 async def _recover_submitted(recover_result):
-    """Saturated history: both NEWNYMs spent, then the final step submits tor-recover."""
     rig = _Rig()
-    rig.saturated = True
     rig.recover_result = recover_result
     await rig.spend_newnyms()
     await rig.step(False, COOLDOWN_SEC)
     assert rig.healer._pending_recovery == "tor-recover"
-    assert rig.healer._attempts == MAX_ATTEMPTS
+    assert rig.healer._attempts == NEWNYM_ATTEMPTS + 1
     return rig
 
 
@@ -151,7 +156,7 @@ async def test_host_recovery_restart_keeps_counting():
     await rig.step(False)  # result read
     rig.tor_started += 3600  # the host-run recovery restarted Tor
     await rig.step(False)
-    assert rig.healer._attempts == MAX_ATTEMPTS
+    assert rig.healer._attempts == NEWNYM_ATTEMPTS + 1
     assert rig.healer._failing_since is not None
     assert rig.healer._last_attempt is not None
 
@@ -169,6 +174,7 @@ async def test_refused_host_recovery_does_not_hide_a_later_external_restart():
 async def test_external_restart_after_an_adopted_healer_restart_still_resets():
     rig = _Rig()
     await rig.spend_newnyms()
+    await rig.spend_reset()
     await rig.step(False, COOLDOWN_SEC)  # the healer's own Tor restart
     assert ("stop", "tor") in rig.docker.calls
     rig.tor_started += 3600

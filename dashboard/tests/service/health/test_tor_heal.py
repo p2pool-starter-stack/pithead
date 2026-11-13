@@ -238,7 +238,7 @@ class TestCheck:
             caplog.at_level("WARNING", logger="TorHeal"),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [
@@ -269,7 +269,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [("stop", "tor"), ("start", "tor")]
@@ -291,7 +291,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [("stop", "tor"), ("start", "tor")]
@@ -318,7 +318,7 @@ class TestCheck:
             caplog.at_level("WARNING", logger="TorHeal"),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert ("stop", "monerod") in docker.calls
@@ -339,7 +339,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += max(BROKEN_AFTER_SEC, COOLDOWN_SEC)
                 await h.check()
             assert len(docker.calls) == 4  # two circuit refreshes and one container restart

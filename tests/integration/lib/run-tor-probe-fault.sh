@@ -115,6 +115,52 @@ _tor_probe_recovered() { # <epoch>
     rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following NEWNYM:'
 }
 
+fault_tor_newnym_exhausted() {
+    local epoch control reply identities after snippet recovered=0
+    fault_rules_clear_all
+    if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq '.tor.auto_heal=true')" ||
+        ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
+        it_fail "Tor NEWNYM-exhausted fault enabled opt-in recovery" "apply or health failed"
+        return
+    fi
+    control=$(env_on_box CONTROL_DIR)
+    identities=$(rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_identities \"\$dir\""' 2>/dev/null)
+    if [ -n "$identities" ]; then
+        it_pass "Tor onion identities are readable before the NEWNYM-exhausted fault"
+    else
+        it_fail "Tor onion identities are readable before the NEWNYM-exhausted fault" "no identity hashes"
+        return
+    fi
+    snippet="printf '%s 2\\n' \"\$(date +%s)\" >$(quote_arg "$control")/tor-newnym-budget"
+    rx "sudo -n sh -c $(quote_arg "$snippet")" >/dev/null 2>&1
+    assert_rc "host NEWNYM budget is spent before the fault" "$?" "0"
+    epoch=$(rx 'date +%s')
+    snippet='cookie=$(xxd -p -c 256 /var/lib/tor/control_auth_cookie)
+printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nQUIT\r\n" "$cookie" | nc -w 3 127.0.0.1 9051'
+    reply=$(rx "docker exec tor sh -c $(quote_arg "$snippet")" 2>/dev/null | tr -d '\r') || reply=
+    assert_eq "Tor network is black-holed through the control port" "$(printf '%s\n' "$reply" | grep -c '^250 OK$')" "2"
+    it_step "fault: Tor network disabled with the host NEWNYM budget spent; waiting for the unattended ladder…"
+    if wait_for 6000 60 "Tor egress recovered through the host state reset" _tor_newnym_exhausted_recovered "$epoch"; then
+        recovered=1
+        it_pass "Tor egress recovered unattended after a rejected NEWNYM"
+    else
+        it_fail "Tor egress recovered unattended after a rejected NEWNYM" "no recovery log within the bounded window"
+        rx "docker compose restart tor" >/dev/null 2>&1 || true
+    fi
+    if [ "$recovered" = 1 ]; then
+        assert_contains "rejected NEWNYM advanced the ladder" "$(rx "docker logs --since $epoch dashboard 2>&1")" "was not confirmed by the host control runner (rejected"
+        assert_contains "state reset ran without a saturated history" "$(rx "docker logs --since $epoch dashboard 2>&1")" "reset circuit state and guards through tor-recover"
+        after=$(rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_identities \"\$dir\""' 2>/dev/null)
+        assert_eq "Tor onion identities survived the reset" "$after" "$identities"
+    fi
+    push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 ||
+        it_fail "Tor NEWNYM-exhausted fault restored baseline config" "baseline apply failed"
+}
+
+_tor_newnym_exhausted_recovered() { # <epoch>
+    rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following'
+}
+
 tor_recovery_lock_snapshot_snippet() {
     cat <<'SNAPSHOT'
 set -o pipefail

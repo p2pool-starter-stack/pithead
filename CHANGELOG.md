@@ -13,6 +13,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- The Tor egress auto-heal no longer stalls when the host refuses NEWNYM. A rejected refresh now
+  spends its rung and the ladder moves on to a host-gated state reset and then a Tor restart,
+  capped at four per rolling day, instead of repeating NEWNYM forever. `tor-recover` accepts a
+  sustained outage, a wedged control port or a stalled bootstrap as reset reasons when egress is
+  still down, the heal reads Tor's control-port circuit state, and giving up is written to the
+  host audit log (#4075).
+
 - On the appliance, the dashboard's own schema migrations no longer run before the booted A/B slot
   commits. `pithead-boot` defers them while the slot is uncommitted, so an update that falls back
   leaves the previous release on the schema it understands, still recording payouts (#3998).

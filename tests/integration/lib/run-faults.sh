@@ -340,6 +340,7 @@ run_fault_injection() {
     fault_p2pool_cold_cache_dns
     fault_p2pool_sidechain_sync
     fault_tor_probe_egress
+    fault_tor_newnym_exhausted
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
 
     # Belt-and-braces: whatever happened above, leave monerod + tor up, the dashboard data dir

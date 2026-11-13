@@ -8,6 +8,8 @@ from mining_dashboard.service import control_service, request_spool
 
 logger = logging.getLogger("TorHeal")
 
+PENDING_CIRCUIT_LIMIT = 32
+
 
 class TorHistoryMixin:
     """Keep the read-only history request and outage alert lifecycle together."""
@@ -50,6 +52,12 @@ class TorHistoryMixin:
         if result.get("status") != "applied":
             logger.warning("Tor circuit-history reading was refused or unavailable")
             return
+        pending = result.get("pending_circuits")
+        self.circuits_wedged = result.get("circuit_established") is False or (
+            isinstance(pending, int)
+            and not isinstance(pending, bool)
+            and pending >= PENDING_CIRCUIT_LIMIT
+        )
         saturated = result.get("saturated") is True
         self.saturated_history = saturated
         if not saturated:
@@ -79,14 +87,14 @@ class TorHistoryMixin:
             if result is not None and result.get("status") == "applied":
                 self._recovery_step = "host-gated Tor state recovery"
                 self._recovery_notice = (
-                    "Tor heal reset saturated circuit history and guards through tor-recover; "
+                    "Tor heal reset circuit state and guards through tor-recover; "
                     "the host verified its evidence, onion identities and six-hour cooldown."
                 )
             else:
                 self._own_restart = False  # nothing restarted Tor; a later restart is not ours
                 detail = (result or {}).get("error", "host result unconfirmed")
                 self._recovery_step = "Tor state recovery unconfirmed"
-                self._recovery_notice = f"Tor state recovery refused or failed: {detail}. No fallback restart was attempted."
+                self._recovery_notice = f"Tor state recovery refused or failed: {detail}. The next heal round restarts Tor."
         if self._recovery_notice is not None:
             logger.warning("%s", self._recovery_notice)
             if self._notify is not None and await self._notify(self._recovery_notice):

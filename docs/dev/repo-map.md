@@ -379,7 +379,9 @@ The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
-to prove saturated-history recovery and the disabled control with production timers.
+to prove saturated-history recovery and the disabled control with production timers, then
+`tor-heal-exhausted-guest.sh` to prove a spent NEWNYM budget still reaches the state reset on an
+unsaturated history.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,

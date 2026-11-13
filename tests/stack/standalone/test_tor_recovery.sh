@@ -7,6 +7,8 @@ WORK=$(cd "$WORK" && pwd -P)
 trap 'chmod 700 "$WORK/tor" 2>/dev/null || true; chmod 700 "$WORK/tor/p2pool" 2>/dev/null || true; rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+# shellcheck source=lib/pithead/02f-tor-recovery-reasons.sh
+source "$ROOT/lib/pithead/02f-tor-recovery-reasons.sh"
 echo "== tor recovery CLI distinguishes refusals from unexpected failures =="
 cat >"$WORK/cli-fixture.sh" <<'SH'
 #!/usr/bin/env bash
@@ -26,6 +28,11 @@ tor_recovery_identities() { [ "$CASE" != identity ] || return 1; printf 'identit
 docker() { printf 'mutation\n' >>"$WORK/cli-actions"; return 99; }
 case "$CASE" in
 mount) tor_recovery_mount() { return 1; } ;;
+unsaturated)
+    tor_recovery_heal_outage() { return 1; }
+    tor_recovery_circuit_status() { return 1; }
+    tor_recovery_bootstrap_persistent() { return 1; }
+    ;;
 lock) mutation_lock_acquire() { _PITHEAD_LOCK_OWNED=0; } ;;
 evidence)
     tor_recovery_heal_outage() { return 1; }
@@ -135,6 +142,10 @@ tor_recovery_info() {
     if [ -e "$WORK/started" ]; then printf '%s\n' "$good"; else printf '%s\n' "$bad"; fi
 }
 sleep() { :; }
+timeout() {
+    shift
+    "$@"
+}
 log() { :; }
 warn() { :; }
 control_audit() { printf '%s\n' "$5" >>"$WORK/audit"; }
@@ -264,6 +275,23 @@ TOR_CAPTURE="$WORK/signal" TOR_COOKIE_FILE="$WORK/cookie" PATH="$WORK/bin:$PATH"
 grep -q '^SIGNAL NEWNYM' "$WORK/signal"
 ! grep -q 'DROPGUARDS' "$WORK/signal"
 [ "$(cat "$WORK/signal-result")" = 'NEWNYM accepted' ]
+cat >"$WORK/bin/nc" <<'SH'
+#!/bin/sh
+cat >"$TOR_CAPTURE"
+cat "$TOR_REPLY"
+SH
+printf '250 OK\r\n250-status/circuit-established=0\r\n250+circuit-status=\r\n1 BUILT $A~a\r\n2 LAUNCHED\r\n3 EXTENDED $B~b\r\n4 CLOSED\r\n.\r\n250 OK\r\n250 closing connection\r\n' >"$WORK/reply"
+status_signal() { TOR_REPLY="$WORK/reply" TOR_CAPTURE="$WORK/signal" TOR_COOKIE_FILE="$WORK/cookie" PATH="$WORK/bin:$PATH" sh "$ROOT/build/tor/control-signal.sh" "$@"; }
+[ "$(status_signal STATUS)" = 'circuit-established=0 pending=2' ]
+grep -q '^GETINFO status/circuit-established circuit-status' "$WORK/signal"
+! grep -q 'SIGNAL' "$WORK/signal"
+printf '515 Authentication failed\r\n' >"$WORK/reply"
+if status_signal STATUS >"$WORK/signal-result"; then exit 1; fi
+[ ! -s "$WORK/signal-result" ]
+printf '250 OK\r\n250 OK\r\n' >"$WORK/reply"
+if status_signal STATUS >"$WORK/signal-result"; then exit 1; fi
+if status_signal DROPGUARDS; then exit 1; fi
+if status_signal STATUS NEWNYM; then exit 1; fi
 
 # The dashboard can request only the fixed circuit signal; the host validates the shape.
 # shellcheck source=lib/pithead/22a-config-document.sh
