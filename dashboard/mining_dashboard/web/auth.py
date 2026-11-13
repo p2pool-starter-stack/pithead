@@ -48,7 +48,7 @@ class Attempts:
         self._failures.setdefault(key, []).append(now)
 
 
-def trusted_proxy(request):
+def trusted_proxy(request) -> bool:
     try:
         return ipaddress.ip_address(request.remote).is_loopback
     except (ValueError, TypeError):
