@@ -1074,9 +1074,9 @@ the dashboard logs once that it has stopped, and the manual fix stays:
 ./pithead restart monerod
 ```
 
-Only a running local monerod is cycled: a stopped one (held by the LAN-access guard on a DIY host, see
-#2749) is never started, and a remote node is never touched. The cap and spacing are held in the
-dashboard's memory, so a dashboard restart clears them.
+Only a running local monerod is cycled: a stopped one (held by the LAN-access guard on a DIY host, see #2749)
+is never started, and a remote node is never touched. The cap and spacing are held in the dashboard's
+memory, so a dashboard restart clears them.
 
 The clocks start when the dashboard first sees the node and again whenever it stops answering, so
 a dashboard restart or a monerod restart never reads as a stall; a node that does not answer shows
