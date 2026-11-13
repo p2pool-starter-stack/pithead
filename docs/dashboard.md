@@ -132,6 +132,13 @@ reply. An `XMR Pruned` / `XMR Full` badge sits with the other badges beside the 
 the bundled node's blockchain mode. It appears for a local node only — with `monero.mode: remote`
 the pruning state is unknown, so neither badge is shown.
 
+A red `Mining paused here: <reason>` badge leads the badges whenever this Pithead is not serving
+work. The reason is the first that holds of: `stratum closed`, `node out of sync` (the local
+Monero health verdict is red), `node syncing`, and `P2Pool isolated` (P2Pool is running with no
+peers). When rigs have moved to a backup pool the line ends with `, N rigs on backup pool`, counted
+from the workers whose mining verdict is `on_backup`; the clause is omitted at zero. The line
+clears on the next poll once the condition ends.
+
 When the dashboard host is a name (not already an IP), the machine's IP shows beside it as
 `hostname @ ip` (e.g. `pithead.local @ 192.168.1.42`), a way back in when the hostname doesn't
 resolve from a phone or another LAN machine.
@@ -173,6 +180,16 @@ The first two also push a Telegram alert (`hugepages`, `low_ram`) when first det
 on; the wallet badge pairs with the `wallet_changed` alert; AVX2 is badge-only (see
 [Telegram Bot](telegram.md#choosing-which-alerts-you-get)). All active warning badges are echoed in
 the bot's `/status` reply.
+
+### Monero node offline banner
+
+When monerod is red (no outgoing peers, or a height that has stopped moving) or, with `tor.auto_heal`
+on, Tor clearnet egress has failed past the auto-heal's 15-minute broken window, a red banner above the dashboard reads
+**Monero node offline** and lists the reasons. With auto-heal on it also adds the heal state: the
+last action and its age, the cooldown before the next one, and, once the three attempts of an outage
+are spent, a line saying the auto-heal has stopped and to run `./pithead doctor`. The banner is
+computed from the dashboard's existing health verdicts and served over the LAN, so it needs no Tor
+and no Telegram, the two paths that fail together in a Tor outage. It clears when the verdicts do.
 
 ### Hero band
 
