@@ -21,14 +21,16 @@ tor_recovery_circuits_wedged() {
 }
 
 tor_recovery_unsaturated_reason() {
-    tor_recovery_egress_down || return 1
+    local reason
     if tor_recovery_heal_outage "$(env_get CONTROL_DIR)"; then
-        printf 'sustained-outage\n'
+        reason=sustained-outage
     elif tor_recovery_circuits_wedged; then
-        printf 'circuits-pending\n'
+        reason=circuits-pending
     elif tor_recovery_bootstrap_persistent; then
-        printf 'bootstrap-stalled\n'
+        reason=bootstrap-stalled
     else
         return 1
     fi
+    tor_recovery_egress_down || return 1
+    printf '%s\n' "$reason"
 }
