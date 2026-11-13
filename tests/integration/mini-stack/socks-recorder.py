@@ -50,7 +50,7 @@ def v5(conn):
 
 server = socket.socket()
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind(("0.0.0.0", 1080))
+server.bind((socket.gethostbyname(socket.gethostname()), 1080))
 server.listen()
 while True:
     conn, _ = server.accept()
