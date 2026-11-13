@@ -11,7 +11,18 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Added
+
+- The Service diagnostics card has a **Restart all** button (typed `RESTART`, refused during an OS
+  update, an uncommitted slot or a held host lock, and riding out the dashboard's own restart) and a
+  **Reset Tor state** button on the Tor card that runs the existing gated Tor recovery with its own
+  30-minute budget and returns the gate's refusal reason (#4064, #4063).
+
 ### Fixed
+
+- `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
+  bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
+  instead of staying at 0 peers when compose did not cycle it (#4063).
 
 - On the appliance, the dashboard's own schema migrations no longer run before the booted A/B slot
   commits. `pithead-boot` defers them while the slot is uncommitted, so an update that falls back

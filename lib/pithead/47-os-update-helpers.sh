@@ -152,3 +152,22 @@ os_verify_bundle_reason() { # <bundle> <target-tag>
     fi
     return 0
 }
+
+control_restart_refusal() { # <control-dir>; echoes the reason, empty = proceed
+    local step to
+    step=$(jq -r '.step // ""' "$1/results/os-update-state.json" 2>/dev/null) || step=""
+    to=$(jq -r '.to // ""' "$(os_update_inflight_file)" 2>/dev/null) || to=""
+    case "$step" in
+    downloading | installing | verifying | reboot-pending)
+        printf 'an OS update is in progress (%s) — restarting the stack now could interrupt it. Nothing was restarted; try again once the update has finished.' "$step"
+        return 0
+        ;;
+    esac
+    if [ -n "$to" ] && [ "$(os_running_version)" = "$to" ]; then
+        printf 'the installed OS update v%s is still being committed — restarting now could roll the machine back. Nothing was restarted; try again once it is committed.' "$to"
+        return 0
+    fi
+    if ! (PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire restart) >/dev/null 2>&1; then
+        printf 'another host operation (a config apply, backup, restore or upgrade) is running — nothing was restarted; try again once it has finished.'
+    fi
+}

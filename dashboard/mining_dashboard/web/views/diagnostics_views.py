@@ -108,3 +108,38 @@ async def handle_onion_key(request):
         logger.exception("Error submitting onion-client-key request")
         return web.json_response({"error": "Failed to submit the request."}, status=500)
     return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
+async def handle_restart_all(request):
+    _require_control_header(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="Body must be JSON.") from None
+    if not isinstance(body, dict) or body.get("confirm") != "RESTART":
+        raise web.HTTPBadRequest(text="'confirm' must be the word RESTART.")
+    try:
+        rid = control_service.submit("restart", actor=request.headers.get("X-Auth-User", ""))
+    except Exception:
+        logger.exception("Error submitting restart request")
+        return web.json_response({"error": "Failed to submit the restart request."}, status=500)
+    return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
+async def handle_tor_reset(request):
+    _require_control_header(request)
+    try:
+        rid = control_service.submit("tor-reset", actor=request.headers.get("X-Auth-User", ""))
+    except Exception:
+        logger.exception("Error submitting tor-reset request")
+        return web.json_response({"error": "Failed to submit the Tor reset request."}, status=500)
+    return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
+ROUTES = [
+    web.post("/api/control/diag-doctor", handle_diag_doctor),
+    web.post("/api/control/diag-logs", handle_diag_logs),
+    web.post("/api/control/onion-client-key", handle_onion_key),
+    web.post("/api/control/restart", handle_restart_all),
+    web.post("/api/control/tor-reset", handle_tor_reset),
+]

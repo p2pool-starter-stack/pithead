@@ -358,30 +358,21 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
     fi
 }
 
-# Validate + dispatch one CLAIMED request file. Trusts no byte of it: must be JSON, only the keys
-# id/action/config/actor/version, the id must be a UUID (it becomes the result/staged FILENAME —
-# anything else is rejected before it can touch a path), and the action one of the three known verbs.
-# Lifecycle verbs for the Telegram control commands (#338): the only two host actions the bot can
-# trigger, both FIXED — `restart` runs `$0 restart` (recreate the running stack) and `apply` runs
-# `$0 apply -y` (re-render + re-apply the CURRENT on-disk config.json). The container's `action`
-# string only SELECTS between these two hardcoded commands; nothing from the request is ever
-# interpolated into a command, and `apply` here carries no config change (the default-deny config
-# allowlist is only relevant to a config-editing commit, not a re-apply of the source of truth).
-# Since #2076 removed the Telegram control commands, NOTHING produces a restart/apply intent: the
-# dashboard never submits either verb. The dispatch is kept because it is where "a spool writer
-# cannot run an arbitrary host command" is proven and tested (tests/stack/control/
-# test-control-lifecycle-verbs.sh), and because the spool already accepts the far more powerful
-# `commit`, so removing these two buys no boundary. This side records the actor and outcome in the
-# same tamper-evidence audit log.
 control_lifecycle() { # <verb: restart|apply> <id> <actor> <control-dir>
     local verb="$1" id="$2" actor="$3" cdir="$4" rc=0
-    local logf="$cdir/staged/.$id.log"
+    local logf="$cdir/staged/.$id.log" refusal=""
+    [ "$verb" != restart ] || refusal=$(control_restart_refusal "$cdir")
+    if [ -n "$refusal" ]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg a "$verb" --arg e "$refusal" '{status:"rejected",action:$a,error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "rejected"
+        return 0
+    fi
     control_audit "$cdir/audit/control.log" "$id" "$actor" "$verb" "started"
     # ${PITHEAD_SELF:-$0} is this script (run_chain uses the same handle); the verb is a FIXED
     # literal picked by the case, never a string from the request.
     local self="${PITHEAD_SELF:-$0}"
     case "$verb" in
-    restart) "$self" restart >"$logf" 2>&1 || rc=$? ;;
+    restart) PITHEAD_LOCK_TIMEOUT=0 "$self" restart >"$logf" 2>&1 || rc=$? ;;
     apply) "$self" apply -y >"$logf" 2>&1 || rc=$? ;;
     *) return 0 ;; # unreachable: the dispatch already gated the verb
     esac

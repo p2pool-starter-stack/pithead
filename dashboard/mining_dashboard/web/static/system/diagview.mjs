@@ -10,6 +10,7 @@
 // its fixed allowlist. Preact interpolation is the final output-escaping boundary in the browser.
 
 import { Component, html } from "../app/preact.mjs";
+import { RestartAllControl, TorResetControl } from "./stackactions.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const DIAG_POLL_MS = 2000;
@@ -271,6 +272,7 @@ export class DiagnosticsPanel extends Component {
           ? this.renderChecks(service.checks)
           : html`<p class="text-muted text-xs">Run the health check to see this service's checks.</p>`
       }
+      ${service.name === "tor" ? html`<${TorResetControl} run=${runDiag} />` : null}
       ${this.renderLog(service.name)}
     </section>`;
   }
@@ -293,6 +295,7 @@ export class DiagnosticsPanel extends Component {
       below; open a service's recent log only when you need it.</p>
       <button class="btn-toggle active" disabled=${healthPhase === "waiting"}
               onClick=${() => this.runHealth()}>Run health check</button>
+      <${RestartAllControl} />
       ${
         healthPhase === "waiting"
           ? html`<p class="text-muted">Waiting for the host to return the health check…</p>`

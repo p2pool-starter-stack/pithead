@@ -12,7 +12,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead apply` | Preview and apply `config.json` changes. Warns before disruptive ones and recreates only what changed. `-y` / `--yes` skips the prompt. |
 | `./pithead up` | Start the stack. |
 | `./pithead down` | Stop the stack. |
-| `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` rebuilds circuits when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts right after tor is healthy again so it re-dials its peers (#972). `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
+| `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` rebuilds circuits when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts once the host has seen tor report bootstrapped (it polls for up to five minutes, then fails and names `restart monerod` instead of re-dialling a dead Tor) so it re-dials its peers (#972, #4063). A bare `restart` re-dials monerod the same way after the whole stack restarts. `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
 | `./pithead upgrade` | Re-render the generated config, then **pull** (release bundle) or **rebuild** (source checkout) the images and restart. Run after downloading a newer bundle or a `git pull`. |
 | `./pithead logs [service]` | Follow logs for all containers, or a single service (e.g. `logs p2pool`). |
 | `./pithead status` | Show container status and health-check every expected service. Warns about anything down/unhealthy and exits non-zero if so (handy for cron/monitoring). Profile-aware, and treats a stopped `p2pool`/`xmrig-proxy` as intentional during a node-down failover or while the miner is held until the chains sync. |
@@ -1023,7 +1023,7 @@ check) WARNs on the live state. Fix:
 ```
 
 Stack operations don't need the manual step: compose restarts monerod automatically whenever it
-restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the final `tor.auto_heal` container restart does the same. NEWNYM does not restart monerod. (#972)
+restarts or recreates tor (`up`, `apply`, `upgrade`), and `restart tor`, a bare `restart` (and so the dashboard's Restart all) and the final `tor.auto_heal` container restart each wait for Tor to report bootstrapped and then restart a running monerod themselves, whether or not compose already cycled it. NEWNYM does not restart monerod. (#972, #4063)
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.

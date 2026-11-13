@@ -148,6 +148,7 @@ run_hardening() {
         wait_status_ok 240 || true
         pithead status >/dev/null 2>&1
         assert_rc "stack healthy after a tor restart (#424 heal action)" "$?" "0"
+        _monerod_started_after_tor "monerod re-dialled after the tor restart: restarted after tor (#4063)"
         if [ "$pre_onion" = "1" ]; then
             it_step "external Tor client: dashboard onion must come back after the restart…"
             if _onion_reachable_external; then
@@ -272,6 +273,8 @@ run_hardening() {
         assert_eq "the allowlisted change landed host-side (#33)" "$(env_on_box DASHBOARD_CHECK_UPDATES)" "false"
         assert_contains "control mutation audited (#33)" \
             "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"action":"commit"'
+
+        _hardening_stack_action_rows "$cdir"
 
         local port_before port_after occupied_port port_rc=0 snapshot_rc=0
         occupied_port="$(env_on_box HOST_PORT)"

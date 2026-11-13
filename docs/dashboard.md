@@ -1470,7 +1470,8 @@ that is gone from the dashboard, and the host's own `control.log` — which the 
 
 Two read-only questions you can ask the host, in the same card stack as the config editor and
 under the same `dashboard.control.enabled` flag. Neither changes anything: they run a check and
-report, which is why neither asks you to confirm.
+report, which is why neither asks you to confirm. The same card also carries two actions that do
+change the stack, **Restart all** and **Reset Tor state**, described at the end of this section.
 
 **Run health check** runs the host's own `pithead doctor` and shows what it found — the same
 checks the CLI prints, failures first, with the host's summary counts above them. This is the one
@@ -1539,6 +1540,29 @@ daemon, use the support bundle or the console.
 
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
+
+**Restart all** restarts every container of the stack through the host's `restart` verb. It asks
+you to type `RESTART`, and it says that mining stops briefly, that the dashboard goes offline and
+comes back on its own, and that the machine is not rebooted. The page then shows an offline state,
+polls the host's result every two seconds for up to ten minutes, and reloads when the restart
+finished; if the stack has not answered by then it says so and leaves the page for you to reload.
+The host refuses, and the panel shows its reason, while an OS update is downloading, installing,
+verifying or waiting for its reboot, while the new slot is still being committed (a restart then
+could roll the machine back), and while another host operation (a config apply, backup, restore or
+upgrade) holds the mutation lock; it reports busy instead of queueing. Every request is audited
+with its actor, action and status. After the restart the host waits for Tor to report bootstrapped
+and restarts monerod so it re-dials through the new Tor. The restart verb is available on the DIY
+stack and the appliance.
+
+**Reset Tor state**, on the Tor card, asks the host to run the same gated `tor-recover apply` that
+the Tor auto-heal uses, as the signed-in user instead of `tor-heal`. Its confirmation names what it
+discards (Tor's circuit history, moved aside as a backup; onion addresses are kept) and that the
+host can refuse. Every gate stays in force: `tor.auto_heal` must be on, the circuit history must
+be saturated, a stalled Monero or Tor bootstrap must corroborate it, no other host operation may
+hold the lock, and the six-hour recovery cooldown applies. A refusal comes back as the gate's own
+sentence in the panel. The button also has its own 30-minute budget: a repeat inside it is
+rejected with the time left, so it cannot be pressed repeatedly. A successful reset restarts Tor
+and re-dials a running monerod.
 
 ## Backup view
 
