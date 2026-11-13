@@ -310,6 +310,22 @@ assert_stays "Monero recovery alone does not readmit while required Tari is down
 set_tari synced
 assert_state "readmitted after both required nodes recover" itest-xmrig-proxy running 90
 
+log "scenario 9b: P2Pool isolated past the grace rejects workers; recovery readmits"
+p2pool_stats() { docker exec itest-p2pool sh -c "mkdir -p /stats/local && printf '%s' '$1' > /stats/local/p2p"; }
+P2P_OK='{"connections":3,"incoming_connections":1,"peer_list_size":9,"uptime":900,"zmq_last_active":2}'
+P2P_ISOLATED='{"connections":0,"incoming_connections":0,"peer_list_size":0,"uptime":900,"zmq_last_active":2}'
+p2pool_stats "$P2P_OK"
+assert_stays "healthy P2Pool does not reject workers" itest-xmrig-proxy running 6
+p2pool_stats "$P2P_ISOLATED"
+sleep 3
+p2pool_stats "$P2P_OK"
+assert_stays "a P2Pool peer dip shorter than the grace does not reject workers" itest-xmrig-proxy running 10
+p2pool_stats "$P2P_ISOLATED"
+assert_state "rejected on P2Pool with no sidechain peers: itest-xmrig-proxy stopped" itest-xmrig-proxy exited 90
+p2pool_stats "$P2P_OK"
+assert_state "readmitted after P2Pool regains peers: itest-xmrig-proxy running" itest-xmrig-proxy running 90
+docker exec itest-p2pool rm -f /stats/local/p2p
+
 # 10. Dashboard restart after release → the one-way latch is persisted, so the miner is NOT
 #     re-held: both containers stay running across the restart. (#35 persistence)
 log "scenario 10: a dashboard restart does not re-hold a released miner"

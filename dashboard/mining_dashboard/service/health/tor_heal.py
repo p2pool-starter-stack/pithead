@@ -110,6 +110,10 @@ class TorEgressHealer(TorHistoryMixin):
                 COOLDOWN_SEC // 60,
             )
 
+    @property
+    def failing(self):
+        return self._failing_since is not None
+
     @staticmethod
     def _probe_egress() -> tuple[bool, str]:
         """Corroborate failures on separate SOCKS circuits and independent targets."""

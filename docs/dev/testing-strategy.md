@@ -229,6 +229,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 |---|---|---|
 | Local or remote monerod down → **reject workers** (stop `xmrig-proxy`) | unreachable ≥ `NODE_DOWN_AFTER_SEC` | 1 ✅ · 3 ▶ · 4 ▶ |
 | monerod busy / mid-reorg (HTTP 200, `status≠OK`) → **reject workers** | RPC answers but distrusted | 1 ✅ · 3 ▶ |
+| Invalid work (#4046) → **reject workers**: red Monero verdict, P2Pool with no sidechain peers or no ZMQ, failing Tor egress; a dip shorter than the grace stops nothing, and recovery readmits | `MiningGuard` (`MINING_GUARD_GRACE_SEC`, `P2POOL_ZMQ_STALE_SEC`) | 1 ✅ (`test_mining_guard.py`, `test_data_service_worker_rejection.py`) · 3 ▶ (mini-stack scenario 9b) |
 | Configured Tari RPC unreachable for 15 minutes, including after dashboard restart → rejects when required; optional Tari keeps mining Monero; alerts either way | `tari_down` | 1 ✅ · 3 ▶ |
 | Recovery hysteresis — readmit only after every required node stable `NODE_RECOVERY_AFTER_SEC` | reachable again | 1 ✅ |
 | Transient blip / never-reachable Monero → **no** false reject | debounce / `ever_up` | 1 ✅ |

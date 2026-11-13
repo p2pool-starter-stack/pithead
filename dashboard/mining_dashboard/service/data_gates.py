@@ -3,6 +3,11 @@ import os
 import stat
 
 from mining_dashboard.config.config import DISK_PATH
+from mining_dashboard.service.health.mining_guard import (
+    MINING_GUARD_GRACE_SEC,
+    monero_trigger,
+    p2pool_triggers,
+)
 
 logger = logging.getLogger("DataService")
 
@@ -65,28 +70,47 @@ class DataGateMixin:
         self.latest_data["miner_released"] = self.miner_released
         self.latest_data["sync_gate_monero_only"] = self.sync_gate_monero_only
 
+    def _update_mining_guard(self, monero_sync, p2pool_stats):
+        triggers = {
+            "monero_unhealthy": monero_trigger(monero_sync.get("health") or {}),
+            "tor_down": (
+                self.tor_healer.failing,
+                "Tor egress is failing",
+                MINING_GUARD_GRACE_SEC,
+            ),
+        }
+        triggers.update(p2pool_triggers(p2pool_stats.get("p2p") or {}))
+        self.mining_guard.update(triggers)
+
     async def _apply_worker_rejection(self, monero_down, tari_down=False):
-        """Stop the proxy on a debounced required-node outage; readmit only after
-        every required node is confirmed healthy. Tari is required by default;
-        opting out preserves Monero mining through a Tari-only outage.
+        """Stop the proxy on a debounced required-node outage or an invalid-work trigger from
+        the mining guard; readmit only after every trigger has cleared and every required node
+        is confirmed healthy. Tari is required by default; opting out preserves Monero mining
+        through a Tari-only outage.
 
         Act only on transitions. Failed Docker operations leave the flag unchanged
         so the next cycle retries; repeat operations are safe (HTTP 304).
         """
-        required_down = monero_down or (_runtime().TARI_REQUIRED and tari_down)
+        required_down = (
+            monero_down
+            or (_runtime().TARI_REQUIRED and tari_down)
+            or bool(self.mining_guard.active)
+        )
         if required_down:
             if not self.workers_rejected:
                 logger.warning(
-                    f"Required node unreachable — stopping {_runtime().REJECT_WORKERS_CONTAINER} so workers "
-                    f"fail over to their backup pools."
+                    f"Mining work is not valid ({(self.mining_guard.pause or {}).get('reason', 'required node unreachable')}) — "
+                    f"stopping {_runtime().REJECT_WORKERS_CONTAINER} so workers fail over to their backup pools."
                 )
                 if await self.docker_control.stop(_runtime().REJECT_WORKERS_CONTAINER):
                     self.workers_rejected = True
             return
 
         # Not-down is insufficient after a dashboard restart or during recovery.
-        recovered = self.monero_health.healthy and (
-            not _runtime().TARI_REQUIRED or self.tari_health.healthy
+        recovered = (
+            self.monero_health.healthy
+            and (not _runtime().TARI_REQUIRED or self.tari_health.healthy)
+            and not self.mining_guard.holding
         )
         if self.workers_rejected and recovered:
             logger.info(

@@ -146,3 +146,95 @@ class TestWorkerRejection:
                 now[0] = time
                 await svc._apply_worker_rejection(False, svc.tari_health.update(False))
                 assert svc.workers_rejected is rejected
+
+
+class TestMiningGuardRejection:
+    def _svc(self):
+        sm = MagicMock()
+        sm.load_snapshot.return_value = None
+        svc = DataService(sm, MagicMock(), MagicMock())
+        svc.docker_control = MagicMock()
+        svc.docker_control.stop = AsyncMock(return_value=True)
+        svc.docker_control.start = AsyncMock(return_value=True)
+        svc.tor_healer = MagicMock(failing=False)
+        svc.monero_health.healthy = svc.tari_health.healthy = True
+        return svc
+
+    @staticmethod
+    def _p2p(**kw):
+        return {"p2p": {"uptime": 900, "out_peers": 2, "in_peers": 0, "zmq_active": 3, **kw}}
+
+    def _cycle(self, svc, p2pool=None, health=None, tor=False):
+        svc.tor_healer.failing = tor
+        svc._update_mining_guard({"health": health or {"level": "green"}}, p2pool or self._p2p())
+        return svc._apply_worker_rejection(False, False)
+
+    async def test_healthy_node_never_rejects(self):
+        svc = self._svc()
+        await self._cycle(svc)
+        assert svc.workers_rejected is False
+        svc.docker_control.stop.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "kwargs,needle",
+        [
+            (
+                {"health": {"level": "red", "reasons": ["0 outgoing peers for 10 min"]}},
+                "0 outgoing peers",
+            ),
+            ({"p2pool": {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}}, "no sidechain"),
+            ({"p2pool": {"p2p": {"uptime": 9, "out_peers": 1, "zmq_active": 900}}}, "ZMQ"),
+        ],
+    )
+    async def test_invalid_work_stops_the_proxy_and_names_the_trigger(self, kwargs, needle):
+        svc = self._svc()
+        clock = [0]
+        svc.mining_guard._clock = lambda: clock[0]
+        await self._cycle(svc, **kwargs)
+        clock[0] = 10_000
+        await self._cycle(svc, **kwargs)
+        assert svc.workers_rejected is True
+        svc.docker_control.stop.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
+        assert needle in svc.mining_guard.pause["reason"]
+
+    async def test_p2pool_isolation_inside_grace_does_not_stop_the_proxy(self):
+        svc = self._svc()
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        await self._cycle(svc, p2pool=isolated)
+        assert svc.workers_rejected is False
+        svc.docker_control.stop.assert_not_called()
+
+    async def test_tor_failure_past_grace_stops_the_proxy(self):
+        svc = self._svc()
+        clock = [0]
+        svc.mining_guard._clock = lambda: clock[0]
+        await self._cycle(svc, tor=True)
+        assert svc.workers_rejected is False
+        clock[0] = 10_000
+        await self._cycle(svc, tor=True)
+        assert svc.workers_rejected is True
+        assert "Tor" in svc.mining_guard.pause["reason"]
+
+    async def test_readmits_only_after_every_trigger_clears_and_recovers(self):
+        svc = self._svc()
+        clock = [0]
+        svc.mining_guard._clock = lambda: clock[0]
+        zmq_stale = {"p2p": {"uptime": 9, "out_peers": 1, "zmq_active": 900}}
+        await self._cycle(svc, p2pool=zmq_stale)
+        assert svc.workers_rejected is True
+        for at in (10, 69):
+            clock[0] = at
+            await self._cycle(svc)
+            assert svc.workers_rejected is True
+        clock[0] = 70
+        await self._cycle(svc)
+        assert svc.workers_rejected is False
+        svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
+
+    async def test_a_relapse_inside_grace_blocks_readmission(self):
+        svc = self._svc()
+        svc.workers_rejected = True
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        await self._cycle(svc, p2pool=isolated)
+        assert svc.workers_rejected is True
+        svc.docker_control.start.assert_not_called()

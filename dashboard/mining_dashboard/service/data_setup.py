@@ -23,6 +23,7 @@ from mining_dashboard.service.data_helpers import (
     WorkerLifecycle,
 )
 from mining_dashboard.service.health.degradation import DegradationMonitor
+from mining_dashboard.service.health.mining_guard import MiningGuard
 from mining_dashboard.service.health.monero_health import MoneroChainHealth
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.health.tari_health import TariChainHealth
@@ -225,6 +226,7 @@ class DataSetupMixin:
         # True while we've stopped the proxy to reject workers. Persisted in the snapshot so
         # a dashboard restart mid-outage still readmits workers once the node recovers.
         self.workers_rejected = False
+        self.mining_guard = MiningGuard()
 
         # Hold the miner (p2pool + xmrig-proxy) until the required chain(s) finish syncing
         # (Issue #35). One-way latch: `miner_released` flips True the first time the gate is
