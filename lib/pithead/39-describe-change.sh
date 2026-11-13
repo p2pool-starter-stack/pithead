@@ -275,7 +275,7 @@ describe_change() {
         ;;
     TOR_AUTO_HEAL)
         if [ "$new" == "true" ]; then
-            msg="Tor egress self-heal ENABLED — when clearnet egress through Tor stays broken for 15 min, the dashboard tries two NEWNYM circuit refreshes, then a host-gated Tor state reset, then one container restart (max 4 actions per outage, 30-min cooldown; the reset and restart drop mining connections); the dashboard container is recreated."
+            msg="Tor egress self-heal ENABLED — when clearnet egress through Tor stays broken for 15 min, the dashboard tries two NEWNYM circuit refreshes, then a host-gated Tor state reset, then one container restart (max 4 actions per outage, 30-min cooldown; the restart drops mining connections, and the state reset restarts Tor too); the dashboard container is recreated."
         # The DIY fix names 'doctor' + a scoped tor restart, both CLI-only; the appliance has no
         # shell to run either from, and there is no dashboard control that restarts tor alone
         # (#1139) — so this side just states the fact instead of a remedy it cannot offer.
