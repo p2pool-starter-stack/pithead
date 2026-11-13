@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -6,6 +7,7 @@ import {
   draftNote,
   redactDraft,
   restoreDraft,
+  SECRET_PATHS,
   syncDraft,
 } from "../../../mining_dashboard/web/static/config/configdraft.mjs";
 import { ConfigView } from "../../../mining_dashboard/web/static/config/configview.mjs";
@@ -82,6 +84,56 @@ test("a typed secret inside invalid JSON is redacted too", () => {
   const out = redactDraft(broken, CFG);
   assert.doesNotMatch(out, /hunter2-plain/);
   assert.match(out, /"password": \{"__secret__": true\}/);
+});
+
+const LEAKS = [
+  ["a typed worker token", '{"workers":{"list":[{"token":"LEAK"}]}}'],
+  ["a typed worker api_token", '{"workers":{"list":[{"api_token":"LEAK"}]}}'],
+  ["a typed webhook", '{"notifications":{"webhooks":["https://hook.example/LEAK"]}}'],
+  ["a typed value for an unset secret", '{"monero":{"node_password":"LEAK"}}'],
+  ["a typed ntfy token", '{"notifications":{"ntfy":{"token":"LEAK"}}}'],
+  ["a typed view key", '{"tari":{"view_key":"LEAK"}}'],
+  ["an unterminated string", '{"monero":{"node_password":"LEAK'],
+  ["an unquoted value", '{"monero":{"node_password": LEAK, "x": 1}'],
+  ["an escaped key", '{"monero":{"node\\u005fpassword":"LEAK"}'],
+  ["a missing colon", '{"monero":{"node_password" "LEAK" }'],
+  ["a typed webhook in broken JSON", '{"notifications":{"webhooks":["LEAK", "b"],"x":'],
+  ["a typed worker token in broken JSON", '{"workers":{"list":[{"token": "LEAK"}, {'],
+  ["an unquoted key", "{monero: {node_password: LEAK}"],
+];
+for (const [name, text] of LEAKS) {
+  test(`redactDraft never keeps ${name}`, () => {
+    assert.doesNotMatch(redactDraft(text, CFG), /LEAK/);
+  });
+}
+
+test("redactDraft resets a typed secret to what the server sent: its marker, or empty when unset", () => {
+  const cfg = { dashboard: { auth: { password: { __secret__: true } } } };
+  const out = JSON.parse(
+    redactDraft('{"dashboard":{"auth":{"password":"new"}},"monero":{"node_password":"typed"}}', cfg),
+  );
+  assert.deepEqual(out.dashboard.auth.password, { __secret__: true });
+  assert.equal(out.monero.node_password, "");
+});
+
+test("redactDraft leaves same-named non-secret keys alone, even in broken JSON", () => {
+  assert.equal(
+    redactDraft('{"xvb":{"url":"na.example:4247"},"monero":{"source":"x"},"label":"password"', CFG),
+    '{"xvb":{"url":"na.example:4247"},"monero":{"source":"x"},"label":"password"',
+  );
+});
+
+test("the client's secret paths match the server's SECRET_PATHS", () => {
+  const source = readFileSync(
+    new URL("../../../mining_dashboard/service/control_service.py", import.meta.url),
+    "utf8",
+  );
+  const block = source.match(/^SECRET_PATHS = \[([\s\S]*?)^\]/m)[1];
+  const server = [...block.matchAll(/^\s*\(([^)]*)\),/gm)].map(([, tuple]) =>
+    [...tuple.matchAll(/"([^"]+)"/g)].map(([, key]) => key),
+  );
+  assert.ok(server.length > 5);
+  assert.deepEqual(SECRET_PATHS, server);
 });
 
 test("redactDraft keeps text untouched when no secret was replaced", () => {

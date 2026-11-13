@@ -1235,9 +1235,11 @@ shows the loading screen before its first state response, when no editor exists 
 draft is also kept in the tab's `sessionStorage`, so it survives a reload, automatic or manual: the
 reloaded editor shows the draft, the **Unsaved changes** marker and a line saying the draft was
 restored. An invalid-JSON draft is restored with its error. **Discard edits**, **Discard draft and
-reload from host** and a successful apply clear it; closing the tab drops it. The stored copy holds
-only the values the page already has masked: a secret you typed is replaced by its `__secret__`
-marker, so it must be typed again after a reload. The page cannot observe an HTTP authentication
+reload from host** and a successful apply clear it; closing the tab drops it. The stored copy never
+holds a secret you typed: every secret field the server masks (the API tokens and passwords, the
+Monero and Tari view keys, the ping, ntfy and standby URLs, the webhook list and each worker token)
+goes back to the value the page received, its `__secret__` marker or empty, so retype a new
+secret after a reload. The page cannot observe an HTTP authentication
 change, so a re-authenticated tab keeps its draft until it is reloaded
 ([#3323](https://github.com/p2pool-starter-stack/pithead/issues/3323) tracks a reset).
 

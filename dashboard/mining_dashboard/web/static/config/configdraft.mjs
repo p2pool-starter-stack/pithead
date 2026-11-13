@@ -9,40 +9,104 @@ import {
 export const DRAFT_KEY = "pitheadConfigDraft";
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
-function secretPaths(node, prefix = [], out = []) {
-  for (const [key, value] of Object.entries(node || {})) {
-    if (isSecretSentinel(value)) out.push([...prefix, key]);
-    else if (isObject(value)) secretPaths(value, [...prefix, key], out);
+export const SECRET_PATHS = [
+  ["dashboard", "auth", "password"],
+  ["telegram", "bot_token"],
+  ["workers", "api_token"],
+  ["monero", "node_username"],
+  ["monero", "node_password"],
+  ["monero", "view_key"],
+  ["tari", "view_key"],
+  ["p2pool", "stratum_password"],
+  ["healthchecks", "ping_url"],
+  ["notifications", "ntfy", "url"],
+  ["notifications", "ntfy", "token"],
+  ["xvb", "standby", "source"],
+];
+const WORKER_TOKENS = ["token", "api_token"];
+const SENTINEL_TEXT = '{"__secret__": true}';
+const TOKEN = /"(?:[^"\\\n]|\\.)*(?:"|$)|[{}[\]:,]|[^\s{}[\]:,"]+/gm;
+const isWord = (t) => !/^[{}[\]:,]$/.test(t);
+const decode = (t) => {
+  try {
+    return JSON.parse(t);
+  } catch {
+    return t.replace(/^"/, "").replace(/"$/, "");
   }
-  return out;
+};
+const secretKey = (name, parent) =>
+  [...SECRET_PATHS, ["workers", "list", "token"], ["workers", "list", "api_token"]].some(
+    (path) =>
+      path[path.length - 1] === name &&
+      (parent === undefined || parent === null || path[path.length - 2] === parent),
+  );
+
+function scrubText(text) {
+  const tokens = [...text.matchAll(TOKEN)];
+  const stack = [];
+  const edits = [];
+  let lastKey = null;
+  let hooks = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i][0];
+    const at = tokens[i].index;
+    if (t === "{" || t === "[") {
+      stack.push(lastKey);
+      if (t === "[" && lastKey === "webhooks") hooks = stack.length;
+    } else if (t === "}" || t === "]") {
+      if (stack.length === hooks) hooks = -1;
+      stack.pop();
+    } else if (isWord(t)) {
+      const next = tokens[i + 1]?.[0];
+      if (next === ":") lastKey = decode(t);
+      if (hooks === stack.length && next !== ":") {
+        edits.push([at, t.length, '""']);
+        continue;
+      }
+      if (!secretKey(decode(t), stack[stack.length - 1])) continue;
+      const j = next === ":" ? i + 2 : i + 1;
+      if (tokens[j] && isWord(tokens[j][0]))
+        edits.push([tokens[j].index, tokens[j][0].length, SENTINEL_TEXT]);
+    }
+  }
+  return edits.reduceRight(
+    (out, [at, length, value]) => out.slice(0, at) + value + out.slice(at + length),
+    text,
+  );
+}
+
+const keep = (fetched) => (isSecretSentinel(fetched) ? fetched : "");
+const typed = (v) => Boolean(v) && !isSecretSentinel(v);
+
+function scrubDocument(doc, cfg) {
+  let changed = false;
+  const reset = (parent, key, fetchedParent) => {
+    if (!parent || typeof parent !== "object" || !typed(parent[key])) return;
+    parent[key] = keep(fetchedParent?.[key]);
+    changed = true;
+  };
+  const at = (root, path) =>
+    path.reduce((node, key) => (isObject(node) ? node[key] : undefined), root);
+  for (const path of SECRET_PATHS)
+    reset(at(doc, path.slice(0, -1)), path[path.length - 1], at(cfg, path.slice(0, -1)));
+  const hooks = at(doc, ["notifications", "webhooks"]);
+  const fetchedHooks = at(cfg, ["notifications", "webhooks"]);
+  for (let i = 0; Array.isArray(hooks) && i < hooks.length; i++) reset(hooks, i, fetchedHooks);
+  const workers = at(doc, ["workers", "list"]);
+  const fetchedWorkers = at(cfg, ["workers", "list"]);
+  for (let i = 0; Array.isArray(workers) && i < workers.length; i++)
+    for (const key of WORKER_TOKENS) reset(workers[i], key, fetchedWorkers?.[i]);
+  return changed;
 }
 
 export function redactDraft(text, cfg) {
-  const paths = secretPaths(cfg);
   let doc;
   try {
     doc = JSON.parse(text);
   } catch {
-    return paths.reduce((out, path) => {
-      const leaf = path[path.length - 1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return out.replace(
-        new RegExp(`("${leaf}"\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`, "g"),
-        '$1{"__secret__": true}',
-      );
-    }, text);
+    return scrubText(text);
   }
-  let changed = false;
-  for (const path of paths) {
-    const parent = path
-      .slice(0, -1)
-      .reduce((node, key) => (isObject(node) ? node[key] : undefined), doc);
-    const leaf = path[path.length - 1];
-    if (isObject(parent) && leaf in parent && !isSecretSentinel(parent[leaf])) {
-      parent[leaf] = { __secret__: true };
-      changed = true;
-    }
-  }
-  return changed ? JSON.stringify(doc, null, 2) : text;
+  return scrubDocument(doc, cfg) ? JSON.stringify(doc, null, 2) : text;
 }
 
 export function syncDraft({ candidate, cfg, pristine, editText, drafts }, store) {

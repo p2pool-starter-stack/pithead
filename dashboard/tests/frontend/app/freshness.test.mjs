@@ -93,7 +93,7 @@ test('the guard blocks a second reload inside the window and allows it after', a
     assert.equal(t.reloads.length, 2);
 });
 
-test('unreadable or unwritable storage means no automatic reload, never a loop', () => {
+test('unreadable or unwritable storage still reloads, once per page', () => {
     const t = make();
     const broken = {
         getItem: () => { throw new Error('denied'); },
@@ -102,8 +102,23 @@ test('unreadable or unwritable storage means no automatic reload, never a loop',
     const f = createFreshness({ ...t.deps, store: broken });
     f.goodPoll('v1', false);
     f.goodPoll('v2', false);
+    f.goodPoll('v2', false);
     assert.equal(f.message(), UPDATED_MESSAGE);
-    assert.equal(t.reloads.length, 0);
+    assert.equal(t.reloads.length, 1);
+});
+
+test('a guard-blocked reportPageStale keeps polling and reloads when the window has passed', async () => {
+    let clock = 1e12;
+    const t = make({ responses: Array.from({ length: 200 }, () => true), session: { [GUARD_KEY]: String(clock - 1000) } });
+    const f = createFreshness({
+        ...t.deps,
+        now: () => clock,
+        sleep: async () => { clock += 10000; },
+    });
+    await f.reportPageStale();
+    assert.equal(t.reloads.length, 1);
+    assert.ok(t.polls.length > 5);
+    assert.ok(clock - 1e12 >= RELOAD_GUARD_MS - 1000);
 });
 
 test('the first version is remembered and a missing version never triggers', () => {

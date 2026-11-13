@@ -29,14 +29,25 @@ export function createFreshness({
     onChange();
   }
 
-  function attempt() {
-    if (reloaded || holds > 0) return;
+  function recentlyReloaded() {
     try {
-      if (now() - (Number(store.getItem(GUARD_KEY)) || 0) < RELOAD_GUARD_MS) return;
+      return now() - (Number(store.getItem(GUARD_KEY)) || 0) < RELOAD_GUARD_MS;
+    } catch {
+      return false;
+    }
+  }
+
+  function stamp() {
+    try {
       store.setItem(GUARD_KEY, String(now()));
     } catch {
       return;
     }
+  }
+
+  function attempt() {
+    if (reloaded || holds > 0 || recentlyReloaded()) return;
+    stamp();
     reloaded = true;
     reload();
   }
@@ -67,7 +78,7 @@ export function createFreshness({
         if (answered) {
           wanted = true;
           attempt();
-          return;
+          if (reloaded || holds > 0) return;
         }
         await sleep(RECONNECT_MS);
       }
