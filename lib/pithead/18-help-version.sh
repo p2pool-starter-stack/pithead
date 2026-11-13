@@ -154,6 +154,24 @@ Maintenance:
                               --reboot           reboot to finish the update once it is
                                                  installed (asks first unless -y is given).
 
+  rig-update check          Rig-side OS updater (rigs only). Starts Tor through the image's
+                            on-demand client, reads the hardened release channel, prints the
+                            running and available OS versions, stops Tor, installs nothing.
+
+  rig-update install [--tag T] [--max-version V]
+                            Downloads the signed bundle over Tor into /data (resumable,
+                            refused up front when /data lacks the room), verifies it against
+                            the baked release keyring with the same refusals as every other
+                            door (signature, compatible, variant, no downgrade, equal
+                            refused, /data migration floor), refuses while the other slot is
+                            uncommitted or an update is pending, then writes the spare slot
+                            and reboots. The intent and the post-boot verdict live in
+                            rig-update.json on /data. --tag names an exact vX.Y.Z release;
+                            --max-version is a semantic ceiling the target must not exceed.
+                            Every refusal keeps the rig mining and names its reason in that
+                            status file; the bundle and its partial are deleted on every
+                            outcome.
+
   onion-client-key          Print the Tor client-auth line for the dashboard onion —
                             the client PRIVATE key, kept out of 'status'. Add it to your Tor
                             client's ClientOnionAuthDir to reach a client-auth'd onion.

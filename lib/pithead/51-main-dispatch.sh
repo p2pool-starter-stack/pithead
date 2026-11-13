@@ -147,6 +147,7 @@ main() {
         provision_local_miner
         ;;
     os-update) os_update "$@" ;;
+    rig-update) rig_update "$@" ;;
     control-run-pending)
         _reject_options control-run-pending "$@"
         require_deployed
