@@ -384,3 +384,8 @@ test("saturated Tor history is a failing Tor diagnostic with the operator recove
   assert.match(out, /pithead tor-recover check/);
   assert.match(out, /pithead tor-recover apply/);
 });
+
+test("the enabled card carries the class that styles its controls as buttons", () => {
+  const out = renderToString(new DiagnosticsPanel({ enabled: true }).render());
+  assert.match(out, /^<div class="card diag-card">/);
+});
