@@ -14,8 +14,10 @@ The battery is defined in [appliance-release.md](../../appliance-release.md). Th
 proves the [wizard](../README.md#glossary)'s rig card, role select, a submit toward a faked pool listener, volatile
 journald, a plain reboot, a power cut, and the A/B update leg; its share leg (#2063,
 `tests/os/rig-share-leg.sh`) boots a second guest as a remote-node coordinator and proves an
-accepted share on the appliance channel both ways. Each row below says what is automated and what
-a hand must still do. M14 (run-from-USB) no longer needs a hand-run: the
+accepted share on the appliance channel both ways, and since #3996 asserts a nonzero hashrate floor
+on the rig's own feed and fails a release job whose promised input went missing
+(`--require-complete`), while #3994 added the dashboard adoption and config push. Each row below
+says what is automated and what a hand must still do. M14 (run-from-USB) no longer needs a hand-run: the
 `rigmedia` KVM phase (`tests/os/phases/rigmedia.sh`, #2069) covers it — see its row below for what
 it proves and what it still leaves out.
 
@@ -37,13 +39,20 @@ it proves and what it still leaves out.
 - `doctor` on the rig reports MSR applied and hugepages reserved.
 - Hashrate sits within the box's recorded baseline band.
 
-*Covered by: the accepted-share check, automated as the `rig` phase's share leg (#2063,
-`tests/os/rig-share-leg.sh`) — the phase boots a second guest as a remote-node coordinator,
-re-points the already-proven rig at it, and reads the coordinator's own `/api/state` until the
-rig's worker and the coordinator's built-in miner each report an accepted share. Stays manual:
-`doctor` on real hardware reporting MSR applied and hugepages reserved (a KVM guest cannot take
-RandomX MSR writes), hashrate inside the box's recorded baseline band, and the rig card itself on
-a real loaner.*
+*Automated (partially, #2063 + #3996): the `rig` phase's share leg (`tests/os/rig-share-leg.sh`)
+re-points the already-proven rig guest at a coordinator guest the battery itself boots, asserts a
+nonzero hashrate on the rig's own RigForge feed (the M11 floor), and fails unless the rig's worker
+AND the coordinator's built-in miner both show an accepted share — the release rig/rigmedia/media
+split is submitted with `--require-complete` (`docs/dev/releasing.md`), so that leg can no longer
+pass as a skip there. Stays manual: the physical half (flash the
+stick, firmware-boot the loaner and read its rig card, real `pithead.local` discovery), the
+`doctor` MSR check — a KVM guest's `/dev/cpu/*/msr` is the guest's virtual MSRs, so a write there
+proves the path works but moves nothing a virtual CPU can measure, and the RandomX MSR hashrate
+effect is a physical-CPU fact — and the baseline-band reading itself. Hugepages: the boot sizer
+(`os/overlay/pithead-hugepages`) sizes the reservation off the guest's RAM (full 3072 pages on the
+16 GiB guest) and the xmrig unit is fenced from re-growing it
+(`os/overlay/pithead-xmrig-hugepages.conf`), but a guest-side reservation cannot show the pool is
+physically backed, so the `doctor` line here stays hardware-only too.*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -60,11 +69,16 @@ a real loaner.*
 - The change reaches `applied`.
 - No pool credential was touched.
 
-*Manual on `develop`. The check exists — #3717's adopt leg (`rig_adopt_leg`, run in the `rig`
-phase after the share row) adopts a worker from the coordinator's dashboard, pushes one writable
-change to `applied`, and checks pool credentials are untouched — but it merged only to
-`develop-v2.1.0`, so no KVM row on this branch exercises it. #3994 backports it for 2.0.x; until
-that lands, a rig serving no dashboard of its own means this stays a hand-run row.*
+*Automated by `rig_adopt_leg` in `tests/os/rig-adopt-leg.sh` — #3717's leg, merged only to
+`develop-v2.1.0` and backported to this branch by #3994 — called at the end of `rig_share_leg`
+after the accepted-share rows. It uses the existing two guests, enables the coordinator control
+channel, previews and commits an adoption with typed `APPLY`, and polls for an adopted worker with
+a reachable API. Worker descriptors reload on each poll; adoption does not require a separate
+dashboard restart. The leg changes `DONATION`, waits for the matching `change_id` in worker history
+to reach `applied`, checks the rig's own config and unchanged pools, restores the original effective
+value (read from the rig's reported config when the raw key is absent), and checks that the unpinned
+bench host still cannot reach the control port. It prints elapsed seconds without the card token.
+The form and inspector clicks remain manual.*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
