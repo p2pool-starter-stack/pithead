@@ -280,7 +280,7 @@ export class DiagnosticsPanel extends Component {
     const groups = groupDoctorRows(haveReport ? healthResult.doctor : null);
     const reportRows = haveReport ? doctorRows(healthResult.doctor) : [];
     const summary = haveReport ? doctorSummary(healthResult.doctor) : null;
-    return html`<div class="card">
+    return html`<div class="card diag-card">
       <h2>Service diagnostics</h2>
       <p>Run the host's read-only health check once. Every service and the machine checks appear
       below; open a service's recent log only when you need it.</p>
