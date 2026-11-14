@@ -1029,6 +1029,24 @@ restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the fin
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
 
+**P2Pool has no peers.** P2Pool can log `no connections to other p2pool nodes` for hours while
+monerod and Tor look healthy; it then mines a private sidechain and its shares never reach the
+pool (#4077). The dashboard restarts P2Pool by itself, with no opt-in and no setting to tune. The
+bounds are fixed:
+
+- **Trigger:** the dashboard reads zero outgoing and zero incoming P2Pool connections continuously
+  for 15 minutes. A stats file it cannot read or that stopped updating, a stopped or restarting `p2pool` container (the
+  sync gate holds it stopped while the node syncs) and a box with no local `p2pool` container are
+  never a trigger.
+- **Recovery is the sidechain tip, not the container.** After a restart the outage stays open until
+  peers are back and the sidechain height then advances. A real rejoin took about 16 minutes (#4045), so the
+  next restart waits 20 minutes, then 40, then 80 if P2Pool is still peerless.
+- **Cap:** at most 3 automatic restarts in any 24 hours. After the third, the dashboard logs
+  `No more automatic action` once and stops until a restart ages out or the tip resumes; restart
+  by hand with `./pithead restart p2pool`.
+- **Trail:** every restart logs a `P2PoolHeal` warning in the dashboard log and writes a
+  `p2pool-heal` row (action `restart`, status `applied` or `unconfirmed`) to the audit log.
+
 **Monero node isolated or not advancing.**
 A local monerod can keep `synchronized: true` and a green RPC healthcheck while it has no outgoing
 peers, or while its tip stops moving because every peer sits on the same stale block (#2499). The
