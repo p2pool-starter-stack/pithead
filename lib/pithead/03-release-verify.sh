@@ -117,11 +117,8 @@ verify_release_images() {
             # prints via `echo -e`, so an attacker-controlled registry response could otherwise
             # inject ANSI escapes into the operator's terminal (#376 review).
             said=$(printf '%s' "$out" | tr -d '[:cntrl:]' | tail -c 300)
-            # #2735: cosign exits 1 for an unreachable registry too, and calling that a key mismatch
-            # sent the operator hunting a tampered image. Match Go's own dial errors only, and never
-            # vouch for the image: the text rides the same untrusted channel as the note above.
             case "$out" in
-            *"dial tcp "*": connect: "* | *"dial tcp "*": i/o timeout"* | *"dial tcp: lookup "*)
+            *"dial tcp "*": connect: "* | *"dial tcp "*": i/o timeout"* | *"dial tcp: lookup "* | *"read tcp "*": i/o timeout"* | *"read tcp "*": read: connection reset by peer"* | *"read tcp "*": read: connection timed out"*)
                 error "Signature verification could not complete for $image — cosign reports a network error reaching the registry, so the image is UNVERIFIED; refusing to pull or restart, nothing was changed. Check this machine's network path to the registry and retry. cosign said: $said"
                 ;;
             esac
