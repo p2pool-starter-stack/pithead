@@ -37,12 +37,14 @@ fail() {
     side=$(git rev-parse HEAD)
     git checkout -q candidate
     migration_old_commit_valid "$old" && migration_old_commit_valid "$base" || fail 'merged old source rejected'
+    [ "$MIGRATION_BASE_REF" = refs/remotes/origin/develop ] && [ "$MIGRATION_BASE_COMMIT" = "$base" ] || fail 'remote base identity not retained'
     for invalid in "$candidate" "$side" "${old:0:12}" "$(printf '%040d' 1)"; do
         if migration_old_commit_valid "$invalid" 2>/dev/null; then fail 'unmerged, PR or malformed source accepted'; fi
     done
-    [ "$MIGRATION_BASE_REF" = origin/develop ] && [ "$MIGRATION_BASE_COMMIT" = "$base" ] || fail 'remote base identity not retained'
     git update-ref refs/remotes/origin/develop "$old"
-    if migration_old_commit_valid "$base" 2>/dev/null; then fail 'local base overrode valid remote base'; fi
+    migration_old_commit_valid "$base" || fail 'rewound remote-tracking ref hid a merged local base'
+    [ "$MIGRATION_BASE_REF" = refs/heads/develop ] && [ "$MIGRATION_BASE_COMMIT" = "$base" ] || fail 'local base identity not retained'
+    git update-ref refs/remotes/origin/develop "$base"
     git update-ref -d refs/remotes/origin/develop
     migration_old_commit_valid "$base" || fail 'mirror local base rejected'
     [ "$MIGRATION_BASE_REF" = refs/heads/develop ] && [ "$MIGRATION_BASE_COMMIT" = "$base" ] || fail 'mirror base identity not retained'
@@ -55,6 +57,47 @@ fail() {
     git update-ref -d refs/heads/develop
     if migration_old_commit_valid "$old" 2>/dev/null; then fail 'missing develop reference accepted'; fi
     git update-ref refs/remotes/origin/develop "$base"
+)
+# A develop-v* release-line PR takes its baseline from that line; PR commits still refuse.
+(
+    mkdir "$T/line"
+    cd "$T/line"
+    git init -q --initial-branch=develop
+    git config user.name fixture
+    git config user.email fixture@example.invalid
+    echo shared >file
+    git add file
+    GIT_COMMITTER_DATE=1700000000 git commit -qm shared
+    shared=$(git rev-parse HEAD)
+    echo develop >file
+    GIT_COMMITTER_DATE=1700000100 git commit -qam develop
+    develop=$(git rev-parse HEAD)
+    git update-ref refs/remotes/origin/develop "$develop"
+    git checkout -qb develop-v2.1.0 "$shared"
+    echo line >file
+    GIT_COMMITTER_DATE=1700000200 git commit -qam line
+    line=$(git rev-parse HEAD)
+    git update-ref refs/heads/develop-v2.1.0 "$line"
+    git update-ref refs/remotes/origin/develop-v2.1.0 "$line"
+    git checkout -qb candidate "$line"
+    echo candidate >file
+    GIT_COMMITTER_DATE=1700000300 git commit -qam candidate
+    candidate=$(git rev-parse HEAD)
+    migration_old_commit_valid "$line" || fail 'release-line baseline rejected on a develop-v* candidate'
+    [ "$MIGRATION_BASE_REF" = refs/remotes/origin/develop-v2.1.0 ] &&
+        [ "$MIGRATION_BASE_COMMIT" = "$line" ] || fail 'release-line base identity not retained'
+    git update-ref -d refs/remotes/origin/develop-v2.1.0
+    migration_old_commit_valid "$line" || fail 'mirror release-line baseline rejected'
+    [ "$MIGRATION_BASE_REF" = refs/heads/develop-v2.1.0 ] || fail 'mirror release-line base identity not retained'
+    git update-ref refs/remotes/origin/develop-v2.1.0 "$line"
+    migration_old_commit_valid "$shared" || fail 'shared ancestor rejected'
+    [ "$MIGRATION_BASE_REF" = refs/remotes/origin/develop-v2.1.0 ] ||
+        fail 'shared baseline did not prefer the candidate release line'
+    migration_old_commit_valid "$develop" || fail 'develop-only baseline rejected'
+    [ "$MIGRATION_BASE_REF" = refs/remotes/origin/develop ] || fail 'develop-only base identity not retained'
+    for invalid in "$candidate" "${candidate:0:39}0"; do
+        if migration_old_commit_valid "$invalid" 2>/dev/null; then fail 'release-line PR or malformed source accepted'; fi
+    done
 )
 # Refuse an invalid selected source before the old guest's provisioning or seed.
 (
