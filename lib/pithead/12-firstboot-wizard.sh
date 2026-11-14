@@ -113,7 +113,7 @@ firstboot_wizard() {
         warn "Booted from removable media with no internal disk to install onto."
         warn "Running the stack from a USB stick is unsupported — it is too slow for the chain and the stick will wear out."
     fi
-    load_baked_images "$image"
+    PITHEAD_LOAD_ONLY="dashboard caddy" load_baked_images "$image"
     local cert_fp=""
 
     # shellcheck disable=SC2064

@@ -254,11 +254,27 @@ attacker can't substitute what you receive.
 |---|---|---|
 | Source clone / release bundle | `github.com` | install / update (`git checkout vX.Y.Z` or downloading the release bundle) |
 | Component binaries (monerod / p2pool / xmrig-proxy) | `downloads.getmonero.org`, `github.com` | **image build only** — verified against a published **SHA256** / checksum. A release install *pulls* prebuilt images instead, so it never runs these. |
-| Container images | **`ghcr.io`** (the `pithead-*` images, #44), `quay.io` (Tari), Docker Hub (caddy, socket-proxy) | image **pull** on a release install / `pithead upgrade`, or build from source. All pinned by **`@sha256:` digest** (#135). |
+| Container images | **`ghcr.io`** (the `pithead-*` images, #44), `quay.io` (Tari), Docker Hub (caddy, socket-proxy) | image **pull** on a Compose release install, or build from source. All pinned by **`@sha256:` digest** (#135). The Pithead OS appliance pulls none of the always-on images; see below. |
 
 Mitigation: run the install/build behind a VPN or with `torsocks`, or pre-pull the images and clone
 on another machine and copy them over. The downloads are pinned (SHA256 + image digests), so the
 risk is the one-time IP disclosure, not tampering.
+
+**The appliance bakes the always-on images (#978).** Tor exists only inside the `pithead-tor`
+image, so a pull during provisioning would be a clearnet request that Tor could not route: your
+ISP would see the lookup and TLS handshake for `ghcr.io`, and GitHub would see your address
+asking for the Monero, P2Pool and XMRig-proxy images. The appliance image therefore carries tor,
+monero, p2pool, xmrig-proxy, the dashboard, caddy and the docker-socket-proxy, each pinned by
+digest, and first boot loads them from disk. A release build also checks the signature of every first-party image it takes from the
+registry, and a startup check skips the registry only for an image whose
+pinned digest is already on the machine. Before Tor is up
+the machine's only network traffic is DHCP and DNS from your router, time synchronization, and the
+clock check against `www.debian.org` that Tor needs before it can build circuits; none of it
+names Pithead. After Tor is up, release metadata, upgrade bundles and OS updates all go through
+Tor.
+
+The Tari images (`quay.io`) are **not** baked: Tari is opt-in, and turning it on is a choice to
+fetch its images. Run Tari only when you accept that one-time clearnet fetch, or leave it off.
 
 ---
 
