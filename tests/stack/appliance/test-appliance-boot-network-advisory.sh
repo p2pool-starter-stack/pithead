@@ -35,6 +35,28 @@ assert_eq "a failing docker inspect is down, never a guess" \
     "$(BNV_PS='torcid
 ' BNV_INSPECT='' _bnv_verdict)" "down"
 
+echo "== unit: a failed up with tor wedged reaches the gate window instead of spending the fallback (#4049) =="
+_bnv_up_failed() {
+    (
+        # shellcheck disable=SC1090
+        source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+        _v=$1
+        gate_tor_transport_verdict() { printf '%s\n' "$_v"; }
+        fail_boot() { echo "fail_boot:$1"; exit 0; }
+        fail_boot_contended() { echo "contended:$1"; exit 0; }
+        boot_up_failed "$2"
+        echo continues
+    )
+}
+assert_eq "up failed on 'dependency tor is unhealthy' (wedged): the boot goes on to the gate window" \
+    "$(_bnv_up_failed wedged 1)" "continues"
+assert_contains "up failed with tor down: the slot is at fault and fail_boot still fires" \
+    "$(_bnv_up_failed down 1)" "fail_boot:the stack could not be brought up"
+assert_contains "up failed with tor up: the slot is at fault and fail_boot still fires" \
+    "$(_bnv_up_failed up 1)" "fail_boot:the stack could not be brought up"
+assert_contains "a lock timeout stays contention even while wedged" \
+    "$(_bnv_up_failed wedged 75)" "contended:the stack could not be brought up"
+
 echo "== unit: gate_blocked_only_by_network commits only on faults the previous version carries too (#4049) =="
 BNV_BRANCH_CHAINM="Monero node is NOT following the chain; mining sits on a stale tip: 0 outgoing peers in 10 min — next: check the network"
 BNV_BRANCH_SAT="Tor's circuit-build-time history is saturated and clearnet egress is down. When auto-heal is enabled, its final step requests host-gated state recovery."
