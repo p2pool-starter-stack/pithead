@@ -10,6 +10,7 @@
 // its fixed allowlist. Preact interpolation is the final output-escaping boundary in the browser.
 
 import { Component, html } from "../app/preact.mjs";
+import { controlFetch, staleError } from "../config/controlclient.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const DIAG_POLL_MS = 2000;
@@ -68,24 +69,15 @@ export class DiagnosticWaitTimeout extends Error {
   }
 }
 
-// Diagnostics do not write an intermediate `running` result: HTTP 202 means only that no durable
-// result exists yet. Keep that uncertainty instead of borrowing the upgrade flow's version copy or
-// calling the runner wedged from elapsed time alone.
 export async function runDiag(path, body, label = "the diagnostics request", max = DIAG_POLL_MAX) {
-  let res;
-  try {
-    res = await fetch(`/api/control/${path}`, {
-      method: "POST",
-      headers: CONTROL_HEADERS,
-      body: JSON.stringify(body || {}),
-    });
-  } catch {
-    throw new Error(
-      `Could not submit ${label}: the dashboard could not reach the control service.`,
-    );
-  }
+  const res = await controlFetch(`/api/control/${path}`, {
+    method: "POST",
+    headers: CONTROL_HEADERS,
+    body: JSON.stringify(body || {}),
+  });
+  if (res.status === 401 || res.status === 403) throw staleError();
   if (!res.ok && res.status !== 202)
-    throw new Error(`Could not submit ${label}: HTTP ${res.status}`);
+    throw new Error(`Could not submit ${label}: ${(await res.text()) || `HTTP ${res.status}`}`);
   let id;
   try {
     ({ id } = await res.json());
@@ -103,6 +95,7 @@ export async function runDiag(path, body, label = "the diagnostics request", max
       continue;
     }
     if (result.status === 202 || [502, 503, 504].includes(result.status)) continue;
+    if (result.status === 401 || result.status === 403) throw staleError();
     if (!result.ok) throw new Error(`Could not read ${label}: HTTP ${result.status}`);
     try {
       return await result.json();

@@ -21,6 +21,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   error, show the server's text for other failures, and a plain-text error no longer surfaces as a
   JSON `SyntaxError` (#4058). An unsaved Configuration draft survives the reload in the tab's
   `sessionStorage`, without any secret you typed (#4060).
+- Rig upgrade, Adopt rig, Backup, the onion client-key request and the service diagnostics show the
+  same stale-page message and reload instead of `HTTP 401`, `HTTP 403` or a browser network error, and
+  show the server's text for other failures (#4059).
 - Tor's `MaxClientCircuitsPending` is raised to 64 and `monero.out_peers` now defaults to 24 (was 48),
   so monerod, Tari and P2Pool onion dials no longer sit at Tor's pending-circuit ceiling right after
   boot. A `config.json` without `monero.out_peers` re-renders at 24 on the next apply; an explicit value

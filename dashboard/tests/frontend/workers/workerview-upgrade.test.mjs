@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RigUpgrade } from "../../../mining_dashboard/web/static/workers/workerupgrade.mjs";
+import { pollWorkerResult, RigUpgrade } from "../../../mining_dashboard/web/static/workers/workerupgrade.mjs";
 import { StatsTable } from "../../../mining_dashboard/web/static/workers/workerview.mjs";
 import { contrastRatio, DARK_BLOCK, DASHBOARD_CSS, LIGHT_BLOCK, themeToken } from "../helpers/contrast.mjs";
 import { renderToString } from "../helpers/render.mjs";
+import { installStaleProbe, reply, STALE, withFetch } from "../helpers/stalepage.mjs";
 import { DETAIL, SENTINEL, readyInstance, stubSetState } from "./workerview-helpers.mjs";
 
 // --- One-click rig upgrade (#597) -------------------------------------------------------------
@@ -64,7 +65,7 @@ test("upgrade() POSTs {worker, version} and renders the terminal result (#597)",
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {
     posted = { url, body: JSON.parse(opts.body) };
-    return { status: 200, json: async () => ({ status: "noop", note: "already on v1.11.2" }) };
+    return { status: 200, ok: true, json: async () => ({ status: "noop", note: "already on v1.11.2" }) };
   };
   try {
     await inst.upgrade();
@@ -183,6 +184,7 @@ test("RigUpgrade keeps a rejected result line after onDone (#3947)", async () =>
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
     status: 200,
+    ok: true,
     json: async () => ({ status: "rejected", error: "run ./pithead restart tor" }),
   });
   let seen = null;
@@ -275,3 +277,44 @@ test("table mode prefills from the rig's own config and labels every other case 
   assert.doesNotMatch(out, /the rig's live feed doesn't expose these values/); // stale claim, #1235
   assert.match(out, /Prefilled with what the rig is running now/);
 });
+
+const shown = async (fn) => {
+  try {
+    await fn();
+  } catch (e) {
+    return String((e && e.message) || e);
+  }
+  assert.fail("expected a rejection");
+};
+
+const FAILURES = [
+  ["401 with body text", async () => reply(401, "login required"), STALE, 1],
+  ["403", async () => reply(403), STALE, 1],
+  ["a network rejection", async () => Promise.reject(new TypeError("Failed to fetch")), STALE, 1],
+  ["a plain-text 500", async () => reply(500, "control spool is full"), "control spool is full", 0],
+];
+
+for (const [name, stub, text, reloads] of FAILURES) {
+  test(`upgrade(): ${name} shows ${JSON.stringify(text)}`, async () => {
+    const probe = installStaleProbe();
+    const inst = upgradeInstance();
+    await withFetch(stub, () => inst.upgrade());
+    await probe.settle();
+    assert.equal(inst.state.upgResult.status, "error");
+    assert.equal(inst.state.upgResult.error, text);
+    assert.equal(probe.reloads.length, reloads);
+  });
+}
+
+for (const [name, stub, text, reloads] of [
+  ["401", async () => reply(401, "login required"), STALE, 1],
+  ["a plain-text 500", async () => reply(500, "control spool is full"), "control spool is full", 0],
+]) {
+  test(`pollWorkerResult: ${name} on the result read shows ${JSON.stringify(text)}`, async () => {
+    const probe = installStaleProbe();
+    const out = await withFetch(stub, () => pollWorkerResult("r-1"));
+    await probe.settle();
+    assert.equal(out.error, text);
+    assert.equal(probe.reloads.length, reloads);
+  });
+}
