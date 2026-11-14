@@ -92,6 +92,8 @@ _update_wedged_tor_reboot_leg() {
         ok "leg 6: the dashboard serves through the wedge"
     else
         bad "leg 6: the dashboard never served v2 through the wedge"
+        curl -sk -m 5 -o /dev/null -w "host http %{http_code} %{errormsg}\n" "https://${ip:-}/static/os-test-marker.txt" 2>&1 | sed 's/^/dashboard diag: /'
+        _ssh "cd /data/pithead && curl -sk -m 5 -o /dev/null -w 'marker http %{http_code}\n' https://localhost/static/os-test-marker.txt; docker ps -a --format '{{.Names}} {{.Status}}'; docker logs --tail 25 dashboard 2>&1; docker logs --tail 10 caddy 2>&1" 2>&1 | sed 's/^/dashboard diag: /'
     fi
     if _ssh "test ! -e /data/pithead/.boot-gate-failures"; then
         ok "leg 6: the boot-failure counter stayed clear, so a later real fault still gets its one reboot"
@@ -200,6 +202,8 @@ _update_wedged_tor_update_leg() {
         ok "leg 7: the dashboard of the committed update serves through the wedge"
     else
         bad "leg 7: the dashboard never served v3wedge through the wedge"
+        curl -sk -m 5 -o /dev/null -w "host http %{http_code} %{errormsg}\n" "https://${ip:-}/static/os-test-marker.txt" 2>&1 | sed 's/^/dashboard diag: /'
+        _ssh "cd /data/pithead && curl -sk -m 5 -o /dev/null -w 'marker http %{http_code}\n' https://localhost/static/os-test-marker.txt; docker ps -a --format '{{.Names}} {{.Status}}'; docker logs --tail 25 dashboard 2>&1; docker logs --tail 10 caddy 2>&1" 2>&1 | sed 's/^/dashboard diag: /'
     fi
     marker=$(SSH_TIMEOUT=20 _ssh cat /etc/pithead-test-marker 2>/dev/null)
     [ "$marker" = "v3wedge" ] && ok "leg 7: still v3wedge at the end of the window — the update kept its slot" ||
