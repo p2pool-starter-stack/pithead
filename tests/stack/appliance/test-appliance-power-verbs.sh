@@ -28,7 +28,10 @@ EOT
 cat >"$PWC/bin/docker" <<'EOT'
 #!/usr/bin/env bash
 echo "[docker] $*" >>"${PW_ORDER_LOG:?}"
-[ "${PW_STOP_FAIL:-}" != 1 ] || [ "$*" != "compose stop" ]
+case "$*" in
+"compose stop") [ "${PW_STOP_FAIL:-}" != 1 ] ;;
+"compose ps -q --status running") [ "${PW_STILL_RUNNING:-}" != 1 ] || echo abc123 ;;
+esac
 EOT
 chmod +x "$PWC/bin/systemctl" "$PWC/bin/docker"
 pwrun() { # [env pairs...] — drain the spool inside the appliance sandbox
@@ -209,9 +212,15 @@ assert_contains "the failed audit line is written" "$(cat "$PWAUDIT")" '"action"
 pwreset
 
 pwintent "$UP1" power-shutdown SHUTDOWN
-pwrun PW_STOP_FAIL=1 >/dev/null
+pwrun PW_STOP_FAIL=1 PW_STILL_RUNNING=1 >/dev/null
 assert_eq "a stack that will not stop writes a failed result" "$(pwstatus "$UP1")" "failed"
-assert_eq "no power command after a failed stack stop" "$(pwpower)" "0"
+assert_eq "no power command while containers still run" "$(pwpower)" "0"
+pwreset
+
+pwintent "$UP1" power-shutdown SHUTDOWN
+pwrun PW_STOP_FAIL=1 >/dev/null
+assert_eq "a stop error with every container exited still powers off" "$(pwstatus "$UP1")" "shutting-down"
+assert_eq "the power command was ordered after the stop error" "$(pwpower)" "1"
 
 unset -f pwrun pwintent pwstatus pwerror pwpower pwreset
 rm -rf "$PWC"

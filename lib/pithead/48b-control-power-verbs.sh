@@ -45,8 +45,10 @@ control_power_stop_stack() { # <action>
     log "Stopping the stack before $1..."
     out=$(timeout "${CONTROL_POWER_STOP_TIMEOUT_S:-300}" docker compose stop 2>&1) || rc=$?
     if [ "$rc" -ne 0 ]; then
-        warn "Stack stop before $1 failed (exit $rc): $(printf '%s' "$out" | tail -n 5 | tr '\n' ' ' | cut -c1-400)"
-        return 1
+        warn "Stack stop before $1 reported an error (exit $rc): $(printf '%s' "$out" | tail -n 5 | tr '\n' ' ' | cut -c1-400)"
+        local running
+        running=$(timeout 60 docker compose ps -q --status running 2>/dev/null) || return 1
+        [ -z "$running" ] || return 1
     fi
     log "Stack stopped before $1."
 }
