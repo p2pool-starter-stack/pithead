@@ -27,17 +27,7 @@ peers() {
 heal_lines() {
     docker logs -t --since "$epoch" dashboard 2>&1 | grep 'P2Pool has had no peers for' || true
 }
-stage=wait-p2pool-running
-for ((attempt = 0; attempt < 60; attempt++)); do
-    running && break
-    sleep 10
-done
-running
-stage=peerless-precondition
-stats=$(find /data -path '*/stats/local/p2p' -type f 2>/dev/null | head -n 1)
-if [ -z "$stats" ] || [ "$(jq -r '.uptime // 0' "$stats")" -le 0 ] || [ "$(peers)" -gt 0 ]; then
-    stage=control-path
-    before=$(started_at)
+control_path_restart() {
     docker exec -i dashboard python3 - <<'PY'
 import asyncio
 
@@ -67,11 +57,27 @@ async def main():
 
 asyncio.run(main())
 PY
+}
+stage=peerless-precondition
+stats=$(find /data -path '*/stats/local/p2p' -type f 2>/dev/null | head -n 1)
+if [ -z "$stats" ] || [ "$(jq -r '.uptime // 0' "$stats")" -le 0 ] || [ "$(peers)" -gt 0 ]; then
+    stage=control-path
+    before=$(started_at)
+    for ((attempt = 0; attempt < 3; attempt++)); do
+        running || docker start p2pool >/dev/null
+        control_path_restart
+        [ "$(started_at)" != "$before" ] && break
+    done
     [ "$(started_at)" != "$before" ]
-    running
     echo 'PASS: the dashboard healer restarts the guest P2Pool through the appliance container control path (#4077)'
     exit 0
 fi
+stage=wait-p2pool-running
+for ((attempt = 0; attempt < 60; attempt++)); do
+    running && break
+    sleep 10
+done
+running
 first_start=$(started_at)
 stage=observe-restart
 deadline=$((epoch + 50 * 60))
