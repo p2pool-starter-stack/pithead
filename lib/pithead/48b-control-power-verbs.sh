@@ -1,10 +1,13 @@
 control_power_inflight_result() { # <control-dir> — rc 0 = an OS check or power result is still in flight
-    local f
+    local f window up
+    window=5
+    up=$(awk '{print int($1 / 60)}' /proc/uptime 2>/dev/null) || up=""
+    [[ "$up" =~ ^[0-9]+$ ]] && [ "$up" -lt "$window" ] && window=$((up > 0 ? up : 1))
     while IFS= read -r f; do
         case "$(jq -r '.status // ""' "$f" 2>/dev/null || true)" in
         checking | rebooting | shutting-down) return 0 ;;
         esac
-    done < <(find "$1/results" -maxdepth 1 -type f -name '*.json' -mmin -5 2>/dev/null)
+    done < <(find "$1/results" -maxdepth 1 -type f -name '*.json' -mmin -"$window" 2>/dev/null)
     return 1
 }
 
