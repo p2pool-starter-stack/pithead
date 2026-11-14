@@ -143,9 +143,6 @@ control_process_request() { # <claimed-file> <control-dir>
     diag-logs) control_diag_logs "$file" "$id" "$actor" "$cdir" ;;
     svc-restart) control_svc_restart "$file" "$id" "$actor" "$cdir" ;;
     support-bundle) control_support_bundle "$file" "$id" "$actor" "$cdir" ;;
-    # Also read-only, and the one that hands back a SECRET rather than a report (#1882): the Tor
-    # client-auth line without which a client-auth'd dashboard onion cannot be opened at all. It is
-    # a one-time kit with the backup kit's TTL and redaction, and every reveal lands in audit/.
     onion-client-key) control_onion_client_key "$id" "$actor" "$cdir" ;;
     *)
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unknown action",ts:(now|floor)}')"

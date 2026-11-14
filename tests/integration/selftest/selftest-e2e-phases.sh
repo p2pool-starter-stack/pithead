@@ -172,7 +172,7 @@ assert_eq "no borrowed miner => no write phase (there is no rig to write to)" \
 assert_eq "no borrowed miner => EXACTLY the rig-free phases, plus --no-mining-asserts (#905)" \
     "$(phase_set "$NOMINER")" "--auth-fail-closed --lifecycle --no-mining-asserts --scenario --svc-restart local-pruned-main-secure-tari "
 
-contains() { # <haystack> <needle> -> "yes" | "no"
+contains() {
     case "$1" in *"$2"*) echo yes ;; *) echo no ;; esac
 }
 

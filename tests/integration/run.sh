@@ -276,8 +276,6 @@ main() {
     fi
     local lifecycle_ok=1 _gated
     LIFECYCLE_STACK_INTACT=0
-    # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
-    # name every requested one in the summary instead of dropping it silently (#2755).
     if [ "$rig_control_ok" != 1 ]; then
         for _gated in LIFECYCLE:lifecycle RESET_DASHBOARD:reset-dashboard ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed SVC_RESTART:svc-restart HARDENING:hardening \
             XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \

@@ -11,7 +11,7 @@ _svc_restart_request() {
 }
 
 run_svc_restart() {
-    # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
+    # shellcheck disable=SC2034
     IT_CURRENT_SCENARIO="svc-restart"
     echo ""
     it_log "── per-service restart phase (#4062) ────────────"
