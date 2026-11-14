@@ -89,7 +89,7 @@ test("a confirmed restart posts the closed request once, disables the button, an
 
 test("a host refusal or failure is shown verbatim as the restart result", async () => {
   for (const status of ["rejected", "failed"]) {
-    const error = `host said no (${status})`;
+    const error = `host said no ${status}`;
     const fetchStub = async (url) =>
       url === "/api/control/svc-restart"
         ? { status: 202, ok: false, json: async () => ({ id: ID }) }
@@ -97,7 +97,7 @@ test("a host refusal or failure is shown verbatim as the restart result", async 
     const panel = inst();
     await withFastPoll(fetchStub, () => panel.runRestart("monerod"));
     assert.equal(panel.state.restarts.monerod.phase, "failed");
-    assert.match(renderToString(panel.renderRestart("monerod")), new RegExp(error.replace(/[()]/g, "\\$&")));
+    assert.ok(renderToString(panel.renderRestart("monerod")).includes(error));
   }
 });
 
