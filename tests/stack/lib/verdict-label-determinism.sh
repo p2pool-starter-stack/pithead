@@ -180,7 +180,6 @@ test-render-quadlet.sh|qnode
 test-restore-configless.sh|rcf_status
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
-test-secrets.sh|ev
 test-secrets.sh|host_ram_mb
 test-secrets.sh|mem
 test-spool-audit.sh|audit_lines

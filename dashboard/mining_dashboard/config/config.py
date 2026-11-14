@@ -342,16 +342,13 @@ TOR_AUTO_HEAL = os.environ.get("TOR_AUTO_HEAL", "false").strip().lower() == "tru
 # --- Operator alerts: Telegram (Issue #121) ---
 # Notifications-only Telegram pusher: a thin notifier that pushes a small, high-value set of
 # operational edges (node down/recovered, worker offline/back, sync finished) to one chat.
-# Disabled by default — with TELEGRAM_ENABLED unset/false the stack runs with no Telegram
-# config and never sends or errors. The interactive bot / command interface is a separate
-# feature (#45); this is the notifications-only split.
-#
 # `bot_token` is a secret: the pithead CLI renders it into the owner-only .env (like the node
 # RPC password), and the notifier never writes it to a log line. On a Tor-only / no-clearnet
 # host the Telegram API is unreachable and sends fail silently (consistent with #59).
-TELEGRAM_ENABLED = os.environ.get("TELEGRAM_ENABLED", "false").strip().lower() == "true"
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_CONFIGURED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+TELEGRAM_LEVEL = os.environ.get("TELEGRAM_LEVEL", "").strip()
 
 # Interactive command interface (#45), separate opt-in from the alerts above. When on, the
 # dashboard long-polls Telegram (getUpdates — outbound only, no inbound port) and answers
@@ -361,54 +358,6 @@ TELEGRAM_COMMANDS_ENABLED = (
     os.environ.get("TELEGRAM_COMMANDS_ENABLED", "false").strip().lower() == "true"
 )
 
-
-def _telegram_event_enabled(name, default=True):
-    """Read one per-event toggle from TELEGRAM_EVENT_<NAME> (rendered from config.json's
-    telegram.events by pithead). Any toggle left unset defaults to on, so enabling Telegram
-    turns on the full set and an operator only has to opt *out* of the noisy ones."""
-    raw = os.environ.get(f"TELEGRAM_EVENT_{name.upper()}")
-    if raw is None or raw.strip() == "":
-        return default
-    return raw.strip().lower() == "true"
-
-
-# Per-event delivery toggles. Keys here are the canonical event names used throughout the
-# alerter (AlertService.EVT_*) and must match the config.json telegram.events block.
-TELEGRAM_EVENTS = {
-    "node_down": _telegram_event_enabled("node_down"),
-    "node_recovered": _telegram_event_enabled("node_recovered"),
-    "worker_offline": _telegram_event_enabled("worker_offline"),
-    "worker_recovered": _telegram_event_enabled("worker_recovered"),
-    "worker_joined": _telegram_event_enabled("worker_joined"),
-    "worker_left": _telegram_event_enabled("worker_left"),
-    "sync_finished": _telegram_event_enabled("sync_finished"),
-    "disk_space": _telegram_event_enabled("disk_space"),
-    "db_unhealthy": _telegram_event_enabled("db_unhealthy"),
-    "db_reset": _telegram_event_enabled("db_reset"),
-    "xvb_no_share": _telegram_event_enabled("xvb_no_share"),
-    "clearnet_exposed": _telegram_event_enabled("clearnet_exposed"),
-    "xvb_registration": _telegram_event_enabled("xvb_registration"),
-    "new_release": _telegram_event_enabled("new_release"),
-    "stack_online": _telegram_event_enabled("stack_online"),
-    "daily_summary": _telegram_event_enabled("daily_summary"),
-    "hashrate_low": _telegram_event_enabled("hashrate_low"),
-    "hashrate_loss": _telegram_event_enabled("hashrate_loss"),
-    "hugepages": _telegram_event_enabled("hugepages"),
-    "low_ram": _telegram_event_enabled("low_ram"),
-    "wallet_changed": _telegram_event_enabled("wallet_changed"),
-    "high_reject_rate": _telegram_event_enabled("high_reject_rate"),
-    "block_found": _telegram_event_enabled("block_found"),
-    "payout_found": _telegram_event_enabled("payout_found"),
-    "payout_confirmed": _telegram_event_enabled("payout_confirmed"),
-    "container_unhealthy": _telegram_event_enabled("container_unhealthy"),
-    "raffle_win": _telegram_event_enabled("raffle_win"),
-}
-# ponytail: daily_summary is a scheduled push, not an edge — it lives in the events dict only so it
-# gets a per-event on/off toggle like the rest; its time is TELEGRAM_DAILY_SUMMARY_TIME below.
-
-# Local time (HH:MM, 24-hour) to push the once-daily status digest, when the daily_summary event is
-# on. Uses the dashboard container's timezone (dashboard.timezone), so "08:00" means 8am wherever
-# the box is. Rendered from config.json telegram.daily_summary_time.
 TELEGRAM_DAILY_SUMMARY_TIME = os.environ.get("TELEGRAM_DAILY_SUMMARY_TIME", "08:00").strip()
 
 # --- Operator alerts: webhook + ntfy sinks (#380) ---

@@ -311,7 +311,7 @@ class TestEditableKeys:
         cfg = control_service.read_config()
         assert "p2pool.pool" in cfg["_editable_keys"]
         assert "xvb.donation_level" in cfg["_editable_keys"]
-        assert "telegram.events.raffle_win" in cfg["_editable_keys"]
+        assert "telegram.level" in cfg["_editable_keys"]
         assert "monero.out_peers" in cfg["_confirm_keys"]
         assert "monero.out_peers" not in cfg["_editable_keys"]
         assert "proxy.donate_level" not in cfg["_editable_keys"]

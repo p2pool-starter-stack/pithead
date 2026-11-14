@@ -48,7 +48,7 @@ printf '%s\n\n2\n%s\ny\ny\ny\nmybottoken123\n987654321\n' "$WALLET" "$VALID_TARI
 w2_cfg="$(cat "$W2/config.json")"
 assert_eq "fast sync applies to both local chains" "$(jq -c '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$w2_cfg")" '[true,true]'
 assert_eq "remote access enables onion" "$(jq -r '.dashboard.onion.enabled' <<<"$w2_cfg")" true
-assert_eq "Telegram answers survive" "$(jq -c '[.telegram.enabled,.telegram.bot_token,.telegram.chat_id]' <<<"$w2_cfg")" '[true,"mybottoken123","987654321"]'
+assert_eq "Telegram answers survive without removed keys" "$(jq -c '[.telegram.bot_token,.telegram.chat_id,(.telegram|has("enabled"),has("events"))]' <<<"$w2_cfg")" '["mybottoken123","987654321",false,false]'
 
 echo "== unit: wizard_print_pointer — closing pointer names what it deliberately didn't ask (#502) =="
 pointer_out="$(run_sourced "$SANDBOX" wizard_print_pointer 2>&1)"

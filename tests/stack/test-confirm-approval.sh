@@ -86,12 +86,12 @@ assert_eq "a well-formed envelope applies the confirmed bind change" "$(jq -r '.
 assert_eq "the confirmed LAN-access change landed" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "true"
 # Positive control: the envelope still works where the tier is NAMED (2026-09-13 perimeter audit), so the refusals above
 # are a narrowed tier rather than a broken envelope path.
-jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .telegram.enabled=false)}' >"$REQS/$UUID3.json"
+jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .telegram.commands.enabled=true)}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "well-formed envelope applies an approval-tier change" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "approval-tier change landed" "$(jq -r '.telegram.enabled' "$C/config.json")" "false"
+assert_eq "approval-tier change landed" "$(jq -r '.telegram.commands.enabled' "$C/config.json")" "true"
 assert_contains "confirmed change records the signed-in actor" "$(grep '"action":"commit-confirmed","status":"applied"' "$AUDIT" | tail -n 1)" '"actor":"admin"'
 # #2076: nothing can populate `approver` any more — it was only ever written by the Telegram
 # verifier. An audit row that carries one would mean the removed leg came back.
@@ -269,7 +269,7 @@ echo "== black-box: a REMOVED config key is migrated away, not refused (#2076) =
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}},
-    telegram:{enabled:true,bot_token:"tg_tok_2076",chat_id:"-1001",commands:{enabled:true},
+    telegram:{bot_token:"tg_tok_2076",chat_id:"-1001",commands:{enabled:true},
               control:{enabled:true,allowed_ids:[7],confirm_timeout:60}}}' >"$C/config.json"
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>&1)"
 assert_rc "a config carrying the removed telegram.control is not REFUSED" "$?" "0"

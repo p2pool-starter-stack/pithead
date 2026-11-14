@@ -124,44 +124,7 @@ EDITABLE_ENV_KEY_PATHS = {
     "HASHRATE_DROP_THRESHOLD_PCT": ("dashboard.hashrate_drop_threshold",),
     "HASHRATE_DROP_MINUTES": ("dashboard.hashrate_drop_minutes",),
     "TELEGRAM_DAILY_SUMMARY_TIME": ("telegram.daily_summary_time",),
-    # TELEGRAM_EVENT_<NAME> -> telegram.events.<name> is a mechanical rename (pithead's tg_event()
-    # helper and render_env do the same thing per event), so it's generated below rather than
-    # hand-typed 25 times. wallet_changed / clearnet_exposed are the two events NOT in this list:
-    # they are the tamper-evidence alarms, so they are not free-commit. Since #2367 they take the
-    # unlisted route instead (typed APPLY + envelope, a DEST row when switched off).
-    # NOTE (2026-08 audit): raffle_win was missing from this generated set for a while — the one
-    # event toggle out of step with its siblings. Add a new event toggle here AND in pithead's
-    # CONTROL_DASHBOARD_EDITABLE_KEYS: the drift guard catches a mismatch, not an omission from both.
-    **{
-        f"TELEGRAM_EVENT_{name.upper()}": (f"telegram.events.{name}",)
-        for name in (
-            "node_down",
-            "node_recovered",
-            "worker_offline",
-            "worker_recovered",
-            "worker_joined",
-            "worker_left",
-            "sync_finished",
-            "disk_space",
-            "db_unhealthy",
-            "db_reset",
-            "xvb_no_share",
-            "xvb_registration",
-            "new_release",
-            "stack_online",
-            "daily_summary",
-            "hashrate_low",
-            "hashrate_loss",
-            "hugepages",
-            "low_ram",
-            "high_reject_rate",
-            "block_found",
-            "payout_found",
-            "payout_confirmed",
-            "container_unhealthy",
-            "raffle_win",
-        )
-    },
+    "TELEGRAM_LEVEL": ("telegram.level",),
 }
 
 # These paths are config.json-only, so they never appear in the env-var map above, but the host

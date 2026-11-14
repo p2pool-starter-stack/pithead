@@ -538,9 +538,9 @@ class TestDiffConfigKeys:
         assert _diff_config_keys({"a": 1}, {"b": 2}) == ["a", "b"]
 
     def test_nested_paths_use_dotted_names(self):
-        old = {"telegram": {"events": {"node_down": True}}}
-        new = {"telegram": {"events": {"node_down": False}}}
-        assert _diff_config_keys(old, new) == ["telegram.events.node_down"]
+        old = {"telegram": {"commands": {"enabled": True}}}
+        new = {"telegram": {"commands": {"enabled": False}}}
+        assert _diff_config_keys(old, new) == ["telegram.commands.enabled"]
 
     def test_secret_sentinel_change_detected_without_a_value(self):
         # The masked config's secret leaves are {"__secret__": True} sentinels (#440) — clearing or

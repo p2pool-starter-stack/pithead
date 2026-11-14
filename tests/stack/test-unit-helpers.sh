@@ -106,6 +106,92 @@ mx_out="$(run_sourced "$MX" migrate_legacy_workers 2>&1)"
 assert_rc "a non-default xmrig_proxy.url that differs from xvb.url is refused" "$?" "1"
 assert_contains "the refusal names the xvb pair" "$mx_out" "(xvb.url and xmrig_proxy.url)"
 
+echo "== unit: migrate_telegram_alert_level maps 2.0.0 telegram.enabled and telegram.events to telegram.level (#3578) =="
+TL="$SANDBOX/tl"
+mkdir -p "$TL"
+tl_run() {
+    printf '%s' "$1" >"$TL/config.json"
+    TL_OUT="$(run_sourced "$TL" migrate_telegram_alert_level 2>&1)"
+}
+tl_level() { jq -c '[.telegram.level, (.telegram | has("enabled")), (.telegram | has("events"))]' "$TL/config.json"; }
+tl_off() {
+    jq -nc --argjson drop "$1" '$drop | map({(.): false}) | add'
+}
+tl_all_only='["worker_joined","worker_left","stack_online","daily_summary","block_found","new_release"]'
+tl_important_only='["worker_offline","worker_recovered","sync_finished","db_reset","xvb_no_share","xvb_registration","hashrate_low","high_reject_rate","hugepages","low_ram","payout_found","payout_confirmed","raffle_win"]'
+tl_critical='["node_down","node_recovered","container_unhealthy","db_unhealthy","disk_space","hashrate_loss"]'
+tl_cfg() { jq -nc --argjson ev "$1" '{telegram:{enabled:true,bot_token:"t",chat_id:"1",events:$ev}}'; }
+tl_run '{"telegram":{"enabled":true,"bot_token":"t","chat_id":"1"}}'
+assert_eq "every toggle on maps to all" "$(tl_level)" '["all",false,false]'
+assert_eq "a config that already delivered everything warns of nothing" "$TL_OUT" ""
+tl_run "$(tl_cfg "$(tl_off "$tl_all_only")")"
+assert_eq "everything but the all-only alerts maps to important" "$(tl_level)" '["important",false,false]'
+assert_eq "an exact level match warns of nothing" "$TL_OUT" ""
+tl_run "$(tl_cfg "$(tl_off '["node_down"]')")"
+assert_eq "one switch off still maps to all" "$(tl_level)" '["all",false,false]'
+assert_contains "the alert that starts is named" "$TL_OUT" "Alerts that start: node_down"
+tl_run "$(tl_cfg "$(tl_off "$(jq -nc --argjson a "$tl_all_only" --argjson b "$tl_important_only" '$a + $b')")")"
+assert_eq "only the six critical alerts on maps to critical" "$(tl_level)" '["critical",false,false]'
+tl_run "$(tl_cfg "$(tl_off "$(jq -nc --argjson a "$tl_all_only" --argjson b "$tl_important_only" --argjson c "$tl_critical" '$a + $b + $c')")")"
+assert_eq "an empty set maps to off" "$(tl_level)" '["off",false,false]'
+assert_eq "an empty set warns of nothing" "$TL_OUT" ""
+tl_run "$(tl_cfg "$(tl_off "$(jq -nc --argjson a '["worker_left","stack_online","daily_summary","block_found","new_release"]' --argjson b "$tl_important_only" '$a + $b')")")"
+assert_eq "critical plus one extra alert maps to critical" "$(tl_level)" '["critical",false,false]'
+assert_contains "the extra alert that stops is named" "$TL_OUT" "Alerts that stop: worker_joined"
+tl_run "$(tl_cfg "$(tl_off '["worker_left","stack_online","daily_summary"]')")"
+assert_eq "a tie between two levels goes to the more verbose" "$(tl_level)" '["all",false,false]'
+tl_run '{"telegram":{"bot_token":"t","chat_id":"1","events":{"node_down":false}}}'
+assert_eq "credentials without enabled map to off" "$(tl_level)" '["off",false,false]'
+assert_contains "the always-on alarms that start are named" "$TL_OUT" "wallet_changed, clearnet_exposed, payout_wallet_down"
+tl_run '{"telegram":{"enabled":false,"bot_token":"t","chat_id":"1"}}'
+assert_eq "credentials with enabled false map to off" "$(tl_level)" '["off",false,false]'
+tl_run '{"telegram":{"enabled":true,"bot_token":"t","chat_id":"1","events":{"wallet_changed":false}}}'
+assert_contains "a switched-off tamper alarm warns that the alarms are now always on" "$TL_OUT" "tamper alarms are now always on"
+tl_run '{"telegram":{"enabled":true,"bot_token":"   ","chat_id":"1","events":{"node_down":false}}}'
+assert_eq "a blank token counts as no credentials" "$(tl_level)|$TL_OUT" '["off",false,false]|'
+tl_run '{"telegram":{"enabled":"true","bot_token":"t","chat_id":"1"}}'
+assert_eq "a string true still counts as enabled" "$(tl_level)" '["all",false,false]'
+tl_run '{"telegram":{"bot_token":"t","chat_id":"1","events":{"clearnet_exposed":false}}}'
+assert_contains "a switched-off tamper alarm warns even when Telegram was disabled" "$TL_OUT" "tamper alarms are now always on"
+tl_run '{"telegram":{"enabled":false,"bot_token":"t","chat_id":"1","commands":{"enabled":true}}}'
+assert_eq "commands stay off when Telegram was disabled" "$(jq -c '.telegram.commands.enabled' "$TL/config.json")" "false"
+assert_contains "the warning says the command bot was switched off" "$TL_OUT" "telegram.commands.enabled was set to false"
+tl_run '{"telegram":{"enabled":true,"bot_token":"","chat_id":""}}'
+assert_eq "no credentials map to off without a warning" "$(tl_level)|$TL_OUT" '["off",false,false]|'
+tl_run '{"telegram":{"enabled":true,"bot_token":"t","chat_id":"1","events":{"worker_joined":false}}}'
+tl_before="$(cat "$TL/config.json")"
+TL_OUT="$(run_sourced "$TL" migrate_telegram_alert_level 2>&1)"
+assert_eq "a second run changes nothing and says nothing" "$(cat "$TL/config.json")|$TL_OUT" "$tl_before|"
+printf '%s' '{"telegram":{"enabled":true,"bot_token":"t","chat_id":"1"}}' >"$TL/config.json"
+tl_before="$(cat "$TL/config.json")"
+tl_out="$(run_sourced "$TL" eval 'PITHEAD_DRY_RUN=1; migrate_telegram_alert_level' 2>&1)"
+assert_eq "a dry run writes nothing" "$(cat "$TL/config.json")|$tl_out" "$tl_before|"
+
+echo "== unit: the Telegram level table agrees across the dashboard, the CLI and docs/telegram.md (#3578) =="
+tl_table="$(PYTHONPATH="$ROOT/dashboard" python3 -c '
+from mining_dashboard.service.notify.alert_levels import ALL_EVENTS, ALWAYS_ON_EVENTS, CRITICAL_EVENTS, IMPORTANT_EVENTS
+for event in sorted(ALL_EVENTS | ALWAYS_ON_EVENTS):
+    level = "always" if event in ALWAYS_ON_EVENTS else "critical" if event in CRITICAL_EVENTS else "important" if event in IMPORTANT_EVENTS else "all"
+    print(event, level)
+')"
+tl_docs="$(awk -F'|' '$2 ~ /^ `[a-z_]+` $/ && $3 ~ /^ (always|critical|important|all) $/ { gsub(/[ `]/, "", $2); gsub(/ /, "", $3); print $2, $3 }' "$ROOT/docs/telegram.md" | sort)"
+assert_eq "the dashboard level table has 28 alerts" "$(wc -l <<<"$tl_table" | tr -d ' ')" "28"
+assert_eq "docs/telegram.md lists every alert with the dashboard's level" "$tl_docs" "$(sort <<<"$tl_table")"
+tl_cli=""
+for tl_level in critical important all; do
+    for tl_event in $(run_sourced "$SANDBOX" telegram_level_events "$tl_level"); do
+        tl_cli="$tl_cli$tl_event $tl_level"$'\n'
+    done
+done
+tl_cli_first="$(awk 'NF && !seen[$1]++' <<<"$tl_cli" | sort)"
+assert_eq "the CLI level table matches the dashboard's optional alerts" "$tl_cli_first" "$(grep -v ' always$' <<<"$tl_table" | sort)"
+
+echo "== unit: telegram level descriptions (#3578) =="
+assert_contains "raising the level names the alerts that start" "$(run_sourced "$SANDBOX" describe_change TELEGRAM_LEVEL off critical)" "Starts: node_down"
+assert_contains "lowering the level names the alerts that stop" "$(run_sourced "$SANDBOX" describe_change TELEGRAM_LEVEL all critical)" "Stops: worker_offline"
+assert_contains "a level change names the always-on alarms" "$(run_sourced "$SANDBOX" describe_change TELEGRAM_LEVEL all off)" "stay on at every level"
+assert_not_contains "a level change is not a tamper-alarm switch-off" "$(run_sourced "$SANDBOX" describe_change TELEGRAM_LEVEL critical off)" "DEST"
+
 # The XvB tier thresholds are hard-coded in config.py (TIER_DEFAULTS) and stated explicitly in
 # docs/architecture.md. Drift guard: each config value must match the doc's human form, so the
 # user-facing table can't silently fall out of sync if TIER_DEFAULTS ever changes.

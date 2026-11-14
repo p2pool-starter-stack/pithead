@@ -15,18 +15,12 @@ export const FIELD_WARNINGS = {
     "Tari payout address is changing — future merge-mining rewards go to the new address.",
   "dashboard.auth.password":
     "Dashboard login password changing — every other signed-in session is logged out, a mistyped password locks this session out too, and on the appliance it is also the console root login. Keep another way to reach this machine handy before you confirm.",
-  "telegram.enabled":
-    "Telegram bot — turning it off stops every Telegram alert, the wallet-change and clearnet-exposure tamper alarms included.",
   "telegram.bot_token":
     "Telegram bot token changing — a wrong token stops every Telegram alert, the tamper alarms included, and another bot's token sends them to that bot's owner.",
   "telegram.chat_id":
     "Telegram chat changing — a wrong id stops delivery or sends every alert, payout and wallet-change ones included, to another chat.",
   "healthchecks.ping_url":
     "Healthchecks ping URL changing — a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed.",
-  "telegram.events.wallet_changed":
-    "Wallet-change alarm — turning it off means a payout-address change no longer alerts Telegram, so a wallet swap could go unnoticed.",
-  "telegram.events.clearnet_exposed":
-    "Clearnet-exposure alarm — turning it off means a node exposing this machine's IP over clearnet no longer alerts Telegram.",
   "dashboard.host":
     "Machine hostname changing — this is the approval-gated day-two rename: it reissues the local certificate and changes the appliance's mDNS identity. Rigs using the old name stop mining; use Set up again on each rig to point it at the new name.",
 };

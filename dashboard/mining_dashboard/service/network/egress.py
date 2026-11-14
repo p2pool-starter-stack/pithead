@@ -245,7 +245,7 @@ def egress_posture_from_config():
         tari_route=node_route(config.TARI_GRPC_ADDRESS, is_local=config.tari_is_local()),
         tari_enabled=config.TARI_MODE != "off",
         healthchecks_enabled=bool(config.HEALTHCHECKS_PING_URL),
-        telegram_enabled=config.TELEGRAM_ENABLED,
+        telegram_enabled=config.TELEGRAM_CONFIGURED,
         price_feed_enabled=config.DASHBOARD_ENERGY["price_feed"],
         xvb_standby_source=config.XVB_STANDBY_SOURCE,
         **_shared_knobs(),

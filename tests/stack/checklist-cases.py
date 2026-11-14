@@ -34,7 +34,7 @@ expected_changes = [
     'Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }`',
     'Add a second `"wallet_address"` line inside the `monero` block',
     'Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"`',
-    'Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case)',
+    'Set `telegram.bot_token` to `"your_bot_token"` (lower case: the check ignores case)',
     "Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block",
 ]
 table_rows = []

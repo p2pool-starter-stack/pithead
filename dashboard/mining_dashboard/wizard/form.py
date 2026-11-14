@@ -59,7 +59,7 @@ def build_config(
         cfg["healthchecks"] = {"ping_url": hc}
     tg_token, tg_chat = s_("telegram_token"), s_("telegram_chat")
     if tg_token and tg_chat:
-        cfg["telegram"] = {"enabled": True, "bot_token": tg_token, "chat_id": tg_chat}
+        cfg["telegram"] = {"bot_token": tg_token, "chat_id": tg_chat}
 
     if form.get("role") in ("pithead", "both"):
         cfg["local_miner"]["enabled"] = form["role"] == "both"

@@ -16,8 +16,6 @@
 .config-section-core {
   border-color: var(--accent);
 }
-/* Nested sub-group within a section (#612) — telegram.events, the notification sinks,
- * healthchecks — same collapsed-<details> pattern as .config-section, one level deeper. */
 .config-subsection {
   margin: 10px 0 10px 4px;
   padding-left: 10px;

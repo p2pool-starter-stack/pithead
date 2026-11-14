@@ -281,7 +281,7 @@ wizard_write_config() {
     fi
 
     if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
-        cfg=$(jq --arg t "$TELEGRAM_BOT_TOKEN" --arg c "$TELEGRAM_CHAT_ID" '.telegram = {enabled: true, bot_token: $t, chat_id: $c}' <<<"$cfg")
+        cfg=$(jq --arg t "$TELEGRAM_BOT_TOKEN" --arg c "$TELEGRAM_CHAT_ID" '.telegram = {bot_token: $t, chat_id: $c}' <<<"$cfg")
     fi
 
     cfg=$(jq --argjson enabled "${LOCAL_MINER:-$(default_of local_miner.enabled)}" \

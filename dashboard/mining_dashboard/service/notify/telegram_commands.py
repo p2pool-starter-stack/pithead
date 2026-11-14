@@ -11,7 +11,7 @@ from mining_dashboard.config.config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
     TELEGRAM_COMMANDS_ENABLED,
-    TELEGRAM_ENABLED,
+    TELEGRAM_CONFIGURED,
 )
 from mining_dashboard.config.config import (
     NOTIFICATION_PROXY as TOR_SOCKS_PROXY,
@@ -191,7 +191,7 @@ class TelegramCommandBot:
         # exposes the host IP (same discipline as the notifier / Healthchecks pinger).
         self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
         if enabled is None:
-            enabled = bool(TELEGRAM_ENABLED and TELEGRAM_COMMANDS_ENABLED)
+            enabled = bool(TELEGRAM_CONFIGURED and TELEGRAM_COMMANDS_ENABLED)
         self.enabled = bool(enabled and self._token and self.chat_id)
         self._offset = None
 

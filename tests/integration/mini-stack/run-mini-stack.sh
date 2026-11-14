@@ -324,7 +324,7 @@ assert_stays "itest-xmrig-proxy stays up across restart" itest-xmrig-proxy runni
 #     cycle rather than a live toggle.
 log "scenario 11: Tari-optional — sync gate releases on monerod alone; Tari outage does not reject workers"
 compose down -v --remove-orphans >/dev/null 2>&1 || true
-LOCAL_MONERO_HOST=local-monerod TARI_REQUIRED=false TELEGRAM_ENABLED=false NOTIFY_WEBHOOK_URLS='' NTFY_URL='' compose up -d >/dev/null 2>&1
+LOCAL_MONERO_HOST=local-monerod TARI_REQUIRED=false TELEGRAM_BOT_TOKEN='' NOTIFY_WEBHOOK_URLS='' NTFY_URL='' compose up -d >/dev/null 2>&1
 wait_dashboard_api && c_ok "Tari-optional stack: dashboard API is up" || c_bad "Tari-optional stack: dashboard API is up" "no /api/state after ~60s"
 # Tari is non-blocking, so monerod alone gates the sync-hold; release it to reach steady state.
 set_monerod synced
@@ -351,7 +351,7 @@ log "scenario 13: Telegram command round-trip"
 set_monerod synced
 set_tari synced
 if compose run --rm --no-deps -T p2pool sh -c 'mkdir -p /stats/network; cat > /stats/network/stats' <"$HERE/telegram-network-stats.json" >/dev/null &&
-    TELEGRAM_ENABLED=true TELEGRAM_COMMANDS_ENABLED=true compose up -d --force-recreate dashboard >/dev/null 2>&1 &&
+    TELEGRAM_COMMANDS_ENABLED=true compose up -d --force-recreate dashboard >/dev/null 2>&1 &&
     wait_dashboard_api && compose exec -T dashboard python3 - <"$HERE/telegram-command-wire.py"; then
     c_ok "Telegram commands cross the real HTTP transport"
 else

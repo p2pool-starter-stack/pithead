@@ -190,6 +190,7 @@ parse_and_validate_config() {
 
     migrate_legacy_workers
     migrate_removed_telegram_control
+    migrate_telegram_alert_level
     validate_worker_endpoints
     validate_energy_config
 

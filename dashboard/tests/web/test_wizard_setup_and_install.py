@@ -206,7 +206,7 @@ def test_alerts_are_omitted_unless_filled_in():
     # Telegram needs both halves or neither — a half pair cannot deliver anything.
     assert "telegram" not in wizard.build_config({**base, "telegram_token": "123:ABC"})
     both = wizard.build_config({**base, "telegram_token": "123:ABC", "telegram_chat": "999"})
-    assert both["telegram"] == {"enabled": True, "bot_token": "123:ABC", "chat_id": "999"}
+    assert both["telegram"] == {"bot_token": "123:ABC", "chat_id": "999"}
 
 
 def test_timezone_auto_is_the_default_and_never_pinned():

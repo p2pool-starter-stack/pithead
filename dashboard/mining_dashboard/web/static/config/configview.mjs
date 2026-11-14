@@ -277,12 +277,6 @@ export class ConfigView extends Component {
     }
   }
 
-  // Form mode (#529): the core group (pinned, never collapsed) above the LOGICAL sections (#611),
-  // each a native <details> — collapsed by default (no `open` attribute), which gets
-  // keyboard/a11y toggling for free, the same "native platform feature over JS state" call
-  // Worker Inspect's own <dialog> made (#518). Within a section, nestSection (#612) pulls a noisy
-  // cluster (telegram.events, the notification sinks, healthchecks) into its own nested <details>,
-  // one level deeper, also collapsed by default.
   renderForm(core, groups) {
     const { candidate, drafts } = this.state;
     const onEdit = (f, v) => this.onFieldEdit(f, v);

@@ -110,6 +110,16 @@ must pin existing effective values before retiring these exceptions. Both change
 before release. The reference table below distinguishes new-install choices from legacy
 absent-key behavior.
 
+### Removed in 2.1.0
+
+`./pithead apply` migrates a 2.0.0 config in place, backs nothing up, and prints one warning that
+names what changes.
+
+| Removed key | Replacement |
+|---|---|
+| `telegram.enabled` | Delivery exists when `telegram.bot_token` and `telegram.chat_id` are both set |
+| `telegram.events.*` (27 switches) | `telegram.level`: `off`, `critical`, `important` or `all`. The migration picks the level whose alert set differs least from your switches (ties go to the more verbose; credentials without `enabled: true` map to `off`). The payout-wallet change and clearnet-exposure alarms have no switch. |
+
 > The string `"auto"` means "let the stack pick the default": a default path, the machine's
 > hostname, a derived donor id, and so on.
 
@@ -236,22 +246,19 @@ old and new non-secret values, while credentials and capability URLs stay masked
 back after commit. No setting is refused from the dashboard (#2367); `config_version` is the
 read-only exception, hidden from the panel. The high-consequence ones
 warn in the form and name their cost again in the host preview before you confirm: the dashboard
-password; the Telegram bot token, chat id and Healthchecks ping URL, where a wrong value stops
-delivery or sends alerts and pings to an unintended destination; and the
-`telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms, which are the
-detection controls for the sensitive changes this section permits.
+password; and the Telegram bot token, chat id and Healthchecks ping URL, where a wrong value stops
+delivery or sends alerts and pings to an unintended destination. The wallet-changed and
+clearnet-exposed tamper alarms, the detection controls for the sensitive changes this section
+permits, are always on at every alert level and have no switch.
 
 The fields #2367 names are all reachable from the panel. Each gate is in the table below: most
-sit behind the confirmation above, while the ordinary `telegram.events.*` toggles commit
-directly.
+sit behind the confirmation above, while `telegram.level` commits directly.
 
 | Field | Exposed how | Gate |
 |---|---|---|
-| `telegram.enabled` | Configuration view, Notifications; warns turning it off stops every Telegram alert, tamper alarms included | Confirm preview + typed approval envelope |
 | `telegram.bot_token` | Configuration view, Notifications (masked, blank keeps it); warns a wrong token silences every alert and another bot's token reroutes them | Confirm preview + typed `APPLY` + approval envelope |
 | `telegram.chat_id` | Configuration view, Notifications; warns a wrong id stops delivery or sends alerts to another chat | Confirm preview + typed `APPLY` + approval envelope |
-| `telegram.events.*` (all but the two tamper alarms) | Configuration view, Notifications › Telegram events | Direct commit |
-| `telegram.events.wallet_changed`, `telegram.events.clearnet_exposed` | Notifications › Telegram events; warns that switching one off stops the alert it carries | Confirm preview + typed `APPLY` + approval envelope (switching off is a DEST row) |
+| `telegram.level` | Settings page, Alerts; the preview names the alert kinds that start or stop | Direct commit |
 | `dashboard.host` | Configuration view, Dashboard & access; warns this is the approval-gated day-two rename (#2236) before confirming | Confirm preview + typed approval envelope |
 | `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns a mistyped password locks this session out and, on the appliance, also changes the console `root` login | Confirm preview + typed `APPLY` + approval envelope (a live login credential change) |
 | `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it); warns a wrong URL stops the pings or pings someone else's check | Confirm preview + typed `APPLY` + approval envelope |
@@ -329,13 +336,12 @@ the desired value is not presented as proof of what the still-running services u
 | `dashboard.timezone` | `auto` | Timezone for the dashboard's timestamps and charts. `auto` = the host machine's timezone (auto-detected, falling back to `Etc/UTC`); set an IANA name (e.g. `America/Chicago`) to override. |
 | **Notifications** |  | _Choose where operational messages and alerts are sent._ |
 | `healthchecks.ping_url` | _(blank)_ | The full ping URL from Healthchecks.io (e.g. `https://hc-ping.com/<uuid>`) — the optional [dead-man's switch](monitoring.md) that alerts you when your host stops responding. **Setting it turns the monitor on; blank keeps it off.** `performance` sends it directly; `balance` and `privacy` use Tor. An explicit `notifications.tor` value overrides the profile. Treated as a secret — stored in the owner-only `.env`. |
-| `telegram.enabled` | `false` | Push operational alerts (node down/recovered, worker offline/back, sync finished) to Telegram. Off by default. Requires `bot_token` + `chat_id` to actually send. Full walkthrough: [Telegram Bot](telegram.md). |
+| `telegram.level` | `off` | Which optional Telegram alerts you get: `off`, `critical`, `important` or `all` (the alert table is in [Telegram Bot](telegram.md#choosing-which-alerts-you-get)). Absent means `off`. The payout-wallet change, clearnet-exposure and payout-wallet-down alarms are delivered at every level, including `off`, once `bot_token` and `chat_id` are both set; there is no `telegram.enabled`. Full walkthrough: [Telegram Bot](telegram.md). |
 | `telegram.bot_token` | `""` | Your BotFather bot token. A secret — stored owner-only in `.env`, git-ignored, and never logged. Get one from [@BotFather](https://t.me/BotFather). |
 | `telegram.chat_id` | `""` | Where alerts are sent and the only chat the command interface answers. A Telegram group id (negative, e.g. `-1001234567890`) or a personal chat id. See [how to find it](telegram.md#3-find-your-chat-id). |
-| `telegram.events.*` | all `true` | Per-event toggles: `stack_online`, `node_down`, `node_recovered`, `worker_offline`, `worker_recovered`, `worker_joined`, `worker_left`, `sync_finished`, `disk_space`, `db_unhealthy`, `db_reset`, `xvb_no_share`, `xvb_registration`, `clearnet_exposed`, `new_release`, `daily_summary`, `hashrate_low`, `hashrate_loss`, `hugepages`, `low_ram`, `wallet_changed`, `high_reject_rate`, `block_found`, `payout_found`, `payout_confirmed`, `container_unhealthy`, `raffle_win`. Each defaults to on once Telegram is enabled; set one `false` to silence just that alert. The dashboard Configuration view can change every toggle; the `wallet_changed` and `clearnet_exposed` tamper alarms need typed `APPLY` and the confirmation step, and the preview names what stops alerting. Full list: [Telegram Bot](telegram.md#choosing-which-alerts-you-get). |
-| `telegram.daily_summary_time` | `08:00` | Local time (24-hour `HH:MM`) to push the once-a-day status digest, when the `daily_summary` event is on. Uses the dashboard's timezone (`dashboard.timezone`). A malformed value disables the digest. |
+| `telegram.daily_summary_time` | `08:00` | Local time (24-hour `HH:MM`) to push the once-a-day status digest, when the alert level includes `daily_summary`. Uses the dashboard's timezone (`dashboard.timezone`). A malformed value disables the digest. |
 | `telegram.commands.enabled` | `false` | Turn on the interactive command interface — the bot answers read-only status queries (`/status`, `/hashrate`, `/workers`, `/luck`, `/earnings`, and more) from the configured `chat_id` (every other chat is ignored). Off by default; alerts work without it. Long-polls over Tor, so it needs no inbound port. Full command list: [Telegram › Commands](telegram.md#commands). |
-| `notifications.webhooks` | `[]` | Generic JSON webhook alert sinks (#380): every alert the stack produces is POSTed to each listed URL as `{"event", "text", "ts"}` — for Gotify, Home Assistant, or any endpoint that accepts a POST. Empty list keeps it off. Every member must be a URL string; null and other non-string members are rejected before preview or apply, with the array index named and the URL withheld. The URLs are secrets (query strings often carry tokens): owner-only `.env`, never logged or printed. The dashboard editor shows each set URL masked; a save that keeps a masked entry must keep the list's length and each masked entry's position, so to add, remove or reorder webhooks, re-enter every URL. Sinks carry every event; `telegram.events` gates Telegram only. See [Telegram › Webhook and ntfy sinks](telegram.md#webhook-and-ntfy-sinks). |
+| `notifications.webhooks` | `[]` | Generic JSON webhook alert sinks (#380): every alert the stack produces is POSTed to each listed URL as `{"event", "text", "ts"}` — for Gotify, Home Assistant, or any endpoint that accepts a POST. Empty list keeps it off. Every member must be a URL string; null and other non-string members are rejected before preview or apply, with the array index named and the URL withheld. The URLs are secrets (query strings often carry tokens): owner-only `.env`, never logged or printed. The dashboard editor shows each set URL masked; a save that keeps a masked entry must keep the list's length and each masked entry's position, so to add, remove or reorder webhooks, re-enter every URL. Sinks carry every event; `telegram.level` gates Telegram only. See [Telegram › Webhook and ntfy sinks](telegram.md#webhook-and-ntfy-sinks). |
 | `notifications.ntfy.url` | `""` | An [ntfy](https://ntfy.sh) topic URL (`https://server/topic`, self-hosted servers included); each alert's text is POSTed as the message body. Blank keeps it off. Treated as a secret like the webhook URLs. Step-by-step setup: [Telegram › Setting up ntfy](telegram.md#setting-up-ntfy-step-by-step). |
 | `notifications.ntfy.token` | `""` | Optional ntfy access token for a protected topic, sent as an `Authorization: Bearer` header. A secret — owner-only `.env`, never logged. |
 | `notifications.tor` | `true` _(on)_ | Routes webhook, ntfy, Telegram, and Healthchecks traffic through Tor when true. `performance` selects direct delivery; `balance` and `privacy` select Tor. An explicit value overrides the profile. Set false only for endpoints on your own network when direct delivery is intended. |

@@ -39,32 +39,12 @@
 # media-only set below remains outside all of it: no browser approval makes one of those changes
 # committable. Echoes a reason on refusal.
 
-# The direct-commit env keys: bounded operational tuning that needs neither APPLY nor the approval
-# envelope. Every other schema-backed value falls through to confirmation, including the
-# WALLET_CHANGED and CLEARNET_EXPOSED tamper alarms (#2367), which are left off this list so that
-# silencing one always needs the typed APPLY and envelope. Space-separated exact env-key names.
-#
-# NOTE (2026-08 audit): TELEGRAM_EVENT_RAFFLE_WIN was missing from this list for a while — the one
-# event toggle out of step with its 24 siblings, all otherwise editable. If you add a new event
-# toggle, list it here AND in control_service.EDITABLE_ENV_KEY_PATHS (dashboard) — the drift
-# guard only catches a mismatch between the two, not an omission from both.
 CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
     XVB_ENABLED XVB_DONATION_LEVEL TARI_REQUIRED DASHBOARD_FAIL_CLOSED
     DASHBOARD_CHECK_UPDATES DASHBOARD_TZ
     MONERO_MEM_LIMIT TARI_MEM_LIMIT MONERO_PREP_THREADS
     HASHRATE_DROP_THRESHOLD_PCT HASHRATE_DROP_MINUTES TELEGRAM_DAILY_SUMMARY_TIME
-    TELEGRAM_EVENT_NODE_DOWN TELEGRAM_EVENT_NODE_RECOVERED
-    TELEGRAM_EVENT_WORKER_OFFLINE TELEGRAM_EVENT_WORKER_RECOVERED
-    TELEGRAM_EVENT_WORKER_JOINED TELEGRAM_EVENT_WORKER_LEFT
-    TELEGRAM_EVENT_SYNC_FINISHED TELEGRAM_EVENT_DISK_SPACE
-    TELEGRAM_EVENT_DB_UNHEALTHY TELEGRAM_EVENT_DB_RESET TELEGRAM_EVENT_XVB_NO_SHARE
-    TELEGRAM_EVENT_XVB_REGISTRATION TELEGRAM_EVENT_NEW_RELEASE
-    TELEGRAM_EVENT_STACK_ONLINE TELEGRAM_EVENT_DAILY_SUMMARY
-    TELEGRAM_EVENT_HASHRATE_LOW TELEGRAM_EVENT_HASHRATE_LOSS
-    TELEGRAM_EVENT_HUGEPAGES TELEGRAM_EVENT_LOW_RAM
-    TELEGRAM_EVENT_HIGH_REJECT_RATE TELEGRAM_EVENT_BLOCK_FOUND
-    TELEGRAM_EVENT_PAYOUT_FOUND TELEGRAM_EVENT_PAYOUT_CONFIRMED TELEGRAM_EVENT_CONTAINER_UNHEALTHY
-    TELEGRAM_EVENT_RAFFLE_WIN'
+    TELEGRAM_LEVEL'
 
 CONTROL_DASHBOARD_CONFIRM_KEYS='PITHEAD_PROFILE MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
@@ -79,16 +59,6 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='PITHEAD_PROFILE MONERO_DATA_DIR TARI_DATA_DIR P2
 # host shell; what the 2026-09-13 perimeter audit removed is the "everything not otherwise listed" rule that silently swept
 # the entire security perimeter into it once #2076 took the second identity away.
 #
-# Today it is two BOOLEAN toggles on a channel that cannot move value or reach a credential, plus
-# HOST_IP. The Telegram toggles switch a channel #2076 made READ-ONLY, so neither can be used to
-# commit anything, and both are instantly reversible by the same route. HOST_IP is the validated
-# dashboard.host: changing it remints the local certificate and changes the machine's mDNS
-# identity, so it requires the same envelope. The two tamper alarms on that channel are NOT here:
-# silencing one is how a wallet swap goes unnoticed, so they take the stricter unlisted route
-# (typed APPLY and the envelope, with a DEST row naming what stops alerting, #2367).
-# TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID take that route too — repointing the alarm is silencing
-# it by another name.
-#
 # XVB_STANDBY_SOURCE was in a draft of this list, picked off an enumeration of what the old
 # "everything else" tier had swept up. It is a URL — the primary dashboard's /api/xvb-standby
 # endpoint (33-render-env.sh) — and 39-describe-change.sh classifies it as a secret configuration
@@ -100,7 +70,7 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='PITHEAD_PROFILE MONERO_DATA_DIR TARI_DATA_DIR P2
 # The env row is not generally committable: control_worker_append (42-control-approval-helpers.sh)
 # allows only a typed, SSRF-checked append and 43- admits that row only for such an append.
 # dashboard.energy.price_feed and local_miner.enabled render no env row; 43- checks them by path.
-CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED HOST_IP'
+CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_COMMANDS_ENABLED HOST_IP'
 
 CONTROL_DASHBOARD_APPROVAL_PATHS='p2pool.clearnet'
 CONTROL_DASHBOARD_CONFIRM_PATHS='profile
