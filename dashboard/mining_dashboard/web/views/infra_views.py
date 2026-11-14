@@ -180,12 +180,12 @@ def build_workers(workers, rigforge_release=None):
                     "rejected_str": rejected_str,
                     "invalid": invalid,
                     "reject_flag": _reject_flag(accepted, rejected),
-                    # Probe verdict + adoption (#1857): the client flags only api_ok False, and
-                    # adopted decides whether that reads "api ⚠" (config to fix) or "not adopted".
+                    "mining": worker.get("mining") or {"state": "unknown", "pool": None},
+                    "telemetry_h10": worker.get("telemetry_h10"),
+                    "telemetry_h60": worker.get("telemetry_h60"),
+                    "telemetry_h15": worker.get("telemetry_h15"),
                     "api_ok": worker.get("api_ok"),
                     "adopted": worker.get("adopted"),
-                    # RigForge enriched feed (#235): version badge + health/power/tune/watchdog
-                    # chips, or None for a plain-xmrig worker (renders nothing extra).
                     "rigforge": _rigforge_display(
                         worker.get("rigforge"), worker.get("status") == "online"
                     ),
