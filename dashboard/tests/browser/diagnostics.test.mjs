@@ -150,6 +150,7 @@ test("a service restart is confirmed first, then shows the host's result and a r
     expect(request.headers()["x-pithead-control"]).toBe("1");
     expect(request.postDataJSON()).toEqual({ container: "tor" });
   }
+});
 
 for (const theme of ["Light", "Dark"]) {
   test(`${theme} theme: the diagnostics controls render as bordered buttons with a focus ring`, async ({
