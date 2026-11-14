@@ -72,6 +72,18 @@ async def test_external_tor_start_redials_peerless_monerod_once(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_stale_peers_while_tor_boots_do_not_cancel_the_redial(monkeypatch):
+    rig = _Rig(monkeypatch)
+    await rig.step(peers_out=8)
+    rig.tor.update(started_at=900.0, health="starting")
+    await rig.step(peers_out=6)
+    rig.tor["health"] = "healthy"
+    await rig.run(mr.REDIAL_SETTLE_SEC + mr.CHECK_INTERVAL_SEC * 2, peers_out=0)
+    assert rig.restarts == 1
+    assert rig.audits == [("tor-start", "applied")]
+
+
+@pytest.mark.asyncio
 async def test_no_redial_before_tor_reports_a_circuit(monkeypatch):
     rig = _Rig(monkeypatch)
     await rig.step(peers_out=8)

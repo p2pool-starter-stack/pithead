@@ -60,8 +60,6 @@ class MonerodRedial:
             self._pending_tor_start = None
             return
         peers = verdict.get("peers_out") if verdict.get("peers_visible") else None
-        if peers:
-            self._pending_tor_start = None
         monerod_started = monerod.get("started_at")
         if monerod_started != self._monerod_started:
             self._monerod_started = monerod_started
@@ -74,6 +72,8 @@ class MonerodRedial:
             self._peerless_since = self._peerless_since if self._peerless_since is not None else now
         else:
             self._peerless_since = None
+        if peers:
+            self._pending_tor_start = None
         if self._pending_tor_start is not None and peers == 0:
             self._settle_since = self._settle_since if self._settle_since is not None else now
         else:
