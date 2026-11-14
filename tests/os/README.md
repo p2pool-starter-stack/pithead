@@ -112,12 +112,12 @@ sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGIS
 `sudo` resets the environment (`env_reset`), so the override has to be passed THROUGH it — the phases carry those inputs through both `_build_image` and its static image verification, so an exported variable that sudo drops produces exactly the zero-container appliance this avoids.
 
 `PITHEAD_REGISTRY` is not optional on a tree whose `VERSION` is unreleased, and that is the usual
-case here. Only the wizard's dashboard image is baked into the appliance, so at first boot every
-other service is a PULL of `pithead-<service>:v$(cat VERSION)` — tags that exist nowhere public
-until that version ships. Without the override the appliance provisions, publishes its dashboard
-credentials, and then runs ZERO containers; the legs that wait for a stack each take up to 25
-minutes to report it, and nothing in the battery's own output says the image was built wrong
-(#2043). `build-image.sh` now resolves those five refs up front and refuses a bench build that
+case here. `build-image.sh` bakes the always-on services (tor, monero, p2pool, xmrig-proxy,
+dashboard, caddy and the docker-socket-proxy) into the image from the registry at build time, and
+tags that exist nowhere public until that version ships cannot be baked (#2043, #978). The guest
+then loads the archives and never contacts the registry, which the provision leg proves by
+cutting the guest off from the test registry before the wizard submit and asserting that no packet
+reached it (`registry-cut-leg.sh`). `build-image.sh` now resolves those five refs up front and refuses a bench build that
 cannot pull them, so this is a fast error rather than a slow mystery — and
 `tests/os/zero-container-evidence.sh` dumps the guest's image lists at every such leg, where
 `comm -23 want have` separates a missing ref from a refusal with every ref present.

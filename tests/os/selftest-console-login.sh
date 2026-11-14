@@ -63,6 +63,7 @@ PATH="$work/bin:$PATH"
 is_deployed() { return 1; }
 is_appliance() { [ "$appliance" = true ]; }
 mutation_lock_acquire() { :; }
+load_baked_images() { :; }
 mutation_lock_release() { printf 'unlock\n' >>"$work/trace"; }
 check_prerequisites() { :; }
 ensure_config_exists() { :; }

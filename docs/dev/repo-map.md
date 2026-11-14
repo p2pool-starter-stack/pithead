@@ -129,6 +129,11 @@ archive replacement, recreation failures and migration holds through the real st
 The crossupdate phase compares the running dashboard ID with the candidate slot archive.
 `tests/os/dashboard-markers.json` declares signed test-image variants;
 `tests/os/selftest-marker-images.sh` checks the build-time manifest and shared archive reference.
+`os/bake-images.sh` verifies and archives the always-on service images into the appliance (#978);
+`tests/os/selftest-bake-images.sh` checks its pins, signature refusal and archive set, and
+`tests/stack/appliance/test-appliance-baked-images.sh` checks the loader's scope. The provision
+phase cuts the guest off from the test registry with `tests/os/registry-cut-leg.sh`, whose parsing
+`tests/os/selftest-registry-cut.sh` covers.
 
 Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
 `tests/stack/appliance/test-appliance-reset-slot.sh` and
