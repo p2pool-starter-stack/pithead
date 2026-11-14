@@ -99,7 +99,7 @@ async def test_wizard_submit_migrates_only_a_stamped_2_0_0_config(tmp_path, monk
     payload = {"monero": {"wallet_address": "fixture-wallet"}}
     if stamped:
         payload["config_version"] = "2.0.0"
-    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+    async with TestClient(TestServer(wizard.make_app())) as client:
         await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
         response = await client.post("/submit", data={"config": json.dumps(payload)})
         assert response.status == 200
