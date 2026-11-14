@@ -41,8 +41,14 @@ control_power_refusal() { # <control-dir> — echoes the reason a power verb mus
 
 control_power_stop_stack() { # <action>
     [ -f "$ENV_FILE" ] || return 0
+    local out rc=0
     log "Stopping the stack before $1..."
-    timeout "${CONTROL_POWER_STOP_TIMEOUT_S:-300}" docker compose stop >/dev/null 2>&1 && log "Stack stopped before $1."
+    out=$(timeout "${CONTROL_POWER_STOP_TIMEOUT_S:-300}" docker compose stop 2>&1) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        warn "Stack stop before $1 failed (exit $rc): $(printf '%s' "$out" | tail -n 5 | tr '\n' ' ' | cut -c1-400)"
+        return 1
+    fi
+    log "Stack stopped before $1."
 }
 
 control_power() { # <claimed-file> <id> <actor> <control-dir> <action>
