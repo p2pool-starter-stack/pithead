@@ -12,7 +12,7 @@ RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && 
     && rm -rf /var/lib/apt/lists/*
 
 # Download, verify integrity, and install the XMRig Proxy binary
-RUN wget -O xmrig-proxy.tar.gz https://github.com/xmrig/xmrig-proxy/releases/download/v${XMRIG_PROXY_VERSION}/xmrig-proxy-${XMRIG_PROXY_VERSION}-linux-static-x64.tar.gz \
+RUN wget --tries=3 --timeout=180 --waitretry=10 -O xmrig-proxy.tar.gz https://github.com/xmrig/xmrig-proxy/releases/download/v${XMRIG_PROXY_VERSION}/xmrig-proxy-${XMRIG_PROXY_VERSION}-linux-static-x64.tar.gz \
     && echo "${XMRIG_PROXY_HASH}  xmrig-proxy.tar.gz" | sha256sum -c - \
     && tar xzf xmrig-proxy.tar.gz \
     && mv xmrig-proxy-${XMRIG_PROXY_VERSION}/xmrig-proxy /usr/local/bin/xmrig-proxy \
