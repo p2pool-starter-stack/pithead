@@ -423,7 +423,7 @@ m10_flush_before_cut() {
     sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | awk '
         index($0, "height_before=$(_monerod_height)") && !poll { poll = NR }
         index($0, "_ssh sync || {") && !flush { flush = NR }
-        index($0, "virsh destroy \"$VM\"") && !cut { cut = NR }
+        index($0, "vm_stop_abrupt") && !cut { cut = NR }
         END { exit !(poll && flush && cut && poll < flush && flush < cut) }'
 }
 m10_flush_before_cut "$HERE/phases/provision-power-cut.sh" || exit 1

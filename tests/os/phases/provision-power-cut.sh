@@ -129,12 +129,12 @@ _phase_provision_power_cut() {
             bad "M10.$i: could not read the boot id before the power cut"
             return 1
         }
-        virsh destroy "$VM" >/dev/null 2>&1 || {
+        vm_stop_abrupt >/dev/null 2>&1 || {
             bad "M10.$i: could not cut power"
             return 1
         }
         sleep 3
-        virsh start "$VM" >/dev/null 2>&1 || {
+        vm_start >/dev/null 2>&1 || {
             bad "M10.$i: could not restore power"
             return 1
         }
