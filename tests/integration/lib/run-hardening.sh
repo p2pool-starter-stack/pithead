@@ -132,6 +132,7 @@ run_hardening() {
     #    gate: recovery is only asserted when the onion was reachable to begin with.
     #    (Reachability is INBOUND; the clearnet-EXIT half of #424 is not externally observable and
     #    stays with the doctor egress check, which is the stack self-checking its own egress.)
+    _hardening_restart_tor_redial_rows
     local pre_onion=0
     if [ "$(env_on_box DASHBOARD_ONION_ADDRESS)" = "placeholder" ] || [ -z "$(env_on_box DASHBOARD_ONION_ADDRESS)" ]; then
         it_skip_leg "dashboard onion external reachability (#424/#343)" "onion not provisioned on this box"
@@ -148,7 +149,6 @@ run_hardening() {
         wait_status_ok 240 || true
         pithead status >/dev/null 2>&1
         assert_rc "stack healthy after a tor restart (#424 heal action)" "$?" "0"
-        _monerod_started_after_tor "monerod re-dialled after the tor restart: restarted after tor (#4063)"
         if [ "$pre_onion" = "1" ]; then
             it_step "external Tor client: dashboard onion must come back after the restart…"
             if _onion_reachable_external; then

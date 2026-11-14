@@ -15,6 +15,18 @@ _monerod_started_after_tor() { # <label>
     fi
 }
 
+_hardening_restart_tor_redial_rows() {
+    local monerod_before
+    monerod_before="$(_container_started_ns monerod)"
+    it_step "restart tor: monerod must be re-dialled once Tor is bootstrapped (#4063)…"
+    pithead restart tor >/dev/null 2>&1
+    assert_rc "restart tor succeeds and waits for Tor before re-dialling monerod (#4063)" "$?" "0"
+    wait_status_ok 240 || true
+    assert_eq "restart tor restarted monerod (#4063)" \
+        "$([ "$(_container_started_ns monerod)" -gt "$monerod_before" ] && echo yes || echo no)" "yes"
+    _monerod_started_after_tor "monerod re-dialled after restart tor: started after tor (#4063)"
+}
+
 _hardening_stack_action_rows() { # <control-dir>
     local cdir="$1"
     local rst_id tor_started_before tor_reset_id tor_reset_result st
@@ -28,6 +40,14 @@ _hardening_stack_action_rows() { # <control-dir>
     assert_contains "Restart all audited with actor, action and status (#4064)" \
         "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"actor":"itest","action":"restart","status":"applied"'
     _monerod_started_after_tor "after Restart all monerod is re-dialled: restarted after tor (#4064)"
+    if rx "docker inspect tari >/dev/null 2>&1"; then
+        assert_eq "after Restart all tari started after tor (#4064)" \
+            "$([ "$(_container_started_ns tari)" -gt "$(_container_started_ns tor)" ] && echo yes || echo no)" "yes"
+    else
+        it_skip_leg "tari starts after tor on Restart all (#4064)" "no tari container on this box"
+    fi
+    assert_eq "the host result is still readable through the dashboard after it returns (#4064)" \
+        "$(rx "docker exec dashboard python3 -c \"import json,urllib.request as u;print(json.load(u.urlopen('http://127.0.0.1:8000/api/control/result?id=$rst_id'))['status'])\"" 2>/dev/null)" "applied"
     tor_started_before="$(_container_started_ns tor)"
     tor_reset_id="$(_uuid4)"
     _spool_write "$cdir/requests/$tor_reset_id.json" "$(jq -nc --arg id "$tor_reset_id" '{id:$id,action:"tor-reset",actor:"itest"}')"
