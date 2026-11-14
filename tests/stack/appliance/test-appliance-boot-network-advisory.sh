@@ -42,8 +42,14 @@ _bnv_up_failed() {
         source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
         _v=$1
         gate_tor_transport_verdict() { printf '%s\n' "$_v"; }
-        fail_boot() { echo "fail_boot:$1"; exit 0; }
-        fail_boot_contended() { echo "contended:$1"; exit 0; }
+        fail_boot() {
+            echo "fail_boot:$1"
+            exit 0
+        }
+        fail_boot_contended() {
+            echo "contended:$1"
+            exit 0
+        }
         boot_up_failed "$2"
         echo continues
     )
