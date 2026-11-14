@@ -60,7 +60,8 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 		env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$$home" bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; result=1; }; \
 	done; exit $$result
 
-test-tools:
+test-tools: pithead
+	python3 tests/stack/standalone/test_monero_backups.py
 	python3 tests/integration/test_selftest_runner.py
 	python3 tests/tools/test_lmdb_build.py
 	bash scripts/lint/test-sanitize-test-log.sh
