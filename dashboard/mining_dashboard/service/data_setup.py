@@ -24,7 +24,9 @@ from mining_dashboard.service.data_helpers import (
     WorkerLifecycle,
 )
 from mining_dashboard.service.health.degradation import DegradationMonitor
+from mining_dashboard.service.health.mining_guard import MiningGuard
 from mining_dashboard.service.health.monero_health import MoneroChainHealth
+from mining_dashboard.service.health.node_alert import tor_heal_status
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.health.p2pool_heal import P2PoolPeerHealer
 from mining_dashboard.service.health.tari_health import TariChainHealth
@@ -174,7 +176,9 @@ class DataSetupMixin:
         # Healthchecks.io dead-man's switch (Issue #79). Disabled by default — when off this is
         # a no-op. When on, each cycle pings a unique URL; the alert fires externally on the
         # *absence* of a ping, so it survives a host death the in-stack notifier can't report.
-        self.healthchecks = HealthchecksClient.from_config()
+        self.healthchecks = HealthchecksClient.from_config(
+            record_failure=self.state_manager.record_ping_failure
+        )
 
         # Auto-transition a clearnet initial-sync node back to Tor once it's synced (#234). Reuses
         # the same docker control proxy as the #31 failover (start/stop only). on_transition surfaces
@@ -231,6 +235,7 @@ class DataSetupMixin:
         # True while we've stopped the proxy to reject workers. Persisted in the snapshot so
         # a dashboard restart mid-outage still readmits workers once the node recovers.
         self.workers_rejected = False
+        self.mining_guard = MiningGuard()
 
         # Hold the miner (p2pool + xmrig-proxy) until the required chain(s) finish syncing
         # (Issue #35). One-way latch: `miner_released` flips True the first time the gate is
@@ -268,10 +273,8 @@ class DataSetupMixin:
         self._restore_sync_gate()
 
     def _observe_monero(self, monero_sync):
-        """Attach the monerod peers-and-tip verdict (#2499) as ``monero_sync["health"]`` for the
-        card, /api/state, doctor and the alert edges. A remote node gets the "peers not visible"
-        verdict: its peer set is not ours to judge."""
         monero_sync["health"] = self.monero_chain.observe(monero_sync, local=monero_is_local())
+        self.latest_data["tor_heal"] = tor_heal_status(self.tor_healer)
 
     async def _observe_tari(self, tari_client, tari_sync):
         """One cycle of Tari health: the debounced node-down flag (#31), returned, and the chain

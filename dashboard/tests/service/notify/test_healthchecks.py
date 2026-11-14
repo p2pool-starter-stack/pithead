@@ -230,3 +230,143 @@ class TestFromConfig:
         assert c.enabled is True  # a URL is configured
         assert c.url == "https://hc-ping.com/zzz"
         assert c.interval == hc_mod._PING_INTERVAL_SEC  # fixed throttle floor, not configurable
+
+
+NameResolutionError = type("NameResolutionError", (Exception,), {})
+gaierror = type("gaierror", (Exception,), {})
+ProxyConnectionError = type("ProxyConnectionError", (Exception,), {})
+
+
+class TestFailureRecording:
+    URL = "https://hc-ping.com/secret-ping-token"
+
+    def _client(self, recorder, **overrides):
+        return _client(ping_url=self.URL, record_failure=recorder, **overrides)
+
+    def _recorder(self):
+        rows = []
+        return rows, lambda ts, reason, detail: rows.append((ts, reason, detail))
+
+    def _wrapped(self, inner, outer):
+        exc = outer(f"while pinging {self.URL}")
+        exc.__cause__ = inner
+        return exc
+
+    def test_a_success_records_nothing(self):
+        rows, rec = self._recorder()
+        with patch.object(hc_mod, "bounded_get", return_value=_resp(200)):
+            assert self._client(rec).ping() is True
+        assert rows == []
+
+    def test_unconfigured_and_throttled_paths_record_nothing(self):
+        rows, rec = self._recorder()
+        assert _client(ping_url="", record_failure=rec).ping() is False
+        assert rows == []
+        clock = _Clock()
+        c = self._client(rec, clock=clock)
+        with patch.object(hc_mod, "bounded_get", return_value=_resp(200)):
+            assert c.ping() is True
+        rows.clear()
+        with patch.object(hc_mod, "bounded_get", return_value=_resp(200)):
+            assert c.ping() is False
+        assert rows == []
+
+    def test_rejection_is_recorded_as_http_status_with_the_status_in_detail(self):
+        rows, rec = self._recorder()
+        with patch.object(hc_mod, "bounded_get", return_value=_resp(404)):
+            assert self._client(rec).ping() is False
+        assert len(rows) == 1
+        ts, reason, detail = rows[0]
+        assert reason == "http_status"
+        assert detail == "HTTP 404"
+        assert ts > 1_600_000_000
+
+    def test_proxy_error_maps_to_tor_socks(self):
+        rows, rec = self._recorder()
+        err = requests.exceptions.ProxyError(f"Cannot connect to proxy for {self.URL}")
+        with patch.object(hc_mod, "bounded_get", side_effect=err):
+            assert self._client(rec).ping() is False
+        assert rows[0][1:] == ("tor_socks", "ProxyError")
+
+    def test_wrapped_proxy_connection_error_maps_to_tor_socks(self):
+        rows, rec = self._recorder()
+        err = self._wrapped(
+            ProxyConnectionError("proxy refused"), requests.exceptions.ConnectionError
+        )
+        with patch.object(hc_mod, "bounded_get", side_effect=err):
+            assert self._client(rec).ping() is False
+        assert rows[0][1] == "tor_socks"
+
+    def test_name_resolution_maps_to_dns(self):
+        rows, rec = self._recorder()
+        err = self._wrapped(
+            NameResolutionError("host not found"), requests.exceptions.ConnectionError
+        )
+        with patch.object(hc_mod, "bounded_get", side_effect=err):
+            assert self._client(rec).ping() is False
+        assert rows[0][1] == "dns"
+
+    def test_gaierror_maps_to_dns(self):
+        rows, rec = self._recorder()
+        err = self._wrapped(gaierror("nodename nor servname"), requests.exceptions.ConnectionError)
+        with patch.object(hc_mod, "bounded_get", side_effect=err):
+            assert self._client(rec).ping() is False
+        assert rows[0][1] == "dns"
+
+    def test_a_class_two_hops_down_the_chain_still_maps(self):
+        rows, rec = self._recorder()
+        inner = NameResolutionError("host not found")
+        middle = OSError(f"SSLError while reaching {self.URL}")
+        middle.__cause__ = inner
+        err = self._wrapped(middle, requests.exceptions.ConnectionError)
+        with patch.object(hc_mod, "bounded_get", side_effect=err):
+            assert self._client(rec).ping() is False
+        assert rows[0][1] == "dns"
+
+    def test_plain_connection_error_and_timeout_map_to_connect(self):
+        rows, rec = self._recorder()
+        with patch.object(
+            hc_mod,
+            "bounded_get",
+            side_effect=[
+                requests.exceptions.ConnectionError(f"reset by peer on {self.URL}"),
+                requests.exceptions.Timeout(f"timed out against {self.URL}"),
+            ],
+        ):
+            assert self._client(rec).ping() is False
+            assert self._client(rec).ping() is False
+        assert [r[1] for r in rows] == ["connect", "connect"]
+
+    def test_no_stored_field_ever_contains_the_ping_url(self):
+        rows, rec = self._recorder()
+        errs = [
+            requests.exceptions.ProxyError(f"Cannot connect to proxy for {self.URL}"),
+            requests.exceptions.ConnectionError(f"reset by peer on {self.URL}"),
+            requests.exceptions.Timeout(f"timed out against {self.URL}"),
+        ]
+        c = self._client(rec)
+        for err in errs:
+            with patch.object(hc_mod, "bounded_get", side_effect=err):
+                assert c.ping() is False
+        with patch.object(hc_mod, "bounded_get", return_value=_resp(403)):
+            assert c.ping() is False
+        assert len(rows) == 4
+        for _ts, reason, detail in rows:
+            assert self.URL not in str(detail)
+            assert "secret-ping-token" not in f"{reason}{detail}"
+
+    def test_a_recorder_that_raises_never_breaks_the_ping(self):
+        def explode(ts, reason, detail):
+            raise RuntimeError("db on fire")
+
+        c = self._client(explode)
+        with patch.object(hc_mod, "bounded_get", return_value=_resp(500)):
+            assert c.ping() is False
+
+    def test_from_config_threads_the_recorder_through(self):
+        rows, rec = self._recorder()
+        with patch.object(hc_mod, "HEALTHCHECKS_PING_URL", self.URL):
+            c = HealthchecksClient.from_config(record_failure=rec)
+        with patch.object(hc_mod, "bounded_get", return_value=_resp(500)):
+            assert c.ping() is False
+        assert rows[0][1:] == ("http_status", "HTTP 500")

@@ -250,6 +250,9 @@ class StorageSchemaMixin:
             "CREATE TABLE IF NOT EXISTS worker_config_revision (worker TEXT PRIMARY KEY, "
             "revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT, rigforge_version TEXT)"
         )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS ping_failures (ts REAL, reason TEXT, detail TEXT)"
+        )
 
     def _create_indexes(self):
         """Creates indexes. Called after migrations so the indexed columns are guaranteed to
@@ -349,3 +352,36 @@ class StorageSchemaMixin:
             self.logger.info("Migrating DB: Adding type column to worker_config")
             self._conn.execute("ALTER TABLE worker_config ADD COLUMN type TEXT DEFAULT 'apply'")
         self._migrate_worker_config_revision(cursor)
+
+    PING_FAILURES_KEPT = 50
+
+    def record_ping_failure(self, ts: float, reason: str, detail: str = "") -> None:
+        try:
+            with self._db_lock:
+                if not self._conn:
+                    return
+                with self._conn:
+                    self._conn.execute(
+                        "INSERT INTO ping_failures (ts, reason, detail) VALUES (?, ?, ?)",
+                        (float(ts), str(reason), str(detail)[:200]),
+                    )
+                    self._conn.execute(
+                        "DELETE FROM ping_failures WHERE rowid NOT IN "
+                        "(SELECT rowid FROM ping_failures ORDER BY ts DESC, rowid DESC LIMIT ?)",
+                        (self.PING_FAILURES_KEPT,),
+                    )
+        except sqlite3.Error:
+            pass
+
+    def get_ping_failures(self, limit: int = 10) -> list[dict]:
+        try:
+            with self._db_lock:
+                if not self._conn:
+                    return []
+                cur = self._conn.execute(
+                    "SELECT ts, reason, detail FROM ping_failures ORDER BY ts DESC LIMIT ?",
+                    (int(limit),),
+                )
+                return [{"ts": r[0], "reason": r[1], "detail": r[2]} for r in cur.fetchall()]
+        except sqlite3.Error:
+            return []
