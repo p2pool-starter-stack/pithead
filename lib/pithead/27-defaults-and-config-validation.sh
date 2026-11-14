@@ -217,7 +217,8 @@ TELEGRAM_LEVEL_MIGRATION_JQ='
   | (if $sending then [optional[] | select($ev[.] != false)] else [] end) as $old
   | (reduce levels[] as $l ({best: null};
       ([($l.set - $old)[], ($old - $l.set)[]] | length) as $d
-      | if .best == null or $d <= .best.d then .best = {d: $d, level: $l} else . end).best.level) as $pick
+      | if .best == null or $d <= .best.d then .best = {d: $d, level: $l} else . end)
+    | .best.level) as $pick
   | (if ($t.level // "") != "" then ($t.level | tostring) else $pick.name end) as $level
   | (levels | map(select(.name == $level)) | first // levels[3]).set as $new
   | (if $creds then ($new - $old) else [] end) as $started
