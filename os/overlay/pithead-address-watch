@@ -14,6 +14,12 @@ addrs=$(hostname -I 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' '
 
 sig() { sha256sum "$TLS_DIR/wizard.crt" Caddyfile 2>/dev/null | cut -d' ' -f1 | tr '\n' ' '; }
 
+adopt_rendered_files() {
+    printf '%s' "$now" >"$STATE.served"
+    rm -f "$STATE.pending"
+    echo "pithead-address-watch: the dashboard certificate or the Caddyfile changed while the addresses held — the operation that re-rendered them owns the Caddy restart; recorded, not restarted here"
+}
+
 if [ -f "$STATE" ] && [ "$addrs" = "$(cat "$STATE")" ]; then
     now=$(sig)
     if [ ! -f "$STATE.served" ]; then
@@ -25,21 +31,20 @@ if [ -f "$STATE" ] && [ "$addrs" = "$(cat "$STATE")" ]; then
         exit 0
     fi
     if [ ! -f "$STATE.pending" ] || [ "$now" != "$(cat "$STATE.pending")" ]; then
-        printf '%s' "$now" >"$STATE.served"
-        rm -f "$STATE.pending"
-        echo "pithead-address-watch: the dashboard certificate or the Caddyfile changed while the addresses held — the operation that re-rendered them owns the Caddy restart; recorded, not restarted here"
+        adopt_rendered_files
         exit 0
     fi
-    exec 9>>"$LOCK" || exit 0
+    exec 9>>"$LOCK" || {
+        echo "pithead-address-watch: cannot open the mutation lock file; retrying on the next tick"
+        exit 0
+    }
     if ! flock -n 9; then
         echo "pithead-address-watch: another pithead operation holds the lock; retrying on the next tick"
         exit 0
     fi
     now=$(sig)
     if [ "$now" != "$(cat "$STATE.pending")" ]; then
-        printf '%s' "$now" >"$STATE.served"
-        rm -f "$STATE.pending"
-        echo "pithead-address-watch: the dashboard certificate or the Caddyfile changed while the addresses held — the operation that re-rendered them owns the Caddy restart; recorded, not restarted here"
+        adopt_rendered_files
         exit 0
     fi
     echo "pithead-address-watch: the Caddy restart the watch owed for these files is due — restarting Caddy"
@@ -52,7 +57,10 @@ if [ -f "$STATE" ] && [ "$addrs" = "$(cat "$STATE")" ]; then
     exit 0
 fi
 
-exec 9>>"$LOCK" || exit 0
+exec 9>>"$LOCK" || {
+    echo "pithead-address-watch: cannot open the mutation lock file; retrying on the next tick"
+    exit 0
+}
 if ! flock -n 9; then
     echo "pithead-address-watch: another pithead operation holds the lock; retrying on the next tick"
     exit 0

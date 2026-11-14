@@ -102,7 +102,6 @@ _restart ok
 _run "192.168.1.5 fd1c::9" >/dev/null
 assert_eq "…the retry lands the moment Caddy can restart" "$(_count restart "$AW/restarts")" "$((_x + 2))"
 assert_eq "…and the pending marker clears with it" "$(cat "$AW/state.pending" 2>/dev/null)" ""
-# a pithead operation holding the mutation lock: no render, retry
 _render mints
 before=$(_count render "$AW/log")
 out=$(flock -n "$AW/lock" true && (
