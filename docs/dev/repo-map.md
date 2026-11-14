@@ -592,3 +592,7 @@ with its chart and pure model alongside it. `dashboard/mining_dashboard/web/view
 readings through the dashboard state. Frontend regressions are under
 `dashboard/tests/frontend/sovereign/`; `dashboard/tests/browser/overview.test.mjs` retains
 phone, tablet and desktop screenshots in the `sovereign-visual-proof` CI artifact.
+
+The e2e sync sampler in `tests/integration/e2e-sync-sample.sh` rejects restored dashboard
+snapshots before the deploy, preflight and restore waits accept chain readiness. Its portable
+regression suite is `tests/integration/selftest/selftest-e2e-sync-freshness.sh`.
