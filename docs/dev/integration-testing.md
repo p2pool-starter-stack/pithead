@@ -1309,7 +1309,8 @@ safety-rollback and baseline-restore controls additionally name the failed step 
 exit status on the failure row, and keep that step's own output in
 `results/lifecycle-restore/<step>.log`, `results/safety-restore/<step>.log` or
 `results/baseline-restore/<step>.log` (#3641) — including the cleanup steps that fail after
-an earlier failure. A failed step's last 15 lines are also shown under the row. Every such
+an earlier failure. A failed step's last 15 redacted lines are also printed the moment the
+step fails. Every such
 log passes through `redact()` before it is written, and the redacted file is the only one
 that survives: the raw capture is removed even when the step itself failed.
 `selftest-baseline-restore-reason.sh` and the `#3641` rows of
