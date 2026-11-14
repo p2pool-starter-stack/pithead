@@ -139,9 +139,8 @@ export class LanAccessPanel extends ConfigView {
     await super.commit();
     if (this.state.result?.status === "applied") this.props.onApplied?.();
   }
-  dismiss() {
-    this.modalRef.current?.close();
-    if (this.state.phase !== "done") this.setState({ phase: "form", preview: null });
+  componentWillUnmount() {
+    this.props.onDirtyChange?.(false);
   }
   editable() {
     const editable = new Set([
@@ -161,7 +160,7 @@ export class LanAccessPanel extends ConfigView {
         confirmText=${confirmText} onConfirmText=${(value) => this.setState({ confirmText: value })}
         payoutSuffixes=${payoutSuffixes} onPayoutSuffix=${(chain, value) =>
           this.setState({ payoutSuffixes: { ...payoutSuffixes, [chain]: value } })}
-        onConfirm=${() => this.commit()} onCancel=${() => this.dismiss()}
+        onConfirm=${() => this.commit()} onCancel=${() => this.modalRef.current?.close()}
         onClose=${() => this.setState({ phase: "form", preview: null })}
         busy=${phase === "committing"} />`;
     if (phase === "loading") return html`<p role="status">Reading the host's current switches…</p>`;
@@ -179,7 +178,7 @@ export class LanAccessPanel extends ConfigView {
             <input
               type="checkbox"
               checked=${on}
-              disabled=${busy || !this.editable()}
+              disabled=${busy || !this.editable() || phase === "done"}
               onChange=${(event) =>
                 this.onFieldEdit({ key, type: "boolean" }, event.target.checked)}
             />
@@ -222,13 +221,16 @@ export class LanAccessPanel extends ConfigView {
       }
       ${
         phase === "done"
-          ? html`<p role="status">
-            ${
-              result?.status === "applied"
-                ? "Applied. Only the affected services restart. Run the LAN rule check to confirm the rule is live."
-                : "The change was not applied. Its host result remains available in the configuration editor."
-            }
-          </p>`
+          ? html`<div role="status">
+            <p>
+              ${
+                result?.status === "applied"
+                  ? "Applied. Only the affected services restart. Run the LAN rule check to confirm the rule is live."
+                  : "The change was not applied. Its host result remains available in the configuration editor."
+              }
+            </p>
+            <button type="button" onClick=${() => this.load()}>Back to the switches</button>
+          </div>`
           : null
       }
       ${

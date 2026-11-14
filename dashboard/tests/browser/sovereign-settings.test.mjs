@@ -83,6 +83,9 @@ test("LAN access switches: address with copy, apply review, and the LAN rule che
   await expect(group.getByText("The LAN-only source rule is live.")).toBeVisible();
   expect(posted.doctor).toBe(true);
 
+  await expect(rpc).toBeDisabled();
+  await group.getByRole("button", { name: "Back to the switches" }).click();
+  await expect(rpc).toBeEnabled();
   await zmq.check();
   await expect(group.getByText("100.68.38.126:18083")).toBeVisible();
   await grpc.check();

@@ -143,7 +143,16 @@ test("apply previews the toggled key through the existing control path and commi
     assert.equal(component.state.phase, "done");
   });
   assert.equal(applied.length, 1);
-  assert.match(renderToString(component.render()), /LAN rule check/);
+  const done = renderToString(component.render());
+  assert.match(done, /LAN rule check/);
+  assert.match(done, /disabled/);
+  assert.match(done, /Back to the switches/);
+});
+
+test("leaving the page clears the unsaved-changes flag", () => {
+  const flags = [];
+  loaded(panel({ onDirtyChange: (dirty) => flags.push(dirty) })).componentWillUnmount();
+  assert.deepEqual(flags, [false]);
 });
 
 test("a not-yet-previewed commit is polled under the same id", async () => {

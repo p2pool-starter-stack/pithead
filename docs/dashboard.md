@@ -80,8 +80,10 @@ them to local-network sources, and the panel says so. Reviewing a change runs th
 apply path — preview, confirmation, commit — so the confirmation and audit entry are the ones the
 control channel already keeps, and only the affected services restart. **Check the LAN rule now**
 runs the host diagnostics and reads its LAN-guard rows; a switch that is on without its rule is
-reported as a fault, never as working, and a successful apply triggers the check. The group is
-present whenever the host control channel is on; otherwise it explains how to enable it.
+reported as a fault, never as working, and a successful apply triggers the check. After an apply
+the panel holds the switches until you go back to the switches, which re-reads the host. The group
+is on the Settings page always; the switches need an active session on a host whose control channel
+is on, and without one the page says so.
 
 ### Machines in the lean preview
 
