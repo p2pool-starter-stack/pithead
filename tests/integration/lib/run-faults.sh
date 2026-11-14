@@ -369,7 +369,6 @@ run_fault_injection() {
     fault_p2pool_peer_loss
     fault_tor_probe_egress
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
-
     # Belt-and-braces: whatever happened above, leave monerod + tor up, the dashboard data dir
     # writable (real fs, not the ENOSPC tmpfs), the firewall reinstated, the timedatectl shadow
     # gone, and the stack healthy — all unconditional so a mid-phase abort can't leave the box

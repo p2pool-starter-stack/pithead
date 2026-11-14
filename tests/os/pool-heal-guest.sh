@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 stage=initialization
-trap 'printf "P2Pool heal guest failed at %s (line %s, exit %s)\n" "$stage" "$LINENO" "$?" >&2' ERR
+diagnose() {
+    local stats
+    stats=$(find /data -path '*/stats/local/p2p' -type f 2>/dev/null | head -n 1)
+    printf 'diagnose: p2pool %s\n' "$(docker inspect p2pool --format '{{.State.Status}} started={{.State.StartedAt}} health={{.State.Health.Status}}' 2>&1 | head -c 300)" >&2
+    printf 'diagnose: stats file %s\n' "${stats:-absent}" >&2
+    [ -z "$stats" ] || jq -c 'del(.peers)' "$stats" 2>&1 | head -c 600 >&2
+    printf '\ndiagnose: dashboard P2Pool log lines: %s\n' "$(docker logs --since "$epoch" dashboard 2>&1 | grep -c 'P2Pool')" >&2
+    docker logs --tail 5 p2pool 2>&1 | head -c 800 >&2 || true
+}
+trap 'printf "P2Pool heal guest failed at %s (line %s, exit %s)\n" "$stage" "$LINENO" "$?" >&2; diagnose' ERR
 cd /data/pithead
 epoch=$(date +%s)
 started_at() { docker inspect p2pool --format '{{.State.StartedAt}}'; }
@@ -25,8 +34,10 @@ for ((attempt = 0; attempt < 60; attempt++)); do
 done
 running
 stage=peerless-precondition
-if [ "$(peers)" -gt 0 ]; then
-    echo 'SKIP: the guest P2Pool holds peers, so peer loss cannot be observed without a peerless guest'
+stats=$(find /data -path '*/stats/local/p2p' -type f 2>/dev/null | head -n 1)
+if [ -z "$stats" ] || [ "$(jq -r '.uptime // 0' "$stats")" -le 0 ] || [ "$(peers)" -gt 0 ]; then
+    echo 'SKIP: the guest P2Pool reports no stats or holds peers, so a peerless P2Pool cannot be observed'
+    diagnose
     exit 77
 fi
 first_start=$(started_at)
