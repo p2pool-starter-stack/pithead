@@ -162,11 +162,30 @@ assert_payout_control_roundtrip() {
     fi
 }
 
+svc_restart_probe() {
+    compose exec -T dashboard python3 - <<'PY' 2>&1 | head -c 400
+import urllib.error
+import urllib.request
+
+request = urllib.request.Request(
+    "http://127.0.0.1:8000/api/control/svc-restart",
+    data=b"{}",
+    headers={"Content-Type": "application/json", "X-Pithead-Control": "1"},
+)
+try:
+    print(urllib.request.urlopen(request, timeout=10).status)
+except urllib.error.HTTPError as error:
+    print(error.code, error.read()[:200])
+except Exception as error:
+    print(type(error).__name__, error)
+PY
+}
+
 assert_svc_restart_control_roundtrip() {
     local response
     : >"$CTRL_LOG"
     if ! dashboard_control_request svc-restart '{"container":"tor"}'; then
-        c_bad "a service restart reaches the host runner" "dashboard or host runner failed; response=$(head -c 300 "$CONTROL_RESPONSE"); runner=$(tail -n 8 "$SANDBOX/control-runner.log" 2>/dev/null | tr '\n' '|')"
+        c_bad "a service restart reaches the host runner" "dashboard or host runner failed; response=$(head -c 300 "$CONTROL_RESPONSE"); runner=$(tail -n 8 "$SANDBOX/control-runner.log" 2>/dev/null | tr '\n' '|'); probe=$(svc_restart_probe)"
         return
     fi
     response=$(cat "$CONTROL_RESPONSE")
