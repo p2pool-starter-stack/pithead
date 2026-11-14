@@ -72,7 +72,11 @@ _failover_pool_start() {
     local out
     out="$(rx "d=\$(mktemp -d \"\${TMPDIR:-/tmp}/failover-pool.XXXXXX\") && cat >\"\$d/fake_stratum.py\" && : >\"\$d/log\" && { setsid nohup timeout 3600 python3 \"\$d/fake_stratum.py\" 0.0.0.0 $FAILOVER_POOL_PORT \"\$d/log\" </dev/null >\"\$d/out\" 2>&1 & } && echo \"\$d\"" --stdin <"$HERE/fakes/fake_stratum.py")" || return 1
     FAILOVER_POOL_DIR="$(printf '%s\n' "$out" | tail -n 1)"
-    case "$FAILOVER_POOL_DIR" in /*/failover-pool.*) ;; *) FAILOVER_POOL_DIR=""; return 1 ;; esac
+    case "$FAILOVER_POOL_DIR" in /*/failover-pool.*) ;; *)
+        FAILOVER_POOL_DIR=""
+        return 1
+        ;;
+    esac
     wait_for 20 1 "the harness's second pool to listen" _pred_failover_pool_listening
 }
 

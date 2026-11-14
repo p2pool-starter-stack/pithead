@@ -7,6 +7,7 @@ source "$ROOT/lib.sh"
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-failover-view.sh
 source "$ROOT/lib/run-failover-view.sh"
+echo "== failover view: aggregates, banner, fake stratum and pool reorder =="
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 fail=0
@@ -74,7 +75,8 @@ for _ in $(seq 1 50); do
     python3 -c "import socket; socket.create_connection(('127.0.0.1', $port), 1).close()" 2>/dev/null && break
     sleep 0.1
 done
-reply="$(python3 - "$port" <<'PY'
+reply="$(
+    python3 - "$port" <<'PY'
 import json
 import socket
 import sys
