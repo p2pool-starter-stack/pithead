@@ -129,20 +129,26 @@ printf '%s\n' "$(($(date +%s) - 1000))" >"$SR/svc-restart-tor"
 sr_run "$(sr_req "$(sr_id 4)" '"tor"')"
 assert_eq "an expired cooldown allows the restart again" "$(sr_status "$(sr_id 4)")" "applied"
 
+sr_allowed=""
 for svc in wallet-rpc tari tari-wallet p2pool xmrig-proxy; do
     : >"$SR_DOCKER_LOG"
     sr_run "$(sr_req "$(sr_id 10)" "\"$svc\"")"
-    assert_eq "$svc is on the restart allowlist" "$(cat "$SR_DOCKER_LOG")" "compose restart $svc"
+    sr_allowed+="$(cat "$SR_DOCKER_LOG")"$'\n'
     rm -f "$SR/results/$(sr_id 10).json"
 done
+assert_eq "every other allowlisted service restarts with exactly one compose restart" "$sr_allowed" \
+    $'compose restart wallet-rpc\ncompose restart tari\ncompose restart tari-wallet\ncompose restart p2pool\ncompose restart xmrig-proxy\n'
 
+sr_refused=""
+: >"$SR_DOCKER_LOG"
 for bad_svc in dashboard caddy docker-proxy docker-control "tor monerod" "tor;id" '' '../tor' 'TOR' 'torx'; do
-    : >"$SR_DOCKER_LOG"
     sr_run "$(sr_req "$(sr_id 20)" "\"$bad_svc\"")"
-    assert_eq "'$bad_svc' is rejected by exact membership" "$(sr_status "$(sr_id 20)")" "rejected"
-    assert_eq "'$bad_svc' never reaches docker" "$(cat "$SR_DOCKER_LOG")" ""
+    sr_refused+="$(sr_status "$(sr_id 20)") "
     rm -f "$SR/results/$(sr_id 20).json"
 done
+assert_eq "every non-allowlisted name is rejected by exact membership" "$sr_refused" \
+    "rejected rejected rejected rejected rejected rejected rejected rejected rejected rejected "
+assert_eq "no rejected name ever reaches docker" "$(cat "$SR_DOCKER_LOG")" ""
 sr_run "$(sr_req "$(sr_id 21)" '')"
 assert_eq "a request with no service is rejected" "$(sr_status "$(sr_id 21)")" "rejected"
 sr_run "$(sr_req "$(sr_id 22)" '7')"
