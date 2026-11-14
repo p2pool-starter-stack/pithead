@@ -175,7 +175,7 @@ compose up -d >/dev/null 2>&1
 log "waiting for the dashboard API"
 wait_dashboard_api && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
 assert_payout_control_roundtrip # 0a. payout address approval crosses the dashboard/host boundary (#1959)
-assert_svc_restart_control_roundtrip # 0b. a service restart crosses the dashboard/host boundary (#4062)
+assert_svc_restart_control_roundtrip
 
 # 0. The /api/state payload must carry the #170 Stack Topology & Egress contract, derived live
 #    from config by the REAL dashboard. The pure derivation is unit-tested (tests/service/
