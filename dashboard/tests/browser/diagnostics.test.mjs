@@ -89,3 +89,63 @@ test("a failed service-log read displays its reason and can be retried", async (
     expect(request.postDataJSON()).toEqual({ container: "tor", lines: 200 });
   }
 });
+
+for (const theme of ["Light", "Dark"]) {
+  test(`${theme} theme: the diagnostics controls render as bordered buttons with a focus ring`, async ({
+    page,
+    browserName,
+    ui,
+  }) => {
+    const nextKey = browserName === "webkit" && process.platform === "darwin" ? "Alt+Tab" : "Tab";
+    await mount(ui);
+    await page.evaluate(
+      (t) => document.documentElement.setAttribute("data-theme", t),
+      theme.toLowerCase(),
+    );
+    await page.locator("summary", { hasText: "Recent log" }).first().click();
+    await page.clock.install();
+    await page.route("**/api/control/diag-logs", (route) =>
+      route.fulfill({ status: 202, json: { id: "log-1" } }),
+    );
+    await page.route("**/api/control/result?**", (route) =>
+      route.fulfill({ json: { status: "applied", lines: "tor ready" } }),
+    );
+    const run = page.getByRole("button", { name: "Run health check" });
+    const show = page.getByRole("button", { name: "Show recent log" }).first();
+    const refresh = page.getByRole("button", { name: "Refresh recent log" });
+    const heading = page.getByRole("heading", { name: "Service diagnostics" });
+    const section = page.locator("h3").first();
+    const assertButton = async (control, start, tabs) => {
+      await expect(control).toHaveCSS("border-top-width", "1px");
+      await expect(control).toHaveCSS("border-top-style", "solid");
+      await expect(control).toHaveCSS("border-top-left-radius", "6px");
+      await start.click();
+      for (let n = 0; n < tabs; n++) await page.keyboard.press(nextKey);
+      await expect(control).toBeFocused();
+      await expect(control).toHaveCSS("outline-style", "solid");
+      await expect(control).toHaveCSS("outline-width", "2px");
+    };
+    await assertButton(run, heading, 1);
+    await expect(run).toHaveClass(/active/);
+    await assertButton(show, section, 2);
+    await expect(show).not.toHaveClass(/active/);
+    await show.click();
+    await page.clock.fastForward(2000);
+    await expect(refresh).toHaveCount(1);
+    await assertButton(refresh, section, 2);
+    await expect(refresh).not.toHaveClass(/active/);
+    await page.evaluate(() => {
+      for (const b of document.querySelectorAll("button")) b.disabled = true;
+    });
+    for (const control of [run, refresh]) {
+      await expect(control).toHaveCSS("opacity", "0.5");
+      await expect(control).toHaveCSS("cursor", "not-allowed");
+    }
+  });
+}
+
+test("toggle-group segments stay borderless", async ({ page, ui }) => {
+  await ui.open();
+  const segment = page.getByRole("group", { name: "Dashboard view" }).getByRole("button").first();
+  await expect(segment).toHaveCSS("border-top-width", "0px");
+});
