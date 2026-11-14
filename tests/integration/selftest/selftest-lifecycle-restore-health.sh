@@ -30,9 +30,16 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         }
         it_log() { :; }
         it_step() { :; }
-        it_pass() { :; }
+        it_pass() {
+            case "${1:-}" in
+            "injected step failure retained its step, rc and sanitized output (#3641)") touch "$OUT_DIR/injected-diag-pass" ;;
+            esac
+        }
         it_skip_leg() { :; }
-        it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
+        it_fail() {
+            IT_FAIL=$((IT_FAIL + 1))
+            printf '%s\n' "${2:-}" >>"$OUT_DIR/failure-reasons"
+        }
         trace_lifecycle() { [ -z "${LIFECYCLE_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$LIFECYCLE_TRACE_OUT"; }
         trace_restore_order() { [ -z "${RESTORE_ORDER_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$RESTORE_ORDER_TRACE_OUT"; }
         capture_artifacts() {
@@ -46,7 +53,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
                 echo 'carry apply failed before health wait'
                 return 1
             } ;; # the third push is the carry
-            backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
+            backup-fails:backup | down-fails:down | restore-fails:restore) return 1 ;;
+            apply-fails:apply) printf 'apply-boom PASSWORD=fixture-secret\n' && return 1 ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
@@ -152,6 +160,13 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             exit 127
         fi
         printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
+        if [ "${STEP_REASONS:-no}" = yes ]; then
+            printf '|%s' "$(sed "s|$OUT_DIR/||g" "$OUT_DIR/failure-reasons" 2>/dev/null | tr '\n' '~')"
+            [ -e "$OUT_DIR/injected-diag-pass" ] && printf '|injected-diag-pass'
+        fi
+        if [ "${STEP_LOGS:-no}" = yes ] && [ -s "$OUT_DIR/lifecycle-restore/apply.log" ]; then
+            printf '|log=%s' "$(tr '\n' '~' <"$OUT_DIR/lifecycle-restore/apply.log")"
+        fi
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
         [ "$RESTORE_CASE" != carry-rows-unreadable ] || printf '|applied=%s' "$([ -e "$OUT_DIR/dashboard-carry.apply.log" ] && echo yes || echo no)"
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
@@ -317,6 +332,39 @@ assert_eq "a lifecycle that stops silently gets a failure row naming the step (#
 assert_eq "a lifecycle that fails its verdict silently still gets a failure row (#3986)" "$(drive_abort 1 '' 0)" "lifecycle phase stopped without recording a failure|"
 assert_eq "a lifecycle that recorded its own failure gets no second row (#3986)" "$(drive_abort 1 run_support_bundle 1)" "own row|"
 assert_eq "a passing lifecycle adds no failure row (#3986)" "$(drive_abort 0 '' 0)" ""
+
+assert_eq "a failed backup names the backup step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes backup-fails)" \
+    "1|1|backup returned non-zero (rc 1); see lifecycle-restore/backup.log~|injected-diag-pass"
+assert_eq "a failed config push names the config-write step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes push-config-fails)" \
+    "1|1|config-write returned non-zero (rc 1); see lifecycle-restore/config-write.log~|injected-diag-pass"
+assert_eq "a failed round-trip apply names the apply step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes apply-fails)" \
+    "1|1|apply returned non-zero (rc 1); see lifecycle-restore/apply.log~|injected-diag-pass"
+assert_eq "the failed round-trip apply retains its redacted output (#3641)" \
+    "$(STEP_LOGS=yes drive_restore yes apply-fails)" \
+    "1|1|log=apply-boom PASSWORD=<redacted>~"
+assert_eq "a failed round-trip down names the down step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes down-fails)" \
+    "1|1|down returned non-zero (rc 1); see lifecycle-restore/down.log~|injected-diag-pass"
+assert_eq "a failed round-trip restore names the restore step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes restore-fails)" \
+    "1|1|restore returned non-zero (rc 1); see lifecycle-restore/restore.log~|injected-diag-pass"
+assert_eq "a failed round-trip up names the up step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes up-fails)" \
+    "1|1|up returned non-zero (rc 1); see lifecycle-restore/up.log~|injected-diag-pass"
+assert_eq "a failed carry cleanup names the cleanup step that failed (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes carry-cleanup-fails)" \
+    "1|1|cleanup-remove returned non-zero (rc 1); see lifecycle-restore/cleanup-remove.log~|injected-diag-pass"
+assert_contains "the injected step-failure self-check passes in a healthy run (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes)" "injected-diag-pass"
+assert_contains "the injected step failure keeps its sanitized fixture out of the log (#3641)" \
+    "$(STEP_LOGS=yes drive_restore yes apply-fails)" "<redacted>"
+case "$(STEP_LOGS=yes drive_restore yes apply-fails)" in
+*fixture-secret*) it_fail "the retained step log drops the planted secret value (#3641)" ;;
+*) it_pass "the retained step log drops the planted secret value (#3641)" ;;
+esac
 
 echo "selftest-lifecycle-restore-health: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

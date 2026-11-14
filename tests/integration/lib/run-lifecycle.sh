@@ -67,7 +67,7 @@ _run_lifecycle() {
     lifecycle_mining_step run_source_image_reconcile run_source_image_reconcile || lifecycle_stopped run_source_image_reconcile || return 1
     lifecycle_mining_step run_restore_dashboard_probe run_restore_dashboard_probe || lifecycle_stopped run_restore_dashboard_probe || return 1
     lifecycle_mining_step run_tari_background_sync run_tari_background_sync || lifecycle_stopped run_tari_background_sync || return 1
-    local cur_pool fp_before other restore_tls_before
+    local cur_pool fp_before other restore_tls_before rt_dir="$OUT_DIR/lifecycle-restore"
     run_image_permissions || lifecycle_stopped run_image_permissions || return 1
     cur_pool="$(jq_get "$BASELINE_CONFIG" '.p2pool.pool')"
     cur_pool="${cur_pool:-mini}"
@@ -113,8 +113,9 @@ _run_lifecycle() {
         it_skip_leg "node-down failover" "remote mode: no local monerod to stop" "by-design"
     fi
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
+    it_selfcheck_run_logged "$rt_dir" || lifecycle_ok=0
     it_step "backup → restore round-trip…"
-    if pithead backup -y --no-encrypt >/dev/null 2>&1; then
+    if it_run_logged "$rt_dir" backup pithead backup -y --no-encrypt; then
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
@@ -129,11 +130,11 @@ _run_lifecycle() {
                 it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
                 lifecycle_ok=0
             # Diverge from the backed-up state, then restore it back.
-            elif push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
-                pithead apply -y >/dev/null 2>&1 &&
-                pithead down >/dev/null 2>&1 &&
-                pithead restore -y "$arch" >/dev/null 2>&1 &&
-                pithead up >/dev/null 2>&1; then
+            elif it_run_logged "$rt_dir" config-write push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
+                it_run_logged "$rt_dir" apply pithead apply -y &&
+                it_run_logged "$rt_dir" down pithead down &&
+                it_run_logged "$rt_dir" restore pithead restore -y "$arch" &&
+                it_run_logged "$rt_dir" up pithead up; then
                 if wait_status_ok 240; then
                     it_pass "status OK after restore"
                 else
@@ -166,7 +167,7 @@ _run_lifecycle() {
                 fi
                 [ "$IT_FAIL" -le "$failures_before" ] || lifecycle_ok=0
             else
-                it_fail "backup restore round-trip succeeded" "apply, down, restore, or up returned non-zero"
+                it_fail "backup restore round-trip succeeded" "$IT_STEP_NAME returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
                 lifecycle_ok=0
             fi
             rx "rm -f $(quote_arg "$arch")" >/dev/null 2>&1 || true
@@ -175,7 +176,7 @@ _run_lifecycle() {
             lifecycle_ok=0
         fi
     else
-        it_fail "pithead backup succeeded" "backup returned non-zero"
+        it_fail "pithead backup succeeded" "backup returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
         lifecycle_ok=0
     fi
     # Confirmed dashboard.data_dir carry (#2360): DASHBOARD_DATA_DIR is CONFIRM-class both from
@@ -214,11 +215,11 @@ _run_lifecycle() {
             # The product correctly refuses to overwrite the old, still-complete directory on a
             # reverse move. Stop first and remove only this test's verified copy, so suite cleanup
             # can return to its original configuration without discarding the source database.
-            if pithead down >/dev/null 2>&1 && rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1 &&
-                push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
+            if it_run_logged "$rt_dir" cleanup-down pithead down && it_run_logged "$rt_dir" cleanup-remove rx "rm -rf -- $(quote_arg "$carry_new")" && it_run_logged "$rt_dir" cleanup-config push_config "$BASELINE_CONFIG" &&
+                it_run_logged "$rt_dir" cleanup-apply pithead apply -y && it_run_logged "$rt_dir" cleanup-health wait_status_ok 180; then
                 it_pass "dashboard carry cleanup restored its baseline safely"
             else
-                it_fail "dashboard carry cleanup restored its baseline safely" "the stack was not stopped, its test copy was not removed, or the baseline did not return healthy"
+                it_fail "dashboard carry cleanup restored its baseline safely" "$IT_STEP_NAME returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
                 lifecycle_ok=0
             fi
         else
