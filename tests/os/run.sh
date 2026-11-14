@@ -93,6 +93,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/aged-version.sh"
 # shellcheck source=tests/os/rollback-verdict.sh
 . "$SCRIPT_DIR/rollback-verdict.sh"
+# shellcheck source=tests/os/require-complete-verdict.sh
+. "$SCRIPT_DIR/require-complete-verdict.sh"
 # shellcheck source=tests/os/provision-browser-submit.sh
 . "$SCRIPT_DIR/provision-browser-submit.sh"
 . "$SCRIPT_DIR/image-upgrade-certificate-leg.sh"
@@ -161,6 +163,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/m10-height-verdict.sh"
 IMAGE=""
 KEEP=0
+REQUIRE_COMPLETE=0
 PHASE="all"
 VM="pithead-os-test"
 DISK="/srv/code/bench-vm/pithead-os-test.img"
@@ -173,6 +176,10 @@ while [ $# -gt 0 ]; do
         ;;
     --keep)
         KEEP=1
+        shift
+        ;;
+    --require-complete)
+        REQUIRE_COMPLETE=1
         shift
         ;;
     --phase)
@@ -292,6 +299,8 @@ all)
     ;;
 esac
 
+require_complete_row=$(require_complete_verdict "$REQUIRE_COMPLETE" "$IT_SKIPPED_MISSING") || true
+[ -z "$require_complete_row" ] || bad "$require_complete_row"
 printf '\nos harness: \033[1;32m%d passed\033[0m, \033[1;31m%d failed\033[0m\n' "$PASS" "$FAIL"
 # The three buckets stay SEPARATE, and the breakdown under them is worded exactly as
 # tests/integration/lib/run-safety.sh's summary() words it (#1083/#1365), so the two tier-4

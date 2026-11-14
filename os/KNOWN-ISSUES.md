@@ -405,11 +405,13 @@ not proven.
   restore after #2364's fix, and the M16 node-endpoint `APPLY`. Open findings from the run: #2351,
   #2367, #2436, #2447. A dev image is not the shipping image: the final image still
   needs the soak (#1652) and pre-publication verification (#1653), which #394's gate list names
-  beside this battery. (M11–M14 are the rig-role steps and stay manual today — see the manual
-  release checklist — because the `rig` KVM phase does not yet prove MSR/hugepages, a dashboard
-  adopt, or a stick-root boot (its share leg, #2063, does now prove an accepted share, against a
-  second guest the battery itself boots as a coordinator); converting what it can is #1886's
-  first gap.)
+  beside this battery. (M11–M14 are the rig-role steps: M12 and M14 are automated on this branch,
+  while M11 and M13 stay partly manual — see the manual release checklist — because the `rig` KVM
+  phase does not yet prove MSR/hugepages, the physical boot half, the Keep-everything reinstall
+  (#3995), or a stick-root-boot wizard return (its share leg, #2063, does now prove an accepted
+  share, against a second guest the battery itself boots as a coordinator, since #3996 with a
+  hashrate floor and fail-closed skips, and since #3994 its adopt leg proves the dashboard adoption
+  and config push); converting what it can is #1886's first gap.)
 - **Secure Boot is unsupported by design (#2187).** [Disable Secure Boot before booting
   the appliance](../docs/appliance.md#2-boot-the-machine-from-the-stick). The KVM battery keeps
   measuring the result: every other guest in `tests/os/run.sh` pins

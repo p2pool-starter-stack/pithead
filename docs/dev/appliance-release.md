@@ -476,23 +476,24 @@ obvious way: a mains outage took the build bench down overnight and it was still
 the morning.
 
 M11–M14 are the rig-role steps: rig install and mining, dashboard-driven adopt and config push,
-rig power-loss and update, and run-from-USB. M11–M13 stay a manual procedure today — see
+rig power-loss and update, and run-from-USB. M11 and M13 keep a manual procedure for their physical halves — see
 [the rig-role manual battery](manual-qa/appliance/rig-battery.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) covers only the virtualized subset: it proves the
 wizard's rig card and role select, that a rig submits toward a pool, volatile journald, an unaided
 plain reboot, a virsh power cut with unattended mining and slot commit recovery, and the A/B update
 leg committing on a rig. Its own share leg (#2063) then re-points the rig at a SECOND, concurrent
 guest the battery itself boots as a remote-node coordinator (the same precondition as #2062) and
 proves an accepted share both ways — the rig's own worker and the coordinator's built-in miner —
-so an accepted share at a real p2pool is no longer manual-only. What it still does not prove: MSR
-tuning or hugepages via `doctor` (a KVM guest cannot take RandomX MSR writes), a dashboard-driven
-adopt or config push, or firmware Restore-on-AC-Power-Loss on a real rig — those still need a real
-loaner box. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
+so an accepted share at a real p2pool is no longer manual-only; #3996 added the M11 hashrate floor
+and the fail-closed `--require-complete`, and #3994 backported the adopt leg, so a dashboard-driven
+adopt and config push is automated too (`tests/os/rig-adopt-leg.sh`, M12). What it still does not
+prove: MSR tuning or hugepages via `doctor` (a KVM guest cannot take RandomX MSR writes), or
+firmware Restore-on-AC-Power-Loss on a real rig — those still need a real loaner box. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
 (`tests/os/phases/rigmedia.sh`, #2069): it boots the image as removable media beside a blank
 internal disk and answers RigForge without installing, and asserts the rig mines from the stick,
 no containers, volatile journald, an unaided reboot returns it mining, and the blank disk stays
 untouched; it does not touch the bootloader "Set up again" path (#1318), which stays whatever
 reaches the wizard again from a stick-run rig needs by hand. No bench release e2e scenario for the
-rig role exists yet. Converting what is left of M11–M13 is tracked as #3994 and #3995; the
+rig role exists yet. What is left — M11's physical half and M13's Keep-everything pass — is tracked as #3995; the
 numbering here stays stable so old release records still point at the same steps once those land.
 
 **M15 — backup and restore end to end.** On a provisioned machine, record the payout wallet,
