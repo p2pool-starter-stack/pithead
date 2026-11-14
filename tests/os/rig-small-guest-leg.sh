@@ -15,7 +15,7 @@ rig_small_guest_leg() { # <img>
 
 _rig_small_guest_run() { # <img>
     local img="$1" token="" tries=0 jar body scode sysfile pool after mounts unitlog
-    local mode rtok light hr cls ptries=0 oom
+    local mode rtok light hr cls ptries=0 oom rtries=0 htries
     info "small-guest leg (#4010) — the rig role on a 2 GiB, 1 vCPU machine: it must mine, not over-reserve"
     cp "$img" "$DISK" || {
         bad "could not copy the image for the 2 GiB rig guest"
@@ -69,11 +69,40 @@ _rig_small_guest_run() { # <img>
         bad "the rig submit did not return 200 on the 2 GiB guest (got ${scode:-none})"
         return 1
     }
-    [ "$(_ssh 'cat /data/pithead/machine-role' | tr -d '\r\n')" = "rig" ] || {
-        bad "the 2 GiB guest never became a rig"
+    # Accepted is not landed: /submit returns 200 when the spool takes the settings, and it is
+    # the wizard loop that writes the role marker seconds later (the main rig phase waits 120 s
+    # on the handoff card for exactly this). On a 1 vCPU guest everything runs slow — poll.
+    while [ "$(_ssh 'cat /data/pithead/machine-role 2>/dev/null' | tr -d '\r\n')" != "rig" ] &&
+        [ "$rtries" -lt 48 ]; do
+        sleep 5
+        rtries=$((rtries + 1))
+    done
+    [ "$(_ssh 'cat /data/pithead/machine-role 2>/dev/null' | tr -d '\r\n')" = "rig" ] || {
+        bad "the 2 GiB guest never became a rig — the role marker did not say rig within 240 s of the accepted submit"
         return 1
     }
     ok "the 2 GiB machine provisioned as a rig"
+    # The provisioning boot stays a coordinator's boot that only later learned it is a rig:
+    # pithead-hugepages ran before the marker existed, and /run carries a degraded marker from
+    # that pass which only a reboot clears. Judge every assertion on the boot the role owns —
+    # pithead-boot's rig branch brings the miner back up itself.
+    _reboot_wait reboot 600 || {
+        bad "the 2 GiB rig guest never answered from a new boot after reboot (domstate: $(virsh domstate "$VM" 2>&1 | tr '\n' ' ' | cut -c1-120))"
+        return 1
+    }
+    _wait_dhcp_ip 120 || true
+    _wait_ssh 600 || {
+        bad "the rebooted 2 GiB rig guest's SSH never came up ($(_ssh_unreachable_reason "$ip"))"
+        return 1
+    }
+    # sshd gates on /data, not on pithead-hugepages — the unit may still be starting when SSH
+    # answers. Wait it out before the is-active and journal assertions read it.
+    htries=0
+    while [ "$(_ssh 'systemctl is-active pithead-hugepages' 2>/dev/null | tr -d '\r\n')" = "activating" ] &&
+        [ "$htries" -lt 40 ]; do
+        sleep 5
+        htries=$((htries + 1))
+    done
 
     sysfile=$(_ssh 'tr -d "[:space:]" < /etc/sysctl.d/99-pithead-hugepages.conf 2>/dev/null' | tr -d '\r\n')
     [ "$sysfile" = "vm.nr_hugepages=3072" ] &&
