@@ -3,10 +3,13 @@
 Submit the provision phase with `old_image=true`. The runner supplies its
 verified cached image as `PITHEAD_OLD_IMAGE`, keeping its normal checksum,
 registry, signing-trust and reservation checks. The battery records the selected
-guest's full BUILD_COMMIT and requires it to be an ancestor of the verified
-develop commit and outside the PR commits. It resolves `origin/develop` first,
-then `refs/heads/develop` for the runner's full mirror checkout, and records
-the selected ref and full SHA. Neither resolving to a commit is an explicit
+guest's full BUILD_COMMIT and requires it to be an ancestor of a verified
+develop integration line commit and outside the PR commits. It considers every
+`refs/remotes/origin/develop*` and `refs/heads/develop*` ref — the release
+lines `develop-v*` included, and the local refs the runner's full mirror
+checkout carries — prefers the line whose merge-base with the candidate is
+newest, so a `develop-v*` PR takes its baseline from its own line, and records
+the selected ref and full SHA. None resolving to a commit is an explicit
 failure, as is missing, malformed or unmerged baseline source. The baseline and candidate share VERSION but are identified by
 BUILD_COMMIT. An exact RC2 selector is not required; bench-ci#1629 is not a
 prerequisite. The owner's appliance provides the exact RC2-to-RC3 acceptance.

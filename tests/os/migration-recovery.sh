@@ -1,22 +1,36 @@
 # shellcheck shell=bash
 # The runner selects a cached old image; only merged, pre-fix source may seed this proof.
 migration_old_commit_valid() {
-    local commit="$1" pr_commits ref
+    local commit="$1" pr_commits ref refs ordered base_commit merge_base stamp rank
     MIGRATION_BASE_REF="" MIGRATION_BASE_COMMIT=""
-    for ref in origin/develop refs/heads/develop; do
-        if MIGRATION_BASE_COMMIT=$(git rev-parse --verify "$ref^{commit}" 2>/dev/null); then
-            MIGRATION_BASE_REF=$ref
-            break
-        fi
-    done
-    [ -n "$MIGRATION_BASE_REF" ] || {
-        echo "migration baseline: neither origin/develop nor refs/heads/develop resolves to a commit" >&2
+    [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 1
+    refs=$(git for-each-ref --format='%(refname)' 'refs/remotes/origin/develop*' 'refs/heads/develop*')
+    [ -n "$refs" ] || {
+        echo "migration baseline: no develop integration line (origin/develop* or refs/heads/develop*) resolves to a commit" >&2
         return 1
     }
-    [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 1
-    git merge-base --is-ancestor "$commit" "$MIGRATION_BASE_COMMIT" || return 1
-    pr_commits=$(git rev-list "$MIGRATION_BASE_COMMIT..HEAD") || return 1
-    ! printf '%s\n' "$pr_commits" | grep -Fxq "$commit"
+    ordered=$(while read -r ref; do
+        [ -n "$ref" ] || continue
+        base_commit=$(git rev-parse --verify "$ref^{commit}" 2>/dev/null) || continue
+        merge_base=$(git merge-base HEAD "$base_commit" 2>/dev/null) || continue
+        stamp=$(git show -s --format=%ct "$merge_base" 2>/dev/null) || continue
+        case $ref in
+        refs/remotes/*) rank=0 ;;
+        *) rank=1 ;;
+        esac
+        printf '%s %s %s\n' "$stamp" "$rank" "$ref"
+    done <<<"$refs" | sort -k1,1nr -k2,2n -k3,3)
+    while read -r _ _ ref; do
+        [ -n "$ref" ] || continue
+        base_commit=$(git rev-parse --verify "$ref^{commit}" 2>/dev/null) || continue
+        git merge-base --is-ancestor "$commit" "$base_commit" || continue
+        pr_commits=$(git rev-list "$base_commit..HEAD") || return 1
+        if printf '%s\n' "$pr_commits" | grep -Fxq "$commit"; then continue; fi
+        MIGRATION_BASE_REF=$ref
+        MIGRATION_BASE_COMMIT=$base_commit
+        return 0
+    done <<<"$ordered"
+    return 1
 }
 
 migration_prepare_old() {
