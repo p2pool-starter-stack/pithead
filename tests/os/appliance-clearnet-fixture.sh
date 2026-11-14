@@ -2,7 +2,7 @@
 # shellcheck disable=SC2016,SC2034
 CLEARNET_FIXTURE_DIAG=""
 
-_control_apply_idle() { # [seconds]
+_control_apply_idle() {
     local deadline=$(($(date +%s) + ${1:-60})) SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}"
     while :; do
         _ssh 'systemctl is-active --quiet pithead-control.path && [ "$(systemctl is-active pithead-control.service)" != activating ] && flock -n /data/pithead/.pithead.lock true' && return 0
