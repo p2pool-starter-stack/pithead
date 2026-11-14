@@ -1,10 +1,5 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# The address watch (#2463): an address that arrives after pithead-boot committed used to leave the
-# dashboard certificate and Caddy's bind list stale until the next apply or reboot. The script
-# re-renders when `hostname -I` differs from what the last render saw, and restarts Caddy only when
-# the certificate or Caddyfile actually changed. Driven with stubbed hostname/systemctl and a fake
-# ./pithead whose render "mints" from the current address list. Sourced by tests/stack/run.sh.
 
 echo "== unit: pithead-address-watch — re-render when an address arrives after boot (#2463) =="
 AW="$SANDBOX/address-watch"
@@ -22,91 +17,164 @@ cat >"$AW/bin/systemctl" <<'STUB'
 #!/bin/bash
 cat "$AW_BOOT_STATE"
 STUB
-cat >"$AW/dir/pithead" <<'STUB'
+cat >"$AW/bin/_restart-ok" <<'STUB'
 #!/bin/bash
-[ "$1" = render ] || exit 2
+echo restart >>"$AW_RESTARTS"
+if (exec 7>>"$AW/lock" && flock -n 7) 2>/dev/null; then echo free >>"$AW/lock-seen"; else echo held >>"$AW/lock-seen"; fi
+STUB
+cat >"$AW/bin/_restart-fail" <<'STUB'
+#!/bin/bash
+echo restart >>"$AW_RESTARTS"
+exit 1
+STUB
+cat >"$AW/bin/_render-mints" <<'STUB'
+#!/bin/bash
 echo render >>"$AW_LOG"
-[ ! -f "$AW_RENDER_FAIL" ] || exit 1
 cp "$AW_ADDRS" data/tls/wizard.crt
 cp "$AW_ADDRS" Caddyfile
 STUB
-cat >"$AW/bin/restart-caddy" <<'STUB'
-#!/bin/bash
-echo restart >>"$AW_RESTARTS"
-STUB
-chmod +x "$AW/bin/restart-caddy" "$AW/bin/hostname" "$AW/bin/systemctl" "$AW/dir/pithead"
-export AW
-aw_run() { # <addresses> [boot-state] -> script output; render calls in $AW/log, restarts in $AW/restarts
-    printf '%s\n' "$1" >"$AW/addrs"
-    printf '%s\n' "${2:-active}" >"$AW/boot-state"
-    AW_ADDRS="$AW/addrs" AW_BOOT_STATE="$AW/boot-state" AW_LOG="$AW/log" AW_RENDER_FAIL="$AW/render-fail" \
-        PATH="$AW/bin:$PATH" PITHEAD_DIR="$AW/dir" PITHEAD_LOCK_FILE="$AW/lock" PITHEAD_ADDRESS_WATCH_STATE="$AW/state" \
-        PITHEAD_TLS_DIR=data/tls AW_RESTARTS="$AW/restarts" PITHEAD_CADDY_RESTART_CMD="$AW/bin/restart-caddy" \
-        bash "$HERE/../../os/overlay/pithead-address-watch" 2>&1
-}
-aw_count() {
-    local n
-    n=$(grep -c "$1" "$2" 2>/dev/null)
-    echo "${n:-0}"
-}
-
-aw_run "192.168.1.5" >/dev/null
-assert_eq "the first tick records the address set and renders once" "$(aw_count render "$AW/log")" "1"
-aw_run "192.168.1.5" >/dev/null
-assert_eq "an unchanged address set does not render again" "$(aw_count render "$AW/log")" "1"
-out=$(aw_run "192.168.1.5 fd1c::7")
-assert_eq "a ULA arriving later renders again" "$(aw_count render "$AW/log")" "2"
-assert_eq "…and restarts Caddy because the certificate changed" "$(aw_count restart "$AW/restarts")" "2"
-assert_contains "…and says why on the journal" "$out" "addresses changed"
-aw_run "fd1c::7 192.168.1.5" >/dev/null
-assert_eq "the same set in a different order is not a change" "$(aw_count render "$AW/log")" "2"
-# render that changes nothing
-cat >"$AW/dir/pithead" <<'STUB'
+cat >"$AW/bin/_render-quiet" <<'STUB'
 #!/bin/bash
 echo render >>"$AW_LOG"
 STUB
-aw_run "192.168.1.5 fd1c::7 fd1c::8" >/dev/null
-assert_eq "a render that changes nothing does not restart Caddy" "$(aw_count restart "$AW/restarts")" "2"
-# render that rewrites the files and then fails: Caddy must still be restarted onto them, and the
-# retry must not forget it (the address set is unrecorded, the served signature is not)
-cat >"$AW/dir/pithead" <<'STUB'
+cat >"$AW/bin/_render-fail-mints" <<'STUB'
 #!/bin/bash
 echo render >>"$AW_LOG"
 echo minted >data/tls/wizard.crt
 exit 1
 STUB
+chmod +x "$AW/bin/_restart-ok" "$AW/bin/_restart-fail" "$AW/bin/_render-mints" "$AW/bin/_render-quiet" \
+    "$AW/bin/_render-fail-mints" "$AW/bin/hostname" "$AW/bin/systemctl"
+export AW
+_run() {
+    local rs
+    if [ -f "$AW/run-restart" ]; then rs="$(cat "$AW/run-restart")"; else rs="$AW/bin/_restart-ok"; fi
+    printf '%s\n' "$rs" >"$AW/restart-used"
+    printf '%s\n' "$1" >"$AW/addrs"
+    printf '%s\n' "${2:-active}" >"$AW/boot-state"
+    AW_ADDRS="$AW/addrs" AW_BOOT_STATE="$AW/boot-state" AW_LOG="$AW/log" AW_RENDER_FAIL="$AW/render-fail" \
+        PATH="$AW/bin:$PATH" PITHEAD_DIR="$AW/dir" PITHEAD_LOCK_FILE="$AW/lock" PITHEAD_ADDRESS_WATCH_STATE="$AW/state" \
+        PITHEAD_TLS_DIR=data/tls AW_RESTARTS="$AW/restarts" PITHEAD_CADDY_RESTART_CMD="$rs" \
+        bash "$HERE/../../os/overlay/pithead-address-watch" 2>&1
+}
+_render() {
+    cp "$AW/bin/_render-$1" "$AW/dir/pithead"
+}
+_restart() {
+    printf '%s' "$AW/bin/_restart-$1" >"$AW/run-restart"
+}
+_count() {
+    local n
+    n=$(grep -c "$1" "$2" 2>/dev/null)
+    echo "${n:-0}"
+}
+
+_render mints
+_run "192.168.1.5" >/dev/null
+assert_eq "the first tick records the address set and renders once" "$(_count render "$AW/log")" "1"
+assert_eq "…and restarts Caddy onto the files its render moved" "$(_count restart "$AW/restarts")" "1"
+_run "192.168.1.5" >/dev/null
+assert_eq "an unchanged address set does not render again" "$(_count render "$AW/log")" "1"
+out=$(_run "192.168.1.5 fd1c::7")
+assert_eq "a ULA arriving later renders again" "$(_count render "$AW/log")" "2"
+assert_eq "…and restarts Caddy because the certificate changed" "$(_count restart "$AW/restarts")" "2"
+assert_contains "…and says why on the journal" "$out" "addresses changed"
+_run "fd1c::7 192.168.1.5" >/dev/null
+assert_eq "the same set in a different order is not a change" "$(_count render "$AW/log")" "2"
+_render quiet
+_run "192.168.1.5 fd1c::7 fd1c::8" >/dev/null
+assert_eq "a render that changes nothing does not restart Caddy" "$(_count restart "$AW/restarts")" "2"
+_render fail-mints
+_restart fail
 out=$(
-    aw_run "192.168.1.5 fd1c::9"
+    _run "192.168.1.5 fd1c::9"
     echo "rc=$?"
 )
 assert_contains "a failed render leaves the unit successful" "$out" "rc=0"
 assert_contains "…and names the retry" "$out" "retrying on the next tick"
-assert_eq "…yet Caddy is restarted onto the files it left" "$(aw_count restart "$AW/restarts")" "3"
-before=$(aw_count render "$AW/log")
-aw_run "192.168.1.5 fd1c::9" >/dev/null
-assert_eq "…and the next tick renders again, the set never having been recorded" "$(aw_count render "$AW/log")" "$((before + 1))"
-assert_eq "…without restarting Caddy a second time for the same files" "$(aw_count restart "$AW/restarts")" "3"
+before=$(_count render "$AW/log")
+_x=$(_count restart "$AW/restarts")
+assert_eq "…the files the failed render left still got one restart attempt" "$_x" "3"
+_run "192.168.1.5 fd1c::9" >/dev/null
+assert_eq "…the next tick renders again, the set never having been recorded" "$(_count render "$AW/log")" "$((before + 1))"
+assert_eq "…and attempts the restart again from its own marker" "$(_count restart "$AW/restarts")" "$((_x + 1))"
+_restart ok
+_run "192.168.1.5 fd1c::9" >/dev/null
+assert_eq "…the retry lands the moment Caddy can restart" "$(_count restart "$AW/restarts")" "$((_x + 2))"
+assert_eq "…and the pending marker clears with it" "$(cat "$AW/state.pending" 2>/dev/null)" ""
 # a pithead operation holding the mutation lock: no render, retry
-cat >"$AW/dir/pithead" <<'STUB'
-#!/bin/bash
-echo render >>"$AW_LOG"
-STUB
-before=$(aw_count render "$AW/log")
+_render mints
+before=$(_count render "$AW/log")
 out=$(flock -n "$AW/lock" true && (
     exec 8>>"$AW/lock"
     flock 8
-    aw_run "192.168.1.5 fd1c::b"
+    _run "192.168.1.5 fd1c::b"
 ))
-assert_eq "a held mutation lock defers the render" "$(aw_count render "$AW/log")" "$before"
+assert_eq "a held mutation lock defers the render" "$(_count render "$AW/log")" "$before"
 assert_contains "…and says it will retry" "$out" "retrying on the next tick"
-aw_run "192.168.1.5 fd1c::b" >/dev/null
-assert_eq "the render runs once the lock is free" "$(aw_count render "$AW/log")" "$((before + 1))"
-before=$(aw_count render "$AW/log")
-aw_run "192.168.1.5 fd1c::a" activating >/dev/null
-assert_eq "nothing renders while pithead-boot is still running" "$(aw_count render "$AW/log")" "$before"
-aw_run "192.168.1.5 fd1c::a" failed >/dev/null
-assert_eq "a failed pithead-boot (fallback boot) does not disable the watch" "$(aw_count render "$AW/log")" "$((before + 1))"
-unset AW aw_run aw_count out before
+before=$(_count render "$AW/log")
+_x=$(_count restart "$AW/restarts")
+_run "192.168.1.5 fd1c::b" >/dev/null
+assert_eq "the render runs once the lock is free" "$(_count render "$AW/log")" "$((before + 1))"
+assert_eq "…and its restart runs while the mutation lock is held" "$(tail -n 1 "$AW/lock-seen")" "held"
+assert_eq "…with no lock that was free underneath it" "$(tail -n 1 "$AW/restart-used")" "$AW/bin/_restart-ok"
+before=$(_count render "$AW/log")
+_run "192.168.1.5 fd1c::a" activating >/dev/null
+assert_eq "nothing renders while pithead-boot is still running" "$(_count render "$AW/log")" "$before"
+_run "192.168.1.5 fd1c::a" failed >/dev/null
+assert_eq "a failed pithead-boot (fallback boot) does not disable the watch" "$(_count render "$AW/log")" "$((before + 1))"
+printf 'apply-crt\n' >"$AW/dir/data/tls/wizard.crt"
+printf 'apply-caddy\n' >"$AW/dir/Caddyfile"
+before=$(_count render "$AW/log")
+_x=$(_count restart "$AW/restarts")
+out=$(_run "192.168.1.5 fd1c::a")
+assert_eq "a files-only change does not make the watch render" "$(_count render "$AW/log")" "$before"
+assert_eq "the tick after an apply-owned re-render does not restart a Caddy that already serves the files" \
+    "$(_count restart "$AW/restarts")" "$_x"
+assert_contains "…and the log names the served files, not the addresses" "$out" "certificate or the Caddyfile changed"
+assert_not_contains "…without blaming the addresses" "$out" "addresses changed"
+assert_eq "the recorded signature makes the following tick quiet" "$(_run "192.168.1.5 fd1c::a")" ""
+_restart fail
+_run "192.168.1.5 fd1c::e" >/dev/null
+before=$(_count render "$AW/log")
+_x=$(_count restart "$AW/restarts")
+_restart ok
+out=$(_run "192.168.1.5 fd1c::a")
+assert_eq "the owed restart is retried without rendering again" "$(_count render "$AW/log")" "$before"
+assert_eq "…under the mutation lock" "$(tail -n 1 "$AW/lock-seen")" "held"
+assert_eq "…as exactly one restart, the owed one" "$(_count restart "$AW/restarts")" "$((_x + 1))"
+assert_contains "…named for the owed restart" "$out" "owed"
+assert_eq "the following tick is quiet" "$(_run "192.168.1.5 fd1c::a")" ""
+assert_eq "…with no pending marker left behind" "$(cat "$AW/state.pending" 2>/dev/null)" ""
+_render quiet
+printf 'apply-crt2\n' >"$AW/dir/data/tls/wizard.crt"
+printf 'apply-caddy2\n' >"$AW/dir/Caddyfile"
+before=$(_count render "$AW/log")
+_x=$(_count restart "$AW/restarts")
+out=$(_run "192.168.1.5 fd1c::h")
+assert_eq "an address change whose files are already current renders once" "$(_count render "$AW/log")" "$((before + 1))"
+assert_eq "…and does not restart the Caddy apply already restarted" "$(_count restart "$AW/restarts")" "$_x"
+assert_contains "…while the log says the files were already current" "$out" "already current"
+assert_not_contains "…without claiming a restart" "$out" "restarting Caddy"
+assert_eq "the following tick is quiet" "$(_run "192.168.1.5 fd1c::h")" ""
+rm -f "$AW/state" "$AW/state.served" "$AW/state.pending"
+before=$(_count render "$AW/log")
+_x=$(_count restart "$AW/restarts")
+out=$(
+    exec 8>>"$AW/lock"
+    flock 8
+    _run "192.168.1.5 fd1c::i"
+)
+assert_contains "a busy first tick says it will retry" "$out" "retrying on the next tick"
+assert_eq "…renders nothing" "$(_count render "$AW/log")" "$before"
+assert_eq "…and leaves no served baseline behind" "$(cat "$AW/state.served" 2>/dev/null)" ""
+assert_eq "…and restarts nothing" "$(_count restart "$AW/restarts")" "$_x"
+out=$(_run "192.168.1.5 fd1c::i")
+assert_eq "the free tick on unchanged files is quiet" "$out" ""
+assert_eq "…and restarts nothing, Caddy already serving what the render produced" \
+    "$(_count restart "$AW/restarts")" "$_x"
+assert_contains "…while recording the address set" "$(cat "$AW/state")" "192.168.1.5"
+unset AW _run _render _restart _count out before _x
 
 echo "== unit: address_watch_verdict — the KVM provision leg's discrimination (#2463) =="
 # shellcheck source=tests/os/appliance-address-watch-leg.sh
