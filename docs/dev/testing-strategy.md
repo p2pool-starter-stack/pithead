@@ -316,6 +316,7 @@ diagnostics against the real lock.
 | `upgrade` refuses a Tari major that migrates the node database when the data volume lacks `data.mdb`'s size plus 5 GiB (#2636), before any container is recreated | stubbed `df`/`docker`, sparse `data.mdb` (`tests/stack/lifecycle/tari-upgrade-space.sh`) | 1 ✅ |
 | `os-update` and the dashboard's `os-verify`/`os-install` refuse a `data_migration` bundle on the same bound (#2645), through one shared guard: no `rauc install`, no marker, no floor raised, and the dashboard keeps the staged download. Remote or off Tari, no database, and a non-migrating bundle pass; an unreadable `df` warns. Removing either call site fails its door's rows | stubbed `df`/`rauc`, sparse `data.mdb` (`tests/stack/appliance/os-update-migration-space.sh`) | 1 ✅ · 4 ▶ (the provision phase's migration leg fills `/data` to below the bound, asserts the refusal leaves the idle slot and `/data` markers untouched, then frees it and installs) |
 | `backup`/`restore` | real box | 1 ✅ (partial) · 4 ▶ (`--lifecycle`/`--safety-backup`) |
+| Fresh-host DIY lifecycle (#3945): install, setup, pre-sync `up`, `apply`, `doctor`, `rotate-secrets`, backup/restore, upgrade from the previous release, `uninstall` and its residue after a reboot | `tests/diy/lifecycle.sh` in an Ubuntu 24.04 guest | 1 ✅ (`tests/stack/test-diy-lifecycle-harness.sh`) · 4 ▶ (`tier4-diy-kvm` `scenario: lifecycle`) |
 | `reset-dashboard` (#2346): live `.env` targets, chain continuity, both reset services `running healthy`, and resumed worker/hash/share signals | real box | 1 ✅ (partial) · 4 ✅ (`--reset-dashboard --safety-backup`) |
 | `rotate-secrets` (#2344): live new/old RPC, control API and stratum authentication; Monero → p2pool → proxy connectivity, with an authenticated stratum connection held open during the upstream check even without a rig; the reserved rig's accepted share; exact config, secret and miner-service restoration, with runner-owned persistent recovery holds on unverified restoration | local probe/handshake fixtures and real box | 1 ✅ (probe, complete no-rig phase and recovery guards) · 4 ▶ (`--rotate-secrets`, requires `--safety-backup`) |
 | `rotate-dashboard-onion` (#2345): on an e2e-created, marked one-run Tor fixture whose dashboard and mining identities are minted from scratch after the safety backup, the new address answers over real Tor, the retired address stops answering, fixture mining keys stay unchanged, the Caddyfile drops the old vhost (#546), `HOST_IP` survives the render (#356), the client-auth key changes, and the original fixture identity restores after success, failure, or interruption | real box, real Tor | 1 ✅ (`tests/stack/dashboard/test-dashboard-onion.sh`, stubbed engine; `tests/integration/selftest/selftest-rotate-onion-restore.sh`, abort path) · 4 ▶ (`--rotate-onion`) |
@@ -327,6 +328,42 @@ diagnostics against the real lock.
 | Control channel (#33): `apply --dry-run` preview, runner claim/validate/commit, fail-closed flag, rw/ro spool mounts; a commit's audit line precedes its published result; hardening clears the old view key in its refused wallet candidate and checks that the preview requires typed confirmation and an unconfirmed commit is refused without changing `config.json` or `.env` | spool files / sourced fns | 1 ✅ (`test_control_audit_order.sh`, `selftest-hardening-wallet.sh`, shell + pytest + compose) · 4 (`--hardening` exercises the systemd path unit on a real box) |
 | Audit + access logs (#349/#3265/#3263): key-names-not-values audit entries, bounded log growth, hostile content served inert; ordinary last-24-hour failures survive rotation within bounded retained generations; only capability-marked appliance boot probes are excluded, with four ordinary failures quiet and five warning | retained-log fixtures and real rendered Caddy/API requests | 1 ✅ (shell + pytest + node; current `-size` and legacy generations; `selftest-access-log-retention.sh` rejects active-only, old-tail and legacy-name-only readers); 3 (mini-stack `test-boot-health-proxy.sh`: login enabled/disabled, exact counts, direct/front-proxy forgery, capability redaction); 4 (KVM provision reboot: wait for this boot's journal commit as well as the retained RAUC flag, then assert zero failures from current boot probes and one external wrong-password failure; `--hardening`: wrong passwords, padding beyond 256 KiB, native gzip rotation and deployed count; onion matrix: Tor access) |
 | Out-of-band audit detection + persistence (#530, #1551): a `config.json` change with no matching commit (`host-edit`), a rig reporting a change_id the dashboard never spooled (`rig-edit`), or a rig whose config revision moved with no new change_id beside it (`rig-drift`) all append to the durable `audit_events` table (mirrored `control.log` rows + these three kinds); the existing dashboard-spooled rows reconcile from both the newest `control` slot and the first 20 raw entries in rigforge#519's terminal `control_history` ring, so two outcomes inside one poll do not leave the older one `accepted` while malformed or duplicate entries cannot expand the producer's budget; the two rig-fed kinds share one #724 per-worker flood cap, keyed on a name the device chooses and so bounded in turn by a ceiling on how many names may hold a live window at once (#1695), and the rig feed is validated before the store sees it — an unvalidated revision would otherwise choose the row's own permanent id, which is the one field the audit sanitizer does not cover; Security panel hour/day/month grouping | poll-loop diff / real StateManager | 1 ✅ (`dashboard/tests/service/test_data_service_watch_host_config.py::TestWatchHostConfig`, `dashboard/tests/service/test_data_service_rig_edit_detection.py::TestRigEditDetection`, `dashboard/tests/service/test_data_service_mirror_control_audit.py::TestMirrorControlAudit`, `dashboard/tests/service/test_data_service_reconcile_worker_config.py::TestReconcileWorkerConfig`, `dashboard/tests/service/workers/test_worker_change_audit.py`, `dashboard/tests/service/workers/test_worker_name_space_cap.py`, `dashboard/tests/service/test_storage_service.py::TestAuditEvents`, `dashboard/tests/frontend/system/securityview.test.mjs` grouping) · 4 (deferred — the underlying rig-side-edit-visible-in-the-enriched-feed mechanism is already proven live by the #516 row below; a real box producing a `host-edit`/`rig-edit`/`rig-drift` audit row end-to-end is not yet its own matrix leg) |
+
+#### DIY lifecycle on a stock Ubuntu guest (#3945)
+
+`tests/diy/lifecycle.sh` is the fresh-host lifecycle harness. The bench runs it as `tier4-diy-kvm`
+with `scenario: lifecycle` (on demand; nightly on develop where configured), as root inside a
+disposable Ubuntu Server 24.04 guest with the exact commit unpacked and the approved private
+`config.json` staged. Each step prints one `LIFECYCLE-STEP <id> PASS|FAIL|MISSING <detail>` line,
+and `LIFECYCLE-SUMMARY` ends the run. A `FAIL` fails the job; a `MISSING` row is a step the lane
+cannot run yet, names its bench-ci issue, and does not fail it. The harness sits beside the egress
+guest fixture (#2677), which proves real-Tor reboot persistence and is not replaced by it.
+
+| Step | What it asserts |
+|---|---|
+| `clean-start` | root, Ubuntu 24.04, only `config.json` staged, no Pithead units, containers, volumes, images or firewall rules |
+| `prerequisites`, `install-docker` | the documented `apt` command leaves `jq`, Docker, Compose V2, `openssl` and `python3` working; `install-docker` is `MISSING` while the guest already has `docker.io` (bench-ci#2456) |
+| `release-download`, `build-from-source` | the documented latest-release download unpacks and runs; `scripts/build-pithead.sh` yields `./pithead` at the candidate `VERSION` |
+| `setup-defaults` | the wizard, driven on a terminal by `tests/diy/pty-answer.py`, writes the documented defaults (Tor sync, no XvB, a generated 32-character dashboard password) |
+| `setup-prepared`, `up`, `up-first-note`, `sync-gate*`, `status-held` | setup from the prepared answer set completes; the first start prints the held-miner note; `monerod` runs while P2Pool and xmrig-proxy stay held, again after `apply`, `rotate-secrets` and `restore` |
+| `apply`, `doctor`, `rotate-secrets` | a pool change re-renders `.env` and keeps secrets; `doctor --json` gives a verdict with no failure other than chain sync; `rotate-secrets -y` changes the secrets |
+| `backup`, `restore` | the archive restores the backed-up `config.json` and secrets after a diverging edit |
+| `previous-release`, `previous-*`, `upgrade` | the highest non-prerelease tag below `VERSION` is downloaded and its bundle signature verified with the pinned cosign image and the committed `cosign.pub`; the resolved tag is printed as `LIFECYCLE-INFO previous-release=`; that release is installed and started, then upgraded to the candidate with `config.json` unchanged and a new dashboard image identity |
+| `uninstall-candidate-*`, `uninstall-upgraded-*` | `uninstall -y` exits 0 and removes `.env`; no `pithead-*` unit file, active or failed unit record, container, volume, image or firewall rule remains; `config.json`, every `*_DATA_DIR` and `backups/` are byte-identical (#2379). The systemd row is red while #3627 is open |
+| `reboot-residue`, `after-reboot-*`, `reboot-*` | after the final uninstall the harness exits 75 when the lane's marker file `/var/lib/cloud/diy-reboot-resume` exists; the lane reboots the guest and runs `lifecycle.sh --after-reboot`, which checks the boot id changed and repeats the residue and kept-data checks. Without the marker the row is `MISSING` (bench-ci#2456) |
+
+The upgrade step overlays the candidate source tree on the installed release and runs `./pithead upgrade`, the documented source-checkout path: the candidate is unreleased, so the release path (pull and cosign-verify published images) is not exercised there. `upgrade` stamps `config_version`, so the step compares `config.json` without that key. The wizard's Tari question is answered explicitly (No), because its Enter default depends on free disk. Uninstall removes the images of the stack's current Compose file, so images of the previous release are not asserted gone.
+
+Chain data: the guest has no synced chain and no remote node is configured, so the harness proves
+pre-sync behaviour only, as the egress scenario does. `up` is checked for the sync gate, and
+`apply`, `doctor`, `rotate-secrets`, `backup`, `restore` and `upgrade` assert what holds before
+sync. A step that needs a synced daemon (mining, merge-mining, the Tari migration) stays with the
+long-lived `tier4-e2e` stack.
+
+The lane covers the pre-sync parts of the DIY manual-QA sections 1, 2, 3 and 11 (see
+[the DIY README](manual-qa/diy/README.md#covered-by-the-guest-lane)). HugePages and MSR performance,
+USB, power cuts and physical disks stay manual: a VM cannot prove them. The harness's own logic is
+tested at tier 1 in `tests/stack/test-diy-lifecycle-harness.sh`.
 
 #### CLI verb ledger (#2348)
 
@@ -341,18 +378,18 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 
 | verb | tier-4 | note |
 |---|---|---|
-| `setup` | covered | DIY bench; KVM firstboot wizard |
-| `apply` | covered | DIY bench; KVM |
+| `setup` | covered | DIY bench; KVM firstboot wizard; Fresh Ubuntu guest: `tier4-diy-kvm` `scenario: lifecycle` (#3945). |
+| `apply` | covered | DIY bench; KVM; Fresh Ubuntu guest: `tier4-diy-kvm` `scenario: lifecycle` (#3945). |
 | `render` | covered | DIY bench; KVM boot overlay |
-| `up` | covered | DIY bench; KVM boot overlay |
+| `up` | covered | DIY bench; KVM boot overlay; Fresh Ubuntu guest: `tier4-diy-kvm` `scenario: lifecycle` (#3945). |
 | `down` | covered | DIY bench (appliance parity is #2062) |
 | `restart` | covered | DIY bench (appliance parity is #2062) |
 | `tor-recover` | covered | DIY bench fault-injection phase exercises ordinary-state refusal and read-only access to the live Tor mount and identity keys; lifecycle checks the shipped authenticated bootstrap probe refuses a healthy Tor. The e2e restoration proof requires a libcurl Digest challenge and authenticated reply on one direct connection, then independent Monero sync and direct Tari sync; `selftest-restore-chain-sync.sh` exercises its daemon predicates, credential privacy, bounded polling and missing-proof refusals. `selftest-restore-curl-connection.sh` runs the real transport against a bounded local fixture in CI, proving connection reuse and refusals for a closed nonce session or unauthenticated success. Positive `check`/`apply`, identity and chain preservation, and bootstrap-stall refusals are proven by the pure CLI tests, not by poisoning the live baseline |
-| `upgrade` | covered | DIY bench (`--image-upgrade`, opt-in); KVM OS-update leg (combined hardware run still pending, see Known gaps) |
+| `upgrade` | covered | DIY bench (`--image-upgrade`, opt-in); KVM OS-update leg (combined hardware run still pending, see Known gaps); Fresh Ubuntu guest: `tier4-diy-kvm` `scenario: lifecycle` (#3945). |
 | `status` | covered | DIY bench (appliance parity is #2062) |
 | `doctor` | covered | DIY bench; KVM boot overlay |
-| `backup` | covered | DIY bench; KVM |
-| `restore` | covered | DIY bench; KVM (wizard's restore-at-setup flow, not the CLI verb) |
+| `backup` | covered | DIY bench; KVM; Fresh Ubuntu guest: `tier4-diy-kvm` `scenario: lifecycle` (#3945). |
+| `restore` | covered | DIY bench; KVM (wizard's restore-at-setup flow, not the CLI verb); Fresh Ubuntu guest: `tier4-diy-kvm` `scenario: lifecycle` (#3945). |
 | `load-images` | covered | KVM boot overlay |
 | `firstboot-wizard` | covered | KVM (`pithead-firstboot.service`) |
 | `local-miner` | covered | KVM rig phase, via `pithead-boot` |
@@ -363,7 +400,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `egress-status` | covered | DIY bench (fault-injection leg, #2599) |
 | `lan-guard-check` | covered | DIY bench (LAN rule flush leg, #2846) |
 | `onion-client-key` | covered | DIY bench (partly, via the control legs) |
-| `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379) verifies ownership and resets a preexisting Pithead wallet volume if present. With local Tari it activates `tari_payout_confirm`, creates the Tari wallet service and its owned volume through Compose, removes the container, disables the profile, and verifies the inactive model excludes the volume. With remote Tari it records that creation leg as `by-design` because the local `tari` dependency is absent. It checks uninstall removes any owned wallet volume, preserves a separately named unrelated volume, and setup recovers from kept data. Tier-1 stubs prove both modes, the local profile transition, preexisting owned and foreign cases, and refusal to finish on volume inspection failure. The dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347 |
+| `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379) verifies ownership and resets a preexisting Pithead wallet volume if present. With local Tari it activates `tari_payout_confirm`, creates the Tari wallet service and its owned volume through Compose, removes the container, disables the profile, and verifies the inactive model excludes the volume. With remote Tari it records that creation leg as `by-design` because the local `tari` dependency is absent. It checks uninstall removes any owned wallet volume, preserves a separately named unrelated volume, and setup recovers from kept data. Tier-1 stubs prove both modes, the local profile transition, preexisting owned and foreign cases, and refusal to finish on volume inspection failure. The dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347; Fresh Ubuntu guest: `tier4-diy-kvm` `scenario: lifecycle` (#3945). |
 | `rotate-secrets` | covered | DIY bench `--rotate-secrets` with `--safety-backup`: live authentication and routing, the reserved rig's accepted share, exact restoration and owner-only recovery-copy cleanup (#2344) |
 | `rotate-dashboard-onion` | covered | DIY `--rotate-onion`: isolated fixture, real Tor reachability, old-address retirement, and identity restoration |
 | `reset-dashboard` | covered | DIY bench (`--reset-dashboard`, #2346) |

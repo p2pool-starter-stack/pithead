@@ -285,6 +285,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-support-bundle.sh" && domain_ran test-control-support-bundle.sh "$_d0" "$?" || domain_ran test-control-support-bundle.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-grub-hugepages.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-grub-hugepages.sh" && domain_ran test-grub-hugepages.sh "$_d0" "$?" || domain_ran test-grub-hugepages.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-diy-lifecycle-harness.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-diy-lifecycle-harness.sh" && domain_ran test-diy-lifecycle-harness.sh "$_d0" "$?" || domain_ran test-diy-lifecycle-harness.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-setup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015
