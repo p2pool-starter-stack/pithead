@@ -4,7 +4,7 @@ _wedged_tor_plant() {
     info "planting the #3052 saturated circuit-build history on the shared /data (the #4049 wedge)"
     _ssh bash -s <<'GUEST'
 set -e
-trap 'rc=$?; echo "wedge plant: line $LINENO exit $rc: $BASH_COMMAND" >&2' ERR
+trap 'rc=$?; echo "wedge plant: line $LINENO exit $rc: $BASH_COMMAND"' ERR
 cd /data/pithead
 data=$(sed -n 's/^TOR_DATA_DIR=//p' .env)
 [ -s "$data/state" ]
@@ -17,13 +17,13 @@ grep -qx 'CircuitBuildAbandonedCount 1000' "$data/state"
 grep -qx 'TotalBuildTimes 1000' "$data/state"
 ! grep -q '^CircuitBuildTimeBin ' "$data/state"
 docker compose start tor >/dev/null 2>&1
-for _ in $(seq 90); do
+for _ in $(seq 150); do
     s=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$(docker compose ps -aq tor | head -n 1)" 2>/dev/null)
     [ "$s" = unhealthy ] && exit 0
     sleep 10
 done
-echo "wedge plant: tor health after 15 min: ${s:-unreadable}" >&2
-docker logs --tail 15 "$(docker compose ps -aq tor | head -n 1)" 2>&1 | sed 's/^/wedge plant: tor: /' >&2 || true
+echo "wedge plant: tor health after 25 min: ${s:-unreadable}"
+docker logs --tail 15 "$(docker compose ps -aq tor | head -n 1)" 2>&1 | sed 's/^/wedge plant: tor: /' || true
 exit 1
 GUEST
 }
