@@ -302,7 +302,7 @@ run_monero_stranded() {
         it_fail "monero-stranded: docker inspect health is healthy again" "$(monero_strand_state)"
     fi
     assert_eq "monero-stranded: the fresh recovery observation belongs to a newer container run" \
-        "$(monero_observation | jq -r --argjson before "${observation_before:-null}" '.peers_out > 0 and .monero_run_started > $before.monero_run_started' 2>/dev/null)" "true"
+        "$(monero_observation | jq -r --argjson before "${observation_before:-null}" '.monero_run_started > $before.monero_run_started' 2>/dev/null)" "true"
     if [ "$(monero_tor_recovery_out)" -gt 0 ] 2>/dev/null; then
         it_pass "monero-stranded: tor-recover verifies real peers after recovery"
     else

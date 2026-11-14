@@ -3,7 +3,7 @@
 # path<TAB>ceiling-in-lines. Ceilings only ever go down; a file at or below 400 lines drops its entry.
 .github/workflows/ci.yml	440
 dashboard/mining_dashboard/client/xmrig_client.py	446
-dashboard/mining_dashboard/config/config.py	693
+dashboard/mining_dashboard/config/config.py	689
 dashboard/mining_dashboard/service/control_service.py	414
 dashboard/mining_dashboard/service/data_helpers.py	430
 dashboard/mining_dashboard/service/data_service.py	646

@@ -446,7 +446,6 @@ assert_contains "monero clearnet: xmrvsbeast priority node (v4.18)" "$(cat "$MON
 assert_contains "monero clearnet: hashvault priority node (v4.18)" "$(cat "$MONT")" "add-priority-node=nodes.hashvault.pro:18080"
 # The committed template (the Tor-only default) keeps the proxy line + the Tor-tuned out-peers.
 assert_contains "monero default: Tor P2P proxy present (#183)" "$(cat "$ROOT/build/monero/bitmonero.conf.template")" 'proxy=${NETWORK_PREFIX}.25:9050'
-# #595: the template's out-peers is now config-driven (monero.out_peers, default 48 in the render).
 assert_contains "monero default: out-peers config-driven for Tor (#183/#595)" "$(cat "$ROOT/build/monero/bitmonero.conf.template")" 'out-peers=${MONERO_OUT_PEERS}'
 # Compose wires both flags into container env: monerod reads MONERO_CLEARNET_SYNC in its entrypoint;
 # TARI_CLEARNET_SYNC is inert in the container but its presence makes a flag change recreate tari so
@@ -649,6 +648,7 @@ assert_eq "tor entrypoint keeps /tmp/torrc as its container default (#1104)" \
 assert_eq "tor entrypoint writes NO bare /tmp/torrc outside that default (#1104)" \
     "$(grep -vE '^\s*#' "$TOR_ENTRY" | grep -cF '/tmp/torrc')" "1"
 tor_onion_on="$(tor_torrc true)"
+assert_contains "torrc raises MaxClientCircuitsPending to 64 (#4078)" "$tor_onion_on" "MaxClientCircuitsPending 64"
 assert_contains "tor entrypoint: dashboard HiddenService appended when enabled (#343)" \
     "$tor_onion_on" "HiddenServiceDir /var/lib/tor/dashboard/"
 assert_contains "tor entrypoint: onion vhost targets the bridge gateway .1 (#343)" \

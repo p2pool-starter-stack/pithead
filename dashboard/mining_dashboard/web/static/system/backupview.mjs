@@ -12,6 +12,7 @@ import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
 import { failureLog } from "../config/applyfailure.mjs";
 import { pollResult } from "../config/configview.mjs";
+import { controlFetch, requirePreviewResponse } from "../config/controlclient.mjs";
 import { fmtEpoch } from "./securityview.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
@@ -21,12 +22,12 @@ const BACKUP_TIMEOUT =
 const APPLIANCE_BACKUP_TIMEOUT =
   "Stopped waiting for the backup. The host keeps trying, but this dashboard did not return; restart the appliance to recover the normal startup path, then check Backup again.";
 
-// POST the backup intent, then poll past the runner's interim "running" to a terminal result.
-// Exported for node --test — this network flow is the logic; BackupPanel only maps its outcome
-// onto UI state.
 export async function runBackup(appliance = false) {
-  const res = await fetch("/api/control/backup", { method: "POST", headers: CONTROL_HEADERS });
-  if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+  const res = await controlFetch("/api/control/backup", {
+    method: "POST",
+    headers: CONTROL_HEADERS,
+  });
+  await requirePreviewResponse(res);
   const { id } = await res.json();
   const timeout = appliance ? APPLIANCE_BACKUP_TIMEOUT : BACKUP_TIMEOUT;
   const result = await pollResult(id, "running", BACKUP_POLL_MAX, timeout);

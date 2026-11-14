@@ -14,6 +14,7 @@ import {
   runBackup,
 } from "../../../mining_dashboard/web/static/system/backupview.mjs";
 import { renderToString } from "../helpers/render.mjs";
+import { installStaleProbe, reply, STALE, withFetch } from "../helpers/stalepage.mjs";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const okResult = (body) => ({ status: 200, ok: true, json: async () => body });
@@ -228,3 +229,28 @@ test("the backup confirm and creating modals are <dialog>s, not backdrop divs", 
     assert.doesNotMatch(out, /config-modal-backdrop/, phase);
   }
 });
+
+const shown = async (fn) => {
+  try {
+    await fn();
+  } catch (e) {
+    return String((e && e.message) || e);
+  }
+  assert.fail("expected a rejection");
+};
+
+for (const [name, stub, text, reloads] of [
+  ["401 with body text", async () => reply(401, "login required"), STALE, 1],
+  ["403", async () => reply(403), STALE, 1],
+  ["a network rejection", async () => Promise.reject(new TypeError("Failed to fetch")), STALE, 1],
+  ["a plain-text 500", async () => reply(500, "control spool is full"), "control spool is full", 0],
+  ["an empty 500", async () => reply(500), "HTTP 500", 0],
+]) {
+  test(`runBackup: ${name} shows ${JSON.stringify(text)}`, async () => {
+    const probe = installStaleProbe();
+    const out = await withFetch(stub, () => shown(() => runBackup()));
+    await probe.settle();
+    assert.equal(out, text);
+    assert.equal(probe.reloads.length, reloads);
+  });
+}
