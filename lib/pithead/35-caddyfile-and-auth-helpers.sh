@@ -49,13 +49,13 @@ caddy_hash_password_b64() {
     printf '%s' "$hash" | openssl base64 -A
 }
 
-generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
+generate_caddyfile() {
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
     local auth="" gate verify_site="" proxy_user_hdr="" epoch
     if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
         local hash
         hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
-        auth=$(printf '    basic_auth @pithead_basic {\n        %s %s\n    }' "$DASHBOARD_AUTH_USER" "$hash")
+        auth=$(printf '        basic_auth {\n            %s %s\n        }' "$DASHBOARD_AUTH_USER" "$hash")
         epoch=$(printf 'pithead-session-epoch-v1:%s:%s' "$DASHBOARD_AUTH_USER" "$DASHBOARD_AUTH_HASH_B64" | sha256_hex)
         gate=$(printf '%s\n' \
             '    request_header -X-Auth-User' \
@@ -66,10 +66,22 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
             '        header_up X-Forwarded-For {http.request.remote.host}' \
             '        header_up -X-Pithead-Boot-Probe' \
             '    }' \
-            '    @pithead_basic header_regexp Authorization (?i)^basic\s' \
-            '    @pithead_session not header_regexp Authorization (?i)^basic\s' \
+            '    @pithead_basic {' \
+            '        header_regexp Authorization (?i)^basic\s' \
+            '        not header_regexp Cookie (^|;\s*)pithead_session=' \
+            '    }' \
+            '    @pithead_page {' \
+            '        method GET' \
+            '        header Accept *text/html*' \
+            '        not path /api/*' \
+            '    }' \
+            '    route @pithead_basic {' \
+            '        vars pithead_basic 1' \
+            '        redir @pithead_page /login 303' \
             "$auth" \
-            '    request_header @pithead_basic X-Auth-User {http.auth.user.id}' \
+            '        request_header X-Auth-User {http.auth.user.id}' \
+            '    }' \
+            '    @pithead_session not vars pithead_basic 1' \
             '    forward_auth @pithead_session 127.0.0.1:8000 {' \
             '        uri /api/auth/check' \
             "        header_up X-Pithead-Auth-Epoch \"$epoch\"" \
@@ -82,14 +94,6 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
             '    respond @pithead_auth_paths 404')
         proxy_user_hdr='            header_up X-Auth-User {http.auth.user.id}'
     fi
-    # Access log (#349): every vhost writes a JSON line per request (timestamp, status, method,
-    # URI, authenticated user) to one shared file under the host-mounted CADDY_LOG_DIR; the
-    # dashboard tails it read-only, and repeated 401s there are the operator's "someone is
-    # guessing the password" signal. Caddy redacts credential headers (Authorization, Cookie)
-    # unless the log_credentials global option is set — it never is here — so no password material
-    # lands in the log. Growth is bounded by Caddy's native rolling: 4 MiB per file, the current
-    # file plus 2 rolled ones. mode 0644 lets the non-root dashboard read what root-run Caddy
-    # writes (Caddy's default is 0600).
     local logblk='    log {
         output file /var/log/caddy/access.log {
             roll_size 4MiB
@@ -342,11 +346,6 @@ $proxy_user_hdr
 EOF
     [ -z "$verify_site" ] || printf '\n%s' "$verify_site" >>"$target"
 
-    # Onion vhost (#343): a second site reachable ONLY from the tor container, via the bridge gateway
-    # (NETWORK_PREFIX.1 — the /24's first host, where host-networked Caddy binds and bridge containers
-    # route out). It is never on the LAN. Plain HTTP: Tor provides the transport encryption inside the
-    # tunnel, so no `tls internal` here. It MUST carry the same auth block — refuse to publish an
-    # unauthenticated control panel (config validation already fails closed; this is belt-and-suspenders).
     if [ "${DASHBOARD_ONION_ENABLED:-false}" == "true" ]; then
         if [ -z "$auth" ]; then
             error "Refusing to render the dashboard onion vhost without a login: dashboard.onion.enabled is on but no auth hash is set."

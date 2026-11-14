@@ -53,7 +53,6 @@ async def handle_state(request):
             auth.annotate(request, build_state(data, state_mgr, range_arg, window, avg_window))
         )
     except Exception:
-        # Log the full error server-side; never leak exception details to the browser.
         logger.exception("Error building dashboard state")
         return web.json_response({"error": "Failed to build dashboard state."}, status=500)
 
@@ -567,12 +566,9 @@ async def _cancel_bg_tasks(app):
 
 
 def create_app(state_manager, latest_data_ref):
-    """Factory to create the web app instance."""
     app = web.Application(middlewares=[security_headers_middleware, auth.refresh_middleware])
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
-    # Fire-and-forget recorder tasks (worker-upgrade, #1014) — tracked so they can't be
-    # garbage-collected mid-flight and so shutdown can cancel any still in progress.
     app["_bg_tasks"] = set()
     app.on_cleanup.append(_cancel_bg_tasks)
     auth.setup(app)

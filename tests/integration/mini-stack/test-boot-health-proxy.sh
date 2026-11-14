@@ -70,7 +70,6 @@ generate_caddyfile "$scratch/Caddyfile"
 docker exec "$name-caddy" caddy reload --config /etc/caddy/Caddyfile >/dev/null
 docker run --rm -i --network "container:$name-caddy" -e OLD_COOKIE="$old_cookie" -e DASHBOARD_AUTH_HASH_B64 --entrypoint python \
     pithead-dashboard:itest - rotated 127.0.0.1 <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
-# Authentication disabled must still prove a real nonempty dashboard page after rewriting.
 DASHBOARD_AUTH_HASH_B64=""
 generate_caddyfile "$scratch/Caddyfile"
 docker exec "$name-caddy" caddy reload --config /etc/caddy/Caddyfile >/dev/null

@@ -510,9 +510,12 @@ the page is served over HTTPS.
   Basic-auth requests are not rate-limited. On the onion address every visitor reaches the
   dashboard from the Tor container, so they share one failure count.
 - **Scripts and API clients** keep sending the username and password as HTTP basic auth, for
-  example `curl -u admin:PASSWORD`. Local callers on `127.0.0.1:8000` are unaffected.
-- **After an upgrade from 2.0.3** the password is unchanged. A browser that remembered the old
-  basic-auth login lands on the sign-in page once.
+  example `curl -u admin:PASSWORD`. A basic-auth request for a page that asks for HTML
+  (`Accept: text/html`, outside `/api/`) is sent to the sign-in page instead, which is what a
+  browser does. Local callers on `127.0.0.1:8000` are unaffected.
+- **After an upgrade from 2.0.3** the password is unchanged. A browser that still holds the old
+  basic-auth login is sent to the sign-in page on its next page load. Once it has a session
+  cookie, the cookie decides and the old basic-auth login is ignored, so "Sign out" works.
 - The sign-in page checks the password through a Caddy listener that binds `127.0.0.1:8001` only,
   so the dashboard never holds the password hash. Following a link to the dashboard from another
   site shows the sign-in page once, because `SameSite=Strict` withholds the cookie from that first

@@ -78,7 +78,6 @@ def session_cookie(headers):
 
 
 def summary(failures, warning):
-    # Access logging is asynchronous; wait for the exact count, never accept an empty log.
     for _ in range(50):
         status, body = request("/api/access", GOOD_AUTH)
         require(status == 200, (status, body[:200]))
@@ -174,6 +173,11 @@ elif mode == "login":
     state = json.loads(body)
     require(status == 200 and state["auth_user"] == "admin", (status, state.get("auth_user")))
     require(state["auth_session"] is True)
+    status, headers, _ = call("/", auth=GOOD_AUTH, headers={"Accept": "text/html"})
+    require(status == 303 and headers["Location"] == "/login", (status, headers))
+    require(call("/api/state", auth=GOOD_AUTH, headers={"Accept": "text/html"})[0] == 200)
+    status, _, body = call("/api/state", auth=BAD_AUTH, headers={"Cookie": cookie})
+    require(status == 200 and json.loads(body)["auth_user"] == "admin", status)
     status, _, body = call("/api/state", auth=GOOD_AUTH, headers={"X-Auth-User": "evil"})
     require(status == 200 and json.loads(body)["auth_user"] == "admin")
     require(call("/api/state", headers={"X-Auth-User": "admin"})[0] == 401)

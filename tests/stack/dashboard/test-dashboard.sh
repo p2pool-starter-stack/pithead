@@ -235,12 +235,6 @@ caddy_onion="$(
 assert_eq "insecure+onion: both vhosts bind, never one wildcard and one specific" \
     "$(printf '%s' "$caddy_onion" | grep -c '^    bind ')" "3"
 
-# The invariant, checked by counting rather than by naming the blocks: EVERY site block in the
-# rendered file carries a bind, or none does. A hardcoded count only proves the blocks that
-# happened to render, and that is exactly how the HTTPS onion vhost shipped unbound — it renders
-# only once DASHBOARD_ONION holds a provisioned address, so every test that left it empty saw a
-# correct file. `_site_count` counts site openers (a line starting at column 0 and ending in `{`);
-# the global options block opens with a bare `{`, which the leading-character class excludes.
 _site_count() { printf '%s' "$1" | grep -cE '^[^[:space:]{].*\{[[:space:]]*$'; }
 _bind_count() { printf '%s' "$1" | grep -c '^    bind '; }
 # shellcheck disable=SC1090  # STACK path is dynamic by design
@@ -291,14 +285,6 @@ caddy_onion_https_diy="$(
 assert_eq "DIY secure+onion+provisioned: only the loopback verifier binds" \
     "$(_bind_count "$caddy_onion_https_diy")" "1"
 
-# No two site blocks may name the same scheme://address. Caddy rejects the WHOLE file with
-# "ambiguous site definition" and, under Restart=always, crash-loops — dashboard and onion down
-# together. This is reachable because `hostname -I` reports the container-bridge gateway (it is a
-# real host address), so it landed in the auto-expanded LAN list AND in the onion block, which
-# serves on exactly that address. With dashboard.secure:false the two schemes match and the file
-# is unadaptable. Counting binds cannot see this, which is why it is a separate structural check:
-# these two assertions together are the cheap tier-1 stand-in for the real `caddy adapt` gate
-# tracked in #1037.
 _dupe_sites() {
     printf '%s' "$1" | grep -E '^[^[:space:]{].*\{[[:space:]]*$' |
         sed 's/[[:space:]]*{[[:space:]]*$//' | tr ',' '\n' | tr -d ' ' | grep -v '^$' |

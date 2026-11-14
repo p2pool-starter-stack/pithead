@@ -1,3 +1,4 @@
+import asyncio
 import base64
 
 import pytest
@@ -117,6 +118,38 @@ class TestLogin:
         other = await login(stack, headers={**EPOCH, "X-Forwarded-For": "10.0.0.2"})
         assert other.status == 200
 
+    async def test_concurrent_verifications_beyond_the_cap_are_refused(self, stack):
+        release = asyncio.Event()
+        started = []
+        real = auth._verify
+
+        async def held(request, username, password):
+            started.append(username)
+            await release.wait()
+            return await real(request, username, password)
+
+        auth._verify = held
+        try:
+            pending = [
+                asyncio.ensure_future(
+                    login(stack, headers={**EPOCH, "X-Forwarded-For": f"10.0.1.{n}"})
+                )
+                for n in range(auth.MAX_CONCURRENT_VERIFY)
+            ]
+            for _ in range(100):
+                if len(started) == auth.MAX_CONCURRENT_VERIFY:
+                    break
+                await asyncio.sleep(0.01)
+            assert len(started) == auth.MAX_CONCURRENT_VERIFY
+            extra = await login(stack, headers={**EPOCH, "X-Forwarded-For": "10.0.1.99"})
+            assert extra.status == 429
+            release.set()
+            assert [r.status for r in await asyncio.gather(*pending)] == [200] * len(pending)
+        finally:
+            auth._verify = real
+            release.set()
+        assert stack.app["auth"]["busy"] == 0
+
     async def test_login_page_is_served(self, stack):
         resp = await stack.get("/login")
         assert resp.status == 200
@@ -210,3 +243,23 @@ class TestStateAndRefresh:
     async def test_no_refresh_header_leaves_cookies_alone(self, stack):
         resp = await stack.get("/api/state", cookies={auth.COOKIE: "abc"})
         assert "Set-Cookie" not in resp.headers
+
+
+class TestAttempts:
+    def test_limit_opens_after_the_window(self):
+        attempts = auth.Attempts()
+        for _ in range(auth.FAILURE_LIMIT):
+            attempts.failed("a", now=100.0)
+        assert attempts.retry_after("a", now=100.0) > 0
+        assert attempts.retry_after("a", now=100.0 + auth.FAILURE_WINDOW) == 0
+
+    def test_tracked_clients_are_bounded_and_evict_the_oldest(self):
+        attempts = auth.Attempts()
+        for n in range(auth.MAX_TRACKED_CLIENTS):
+            attempts.failed(f"c{n}", now=1.0)
+        for _ in range(auth.FAILURE_LIMIT - 1):
+            attempts.failed("c0", now=1.0)
+        attempts.failed("new", now=1.0)
+        assert len(attempts._failures) == auth.MAX_TRACKED_CLIENTS
+        assert "c0" not in attempts._failures
+        assert "new" in attempts._failures

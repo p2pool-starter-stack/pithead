@@ -4,8 +4,6 @@ import { OsUpdateControl } from "../system/osupdate.mjs";
 import { html } from "./preact.mjs";
 import { Badges, cVar, HighUsage, ThemeSwitcher, UpdateBadge, VersionBadge } from "./ui.mjs";
 
-// --- Top bar -------------------------------------------------------------------------
-
 async function signOut() {
   try {
     await fetch("/api/auth/logout", { method: "POST" });
