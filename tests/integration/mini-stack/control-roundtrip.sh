@@ -161,3 +161,34 @@ assert_payout_control_roundtrip() {
         c_bad "the dashboard reads the host-applied payout address back" "readback did not match"
     fi
 }
+
+assert_svc_restart_control_roundtrip() {
+    local response
+    : >"$CTRL_LOG"
+    if ! dashboard_control_request svc-restart '{"container":"tor"}'; then
+        c_bad "a service restart reaches the host runner" "dashboard or host runner failed"
+        return
+    fi
+    response=$(cat "$CONTROL_RESPONSE")
+    if printf '%s' "$response" | jq -e '.status == "applied" and .container == "tor"' >/dev/null &&
+        grep -qxF '[docker] compose restart tor' "$CTRL_LOG"; then
+        c_ok "the dashboard's svc-restart request restarts exactly the named service on the host"
+    else
+        c_bad "the dashboard's svc-restart request restarts exactly the named service on the host" \
+            "status=$(printf '%s' "$response" | jq -r '.status // "missing"')"
+    fi
+
+    : >"$CTRL_LOG"
+    if ! dashboard_control_request svc-restart '{"container":"caddy"}'; then
+        c_bad "a refused service restart still returns the host's verdict" "dashboard or host runner failed"
+        return
+    fi
+    response=$(cat "$CONTROL_RESPONSE")
+    if printf '%s' "$response" | jq -e '.status == "rejected"' >/dev/null &&
+        ! grep -q 'compose restart' "$CTRL_LOG"; then
+        c_ok "the host refuses a service outside the restart allowlist without touching docker"
+    else
+        c_bad "the host refuses a service outside the restart allowlist without touching docker" \
+            "status=$(printf '%s' "$response" | jq -r '.status // "missing"')"
+    fi
+}
