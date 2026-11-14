@@ -373,7 +373,7 @@ control_lifecycle() { # <verb: restart|apply> <id> <actor> <control-dir>
     case "$verb" in
     restart) PITHEAD_LOCK_TIMEOUT=0 "$self" restart >"$logf" 2>&1 || rc=$? ;;
     apply) "$self" apply -y >"$logf" 2>&1 || rc=$? ;;
-    *) return 0 ;; # unreachable: the dispatch already gated the verb
+    *) return 0 ;;
     esac
     if [ "$verb" = restart ] && [ "$rc" -eq "$PITHEAD_EX_LOCK_TIMEOUT" ]; then
         rm -f "$cdir/restart-at"

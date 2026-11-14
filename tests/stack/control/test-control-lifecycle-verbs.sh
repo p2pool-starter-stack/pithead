@@ -113,6 +113,8 @@ assert_eq "a lock taken after the probe is a rejected busy restart, not a failur
     "$(jq -r .status "$CC/results/$uid_n.json")" "rejected"
 assert_contains "the late busy reason says nothing was restarted" \
     "$(jq -r .error "$CC/results/$uid_n.json")" "took the lock first"
+assert_eq "a late-lock rejection does not use up the restart cooldown" \
+    "$([ -e "$CC/restart-at" ] && echo present || echo absent)" "absent"
 unset SELF_RC
 rm -f "$CC/restart-at"
 : >"$SELF_LOG"
