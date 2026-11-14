@@ -132,6 +132,7 @@ run_hardening() {
     #    gate: recovery is only asserted when the onion was reachable to begin with.
     #    (Reachability is INBOUND; the clearnet-EXIT half of #424 is not externally observable and
     #    stays with the doctor egress check, which is the stack self-checking its own egress.)
+    _hardening_restart_tor_redial_rows
     local pre_onion=0
     if [ "$(env_on_box DASHBOARD_ONION_ADDRESS)" = "placeholder" ] || [ -z "$(env_on_box DASHBOARD_ONION_ADDRESS)" ]; then
         it_skip_leg "dashboard onion external reachability (#424/#343)" "onion not provisioned on this box"
@@ -272,6 +273,8 @@ run_hardening() {
         assert_eq "the allowlisted change landed host-side (#33)" "$(env_on_box DASHBOARD_CHECK_UPDATES)" "false"
         assert_contains "control mutation audited (#33)" \
             "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"action":"commit"'
+
+        _hardening_stack_action_rows "$cdir"
 
         local port_before port_after occupied_port port_rc=0 snapshot_rc=0
         occupied_port="$(env_on_box HOST_PORT)"

@@ -1,0 +1,66 @@
+# shellcheck shell=bash
+: "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+_container_started_ns() { # <container>
+    rx "date -d \"\$(docker inspect $1 --format '{{.State.StartedAt}}')\" +%s%N"
+}
+
+_monerod_started_after_tor() { # <label>
+    local tor_at monerod_at
+    tor_at="$(_container_started_ns tor)"
+    monerod_at="$(_container_started_ns monerod)"
+    if [ "$monerod_at" -gt "$tor_at" ] 2>/dev/null; then
+        it_pass "$1"
+    else
+        it_fail "$1" "monerod started at $monerod_at ns, tor at $tor_at ns"
+    fi
+}
+
+_hardening_restart_tor_redial_rows() {
+    local monerod_before
+    monerod_before="$(_container_started_ns monerod)"
+    it_step "restart tor: monerod must be re-dialled once Tor is bootstrapped (#4063)…"
+    pithead restart tor >/dev/null 2>&1
+    assert_rc "restart tor succeeds and waits for Tor before re-dialling monerod (#4063)" "$?" "0"
+    wait_status_ok 240 || true
+    assert_eq "restart tor restarted monerod (#4063)" \
+        "$([ "$(_container_started_ns monerod)" -gt "$monerod_before" ] && echo yes || echo no)" "yes"
+    _monerod_started_after_tor "monerod re-dialled after restart tor: started after tor (#4063)"
+}
+
+_hardening_stack_action_rows() { # <control-dir>
+    local cdir="$1"
+    local rst_id tor_started_before tor_reset_id tor_reset_result st
+    rst_id="$(_uuid4)"
+    _spool_write "$cdir/requests/$rst_id.json" "$(jq -nc --arg id "$rst_id" '{id:$id,action:"restart",actor:"itest"}')"
+    st="$(_wait_control_status "$cdir" "$rst_id" "" 600 || echo timeout)"
+    assert_eq "dashboard Restart all verb restarts the whole stack through the control runner (#4064)" "$st" "applied"
+    wait_status_ok 240 || true
+    pithead status >/dev/null 2>&1
+    assert_rc "stack healthy after Restart all (#4064)" "$?" "0"
+    assert_contains "Restart all audited with actor, action and status (#4064)" \
+        "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"actor":"itest","action":"restart","status":"applied"'
+    _monerod_started_after_tor "after Restart all monerod is re-dialled: restarted after tor (#4064)"
+    if rx "docker inspect tari >/dev/null 2>&1"; then
+        assert_eq "after Restart all tari started after tor (#4064)" \
+            "$([ "$(_container_started_ns tari)" -gt "$(_container_started_ns tor)" ] && echo yes || echo no)" "yes"
+    else
+        it_skip_leg "tari starts after tor on Restart all (#4064)" "no tari container on this box"
+    fi
+    assert_eq "the host result is still readable through the dashboard after it returns (#4064)" \
+        "$(rx "docker exec dashboard python3 -c \"import json,urllib.request as u;print(json.load(u.urlopen('http://127.0.0.1:8000/api/control/result?id=$rst_id'))['status'])\"" 2>/dev/null)" "applied"
+    tor_started_before="$(_container_started_ns tor)"
+    tor_reset_id="$(_uuid4)"
+    _spool_write "$cdir/requests/$tor_reset_id.json" "$(jq -nc --arg id "$tor_reset_id" '{id:$id,action:"tor-reset",actor:"itest"}')"
+    st="$(_wait_control_status "$cdir" "$tor_reset_id" "" 300 || echo timeout)"
+    tor_reset_result="$(rx "cat $(quote_arg "$cdir/results/$tor_reset_id.json") 2>/dev/null")"
+    case "$st" in
+    rejected | failed) it_pass "a healthy Tor refuses the dashboard Tor state reset (#4063) [$st]" ;;
+    *) it_fail "a healthy Tor refuses the dashboard Tor state reset (#4063)" "status=$st (expected rejected or failed)" ;;
+    esac
+    assert_eq "the refusal carries a gate's own reason (#4063)" \
+        "$(printf '%s' "$tor_reset_result" | jq -r '(.error // "") | test("not saturated|TOR_AUTO_HEAL|cooldown|not corroborated|lock is unavailable")')" "true"
+    assert_eq "a refused reset leaves Tor running untouched (#4063)" \
+        "$(_container_started_ns tor)" "$tor_started_before"
+    assert_contains "Tor reset audited with actor, action and status (#4063)" \
+        "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"actor":"itest","action":"tor-reset"'
+}

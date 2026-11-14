@@ -14,7 +14,7 @@ dashboard/mining_dashboard/service/storage_service.py	785
 dashboard/mining_dashboard/service/workers/worker_config_store.py	422
 dashboard/mining_dashboard/service/xvb/algo_service.py	558
 dashboard/mining_dashboard/sim/donation_model.py	539
-dashboard/mining_dashboard/web/server.py	630
+dashboard/mining_dashboard/web/server.py	627
 dashboard/mining_dashboard/web/static/app/chart.mjs	663
 dashboard/mining_dashboard/web/static/app/logic.mjs	534
 dashboard/mining_dashboard/web/static/config/configview.mjs	555

@@ -194,6 +194,8 @@ echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"
 case "$*" in
   "compose version"|"info") exit 0 ;;
   "exec tor test -f "*) exit 0 ;;
+  "inspect tor --format {{.State.Health.Status}}") echo "${TOR_HEALTH:-healthy}" ;;
+  "inspect monerod --format {{.State.Running}}") echo "${MONEROD_RUNNING:-true}" ;;
   "exec tor cat /var/lib/tor/monero/hostname") echo "mona.onion" ;;
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion" ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion" ;;

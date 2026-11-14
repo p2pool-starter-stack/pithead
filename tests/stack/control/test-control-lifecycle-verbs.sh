@@ -4,11 +4,6 @@
 # action set. The runner dispatches each accepted verb to a FIXED pithead command and audits it; an
 # unknown verb is rejected, and no host command runs on the rejection path.
 #
-# These verbs reached the spool from the Telegram control commands (#338) until #2076 removed them,
-# so `restart` and `apply` currently have NO producer — the dashboard never submits either. The
-# dispatch table is still live code and still the place "a spool writer cannot run an arbitrary
-# host command" is proven, so the domain is kept and renamed rather than deleted with its old
-# caller. The actor below is a plain test tag now, not a Telegram user id.
 # Sourced by tests/stack/run.sh.
 #
 # This domain IS standalone-sourceable once tests/stack/lib.sh has been sourced, and it needs
@@ -78,4 +73,62 @@ printf '{"id":"%s","action":"frobnicate","actor":"tester"}\n' "$uid_x" >"$CC/req
 run_sourced_e "$SANDBOX" control_process_request "$CC/req_x.json" "$CC" >/dev/null 2>&1
 assert_eq "unknown verb rejected (bounded action set)" "$(jq -r .error "$CC/results/$uid_x.json")" "unknown action"
 assert_eq "unknown verb never runs a host command" "$(cat "$SELF_LOG")" ""
+
+echo "== control channel: restart refusals (#4064) =="
+uid_n="55555555-5555-4555-8555-555555555555"
+printf '{"id":"%s","action":"restart","actor":"tester"}\n' "$uid_n" >"$CC/req_n.json"
+restart_refusal_case() { # <label> <substring of the reason>; the caller sets up the state
+    : >"$SELF_LOG"
+    rm -f "$CC/results/$uid_n.json" "$CC/audit/control.log"
+    cp "$CC/req_n.json" "$CC/req_n.run.json"
+    run_sourced_e "$SANDBOX" control_process_request "$CC/req_n.run.json" "$CC" >/dev/null 2>&1
+    assert_eq "$1: rejected" "$(jq -r .status "$CC/results/$uid_n.json")" "rejected"
+    assert_contains "$1: the reason reaches the result" "$(jq -r .error "$CC/results/$uid_n.json")" "$2"
+    assert_eq "$1: the host restart never runs" "$(cat "$SELF_LOG")" ""
+    assert_contains "$1: audited as rejected with the actor" \
+        "$(cat "$CC/audit/control.log")" '"actor":"tester","action":"restart","status":"rejected"'
+}
+for step in downloading installing verifying reboot-pending; do
+    rm -f "$CC/restart-at"
+    printf '{"step":"%s","version":"v9.9.9"}\n' "$step" >"$CC/results/os-update-state.json"
+    restart_refusal_case "restart during OS update step $step" "OS update is in progress ($step)"
+done
+printf '{"step":"idle"}\n' >"$CC/results/os-update-state.json"
+mkdir -p "$CC/os"
+printf '{"to":"9.9.9"}\n' >"$CC/os/in-flight.json"
+export PITHEAD_OS_UPDATE_DIR="$CC/os" PITHEAD_VERSION="9.9.9"
+rm -f "$CC/restart-at"
+restart_refusal_case "restart in the uncommitted-slot window" "still being committed"
+unset PITHEAD_OS_UPDATE_DIR PITHEAD_VERSION
+rm -f "$CC/results/os-update-state.json"
+date +%s >"$CC/restart-at"
+restart_refusal_case "a second restart inside the cooldown" "already requested"
+rm -f "$CC/restart-at"
+: >"$SELF_LOG"
+export SELF_RC=75
+printf '{"id":"%s","action":"restart","actor":"tester"}\n' "$uid_n" >"$CC/req_n.run.json"
+rm -f "$CC/results/$uid_n.json"
+run_sourced_e "$SANDBOX" control_process_request "$CC/req_n.run.json" "$CC" >/dev/null 2>&1
+assert_eq "a lock taken after the probe is a rejected busy restart, not a failure" \
+    "$(jq -r .status "$CC/results/$uid_n.json")" "rejected"
+assert_contains "the late busy reason says nothing was restarted" \
+    "$(jq -r .error "$CC/results/$uid_n.json")" "took the lock first"
+unset SELF_RC
+rm -f "$CC/restart-at"
+: >"$SELF_LOG"
+rm -f "$CC/results/$uid_n.json"
+cp "$CC/req_n.json" "$CC/req_n.run.json"
+bash -Eeuo pipefail -c 'cd "$1"; source "$2"; mutation_lock_acquire() { return 1; }; control_process_request "$3" "$4"' \
+    _ "$SANDBOX" "$STACK" "$CC/req_n.run.json" "$CC" >/dev/null 2>&1
+assert_eq "restart while a host operation holds the lock: rejected, not queued" \
+    "$(jq -r .status "$CC/results/$uid_n.json")" "rejected"
+assert_contains "the busy reason names the running operations" \
+    "$(jq -r .error "$CC/results/$uid_n.json")" "another host operation"
+assert_eq "a busy restart never runs the host restart" "$(cat "$SELF_LOG")" ""
+: >"$SELF_LOG"
+printf '{"id":"%s","action":"apply","actor":"tester"}\n' "$uid_a" >"$CC/req_a.json"
+printf '{"step":"installing"}\n' >"$CC/results/os-update-state.json"
+run_sourced_e "$SANDBOX" control_process_request "$CC/req_a.json" "$CC" >/dev/null 2>&1
+assert_eq "an OS-update step does not refuse apply" "$(cat "$SELF_LOG")" "apply -y"
+rm -f "$CC/results/os-update-state.json"
 unset PITHEAD_SELF SELF_LOG
