@@ -309,10 +309,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-rig-config-merge.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-config-merge.sh" && domain_ran test-appliance-rig-config-merge.sh "$_d0" "$?" || domain_ran test-appliance-rig-config-merge.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-rig-token-landing.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-token-landing.sh" && domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?" || domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-wizard-spool.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-wizard-spool.sh" && domain_ran test-appliance-wizard-spool.sh "$_d0" "$?" || domain_ran test-appliance-wizard-spool.sh "$_d0" "$?"
 
@@ -321,6 +319,8 @@ if in_block 5; then
 
     # shellcheck source=tests/stack/appliance/test-appliance-boot.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot.sh" && domain_ran test-appliance-boot.sh "$_d0" "$?" || domain_ran test-appliance-boot.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-baked-images.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-baked-images.sh" && domain_ran test-appliance-baked-images.sh "$_d0" "$?" || domain_ran test-appliance-baked-images.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-boot-remint.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-remint.sh" && domain_ran test-appliance-boot-remint.sh "$_d0" "$?" || domain_ran test-appliance-boot-remint.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-address-watch.sh disable=SC2015

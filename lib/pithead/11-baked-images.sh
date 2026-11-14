@@ -19,10 +19,6 @@
 # is how an appliance ended up unable to install from its own stick — the store was broken by the
 # reset, not by anything the wizard did. A correct BASE layer carries no `lower` file at all, so a
 # zero-length one is damage, never a legitimate state.
-#
-# ponytail: rebuilds the WHOLE store, so a machine past provisioning re-pulls whatever is not
-# baked (only the dashboard is). Fine as a floor — a store in this state starts no container at
-# all, so re-pulling beats staying dead. Narrow it to the baked set if that ever bites.
 repair_broken_image_store() { # $1: container engine
     local engine="$1" root
     root=$("$engine" info --format '{{.Store.GraphRoot}}' 2>/dev/null) || return 0
@@ -36,7 +32,7 @@ repair_broken_image_store() { # $1: container engine
 
 load_baked_images() { # $1 (optional): image ref whose absence forces a load despite a matching digest
     local required="${1:-}" dir="${PITHEAD_IMAGES_DIR:-/opt/pithead/images}"
-    local engine archive sha rec recorded load_pid t0 load_rc
+    local engine archive base sha rec recorded load_pid t0 load_rc
     engine=$(container_engine)
     # Before trusting any digest record: a record describes what was LOADED, and the check below
     # only asks whether the image still EXISTS. A store damaged as described above satisfies both
@@ -47,6 +43,8 @@ load_baked_images() { # $1 (optional): image ref whose absence forces a load des
     rm -f "$PWD/.wizard-image-sha"
     for archive in "$dir"/*.tar.gz "$dir"/*.tar; do
         [ -f "$archive" ] || continue
+        base=$(basename "$archive")
+        [ -z "${PITHEAD_LOAD_ONLY:-}" ] || [[ " $PITHEAD_LOAD_ONLY " == *" ${base%%.tar*} "* ]] || continue
         sha=$(sha256sum "$archive" 2>/dev/null | cut -d' ' -f1)
         rec="$PWD/data/.loaded-$(basename "$archive").sha"
         # `|| true`: a missing record is the normal first-boot case, not an error to trap.

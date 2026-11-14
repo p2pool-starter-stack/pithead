@@ -60,7 +60,8 @@ test-integration-selftest: pithead ## Integration harness logic and local transp
 		env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$$home" bash "$$t" || { suite_rc=$$?; echo "$$t failed (exit $$suite_rc)" >&2; result=1; }; \
 	done; exit $$result
 
-test-tools:
+test-tools: pithead
+	python3 tests/stack/standalone/test_monero_backups.py
 	python3 tests/integration/test_selftest_runner.py
 	python3 tests/tools/test_lmdb_build.py
 	bash scripts/lint/test-sanitize-test-log.sh
@@ -149,7 +150,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 	printf '%s\0' pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
 		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/test_setup_build_interrupt.sh tests/stack/*/*.sh \
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
-		os/installer/pithead-install os/build-image.sh os/rootfs/*.sh os/rauc/*.sh os/overlay/pithead-sync \
+		os/installer/pithead-install os/build-image.sh os/bake-images.sh os/rootfs/*.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery os/overlay/pithead-serial-port-present \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-tor \
