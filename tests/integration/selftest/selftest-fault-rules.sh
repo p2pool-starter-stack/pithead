@@ -19,6 +19,8 @@ export INTEGRATION_RUN_SUITE=1
 source "$ROOT/lib/run-tari-stranded.sh"
 # shellcheck source=tests/integration/lib/run-monero-stranded.sh
 source "$ROOT/lib/run-monero-stranded.sh"
+# shellcheck source=tests/integration/lib/run-monero-backups.sh
+source "$ROOT/lib/run-monero-backups.sh"
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$ROOT/lib/run-faults.sh"
 
@@ -248,6 +250,7 @@ reset_fake
     done
     run_fault_injection
 ) >/dev/null 2>&1
+assert_eq "the phase exercises the backup failover leg" "$(grep -c '^fault_monero_backups$' "$FAKE/phase.log")" "1"
 assert_eq "the phase clears before its first leg injects" "$(head -n1 "$FAKE/phase.log")" "clear"
 assert_eq "and clears between bringing Tor back and restarting the dashboard" \
     "$(sed -n '/^rx docker compose up -d tor$/,/^rx docker compose restart dashboard$/p' "$FAKE/phase.log" | grep -c '^clear$')" "1"

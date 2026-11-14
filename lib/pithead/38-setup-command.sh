@@ -20,6 +20,7 @@ setup() {
 setup_confirmed() {
     mutation_lock_acquire setup
 
+    ! is_appliance || load_baked_images
     check_prerequisites
     ensure_config_exists
     ensure_onion_password

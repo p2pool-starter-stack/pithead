@@ -87,6 +87,13 @@ executable self-contained. Do not nest or reorder `lib/pithead/` slices without
 checking that contract. `make lint-pithead-build` checks assembly and ordering
 guards. Sources are excluded from release bundles.
 
+Monero backup validation and launch arguments live in `lib/pithead/28a-monero-backups.sh`.
+Both runtime renderers pass the encoded argument list to `build/p2pool/entrypoint.sh`;
+`dashboard/mining_dashboard/service/health/monero_backups.py` checks individual nodes for worker admission.
+`tests/stack/standalone/test_monero_backups.py` and `dashboard/tests/service/test_monero_backups.py`
+cover these contracts, and `tests/integration/lib/run-monero-backups.sh` proves primary-down
+failover in the existing fault-injection phase with an approved external node provider.
+
 Doctor verdict ids are pinned in `tests/stack/doctor/check-ids.py`;
 `tests/stack/doctor/test-doctor-appliance.sh` checks the JSON and support-bundle rows,
 and the surface and memory suites check that an id survives verdict and wording changes.
@@ -122,6 +129,11 @@ archive replacement, recreation failures and migration holds through the real st
 The crossupdate phase compares the running dashboard ID with the candidate slot archive.
 `tests/os/dashboard-markers.json` declares signed test-image variants;
 `tests/os/selftest-marker-images.sh` checks the build-time manifest and shared archive reference.
+`os/bake-images.sh` verifies and archives the always-on service images into the appliance (#978);
+`tests/os/selftest-bake-images.sh` checks its pins, signature refusal and archive set, and
+`tests/stack/appliance/test-appliance-baked-images.sh` checks the loader's scope. The provision
+phase cuts the guest off from the test registry with `tests/os/registry-cut-leg.sh`, whose parsing
+`tests/os/selftest-registry-cut.sh` covers.
 
 Reset slot preservation is in `lib/pithead/16b-reset-slot.sh`; its fixture controls live in
 `tests/stack/appliance/test-appliance-reset-slot.sh` and

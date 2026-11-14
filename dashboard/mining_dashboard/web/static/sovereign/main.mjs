@@ -6,6 +6,7 @@ import { Overview, OverviewAdvanced } from "./overview.mjs";
 import { RANGES } from "./overview-model.mjs";
 import { createPolling } from "./polling.mjs";
 import { PowerControl } from "./power.mjs";
+import { SettingsPage } from "./settings.mjs";
 import { Shell } from "./shell.mjs";
 import { createSyncHistory } from "./sync-model.mjs";
 import { overviewContent } from "./sync-view.mjs";
@@ -92,7 +93,10 @@ export function initSovereign({
           ? html`<${MachinesPage} state=${state} connected=${data.connected} sessionExpired=${data.sessionExpired}
         onDirtyChange=${onDirtyChange}
         worker=${route.page === "machines" ? new URL(win.location.href).searchParams.get("worker") : null} />`
-          : null);
+          : page === "settings"
+            ? html`<${SettingsPage} state=${state} connected=${data.connected}
+        sessionExpired=${data.sessionExpired} onDirtyChange=${(dirty) => onDirtyChange("lan", dirty)} />`
+            : null);
   const paint = () => {
     doc.title = `Pithead — ${PAGES[route.page][0]}`;
     render(
