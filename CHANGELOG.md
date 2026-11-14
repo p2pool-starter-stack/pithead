@@ -21,6 +21,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- The rig role reserves no hugepages at boot — it releases the baked 6 GB reservation and leaves the pool to RigForge — and a rig renders RandomX mode `auto`, so a machine too small for the dataset mines in light mode instead of failing the miner unit (#4010). The baked RigForge tree moves to develop's tip, the first that honors `xmrig.randomx`.
 - Tor auto-heal now works on **No login** appliances through a host-restricted healing channel. General dashboard control remains disabled, and state recovery retains its evidence, onion-identity, lock and six-hour cooldown checks (#3166).
 - XvB sync regression tests now check real stored stats, reward estimates and raffle wins. Failed fetches and unparseable round aggregates must retain the last good readings and freshness timestamps; a local failure-count update remains allowed (#3056).
 

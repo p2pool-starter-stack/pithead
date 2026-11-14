@@ -19,6 +19,7 @@
     1248
   ],
   "rigforge": {
+    "appliance": true,
     "config": {
       "DONATION": 0,
       "autotune": "disabled",
@@ -71,6 +72,7 @@
       "hs_per_watt": null,
       "watts": null
     },
+    "stamp": "ref=0000000000000000000000000000000000000000 version=0.0.0-fixture",
     "tune": {
       "applied": null,
       "autotune": {

@@ -50,9 +50,11 @@ _XMRIG_SUMMARY = {
 # "none"; the SMT control value or null). Nothing in the dashboard reads either one — they are here
 # so the shape guard has the whole block to compare, not because a consumer depends on them.
 _RIGFORGE_BLOCK = {
+    "appliance": True,
     "version": "1.16.0",
     "xmrig_version": "6.24.0",
     "xmrig_commit": "abcdef0",
+    "stamp": "ref=0000000000000000000000000000000000000000 version=0.0.0-fixture",
     "tune": {
         "applied": True,
         "target": "perf",

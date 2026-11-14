@@ -338,7 +338,8 @@ render_rig_miner_config() {
     jq --argjson keep "$keep" --arg tok "$tok" --arg allow "$allow" '$keep + {pools: [({url: .pool, user: (.worker // "")}
         + (if (.stratum_password // "") == "" then {} else {pass: .stratum_password} end))],
         ACCESS_TOKEN: $tok, api: "enabled"}
-        + (if $allow == "" then {} else {control: "enabled", api_allow_from: $allow} end)' \
+        + (if $allow == "" then {} else {control: "enabled", api_allow_from: $allow} end)
+        + {xmrig: {randomx: {mode: "auto"}}}' \
         "$PWD/rig.json" >"$dir/config.json" 2>/dev/null || return 1
     chmod 600 "$dir/config.json" 2>/dev/null || true
 }

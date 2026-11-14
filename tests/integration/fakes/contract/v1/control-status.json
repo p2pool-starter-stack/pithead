@@ -13,6 +13,19 @@
       "status": "applied",
       "warnings": []
     },
+    "busy": {
+      "age_seconds": "NORMALIZED",
+      "applied_at": "NORMALIZED",
+      "backup": null,
+      "change_id": "8888888888888888",
+      "changed_keys": [
+        "version"
+      ],
+      "reason": "rig is lent to a bench job; retry after it is returned",
+      "source": "control",
+      "status": "busy",
+      "warnings": []
+    },
     "failed": {
       "age_seconds": "NORMALIZED",
       "applied_at": "NORMALIZED",
@@ -109,6 +122,7 @@
   },
   "statuses": [
     "applied",
+    "busy",
     "failed",
     "noop",
     "pending",

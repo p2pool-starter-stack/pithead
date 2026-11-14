@@ -15,7 +15,7 @@ STUB
 chmod +x "$RCM/bin/getent"
 printf '{"pool":"coordinator.lan:3333","worker":"shed-3","stratum_password":"pw","access_token":"%032d"}' 1 >"$RCM/rig.json"
 rcm_render() { PITHEAD_RIGFORGE_DIR="$RCM/rigforge" PATH="$RCM/bin:$PATH" run_sourced "$RCM" render_rig_miner_config >/dev/null 2>&1; }
-rcm_plain='["ACCESS_TOKEN","api","api_allow_from","control","pools"]'
+rcm_plain='["ACCESS_TOKEN","api","api_allow_from","control","pools","xmrig"]'
 rcm_render
 assert_eq "a first render has no writable keys" "$(jq -c keys "$RCM/rigforge/config.json")" "$rcm_plain"
 jq '. + {DONATION: 2, autotune: false, watchdog: true, watchdog_interval_min: 7, max_temp_c: 81,

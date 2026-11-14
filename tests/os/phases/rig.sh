@@ -445,6 +445,6 @@ phase_rig() {
             "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" "${PITHEAD_OS_MONERO_NODE_PASSWORD:-}" \
             "${PITHEAD_OS_TARI_NODE_HOST:-}" "${PITHEAD_OS_TARI_GRPC_PORT:-}" "$ip"
     fi
-
     rig_setup_again_coordinator_leg "$token" # #1318: Set up again as a coordinator, from the updated slot
+    rig_small_guest_leg "$img"
 }

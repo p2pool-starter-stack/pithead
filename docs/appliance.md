@@ -12,12 +12,16 @@ manage the host.
 
 The RAM and chain-storage figures below size a coordinator, with or without a local worker.
 For worker-only, use [worker hardware requirements](hardware.md#choose-the-arrangement): it runs
-no chains. UEFI, wired ethernet and boot/install media requirements still apply to both roles;
-a rig can [run from the USB stick](#the-disk) without an internal chain disk.
+no chains. A **RigForge rig has no RAM or CPU floor of its own**: it runs no chains and reserves
+no memory for mining — RigForge sizes the pool for the machine it finds. Any machine that boots
+this image mines; a smaller one mines more slowly, dropping to RandomX's light mode when
+the RAM cannot hold the dataset, which is slower and not broken. UEFI, wired ethernet and
+boot/install media requirements still apply to both roles; a rig can
+[run from the USB stick](#the-disk) without an internal chain disk.
 
 - An x86-64 machine with UEFI you can dedicate to mining. It will be **erased**.
-- 16 GB RAM or more — that is the supported floor, not a suggestion: the appliance reserves
-  6 GB of it for mining at every boot. With less RAM it still boots, but it prints a warning
+- 16 GB RAM or more — the supported floor for a **coordinator**, not a suggestion: the appliance
+  reserves 6 GB of it for mining at every boot. With less RAM it still boots, but it prints a warning
   on the machine's screen and shrinks that reservation — mining runs slower and everything
   else runs squeezed, at every boot until the machine has 16 GB. If that warning never reaches
   the physical console (a serial line can lose a message to a login prompt claiming it at the
@@ -33,7 +37,8 @@ a rig can [run from the USB stick](#the-disk) without an internal chain disk.
   [Hardware › Running a node elsewhere](hardware.md#running-a-node-elsewhere) for the totals in
   every combination.
 - A wired ethernet connection. Wi-Fi is not supported.
-- A USB stick, **16 GB or larger** — the image writes 5 GB to the stick, whatever the size of the download.
+- A USB stick, **16 GB or larger** — a floor on the medium, not on the machine: the image writes
+  5 GB to the stick, whatever the size of the download.
 - A second computer with a browser, on the same network.
 
 A coordinator with local chains runs continuously and needs an internal SSD or NVMe; do not
