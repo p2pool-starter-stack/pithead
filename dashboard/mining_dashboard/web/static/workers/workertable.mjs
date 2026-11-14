@@ -119,15 +119,16 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, local
                     )}</tr>
                 </thead>
                 <tbody id="workers-tbody">
-                    ${rows.map(
-                      (w) => html`
+                    ${rows.map((w) => {
+                      const inspect = w.unnamed ? null : onInspect;
+                      return html`
                         <tr class=${aliveHere(w) ? "status-ok" : "status-bad"}>
                             <td>${
-                              onInspect && !w.unnamed
-                                ? html`<button type="button" class="worker-name-link" onClick=${() => onInspect(w.name)}
+                              inspect
+                                ? html`<button type="button" class="worker-name-link" onClick=${() => inspect(w.name)}
                                                 title="Inspect / edit this worker's config">${w.name}</button>`
                                 : w.name
-                            } <${PoolBadge} pool=${w.pool} /><${ApiBadge} w=${w} onInspect=${onInspect} /><${RigForgeChips} rf=${w.rigforge} /><${RigUpdateBadge} up=${w.rigforge_update} name=${w.name} onInspect=${onInspect} />${
+                            } <${PoolBadge} pool=${w.pool} /><${ApiBadge} w=${w} onInspect=${inspect} /><${RigForgeChips} rf=${w.rigforge} /><${RigUpdateBadge} up=${w.rigforge_update} name=${w.name} onInspect=${inspect} />${
                               miningNote(w)
                                 ? html` <span class="badge badge-outline mining-note">${miningNote(w)}</span>`
                                 : null
@@ -143,8 +144,8 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, local
                                 : null
                             }</td>
                             <td class="text-muted" title="Hashrate the rig reports for itself, wherever it mines">${w.telemetry_str}</td>
-                        </tr>`,
-                    )}
+                        </tr>`;
+                    })}
                 </tbody>
             </table>
         </div>

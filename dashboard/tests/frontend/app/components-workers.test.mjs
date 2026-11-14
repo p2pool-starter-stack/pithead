@@ -212,11 +212,23 @@ test('WorkersTable explains DOWN beside telemetry and keeps telemetry in its own
     assert.match(renderApp({ state: s }), />Rig telemetry 1m</);
 });
 
-test('WorkersTable lists an unnamed proxy client without an inspect link (#4072)', () => {
+test('WorkersTable lists an unnamed proxy client with no inspect path, badges included (#4072)', () => {
     const s = clone();
-    Object.assign(s.workers[0], { name: 'unnamed proxy worker (10.0.0.9)', unnamed: true, ip: '10.0.0.9' });
+    s.control_enabled = true;
+    Object.assign(s.workers[0], {
+        name: 'unnamed proxy worker (10.0.0.9)',
+        unnamed: true,
+        ip: '10.0.0.9',
+        api_ok: false,
+        adopted: false,
+        rigforge_update: { available: true, latest: 'v1.11.2', url: 'https://h/v1.11.2' },
+    });
+    Object.assign(s.workers[1], { api_ok: false, adopted: false });
     const html = renderApp({ state: s });
     const row = rowOf(html, 'unnamed proxy worker');
     assert.match(row, /10\.0\.0\.9/);
-    assert.doesNotMatch(row, /worker-name-link/);
+    assert.match(row, /not adopted/);
+    assert.doesNotMatch(row, /<button/);
+    assert.match(rowOf(html, 'rig-bravo'), /worker-name-link/);
+    assert.match(rowOf(html, 'rig-bravo'), /<button[^>]*>not adopted/);
 });
