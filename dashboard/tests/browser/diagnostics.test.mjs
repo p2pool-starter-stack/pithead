@@ -93,8 +93,10 @@ test("a failed service-log read displays its reason and can be retried", async (
 for (const theme of ["Light", "Dark"]) {
   test(`${theme} theme: the diagnostics controls render as bordered buttons with a focus ring`, async ({
     page,
+    browserName,
     ui,
   }) => {
+    const nextKey = browserName === "webkit" && process.platform === "darwin" ? "Alt+Tab" : "Tab";
     await mount(ui);
     await page.evaluate(
       (t) => document.documentElement.setAttribute("data-theme", t),
@@ -105,18 +107,17 @@ for (const theme of ["Light", "Dark"]) {
       page.getByRole("button", { name: "Run health check" }),
       page.getByRole("button", { name: "Show recent log" }).first(),
     ];
-    for (const control of controls) {
+    const starts = [
+      [page.getByRole("heading", { name: "Service diagnostics" }), 1],
+      [page.locator("h3").first(), 2],
+    ];
+    for (const [i, control] of controls.entries()) {
       await expect(control).toHaveCSS("border-top-width", "1px");
       await expect(control).toHaveCSS("border-top-style", "solid");
       await expect(control).toHaveCSS("border-top-left-radius", "6px");
-      await page.evaluate(() => document.activeElement?.blur());
-      for (
-        let i = 0;
-        i < 20 && !(await control.evaluate((el) => el === document.activeElement));
-        i++
-      ) {
-        await page.keyboard.press("Tab");
-      }
+      const [start, tabs] = starts[i];
+      await start.click();
+      for (let n = 0; n < tabs; n++) await page.keyboard.press(nextKey);
       await expect(control).toBeFocused();
       await expect(control).toHaveCSS("outline-style", "solid");
       await expect(control).toHaveCSS("outline-width", "2px");
