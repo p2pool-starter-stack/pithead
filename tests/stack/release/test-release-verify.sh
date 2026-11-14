@@ -317,3 +317,68 @@ for pin_case in staging unset empty synthetic; do
     assert_eq "$pin_case preserves version references and third-party pins" \
         "$(cat "$pin_dir/os/build/stage/docker-compose.yml")" "$(cat "$pin_dir/expected.yml")"
 done
+
+echo "== black-box: an appliance verifies with its baked cosign and skips only an image it already holds at the pinned digest (#978) =="
+VRA="$SANDBOX/verify978"
+mkdir -p "$VRA/bin"
+write_pinned_compose "$VRA"
+printf 'fake release public key' >"$VRA/cosign.pub"
+cat >"$VRA/hostcosign" <<'COSIGN'
+#!/usr/bin/env bash
+printf '[host-cosign] cwd=%s home=%s %s\n' "$PWD" "$HOME" "$*" >>"${COSIGN_LOG:?}"
+exit "${COSIGN_RC:-0}"
+COSIGN
+cat >"$VRA/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+case "$1 $2" in
+"image inspect") grep -qxF "$3" "${LOCAL_IMAGES:?}" ;;
+info*) exit 0 ;;
+*) echo "[docker] $*" >>"${COSIGN_LOG:?}" ;;
+esac
+DOCKER
+chmod +x "$VRA/hostcosign" "$VRA/bin/docker"
+: >"$VRA/local"
+n=1
+for suffix in tor monero p2pool xmrig-proxy dashboard; do
+    printf 'ghcr.io/p2pool-starter-stack/pithead-%s@sha256:%s\n' "$suffix" "$(hex64 "$n")" >>"$VRA/local"
+    n=$((n + 1))
+done
+vra_verify() {
+    PATH="$VRA/bin:/usr/bin:/bin" PITHEAD_APPLIANCE=1 PITHEAD_COSIGN_BIN="$VRA/hostcosign" LOCAL_IMAGES="$VRA/local" \
+        COSIGN_LOG="$VRA/cosign.log" PITHEAD_REGISTRY="" run_sourced "$VRA" verify_release_images 2>&1
+}
+: >"$VRA/cosign.log"
+out="$(vra_verify)"
+assert_rc "an appliance holding every image at its pinned digest verifies without a registry" "$?" "0"
+assert_eq "no image already held at its pinned digest is looked up in a registry" "$(wc -l <"$VRA/cosign.log" | tr -d ' ')" "0"
+
+grep -v 'pithead-dashboard@' "$VRA/local" >"$VRA/local.new" && mv "$VRA/local.new" "$VRA/local"
+out="$(vra_verify)"
+assert_rc "an image that is not held still verifies through the baked binary" "$?" "0"
+assert_eq "only the image that is not held is verified" "$(wc -l <"$VRA/cosign.log" | tr -d ' ')" "1"
+vra_home=$(sed -n 's/.* home=\([^ ]*\) .*/\1/p' "$VRA/cosign.log" | head -1)
+[ -n "$vra_home" ] && [ ! -e "$vra_home" ] && ok "the baked binary's private HOME is removed afterwards" || bad "the baked binary's private HOME is removed afterwards" "home: ${vra_home:-none}"
+assert_contains "the unheld image is verified at its pinned digest" "$(cat "$VRA/cosign.log")" "verify --key cosign.pub --private-infrastructure ghcr.io/p2pool-starter-stack/pithead-dashboard@sha256:$(hex64 5)"
+assert_not_contains "the baked binary never runs with the shared /tmp as HOME" "$(cat "$VRA/cosign.log")" "home=/tmp "
+
+: >"$VRA/local"
+: >"$VRA/cosign.log"
+out="$(vra_verify)"
+assert_eq "an archive that did not load at the pinned digest is verified, not trusted" "$(grep -c 'host-cosign' "$VRA/cosign.log")" "5"
+
+: >"$VRA/cosign.log"
+out="$(COSIGN_RC=1 vra_verify)"
+assert_rc "a failing baked verifier refuses" "$?" "1"
+
+: >"$VRA/cosign.log"
+out="$(PATH="$VRA/bin:/usr/bin:/bin" PITHEAD_APPLIANCE=1 PITHEAD_COSIGN_BIN="$VRA/hostcosign" COSIGN_LOG="$VRA/cosign.log" \
+    run_sourced "$VRA" cosign_run verify-blob --signature /w/data/control/staged/x.sig /w/data/control/staged/x.tar.gz 2>&1)"
+assert_contains "container paths are mapped onto the install dir for the baked binary" "$(cat "$VRA/cosign.log")" \
+    "verify-blob --signature $VRA/data/control/staged/x.sig $VRA/data/control/staged/x.tar.gz"
+
+: >"$VRA/cosign.log"
+out="$(PATH="$VRI/bin:/usr/bin:/bin" PITHEAD_APPLIANCE=0 PITHEAD_COSIGN_BIN="$VRA/hostcosign" COSIGN_LOG="$VRA/cosign.log" \
+    LOCAL_IMAGES="$VRA/local" run_sourced "$VRA" verify_release_images 2>&1)"
+assert_eq "a DIY install ignores a host cosign and keeps the pinned container as its trust root" \
+    "$(grep -c 'host-cosign' "$VRA/cosign.log")" "0"
+assert_eq "a DIY install verifies every image through the container" "$(grep -c '^\[cosign\] verify ' "$VRA/cosign.log")" "5"
