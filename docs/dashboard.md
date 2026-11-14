@@ -752,7 +752,10 @@ operational: a node you run is yours to restart and resync, and a node you point
 (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible
 without opening `config.json`. A row reads `—` when the dashboard cannot tell — a payload from
-before this shipped, rather than a node it has decided is local.
+before this shipped, rather than a node it has decided is local. The card also keeps the dead-man's
+switch honest: a **Monitoring ping** line under the diagram shows the recent failed Healthchecks.io
+pings — timestamps and reason classes, nothing else — or says none failed.
+[Monitoring](monitoring.md) says what is recorded and why the ping URL itself is never part of it.
 
 The what-if earnings calculator and the XvB tier calculator live only in Advanced view. Simple view
 shows a one-time banner pointing there; it goes away once you dismiss it or open Advanced view, and
@@ -1613,9 +1616,26 @@ set up without a dashboard login, it points at **Set up again** in the boot menu
 labels it as the machine's own backup log, so commands in that log do not read as instructions for
 the browser.
 
+A second card lives on the same tab: **Support bundle**
+([#4036](https://github.com/p2pool-starter-stack/pithead/issues/4036)). One button asks the host to
+collect one redacted diagnostics archive for a bug report: journal lines of every Pithead unit over
+the window you ask for (the last 72 hours by default, 1 to 168), the dashboard's health history,
+the Tor bootstrap state, versions, the active RAUC slot, and the config's key shape with every
+value dropped. Every line passes the same redactor the diagnostics log tail uses on its way in;
+the host refuses a bundle over its own size cap rather than truncating one onto the wire; and the
+ask is audited like every other control request. The finished archive waits in the same results
+spool with the same hour-window retention a backup gets: **Download bundle** appears only once the
+host's result says applied, and nothing leaves the box until you press it. Attach it to a report
+the way [#3746](https://github.com/p2pool-starter-stack/pithead/issues/3746) lays out. A box whose
+stack never came up cannot serve the dashboard, so it builds the same archive from the console
+instead: `pithead recovery-bundle` in [Operations](operations.md).
+
 **Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that
-window, only the 3 most recent archives are kept. Ordinary control-request results (config
+window, only the 3 most recent archives are kept, backups and support bundles alike. An expired
+archive past those 3 is removed with its result; the 3 that remain stay downloadable until a newer
+one displaces them or the byte cap evicts them, so a support bundle can outlive the hour the card
+quotes. Ordinary control-request results (config
 previews, applies, upgrades) age out after a day or once more than 200 accumulate. Whatever these
 limits leave behind is capped at 512 MiB total, oldest first, unless the files that must remain
 (`os-update-state.json`, the result of a request still in flight, or a fresh backup pair) alone
