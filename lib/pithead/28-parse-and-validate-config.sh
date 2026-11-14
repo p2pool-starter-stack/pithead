@@ -64,21 +64,10 @@ parse_and_validate_config() {
     *) error "monero.mode must be \"local\" or \"remote\" (got \"$MONERO_MODE\")." ;;
     esac
 
-    # On-chain payout confirmation (#381). The operator supplies the PRIVATE VIEW KEY for
-    # monero.wallet_address; the stack runs a view-only monero-wallet-rpc against the LOCAL node to
-    # confirm payouts actually landed. The view key is a SECRET (it reveals all incoming amounts and
-    # timing to anyone who can read config.json/.env) — handled like node_password: never logged or
-    # echoed. Empty (the default) = feature off, nothing new runs. Phase 1 is LOCAL NODE ONLY:
-    # scanning through a third-party daemon changes the trust story, so a view key set on a remote
-    # node is refused, loudly — the wrong way to fail is silent.
     MONERO_VIEW_KEY=$(jq -r '.monero.view_key // empty' "$CONFIG_FILE")
     PAYOUT_SCAN_HEIGHT=$(jq -r '.monero.payout_scan_height // "auto"' "$CONFIG_FILE")
     PAYOUT_CONFIRM_ENABLED=false
     if [ -n "$MONERO_VIEW_KEY" ]; then
-        if [ "$MONERO_MODE" != "local" ]; then
-            error "monero.view_key is set but monero.mode is \"$MONERO_MODE\". On-chain payout confirmation scans against the LOCAL node only — a remote/third-party daemon changes the trust story. Unset monero.view_key, or switch to a local node."
-        fi
-        # A view key is 64 lowercase hex chars. Reject a malformed value before it reaches the wallet.
         if ! printf '%s' "$MONERO_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
             error "monero.view_key must be the 64-character hex SECRET VIEW KEY for monero.wallet_address (Monero GUI: Settings › Wallet › Show seed & keys › 'Secret view key'; monero-wallet-cli: viewkey). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#MONERO_VIEW_KEY} chars."
         fi
@@ -90,23 +79,13 @@ parse_and_validate_config() {
         PAYOUT_CONFIRM_ENABLED=true
     fi
 
-    # Tari on-chain payout confirmation (#462), the sibling of #381 for the merge-mine half. The
-    # operator supplies the PRIVATE VIEW KEY plus the PUBLIC SPEND KEY for the Tari payout address;
-    # the stack runs a view-only minotari_console_wallet against the LOCAL Tari node to confirm a
-    # merge-mine coinbase actually landed. The view key is a SECRET (reveals all incoming amounts and
-    # timing) — handled like node_password: never logged or echoed, delivered to the container in a
-    # read-only bind-mounted owner-only file, never the command line or `docker inspect`. Empty =
-    # feature off. Phase 1 is LOCAL NODE ONLY: a view key with a remote Tari node (#103) is refused,
-    # mirroring monero.mode — scanning through a third-party node changes the trust story.
-    # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE 2022-01-01 (#2731), so a fresh
-    # wallet doesn't rescan from genesis. TARI_MODE was already parsed and validated above.
     TARI_VIEW_KEY=$(jq -r '.tari.view_key // empty' "$CONFIG_FILE")
     TARI_SPEND_PUBLIC_KEY=$(jq -r '.tari.spend_public_key // empty' "$CONFIG_FILE")
     TARI_WALLET_BIRTHDAY=$(jq -r '.tari.payout_scan_birthday // "auto"' "$CONFIG_FILE")
     TARI_PAYOUT_CONFIRM_ENABLED=false
     if [ -n "$TARI_VIEW_KEY" ]; then
         if [ "$TARI_MODE" != "local" ]; then
-            error "tari.view_key is set but tari.mode is \"$TARI_MODE\". Payout confirmation scans the LOCAL Tari node, so it needs tari.mode: local — unset tari.view_key, or use a local Tari node."
+            error "tari.view_key is set but tari.mode is \"$TARI_MODE\". Payout confirmation through a remote node is supported for Monero only; the Tari wallet scans through the local Tari node, so it needs tari.mode: local — unset tari.view_key, or use a local Tari node."
         fi
         # Tari view / public-spend keys are 64 lowercase hex chars (32-byte Ristretto scalar / point).
         if ! printf '%s' "$TARI_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
@@ -136,6 +115,11 @@ parse_and_validate_config() {
     *) error "network.subnet must be an X.Y.Z.0/24 block (got \"$NETWORK_SUBNET\")." ;;
     esac
     is_ipv4 "${NETWORK_PREFIX}.0" || error "network.subnet is not a valid IPv4 /24 (got \"$NETWORK_SUBNET\")."
+    PAYOUT_NODE_REMOTE=false PAYOUT_NODE_PROXY=""
+    if [ "$PAYOUT_CONFIRM_ENABLED" = true ] && [ "$MONERO_MODE" = remote ]; then
+        PAYOUT_NODE_REMOTE=true
+        [ "$(profile_name)" != privacy ] || PAYOUT_NODE_PROXY="${NETWORK_PREFIX}.25:9050"
+    fi
     # Fail-closed Tor-only egress firewall (#270); default on. Renders to .env so `up` can read it.
     # config_bool (not a plain `// true`) so an explicit false actually disables it — see #294.
     TOR_EGRESS_FIREWALL=$(normalize_bool "$(config_bool '.network.tor_egress_firewall' true)")
@@ -168,6 +152,9 @@ parse_and_validate_config() {
         is_valid_port "$MONERO_REMOTE_RPC_PORT" || error "monero.remote.rpc_port must be a TCP port 1–65535. Got \"$MONERO_REMOTE_RPC_PORT\"."
         MONERO_REMOTE_ZMQ_PORT=$(jq -r '.monero.remote.zmq_port // 18083' "$CONFIG_FILE")
         is_valid_port "$MONERO_REMOTE_ZMQ_PORT" || error "monero.remote.zmq_port must be a TCP port 1–65535. Got \"$MONERO_REMOTE_ZMQ_PORT\"."
+        if [ "$PAYOUT_CONFIRM_ENABLED" = true ] && [ "$(profile_name)" = privacy ] && payout_host_off_tor "$MONERO_REMOTE_HOST"; then
+            error "monero.view_key is set but the Privacy profile scans payouts only through Tor, and Tor cannot reach monero.remote.host \"$MONERO_REMOTE_HOST\" (private or local address). Use a publicly reachable node, switch profile, or unset monero.view_key."
+        fi
     fi
     # tari.mode remote (#103), mirroring monero.mode above: a third-party (or fleet-shared) Tari
     # base node needs a host — an empty one would render an empty TARI_GRPC_ADDRESS and mining can't

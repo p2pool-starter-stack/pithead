@@ -39,10 +39,6 @@ render_env() {
     tari_grpc_lan=$(jq -r '.tari.grpc_lan_access // false' "$CONFIG_FILE")
     if [ "$tari_grpc_lan" == "true" ]; then tari_grpc_bind="0.0.0.0"; else tari_grpc_bind="127.0.0.1"; fi
 
-    # On-chain payout confirmation (#381): the view-only wallet-rpc service only starts when its
-    # compose profile is active, which is only when a view key is set on a local node. Off = no
-    # container, dashboard unchanged. PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config
-    # (which also refuses a view key on a remote node and validates the key/height).
     if [ "${PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
         profiles="${profiles:+$profiles,}payout_confirm"
     fi
@@ -445,6 +441,8 @@ PITHEAD_TLS_DIR=$(dotenv_render_value "$(appliance_tls_dir)")
 HOST_PORT=$(dotenv_render_value "$HOST_PORT")
 DEPLOYMENT_COMPLETED=$(dotenv_render_value "${DEPLOYMENT_COMPLETED:-false}")
 EOF
+        [ "${PAYOUT_NODE_REMOTE:-false}" != true ] ||
+            printf 'PAYOUT_NODE_REMOTE=true\nPAYOUT_NODE_PROXY=%s\n' "$(dotenv_render_value "${PAYOUT_NODE_PROXY:-}")" >>"$target"
     )
     # Contains the node RPC password; keep it owner-only (belt-and-braces — the umask above
     # already created it 600; a chmod failure now aborts loudly instead of passing silently).

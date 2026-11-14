@@ -30,6 +30,8 @@ export function trackingNotice(summary) {
     return "Tracking may be incomplete: no view-only tracking is enabled.";
   if (summary.address_match === false)
     return "Tracking may be incomplete: the payout wallet does not match the configured address.";
+  if (summary.tracking?.complete === false)
+    return `Tracking may be incomplete: ${summary.tracking.reason}.`;
   if (summary.reachable === false || summary.down === true)
     return "Tracking may be incomplete: the payout wallet is unreachable or its scan has not answered.";
   if (summary.reachable !== true)

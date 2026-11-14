@@ -1,12 +1,4 @@
 #!/bin/bash
-# View-only payout-confirmation wallet (#381).
-#
-# Runs monero-wallet-rpc against the LOCAL monerod, scan-only: the wallet is generated from the
-# operator's PRIVATE VIEW KEY with NO spend key, so it can see incoming payouts but CANNOT
-# spend. The view key is written to a JSON file on tmpfs and handed to --generate-from-json — it is
-# NEVER put on the command line, where `docker inspect` / `ps` would expose it (#90 discipline,
-# same as monerod's RPC creds). Each address/key pair keeps a wallet in the named volume. Reverting a pair reopens
-# its saved scan progress. New wallets use PAYOUT_SCAN_HEIGHT or the local tip minus 100 blocks.
 set -eu
 umask 077
 
@@ -19,20 +11,24 @@ WALLET_FILE="" # selected after the test-source guard
 # It lives in the volume so it persists across container recreates until the scan actually finishes.
 SCAN_MARKER="$WALLET_DIR/.payout-scanning"
 GEN_JSON="${GEN_JSON:-/tmp/gen.json}" # tmpfs; holds the view key for the create-from-keys step only
-DAEMON_ADDRESS="${MONERO_NODE_HOST:-127.0.0.1}:${MONERO_RPC_PORT:-18081}"
+case "${MONERO_NODE_HOST:-127.0.0.1}" in
+*:*) DAEMON_ADDRESS="[${MONERO_NODE_HOST}]:${MONERO_RPC_PORT:-18081}" ;;
+*) DAEMON_ADDRESS="${MONERO_NODE_HOST:-127.0.0.1}:${MONERO_RPC_PORT:-18081}" ;;
+esac
 
 # Fresh wallets start 100 blocks behind the local tip (about 200 minutes).
 # Never fall back to genesis when the node is unavailable: restart and retry instead.
 resolve_scan_height() {
-    local want="${PAYOUT_SCAN_HEIGHT:-auto}" count
+    local want="${PAYOUT_SCAN_HEIGHT:-auto}" count timeout=10
+    [ -z "${PAYOUT_NODE_PROXY:-}" ] || timeout=30
     case "$want" in
     '' | auto)
-        count=$(curl -fsS --digest --max-time 10 \
+        count=$(curl -fsS --digest --max-time "$timeout" ${PAYOUT_NODE_PROXY:+--socks5-hostname "$PAYOUT_NODE_PROXY"} \
             -u "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
             -H 'Content-Type: application/json' \
             -d '{"jsonrpc":"2.0","id":"0","method":"get_block_count"}' \
             "http://$DAEMON_ADDRESS/json_rpc" | jq -er '.result.count | select(type == "number" and . > 0 and floor == .)') || {
-            echo "Cannot read the local Monero height; refusing a genesis fallback." >&2
+            echo "Cannot read the Monero node height; refusing a genesis fallback." >&2
             return 1
         }
         if [ "$count" -gt 100 ]; then printf '%s\n' "$((count - 100))"; else printf '0\n'; fi
@@ -142,7 +138,6 @@ select_wallet
 set -- \
     --daemon-address "$DAEMON_ADDRESS" \
     --daemon-login "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
-    --trusted-daemon \
     --rpc-bind-ip 0.0.0.0 --confirm-external-bind \
     --rpc-bind-port 18082 \
     --rpc-login "${WALLET_RPC_USERNAME:-wallet}:${WALLET_RPC_PASSWORD:-}" \
@@ -151,6 +146,8 @@ set -- \
     --max-concurrency 1 \
     --log-level 0 \
     --non-interactive
+if [ "${PAYOUT_NODE_REMOTE:-false}" = true ]; then set -- "$@" --untrusted-daemon; else set -- "$@" --trusted-daemon; fi
+[ -z "${PAYOUT_NODE_PROXY:-}" ] || set -- "$@" --proxy "$PAYOUT_NODE_PROXY" --daemon-ssl-allow-any-cert
 
 # Mark a scan on EVERY start (#718, #2756): a first creation scans from the restore height (genesis
 # is hours); a reopen catches up from the height the wallet last stored, which after a long stop, a

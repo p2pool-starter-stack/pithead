@@ -40,6 +40,16 @@ test("unknown, missing, partial and unreachable tracking cannot read as zero ear
   }
 });
 
+test("a remote-node scan that is behind or cut off names its reason instead of reading as complete", () => {
+  const tracking = { complete: false, reason: "the remote node is unreachable" };
+  const summary = { enabled: true, reachable: true, partial: { "30d": false }, tracking };
+  assert.equal(trackingNotice(summary), "Tracking may be incomplete: the remote node is unreachable.");
+  const state = fixture();
+  state.earnings.confirmed = summary;
+  assert.match(page(state), /Tracking may be incomplete: the remote node is unreachable\./);
+  assert.equal(trackingNotice({ ...summary, tracking: { complete: true, reason: null } }), null);
+});
+
 test("returns stay withheld for arbitrary network rates, bad prices, disconnect and very low hashrate", () => {
   for (const price of [null, -1, NaN, Infinity, 0, 10000]) {
     const state = fixture();

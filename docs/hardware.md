@@ -54,7 +54,7 @@ plus headroom for the OS. Per-component breakdown, from each project's own guida
 | **[Tari base node](https://www.tari.com/integration-guide)** (`minotari_node`) | **4 GB** minimum, **8 GB+** recommended; grows over time | auto (`tari.mem_limit`) | **~150 GB estimate** SSD — and growing | Budget for it whenever it runs here. The stack caps its memory so growth can't take the host down. Not run at all with `tari.mode: remote` or `off`. |
 | **XMRig proxy · Tor · dashboard** | a few hundred MB combined | 512 MB each | a few GB (Docker images) | These coordinate and serve the UI. They don't mine, so no special CPU. |
 | **Caddy · Docker socket proxies** | small | 128 MB each | — | Serve the dashboard and mediate its Docker access. |
-| **Payout confirmation** (`wallet-rpc`, `tari-wallet`) | only when enabled | 2 GB · 512 MB | small (view-only wallet state) | Started only when `monero.view_key` / `tari.view_key` are set — and both are refused in that node's `remote` mode, since the scan needs a local node. |
+| **Payout confirmation** (`wallet-rpc`, `tari-wallet`) | only when enabled | 2 GB · 512 MB | small (view-only wallet state) | Started only when `monero.view_key` / `tari.view_key` are set — and `tari.view_key` is refused in `remote` mode, since the Tari scan needs a local node. A remote Monero node is supported with its own trust and routing rules. |
 
 Add the three heavy services' RAM (Monero 4 GB, P2Pool ~2.3 GB, Tari 4 GB) plus a couple of GB for
 the OS, page cache, and supporting containers, and you reach the 16 GB minimum above.
@@ -273,9 +273,10 @@ Either way it must be a node you control, and the requirements differ per chain.
 [Remote Tari node](configuration.md#remote-tari-node) — including how to make *this* stack the
 serving side for another one.
 
-> NOTE: on-chain payout confirmation scans against local nodes only, so `monero.view_key` is refused
-> with `monero.mode: remote` and `tari.view_key` with `tari.mode: remote`. Setup fails with that
-> reason rather than scanning through someone else's daemon.
+> NOTE: on-chain payout confirmation through a remote node is supported for Monero only, with the
+> trust and routing rules in [Dashboard › Payout confirmation through a remote Monero node](dashboard.md#payout-confirmation-through-a-remote-monero-node).
+> `tari.view_key` is refused with `tari.mode: remote`. Setup fails with that reason rather than
+> scanning through someone else's daemon.
 
 ---
 

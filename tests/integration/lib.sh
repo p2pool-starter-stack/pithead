@@ -172,7 +172,8 @@ resolve_overrides() {
             SKIP_REASON="needs --remote-monero-host"
             return 1
         }
-        out="$out monero.remote.host=$REMOTE_MONERO_HOST monero.view_key="
+        out="$out monero.remote.host=$REMOTE_MONERO_HOST"
+        printf '%s' "$overrides" | tr ' ' '\n' | grep -qx 'payout_confirm=env' || out="$out monero.view_key="
         out="$out${REMOTE_MONERO_RPC_PORT:+ monero.remote.rpc_port=$REMOTE_MONERO_RPC_PORT}${REMOTE_MONERO_ZMQ_PORT:+ monero.remote.zmq_port=$REMOTE_MONERO_ZMQ_PORT}"
     fi
 
@@ -195,7 +196,7 @@ resolve_overrides() {
             return 1
         }
         [ -z "${IT_MONERO_VIEW_KEY:-}" ] || out="${out:+$out }monero.view_key=$IT_MONERO_VIEW_KEY"
-        [ -z "$tari_pair" ] || out="${out:+$out }tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
+        [ -z "$tari_pair" ] || [ "$tari_mode" = off ] || out="${out:+$out }tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
     fi
 
     RESOLVED="$out"
