@@ -102,6 +102,15 @@ _failover_view_restore() {
     _failover_pool_stop
 }
 
+_failover_row_diagnostics() {
+    printf '%s' "$FAILOVER_STATE" | jq -c --arg n "$RIG_NAME" '
+        def host: sub(":[0-9]+$"; "") | if test("^[0-9.]+$") then "ip" elif . == "" then "none" else "name" end;
+        {workers: ([.workers[]?] | length), named_row_found: (any(.workers[]?; .name == $n)),
+         rows: [.workers[]? | {status, api_ok, adopted, state: .mining.state, pool_host: ((.mining.pool // "") | host),
+                pool_port: ((.mining.pool // "") | capture(":(?<p>[0-9]+)$").p? // null), has_telemetry: (.telemetry_h60 != null)}]}' 2>/dev/null |
+        while IFS= read -r line; do it_warn "failover-view row diagnostics: $line"; done
+}
+
 _failover_view_transition() {
     local desc="$1" pred="$2"
     shift 2
@@ -110,6 +119,7 @@ _failover_view_transition() {
         return 0
     fi
     it_fail "$desc within ${FAILOVER_VIEW_WINDOW}s (#4074)" "the dashboard state did not reach it in time"
+    _failover_row_diagnostics
     return 1
 }
 
