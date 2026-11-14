@@ -53,12 +53,12 @@ fail() {
     done
     git update-ref refs/remotes/origin/develop "$(git hash-object -w file)"
     migration_old_commit_valid "$old" || fail 'non-commit remote ref prevented mirror fallback'
-    git update-ref -d refs/remotes/origin/develop
     git update-ref -d refs/heads/develop
+    if migration_old_commit_valid "$old" 2>/dev/null; then fail 'non-commit develop line accepted'; fi
+    git update-ref -d refs/remotes/origin/develop
     if migration_old_commit_valid "$old" 2>/dev/null; then fail 'missing develop reference accepted'; fi
     git update-ref refs/remotes/origin/develop "$base"
 )
-# A develop-v* release-line PR takes its baseline from that line; PR commits still refuse.
 (
     mkdir "$T/line"
     cd "$T/line"
@@ -95,6 +95,14 @@ fail() {
         fail 'shared baseline did not prefer the candidate release line'
     migration_old_commit_valid "$develop" || fail 'develop-only baseline rejected'
     [ "$MIGRATION_BASE_REF" = refs/remotes/origin/develop ] || fail 'develop-only base identity not retained'
+    git update-ref refs/heads/develop-attacker "$candidate"
+    git update-ref refs/remotes/origin/develop-notes "$candidate"
+    git update-ref refs/heads/development "$candidate"
+    if migration_old_commit_valid "$candidate" 2>/dev/null; then
+        fail 'attacker-named develop-prefix branch accepted as a line'
+    fi
+    migration_old_commit_valid "$line" || fail 'develop-prefix branches displaced the release line'
+    [ "$MIGRATION_BASE_REF" = refs/remotes/origin/develop-v2.1.0 ] || fail 'release line identity lost'
     for invalid in "$candidate" "${candidate:0:39}0"; do
         if migration_old_commit_valid "$invalid" 2>/dev/null; then fail 'release-line PR or malformed source accepted'; fi
     done
