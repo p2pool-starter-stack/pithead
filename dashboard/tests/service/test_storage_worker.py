@@ -256,7 +256,7 @@ class TestWorkerConfigReconcile:
         # #1009: failed/noop/throttled — the rigforge#320 members #579's original three-status
         # allowlist dropped — must reconcile an accepted row exactly like applied/rejected/
         # rolled_back always have.
-        for status in ("failed", "noop", "throttled"):
+        for status in ("failed", "noop", "throttled", "busy"):
             self._seed(state_manager, "accepted", change_id=f"cid-{status}")
             state_manager.reconcile_worker_config_status(f"cid-{status}", status, "rig-supplied")
             row = self._status_of(state_manager, change_id=f"cid-{status}")

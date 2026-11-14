@@ -14,6 +14,7 @@ SETTLED_WORDS = {
     "applied": "upgraded",
     "noop": "already current",
     "throttled": "retry later",
+    "busy": "rig is lent to a bench job — retry later",
     "accepted": "still running on the rig",
     "rolled_back": "rolled back",
     "rejected": "rejected",

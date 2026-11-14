@@ -477,7 +477,7 @@ def test_parse_worker_control_status_full_terminal_vocabulary():
     # target)/throttled (the rig's own anti-beacon window) from a control-upgrade (rigforge#320) —
     # the SAME vocabulary pithead's own control_worker_apply/control_worker_upgrade poll cases
     # accept (#1001). Each must parse through, not just the three pre-#1009 members.
-    for status in ("applied", "rejected", "rolled_back", "failed", "noop", "throttled"):
+    for status in ("applied", "rejected", "rolled_back", "failed", "noop", "throttled", "busy"):
         block = {
             **RIGFORGE_BLOCK,
             "control": {"change_id": "abc123", "status": status, "reason": "rig-supplied"},

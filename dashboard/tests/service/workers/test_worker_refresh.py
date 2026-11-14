@@ -165,7 +165,9 @@ class TestMaybeRefreshAfterUpgrade:
         )
         called.assert_awaited_once()
 
-    @pytest.mark.parametrize("status", ["rejected", "failed", "rolled_back", "throttled", "noop"])
+    @pytest.mark.parametrize(
+        "status", ["rejected", "failed", "rolled_back", "throttled", "noop", "busy"]
+    )
     async def test_does_not_fire_on_non_success(self, monkeypatch, status):
         called = AsyncMock(return_value=True)
         monkeypatch.setattr(worker_refresh, "refresh_worker_after_upgrade", called)
