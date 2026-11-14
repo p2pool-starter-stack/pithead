@@ -81,7 +81,7 @@ async def test_control_port_reading_sets_wedged(reading, wedged):
     assert healer.circuits_wedged is wedged
 
 
-async def test_wedged_control_port_counts_a_responding_probe_as_failed():
+async def test_wedged_control_port_never_overrides_a_responding_probe():
     now = [100000.0]
     healer = _healer(now, probe=lambda: (True, "answered"))
     healer._attempts = 1
@@ -90,16 +90,25 @@ async def test_wedged_control_port_counts_a_responding_probe_as_failed():
     with (
         patch(f"{TARGET}.get_container_health", AsyncMock(return_value={})),
         patch("mining_dashboard.service.request_spool.write", return_value="history"),
+        patch("mining_dashboard.service.control_service.result", return_value=None),
     ):
         for _ in range(3):
             await healer.check()
             now[0] += PROBE_INTERVAL_SEC
-    assert healer._attempts == 2
-    assert healer._failing_since is not None
-    assert healer._ok_streak == 0
-    healer.circuits_wedged = False
-    assert healer.decide(True, now[0]) is None
-    assert healer.decide(True, now[0]) == "recovered"
+    assert healer._attempts == 0
+    assert healer._failing_since is None
+
+
+async def test_wedged_control_port_is_named_in_failed_probe_evidence():
+    now = [100000.0]
+    healer = _healer(now, probe=lambda: (False, "no answer"))
+    healer.circuits_wedged = True
+    with (
+        patch(f"{TARGET}.get_container_health", AsyncMock(return_value={})),
+        patch("mining_dashboard.service.request_spool.write", return_value="history"),
+    ):
+        await healer.check()
+    assert healer._failure_evidence == "no answer; control port reports wedged circuits"
 
 
 async def test_lost_newnym_transport_is_retried_once_then_the_ladder_advances():

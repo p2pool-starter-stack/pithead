@@ -259,8 +259,8 @@ class TorEgressHealer(TorHistoryMixin):
             ok, evidence = probe
             if self._attempts:
                 self._request_history()
-                if ok and self.circuits_wedged:
-                    ok, evidence = False, f"{evidence}; control port reports wedged circuits"
+            if not ok and self.circuits_wedged:
+                evidence = f"{evidence}; control port reports wedged circuits"
             if not ok:
                 self._failure_evidence = evidence
             outage_minutes = (now - self._failing_since) / 60 if self._failing_since else 0

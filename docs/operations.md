@@ -970,8 +970,9 @@ history (abandoned count and total build times both at 1000, no `CircuitBuildTim
 on each such round, sent once per outage to the alert sinks (failed delivery retries on later rounds), and names `./pithead tor-recover`;
 `./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. The doctor check does not require an outage record or auto-heal: saturated history plus live egress failure is enough for a FAIL. Each reading also carries the control-port view of
 Tor (`status/circuit-established` and the number of pending circuits). No established circuit, or
-64 or more pending circuits (the `MaxClientCircuitsPending` Pithead sets), counts as a failed probe for
-the outage even when an HTTP probe answers. The action budget is four per outage, and the reset and
+64 or more pending circuits (the `MaxClientCircuitsPending` Pithead sets), is named in the failed-probe
+evidence and is one of the reasons the host accepts a state reset; an answering probe is never
+overridden by it, because a busy Tor can sit at that ceiling while egress works. The action budget is four per outage, and the reset and
 restart together are capped at four per rolling 24 hours, a count held in the dashboard's memory
 (a dashboard restart clears it; the host's six-hour reset cooldown persists); at either limit the monitor logs once,
 asks the host to write a `tor-heal-exhausted` entry to its audit log, and warns until egress
