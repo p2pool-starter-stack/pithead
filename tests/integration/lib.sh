@@ -680,3 +680,4 @@ capture_artifacts() {
     api_state | redact >"${dir}/api-state.json" || true
     rx "docker compose logs --tail=200 --no-color" 2>&1 | redact >"${dir}/logs.txt" || true
 }
+source "${BASH_SOURCE[0]%/*}/lib/step-diagnostics.sh" || return $?
