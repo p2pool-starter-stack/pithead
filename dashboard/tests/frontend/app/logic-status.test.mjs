@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { heroKpis, raffleCls, bandBorderWidth, uptimeCell, egressRoute, boxAnchor } from '../../../mining_dashboard/web/static/app/logic.mjs';
+import { aliveHere, miningNote } from '../../../mining_dashboard/web/static/app/miningnote.mjs';
 
 // --- Issue #81: hero KPI band selector ------------------------------------------------
 
@@ -97,6 +98,22 @@ test('bandBorderWidth: zero-height segments get no border, real ones keep full w
 test('uptimeCell: online shows uptime, offline shows DOWN', () => {
     assert.equal(uptimeCell({ status: 'online', uptime_str: '3h 20m' }), '3h 20m');
     assert.equal(uptimeCell({ status: 'offline', uptime_str: '99h 9m' }), 'DOWN');
+    const away = { status: 'online', uptime_str: '3h 20m', mining: { state: 'on_backup', pool: 'b:3333' } };
+    assert.equal(uptimeCell(away), 'DOWN');
+    assert.equal(aliveHere(away), false);
+});
+
+test('miningNote: one explanation per verdict, and DOWN with telemetry is never silent (#4072)', () => {
+    const w = (state, pool = null, extra = {}) => ({ status: 'online', mining: { state, pool }, ...extra });
+    assert.equal(miningNote(w('on_backup', 'backup.example:3333')), 'on backup pool: backup.example:3333');
+    assert.equal(miningNote(w('not_connected')), 'not connected to this Pithead');
+    assert.equal(miningNote(w('unknown')), 'mining location unknown');
+    assert.equal(miningNote(w('mining_here')), null);
+    assert.equal(
+        miningNote(w('mining_here', null, { status: 'offline', telemetry_h60: 3100 })),
+        'telemetry only — not this Pithead',
+    );
+    assert.equal(miningNote(w('mining_here', null, { status: 'offline', telemetry_h60: null })), null);
 });
 
 // #170: egressRoute maps a server route token to a display glyph + label + CSS colour token.

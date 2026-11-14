@@ -95,3 +95,57 @@ render(html\`<\${Harness} />\`, document.getElementById('fixture'));
   await expect(dialog).toBeVisible();
   expect(reads).toBe(2);
 });
+
+test("the Workers table labels each mining verdict and lists an unnamed proxy client", async ({
+  page,
+  ui,
+}) => {
+  const base = ui.state.workers[0];
+  const row = (name, ip, extra) => ({ ...base, name, ip, ...extra });
+  ui.state.workers = [
+    row("rig-here", "10.0.0.1", {
+      status: "online",
+      mining: { state: "mining_here", pool: "h:3333" },
+    }),
+    row("rig-away", "10.0.0.2", {
+      status: "online",
+      mining: { state: "on_backup", pool: "backup.example:3333" },
+      telemetry_h60: 31000,
+      telemetry_str: "31.00 kH/s",
+    }),
+    row("rig-dark", "10.0.0.3", {
+      status: "offline",
+      mining: { state: "not_connected", pool: null },
+    }),
+    row("rig-unk", "10.0.0.4", { status: "online", mining: { state: "unknown", pool: null } }),
+    row("rig-tele", "10.0.0.5", {
+      status: "offline",
+      mining: { state: "mining_here", pool: null },
+      telemetry_h60: 3100,
+      telemetry_str: "3.10 kH/s",
+    }),
+    row("unnamed proxy worker (10.0.0.9)", "10.0.0.9", {
+      status: "online",
+      unnamed: true,
+      mining: { state: "unknown", pool: null },
+    }),
+  ];
+  await ui.open();
+  await page
+    .getByRole("group", { name: "Dashboard view" })
+    .getByRole("button", { name: "Advanced", exact: true })
+    .click();
+
+  const table = page.locator("#workers-table");
+  const rowOf = (text) => table.locator("tbody tr", { hasText: text });
+  await expect(rowOf("rig-away")).toContainText("on backup pool: backup.example:3333");
+  await expect(rowOf("rig-away")).toContainText("DOWN");
+  await expect(rowOf("rig-away")).toContainText("31.00 kH/s");
+  await expect(rowOf("rig-dark")).toContainText("not connected to this Pithead");
+  await expect(rowOf("rig-unk")).toContainText("mining location unknown");
+  await expect(rowOf("rig-tele")).toContainText("telemetry only — not this Pithead");
+  await expect(rowOf("rig-here")).not.toContainText("on backup pool");
+  const unnamed = rowOf("unnamed proxy worker (10.0.0.9)");
+  await expect(unnamed).toContainText("10.0.0.9");
+  await expect(unnamed.locator(".worker-name-link")).toHaveCount(0);
+});

@@ -32,6 +32,13 @@ The server is a data API; the browser renders the UI. There is no server-side te
   of online rows that are not `on_backup` or `not_connected`. The rig's own hashrate is the
   separate `telemetry_h10`, `telemetry_h60` and `telemetry_h15` fields (H/s, `null` when not
   probed); it is never summed into a total, and `h60`/`h15` stay the proxy's figures.
+  The Workers table (#4072) renders the verdict in each row as "on backup pool: <pool>", "not
+  connected to this Pithead" or "mining location unknown", never lists a rig mining elsewhere as
+  alive, and explains a `DOWN` row that still has telemetry as "telemetry only — not this
+  Pithead". `telemetry_str` is the formatted `telemetry_h60`, shown in its own "Rig telemetry 1m"
+  column. A proxy client with no rig name (`-` or empty) is a row named `unnamed proxy worker
+  (<address>)` with `unnamed: true`, shown with its address and proxy hashrate and without a
+  Worker Inspect link.
 - The client (`static/dashboard.js` + `components.mjs`) is a small Preact app, rendered with `htm`
   tagged templates (no JSX, no build step). It polls `/api/state` every 30s and renders
   declaratively, so the chart instance, table sort, selected range, and the simple/advanced view

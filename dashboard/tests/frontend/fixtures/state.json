@@ -749,6 +749,8 @@
       "telemetry_h10": null,
       "telemetry_h15": null,
       "telemetry_h60": null,
+      "telemetry_str": "\u2014",
+      "unnamed": false,
       "uptime": 0,
       "uptime_str": "0m 0s"
     },
@@ -799,6 +801,8 @@
       "telemetry_h10": null,
       "telemetry_h15": null,
       "telemetry_h60": null,
+      "telemetry_str": "\u2014",
+      "unnamed": false,
       "uptime": 0,
       "uptime_str": "0m 0s"
     }

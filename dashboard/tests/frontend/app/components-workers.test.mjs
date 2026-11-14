@@ -174,3 +174,49 @@ test('WorkersTable badges a rig running an older RigForge — and only that rig 
     none.workers.forEach((w) => (w.rigforge_update = null));
     assert.doesNotMatch(renderApp({ state: none }), /RigForge release is available/);
 });
+
+const rowOf = (html, name) => html.match(new RegExp(`<tr class="[^"]*">(?:(?!</tr>)[\\s\\S])*${name}[\\s\\S]*?</tr>`))[0];
+
+test('WorkersTable labels where each rig mines and never shows an elsewhere rig alive (#4072)', () => {
+    const s = clone();
+    const [a, b] = s.workers;
+    Object.assign(a, { name: 'rig-away', mining: { state: 'on_backup', pool: 'backup.example:3333' } });
+    Object.assign(b, { name: 'rig-dark', mining: { state: 'not_connected', pool: null } });
+    s.workers.push({ ...a, name: 'rig-unk', mining: { state: 'unknown', pool: null } });
+    s.workers.push({ ...a, name: 'rig-here', mining: { state: 'mining_here', pool: 'h:3333' } });
+    const html = renderApp({ state: s });
+    const away = rowOf(html, 'rig-away');
+    assert.match(away, /on backup pool: backup\.example:3333/);
+    assert.match(away, /DOWN/);
+    assert.match(away, /^<tr class="status-bad"/);
+    assert.match(rowOf(html, 'rig-dark'), /not connected to this Pithead/);
+    assert.match(rowOf(html, 'rig-unk'), /mining location unknown/);
+    const here = rowOf(html, 'rig-here');
+    assert.doesNotMatch(here, /mining-note/);
+    assert.match(here, /^<tr class="status-ok"/);
+});
+
+test('WorkersTable explains DOWN beside telemetry and keeps telemetry in its own cell (#4072)', () => {
+    const s = clone();
+    Object.assign(s.workers[0], {
+        name: 'rig-tele',
+        status: 'offline',
+        mining: { state: 'mining_here', pool: null },
+        telemetry_h60: 31000,
+        telemetry_str: '31.00 kH/s',
+    });
+    const row = rowOf(renderApp({ state: s }), 'rig-tele');
+    assert.match(row, /DOWN/);
+    assert.match(row, /telemetry only — not this Pithead/);
+    assert.match(row, /<td class="text-muted"[^>]*>31\.00 kH\/s<\/td>/);
+    assert.match(renderApp({ state: s }), />Rig telemetry 1m</);
+});
+
+test('WorkersTable lists an unnamed proxy client without an inspect link (#4072)', () => {
+    const s = clone();
+    Object.assign(s.workers[0], { name: 'unnamed proxy worker (10.0.0.9)', unnamed: true, ip: '10.0.0.9' });
+    const html = renderApp({ state: s });
+    const row = rowOf(html, 'unnamed proxy worker');
+    assert.match(row, /10\.0\.0\.9/);
+    assert.doesNotMatch(row, /worker-name-link/);
+});
