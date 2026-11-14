@@ -11,6 +11,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard and the configuration view now open on a sign-in page instead of the browser's
+  password prompt. It has a "Remember me" box (30 days, renewed while in use; otherwise the session
+  ends when the browser closes or after 8 hours idle) and a "Sign out" button. Changing the password
+  ends every session, wrong passwords are rate-limited, and scripts keep using HTTP basic auth with
+  the same credentials (#4089).
+
 ### Fixed
 
 - A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a

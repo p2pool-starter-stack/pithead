@@ -57,6 +57,19 @@ capability = hashlib.sha256(("pithead-boot-health-v1:" + os.environ["DASHBOARD_A
 if capability in raw or "X-Pithead-Boot-Probe" in raw:
     raise AssertionError("boot capability leaked into access log")
 PYLOG
+docker exec "$name-dashboard" python -c "
+from pathlib import Path
+if 'fixture-password' in Path('/access-log/access.log').read_text():
+    raise AssertionError('password leaked into access log')
+"
+login_out=$(run_driver "container:$name-caddy" login 127.0.0.1)
+old_cookie=$(printf '%s\n' "$login_out" | sed -n 's/^COOKIE=//p')
+[ -n "$old_cookie" ]
+DASHBOARD_AUTH_HASH_B64=$(printf '%s\n' rotated-password | docker run --rm -i "$image" caddy hash-password | openssl base64 -A)
+generate_caddyfile "$scratch/Caddyfile"
+docker exec "$name-caddy" caddy reload --config /etc/caddy/Caddyfile >/dev/null
+docker run --rm -i --network "container:$name-caddy" -e OLD_COOKIE="$old_cookie" -e DASHBOARD_AUTH_HASH_B64 --entrypoint python \
+    pithead-dashboard:itest - rotated 127.0.0.1 <"$ROOT/tests/integration/mini-stack/boot-health-proxy.py"
 # Authentication disabled must still prove a real nonempty dashboard page after rewriting.
 DASHBOARD_AUTH_HASH_B64=""
 generate_caddyfile "$scratch/Caddyfile"
