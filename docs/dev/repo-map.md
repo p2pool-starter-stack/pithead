@@ -381,8 +381,8 @@ through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
 to prove saturated-history recovery and the disabled control with production timers.
-The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to observe the dashboard's
-zero-peer P2Pool restart, its backoff and its cap; `run-pool-peer-loss.sh` is the `fault-injection` leg that
+The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
+zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
 cuts a live P2Pool's peers.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.

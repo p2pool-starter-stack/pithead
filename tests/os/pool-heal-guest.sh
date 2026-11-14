@@ -36,9 +36,41 @@ running
 stage=peerless-precondition
 stats=$(find /data -path '*/stats/local/p2p' -type f 2>/dev/null | head -n 1)
 if [ -z "$stats" ] || [ "$(jq -r '.uptime // 0' "$stats")" -le 0 ] || [ "$(peers)" -gt 0 ]; then
-    echo 'SKIP: the guest P2Pool reports no stats or holds peers, so a peerless P2Pool cannot be observed'
-    diagnose
-    exit 77
+    stage=control-path
+    before=$(started_at)
+    docker exec -i dashboard python3 - <<'PY'
+import asyncio
+
+from mining_dashboard.client.docker.docker_control import DockerControl
+from mining_dashboard.service.health import p2pool_heal as heal
+
+
+class Clock:
+    now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+async def main():
+    clock = Clock()
+    healer = heal.P2PoolPeerHealer(DockerControl(), clock=clock)
+    uptime = iter(range(1, 100))
+
+    def stats():
+        return {"p2p": {"out_peers": 0, "in_peers": 0, "uptime": next(uptime)}, "pool": {}}
+
+    await healer.check(stats())
+    clock.now = heal.ZERO_PEERS_AFTER_SEC + 1
+    await healer.check(stats())
+
+
+asyncio.run(main())
+PY
+    [ "$(started_at)" != "$before" ]
+    running
+    echo 'PASS: the dashboard healer restarts the guest P2Pool through the appliance container control path (#4077)'
+    exit 0
 fi
 first_start=$(started_at)
 stage=observe-restart

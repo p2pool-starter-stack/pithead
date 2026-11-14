@@ -10,7 +10,7 @@ phase_p2pool_heal() {
     SSH_TIMEOUT=6000 _ssh 'timeout 5800 bash -s' <"$SCRIPT_DIR/pool-heal-guest.sh" || rc=$?
     case "$rc" in
     0) ok "guest peerless P2Pool is restarted by the dashboard with backoff and a cap (#4077)" ;;
-    77) it_skip_leg "p2pool-heal: observe a peerless guest P2Pool (#4077)" "the guest P2Pool held peers or never started" missing ;;
+    77) it_skip_leg "p2pool-heal: observe a peerless guest P2Pool (#4077)" "the guest skipped" missing ;;
     *)
         printf 'Guest stderr: %s\n' "$(tail -c 2048 "$SSH_ERR" 2>/dev/null | tr -d '\r')"
         bad "guest P2Pool peer-loss restart, backoff or cap failed (#4077)"
