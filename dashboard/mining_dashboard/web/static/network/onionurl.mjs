@@ -21,6 +21,7 @@
 
 import { Component, html } from "../app/preact.mjs";
 import { pollResult } from "../config/configview.mjs";
+import { controlFetch, requirePreviewResponse } from "../config/controlclient.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 // The host answers this one out of .env with no daemon work, so it returns in a drain cycle, not
@@ -29,14 +30,12 @@ const KEY_POLL_MAX = 30;
 const KEY_TIMEOUT =
   "Stopped waiting for the client key. Check that the pithead-control unit is running, then try again.";
 
-// POST the intent, then poll past the runner's interim status to a terminal result. Exported for
-// node --test: this network flow is the logic, and OnionUrl only maps its outcome onto UI state.
 export async function fetchClientKey() {
-  const res = await fetch("/api/control/onion-client-key", {
+  const res = await controlFetch("/api/control/onion-client-key", {
     method: "POST",
     headers: CONTROL_HEADERS,
   });
-  if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+  await requirePreviewResponse(res);
   const { id } = await res.json();
   return await pollResult(id, "running", KEY_POLL_MAX, KEY_TIMEOUT);
 }

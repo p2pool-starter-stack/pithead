@@ -53,7 +53,7 @@ test('sortWorkers: does not mutate the input array', () => {
 test('WORKER_COLUMNS: keys match the worker fields the server sends', () => {
     assert.deepEqual(
         WORKER_COLUMNS.map((c) => c.key),
-        ['name', 'ip_sort', 'uptime', 'h60', 'h15', 'accepted', 'rejected'],
+        ['name', 'ip_sort', 'uptime', 'h60', 'h15', 'accepted', 'rejected', 'telemetry_h60'],
     );
 });
 

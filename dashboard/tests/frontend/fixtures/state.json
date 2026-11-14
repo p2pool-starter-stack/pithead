@@ -330,6 +330,7 @@
     "monero": [],
     "tari": []
   },
+  "ping_failures": [],
   "pool": {
     "blocks": 0,
     "diff": "0.00 M",
@@ -713,6 +714,10 @@
       "invalid": 0,
       "ip": "192.168.1.10",
       "ip_sort": 3232235786,
+      "mining": {
+        "pool": null,
+        "state": "unknown"
+      },
       "name": "rig-alpha",
       "pool": "p2pool",
       "reject_flag": null,
@@ -741,6 +746,11 @@
       },
       "rigforge_update": null,
       "status": "online",
+      "telemetry_h10": null,
+      "telemetry_h15": null,
+      "telemetry_h60": null,
+      "telemetry_str": "\u2014",
+      "unnamed": false,
       "uptime": 0,
       "uptime_str": "0m 0s"
     },
@@ -756,6 +766,10 @@
       "invalid": 0,
       "ip": "192.168.1.11",
       "ip_sort": 3232235787,
+      "mining": {
+        "pool": null,
+        "state": "unknown"
+      },
       "name": "rig-bravo",
       "pool": "p2pool",
       "reject_flag": null,
@@ -784,6 +798,11 @@
       },
       "rigforge_update": null,
       "status": "offline",
+      "telemetry_h10": null,
+      "telemetry_h15": null,
+      "telemetry_h60": null,
+      "telemetry_str": "\u2014",
+      "unnamed": false,
       "uptime": 0,
       "uptime_str": "0m 0s"
     }
