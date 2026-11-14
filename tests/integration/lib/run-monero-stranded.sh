@@ -8,13 +8,16 @@
 # recorded); then within the 10-minute bound plus a poll, the verdict red with the numbers, the
 # container's docker health unhealthy, doctor non-zero, status naming it, the card's payload red, and
 # the alert at a loopback webhook; no automatic restart; then, the rule removed, the operator's fix
-# (`pithead restart monerod`: the dead SOCKS sockets do not recover on their own, job 1789 waited
-# 40 minutes) and every layer returns to green, with the recovery note. Opt-in, about 40 minutes: never part of a preset.
+# (the dead SOCKS sockets do not recover on their own, job 1789 waited 40 minutes): the dashboard watchdog
+# restarts monerod unattended (#4076) and every layer returns to green, with the recovery note; then an
+# external restart of the tor container leaves monerod holding peers. Opt-in, about 40 minutes: never part of a preset.
 # The rule carries a fixed comment, dies with monerod's namespace, and is removed by an EXIT trap too.
 
 MONERO_STRAND_TAG="pithead-e2e-fault-monero-stranded"
 MONERO_POLL_SLACK=180 # a dashboard poll, the healthcheck's 30 s x 3 retries, and the harness's sampling
 MONERO_DISCONNECT_MAX=1500
+MONERO_WATCHDOG_MAX=900
+MONERO_TOR_REDIAL_MAX=2400
 MONERO_HOOK_PORT=18198
 MONERO_HOOK_LOG=/tmp/pithead-e2e-monero-alerts.log
 
@@ -163,6 +166,7 @@ assert_monero_rpc_boundary() {
         "$(rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env | cut -d= -f2-); p=$(grep -E "^MONERO_NODE_PASSWORD=" .env | cut -d= -f2-);
             curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -c "{restricted, o: .outgoing_connections_count}"' 2>/dev/null)" '"restricted":true'
 }
+_pred_monerod_restarted_since() { [ "$(monero_started_at)" != "$1" ]; }
 monero_started_at() { rx "docker inspect -f '{{.State.StartedAt}}' monerod" 2>/dev/null; }
 monero_strand_state() { echo "verdict '$(monero_health_field level)', peers $(monero_health_field peers_out) out / $(monero_health_field peers_in) in, docker health '$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)'"; }
 
@@ -267,21 +271,28 @@ run_monero_stranded() {
     else
         it_fail "monero-stranded: the peerless alert left the dashboard" "nothing at the loopback sink"
     fi
-    assert_eq "monero-stranded: detection only, monerod was not restarted" "$(monero_started_at)" "$started"
+    assert_eq "monero-stranded: red alone does not restart monerod" "$(monero_started_at)" "$started"
 
-    it_step "recover: remove the rule, then the advised fix (restart monerod); every layer must return to green…"
+    it_step "recover: nobody restarts monerod; the dashboard watchdog must re-dial it unattended (#4076)…"
+    t0=$(now_s)
+    if wait_for "$MONERO_WATCHDOG_MAX" 10 "monerod restarted by the watchdog" _pred_monerod_restarted_since "$started"; then
+        it_pass "monero-stranded: the watchdog restarted the peerless monerod $(($(now_s) - t0)) s after red, unattended"
+    else
+        it_fail "monero-stranded: the watchdog restarts a peerless monerod within ${MONERO_WATCHDOG_MAX} s" "$(monero_strand_state)"
+    fi
+    assert_eq "monero-stranded: the restart is logged once for the owner" \
+        "$(rx "docker logs dashboard 2>&1 | grep -c 'Restarting monerod to re-dial its peers'" 2>/dev/null)" "1"
     monero_strand_remove_all
-    pithead restart monerod >/dev/null 2>&1
     t0=$(now_s)
     if wait_for 900 15 "monerod has outgoing peers again after the fix" _pred_monero_has_peers_sampled; then
-        it_pass "monero-stranded: real outgoing peers returned after the fault was removed and monerod restarted"
+        it_pass "monero-stranded: real outgoing peers returned after the watchdog restarted monerod"
     else
         it_fail "monero-stranded: real outgoing peers returned after recovery" "$(monero_strand_state)"
     fi
     if wait_for 1500 15 "Monero verdict green after the fix" _pred_monero_level green; then
-        it_pass "monero-stranded: green $(($(now_s) - t0)) s after the fault was removed and monerod restarted"
+        it_pass "monero-stranded: green $(($(now_s) - t0)) s after the watchdog restarted monerod"
     else
-        it_fail "monero-stranded: green after the fault was removed and monerod restarted" "$(monero_strand_state)"
+        it_fail "monero-stranded: green after the watchdog restarted monerod" "$(monero_strand_state)"
     fi
     assert_eq "monero-stranded: header clears the Monero chain warning after recovery" \
         "$(api_state | jq -r 'any(.badges[]; .text == "Monero chain unhealthy")')" "false"
@@ -291,7 +302,7 @@ run_monero_stranded() {
         it_fail "monero-stranded: docker inspect health is healthy again" "$(monero_strand_state)"
     fi
     assert_eq "monero-stranded: the fresh recovery observation belongs to a newer container run" \
-        "$(monero_observation | jq -r --argjson before "${observation_before:-null}" '.peers_out > 0 and .monero_run_started > $before.monero_run_started' 2>/dev/null)" "true"
+        "$(monero_observation | jq -r --argjson before "${observation_before:-null}" '.monero_run_started > $before.monero_run_started' 2>/dev/null)" "true"
     if [ "$(monero_tor_recovery_out)" -gt 0 ] 2>/dev/null; then
         it_pass "monero-stranded: tor-recover verifies real peers after recovery"
     else
@@ -301,6 +312,19 @@ run_monero_stranded() {
         it_pass "monero-stranded: the recovery note left the dashboard"
     else
         it_fail "monero-stranded: the recovery note left the dashboard" "nothing at the loopback sink"
+    fi
+    started="$(monero_started_at)"
+    it_step "external Tor start: restart the tor container outside the stack's own operations (#4076)…"
+    rx "docker restart tor" >/dev/null 2>&1
+    if wait_for "$MONERO_TOR_REDIAL_MAX" 15 "monerod holding outgoing peers after an external Tor start" _pred_monero_has_peers_sampled; then
+        it_pass "monero-stranded: monerod holds outgoing peers after an external Tor start, unattended"
+    else
+        it_fail "monero-stranded: monerod re-dials within the window after an external Tor start" "$(monero_strand_state)"
+    fi
+    if [ "$(monero_started_at)" != "$started" ]; then
+        it_log "external Tor start: monerod was re-dialled by the dashboard"
+    else
+        it_log "external Tor start: monerod recovered without a restart"
     fi
     monero_restore_config
     trap - EXIT
