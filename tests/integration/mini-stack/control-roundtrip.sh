@@ -166,7 +166,7 @@ assert_svc_restart_control_roundtrip() {
     local response
     : >"$CTRL_LOG"
     if ! dashboard_control_request svc-restart '{"container":"tor"}'; then
-        c_bad "a service restart reaches the host runner" "dashboard or host runner failed"
+        c_bad "a service restart reaches the host runner" "dashboard or host runner failed; response=$(head -c 300 "$CONTROL_RESPONSE"); runner=$(tail -n 8 "$SANDBOX/control-runner.log" 2>/dev/null | tr '\n' '|')"
         return
     fi
     response=$(cat "$CONTROL_RESPONSE")
