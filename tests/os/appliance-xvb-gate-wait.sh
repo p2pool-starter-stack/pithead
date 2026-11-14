@@ -91,9 +91,10 @@ _xvb_gate_order_self_test() (
 
 # The REAL payload against the real dashboard modules: a seeded snapshot and marker in a temp dir.
 _xvb_gate_payload_self_test() {
-    local root out
+    local root out py=(python3)
     root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-    out="$(PAYLOAD="$(_xvb_gate_payload | base64 -d)" PYTHONPATH="$root/dashboard" python3 -c '
+    python3 -c 'import requests' >/dev/null 2>&1 || ! command -v uv >/dev/null 2>&1 || py=(uv run --quiet --locked --project "$root/dashboard" python)
+    out="$(PAYLOAD="$(_xvb_gate_payload | base64 -d)" PYTHONPATH="$root/dashboard" "${py[@]}" -c '
 import os, subprocess, sys, tempfile
 d = tempfile.mkdtemp()
 def run(snapshot, marker):
