@@ -579,6 +579,7 @@ bg_rebooted2=$(ls "$BG"/rebooted.* 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "the fallback slot failing the same way does NOT reboot again" "$bg_rebooted2" "0"
 assert_eq "the attempt is still counted" "$(cat "$BG/.boot-gate-failures" 2>/dev/null)" "2"
 assert_contains "and the console says the fault is not the slot" "$bg_out2" "the fault is not the slot"
+assert_contains "and names the no-dashboard bundle verb and where it writes" "$bg_out2" "/opt/pithead/pithead recovery-bundle to write a redacted support bundle under /data/pithead/support-bundles"
 
 # A healthy boot clears the counter, or one transient failure months ago would spend the machine's
 # single rollback attempt on the update that actually needs it.
