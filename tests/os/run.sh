@@ -206,8 +206,6 @@ source "$SCRIPT_DIR/phases/update-spare-slot.sh" || exit $?
 source "$SCRIPT_DIR/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
 source "$SCRIPT_DIR/phases/update-dashboard.sh" || exit $?
-# shellcheck source=tests/os/phases/update-power-leg.sh
-source "$SCRIPT_DIR/phases/update-power-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/update-healthgate-leg.sh
 source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh

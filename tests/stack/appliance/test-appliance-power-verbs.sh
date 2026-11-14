@@ -64,7 +64,7 @@ pwreset
 for bad_confirm in "" "reboot" "SHUTDOWN"; do
     printf '{"id":"%s","action":"power-reboot","actor":"admin","confirm":"%s"}\n' "$UP1" "$bad_confirm" >"$PWREQS/$UP1.json"
     pwrun >/dev/null
-    assert_eq "power-reboot with confirm '$bad_confirm' is rejected" "$(pwstatus "$UP1")" "rejected"
+    assert_eq "power-reboot with a missing, lowercase or wrong confirm word is rejected" "$(pwstatus "$UP1")" "rejected"
     assert_contains "the refusal names the word" "$(pwerror "$UP1")" "REBOOT"
     rm -f "$PWRES/$UP1.json"
 done
@@ -123,9 +123,9 @@ for step in downloading installing verifying reboot-pending; do
     printf '{"step":"%s"}\n' "$step" >"$PWRES/os-update-state.json"
     pwintent "$UP1" power-shutdown SHUTDOWN
     pwrun >/dev/null
-    assert_eq "power-shutdown while the OS update step is $step is rejected" "$(pwstatus "$UP1")" "rejected"
-    assert_contains "the $step refusal names the update" "$(pwerror "$UP1")" "update"
-    assert_eq "no power command while the OS update step is $step" "$(pwpower)" "0"
+    assert_eq "power-shutdown during an in-progress OS update step is rejected" "$(pwstatus "$UP1")" "rejected"
+    assert_contains "the in-progress step refusal names the update" "$(pwerror "$UP1")" "update"
+    assert_eq "no power command during an in-progress OS update step" "$(pwpower)" "0"
     rm -f "$PWRES/$UP1.json" "$PWC/data/control/power-cooldown"
 done
 printf '{"step":"idle"}\n' >"$PWRES/os-update-state.json"
