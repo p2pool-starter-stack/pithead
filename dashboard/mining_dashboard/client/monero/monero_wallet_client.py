@@ -4,6 +4,8 @@ import requests
 from requests.auth import HTTPDigestAuth
 
 from mining_dashboard.config.config import (
+    MONERO_SUBADDRESS,
+    MONERO_WALLET_ADDRESS,
     MONERO_WALLET_RPC_URL,
     WALLET_RPC_PASSWORD,
     WALLET_RPC_USERNAME,
@@ -36,11 +38,15 @@ class MoneroWalletClient:
         username=WALLET_RPC_USERNAME,
         password=WALLET_RPC_PASSWORD,
         timeout=10,
+        wallet_address=MONERO_WALLET_ADDRESS,
+        subaddress=MONERO_SUBADDRESS,
     ):
         self.url = url
         # No creds → send unauthenticated; the request simply fails and the caller degrades.
         self._auth = HTTPDigestAuth(username, password) if username else None
         self.timeout = timeout
+        self.wallet_address = wallet_address
+        self.subaddress = subaddress
 
     def _rpc(self, method, params=None) -> dict | None:
         """POST one JSON-RPC call; return the ``result`` dict, or None on any error."""
@@ -88,29 +94,35 @@ class MoneroWalletClient:
     def get_confirmed_payouts(self, min_height=0):
         return self.scan(min_height)[0]
 
+    def _subaddress_index(self):
+        result = self._rpc("get_address_index", {"address": self.subaddress})
+        index = result.get("index") if result else None
+        if not isinstance(index, dict):
+            return None
+        major, minor = index.get("major"), index.get("minor")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (major, minor)
+        ):
+            return None
+        return major, minor
+
     def scan(self, min_height=0):
-        """Return confirmed incoming transfers at or above ``min_height`` as normalized dicts.
-
-        Seeds ``min_height`` from the highest payout already stored so a restart re-fetches only
-        the tip (and idempotent storage drops the overlap) rather than replaying history. Each row
-        is ``{"txid", "height", "ts", "amount_atomic", "amount_xmr"}``; the caller records atomic
-        and converts to XMR only at the display edge. Returns ``(transfers, answered)``:
-        an empty successful scan has ``answered=True``; an RPC failure has ``answered=False``.
-
-        ``coinbase: true`` includes the P2Pool coinbase payouts (each miner's PPLNS share is paid
-        directly in a Monero block's coinbase). ``filter_by_height`` + ``min_height`` bound the
-        scan server-side. Coinbase outputs unlock only after 60 blocks; we record on CONFIRMATION
-        (in a block), not on unlock, so a still-locked payout is captured once and never re-alerted.
-        """
-        result = self._rpc(
-            "get_transfers",
-            {
-                "in": True,
-                "coinbase": True,
-                "filter_by_height": True,
-                "min_height": int(min_height or 0),
-            },
-        )
+        params = {
+            "in": True,
+            "coinbase": True,
+            "filter_by_height": True,
+            "min_height": int(min_height or 0),
+        }
+        if self.subaddress:
+            primary = self._rpc("get_address")
+            if not primary or primary.get("address") != self.wallet_address:
+                return [], False
+            index = self._subaddress_index()
+            if index is None:
+                return [], False
+            params.update(account_index=index[0], subaddr_indices=[index[1]])
+        result = self._rpc("get_transfers", params)
         if result is None:
             return [], False
         payouts = []
@@ -128,6 +140,8 @@ class MoneroWalletClient:
         for t in rows:
             if not isinstance(t, dict):
                 continue  # a non-object transfer is unusable — the same skip as the two below
+            if self.subaddress and t.get("type") != "block":
+                continue
             txid = t.get("txid")
             amount = t.get("amount")
             if not txid or amount is None:
@@ -156,6 +170,12 @@ class MoneroWalletClient:
         return payouts, True
 
     def payout_addresses(self):
-        """Return the wallet's own address, or None when RPC did not answer."""
         result = self._rpc("get_address")
-        return [result["address"]] if result and result.get("address") else None
+        if not result or not result.get("address"):
+            return None
+        primary = result["address"]
+        if not self.subaddress:
+            return [primary]
+        if primary != self.wallet_address or self._subaddress_index() is None:
+            return None
+        return [primary, self.subaddress]

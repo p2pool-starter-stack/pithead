@@ -303,7 +303,10 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                  (($c + ".wallet_address") / ".") as $p
                  | if ($live[0] | getpath($p)) != ($staged[0] | getpath($p))
                    then .[$c] = (($staged[0] | getpath($p) // "") | if length > 8 then .[-8:] else . end)
-                   else . end)),
+                   else . end)
+                 | if (($live[0].monero.subaddress // "") != ($staged[0].monero.subaddress // ""))
+                   then .monero_subaddress = ((($staged[0].monero.subaddress // "") as $s | if ($s | length) > 0 then $s else ($staged_full.monero.wallet_address // "") end) | if length > 8 then .[-8:] else . end)
+                   else . end),
                ts: (now | floor)}')
         # #504: dashboard.energy is config.json-only (never rendered to .env), so an energy-only
         # edit produces no porcelain row. Surface it as a normal committable INFO change so the UI

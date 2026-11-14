@@ -586,7 +586,7 @@ The summary panel pulls the key numbers together:
 | **XvB 1h / 24h (routed)** | Time-weighted average hashrate the proxy actually **routed** to XvB. (The XvB-API *credited* figure, XvB's definitive record, appears in the **Advanced** view's *XvB Donation Stats* card.) |
 | **Last Share** | Time since your last accepted share. |
 | **Tari Mining** | Whether merge-mining of Tari is active and healthy. |
-| **Wallet XMR / Wallet TARI** | Your configured Monero and Tari payout addresses, one card each. |
+| **Wallet XMR / Wallet TARI** | Your configured Monero and Tari payout addresses, one card each. Monero shows the selected subaddress when `monero.subaddress` is set. |
 
 While XvB is disabled the five raffle/split tiles (Current Tier, Raffle Eligible, Target Tier,
 XvB routed averages) drop out of the card, along with the header's XvB routed line and the whole
@@ -1113,6 +1113,17 @@ the earnings card then shows a **Confirmed on-chain** block under the estimate â
 `payout_confirmed` alert fires once per payout (Telegram and the other sinks). The Tari tab carries
 the same **Confirmed on-chain** block in XTM once Tari payout confirmation is on (see the Tari note
 below).
+
+With `monero.subaddress` set, confirmation resolves that address through `get_address_index`,
+then filters `get_transfers` by its account and subaddress index. The primary address must
+still match the view-only wallet. An unknown subaddress or mismatched primary leaves tracking
+unavailable; it does not count as a successful empty scan. The internal view-only wallet uses Moneroâ€™s default lookahead of 50 accounts and 200
+subaddresses per account. Addresses outside that discovery range can leave confirmation
+unavailable while P2Pool continues mining to them. Choose an address within range or leave
+payout confirmation off; extending the internal wallet and rescanning it needs separate proof. This follows the pinned [Monero wallet RPC implementation](https://github.com/monero-project/monero/blob/v0.18.5.1/src/wallet/wallet_rpc_server.cpp).
+Subaddress scans count coinbase entries (`type: "block"`), excluding ordinary incoming
+transfers to that address. Existing confirmed history remains in the dashboard when the
+destination changes; the legacy primary-only scan retains its existing incoming-transfer behavior.
 
 Receipt history and scan progress are separate for each configured wallet on each chain.
 Switching from wallet A to B starts B's history independently; switching back restores A's

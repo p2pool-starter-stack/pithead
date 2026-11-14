@@ -69,7 +69,7 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globa
 
 execute_launch() { # <stdin-file> <capture-file>
     # env -u: the launched runner must see only what the stream carried, never this shell's exports.
-    CAPTURE_FILE="$2" CAPTURE_MODE="${3:-complete}" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY bash -c '
+    CAPTURE_FILE="$2" CAPTURE_MODE="${3:-complete}" LIB="$HERE/../lib.sh" env -u IT_MONERO_SUBADDRESS -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY bash -c '
         rm() { :; }; cd() { :; }
         grep() {
             if [ "${!#}" = /test/state ]; then
@@ -80,8 +80,8 @@ execute_launch() { # <stdin-file> <capture-file>
             fi
         }
         nohup() {
-            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nMONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s\nATTEST[%s]\nARGV[%s]\n" \
-                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$IT_MONERO_VIEW_KEY" "$IT_TARI_VIEW_KEY" "$IT_TARI_SPEND_PUBLIC_KEY" "$IT_ROTATE_ONION_FIXTURE_ATTESTATION" "$*" >"$CAPTURE_FILE"
+            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nMONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s\nSUBADDRESS=%s\nATTEST[%s]\nARGV[%s]\n" \
+                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$IT_MONERO_VIEW_KEY" "$IT_TARI_VIEW_KEY" "$IT_TARI_SPEND_PUBLIC_KEY" "$IT_MONERO_SUBADDRESS" "$IT_ROTATE_ONION_FIXTURE_ATTESTATION" "$*" >"$CAPTURE_FILE"
             [ "$CAPTURE_MODE" != incomplete ] || return 0
             [ "$CAPTURE_MODE" != delayed ] || sleep .3
             # The harness-side consumer, fed the environment the runner received.
@@ -98,11 +98,11 @@ execute_launch() { # <stdin-file> <capture-file>
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
 }
 
-echo "== exact nine-record transport, multiline decode, environment, and argv hygiene =="
+echo "== exact ten-record transport, multiline decode, environment, and argv hygiene =="
 ROLLBACK=$'{"pools":[\n{"url":"127.0.0.1:1"}]}' POOLS='[{"url":"probe:1"}]'
 capture_launch "$ROLLBACK" "$POOLS"
-assert_eq "the producer emits exactly nine records" "$(awk 'END {print NR}' "$STDIN_FILE")" 9
-EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\n\n\n\n%s' \
+assert_eq "the producer emits exactly ten records" "$(awk 'END {print NR}' "$STDIN_FILE")" 10
+EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\n\n\n\n\n%s' \
     'eyJwb29scyI6Wwp7InVybCI6IjEyNy4wLjAuMToxIn1dfQ==' 'W3sidXJsIjoicHJvYmU6MSJ9XQ==' \
     '/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3')"
 assert_eq "record values and order are exact" "$(cat "$STDIN_FILE")" "$EXPECTED"
@@ -152,6 +152,10 @@ assert_eq "a view key with a newline refuses to launch" "$?" 1
 assert_eq "a view key with a newline never reaches the remote launch" "$(if [ -s "$LAUNCH_FILE" ]; then echo 1; else echo 0; fi)" 0
 
 echo "== empty values remain supplied, while missing records and encoder errors fail closed =="
+IT_MONERO_SUBADDRESS="$(printf '8%094d' 0)" capture_launch "" ""
+execute_launch "$STDIN_FILE" "$WORK/subaddress"
+assert_contains "subaddress reaches the runner environment" "$(cat "$WORK/subaddress")" "SUBADDRESS=$(printf '8%094d' 0)"
+assert_eq "subaddress stays off the remote command line" "$(contains "$(cat "$LAUNCH_FILE")" "$(printf '8%094d' 0)")" no
 capture_launch "" ""
 execute_launch "$STDIN_FILE" "$WORK/empty"
 assert_contains "empty rollback survives as an environment entry" "$(cat "$WORK/empty")" $'ROLLBACK_BEGIN\n\nROLLBACK_END'

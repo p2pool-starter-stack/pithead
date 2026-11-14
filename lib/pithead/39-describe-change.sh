@@ -62,6 +62,10 @@ describe_change() {
         flag=DEST
         msg="Monero payout address is changing — future mining rewards go to the new address."
         ;;
+    MONERO_SUBADDRESS)
+        flag=DEST
+        if [ -n "$new" ]; then msg="Monero mining subaddress is changing — future mining rewards go to the new destination."; else msg="Monero mining subaddress is disabled — future mining rewards go to the primary address."; fi
+        ;;
     TARI_WALLET_ADDRESS)
         flag=DEST
         msg="Tari payout address is changing — future merge-mining rewards go to the new address."

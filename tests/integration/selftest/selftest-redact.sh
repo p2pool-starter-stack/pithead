@@ -158,7 +158,7 @@ REF="$(cd "$HERE/../../.." && pwd)/config.reference.json"
 
 # Hand-classified, and the classification is the judgement this test encodes. A field the screen
 # picks up that appears in NEITHER list fails below by name, so the schema cannot drift past it.
-MUST_REDACT="monero.wallet_address monero.node_username monero.node_password monero.view_key
+MUST_REDACT="monero.wallet_address monero.subaddress monero.node_username monero.node_password monero.view_key
 tari.wallet_address tari.view_key tari.spend_public_key p2pool.stratum_password xvb.donor_id
 dashboard.auth.username dashboard.auth.password workers.api_token
 ssh.authorized_key healthchecks.ping_url telegram.bot_token notifications.ntfy.token

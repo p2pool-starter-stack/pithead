@@ -65,6 +65,14 @@ class _Handler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if method == "get_address_index":
+            address = (req.get("params") or {}).get("address")
+            index = self.server.state.get("subaddresses", {}).get(address)
+            if index is None:
+                self._send(200, {"error": {"code": -2, "message": "Address not found"}})
+            else:
+                self._send(200, {"result": {"index": index}})
+            return
         if method == "get_transfers":
             self.server.state["calls"] += 1
             params = req.get("params") or {}
@@ -73,6 +81,16 @@ class _Handler(BaseHTTPRequestHandler):
             rows = [
                 t for t in self.server.state["transfers"] if int(t.get("height", 0)) >= min_height
             ]
+            if not params.get("all_accounts", False):
+                rows = [
+                    t
+                    for t in rows
+                    if t.get("subaddr_index", {}).get("major", 0) == params.get("account_index", 0)
+                    and (
+                        not params.get("subaddr_indices")
+                        or t.get("subaddr_index", {}).get("minor", 0) in params["subaddr_indices"]
+                    )
+                ]
             self._send(200, {"jsonrpc": "2.0", "id": "0", "result": {"in": rows}})
             return
         self._send(200, {"jsonrpc": "2.0", "id": "0", "error": {"code": -32601, "message": method}})

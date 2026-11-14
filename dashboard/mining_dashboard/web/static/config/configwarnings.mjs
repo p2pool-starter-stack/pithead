@@ -11,6 +11,8 @@ export const FIELD_WARNINGS = {
     "Tor hides your home IP from the XvB donation pool. Turning it off connects directly and exposes your home IP to that pool.",
   "monero.wallet_address":
     "Monero payout address is changing — future mining rewards go to the new address.",
+  "monero.subaddress":
+    "Monero payout subaddress is changing — future mining rewards go to the new subaddress.",
   "tari.wallet_address":
     "Tari payout address is changing — future merge-mining rewards go to the new address.",
   "dashboard.auth.password":

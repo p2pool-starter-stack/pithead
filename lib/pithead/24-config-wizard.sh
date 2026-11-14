@@ -25,7 +25,7 @@ wizard_ask_core() {
         read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || error "End of input while reading the Monero payout address. Aborting."
         case "$(monero_address_type "$IN_MONERO_WALLET")" in
         primary) break ;;
-        subaddress) echo "  ✗ That's a subaddress (8…) — p2pool can't pay it. Use your PRIMARY address (starts with 4)." >&2 ;;
+        subaddress) echo "  ✗ That's a subaddress (8…). Enter your PRIMARY address here; monero.subaddress is the optional mining destination." >&2 ;;
         integrated) echo "  ✗ That's an integrated address — use your plain primary address." >&2 ;;
         checksum) echo "  ✗ Checksum failed — at least one character is mistyped. Re-copy the address from your wallet." >&2 ;;
         *) echo "  ✗ Not a valid Monero primary address (95 chars, starts with 4). Try again." >&2 ;;
@@ -313,7 +313,8 @@ wizard_print_pointer() {
         echo "Save it now — it is also stored in your owner-only config.json."
     fi
     echo "That's the core config — everything else (ports, XvB, alerts, energy pricing, per-worker"
-    echo "overrides, ...) keeps its default. Want on-chain payout confirmation, a per-kWh cost, or"
-    echo "per-worker overrides? Set monero.view_key / dashboard.energy.cost_per_kwh / workers.list in"
+    echo "overrides, ...) keeps its default. Want a mining subaddress, payout confirmation, a per-kWh"
+    echo "cost, or per-worker overrides? Set monero.subaddress / monero.view_key /"
+    echo "dashboard.energy.cost_per_kwh / workers.list in"
     echo "$CONFIG_FILE and run '$0 apply' — see $DOCS_URL/docs/configuration.md, or use the dashboard's config editor."
 }

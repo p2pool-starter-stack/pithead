@@ -6,7 +6,7 @@ from mining_dashboard.config import config
 
 def configured_wallet_id(chain: str) -> str | None:
     address = {
-        "monero": config.MONERO_WALLET_ADDRESS,
+        "monero": config.MONERO_SUBADDRESS or config.MONERO_WALLET_ADDRESS,
         "tari": config.TARI_WALLET_ADDRESS,
     }[chain].strip()
     if not address:

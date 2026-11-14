@@ -254,8 +254,8 @@ The words the guides use, in alphabetical order.
   without a question; a `⚠` change is disruptive and asks first: `(y/N)` on the command line,
   typing `APPLY` on the dashboard. `./pithead apply --dry-run` shows the preview only.
 - **Primary address, subaddress**: a Monero wallet's primary address starts with `4` and is 95
-  characters long; a subaddress starts with `8`. Pithead refuses a subaddress as the payout
-  address.
+  characters long; a subaddress starts with `8`. Keep the primary in `monero.wallet_address`;
+  set an optional payout destination from the same wallet in `monero.subaddress`.
 - **Private handoff**: notes kept out of public view, for passwords, keys, machine names, IP
   addresses and raw logs. Never paste them into a public issue.
 - **RC (release candidate)**: the build under test, run through this checklist before it is

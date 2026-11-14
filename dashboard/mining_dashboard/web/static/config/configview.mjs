@@ -10,7 +10,7 @@
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
-import { Field, validNumber } from "./configfield.mjs";
+import { Field, validMoneroSubaddress, validNumber } from "./configfield.mjs";
 import {
   buildSections,
   editableCandidate,
@@ -399,7 +399,9 @@ export class ConfigView extends Component {
     const busy = phase === "previewing" || phase === "committing";
     const dirty = editText !== this.state.pristine;
     const badDraft = Object.values(this.state.drafts).some((raw) => !validNumber(raw));
-    const canSave = dirty && !jsonError && !badDraft;
+    const payoutAddress = pathGet(this.state.candidate, "monero.subaddress");
+    const badSubaddress = !validMoneroSubaddress(payoutAddress);
+    const canSave = dirty && !jsonError && !badDraft && !badSubaddress;
     const { core, sections: groups } = regroupCore(
       markEditable(sections, editableKeys, confirmKeys, approvalKeys, defaultKeys),
       coreKeys,

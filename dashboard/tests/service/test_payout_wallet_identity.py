@@ -258,3 +258,16 @@ def test_failed_legacy_migration_rolls_back_without_losing_receipts():
     finally:
         store._conn = connection
         store.close()
+
+
+def test_monero_identity_follows_the_selected_subaddress(monkeypatch):
+    from mining_dashboard.service.payout_identity import configured_wallet_id
+
+    monkeypatch.setattr(config, "MONERO_WALLET_ADDRESS", _WALLET_A)
+    monkeypatch.setattr(config, "MONERO_SUBADDRESS", "")
+    primary_only = configured_wallet_id("monero")
+    monkeypatch.setattr(config, "MONERO_SUBADDRESS", _WALLET_B)
+    with_subaddress = configured_wallet_id("monero")
+    monkeypatch.setattr(config, "MONERO_SUBADDRESS", "")
+    assert with_subaddress != primary_only
+    assert configured_wallet_id("monero") == primary_only

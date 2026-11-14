@@ -153,6 +153,29 @@ A new install leaves XvB off and never asks (#3099), so this panel is where a us
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
+### 7.5b Monero subaddress payout
+
+**What you do:**
+
+1. Keep the QA primary address in `monero.wallet_address` and enter its subaddress in
+   `monero.subaddress` under Payouts.
+2. Preview, confirm the destination suffix, and apply.
+3. Check P2Pool’s launch flags, the dashboard payout address and the wallet-change alert.
+4. With payout confirmation enabled, wait for a coinbase payout to this subaddress.
+   Check its account/subaddress index through wallet RPC and match its transaction to the
+   dashboard’s confirmed payout and Telegram alert. A healthy wallet with no payout proves
+   readiness only; record the payout leg as still needed until it happens.
+5. Clear the subaddress, confirm the primary address suffix and apply.
+
+**What you should see:**
+
+- P2Pool receives the primary and subaddress together; XvB retains the primary identity.
+- Changing either destination field raises the wallet-change alert; subaddress payouts are confirmed
+  once and alerts name the subaddress prefix.
+- Clearing the field restores primary payouts and removes the optional launch flag.
+
+**Record:** PASS, FAIL or still needed, including the exact candidate SHA and the coinbase evidence.
+
 ### 7.6 Bad value
 
 **What you do:**
@@ -163,7 +186,7 @@ A new install leaves XvB off and never asks (#3099), so this panel is where a us
 
 **What you should see:**
 
-- The subaddress is refused with the same message as the command line.
+- A subaddress in the primary address field is refused with the same message as the command line.
 - The duplicated block is refused, and the message names the key (#3098).
 - The placeholder is refused, and the message names the key (#3098).
 - Nothing is applied.

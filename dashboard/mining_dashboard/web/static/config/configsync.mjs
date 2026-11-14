@@ -64,7 +64,7 @@ export function classifyMoneroAddress(value) {
   if (v[0] === "8") {
     return {
       kind: "subaddress",
-      message: "That is a subaddress (8…). p2pool cannot pay it — use your primary address.",
+      message: "Keep the primary address here; configure monero.subaddress separately.",
     };
   }
   if (v.length > 95) {
@@ -80,6 +80,17 @@ export function classifyMoneroAddress(value) {
     return { kind: "partial", message: `${v.length} of 95 characters.` };
   }
   return { kind: "ok", message: "Looks like a valid primary address." };
+}
+
+export function classifyMoneroSubaddress(value) {
+  const v = typeof value === "string" ? value.trim() : value == null ? "" : String(value);
+  if (!v)
+    return { kind: "empty", message: "Optional; leave blank to mine to the primary address." };
+  if (v[0] !== "8") {
+    return { kind: "not-subaddress", message: "A Monero subaddress starts with 8." };
+  }
+  if (v.length !== 95) return { kind: "partial", message: `${v.length} of 95 characters.` };
+  return { kind: "ok", message: "Looks like a valid subaddress." };
 }
 
 /**

@@ -204,7 +204,7 @@ apply() {
         for key in "${changed[@]}"; do
             old=$(env_get_file "$ENV_FILE" "$key")
             new=$(env_get_file "$newenv" "$key")
-            case "$key" in MONERO_WALLET_ADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
+            case "$key" in MONERO_WALLET_ADDRESS | MONERO_SUBADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
             [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
@@ -232,8 +232,9 @@ apply() {
             local wkey wnew wallet_new8 wlabel
             for wkey in "${wallet_keys[@]}"; do
                 wnew=$(env_get_file "$newenv" "$wkey")
+                [ "$wkey" != MONERO_SUBADDRESS ] || [ -n "$wnew" ] || wnew=$(env_get_file "$newenv" MONERO_WALLET_ADDRESS)
                 wallet_new8="${wnew: -8}" # never the full address — previews and prompts stay truncated
-                [ "$wkey" == "MONERO_WALLET_ADDRESS" ] && wlabel="Monero" || wlabel="Tari"
+                case "$wkey" in MONERO_WALLET_ADDRESS) wlabel="Monero" ;; MONERO_SUBADDRESS) wlabel="Monero mining subaddress" ;; *) wlabel="Tari" ;; esac
                 warn "The $wlabel payout wallet address is changing — ALL future $wlabel rewards go to the new address."
                 warn "Confirm by typing the last 8 characters of the new address ($wallet_new8)."
                 read -r -p "Confirm: " CONFIRM || true

@@ -160,7 +160,6 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig-worker.sh "$_d0" "$?" || domain_ran test-rig-worker.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-connection-announce.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-connection-announce.sh" && domain_ran test-connection-announce.sh "$_d0" "$?" || domain_ran test-connection-announce.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-status-vocabulary.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-status-vocabulary.sh" && domain_ran test-control-status-vocabulary.sh "$_d0" "$?" || domain_ran test-control-status-vocabulary.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-monero-tari.sh disable=SC2015
@@ -173,6 +172,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-recovery-address-gates.sh" && domain_ran test-recovery-address-gates.sh "$_d0" "$?" || domain_ran test-recovery-address-gates.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-p2pool-tari-off.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-p2pool-tari-off.sh" && domain_ran test-p2pool-tari-off.sh "$_d0" "$?" || domain_ran test-p2pool-tari-off.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-monero-subaddress.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-monero-subaddress.sh" && domain_ran test-monero-subaddress.sh "$_d0" "$?" || domain_ran test-monero-subaddress.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-mode-off.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-tari-mode-off.sh "$_d0" "$?" || domain_ran test-tari-mode-off.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-lmdb.sh disable=SC2015
@@ -205,10 +206,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-boot.sh" && domain_ran test-tor-egress-boot.sh "$_d0" "$?" || domain_ran test-tor-egress-boot.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tor-egress-check.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-check.sh" && domain_ran test-tor-egress-check.sh "$_d0" "$?" || domain_ran test-tor-egress-check.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/secrets/test-secrets-masking.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/secrets/test-secrets-masking.sh" && domain_ran test-secrets-masking.sh "$_d0" "$?" || domain_ran test-secrets-masking.sh "$_d0" "$?"
 fi

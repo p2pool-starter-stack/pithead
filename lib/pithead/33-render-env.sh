@@ -287,7 +287,7 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
+    local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false monero_subaddress_row=""
     local tari_secret_target="${2:-$tari_secret_file}"
     if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
@@ -302,6 +302,7 @@ render_env() {
             error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
     fi
 
+    [ -z "${MONERO_SUBADDRESS:-}" ] || printf -v monero_subaddress_row 'MONERO_SUBADDRESS=%s\n' "$(dotenv_render_value "$MONERO_SUBADDRESS")"
     # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
     # before the heredoc so embedded line breaks become quoted escapes, not dotenv assignments.
     (
@@ -315,7 +316,7 @@ TOR_DATA_DIR=$(dotenv_render_value "$TOR_DATA_DIR")
 MONERO_NODE_USERNAME=$(dotenv_render_value "$MONERO_USER")
 MONERO_NODE_PASSWORD=$(dotenv_render_value "$MONERO_PASS")
 MONERO_WALLET_ADDRESS=$(dotenv_render_value "$MONERO_WALLET")
-MONERO_VIEW_KEY=$(dotenv_render_value "$MONERO_VIEW_KEY")
+${monero_subaddress_row}MONERO_VIEW_KEY=$(dotenv_render_value "$MONERO_VIEW_KEY")
 PAYOUT_SCAN_HEIGHT=$(dotenv_render_value "$PAYOUT_SCAN_HEIGHT")
 PAYOUT_CONFIRM_ENABLED=$(dotenv_render_value "$PAYOUT_CONFIRM_ENABLED")
 WALLET_RPC_USERNAME=wallet

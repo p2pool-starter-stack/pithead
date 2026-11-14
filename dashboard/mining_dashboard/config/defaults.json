@@ -33,6 +33,7 @@
     },
     "monero": {
       "wallet_address": "your_monero_wallet_address",
+      "subaddress": "",
       "view_key": "",
       "payout_scan_height": "auto",
       "mode": "local",

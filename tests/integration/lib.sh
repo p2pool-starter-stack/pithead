@@ -39,9 +39,9 @@ it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
 # POSITION (#1596); an IP by SCOPE (#1609), its \x01 sentinel an INVARIANT, not an input guess (#1613).
 redact() {
     redact_it_password | redact_onions | sed -E \
-        -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|EXPLORER_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
+        -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|SUBADDRESS|PING_URL|EXPLORER_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--(wallet|subaddress)[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
         -e 's/(Stratum password:).*/\1 <redacted>/; s/(Stratum authentication is ON: every rig must connect with pass ).*/\1<redacted>/' \
-        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
+        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|subaddress|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
 }
 # Counters are global so the runner can total them across scenarios. The skip buckets and the
 # three helpers that move them live next door; sourced here so anything that has lib.sh has them.
@@ -196,6 +196,14 @@ resolve_overrides() {
         }
         [ -z "${IT_MONERO_VIEW_KEY:-}" ] || out="${out:+$out }monero.view_key=$IT_MONERO_VIEW_KEY"
         [ -z "$tari_pair" ] || out="${out:+$out }tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
+    fi
+
+    if printf '%s' "$overrides" | tr ' ' '\n' | grep -qx 'monero_subaddress=env'; then
+        [ -n "${IT_MONERO_SUBADDRESS:-}" ] && [ -n "${IT_MONERO_VIEW_KEY:-}" ] || {
+            SKIP_REASON="needs IT_MONERO_SUBADDRESS + IT_MONERO_VIEW_KEY from the same wallet"
+            return 1
+        }
+        out="$(printf '%s' "$out" | tr ' ' '\n' | grep -vx 'monero_subaddress=env' | tr '\n' ' ')monero.subaddress=$IT_MONERO_SUBADDRESS monero.view_key=$IT_MONERO_VIEW_KEY"
     fi
 
     RESOLVED="$out"

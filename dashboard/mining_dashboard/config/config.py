@@ -129,6 +129,8 @@ XVB_MIN_TIME_SEND_MS = 15000
 
 # Wallet address used for fetching XvB bonus history and pool identification
 MONERO_WALLET_ADDRESS = os.environ.get("MONERO_WALLET_ADDRESS", "")
+MONERO_SUBADDRESS = os.environ.get("MONERO_SUBADDRESS", "")
+MONERO_PAYOUT_ADDRESS = MONERO_SUBADDRESS or MONERO_WALLET_ADDRESS
 
 # On-chain payout confirmation (#381). When enabled, the dashboard polls a view-only
 # monero-wallet-rpc (scanning the local node) for confirmed incoming payouts, persists them, and

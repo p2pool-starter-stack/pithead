@@ -429,7 +429,7 @@ holds a Pithead `data` partition. Expected: listed as "holds a previous install"
 re-syncing if it is wrong.*
 
 **M6 — configure by paste.** Complete the wizard using copy/paste for both addresses.
-Confirm a pasted **subaddress** (`8…`) is rejected with an explanation before submitting.
+Confirm a pasted **subaddress** (`8…`) in the primary-address field is rejected with an explanation before submitting; the optional `monero.subaddress` field is configured separately.
 Expected: the stack provisions and the dashboard comes up.
 
 **M7 — real update.** Build a `v+1` bundle, copy it to the machine, and install it with

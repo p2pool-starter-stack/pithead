@@ -320,6 +320,15 @@ assert_running_state() {
         assert_eq "PAYOUT_CONFIRM_ENABLED matches config (#381/#942)" "$(env_on_box PAYOUT_CONFIRM_ENABLED)" "true"
         assert_eq "dashboard confirms Monero payout tracking is live (#381/#942)" "$(jq_get "$st" '.earnings.confirmed.enabled')" "true"
         assert_payout_wallet_ready confirmed Monero
+        if [ -n "$(jq_get "$config" '.monero.subaddress')" ]; then
+            local destination
+            destination="$(jq_get "$config" '.monero.subaddress')"
+            assert_eq "configured mining subaddress reaches the environment" \
+                "$([ "$(env_on_box MONERO_SUBADDRESS)" = "$destination" ] && echo true || echo false)" true
+            st="$(api_state)"
+            assert_eq "P2Pool reports mining to the configured subaddress" \
+                "$([ "$(jq_get "$st" '.stratum.wallet')" = "$destination" ] && echo true || echo false)" true
+        fi
     fi
     if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.tari.view_key')" ]; then
         assert_tari_payout_scan "$config" "$st"

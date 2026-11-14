@@ -130,7 +130,7 @@ harness_launch_records() {
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
     HARNESS_RECORDS=""
     for record in "${IT_RIG_TOKEN:-}" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" \
-        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}" "${ROTATE_FIXTURE_ATTESTATION:-}"; do
+        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}" "${IT_MONERO_SUBADDRESS:-}" "${ROTATE_FIXTURE_ATTESTATION:-}"; do
         [[ "$record" != *$'\n'* ]] || die "A harness launch record contains a newline."
         HARNESS_RECORDS+="$record"$'\n'
     done

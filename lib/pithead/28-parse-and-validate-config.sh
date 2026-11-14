@@ -23,7 +23,10 @@ parse_and_validate_config() {
     *) error "tari.mode must be \"local\", \"remote\" or \"off\" (got \"$TARI_MODE\")." ;;
     esac
     # Required fields. "off" needs no Tari address: nothing merge-mines, so nothing is paid (#1855).
+    jq -e 'if .monero.subaddress == null then true else .monero.subaddress | type == "string" end' "$CONFIG_FILE" >/dev/null ||
+        error "monero.subaddress must be a string containing a Monero subaddress, or an empty string when unused."
     MONERO_WALLET=$(jq -r '.monero.wallet_address // empty' "$CONFIG_FILE")
+    MONERO_SUBADDRESS=$(jq -r '.monero.subaddress // empty' "$CONFIG_FILE")
     TARI_WALLET=$(jq -r '.tari.wallet_address // empty' "$CONFIG_FILE")
     if [ -z "$MONERO_WALLET" ] || { [ -z "$TARI_WALLET" ] && [ "$TARI_MODE" != "off" ]; }; then
         error "Missing required wallet addresses in $CONFIG_FILE."
@@ -37,16 +40,22 @@ parse_and_validate_config() {
     case "$TARI_WALLET" in
     *[[:space:]]*) error "tari.wallet_address contains whitespace — a Tari address (base58 or emoji) has none. Check for a stray space or line break in $CONFIG_FILE." ;;
     esac
-    # p2pool pays out via coinbase, which CANNOT go to a subaddress or integrated address — it requires a
-    # PRIMARY/standard address (XvB credits by the same address too). A wrong type mines but is NEVER
-    # paid, silently — so hard-fail here rather than let someone lose rewards (#250).
     case "$(monero_address_type "$MONERO_WALLET")" in
     primary) ;;
-    subaddress) error "monero.wallet_address is a SUBADDRESS (starts with 8). p2pool cannot pay subaddresses — use your PRIMARY/standard Monero address (starts with 4)." ;;
+    subaddress) error "monero.wallet_address is a SUBADDRESS (starts with 8). Keep your PRIMARY/standard Monero address (starts with 4) here and put the optional mining subaddress in monero.subaddress." ;;
     integrated) error "monero.wallet_address is an INTEGRATED address. p2pool needs your plain PRIMARY address (95 chars, starts with 4)." ;;
     checksum) error "monero.wallet_address ('${MONERO_WALLET:0:6}…') fails its checksum — at least one character is mistyped, and p2pool crashes on a mistyped address instead of mining. Re-copy the address from your wallet and try again." ;;
     *) error "monero.wallet_address ('${MONERO_WALLET:0:6}…', ${#MONERO_WALLET} chars) is not a valid Monero primary address (expected 95 chars starting with 4)." ;;
     esac
+    if [ -n "$MONERO_SUBADDRESS" ]; then
+        case "$(monero_address_type "$MONERO_SUBADDRESS")" in
+        subaddress) ;;
+        primary) error "monero.subaddress is a PRIMARY address. Keep it in monero.wallet_address and use a Monero subaddress (95 chars, starts with 8) here." ;;
+        integrated) error "monero.subaddress is an INTEGRATED address. Use a Monero subaddress (95 chars, starts with 8)." ;;
+        checksum) error "monero.subaddress ('${MONERO_SUBADDRESS:0:6}…') fails its checksum — at least one character is mistyped. Re-copy the subaddress from your wallet and try again." ;;
+        *) error "monero.subaddress ('${MONERO_SUBADDRESS:0:6}…', ${#MONERO_SUBADDRESS} chars) is not a valid Monero subaddress (expected 95 chars starting with 8)." ;;
+        esac
+    fi
 
     # The Tari sibling of the gate above (#845): full decode + DammSum verdict, both address
     # forms. "unchecked" (no usable python3) passes — never a false reject. "off" merge-mines

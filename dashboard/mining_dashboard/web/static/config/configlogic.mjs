@@ -116,6 +116,7 @@ export const LOGICAL_GROUPS = [
     description: "Set payout destinations and the read-only wallet data used to confirm payments.",
     prefixes: [
       "monero.wallet_address",
+      "monero.subaddress",
       "monero.view_key",
       "monero.payout_scan_height",
       "tari.wallet_address",

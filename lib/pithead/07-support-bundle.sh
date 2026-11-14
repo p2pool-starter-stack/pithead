@@ -136,6 +136,7 @@ bundle_redact_log() {
     sed -E \
         -e 's/(--rpc-login|--http-access-token|--tls-fingerprint)[= ][^ ]+/\1 [redacted]/g' \
         -e 's/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1[redacted-address]/g' \
+        -e 's/(--subaddress[ =])[^-[:space:]][^[:space:]]*/\1[redacted-address]/g' \
         -e 's/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1[redacted-address]/g' \
         -e 's/[a-z2-7]{56}\.onion/[redacted].onion/g' \
         -e "$xmr_shape" \

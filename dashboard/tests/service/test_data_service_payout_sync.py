@@ -1,5 +1,6 @@
 # ruff: noqa: F403, F405
 from mining_dashboard.config import config
+from mining_dashboard.service import payout_sync
 from mining_dashboard.service.payout_identity import configured_wallet_id
 from tests.service._data_service_support import *  # noqa: F403
 
@@ -29,7 +30,7 @@ class TestPayoutSync:
             asyncio.run(svc._sync_payouts())
             assert len(sm.get_payouts("monero", configured_wallet_id("monero"))) == 1
             svc.alert_service.payout_confirmed_alert.assert_awaited_once_with(
-                "monero", 250_000_000_000, "aa"
+                "monero", 250_000_000_000, "aa", payout_sync.MONERO_PAYOUT_ADDRESS
             )
         finally:
             sm.close()

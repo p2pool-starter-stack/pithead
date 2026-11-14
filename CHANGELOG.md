@@ -13,6 +13,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- Optional `monero.subaddress` mining payouts, with the primary retained for P2Pool/XvB identity,
+  destination confirmation, wallet monitoring and subaddress-aware payout tracking (#2484).
 - Appliance reboot and clean power-off in the lean UI preview's Advanced > Maintenance section,
   with typed confirmation and host-side cooldowns (#2384).
 - The appliance update channel is read as untrusted data: https-only fetches to the release hosts

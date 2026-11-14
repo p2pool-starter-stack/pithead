@@ -140,11 +140,11 @@ _redact_argv() {
             ;;
         esac
         case "$a" in
-        --rpc-login | --wallet | --onion-address | --merge-mine=*)
+        --rpc-login | --wallet | --subaddress | --onion-address | --merge-mine=*)
             out="$out $a"
             next=mask
             ;;
-        --rpc-login=* | --wallet=* | --onion-address=*) out="$out ${a%%=*}=[redacted]" ;;
+        --rpc-login=* | --wallet=* | --subaddress=* | --onion-address=*) out="$out ${a%%=*}=[redacted]" ;;
         --merge-mine)
             out="$out $a"
             next=mmurl
@@ -165,5 +165,6 @@ _redact_argv() {
 # read twice — instead of a space-joined `$*` that only resembles it.
 # shellcheck disable=SC2086  # intentional word-splitting of the space-separated flag string
 set -- "$@" ${P2POOL_FLAGS:-}
+[ -z "${MONERO_SUBADDRESS:-}" ] || set -- "$@" --subaddress "$MONERO_SUBADDRESS"
 echo "[p2pool-entrypoint] launching: p2pool $(_redact_argv "$@")"
 exec p2pool "$@"

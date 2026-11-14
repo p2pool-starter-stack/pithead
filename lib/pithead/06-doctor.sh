@@ -81,12 +81,20 @@ doctor() {
             [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE" 2>/dev/null)" = true ]; then
             dr_warn ssh-release "ssh.enabled is ignored on this release image — SSH is available only in a debug build."
         fi
-        local _mw
+        local _mw _ms
         _mw=$(jq -r '.monero.wallet_address // empty' "$CONFIG_FILE" 2>/dev/null)
+        _ms=$(jq -r '.monero.subaddress // empty' "$CONFIG_FILE" 2>/dev/null)
         if [ -n "$_mw" ] && [ "$_mw" != "your_monero_wallet_address" ]; then
             case "$(monero_address_type "$_mw")" in
-            primary) dr_ok monero-address-type "Monero payout address is a primary address (p2pool/XvB can pay it)." ;;
-            subaddress) dr_fail_surface monero-address-type "Monero payout address is a SUBADDRESS (8…) — p2pool CANNOT pay it, so you are NOT being paid. Set monero.wallet_address to your PRIMARY address (4…) and run './pithead apply'." "Monero payout address is a SUBADDRESS (8…) — p2pool CANNOT pay it, so you are NOT being paid. Open Configuration, replace it with your PRIMARY address (4…), and complete the confirmation step." ;;
+            primary)
+                case "${_ms:+$(monero_address_type "$_ms")}" in
+                '') dr_ok monero-address-type "Monero payout address is a primary address (p2pool/XvB can pay it)." ;;
+                subaddress) dr_ok monero-address-type "Monero primary address and mining subaddress are valid." ;;
+                checksum) dr_fail_surface monero-address-type "Monero mining subaddress FAILS its checksum. Re-copy monero.subaddress from your wallet and run './pithead apply'." "Monero mining subaddress FAILS its checksum. Open Configuration, re-copy it from your wallet, and complete the confirmation step." ;;
+                *) dr_fail_surface monero-address-type "monero.subaddress is not a valid Monero subaddress (95 chars, starts with 8)." "The mining subaddress is invalid. Open Configuration, replace it with a Monero subaddress (95 chars, starts with 8), and complete the confirmation step." ;;
+                esac
+                ;;
+            subaddress) dr_fail_surface monero-address-type "monero.wallet_address is a SUBADDRESS (8…). Keep the PRIMARY address (4…) there, set the optional mining destination in monero.subaddress, and run './pithead apply'." "Monero payout address is a SUBADDRESS (8…). Open Configuration, keep the PRIMARY address (4…) there, and set the optional mining destination in monero.subaddress, and complete the confirmation step." ;;
             integrated) dr_fail_surface monero-address-type "Monero payout address is an INTEGRATED address — p2pool can't pay it. Use your plain PRIMARY address (4…)." "Monero payout address is an INTEGRATED address — p2pool can't pay it. Open Configuration, replace it with your plain PRIMARY address (4…), and complete the confirmation step." ;;
             checksum) dr_fail_surface monero-address-type "Monero payout address FAILS its checksum — at least one character is mistyped, and p2pool crashes on it at startup. Re-copy the address from your wallet into monero.wallet_address and run './pithead apply'." "Monero payout address FAILS its checksum — at least one character is mistyped, and p2pool crashes on it at startup. Open Configuration, re-copy it from your wallet, and complete the confirmation step." ;;
             *) dr_warn monero-address-type "Monero payout address doesn't look like a primary address (expected 95 chars starting with 4)." ;;

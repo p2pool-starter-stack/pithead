@@ -194,7 +194,7 @@ control_preview_policy_error() { # <staged-file>
     paths=$(control_changed_config_paths "$1")
     if printf '%s\n' "$paths" | grep -q '^dashboard\.workers\.'; then
         printf 'legacy dashboard.workers descriptors cannot be changed from the dashboard; migrate them on the host first'
-    elif printf '%s\n' "$paths" | grep -qx 'monero.wallet_address' &&
+    elif printf '%s\n' "$paths" | grep -qxE 'monero\.(wallet_address|subaddress)' &&
         printf '%s\n' "$paths" | grep -qx 'dashboard.data_dir'; then
         printf 'change the payout address and dashboard data directory separately so the wallet-change alarm keeps its baseline'
     else
@@ -286,7 +286,7 @@ control_carried_ssh() { # <staged-file>
 # set the address can also supply its own suffix.
 control_validate_approval() { # <staged-file> <actor> <approval-json> <porcelain>
     local staged="$1" actor="$2" approval="$3" porcelain="$4"
-    local chain env_key expected supplied suffixes
+    local destination env_key config_path expected supplied suffixes
     [ -n "$actor" ] || {
         printf 'sign in before approving this sensitive change'
         return 1
@@ -294,20 +294,39 @@ control_validate_approval() { # <staged-file> <actor> <approval-json> <porcelain
     jq -e '
         type == "object" and ((.payout_suffixes // {}) | type == "object")
         and ([keys[] | select(. != "payout_suffixes")] | length == 0)
-        and ([.payout_suffixes | keys[] | select(. != "monero" and . != "tari")] | length == 0)
+        and ([.payout_suffixes | keys[] | select(. != "monero" and . != "monero_subaddress" and . != "tari")] | length == 0)
         and ([.payout_suffixes[] | select(type != "string")] | length == 0)
     ' <<<"$approval" >/dev/null 2>&1 || {
         printf 'sensitive changes need typed payout confirmations'
         return 1
     }
     suffixes=$(jq -c '.payout_suffixes // {}' <<<"$approval")
-    for chain in monero tari; do
-        env_key="$(printf '%s' "$chain" | tr 'a-z' 'A-Z')_WALLET_ADDRESS"
+    for destination in monero monero_subaddress tari; do
+        case "$destination" in
+        monero)
+            env_key=MONERO_WALLET_ADDRESS
+            config_path='.monero.wallet_address'
+            ;;
+        monero_subaddress)
+            env_key=MONERO_SUBADDRESS
+            config_path='.monero.subaddress'
+            ;;
+        tari)
+            env_key=TARI_WALLET_ADDRESS
+            config_path='.tari.wallet_address'
+            ;;
+        esac
         if printf '%s' "$porcelain" | awk -F'\t' -v k="$env_key" '$2 == k {found=1} END {exit !found}'; then
-            expected=$(jq -r --arg c "$chain" '.[$c].wallet_address // "" | if length > 8 then .[-8:] else . end' "$staged")
-            supplied=$(jq -r --arg c "$chain" '.[$c] // ""' <<<"$suffixes")
+            expected=$(jq -r "$config_path // \"\"" "$staged")
+            [ "$destination" != monero_subaddress ] || [ -n "$expected" ] || expected=$(jq -r '.monero.wallet_address // ""' "$staged")
+            [ "${#expected}" -le 8 ] || expected="${expected: -8}"
+            supplied=$(jq -r --arg d "$destination" '.[$d] // ""' <<<"$suffixes")
             [ -n "$expected" ] && [ "$supplied" = "$expected" ] || {
-                printf 'type the final characters of the new %s payout address exactly' "$chain"
+                if [ "$destination" = monero_subaddress ]; then
+                    printf 'type the final characters of the new monero subaddress payout destination exactly'
+                else
+                    printf 'type the final characters of the new %s payout address exactly' "$destination"
+                fi
                 return 1
             }
         fi
