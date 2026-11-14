@@ -75,6 +75,7 @@ fixture_engine() {
     esac
     touch data/firstboot/submission-staging data/firstboot/submission-active
 }
+machine_name_warning() { [ "$case_name" != rig ] || printf 'fixture collision for %s' "$1"; }
 write_handoff_card() {
     cat >card.json
     printf 'card\n' >>trace
@@ -98,6 +99,11 @@ consume_install_request() {
     printf 'install\n' >>trace
     if [ "$case_name" != bare-keep ]; then
         jq -e '.role == "rig" and .worker == "fixture-rig" and .token == "0123456789abcdef0123456789abcdef"' card.json >/dev/null || return 1
+        if [ "$case_name" = rig ]; then
+            jq -e '.warning == "fixture collision for fixture-rig"' card.json >/dev/null || return 1
+        else
+            jq -e 'has("warning") | not' card.json >/dev/null || return 1
+        fi
         jq -e '.access_token == "0123456789abcdef0123456789abcdef"' "$PRESEED_DIR/staged.json" >/dev/null || return 1
     fi
 }

@@ -165,6 +165,14 @@ PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
     eval "$WBC_STUBS; openssl() { return 9; }; firstboot_consume_spool() { printf '{}' >config.json; printf none >data/firstboot/auth-mode; }; firstboot_wizard" >/dev/null 2>&1
 assert_rc "explicit no-login reaches handoff without generating a password" "$?" 7
 assert_eq "explicit no-login publishes a handoff" "$([ -f "$WBK/credentials/handoff-reached" ] && echo yes)" yes
+for wb_collision in 'fixture collision' ''; do
+    rm -f "$WBK/credentials/config.json" "$WBK/credentials/card.json"
+    PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
+        eval "$WBC_STUBS; openssl() { return 9; }; firstboot_consume_spool() { printf '{}' >config.json; printf none >data/firstboot/auth-mode; }; machine_name_warning() { printf '%s' '$wb_collision'; }; write_handoff_card() { cat >card.json; exit 7; }; firstboot_wizard" >/dev/null 2>&1
+    assert_eq "the coordinator card carries the collision warning only when the name is in use (#3810)" \
+        "$(jq -r '.warning // "none"' "$WBK/credentials/card.json")" "${wb_collision:-none}"
+done
+unset wb_collision
 printf '{"dashboard":{"auth":{"password":"existing-password-kept"}}}' >"$WBK/credentials/config.json"
 PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
     eval "$WBC_STUBS; openssl() { return 9; }; firstboot_wizard" >/dev/null 2>&1
