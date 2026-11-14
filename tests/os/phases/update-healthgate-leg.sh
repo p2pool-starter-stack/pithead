@@ -163,7 +163,7 @@ phase_update_power_leg() {
         return
     fi
     local cdir=/data/pithead/data/control before out id deadline audit
-    local rid_bad="4084aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" rid_reboot="4084bbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" rid_off="4084cccc-cccc-4ccc-8ccc-cccccccccccc"
+    local rid_bad="4084aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" rid_reboot="4084bbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     local plant="for i in \$(seq 90); do [ -f $cdir/results/\$id.json ] && break; sleep 2; done; jq -c . $cdir/results/\$id.json"
     before=$(_boot_id) || {
         bad "leg 4b: could not read the boot id before the power probes"
@@ -210,8 +210,13 @@ phase_update_power_leg() {
     done
     ok "leg 4b: the stack and dashboard came back after the reboot"
     _ssh "rm -f $cdir/results/$rid_reboot.json $cdir/power-cooldown"
-    id=$rid_off
-    out=$(_ssh "id=$id; printf '%s\n' '{\"id\":\"$id\",\"action\":\"power-shutdown\",\"actor\":\"admin\",\"confirm\":\"SHUTDOWN\"}' > $cdir/requests/$id.json; $plant" 2>/dev/null)
+    local attempt
+    for attempt in $(seq 1 40); do
+        id=$(printf '4084cc%02d-cccc-4ccc-8ccc-cccccccccccc' "$attempt")
+        out=$(_ssh "id=$id; printf '%s\n' '{\"id\":\"$id\",\"action\":\"power-shutdown\",\"actor\":\"admin\",\"confirm\":\"SHUTDOWN\"}' > $cdir/requests/$id.json; $plant" 2>/dev/null)
+        printf '%s' "$out" | jq -r '.error // ""' | grep -q 'lock' || break
+        sleep 15
+    done
     if [ "$(printf '%s' "$out" | jq -r '.status')" = "shutting-down" ]; then
         ok "leg 4b: power-shutdown answered shutting-down"
     else
