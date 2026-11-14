@@ -76,26 +76,25 @@ rc=$?
 assert_rc "tari remote ok with endpoint" "$rc" "0"
 assert_contains "augments remote tari host" "$RESOLVED" "tari.remote.host=10.0.0.6"
 unset REMOTE_TARI_HOST
-# Payout confirmation (#381/#462/#942/#2731): the "payout_confirm=env" marker gates on
-# IT_MONERO_VIEW_KEY or BOTH tari env vars, is always stripped from RESOLVED, and folds in each.
+# Both payout wallets are mandatory, and their fixture marker must be stripped (#2885).
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 resolve_overrides "p2pool.pool=main payout_confirm=env"
 rc=$?
 assert_rc "payout confirm skips without IT_MONERO_VIEW_KEY" "$rc" "1"
 assert_contains "skip names IT_MONERO_VIEW_KEY" "$SKIP_REASON" "IT_MONERO_VIEW_KEY"
 IT_MONERO_VIEW_KEY="deadbeef"
+IT_TARI_VIEW_KEY="tvk"
+IT_TARI_SPEND_PUBLIC_KEY="tspk"
 resolve_overrides "p2pool.pool=main payout_confirm=env"
 rc=$?
-assert_rc "payout confirm ok with the monero key" "$rc" "0"
+assert_rc "payout confirm ok with all three keys" "$rc" "0"
 assert_contains "augments monero.view_key" "$RESOLVED" "monero.view_key=deadbeef"
 case "$RESOLVED" in
 *payout_confirm=env*) it_fail "marker stripped from RESOLVED" "payout_confirm=env leaked into $RESOLVED" ;;
 *) it_pass "marker stripped from RESOLVED" ;;
 esac
-case "$RESOLVED" in
-*tari.view_key=*) it_fail "tari pair absent without both tari env vars" "tari.view_key present in $RESOLVED" ;;
-*) it_pass "tari pair absent without both tari env vars" ;;
-esac
+assert_contains "augments tari.view_key" "$RESOLVED" "tari.view_key=tvk"
+assert_contains "augments tari.spend_public_key" "$RESOLVED" "tari.spend_public_key=tspk"
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 # Compound prerequisites both augment.
 BASELINE_PRUNE=1
