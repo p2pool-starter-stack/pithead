@@ -46,7 +46,10 @@ pwintent() { # <id> <action> [confirm] — a well-formed request; no confirm key
 pwstatus() { jq -r '.status' "$PWRES/$1.json" 2>/dev/null; }
 pwerror() { jq -r '.error' "$PWRES/$1.json" 2>/dev/null; }
 pwpower() { grep -c '^\[systemctl\]' "$PWC/order.log" || true; }
-pwreset() { rm -f "$PWRES"/*.json "$PWC/data/control/power-cooldown" "$PWOS/in-flight.json" "$PWAUDIT"; : >"$PWC/order.log"; }
+pwreset() {
+    rm -f "$PWRES"/*.json "$PWC/data/control/power-cooldown" "$PWOS/in-flight.json" "$PWAUDIT"
+    : >"$PWC/order.log"
+}
 UP1="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 UP2="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 pwreset
