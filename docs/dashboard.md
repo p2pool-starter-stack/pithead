@@ -1510,9 +1510,10 @@ that is gone from the dashboard, and the host's own `control.log` — which the 
 
 ### Service diagnostics
 
-Two read-only questions you can ask the host, in the same card stack as the config editor and
-under the same `dashboard.control.enabled` flag. Neither changes anything: they run a check and
-report, which is why neither asks you to confirm.
+Two read-only questions you can ask the host and one recovery action, in the same card stack as
+the config editor and under the same `dashboard.control.enabled` flag. The two questions change
+nothing: they run a check and report, which is why neither asks you to confirm. The restart does
+change the machine and always asks first (see [Restart a service](#restart-a-service)).
 
 **Run health check** runs the host's own `pithead doctor` and shows what it found — the same
 checks the CLI prints, failures first, with the host's summary counts above them. This is the one
@@ -1540,6 +1541,25 @@ you are looking at. Saving any change from the dashboard re-runs this machine's 
 regenerates a missing hidden service for the Monero node, the Tari node, or the dashboard itself — so
 those verdicts ask you to save a change rather than to find a console. P2Pool's is the exception:
 apply refuses to finish while that one is missing, so no dashboard surface can regenerate it.
+
+#### Restart a service
+
+Each service card with a restart control has a **Restart** button next to its log: `tor`,
+`monerod`, `wallet-rpc`, `tari`, `tari-wallet`, `p2pool` and `xmrig-proxy`. `dashboard`, `caddy`,
+`docker-proxy` and `docker-control` have none, and the host refuses them if asked: restarting the
+page you are reading or the proxy in front of it would cut off the answer. The button opens a
+confirmation naming what else is interrupted (restarting `tor` also restarts `monerod`; restarting
+`monerod` interrupts `wallet-rpc`; a wallet pauses its sync and payouts briefly), and sends nothing
+until you confirm. The button stays disabled while the host works, then shows the result or the
+host's reason for refusing.
+
+The host decides, not the dashboard. It restarts only a service on its fixed list, with
+`docker compose restart <service>` under the same lock as `apply`, `upgrade` and `backup`. It
+refuses, with a reason and without queueing, while another of those operations holds the lock,
+while the LAN-only source rule for a published port is not in place, and when the same service was
+restarted in the last 120 seconds. Every request is recorded in the control audit log with the
+actor, the action `svc-restart`, the service and the outcome (`started`, `rejected`, `applied` or
+`failed`).
 
 One thing reads differently here than at a terminal: the report is redacted on its way to the
 browser, so where `pithead doctor` prints your dashboard's onion address in full, this panel shows

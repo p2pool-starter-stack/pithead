@@ -89,3 +89,65 @@ test("a failed service-log read displays its reason and can be retried", async (
     expect(request.postDataJSON()).toEqual({ container: "tor", lines: 200 });
   }
 });
+
+test("a service restart is confirmed first, then shows the host's result and a refusal", async ({
+  page,
+  ui,
+}) => {
+  await page.clock.install();
+  const posts = [];
+  await page.route("**/api/control/svc-restart", async (route) => {
+    posts.push(route.request());
+    await route.fulfill({ status: 202, json: { id: `restart-${posts.length}` } });
+  });
+  await page.route("**/api/control/result?**", (route) => {
+    const id = new URL(route.request().url()).searchParams.get("id");
+    return route.fulfill({
+      json:
+        id === "restart-1"
+          ? { status: "applied", container: "tor" }
+          : {
+              status: "rejected",
+              error: "tor was restarted less than 120s ago; wait before restarting it again.",
+            },
+    });
+  });
+  await mount(ui);
+
+  const tor = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "tor", exact: true }),
+  });
+  await expect(
+    page
+      .locator("section")
+      .filter({
+        has: page.getByRole("heading", { name: "caddy", exact: true }),
+      })
+      .getByRole("button", { name: /Restart/ }),
+  ).toHaveCount(0);
+
+  await tor.getByRole("button", { name: "Restart tor" }).click();
+  await expect(tor.getByText(/monerod is restarted with it/)).toBeVisible();
+  expect(posts).toHaveLength(0);
+  await tor.getByRole("button", { name: "Cancel" }).click();
+  await expect(tor.getByText(/monerod is restarted with it/)).toHaveCount(0);
+
+  await tor.getByRole("button", { name: "Restart tor" }).click();
+  await tor.getByRole("button", { name: "Confirm restart of tor" }).click();
+  await expect(tor.getByRole("button", { name: "Restart tor" })).toBeDisabled();
+  await expect(tor.getByText(/Waiting for the host to restart tor/)).toBeVisible();
+  await page.clock.fastForward(2000);
+  await expect(tor.getByText("tor was restarted.")).toBeVisible();
+  await expect(tor.getByRole("button", { name: "Restart tor" })).toBeEnabled();
+
+  await tor.getByRole("button", { name: "Restart tor" }).click();
+  await tor.getByRole("button", { name: "Confirm restart of tor" }).click();
+  await page.clock.fastForward(2000);
+  await expect(tor.getByText(/wait before restarting it again/)).toBeVisible();
+
+  expect(posts).toHaveLength(2);
+  for (const request of posts) {
+    expect(request.headers()["x-pithead-control"]).toBe("1");
+    expect(request.postDataJSON()).toEqual({ container: "tor" });
+  }
+});
