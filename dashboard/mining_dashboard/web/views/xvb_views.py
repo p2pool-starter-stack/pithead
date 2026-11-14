@@ -166,14 +166,16 @@ def build_badges(data, metrics, mode_variant, db_healthy=True, wallet_change=Non
     if metrics.tari.down:
         badges.append({"text": "Tari DOWN", "variant": "bad"})
     if data.get("workers_rejected"):
+        pause = data.get("mining_pause") or {}
+        since = time.strftime("%H:%M UTC", time.gmtime(pause.get("since", 0)))
         badges.append(
             {
                 "text": "Workers rejected",
                 "variant": "bad",
-                "title": "Workers rejected so they fail over to their backup pools",
+                "title": "Workers rejected so they fail over to their backup pools"
+                + (f": {pause['reason']} (since {since})" if pause else ""),
             }
         )
-    # Miner held until required chain(s) finish their initial sync (Issue #35).
     if data.get("miner_held"):
         badges.append(
             {
@@ -182,8 +184,6 @@ def build_badges(data, metrics, mode_variant, db_healthy=True, wallet_change=Non
                 "title": "p2pool and xmrig-proxy are held until the required chains finish syncing",
             }
         )
-    # Fail-closed miner hold on an unrecoverable health failure (Issue #490), opt-in via
-    # dashboard.fail_closed. Distinct from the sync-gate badge above — this fires post-sync.
     if data.get("fail_closed_held"):
         badges.append(
             {

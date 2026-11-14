@@ -61,7 +61,7 @@ test("a refused client-key request displays the failure and can be retried", asy
   let attempts = 0;
   await page.route("**/api/control/onion-client-key", (route) =>
     ++attempts === 1
-      ? route.fulfill({ status: 403 })
+      ? route.fulfill({ status: 500, body: "control spool is full" })
       : route.fulfill({ status: 202, json: { id: "key-retry" } }),
   );
   await page.route("**/api/control/result?id=key-retry", (route) =>
@@ -70,11 +70,11 @@ test("a refused client-key request displays the failure and can be retried", asy
   await ui.open();
   const reveal = page.getByRole("button", { name: "Show client key", exact: true });
   await reveal.click();
-  await expect(page.getByText("HTTP 403", { exact: true })).toBeVisible();
+  await expect(page.getByText("control spool is full", { exact: true })).toBeVisible();
   await expect(reveal).toBeEnabled();
   await reveal.click();
   await expect(page.getByText("Client authorization is disabled.", { exact: true })).toBeVisible();
-  await expect(page.getByText("HTTP 403", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("control spool is full", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Tor client key" })).toHaveCount(0);
   expect(attempts).toBe(2);
 });

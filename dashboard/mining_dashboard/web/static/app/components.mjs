@@ -3,8 +3,10 @@ import { ComponentHealth } from "../network/health.mjs";
 import { MineCartTrain } from "../network/minecart.mjs";
 import { BackupPanel } from "../system/backupview.mjs";
 import { DiagnosticsPanel } from "../system/diagview.mjs";
+import { NodeAlertBanner } from "../system/nodealert.mjs";
 import { OsVerdictBanner } from "../system/osupdate.mjs";
 import { SecurityPanel } from "../system/securityview.mjs";
+import { SupportBundlePanel } from "../system/supportbundle.mjs";
 import { SyncView } from "../system/syncview.mjs";
 import { MinerConnection } from "../workers/minerconnection.mjs";
 import { WorkersTable } from "../workers/workertable.mjs";
@@ -103,7 +105,7 @@ class DashboardView extends Component {
         }
         ${
           backupView
-            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} active=${!suspended} /></div>`
+            ? html`<div class="card-stack"><${BackupPanel} enabled=${state.control_enabled} appliance=${!!state.os_update} active=${!suspended} /><${SupportBundlePanel} enabled=${state.control_enabled} /></div>`
             : null
         }
         ${
@@ -134,7 +136,7 @@ class DashboardView extends Component {
         <div class="grid grid-columns">
             <${GlobalStats} state=${state} />
             <${NetworkCard} state=${state} />
-            <${ComponentHealth} topology=${state.topology} egress=${state.egress} />
+            <${ComponentHealth} topology=${state.topology} egress=${state.egress} ping_failures=${state.ping_failures} />
         </div>`
         }
     </div>`;
@@ -147,6 +149,7 @@ export function App({
   state,
   connected,
   recoveryNeeded = false,
+  reloading = null,
   ui,
   onRange,
   onSort,
@@ -186,7 +189,9 @@ export function App({
   return html`<${Fragment}>
         <${Header} state=${state} theme=${ui.theme} onTheme=${onTheme} />
         <main id="dashboard-main">
+            <${NodeAlertBanner} alert=${state.node_alert} />
             <${OsVerdictBanner} os=${state.os_update} />
+            ${reloading ? html`<div class="disconnected-banner" role="status" aria-live="polite">${reloading}</div>` : null}
             ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…${recoveryNeeded ? html`<${ConnectionRecovery} />` : null}</div>` : null}
             <${MinerConnection} />
             ${

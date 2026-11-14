@@ -123,6 +123,15 @@ certificate's SHA-256 fingerprint with the current one on the appliance console;
 mismatch and accept only a match. Polling reconnects after trust is restored. The page cannot
 distinguish certificate, network and authentication failures.
 
+A tab remembers the version from its first successful refresh. When a later refresh reports a
+different version, or the first successful refresh after the disconnected banner, the page shows
+"Pithead was updated or restarted. Reloading…" and reloads itself, so an open tab does not keep
+running old code after a restart, rollback or update. The page reloads only after the dashboard
+has answered, never into a browser error page, and at most once every 2 minutes per tab: a
+trigger inside that window shows the message but leaves the reload to a later refresh. The page
+also checks once when the window regains focus or becomes visible. An update-dialog step in
+progress holds the reload until it finishes or fails; the Configuration draft is kept across it.
+
 ### Top bar
 
 A status strip across the top shows the hostname, host telemetry (CPU, load, RAM, HugePages, disk),
@@ -131,6 +140,13 @@ switches from GB to TB once the volume reaches 1 TB, on the same scale in the Te
 reply. An `XMR Pruned` / `XMR Full` badge sits with the other badges beside the stack name, showing
 the bundled node's blockchain mode. It appears for a local node only — with `monero.mode: remote`
 the pruning state is unknown, so neither badge is shown.
+
+A red `Mining paused here: <reason>` badge leads the badges whenever this Pithead is not serving
+work. The reason is the first that holds of: `stratum closed`, `node out of sync` (the local
+Monero health verdict is red), `node syncing`, and `P2Pool isolated` (P2Pool is running with no
+peers). When rigs have moved to a backup pool the line ends with `, N rigs on backup pool`, counted
+from the workers whose mining verdict is `on_backup`; the clause is omitted at zero. The line
+clears on the next poll once the condition ends.
 
 When the dashboard host is a name (not already an IP), the machine's IP shows beside it as
 `hostname @ ip` (e.g. `pithead.local @ 192.168.1.42`), a way back in when the hostname doesn't
@@ -173,6 +189,16 @@ The first two also push a Telegram alert (`hugepages`, `low_ram`) when first det
 on; the wallet badge pairs with the `wallet_changed` alert; AVX2 is badge-only (see
 [Telegram Bot](telegram.md#choosing-which-alerts-you-get)). All active warning badges are echoed in
 the bot's `/status` reply.
+
+### Monero node offline banner
+
+When monerod is red (no outgoing peers, or a height that has stopped moving) or, with `tor.auto_heal`
+on, Tor clearnet egress has failed past the auto-heal's 15-minute broken window, a red banner above the dashboard reads
+**Monero node offline** and lists the reasons. With auto-heal on it also adds the heal state: the
+last action and its age, the cooldown before the next one, and, once the three attempts of an outage
+are spent, a line saying the auto-heal has stopped and to run `./pithead doctor`. The banner is
+computed from the dashboard's existing health verdicts and served over the LAN, so it needs no Tor
+and no Telegram, the two paths that fail together in a Tor outage. It clears when the verdicts do.
 
 ### Hero band
 
@@ -255,6 +281,43 @@ proxy. Monero is always required, for local and remote nodes. The dashboard prob
 configured Monero RPC; stale P2Pool stats do not count as reachability. Monero uses a 90-second outage debounce; Tari uses 15 minutes. Both require 60 seconds
 of confirmed reachability for recovery. Readmission waits for every required node
 to be confirmed healthy, so a dashboard restart mid-outage does not admit workers prematurely.
+
+Work that P2Pool or monerod cannot make valid also stops `xmrig-proxy`, so a rig is never left
+hashing a stale tip. A monerod with zero peers still reports itself synchronized, so the guard
+does not rely on that flag. Each trigger below must hold continuously for its wait, then stay
+clear before it releases:
+
+| Trigger | Holds when | Waits before stopping |
+|---|---|---|
+| Monero node unhealthy | the Monero card is red: out of sync for 10 minutes (`NODE_STALE_AFTER_SEC`), 0 outgoing peers for 10 minutes, or no new height for 30 minutes | the card's own clocks: 10 minutes out of sync or peerless, 30 minutes without a new height |
+| Monero node has 0 outgoing peers | the current reading shows 0 outgoing peers | `MINING_GUARD_GRACE_SEC`, default 600 s |
+| Monero node not synchronized | monerod's own `synchronized` flag is false | `MINING_GUARD_GRACE_SEC` |
+| Monero node behind P2Pool's peers | at least two different peers appear in P2Pool's log in the last 2 minutes as at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead, and monerod's height has not moved for 15 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
+| P2Pool reports monerod is not synchronized | P2Pool logged `monerod is not synchronized` in the last 2 minutes | `NODE_DOWN_AFTER_SEC` |
+| P2Pool has no sidechain peers | P2Pool reports 0 outgoing and 0 incoming connections | `MINING_GUARD_GRACE_SEC` |
+| P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | `NODE_DOWN_AFTER_SEC` |
+| `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |
+
+The current-reading rows exist so that a dashboard restart during a pause cannot readmit rigs onto
+a node that is still peerless or unsynchronized. A trigger whose input cannot be read (the Docker
+proxy, P2Pool's stats or its logs) keeps its current state for 10 minutes, then drops out. A failed
+read alone never ends a pause sooner. A monerod that is unreachable is the existing
+outage above. A brief dip inside the wait stops nothing. The `Workers rejected` badge names the
+active trigger and when it began, and `/api/state` carries the same as `mining_pause`; the time is
+when the trigger began holding, not when it fired. A trigger clears after 60 seconds
+(`NODE_RECOVERY_AFTER_SEC`) without it, and readmission waits for every trigger to clear. The
+dashboard stops only `xmrig-proxy`: the stratum port closes, connected rigs get a disconnect, and
+P2Pool keeps running. The built-in local miner is a rig on the same stratum, so it stops with them.
+
+The lag row reads P2Pool's own `peer ... is ahead on mainchain` log line. It also needs two peers and
+a stalled monerod height, because a hostile peer can make P2Pool log that line, and it is not used for a
+remote node, which has no height-progress verdict. Limits: after a dashboard restart the "no new
+height for 30 minutes" clock starts again.
+
+xmrig keeps retrying its first pool while it mines on a backup and switches back by itself
+when the login succeeds (`FailoverStrategy` in the xmrig source), so rigs return once
+`xmrig-proxy` restarts. The bench fault-injection phase checks this with a borrowed rig: its active pool
+leaves the stack when the stratum closes and comes back on its own after readmission.
 
 With [`dashboard.tari_required: true`](configuration.md) (the default), a Tari outage also
 rejects workers, for local and remote Tari nodes. This costs Monero revenue until Tari recovers:
@@ -698,7 +761,10 @@ operational: a node you run is yours to restart and resync, and a node you point
 (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible
 without opening `config.json`. A row reads `—` when the dashboard cannot tell — a payload from
-before this shipped, rather than a node it has decided is local.
+before this shipped, rather than a node it has decided is local. The card also keeps the dead-man's
+switch honest: a **Monitoring ping** line under the diagram shows the recent failed Healthchecks.io
+pings — timestamps and reason classes, nothing else — or says none failed.
+[Monitoring](monitoring.md) says what is recorded and why the ping URL itself is never part of it.
 
 The what-if earnings calculator and the XvB tier calculator live only in Advanced view. Simple view
 shows a one-time banner pointing there; it goes away once you dismiss it or open Advanced view, and
@@ -1222,9 +1288,17 @@ including invalid JSON. **Unsaved changes** beside the Configuration button mark
 edits. Return to Configuration to finish them; the marker clears after a successful apply or
 **Discard edits**. When the stack enters its synchronization screen the editor is hidden, not
 unmounted, so the draft and the marker are still there when the dashboard returns. The page only
-shows the loading screen before its first state response, when no editor exists yet. Drafts are
-not stored across a browser reload or close. The page cannot observe an HTTP authentication change,
-so a re-authenticated tab keeps its draft until it is reloaded
+shows the loading screen before its first state response, when no editor exists yet. An unsaved
+draft is also kept in the tab's `sessionStorage`, so it survives a reload, automatic or manual: the
+reloaded editor shows the draft, the **Unsaved changes** marker and a line saying the draft was
+restored. Text that is not valid JSON is never stored: after a reload the editor shows the last
+valid state of the draft, without the broken edit. **Discard edits**, **Discard draft and
+reload from host** and a successful apply clear it; closing the tab drops it. The stored copy never
+holds a secret you typed: every secret field the server masks (the API tokens and passwords, the
+Monero and Tari view keys, the ping, ntfy and standby URLs, the webhook list and each worker token)
+goes back to the value the page received, its `__secret__` marker or empty, so retype a new
+secret after a reload. The page cannot observe an HTTP authentication
+change, so a re-authenticated tab keeps its draft until it is reloaded
 ([#3323](https://github.com/p2pool-starter-stack/pithead/issues/3323) tracks a reset).
 
 The flow mirrors the CLI's `apply`:
@@ -1276,7 +1350,19 @@ The flow mirrors the CLI's `apply`:
    draft with the host's configuration. After a successful apply, **Back to the form** reloads it.
    The error card shown when the commit request itself fails (an HTTP error, an unreadable response,
    or a poll timeout; a timeout does not mean the apply failed) offers the same two actions. Only a
-   failed first load, which has no draft, offers a plain **Reload**.
+   failed first load, which has no draft, offers a plain **Reload**. A non-2xx answer shows the
+   response text, or `HTTP` and the status when it is empty. A request that cannot reach the
+   dashboard, or that is answered 401 or 403 (what a tab from before a restart gets), shows
+   "Pithead restarted or the page is out of date. Reloading…" and the page reloads once the
+   dashboard answers. A restart during the apply is not that case: the commit keeps polling for
+   its result.
+
+Rig upgrade, Adopt rig, Backup, the onion client-key request and the service diagnostics
+behave the same way: a request that cannot reach the dashboard, or that is answered 401 or 403,
+shows "Pithead restarted or the page is out of date. Reloading…" and the page reloads once the
+dashboard answers; any other non-2xx answer shows the response text, or `HTTP` and the status when
+it is empty. For other failures Diagnostics names the request, for example "Could not submit the health
+check: …". Polling for a spooled result and Backup's wait through the stack restart are unchanged.
 
 Every reference setting belongs to a policy class. The ordinary allowlist covers routine
 operations; all remaining values confirm unless they are in the physical-presence set. Typed
@@ -1559,9 +1645,26 @@ set up without a dashboard login, it points at **Set up again** in the boot menu
 labels it as the machine's own backup log, so commands in that log do not read as instructions for
 the browser.
 
+A second card lives on the same tab: **Support bundle**
+([#4036](https://github.com/p2pool-starter-stack/pithead/issues/4036)). One button asks the host to
+collect one redacted diagnostics archive for a bug report: journal lines of every Pithead unit over
+the window you ask for (the last 72 hours by default, 1 to 168), the dashboard's health history,
+the Tor bootstrap state, versions, the active RAUC slot, and the config's key shape with every
+value dropped. Every line passes the same redactor the diagnostics log tail uses on its way in;
+the host refuses a bundle over its own size cap rather than truncating one onto the wire; and the
+ask is audited like every other control request. The finished archive waits in the same results
+spool with the same hour-window retention a backup gets: **Download bundle** appears only once the
+host's result says applied, and nothing leaves the box until you press it. Attach it to a report
+the way [#3746](https://github.com/p2pool-starter-stack/pithead/issues/3746) lays out. A box whose
+stack never came up cannot serve the dashboard, so it builds the same archive from the console
+instead: `pithead recovery-bundle` in [Operations](operations.md).
+
 **Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that
-window, only the 3 most recent archives are kept. Ordinary control-request results (config
+window, only the 3 most recent archives are kept, backups and support bundles alike. An expired
+archive past those 3 is removed with its result; the 3 that remain stay downloadable until a newer
+one displaces them or the byte cap evicts them, so a support bundle can outlive the hour the card
+quotes. Ordinary control-request results (config
 previews, applies, upgrades) age out after a day or once more than 200 accumulate. Whatever these
 limits leave behind is capped at 512 MiB total, oldest first, unless the files that must remain
 (`os-update-state.json`, the result of a request still in flight, or a fresh backup pair) alone
@@ -1654,7 +1757,10 @@ drives the appliance's A/B update from the browser, one explicit step at a time,
 control channel as everything else on this page: the dashboard container only asks, and the host
 re-derives and re-verifies every step itself. **Close** dismisses the dialog in one click, including
 after an update-check error, and returns focus to **OS updates**. **Retry** remains available
-when there is a target to download.
+when there is a target to download. A step that cannot reach the dashboard, or that is answered
+401 or 403, shows "Pithead restarted or the page is out of date. Reloading…" and the page reloads
+once the dashboard answers; any other refusal shows the response text, or `HTTP` and the status
+when it is empty.
 
 1. **Check.** The host asks the release API (over Tor) for the latest release and its OS bundle.
    The dashboard's passive new-release badge covers the same ground hourly, from inside the

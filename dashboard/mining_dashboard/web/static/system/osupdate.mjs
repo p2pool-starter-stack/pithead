@@ -12,8 +12,10 @@
 // dashboard answers again; the post-reboot verdict (updated / rolled back) arrives via the
 // host-persisted state in state.os_update and renders as a banner.
 
+import { holdWhile } from "../app/freshness.mjs";
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
+import { controlFetch, requirePreviewResponse } from "../config/controlclient.mjs";
 import {
   hostAnswered,
   osBadgeLabel,
@@ -32,26 +34,22 @@ const OS_POLL_MAX = 450;
 // Resume attempts chained per Download/Retry click: 48 x ~10 min covers a very slow Tor night
 // while a genuinely dead route still terminates.
 const OS_RESUME_MAX = 48;
+const BUSY_PHASES = ["checking", "downloading", "verifying", "installing", "rebooting"];
 
 export const fmtMiB = (bytes) =>
   Number.isFinite(bytes) && bytes > 0 ? Math.round(bytes / 1048576) + " MiB" : "";
 
-// POST one OS-update step; resolves to the intent id (the server always answers 202).
 export async function osAction(action, version) {
   const body = version ? { action, version } : { action };
-  const res = await fetch("/api/control/os-update", {
+  const res = await controlFetch("/api/control/os-update", {
     method: "POST",
     headers: CONTROL_HEADERS,
     body: JSON.stringify(body),
   });
-  if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+  await requirePreviewResponse(res);
   return (await res.json()).id;
 }
 
-// Poll one intent to its terminal result, surfacing in-flight progress ("downloading",
-// "installing") through onProgress instead of skipping it — the difference from configview's
-// pollResult, which has no progress to show. Rides out dropped connections and proxy 50x the
-// same way (the host result file is the durable outcome).
 export async function pollOsResult(id, onProgress, max = OS_POLL_MAX) {
   for (let i = 0; i < max; i++) {
     await new Promise((r) => setTimeout(r, POLL_MS));
@@ -63,7 +61,7 @@ export async function pollOsResult(id, onProgress, max = OS_POLL_MAX) {
     }
     if (res.status === 202 || res.status === 502 || res.status === 503 || res.status === 504)
       continue;
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await requirePreviewResponse(res);
     const out = await res.json();
     if (out.status === "downloading" || out.status === "installing") {
       if (onProgress) onProgress(out);
@@ -146,13 +144,16 @@ export class OsUpdateControl extends Component {
     this.cancelled = false;
     this.modalRef = createRef();
   }
+  componentWillUnmount() {
+    holdWhile(this, false);
+  }
   componentDidUpdate() {
+    holdWhile(this, BUSY_PHASES.includes(this.state.phase));
     if (this.state.phase === "rebooting" && hostAnswered(this.props.os, this.rebootVerdictTs))
       this.setState({ phase: "closed", confirmText: "" });
   }
   cancel() {
-    const busy = ["checking", "downloading", "verifying", "installing", "rebooting"];
-    if (busy.includes(this.state.phase)) return;
+    if (BUSY_PHASES.includes(this.state.phase)) return;
     this.modalRef.current?.close();
   }
   stepPhase() {

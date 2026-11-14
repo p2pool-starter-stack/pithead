@@ -74,14 +74,20 @@
   margin: 15px 0;
 }
 .config-actions .btn-toggle,
-.config-modal-actions .btn-toggle {
+.config-modal-actions .btn-toggle,
+.diag-card .btn-toggle {
   border: 1px solid var(--border);
   border-radius: 6px;
 }
 .config-actions .btn-toggle:disabled,
-.config-modal-actions .btn-toggle:disabled {
+.config-modal-actions .btn-toggle:disabled,
+.diag-card .btn-toggle:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.diag-card .btn-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .config-modal {
   box-sizing: border-box;

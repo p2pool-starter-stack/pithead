@@ -41,3 +41,6 @@ be95cee9f654b55eff157c89350913921fdb23ab:tests/os/selftest-miner-connection.sh:g
 # Current fixtures use SOAK_REPLY; these historical fingerprints exempt no later copies.
 767ae18596b06a63ef98beccf31ac0a212786365:tests/os/soak-selftest.sh:generic-api-key:86
 767ae18596b06a63ef98beccf31ac0a212786365:tests/os/soak-selftest.sh:generic-api-key:88
+# Synthetic secret strings in the first #4060 draft-redaction test commit; the current test file has no such literal at these lines.
+ff9e346a13f2d1e645aa6bc5b0ff5cd85d8f6e69:dashboard/tests/frontend/config/configdraft.test.mjs:generic-api-key:72
+ff9e346a13f2d1e645aa6bc5b0ff5cd85d8f6e69:dashboard/tests/frontend/config/configdraft.test.mjs:generic-api-key:81

@@ -43,8 +43,9 @@ _build_bundle_stamped() {
     cert="$(cd "$(dirname "$RAUC_CERT")" && pwd -P)/$(basename "$RAUC_CERT")" || return 1
     key="$(cd "$(dirname "$RAUC_KEY")" && pwd -P)/$(basename "$RAUC_KEY")" || return 1
     keyring="$(cd "$(dirname "$RAUC_KEYRING")" && pwd -P)/$(basename "$RAUC_KEYRING")" || return 1
-    wt=$(mktemp -d /tmp/pithead-floor-fallback.XXXXXX) || return 1
-    out=/tmp/os-floor-fallback-$marker.raucb
+    mkdir -p "$HOST_SCRATCH" || return 1
+    wt=$(mktemp -d "$HOST_SCRATCH/floor-fallback.XXXXXX") || return 1
+    out="$HOST_SCRATCH/os-floor-fallback-$marker.raucb"
     {
         git archive HEAD | tar -x -C "$wt" &&
             printf '%s\n' "$version" >"$wt/VERSION" &&
