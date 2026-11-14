@@ -41,6 +41,15 @@ for (const theme of ["light", "dark"]) {
         hashrate_history: { hashrate: [{ x: 1735689600000, y: 1370 }], markers: [] },
       }),
     );
+    ui.responses.set(
+      "/api/control/worker-upgrade-all",
+      json({
+        version: "v1.15.0",
+        eligible: [{ name: "rig-001", running: "v0.9.0" }],
+        skipped: [{ name: "rig-005", reason: "control API unreachable" }],
+        run: null,
+      }),
+    );
     await page.clock.install();
     await page.setViewportSize({ width: 375, height: 800 });
     const started = Date.now();
@@ -57,9 +66,12 @@ for (const theme of ["light", "dark"]) {
     await expect(main.getByText("AB:CD:EF", { exact: true })).toBeVisible();
     await expect(main.getByRole("button", { name: "Copy rig settings" })).toBeVisible();
     await expect(main.getByRole("button", { name: "Also mine on this box" })).toBeVisible();
-    await expect(main.getByRole("button", { name: /Update all|Reveal|Copy password/ })).toHaveCount(
-      0,
-    );
+    await expect(main.getByRole("button", { name: /Reveal|Copy password/ })).toHaveCount(0);
+    await main.getByRole("button", { name: "Update all rigs to v1.15.0" }).click();
+    const review = page.getByRole("dialog", { name: "Update all rigs to v1.15.0" });
+    await expect(review.getByText("rig-005: control API unreachable")).toBeVisible();
+    await review.getByRole("button", { name: "Cancel" }).click();
+    await expect(review).toHaveCount(0);
     await expect(main.getByRole("combobox")).toBeHidden();
     await expect(main.getByRole("searchbox")).toBeHidden();
     await expect(main.getByText("unmanaged").first()).toBeVisible();
