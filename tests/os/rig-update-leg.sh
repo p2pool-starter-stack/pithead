@@ -3,9 +3,9 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
     info "rig-update leg — channel check, refusals, install and verdict through pithead rig-update"
     local tag srv host_addr port=8933 size srv_pid bundle out aged before marker
     tag="v$(tr -d ' \t\r\n' <VERSION)"
-    if ! bundle=$(_build_bundle v3); then
+    if ! bundle=$(_build_bundle v1); then
         bundle_build_evidence
-        bad "rig-update leg: v3 bundle build failed — read /tmp/os-fault-bundle.log"
+        bad "rig-update leg: v1 bundle build failed — read /tmp/os-fault-bundle.log"
         return
     fi
     srv=$(mktemp -d)
@@ -73,6 +73,7 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
     esac
     [ "$(_ssh "jq -r '.to' /data/pithead/rig-update.json" 2>/dev/null | tr -d '\r')" = "9.9.9" ] &&
         ok "the refusal kept the pending record intact" || bad "the refusal clobbered the pending record"
+    _ssh "rm -f /data/pithead/rig-update.json"
 
     if ! before=$(_boot_id); then
         bad "rig-update leg: could not read the boot id before the install reboot — a reconnect and a reboot would look alike"
@@ -88,8 +89,8 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
         return
     fi
     marker=$(_ssh cat /etc/pithead-test-marker | tr -d '\r\n')
-    [ "$marker" = "v3" ] && ok "rig-update installed its bundle and the rig booted it" ||
-        bad "expected v3 after rig-update's reboot, got '$marker'"
+    [ "$marker" = "v1" ] && ok "rig-update installed its bundle and the rig booted it" ||
+        bad "expected v1 after rig-update's reboot, got '$marker'"
     _rig_mining_up 24 && ok "the rig mines again after the rig-update reboot" ||
         bad "the rig stopped mining after the rig-update reboot"
     [ "$(_ssh "jq -r '.state' /data/pithead/rig-update.json" 2>/dev/null | tr -d '\r')" = "updated" ] &&
@@ -110,7 +111,6 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
     [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
         ok "Tor stopped after the check" || bad "Tor kept running after the check"
 
-    _ssh 'rm -f /data/pithead/VERSION'
     kill "$srv_pid" 2>/dev/null || true
     rm -rf "$srv"
 }
