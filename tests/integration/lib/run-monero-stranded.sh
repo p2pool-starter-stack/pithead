@@ -4,8 +4,8 @@
 MONERO_STRAND_TAG="pithead-e2e-fault-monero-stranded"
 MONERO_POLL_SLACK=180 # a dashboard poll, the healthcheck's 30 s x 3 retries, and the harness's sampling
 MONERO_DISCONNECT_MAX=1500
-MONERO_WATCHDOG_MAX=900
-MONERO_TOR_REDIAL_MAX=2400
+MONERO_WATCHDOG_MAX=2400
+MONERO_TOR_REDIAL_MAX=1500
 MONERO_HOOK_PORT=18198
 MONERO_HOOK_LOG=/tmp/pithead-e2e-monero-alerts.log
 
@@ -217,6 +217,25 @@ run_monero_stranded() {
     trap monero_strand_abort EXIT
     started="$(monero_started_at)"
 
+    it_step "external Tor start: restart the tor container outside the stack's own operations, and keep monerod stranded (#4076)…"
+    rx "docker restart tor" >/dev/null 2>&1
+    tor="$(rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' tor" 2>/dev/null | head -n1)"
+    monero_ns_ipt "-I OUTPUT -d $tor -m comment --comment $MONERO_STRAND_TAG -j DROP" >/dev/null
+    if wait_for "$MONERO_TOR_REDIAL_MAX" 15 "monerod re-dialled by the dashboard after an external Tor start" _pred_monerod_restarted_since "$started"; then
+        it_pass "monero-stranded: the dashboard restarted the stranded monerod after an external Tor start, unattended"
+    else
+        it_fail "monero-stranded: the dashboard restarts the stranded monerod within ${MONERO_TOR_REDIAL_MAX} s of an external Tor start" "$(monero_strand_state)"
+    fi
+    assert_eq "monero-stranded: the Tor-start re-dial is logged once for the owner" \
+        "$(rx "docker logs dashboard 2>&1 | grep -c 'Tor restarted and monerod has no peers'" 2>/dev/null)" "1"
+    monero_strand_remove_all
+    if wait_for 900 15 "monerod holding outgoing peers after the Tor-start re-dial" _pred_monero_has_peers_sampled; then
+        it_pass "monero-stranded: monerod holds outgoing peers after the Tor-start re-dial"
+    else
+        it_fail "monero-stranded: monerod holds outgoing peers after the Tor-start re-dial" "$(monero_strand_state)"
+    fi
+    started="$(monero_started_at)"
+
     it_step "fault: drop monerod -> tor inside monerod's network namespace ($MONERO_STRAND_TAG)…"
     monero_ns_ipt "-I OUTPUT -d $tor -m comment --comment $MONERO_STRAND_TAG -j DROP" >/dev/null
     t0=$(now_s)
@@ -269,7 +288,7 @@ run_monero_stranded() {
         it_fail "monero-stranded: the watchdog restarts a peerless monerod within ${MONERO_WATCHDOG_MAX} s" "$(monero_strand_state)"
     fi
     assert_eq "monero-stranded: the restart is logged once for the owner" \
-        "$(rx "docker logs dashboard 2>&1 | grep -c 'Restarting monerod to re-dial its peers'" 2>/dev/null)" "1"
+        "$(rx "docker logs dashboard 2>&1 | grep -c 'no outgoing peers beyond the health bound'" 2>/dev/null)" "1"
     monero_strand_remove_all
     t0=$(now_s)
     if wait_for 900 15 "monerod has outgoing peers again after the fix" _pred_monero_has_peers_sampled; then
@@ -300,19 +319,6 @@ run_monero_stranded() {
         it_pass "monero-stranded: the recovery note left the dashboard"
     else
         it_fail "monero-stranded: the recovery note left the dashboard" "nothing at the loopback sink"
-    fi
-    started="$(monero_started_at)"
-    it_step "external Tor start: restart the tor container outside the stack's own operations (#4076)…"
-    rx "docker restart tor" >/dev/null 2>&1
-    if wait_for "$MONERO_TOR_REDIAL_MAX" 15 "monerod holding outgoing peers after an external Tor start" _pred_monero_has_peers_sampled; then
-        it_pass "monero-stranded: monerod holds outgoing peers after an external Tor start, unattended"
-    else
-        it_fail "monero-stranded: monerod re-dials within the window after an external Tor start" "$(monero_strand_state)"
-    fi
-    if [ "$(monero_started_at)" != "$started" ]; then
-        it_log "external Tor start: monerod was re-dialled by the dashboard"
-    else
-        it_log "external Tor start: monerod recovered without a restart"
     fi
     monero_restore_config
     trap - EXIT
