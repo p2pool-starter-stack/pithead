@@ -99,6 +99,9 @@ MATRIX:
                          reads it. Non-destructive; self-skips if no rigforge rig is connected.
   --rigforge-control     run the real RigForge control, reversible-write, and upgrade legs.
                          DESTRUCTIVE-then-restored; local mode and an opted-in real rig required.
+  --failover-view        move the borrowed rig to a second pool the harness serves and back; assert the
+                         Workers row, Workers Alive, Total Hashrate and the paused banner follow each
+                         transition (#4074). DESTRUCTIVE-then-restored; needs --rig-name and a reserved rig.
   --rig-host <h>         the borrowed rig's LAN host/IP for control dials — needed to inject a
                          workers.list[] descriptor when the box's baseline lacks one (#513/#514/#506).
   --rig-name <name>      exact borrowed rig NAME from its protected RigForge config.

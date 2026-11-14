@@ -272,7 +272,7 @@ drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
     (
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
         RUN_LIFECYCLE=1 RUN_RESET_DASHBOARD=0 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
-            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_FAILOVER_VIEW=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
         run_lifecycle() {
             LIFECYCLE_STACK_INTACT="${intact:-0}"
             return "$lifecycle_rc"
@@ -295,7 +295,7 @@ drive_abort() {
     (
         # shellcheck disable=SC2034
         RUN_LIFECYCLE=1 RUN_RESET_DASHBOARD=0 RUN_ROTATE_SECRETS=0 RUN_FAULTS=0 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
-            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok=1 IT_FAIL=0 rows="" lc_rc="$1" lc_step="$2" lc_own="$3"
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_FAILOVER_VIEW=0 RUN_SUBNET=0 rig_control_ok=1 IT_FAIL=0 rows="" lc_rc="$1" lc_step="$2" lc_own="$3"
         # shellcheck disable=SC2034
         run_lifecycle() {
             [ -z "$lc_step" ] || IT_LC_STEP="$lc_step"

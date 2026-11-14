@@ -196,6 +196,10 @@ parse_args() {
             RUN_RIGFORGE_CONTROL=1
             shift
             ;;
+        --failover-view)
+            RUN_FAILOVER_VIEW=1
+            shift
+            ;;
         --rig-host)
             RIG_HOST="$2"
             shift 2

@@ -62,6 +62,7 @@ RUN_HARDENING=0
 RUN_ROTATE_ONION=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
+RUN_FAILOVER_VIEW=0
 RUN_SUBNET=0
 RUN_ROTATE_SECRETS=0
 RUN_IMAGE_UPGRADE=0
@@ -167,6 +168,8 @@ source "$HERE/lib/run-tari-stranded.sh" || exit $?
 source "$HERE/lib/run-monero-stranded.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
 source "$HERE/lib/run-mergemine-localnet.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-failover-view.sh
+source "$HERE/lib/run-failover-view.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -278,7 +281,7 @@ main() {
     if [ "$rig_control_ok" != 1 ]; then
         for _gated in LIFECYCLE:lifecycle RESET_DASHBOARD:reset-dashboard ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
             XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
-            MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
+            MERGEMINE_LOCALNET:mergemine-localnet FAILOVER_VIEW:failover-view SUBNET:subnet; do
             local _flag="RUN_${_gated%%:*}"
             [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
         done
@@ -307,6 +310,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_TARI_STRANDED" = "1" ] && run_tari_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MONERO_STRANDED" = "1" ] && run_monero_stranded
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_FAILOVER_VIEW" = "1" ] && run_failover_view
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario

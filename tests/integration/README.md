@@ -6,7 +6,7 @@ and asserts the stack behaves (issue
 
 ```
 run.sh          entry point — connects (SSH or --local) and runs the matrix (+ --lifecycle,
-                --fault-injection, --image-upgrade, --xvb-routing-smoke)
+                --fault-injection, --failover-view, --image-upgrade, --xvb-routing-smoke)
 scenarios.sh    the declarative config matrix (data, not code)
 lib.sh          shared helpers: target I/O, assertions, readiness waiters, redaction
 lib/            sourced live-runner modules (incl. the live-gates.sh upgrade/XvB gates and
