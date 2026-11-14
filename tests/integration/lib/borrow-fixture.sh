@@ -86,7 +86,7 @@ handle_borrow_rearm() {
         local attempt
         for attempt in 1 2 3 4; do
             repoint_miner || return 1
-            wait_workers "$WORKERS" 60 && break
+            wait_workers "$WORKERS" 60 "$MINER_WORKER_NAME" && break
             [ "$attempt" = 4 ] && return 1
             warn "re-arm attempt $attempt: the borrowed rig did not reach the test bench; restarting it again"
         done
@@ -127,7 +127,7 @@ miner_reload() {
     '
 }
 
-wait_workers() { # <n> <timeout_s> [worker-name]
+wait_workers() {
     local want="$1" deadline=$(($(date +%s) + ${2:-180})) name="${3:-}" got
     [ -z "$name" ] || want=1
     while :; do
