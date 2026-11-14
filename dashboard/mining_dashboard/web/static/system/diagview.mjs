@@ -95,6 +95,7 @@ export async function runDiag(path, body, label = "the diagnostics request", max
       continue;
     }
     if (result.status === 202 || [502, 503, 504].includes(result.status)) continue;
+    if (result.status === 401 || result.status === 403) throw staleError();
     if (!result.ok) throw new Error(`Could not read ${label}: HTTP ${result.status}`);
     try {
       return await result.json();

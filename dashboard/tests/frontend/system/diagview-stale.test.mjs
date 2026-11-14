@@ -35,3 +35,15 @@ for (const [name, stub, text, reloads] of [
     assert.equal(probe.reloads.length, reloads);
   });
 }
+
+test("runDiag: a 401 while reading the result shows the stale-page message and reloads", async () => {
+  const probe = installStaleProbe();
+  const out = await withFetch(
+    async (url) =>
+      url === "/api/control/diag-logs" ? reply(202, "", { id: "r-1" }) : reply(401, "login required"),
+    () => diagShown(() => runDiag("diag-logs", { container: "tor" }, "tor's recent log")),
+  );
+  await probe.settle();
+  assert.equal(out, STALE);
+  assert.equal(probe.reloads.length, 1);
+});
