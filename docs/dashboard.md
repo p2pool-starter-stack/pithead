@@ -282,6 +282,43 @@ configured Monero RPC; stale P2Pool stats do not count as reachability. Monero u
 of confirmed reachability for recovery. Readmission waits for every required node
 to be confirmed healthy, so a dashboard restart mid-outage does not admit workers prematurely.
 
+Work that P2Pool or monerod cannot make valid also stops `xmrig-proxy`, so a rig is never left
+hashing a stale tip. A monerod with zero peers still reports itself synchronized, so the guard
+does not rely on that flag. Each trigger below must hold continuously for its wait, then stay
+clear before it releases:
+
+| Trigger | Holds when | Waits before stopping |
+|---|---|---|
+| Monero node unhealthy | the Monero card is red: out of sync for 10 minutes (`NODE_STALE_AFTER_SEC`), 0 outgoing peers for 10 minutes, or no new height for 30 minutes | the card's own clocks: 10 minutes out of sync or peerless, 30 minutes without a new height |
+| Monero node has 0 outgoing peers | the current reading shows 0 outgoing peers | `MINING_GUARD_GRACE_SEC`, default 600 s |
+| Monero node not synchronized | monerod's own `synchronized` flag is false | `MINING_GUARD_GRACE_SEC` |
+| Monero node behind P2Pool's peers | at least two different peers appear in P2Pool's log in the last 2 minutes as at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead, and monerod's height has not moved for 15 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
+| P2Pool reports monerod is not synchronized | P2Pool logged `monerod is not synchronized` in the last 2 minutes | `NODE_DOWN_AFTER_SEC` |
+| P2Pool has no sidechain peers | P2Pool reports 0 outgoing and 0 incoming connections | `MINING_GUARD_GRACE_SEC` |
+| P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | `NODE_DOWN_AFTER_SEC` |
+| `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |
+
+The current-reading rows exist so that a dashboard restart during a pause cannot readmit rigs onto
+a node that is still peerless or unsynchronized. A trigger whose input cannot be read (the Docker
+proxy, P2Pool's stats or its logs) keeps its current state for 10 minutes, then drops out. A failed
+read alone never ends a pause sooner. A monerod that is unreachable is the existing
+outage above. A brief dip inside the wait stops nothing. The `Workers rejected` badge names the
+active trigger and when it began, and `/api/state` carries the same as `mining_pause`; the time is
+when the trigger began holding, not when it fired. A trigger clears after 60 seconds
+(`NODE_RECOVERY_AFTER_SEC`) without it, and readmission waits for every trigger to clear. The
+dashboard stops only `xmrig-proxy`: the stratum port closes, connected rigs get a disconnect, and
+P2Pool keeps running. The built-in local miner is a rig on the same stratum, so it stops with them.
+
+The lag row reads P2Pool's own `peer ... is ahead on mainchain` log line. It also needs two peers and
+a stalled monerod height, because a hostile peer can make P2Pool log that line, and it is not used for a
+remote node, which has no height-progress verdict. Limits: after a dashboard restart the "no new
+height for 30 minutes" clock starts again.
+
+xmrig keeps retrying its first pool while it mines on a backup and switches back by itself
+when the login succeeds (`FailoverStrategy` in the xmrig source), so rigs return once
+`xmrig-proxy` restarts. The bench fault-injection phase checks this with a borrowed rig: its active pool
+leaves the stack when the stratum closes and comes back on its own after readmission.
+
 With [`dashboard.tari_required: true`](configuration.md) (the default), a Tari outage also
 rejects workers, for local and remote Tari nodes. This costs Monero revenue until Tari recovers:
 p2pool could keep mining Monero through a Tari-only outage. Set `dashboard.tari_required: false`
