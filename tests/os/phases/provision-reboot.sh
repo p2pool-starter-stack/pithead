@@ -213,4 +213,19 @@ _phase_provision_reboot() {
     [ -z "$mcid" ] || _ssh "podman start $mcid >/dev/null 2>&1" || true
     unset -f _gate
 
+    local jverdict jw0 jw1 jbytes0 jst jmu jun jkb jage
+    jw0=$(date +%s)
+    jbytes0=$(_ssh "$JOURNAL_BYTES_PROBE" 2>/dev/null | tr -d '\r\n ')
+    sleep 300
+    jw1=$(date +%s)
+    {
+        read -r jst
+        read -r jmu
+        read -r jun
+        read -r jkb
+        read -r jage
+    } < <(_ssh "$JOURNAL_STATE_PROBE" 2>/dev/null | tr -d '\r')
+    jverdict=$(journal_config_verdict "$jst" "$jmu" "$jun") && ok "$jverdict" || bad "$jverdict"
+    jverdict=$(journal_window_verdict "$jbytes0" "$jkb" "$((jw1 - jw0))" "$(journal_cap_kib "$jmu" 2>/dev/null || echo 0)" "$jage" "provisioned stack") && ok "$jverdict" || bad "$jverdict"
+
 }
