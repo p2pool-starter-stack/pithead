@@ -6,8 +6,8 @@
 ensure_control_fixture
 
 echo "== black-box: confirm-gate — an in-scope disruptive change needs a typed APPLY (#719) =="
-assert_eq "reference default enables XvB" "$(jq -r '.xvb.enabled' "$ROOT/config.reference.json")" "true"
-assert_eq "a config without xvb.enabled renders the same enabled state" "$(grep '^XVB_ENABLED=' "$C/.env" | cut -d= -f2-)" "true"
+assert_eq "reference default leaves XvB off for new installs" "$(jq -r '.xvb.enabled' "$ROOT/config.reference.json")" "false"
+assert_eq "a config without xvb.enabled renders XvB off" "$(grep '^XVB_ENABLED=' "$C/.env" | cut -d= -f2-)" "false"
 UUID3="33333333-3333-4333-8333-333333333333"
 # Clean baseline: pool mini, clearnet off, the host's egress firewall off (only then does a clearnet flag reach .env, #2649), applied.
 control_config mini && jq '.network.tor_egress_firewall=false' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
@@ -17,7 +17,7 @@ control_config mini && jq '.network.tor_egress_firewall=false' "$C/config.json" 
 preview_clearnet() {
     jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
         monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",clearnet_initial_sync:true},
-        tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"}, network:{tor_egress_firewall:false},
+        tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"}, network:{tor_egress_firewall:false},
         dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
     run_pending >/dev/null
 }
@@ -56,7 +56,7 @@ echo "== black-box: sensitive changes need the typed payout-confirmation envelop
 # change and supplying any payout suffixes for the host to re-check.
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",rpc_lan_access:true},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID3" >"$REQS/$UUID3.json"
@@ -69,7 +69,7 @@ assert_eq "unconfirmed perimeter change did not touch config.json" "$(jq -r '.mo
 # or a self-asserted approver past the host, which is why the shape check outlived the tap.
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",rpc_lan_access:true},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{preview_id:$id,actor:"mallory",approver:"tg-7",payout_suffixes:{}}}' >"$REQS/$UUID3.json"
@@ -77,7 +77,7 @@ run_pending >/dev/null
 assert_eq "an envelope with any extra key is refused" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",rpc_lan_access:true},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
@@ -132,12 +132,12 @@ assert_eq "a confirmed adopt appends rig-2 after rig-1" "$(jq -r '.status' "$RES
 # A confirm-key in its heavy direction (prune disable) is now approval-gated too: it still needs
 # typed APPLY, but is no longer impossible for a shell-less appliance operator.
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:true},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:false},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
@@ -152,7 +152,7 @@ NEW_WALLET_SUFFIX="${NEW_WALLET: -8}"
 BAD_WALLET="${NEW_WALLET%?}B"
 jq -n --arg new "$BAD_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "invalid payout address is refused during preview" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
@@ -160,14 +160,14 @@ assert_contains "invalid payout preview names its checksum" "$(jq -r '.log' "$RE
 BAD_TARI="${VALID_TARI%?}B"
 jq -n --arg w "$WALLET" --arg tari "$BAD_TARI" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:false},
-    tari:{wallet_address:$tari}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:$tari}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "invalid Tari payout is refused during preview" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_contains "invalid Tari preview names its checksum" "$(jq -r '.log' "$RESULTS/$UUID3.json")" "checksum"
 jq -n --arg old "$WALLET" --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "payout preview is offered for confirmation" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "previewed"
@@ -181,7 +181,7 @@ assert_eq "wrong payout suffix changed no funds destination" "$(jq -r '.monero.w
 # A fresh preview plus the exact suffix and APPLY token commits the ruled dashboard change.
 jq -n --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" --arg suffix "$NEW_WALLET_SUFFIX" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:$suffix}}}' >"$REQS/$UUID3.json"
@@ -267,7 +267,7 @@ echo "== black-box: a REMOVED config key is migrated away, not refused (#2076) =
 # protects, rather than in tests/stack/test-config.sh (at its file-budget ceiling; CONTRIBUTING.md
 # — File budget gate). Runs last in this domain: it rewrites $C/config.json and nothing follows.
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}},
     telegram:{enabled:true,bot_token:"tg_tok_2076",chat_id:"-1001",commands:{enabled:true},
               control:{enabled:true,allowed_ids:[7],confirm_timeout:60}}}' >"$C/config.json"

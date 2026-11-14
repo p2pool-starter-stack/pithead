@@ -35,7 +35,6 @@ for defaults_platform in diy appliance; do
             "$(cat "$defaults_dir/normalized.env")" \
             "$(awk '
                 /^P2POOL_FLAGS=/ { print "PITHEAD_PROFILE=balance"; print $0 " --no-upnp"; next }
-                /^TOR_AUTO_HEAL=/ { print "TOR_AUTO_HEAL=true"; next }
                 /^COMPOSE_PROFILES=/ { print "COMPOSE_PROJECT_NAME=pithead" }
                 { print }' "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.env")"
         assert_eq "$defaults_platform absent local_miner.enabled matches v2.0.0" \
@@ -44,7 +43,7 @@ for defaults_platform in diy appliance; do
             "$(cat "$defaults_dir/golden/dashboard-host.txt")" "$(cat "$ROOT/tests/stack/fixtures/config-2.0.0/$defaults_platform.dashboard-host")"
         for defaults_legacy in 'tari.mode local' 'xvb.enabled true' 'dashboard.tari_required true'; do
             read -r defaults_key defaults_value <<<"$defaults_legacy"
-            assert_eq "$defaults_platform LEGACY_ABSENT $defaults_key" \
+            assert_eq "$defaults_platform migrated pin $defaults_key" \
                 "$(PITHEAD_APPLIANCE="$defaults_flag" run_sourced "$defaults_dir/golden" config_get "$defaults_key")" "$defaults_value"
         done
     else
@@ -57,7 +56,7 @@ for defaults_platform in diy appliance; do
     [ "$defaults_platform" != appliance ] || defaults_flag=1
     defaults_dir="$SANDBOX/parity-$defaults_platform"
     mkdir -p "$defaults_dir"
-    defaults_full=$(PITHEAD_APPLIANCE="$defaults_flag" run_sourced "$defaults_dir" config_defaults legacy)
+    defaults_full=$(PITHEAD_APPLIANCE="$defaults_flag" run_sourced "$defaults_dir" config_defaults)
     mkdir -p "$defaults_dir/empty"
     printf '{}\n' >"$defaults_dir/empty/config.json"
     defaults_checked=0
@@ -72,7 +71,8 @@ for defaults_platform in diy appliance; do
         $defaults * . | .dashboard.control.enabled = false' \
         "$ROOT/tests/stack/fixtures/config-2.0.0/absent.json" >"$defaults_dir/full.json"
     for defaults_kind in absent full minimal; do
-        defaults_fixture="$ROOT/tests/stack/fixtures/config-2.0.0/absent.json"
+        jq '.profile = "balance"' "$ROOT/tests/stack/fixtures/config-2.0.0/absent.json" >"$defaults_dir/absent.json"
+        defaults_fixture="$defaults_dir/absent.json"
         [ "$defaults_kind" != full ] || defaults_fixture="$defaults_dir/full.json"
         if [ "$defaults_kind" = minimal ]; then
             defaults_minimal="$ROOT/config.minimal.json"
@@ -102,7 +102,7 @@ done
 defaults_preview() {
     local table
     table=$(config_defaults_json | jq --arg mode "$1" '
-        (.LEGACY_ABSENT[] | select(.path == "tari.mode")).value = $mode')
+        .values.tari.mode = $mode')
     config_defaults_json() { printf '%s' "$table"; }
     control_mark_config_confirm_rows tari.remote.host '' "$2"
 }
@@ -114,7 +114,7 @@ for defaults_legacy_mode in local off; do
         [ "$defaults_explicit_mode" != null ] || defaults_expected="$defaults_legacy_mode"
         defaults_message='Remote node endpoint settings are changing.'
         [ "$defaults_expected" != off ] || defaults_message='Tari remote settings are stored but inactive while merge-mining is off.'
-        assert_contains "control preview uses $defaults_legacy_mode fallback and $defaults_explicit_mode explicit mode" \
+        assert_contains "control preview uses $defaults_legacy_mode default and $defaults_explicit_mode explicit mode" \
             "$(run_sourced "$SANDBOX" defaults_preview "$defaults_legacy_mode" "$defaults_staged")" "$defaults_message"
     done
 done

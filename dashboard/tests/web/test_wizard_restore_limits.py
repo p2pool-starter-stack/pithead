@@ -152,7 +152,7 @@ async def test_ready_marker_failure_rolls_back_published_request(
 
 
 async def test_restore_restates_stale_typed_login_intent(client, seeded):
-    seeded.joinpath("config.reference.json").write_text(json.dumps(effective_defaults(legacy=True)))
+    seeded.joinpath("config.reference.json").write_text(json.dumps(effective_defaults()))
     await _auth(client)
     typed = await client.post(
         "/submit", data={"config": json.dumps({"dashboard": {"auth": {"password": ""}}})}

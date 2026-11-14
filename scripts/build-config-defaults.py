@@ -15,8 +15,11 @@ def artifacts() -> dict[Path, str]:
         new_install_defaults,
     )
 
-    reference = {"_docs": TABLE["reference_docs"], **effective_defaults(legacy=True)}
-    result = {ROOT / "config.reference.json": json.dumps(reference, indent=2) + "\n"}
+    reference = {"_docs": TABLE["reference_docs"], **effective_defaults()}
+    result = {
+        ROOT / "config.reference.json": json.dumps(reference, indent=2) + "\n",
+        ROOT / "config.core-keys.json": json.dumps(TABLE["tiers"]["essential"], indent=4) + "\n",
+    }
     for platform, filename in (
         ("diy", "config.minimal.json"),
         ("appliance", "config.minimal.appliance.json"),
@@ -30,12 +33,9 @@ def artifacts() -> dict[Path, str]:
         )
         result[ROOT / filename] = json.dumps(config, indent=2) + "\n"
     runtime = {
-        key: TABLE[key] for key in ("values", "appliance", "materialize", "profiles", "runtime")
+        key: TABLE[key]
+        for key in ("values", "appliance", "materialize", "profiles", "runtime", "migrations")
     }
-    runtime["LEGACY_ABSENT"] = [
-        {key: value for key, value in entry.items() if key != "retired_by"}
-        for entry in TABLE["LEGACY_ABSENT"]
-    ]
     script = ROOT / "lib/pithead/19a-config-defaults.sh"
     before, rest = script.read_text().split("    cat <<'PITHEAD_DEFAULTS_JSON'\n", 1)
     _, after = rest.split("\nPITHEAD_DEFAULTS_JSON", 1)

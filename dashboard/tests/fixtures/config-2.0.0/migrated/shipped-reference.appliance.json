@@ -1,0 +1,159 @@
+{
+  "dashboard": {
+    "auth": {
+      "password": "",
+      "username": "admin"
+    },
+    "check_for_updates": true,
+    "control": {
+      "enabled": false
+    },
+    "data_dir": "auto",
+    "energy": {
+      "cost_per_kwh": 0,
+      "currency": "USD",
+      "price_feed": false,
+      "tari_price": 0,
+      "xmr_price": 0
+    },
+    "expose_public_ip": false,
+    "fail_closed": false,
+    "hashrate_drop_minutes": 10,
+    "hashrate_drop_threshold": 50,
+    "host": "auto",
+    "onion": {
+      "client_auth": true,
+      "enabled": false
+    },
+    "port": "auto",
+    "secure": true,
+    "tari_required": true,
+    "timezone": "auto"
+  },
+  "healthchecks": {
+    "ping_url": ""
+  },
+  "local_miner": {
+    "enabled": false
+  },
+  "monero": {
+    "clearnet_initial_sync": false,
+    "data_dir": "auto",
+    "mem_limit": "4g",
+    "mode": "local",
+    "node_password": "fixture-rpc-password",
+    "node_username": "fixture",
+    "out_peers": 48,
+    "payout_scan_height": "auto",
+    "prep_blocks_threads": "auto",
+    "prune": true,
+    "remote": {
+      "host": "node.remote-monero-host.com",
+      "rpc_port": 18081,
+      "zmq_port": 18083
+    },
+    "rpc_lan_access": false,
+    "view_key": "",
+    "wallet_address": "48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD",
+    "zmq_lan_access": false
+  },
+  "network": {
+    "subnet": "172.28.0.0/24",
+    "tor_egress_firewall": true
+  },
+  "notifications": {
+    "ntfy": {
+      "token": "",
+      "url": ""
+    },
+    "tor": true,
+    "webhooks": []
+  },
+  "p2pool": {
+    "clearnet": false,
+    "data_dir": "auto",
+    "pool": "mini",
+    "stratum_bind": "0.0.0.0",
+    "stratum_password": "",
+    "stratum_port": 3333,
+    "stratum_tls": false
+  },
+  "profile": "balance",
+  "proxy": {
+    "donate_level": 0
+  },
+  "tari": {
+    "clearnet_initial_sync": false,
+    "data_dir": "auto",
+    "explorer_url": "https://textexplore.tari.com/?json",
+    "grpc_lan_access": false,
+    "mem_limit": "8g",
+    "mode": "local",
+    "payout_scan_birthday": "auto",
+    "remote": {
+      "grpc_port": 18142,
+      "host": "tari-node.lan"
+    },
+    "spend_public_key": "",
+    "view_key": "",
+    "wallet_address": "126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+  },
+  "telegram": {
+    "bot_token": "",
+    "chat_id": "",
+    "commands": {
+      "enabled": false
+    },
+    "daily_summary_time": "08:00",
+    "enabled": false,
+    "events": {
+      "block_found": true,
+      "clearnet_exposed": true,
+      "container_unhealthy": true,
+      "daily_summary": true,
+      "db_reset": true,
+      "db_unhealthy": true,
+      "disk_space": true,
+      "hashrate_loss": true,
+      "hashrate_low": true,
+      "high_reject_rate": true,
+      "hugepages": true,
+      "low_ram": true,
+      "new_release": true,
+      "node_down": true,
+      "node_recovered": true,
+      "payout_confirmed": true,
+      "payout_found": true,
+      "raffle_win": true,
+      "stack_online": true,
+      "sync_finished": true,
+      "wallet_changed": true,
+      "worker_joined": true,
+      "worker_left": true,
+      "worker_offline": true,
+      "worker_recovered": true,
+      "xvb_no_share": true,
+      "xvb_registration": true
+    }
+  },
+  "tor": {
+    "auto_heal": false,
+    "data_dir": "auto"
+  },
+  "workers": {
+    "api_auth": "none",
+    "api_port": 8080,
+    "api_token": "",
+    "list": []
+  },
+  "xvb": {
+    "donation_level": "auto",
+    "donor_id": "auto",
+    "enabled": true,
+    "standby": {
+      "source": ""
+    },
+    "tor": true,
+    "url": "na.xmrvsbeast.com:4247"
+  }
+}

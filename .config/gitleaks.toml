@@ -69,5 +69,18 @@ description = "Empty ntfy token followed by a boolean in versioned render golden
 condition = "AND"
 regexTarget = "match"
 targetRules = ["generic-api-key"]
-paths = ['''^tests/stack/fixtures/config-2\.0\.0/(diy|appliance)\.env$''']
-regexes = ['''^NTFY_TOKEN=\r?\nNOTIFY_TOR=true$''']
+paths = [
+  '''^tests/stack/fixtures/config-2\.0\.0/((diy|appliance)\.env|golden/[a-z-]+\.(diy|appliance)\.env)$''',
+]
+regexes = ['''^NTFY_TOKEN=\r?\nNOTIFY_TOR=(true|false)$''']
+
+[[allowlists]]
+description = "Stub dashboard hash and password fingerprint in v2.0.0 render goldens"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^tests/stack/fixtures/config-2\.0\.0/golden/[a-z-]+\.(diy|appliance)\.env$''',
+]
+regexes = [
+  '''(?m)^DASHBOARD_AUTH_(HASH_B64|PW_FP)=[A-Za-z0-9+/=]+[ \t\r\n]*\z''',
+]

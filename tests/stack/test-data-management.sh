@@ -19,7 +19,7 @@ EVIL_DIR="$SANDBOX/other-service-vol/monero" # absolute, NOT blocklisted, NOT un
 preview_move() {                             # <monero.data_dir>
     jq -n --arg w "$WALLET" --arg id "$UUID7" --arg dd "$1" '{id:$id,action:"preview",actor:"admin",config:{
         monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",data_dir:$dd},
-        tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+        tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
         dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID7.json"
     run_pending >/dev/null
 }
@@ -151,7 +151,7 @@ assert_contains "broad shared parent does not widen the allowlist" \
 mv "$C/.env.before-broad-root" "$C/.env"
 # (5) The SAME path from the HOST shell still applies — the tighter rule is control-only.
 jq -n --arg w "$WALLET" --arg dd "$EVIL_DIR" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",data_dir:$dd},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_rc "host-shell apply to the same out-of-root path succeeds" "$?" "0"
@@ -164,7 +164,7 @@ control_config mini
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"nano"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"nano"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID3" >"$REQS/$UUID3.json"

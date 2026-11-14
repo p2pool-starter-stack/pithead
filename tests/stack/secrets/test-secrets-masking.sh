@@ -42,7 +42,7 @@ esac
 UUID5="55555555-5555-4555-8555-555555555555"
 jq -n --arg w "$WALLET" --arg id "$UUID5" '{id:$id, action:"preview", actor:"admin", config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:{"__secret__":true}},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"}, workers:{api_token:{"__secret__":true}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"}, workers:{api_token:{"__secret__":true}},
     telegram:{bot_token:{"__secret__":true},chat_id:"-100123"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:{"__secret__":true}},control:{enabled:true}}}}' >"$REQS/$UUID5.json"
 run_pending >/dev/null
@@ -80,7 +80,7 @@ echo "== black-box: .env line-injection guard (#33 hardening, per field) =="
 inject_reject() { # <label> <jq-setter expr using $v>
     jq -n --arg w "$WALLET" --arg v $'legit\nPITHEAD_REGISTRY=evil.tld/attacker' \
         '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-          tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
+          tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
           dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}
          | '"$2" >"$C/config.json"
     out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>&1)"
@@ -97,7 +97,7 @@ inject_reject "chat_id" '(.telegram={chat_id:$v})'
 # Positive: legitimate tokens (no control chars) still validate.
 jq -n --arg w "$WALLET" \
     '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-      tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
+      tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
       telegram:{bot_token:"123456:legit-ABC_def"}, workers:{api_token:"tok_legit123"},
       healthchecks:{ping_url:"https://hc-ping.com/abc-123"},
       dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
@@ -106,7 +106,7 @@ assert_rc "legitimate secrets still validate" "$?" "0"
 # No second line reaches .env: a poisoned config rejected at `apply -y` never renders the attacker key.
 jq -n --arg w "$WALLET" --arg v $'legit\nPITHEAD_REGISTRY=evil.tld/attacker' \
     '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-      tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"}, telegram:{bot_token:$v},
+      tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"}, telegram:{bot_token:$v},
       dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 if grep -q 'PITHEAD_REGISTRY' "$C/.env"; then bad "no injected line in .env" "PITHEAD_REGISTRY landed in .env"; else ok "rejected config injects no second .env line"; fi
@@ -117,7 +117,7 @@ echo "== black-box: control channel on a published onion requires client-auth (#
 onion_control_config() { # <onion-enabled> <client-auth> -> writes config.json
     jq -n --arg w "$WALLET" --argjson onion "$1" --argjson ca "$2" \
         '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-          tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
+          tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
           dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a strong control passphrase"},
                      onion:{enabled:$onion,client_auth:$ca}, control:{enabled:true}}}' >"$C/config.json"
 }

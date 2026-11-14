@@ -214,6 +214,10 @@ part of the generated CLI and is loaded before main dispatch.
 The host-only configuration stamp and both restore version checks are in `27a-config-version.sh`;
 its shell regressions are in `tests/stack/config/version.sh`. The Configuration newer-config warning card is
 `web/static/config/configversion.mjs`, with response metadata in `service/config_operations.py`.
+The 2.0.0 to 2.1.0 configuration migration is `27b-config-migration.sh`, mirrored for the wizard by
+`dashboard/mining_dashboard/config/migration.py`; both read `migrations` and `tiers` in the defaults table
+and are tested against the v2.0.0 inputs and migrated goldens in `dashboard/tests/fixtures/config-2.0.0/` and the rendered environments in `tests/stack/fixtures/config-2.0.0/` by `tests/stack/config/migration.sh` and
+`dashboard/tests/web/test_config_migration.py`.
 The host firewall installer is `02b-tor-egress-apply.sh`; the host-owned clearnet
 sync transition and attestation are in `02c-tor-egress-sync.sh`, and live rule
 readback helpers are in `02d-tor-egress-verify.sh`.

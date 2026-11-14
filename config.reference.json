@@ -1,6 +1,6 @@
 {
   "_docs": "Reference for every config.json key, each shown with its default value. Keys follow the Configuration view's operator-purpose order: mining, payouts and nodes, workers, dashboard access, notifications, energy and alerts, then advanced settings. config_version is a read-only host stamp, not a setting. Copy ONLY the keys you actually want to change into config.json; any key you omit keeps the default below. The string \"auto\" means 'let the stack decide' (default path / hostname / donor id), and blank node_username/node_password on a local node means 'auto-generate the RPC credentials'. Full descriptions: https://github.com/p2pool-starter-stack/pithead/blob/main/docs/configuration.md#configuration-reference",
-  "config_version": "2.0.0",
+  "config_version": "2.1.0",
   "p2pool": {
     "pool": "mini",
     "stratum_bind": "0.0.0.0",
@@ -17,7 +17,7 @@
     "enabled": false
   },
   "xvb": {
-    "enabled": true,
+    "enabled": false,
     "url": "na.xmrvsbeast.com:4247",
     "donor_id": "auto",
     "donation_level": "auto",
@@ -57,7 +57,7 @@
     "view_key": "",
     "spend_public_key": "",
     "payout_scan_birthday": "auto",
-    "mode": "local",
+    "mode": "off",
     "grpc_lan_access": false,
     "clearnet_initial_sync": false,
     "remote": {
@@ -100,7 +100,7 @@
     },
     "hashrate_drop_threshold": 50,
     "hashrate_drop_minutes": 10,
-    "tari_required": true,
+    "tari_required": false,
     "fail_closed": false,
     "check_for_updates": true,
     "data_dir": "auto"

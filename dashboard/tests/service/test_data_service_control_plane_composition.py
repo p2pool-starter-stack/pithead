@@ -1,4 +1,6 @@
 # ruff: noqa: F403, F405
+import pytest
+
 from tests.service._data_service_support import *  # noqa: F403
 
 

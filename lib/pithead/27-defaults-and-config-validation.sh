@@ -11,7 +11,7 @@ apply_appliance_defaults() { # [config, default $CONFIG_FILE]
     local config="${1:-$CONFIG_FILE}" tmp
     [ -f "$config" ] || return 0
     tmp=$(mktemp) || return 1
-    if jq --argjson defaults "$(config_defaults new appliance)" '
+    if jq --argjson defaults "$(config_defaults appliance)" '
         if .dashboard.control.enabled == null and ((.dashboard.auth.password // "") != "")
           then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = $defaults.dashboard.control.enabled
           else . end' \

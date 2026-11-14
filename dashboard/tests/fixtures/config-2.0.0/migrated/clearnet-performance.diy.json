@@ -1,0 +1,36 @@
+{
+  "dashboard": {
+    "tari_required": true,
+    "timezone": "UTC"
+  },
+  "monero": {
+    "clearnet_initial_sync": true,
+    "mem_limit": "4g",
+    "node_password": "fixture-rpc-password",
+    "node_username": "fixture",
+    "wallet_address": "48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD"
+  },
+  "network": {
+    "tor_egress_firewall": false
+  },
+  "notifications": {
+    "tor": false
+  },
+  "p2pool": {
+    "clearnet": true
+  },
+  "profile": "performance",
+  "tari": {
+    "clearnet_initial_sync": true,
+    "mem_limit": "8g",
+    "mode": "local",
+    "wallet_address": "126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+  },
+  "tor": {
+    "auto_heal": false
+  },
+  "xvb": {
+    "enabled": true,
+    "tor": false
+  }
+}
