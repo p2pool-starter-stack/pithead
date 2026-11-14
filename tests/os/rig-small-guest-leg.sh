@@ -15,7 +15,7 @@ rig_small_guest_leg() { # <img>
 
 _rig_small_guest_run() { # <img>
     local img="$1" token="" tries=0 jar body scode sysfile pool after mounts unitlog
-    local mode rtok light hr cls ptries=0 oom rtries=0 htries
+    local mode rtok light hr cls ptries=0 oom rtries=0 htries card="" ctries=0 arc=0
     info "small-guest leg (#4010) — the rig role on a 2 GiB, 1 vCPU machine: it must mine, not over-reserve"
     cp "$img" "$DISK" || {
         bad "could not copy the image for the 2 GiB rig guest"
@@ -63,28 +63,43 @@ _rig_small_guest_run() { # <img>
     }
     body="role=rig&rig_pool=127.0.0.1:22&rig_worker=kvm-rig-small"
     scode=$(curl -sSk -b "$jar" --data "$body" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
-    rm -f "$jar"
     [ "$scode" = "200" ] || {
         bad "the rig submit did not return 200 on the 2 GiB guest (got ${scode:-none})"
+        rm -f "$jar"
         return 1
     }
-    # Accepted is not landed: /submit returns 200 when the spool takes the settings, and it is
-    # the wizard loop that writes the role marker seconds later (the main rig phase waits 120 s
-    # on the handoff card for exactly this). On a 1 vCPU guest everything runs slow — poll.
+    ctries=0
+    card=""
+    while [ "$ctries" -lt 24 ]; do
+        card=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
+        case "$card" in *'"worker"'*) break ;; esac
+        sleep 5
+        ctries=$((ctries + 1))
+    done
+    case "$card" in
+    *'"worker"'*) ok "the rig card appeared on the 2 GiB guest's page (worker + pool)" ;;
+    *)
+        bad "the rig submit was accepted but no card appeared — the wizard waits on an ack nobody posted"
+        rm -f "$jar"
+        return 1
+        ;;
+    esac
+    case "$card" in
+    *'"password"'*) bad "the rig card published a dashboard password — a rig serves no dashboard" ;;
+    esac
+    arc=0
+    curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null || arc=$?
+    rm -f "$jar"
     while [ "$(_ssh 'cat /data/pithead/machine-role 2>/dev/null' | tr -d '\r\n')" != "rig" ] &&
         [ "$rtries" -lt 48 ]; do
         sleep 5
         rtries=$((rtries + 1))
     done
     [ "$(_ssh 'cat /data/pithead/machine-role 2>/dev/null' | tr -d '\r\n')" = "rig" ] || {
-        bad "the 2 GiB guest never became a rig — the role marker did not say rig within 240 s of the accepted submit"
+        bad "the 2 GiB guest never became a rig — no role marker within 240 s of the card ack (ack rc=$arc)"
         return 1
     }
     ok "the 2 GiB machine provisioned as a rig"
-    # The provisioning boot stays a coordinator's boot that only later learned it is a rig:
-    # pithead-hugepages ran before the marker existed, and /run carries a degraded marker from
-    # that pass which only a reboot clears. Judge every assertion on the boot the role owns —
-    # pithead-boot's rig branch brings the miner back up itself.
     _reboot_wait reboot 600 || {
         bad "the 2 GiB rig guest never answered from a new boot after reboot (domstate: $(virsh domstate "$VM" 2>&1 | tr '\n' ' ' | cut -c1-120))"
         return 1
@@ -94,8 +109,6 @@ _rig_small_guest_run() { # <img>
         bad "the rebooted 2 GiB rig guest's SSH never came up ($(_ssh_unreachable_reason "$ip"))"
         return 1
     }
-    # sshd gates on /data, not on pithead-hugepages — the unit may still be starting when SSH
-    # answers. Wait it out before the is-active and journal assertions read it.
     htries=0
     while [ "$(_ssh 'systemctl is-active pithead-hugepages' 2>/dev/null | tr -d '\r\n')" = "activating" ] &&
         [ "$htries" -lt 40 ]; do
