@@ -345,29 +345,6 @@ wait_synced() { # <timeout_s>
     done
 }
 
-# Nudge the miner's xmrig to reload its (rewritten) config. xmrig watches its config file and
-# reloads on change; the systemctl/SIGHUP fallbacks cover builds that don't. At least one must work;
-# forward paths then poll the test bench for the worker, so the exact mechanism doesn't matter.
-miner_reload() {
-    on_miner "sudo -n systemctl restart xmrig >/dev/null 2>&1 || systemctl --user restart xmrig >/dev/null 2>&1 || pkill -HUP -x xmrig >/dev/null 2>&1"
-}
-
-# Poll the test bench's dashboard for at least <n> workers connected.
-wait_workers() { # <n> <timeout_s>
-    local want="$1" deadline=$(($(date +%s) + ${2:-180})) got
-    while :; do
-        got="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.proxy_workers // 0' 2>/dev/null" || echo 0)"
-        [ -n "$got" ] && [ "$got" -ge "$want" ] 2>/dev/null && {
-            ok "$got worker(s) mining through the test bench"
-            return 0
-        }
-        [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "only $got worker(s) connected after $((${2:-180}))s (wanted $want)"
-            return 1
-        }
-        sleep 8
-    done
-}
 # --- Phase 0: preflight -----------------------------------------------------
 preflight() {
     log "Preflight"
@@ -558,7 +535,7 @@ borrow_miner() {
     on_miner "cp -a '$MINER_XMRIG_CONFIG' '$MINER_CFG_BACKUP'" || die "Failed to back up the miner config."
     step "miner config backed up → $MINER_CFG_BACKUP"
     repoint_miner || die "Failed to repoint the miner config."
-    wait_workers "$WORKERS" 180 || warn "proceeding, but the matrix's mining assertions may not pass with too few workers"
+    wait_workers "$WORKERS" 180 "$MINER_WORKER_NAME" || warn "proceeding, but the matrix's mining assertions may not pass without the borrowed rig"
 }
 
 # --- Phase 4: deploy the branch ---------------------------------------------

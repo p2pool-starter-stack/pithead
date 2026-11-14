@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Confirm-gated Monero login edits and reserved-node runtime proof (#2333). Loaded by appliance-config-approval-leg.sh after the shared approval helpers.
 
+# shellcheck source=tests/os/appliance-clearnet-fixture.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-clearnet-fixture.sh"
+
 REMOTE_NODE_RUNTIME_REASON="not-run"
 
 remote_node_proposal() { # <config> <monero-host> <rpc> <zmq> <user> <password> <tari-host> <grpc>
@@ -131,18 +134,6 @@ local_node_login_edit() { # <config-path> <env-key> <value> <label>
     ok "standalone local $4 preserves the coupled node login and authenticated dashboard access"
 }
 
-# p2pool.clearnet (#165) keeps the private reserved Tari endpoint off Tor. It is fixed at setup on an appliance, so the fixture sets it host-side before the dashboard proposal of the node change.
-reserved_node_clearnet_fixture() {
-    _control_requests_drained || return 1 # the apply restarts the control runner (#2094)
-    _ssh 'set -euo pipefail
-cd /data/pithead
-jq ".p2pool.clearnet = true" config.json >config.json.os2333-clearnet
-chmod 600 config.json.os2333-clearnet
-mv config.json.os2333-clearnet config.json
-./pithead apply -y >/dev/null
-jq -e ".p2pool.clearnet == true" config.json >/dev/null'
-}
-
 # SC2034: dashboard_curl reads DASH_USER/DASH_PASS from this frame (dynamic scope; job 1182).
 # shellcheck disable=SC2034
 phase_provision_remote_node_regressions() { # <dashboard-user> <dashboard-password>
@@ -197,7 +188,7 @@ _reserved_node_regressions() {
     }
 
     reserved_node_clearnet_fixture || {
-        bad "reserved-node fixture could not set p2pool.clearnet host-side"
+        bad "reserved-node fixture could not set p2pool.clearnet host-side: ${CLEARNET_FIXTURE_DIAG:-no diagnostic captured}"
         return 1
     }
     # Re-read after the fixture: a proposal built on the stale config would revert clearnet.
@@ -428,6 +419,7 @@ _remote_node_self_test() {
     _local_node_login_self_test || f=$((f + 1))
     _reserved_node_proposal_scope_self_test || f=$((f + 1))
     _startup_since_self_test || f=$((f + 1))
+    _clearnet_fixture_self_test || f=$((f + 1))
     grep -Fq 'if [ "$tries" -lt 60 ]; then' "$here/appliance-node-runtime-leg.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-node-runtime-leg self-test FAILED: %s checks\n' "$f"

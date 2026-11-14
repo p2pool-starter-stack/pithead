@@ -1,16 +1,16 @@
 # shellcheck shell=bash
 
+MINER_WORKER_NAME=pithead-e2e
+
 # Reapply the temporary pool fixture without minting another restore anchor. RigForge correctly
 # regenerates xmrig's rendered config after bootstrap/control applies; e2e.sh's original backup
 # remains the one and only restore source (#1994).
 repoint_miner() {
-    # Inject a bench pool if needed, then keep it primary with the rig's original pools as failover.
-    # ponytail: :3333 is the seeded canonical stratum port the bench runs.
     on_miner "
         jq --arg b '$BENCH_HOST' '
             (if any(.pools[]?; .url | ascii_downcase | contains(\$b)) then .
              else .pools = ([ (.pools[0]) + {url: (\$b + \":3333\"), tls: false, daemon: false, \"rig-id\": \"pithead-e2e\"} ] + .pools) end)
-            | .pools |= ([.[] | select(.url | ascii_downcase | contains(\$b))] + [.[] | select(.url | ascii_downcase | contains(\$b) | not)])' \
+            | .pools |= ([.[] | select(.url | ascii_downcase | contains(\$b)) | . + {\"rig-id\": \"$MINER_WORKER_NAME\"}] + [.[] | select(.url | ascii_downcase | contains(\$b) | not)])' \
             '$MINER_XMRIG_CONFIG' > '$MINER_XMRIG_CONFIG.e2e.tmp' \
         && mv '$MINER_XMRIG_CONFIG.e2e.tmp' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG'
     " || return 1
@@ -86,7 +86,7 @@ handle_borrow_rearm() {
         local attempt
         for attempt in 1 2 3 4; do
             repoint_miner || return 1
-            wait_workers "$WORKERS" 60 && break
+            wait_workers "$WORKERS" 60 "$MINER_WORKER_NAME" && break
             [ "$attempt" = 4 ] && return 1
             warn "re-arm attempt $attempt: the borrowed rig did not reach the test bench; restarting it again"
         done
@@ -95,5 +95,51 @@ handle_borrow_rearm() {
         ;;
     *) return 1 ;;
     esac
-    wait_workers "$WORKERS" 180 && printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
+    wait_workers "$WORKERS" 180 "$MINER_WORKER_NAME" && printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
+}
+
+# shellcheck disable=SC2016
+miner_reload() {
+    on_miner '
+        mainpid() { systemctl "$1" show -p MainPID --value xmrig 2>/dev/null; }
+        moved() {
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+                now=$(mainpid "$1")
+                [ -n "$now" ] && [ "$now" != 0 ] && [ "$now" != "$2" ] && return 0
+                sleep 1
+            done
+            return 1
+        }
+        reload() {
+            old=$(mainpid --system)
+            if sudo -n systemctl restart xmrig >/dev/null 2>&1; then
+                moved --system "$old"
+                return
+            fi
+            if sudo -n systemctl stop xmrig >/dev/null 2>&1; then
+                sudo -n systemctl start xmrig >/dev/null 2>&1 || sudo -n systemctl start xmrig >/dev/null 2>&1 && moved --system "$old"
+                return
+            fi
+            old=$(mainpid --user)
+            systemctl --user restart xmrig >/dev/null 2>&1 && moved --user "$old"
+        }
+        reload
+    '
+}
+
+wait_workers() {
+    local want="$1" deadline=$(($(date +%s) + ${2:-180})) name="${3:-}" got
+    [ -z "$name" ] || want=1
+    while :; do
+        got="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r --arg n '$name' 'if \$n == \"\" then .proxy_workers // 0 else [.workers[]? | select(.name == \$n and .status == \"online\")] | length end' 2>/dev/null" || echo 0)"
+        [ -n "$got" ] && [ "$got" -ge "$want" ] 2>/dev/null && {
+            ok "$got worker(s) mining through the test bench${name:+ ($name)}"
+            return 0
+        }
+        [ "$(date +%s)" -ge "$deadline" ] && {
+            warn "only $got worker(s)${name:+ named $name} connected after $((${2:-180}))s (wanted $want)"
+            return 1
+        }
+        sleep 8
+    done
 }
