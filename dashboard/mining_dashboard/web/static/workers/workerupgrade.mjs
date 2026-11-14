@@ -7,7 +7,7 @@
 
 import { Component, html } from "../app/preact.mjs";
 import { STATUS_META } from "../config/confighistory.mjs";
-import { controlFetch, requirePreviewResponse } from "../config/controlclient.mjs";
+import { controlFetch, requirePreviewResponse, staleError } from "../config/controlclient.mjs";
 
 export const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const POLL_MS = 2000;
@@ -33,7 +33,9 @@ export async function pollWorkerResult(id, max = POLL_MAX) {
       continue;
     }
     if (res.status === 202) continue;
-    if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
+    if (res.status === 401 || res.status === 403)
+      return { status: "error", error: String(staleError()) };
+    if (!res.ok) return { status: "error", error: (await res.text()) || `HTTP ${res.status}` };
     const out = await res.json();
     if (out.status && out.status !== "running") return out;
   }

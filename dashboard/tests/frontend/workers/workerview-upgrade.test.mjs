@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RigUpgrade } from "../../../mining_dashboard/web/static/workers/workerupgrade.mjs";
+import { pollWorkerResult, RigUpgrade } from "../../../mining_dashboard/web/static/workers/workerupgrade.mjs";
 import { StatsTable } from "../../../mining_dashboard/web/static/workers/workerview.mjs";
 import { contrastRatio, DARK_BLOCK, DASHBOARD_CSS, LIGHT_BLOCK, themeToken } from "../helpers/contrast.mjs";
 import { renderToString } from "../helpers/render.mjs";
@@ -302,6 +302,19 @@ for (const [name, stub, text, reloads] of FAILURES) {
     await probe.settle();
     assert.equal(inst.state.upgResult.status, "error");
     assert.equal(inst.state.upgResult.error, text);
+    assert.equal(probe.reloads.length, reloads);
+  });
+}
+
+for (const [name, stub, text, reloads] of [
+  ["401", async () => reply(401, "login required"), STALE, 1],
+  ["a plain-text 500", async () => reply(500, "control spool is full"), "control spool is full", 0],
+]) {
+  test(`pollWorkerResult: ${name} on the result read shows ${JSON.stringify(text)}`, async () => {
+    const probe = installStaleProbe();
+    const out = await withFetch(stub, () => pollWorkerResult("r-1"));
+    await probe.settle();
+    assert.equal(out.error, text);
     assert.equal(probe.reloads.length, reloads);
   });
 }

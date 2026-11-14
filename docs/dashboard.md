@@ -1324,7 +1324,7 @@ Rig upgrade, Adopt rig, Backup, the onion client-key request and the service dia
 behave the same way: a request that cannot reach the dashboard, or that is answered 401 or 403,
 shows "Pithead restarted or the page is out of date. Reloading…" and the page reloads once the
 dashboard answers; any other non-2xx answer shows the response text, or `HTTP` and the status when
-it is empty. Diagnostics names the request in that message, for example "Could not submit the health
+it is empty. For other failures Diagnostics names the request, for example "Could not submit the health
 check: …". Polling for a spooled result and Backup's wait through the stack restart are unchanged.
 
 Every reference setting belongs to a policy class. The ordinary allowlist covers routine
