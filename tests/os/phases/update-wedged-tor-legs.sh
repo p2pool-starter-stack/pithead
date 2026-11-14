@@ -16,7 +16,8 @@ printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >>"$data/state"
 grep -qx 'CircuitBuildAbandonedCount 1000' "$data/state"
 grep -qx 'TotalBuildTimes 1000' "$data/state"
 ! grep -q '^CircuitBuildTimeBin ' "$data/state"
-docker compose start tor >/dev/null 2>&1
+printf 'services:\n  tor:\n    entrypoint: ["sleep", "infinity"]\n' >docker-compose.override.yml
+docker compose up -d --no-deps --force-recreate tor >/dev/null 2>&1
 for _ in $(seq 150); do
     s=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$(docker compose ps -aq tor | head -n 1)" 2>/dev/null)
     [ "$s" = unhealthy ] && exit 0
