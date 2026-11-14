@@ -265,8 +265,8 @@ export class DiagnosticsPanel extends Component {
           ? this.renderChecks(service.checks)
           : html`<p class="text-muted text-xs">Run the health check to see this service's checks.</p>`
       }
-      ${service.name === "tor" ? html`<${TorResetControl} run=${runDiag} />` : null}
       ${this.renderLog(service.name)}
+      ${service.name === "tor" ? html`<${TorResetControl} run=${runDiag} />` : null}
     </section>`;
   }
 
