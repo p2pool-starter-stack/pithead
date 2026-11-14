@@ -1,13 +1,5 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# The address watch (#2463): an address that arrives after pithead-boot committed used to leave the
-# dashboard certificate and Caddy's bind list stale until the next apply or reboot. The script
-# re-renders when `hostname -I` differs from what the last render saw and restarts Caddy under the
-# mutation lock only when its own render moved the files, or when the watch itself still owes the
-# restart a failed attempt left behind; files someone else re-rendered (an apply or up that restarts
-# Caddy itself) are recorded, never restarted over, even when an address change lands in the same
-# tick (#3987). Driven with stubbed hostname/systemctl and fake ./pithead render stubs.
-# Sourced by tests/stack/run.sh.
 
 echo "== unit: pithead-address-watch — re-render when an address arrives after boot (#2463) =="
 AW="$SANDBOX/address-watch"
@@ -54,7 +46,7 @@ STUB
 chmod +x "$AW/bin/_restart-ok" "$AW/bin/_restart-fail" "$AW/bin/_render-mints" "$AW/bin/_render-quiet" \
     "$AW/bin/_render-fail-mints" "$AW/bin/hostname" "$AW/bin/systemctl"
 export AW
-_run() { # <addresses> [boot-state] -> script output; render calls in $AW/log, restarts in $AW/restarts
+_run() {
     local rs
     if [ -f "$AW/run-restart" ]; then rs="$(cat "$AW/run-restart")"; else rs="$AW/bin/_restart-ok"; fi
     printf '%s\n' "$rs" >"$AW/restart-used"
@@ -131,7 +123,6 @@ _run "192.168.1.5 fd1c::a" activating >/dev/null
 assert_eq "nothing renders while pithead-boot is still running" "$(_count render "$AW/log")" "$before"
 _run "192.168.1.5 fd1c::a" failed >/dev/null
 assert_eq "a failed pithead-boot (fallback boot) does not disable the watch" "$(_count render "$AW/log")" "$((before + 1))"
-# an apply re-rendered the files and restarted Caddy itself under the mutation lock (#3987)
 printf 'apply-crt\n' >"$AW/dir/data/tls/wizard.crt"
 printf 'apply-caddy\n' >"$AW/dir/Caddyfile"
 before=$(_count render "$AW/log")
@@ -143,7 +134,6 @@ assert_eq "the tick after an apply-owned re-render does not restart a Caddy that
 assert_contains "…and the log names the served files, not the addresses" "$out" "certificate or the Caddyfile changed"
 assert_not_contains "…without blaming the addresses" "$out" "addresses changed"
 assert_eq "the recorded signature makes the following tick quiet" "$(_run "192.168.1.5 fd1c::a")" ""
-# the watch's own restart failed and the address set flapped back before the retry (#3987)
 _restart fail
 _run "192.168.1.5 fd1c::e" >/dev/null
 before=$(_count render "$AW/log")
@@ -156,8 +146,6 @@ assert_eq "…as exactly one restart, the owed one" "$(_count restart "$AW/resta
 assert_contains "…named for the owed restart" "$out" "owed"
 assert_eq "the following tick is quiet" "$(_run "192.168.1.5 fd1c::a")" ""
 assert_eq "…with no pending marker left behind" "$(cat "$AW/state.pending" 2>/dev/null)" ""
-# an apply landing in the same tick gap as an address change (#3987): the watch's own render is a
-# no-op, so the restart apply already ran stands even though the addresses moved too
 _render quiet
 printf 'apply-crt2\n' >"$AW/dir/data/tls/wizard.crt"
 printf 'apply-caddy2\n' >"$AW/dir/Caddyfile"
@@ -169,8 +157,6 @@ assert_eq "…and does not restart the Caddy apply already restarted" "$(_count 
 assert_contains "…while the log says the files were already current" "$out" "already current"
 assert_not_contains "…without claiming a restart" "$out" "restarting Caddy"
 assert_eq "the following tick is quiet" "$(_run "192.168.1.5 fd1c::h")" ""
-# a fresh box whose first tick lands inside an apply's lock window must not persist a baseline it
-# read before the lock (#3987)
 rm -f "$AW/state" "$AW/state.served" "$AW/state.pending"
 before=$(_count render "$AW/log")
 _x=$(_count restart "$AW/restarts")
