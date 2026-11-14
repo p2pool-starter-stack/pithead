@@ -36,6 +36,7 @@ for CASE in recreated stopped unchanged same-height never-syncing loading-to-don
     OUT_DIR="$fixture/$CASE"
     mkdir -p "$OUT_DIR"
     PHASE=0
+    export LIFECYCLE_MINING_ACTIVE=1
     FAILURE_COUNT=0
     CONTINUITY_PASSES=0
     TEMPLATE_FAILURE=""
@@ -46,7 +47,10 @@ for CASE in recreated stopped unchanged same-height never-syncing loading-to-don
         grep -qx 'height_before=42' "$OUT_DIR/tari-enable/snapshots.log" || FAILURE_COUNT=$((FAILURE_COUNT + 1))
         PHASE=$((PHASE + 1))
     }
-    pithead() { printf 'apply-completed\n'; }
+    pithead() {
+        printf '%s\n' "${LIFECYCLE_MINING_ACTIVE:-unset}" >>"$OUT_DIR/apply-active"
+        printf 'apply-completed\n'
+    }
     wait_stratum_hashes() { return 0; }
     wait_status_ok() { return 0; }
     now_s() { printf '%s' "$((1 + $(cat "$OUT_DIR/polls") * 30))"; }
@@ -173,6 +177,8 @@ for CASE in recreated stopped unchanged same-height never-syncing loading-to-don
     expected_snapshot_height=44
     [ "$CASE" != same-height ] || expected_snapshot_height=42
     jq -e -s --arg height "$expected_snapshot_height" 'length == 1 and .[0].tari.height == $height' <(sed -n '/^phase=before-off$/,/^phase=after-off$/{ /^{$/,/^}$/p; }' "$OUT_DIR/tari-enable/snapshots.log") >/dev/null || bad=$((bad + 1))
+    [ "$(tail -n1 "$OUT_DIR/apply-active")" = 0 ] || bad=$((bad + 1))
+    [ "$(grep -c '^1$' "$OUT_DIR/apply-active")" = "$(($(wc -l <"$OUT_DIR/apply-active") - 1))" ] || bad=$((bad + 1))
     [ -s "$OUT_DIR/tari-enable/off.apply.log" ] && [ -s "$OUT_DIR/tari-enable/on.apply.log" ] || bad=$((bad + 1))
     grep -q 'phase=after-restore' "$OUT_DIR/tari-enable/snapshots.log" || bad=$((bad + 1))
     if grep -q must-not-be-retained "$OUT_DIR/tari-enable/snapshots.log"; then bad=$((bad + 1)); fi

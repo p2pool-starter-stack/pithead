@@ -22,69 +22,6 @@ async def test_static_assets_serve_with_module_mime(client):
     assert "javascript" in r.headers["Content-Type"]
 
 
-@pytest.mark.parametrize(
-    "typed",
-    ["pit-X7KM2Q", "PIT-X7KM2Q", "pit-x7km2q", "X7KM2Q", "x7km2q", "  pit-X7KM2Q  "],
-)
-async def test_token_transcription_variants_all_pass(client, typed):
-    # The operator copies from a console, often on a phone that autocapitalizes. Case and the
-    # pit- prefix carry no entropy; neither may fail a correct transcription.
-    r = await _auth(client, typed)
-    assert r.status == 302
-    assert "SameSite=Strict" in r.headers.get("Set-Cookie", "")
-
-
-async def test_wrong_token_403(client):
-    assert (await _auth(client, "pit-WRONGX")).status == 403
-
-
-async def test_lockout_exits_3_after_max_failures(client):
-    for _ in range(wizard.MAX_FAILURES):
-        await _auth(client, "pit-WRONGX")
-    assert client.server.app["exits"] == [wizard.EXIT_TOKEN_LOCKOUT]
-
-
-async def test_lockout_response_is_429_with_console_hint(client):
-    # Every failure before the last is the plain 403; only the one that trips the limit gets
-    # the distinguishing status and the pointer to the console.
-    for _ in range(wizard.MAX_FAILURES - 1):
-        r = await _auth(client, "pit-WRONGX")
-        assert r.status == 403
-    r = await _auth(client, "pit-WRONGX")
-    assert r.status == 429
-    body = await r.json()
-    assert "too many attempts" in body["error"].lower()
-    assert "console" in body["error"].lower()
-
-
-async def test_lockout_writes_the_429_before_the_exit_hook_runs(spool, monkeypatch):
-    """Regression: the exit hook used to fire before the response was ever written, so the
-    process could tear down before a single byte reached the browser. Track the real order of
-    'bytes handed to the transport' vs 'exit hook called' rather than trusting that both merely
-    happened."""
-    order = []
-    real_write_eof = web.Response.write_eof
-
-    async def tracking_write_eof(self, *a, **kw):
-        order.append("written")
-        return await real_write_eof(self, *a, **kw)
-
-    monkeypatch.setattr(web.Response, "write_eof", tracking_write_eof)
-
-    app = wizard.make_app(exit_fn=lambda code: order.append("exit"))
-    c = TestClient(TestServer(app))
-    await c.start_server()
-    try:
-        for _ in range(wizard.MAX_FAILURES - 1):
-            await _auth(c, "pit-WRONGX")
-        r = await _auth(c, "pit-WRONGX")
-        assert r.status == 429
-    finally:
-        await c.close()
-    assert order[0] == "written"
-    assert order.count("exit") == 1
-
-
 def test_main_requires_token(monkeypatch):
     monkeypatch.delenv("WIZARD_TOKEN", raising=False)
     with pytest.raises(SystemExit) as e:

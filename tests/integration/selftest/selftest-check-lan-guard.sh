@@ -47,6 +47,7 @@ pithead() {
     [ "$1" != apply ] || echo 'No configuration changes detected'
 }
 _lan_probe() { echo "probe $*" >>"$TRACE"; }
+_lan_assert_open() { _lan_probe "$2" "$3"; }
 assert_lan_guard_timer_flush() { echo "timer $*" >>"$TRACE"; }
 assert_lan_guard_crash_restart() { echo "crash $*" >>"$TRACE"; }
 assert_lan_guard_boot_restore() { echo "boot-restore $*" >>"$TRACE"; }
@@ -114,6 +115,7 @@ timer_flush_trace() {
         printf '%s\n' "$1" >"$states"
         sleep() { :; }
         _lan_probe() { echo closed; }
+        _lan_assert_open() { :; }
         it_fail() { echo "fail" >>"$TRACE"; }
         rx() {
             case "$1" in

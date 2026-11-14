@@ -1,5 +1,5 @@
-ref=b2d4c3d9ca1da74d0e6d5ccce772d401acc8be03
-version=1.18.0
+ref=8f06cb8df791f3cb16d47bbee85fde92103cbe0b
+version=1.18.1
 stratum_upstream=https://github.com/SChernykh/p2pool/blob/v4.18.1/src/stratum_server.cpp
 stratum_release=v4.18.1
 stratum_login_source=StratumServer::on_login

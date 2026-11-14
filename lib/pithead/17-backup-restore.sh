@@ -9,13 +9,35 @@ backup_require_items() { # <item>...
     done
 }
 
-# Turns a tar failure into something the NEXT investigation can read straight off the log,
-# instead of needing another bench boot before anyone can look (#1059/#1244: a genuine
-# occurrence had config.json present and root-owned moments earlier, then unstattable at tar
-# time — twice, across the #970 retry — on a guest that was recycled before the state could be
-# inspected by hand). $1 = the directory tar's `-C` pointed at; the rest = the absolute item
-# paths passed to it, so this prints exactly what an investigator would check by hand next.
-backup_diagnose_items() { # <tar -C dir> <item>...
+backup_collect_items() {
+    local with_chains="$1" cfg_path="$CONFIG_FILE" key applied d i=0
+    case "$cfg_path" in /*) ;; *) cfg_path="$PWD/$cfg_path" ;; esac
+    backup_require_items "$cfg_path" "$PWD/$ENV_FILE"
+    parse_and_validate_config
+    local desired=("$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR")
+    for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do
+        applied=$(env_get "$key")
+        [ -z "$applied" ] || [ "$applied" = "${desired[$i]}" ] ||
+            error "Backup refused: desired configuration and applied environment have inconsistent data paths ($key). Revert the unapplied data-path edit or complete the intended apply, then retry; no services were stopped and no archive was created."
+        i=$((i + 1))
+    done
+
+    BACKUP_ITEMS=("$cfg_path" "$PWD/$ENV_FILE")
+    [ ! -f Caddyfile ] || BACKUP_ITEMS+=("$PWD/Caddyfile")
+    if [ -d "$TOR_DATA_DIR" ]; then
+        BACKUP_ITEMS+=("$TOR_DATA_DIR")
+    else
+        warn "Tor data dir not found ($TOR_DATA_DIR) — onion keys will NOT be in the backup."
+    fi
+    [ ! -d "$DASHBOARD_DIR" ] || BACKUP_ITEMS+=("$DASHBOARD_DIR")
+    if [ "$with_chains" -eq 1 ]; then
+        for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR"; do
+            [ ! -d "$d" ] || BACKUP_ITEMS+=("$d")
+        done
+    fi
+}
+
+backup_diagnose_items() {
     local cwd="$1"
     shift
     warn "tar ran with -C \"$cwd\" against these resolved items:"
@@ -46,12 +68,10 @@ stack_backup() {
     done
 
     require_env
-    parse_and_validate_config
+    backup_collect_items "$with_chains"
 
-    # Resolve encryption before touching disk. Plaintext is explicit; unattended use without a
-    # passphrase refuses instead of silently archiving secrets in plaintext (#374).
     local pass=""
-    { set +x; } 2>/dev/null # xtrace would print the passphrase below (see the prompt-path comment)
+    { set +x; } 2>/dev/null
     if [ "$no_encrypt" -eq 0 ]; then
         if [ -n "${PITHEAD_BACKUP_PASSPHRASE:-}" ]; then
             pass="$PITHEAD_BACKUP_PASSPHRASE"
@@ -82,61 +102,12 @@ stack_backup() {
     archive="$backups_dir/pithead-backup-$stamp.tar.gz"
     [ -z "$pass" ] || archive="$archive.enc"
 
-    # Collect what exists, as absolute paths. We tar with -C / and strip the leading slash, so
-    # restore (extract at /) puts every file back exactly where it came from regardless of where
-    # config.json / the data dirs live. config.json/.env/Caddyfile sit in the script dir ($PWD).
-    #
-    # CONFIG_FILE (unlike ENV_FILE) is overridable — PITHEAD_CONFIG_FILE points a single
-    # invocation at an absolute candidate path (the control gate's staged-config preview uses
-    # it). A bare "$PWD/$CONFIG_FILE" concatenation is unsound exactly then: prefixing $PWD onto
-    # an already-absolute path produces a doubled, non-existent path like
-    # "/data/pithead//tmp/staged.json" that no file was ever going to be at. Not what #1059's
-    # capture hit — that override was not in play there — but real whenever it is, so resolve it
-    # the way every path join should: only prefix $PWD onto a RELATIVE candidate.
-    local _cfg_path="$CONFIG_FILE"
-    case "$_cfg_path" in /*) ;; *) _cfg_path="$PWD/$_cfg_path" ;; esac
-    # Kept as its own array so the check can be REPEATED under the lock below. This one runs
-    # before the passphrase and stop-the-stack prompts, and #1342's point is exactly that a
-    # precondition checked outside mutual exclusion can be false again by the time it is used.
-    local required=("$_cfg_path" "$PWD/$ENV_FILE")
-    local items=("${required[@]}")
-    backup_require_items "${required[@]}"
-    [ -f "Caddyfile" ] && items+=("$PWD/Caddyfile")
-
-    if [ -d "$TOR_DATA_DIR" ]; then
-        items+=("$TOR_DATA_DIR")
-    else
-        warn "Tor data dir not found ($TOR_DATA_DIR) — onion keys will NOT be in the backup."
-    fi
-
-    # The dashboard's data dir holds its database (hashrate history & settings). It's small and
-    # irreplaceable (it does NOT re-sync), so it always goes in the default backup, not behind
-    # --with-chains.
-    [ -d "$DASHBOARD_DIR" ] && items+=("$DASHBOARD_DIR")
-
     if [ "$with_chains" -eq 1 ]; then
         log "Including blockchain data (this can be very large)..."
-        local d
-        for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR"; do
-            [ -d "$d" ] && items+=("$d")
-        done
     fi
 
-    # Strip the leading "/" so paths are stored relative to / inside the archive.
-    local rel=()
-    local p
-    for p in "${items[@]}"; do rel+=("${p#/}"); done
-
-    # Disk-space pre-check — run BEFORE we touch the running stack, so a "not enough space"
-    # answer leaves everything as it was. Blockchains (--with-chains) are largely incompressible,
-    # so we assume the archive needs roughly the source size plus a ~5% safety margin.
     local need_kb avail_kb
-    # sudo: the Tor data dir is owned by 100:101; -c gives a grand total across all items.
-    # `|| true`: du exits non-zero if it can't read any descendant (a permission-denied subdir, a
-    # file vanishing mid-walk, an NFS hiccup) even though 2>/dev/null hides the message and a total
-    # is still printed. Without this, errexit (set -e) aborts the whole backup on a bare assignment,
-    # making the graceful "proceeding without a space check" fallback below unreachable (#127).
-    need_kb=$(sudo du -sck "${items[@]}" 2>/dev/null | awk 'END{print $1}') || true
+    need_kb=$(sudo du -sck "${BACKUP_ITEMS[@]}" 2>/dev/null | awk 'END{print $1}') || true
     avail_kb=$(df -Pk "$backups_dir" 2>/dev/null | awk 'NR==2{print $4}') || true
     if [ -n "$need_kb" ] && [ -n "$avail_kb" ]; then
         if [ "$avail_kb" -lt "$((need_kb + need_kb / 20))" ]; then
@@ -180,15 +151,11 @@ stack_backup() {
                 return
             fi
         fi
-        # AFTER both prompts (passphrase, and permission to stop the stack): the hold must not
-        # span an unbounded human wait. It runs from here across stack_down_except_caddy -> tar ->
-        # stack_up, so nothing can mutate config.json inside that span. Nested acquisition is a
-        # no-op, so the stack_down_except_caddy/stack_up below take no second lock.
-        mutation_lock_acquire backup
-        # Re-checked under the lock and BEFORE anything is stopped, so a file that vanished while
-        # the operator was at a prompt refuses here rather than failing tar with the stack already
-        # down — the same blast-radius rule as #1244/#1248.
-        backup_require_items "${required[@]}"
+    fi
+
+    mutation_lock_acquire backup
+    backup_collect_items "$with_chains"
+    if [ -n "$running" ]; then
         was_running=1
         if ! (
             trap - ERR
@@ -199,21 +166,12 @@ stack_backup() {
                 error "Backup aborted: the stack failed to stop and failed to recover. Correct the errors above, then run '$0 up'."
             error "Backup aborted because the stack could not be stopped cleanly. The normal startup path recovered it; no archive was written."
         fi
-    else
-        # Stack already stopped: the same hold and the same re-check, still before tar.
-        mutation_lock_acquire backup
-        backup_require_items "${required[@]}"
     fi
 
+    local rel=() p
+    for p in "${BACKUP_ITEMS[@]}"; do rel+=("${p#/}"); done
+
     log "Creating backup archive..."
-    # Read with sudo because the Tor data dir is owned by 100:101.
-    #
-    # One bounded retry (#970): even with the stack stopped, tar can lose a race against a
-    # container teardown finishing its last flush or a startup that slipped past the running
-    # snapshot above — "file changed as we read it" is exit 1 and pipefail fails the pipeline.
-    # A second pass a few seconds later reads a quiet tree; failing twice is a real fault and
-    # stays fatal. tar's own stderr is left on the terminal both times — the failing member's
-    # name is the diagnosis.
     local _attempt _backup_ok=0
     for _attempt in 1 2; do
         if [ -n "$pass" ]; then
@@ -243,7 +201,7 @@ stack_backup() {
         }
     done
     if [ "$_backup_ok" -ne 1 ]; then
-        backup_diagnose_items "/" "${items[@]}"
+        backup_diagnose_items "/" "${BACKUP_ITEMS[@]}"
         [ "$was_running" -ne 1 ] || backup_restart_stack ||
             error "Backup failed, the partial archive was removed, and the stack failed to recover. Correct the errors above, then run '$0 up'."
         error "Backup failed — the partial archive was removed."

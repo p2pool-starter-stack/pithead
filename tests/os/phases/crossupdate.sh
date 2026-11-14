@@ -206,7 +206,7 @@ phase_crossupdate() {
     # Transient healthcheck ephemera excluded, same as the reboot leg's check (provision-reboot.sh):
     # podman drives container healthchecks through hash-named systemd-run units, and one dies
     # harmlessly whenever compose recreates its container mid-check.
-    local failed_units
+    local failed_units donate_min
     failed_units=$(_ssh "systemctl --failed --no-legend --no-pager --plain" 2>/dev/null |
         awk '$1 !~ /^[0-9a-f]{64}-[0-9a-f]+\.service$/' | tr -s ' ' | tr '\n' ';')
     if [ -z "${failed_units//[; ]/}" ]; then
@@ -214,6 +214,16 @@ phase_crossupdate() {
     else
         bad "unit(s) failed after the cross-version update: $failed_units"
     fi
+
+    # The reseed of the workspace miner from the slot's baked build is only proven here, on a guest that carried the older one.
+    if _ssh "cmp -s /data/rigforge/data/worker/xmrig/build/xmrig /opt/rigforge/prebuilt/xmrig/build/xmrig"; then
+        ok "the workspace miner is the candidate slot's baked binary byte for byte"
+    else
+        bad "the workspace miner is not the candidate slot's baked binary — the update did not reseed it"
+    fi
+    donate_min=$(_ssh "cat /data/rigforge/data/worker/xmrig/.rigforge-donate-min" 2>/dev/null | tr -d '\r\n')
+    [ "$donate_min" = "0" ] && ok "the reseeded miner carries the zero donate minimum (.rigforge-donate-min 0)" ||
+        bad "the reseeded miner's .rigforge-donate-min is '${donate_min:-none}', expected 0"
 
     # Deterministic, not a 360s HTTP poll (#2056 review, round 3): job 360 spent its whole marker
     # budget getting "nothing" back from /static/os-test-marker.txt while the dashboard was
@@ -231,7 +241,7 @@ phase_crossupdate() {
     # podman assigns on load, so a container still running the previous version cannot match it.
     # manifest.json sits at the end of a `docker save` tar, so this decompresses the archive once.
     running_img=$(_ssh "podman inspect dashboard --format '{{.Image}}'" 2>/dev/null | tr -d '\r\n')
-    baked_img=$(_ssh "tar -xzOf \$(ls /opt/pithead/images/*.tar.gz | head -1) manifest.json 2>/dev/null | jq -r '.[0].Config // \"\"'" 2>/dev/null |
+    baked_img=$(_ssh "tar -xzOf /opt/pithead/images/dashboard.tar.gz manifest.json 2>/dev/null | jq -r '.[0].Config // \"\"'" 2>/dev/null |
         sed 's#.*/##; s#\.json$##' | tr -d '\r\n')
     # Diagnostic only: a mismatch then says WHICH half did not happen — the loader, or the recreate.
     tagged_img=$(_ssh "podman images --no-trunc --format '{{.Repository}} {{.ID}}'" 2>/dev/null |

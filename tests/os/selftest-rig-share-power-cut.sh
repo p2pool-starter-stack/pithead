@@ -150,6 +150,7 @@ _setup_again_session() {
 }
 _setup_again_rig_submit() { echo '{"token":"fixture"}'; }
 rig_adopt_leg() { [ -n "$rig_card" ]; }
+miner_backup_trial() { [ "$*" = kvm-rig-share ]; }
 _rig_mining_up() { return 0; }
 _ssh() {
     case "$*" in

@@ -11,7 +11,7 @@ preserve_migration_bundle() {
 }
 
 phase_provision_same_version_fallback() {
-    local version bundle floor state out rc
+    local version bundle floor state out rc unsettled=0
     version=$(tr -d '[:space:]' <VERSION)
     floor=$(_ssh "cat /data/pithead/.os-data-floor" | tr -d ' \r\n')
     bundle=$(PITHEAD_TEST_BREAK_HEALTHCHECK=1 PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION="$version" _build_bundle vmigfault) || {
@@ -38,16 +38,20 @@ phase_provision_same_version_fallback() {
         ok "the equal-version migration candidate failed its ordinary commit gate"
     else
         bad "the equal-version candidate has no recorded commit-gate failure"
+        unsettled=1
     fi
     state=$(_floor_state)
     if [ "$state" = "$floor||" ]; then
         ok "same-version fallback restored the data floor and consumed the owned migration marker"
     else
         bad "same-version fallback did not restore the migration marker and floor record"
+        unsettled=1
     fi
     if _ssh "journalctl -u pithead-boot -b | grep -q 'holding chain services'"; then
         bad "the equal-version previous slot incorrectly held its chain services"
+        unsettled=1
     else
         ok "the equal-version previous slot booted without a migration hold"
     fi
+    return "$unsettled"
 }

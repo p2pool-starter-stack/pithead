@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
 source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
+source "$SCRIPT_DIR/registry-cut-leg.sh" || return $?
 # The provision leg proper, plus the one assertion that must survive its aborts.
 #
 # #2059: the Tor-only egress ENFORCEMENT backstop used to be the last ~55 lines of the body below,
@@ -33,6 +34,7 @@ _phase_provision_initial_body() {
         return 1
     }
     ok "image boots ($ip)"
+    phase_provision_registry_cut || return 1
 
     # The wizard's one-time token, exactly where a human gets it: the console.
     tries=0
@@ -74,6 +76,10 @@ _phase_provision_initial_body() {
         return 1
     }
     provision_node_preflight "$ip" "$jar" 127.0.0.1 address container "a loopback Tari endpoint" || {
+        rm -f "$jar"
+        return 1
+    }
+    provision_node_preflight_accepts_reserved_name "$ip" "$jar" || {
         rm -f "$jar"
         return 1
     }
@@ -152,6 +158,9 @@ _phase_provision_initial_body() {
     case "$names" in
     *dashboard*caddy* | *caddy*dashboard*)
         ok "stack containers are running (podman: $names)"
+        phase_provision_registry_untouched
+        phase_provision_baked_stack
+        phase_provision_no_pull_before_load
         ;;
     *)
         bad "stack never came up within 25m — running: '${names:-none}'"

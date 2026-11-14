@@ -301,12 +301,7 @@ def submit_worker_apply(worker, changes, actor="", intent_id=None):
     return request_spool.write(request)
 
 
-def submit_worker_upgrade(worker, version, actor="", intent_id=None):
-    """Spool a worker RigForge-upgrade intent (#597). Carries ONLY the worker NAME and the version
-    the operator confirmed seeing — never a host, port, or token (the host runner resolves the
-    rig's real address and bearer from workers.list[], exactly like worker-apply), and the version
-    is a proposal, never a target: the host re-derives the real latest RigForge release over Tor
-    and refuses a mismatch. Returns the request id (always a UUID)."""
+def submit_worker_upgrade(worker, version, actor="", intent_id=None, appliance=False):
     rid = str(uuid.UUID(intent_id)) if intent_id else str(uuid.uuid4())
     request = {
         "id": rid,
@@ -315,6 +310,8 @@ def submit_worker_upgrade(worker, version, actor="", intent_id=None):
         "worker": worker,
         "version": version,
     }
+    if appliance:
+        request["appliance"] = True
     return request_spool.write(request)
 
 

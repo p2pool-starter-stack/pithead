@@ -112,12 +112,12 @@ sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGIS
 `sudo` resets the environment (`env_reset`), so the override has to be passed THROUGH it — the phases carry those inputs through both `_build_image` and its static image verification, so an exported variable that sudo drops produces exactly the zero-container appliance this avoids.
 
 `PITHEAD_REGISTRY` is not optional on a tree whose `VERSION` is unreleased, and that is the usual
-case here. Only the wizard's dashboard image is baked into the appliance, so at first boot every
-other service is a PULL of `pithead-<service>:v$(cat VERSION)` — tags that exist nowhere public
-until that version ships. Without the override the appliance provisions, publishes its dashboard
-credentials, and then runs ZERO containers; the legs that wait for a stack each take up to 25
-minutes to report it, and nothing in the battery's own output says the image was built wrong
-(#2043). `build-image.sh` now resolves those five refs up front and refuses a bench build that
+case here. `build-image.sh` bakes the always-on services (tor, monero, p2pool, xmrig-proxy,
+dashboard, caddy and the docker-socket-proxy) into the image from the registry at build time, and
+tags that exist nowhere public until that version ships cannot be baked (#2043, #978). The guest
+then loads the archives and never contacts the registry, which the provision leg proves by
+cutting the guest off from the test registry before the wizard submit and asserting that no packet
+reached it (`registry-cut-leg.sh`). `build-image.sh` now resolves those five refs up front and refuses a bench build that
 cannot pull them, so this is a fast error rather than a slow mystery — and
 `tests/os/zero-container-evidence.sh` dumps the guest's image lists at every such leg, where
 `comm -23 want have` separates a missing ref from a refusal with every ref present.
@@ -181,8 +181,8 @@ the configured test registry fail before the image build. Release builds do not 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd
   banner reaches the serial console, the first-boot wizard announces its URL + one-time token,
   the console SHA-256 fingerprint matches the certificate served over TLS, and five wrong tokens
-  restart the wizard with a fresh console token. The old token is refused and the new token opens
-  authenticated wizard state. These checks run before the boot phase reboots the guest.
+  hold the correct console token at HTTP 429 for the 60-second cooldown, after which the same
+  token opens authenticated wizard state. These checks run before the boot phase reboots the guest.
   Assert serial getty is active on the guest's UART; give its installed
   condition a type-0 port for five minutes and require an inactive unit with no restarts or terminal
   errors, then restore the UART, require the unit active again and check a clean hangup respawns
@@ -265,9 +265,15 @@ the configured test registry fail before the image build. Release builds do not 
   The state, TCP and log diagnostics are read-only too. Without an applied reserved-node approval
   the leg does not run, and says so in one red row.
   Before the successful attempt, an
-  unreachable remote node must be refused by preflight with its safe form values retained; a
-  separate injected post-validation setup fault must open a recoverable failed page and retry
-  with those values. The successful wizard submission names the appliance `fixture-box`; the
+  unreachable remote node must be refused by preflight with its safe form values retained, and
+  a name resolving only to the bench's reserved node's private address must be accepted and
+  pinned to that resolved address, not the name (#2351; skipped, missing, without a reserved
+  node configured). Because a configuration preview lists only changed values, the later
+  reserved-node preview checks (`endpoint_shown` in `tests/os/preview-endpoint.sh`) count an
+  endpoint as shown when the preview lists it, or when the live config already uses that host and
+  the chain is or becomes remote; this covers the host the by-name leg leaves in place. A separate injected post-validation setup fault must open a recoverable
+  failed page and retry with those values. The successful wizard submission names the appliance
+  `fixture-box`; the
   running kernel, rendered dashboard address, served certificate and active mDNS service must all
   agree on that identity. The guest carries an unrouted documentation-range global IPv6 address
   and a ULA before submit; after provisioning, the pinned site, LAN v4 and ULA binds/listeners,
@@ -442,7 +448,14 @@ the configured test registry fail before the image build. Release builds do not 
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
-  with local chains and the non-default nano pool. The authenticated wizard must name the saved
+  with local chains and the non-default nano pool. Each setup-again session separately checks
+  the current boot journal for a minted token, the new-boot serial slice and tty1 text from
+  `/dev/vcs1`. `wizard-console-leg.sh` restarts both gettys during a paused direct announcement
+  and requires the current URL and token before releasing it; disabling issue publication is
+  its negative control. Bounded console captures and getty properties are retained between `BEGIN setup-console`
+  and `END setup-console` markers in the collected rig log.
+  `selftest-wizard-console.sh` checks publication, replacement, cleanup and failed verdicts.
+  The authenticated wizard must name the saved
   coordinator role (`pithead`, or `both` for an appliance whose own miner the 2.1.0 defaults enable)
   and prefill its answers with secrets blank; the on-disk role marker must equal the named role.
   POST **Keep it** through the wizard;

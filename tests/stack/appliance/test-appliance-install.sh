@@ -75,22 +75,24 @@ rm -rf "$IGSB"
 unset IGSB igout
 
 echo "== unit: pre-seeding from the installation medium =="
-# The ESP is FAT and anyone can write it, so both readers treat its contents as input, not truth.
 mk_tmpdir PSD
 export PITHEAD_PRESEED_DIR="$PSD"
 
 run_sourced "$SANDBOX" preseed_token >/dev/null 2>&1
 assert_rc "no token file -> rc 1 (mint one instead)" "$?" "1"
-
-printf 'pit-ABC123\n' >"$PSD/pithead-token.txt"
-assert_eq "token read from the medium" "$(run_sourced "$SANDBOX" preseed_token)" "pit-ABC123"
-
-printf 'pit-ABC123; rm -rf /\n' >"$PSD/pithead-token.txt"
-assert_eq "token sanitised to its alphabet" "$(run_sourced "$SANDBOX" preseed_token)" "pit-ABC123rm-rf"
-
-printf 'ab\n' >"$PSD/pithead-token.txt"
-run_sourced "$SANDBOX" preseed_token >/dev/null 2>&1
-assert_rc "implausibly short token refused" "$?" "1"
+for preseed_weak in pit-ABCD pit-synthetic-token synthetic-token 'synthetic-token;'; do
+    printf '%s\n' "$preseed_weak" >"$PSD/pithead-token.txt"
+    run_sourced "$SANDBOX" preseed_token >/dev/null 2>&1
+    assert_rc "short token refused after sanitising and prefix removal" "$?" "1"
+done
+printf 'synthetic-token1\n' >"$PSD/pithead-token.txt"
+assert_eq "16-character token read from the medium" "$(run_sourced "$SANDBOX" preseed_token)" "synthetic-token1"
+printf 'PiT-synthetic-token1\n' >"$PSD/pithead-token.txt"
+assert_eq "prefix is ignored case-insensitively for length" "$(run_sourced "$SANDBOX" preseed_token)" "PiT-synthetic-token1"
+printf 'synthetic;token-1\n' >"$PSD/pithead-token.txt"
+assert_eq "token sanitised to its alphabet" "$(run_sourced "$SANDBOX" preseed_token)" "synthetictoken-1"
+printf 'synthetic-token-1234567890-ABCDEFGH\n' >"$PSD/pithead-token.txt"
+assert_eq "token remains capped at 32 characters" "$(run_sourced "$SANDBOX" preseed_token)" "synthetic-token-1234567890-ABCDE"
 rm -f "$PSD/pithead-token.txt"
 
 run_sourced "$SANDBOX" consume_preseed_config "$PSD/out.json" >/dev/null 2>&1
@@ -108,8 +110,6 @@ TMPDIR="$PSD" run_sourced "$SANDBOX" consume_preseed_config "$PSD/out.json" >/de
 assert_rc "valid config -> rc 0" "$?" "0"
 [ -s "$PSD/out.json" ] && ok "valid config installed" || bad "valid config installed" "missing"
 assert_eq "pre-seed validation copies leave no migration backup" "$(find "$PSD" -name '*.bak-1x' -print -quit)" ""
-# The medium must come back unchanged: validation fills in generated credentials, and writing
-# those back would hand every machine in a fleet the first one's secrets.
 if cmp -s "$PSD/pithead-config.json" "$PSD/original.json"; then
     ok "the medium is left byte-for-byte unchanged"
 else

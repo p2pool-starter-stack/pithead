@@ -311,13 +311,12 @@ assert_eq "DEPLOYMENT_COMPLETED survives the rotate (#356)" "$(run_sourced "$V" 
 # (which would reuse p2pool's old --rpc-login args).
 assert_contains "rotate recreates via compose up" "$(cat "$DOCKER_LOG")" "compose up"
 assert_not_contains "rotate never uses compose restart" "$(cat "$DOCKER_LOG")" "compose restart"
-# Secrets stay out of the command output — except the stratum password, deliberately surfaced via
-# announce_stratum_auth so the operator can update each rig's 'pass'.
 case "$out" in
-*"$rot_pass"* | *"$rot_token"*) bad "rotate never prints the RPC password / proxy token" "leaked in: $out" ;;
-*) ok "rotate never prints the RPC password / proxy token" ;;
+*"$rot_pass"* | *"$rot_token"* | *"$rot_sp"*) bad "rotate never prints credentials" "credential leaked into output" ;;
+*) ok "rotate never prints credentials" ;;
 esac
-assert_contains "rotate surfaces the new stratum password for rigs" "$out" "Stratum authentication is ON"
+assert_contains "rotate reports stratum authentication for rigs" "$out" "Stratum authentication is ON"
+assert_contains "rotate directs rigs to the password handoff" "$out" "Connect a miner"
 assert_contains "rotate warns that rigs are rejected until updated" "$out" "rejected"
 # Recoverability: the pre-rotation copies hold the OLD values, owner-only.
 rot_cfg_bak="$(ls "$V"/config.json.bak-* 2>/dev/null | head -1)"
