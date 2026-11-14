@@ -1,5 +1,3 @@
-// Per-service restart in the Service diagnostics card (#4062): confirmation, closed request,
-// in-progress and result states, and the browser list against the host's restart allowlist.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
