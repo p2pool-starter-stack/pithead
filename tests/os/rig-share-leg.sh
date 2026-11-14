@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # ip/VM/DISK/SERIAL/token/jar/card_tok are run.sh's / phase_rig's
+# shellcheck source=tests/os/rig-adopt-leg.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/rig-adopt-leg.sh"
 #
 # #2063: the KVM battery has never once proven an ACCEPTED share on the appliance channel. The
 # `rig` phase's own pool is the guest's own sshd (deliberately, #796) and the coordinator's
@@ -53,12 +55,36 @@ _rig_share_abort() {
 # accepted-counter checks below, none of which can trust jq to have produced a clean number.
 _gt0() { [ "${1:-0}" -gt 0 ] 2>/dev/null; }
 
+_rig_share_state() {
+    local auth="${coord_user}:${coord_pass}"
+    case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
+    auth=${auth//\\/\\\\}
+    auth=${auth//\"/\\\"}
+    curl --config - -fsSk -m 10 "https://$coord_ip/api/state" <<EOF
+user = "$auth"
+EOF
+}
+
+rig_share_hashrate_wait() {
+    local token deadline=$(($(date +%s) + ${1:-120})) hs=""
+    token=$(_ssh "jq -r '.ACCESS_TOKEN // \"\"' /data/rigforge/config.json" | tr -d '\r')
+    [[ "$token" =~ ^[0-9a-f]{32}$ ]] || return 1
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        hs=$(_ssh "curl -fsS -m 5 -H \"Authorization: Bearer $token\" http://127.0.0.1:8081/1/summary" 2>/dev/null |
+            jq -r '(.hashrate.total[0] // 0) | tostring' 2>/dev/null)
+        awk -v v="${hs:-0}" 'BEGIN { exit !(v > 0) }' && return 0
+        sleep 15
+    done
+    return 1
+}
+
 # $1 already-built image (the rig's own v1), $2-$8 the remote-node inputs phase_rig read off the
 # env (mh rpc zmq mu mp th grpc), $9 the rig's own ip (so it can be restored — the coordinator boot
 # below overwrites the global $ip).
 rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     local img="$1" mh="$2" rpc="$3" zmq="$4" mu="$5" mp="$6" th="$7" grpc="$8" rig_ip="$9"
     local rig_vm="$VM" rig_disk="$DISK" rig_serial="$SERIAL"
+    local rig_card=""
     local coord_vm="${rig_vm}-coord" coord_disk="${rig_disk%.img}-coord.img" coord_serial="${rig_serial%.log}-coord.log"
 
     info "share leg (#2063) — the rig mines against a coordinator this battery itself boots, not its own sshd"
@@ -91,13 +117,15 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     local jar="" token="" new_card=""
     _setup_again_boot 300 || _rig_share_abort || return 1
     _setup_again_session || _rig_share_abort || return 1
-    new_card=$(_setup_again_rig_submit kvm-rig-share "$coord_ip:3333") || {
+    new_card=$(_setup_again_rig_submit kvm-rig-share "$coord_ip:3333" .) || {
         rm -f "$jar"
         _rig_share_abort || return 1
     }
     rm -f "$jar"
-    [ -n "${new_card%% *}" ] && ok "share leg: the rig re-provisioned against $coord_ip:3333" ||
-        bad "share leg: no card token came back from the re-provisioned rig"
+    printf '%s' "$new_card" | jq -e '.token | type == "string" and length > 0' >/dev/null ||
+        _rig_share_abort "share leg: no card token came back from the re-provisioned rig" || return 1
+    rig_card="$new_card"
+    ok "share leg: the rig re-provisioned against $coord_ip:3333"
 
     _rig_mining_up 36 && ok "share leg: the rig mines again, now at the coordinator" ||
         _rig_share_abort "share leg: the rig never resumed mining against the coordinator" || return 1
@@ -105,6 +133,11 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
         ok "share leg: the rig's miner config points at the coordinator, not its own sshd"
     else
         bad "share leg: the rig's miner config does not name the coordinator ($(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
+    fi
+    if rig_share_hashrate_wait; then
+        ok "share leg: the rig's sister feed reports a live hashrate (M11 floor, #3996)"
+    else
+        bad "share leg: the rig's sister feed never reported a nonzero hashrate within 120s (M11 floor, #3996)"
     fi
 
     # The assertion of this whole issue: BOTH sides of the coordinator's own /api/state must show
@@ -114,7 +147,7 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     # the appliance channel has never had a built-in miner clear the sync gate before either).
     local deadline=$(($(date +%s) + RIG_SHARE_WINDOW_SEC)) st="" rig_accepted=0 other_accepted=0
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        st=$(curl -sSk -u "$coord_user:$coord_pass" -m 10 "https://$coord_ip/api/state" 2>/dev/null)
+        st=$(_rig_share_state 2>/dev/null)
         rig_accepted=$(printf '%s' "$st" | jq -r '[.workers[]? | select(.name == "kvm-rig-share") | .accepted // 0] | add // 0' 2>/dev/null)
         other_accepted=$(printf '%s' "$st" | jq -r '[.workers[]? | select(.name != "kvm-rig-share") | .accepted // 0] | add // 0' 2>/dev/null)
         _gt0 "$rig_accepted" && _gt0 "$other_accepted" && break
@@ -139,5 +172,6 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     if [ "$miner_rc" != 0 ] && [ "$miner_rc" != 77 ]; then
         bad "connected rig cannot mask local miner backup recovery (#3375)"
     fi
+    rig_adopt_leg || _rig_share_abort "M12: dashboard adoption/config push did not complete (#3069)" || return 1
     _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
 }
