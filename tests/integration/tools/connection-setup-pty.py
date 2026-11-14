@@ -25,7 +25,6 @@ def setup_output(timeout):
     output = bytearray()
     prompts = [
         (rb"(?m)^Re-run setup \(re-provisions Tor and may modify GRUB\)\? \(y/N\): ", b"y\n"),
-        (rb"(?m)^Enter Hostname \[[^\r\n]*\]: ", b"\n"),
         (rb"(?m)^Start Pithead now\? \(Y/n\): ", b"n\n"),
     ]
     deadline = time.monotonic() + timeout

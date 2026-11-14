@@ -227,7 +227,7 @@ or Tari node required.
 | **RigForge** | A rig: just the miner, pointed at a Pithead you already have running. No coordinator, no containers, no chains, no dashboard. |
 
 Picking **RigForge** collapses the rest of the page to three questions — the pool address
-(`host:port`), a worker name, and an optional stratum password — because a rig holds no payout
+(`host:port`), a name for the machine (the worker name, also its hostname), and an optional stratum password — because a rig holds no payout
 addresses, runs no node, and serves nothing to log into. If a Pithead already answers on the
 network at `pithead.local:3333`, its address is filled in for you; otherwise enter it by hand
 from that machine's own "Point miners at" line. Confirming shows a summary card with the worker

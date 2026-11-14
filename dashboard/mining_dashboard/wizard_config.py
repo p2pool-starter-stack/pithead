@@ -9,6 +9,19 @@ _XVB_ALIASES = ("enabled", "url", "donor_id")
 _XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
 _WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "watts"}
 
+MACHINE_NAME_RULE = (
+    "Name this machine: 1–63 lowercase letters, digits or hyphens, starting and ending "
+    "with a letter or digit; auto and localhost are reserved."
+)
+
+
+def validate_machine_label(name: str) -> None:
+    if name and (
+        not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", name)
+        or name in ("auto", "localhost")
+    ):
+        raise ValueError(MACHINE_NAME_RULE)
+
 
 def validate_machine_name(cfg: dict, previous: dict) -> None:
     """Reject malformed explicit coordinator names before publishing a setup request.
@@ -30,12 +43,20 @@ def validate_machine_name(cfg: dict, previous: dict) -> None:
         and re.fullmatch(r"[a-zA-Z0-9._:-]{0,253}", host)
     ):
         return
-    if not isinstance(host, str) or not re.fullmatch(
-        r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", host
+    if (
+        not isinstance(host, str)
+        or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", host)
+        or host == "localhost"
     ):
-        raise ValueError(
-            "Name this machine must be 1–63 letters, digits or hyphens, starting and ending with a letter or digit"
-        )
+        raise ValueError(MACHINE_NAME_RULE)
+
+
+def prefill_machine_name(cfg: dict, platform: str) -> dict:
+    dflt = default_of("dashboard.host", platform)
+    dash = cfg.get("dashboard")
+    if dflt != "auto" and isinstance(dash, dict) and dash.get("host") == "auto":
+        cfg["dashboard"] = {**dash, "host": dflt}
+    return cfg
 
 
 def _change(changes: list[str], path: str, replacement: str | None = None) -> None:

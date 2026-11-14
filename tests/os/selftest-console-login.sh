@@ -74,6 +74,7 @@ check_stratum_exposure() { :; }
 load_preserved_state() { :; }
 resolve_dashboard_host() { :; }
 reconcile_appliance_hostname() { :; }
+machine_name_warning() { :; }
 prepare_directories() { :; }
 render_env() { :; }
 provision_tor() { :; }

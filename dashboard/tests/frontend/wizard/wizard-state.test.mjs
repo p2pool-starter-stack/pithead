@@ -40,6 +40,22 @@ test("the handoff arrives through the SAME poll and reaches the view", async () 
   restore();
 });
 
+test("a name collision warning reaches both the coordinator card and the rig card", async () => {
+  const warning = "Another machine on this network already answers box.local — give this machine a different name.";
+  const cards = [
+    { username: "admin", password: "p".repeat(32), dashboard: "https://box.local", stratum: "s", warning },
+    { role: "rig", worker: "box", stratum: "stratum+tcp://pithead.local:3333", warning },
+  ];
+  for (const handoff of cards) {
+    const { inst, restore } = await appOn([stateFor("handoff", { handoff })]);
+    assert.match(renderToString(inst.render()), /already answers box\.local/);
+    restore();
+  }
+  const { inst, restore } = await appOn([stateFor("handoff", { handoff: { ...cards[1], warning: undefined } })]);
+  assert.doesNotMatch(renderToString(inst.render()), /already answers/);
+  restore();
+});
+
 test("a refresh mid-provision does not walk back into an editable form", async () => {
   const { inst, restore } = await appOn([stateFor("done")]);
   const out = renderToString(inst.render());

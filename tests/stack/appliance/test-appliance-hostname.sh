@@ -84,6 +84,11 @@ hn_run() {
             appliance_mint_cert >/dev/null
             cert_san_string "$PITHEAD_TLS_DIR/wizard.crt"
             ;;
+        rig)
+            printf '{"worker":"%s"}\n' "$5" >rig.json
+            reconcile_rig_hostname
+            printf 'kernel=%s static=%s calls=%s\n' "$(hostname)" "$(hostnamectl --static)" "$(wc -l <calls)"
+            ;;
         reconcile)
             reconcile_appliance_hostname
             printf 'kernel=%s static=%s calls=%s\n' "$(hostname)" "$(hostnamectl --static)" "$(wc -l <calls)"
@@ -138,6 +143,10 @@ for pin in example.test 192.168.1.10 auto '' 'bad name' '-bad' "$(printf 'a%.0s'
     assert_eq "legacy or invalid non-label does not rename host" "$(hn_run appliance "$pin" reconcile)" 'kernel=old-name static=old-name calls=0'
 done
 assert_eq "reconcile sets the kernel AND static name and refreshes Avahi (#2350)" "$(hn_run appliance Garden-Box reconcile)" 'kernel=garden-box static=garden-box calls=2'
+assert_eq "a rig takes its hostname from rig.json's worker, not dashboard.host" "$(hn_run appliance dashboard-name rig changed shed-3)" 'kernel=shed-3 static=shed-3 calls=2'
+for worker in '' 'Bad_Name' 'bad name' localhost auto; do
+    assert_eq "a rig worker that is no valid label leaves the hostname alone" "$(hn_run appliance dashboard-name rig changed "$worker")" 'kernel=old-name static=old-name calls=0'
+done
 assert_eq "existing name still retries mDNS announcement" "$(hn_run appliance old-name reconcile)" 'kernel=old-name static=old-name calls=1'
 assert_eq "named cert includes mDNS and permitted IP" "$(hn_run appliance garden-box names)" 'DNS:garden-box.local,IP:192.168.1.10,DNS:localhost'
 assert_contains "minted certificate follows resolved name" "$(hn_run appliance garden-box cert)" 'DNS:garden-box.local'
@@ -239,3 +248,83 @@ no allow-interfaces line'
 assert_eq "an auto-named appliance still refreshes Avahi" "$(md_run reconcile)" \
     'calls=overlay systemctl try-restart avahi-daemon.service '
 unset MD
+
+echo "== unit: the machine-name rule is one rule with one message (#3810) =="
+NM="$SANDBOX/machine-name"
+mkdir -p "$NM"
+nm_run() {
+    (
+        cd "$NM" || exit 1
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
+        source "$STACK"
+        set -eu
+        case "$1" in
+        label) is_machine_name_label "$2" ;;
+        rule) printf '%s\n' "$MACHINE_NAME_RULE" ;;
+        inuse)
+            is_appliance() { [ "${FAKE_APPLIANCE:-1}" = 1 ]; }
+            getent() { printf '%s\n' "$FAKE_ANSWERS"; }
+            hostname() { printf '192.168.1.10 10.0.0.5\n'; }
+            if appliance_mdns_name_in_use box; then printf in-use; else printf free; fi
+            ;;
+        warn)
+            is_appliance() { return 0; }
+            getent() { printf '%s\n' "$FAKE_ANSWERS"; }
+            hostname() { printf '192.168.1.10\n'; }
+            machine_name_warning box rig
+            ;;
+        ask)
+            printf '{}\n' >cfg.json
+            [ -z "${NOCFG:-}" ] || rm -f cfg.json
+            python3 - "$STACK" "$PWD/cfg.json" "$2" "$3" <<'PY'
+import os, pty, re, select, subprocess, sys
+stack, cfg, appliance, answers = sys.argv[1:5]
+master, slave = pty.openpty()
+script = (
+    'kind=$3; source "$1"; unset DASHBOARD_HOST HOST_IP PRESERVED_HOST_IP; '
+    'hostname() { echo box; }; '
+    'is_appliance() { [ "$kind" = 1 ]; }; resolve_dashboard_host interactive; '
+    'printf "host=%s\\n" "$HOST_IP"'
+)
+proc = subprocess.Popen(["bash", "-c", script, "bash", stack, cfg, appliance], stdin=slave, stdout=slave, stderr=slave, env={**os.environ, "PITHEAD_CONFIG_FILE": cfg})
+os.write(master, answers.encode().decode("unicode_escape").encode())
+out = b""
+while select.select([master], [], [], 0.2)[0] or proc.poll() is None:
+    out += os.read(master, 4096)
+text = out.decode()
+host = re.search(r"host=\S+", text)[0]
+saved = subprocess.run(["jq", "-r", ".dashboard.host // \"none\"", cfg], capture_output=True, text=True).stdout.strip()
+print(f"{host} saved={saved} rule={text.count('lowercase letters, digits or hyphens')} unsaved={text.count('applies to this run only')}")
+PY
+            ;;
+        esac
+    )
+}
+assert_eq "plain labels are accepted" "$(
+    for good in a 7 pithead garden-box "$(printf 'a%.0s' {1..63})"; do
+        nm_run label "$good" && printf 'yes ' || printf 'no '
+    done
+)" 'yes yes yes yes yes '
+assert_eq "reserved words, cases, lengths and shapes are refused" "$(
+    for bad in '' Auto Box localhost auto a-box- '-a' 'a b' 'a.b' "$(printf 'a%.0s' {1..64})"; do
+        nm_run label "$bad" && printf 'wrong ' || printf 'no '
+    done
+)" 'no no no no no no no no no no '
+assert_eq "the rule names the reserved words it refuses" "$(nm_run rule)" \
+    'Name this machine: 1–63 lowercase letters, digits or hyphens, starting and ending with a letter or digit; auto and localhost are reserved.'
+assert_eq "a name answering only on this machine's own address is free" \
+    "$(FAKE_ANSWERS='10.0.0.5' nm_run inuse)" free
+assert_eq "a name also answered by another machine is in use" \
+    "$(FAKE_ANSWERS='192.0.2.5
+10.0.0.5' nm_run inuse)" in-use
+assert_eq "a name another machine answers is in use" "$(FAKE_ANSWERS='192.0.2.5' nm_run inuse)" in-use
+assert_eq "an unanswered name is free" "$(FAKE_ANSWERS='' nm_run inuse)" free
+assert_eq "off the appliance nothing is ever announced" "$(FAKE_APPLIANCE=0 FAKE_ANSWERS='192.0.2.5' nm_run inuse)" free
+assert_eq "DIY setup reads no hostname input" "$(nm_run ask 0 'evil-name\n')" "host=box saved=none rule=0 unsaved=0"
+assert_eq "an appliance refuses a bad name, explains the rule, then keeps the good one" \
+    "$(nm_run ask 1 'Bad_Name\ngarden-box\n')" "host=garden-box.local saved=garden-box rule=1 unsaved=0"
+assert_eq "an empty answer keeps the default name and saves nothing" "$(nm_run ask 1 '\n')" "host=box.local saved=none rule=0 unsaved=0"
+assert_eq "an unsaved name is reported, not swallowed" "$(NOCFG=1 nm_run ask 1 'garden-box\n')" "host=garden-box.local saved= rule=0 unsaved=1"
+assert_eq "an in-use name carries the warning text and a free one carries none" \
+    "$(FAKE_ANSWERS='192.0.2.5' nm_run warn)|$(FAKE_ANSWERS='' nm_run warn)" \
+    "Another machine on this network already answers box.local — give this rig a different name if both must be reachable.|"

@@ -193,3 +193,10 @@ stage_wizard_spool() { # <spool-dir> -> fingerprint on stdout
     # fingerprint the console prints stays the machine's one certificate across retries.
     wizard_mint_cert "$spool" 2>/dev/null || true
 }
+
+rig_refuse() {
+    printf '%s' "$2" | wizard_spool_publish "$1" error.txt cat
+    rm -f "$1/rig-request.json"
+    wizard_clear_submission_transaction "$1"
+    return 1
+}

@@ -1,10 +1,12 @@
 import { html } from "../app/preact.mjs";
 import { restoreBackLabel } from "./savedrole.mjs";
 import { InstallSection, RestoreSection } from "./stages.mjs";
+import { machineNameError } from "./wizardhostname.mjs";
 import { Err, Field, Note } from "./wizardparts.mjs";
 
 export function renderRigFields(app) {
   const { rigPool, rigWorker, rigPassword, rigDefaults } = app.state;
+  const nameError = rigWorker.trim() ? machineNameError(rigWorker.trim()) : "";
   return html`<h2>Where it mines</h2>
         <${Field} label="Pool address (host:port)">
             <input class="wizard-mono" value=${rigPool}
@@ -20,10 +22,12 @@ export function renderRigFields(app) {
               hand. Its own setup card names it, as ${" "}
               <code>stratum+tcp://…</code>${" "}under "Point miners at".`
         }<//>
-        <${Field} label="Worker name">
+        <${Field} label="Name this machine (its worker name)">
             <input value=${rigWorker} onInput=${(e) => app.setState({ rigWorker: e.target.value })}
+                ref=${(el) => el && el.setCustomValidity(nameError)} maxlength="63"
                 autocomplete="off" autocapitalize="off" spellcheck=${false} />
         <//>
+        ${nameError && html`<${Err}>${nameError}<//>`}
         <${Field} label="Stratum password (leave blank unless the Pithead set one)">
             <input type="password" value=${rigPassword}
                 onInput=${(e) => app.setState({ rigPassword: e.target.value })}

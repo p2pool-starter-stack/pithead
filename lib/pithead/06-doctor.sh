@@ -284,6 +284,7 @@ doctor() {
     fi
 
     check_appliance_cert
+    check_dashboard_host_drift
 
     # --- Containers (best-effort) ---
     echo ""

@@ -6,8 +6,38 @@ appliance_hostname_label() {
     is_appliance || return 0
     local name="${DASHBOARD_HOST:-}"
     [[ "$name" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || return 0
-    [ "$name" != auto ] || return 0
+    [ "$name" != auto ] && [ "$name" != localhost ] || return 0
     printf '%s' "${name,,}"
+}
+
+MACHINE_NAME_RULE="Name this machine: 1–63 lowercase letters, digits or hyphens, starting and ending with a letter or digit; auto and localhost are reserved."
+
+is_machine_name_label() {
+    [[ "$1" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || return 1
+    [ "$1" != auto ] && [ "$1" != localhost ]
+}
+
+appliance_mdns_name_in_use() {
+    is_appliance || return 1
+    local answers mine answer
+    answers=$(getent ahostsv4 "${1}.local" 2>/dev/null | awk '{print $1}' | sort -u) || return 1
+    [ -n "$answers" ] || return 1
+    mine=" $(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^$' | tr '\n' ' ')"
+    for answer in $answers; do
+        case "$mine" in *" $answer "*) ;; *) return 0 ;; esac
+    done
+    return 1
+}
+
+machine_name_warning() {
+    is_machine_name_label "$1" && appliance_mdns_name_in_use "$1" || return 0
+    printf 'Another machine on this network already answers %s.local — give this %s a different name if both must be reachable.' "$1" "$2"
+}
+
+reconcile_rig_hostname() {
+    local DASHBOARD_HOST
+    DASHBOARD_HOST=$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)
+    reconcile_appliance_hostname
 }
 
 # The interfaces Avahi may publish this machine's name on: its real NICs, comma-separated, empty

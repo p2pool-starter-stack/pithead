@@ -28,7 +28,10 @@ setup_confirmed() {
     preflight_resources
     check_stratum_exposure setup
     load_preserved_state
-    resolve_dashboard_host
+    resolve_dashboard_host "interactive"
+    local name_warning
+    name_warning=$(machine_name_warning "${DASHBOARD_HOST:-}" machine)
+    [ -z "$name_warning" ] || warn "$name_warning"
     reconcile_appliance_hostname
     prepare_directories
     render_env

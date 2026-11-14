@@ -172,7 +172,7 @@ test("role RigForge collapses the form to pool, worker, password — none of the
   inst.setRole({ target: { value: "rig" } });
   const out = renderToString(inst.render());
   assert.match(out, /Pool address/);
-  assert.match(out, /Worker name/);
+  assert.match(out, /its worker name/);
   assert.match(out, /Stratum password/);
   assert.doesNotMatch(out, /Payout address/);
   assert.doesNotMatch(out, /Dashboard login/);

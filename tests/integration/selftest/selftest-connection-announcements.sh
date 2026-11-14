@@ -50,11 +50,6 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
         # Model a setup child draining queued answers. Never let a fake that reads nothing
         # stand in for the real terminal transaction again.
         python3 -c 'import termios; termios.tcflush(0, termios.TCIFLUSH)'
-        if [ "${SKIP_HOST_PROMPT:-0}" != 1 ]; then
-            read -r -p 'Enter Hostname [fixture-box]: ' answer
-            [ -z "$answer" ] || exit 1
-        fi
-        python3 -c 'import termios; termios.tcflush(0, termios.TCIFLUSH)'
         read -r -p 'Start Pithead now? (Y/n): ' answer
         [ "$answer" = n ] || exit 1
     fi
@@ -89,9 +84,6 @@ if (cd "$fixture" && LEAK_SECRET=1 bash -c "$probe") >"$fixture/output" 2>&1; th
     exit 1
 fi
 echo 'PASS: configured credential leak fails closed'
-rm -f "$fixture/apply-count"
-(cd "$fixture" && SKIP_HOST_PROMPT=1 bash -c "$probe") >"$fixture/output" 2>&1
-echo 'PASS: setup answers the startup prompt when no hostname prompt appears'
 for command in setup up apply no-change; do
     for field in pool auth tls miner; do
         rm -f "$fixture/apply-count"

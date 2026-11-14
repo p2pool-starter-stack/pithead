@@ -15,6 +15,7 @@ CHECKS = (
     ("dashboard-answers", "check_dashboard_answers"),
     ("dashboard-certificate", "check_appliance_cert"),
     ("dashboard-certificate-expiry", "check_appliance_cert"),
+    ("dashboard-host", "check_dashboard_host_drift"),
     ("dashboard-onion-address", "doctor"),
     ("dashboard-public-listener", "check_dashboard_public_listener"),
     ("data-directories", "doctor"),

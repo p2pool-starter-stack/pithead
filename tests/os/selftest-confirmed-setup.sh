@@ -58,7 +58,7 @@ prompt_start_stack() {
 provision_local_miner() { trace miner; }
 for stub in check_prerequisites ensure_config_exists ensure_onion_password parse_and_validate_config \
     preflight_resources check_stratum_exposure load_preserved_state resolve_dashboard_host \
-    reconcile_appliance_hostname prepare_directories inject_service_configs optimize_kernel \
+    reconcile_appliance_hostname machine_name_warning prepare_directories inject_service_configs optimize_kernel \
     generate_caddyfile provision_console_login provision_control_runner provision_egress_check_units \
     provision_lan_guard_check_units render_local_miner_config update_current_symlink; do
     eval "$stub() { :; }"
