@@ -13,19 +13,30 @@ _control_apply_idle() {
     return 1
 }
 
-reserved_node_clearnet_fixture() {
-    local out
-    CLEARNET_FIXTURE_DIAG=""
-    for _ in 1 2; do
-        _control_requests_drained && _control_apply_idle || return 1
-        out=$(approval_restore_step clearnet-apply _ssh 'set -euo pipefail
+_clearnet_apply_once() {
+    local raw rc=0 here
+    here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    raw=$(mktemp)
+    _ssh 'set -euo pipefail
 cd /data/pithead
 jq ".p2pool.clearnet = true" config.json >config.json.os2333-clearnet
 chmod 600 config.json.os2333-clearnet
 mv config.json.os2333-clearnet config.json
 ./pithead apply -y
-jq -e ".p2pool.clearnet == true" config.json >/dev/null') && return 0
-        CLEARNET_FIXTURE_DIAG="${CLEARNET_FIXTURE_DIAG:+$CLEARNET_FIXTURE_DIAG$'\n'}$out"
+jq -e ".p2pool.clearnet == true" config.json >/dev/null' >"$raw" 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        [ ! -s "${SSH_ERR:-}" ] || cat -- "$SSH_ERR" >>"$raw"
+        CLEARNET_FIXTURE_DIAG="${CLEARNET_FIXTURE_DIAG:+$CLEARNET_FIXTURE_DIAG$'\n'}clearnet apply exit=$rc$'\n'$(bash "$here/../../scripts/sanitize-test-log.sh" --lines 12 --width 240 "$raw")"
+    fi
+    rm -f "$raw"
+    return "$rc"
+}
+
+reserved_node_clearnet_fixture() {
+    CLEARNET_FIXTURE_DIAG=""
+    for _ in 1 2; do
+        _control_requests_drained && _control_apply_idle || return 1
+        _clearnet_apply_once && return 0
     done
     return 1
 }
@@ -46,11 +57,10 @@ _clearnet_fixture_self_test() (
     _control_apply_idle 9 && f=$((f + 1))
     _control_requests_drained() { return 0; }
     _control_apply_idle() { return 0; }
-    approval_restore_step() {
+    _ssh() {
         echo >>"$count"
         [ "$(wc -l <"$count")" -gt "$fail_calls" ] && return 0
-        printf 'approval restore operation=clearnet-apply exit=1\n'
-        printf '[ERROR] noise\nFailed to apply the config\n' | python3 "$(dirname "${BASH_SOURCE[0]}")/approval-restore-output.py"
+        printf 'noise\n[ERROR] failed to apply the config: conflict\n'
         return 1
     }
     fail_calls=1
@@ -60,7 +70,7 @@ _clearnet_fixture_self_test() (
     : >"$count"
     reserved_node_clearnet_fixture && f=$((f + 1))
     [ "$(wc -l <"$count")" -eq 2 ] || f=$((f + 1))
-    case "$CLEARNET_FIXTURE_DIAG" in *'exit=1'*'[output redacted]'*'failed to apply'*) ;; *) f=$((f + 1)) ;; esac
+    case "$CLEARNET_FIXTURE_DIAG" in *'exit=1'*'failed to apply'*) ;; *) f=$((f + 1)) ;; esac
     [ "$(printf '%s\n' "$CLEARNET_FIXTURE_DIAG" | grep -c 'exit=1')" -eq 2 ] || f=$((f + 1))
     fail_calls=5
     : >"$count"
