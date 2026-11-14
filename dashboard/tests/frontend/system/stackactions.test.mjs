@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { installFreshness } from "../../../mining_dashboard/web/static/app/freshness.mjs";
 import { DiagnosticsPanel } from "../../../mining_dashboard/web/static/system/diagview.mjs";
 import {
   RESTART_ALL_POLL_MAX,
@@ -10,6 +11,13 @@ import {
   awaitRestartResult,
 } from "../../../mining_dashboard/web/static/system/stackactions.mjs";
 import { renderToString } from "../helpers/render.mjs";
+
+installFreshness({
+  reload() {},
+  store: { getItem: () => null, setItem() {} },
+  fetchFn: async () => ({ ok: false }),
+  sleep: () => new Promise(() => {}),
+});
 
 const ID = "22222222-2222-4222-8222-222222222222";
 const json = (status, body) => ({ status, ok: status < 300, json: async () => body });
@@ -146,9 +154,12 @@ test("Restart all prints a clear message when the stack has not returned", async
 
 test("Restart all reports a submit failure", async () => {
   const c = inst(RestartAllControl);
-  await withStubs(() => json(403, {}), () => c.restart());
+  await withStubs(() => json(500, {}), () => c.restart());
   assert.equal(c.state.phase, "failed");
-  assert.match(view(c), /HTTP 403/);
+  assert.match(view(c), /HTTP 500/);
+  const d = inst(RestartAllControl);
+  await withStubs(() => json(403, {}), () => d.restart());
+  assert.match(view(d), /out of date/);
 });
 
 test("Reset Tor state has its own confirmation naming what it discards and that it can refuse", () => {

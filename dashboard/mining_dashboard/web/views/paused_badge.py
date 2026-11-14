@@ -4,7 +4,8 @@ from mining_dashboard.service.mining_verdict import BACKUP
 
 def _paused_reason(data, metrics):
     if data.get("stratum_closed"):
-        return "stratum closed"
+        pause = data.get("mining_pause")
+        return f"stratum closed ({pause['reason']})" if pause else "stratum closed"
     health = (data.get("monero_sync") or {}).get("health") or {}
     if monero_is_local() and not metrics.monero.down and health.get("level") == "red":
         return "node out of sync"

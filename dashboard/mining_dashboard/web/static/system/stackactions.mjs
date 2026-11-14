@@ -1,4 +1,5 @@
 import { Component, html } from "../app/preact.mjs";
+import { controlFetch, staleError } from "../config/controlclient.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 
@@ -36,18 +37,12 @@ export async function awaitRestartResult(id, { onOffline, onWaiting, pollMs, max
 }
 
 export async function submitRestartAll(confirm) {
-  let res;
-  try {
-    res = await fetch("/api/control/restart", {
-      method: "POST",
-      headers: CONTROL_HEADERS,
-      body: JSON.stringify({ confirm }),
-    });
-  } catch {
-    throw new Error(
-      "Could not submit the restart: the dashboard could not reach the control service.",
-    );
-  }
+  const res = await controlFetch("/api/control/restart", {
+    method: "POST",
+    headers: CONTROL_HEADERS,
+    body: JSON.stringify({ confirm }),
+  });
+  if (res.status === 401 || res.status === 403) throw staleError();
   if (!res.ok && res.status !== 202)
     throw new Error(`Could not submit the restart: HTTP ${res.status}`);
   let id;

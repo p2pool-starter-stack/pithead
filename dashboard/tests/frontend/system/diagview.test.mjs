@@ -200,8 +200,8 @@ test("a wait expiry keeps queued-vs-running unknown and does not invent a wedged
 
 test("submission and result HTTP failures name the diagnostics request", async () => {
   await assert.rejects(
-    () => withFastPoll(async () => ({ status: 403, ok: false }), () => runDiag("diag-doctor", {}, "the health check")),
-    /Could not submit the health check: HTTP 403/,
+    () => withFastPoll(async () => ({ status: 404, ok: false, text: async () => "" }), () => runDiag("diag-doctor", {}, "the health check")),
+    /Could not submit the health check: HTTP 404/,
   );
   let first = true;
   await assert.rejects(
@@ -220,18 +220,7 @@ test("submission and result HTTP failures name the diagnostics request", async (
   );
 });
 
-test("transport and malformed responses keep the diagnostics request context", async () => {
-  await assert.rejects(
-    () =>
-      withFastPoll(
-        async () => {
-          throw new TypeError("Failed to fetch");
-        },
-        () => runDiag("diag-logs", { container: "tor" }, "tor's recent log"),
-      ),
-    /Could not submit tor's recent log: the dashboard could not reach the control service/,
-  );
-
+test("malformed responses keep the diagnostics request context", async () => {
   await assert.rejects(
     () =>
       withFastPoll(
