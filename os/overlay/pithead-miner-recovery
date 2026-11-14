@@ -19,6 +19,7 @@ systemctl is-active --quiet xmrig.service || reset_window
 worker_config=${PITHEAD_MINER_RECOVERY_CONFIG:-/data/rigforge/data/worker/xmrig/build/config.json}
 worker=$(jq -er '.pools[0].user | select(type == "string" and length > 0)' "$worker_config" 2>/dev/null) || reset_window
 rig_id=$(jq -er '.pools[0]["rig-id"] // "" | select(type == "string")' "$worker_config" 2>/dev/null) || reset_window
+proxy_before=$(timeout 5 podman inspect -f '{{.State.StartedAt}}' xmrig-proxy 2>/dev/null) || proxy_before=
 reading=$(
     timeout 15 podman exec -i dashboard python - "$worker" "$rig_id" <<'PY'
 import os
@@ -49,13 +50,15 @@ try:
             count += row[2]
     print("idle" if count == 0 else "reset")
 except Exception:
-    print("reset")
+    print("error")
 PY
 ) 2>/dev/null || reset_window
-proxy_now=$(timeout 10 podman inspect -f '{{.State.StartedAt}}' xmrig-proxy 2>/dev/null) || proxy_now=
+proxy_now=$(timeout 5 podman inspect -f '{{.State.StartedAt}}' xmrig-proxy 2>/dev/null) || proxy_now=
 seen_proxy=$(cat "$STATE.proxy" 2>/dev/null || true)
 [ "$reading" = idle ] || {
-    mark_proxy
+    if [ "$reading" = reset ] && [ "$proxy_before" = "$proxy_now" ]; then
+        mark_proxy
+    fi
     reset_window
 }
 if [ -n "$seen_proxy" ] && [ -n "$proxy_now" ] && [ "$seen_proxy" != "$proxy_now" ]; then
