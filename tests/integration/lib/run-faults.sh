@@ -367,12 +367,9 @@ run_fault_injection() {
     fault_p2pool_cold_cache_dns
     fault_p2pool_sidechain_sync
     fault_tor_probe_egress
+    fault_tor_newnym_exhausted
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
 
-    # Belt-and-braces: whatever happened above, leave monerod + tor up, the dashboard data dir
-    # writable (real fs, not the ENOSPC tmpfs), the firewall reinstated, the timedatectl shadow
-    # gone, and the stack healthy — all unconditional so a mid-phase abort can't leave the box
-    # read-only, tmpfs-shadowed, clock-shadowed, or with clearnet egress open.
     rx "docker compose up -d monerod" >/dev/null 2>&1 || true
     rx "docker compose up -d tor" >/dev/null 2>&1 || true
     fault_rules_clear_all

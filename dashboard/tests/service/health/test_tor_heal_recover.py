@@ -13,7 +13,7 @@ from mining_dashboard.service.health.tor_heal import (
 
 
 @pytest.mark.parametrize("saturated", [True, False])
-async def test_first_round_reads_history_and_final_step_selects_host_recovery(saturated):
+async def test_third_rung_requests_host_recovery_then_restarts_tor(saturated):
     now = [1000.0]
     docker = AsyncMock()
     docker.stop.return_value = docker.start.return_value = True
@@ -28,6 +28,7 @@ async def test_first_round_reads_history_and_final_step_selects_host_recovery(sa
     results = {
         "tor-history": {"status": "applied", "saturated": saturated},
         "tor-newnym": {"status": "applied"},
+        "tor-recover": {"status": "applied"},
     }
 
     def submit(action, **kwargs):
@@ -46,14 +47,14 @@ async def test_first_round_reads_history_and_final_step_selects_host_recovery(sa
         for _ in range(2):
             now[0] += COOLDOWN_SEC
             await healer.check()
-        if saturated:
-            assert requests.count("tor-recover") == 1
-            docker.stop.assert_not_awaited()
-            docker.start.assert_not_awaited()
-        else:
-            assert "tor-recover" not in requests
-            docker.stop.assert_awaited_once()
-            docker.start.assert_awaited_once()
+        assert requests.count("tor-recover") == 1
+        docker.stop.assert_not_awaited()
+        for _ in range(2):
+            now[0] += COOLDOWN_SEC
+            await healer.check()
+        assert requests.count("tor-recover") == 1
+        docker.stop.assert_awaited_once()
+        docker.start.assert_awaited_once()
 
 
 @pytest.mark.parametrize(
@@ -99,10 +100,10 @@ async def test_recovery_result_alerts_once_without_fallback_or_resubmission(resu
     notify.assert_awaited_once()
     message = notify.await_args.args[0]
     if result and result["status"] == "applied":
-        assert "reset saturated circuit history and guards" in message
+        assert "reset circuit state and guards" in message
     else:
         assert (result or {}).get("error", "host result unconfirmed") in message
-        assert "No fallback restart" in message
+        assert "next heal round restarts Tor" in message
     assert any(message in record.message for record in caplog.records)
 
 

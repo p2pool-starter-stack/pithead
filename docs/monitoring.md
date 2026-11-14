@@ -162,7 +162,7 @@ Two things to know:
   it silences the [Telegram alerts](telegram.md#privacy-and-secrets) too). One such outage is
   Tor stuck on a **failing guard** — bootstrapped, mining fine, but clearnet exits dead (#424):
   `./pithead doctor` diagnoses it. `tor.auto_heal: true` tries bounded circuit
-  refresh before one possible Tor restart; `./pithead restart tor` is the manual restart. See
+  refresh, then a host-gated state reset, before one possible Tor restart; `./pithead restart tor` is the manual restart. See
   [Operations › Troubleshooting](operations.md#troubleshooting).
 - **Your ping URL must be Tor-reachable.** Hosted `hc-ping.com` is. A self-hosted instance must be
   public or, better, an **onion service** — paste its `.onion` URL and the ping stays on Tor end to

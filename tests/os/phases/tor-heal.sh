@@ -17,4 +17,10 @@ phase_tor_heal() {
         printf 'Guest stderr: %s\n' "$(tail -c 2048 "$SSH_ERR" 2>/dev/null | tr -d '\r')"
         bad "guest Tor saturated-history self-heal or disabled control failed (#3118)"
     fi
+    if SSH_TIMEOUT=7000 _ssh 'timeout 6500 bash -s' <"$SCRIPT_DIR/tor-heal-exhausted-guest.sh"; then
+        ok "guest Tor self-heal resets state after a rejected NEWNYM without a saturated history (#4075)"
+    else
+        printf 'Guest stderr: %s\n' "$(tail -c 2048 "$SSH_ERR" 2>/dev/null | tr -d '\r')"
+        bad "guest Tor self-heal after a rejected NEWNYM failed (#4075)"
+    fi
 }

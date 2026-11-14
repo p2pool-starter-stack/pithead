@@ -12,25 +12,36 @@ from mining_dashboard.service.health.tor_heal import (
 )
 
 
-async def test_unconfirmed_newnym_cannot_escalate_to_container_restart():
+async def test_rejected_newnym_advances_to_host_reset_then_tor_restart():
     now = [1000.0]
     docker = AsyncMock()
+    docker.stop.return_value = docker.start.return_value = True
+    submits = []
     healer = TorEgressHealer(
-        docker, enabled=True, probe=lambda: (False, "test probe"), clock=lambda: now[0]
+        docker,
+        enabled=True,
+        probe=lambda: (False, "test probe"),
+        clock=lambda: now[0],
+        restart_monerod=False,
     )
     with (
-        patch("mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"),
+        patch(
+            "mining_dashboard.service.health.tor_heal.control_service.submit",
+            side_effect=lambda action, **_: submits.append(action) or action,
+        ),
         patch(
             "mining_dashboard.service.health.tor_heal.control_service.result",
-            return_value={"status": "rejected", "error": "NEWNYM cooldown"},
+            return_value={"status": "rejected", "error": "NEWNYM budget or cooldown"},
         ),
     ):
         await healer.check()
-        for _ in range(MAX_ATTEMPTS + 1):
+        for _ in range(MAX_ATTEMPTS + 2):
             now[0] += COOLDOWN_SEC
             await healer.check()
-    docker.stop.assert_not_awaited()
-    assert healer._attempts == 0
+    assert submits.count("tor-newnym") == 1
+    assert submits.count("tor-recover") == 1
+    docker.stop.assert_awaited_once()
+    assert healer._attempts == MAX_ATTEMPTS
 
 
 async def test_probe_is_throttled_to_the_interval():
@@ -149,8 +160,8 @@ async def test_unconfirmed_newnym_reads_saturated_history_and_alerts_once(caplog
     assert "tor-history" in submits
     assert healer.saturated_history is True
     assert sum("tor-recover check" in r.message for r in caplog.records) >= 2
-    notify.assert_awaited_once()
-    assert "./pithead tor-recover" in notify.await_args.args[0]
+    saturated_alerts = [c for c in notify.await_args_list if "tor-recover check" in c.args[0]]
+    assert len(saturated_alerts) == 1
 
 
 async def test_unsaturated_history_stays_silent():
@@ -203,7 +214,7 @@ async def test_second_outage_alerts_again_and_late_reading_is_dropped_on_recover
         await _run_rounds(healer, now, 4)
         assert notify.await_count == 1
         # Recover, with a history request still unanswered: the late reading must stay silent.
-        assert healer._attempts == 0
+        assert healer._attempts == 1
         ok[0] = True
         healer._pending_history = "tor-history"
         results["tor-history"] = None
@@ -294,5 +305,5 @@ async def test_exhausted_heal_keeps_history_and_undelivered_alerts_alive():
     assert healer._warned_saturated is True
     assert notify.await_count == 4
     assert submits.count("tor-recover") == 1
-    docker.stop.assert_not_awaited()
-    docker.start.assert_not_awaited()
+    docker.stop.assert_awaited_once()
+    docker.start.assert_awaited_once()

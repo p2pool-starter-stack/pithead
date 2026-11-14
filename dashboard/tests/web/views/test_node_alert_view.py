@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from mining_dashboard.service.data_setup import DataSetupMixin
 from mining_dashboard.service.health.monero_health import MoneroChainHealth
+from mining_dashboard.service.health.tor_heal import MAX_ATTEMPTS
 from mining_dashboard.web.views.views import build_state
 
 
@@ -28,11 +29,14 @@ def test_build_state_reports_a_tor_outage_and_the_spent_attempt_cap(_data, _stat
     data["tor_heal"] = {
         "enabled": True,
         "broken_sec": 3600,
-        "attempts": 3,
+        "attempts": MAX_ATTEMPTS,
         "last_action": "Tor restart",
         "last_action_age_sec": 300,
     }
     alert = build_state(data, _state_mgr(), "all")["node_alert"]
     assert alert["reasons"] == ["Tor clearnet egress has failed for 60 min"]
-    assert alert["heal"][0] == "Tor auto-heal last action: Tor restart, 5 min ago (attempt 3 of 3)."
-    assert alert["heal"][1].startswith("Tor auto-heal stopped after 3 attempts")
+    assert (
+        alert["heal"][0]
+        == f"Tor auto-heal last action: Tor restart, 5 min ago (attempt {MAX_ATTEMPTS} of {MAX_ATTEMPTS})."
+    )
+    assert alert["heal"][1].startswith(f"Tor auto-heal stopped after {MAX_ATTEMPTS} attempts")
