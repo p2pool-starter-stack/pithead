@@ -90,6 +90,7 @@ services:
       NODE_DOWN_AFTER_SEC: "4"
       TARI_NODE_DOWN_AFTER_SEC: "4"
       NODE_RECOVERY_AFTER_SEC: "3"
+      MINING_GUARD_GRACE_SEC: "8"
       # Healthchecks.io dead-man's switch (#79), pointed at the fake receiver so the e2e proves the
       # REAL loop fires a heartbeat over a real HTTP call (not a mock). The ping URL is the on switch;
       # the first ping fires immediately (throttle starts unarmed). There's no Tor container here, so
@@ -175,6 +176,8 @@ services:
     container_name: itest-p2pool
     networks: [itestnet]
     command: ["sh", "-c", "while true; do sleep 30; done"]
+    volumes:
+      - dashboard_stats:/stats
 
   xmrig-proxy:
     image: busybox:1.36

@@ -33,6 +33,13 @@ def test_remote_node_health_is_not_a_trigger(_metrics, monkeypatch):
     assert paused_badges({"monero_sync": {"health": {"level": "red"}}}, _metrics()) == []
 
 
+def test_stratum_closed_names_the_guard_trigger(_metrics):
+    pause = {"reason": "P2Pool has no sidechain peers", "since": 1}
+    data = {"stratum_closed": True, "mining_pause": pause}
+    text = paused_badges(data, _metrics())[0]["text"]
+    assert text == "Mining paused here: stratum closed (P2Pool has no sidechain peers)"
+
+
 def test_rigs_clause_omitted_when_zero_and_singular_for_one(_metrics):
     data = {"stratum_closed": True, **_rigs("mining_here")}
     assert paused_badges(data, _metrics())[0]["text"] == "Mining paused here: stratum closed"
