@@ -55,7 +55,6 @@ def issue(store, username, epoch, remember):
 
 
 def validate(store, token, epoch):
-    """Return (username, remember, refresh_cookie) for a live session, else None."""
     if not token or len(token) > 128 or not epoch:
         return None
     now = time.time()

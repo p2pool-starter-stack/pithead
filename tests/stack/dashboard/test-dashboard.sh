@@ -259,10 +259,6 @@ caddy_onion_https="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-# Seven blocks (the sixth being the loopback sign-in verifier) since #1123 took :80 over and #1132 took :443's own empty-200 default: the two LAN
-# vhosts (the known-host :80 redirect and the HTTPS one), the :80 catch-all, the :443 catch-all,
-# and the two onion vhosts. The number is worth pinning rather than deriving — it is what caught
-# the redirect blocks arriving without anyone re-counting.
 assert_eq "secure+onion+provisioned: the HTTPS onion vhost renders (7 site blocks)" \
     "$(_site_count "$caddy_onion_https")" "7"
 assert_eq "secure+onion+provisioned: every site block binds — no unbound wildcard on :443" \
