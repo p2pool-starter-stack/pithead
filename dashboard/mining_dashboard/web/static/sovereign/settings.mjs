@@ -103,8 +103,8 @@ export class LanGuardStatus extends Component {
     return html`<div class="lan-guard-status">
       <h3>LAN rule</h3>
       <p class="muted">
-        The stack installs a source rule so only local-network addresses can reach these ports. A
-        switch that is on without its rule is a fault, not a working control.
+        The stack installs a source rule so only local-network and VPN (CGNAT-range) addresses can
+        reach these ports. A switch that is on without its rule is a fault, not a working control.
       </p>
       <button
         type="button"
@@ -259,9 +259,9 @@ export class SettingsPage extends Component {
       <section class="panel lan-group" aria-labelledby="lan-access-title">
         <h2 id="lan-access-title">LAN access</h2>
         <p>
-          Share this stack's node ports with devices on your local network. Each switch below
-          writes its existing configuration key, keeps the LAN-only source rule, and never exposes
-          a port to the internet. Sharing the node beyond the LAN is not offered here.
+          Share this stack's node ports with devices on your local network or VPN. Each switch
+          below writes its existing configuration key, keeps the LAN-only source rule, and never
+          exposes a port to the internet. Sharing the node beyond that is not offered here.
         </p>
         ${
           writable

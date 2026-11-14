@@ -75,8 +75,9 @@ Settings opens with a **LAN access** group: one switch each for the Monero walle
 (`tari.grpc_lan_access`), each with a one-line purpose. A switched-on service shows the exact
 address to use — the host and the port it publishes (18081, 18083, 18142) — with the detected LAN
 IP beside it and a copy button, plus a short note on connecting a wallet or a second stack. The
-group only ever shares these ports on the local network: the stack's LAN-only source rule limits
-them to local-network sources, and the panel says so. Reviewing a change runs the host's existing
+group only ever shares these ports on the local network or a machine-local VPN: the stack's LAN-only
+source rule limits them to local-network and CGNAT/VPN sources, and the panel says so. Reviewing a
+change runs the host's existing
 apply path — preview, confirmation, commit — so the confirmation and audit entry are the ones the
 control channel already keeps, and only the affected services restart. **Check the LAN rule now**
 runs the host diagnostics and reads its LAN-guard rows; a switch that is on without its rule is
