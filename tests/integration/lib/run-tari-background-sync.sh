@@ -47,7 +47,7 @@ run_tari_background_sync() {
         return 0
     fi
     local last_state=unobserved last_connected=unobserved last_current=unobserved last_height=unobserved template_updated=unobserved receipt_state=unobserved receipt_height=unobserved
-    local saved_config proxy_start deadline state window_hashes=0 synced=0 failed=0 previous_hashes="" hashes height_before mining_sample observed enable_started window_start last_advance
+    local saved_config proxy_start deadline state window_hashes=0 workers synced=0 failed=0 previous_hashes="" hashes height_before mining_sample observed enable_started window_start last_advance
     height_before="$(jq_get "$(api_state)" '.tari.height | tonumber')"
     [[ "$height_before" =~ ^[0-9]+$ ]] || {
         it_fail "pre-enable Tari template height is readable (#3094)" "no numeric template baseline"
@@ -107,7 +107,9 @@ run_tari_background_sync() {
                     template_updated="$(jq_get "$mining_sample" '.template_updated')"
                     receipt_state="$(jq_get "$mining_sample" '.receipt_state')"
                     receipt_height="$(jq_get "$mining_sample" '.receipt_height | tonumber')"
-                    if ! [ "$(jq_get "$mining_sample" '.workers')" -ge 1 ] 2>/dev/null ||
+                    workers="$(jq_get "$mining_sample" '.workers')"
+                    if ! [[ "$workers" =~ ^[0-9]+$ ]] ||
+                        { [ "$workers" -lt 1 ] && [ "$((observed - window_start))" -ge 90 ]; } ||
                         ! [[ "$hashes" =~ ^[0-9]+$ ]] ||
                         { [ -n "$previous_hashes" ] && [ "$hashes" -lt "$previous_hashes" ]; }; then
                         failed=1
@@ -115,7 +117,7 @@ run_tari_background_sync() {
                         break
                     fi
                     if [ -n "$previous_hashes" ] && [ "$hashes" -gt "$previous_hashes" ]; then
-                        window_hashes=1
+                        [ "$workers" -lt 1 ] || window_hashes=1
                         last_advance="$observed"
                     fi
                     previous_hashes="$hashes"
