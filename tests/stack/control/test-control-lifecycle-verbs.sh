@@ -91,11 +91,11 @@ exit 0
 EOF2
 chmod +x "$SR/bin/docker"
 export SR SR_DOCKER_LOG="$SR/docker.log"
-sr_req() { # <id> <container-json-fragment> [extra]
+sr_req() {
     printf '{"id":"%s","action":"svc-restart","actor":"admin"%s%s}\n' "$1" "${2:+,\"container\":$2}" "${3:-}" >"$SR/req-$1.json"
     printf '%s\n' "$SR/req-$1.json"
 }
-sr_run() { # <request-file> [guard-ready: 1|0]
+sr_run() {
     (
         export PATH="$SR/bin:$PATH" PITHEAD_LOCK_FILE="$SR/.lock"
         if [ "${2:-1}" = 0 ]; then
@@ -138,6 +138,11 @@ for svc in wallet-rpc tari tari-wallet p2pool xmrig-proxy; do
 done
 assert_eq "every other allowlisted service restarts with exactly one compose restart" "$sr_allowed" \
     $'compose restart wallet-rpc\ncompose restart tari\ncompose restart tari-wallet\ncompose restart p2pool\ncompose restart xmrig-proxy\n'
+
+sr_audit="$(cat "$SR/audit/control.log")"
+assert_contains "the audit records wallet-rpc with its hyphen" "$sr_audit" '"action":"svc-restart","status":"applied","keys":"wallet-rpc"'
+assert_contains "the audit records tari-wallet with its hyphen" "$sr_audit" '"action":"svc-restart","status":"applied","keys":"tari-wallet"'
+assert_contains "the audit records xmrig-proxy with its hyphen" "$sr_audit" '"action":"svc-restart","status":"applied","keys":"xmrig-proxy"'
 
 sr_refused=""
 : >"$SR_DOCKER_LOG"

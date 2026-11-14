@@ -91,6 +91,9 @@ MATRIX:
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
                          recover. DESTRUCTIVE-then-restored; works in both ssh and local mode.
+  --svc-restart          local-only: enable control, restart xmrig-proxy through the control spool,
+                         assert applied + healthy + a moved container start time + the audit entry,
+                         the cooldown refusal and the allowlist refusal (#4062). DESTRUCTIVE-then-restored.
   --hardening            local-only: rootfs write refusal, control path-unit apply/refusal, Tor recovery.
                          DESTRUCTIVE-then-restored; enables then disables control (#377/#33/#424).
   --rotate-onion         rotate an isolated onion fixture; prove reachability, retirement and restore (#2345).

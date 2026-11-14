@@ -3,7 +3,7 @@ readonly PITHEAD_SVC_RESTART_COOLDOWN_S=120
 readonly PITHEAD_SVC_RESTART_EX_GUARD=11
 readonly PITHEAD_SVC_RESTART_EX_COOLDOWN=12
 
-control_svc_restart_locked() ( # <control-dir> <service> <log-file>
+control_svc_restart_locked() (
     local cdir="$1" service="$2" logf="$3" stamp last now
     stamp="$cdir/svc-restart-$service"
     PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire svc-restart
@@ -17,7 +17,7 @@ control_svc_restart_locked() ( # <control-dir> <service> <log-file>
     printf '%s\n' "$now" >"$stamp"
 )
 
-control_svc_restart() { # <request-file> <id> <actor> <control-dir>
+control_svc_restart() {
     local file="$1" id="$2" actor="$3" cdir="$4"
     local results="$cdir/results" auditf="$cdir/audit/control.log"
     local service found=0 c rc=0 logf="$cdir/staged/.$id.log" error
