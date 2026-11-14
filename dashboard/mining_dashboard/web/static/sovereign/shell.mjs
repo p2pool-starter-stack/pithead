@@ -114,6 +114,7 @@ export function Shell({
             onClick=${() => onNavigate(route.page, PAGES[route.page][2])}>Advanced</button>
         </nav>
         ${state?.update?.available ? html`<a class="update-link" href=${link("settings", "update-details")} onClick=${navigate("settings", "update-details")}>Update available</a>` : null}
+        ${state?.update?.available && state?.apt_update_command ? html`<p class="muted update-apt">Update with <code>${state.apt_update_command}</code></p>` : null}
       </aside>
       <div class="workspace">
         <p class="preview-note">Development preview — page content is still being built. <a href="/">Current dashboard</a></p>

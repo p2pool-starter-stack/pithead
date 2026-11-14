@@ -108,6 +108,7 @@ if [ "${1:-}" = --case ]; then
     esac
     appliance_identity "$WORKDIR/image" "$WORKDIR/bundle" "$WORKDIR/keyring" "$STACK_VERSION" "$GIT_COMMIT" release >"$WORKDIR/appliance-rigforge.md"
     case "$scenario" in identity | floor-match) exit 0 ;; esac
+    apt_channel_enabled() { return 1; }
     make_bundle() { printf 'install bundle\n' >"$1"; }
     sign_bundle() {
         [ "$scenario" != no-install-signature ] || return 0

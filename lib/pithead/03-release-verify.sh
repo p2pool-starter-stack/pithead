@@ -172,6 +172,14 @@ stack_upgrade() {
     if is_appliance; then
         error "This is a Pithead OS appliance: the program tree is delivered by OS images and resynced from the system slot at every boot, so a tarball upgrade here would silently revert at the next reboot. Updates arrive as signed OS images — see the appliance guide."
     fi
+    if is_apt_install && [ "${PITHEAD_APT_POSTINST:-0}" != "1" ]; then
+        error "This install is owned by the pithead APT package: update it with '$APT_UPDATE_COMMAND'. The package moves the running stack to the new images itself."
+    fi
+    local images_verified=0
+    if is_apt_install; then
+        verify_release_images
+        images_verified=1
+    fi
     mutation_lock_acquire upgrade
     log "Upgrading stack (rebuilding containers)..."
     # A release (git pull) may change config templates, add/rename .env vars, or restructure the
@@ -211,7 +219,7 @@ stack_upgrade() {
         compose_up_checked -d --build || error "Upgrade failed during 'docker compose up' — see the error above."
         reconcile_compose_images || error "Upgrade failed to recreate a container on its rebuilt image."
     else
-        verify_release_images
+        [ "$images_verified" = 1 ] || verify_release_images
         PITHEAD_PULL=always compose_up_checked -d || error "Upgrade failed during 'docker compose up' — see the error above."
     fi
     if [ "${DASHBOARD_ONION_ENABLED:-false}" == "true" ] && onion_missing "${DASHBOARD_ONION:-}"; then
