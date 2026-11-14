@@ -307,7 +307,8 @@ height for 30 minutes" clock starts again.
 
 xmrig keeps retrying its first pool while it mines on a backup and switches back by itself
 when the login succeeds (`FailoverStrategy` in the xmrig source), so rigs return once
-`xmrig-proxy` restarts. This is read from source; it is not yet proven on a bench with a rig.
+`xmrig-proxy` restarts. The bench fault-injection phase checks this with a borrowed rig: its active pool
+leaves the stack when the stratum closes and comes back on its own after readmission.
 
 With [`dashboard.tari_required: true`](configuration.md) (the default), a Tari outage also
 rejects workers, for local and remote Tari nodes. This costs Monero revenue until Tari recovers:
