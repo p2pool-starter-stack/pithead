@@ -137,7 +137,7 @@ def build_workers(workers, rigforge_release=None):
     """Worker rows as data: raw numeric fields (for client-side sorting) alongside their
     formatted display strings, plus a pool token for the badge. Online first, then by name."""
     rows = []
-    sorted_workers = sorted(workers, key=lambda x: (x["status"] != "online", x["name"]))
+    sorted_workers = sorted(workers, key=lambda x: (x["status"] != "online", x["name"] or ""))
 
     for worker in sorted_workers:
         try:

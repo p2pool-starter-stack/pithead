@@ -145,6 +145,9 @@ test("the Workers table labels each mining verdict and lists an unnamed proxy cl
   await expect(rowOf("rig-unk")).toContainText("mining location unknown");
   await expect(rowOf("rig-tele")).toContainText("telemetry only — not this Pithead");
   await expect(rowOf("rig-here")).not.toContainText("on backup pool");
+  await expect(rowOf("rig-here")).toHaveClass("status-ok");
+  await expect(rowOf("rig-away")).toHaveClass("status-bad");
+  await expect(rowOf("rig-dark")).toHaveClass("status-bad");
   const unnamed = rowOf("unnamed proxy worker (10.0.0.9)");
   await expect(unnamed).toContainText("10.0.0.9");
   await expect(unnamed.locator(".worker-name-link")).toHaveCount(0);

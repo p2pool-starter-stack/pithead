@@ -9,7 +9,7 @@ export function miningNote(worker) {
   if (state === "on_backup") return "on backup pool: " + pool;
   if (state === "not_connected") return "not connected to this Pithead";
   if (state === "unknown") return "mining location unknown";
-  return !aliveHere(worker) && worker.telemetry_h60 > 0
-    ? "telemetry only — not this Pithead"
-    : null;
+  if (aliveHere(worker)) return null;
+  if (worker.telemetry_h60 > 0) return "telemetry only — not this Pithead";
+  return worker.h60 > 0 || worker.h15 > 0 ? "no live connection here" : null;
 }

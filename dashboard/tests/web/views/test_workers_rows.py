@@ -26,3 +26,12 @@ class TestWorkerRows:
         assert row["h60_str"] == "0.00 H/s"
         silent = build_workers([{"name": "b", "ip": "1.1.1.2", "status": "online"}])[0]
         assert silent["telemetry_str"] == "—"
+
+    def test_a_null_proxy_name_does_not_abort_the_table(self):
+        rows = build_workers(
+            [
+                {"name": None, "ip": "10.0.0.8", "status": "online"},
+                {"name": "rig-a", "ip": "10.0.0.7", "status": "online"},
+            ]
+        )
+        assert len(rows) == 2

@@ -114,6 +114,10 @@ test('miningNote: one explanation per verdict, and DOWN with telemetry is never 
         'telemetry only — not this Pithead',
     );
     assert.equal(miningNote(w('mining_here', null, { status: 'offline', telemetry_h60: null })), null);
+    assert.equal(
+        miningNote(w('mining_here', null, { status: 'offline', telemetry_h60: null, h60: 900 })),
+        'no live connection here',
+    );
 });
 
 // #170: egressRoute maps a server route token to a display glyph + label + CSS colour token.

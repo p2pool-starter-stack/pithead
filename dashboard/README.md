@@ -35,7 +35,7 @@ The server is a data API; the browser renders the UI. There is no server-side te
   The Workers table (#4072) renders the verdict in each row as "on backup pool: <pool>", "not
   connected to this Pithead" or "mining location unknown", never lists a rig mining elsewhere as
   alive, and explains a `DOWN` row that still has telemetry as "telemetry only — not this
-  Pithead". `telemetry_str` is the formatted `telemetry_h60`, shown in its own "Rig telemetry 1m"
+  Pithead" (or "no live connection here" when only the proxy's decaying rate remains). `telemetry_str` is the formatted `telemetry_h60`, shown in its own "Rig telemetry 1m"
   column. A proxy client with no rig name (`-` or empty) is a row named `unnamed proxy worker
   (<address>)` with `unnamed: true`, shown with its address and proxy hashrate and without a
   Worker Inspect link.
