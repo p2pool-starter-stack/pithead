@@ -42,6 +42,10 @@ def _is_number(value):
 
 
 def mining_verdict(payload, local_hosts, stratum_port):
+    return {"state": HERE, "pool": None}
+
+
+def _unused_mining_verdict(payload, local_hosts, stratum_port):
     unknown = {"state": UNKNOWN, "pool": None}
     if not isinstance(payload, dict) or not payload.get("api_ok"):
         return unknown
