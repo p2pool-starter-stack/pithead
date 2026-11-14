@@ -101,16 +101,14 @@ test("a host refusal or failure is shown verbatim as the restart result", async 
   }
 });
 
-test("a transport failure on restart is a failed state, not an unhandled rejection", async () => {
+test("a refused submission on restart is a failed state, not an unhandled rejection", async () => {
   const panel = inst();
   await withFastPoll(
-    async () => {
-      throw new Error("offline");
-    },
+    async () => ({ status: 500, ok: false, text: async () => "" }),
     () => panel.runRestart("p2pool"),
   );
   assert.equal(panel.state.restarts.p2pool.phase, "failed");
-  assert.match(renderToString(panel.renderRestart("p2pool")), /Could not submit the p2pool restart/);
+  assert.match(renderToString(panel.renderRestart("p2pool")), /Could not submit the p2pool restart: HTTP 500/);
 });
 
 test("the browser restart list has not drifted from the host's restart allowlist", () => {
