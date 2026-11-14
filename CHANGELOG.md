@@ -23,6 +23,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
   bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
   instead of staying at 0 peers when compose did not cycle it (#4063).
+- A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
+  changed version or the first successful refresh after the disconnected banner, shows "Pithead was
+  updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2
+  minutes (#4057). OS-update and Configuration requests from a stale tab show "Pithead restarted or
+  the page is out of date. Reloading…" instead of `HTTP 401`, `HTTP 403` or the browser's own network
+  error, show the server's text for other failures, and a plain-text error no longer surfaces as a
+  JSON `SyntaxError` (#4058). An unsaved Configuration draft survives the reload in the tab's
+  `sessionStorage`, without any secret you typed (#4060).
 - Tor's `MaxClientCircuitsPending` is raised to 64 and `monero.out_peers` now defaults to 24 (was 48),
   so monerod, Tari and P2Pool onion dials no longer sit at Tor's pending-circuit ceiling right after
   boot. A `config.json` without `monero.out_peers` re-renders at 24 on the next apply; an explicit value
