@@ -58,6 +58,10 @@ Inspection:
                             facts, doctor (prose + JSON), masked config, redacted .env, and
                             the last 200 log lines per container (launch-line credentials
                             scrubbed). Read-only; nothing leaves the box — review, then share.
+  recovery-bundle           Appliance only: collect the same redacted bundle from the journal
+                            alone — no dashboard, no container engine, no network — for a box
+                            whose stack is down. Prints the archive path under /data.
+                            [--hours N, default 72].
   version, -V, --version    Print the installed stack version (offline; no update check).
 
 Maintenance:

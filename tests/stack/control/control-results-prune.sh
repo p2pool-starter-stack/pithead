@@ -202,6 +202,71 @@ run_sourced "$SANDBOX" control_prune_results "$PRP" >/dev/null 2>&1
     ok "byte eviction removes an expired backup result and archive together" ||
     bad "byte eviction removes an expired backup result and archive together" "json: $([ -f "$PRP/results/$pair_id.json" ] && echo present || echo missing), archive: $([ -f "$PRP/results/$pair_id.tar.gz.enc" ] && echo present || echo missing)"
 
+PRZ="$SANDBOX/ctrl4036bundles"
+mkdir -p "$PRZ/results"
+echo '{"step":"idle"}' >"$PRZ/results/os-update-state.json"
+bundle() { # <id> <minutes-ago>
+    echo '{"status":"applied","archive":"b.tar.gz"}' >"$PRZ/results/$1.json"
+    head -c 2000 </dev/zero | tr '\0' x >"$PRZ/results/$1.tar.gz"
+    backdate "$PRZ/results/$1.json" "$2"
+    backdate "$PRZ/results/$1.tar.gz" "$2"
+}
+has() { [ -f "$PRZ/results/$1.json" ] && [ -f "$PRZ/results/$1.tar.gz" ]; }
+gone() { [ ! -f "$PRZ/results/$1.json" ] && [ ! -f "$PRZ/results/$1.tar.gz" ]; }
+bundle a0a0a0a0-0000-4000-8000-000000000801 1
+bundle a0a0a0a0-0000-4000-8000-000000000802 120
+bundle a0a0a0a0-0000-4000-8000-000000000803 130
+bundle a0a0a0a0-0000-4000-8000-000000000804 140
+export CONTROL_BACKUP_MAX_COUNT=2 CONTROL_RESULT_MAX_COUNT=100 CONTROL_RESULT_MAX_AGE_S=100000 CONTROL_BACKUP_DOWNLOAD_WINDOW_S=3600
+unset CONTROL_RESULTS_MAX_BYTES
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+has a0a0a0a0-0000-4000-8000-000000000801 &&
+    ok "a support bundle inside its download window keeps its archive and result JSON" ||
+    bad "a support bundle inside its download window keeps its archive and result JSON" "missing"
+has a0a0a0a0-0000-4000-8000-000000000802 && has a0a0a0a0-0000-4000-8000-000000000803 &&
+    ok "expired support bundles within CONTROL_BACKUP_MAX_COUNT keep their pairs" ||
+    bad "expired support bundles within CONTROL_BACKUP_MAX_COUNT keep their pairs" "missing"
+gone a0a0a0a0-0000-4000-8000-000000000804 &&
+    ok "the support bundle past CONTROL_BACKUP_MAX_COUNT is evicted with its result JSON" ||
+    bad "the support bundle past CONTROL_BACKUP_MAX_COUNT is evicted with its result JSON" "archive or json survived"
+bz_before=$(du -sk "$PRZ/results" | awk '{print $1 * 1024}')
+export CONTROL_RESULTS_MAX_BYTES=$((bz_before - 1))
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+gone a0a0a0a0-0000-4000-8000-000000000803 &&
+    ok "byte eviction removes the oldest expired support bundle and its result JSON together" ||
+    bad "byte eviction removes the oldest expired support bundle and its result JSON together" "pair survived or was split"
+has a0a0a0a0-0000-4000-8000-000000000801 &&
+    ok "byte eviction spares the in-window support bundle" ||
+    bad "byte eviction spares the in-window support bundle" "in-window bundle lost"
+unset CONTROL_RESULTS_MAX_BYTES CONTROL_BACKUP_MAX_COUNT CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S
+PRZ="$SANDBOX/ctrl4036pairing"
+mkdir -p "$PRZ/results"
+echo '{"step":"idle"}' >"$PRZ/results/os-update-state.json"
+bundle a0a0a0a0-0000-4000-8000-000000000811 120
+export CONTROL_BACKUP_MAX_COUNT=3 CONTROL_RESULT_MAX_COUNT=100 CONTROL_RESULT_MAX_AGE_S=60 CONTROL_BACKUP_DOWNLOAD_WINDOW_S=3600
+unset CONTROL_RESULTS_MAX_BYTES
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+has a0a0a0a0-0000-4000-8000-000000000811 &&
+    ok "a kept support bundle's result JSON outlives the plain-result age cap with its archive" ||
+    bad "a kept support bundle's result JSON outlives the plain-result age cap with its archive" "json: $([ -f "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000811.json" ] && echo present || echo missing)"
+rm -f "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000811".*
+bundle a0a0a0a0-0000-4000-8000-000000000812 1
+backdate "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000812.json" 240
+bz_before=$(du -sk "$PRZ/results" | awk '{print $1 * 1024}')
+export CONTROL_RESULTS_MAX_BYTES=$((bz_before - 1)) CONTROL_RESULT_MAX_AGE_S=100000
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+has a0a0a0a0-0000-4000-8000-000000000812 &&
+    ok "byte eviction that reaches an in-window support bundle's JSON first keeps the pair" ||
+    bad "byte eviction that reaches an in-window support bundle's JSON first keeps the pair" "json: $([ -f "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000812.json" ] && echo present || echo missing)"
+backdate "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000812.tar.gz" 120
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+gone a0a0a0a0-0000-4000-8000-000000000812 &&
+    ok "byte eviction that reaches an expired support bundle's JSON first removes the pair" ||
+    bad "byte eviction that reaches an expired support bundle's JSON first removes the pair" "archive: $([ -f "$PRZ/results/a0a0a0a0-0000-4000-8000-000000000812.tar.gz" ] && echo present || echo missing)"
+unset CONTROL_RESULTS_MAX_BYTES CONTROL_BACKUP_MAX_COUNT CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S
+unset -f bundle has gone
+unset PRZ bz_before
+
 # #3047: boot prunes a results/ dir with no archive or JSON in it. `ls` of an unmatched glob exits 2,
 # which inside the loop-list substitution fired the inherited ERR trap and logged "pithead aborted
 # unexpectedly (exit 2)" on a run that carried on. Run it under the production trap and options.

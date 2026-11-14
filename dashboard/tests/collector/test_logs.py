@@ -86,6 +86,20 @@ class TestFetchDockerLogs:
             out = await logs.fetch_docker_logs("monerod")
         assert out == ["hello"]
 
+    async def test_since_is_sent_to_the_engine(self):
+        session = MagicMock()
+        session.get.return_value = _AsyncCM(_FakeResp(200, _frame("hello")))
+        with patch.object(logs.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
+            await logs.fetch_docker_logs("p2pool", tail=5, since=1234.9)
+        assert session.get.call_args.kwargs["params"]["since"] == 1234
+
+    async def test_since_is_omitted_by_default(self):
+        session = MagicMock()
+        session.get.return_value = _AsyncCM(_FakeResp(200, _frame("hello")))
+        with patch.object(logs.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
+            await logs.fetch_docker_logs("monerod")
+        assert "since" not in session.get.call_args.kwargs["params"]
+
     async def test_non_200_returns_error(self):
         session = MagicMock()
         session.get.return_value = _AsyncCM(_FakeResp(404))

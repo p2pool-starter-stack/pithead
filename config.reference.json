@@ -37,7 +37,7 @@
       "zmq_port": 18083
     },
     "prep_blocks_threads": "auto",
-    "out_peers": 48,
+    "out_peers": 24,
     "data_dir": "auto",
     "mem_limit": "auto"
   },

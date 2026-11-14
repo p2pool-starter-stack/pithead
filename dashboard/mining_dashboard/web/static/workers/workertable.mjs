@@ -1,4 +1,5 @@
 import { sortWorkers, uptimeCell, WORKER_COLUMNS } from "../app/logic.mjs";
+import { aliveHere, miningNote } from "../app/miningnote.mjs";
 import { html } from "../app/preact.mjs";
 
 // --- Workers table (WORKER_COLUMNS + sortWorkers live in logic.mjs, unit-tested) -----
@@ -118,15 +119,20 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, local
                     )}</tr>
                 </thead>
                 <tbody id="workers-tbody">
-                    ${rows.map(
-                      (w) => html`
-                        <tr class=${w.status === "online" ? "status-ok" : "status-bad"}>
+                    ${rows.map((w) => {
+                      const inspect = w.unnamed ? null : onInspect;
+                      return html`
+                        <tr class=${aliveHere(w) ? "status-ok" : "status-bad"}>
                             <td>${
-                              onInspect
-                                ? html`<button type="button" class="worker-name-link" onClick=${() => onInspect(w.name)}
+                              inspect
+                                ? html`<button type="button" class="worker-name-link" onClick=${() => inspect(w.name)}
                                                 title="Inspect / edit this worker's config">${w.name}</button>`
                                 : w.name
-                            } <${PoolBadge} pool=${w.pool} /><${ApiBadge} w=${w} onInspect=${onInspect} /><${RigForgeChips} rf=${w.rigforge} /><${RigUpdateBadge} up=${w.rigforge_update} name=${w.name} onInspect=${onInspect} /></td>
+                            } <${PoolBadge} pool=${w.pool} /><${ApiBadge} w=${w} onInspect=${inspect} /><${RigForgeChips} rf=${w.rigforge} /><${RigUpdateBadge} up=${w.rigforge_update} name=${w.name} onInspect=${inspect} />${
+                              miningNote(w)
+                                ? html` <span class="badge badge-outline mining-note">${miningNote(w)}</span>`
+                                : null
+                            }</td>
                             <td>${w.ip}</td>
                             <td>${uptimeCell(w)}</td>
                             <td>${w.h60_str}</td>
@@ -137,8 +143,9 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, local
                                 ? html` <span class="badge badge-bad" title=${w.reject_flag.title}>${w.reject_flag.text}</span>`
                                 : null
                             }</td>
-                        </tr>`,
-                    )}
+                            <td class="text-muted" title="Hashrate the rig reports for itself, wherever it mines">${w.telemetry_str}</td>
+                        </tr>`;
+                    })}
                 </tbody>
             </table>
         </div>

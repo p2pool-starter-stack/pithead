@@ -102,6 +102,15 @@ the whole host) and, once the period + grace elapses, Healthchecks.io alerts you
   momentarily down — is logged at debug level only; Healthchecks.io alerts on the missed ping
   regardless, which is the point. A ping the endpoint *answers* with a non-2xx status is different:
   a revoked or mistyped URL logs `Healthchecks ping rejected: HTTP <code>` once, on the transition.
+- **A failed ping leaves a record.** Every failed attempt is appended to a ring of the last 50 rows
+  in the dashboard's own store: a timestamp, a reason class — Tor proxy, name resolution,
+  connection, or the HTTP status the endpoint answered — and nothing else. The ping URL is
+  **never** stored: it is the check's credential, so what gets recorded is the exception's class
+  and the status code, never a message. The **Stack Topology & Egress** card shows the recent
+  failures under **Monitoring ping** — "No failed pings recorded." while things are calm, a
+  timestamped list afterwards — so a broken Tor path and a dead stack stop looking identical from
+  the outside. Recording can never disturb the loop that keeps the box alive: a failing write costs
+  a row, nothing more.
 
 ---
 

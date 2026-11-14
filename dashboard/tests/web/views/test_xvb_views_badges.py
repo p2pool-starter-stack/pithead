@@ -70,6 +70,17 @@ class TestBadges:
         t = self._texts(out)
         assert "monerod DOWN" in t and "Tari DOWN" in t and "Workers rejected" in t
 
+    def test_rejected_badge_names_the_trigger_and_since(self, _metrics):
+        pause = {"reason": "P2Pool has no sidechain peers", "since": 3600 * 5 + 60 * 7}
+        out = build_badges({"workers_rejected": True, "mining_pause": pause}, _metrics(), "ok")
+        badge = next(b for b in out if b["text"] == "Workers rejected")
+        assert badge["title"].endswith(": P2Pool has no sidechain peers (since 05:07 UTC)")
+
+    def test_rejected_badge_without_a_trigger_keeps_the_plain_title(self, _metrics):
+        out = build_badges({"workers_rejected": True}, _metrics(), "ok")
+        badge = next(b for b in out if b["text"] == "Workers rejected")
+        assert badge["title"] == "Workers rejected so they fail over to their backup pools"
+
     def test_miner_held(self, _metrics):
         out = build_badges({"miner_held": True}, _metrics(global_syncing=True), "ok")
         assert "Miner held (sync)" in self._texts(out)

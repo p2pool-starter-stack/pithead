@@ -194,6 +194,9 @@ phase_fault() {
         printf '%s\n' "$out" | tail -12 | sed 's/^/       /'
     fi
 
+    info "fault E — recovery-bundle with the stack down (#4038)"
+    phase_fault_recovery_bundle
+
     # Fault D (#2067c, the #1029 class): cut power WHILE a FRESH guest's first boot is loading its
     # baked container images from the archive (lib/pithead/11-baked-images.sh) — the interrupted
     # write a real USB stick produces, on a disk this harness can actually destroy mid-write. A

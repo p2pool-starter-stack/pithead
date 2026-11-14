@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from mining_dashboard.client.xmrig_client import parse_rigforge
 from mining_dashboard.config import config
 from mining_dashboard.helper.utils import effective_hashrate, get_tier_info
+from mining_dashboard.service import mining_verdict as mv
 from mining_dashboard.service.control_service import SECRET_SENTINEL, mask_secrets
 
 # xmrig-proxy 6.x /workers rows are positional arrays; name the fields we read so the
@@ -191,35 +192,20 @@ def _merge_proxy_summary(last_good, summary_data):
 
 
 def _merge_direct_stats(workers, results, active_pool_port):
-    """Augment proxy-derived workers with direct-API stats (uptime + hashrate).
-
-    ``results`` is the per-worker output of the direct worker API, positionally aligned
-    with ``workers``. xmrig-proxy ``/1/summary`` reports kH/s while an xmrig miner reports
-    H/s; the ``kind`` field distinguishes them so we scale to H/s. If the direct API is
-    unreachable (falsy ``extra_stats``) the worker keeps its proxy-derived hashrate/uptime
-    and stays online — the proxy already confirmed it's connected and submitting shares —
-    rather than dropping out of the hashrate total and reading zero (Fixes #28). Each
-    worker is tagged with ``active_pool`` for the UI badge, and with ``api_ok`` (True/False) plus
-    ``adopted`` when the worker API was probed, so the UI can tell a rig whose configured feed
-    failed from one never adopted (#1857) — both distinct from a worker that's simply offline.
-    """
+    local_hosts = mv.local_stratum_hosts()
     final_workers = []
     for w, extra_stats in zip(workers, results, strict=False):
-        # api_ok: True (probe succeeded), False (probe failed — surfaced, not swallowed), or unset
-        # (not probed, e.g. an internal IP per the SSRF guard). `adopted` (#1857) rides with it.
         api_ok = extra_stats.get("api_ok") if extra_stats else None
         if api_ok is not None:
             w["api_ok"], w["adopted"] = api_ok, bool(extra_stats.get("adopted"))
 
-        # RigForge enriched feed (#235): a superset /1/summary carries an extra `rigforge` block.
-        # Present only for RigForge rigs whose descriptor port points at the enriched feed; a
-        # plain-xmrig rig parses to None and gets no chips. A miner-down enriched body has no XMRig
-        # keys, so this rides in even when api_ok can't confirm live hashrate.
         rf = parse_rigforge(extra_stats) if extra_stats else None
         if rf is not None:
             w["rigforge"] = rf
 
-        if api_ok:  # only a successful probe carries uptime + per-miner hashrate
+        w["mining"] = mv.mining_verdict(extra_stats, local_hosts, config.STRATUM_PORT)
+
+        if api_ok:
             w["uptime"] = extra_stats.get("uptime", w["uptime"])
 
             is_proxy = extra_stats.get("kind") == "proxy"
@@ -227,9 +213,9 @@ def _merge_direct_stats(workers, results, active_pool_port):
 
             hr_total = extra_stats.get("hashrate", {}).get("total", [])
             if isinstance(hr_total, list) and len(hr_total) >= 3:
-                w["h10"] = (hr_total[0] or 0) * hr_scale
-                w["h60"] = (hr_total[1] or 0) * hr_scale
-                w["h15"] = (hr_total[2] or 0) * hr_scale
+                w["telemetry_h10"] = (hr_total[0] or 0) * hr_scale
+                w["telemetry_h60"] = (hr_total[1] or 0) * hr_scale
+                w["telemetry_h15"] = (hr_total[2] or 0) * hr_scale
 
         w["active_pool"] = active_pool_port
         final_workers.append(w)
@@ -237,16 +223,10 @@ def _merge_direct_stats(workers, results, active_pool_port):
 
 
 def _aggregate_hashrate(workers):
-    """Total live hashrate across online workers, as ``(total_h15, total_h10)``.
-
-    The headline figure prefers the 15m average, falling back to 60s then 10s when a
-    longer window hasn't accumulated yet (Priority: 15m > 60s > 10s). Offline workers
-    contribute nothing.
-    """
     total_hr = 0
     total_h10 = 0
     for w in workers:
-        if w.get("status") == "online":
+        if w.get("status") == "online" and not mv.mines_elsewhere(w):
             total_hr += effective_hashrate(w)
             total_h10 += w.get("h10", 0)
     return total_hr, total_h10
@@ -266,7 +246,7 @@ def _aggregate_window_hashrates(workers):
     """
     totals = {win: 0 for win in _WINDOW_WORKER_KEYS}
     for w in workers:
-        if w.get("status") == "online":
+        if w.get("status") == "online" and not mv.mines_elsewhere(w):
             for win, src in _WINDOW_WORKER_KEYS.items():
                 totals[win] += w.get(src, 0) or 0
     return totals

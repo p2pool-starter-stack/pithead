@@ -166,12 +166,11 @@ GETTY_DROPIN
         bad "$verdict"
     fi
 
-    # #895: machine-id must be assigned once and then STAY. #1659 and #1791 ride the same reboot:
-    # journald keeping the transient id (a new journal dir per boot), and the /var overlay racing the
-    # #1030 bind for /var/log/journal (a split boot list). Both verdicts are fixture-tested (tier 1).
-    local id_before id_after jd_before jd_after jb
+    local id_before id_after jd_before jd_after jb jt0 jt1 kb0 jt_st jt_mu jt_un jt_kb jt_age
     id_before=$(_ssh cat /etc/machine-id)
     jd_before=$(_ssh 'ls /var/log/journal | wc -l' | tr -d '\r\n ')
+    jt0=$(date +%s)
+    kb0=$(_ssh "$JOURNAL_BYTES_PROBE" 2>/dev/null | tr -d '\r\n ')
     if [ -n "$id_before" ]; then
         if _reboot_wait reboot 240; then
             id_after=$(_ssh cat /etc/machine-id)
@@ -182,6 +181,16 @@ GETTY_DROPIN
             printf '     · journal dirs %s -> %s; journalctl -b: %s kernel lines, %s from pithead-machine-id\n' "$jd_before" "$jd_after" "$(_ssh 'journalctl -b -k -q --no-pager 2>/dev/null | wc -l' | tr -d '\r\n ')" "$jb"
             verdict=$(journal_boot_verdict "$jd_before" "$jd_after" "$jb") && ok "$verdict" || bad "$verdict"
             verdict=$(journal_home_verdict "$(_ssh "$JOURNAL_HOME_PROBE" 2>/dev/null | tr -d '\r')") && ok "$verdict" || bad "$verdict"
+            jt1=$(date +%s)
+            {
+                read -r jt_st
+                read -r jt_mu
+                read -r jt_un
+                read -r jt_kb
+                read -r jt_age
+            } < <(_ssh "$JOURNAL_STATE_PROBE" 2>/dev/null | tr -d '\r')
+            verdict=$(journal_config_verdict "$jt_st" "$jt_mu" "$jt_un") && ok "$verdict" || bad "$verdict"
+            verdict=$(journal_window_verdict "$kb0" "$jt_kb" "$((jt1 - jt0))" "$(journal_cap_kib "$jt_mu" 2>/dev/null || echo 0)" "$jt_age" "boot reboot burst") && ok "$verdict" || bad "$verdict"
         else
             bad "guest never returned after the machine-id reboot check"
         fi

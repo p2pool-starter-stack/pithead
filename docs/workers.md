@@ -49,8 +49,8 @@ stack's address filled in.
 - `YOUR_STACK_IP` is the stack host's IP or a DNS-resolvable hostname. For a stable address on a home
   LAN, set a DHCP reservation (or a static IP) for the stack host.
 - Add a backup pool for failover. List a second entry in `pools` (a public pool, or another stack).
-  If the Monero node goes down or is still syncing, the stack stops accepting work so rigs fail over
-  to the backup, then switch back when it recovers. A Tari outage or resync does the same while
+  If the Monero node goes down, is still syncing, or P2Pool or monerod cannot make valid work (no
+  peers, no ZMQ), the stack stops accepting work so rigs fail over to the backup, then switch back when it recovers. A Tari outage or resync does the same while
   `dashboard.tari_required` is `true` (the default); set it to `false` and only Monero gates the
   work.
 

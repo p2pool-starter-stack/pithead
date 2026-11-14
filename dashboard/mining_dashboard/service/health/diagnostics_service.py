@@ -54,3 +54,10 @@ def submit_diag_logs(container: str, lines: int, actor: str = "") -> str:
             "lines": lines,
         }
     )
+
+
+def submit_support_bundle(hours=None, actor: str = "") -> str:
+    intent = {"id": str(uuid.uuid4()), "action": "support-bundle", "actor": actor}
+    if hours is not None:
+        intent["hours"] = hours
+    return request_spool.write(intent)

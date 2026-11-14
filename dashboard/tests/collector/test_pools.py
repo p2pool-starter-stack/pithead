@@ -1,5 +1,5 @@
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import mining_dashboard.collector.pools as pools
 from mining_dashboard.collector.pools import (
@@ -224,3 +224,42 @@ class TestPollSequenceReplay:
         assert "pplns_window" not in s["pool"]
         recorded, baseline = _shares_to_record(None, s["pool"]["shares_found"])
         assert (recorded, baseline) == (0, 0)
+
+
+class TestP2PoolLogSignals:
+    AHEAD = "NOTICE  P2PServer peer {} is ahead on mainchain (height {}, your height {}). Is your monerod stuck or lagging?"
+
+    async def _signals(self, lines):
+        with patch.object(pools, "fetch_docker_logs", AsyncMock(return_value=lines)) as fetch:
+            signals = await pools.get_p2pool_log_signals(120)
+        return signals, fetch
+
+    async def test_lag_needs_two_distinct_peers_and_takes_the_smaller_claim(self):
+        lines = [
+            self.AHEAD.format("1.2.3.4:37889", 3500480, 3500000),
+            "other",
+            self.AHEAD.format("5.6.7.8:37889", 3500300, 3500000),
+            self.AHEAD.format("5.6.7.8:37889", 3500010, 3500000),
+        ]
+        signals, fetch = await self._signals(lines)
+        assert signals["lag"] == 300
+        assert fetch.await_args.args == ("p2pool",)
+        assert fetch.await_args.kwargs["since"] > 0
+
+    async def test_one_peer_alone_is_not_enough(self):
+        lines = [self.AHEAD.format("1.2.3.4:37889", 9999999999, 3500000)] * 5
+        assert (await self._signals(lines))[0]["lag"] == 0
+
+    async def test_oversized_digits_do_not_match(self):
+        lines = [self.AHEAD.format(p, "9" * 40, 1) for p in ("a:1", "b:1")]
+        assert (await self._signals(lines))[0]["lag"] == 0
+
+    async def test_monerod_not_synchronized_line_is_seen(self):
+        lines = ["WARNING monerod is not synchronized, trying again in 1 second"]
+        assert (await self._signals(lines))[0] == {"lag": 0, "monerod_unsynced": True}
+
+    async def test_quiet_log_is_a_clean_reading(self):
+        assert (await self._signals([]))[0] == {"lag": 0, "monerod_unsynced": False}
+
+    async def test_unreadable_logs_are_no_verdict(self):
+        assert (await self._signals(["Error: Could not retrieve logs (Status 404)"]))[0] is None

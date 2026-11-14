@@ -495,10 +495,8 @@ assert_eq "grpc_lan_access true binds tari gRPC to all interfaces" "$(run_source
 assert_eq "prep_blocks_threads override reflected verbatim" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_PREP_THREADS)" "6"
 
 echo "== black-box: monero.out_peers renders to .env, bounds enforced (#595) =="
-# Default 48 when unset (the Tor-IBD bandwidth default); an explicit value lands verbatim in
-# MONERO_OUT_PEERS (each outbound peer ≈ one Tor circuit — the steady-state Tor CPU lever);
-# out-of-range or non-integer values are refused before anything is written.
-assert_eq "out_peers default renders 48" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_OUT_PEERS)" "48"
+assert_eq "out_peers default renders 24 (#4078)" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_OUT_PEERS)" "24"
+assert_eq "reference config out_peers is 24 (#4078)" "$(jq -r '.monero.out_peers' "$ROOT/config.reference.json")" "24"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","out_peers":32}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"

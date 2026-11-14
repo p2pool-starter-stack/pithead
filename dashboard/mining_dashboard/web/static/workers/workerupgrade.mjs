@@ -7,6 +7,7 @@
 
 import { Component, html } from "../app/preact.mjs";
 import { STATUS_META } from "../config/confighistory.mjs";
+import { controlFetch, requirePreviewResponse, staleError } from "../config/controlclient.mjs";
 
 export const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const POLL_MS = 2000;
@@ -32,7 +33,9 @@ export async function pollWorkerResult(id, max = POLL_MAX) {
       continue;
     }
     if (res.status === 202) continue;
-    if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
+    if (res.status === 401 || res.status === 403)
+      return { status: "error", error: String(staleError()) };
+    if (!res.ok) return { status: "error", error: (await res.text()) || `HTTP ${res.status}` };
     const out = await res.json();
     if (out.status && out.status !== "running") return out;
   }
@@ -67,18 +70,16 @@ export class RigUpgrade extends Component {
     this.state = { upgArmed: false, upgBusy: false, upgResult: null };
   }
 
-  // One-click rig upgrade (#597). POSTs {worker, version} only — the version is the badge's
-  // latest, a proposal the HOST re-derives and the rig bounds; this client never picks a target.
-  // 202 means spooled: poll with the long budget (the rig may rebuild its miner, ~10 min).
   async upgrade() {
     const version = this.props.update.latest;
     this.setState({ upgArmed: false, upgBusy: true, upgResult: { status: "running" } });
     try {
-      const res = await fetch("/api/control/worker-upgrade", {
+      const res = await controlFetch("/api/control/worker-upgrade", {
         method: "POST",
         headers: CONTROL_HEADERS,
         body: JSON.stringify({ worker: this.props.name, version }),
       });
+      await requirePreviewResponse(res);
       let out = await res.json();
       if (res.status === 202 && out.id) out = await pollWorkerResult(out.id, UPGRADE_POLL_MAX);
       this.setState({ upgBusy: false, upgResult: out });

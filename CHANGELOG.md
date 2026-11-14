@@ -17,8 +17,29 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   checks the typed `REBOOT` or `SHUTDOWN` word, refuses during an OS update or its uncommitted-slot
   window, stops the stack cleanly, then runs `systemctl reboot` or `poweroff` (#4084, host half of #4052).
 
+- The dashboard and the configuration view now open on a sign-in page instead of the browser's
+  password prompt. It has a "Remember me" box (30 days, renewed while in use; otherwise the session
+  ends when the browser closes or after 8 hours idle) and a "Sign out" button. Changing the password
+  ends every session, wrong passwords are rate-limited, and scripts keep using HTTP basic auth with
+  the same credentials (#4089).
+
 ### Fixed
 
+- A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
+  changed version or the first successful refresh after the disconnected banner, shows "Pithead was
+  updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2
+  minutes (#4057). OS-update and Configuration requests from a stale tab show "Pithead restarted or
+  the page is out of date. Reloading…" instead of `HTTP 401`, `HTTP 403` or the browser's own network
+  error, show the server's text for other failures, and a plain-text error no longer surfaces as a
+  JSON `SyntaxError` (#4058). An unsaved Configuration draft survives the reload in the tab's
+  `sessionStorage`, without any secret you typed (#4060).
+- Rig upgrade, Adopt rig, Backup, the onion client-key request and the service diagnostics show the
+  same stale-page message and reload instead of `HTTP 401`, `HTTP 403` or a browser network error, and
+  show the server's text for other failures (#4059).
+- Tor's `MaxClientCircuitsPending` is raised to 64 and `monero.out_peers` now defaults to 24 (was 48),
+  so monerod, Tari and P2Pool onion dials no longer sit at Tor's pending-circuit ceiling right after
+  boot. A `config.json` without `monero.out_peers` re-renders at 24 on the next apply; an explicit value
+  is kept (#4078).
 - On the appliance, the dashboard's own schema migrations no longer run before the booted A/B slot
   commits. `pithead-boot` defers them while the slot is uncommitted, so an update that falls back
   leaves the previous release on the schema it understands, still recording payouts (#3998).

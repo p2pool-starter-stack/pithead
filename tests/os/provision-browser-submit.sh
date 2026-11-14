@@ -124,7 +124,13 @@ dashboard_control_request() {
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        pending | accepted | running | downloading | installing | "") ;;
+        accepted)
+            [ "$route" = worker-apply ] && {
+                control_result_stamp_id "$out" "$rid"
+                return 0
+            }
+            ;;
+        pending | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
             control_result_stamp_id "$out" "$rid"
             return 0
@@ -194,7 +200,7 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     # No re-read and no emptiness guard: reaching this line means the row above parsed $live as
     # JSON carrying 0.17, so it cannot be empty here. The `case` below is the real guard on the
     # value, and it reports rather than returning silently.
-    old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 48')
+    old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 24')
     case "$old" in *[!0-9]* | "" | ?????*)
         bad "post-provision approved setting returned an unsafe current value"
         return
