@@ -1,17 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# --- Monero stranded leg (--monero-stranded, #2499) --------------------------
-# A live monerod with no peers must stop reading healthy on every layer. Like the Tari leg (#2464), an
-# iptables rule in monerod's own network namespace drops its traffic to the tor container, so the RPC
-# keeps answering and the process stays up while its outgoing peers die. Asserts, on the real clocks
-# (monero_health.py, build/monero/healthcheck.sh, peers read from the in-container helper, #2921): the first 0-outgoing-peer reading (latency
-# recorded); then within the 10-minute bound plus a poll, the verdict red with the numbers, the
-# container's docker health unhealthy, doctor non-zero, status naming it, the card's payload red, and
-# the alert at a loopback webhook; no automatic restart; then, the rule removed, the operator's fix
-# (the dead SOCKS sockets do not recover on their own, job 1789 waited 40 minutes): the dashboard watchdog
-# restarts monerod unattended (#4076) and every layer returns to green, with the recovery note; then an
-# external restart of the tor container leaves monerod holding peers. Opt-in, about 40 minutes: never part of a preset.
-# The rule carries a fixed comment, dies with monerod's namespace, and is removed by an EXIT trap too.
 
 MONERO_STRAND_TAG="pithead-e2e-fault-monero-stranded"
 MONERO_POLL_SLACK=180 # a dashboard poll, the healthcheck's 30 s x 3 retries, and the harness's sampling
