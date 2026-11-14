@@ -308,7 +308,9 @@ control_run_pending() {
     CONTROL_WU_BUDGET=1
     # OS-update budget: a bundle download attempt or a slot install holds the runner for minutes
     # too, so exactly one os-* verb runs per drain; the rest reject with a retry hint.
+    # shellcheck disable=SC2034
     CONTROL_OS_BUDGET=1
+    # shellcheck disable=SC2034
     CONTROL_POWER_BUDGET=1
     CONTROL_POWER_ORDERED=0
     names=$(cd "$cdir/requests" 2>/dev/null && ls -1tr -- *.json 2>/dev/null) || true
