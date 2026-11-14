@@ -88,9 +88,7 @@ QFLAGS="$SANDBOX/quadlet-flags-out"
 sed -E 's|^P2POOL_FLAGS=.*|P2POOL_FLAGS=--mini --socks5-proxy-type tor|' \
     "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/flags.env"
 run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/flags.env" "$QFLAGS" >/dev/null
-qflags_line=$(sed -n 's/^Environment=//p' "$QFLAGS/p2pool.container")
-# Arming: without a genuinely multi-token value in the .env the row below passes on a value that
-# never had a space in it, which is the shape this whole test exists to catch.
+qflags_line=$(sed -n 's/^Environment=\("P2POOL_FLAGS=.*\)$/\1/p' "$QFLAGS/p2pool.container")
 assert_eq "#2040 arming: the rendered value really carries three tokens" \
     "$(grep -c '^P2POOL_FLAGS=--mini --socks5-proxy-type tor$' "$SANDBOX/flags.env")" "1"
 assert_eq "#2040: a P2POOL_FLAGS holding spaces renders ONE quoted assignment, not three" \
@@ -102,7 +100,7 @@ QPCT="$SANDBOX/quadlet-pct-out"
 sed -E 's|^P2POOL_FLAGS=.*|P2POOL_FLAGS=--x 50% --host %H|' \
     "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/pct.env"
 run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/pct.env" "$QPCT" >/dev/null
-qpct_line=$(sed -n 's/^Environment=//p' "$QPCT/p2pool.container")
+qpct_line=$(sed -n 's/^Environment=\("P2POOL_FLAGS=.*\)$/\1/p' "$QPCT/p2pool.container")
 assert_eq "#2040 arming: the fixture really carries a literal % and a %H specifier" \
     "$(grep -c '^P2POOL_FLAGS=--x 50% --host %H$' "$SANDBOX/pct.env")" "1"
 assert_eq "#2040: literal % is doubled so systemd does not expand %H to the hostname" \

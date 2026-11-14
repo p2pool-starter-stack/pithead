@@ -2,11 +2,9 @@
 control_changed_config_paths() { # <staged-file>
     jq -rn --slurpfile ref "$REFERENCE_CONFIG" --slurpfile live "$CONFIG_FILE" --slurpfile staged "$1" '
         def merged($x): $ref[0] * $x;
-        # Scalar arrays are one configuration setting. Collapse their numeric indexes so audit
-        # reconciliation uses the same dotted path as the dashboard config flattener.
         def leaves($x): [$x | paths(scalars)
             | select(.[0:2] != ["workers", "list"])
-            | map(select(type == "string"))];
+            | if .[0:2] == ["monero", "backup_nodes"] then .[0:2] else map(select(type == "string")) end];
         (leaves(merged($live[0])) + leaves(merged($staged[0])) | unique)[] as $p
         | select((merged($live[0]) | getpath($p)) != (merged($staged[0]) | getpath($p)))
         | $p | map(tostring) | join(".")' 2>/dev/null
@@ -59,8 +57,12 @@ control_masked_binding_error() { # <request-file>
                  and (monero_rpc_endpoint($candidate) != monero_rpc_endpoint($live[0]))))
             then "the Monero RPC endpoint changed while its credentials were masked — enter the credentials for the new endpoint explicitly"
             else empty end,
-            # Webhook sentinels restore by position, and each carries the live position it was
-            # masked at: an added, removed or moved entry would restore another live URL (#2373).
+            ($candidate.monero.backup_nodes // [] | to_entries[]
+             | select(.value.rpc_login | sentinel)
+             | .key as $i | .value as $node | $live[0].monero.backup_nodes[$i] as $old
+             | if ([$node.host, $node.rpc_port, $node.zmq_port] != [$old.host, $old.rpc_port, $old.zmq_port])
+               then "monero.backup_nodes[\($i)] changed while its credentials were masked — enter the credentials for the new endpoint explicitly"
+               else empty end),
             ($candidate.notifications.webhooks as $hooks | ($live[0].notifications.webhooks // []) as $old
              | if ($hooks | type) == "array" and any($hooks[]; sentinel)
                    and (($hooks | length) != ($old | length)

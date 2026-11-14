@@ -153,3 +153,63 @@ class TestControlPlaneComposition:
         assert svc.docker_control.stop.await_count == int(required)
         assert svc.workers_rejected is required
         assert svc.alert_service.process.await_args.kwargs["workers_rejected"] is required
+
+    @pytest.mark.parametrize("usable", [True, False])
+    async def test_primary_monero_outage_with_backups_in_live_loop(self, usable):
+        svc, sm, proxy = _make_service()
+        svc.alert_service = MagicMock(enabled=False)
+        svc.alert_service.process = AsyncMock()
+        proxy.get_workers.return_value = {"workers": []}
+        svc.miner_released = True
+        svc.monero_health.ever_up = True
+        svc.monero_health.down_after = 0
+        svc.monero_pool_health.ever_up = True
+        svc.monero_pool_health.down_after = 0
+        svc.monero_backups.nodes = [
+            {"host": "backup.example", "rpc_port": 28081, "zmq_port": 28083}
+        ]
+        svc.monero_backups.usable = MagicMock(return_value=usable)
+
+        worker_client = MagicMock()
+        worker_client.get_stats = AsyncMock(return_value={})
+        tari_client = MagicMock()
+        tari_client.get_sync_status = AsyncMock(
+            return_value={"is_syncing": False, "reachable": True}
+        )
+        tari_client.close = AsyncMock()
+
+        with (
+            patch.object(ds_mod, "ClientSession", _FakeClientSession),
+            patch.object(ds_mod, "XMRigWorkerClient", return_value=worker_client),
+            patch.object(ds_mod, "TariClient", return_value=tari_client),
+            patch.object(ds_mod, "SYNC_GATE_CONTAINERS", ["p2pool", "xmrig-proxy"]),
+            patch.object(ds_mod, "REJECT_WORKERS_CONTAINER", "xmrig-proxy"),
+            patch.object(ds_mod, "get_stratum_stats", return_value={}),
+            patch.object(ds_mod, "get_network_stats", return_value={"height": 100}),
+            patch.object(
+                ds_mod, "get_tari_stats", return_value={"active": True, "status": "OK", "height": 3}
+            ),
+            patch.object(
+                ds_mod,
+                "get_p2pool_stats",
+                return_value={"pool": {"last_share_time": 0, "difficulty": 0}},
+            ),
+            patch.object(
+                ds_mod,
+                "get_monero_sync_status",
+                AsyncMock(return_value={"is_syncing": False, "reachable": False}),
+            ),
+            patch.object(ds_mod, "get_disk_usage", return_value={}),
+            patch.object(ds_mod, "get_hugepages_status", return_value=("Enabled", "ok", "1/2")),
+            patch.object(ds_mod, "get_memory_usage", return_value={}),
+            patch.object(ds_mod, "get_load_average", return_value="0"),
+            patch.object(ds_mod, "get_cpu_usage", return_value="0%"),
+            patch.object(ds_mod, "get_cpu_avx2", return_value=True),
+            patch("asyncio.sleep", AsyncMock(side_effect=StopAsyncIteration)),
+        ):
+            with pytest.raises(StopAsyncIteration):
+                await svc.run()
+
+        svc.monero_backups.usable.assert_called_once()
+        assert svc.docker_control.stop.await_count == int(not usable)
+        assert svc.workers_rejected is (not usable)
