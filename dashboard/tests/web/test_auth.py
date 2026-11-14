@@ -1,5 +1,4 @@
 import base64
-from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from aiohttp import web
@@ -149,16 +148,6 @@ class TestCheck:
         )
         assert resp.status == 303
         assert resp.headers["Location"] == "/login"
-
-    async def test_redirect_carries_the_original_path(self, stack):
-        resp = await stack.get(
-            "/api/auth/check",
-            headers={**EPOCH, "Accept": "text/html", "X-Forwarded-Uri": "/config?a=1"},
-            allow_redirects=False,
-        )
-        location = urlsplit(resp.headers["Location"])
-        assert location.path == "/login"
-        assert parse_qs(location.query) == {"next": ["/config?a=1"]}
 
     async def test_missing_epoch_is_401(self, stack):
         await self.signed_in(stack)

@@ -154,7 +154,7 @@ elif mode == "final":
 elif mode == "login":
     status, _, body = call("/login")
     require(status == 200 and b'id="login-form"' in body, status)
-    for asset in ("/static/login.js", "/static/login-next.mjs", "/static/dashboard.css"):
+    for asset in ("/static/login.js", "/static/dashboard.css"):
         require(call(asset)[0] == 200, asset)
     require(call("/static/dashboard.js")[0] == 401)
     status, headers, _ = call("/", headers={"Accept": "text/html"})

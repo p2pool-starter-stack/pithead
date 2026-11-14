@@ -4,7 +4,6 @@ import ipaddress
 import logging
 import time
 from pathlib import Path
-from urllib.parse import quote
 
 import aiohttp
 from aiohttp import web
@@ -182,9 +181,7 @@ async def check(request):
     )
     if session is None:
         if _wants_page(request):
-            uri = request.headers.get("X-Forwarded-Uri", "/")
-            target = "/login" if uri == "/" else f"/login?next={quote(uri, safe='')}"
-            raise web.HTTPSeeOther(target, headers={"Cache-Control": "no-store"})
+            raise web.HTTPSeeOther("/login", headers={"Cache-Control": "no-store"})
         raise web.HTTPUnauthorized(text="Authentication required.")
     username, _, refresh = session
     headers = {"X-Auth-User": username, "Cache-Control": "no-store"}

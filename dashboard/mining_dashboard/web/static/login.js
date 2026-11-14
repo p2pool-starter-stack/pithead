@@ -1,5 +1,3 @@
-import { safeNext } from "./login-next.mjs";
-
 const form = document.getElementById("login-form");
 const errorBox = document.getElementById("login-error");
 
@@ -24,7 +22,7 @@ form.addEventListener("submit", async (event) => {
       }),
     });
     if (response.ok) {
-      location.assign(safeNext(location.search));
+      location.assign("/");
       return;
     }
     if (response.status === 401) fail("Wrong username or password.");
