@@ -28,7 +28,6 @@ echo "== unit: the control-status vocabulary is guarded at its third site too â€
 _CSV_FIXTURE="$ROOT/tests/integration/fakes/contract/v1/control-status.json"
 _CSV_NON_TERMINAL='^(busy|pending|started)$'
 
-
 _csv_fixture_terminal=$(jq -r '.statuses[]' "$_CSV_FIXTURE" 2>/dev/null | grep -vE "$_CSV_NON_TERMINAL" | sort -u)
 assert_contains "the vendored fixture actually lists terminal words to check against" "$_csv_fixture_terminal" "applied"
 
