@@ -38,7 +38,7 @@ migrate_config_to_2_1() {
     migrated=$(jq --argjson table "$(config_defaults_json)" --arg platform "$(config_platform)" \
         "$CONFIG_MIGRATION_2_1_JQ" "$CONFIG_FILE") || error "Could not compute the 2.1.0 configuration migration for $CONFIG_FILE. Nothing was changed."
     [ "$PITHEAD_DRY_RUN" -eq 0 ] || return 0
-    if ! cp -p "$CONFIG_FILE" "${CONFIG_FILE}.bak-2.0" 2>/dev/null; then
+    if ! cp -p "$CONFIG_FILE" "${CONFIG_FILE}.bak-2.0" 2>/dev/null || ! chmod 600 "${CONFIG_FILE}.bak-2.0"; then
         error "Could not back up $CONFIG_FILE before migrating it to the 2.1.0 layout. Refusing: the migration pins settings 2.0.0 left implicit. Free space or fix the permissions on the config directory, then re-run."
     fi
     owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""

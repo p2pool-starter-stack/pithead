@@ -45,6 +45,7 @@ for mg_input in "$MG_DATA"/inputs/*.json; do
             "$(jq -S 'del(.config_version)' "$mg_dir/config.json")" "$(cat "$MG_DATA/migrated/$mg_name.$mg_platform.json")"
         cmp -s "$mg_input" "$mg_dir/config.json.bak-2.0" && ok "$mg_name $mg_platform keeps the 2.0.0 bytes" || bad "$mg_name $mg_platform keeps the 2.0.0 bytes" "backup differs"
         assert_eq "$mg_name $mg_platform migrated mode" "$(file_mode "$mg_dir/config.json")" 600
+        assert_eq "$mg_name $mg_platform backup mode" "$(file_mode "$mg_dir/config.json.bak-2.0")" 600
         cp "$mg_dir/config.json" "$mg_dir/once"
         PITHEAD_APPLIANCE="$mg_flag" run_sourced "$mg_dir" migrate_config_to_2_1 >/dev/null 2>&1
         cmp -s "$mg_dir/config.json" "$mg_dir/once" && ok "$mg_name $mg_platform second run changes nothing" || bad "$mg_name $mg_platform second run changes nothing" changed

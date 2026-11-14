@@ -171,7 +171,7 @@ PYTHON
         cp "$ROOT/docker-compose.yml" "$parity_dir/$parity_kind/docker-compose.yml"
         PATH="$parity_dir/$parity_kind/bin:$PATH" PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/$parity_kind" parity_finalize >"$parity_dir/$parity_kind.finalize.log" 2>&1
         assert_rc "$parity_platform $parity_kind defaults validate" "$?" 0
-        parity_defaults=$(PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/$parity_kind" config_defaults legacy)
+        parity_defaults=$(PITHEAD_APPLIANCE="$parity_flag" run_sourced "$parity_dir/$parity_kind" config_defaults)
         jq -S --argjson defaults "$parity_defaults" '$defaults * .' "$parity_dir/$parity_kind/config.json" >"$parity_dir/$parity_kind.effective.json"
         assert_rc "$parity_platform $parity_kind effective config is complete" "$?" 0
     done
