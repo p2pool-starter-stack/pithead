@@ -126,13 +126,20 @@ assert_eq "the throttle rejects the immediate second collect" \
     "$(jq -r .status "$SB/results/$sid5.json")" "rejected"
 
 echo "== host CLI: recovery-bundle shares the one collector and prints a 600 archive (#4038) =="
+mkdir -p "$SB/trip"
+for t in docker podman docker-compose curl wget nc; do
+    printf '#!/bin/sh\necho "%s $*" >>"%s/trip.log"\nexit 127\n' "$t" "$SB" >"$SB/trip/$t"
+    chmod +x "$SB/trip/$t"
+done
+rm -f "$SB/trip.log"
 rb=$(
-    export PATH="$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
+    export PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
     run_sourced_e "$SANDBOX" recovery_bundle --hours 24 2>/dev/null |
         sed -n 's/.*Support bundle written: //p' | tail -1
 )
 assert_rc "recovery-bundle writes an archive on a journal-only host" \
     "$([ -e "$rb" ] && echo 0 || echo 1)" "0"
+assert_eq "no container engine or network tool was invoked" "$(cat "$SB/trip.log" 2>/dev/null)" ""
 assert_contains "the archive lands under the stated directory" "$rb" "$SB/out/support-bundle-"
 assert_eq "the printed archive is mode 600" "$(stat -c '%a' "$rb")" "600"
 mkdir -p "$SB/extract2"

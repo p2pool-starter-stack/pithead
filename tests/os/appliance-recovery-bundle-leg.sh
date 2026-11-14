@@ -12,7 +12,8 @@ for u in p2pool.service xmrig.service docker-control.service xmrig-proxy.service
     fi
 done
 [ -n "$unit" ] || { echo "recovery bundle leg: no unloaded pithead unit name to fault"; exit 1; }
-[ -z "$(podman ps -q 2>/dev/null)" ] || { echo "recovery bundle leg: containers are running, the stack is not down"; exit 1; }
+podman stop -a -t 5 >/dev/null 2>&1
+[ -z "$(podman ps -q 2>/dev/null)" ] || { echo "recovery bundle leg: containers are still running, the stack is not down"; exit 1; }
 systemd-run --quiet --unit="${unit%.service}" --wait -p Type=oneshot sh -c 'echo recovery-leg-marker; exit 3' >/dev/null 2>&1
 systemctl is-failed --quiet "$unit" || { echo "recovery bundle leg: $unit did not fail"; exit 1; }
 out=$(mktemp)
@@ -24,7 +25,8 @@ systemctl reset-failed "$unit" 2>/dev/null
 [ "$rc" -eq 0 ] || { echo "recovery bundle leg: verb exited $rc"; exit 1; }
 case "$arch" in /data/pithead/support-bundles/support-bundle-*.tar.gz) ;; *) echo "recovery bundle leg: unexpected path '$arch'"; exit 1 ;; esac
 [ "$(stat -c %a "$arch")" = 600 ] || { echo "recovery bundle leg: archive mode is $(stat -c %a "$arch"), want 600"; exit 1; }
-tar -xzOf "$arch" "bundle/logs/$unit.log" | grep -q recovery-leg-marker || { echo "recovery bundle leg: no journal line from failed $unit in the archive"; exit 1; }
+member=$(tar -xzOf "$arch" "bundle/logs/$unit.log")
+grep -q recovery-leg-marker <<<"$member" || { echo "recovery bundle leg: no journal line from failed $unit in the archive"; exit 1; }
 rm -f "$arch" "$out"
 echo "recovery bundle leg: PASS $arch"
 GUEST
