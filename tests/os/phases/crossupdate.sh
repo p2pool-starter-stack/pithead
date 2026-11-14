@@ -241,7 +241,7 @@ phase_crossupdate() {
     # podman assigns on load, so a container still running the previous version cannot match it.
     # manifest.json sits at the end of a `docker save` tar, so this decompresses the archive once.
     running_img=$(_ssh "podman inspect dashboard --format '{{.Image}}'" 2>/dev/null | tr -d '\r\n')
-    baked_img=$(_ssh "tar -xzOf \$(ls /opt/pithead/images/*.tar.gz | head -1) manifest.json 2>/dev/null | jq -r '.[0].Config // \"\"'" 2>/dev/null |
+    baked_img=$(_ssh "tar -xzOf /opt/pithead/images/dashboard.tar.gz manifest.json 2>/dev/null | jq -r '.[0].Config // \"\"'" 2>/dev/null |
         sed 's#.*/##; s#\.json$##' | tr -d '\r\n')
     # Diagnostic only: a mismatch then says WHICH half did not happen — the loader, or the recreate.
     tagged_img=$(_ssh "podman images --no-trunc --format '{{.Repository}} {{.ID}}'" 2>/dev/null |

@@ -146,6 +146,52 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         return
     fi
 
+    local chreset="rm -f /data/pithead/data/os-update/target.json /data/pithead/data/os-update/.check-stamp /data/pithead/data/os-update/.check-stamp-short"
+    printf '{"tag_name":"v1.0.0/../x","assets":[]}' >"$srv/releases-latest.json"
+    _ssh "$chreset" >/dev/null 2>&1
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.status')" = "rejected" ] &&
+        printf '%s' "$out" | grep -q "no usable release tag"; then
+        ok "leg 4: a tainted release tag is refused by name"
+    else
+        bad "leg 4: a tainted release tag was not refused (got: $(printf '%s' "$out" | cut -c1-200))"
+    fi
+    printf '{"tag_name":"%s","html_url":"http://bench.invalid/rel","assets":[{"name":"pithead-os-%s.raucb","size":%s}]}' \
+        "$tag" "$tag" "$size" >"$srv/releases-latest.json"
+    _ssh "$chreset" >/dev/null 2>&1
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.channel.moved')" = "false" ] &&
+        printf '%s' "$out" | grep -q "stale or frozen"; then
+        ok "leg 4: a channel that has not advanced is reported stale"
+    else
+        bad "leg 4: a frozen channel was not flagged (got: $(printf '%s' "$out" | cut -c1-200))"
+    fi
+    {
+        printf '{"tag_name":"%s","assets":[{"name":"pithead-os-%s.raucb","size":%s}],"pad":"' "$tag" "$tag" "$size"
+        head -c 1500000 /dev/zero | tr '\0' 'a'
+        printf '"}'
+    } >"$srv/releases-latest.json"
+    _ssh "$chreset" >/dev/null 2>&1
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.status')" = "rejected" ] &&
+        printf '%s' "$out" | grep -q "size cap"; then
+        ok "leg 4: a listing over the size cap is refused"
+    else
+        bad "leg 4: an oversized listing was not refused (got: $(printf '%s' "$out" | cut -c1-120))"
+    fi
+    printf '{"tag_name":"%s","html_url":"http://bench.invalid/rel","assets":[{"name":"pithead-os-%s.raucb","size":%s}]}' \
+        "$tag" "$tag" "$size" >"$srv/releases-latest.json"
+    _ssh "$chreset" >/dev/null 2>&1
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.status')" = "checked" ] &&
+        [ "$(printf '%s' "$out" | jq -r '.version')" = "$tag" ]; then
+        ok "leg 4: the channel recovers after the hostile listings"
+    else
+        bad "leg 4: the check did not recover (got: $(printf '%s' "$out" | cut -c1-200))"
+        _leg4_srv_stop
+        return
+    fi
+
     # Refusal 1 — the /data floor, via the dashboard door onto the SAME guard the CLI enforces. A
     # floor above this (newer) bundle is above the running version too: since #1393 that is the
     # failed-migration state, refused FIRST with its premise; the plain door is tier 1's (#1694).
