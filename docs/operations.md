@@ -48,6 +48,12 @@ show that the control runner is stuck. The `wallet-rpc` and `tari-wallet` checks
 but their logs stay in the owner-only support bundle because their ordinary output can carry
 wallet material the browser log redactor cannot safely recognize.
 
+Each service card with a **Restart** button (`tor`, `monerod`, `wallet-rpc`, `tari`, `tari-wallet`,
+`p2pool`, `xmrig-proxy`) restarts only that service after a confirmation that names what else is
+interrupted. The host refuses while another pithead operation holds the lock, while the LAN-only
+source rule is not in place, and within 120 seconds of the last restart of the same service; see
+[Restart a service](dashboard.md#restart-a-service).
+
 ### Appliance-only commands
 
 These exist on every install but only do something on [the appliance image](appliance.md), where the

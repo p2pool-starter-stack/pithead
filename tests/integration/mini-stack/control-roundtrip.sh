@@ -161,3 +161,55 @@ assert_payout_control_roundtrip() {
         c_bad "the dashboard reads the host-applied payout address back" "readback did not match"
     fi
 }
+
+svc_restart_probe() {
+    compose exec -T dashboard python3 - <<'PY' 2>&1 | head -c 400
+import urllib.error
+import urllib.request
+
+request = urllib.request.Request(
+    "http://127.0.0.1:8000/api/control/svc-restart",
+    data=b"{}",
+    headers={"Content-Type": "application/json", "X-Pithead-Control": "1"},
+)
+try:
+    print(urllib.request.urlopen(request, timeout=10).status)
+except urllib.error.HTTPError as error:
+    print(error.code, error.read()[:200])
+except Exception as error:
+    print(type(error).__name__, error)
+PY
+}
+
+assert_svc_restart_control_roundtrip() {
+    local response
+    chmod 755 "$C/data/control" "$C/data/control/results"
+    chmod 733 "$C/data/control/requests"
+    : >"$CTRL_LOG"
+    if ! dashboard_control_request svc-restart '{"container":"tor"}'; then
+        c_bad "a service restart reaches the host runner" "dashboard or host runner failed; response=$(head -c 300 "$CONTROL_RESPONSE"); runner=$(tail -n 8 "$SANDBOX/control-runner.log" 2>/dev/null | tr '\n' '|'); probe=$(svc_restart_probe); perms=$(stat -c '%a %U' "$C/data/control" "$C/data/control/requests" 2>&1 | tr '\n' '|')"
+        return
+    fi
+    response=$(cat "$CONTROL_RESPONSE")
+    if printf '%s' "$response" | jq -e '.status == "applied" and .container == "tor"' >/dev/null &&
+        grep -qxF '[docker] compose restart tor' "$CTRL_LOG"; then
+        c_ok "the dashboard's svc-restart request restarts exactly the named service on the host"
+    else
+        c_bad "the dashboard's svc-restart request restarts exactly the named service on the host" \
+            "status=$(printf '%s' "$response" | jq -r '.status // "missing"')"
+    fi
+
+    : >"$CTRL_LOG"
+    if ! dashboard_control_request svc-restart '{"container":"caddy"}'; then
+        c_bad "a refused service restart still returns the host's verdict" "dashboard or host runner failed"
+        return
+    fi
+    response=$(cat "$CONTROL_RESPONSE")
+    if printf '%s' "$response" | jq -e '.status == "rejected"' >/dev/null &&
+        ! grep -q 'compose restart' "$CTRL_LOG"; then
+        c_ok "the host refuses a service outside the restart allowlist without touching docker"
+    else
+        c_bad "the host refuses a service outside the restart allowlist without touching docker" \
+            "status=$(printf '%s' "$response" | jq -r '.status // "missing"')"
+    fi
+}

@@ -79,3 +79,121 @@ run_sourced_e "$SANDBOX" control_process_request "$CC/req_x.json" "$CC" >/dev/nu
 assert_eq "unknown verb rejected (bounded action set)" "$(jq -r .error "$CC/results/$uid_x.json")" "unknown action"
 assert_eq "unknown verb never runs a host command" "$(cat "$SELF_LOG")" ""
 unset PITHEAD_SELF SELF_LOG
+
+echo "== control channel: svc-restart — one allowlisted service, under the lock, with a cooldown (#4062) =="
+SR="$SANDBOX/ctrl4062"
+mkdir -p "$SR/results" "$SR/audit" "$SR/bin"
+cat >"$SR/bin/docker" <<'EOF2'
+#!/usr/bin/env bash
+echo "$*" >>"$SR_DOCKER_LOG"
+[ "${SR_DOCKER_RC:-0}" -eq 0 ] || { echo "no such service" >&2; exit "$SR_DOCKER_RC"; }
+exit 0
+EOF2
+chmod +x "$SR/bin/docker"
+export SR SR_DOCKER_LOG="$SR/docker.log"
+sr_req() { # <id> <container-json-fragment> [extra]
+    printf '{"id":"%s","action":"svc-restart","actor":"admin"%s%s}\n' "$1" "${2:+,\"container\":$2}" "${3:-}" >"$SR/req-$1.json"
+    printf '%s\n' "$SR/req-$1.json"
+}
+sr_run() { # <request-file> [guard-ready: 1|0]
+    (
+        export PATH="$SR/bin:$PATH" PITHEAD_LOCK_FILE="$SR/.lock"
+        if [ "${2:-1}" = 0 ]; then
+            bash -Eeuo pipefail -c 'cd "$1"; source "$2"; lan_guard_ready() { return 1; }; control_process_request "$3" "$4"' _ "$SANDBOX" "$STACK" "$1" "$SR"
+        else
+            run_sourced_e "$SANDBOX" control_process_request "$1" "$SR"
+        fi
+    ) >/dev/null 2>&1
+}
+sr_status() { jq -r '.status' "$SR/results/$1.json"; }
+sr_id() { printf 'c4062c40-0000-4000-8000-%012d' "$1"; }
+
+: >"$SR_DOCKER_LOG"
+sr_run "$(sr_req "$(sr_id 1)" '"tor"')"
+assert_eq "an allowlisted service restarts" "$(sr_status "$(sr_id 1)")" "applied"
+assert_eq "the restart runs exactly one compose restart of that service" "$(cat "$SR_DOCKER_LOG")" "compose restart tor"
+assert_contains "started and applied are audited with the actor and the service" \
+    "$(cat "$SR/audit/control.log")" '"actor":"admin","action":"svc-restart","status":"applied","keys":"tor"'
+assert_contains "the audit also records the start" "$(cat "$SR/audit/control.log")" '"action":"svc-restart","status":"started","keys":"tor"'
+
+: >"$SR_DOCKER_LOG"
+sr_run "$(sr_req "$(sr_id 2)" '"tor"')"
+assert_eq "a repeat inside the cooldown is rejected" "$(sr_status "$(sr_id 2)")" "rejected"
+assert_contains "the cooldown refusal says why" "$(jq -r .error "$SR/results/$(sr_id 2).json")" "wait before restarting it again"
+assert_eq "a cooled-down request never reaches docker" "$(cat "$SR_DOCKER_LOG")" ""
+
+: >"$SR_DOCKER_LOG"
+sr_run "$(sr_req "$(sr_id 3)" '"monerod"')"
+assert_eq "the cooldown is per service" "$(sr_status "$(sr_id 3)")" "applied"
+printf '%s\n' "$(($(date +%s) - 1000))" >"$SR/svc-restart-tor"
+sr_run "$(sr_req "$(sr_id 4)" '"tor"')"
+assert_eq "an expired cooldown allows the restart again" "$(sr_status "$(sr_id 4)")" "applied"
+
+sr_allowed=""
+for svc in wallet-rpc tari tari-wallet p2pool xmrig-proxy; do
+    : >"$SR_DOCKER_LOG"
+    sr_run "$(sr_req "$(sr_id 10)" "\"$svc\"")"
+    sr_allowed+="$(cat "$SR_DOCKER_LOG")"$'\n'
+    rm -f "$SR/results/$(sr_id 10).json"
+done
+assert_eq "every other allowlisted service restarts with exactly one compose restart" "$sr_allowed" \
+    $'compose restart wallet-rpc\ncompose restart tari\ncompose restart tari-wallet\ncompose restart p2pool\ncompose restart xmrig-proxy\n'
+
+sr_refused=""
+: >"$SR_DOCKER_LOG"
+for bad_svc in dashboard caddy docker-proxy docker-control "tor monerod" "tor;id" '' '../tor' 'TOR' 'torx'; do
+    sr_run "$(sr_req "$(sr_id 20)" "\"$bad_svc\"")"
+    sr_refused+="$(sr_status "$(sr_id 20)") "
+    rm -f "$SR/results/$(sr_id 20).json"
+done
+assert_eq "every non-allowlisted name is rejected by exact membership" "$sr_refused" \
+    "rejected rejected rejected rejected rejected rejected rejected rejected rejected rejected "
+assert_eq "no rejected name ever reaches docker" "$(cat "$SR_DOCKER_LOG")" ""
+sr_run "$(sr_req "$(sr_id 21)" '')"
+assert_eq "a request with no service is rejected" "$(sr_status "$(sr_id 21)")" "rejected"
+sr_run "$(sr_req "$(sr_id 22)" '7')"
+assert_eq "a non-string service is rejected" "$(sr_status "$(sr_id 22)")" "rejected"
+sr_run "$(sr_req "$(sr_id 23)" '["tor"]')"
+assert_eq "an array service is rejected" "$(sr_status "$(sr_id 23)")" "rejected"
+sr_run "$(sr_req "$(sr_id 24)" '"p2pool"' ',"lines":5')"
+assert_eq "extra keys on the verb are rejected and nothing restarts" "$(sr_status "$(sr_id 24)")" "rejected"
+assert_contains "a rejection is audited" "$(cat "$SR/audit/control.log")" '"action":"svc-restart","status":"rejected"'
+
+: >"$SR_DOCKER_LOG"
+rm -f "$SR/svc-restart-p2pool"
+sr_run "$(sr_req "$(sr_id 30)" '"p2pool"')" 0
+assert_eq "a restart is refused while the LAN guard is not ready" "$(sr_status "$(sr_id 30)")" "rejected"
+assert_contains "the guard refusal names the cause" "$(jq -r .error "$SR/results/$(sr_id 30).json")" "LAN-only source rule"
+assert_eq "a guard refusal never reaches docker" "$(cat "$SR_DOCKER_LOG")" ""
+
+: >"$SR_DOCKER_LOG"
+SR_DOCKER_RC=1 sr_run "$(sr_req "$(sr_id 31)" '"p2pool"')"
+assert_eq "a failing compose restart is a failed result" "$(sr_status "$(sr_id 31)")" "failed"
+assert_contains "the failure carries the host's reason" "$(jq -r .error "$SR/results/$(sr_id 31).json")" "no such service"
+assert_contains "the failure is audited" "$(cat "$SR/audit/control.log")" '"action":"svc-restart","status":"failed","keys":"p2pool"'
+sr_run "$(sr_req "$(sr_id 32)" '"p2pool"')"
+assert_eq "a failed restart does not start the cooldown" "$(sr_status "$(sr_id 32)")" "applied"
+
+if command -v flock >/dev/null 2>&1; then
+    : >"$SR_DOCKER_LOG"
+    rm -f "$SR/svc-restart-xmrig-proxy"
+    : >"$SR/.lock"
+    (
+        exec 9>>"$SR/.lock"
+        flock -w 20 9 || exit 1
+        exec sleep 30
+    ) >/dev/null 2>&1 &
+    sr_holder=$!
+    sr_i=0
+    while flock -n "$SR/.lock" true 2>/dev/null && [ "$sr_i" -lt 200 ]; do
+        sleep 0.05
+        sr_i=$((sr_i + 1))
+    done
+    sr_run "$(sr_req "$(sr_id 40)" '"xmrig-proxy"')"
+    assert_eq "a restart while the mutation lock is held is rejected as busy, not queued" "$(sr_status "$(sr_id 40)")" "rejected"
+    assert_contains "the busy refusal says another operation is running" "$(jq -r .error "$SR/results/$(sr_id 40).json")" "in progress"
+    assert_eq "a busy refusal never reaches docker" "$(cat "$SR_DOCKER_LOG")" ""
+    kill "$sr_holder" 2>/dev/null || true
+    wait "$sr_holder" 2>/dev/null || true
+fi
+unset SR SR_DOCKER_LOG

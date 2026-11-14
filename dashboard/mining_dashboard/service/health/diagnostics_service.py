@@ -56,6 +56,12 @@ def submit_diag_logs(container: str, lines: int, actor: str = "") -> str:
     )
 
 
+def submit_svc_restart(container: str, actor: str = "") -> str:
+    return request_spool.write(
+        {"id": str(uuid.uuid4()), "action": "svc-restart", "actor": actor, "container": container}
+    )
+
+
 def submit_support_bundle(hours=None, actor: str = "") -> str:
     intent = {"id": str(uuid.uuid4()), "action": "support-bundle", "actor": actor}
     if hours is not None:

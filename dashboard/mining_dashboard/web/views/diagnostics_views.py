@@ -86,6 +86,27 @@ async def handle_diag_logs(request):
     return web.json_response({"id": rid, "status": "pending"}, status=202)
 
 
+async def handle_svc_restart(request):
+    _require_control_header(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="Body must be JSON.") from None
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="Body must be a JSON object.")
+    container = body.get("container")
+    if not diagnostics_service.valid_container(container):
+        raise web.HTTPBadRequest(text="'container' must be a compose service name.")
+    try:
+        rid = diagnostics_service.submit_svc_restart(
+            container, request.headers.get("X-Auth-User", "")
+        )
+    except Exception:
+        logger.exception("Error submitting svc-restart request")
+        return web.json_response({"error": "Failed to submit the restart request."}, status=500)
+    return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
 async def handle_onion_key(request):
     """Ask the host for the dashboard onion's Tor client-auth credential, shown once (#1882).
 
@@ -140,6 +161,7 @@ def control_routes():
     return [
         web.post("/api/control/diag-doctor", handle_diag_doctor),
         web.post("/api/control/diag-logs", handle_diag_logs),
+        web.post("/api/control/svc-restart", handle_svc_restart),
         web.post("/api/control/onion-client-key", handle_onion_key),
         web.post("/api/control/support-bundle", handle_support_bundle),
         web.get(

@@ -54,7 +54,11 @@ class TestDiagRoutesDisabled:
         sm = StateManager(db_path=":memory:")
         cli = await aiohttp_client(create_app(sm, {}))
         try:
-            for path in ("/api/control/diag-doctor", "/api/control/diag-logs"):
+            for path in (
+                "/api/control/diag-doctor",
+                "/api/control/diag-logs",
+                "/api/control/svc-restart",
+            ):
                 resp = await cli.post(path, headers=CONTROL_HEADERS, json={"container": "tor"})
                 assert resp.status == 404, path
         finally:
@@ -200,6 +204,66 @@ class TestDiagLogs:
         monkeypatch.setattr(request_spool.config, "CONTROL_REQUESTS_DIR", "/nonexistent/requests")
         resp = await diag_client.post(
             "/api/control/diag-logs", headers=CONTROL_HEADERS, json={"container": "tor"}
+        )
+        assert resp.status == 500
+        assert "nonexistent" not in json.dumps(await resp.json())
+
+
+class TestSvcRestart:
+    async def test_requires_the_control_header(self, diag_client, spool):
+        resp = await diag_client.post("/api/control/svc-restart", json={"container": "tor"})
+        assert resp.status == 403
+        assert list((spool / "requests").glob("*.json")) == []
+
+    @pytest.mark.parametrize("body", [b"nope", b"[]", b'"tor"'])
+    async def test_a_body_that_is_not_a_json_object_is_a_400(self, diag_client, spool, body):
+        resp = await diag_client.post(
+            "/api/control/svc-restart",
+            headers={**CONTROL_HEADERS, "Content-Type": "application/json"},
+            data=body,
+        )
+        assert resp.status == 400
+        assert list((spool / "requests").glob("*.json")) == []
+
+    @pytest.mark.parametrize("container", [None, 7, "", "Tor", "tor; reboot", "../x", "a" * 80])
+    async def test_a_malformed_service_is_a_400_and_spools_nothing(
+        self, diag_client, spool, container
+    ):
+        resp = await diag_client.post(
+            "/api/control/svc-restart", headers=CONTROL_HEADERS, json={"container": container}
+        )
+        assert resp.status == 400
+        assert list((spool / "requests").glob("*.json")) == []
+
+    async def test_202_and_spools_a_closed_request(self, diag_client, spool):
+        resp = await diag_client.post(
+            "/api/control/svc-restart",
+            headers={**CONTROL_HEADERS, "X-Auth-User": "admin"},
+            json={"container": "monerod", "lines": 5},
+        )
+        assert resp.status == 202
+        body = await resp.json()
+        assert body["status"] == "pending"
+        assert spooled(spool) == {
+            "id": body["id"],
+            "action": "svc-restart",
+            "actor": "admin",
+            "container": "monerod",
+        }
+
+    async def test_a_wellformed_but_unlisted_service_still_spools_for_the_host_to_refuse(
+        self, diag_client, spool
+    ):
+        resp = await diag_client.post(
+            "/api/control/svc-restart", headers=CONTROL_HEADERS, json={"container": "caddy"}
+        )
+        assert resp.status == 202
+        assert spooled(spool)["container"] == "caddy"
+
+    async def test_a_spool_failure_is_a_500_that_names_no_path(self, diag_client, monkeypatch):
+        monkeypatch.setattr(request_spool.config, "CONTROL_REQUESTS_DIR", "/nonexistent/requests")
+        resp = await diag_client.post(
+            "/api/control/svc-restart", headers=CONTROL_HEADERS, json={"container": "tor"}
         )
         assert resp.status == 500
         assert "nonexistent" not in json.dumps(await resp.json())
