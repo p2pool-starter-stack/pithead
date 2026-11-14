@@ -182,7 +182,7 @@ What the running stack sends to the internet, connection by connection.
 |---|---|---|---|---|---|
 | **monerod** P2P + tx broadcast | Monero network | — | `performance`: direct P2P; `balance`/`privacy`: Tor (`proxy=` / `tx-proxy=`) | on | profile and explicit sync flags govern local nodes; remote mode forces sync false |
 | **monerod** DNS (checkpoints, blocklist, update check, priority-node hostnames) | DNS resolvers | "this IP runs Monero" | ✅ **closed** — `disable-dns-checkpoints`, `check-updates=disabled`, `enable-dns-blocklist=0`, hostname priority-nodes dropped (#161) | n/a | — |
-| **monerod RPC to a remote node** (only if `monero.mode: remote`) | the node you configured | **your real home IP**, to that node's operator | ❌ clearnet | **off** — the bundled local node is the default and has no remote-RPC egress | use a node you run on your LAN or reachable over WireGuard; a `.onion` remote isn't supported — with Tor on, p2pool's socat bridge moves this leg off the SOCKS5 proxy before it could reach Tor |
+| **Monero RPC/ZMQ to external nodes** (the primary when `monero.mode: remote`, plus any `monero.backup_nodes`) | each configured node | **your real home IP**, to each node's operator | ❌ direct clearnet | **off** — the bundled local node is the default and backup links are absent unless configured | use nodes you run on your LAN or reachable over WireGuard; a `.onion` remote isn't supported — with Tor on, P2Pool's bridge moves these links off the SOCKS5 proxy before they could reach Tor |
 | **Tari** P2P | Tari network | — | `performance`: direct TCP; `balance`/`privacy`: Tor SOCKS (`type = "socks5"`) | on | profile and explicit sync flags govern local nodes; remote or off mode forces sync false |
 | **Tari** DNS seeds + Pulse (`seeds.tari.com`, `checkpoints.tari.com`) | DNS resolvers | "this IP runs Tari" | ✅ **closed** — `dns_seeds = []` and onion `peer_seeds` prevent seed lookups; Pulse's advisory lookup fails at the isolated loopback resolver, so no DNS packet leaves the host (#162) | n/a | `performance` or an explicit clearnet sync override re-enables the `seeds.tari.com` DNS seed |
 | **P2Pool** merge-mine gRPC to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — same posture as monerod's own remote-node RPC above | **off** — the bundled local Tari node is the default and this leg only exists in remote mode | use a node on your LAN or reachable over WireGuard; a `.onion` remote isn't supported yet (see [Configuration › Remote Tari node](configuration.md#remote-tari-node)) |
@@ -210,7 +210,8 @@ What the running stack sends to the internet, connection by connection.
 resolved on the clearnet either. The host-networked dashboard reaches the bridge's Tor SOCKS at
 `172.28.0.25:9050`.
 
-A remote node given as a hostname (`monero.remote.host` or `tari.remote.host`) is the exception:
+A remote node given as a hostname (`monero.remote.host`, a `monero.backup_nodes[].host`, or
+`tari.remote.host`) is the exception:
 p2pool's socat bridge (above) only moves the TCP connection itself off the SOCKS5 proxy, so the
 DNS lookup that turns that hostname into an IP still happens on the clearnet, via the container's
 own resolver — same exposure as any of the closed clearnet DNS lookups above, but this one has no
@@ -242,6 +243,10 @@ their opt-in settings. Check the bind settings and host firewall for the actual 
 connection whichever way it draws, so the rows above still apply: anyone who can watch your local
 network can read it. LAN means only that the traffic does not reach the internet.
 
+Backup nodes have the same trust boundary as the primary remote node. RPC and ZMQ connections are
+plaintext, and each configured operator can observe your host's address and node requests. Keep
+`rpc_login` credentials private; Pithead redacts them from outputs.
+
 ---
 
 ## Build / setup-time egress
@@ -254,11 +259,27 @@ attacker can't substitute what you receive.
 |---|---|---|
 | Source clone / release bundle | `github.com` | install / update (`git checkout vX.Y.Z` or downloading the release bundle) |
 | Component binaries (monerod / p2pool / xmrig-proxy) | `downloads.getmonero.org`, `github.com` | **image build only** — verified against a published **SHA256** / checksum. A release install *pulls* prebuilt images instead, so it never runs these. |
-| Container images | **`ghcr.io`** (the `pithead-*` images, #44), `quay.io` (Tari), Docker Hub (caddy, socket-proxy) | image **pull** on a release install / `pithead upgrade`, or build from source. All pinned by **`@sha256:` digest** (#135). |
+| Container images | **`ghcr.io`** (the `pithead-*` images, #44), `quay.io` (Tari), Docker Hub (caddy, socket-proxy) | image **pull** on a Compose release install, or build from source. All pinned by **`@sha256:` digest** (#135). The Pithead OS appliance pulls none of the always-on images; see below. |
 
 Mitigation: run the install/build behind a VPN or with `torsocks`, or pre-pull the images and clone
 on another machine and copy them over. The downloads are pinned (SHA256 + image digests), so the
 risk is the one-time IP disclosure, not tampering.
+
+**The appliance bakes the always-on images (#978).** Tor exists only inside the `pithead-tor`
+image, so a pull during provisioning would be a clearnet request that Tor could not route: your
+ISP would see the lookup and TLS handshake for `ghcr.io`, and GitHub would see your address
+asking for the Monero, P2Pool and XMRig-proxy images. The appliance image therefore carries tor,
+monero, p2pool, xmrig-proxy, the dashboard, caddy and the docker-socket-proxy, each pinned by
+digest, and first boot loads them from disk. A release build also checks the signature of every first-party image it takes from the
+registry, and a startup check skips the registry only for an image whose
+pinned digest is already on the machine. Before Tor is up
+the machine's only network traffic is DHCP and DNS from your router, time synchronization, and the
+clock check against `www.debian.org` that Tor needs before it can build circuits; none of it
+names Pithead. After Tor is up, release metadata, upgrade bundles and OS updates all go through
+Tor.
+
+The Tari images (`quay.io`) are **not** baked: Tari is opt-in, and turning it on is a choice to
+fetch its images. Run Tari only when you accept that one-time clearnet fetch, or leave it off.
 
 ---
 

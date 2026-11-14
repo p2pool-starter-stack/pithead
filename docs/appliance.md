@@ -125,6 +125,13 @@ longer from a USB stick** — prints the address and a one-time token:
   SHA-256: A1:B2:C3:...
 ```
 
+**Setup downloads no container images.** The image carries Tor, Monero, P2Pool, XMRig-proxy,
+the dashboard, Caddy and the socket proxy, so a first boot behind a Tor-hostile or fully
+offline network still completes provisioning. Before Tor is up the machine sends only DHCP and
+DNS requests, time synchronization, and one clock check against `www.debian.org`; it never asks
+`ghcr.io` for anything. Turning Tari on later does fetch its images; see
+[Privacy](privacy.md#build--setup-time-egress).
+
 **Your browser will warn you once, and that is expected.** The machine makes its own
 certificate — the *same* one it keeps using for the dashboard afterwards, so you accept it once
 and the warning does not return across updates, stopped-stack restores, or dashboard password
