@@ -364,19 +364,7 @@ for gate_attempt in $(seq 90); do
         commit_config_stamp
         [ "$hold_chain" != 0 ] || restore_data_floor_after_fallback "$migration_fingerprint" || echo "pithead-boot: FAULT — the previous migration candidate remains protected" >&2
         echo "pithead-boot: stack is serving (HTTP $code) and doctor reports ${gate_advisory:-healthy}${gate_advisory:+ as its only failing check} — booted slot committed${gate_advisory:+ with that recorded as advisory; run './pithead apply' on the machine to re-mint}"
-        # OS-update verdict, success half: this slot just committed while an in-flight flag names
-        # exactly this version — the dashboard-driven update landed and can no longer fall back.
-        if [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
-            to=$(jq -r '.to // ""' "$OS_INFLIGHT" 2>/dev/null)
-            if [ -n "$to" ] && [ "$to" = "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ]; then
-                mkdir -p "$OS_STATE_DIR" 2>/dev/null || true
-                jq -n --arg f "$(jq -r '.from // ""' "$OS_INFLIGHT" 2>/dev/null)" --arg t "$to" --arg a "$gate_advisory" \
-                    '{step:"idle",verdict:{outcome:"updated",from:$f,to:$t,ts:(now|floor),advisory:(if $a == "" then [] else [$a] end)}}' \
-                    >"$OS_STATE_DIR/os-update-state.json" 2>/dev/null || true
-                echo "pithead-boot: OS update to $to committed — verdict published to the dashboard"
-            fi
-            rm -f "$OS_INFLIGHT"
-        fi
+        boot_publish_os_update_verdict "$gate_advisory"
         # Post-commit, the held chain services start and the forward migration runs NOW. Never
         # grounds to fail a boot the commit already accepted: the function alerts and returns.
         [ "$hold_chain" = 1 ] && { release_held_chain_services "$migration_fingerprint" || true; }
@@ -399,4 +387,5 @@ for gate_attempt in $(seq 90); do
     fi
     sleep 10
 done
+if [ "$(gate_tor_transport_verdict)" = wedged ] && gate_network_advisory_commit; then exit 0; fi
 fail_boot "the stack never became healthy (serving + doctor + status)"

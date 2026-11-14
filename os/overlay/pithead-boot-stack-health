@@ -105,3 +105,89 @@ schema_hold_release() {
     ${PITHEAD_DASHBOARD_RESTART_CMD:-docker compose restart dashboard} >/dev/null 2>&1 ||
         echo "pithead-boot: FAULT — the committed slot could not restart the dashboard to run its deferred database migrations; run 'docker compose restart dashboard' from /data/pithead" >&2
 }
+gate_tor_transport_verdict() {
+    BOOT_TOR_VERDICT=down
+    local cid info state health
+    cid=$(docker compose ps -aq tor 2>/dev/null | head -n 1)
+    [ -n "$cid" ] || { printf 'down\n'; return 0; }
+    info=$(docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null)
+    [ -n "$info" ] || { printf 'down\n'; return 0; }
+    state=${info%% *}
+    health=${info##* }
+    if [ "$state" = running ]; then
+        case "$health" in
+        healthy) BOOT_TOR_VERDICT=up ;;
+        starting | unhealthy) BOOT_TOR_VERDICT=wedged ;;
+        esac
+    fi
+    printf '%s\n' "$BOOT_TOR_VERDICT"
+}
+gate_blocked_only_by_network() {
+    GATE_NETWORK_ADVISORY=""
+    command -v jq >/dev/null 2>&1 || return 1
+    [ -s "${BOOT_DOCTOR_JSON:-}" ] || return 1
+    jq -e --arg tor "$1" --arg sat "Tor's circuit-build-time history is saturated" '
+        ($tor != "down") as $torup |
+        ($tor == "wedged") as $w |
+        [.checks[]? | select(.status == "fail") | .message] |
+        all(.[];
+            test("^(Monero|Tari) node is NOT following the chain")
+            or ($torup and test("^" + $sat))
+            or ($w and test("^(monerod|tari|wallet-rpc|tari-wallet) is (down|not ready)")))' \
+        "$BOOT_DOCTOR_JSON" >/dev/null 2>&1 || return 1
+    local line blocked="" bad=0
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        case "$line" in
+        'container monero: chain '* | 'container tari: chain '*) ;;
+        'container tor: '* | 'container monerod: '* | 'container tari: '* | 'container wallet-rpc: '* | 'container tari-wallet: '*)
+            [ "$1" = wedged ] || bad=1 ;;
+        *) bad=1 ;;
+        esac
+        blocked="${blocked:+$blocked; }$line"
+    done <<<"$2"
+    [ "$bad" = 0 ] || return 1
+    local fails
+    fails=$(jq -r '[.checks[]? | select(.status == "fail") | .message] | join("; ")' "$BOOT_DOCTOR_JSON" 2>/dev/null)
+    GATE_NETWORK_ADVISORY=$(printf '%s' "${fails:+$fails}${blocked:+${fails:+; }$blocked}" | jq -Rr '.[0:480]')
+    [ -n "$GATE_NETWORK_ADVISORY" ]
+}
+boot_publish_os_update_verdict() {
+    [ -f "${OS_INFLIGHT:-}" ] && command -v jq >/dev/null 2>&1 || return 0
+    local state_dir
+    state_dir="${OS_STATE_DIR:-data/control/results}"
+    local to
+    to=$(jq -r '.to // ""' "$OS_INFLIGHT" 2>/dev/null)
+    if [ -n "$to" ] && [ "$to" = "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ]; then
+        mkdir -p "$state_dir" 2>/dev/null || true
+        jq -n --arg f "$(jq -r '.from // ""' "$OS_INFLIGHT" 2>/dev/null)" --arg t "$to" --arg a "${1:-}" \
+            '{step:"idle",verdict:{outcome:"updated",from:$f,to:$t,ts:(now|floor),advisory:(if $a == "" then [] else [$a] end)}}' \
+            >"$state_dir/os-update-state.json" 2>/dev/null || true
+        echo "pithead-boot: OS update to $to committed — verdict published to the dashboard"
+    fi
+    rm -f "$OS_INFLIGHT"
+}
+gate_network_advisory_commit() {
+    local gs gh gp target rs rargs=() code size blocked verdict
+    IFS='|' read -r gs gh gp <<<"$(gate_url)"
+    target=$(gate_target_url "$gs" "$gh" "$gp")
+    rs=$(gate_resolve_spec "$gh" "$gp")
+    [ -n "$rs" ] && rargs=(--resolve "$rs")
+    read -r code size <<<"$(gate_probe_header | curl --header @- -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
+        --noproxy '*' --connect-to '::127.0.0.1:' "${rargs[@]}" "$target" 2>/dev/null)"
+    gate_answer_is_dashboard "${code:-000}" "${size:-0}" || return 1
+    PITHEAD_BOOT_GATE=1 ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || true
+    boot_status || true
+    blocked=$(boot_status_blocking)
+    verdict=$(gate_tor_transport_verdict)
+    gate_blocked_only_by_network "$verdict" "$blocked" || return 1
+    rauc status mark-good && sync || return 1
+    boot_gate_passed
+    commit_config_stamp
+    echo "pithead-boot: the dashboard answers and every boot check that still fails is this machine's network, not the slot (${GATE_NETWORK_ADVISORY}) — the fault lives on the shared data, so the previous version carries it too and a rollback could not clear it: the booted slot commits with the fault recorded as advisory, and mining stays down until the network recovers"
+    boot_publish_os_update_verdict "$GATE_NETWORK_ADVISORY"
+    [ "${hold_chain:-0}" != 0 ] || restore_data_floor_after_fallback "${migration_fingerprint:-}" ||
+        echo "pithead-boot: FAULT — the previous migration candidate remains protected" >&2
+    [ "${hold_chain:-}" = 1 ] && { release_held_chain_services "${migration_fingerprint:-}" || true; }
+    return 0
+}

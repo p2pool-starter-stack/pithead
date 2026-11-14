@@ -325,6 +325,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-stack-health.sh" && domain_ran test-appliance-boot-stack-health.sh "$_d0" "$?" || domain_ran test-appliance-boot-stack-health.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-cert-advisory.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-cert-advisory.sh" && domain_ran test-appliance-cert-advisory.sh "$_d0" "$?" || domain_ran test-appliance-cert-advisory.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-boot-network-advisory.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-network-advisory.sh" && domain_ran test-appliance-boot-network-advisory.sh "$_d0" "$?" || domain_ran test-appliance-boot-network-advisory.sh "$_d0" "$?"
 
     # shellcheck source=tests/stack/appliance/test-appliance-boot-release.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-release.sh" && domain_ran test-appliance-boot-release.sh "$_d0" "$?" || domain_ran test-appliance-boot-release.sh "$_d0" "$?"

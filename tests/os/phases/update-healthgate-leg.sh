@@ -151,4 +151,5 @@ phase_update_healthgate_leg() {
         info "leg 5 failure evidence (boot journal, verdict, grubenv, doctor) kept at $SERIAL.leg5-evidence"
         bash scripts/sanitize-test-log.sh --lines 200 "$SERIAL.leg5-evidence"
     fi
+    phase_update_wedged_tor_legs
 }

@@ -493,7 +493,16 @@ and returning to the previous version. If the certificate still does not match a
 the machine keeps the new version and notes the gap in its boot log and with the update's
 recorded outcome: the mismatch is about this machine's addresses, not the update, and
 running `cd /data/pithead && ./pithead apply` at the console mints the certificate — that command now does so
-even when the configuration is unchanged. The machine refuses images that are unsigned, built for
+even when the configuration is unchanged. A second thing the machine will not trade its return to the
+previous version for: when the checks that fail are all this machine's network — Tor not reaching the
+network, and only the checks that hang off that connection failing with it — the new copy is not what
+broke, and the old copy meets the same fault, because the broken state lives on the data partition the
+two copies share. The machine then keeps the new version, keeps serving the dashboard, and names the
+network fault in the boot log and in the update's recorded outcome, exactly as it names a held-back
+check. Mining stays down until the network recovers; nothing else does. A genuinely broken copy still
+goes back: a bad render, a container crash-looping with the network up, or a dashboard that never
+answers all spend the return to the previous version as before.
+The machine refuses images that are unsigned, built for
 different hardware, or older than what it runs. The dashboard has no downgrade override.
 At the console, `cd /data/pithead && ./pithead os-update BUNDLE --allow-downgrade` installs
 an older signed image, but never one below the `/data` migration floor. It also refuses an update
