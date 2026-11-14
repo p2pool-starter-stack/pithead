@@ -337,6 +337,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-labels.sh" && domain_ran test-appliance-boot-labels.sh "$_d0" "$?" || domain_ran test-appliance-boot-labels.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-os-update-verbs.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-os-update-verbs.sh" && domain_ran test-appliance-os-update-verbs.sh "$_d0" "$?" || domain_ran test-appliance-os-update-verbs.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/appliance/test-appliance-power-verbs.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-power-verbs.sh" && domain_ran test-appliance-power-verbs.sh "$_d0" "$?" || domain_ran test-appliance-power-verbs.sh "$_d0" "$?"
 
     # shellcheck source=tests/stack/appliance/test-appliance-data-floor.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-data-floor.sh" && domain_ran test-appliance-data-floor.sh "$_d0" "$?" || domain_ran test-appliance-data-floor.sh "$_d0" "$?"

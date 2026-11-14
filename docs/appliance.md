@@ -509,6 +509,12 @@ operation has finished. See
 step-by-step. The one-click tarball upgrade other installs offer refuses on the
 appliance on purpose — it would apply the wrong kind of update.
 
+The control channel can also reboot or shut the machine down, with a typed `REBOOT` or
+`SHUTDOWN` checked on the host. It refuses either while an update is downloading, installing,
+verifying or waiting for its reboot, and within 5 minutes of another power action. A shutdown stays
+off until the power button is pressed. See
+[Dashboard › Rebooting and shutting down the appliance](dashboard.md#rebooting-and-shutting-down-the-appliance).
+
 For a chain data migration, installation first persists the previous data floor,
 the candidate version and A/B slot, and the new floor. The candidate holds chain
 services until RAUC successfully commits its slot. A failed or superseded install
