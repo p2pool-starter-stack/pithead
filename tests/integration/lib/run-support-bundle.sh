@@ -9,6 +9,7 @@ run_support_bundle() {
         .dashboard.secure = true |
         .dashboard.auth.password = ("dashboard-" + $nonce) |
         .p2pool.stratum_password = ("stratum-" + $nonce) |
+        .telegram.chat_id = "" |
         .telegram.bot_token = ("123456789:" + $nonce)') || return 1
     before=$(upgrade_secret_fingerprints) || return 1
     [ -n "$before" ] || return 1
