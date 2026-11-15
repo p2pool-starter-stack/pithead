@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # ip, token, jar and SERIAL are run.sh's — the guest address, the session, the console log
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 #
 # The boot menu's "Set up again" entry, tier 4 (#1318). Sourced by tests/os/run.sh and run inside
 # phase_rig on the guest the reboot leg just left: a provisioned rig, mining, slot A committed.

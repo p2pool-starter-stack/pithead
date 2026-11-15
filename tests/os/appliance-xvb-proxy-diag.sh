@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Sourced by appliance-xvb-routing-leg.sh; kept apart to hold that file under its budget.
 
 # #2733 (jobs 1211, 1863, 1920, 2183): the restore died to a ConnectTimeout / "No route to host" on

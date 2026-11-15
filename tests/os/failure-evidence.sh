@@ -16,7 +16,7 @@ osupdate_failure_evidence() {
     printf '     os-update rc=%s (124 = harness timeout kill, 255 = ssh transport death)\n' "$1"
     printf '     ssh client stderr: %s\n' "$(tr -d '\r' <"$SSH_ERR" 2>/dev/null | os_redact_addr | tail -3 | tr '\n' ';')"
     printf '     os-update output:\n'
-    printf '%s\n' "$2" | sed 's/^/     | /'
+    printf '%s\n' "$2" | os_redact_addr | sed 's/^/     | /'
     # The console NOW, not at phase end: later boots truncate $SERIAL, which is how every
     # prior occurrence left no console evidence. cleanup() will not clobber this copy.
     cp -f "$SERIAL" "$SERIAL.failed" 2>/dev/null || true
@@ -28,7 +28,7 @@ osupdate_failure_evidence() {
           echo '-- rauc unit --'; journalctl -u rauc --no-pager -n 8 2>/dev/null
           echo '-- memory --'; free -m | head -2
           grep -E 'MemAvailable|HugePages_Total|^Dirty|^Writeback:' /proc/meminfo" 2>/dev/null |
-        tr -d '\r' | sed 's/^/     · /'
+        tr -d '\r' | os_redact_addr | sed 's/^/     · /'
 }
 
 # backup_failure_evidence — the restore leg's source backup refused to complete (#1059).

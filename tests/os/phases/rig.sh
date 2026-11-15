@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 _rig_mining_up() { # <tries>, 10 s apart — 0 once the xmrig unit is active with its process up
     local n=0
@@ -70,7 +72,7 @@ phase_rig() {
         # from the guard's own else-branch (lib/pithead/12-firstboot-wizard.sh).
         land_warn=$(_ssh "journalctl -b --no-pager -o cat | grep -m1 unusable" 2>/dev/null | tr -d '\r')
         [ -n "$land_warn" ] &&
-            ok "#1843: the guard ran — boot journal: $(printf '%s' "$land_warn" | cut -c1-140)" ||
+            ok "#1843: the guard ran — boot journal: $(printf '%s' "$land_warn" | os_redact_addr | cut -c1-140)" ||
             bad "#1843: no 'unusable' line in the boot journal — the guard never ran on this boot"
         # Refused is still readable: the file may carry a stratum password and a VFAT ESP keeps
         # no mode 600, so the refusal scrubs it exactly as the consumed path does.
@@ -162,7 +164,7 @@ phase_rig() {
     if _ssh "jq -e '.pools[0].url == \"127.0.0.1:22\" and .pools[0].user == \"kvm-rig\"' /data/rigforge/config.json >/dev/null"; then
         ok "the miner's config is derived from rig.json (pool + worker name)"
     else
-        bad "the rig's miner config does not match its answers ($(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
+        bad "the rig's miner config does not match its answers ($(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | os_redact_addr | cut -c1-100))"
     fi
     # #1836: the rig's token guards every API, the sister feed the coordinator probes exists, and the
     # writable control path is pinned to the pool host — 127.0.0.1 here, so the guest probes itself over
@@ -172,7 +174,7 @@ phase_rig() {
     [ -n "$card_tok" ] && [ "$card_tok" = "$rtok" ] && ok "the rig card showed the SAME token the miner enforces" || bad "the card's token ('${card_tok:0:8}') is not the miner's ('${rtok:0:8}')"
     _ssh "jq -e '.api == \"enabled\" and .control == \"enabled\" and .api_allow_from == \"127.0.0.1\" and (has(\"control_upgrade\") | not)' /data/rigforge/config.json >/dev/null" &&
         ok "sister API + control enabled, pinned to the pool host; control_upgrade untouched" ||
-        bad "the rig's API keys are not what #1836 renders: $(_ssh "jq -c 'del(.pools, .ACCESS_TOKEN)' /data/rigforge/config.json" | cut -c1-120)"
+        bad "the rig's API keys are not what #1836 renders: $(_ssh "jq -c 'del(.pools, .ACCESS_TOKEN)' /data/rigforge/config.json" | os_redact_addr | cut -c1-120)"
     _rig_http() { _ssh "curl -s -m 5 -o /dev/null -w '%{http_code}' $*" 2>/dev/null | tr -d '\r'; }
     while [ "$ptries" -lt 12 ] && [ "$(_rig_http -H "'Authorization: Bearer $rtok'" http://127.0.0.1:8081/1/summary)" != "200" ]; do
         sleep 5

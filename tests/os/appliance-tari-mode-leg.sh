@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Day-two tari.mode switching from the dashboard on a live appliance (#1929). Sourced by
 # tests/os/run.sh; --self-test covers the pure verdicts without a guest.
 #
@@ -174,7 +176,7 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
         return 1
     fi
     if ! tari_commit_verdict "$result"; then
-        bad "tari.mode off did not apply: $(printf '%s' "$result" | jq -r '.error // .status')"
+        bad "tari.mode off did not apply: $(printf '%s' "$result" | jq -r '.error // .status' | os_redact_addr)"
         return 1
     fi
     ok "turning Tari off commits from the dashboard with a typed APPLY and no second identity"
@@ -243,7 +245,7 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
         result=$(tari_mode_commit "$proposed") && tari_commit_verdict "$result"; then
         restored=1
     else
-        bad "tari.mode could not be restored to $origin ($(printf '%s' "${result:-}" | jq -r '.error // .status // "no result"' 2>/dev/null)) — the machine is left NOT merge-mining"
+        bad "tari.mode could not be restored to $origin ($(printf '%s' "${result:-}" | jq -r '.error // .status // "no result"' 2>/dev/null | os_redact_addr)) — the machine is left NOT merge-mining"
         rc=1
     fi
     if [ "$restored" -eq 1 ]; then

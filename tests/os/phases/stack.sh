@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # The stack phase (#2062): tests/integration/run.sh (the DIY gate, what release-gate.yml runs)
 # has never once run against the appliance runtime — podman through the docker shim, read-only
@@ -88,7 +90,7 @@ _stack_run_integration() { # <label> <extra args...>
         # of those needs a different fix. This flows into the same kvm-<phase>.log artifact the
         # rest of the battery already writes through, so it costs nothing to keep.
         bad "DIY gate vs. appliance channel: $label (exit $rc)"
-        sed 's/\x1b\[[0-9;]*m//g' "$out"
+        os_redact_addr <"$out" | sed 's/\x1b\[[0-9;]*m//g'
         # The DIY gate's own per-scenario capture (lib.sh:capture_artifacts) writes status/doctor/
         # compose/api-state into results/<scenario>/ on THIS host, and bench-ci collects fixed paths
         # only — so job 497 could not answer "what did `pithead status` actually say" for a leg that
@@ -100,12 +102,12 @@ _stack_run_integration() { # <label> <extra args...>
             "$SCRIPT_DIR/../integration/results"/*/api-state.json; do
             [ -f "$f" ] || continue
             info "  [$label] --- ${f#*results/} ---"
-            sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
+            os_redact_addr <"$f" | sed 's/\x1b\[[0-9;]*m//g' | head -n 60
         done
     fi
     # The merge-mining round-trip's row rides along on a pass too: it is the one row whose verdict
     # (a chain_id read from the Tari node, #1397/#2326) is this channel's evidence on its own.
-    grep -a -e 'of which:' -e '(#1397)' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
+    grep -a -e 'of which:' -e '(#1397)' "$out" | os_redact_addr | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"
     done
     rm -f "$out"

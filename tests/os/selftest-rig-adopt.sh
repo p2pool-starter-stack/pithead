@@ -51,6 +51,12 @@ _ssh() {
         [ "$scenario" != enable-fails ] || return 1
         touch "$scratch/enabled"
         ;;
+    *config.json.restore*)
+        [ "$ip" = "$rig_ip" ] || fail 'restored max_temp_c on the coordinator'
+        case "$scenario" in *restore-fails) return 1 ;; esac
+        case "$*" in *'del(.max_temp_c)'*) printf 'unset\n' >"$scratch/max_temp_c" ;; *) printf 'null\n' >"$scratch/max_temp_c" ;; esac
+        printf 'ssh\n' >>"$scratch/writes"
+        ;;
     *max_temp_c*)
         [ "$ip" = "$rig_ip" ] || fail 'read max_temp_c from the coordinator'
         [ "$scenario" != missing-original ] || return 1
@@ -68,10 +74,9 @@ dashboard_curl() {
     [ -f "$scratch/enabled" ] || fail 'config requested before control enabled'
     case "$*" in
     '-fsSk -m 10 https://192.0.2.2/api/worker?name=kvm-rig-share')
-        [ "$scenario" != missing-effective ] || return 1
         local value id="" row=accepted polls=0
         value=$(cat "$scratch/max_temp_c")
-        [ "$value" != unset ] || value=1
+        [ "$value" != unset ] || value=null
         if [ -f "$scratch/change-id" ]; then
             id=$(cat "$scratch/change-id")
             polls=$(cat "$scratch/history-polls")
@@ -150,7 +155,10 @@ run_case() {
     local rig_ip=192.0.2.1 coord_ip=192.0.2.2 ip=192.0.2.1 coord_user=fixture coord_pass=login
     local card_token=fixture-card-secret rig_card='{"token":"fixture-card-secret"}'
     local stored_value="$original_value"
-    case "$scenario" in absent-original | missing-effective) stored_value=unset original_value=1 ;; esac
+    case "$scenario" in
+    absent-original | absent-restore-fails) stored_value=unset original_value=unset ;;
+    null-original | null-restore-fails) stored_value=null original_value=null ;;
+    esac
     rm -f "$scratch/adopted" "$scratch/enabled" "$scratch/writes" "$scratch/change-id" "$scratch/history-polls"
     printf '0\n' >"$scratch/tick"
     printf '%s\n' "$stored_value" >"$scratch/max_temp_c"
@@ -164,10 +172,16 @@ run_case() {
         [ "$(cat "$scratch/max_temp_c")" = "$original_value" ] || fail 'max_temp_c was not restored'
         [ "$(cat "$scratch/pools")" = original ] || fail 'pools were changed'
         [ "$(wc -l <"$scratch/writes")" -eq 2 ] || fail 'missing write or restore'
+        [ "$(tail -1 "$scratch/writes")" = "$original_value" ] || [ "$original_value" = unset ] || [ "$original_value" = null ] || fail 'wrong last write'
+        case "$original_value" in unset | null) [ "$(tail -1 "$scratch/writes")" = ssh ] || fail 'non-numeric original not restored on the rig' ;; esac
         [ "$(cat "$scratch/history-polls")" -ge 3 ] || fail 'accepted response bypassed history completion'
         grep -q 'added .* seconds' "$scratch/output" || fail 'missing elapsed time'
     fi
     case "$scenario" in
+    null-restore-fails | absent-restore-fails)
+        [ "$(tail -1 "$scratch/writes")" = 77 ] || fail "$scenario did not attempt the probe"
+        grep -q 'restoration failed' "$scratch/output" || fail "$scenario did not report the failed restore"
+        ;;
     write-fails | false-applied | changed-pools | restore-fails)
         [ "$(tail -1 "$scratch/writes")" = "$original_value" ] || fail "$scenario did not attempt restore"
         ;;
@@ -177,8 +191,11 @@ run_case() {
 run_case success 0
 run_case zero-original 0 0
 run_case absent-original 0
+run_case null-original 0
+run_case null-restore-fails 1
+run_case absent-restore-fails 1
 for scenario in already-adopted malformed-state missing-worker unavailable-state missing-original undrained provisioning-busy provisioning-failed \
-    enable-fails preview-fails commit-fails stale-adoption api-down missing-effective write-fails false-applied changed-pools restore-fails exposed-port \
+    enable-fails preview-fails commit-fails stale-adoption api-down write-fails false-applied changed-pools restore-fails exposed-port \
     history-stuck history-rejected history-wrong-id history-unavailable history-malformed history-secret-status malformed-change-id; do
     run_case "$scenario" 1
 done

@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Sourced by tests/os/run.sh. A live stack is not a finished provisioning: the wizard's `(setup)`
 # (and pithead-boot's `./pithead up`) holds the mutation lock through `compose up`'s tor-health
 # wait, minutes after `podman ps` shows dashboard and caddy, and a `pithead backup` started then

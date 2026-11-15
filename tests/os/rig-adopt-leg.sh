@@ -17,7 +17,7 @@ _rig_adopt_state() {
 
 _rig_adopt_snapshot() {
     local current pools ip="${rig_address:-$ip}"
-    current=$(_ssh "jq -er 'if has(\"max_temp_c\") then .max_temp_c | select(type == \"number\" and . >= 0 and . <= 100) else \"unset\" end' /data/rigforge/config.json") || return 1
+    current=$(_ssh "jq -er 'if has(\"max_temp_c\") then (.max_temp_c | if . == null then \"null\" elif type == \"number\" and . >= 0 and . <= 100 then . else error(\"bad\") end) else \"unset\" end' /data/rigforge/config.json") || return 1
     pools=$(_ssh "set -o pipefail; jq -ceS '.pools | select(type == \"array\" and length > 0)' /data/rigforge/config.json | sha256sum") || return 1
     printf '%s %s\n' "$current" "${pools%% *}"
 }
@@ -58,8 +58,28 @@ _rig_adopt_apply() {
     return 1
 }
 
+_rig_adopt_restore() {
+    local original="$1" pools="$2" filter
+    case "$original" in
+    unset) filter='del(.max_temp_c)' ;;
+    null) filter='.max_temp_c = null' ;;
+    *)
+        _rig_adopt_apply "$original" "$pools"
+        return
+        ;;
+    esac
+    local ip="${rig_address:-$ip}"
+    _ssh "set -eu
+cd /data/rigforge
+umask 077
+staging=\$(mktemp config.json.restore.XXXXXX)
+jq '$filter' config.json > \"\$staging\"
+mv \"\$staging\" config.json" || return 1
+    [ "$(_rig_adopt_snapshot)" = "$original $pools" ]
+}
+
 _rig_adopt_round_trip() (
-    trap '_rig_adopt_apply "$original" "$pools" && printf "restored\n" || { printf "restore-failed\n"; exit 1; }' EXIT
+    trap '_rig_adopt_restore "$original" "$pools" && printf "restored\n" || { printf "restore-failed\n"; exit 1; }' EXIT
     trap 'exit 1' INT TERM
     _rig_adopt_apply "$probe" "$pools" || exit 1
     printf 'changed\n'
@@ -112,14 +132,8 @@ mv "$staging" config.json
     }
     ok "M12: preview and typed APPLY adopt the rig with its API reachable (#3069)"
     local ip="$coord_ip"
-    if [ "$original" = unset ]; then
-        result=$(dashboard_curl -fsSk -m 10 "https://$ip/api/worker?name=kvm-rig-share" 2>/dev/null) &&
-            original=$(printf '%s' "$result" | jq -er '.rig_config.max_temp_c | select(type == "number" and . >= 0 and . <= 100)') || {
-            bad "M12: the rig did not report its effective max_temp_c default (#3069)"
-            return 1
-        }
-    fi
-    probe=$(jq -nr --argjson value "$original" 'if $value == 77 then 78 else 77 end') || return 1
+    probe=77
+    [ "$original" != 77 ] || probe=78
     flags=$(_rig_adopt_round_trip) || trip_rc=$?
     case "$flags" in *changed*) changed=1 ;; esac
     case "$flags" in *restored*) restored=1 ;; esac

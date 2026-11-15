@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
 # The provision leg proper, plus the one assertion that must survive its aborts.
@@ -342,7 +344,7 @@ _phase_provision_initial_body() {
     if _ssh "jq -e '.pools[0].url == \"127.0.0.1:3333\"' /data/rigforge/config.json >/dev/null"; then
         ok "built-in miner is wired to the machine's own stratum (127.0.0.1:3333)"
     else
-        bad "the built-in miner's config does not dial the machine's own stratum (pools: $(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
+        bad "the built-in miner's config does not dial the machine's own stratum (pools: $(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | os_redact_addr | cut -c1-100))"
     fi
 
     # Same-apply convergence: exercise both toggles while the original boot is still running.

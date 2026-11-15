@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 
 # shellcheck source=tests/integration/lib/tor-control-dial.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../integration/lib" && pwd)/tor-control-dial.sh"
@@ -24,7 +26,7 @@ _egress_capture_diagnostics() {
     info "  egress diagnostics (#2059) — is the table ABSENT, or PRESENT but ineffective?"
     while IFS=$'\t' read -r label cmd; do
         [ -n "$label" ] || continue
-        out=$(_ssh "$cmd" </dev/null 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
+        out=$(_ssh "$cmd" </dev/null 2>/dev/null | os_redact_addr | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
         info "    $label: ${out:-<empty>}"
         ran=$((ran + 1))
     done < <(egress_diag_probes)

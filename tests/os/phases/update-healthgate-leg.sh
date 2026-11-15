@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # leg 5 — a container whose OWN healthcheck fails must hold the gate (#2383, manual battery M9).
 # Split from phases/update.sh (file-budget ratchet): called from phase_update right after
@@ -60,7 +62,7 @@ _update_healthgate_leg_body() {
     if [ "$(printf '%s' "$out" | jq -r '.status')" = "installed" ]; then
         ok "leg 5: fault bundle installed into the spare slot through the dashboard action"
     else
-        bad "leg 5: the dashboard could not check, download, verify and install the fault bundle (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 5: the dashboard could not check, download, verify and install the fault bundle (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
         return
     fi
     fserial_mark=$(wc -c <"$SERIAL") || {
