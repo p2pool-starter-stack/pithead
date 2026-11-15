@@ -446,11 +446,11 @@ the configured test registry fail before the image build. Release builds do not 
   (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
   diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|setup-defaults|rig|rigmedia|rigkeep|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|p2pool-heal|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate, including image-upgrade, fault, reset and stack, and the full run is required once for
-every RC candidate.
+crossupdate, tor-heal and p2pool-heal — since #3995 that includes rigkeep alongside image-upgrade,
+fault, reset and stack — and the full run is required once for every RC candidate.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
