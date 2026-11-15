@@ -94,7 +94,33 @@ _failover_pool_stop() {
     FAILOVER_POOL_DIR=""
 }
 
+_failover_pin_rig() {
+    local cfg
+    if [ -z "$RIG_HOST" ] || [ -z "${IT_RIG_TOKEN:-}" ]; then
+        it_fail "failover-view has the rig host and token to pin the rig (#4074)" "--rig-host or the rig token is missing"
+        return 1
+    fi
+    cfg="$(rx 'cat config.json' | IT_RIG_TOKEN="$IT_RIG_TOKEN" jq --arg n "$RIG_NAME" --arg h "$RIG_HOST" --argjson cp "$RIG_CONTROL_PORT" '
+        del(.dashboard.workers)
+        | .workers.list = ((.workers.list // []) | map(select(.name != $n)) + [{name:$n, host:$h, port:8081, control_port:$cp, token:env.IT_RIG_TOKEN}])')" || return 1
+    FAILOVER_CONFIG_PUSHED=1
+    push_config "$cfg" && pithead apply -y >/dev/null 2>&1 || {
+        it_fail "failover-view pinned the rig in workers.list (#4074)" "config push or apply failed"
+        return 1
+    }
+    wait_status_ok 240 || true
+    wait_for 120 5 "the dashboard to poll the pinned rig" _pred_failover_row_polled
+}
+
+_pred_failover_row_polled() {
+    _failover_snapshot && [ "$(_failover_row_field "$FAILOVER_STATE" "$RIG_NAME" '.api_ok')" = true ]
+}
+
 _failover_view_restore() {
+    if [ "${FAILOVER_CONFIG_PUSHED:-0}" = 1 ]; then
+        push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 || it_fail "failover-view restored the baseline config (#4074)" "config push or apply failed"
+        wait_status_ok 240 || true
+    fi
     rx "docker compose up -d monerod" >/dev/null 2>&1 || true
     wait_for 240 5 "monerod healthy after the failover view" _pred_monerod_healthy || true
     wait_for 180 5 "xmrig-proxy readmitted after the failover view" _pred_failover_armed || true
@@ -185,6 +211,7 @@ run_failover_view() {
         return 0
     fi
     FAILOVER_POOL_DIR=""
-    _failover_view_legs
+    FAILOVER_CONFIG_PUSHED=0
+    _failover_pin_rig && _failover_view_legs
     _failover_view_restore
 }
