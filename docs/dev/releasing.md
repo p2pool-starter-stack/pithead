@@ -83,6 +83,15 @@ image builds name the base's openssl and musl packages in their apk upgrade list
 builds name packages such as apt and zlib1g in their install lists, so an installable fix lands on
 the next rebuild without an ignore (#1438, #3923, #3929).
 
+The Tor image pins its apk package by `ARG TOR_VERSION` in `build/tor/Dockerfile`, because Alpine's
+repository would otherwise change the Tor in the image between builds with no commit here (#4125): the
+0.4.9.17 bump changed state-file semantics and turned the `tor-heal` proof red. `apk add` refuses a pin
+the repository no longer carries, and the build then runs `tor --version` and fails unless it reports the
+pinned version. The Dockerfile also names the base's openssl and musl libs in `--upgrade` and installs
+netcat for the bootstrap healthcheck; it deliberately omits `xxd`, which busybox already provides (#1372).
+Bump `TOR_VERSION` by hand, and re-run the `tier4-kvm` `tor-heal` phase on the result: it is the live proof
+of Tor's state-file behaviour.
+
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
 ([#1377](https://github.com/p2pool-starter-stack/pithead/issues/1377)).
