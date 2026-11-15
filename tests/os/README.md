@@ -33,6 +33,13 @@ no unexpected-abort message or debug advice. `selftest-tor-recovery-refusal.sh` 
 this guest script against the generated CLI and a pre-fix dispatch negative control,
 without a container or guest. The live result requires a KVM job on the PR head.
 
+The opt-in `p2pool-heal` phase (#4077) provisions a guest. When the guest P2Pool reports readable peerless stats, it
+observes the dashboard restart it (within 50 minutes), keep at least 20 minutes between restarts, stay within three
+and leave P2Pool running. A stock guest P2Pool reports no stats, so the phase instead runs the dashboard's healer
+inside the dashboard container against zero-peer stats and the real container control path, and requires the
+P2Pool container to restart and be running. Peer-loss detection itself is proved by the `fault-injection` e2e leg.
+`selftest-pool-heal.sh` exercises the phase wrapper without a guest.
+
 The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
 It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
 with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery
@@ -299,6 +306,14 @@ the configured test registry fail before the image build. Release builds do not 
   again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
   the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
   counts it a `missing` leg skip, the same env vars the `stack` phase needs.
+  Before the shares are polled the leg asserts the M11 hashrate floor (#3996): the rig's own
+  RigForge feed must report a nonzero hashrate (`rig_share_hashrate_wait`). The M12 adopt leg
+  (#3069, backported here in #3994) then runs (`tests/os/rig-adopt-leg.sh`): it enables the
+  coordinator's control channel, previews and commits an adoption with typed `APPLY`, polls
+  until the worker reads adopted with a reachable API, pushes one reversible `DONATION`
+  change to `applied` by its exact `change_id`, checks the pools sha256 unchanged, restores the
+  original value, and proves the unpinned bench host still cannot reach the control port;
+  `selftest-rig-adopt.sh` covers those paths without a guest.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -326,6 +341,9 @@ the configured test registry fail before the image build. Release builds do not 
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
+  Fault E (#4038) runs `recovery-bundle` on the fault guest with no container running and a
+  deliberately failed pithead unit; the archive must be mode 600 under `/data/pithead/support-bundles`,
+  hold that unit's journal line, and its path must appear on the serial console.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
   with local chains and the non-default nano pool. Each setup-again session separately checks
   the current boot journal for a minted token, the new-boot serial slice and tty1 text from
@@ -457,6 +475,16 @@ row below). Narrower invocations print a subset and nothing else: `--phase updat
 by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
 `--phase rig` prints that row alone, and `--phase provision` prints only the reserved-node row,
 and only on a credentialed bench.
+
+`--require-complete` (#3996) turns `missing` into failure material: the release rig/rigmedia/media
+split is submitted with it (`options.require_complete`, `docs/dev/releasing.md`; bench-ci appends
+the flag to each phase of that split), and the run then prints a failed row and exits non-zero when
+any row skipped for a missing input, so the accepted-share row can never pass as a skip on the job
+that gates a release. Until bench-ci#2480 puts `node` on the tier4-kvm harness host, the rig
+phase's #1867 card-render row is itself one of those missing skips, so that split fails closed on
+it by design. `by-design` and `covered` skips stay accepted — the flag asks one question: did the
+job get every input it said it would run with? The verdict is the pure `require_complete_verdict`
+in `tests/os/require-complete-verdict.sh`, covered by `selftest-require-complete.sh`.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer

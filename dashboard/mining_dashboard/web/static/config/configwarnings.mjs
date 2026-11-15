@@ -14,7 +14,7 @@ export const FIELD_WARNINGS = {
   "tari.wallet_address":
     "Tari payout address is changing — future merge-mining rewards go to the new address.",
   "dashboard.auth.password":
-    "Dashboard login password changing — every other signed-in session is logged out, a mistyped password locks this session out too, and on the appliance it is also the console root login. Keep another way to reach this machine handy before you confirm.",
+    "Dashboard login password changing — every signed-in session is logged out, this one included, a mistyped password locks you out, and on the appliance it is also the console root login. Keep another way to reach this machine handy before you confirm.",
   "telegram.enabled":
     "Telegram bot — turning it off stops every Telegram alert, the wallet-change and clearnet-exposure tamper alarms included.",
   "telegram.bot_token":
