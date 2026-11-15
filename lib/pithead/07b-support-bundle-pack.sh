@@ -7,7 +7,7 @@ CAP_LINES_HEAD_SHARE = 4
 
 def cap_lines(lines, cap):
     head_budget = cap // CAP_LINES_HEAD_SHARE
-    tail_budget = cap - head_budget
+    tail_budget = cap
     head, head_bytes, in_tail = [], 0, False
     tail, tail_bytes = collections.deque(), 0
     dropped_lines = dropped_bytes = total_lines = total_bytes = 0
@@ -18,7 +18,9 @@ def cap_lines(lines, cap):
             head.append(line)
             head_bytes += len(line)
             continue
-        in_tail = True
+        if not in_tail:
+            in_tail = True
+            tail_budget = cap - head_bytes
         tail.append(line)
         tail_bytes += len(line)
         while tail_bytes > tail_budget and tail:
@@ -39,9 +41,11 @@ def cap_lines(lines, cap):
 
 
 def state_for(lines, installed, short):
+    if short:
+        return "journal_short"
     if lines == 0:
         return "empty" if installed else "missing"
-    return "journal_short" if short else "ok"
+    return "ok"
 
 
 def stream_cap(dest, cap, meta, installed, short, since, until):
@@ -109,19 +113,23 @@ if os.path.exists(steps_path):
         step, status, reason = (row.split("\t") + ["", ""])[:3]
         failures.append({"step": step, "status": status, "reason": reason})
 
+stuck = set()
 while total_size() > total_cap:
     candidates = [
         (os.path.getsize(full), rel, full)
         for rel, full in files()
-        if read_meta(rel)[1] is not None and os.path.getsize(full) > FLOOR
+        if rel not in stuck and read_meta(rel)[1] is not None and os.path.getsize(full) > FLOOR
     ]
     if not candidates:
         failures.append({"step": "total-cap", "status": "failed", "reason": "bundle is over the total cap and no file can shrink further"})
         break
     size, rel, full = max(candidates)
     mpath, meta = read_meta(rel)
+    target = max(FLOOR, size // 2)
+    if target == FLOOR:
+        stuck.add(rel)
     with open(full, "rb") as fh:
-        out, _tl, _tb, dl, db = cap.cap_lines(fh, max(FLOOR, size // 2))
+        out, _tl, _tb, dl, db = cap.cap_lines(fh, target)
     with open(full, "wb") as fh:
         fh.writelines(out)
     meta["truncated"] = True

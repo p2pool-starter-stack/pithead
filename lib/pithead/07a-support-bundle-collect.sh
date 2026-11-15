@@ -33,8 +33,9 @@ def parse(name, value):
     if not m:
         sys.exit("%s %r is not an RFC 3339 time such as 2026-11-15T10:00:00Z" % (name, value))
     zone = "+00:00" if m.group(3) in "Zz" else m.group(3)
+    frac = "." + (m.group(2) or ".")[1:].ljust(6, "0")[:6]
     try:
-        return datetime.fromisoformat(m.group(1) + zone).astimezone(timezone.utc)
+        return datetime.fromisoformat(m.group(1) + frac + zone).astimezone(timezone.utc)
     except ValueError:
         sys.exit("%s %r is not a valid time" % (name, value))
 
@@ -53,9 +54,9 @@ print(since.strftime("%Y-%m-%dT%H:%M:%SZ"), until.strftime("%Y-%m-%dT%H:%M:%SZ")
 }
 
 bundle_support_step_fail() {
-    local tmp="$1" step="$2" status="$3" reason
-    reason=$(printf '%s' "$4" | bundle_redact_log | tr '\t\n' '  ' | cut -c1-200)
-    printf '%s\t%s\t%s\n' "$step" "$status" "$reason" >>"$tmp/steps.tsv"
+    local tmp="$1" step="$2" kind="$3" why
+    why=$(printf '%s' "$4" | bundle_redact_log | tr '\t\n' '  ' | cut -c1-200)
+    printf '%s\t%s\t%s\n' "$step" "$kind" "$why" >>"$tmp/steps.tsv"
 }
 
 bundle_support_capture() {
@@ -142,7 +143,7 @@ bundle_support_collect() {
         df -h / /data 2>/dev/null
         echo
         free -h 2>/dev/null
-    } >"$tmp/bundle/host.txt" 2>&1
+    } 2>&1 | bundle_redact_log >"$tmp/bundle/host.txt"
 
     if command -v journalctl >/dev/null 2>&1; then
         local jargs=(--since "$jsince" --until "$juntil" --no-pager --utc)
@@ -176,8 +177,8 @@ bundle_support_collect() {
         render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
         if [ -f "$tmp/scratch/masked/config.json" ]; then
             bundle_mask_config <"$tmp/scratch/masked/config.json" |
-                jq 'def j: if type=="object" then with_entries(.value |= j) elif type=="array" then map(j) else null end; j' \
-                    >"$tmp/bundle/config.shape.json" 2>/dev/null || true
+                jq 'def j: if type=="object" then with_entries(.value |= j) elif type=="array" then map(j) else null end; j' 2>/dev/null |
+                bundle_redact_log >"$tmp/bundle/config.shape.json" || true
         fi
     fi
 
@@ -193,7 +194,7 @@ until = float(os.environ["PITHEAD_SUPPORT_UNTIL"])
 try:
     conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
     conn.row_factory = sqlite3.Row
-    out = {}
+    out = {"row_limit_per_table": 5000}
     for table, tcol, cols in (
         ("history", "timestamp", "timestamp, v, v_p2pool, v_xvb"),
         ("events", "ts", "ts, type, detail"),

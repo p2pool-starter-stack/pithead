@@ -326,6 +326,24 @@ assert_eq "the manifest records the shrunk files" \
 assert_eq "the sum of the file sizes fits the stated cap" \
     "$(sb_man "$SB/extractB" '([.files[].bytes] | add) <= 300000 + 100000')" "true"
 
+echo "== control channel: a total cap no file can meet ends, applies and says so =="
+sidE="c403c403-0000-4000-8000-00000000000e"
+rm -f "$SB/staged/.support-bundle-stamp"
+(
+    export PATH="$SB/bin:$PATH" SB_BULK=3000 PITHEAD_SUPPORT_MAX_TOTAL_BYTES=1
+    run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidE" support-bundle)" "$SB"
+) >/dev/null 2>&1
+assert_eq "an unmeetable total cap still applies" "$(jq -r .status "$SB/results/$sidE.json")" "applied"
+sb_unzip "$SB/results/$sidE.zip" "$SB/extractE"
+assert_eq "the manifest records that the cap could not be met" \
+    "$(sb_man "$SB/extractE" '[.failures[] | select(.step == "total-cap")] | length')" "1"
+
+echo "== control channel: a window shorter than a second is compared with its fractions =="
+sidF="c403c403-0000-4000-8000-00000000000f"
+sb_run "$(sb_req "$sidF" support-bundle ',"since":"2026-11-10T10:00:00.900Z","until":"2026-11-10T10:00:00.100Z"')"
+assert_eq "a start after the end by a fraction of a second is rejected" \
+    "$(jq -r .status "$SB/results/$sidF.json")" "rejected"
+
 echo "== control channel: a failed or timed-out step is recorded with its reason and the rest still collects =="
 sidC="c403c403-0000-4000-8000-00000000000c"
 rm -f "$SB/staged/.support-bundle-stamp"

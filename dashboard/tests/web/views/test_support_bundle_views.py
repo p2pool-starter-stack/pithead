@@ -156,6 +156,4 @@ class TestSupportBundleDownload:
         resp = await bundle_client.get("/api/control/support-bundle-download", params={"id": rid})
         assert resp.status == 200
         assert await resp.read() == b"zipbytes"
-        assert (
-            'attachment; filename="support-bundle-x.zip"' in resp.headers["Content-Disposition"]
-        )
+        assert 'attachment; filename="support-bundle-x.zip"' in resp.headers["Content-Disposition"]
