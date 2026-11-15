@@ -1,13 +1,13 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # IT_STEP_* are consumed by the lib/run-*.sh callers
 it_run_logged() {
-    local dir="$1" step="$2" raw rc=0
+    local dir="$1" step="$2" raw="" rc=0
     shift 2
     IT_STEP_NAME="$step"
     IT_STEP_RC=0
     IT_STEP_LOG=""
-    if [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null; then
-        raw="$dir/.$step.raw"
+    if [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null &&
+        raw="$(mktemp "${TMPDIR:-/tmp}/it-${step}-raw.XXXXXX" 2>/dev/null)" && [ -n "$raw" ]; then
         "$@" >"$raw" 2>&1
         rc=$?
         redact <"$raw" >"$dir/$step.log" 2>/dev/null || true

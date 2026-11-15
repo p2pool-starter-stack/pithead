@@ -167,6 +167,9 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         if [ "${STEP_LOGS:-no}" = yes ] && [ -s "$OUT_DIR/lifecycle-restore/apply.log" ]; then
             printf '|log=%s' "$(tr '\n' '~' <"$OUT_DIR/lifecycle-restore/apply.log")"
         fi
+        if [ "${RAWCHECK:-no}" = yes ]; then
+            printf '|raw=%s' "$(find "$OUT_DIR" -name '*.raw' 2>/dev/null | wc -l | tr -d ' ')"
+        fi
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
         [ "$RESTORE_CASE" != carry-rows-unreadable ] || printf '|applied=%s' "$([ -e "$OUT_DIR/dashboard-carry.apply.log" ] && echo yes || echo no)"
         case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
@@ -365,6 +368,8 @@ case "$(STEP_LOGS=yes drive_restore yes apply-fails)" in
 *fixture-secret*) it_fail "the retained step log drops the planted secret value (#3641)" ;;
 *) it_pass "the retained step log drops the planted secret value (#3641)" ;;
 esac
+assert_eq "no raw capture survives under the results tree (#3641)" \
+    "$(RAWCHECK=yes drive_restore yes apply-fails)" "1|1|raw=0"
 
 echo "selftest-lifecycle-restore-health: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
