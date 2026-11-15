@@ -109,9 +109,6 @@ poison() {
         sleep 1
     done
     [ "$attempt" -lt 30 ] || return 1
-    # Tor 0.4.8+ self-repairs a saturated history at load and rewrites the state file without
-    # the signature; a poisoned file only survives once that write has landed. Re-poison on
-    # every foreign rewrite and require a saturated file through three quiet checks.
     for ((attempt = 0; attempt < 45; attempt++)); do
         if saturated "$data/state"; then
             stable=$((stable + 1))
@@ -181,10 +178,6 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
 done
 [ "$diagnosed" = 1 ]
 echo 'PASS: first-round saturated alert is delivered within 25 minutes (#3118)'
-# Tor >=0.4.8 rewrites its state on every clean shutdown, so the recovery's own stop would wipe
-# the poisoned file before the backup. Tor must stay up for the two applied NEWNYM rounds, and
-# once they land the script stops Tor itself: the recovery stop is then a no-op and the poisoned
-# file survives into the backup.
 stage=recovery-stop
 deadline=$((started + 70 * 60))
 while [ "$(date +%s)" -lt "$deadline" ] && [ "$(newnym_applied "$started")" -lt 2 ]; do

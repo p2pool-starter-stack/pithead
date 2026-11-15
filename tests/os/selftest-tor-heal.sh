@@ -122,8 +122,6 @@ sink_stop_rc=21
 if restore_case 0 0 1 >"$work/restore-sink-failure"; then exit 1; else [ "$?" = 1 ]; fi
 grep -q 'Guest restoration exit: 1; original exit: 0' "$work/restore-sink-failure"
 unset sink_stop_rc
-# Poison against a guest Tor that rewrites the state at start (the #4122 class: Tor >=0.4.8
-# self-repairs the saturated history on load): poison must leave a saturated file anyway.
 poison_case() (
     mode=$1
     data="$work/poison-$mode"
@@ -149,7 +147,6 @@ poison_case() (
 )
 poison_case repaired
 poison_case preserving
-# The script stops Tor only after the ladder's two NEWNYM rounds landed, before the recovery.
 grep -E '^stage=(recovery-stop|host-recovery)$' "$ROOT/tests/os/tor-heal-guest.sh" |
     tr '\n' ' ' | grep -qx 'stage=recovery-stop stage=host-recovery '
 grep -Fq 'newnym_applied "$started")" -lt 2' "$ROOT/tests/os/tor-heal-guest.sh"

@@ -391,7 +391,7 @@ _phase_provision_initial_body() {
     phase_provision_reserved_node_legs
 }
 
-phase_provision_reserved_node_legs() { # #4123: consumer phases run the reserved-node proof and its routing leg
+phase_provision_reserved_node_legs() {
     if [ "${OS_RESERVED_NODE_CONSUMER:-1}" = 1 ]; then
         phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad "reserved-node regression phase aborted before completing required checks"
     else
