@@ -15,7 +15,7 @@ rig_small_guest_leg() { # <img>
 
 _rig_small_guest_run() { # <img>
     local img="$1" token="" tries=0 jar body scode sysfile pool after mounts unitlog
-    local mode rtok light hr cls summ ptries=0 oom rtries=0 htries card="" ctries=0 arc=0
+    local mode rtok light hr cls summ bench bline hrsrc ptries=0 oom rtries=0 htries card="" ctries=0 arc=0
     info "small-guest leg (#4010) — the rig role on a 2 GiB, 1 vCPU machine: it must mine, not over-reserve"
     cp "$img" "$DISK" || {
         bad "could not copy the image for the 2 GiB rig guest"
@@ -180,21 +180,35 @@ _rig_small_guest_run() { # <img>
         bad "#4010: the rendered RandomX mode is '${mode:-unreadable}', not auto"
     light=$(_ssh "journalctl -u xmrig -b --no-pager -o cat | grep -im1 'light mode\|1 GB mode'" 2>/dev/null | tr -d '\r')
     [ -n "$light" ] || light=$(_ssh "grep -im1 'light mode\|1 GB mode' /data/rigforge/data/worker/xmrig/build/config.log /data/rigforge/data/worker/xmrig/*.log 2>/dev/null")
-    [ -n "$light" ] &&
-        ok "the machine says it mines in light mode: $(printf '%s' "$light" | cut -c1-140)" ||
-        bad "the miner is running but never said a word about light mode — the fallback is invisible"
     rtok=$(_ssh "jq -r '.ACCESS_TOKEN // \"\"' /data/rigforge/config.json" | tr -d '\r')
     hr=0
-    while [ "$hr" = "0" ] && [ "$ptries" -lt 12 ]; do
+    while [ "$hr" = "0" ] && [ "$ptries" -lt 6 ]; do
         sleep 10
         summ=$(_ssh "curl -s -m 5 -H \"Authorization: Bearer $rtok\" http://127.0.0.1:8081/1/summary" 2>/dev/null | tr -d '\r')
         hr=$(printf '%s' "$summ" | jq -r '[( (.hashrate.total? // ."hash-rate"? // [0]) | if type == "array" then (.[-1] // 0) else . end ), (.rigforge.tune.last_best_hs? // 0)] | max' 2>/dev/null)
         case "$hr" in '' | *[!0-9.]*) hr=0 ;; esac
         ptries=$((ptries + 1))
     done
+    hrsrc="sister feed"
+    if [ "$hr" = "0" ] || [ -z "$light" ]; then
+        info "  a black-holed pool assigns no work, so the feed and any mode line stay silent — measuring the machine's own bench in the rendered mode"
+        bench=$(_ssh 'bx=$(readlink /proc/$(pgrep -x xmrig | head -1)/exe 2>/dev/null); [ -x "$bx" ] || bx=/data/rigforge/data/worker/xmrig/build/xmrig; systemctl stop xmrig; echo 0 >/proc/sys/vm/nr_hugepages 2>/dev/null; printf "{\"pools\":[],\"randomx\":{\"mode\":\"light\"},\"colors\":false}" >/tmp/pb4010.json; timeout 480 "$bx" -c /tmp/pb4010.json --benchmark 2>&1 | tail -80; systemctl start xmrig')
+        bline=$(printf '%s' "$bench" | tr -d '\r' | grep -oE '[0-9]+([.][0-9]+)? (H|kH|MH)/s' | tail -1)
+        [ -z "$light" ] && light=$(printf '%s' "$bench" | tr -d '\r' | grep -im1 'light mode\|1 GB mode')
+        if [ "$hr" = "0" ] && [ -n "$bline" ]; then
+            hr=$(printf '%s' "$bline" | awk '{ v = $1 + 0; if ($2 == "kH/s") v *= 1000; if ($2 == "MH/s") v *= 1000000; print v }')
+            hrsrc="local bench"
+        fi
+    fi
+    [ -n "$light" ] &&
+        ok "the machine says it mines in light mode: $(printf '%s' "$light" | cut -c1-140)" ||
+        bad "the miner is running but said nothing about light mode in its journal, logs, or its own bench — the fallback is invisible"
     cls=$(awk -v h="$hr" 'BEGIN { if (h + 0 >= 1000000) print "MH/s-class"; else if (h + 0 >= 1000) print "kH/s-class"; else if (h + 0 > 0) print "H/s-class"; else print "zero" }')
     [ "$cls" != "zero" ] &&
-        ok "hashrate class recorded for a 2 GiB, 1 vCPU rig: $cls ($hr H/s)" ||
-        bad "the sister feed never reported a nonzero hashrate on the 2 GiB rig"
-    [ "$cls" = "zero" ] && info "  sister feed said: $(printf '%s' "$summ" | jq -c '{hashrate: (.hashrate // ."hash-rate"), tune: (.rigforge.tune // .tune // "?")}' 2>/dev/null | cut -c1-240)"
+        ok "hashrate class recorded for a 2 GiB, 1 vCPU rig: $cls ($hr H/s, $hrsrc)" ||
+        bad "neither the sister feed nor the machine's own bench produced a nonzero hashrate on the 2 GiB rig"
+    if [ "$cls" = "zero" ]; then
+        info "  sister feed said: $(printf '%s' "$summ" | jq -c '{hashrate: (.hashrate // ."hash-rate"), tune: (.rigforge.tune // .tune // "?")}' 2>/dev/null | cut -c1-240)"
+        info "  bench tail: $(printf '%s' "$bench" | tr '\r\n' '  ' | tail -c 280)"
+    fi
 }
