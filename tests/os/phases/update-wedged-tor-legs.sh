@@ -39,6 +39,15 @@ _wedged_tor_still_wedged() {
         ;;
     esac
 }
+_wedged_marker_served() {
+    local want="$1" deadline=$(($(date +%s) + $2)) got=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        got=$(curl -fsSk -m 5 -u "$DASH_USER:$DASH_PASS" "https://${ip:-}/static/os-test-marker.txt" 2>/dev/null)
+        [ "$got" = "$want" ] && return 0
+        sleep 5
+    done
+    return 1
+}
 _wedged_tor_advisory_wait() {
     local deadline=$(($(date +%s) + $1))
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -88,7 +97,7 @@ _update_wedged_tor_reboot_leg() {
     _wedged_tor_still_wedged >/dev/null &&
         ok "leg 6: the wedge is still live after the commit (the fault was survived, not cleared)" ||
         bad "leg 6: tor recovered by itself during the leg — the leg was not run against a live wedge"
-    if _dash_marker_served v2 300; then
+    if _wedged_marker_served v2 300; then
         ok "leg 6: the dashboard serves through the wedge"
     else
         bad "leg 6: the dashboard never served v2 through the wedge"
@@ -198,7 +207,7 @@ _update_wedged_tor_update_leg() {
     _wedged_tor_still_wedged >/dev/null &&
         ok "leg 7: tor is still wedged on the committed update — the update was committed through the fault, not after it cleared" ||
         bad "leg 7: tor recovered during the leg — this run did not stay wedged"
-    if _dash_marker_served v3wedge 300; then
+    if _wedged_marker_served v3wedge 300; then
         ok "leg 7: the dashboard of the committed update serves through the wedge"
     else
         bad "leg 7: the dashboard never served v3wedge through the wedge"
