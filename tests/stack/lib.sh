@@ -196,6 +196,7 @@ case "$*" in
   "exec tor test -f "*) exit 0 ;;
   "inspect tor --format {{.State.Health.Status}}") echo "${TOR_HEALTH:-healthy}" ;;
   "inspect monerod --format {{.State.Running}}") echo "${MONEROD_RUNNING:-true}" ;;
+  "inspect tari --format {{.State.Running}}") echo "${TARI_RUNNING:-true}" ;;
   "exec tor cat /var/lib/tor/monero/hostname") echo "mona.onion" ;;
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion" ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion" ;;

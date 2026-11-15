@@ -1637,7 +1637,7 @@ verifying or waiting for its reboot, while the new slot is still being committed
 could roll the machine back), and while another host operation (a config apply, backup, restore or
 upgrade) holds the mutation lock; it reports busy instead of queueing. Every request is audited
 with its actor, action and status, and a second request inside two minutes of the last is rejected with the time left. After the restart the host waits for Tor to report bootstrapped
-and restarts monerod so it re-dials through the new Tor. The restart verb is available on the DIY
+and restarts monerod so it re-dials through the new Tor, then restarts a running tari so it starts after Tor. The restart verb is available on the DIY
 stack and the appliance.
 
 **Reset Tor state**, on the Tor card, asks the host to run the same gated `tor-recover apply` that
