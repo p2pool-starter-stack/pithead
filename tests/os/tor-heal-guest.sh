@@ -88,7 +88,7 @@ write_poison() {
     awk '!/^CircuitBuild/ && !/^TotalBuildTimes /' "$work/original-state" >"$data/state"
     printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >>"$data/state"
 }
-newnym_applied() { # <epoch>; count of host-applied NEWNYM results at or after the epoch
+newnym_applied() {
     find "$control/results" -maxdepth 1 -name '*.json' -type f -exec \
         jq -e --argjson started "$1" 'select(.action == "tor-newnym" and .status == "applied" and .ts >= $started)' {} \; 2>/dev/null |
         grep 'tor-newnym' | wc -l
