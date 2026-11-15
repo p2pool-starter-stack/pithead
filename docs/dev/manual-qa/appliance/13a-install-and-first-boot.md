@@ -215,9 +215,13 @@ Per #3099 and #3092:
 
 **What you should see:**
 
-- Item 1 prints `ref=8f06cb8df791f3cb16d47bbee85fde92103cbe0b version=1.18.1`.
-- Item 2 prints the same commit. The `^{}` suffix matters: v1.18.1 is an annotated tag, and
-  without it `git ls-remote` prints the tag object instead of the commit.
+- Item 1 prints `ref=03f13e200a750cecfa96c5896cf9d4a78712e9f4 version=1.18.1`.
+- Item 2 prints `8f06cb8df791f3cb16d47bbee85fde92103cbe0b` — the v1.18.1 release commit the pin
+  sits on: the pinned tree is the develop tip cut from it, ahead by the changes the rig role needs
+  (#4010: rigforge#605, honoring the `xmrig.randomx` config key). The `^{}` suffix matters: v1.18.1
+  is an annotated tag, and without it `git ls-remote` prints the tag object instead of the commit.
+  Once rigforge ships a release containing #605, #4010 returns this pin to release pinning and item 1
+  prints the new release commit again.
 
 **Record:** PASS, FAIL or N/A in the results sheet, plus the `<sha>` that item 1 printed.
 

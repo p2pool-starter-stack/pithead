@@ -382,7 +382,7 @@ assert_not_contains "the Dockerfile no longer copies the tree's compose file" "$
 assert_contains "verify-image compares against what the stamp resolves to, not the tree" "$CS_VI" 'compose_reference "$ROOT" "$COMPOSE_REF"'
 assert_not_contains "verify-image's old tree comparison is gone" "$CS_VI" 'docker-compose.yml" ./docker-compose.yml'
 
-rigforge_pin_ref="8f06cb8df791f3cb16d47bbee85fde92103cbe0b"
+rigforge_pin_ref="03f13e200a750cecfa96c5896cf9d4a78712e9f4"
 assert_contains "the appliance pins RigForge v1.18.1 by commit" "$CS_DF" "ARG RIGFORGE_REF=$rigforge_pin_ref"
 assert_contains "the RigForge pin comment names v1.18.1" "$CS_DF" "v1.18.1"
 assert_contains "the XMRig prebuild patches the default donate level like RigForge" "$CS_DF" "s/kDefaultDonateLevel = 1;/kDefaultDonateLevel = 0;/"

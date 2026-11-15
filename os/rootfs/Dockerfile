@@ -93,6 +93,12 @@ COPY --from=gobuild /out/docker-compose /out/cosign /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
     && touch /etc/containers/nodocker
 
+# The built-in miner (#796): a pinned RigForge tree plus everything it needs, baked at image
+# build because nothing can be installed later — apt cannot run on the read-only root, and even
+# a rw-remount install leaves its /etc state (alternatives, ld.so.cache) on the volatile overlay
+# where the first reboot breaks the compiler. RIGFORGE_REF pins rigforge's develop tip at the
+# 2026-11-11 bump (v1.18.1), the first pinned tree that honors the config key xmrig.randomx
+# (rigforge#605) the rig role's mode-auto render depends on; then pin releases by commit.
 ARG RIGFORGE_REF=03f13e200a750cecfa96c5896cf9d4a78712e9f4
 RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
