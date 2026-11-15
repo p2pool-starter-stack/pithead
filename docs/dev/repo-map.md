@@ -168,7 +168,7 @@ The P2Pool zero-peer watchdog is `service/health/p2pool_heal.py`.
 The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
 the same host-gated recovery as the CLI.
 The appliance `power-reboot` and `power-shutdown` control verbs are in `48b-control-power-verbs.sh`;
-their host tests are `tests/stack/appliance/test-appliance-power-verbs.sh` and KVM leg 4b
+their host tests are `tests/stack/appliance/test-appliance-power-verbs.sh` and KVM leg 6
 (`tests/os/phases/update-healthgate-leg.sh`).
 
 ## Dashboard feature folders
