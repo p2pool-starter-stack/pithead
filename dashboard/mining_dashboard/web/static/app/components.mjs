@@ -149,6 +149,7 @@ export function App({
   state,
   connected,
   recoveryNeeded = false,
+  reloading = null,
   ui,
   onRange,
   onSort,
@@ -190,6 +191,7 @@ export function App({
         <main id="dashboard-main">
             <${NodeAlertBanner} alert=${state.node_alert} />
             <${OsVerdictBanner} os=${state.os_update} />
+            ${reloading ? html`<div class="disconnected-banner" role="status" aria-live="polite">${reloading}</div>` : null}
             ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…${recoveryNeeded ? html`<${ConnectionRecovery} />` : null}</div>` : null}
             <${MinerConnection} />
             ${

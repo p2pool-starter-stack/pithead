@@ -123,6 +123,15 @@ certificate's SHA-256 fingerprint with the current one on the appliance console;
 mismatch and accept only a match. Polling reconnects after trust is restored. The page cannot
 distinguish certificate, network and authentication failures.
 
+A tab remembers the version from its first successful refresh. When a later refresh reports a
+different version, or the first successful refresh after the disconnected banner, the page shows
+"Pithead was updated or restarted. Reloading…" and reloads itself, so an open tab does not keep
+running old code after a restart, rollback or update. The page reloads only after the dashboard
+has answered, never into a browser error page, and at most once every 2 minutes per tab: a
+trigger inside that window shows the message but leaves the reload to a later refresh. The page
+also checks once when the window regains focus or becomes visible. An update-dialog step in
+progress holds the reload until it finishes or fails; the Configuration draft is kept across it.
+
 ### Top bar
 
 A status strip across the top shows the hostname, host telemetry (CPU, load, RAM, HugePages, disk),
@@ -272,6 +281,43 @@ proxy. Monero is always required, for local and remote nodes. The dashboard prob
 configured Monero RPC; stale P2Pool stats do not count as reachability. Monero uses a 90-second outage debounce; Tari uses 15 minutes. Both require 60 seconds
 of confirmed reachability for recovery. Readmission waits for every required node
 to be confirmed healthy, so a dashboard restart mid-outage does not admit workers prematurely.
+
+Work that P2Pool or monerod cannot make valid also stops `xmrig-proxy`, so a rig is never left
+hashing a stale tip. A monerod with zero peers still reports itself synchronized, so the guard
+does not rely on that flag. Each trigger below must hold continuously for its wait, then stay
+clear before it releases:
+
+| Trigger | Holds when | Waits before stopping |
+|---|---|---|
+| Monero node unhealthy | the Monero card is red: out of sync for 10 minutes (`NODE_STALE_AFTER_SEC`), 0 outgoing peers for 10 minutes, or no new height for 30 minutes | the card's own clocks: 10 minutes out of sync or peerless, 30 minutes without a new height |
+| Monero node has 0 outgoing peers | the current reading shows 0 outgoing peers | `MINING_GUARD_GRACE_SEC`, default 600 s |
+| Monero node not synchronized | monerod's own `synchronized` flag is false | `MINING_GUARD_GRACE_SEC` |
+| Monero node behind P2Pool's peers | at least two different peers appear in P2Pool's log in the last 2 minutes as at least `P2POOL_LAG_BLOCKS` (default 5) blocks ahead, and monerod's height has not moved for 15 minutes | `NODE_DOWN_AFTER_SEC`, default 90 s |
+| P2Pool reports monerod is not synchronized | P2Pool logged `monerod is not synchronized` in the last 2 minutes | `NODE_DOWN_AFTER_SEC` |
+| P2Pool has no sidechain peers | P2Pool reports 0 outgoing and 0 incoming connections | `MINING_GUARD_GRACE_SEC` |
+| P2Pool has no ZMQ messages | P2Pool's last ZMQ message is older than `P2POOL_ZMQ_STALE_SEC`, default 600 s | `NODE_DOWN_AFTER_SEC` |
+| `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |
+
+The current-reading rows exist so that a dashboard restart during a pause cannot readmit rigs onto
+a node that is still peerless or unsynchronized. A trigger whose input cannot be read (the Docker
+proxy, P2Pool's stats or its logs) keeps its current state for 10 minutes, then drops out. A failed
+read alone never ends a pause sooner. A monerod that is unreachable is the existing
+outage above. A brief dip inside the wait stops nothing. The `Workers rejected` badge names the
+active trigger and when it began, and `/api/state` carries the same as `mining_pause`; the time is
+when the trigger began holding, not when it fired. A trigger clears after 60 seconds
+(`NODE_RECOVERY_AFTER_SEC`) without it, and readmission waits for every trigger to clear. The
+dashboard stops only `xmrig-proxy`: the stratum port closes, connected rigs get a disconnect, and
+P2Pool keeps running. The built-in local miner is a rig on the same stratum, so it stops with them.
+
+The lag row reads P2Pool's own `peer ... is ahead on mainchain` log line. It also needs two peers and
+a stalled monerod height, because a hostile peer can make P2Pool log that line, and it is not used for a
+remote node, which has no height-progress verdict. Limits: after a dashboard restart the "no new
+height for 30 minutes" clock starts again.
+
+xmrig keeps retrying its first pool while it mines on a backup and switches back by itself
+when the login succeeds (`FailoverStrategy` in the xmrig source), so rigs return once
+`xmrig-proxy` restarts. The bench fault-injection phase checks this with a borrowed rig: its active pool
+leaves the stack when the stratum closes and comes back on its own after readmission.
 
 With [`dashboard.tari_required: true`](configuration.md) (the default), a Tari outage also
 rejects workers, for local and remote Tari nodes. This costs Monero revenue until Tari recovers:
@@ -1242,9 +1288,17 @@ including invalid JSON. **Unsaved changes** beside the Configuration button mark
 edits. Return to Configuration to finish them; the marker clears after a successful apply or
 **Discard edits**. When the stack enters its synchronization screen the editor is hidden, not
 unmounted, so the draft and the marker are still there when the dashboard returns. The page only
-shows the loading screen before its first state response, when no editor exists yet. Drafts are
-not stored across a browser reload or close. The page cannot observe an HTTP authentication change,
-so a re-authenticated tab keeps its draft until it is reloaded
+shows the loading screen before its first state response, when no editor exists yet. An unsaved
+draft is also kept in the tab's `sessionStorage`, so it survives a reload, automatic or manual: the
+reloaded editor shows the draft, the **Unsaved changes** marker and a line saying the draft was
+restored. Text that is not valid JSON is never stored: after a reload the editor shows the last
+valid state of the draft, without the broken edit. **Discard edits**, **Discard draft and
+reload from host** and a successful apply clear it; closing the tab drops it. The stored copy never
+holds a secret you typed: every secret field the server masks (the API tokens and passwords, the
+Monero and Tari view keys, the ping, ntfy and standby URLs, the webhook list and each worker token)
+goes back to the value the page received, its `__secret__` marker or empty, so retype a new
+secret after a reload. The page cannot observe an HTTP authentication
+change, so a re-authenticated tab keeps its draft until it is reloaded
 ([#3323](https://github.com/p2pool-starter-stack/pithead/issues/3323) tracks a reset).
 
 The flow mirrors the CLI's `apply`:
@@ -1296,7 +1350,19 @@ The flow mirrors the CLI's `apply`:
    draft with the host's configuration. After a successful apply, **Back to the form** reloads it.
    The error card shown when the commit request itself fails (an HTTP error, an unreadable response,
    or a poll timeout; a timeout does not mean the apply failed) offers the same two actions. Only a
-   failed first load, which has no draft, offers a plain **Reload**.
+   failed first load, which has no draft, offers a plain **Reload**. A non-2xx answer shows the
+   response text, or `HTTP` and the status when it is empty. A request that cannot reach the
+   dashboard, or that is answered 401 or 403 (what a tab from before a restart gets), shows
+   "Pithead restarted or the page is out of date. Reloading…" and the page reloads once the
+   dashboard answers. A restart during the apply is not that case: the commit keeps polling for
+   its result.
+
+Rig upgrade, Adopt rig, Backup, the onion client-key request and the service diagnostics
+behave the same way: a request that cannot reach the dashboard, or that is answered 401 or 403,
+shows "Pithead restarted or the page is out of date. Reloading…" and the page reloads once the
+dashboard answers; any other non-2xx answer shows the response text, or `HTTP` and the status when
+it is empty. For other failures Diagnostics names the request, for example "Could not submit the health
+check: …". Polling for a spooled result and Backup's wait through the stack restart are unchanged.
 
 Every reference setting belongs to a policy class. The ordinary allowlist covers routine
 operations; all remaining values confirm unless they are in the physical-presence set. Typed
@@ -1691,7 +1757,10 @@ drives the appliance's A/B update from the browser, one explicit step at a time,
 control channel as everything else on this page: the dashboard container only asks, and the host
 re-derives and re-verifies every step itself. **Close** dismisses the dialog in one click, including
 after an update-check error, and returns focus to **OS updates**. **Retry** remains available
-when there is a target to download.
+when there is a target to download. A step that cannot reach the dashboard, or that is answered
+401 or 403, shows "Pithead restarted or the page is out of date. Reloading…" and the page reloads
+once the dashboard answers; any other refusal shows the response text, or `HTTP` and the status
+when it is empty.
 
 1. **Check.** The host asks the release API (over Tor) for the latest release and its OS bundle.
    The dashboard's passive new-release badge covers the same ground hourly, from inside the

@@ -203,7 +203,7 @@ draw();
   const valid = await editor.inputValue();
   await page.getByRole("button", { name: "Save & preview changes" }).click();
   await page.getByRole("button", { name: "Confirm & apply", exact: true }).click();
-  await page.getByText("HTTP 500").waitFor();
+  await page.getByText("boom", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Reload", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Back to the form", exact: true }).click();
   await marker().waitFor();

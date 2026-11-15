@@ -420,7 +420,15 @@ cap, and so does the boot group with provision.
 - Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases as
   the four splits the last three release gates ran — rig, rigmedia and media; fault and reset;
   image-upgrade; stack. In the 2.0.1 and 2.0.2 gates the combined seven-phase job failed one
-  phase each time and reran all seven; the splits keep a rerun to its own phase.
+  phase each time and reran all seven; the splits keep a rerun to its own phase. The
+  rig/rigmedia/media split is submitted with `require_complete` (#3996): bench-ci appends
+  `--require-complete` to each of its three phases, so a rig phase that skipped the accepted-share
+  leg for want of the reserved Monero node fails the gate instead of concluding success, and
+  rigmedia or media carry the same guard for any input they later start skipping on. The rig phase
+  also missing-skips the card-render leg (#1867) on a harness host without `node`, so until
+  bench-ci#2480 provisions it there, a rig/rigmedia/media job whose only failed row names that
+  card-render row is the guard refusing a skip, not a candidate defect: read the row before
+  blaming the tree.
 - Provision: provision and setup-defaults against the seeded baseline, pinned to the seeded bench.
 - Crossupdate: the update from the previous release, which is the path existing installs take,
   pinned to a bench that keeps that release's image.
@@ -447,7 +455,7 @@ KVM_BOOT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_BOOT_KEY" 
 KVM_RIG_KEY=$(uuidgen)
 printf 'KVM rig/rigmedia/media split idempotency key: %s\n' "$KVM_RIG_KEY"
 KVM_RIG_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIG_KEY" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig split",idempotency_key:$key}' \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media"],require_complete:true},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig split",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
 KVM_FAULT_KEY=$(uuidgen)
 printf 'KVM fault/reset split idempotency key: %s\n' "$KVM_FAULT_KEY"

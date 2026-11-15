@@ -10,6 +10,7 @@
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
+import { draftNote, restoreDraft, syncDraft } from "./configdraft.mjs";
 import { Field, validNumber } from "./configfield.mjs";
 import {
   buildSections,
@@ -25,7 +26,7 @@ import {
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, focusSection, pathGet, pathSet } from "./configsync.mjs";
 import { ConfigVersion } from "./configversion.mjs";
-import { controlCommitResult, requirePreviewResponse } from "./controlclient.mjs";
+import { controlCommitResult, controlFetch, requirePreviewResponse } from "./controlclient.mjs";
 
 export { editableCandidate, PreviewModal };
 
@@ -52,12 +53,8 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
       continue;
     }
     if (res.status === 202) continue;
-    // Both flows recreate the dashboard container itself; while it restarts, the reverse proxy
-    // (caddy) stays up and answers 502/503/504 — the upstream is briefly gone, not failed. Ride
-    // these out like a dropped connection (#59/#622); the durable control result is the real
-    // outcome and `max` is the backstop. A real backend 500 (upstream up, erroring) still throws.
     if (res.status === 502 || res.status === 503 || res.status === 504) continue;
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await requirePreviewResponse(res);
     const out = await res.json();
     if (out.status === skip) continue;
     return out;
@@ -99,15 +96,16 @@ export class ConfigView extends Component {
     this.modalRef = createRef();
   }
   componentDidMount() {
-    this.load();
+    this.load(true);
   }
   componentDidUpdate(_previousProps, { editText, pristine }) {
+    syncDraft(this.state);
     const dirty = this.state.editText !== this.state.pristine;
     if (dirty !== (editText !== pristine)) this.props.onDirtyChange?.(dirty);
   }
-  async load() {
+  async load(restore) {
     try {
-      const res = await fetch("/api/config");
+      const res = await controlFetch("/api/config");
       if (res.status === 404) return this.setState({ phase: "disabled" });
       await requirePreviewResponse(res);
       const cfg = await res.json();
@@ -129,6 +127,8 @@ export class ConfigView extends Component {
         editText: text,
         jsonError: null,
         error: null,
+        draftRestored: false,
+        ...(restore && restoreDraft(text)),
       });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
@@ -228,7 +228,7 @@ export class ConfigView extends Component {
     this.setState({ phase: "previewing", error: null });
     try {
       const proposed = staged.config;
-      const res = await fetch("/api/control/preview", {
+      const res = await controlFetch("/api/control/preview", {
         method: "POST",
         headers: CONTROL_HEADERS,
         body: JSON.stringify({ config: proposed }),
@@ -261,12 +261,12 @@ export class ConfigView extends Component {
         body.payout_suffixes = this.state.payoutSuffixes;
       }
       const opts = { method: "POST", headers: CONTROL_HEADERS, body: JSON.stringify(body) };
-      let res = null; // #2366: a restart (#622) can drop this request or answer 502/503/504 — poll the id below
+      let res = null;
       try {
         res = await fetch("/api/control/commit", opts);
       } catch {}
       const restarting = !res || [502, 503, 504].includes(res.status);
-      if (!restarting && !res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+      if (!restarting) await requirePreviewResponse(res);
       const out = restarting
         ? await this.poll(id, "previewed")
         : await controlCommitResult(res, id, this.poll.bind(this));
@@ -406,6 +406,7 @@ export class ConfigView extends Component {
     );
     return html`<div class="config-view">
         <${ConfigVersion} cfg=${this.state.cfg} />
+        ${draftNote(this.state)}
         ${error ? previewFailure(error, this.props.appliance) : null}
         ${
           lastApply?.status === "failed"
@@ -450,12 +451,12 @@ export class ConfigView extends Component {
 // flow is the logic; UpgradeControl only maps its outcome onto UI state. The server answers 202
 // straight away, so the real outcome arrives via pollResult, skipping "running" and the restart.
 export async function runUpgrade(version) {
-  const res = await fetch("/api/control/upgrade", {
+  const res = await controlFetch("/api/control/upgrade", {
     method: "POST",
     headers: CONTROL_HEADERS,
     body: JSON.stringify({ version }),
   });
-  if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+  await requirePreviewResponse(res);
   const out = await res.json();
   return pollResult(out.id, "running", UPGRADE_POLL_MAX);
 }

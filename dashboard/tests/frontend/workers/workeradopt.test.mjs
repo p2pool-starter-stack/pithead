@@ -16,6 +16,7 @@ import { App } from "../../../mining_dashboard/web/static/app/components.mjs";
 import { AdoptRigForm } from "../../../mining_dashboard/web/static/workers/workeradopt.mjs";
 import { WorkerInspect } from "../../../mining_dashboard/web/static/workers/workerview.mjs";
 import { render, renderToString } from "../helpers/render.mjs";
+import { installStaleProbe, reply, STALE, withFetch } from "../helpers/stalepage.mjs";
 
 const FIXTURE = JSON.parse(readFileSync(new URL("../fixtures/state.json", import.meta.url)));
 const TOKEN = "0123456789abcdef0123456789abcdef";
@@ -341,3 +342,42 @@ test("table badge: with the control channel off, it falls back to the old releas
   const out = withRigUpdate(noop, false);
   assert.match(out, /<a[^>]*href="https:\/\/h\/v1\.11\.2"[^>]*>rf v1\.11\.2 available/);
 });
+
+const ADOPT_LEGS = [
+  ["config", 0],
+  ["preview", 1],
+  ["commit", 2],
+];
+
+for (const [leg, index] of ADOPT_LEGS) {
+  for (const [name, fail, text, reloads] of [
+    ["401 with body text", () => reply(401, "login required"), STALE, 1],
+    ["a network reject", () => Promise.reject(new TypeError("Failed to fetch")), STALE, 1],
+    ["a plain-text 500", () => reply(500, "control spool is full"), "control spool is full", 0],
+  ]) {
+    test(`AdoptRigForm: ${name} on the ${leg} request shows ${JSON.stringify(text)}`, async () => {
+      const probe = installStaleProbe();
+      const inst = adoptForm();
+      inst.state.token = TOKEN;
+      inst.state.preview = { id: "req-1" };
+      const legs = [
+        () => reply(200, JSON.stringify({ workers: { list: [] } })),
+        () => reply(200, JSON.stringify(ADOPT_PREVIEW)),
+        () => reply(200, JSON.stringify({ status: "applied" })),
+      ];
+      legs[index] = fail;
+      const sequence = leg === "commit" ? [fail] : legs;
+      let n = 0;
+      await withFetch(
+        async () => sequence[n++](),
+        async () => {
+          if (leg === "commit") await inst.confirm();
+          else await inst.adopt();
+        },
+      );
+      await probe.settle();
+      assert.equal(inst.state.result.error, text);
+      assert.equal(probe.reloads.length, reloads);
+    });
+  }
+}

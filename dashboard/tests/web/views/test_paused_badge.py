@@ -10,7 +10,7 @@ def _local_node(monkeypatch):
 
 
 def _rigs(*verdicts):
-    return {"workers": [{"mining_verdict": v} for v in verdicts]}
+    return {"workers": [{"mining": {"state": v, "pool": None}} for v in verdicts]}
 
 
 def test_absent_while_serving(_metrics):
@@ -31,6 +31,13 @@ def test_node_out_of_sync_counts_rigs_on_backup(_metrics):
 def test_remote_node_health_is_not_a_trigger(_metrics, monkeypatch):
     monkeypatch.setattr(paused_badge, "monero_is_local", lambda: False)
     assert paused_badges({"monero_sync": {"health": {"level": "red"}}}, _metrics()) == []
+
+
+def test_stratum_closed_names_the_guard_trigger(_metrics):
+    pause = {"reason": "P2Pool has no sidechain peers", "since": 1}
+    data = {"stratum_closed": True, "mining_pause": pause}
+    text = paused_badges(data, _metrics())[0]["text"]
+    assert text == "Mining paused here: stratum closed (P2Pool has no sidechain peers)"
 
 
 def test_rigs_clause_omitted_when_zero_and_singular_for_one(_metrics):

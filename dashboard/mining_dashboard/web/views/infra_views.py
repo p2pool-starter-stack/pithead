@@ -137,7 +137,7 @@ def build_workers(workers, rigforge_release=None):
     """Worker rows as data: raw numeric fields (for client-side sorting) alongside their
     formatted display strings, plus a pool token for the badge. Online first, then by name."""
     rows = []
-    sorted_workers = sorted(workers, key=lambda x: (x["status"] != "online", x["name"]))
+    sorted_workers = sorted(workers, key=lambda x: (x["status"] != "online", x["name"] or ""))
 
     for worker in sorted_workers:
         try:
@@ -152,24 +152,22 @@ def build_workers(workers, rigforge_release=None):
             uptime = worker.get("uptime", 0)
             h60 = worker.get("h60", 0)
             h15 = worker.get("h15", 0)
-            # Per-worker share health (Issue #82). Raw counts for client-side sorting; a display
-            # string that appends invalid only when it's non-zero (keeps the common case clean);
-            # and an optional warning flag the client renders when the reject rate is high.
             accepted = worker.get("accepted", 0)
             rejected = worker.get("rejected", 0)
             invalid = worker.get("invalid", 0)
             rejected_str = f"{rejected:,} (+{invalid:,} inv)" if invalid else f"{rejected:,}"
+            unnamed = str(worker["name"] or "").strip() in ("", "-")
+            telemetry_h60 = worker.get("telemetry_h60")
             rows.append(
                 {
-                    "name": worker["name"],
+                    "name": f"unnamed proxy worker ({worker['ip']})" if unnamed else worker["name"],
+                    "unnamed": unnamed,
                     "ip": worker["ip"],
                     "ip_sort": _ip_to_sort_int(worker.get("ip", "0.0.0.0")),
                     "pool": pool,
                     "status": "online" if worker["status"] == "online" else "offline",
                     "uptime": uptime,
                     "uptime_str": format_duration(uptime),
-                    # No h10 here: the table shows the 1m (h60) and 10m (h15) windows — via the
-                    # proxy the legacy h10 field is just a second copy of the 1m rate (#387).
                     "h60": h60,
                     "h60_str": format_hashrate(h60),
                     "h15": h15,
@@ -180,16 +178,18 @@ def build_workers(workers, rigforge_release=None):
                     "rejected_str": rejected_str,
                     "invalid": invalid,
                     "reject_flag": _reject_flag(accepted, rejected),
-                    # Probe verdict + adoption (#1857): the client flags only api_ok False, and
-                    # adopted decides whether that reads "api ⚠" (config to fix) or "not adopted".
+                    "mining": worker.get("mining") or {"state": "unknown", "pool": None},
+                    "telemetry_h10": worker.get("telemetry_h10"),
+                    "telemetry_h60": telemetry_h60,
+                    "telemetry_str": "—"
+                    if telemetry_h60 is None
+                    else format_hashrate(telemetry_h60),
+                    "telemetry_h15": worker.get("telemetry_h15"),
                     "api_ok": worker.get("api_ok"),
                     "adopted": worker.get("adopted"),
-                    # RigForge enriched feed (#235): version badge + health/power/tune/watchdog
-                    # chips, or None for a plain-xmrig worker (renders nothing extra).
                     "rigforge": _rigforge_display(
                         worker.get("rigforge"), worker.get("status") == "online"
                     ),
-                    # {available, latest, url} | None — this rig runs an older RigForge (#596).
                     "rigforge_update": rigforge_update_for(worker, rigforge_release),
                 }
             )

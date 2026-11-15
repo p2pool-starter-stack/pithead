@@ -200,8 +200,8 @@ test("a wait expiry keeps queued-vs-running unknown and does not invent a wedged
 
 test("submission and result HTTP failures name the diagnostics request", async () => {
   await assert.rejects(
-    () => withFastPoll(async () => ({ status: 403, ok: false }), () => runDiag("diag-doctor", {}, "the health check")),
-    /Could not submit the health check: HTTP 403/,
+    () => withFastPoll(async () => ({ status: 404, ok: false, text: async () => "" }), () => runDiag("diag-doctor", {}, "the health check")),
+    /Could not submit the health check: HTTP 404/,
   );
   let first = true;
   await assert.rejects(
@@ -220,18 +220,7 @@ test("submission and result HTTP failures name the diagnostics request", async (
   );
 });
 
-test("transport and malformed responses keep the diagnostics request context", async () => {
-  await assert.rejects(
-    () =>
-      withFastPoll(
-        async () => {
-          throw new TypeError("Failed to fetch");
-        },
-        () => runDiag("diag-logs", { container: "tor" }, "tor's recent log"),
-      ),
-    /Could not submit tor's recent log: the dashboard could not reach the control service/,
-  );
-
+test("malformed responses keep the diagnostics request context", async () => {
   await assert.rejects(
     () =>
       withFastPoll(
@@ -383,4 +372,9 @@ test("saturated Tor history is a failing Tor diagnostic with the operator recove
   assert.match(out, /status-bad/);
   assert.match(out, /pithead tor-recover check/);
   assert.match(out, /pithead tor-recover apply/);
+});
+
+test("the enabled card carries the class that styles its controls as buttons", () => {
+  const out = renderToString(new DiagnosticsPanel({ enabled: true }).render());
+  assert.match(out, /^<div class="card diag-card">/);
 });

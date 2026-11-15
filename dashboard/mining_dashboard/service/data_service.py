@@ -320,16 +320,12 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     monero_sync["stale"] = monero_stale
                     self._observe_monero(monero_sync)
 
-                    # 4. Sync gate (Issue #35): hold p2pool + xmrig-proxy until the required
-                    # chain(s) first sync, then release. monerod must be synced; Tari must be
-                    # synced too unless it's non-blocking. #31's runtime failover only applies
-                    # once released — before that there are no workers to fail over, and it
-                    # keeps the two features from both driving xmrig-proxy.
                     await self._apply_sync_gate(
                         monero_synced
                         and (tari_synced or not TARI_REQUIRED or self.sync_gate_monero_only)
                     )
                     if self.miner_released:
+                        await self._update_mining_guard(monero_sync, p2pool_stats)
                         await self._apply_worker_rejection(monero_down, tari_down)
 
                     # 5. Operator alerts (Issues #121/#45): push debounced node/worker/sync/host
@@ -487,6 +483,8 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                             "global_sync": global_sync,
                             "tari_syncing_passive": tari_syncing_passive,
                             "workers_rejected": self.workers_rejected,
+                            "stratum_closed": self.workers_rejected,
+                            "mining_pause": self.mining_guard.pause,
                             "miner_released": self.miner_released,
                             "sync_gate_monero_only": self.sync_gate_monero_only,
                             "miner_held": self.miner_held,
