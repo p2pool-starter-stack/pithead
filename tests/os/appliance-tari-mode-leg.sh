@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck source=tests/os/lib/redact-addr.sh
-source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Day-two tari.mode switching from the dashboard on a live appliance (#1929). Sourced by
 # tests/os/run.sh; --self-test covers the pure verdicts without a guest.
 #

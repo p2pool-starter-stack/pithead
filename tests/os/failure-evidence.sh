@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck source=tests/os/lib/redact-addr.sh
-source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Failure evidence for the battery's os-update leg (#1060). Sourced by tests/os/run.sh; uses
 # its globals (_ssh, SSH_ERR, SERIAL) and prints in its indentation idiom.
 # The ~60% mid-copy death survived four batteries because the evidence of WHO killed the

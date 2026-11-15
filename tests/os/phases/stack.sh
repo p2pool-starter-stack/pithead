@@ -175,7 +175,7 @@ _provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user
         # /submit probes the reserved node's reachability synchronously (wizard_node_probe.py)
         # and 400s with the probe's own reason — surface it, not just the status code, since a
         # remote-node submit failure is far more often a bad host/port/firewall than bad JSON.
-        bad "coordinator remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | cut -c1-500))"
+        bad "coordinator remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | os_redact_addr | cut -c1-500))"
         rm -f "$jar" "$sbody"
         return 1
     }

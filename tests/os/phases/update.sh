@@ -1,6 +1,4 @@
 # shellcheck shell=bash
-# shellcheck source=tests/os/lib/redact-addr.sh
-source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # SCOPE (#2055 G1): legs 1-3 below keep the guest UNPROVISIONED throughout — neither config.json
 # nor machine-role is ever written, so pithead-boot.service's ConditionPathExists never triggers

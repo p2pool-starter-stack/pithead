@@ -133,6 +133,9 @@ grep -q '_wizard_provision_capture' "$HERE/migration-recovery.sh" &&
     grep -q 'provision_browser_submit' "$HERE/phases/provision-initial.sh" ||
     fail "migration recovery no longer provisions through the payout-aware browser submit"
 
+grep -q 'submit did not return 200.*"\$sbody" | os_redact_addr | cut' "$HERE/phases/stack.sh" ||
+    fail "the remote-node /submit failure body is not redacted before truncation"
+
 (
     source "$HERE/lib/redact-addr.sh" || exit 1
     addr="4$(printf 'A%.0s' $(seq 94))"

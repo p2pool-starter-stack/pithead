@@ -9,10 +9,8 @@ source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # prompt and approver verdicts, and the four fixture self-tests that existed only to prove that
 # harness could not silently no-op. A sensitive commit now goes through the ordinary authenticated
 # control route, so the leg needs no privileged loopback identity and no guest-side fake at all.
-#
-# What is left is what the removal did not touch: the consumer proof that a repointed Tari endpoint
-# is the one p2pool actually merge-mines against, and the two pure self-tests that keep this file
-# honest without a guest.
+# What is left is the consumer proof that a repointed Tari endpoint is the one p2pool actually
+# merge-mines against, and the two pure self-tests that keep this file honest without a guest.
 
 # WHICH of the four bindings failed, for the row that reported only that one of them did (#2060).
 # The row's own `if` is a four-way conjunction and prints one red for all four. The three cheap
