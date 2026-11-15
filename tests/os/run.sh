@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|rigkeep|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -35,6 +35,13 @@
 #           beside a blank internal disk that must stay untouched; answer "RigForge" and never
 #           install. Mines from the stick, no containers, volatile journald, an unaided reboot
 #           returns it mining, and the blank disk is still blank.
+#   rigkeep (M13, #3995) install a rig to its internal disk exactly as the install phase's rig
+#           leg does, adopt it on a remote-node coordinator, then boot a newer image (marker v2)
+#           as removable USB beside that disk and choose Keep everything. Asserts role, worker,
+#           pool and access token survive unchanged, the rig mines on the new image, the new slot
+#           self-commits (A_OK=1 A_TRY=0), and the coordinator still reads the same adopted
+#           worker with nothing to redo. A bench with no reserved node counts the adoption legs
+#           as a `missing` skip; the identity half runs regardless.
 #   media   physical-presence config channel (#786 sub-issue D): a removable stick applied at boot
 #           shows its exact diff on the console, counts down, applies, and consumes itself; pulling
 #           it mid-countdown cancels the change. A minimal stick (#965) changes only what it names;
@@ -55,7 +62,8 @@
 #           --auth-fail-closed on remote-main-secure-tari. A bench with no reserved node is a
 #           counted `missing` phase skip; #2443 and #2444 run from neither invocation.
 #   all     every phase above except crossupdate, in that order — media, fault and reset included
-#           since #1064; rigmedia added since #2069; image-upgrade added for #2057; stack since #2062
+#           since #1064; rigmedia added since #2069; rigkeep since #3995; image-upgrade added for
+#           #2057; stack since #2062
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -189,7 +197,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,58p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -229,6 +237,8 @@ source "$SCRIPT_DIR/phases/media.sh" || exit $?
 source "$SCRIPT_DIR/phases/rig.sh" || exit $?
 # shellcheck source=tests/os/phases/rigmedia.sh
 source "$SCRIPT_DIR/phases/rigmedia.sh" || exit $?
+# shellcheck source=tests/os/phases/rigkeep.sh
+source "$SCRIPT_DIR/phases/rigkeep.sh" || exit $?
 # shellcheck source=tests/os/phases/fault.sh
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
@@ -271,6 +281,7 @@ provision) _run_phase provision phase_provision ;;
 setup-defaults) _run_phase setup-defaults phase_setup_defaults ;;
 rig) _run_phase rig phase_rig ;;
 rigmedia) _run_phase rigmedia phase_rigmedia ;;
+rigkeep) _run_phase rigkeep phase_rigkeep ;;
 media) _run_phase media phase_media ;;
 fault) _run_phase fault phase_fault ;;
 reset) _run_phase reset phase_reset ;;
@@ -289,6 +300,7 @@ all)
     _run_phase setup-defaults phase_setup_defaults
     _run_phase rig phase_rig
     _run_phase rigmedia phase_rigmedia
+    _run_phase rigkeep phase_rigkeep
     _run_phase media phase_media
     _run_phase fault phase_fault
     _run_phase reset phase_reset

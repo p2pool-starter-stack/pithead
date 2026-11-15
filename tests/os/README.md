@@ -313,6 +313,21 @@ the configured test registry fail before the image build. Release builds do not 
   stick, no containers, volatile journald, an unaided reboot returns it mining, and the blank
   disk stays byte-for-byte untouched. Reaching the wizard again from a stick-run rig needs the
   bootloader path (#1318) and is not this leg's job.
+- **rigkeep** — M13 Keep everything over an installed rig's `/data`, #3995. Runs the install
+  phase's own rig-to-disk leg as setup (the same submit, card and boot-from-disk assertions),
+  then — when the bench carries a reserved remote node — boots the share leg's coordinator
+  guest, re-points the rig at its stratum through the set-up-again entry and adopts it through
+  the dashboard (#3069 path). It builds a newer image (marker v2), attaches it as removable USB
+  beside the installed disk, chooses **Keep everything** on the wizard, and after the disk
+  boot asserts the marker moved, the rig mines, the new slot self-commits (`A_OK=1 A_TRY=0`),
+  and an identity snapshot (role, worker, pool, `rig.json` access token, miner token, container
+  count) is unchanged — the access token kept, never re-minted; a rig whose token was absent is
+  accepted only with one freshly minted. With a coordinator present the leg finally requires the
+  dashboard to still read the same worker as adopted with a reachable API, nothing to redo.
+  A bench without the reserved node counts the adoption legs as `missing`; the reinstall half
+  runs regardless. `selftest-rigkeep-verdict.sh` covers the identity verdict, including every
+  way it must refuse drift; every fixture (coordinator guest, target disk) is deleted on
+  failure as well as success.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
   reboots. Asserts the exact diff appears on the console (the changed wallet address in full, read

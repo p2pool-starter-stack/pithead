@@ -418,9 +418,13 @@ cap, and so does the boot group with provision.
 
 - Boot group: boot, update, install.
 - Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases as
-  the four splits the last three release gates ran — rig, rigmedia and media; fault and reset;
-  image-upgrade; stack. In the 2.0.1 and 2.0.2 gates the combined seven-phase job failed one
-  phase each time and reran all seven; the splits keep a rerun to its own phase. The
+  five splits — the four the last three release gates ran plus #3995's rigkeep — rig, rigmedia
+  and media; rigkeep; fault and reset; image-upgrade; stack. In the 2.0.1 and 2.0.2 gates the
+  combined seven-phase job failed one phase each time and reran all seven; the splits keep a
+  rerun to its own phase. The `rigkeep` split (M13's Keep-everything reinstall over an installed
+  rig's `/data`) is submitted with `require_complete` for the same reason: without the reserved
+  Monero node it skips both adoption legs as `missing`, and the guard turns that into a gate
+  failure instead of a quiet pass. The
   rig/rigmedia/media split is submitted with `require_complete` (#3996): bench-ci appends
   `--require-complete` to each of its three phases, so a rig phase that skipped the accepted-share
   leg for want of the reserved Monero node fails the gate instead of concluding success, and
@@ -457,6 +461,11 @@ printf 'KVM rig/rigmedia/media split idempotency key: %s\n' "$KVM_RIG_KEY"
 KVM_RIG_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIG_KEY" \
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media"],require_complete:true},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig split",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_RIGKEEP_KEY=$(uuidgen)
+printf 'KVM rigkeep idempotency key: %s\n' "$KVM_RIGKEEP_KEY"
+KVM_RIGKEEP_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIGKEEP_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rigkeep"],require_complete:true},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rigkeep",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
 KVM_FAULT_KEY=$(uuidgen)
 printf 'KVM fault/reset split idempotency key: %s\n' "$KVM_FAULT_KEY"
 KVM_FAULT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_FAULT_KEY" \
@@ -482,11 +491,11 @@ printf 'KVM crossupdate idempotency key: %s\n' "$KVM_CROSS_KEY"
 KVM_CROSS_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_CROSS_KEY" --arg prev "$PREVIOUS_RELEASE_SHA" \
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["crossupdate"],old_image_commit:$prev},local_only:true,timeout_minutes:240,submitted_by:"release/devops",note:"release KVM crossupdate",idempotency_key:$key}' \
   | curl -fsS -X POST "$CROSSUPDATE_BENCH_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
-printf 'KVM jobs: %s %s %s %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_FAULT_ID" \
-  "$KVM_IMGUP_ID" "$KVM_STACK_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
+printf 'KVM jobs: %s %s %s %s %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_RIGKEEP_ID" \
+  "$KVM_FAULT_ID" "$KVM_IMGUP_ID" "$KVM_STACK_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
 ```
 
-Read all seven completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
+Read all eight completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
 
@@ -540,13 +549,14 @@ E2E_MODE=targeted
 E2E_KEY=$(uuidgen)
 printf 'e2e idempotency key: %s\n' "$E2E_KEY"
 jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MODE" \
-  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" --argjson fault "$KVM_FAULT_ID" \
+  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" --argjson rigkeep "$KVM_RIGKEEP_ID" \
+  --argjson fault "$KVM_FAULT_ID" \
   --argjson imgup "$KVM_IMGUP_ID" --argjson stack "$KVM_STACK_ID" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig,$fault,$imgup,$stack],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig,$rigkeep,$fault,$imgup,$stack],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
 ```
 
-Read the completed e2e job's full status, log, artifacts and evidence. All eight jobs must carry
+Read the completed e2e job's full status, log, artifacts and evidence. All nine jobs must carry
 the same SHA and ref. A failed or cancelled leg cannot yield a
 successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
 `success` and its creator is the configured bench-ci App before running `release.sh`; record all

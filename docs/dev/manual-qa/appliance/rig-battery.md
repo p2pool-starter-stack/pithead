@@ -19,7 +19,9 @@ on the rig's own feed and fails a release job whose promised input went missing
 (`--require-complete`), while #3994 added the dashboard adoption and config push. Each row below
 says what is automated and what a hand must still do. M14 (run-from-USB) no longer needs a hand-run: the
 `rigmedia` KVM phase (`tests/os/phases/rigmedia.sh`, #2069) covers it — see its row below for what
-it proves and what it still leaves out.
+it proves and what it still leaves out. M13's Keep-everything pass no longer needs a hand-run on a
+disk-installed rig: the `rigkeep` KVM phase (`tests/os/phases/rigkeep.sh`, #3995) covers it — see
+its row below for what it proves and what it still leaves to a hand.
 
 ## Steps
 
@@ -102,9 +104,16 @@ The form and inspector clicks remain manual.*
 
 *Covered by: the `rig` phase's power-cut leg (#2067, `tests/os/phases/rig.sh`) proves the
 return-mining-unaided fact off a real `virsh destroy`, and the phase's existing update leg proves
-the install/self-commit half. What stays manual is Restore on AC Power Loss itself — a firmware
-setting a virtual disk cannot show — and the Keep-everything pass itself: no automated leg
-reinstalls a rig over its own `/data` yet (#3995).*
+the install/self-commit half. The Keep-everything pass is automated for **disk-installed rigs**
+(the migration case) by the `rigkeep` KVM phase (`tests/os/phases/rigkeep.sh`, #3995): it installs
+the rig to its internal disk, adopts it on a remote-node coordinator, boots a newer image as
+removable USB beside that disk, chooses **Keep everything**, and asserts the role, `rig.json`,
+worker, pool and access token come back unchanged, the rig mines on the new image, the new slot
+self-commits (`A_OK=1 A_TRY=0`), and the coordinator still reads the same adopted worker with
+nothing to redo. A rig that runs from its stick never takes this path — its run-from-USB row is
+M14's `rigmedia` phase, and its stick update stays manual until that leg lands (#4018). What
+stays manual here is Restore on AC Power Loss itself — a firmware setting a virtual disk cannot
+show — and a real stick and wall switch.*
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
