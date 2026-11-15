@@ -324,9 +324,11 @@ the configured test registry fail before the image build. Release builds do not 
   phase's own rig-to-disk leg as setup (the same submit, card and boot-from-disk assertions),
   then — when the bench carries a reserved remote node — boots the share leg's coordinator
   guest, re-points the rig at its stratum through the set-up-again entry and adopts it through
-  the dashboard (#3069 path). It builds a newer image (marker v2), attaches it as removable USB
+  the dashboard (#3069 path). It builds a newer image (marker v2 for the stick, build label v2
+  for the installed system — the installer copies the running system but strips the harness
+  marker, so the label is what travels), attaches it as removable USB
   beside the installed disk, chooses **Keep everything** on the wizard, and after the disk
-  boot asserts the marker moved, the rig mines, the new slot self-commits (`A_OK=1 A_TRY=0`),
+  boot asserts the newer system is on the disk (label v2, marker stripped), the rig mines, the new slot self-commits (`A_OK=1 A_TRY=0`),
   and an identity snapshot (role, worker, pool, `rig.json` access token, miner token, container
   count) is unchanged — the access token kept, never re-minted; a rig whose token was absent is
   accepted only with one freshly minted. With a coordinator present the leg finally requires the

@@ -1,13 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154
 : "${OS_RUN_SUITE:?source via the suite runner}"
-_rigkeep_verdict() { # <before-json> <after-json> <expected-marker>
-    local before="$1" after="$2" marker="$3"
-    jq -ne --argjson b "$before" --argjson a "$after" --arg marker "$marker" '
+_rigkeep_verdict() { # <before-json> <after-json>
+    local before="$1" after="$2"
+    jq -ne --argjson b "$before" --argjson a "$after" '
         ($a.role == "rig") and
         ($b.role == "rig") and
-        ($a.marker == $marker) and
-        ($a.marker != $b.marker) and
         ($a.containers == "0") and
         ($a.containers == $b.containers) and
         (($a.worker | type) == "string") and
@@ -100,7 +98,7 @@ _rigkeep_run() {
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}"
     # shellcheck disable=SC2034  # coord_user, coord_pass and rig_card are read through dynamic scope
     local coord_ip="" coord_user="" coord_pass="" rig_card="" adopted=0
-    local before="" after="" marker="" genv="" img2="" token="" tries=0 jar="" scode="" hcode=""
+    local before="" after="" marker="" genv="" img2="" token="" tries=0 jar="" scode="" hcode="" label=""
 
     _phase_install_rig || return 1
 
@@ -118,8 +116,8 @@ _rigkeep_run() {
     }
     ok "M13: identity snapshot recorded before the reinstall (#3995)"
 
-    img2=$(_build_image v2) || {
-        bad "M13: building the newer image (marker v2) failed (/tmp/os-fault-build.log)"
+    img2=$(_build_image v2 v2) || {
+        bad "M13: building the newer image (marker v2, build label v2) failed (/tmp/os-fault-build.log)"
         return 1
     }
     _ssh "systemctl poweroff" 2>/dev/null || true
@@ -150,6 +148,12 @@ _rigkeep_run() {
         bad "M13: the newer image never answered SSH beside the installed disk (#3995)"
         return 1
     }
+    marker=$(_marker)
+    [ "$marker" = "v2" ] || {
+        bad "M13: the booted stick carries marker '${marker:-none}', not the v2 image this phase built (#3995)"
+        return 1
+    }
+    ok "M13: the newer image on the stick is the built v2 image (#3995)"
     if _ssh "pithead-install --list" | grep -q "pithead-with-data"; then
         ok "M13: the newer installer reads the rig's disk as carrying data (#3995)"
     else
@@ -228,16 +232,17 @@ _rigkeep_run() {
         return 1
     }
     marker=$(_marker)
-    if [ "$marker" = "v2" ]; then
-        ok "M13: the reinstalled rig boots the newer image (marker v2) (#3995)"
+    label=$(_ssh "cat /opt/pithead/BUILD_LABEL 2>/dev/null" | tr -d '\r\n')
+    if [ "$label" = "v2" ] && [ -z "$marker" ]; then
+        ok "M13: the reinstalled rig boots the newer stick's system — build label v2, harness marker stripped (#3995)"
     else
-        bad "M13: expected marker v2 on the reinstalled rig, got '${marker:-none}' (#3995)"
+        bad "M13: reinstalled disk is not the newer stick's system — build label '${label:-none}' want v2, marker '${marker:-none}' want stripped (#3995)"
     fi
     _rig_mining_up 36 &&
         ok "M13: the reinstalled rig mines on the new image (#3995)" ||
         bad "M13: the reinstalled rig is not mining on the new image (#3995)"
     after=$(_rigkeep_snapshot)
-    if _rigkeep_verdict "$before" "$after" v2; then
+    if _rigkeep_verdict "$before" "$after"; then
         ok "M13: role, worker, pool and access token survived Keep everything unchanged (#3995)"
     else
         bad "M13: identity drifted across Keep everything (was $(printf '%s' "$before" | jq -c 'del(.access_token, .miner_token)' 2>/dev/null), now $(printf '%s' "$after" | jq -c 'del(.access_token, .miner_token)' 2>/dev/null)) (#3995)"

@@ -36,12 +36,12 @@
 #           install. Mines from the stick, no containers, volatile journald, an unaided reboot
 #           returns it mining, and the blank disk is still blank.
 #   rigkeep (M13, #3995) install a rig to its internal disk exactly as the install phase's rig
-#           leg does, adopt it on a remote-node coordinator, then boot a newer image (marker v2)
-#           as removable USB beside that disk and choose Keep everything. Asserts role, worker,
-#           pool and access token survive unchanged, the rig mines on the new image, the new slot
-#           self-commits (A_OK=1 A_TRY=0), and the coordinator still reads the same adopted
-#           worker with nothing to redo. A bench with no reserved node counts the adoption legs
-#           as a `missing` skip; the identity half runs regardless.
+#           leg does, adopt it on a remote-node coordinator, then boot a newer image (build label
+#           v2) as removable USB beside that disk and choose Keep everything. Asserts the disk
+#           boots the stick's system (label v2, harness marker stripped as the installer demands),
+#           role, worker, pool and access token survive unchanged, the rig mines on the new image,
+#           the new slot self-commits (A_OK=1 A_TRY=0), and the coordinator still reads the same
+#           adopted worker with nothing to redo. No reserved node: adoption legs `missing`-skip.
 #   media   physical-presence config channel (#786 sub-issue D): a removable stick applied at boot
 #           shows its exact diff on the console, counts down, applies, and consumes itself; pulling
 #           it mid-countdown cancels the change. A minimal stick (#965) changes only what it names;
