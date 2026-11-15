@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its own OS update
     info "rig-update leg — channel check, refusals, install and verdict through pithead rig-update"
-    local tag srv host_addr port=8933 size srv_pid bundle out aged before marker
+    local tag srv host_addr port=8933 size srv_pid bundle out aged before marker n
     tag="v$(tr -d ' \t\r\n' <VERSION)"
     if ! bundle=$(_build_bundle v1); then
         bundle_build_evidence
@@ -39,7 +39,7 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
         return
     }
 
-    out=$(_ssh "cd /data/pithead && ./pithead rig-update check" 2>&1)
+    out=$(_ssh "cd /data/pithead && ./pithead rig-update check 2>&1")
     case "$out" in
     *"running v$aged, release channel offers $tag"*)
         ok "rig-update check reports the running and published versions without installing"
@@ -49,7 +49,7 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
     [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
         ok "the seam check started no Tor" || bad "the seam check started Tor"
 
-    out=$(_ssh "cd /data/pithead && ./pithead rig-update install --max-version 2.0.0" 2>&1)
+    out=$(_ssh "cd /data/pithead && ./pithead rig-update install --max-version 2.0.0 2>&1")
     case "$out" in
     *"above --max-version"*)
         ok "rig-update refuses the published tag above --max-version, semantically"
@@ -66,7 +66,7 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
         bad "the refusal did not reach the status file"
 
     _ssh "printf '{\"state\":\"pending\",\"from\":\"0.0.0\",\"to\":\"9.9.9\",\"ts\":1}' > /data/pithead/rig-update.json"
-    out=$(_ssh "cd /data/pithead && ./pithead rig-update install" 2>&1)
+    out=$(_ssh "cd /data/pithead && ./pithead rig-update install 2>&1")
     case "$out" in
     *"pending a reboot"*) ok "a pending update blocks a new install until the reboot settles it" ;;
     *) bad "the pending record did not refuse a second install (got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200))" ;;
@@ -81,7 +81,7 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
         rm -rf "$srv"
         return
     fi
-    out=$(_ssh "cd /data/pithead && ./pithead rig-update install" 2>&1) || true
+    out=$(_ssh "cd /data/pithead && ./pithead rig-update install 2>&1") || true
     if ! _wait_new_boot "$before" 420; then
         bad "rig-update leg: the rig never returned after rig-update installed the spare slot"
         kill "$srv_pid" 2>/dev/null || true
@@ -93,23 +93,40 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
         bad "expected v1 after rig-update's reboot, got '$marker'"
     _rig_mining_up 24 && ok "the rig mines again after the rig-update reboot" ||
         bad "the rig stopped mining after the rig-update reboot"
-    [ "$(_ssh "jq -r '.state' /data/pithead/rig-update.json" 2>/dev/null | tr -d '\r')" = "updated" ] &&
-        ok "the boot settled the verdict as updated in rig-update.json" ||
+    n=0
+    while [ "$n" -lt 30 ]; do
+        [ "$(_ssh "jq -r '.state' /data/pithead/rig-update.json" 2>/dev/null | tr -d '\r')" = "updated" ] && break
+        sleep 5
+        n=$((n + 1))
+    done
+    [ "$n" -lt 30 ] && ok "the boot settled the verdict as updated in rig-update.json" ||
         bad "the post-boot verdict never landed in rig-update.json"
-    _ssh "journalctl -u pithead-boot -b 2>/dev/null | grep -q 'verdict updated'" &&
+    _ssh "journalctl -b -u pithead-boot 2>/dev/null | grep -q 'verdict updated'" &&
         ok "pithead-boot's journal carries the updated verdict" ||
         bad "pithead-boot's journal has no verdict line"
     ! _ssh 'ls /data/pithead/data/os-update/pithead-os-* >/dev/null 2>&1' &&
         ok "the bundle and any partial were deleted after the install" ||
         bad "a staged bundle survived the rig-update outcome"
 
-    out=$(_ssh "rm -f /data/pithead/os-update-test-base && cd /data/pithead && PITHEAD_TOR_TIMEOUT=300 ./pithead rig-update check" 2>&1)
+    out=$(_ssh "rm -f /data/pithead/os-update-test-base && cd /data/pithead && PITHEAD_TOR_TIMEOUT=300 ./pithead rig-update check 2>&1")
     case "$out" in
     *"release channel offers v"*) ok "rig-update check reads the real release channel over Tor" ;;
     *) bad "the Tor check did not report the channel (got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200))" ;;
     esac
     [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
         ok "Tor stopped after the check" || bad "Tor kept running after the check"
+
+    # The legs below this one drive the rig on its updated slot B — rig-update's install moved
+    # the boot default to the slot it wrote, so hand the machine back the way the update leg left it.
+    _ssh 'grub-editenv /boot/efi/grub/grubenv set "ORDER=B A"' ||
+        bad "rig-update leg: could not put slot B back as the boot default — the legs below will follow the wrong slot"
+    _reboot_wait reboot 300 || bad "rig-update leg: the rig never returned after the boot-default was restored to slot B"
+    case "$(_ssh cat /proc/cmdline 2>/dev/null | tr -d '\r')" in
+    *rauc.slot=B*) ok "the rig runs slot B again for the legs below" ;;
+    *) bad "the rig did not come back on slot B — cmdline: $(printf '%s' "$(_ssh cat /proc/cmdline 2>/dev/null)" | cut -c1-160)" ;;
+    esac
+    _rig_mining_up 24 && ok "the rig mines again after the hand-back reboot" ||
+        bad "the rig stopped mining after the hand-back reboot"
 
     kill "$srv_pid" 2>/dev/null || true
     rm -rf "$srv"
