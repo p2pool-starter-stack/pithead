@@ -42,12 +42,13 @@ vm_list_running() { virsh list --name; }
 
 vm_create() {
     local disk="$1" serial="$2" secure_boot="$3"
+    shift 3
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
         --boot "uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=$secure_boot" \
         --import --disk "path=$disk,format=raw,bus=virtio" \
         --network network=default,model=virtio --graphics none \
-        --serial "file,path=$serial" --noautoconsole
+        --serial "file,path=$serial" --noautoconsole "$@"
 }
 
 vm_destroy() {

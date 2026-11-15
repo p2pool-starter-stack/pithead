@@ -398,9 +398,9 @@ assert_eq "tari endpoint named in preview_values" \
 rm -f "$RESULTS/$UUID3.json" "$STAGED/$UUID3.json"
 # shellcheck source=tests/stack/control/config-concurrency.sh
 source "$HERE/control/config-concurrency.sh"
-# Restore the baseline this file's own tail is documented to leave behind (pool mini, local mode,
-# node_password "p", dashboard password "a control passphrase") — test-secrets-masking.sh, sourced
-# right after this file, reads that exact state rather than re-establishing it itself.
+# shellcheck source=tests/stack/control/commit-lock.sh
+source "$HERE/control/commit-lock.sh"
+# test-secrets-masking.sh, sourced next, reads this restored baseline instead of setting it up.
 control_config mini
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 # shellcheck source=tests/stack/control/config-version.sh

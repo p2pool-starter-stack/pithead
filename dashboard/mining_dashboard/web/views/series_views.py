@@ -19,6 +19,7 @@ import time
 from mining_dashboard.config import config
 from mining_dashboard.helper.utils import format_duration, format_hashrate, format_time_abs
 from mining_dashboard.service.metrics import share_reject_pct
+from mining_dashboard.service.payout_identity import configured_wallet_id
 from mining_dashboard.web.views.charts import _MAX_CHART_POINTS, _RANGE_SECONDS, _filter_events
 from mining_dashboard.web.views.xvb_views import _LOW_HR_TITLE
 
@@ -150,7 +151,9 @@ def build_payouts(state_mgr, range_arg, window=None):
     return {
         chain: [
             {"x": int(p["ts"] * 1000), "amount": p.get("amount_atomic", 0)}
-            for p in _filter_events(state_mgr.get_payouts(chain), range_arg, window)
+            for p in _filter_events(
+                state_mgr.get_payouts(chain, configured_wallet_id(chain)), range_arg, window
+            )
         ]
         if enabled and state_mgr is not None
         else []

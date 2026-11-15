@@ -1,14 +1,5 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Rig/worker domain (#1105 Phase 1, appliance lane): the merge-mining rig's stratum-facing
-# surface and the control channel's per-rig worker-config/worker-upgrade verbs — xmrig-proxy's
-# stratum auth + donate-level knobs (#152/#173), the co-located built-in miner's opt-in announce
-# of the pool URL + stratum secret to a RigForge install (#593), stratum-over-TLS render and the
-# cert lifecycle a rig pins its fingerprint to (#261), and the worker-config/worker-upgrade verbs
-# end to end — fail-closed resolution from the HOST's config.json only, never the intent
-# (#185/#597), the accept/poll/terminal state machine against a stubbed rig control API, the
-# GitHub release-tag derive + anti-beacon throttle, and the rig-refusal/timeout/stale-terminal
-# edges (#597).
 # Sourced by tests/stack/run.sh.
 #
 # Left behind, code-checked (not markers):
@@ -60,10 +51,7 @@ case "$sp1" in ?*) ok "stratum_password auto generated a secret" ;; *) bad "stra
 assert_eq "donate-level explicit propagated" "$(run_sourced "$V" env_get_file "$V/.env" PROXY_DONATE_LEVEL)" "1"
 assert_contains "stratum auth surfaced for rigs" "$(run_sourced "$V" announce_stratum_auth 2>&1)" "Stratum authentication is ON"
 
-echo "== unit: announce_local_miner hands off the stratum URL + secret only when opted in (#593) =="
-# The local-miner opt-in surfaces the two values a co-located RigForge install needs (pool URL +
-# stratum secret) and NOTHING else — off by default, loopback when the bind allows it, the bound
-# LAN address when it doesn't (the #593 stratum_bind edge case), and RigForge-owns-tuning stated.
+echo "== unit: announce_local_miner hands off stratum connection details only when opted in (#593) =="
 LM="$SANDBOX/lm"
 mkdir -p "$LM"
 printf 'STRATUM_BIND=0.0.0.0\nSTRATUM_PORT=3333\nPROXY_STRATUM_PASSWORD=s3cr3t\n' >"$LM/.env"
@@ -73,11 +61,12 @@ assert_eq "opt-out prints nothing" "$(run_sourced "$LM" announce_local_miner 2>&
 # Absent block also prints nothing (default false).
 printf '{}' >"$LM/config.json"
 assert_eq "absent local_miner prints nothing" "$(run_sourced "$LM" announce_local_miner 2>&1)" ""
-# Opt-in, 0.0.0.0 bind: loopback URL + the secret + the RigForge-owns-tuning note.
 printf '{"local_miner":{"enabled":true}}' >"$LM/config.json"
 lm_out="$(run_sourced "$LM" announce_local_miner 2>&1)"
 assert_contains "opt-in surfaces loopback pool URL" "$lm_out" "127.0.0.1:3333"
-assert_contains "opt-in surfaces the stratum secret" "$lm_out" "s3cr3t"
+assert_contains "opt-in reports stratum authentication" "$lm_out" "Stratum authentication is ON"
+assert_contains "opt-in directs to the dashboard" "$lm_out" "Connect a miner"
+assert_not_contains "opt-in withholds the stratum secret" "$lm_out" "s3cr3t"
 assert_contains "opt-in states RigForge owns host tuning" "$lm_out" "RigForge"
 # Custom port + specific LAN bind: target the bound address, not hardcoded loopback (#593 edge case).
 printf 'STRATUM_BIND=192.168.1.9\nSTRATUM_PORT=4444\nPROXY_STRATUM_PASSWORD=s3cr3t\n' >"$LM/.env"
@@ -341,6 +330,13 @@ PATH="$WUT/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$WUT/config.json"
 assert_contains "upgrade inside the 10-min lookup window (no cached tag) is rejected" \
     "$(jq -r '.error // ""' "$WUT/results/$w6.json")" "retry in a few minutes"
 assert_eq "the throttled upgrade made NO network dial" "$(cat "$WUT/dials.log" 2>/dev/null)" ""
+wua="a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0"
+printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v1.11.2","appliance":true}\n' "$wua" >"$WUT/appliance.json"
+PATH="$WUT/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$WUT/config.json" \
+    run_sourced_e "$SANDBOX" control_process_request "$WUT/appliance.json" "$WUT" >/dev/null 2>&1
+assert_contains "upgrade of an appliance rig is rejected with the OS-image message" \
+    "$(jq -r '.error // ""' "$WUT/results/$wua.json")" "OS image"
+assert_eq "the appliance rejection makes no network dial" "$(cat "$WUT/dials.log" 2>/dev/null)" ""
 
 echo "== control channel: worker upgrade drives the rig to each terminal (#597) =="
 # A stub curl stands in for the rig's control API (and would catch any unexpected GitHub dial: the

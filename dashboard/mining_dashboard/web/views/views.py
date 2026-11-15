@@ -31,6 +31,7 @@ from mining_dashboard.service.host_resources import build_host_resources
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.network.topology import topology_from_config
+from mining_dashboard.service.payout_identity import configured_wallet_id
 from mining_dashboard.service.pool_tier import suggest_pool_tier
 from mining_dashboard.service.workers.donation import fleet_donation
 from mining_dashboard.version import resolve_version
@@ -234,7 +235,11 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     history = state_mgr.get_history()
     share_stats = state_mgr.get_share_stats()
     raffle_wins = state_mgr.get_raffle_wins()
-    monero_payouts = state_mgr.get_payouts("monero") if config.PAYOUT_CONFIRM_ENABLED else None
+    monero_payouts = (
+        state_mgr.get_payouts("monero", configured_wallet_id("monero"))
+        if config.PAYOUT_CONFIRM_ENABLED
+        else None
+    )
     metrics = build_metrics(data, state_mgr, history)
     db_healthy = state_mgr.is_db_healthy()
 
@@ -248,7 +253,9 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         metrics,
         payouts=monero_payouts,
         tari_payouts=(
-            state_mgr.get_payouts("tari") if config.TARI_PAYOUT_CONFIRM_ENABLED else None
+            state_mgr.get_payouts("tari", configured_wallet_id("tari"))
+            if config.TARI_PAYOUT_CONFIRM_ENABLED
+            else None
         ),
         xvb_day=xvb_current_tier_reward_day(metrics, state_mgr),
     )

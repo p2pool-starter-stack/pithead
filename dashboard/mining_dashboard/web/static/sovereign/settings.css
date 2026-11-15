@@ -1,0 +1,57 @@
+.settings-page {
+  max-width: 72rem;
+  overflow-wrap: anywhere;
+}
+.lan-group {
+  margin-block: 0;
+}
+.lan-row {
+  padding-block: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.lan-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+.lan-row p {
+  margin-block: 0.4rem;
+}
+.lan-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.lan-address code {
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  font-weight: 700;
+}
+.lan-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.lan-guard-status {
+  margin-block-start: 1rem;
+  padding-block-start: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.lan-verdict {
+  font-weight: 700;
+}
+.lan-ok {
+  color: var(--ok);
+}
+.lan-warn {
+  color: var(--warn);
+}
+.lan-fail {
+  color: var(--bad);
+}
+.lan-apply {
+  margin-block-start: 0.75rem;
+}

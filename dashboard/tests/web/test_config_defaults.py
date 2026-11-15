@@ -118,7 +118,7 @@ async def test_sparse_browser_submit_materializes_defaults_without_replacing_ans
         payload["xmrig_proxy"] = {"enabled": True}
     elif explicit:
         payload.update({"local_miner": {"enabled": False}, "dashboard": {"host": "chosen"}})
-    async with TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None))) as client:
+    async with TestClient(TestServer(wizard.make_app())) as client:
         await client.post("/auth", data={"token": "fixture-token"}, allow_redirects=False)
         response = await client.post("/submit", data={"config": json.dumps(payload)})
         assert response.status == 200

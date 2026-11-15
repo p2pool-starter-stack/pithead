@@ -66,9 +66,6 @@ def _set(cfg, path, value):
 
 
 def mask_secrets(cfg):
-    """Mask fixed secret leaves, webhook URLs, and per-worker tokens in place. Mirrors
-    pithead's ``render_masked_config``; shared by ``read_config`` and ``data_service`` so masks
-    never drift between the two defense-in-depth passes. An empty secret stays empty."""
     for path in SECRET_PATHS:
         found, value = _get(cfg, path)
         if found and value:
@@ -76,13 +73,17 @@ def mask_secrets(cfg):
     found, hooks = _get(cfg, WEBHOOKS_PATH)
     if found and isinstance(hooks, list):
         _set(cfg, WEBHOOKS_PATH, [h and dict(SECRET_SENTINEL, slot=i) for i, h in enumerate(hooks)])
-    workers = cfg.get("workers")
-    if isinstance(workers, dict) and isinstance(workers.get("list"), list):
-        for worker in workers["list"]:
-            if isinstance(worker, dict):
-                for key in ("token", "api_token"):
-                    if worker.get(key):
-                        worker[key] = dict(SECRET_SENTINEL)
+    for path, keys in (
+        (("workers", "list"), ("token", "api_token")),
+        (("monero", "backup_nodes"), ("rpc_login",)),
+    ):
+        _, entries = _get(cfg, path)
+        if isinstance(entries, list):
+            for entry in entries:
+                if isinstance(entry, dict):
+                    for key in keys:
+                        if entry.get(key):
+                            entry[key] = dict(SECRET_SENTINEL)
     return cfg
 
 
@@ -200,16 +201,13 @@ CONFIRM_ENV_KEY_PATHS = {
     "MONERO_CLEARNET_SYNC": ("monero.clearnet_initial_sync",),
     "TARI_CLEARNET_SYNC": ("tari.clearnet_initial_sync",),
     "MONERO_PRUNE": ("monero.prune",),
-    # Bounded (8-1024) and reversible, but the biggest steady-state knob on the shared Tor daemon.
     "MONERO_OUT_PEERS": ("monero.out_peers",),
-    # Node endpoints (#1888) are confirm-gated and host-probed.
+    "MONERO_BACKUP_NODES": ("monero.backup_nodes",),
+    "P2POOL_BACKUP_ARGS_B64": ("monero.backup_nodes",),
     "MONERO_NODE_HOST": ("monero.remote.host",),
     "MONERO_RPC_PORT": ("monero.remote.rpc_port",),
     "MONERO_ZMQ_PORT": ("monero.remote.zmq_port",),
     "TARI_GRPC_ADDRESS": ("tari.remote.host", "tari.remote.grpc_port"),
-    # Whether this host merge-mines at all (#1929), plus the full and Tor-only node profiles.
-    # Mapped to tari.mode ALONE, narrower than their real derivation on
-    # purpose: monero.mode and the view keys also move it and keep their own classification.
     "TARI_MODE": ("tari.mode",),
     "COMPOSE_PROFILES": ("tari.mode",),
     "TOR_COMPOSE_PROFILES": ("tari.mode",),
@@ -338,12 +336,7 @@ def submit_worker_apply(worker, changes, actor="", intent_id=None):
     return request_spool.write(request)
 
 
-def submit_worker_upgrade(worker, version, actor="", intent_id=None):
-    """Spool a worker RigForge-upgrade intent (#597). Carries ONLY the worker NAME and the version
-    the operator confirmed seeing — never a host, port, or token (the host runner resolves the
-    rig's real address and bearer from workers.list[], exactly like worker-apply), and the version
-    is a proposal, never a target: the host re-derives the real latest RigForge release over Tor
-    and refuses a mismatch. Returns the request id (always a UUID)."""
+def submit_worker_upgrade(worker, version, actor="", intent_id=None, appliance=False):
     rid = str(uuid.UUID(intent_id)) if intent_id else str(uuid.uuid4())
     request = {
         "id": rid,
@@ -352,6 +345,8 @@ def submit_worker_upgrade(worker, version, actor="", intent_id=None):
         "worker": worker,
         "version": version,
     }
+    if appliance:
+        request["appliance"] = True
     return request_spool.write(request)
 
 

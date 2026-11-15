@@ -11,6 +11,19 @@ source "$ROOT/lib/pithead/15-os-update.sh"
 source "$ROOT/os/overlay/pithead-boot"
 export PITHEAD_MIGRATION_MARKER_FILE="$T/.os-migration-pending" PITHEAD_CMDLINE="$T/cmdline" PITHEAD_VERSION=2.0.0
 cd "$T"
+cp "$ROOT/pithead" ./pithead
+mkdir bin
+printf '#!/bin/sh\nexit 0\n' >bin/sync
+cat >bin/rauc <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+'status --output-format=json') printf '%s\n' '{"slots":[{"rootfs.0":{"state":"booted","bootname":"A","boot_status":"good"}}]}' ;;
+'status mark-bad other') printf '%s\n' "$*" >>rauc-calls ;;
+*) exit 1 ;;
+esac
+EOF
+chmod +x bin/sync bin/rauc
+export PATH="$T/bin:$PATH"
 fail() {
     echo "FAIL: $*" >&2
     exit 1
@@ -31,6 +44,7 @@ if os_migration_hold_active; then fail 'same-version previous slot was held'; fi
 printf '2.0.0\n' >.os-data-floor
 printf '1.20.0\n' >.os-data-floor.prev
 restore_data_floor_after_fallback >/dev/null
+[ "$(cat rauc-calls)" = "status mark-bad other" ] || fail 'fallback did not disarm the candidate'
 [ "$(cat .os-data-floor)" = 1.20.0 ] || fail 'fallback did not restore the floor'
 [ ! -e .os-migration-pending ] && [ ! -e .os-data-floor.prev ] || fail 'fallback markers survived'
 if os_prepare_migration_hold; then fail 'absent marker held a normal boot'; fi
@@ -57,8 +71,13 @@ done
 printf 'quiet rauc.slot=B\n' >cmdline
 printf '1.20.0\n' >.os-migration-pending
 if os_prepare_migration_hold; then fail 'different-version marker held a normal boot'; fi
+printf '1.20.0|B\n' >.os-migration-pending
+rc=0
+os_prepare_migration_hold || rc=$?
+[ "$rc" = 2 ] || fail 'same-slot different-version marker permitted startup'
+[ "$(cat .os-migration-pending)" = '1.20.0|B' ] || fail 'same-slot version mismatch changed protection'
 # Establish ownership before any boot action that can fail and trigger fallback.
-claim=$(awk '/^bash -c .*os_prepare_migration_hold/ {print NR}' "$ROOT/os/overlay/pithead-boot")
+claim=$(awk '/^migration_fingerprint=\$\(bash -c/ {print NR}' "$ROOT/os/overlay/pithead-boot")
 load=$(awk '/^\.\/pithead load-images/ {print NR}' "$ROOT/os/overlay/pithead-boot")
 [ -n "$claim" ] && [ "$claim" -lt "$load" ] || fail 'ownership was deferred until after loading'
 echo 'selftest-migration-hold: PASS'

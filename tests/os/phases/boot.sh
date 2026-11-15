@@ -158,6 +158,13 @@ GETTY_DROPIN
         bad "$verdict"
     fi
 
+    [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
+        ok "both Debian Tor units ship masked on a fresh coordinator boot" ||
+        bad "a Debian Tor unit is not masked on a fresh coordinator boot: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"
+    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null')" ] &&
+        ok "no Tor process on a fresh coordinator boot" ||
+        bad "tor runs on a fresh coordinator boot"
+
     # #895: machine-id must be assigned once and then STAY. #1659 and #1791 ride the same reboot:
     # journald keeping the transient id (a new journal dir per boot), and the /var overlay racing the
     # #1030 bind for /var/log/journal (a split boot list). Both verdicts are fixture-tested (tier 1).
@@ -214,6 +221,6 @@ _vm_boot_disk() {
     qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
-    vm_create "$DISK" "$SERIAL" no >/dev/null 2>&1 || return 1
+    vm_create "$DISK" "$SERIAL" no --video vga >/dev/null 2>&1 || return 1
     _wait_dhcp_ip 120
 }

@@ -1,12 +1,19 @@
 # shellcheck shell=bash
 # shellcheck source=tests/integration/lib/run-channel.sh
 source "${BASH_SOURCE[0]%/*}/run-channel.sh" || exit $?
-# Run the real CLI on the deployed candidate, keeping credentials inside the target shell.
 connection_announcements_snippet() {
     lifecycle_gate_snippet
+    printf 'SKIP_MINING_ASSERTS=%q\n' "${SKIP_MINING_ASSERTS:-0}"
     cat <<'PROBE'
 set -Eeuo pipefail
 source ./pithead
+INTEGRATION_RUN_SUITE=1 IT_PITHEAD=./pithead LIFECYCLE_MINING_ACTIVE=1
+source tests/integration/lib/run-lifecycle-miners.sh
+    rx() { bash -c "$1"; }
+    it_pass() { :; }
+    it_fail() { printf '%s\n' 'connections: mining post-step failed' >&2; }
+exec 3>&1
+    it_skip_leg() { printf 'connections: mining skipped: %s\n' "${1%% *}" >&3; }
 stage=initialization
 # EXIT alone preserves the integration harness's abort/unwind contract.
 trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at %s\n" "$stage" >&2; fi' EXIT
@@ -20,7 +27,9 @@ trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at
     [[ "$out" == *"Pool URL: $host:$(stratum_port_effective)"* ]]
     secret=$(env_get PROXY_STRATUM_PASSWORD)
     if [ -n "$secret" ]; then
-        [[ "$out" == *"Stratum password: $secret"* ]]
+        [[ "$out" == *"Stratum authentication is ON"* ]]
+        [[ "$out" == *"Connect a miner"* ]]
+        [[ "$out" != *"$secret"* ]]
     else
         [[ "$out" == *"Stratum password: none set"* ]]
     fi
@@ -37,7 +46,7 @@ trap 'rc=$?; if [ "$rc" -ne 0 ]; then printf "connections: diagnostic: failed at
 # Answer each prompt as it appears: setup's subprocesses may consume pre-fed stdin.
 lifecycle_gate_sample_target before-setup
 stage=setup
-out=$(python3 tests/integration/tools/connection-setup-pty.py) || {
+out=$(lifecycle_mining_step setup python3 tests/integration/tools/connection-setup-pty.py) || {
     rc=$?
     printf '%s\n' 'connections: diagnostic: failed at setup'
     printf 'connections: diagnostic: setup command exit %s\n' "$rc"
@@ -54,25 +63,25 @@ out=$(python3 tests/integration/tools/connection-setup-pty.py) || {
 [[ "$out" == *"You can start the stack later with:"* ]]
 lifecycle_gate_sample_target after-setup
 check_output "$out"
-printf '%s\n' 'connections: setup with startup declined matches rendered credentials'
+printf '%s\n' 'connections: setup with startup declined protects connection details'
 stage=up
-out=$(./pithead up 2>&1)
+out=$(pithead up 2>&1)
 lifecycle_gate_sample_target after-up
 check_output "$out"
-printf '%s\n' 'connections: up matches rendered credentials'
+printf '%s\n' 'connections: up protects connection details'
 stage=apply
-out=$(./pithead apply -y 2>&1)
+out=$(pithead apply -y 2>&1)
 lifecycle_gate_sample_target after-apply
 check_output "$out"
-printf '%s\n' 'connections: apply matches rendered credentials'
+printf '%s\n' 'connections: apply protects connection details'
 before=$(sha256sum .env)
 stage=no-change
-out=$(./pithead apply -y 2>&1)
+out=$(pithead apply -y 2>&1)
 [[ "$out" == *"No configuration changes detected"* ]]
 check_output "$out"
 lifecycle_gate_sample_target after-no-change
 [ "$(sha256sum .env)" = "$before" ]
-printf '%s\n' 'connections: no-change apply matches rendered credentials and preserves env'
+printf '%s\n' 'connections: no-change apply protects connection details and preserves env'
 PROBE
 }
 
@@ -80,15 +89,14 @@ run_connection_announcements() {
     skip_appliance_checkout_probe \
         "setup is owned by the wizard and the CLI PTY tool is not shipped; strict proof runs on DIY" \
         "coordinator connection announcement probe succeeds (#3090)" \
-        "setup with startup declined matches rendered credentials (#3090)" \
-        "up matches rendered credentials (#3090)" \
-        "apply matches rendered credentials (#3090)" \
-        "no-change apply matches rendered credentials and preserves env (#3090)" && return 0
+        "setup with startup declined protects connection details (#3090)" \
+        "up protects connection details (#3090)" \
+        "apply protects connection details (#3090)" \
+        "no-change apply protects connection details and preserves env (#3090)" && return 0
     local out rc before="$IT_FAIL" marker
     it_step "checking setup/up/apply connection announcements on the candidate…"
     out="$(rx "$(connection_announcements_snippet)" 2>&1)"
     rc=$?
-    # Never retain the raw CLI output: it intentionally contains the pool password.
     printf 'connection announcement probe exit: %s\n' "$rc" >"$OUT_DIR/connection-announcements.log"
     # Reconstruct only our fixed diagnostic labels; the remote output is never copied.
     for marker in initialization setup up apply no-change; do
@@ -104,17 +112,25 @@ run_connection_announcements() {
         fi
     done
     printf '%s\n' "$out" | retain_lifecycle_gate_samples >>"$OUT_DIR/lifecycle-gate.log"
+    while IFS= read -r marker; do
+        case "$marker" in
+        'connections: mining skipped: setup' | 'connections: mining skipped: up' | 'connections: mining skipped: apply')
+            it_skip_leg "${marker##*: } worker return (#3375)" "no pre-step worker or SKIP_MINING_ASSERTS=1" "by-design"
+            printf 'SKIP: %s\n' "${marker##*: } worker return (#3375)" >>"$OUT_DIR/connection-announcements.log"
+            ;;
+        esac
+    done <<<"$out"
     assert_rc "coordinator connection announcement probe succeeds (#3090)" "$rc" 0
     for marker in \
-        'setup with startup declined matches rendered credentials' \
-        'up matches rendered credentials' \
-        'apply matches rendered credentials' \
-        'no-change apply matches rendered credentials and preserves env'; do
+        'setup with startup declined protects connection details' \
+        'up protects connection details' \
+        'apply protects connection details' \
+        'no-change apply protects connection details and preserves env'; do
         if [[ "$out" == *"connections: $marker"* ]]; then
             it_pass "$marker (#3090)"
             printf 'PASS: %s\n' "$marker" >>"$OUT_DIR/connection-announcements.log"
         else
-            it_fail "$marker (#3090)" "required credential assertions did not complete; CLI output withheld"
+            it_fail "$marker (#3090)" "required connection assertions did not complete; CLI output withheld"
         fi
     done
     [ "$IT_FAIL" -eq "$before" ]

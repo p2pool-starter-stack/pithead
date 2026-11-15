@@ -41,6 +41,7 @@ from mining_dashboard.service.notify.telegram_formatters import (
     status_warnings,
 )
 from mining_dashboard.service.notify.telegram_notifier import TELEGRAM_API_BASE
+from mining_dashboard.service.payout_identity import configured_wallet_id
 from mining_dashboard.service.xvb.earnings import (
     MICRO_PER_XTM,
     confirmed_payouts_summary,
@@ -211,7 +212,7 @@ class TelegramCommandBot:
         )
         if not enabled:
             return None
-        payouts = self.data_service.state_manager.get_payouts(chain)
+        payouts = self.data_service.state_manager.get_payouts(chain, configured_wallet_id(chain))
         if chain == "tari":
             return confirmed_payouts_summary(payouts, divisor=MICRO_PER_XTM, unit="xtm")
         return confirmed_payouts_summary(payouts)

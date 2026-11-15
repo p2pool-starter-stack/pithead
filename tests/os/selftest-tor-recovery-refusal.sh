@@ -84,8 +84,13 @@ _vm_boot_disk() { :; }
 _wait_ssh() { :; }
 _wait_setup_page() { :; }
 phase_wizard_redirect() { :; }
+phase_provision_registry_cut() { :; }
+phase_provision_registry_untouched() { :; }
+phase_provision_baked_stack() { :; }
+phase_provision_no_pull_before_load() { :; }
 stage_dashboard_exposure_addresses() { :; }
 provision_node_preflight() { :; }
+provision_node_preflight_accepts_reserved_name() { :; }
 provision_setup_failure_recovery() { :; }
 provision_browser_submit() { echo 200; }
 wizard_miner_connection_card_valid() { :; }

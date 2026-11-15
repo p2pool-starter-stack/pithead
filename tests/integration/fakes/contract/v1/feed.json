@@ -20,7 +20,7 @@
   ],
   "rigforge": {
     "config": {
-      "DONATION": 1,
+      "DONATION": 0,
       "autotune": "disabled",
       "max_temp_c": 85,
       "pools": [
@@ -37,7 +37,7 @@
     "config_meta": {
       "changed_at": null,
       "last_change_id": null,
-      "revision": "50c51399833d2a28",
+      "revision": "6bd0e04fa9f6609a",
       "source": null
     },
     "control": {

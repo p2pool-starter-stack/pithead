@@ -72,7 +72,7 @@ gh_release_fetch() { # <owner/repo>; sets GH_RELEASE_JSON on success, GH_RELEASE
     # says the limit was exceeded. Without -f, curl's own non-zero exit now means only a transport
     # failure, which is exactly the distinction that was missing.
     if ! out=$(curl -sS --max-time 60 --max-filesize "$CURL_CAP_SMALL" -w '\n%{http_code}' \
-        --socks5-hostname "$GH_SOCKS" -H 'Accept: application/vnd.github+json' \
+        --proto =https --socks5-hostname "$GH_SOCKS" -H 'Accept: application/vnd.github+json' \
         "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null); then
         GH_RELEASE_HINT="could not reach the GitHub release API over Tor — nothing was changed. $retry_hint"
         # rc 2, not 1: no HTTP response came back from GitHub, so this is distinct from every
@@ -203,6 +203,10 @@ render_masked_config() { # <control-dir>
         reduce $paths[] as $p (.;
             if ((try getpath($p) catch null) // "") == "" then .
             else setpath($p; {"__secret__": true}) end)
+        | if (.monero.backup_nodes | type) == "array"
+          then .monero.backup_nodes |= map(if type == "object" and (.rpc_login // "") != ""
+              then .rpc_login = {"__secret__": true} else . end)
+          else . end
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
               if (.token // "") == "" then . else .token = {"__secret__": true} end

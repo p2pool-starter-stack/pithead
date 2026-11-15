@@ -247,20 +247,16 @@ pool_label() {
     esac
 }
 
-# --- Target I/O (SSH or local) ----------------------------------------------
-# Globals set by the runner: IT_MODE (ssh|local), IT_SSH_DEST, IT_SSH_OPTS (array),
-# IT_REMOTE_DIR, IT_PITHEAD (the pithead invocation, e.g. "./pithead" or "sudo ./pithead").
-
-# Run a shell snippet on the target, in the stack directory. The snippet is our own trusted
-# code; we never interpolate untrusted data into it. Returns the remote command's exit code.
 rx() {
     local snippet="$1"
     if [ "$IT_MODE" = "local" ]; then
         (cd "$IT_REMOTE_DIR" && bash -c "$snippet")
     else
-        local remote stdin_flag=(-n)
-        remote="cd $(quote_arg "$IT_REMOTE_DIR") && { $snippet; }"
-        # Default -n protects scenario loops; --stdin opts in for a dedicated input pipe.
+        local remote prefix="" stdin_flag=(-n)
+        if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+            prefix="export IT_SCRATCH_DIR=$(quote_arg "$IT_SCRATCH_DIR"); export TMPDIR=\"\$IT_SCRATCH_DIR\"; "
+        fi
+        remote="${prefix}cd $(quote_arg "$IT_REMOTE_DIR") && { $snippet; }"
         [ "${2:-}" != --stdin ] || stdin_flag=()
         ssh "${stdin_flag[@]}" "${IT_SSH_OPTS[@]}" "$IT_SSH_DEST" "$remote"
     fi

@@ -267,7 +267,7 @@ provision_local_miner() {
         systemctl stop xmrig.service >/dev/null 2>&1 || true
         return 0
     fi
-    [ -f "$dir/config.json" ] || render_local_miner_config
+    render_local_miner_config
     if rigforge_setup_run; then
         log "Local miner is up — it appears in the dashboard's Workers view."
     else

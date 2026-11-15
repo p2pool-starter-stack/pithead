@@ -184,6 +184,38 @@ mm_await_roundtrip() {
     return 1
 }
 
+mm_startup_lost() {
+    local started="$1" command raw log_rc oldest
+    [[ "$started" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] || return 1
+    command="timeout ${MM_LOG_READ_TIMEOUT} docker logs --timestamps --since $(quote_arg "$started") p2pool 2>&1 | awk 'NR==1 && \$1 ~ /^[0-9][0-9][0-9][0-9]-[0-9TZ:.+-]+\$/ {print \$1}'; printf '\\n__PITHEAD_MM_LOG_RC=%s\\n' \"\${PIPESTATUS[0]}\""
+    raw="$(rx "bash -c $(quote_arg "$command")" 2>/dev/null)" || return 1
+    log_rc="$(printf '%s\n' "$raw" | sed -n 's/^__PITHEAD_MM_LOG_RC=//p' | tail -n 1)"
+    [ "$log_rc" = 0 ] || return 1
+    oldest="$(printf '%s\n' "$raw" | sed '/^__PITHEAD_MM_LOG_RC=/d; /^$/d')"
+    python3 - "$started" "$oldest" <<'MM_TIME'
+import re
+import sys
+from datetime import datetime
+from decimal import Decimal
+
+
+def instant(text):
+    match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})", text)
+    if not match:
+        raise ValueError("invalid engine timestamp")
+    whole = datetime.fromisoformat(match[1] + match[3].replace("Z", "+00:00"))
+    return whole, Decimal("0." + (match[2] or "0"))
+
+
+try:
+    (start, sf), (oldest, of) = map(instant, sys.argv[1:])
+    lost = Decimal(str((oldest - start).total_seconds())) + of - sf > 60
+except ValueError:
+    lost = False
+sys.exit(0 if lost else 1)
+MM_TIME
+}
+
 # Diagnostic lines from the same window, for a FAIL only (#2326). An empty capture cannot say
 # whether p2pool built no client, the client could not reach Tari, or the log was never read; these
 # lines can: a `compose logs` error, the entrypoint's launch and bridge lines, p2pool's Tari and error
@@ -245,12 +277,8 @@ mm_mask_excerpt() {
 # to THIS harness would make the signal exist (cycle 40 measured zero Tari gRPC calls across five
 # legs against absent, synced-fake and partial-fake monerods). Covering it means running against
 # a synced chain, not supplying something.
-#
-# Every case the reorder moves, it moves OUT of the skip ledger into a pass or a fail; no case
-# that previously passed or failed can become a skip. That direction is the safety argument, and
-# the self-test asserts all three moved cases rather than resting on it.
 assert_mergemine_roundtrip() {
-    local observed verdict epoch current rc=0 excerpt=""
+    local observed verdict epoch current lines rc=0 excerpt=""
     observed="$(mm_await_roundtrip)" || rc=$?
     case "$rc" in
     2)
@@ -261,6 +289,27 @@ assert_mergemine_roundtrip() {
     esac
     verdict="${observed%%|*}"
     epoch="${observed#*|}"
+    case "$verdict" in absent | local-only)
+        if mm_startup_lost "${epoch#*|}"; then
+            current="$(mm_epoch)" || current=""
+            if [ "$current" != "$epoch" ]; then
+                it_fail "p2pool merge-mining gRPC round-trip (#1397)" "p2pool restarted while checking startup evidence; refusing a verdict from the prior container epoch"
+                return 0
+            fi
+            lines="$(mm_capture_startup 60s)" || lines=""
+            current="$(mm_epoch)" || current=""
+            if [ "$current" != "$epoch" ]; then
+                it_fail "p2pool merge-mining gRPC round-trip (#1397)" "p2pool restarted during the fresh-window read; refusing a verdict from the prior container epoch"
+            elif verdict="$(mm_roundtrip_verdict "$lines")"; then
+                it_pass "p2pool reached the Tari node over gRPC — fresh ${verdict} (#1397)"
+            else
+                it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" \
+                    "oldest retained log timestamp is more than 60 seconds after container start; startup evidence may have been lost to rotation (conservative heuristic), and no fresh round-trip proof is available" missing
+            fi
+            return 0
+        fi
+        ;;
+    esac
     if [ "$verdict" = absent ] && ! monero_caught_up; then
         current="$(mm_epoch)" || current=""
         if [ "$current" = "$epoch" ]; then

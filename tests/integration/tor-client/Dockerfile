@@ -1,13 +1,4 @@
-# Independent Tor client for black-box onion-reachability tests (tier-4).
-#
-# Shares NOTHING with the stack: its own tor daemon, its own circuits, its own image. It reaches the
-# stack's published onion over the REAL Tor network exactly as a remote user's Tor Browser would —
-# so a green result proves the whole inbound path (tor hidden service -> Caddy -> client-auth ->
-# dashboard) works from outside the trust boundary, using none of the stack's own tooling.
-#
-# Base pinned by digest (supply-chain policy, #282). Not a release image — built on the bench by the
-# tier-4 harness, never pushed.
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 RUN apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils tor curl ca-certificates
 

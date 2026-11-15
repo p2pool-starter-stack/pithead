@@ -89,18 +89,19 @@ install, and the first checks on the installed appliance (steps 13.1 to 13.9).
 
 1. From the laptop, open `https://pithead.local`.
 2. Then open the IP the console printed.
-3. Enter a wrong token five times.
-4. After the fresh token appears on the console, try the previous token once, then the fresh one.
+3. Enter the correct token in one window and leave the setup form open.
+4. In a private window, enter a wrong token five times.
+5. Keep using the authenticated window during the cooldown. After 60 seconds, enter the same
+   correct token in the private window.
 
 **What you should see:**
 
 - Both addresses show the token page after one certificate warning.
 - The fingerprint in the browser matches the one on the console.
-- Five wrong tokens mint a fresh one on the console.
-- The previous token is refused; the fresh token opens the role and disk page.
-
-The KVM boot phase checks the served certificate fingerprint, five-token lockout and fresh-token
-authentication. Check browser certificate warnings and both addresses by hand.
+- The fifth wrong token starts a 60-second cooldown for the private window's network peer and
+  tells you to retry the same token. It does not restart the wizard or print a replacement token.
+- The already authenticated window remains usable throughout, and the same correct token opens
+  the private window after the cooldown.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
@@ -196,7 +197,7 @@ Per #3099 and #3092:
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
-### 13.7a RigForge is pinned to the 1.18.0 commit (#3116)
+### 13.7a RigForge is pinned to the 1.18.1 release (#3116, #3817)
 
 **What you do:**
 
@@ -206,17 +207,17 @@ Per #3099 and #3092:
    cat /opt/rigforge/RIGFORGE_REF
    ```
 
-2. After the RigForge v1.18.0 tag exists (it is cut after the soak), run:
+2. On any machine with network access, run:
 
    ```bash
-   git ls-remote https://github.com/p2pool-starter-stack/rigforge refs/tags/v1.18.0
+   git ls-remote https://github.com/p2pool-starter-stack/rigforge 'refs/tags/v1.18.1^{}'
    ```
 
 **What you should see:**
 
-- Item 1 prints `ref=<sha> version=1.18.0`, where `<sha>` is the commit the release notes name as
-  the one RigForge v1.18.0 is tagged from.
-- Once the tag exists, `git ls-remote` prints the same `<sha>`.
+- Item 1 prints `ref=8f06cb8df791f3cb16d47bbee85fde92103cbe0b version=1.18.1`.
+- Item 2 prints the same commit. The `^{}` suffix matters: v1.18.1 is an annotated tag, and
+  without it `git ls-remote` prints the tag object instead of the commit.
 
 **Record:** PASS, FAIL or N/A in the results sheet, plus the `<sha>` that item 1 printed.
 
@@ -262,7 +263,7 @@ Per #3092:
 For items 3 to 7:
 
 - The same results as on the DIY route.
-- The built-in miner appears as a worker, and it reports RigForge 1.18.0 (#3116).
+- The built-in miner appears as a worker, and it reports RigForge 1.18.1 (#3817).
 
 **Record:** PASS, FAIL or N/A in the results sheet, including Chrome version, whether the
 certificate warning appeared, guidance during sync or the full dashboard, fingerprint match,
