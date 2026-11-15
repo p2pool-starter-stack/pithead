@@ -21,6 +21,9 @@ cat >"$work/bin/podman" <<'SH'
 #!/bin/bash
 if [ "$1" = inspect ]; then
     [ "${INSPECT_FAIL:-0}" = 0 ] || exit 1
+    if [ -n "${PROXY_STARTED_AT_FILE:-}" ] && [ -f "$PROXY_STARTED_AT_FILE" ]; then
+        PROXY_STARTED_AT=$(cat "$PROXY_STARTED_AT_FILE")
+    fi
     [ -n "${PROXY_STARTED_AT:-}" ] || exit 1
     printf '%s\n' "$PROXY_STARTED_AT"
     exit 0
@@ -38,6 +41,7 @@ SH
 cat >"$work/python/mining_dashboard/helper/http.py" <<'PY'
 import json
 import os
+import time
 class Response:
     def raise_for_status(self):
         if os.environ.get("HTTP_FAIL") == "1":
@@ -46,6 +50,12 @@ class Response:
         return json.loads(os.environ["PROXY_WORKERS"])
 def bounded_get(url, headers, timeout):
     assert url == "http://xmrig-proxy:3344/1/workers"
+    hold = os.environ.get("PROXY_HOLD")
+    if hold:
+        with open(hold, "w") as marker:
+            marker.write("reading")
+        while os.path.exists(hold):
+            time.sleep(0.05)
     assert headers == {"Authorization": "Bearer fixture-token"}
     assert timeout == 5
     return Response()
@@ -113,6 +123,57 @@ export PROXY_WORKERS='{"mode":"rig_id","workers":[]}'
 tick 1320
 no_restart
 [ "$(cat "$work/state")" = 1320 ]
+export PROXY_STARTED_AT_FILE="$work/proxy-id"
+printf '4000\n' >"$work/proxy-id"
+export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",1]]}'
+tick 3000
+no_restart
+[ "$(cat "$work/state.proxy")" = 4000 ]
+export PROXY_HOLD="$work/recreate"
+bash "$ROOT/os/overlay/pithead-miner-recovery" >"$work/output" &
+bg=$!
+bg_end=$((SECONDS + 20))
+until [ -e "$PROXY_HOLD" ]; do
+    [ "$SECONDS" -lt "$bg_end" ] || {
+        kill "$bg"
+        exit 1
+    }
+    sleep 0.05
+done
+printf '5000\n' >"$work/proxy-id"
+rm -f "$PROXY_HOLD"
+wait "$bg"
+no_restart
+[ "$(cat "$work/state.proxy")" = 4000 ]
+export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-rig","fixture",1]]}'
+unset PROXY_HOLD
+tick 3030
+[ "$(cat "$work/calls")" = restart ]
+grep -Fq 'proxy was recreated while the miner was disconnected; restarting xmrig' "$work/output"
+[ "$(cat "$work/state.proxy")" = 5000 ]
+[ ! -e "$work/state" ]
+export PROXY_STARTED_AT=6000
+unset PROXY_STARTED_AT_FILE
+rm -f "$work/state" "$work/state.proxy" "$work/calls"
+export PROXY_WORKERS='{"mode":"rig_id","workers":[["fixture-local","fixture",1]]}'
+tick 3100
+no_restart
+[ "$(cat "$work/state.proxy")" = 6000 ]
+export HTTP_FAIL=1
+export PROXY_STARTED_AT=7000
+tick 3130
+no_restart
+[ "$(cat "$work/state.proxy")" = 6000 ]
+unset HTTP_FAIL
+export PROXY_WORKERS='{"mode":"rig_id","workers":[]}'
+rm -f "$work/state"
+tick 3160
+[ "$(cat "$work/calls")" = restart ]
+grep -Fq 'proxy was recreated while the miner was disconnected; restarting xmrig' "$work/output"
+[ "$(cat "$work/state.proxy")" = 7000 ]
+rm -f "$work/state" "$work/state.proxy" "$work/calls"
+unset PROXY_STARTED_AT
+export PROXY_WORKERS='{"mode":"rig_id","workers":[]}'
 export INSPECT_FAIL=1
 rm -f "$work/state" "$work/state.proxy"
 tick 1400
@@ -220,7 +281,7 @@ done
 grep -Fq '/usr/local/sbin/pithead-miner-recovery' "$ROOT/os/rootfs/Dockerfile"
 grep -Fq 'ExecStart=/usr/local/sbin/pithead-miner-recovery' "$ROOT/os/overlay/pithead-miner-recovery.service"
 grep -Fq 'OnUnitInactiveSec=30s' "$ROOT/os/overlay/pithead-miner-recovery.timer"
-printf '%s\n' 'PASS: miner recovery debounce, proxy-recreation fast restart, refusals, decoder, failure and image wiring'
+printf '%s\n' 'PASS: miner recovery debounce, proxy-recreation fast restart, identity bracket, refusals, decoder, failure and image wiring'
 
 # shellcheck source=tests/os/appliance-miner-recovery-leg.sh
 source "$ROOT/tests/os/appliance-miner-recovery-leg.sh"
@@ -317,3 +378,35 @@ if miner_watch_restore; then
 fi
 [ -e "$T3375/paused" ]
 printf '%s\n' 'PASS: failed watchdog restoration retains its control files'
+export PITHEAD_MINER_RECOVERY_BIN="$work/recovery-bin"
+printf '%s\n' 'printf proxy was recreated marker' >"$work/recovery-bin"
+mkdir -p "$T3375"
+printf '0\n' >"$T3375/backup-at"
+journalctl() { printf '%s\n' 'pithead-t3375: nothing relevant'; }
+rc=0
+out=$(miner_fastpath_receipt) || rc=$?
+[ "$rc" = 1 ]
+[ "$out" = 'pithead-t3375: fastpath_restart=missing timer_restart=absent' ]
+journalctl() {
+    printf '%s\n' 'pithead-miner-recovery: active local miner disconnected for 300 seconds; restarting xmrig'
+}
+rc=0
+out=$(miner_fastpath_receipt) || rc=$?
+[ "$rc" = 1 ]
+[ "$out" = 'pithead-t3375: fastpath_restart=missing timer_restart=observed' ]
+journalctl() {
+    printf '%s\n' \
+        'pithead-miner-recovery: local miner proxy was recreated while the miner was disconnected; restarting xmrig' \
+        'pithead-miner-recovery: active local miner disconnected for 300 seconds; restarting xmrig'
+}
+out=$(miner_fastpath_receipt)
+[ "$out" = 'pithead-t3375: fastpath_restart=observed timer_restart=observed' ]
+journalctl() {
+    printf '%s\n' 'pithead-miner-recovery: local miner proxy was recreated while the miner was disconnected; restarting xmrig'
+}
+out=$(miner_fastpath_receipt)
+[ "$out" = 'pithead-t3375: fastpath_restart=observed timer_restart=absent' ]
+printf '%s\n' 'no fastpath marker here' >"$work/recovery-bin"
+miner_fastpath_receipt
+unset PITHEAD_MINER_RECOVERY_BIN
+printf '%s\n' 'PASS: receipt distinguishes fastpath and timer restarts'
