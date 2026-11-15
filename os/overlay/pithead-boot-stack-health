@@ -106,8 +106,7 @@ schema_hold_release() {
         echo "pithead-boot: FAULT — the committed slot could not restart the dashboard to run its deferred database migrations; run 'docker compose restart dashboard' from /data/pithead" >&2
 }
 gate_tor_transport_verdict() {
-    BOOT_TOR_VERDICT=down
-    local cid info state health
+    local cid info state health BOOT_TOR_VERDICT=down
     cid=$(docker compose ps -aq tor 2>/dev/null | head -n 1)
     [ -n "$cid" ] || { printf 'down\n'; return 0; }
     info=$(docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid" 2>/dev/null)
@@ -190,5 +189,6 @@ gate_network_advisory_commit() {
     [ "${hold_chain:-0}" != 0 ] || restore_data_floor_after_fallback "${migration_fingerprint:-}" ||
         echo "pithead-boot: FAULT — the previous migration candidate remains protected" >&2
     [ "${hold_chain:-}" = 1 ] && { release_held_chain_services "${migration_fingerprint:-}" || true; }
+    timeout 1800 ./pithead local-miner || true
     return 0
 }

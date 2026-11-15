@@ -235,7 +235,7 @@ _bnv_commit() {
     )
 }
 _bnv_commit_reset() {
-    rm -f "$_BNV/rauc.log" "$_BNV/in-flight.json" "$_BNV/.boot-gate-failures"
+    rm -f "$_BNV/miner.log" "$_BNV/rauc.log" "$_BNV/in-flight.json" "$_BNV/.boot-gate-failures"
     rm -rf "$_BNV/state"
     printf '9.9.9\n' >"$_BNV/VERSION"
     printf 'HOST_IP=localhost\nDASHBOARD_AUTH_HASH_B64=hash\nDASHBOARD_DATA_DIR=%s/dash\n' "$_BNV" >"$_BNV/.env"
@@ -249,6 +249,7 @@ doctor)
     cat doctor-fixture.json
     grep -q '"status":"fail"' doctor-fixture.json && exit 1
     ;;
+local-miner) echo local-miner >>miner.log ;;
 status)
     cat status-fixture.log
     grep -q '✗\|UNHEALTHY' status-fixture.log && exit 1
@@ -270,6 +271,7 @@ _BNV_OUT=$(BNV_CODE=401 BNV_SIZE=0 _bnv_commit)
 assert_rc "wedged network, dashboard serving: the boot commits instead of spending the fallback" "$?" "0"
 assert_contains "the commit names the fault on the console so the journal does too" "$_BNV_OUT" "this machine's network, not the slot"
 assert_contains "the console line says the slot commits with the fault recorded as advisory" "$_BNV_OUT" "commits with the fault recorded as advisory"
+assert_eq "the on-box miner step runs after the advisory commit, as after a normal one" "$(cat "$_BNV/miner.log" 2>/dev/null)" "local-miner"
 assert_eq "the booted slot is committed (rauc mark-good ran)" "$(cat "$_BNV/rauc.log")" "rauc status mark-good"
 assert_eq "the update verdict outcome is updated (the OS update landed through the wedge)" \
     "$(jq -r '.verdict.outcome' "$_BNV/state/os-update-state.json")" "updated"
@@ -290,6 +292,7 @@ printf '⚠ tor  running but UNHEALTHY (x)\n' >"$_BNV/status-fixture.log"
 BNV_CODE=401 BNV_SIZE=0 _bnv_commit >/dev/null
 assert_rc "a wedged box with a slot-class fail among the blockers stays uncommitted" "$?" "1"
 assert_eq "rauc never ran there either" "$(test -f "$_BNV/rauc.log" && echo yes || echo no)" "no"
+assert_eq "and the miner step never ran on a refused commit" "$(test -f "$_BNV/miner.log" && echo yes || echo no)" "no"
 _bnv_commit_reset
 printf '%s\n' "$(_bnv_dj ok 'all good')" >"$_BNV/doctor-fixture.json"
 : >"$_BNV/status-fixture.log"
