@@ -27,7 +27,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
   bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
-  instead of staying at 0 peers when compose did not cycle it (#4063); a bare restart and Restart all then also restart a running tari so it starts after Tor (#4064).
+  instead of staying at 0 peers when compose did not cycle it (#4063); a bare restart and Restart all then also restart the tari container, when the stack has one, so it starts after Tor (#4064).
 - A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
   changed version or the first successful refresh after the disconnected banner, shows "Pithead was
   updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2

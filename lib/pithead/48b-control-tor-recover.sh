@@ -40,7 +40,7 @@ control_tor_reset() { # <control-dir> <id> <actor>
 
 stack_redial_after_restart() {
     stack_redial_monerod
-    if [ "$(docker inspect tari --format '{{.State.Running}}' 2>/dev/null)" = true ]; then
+    if [ -n "$(docker inspect tari --format '{{.State.Running}}' 2>/dev/null)" ]; then
         log "Restarting tari so it starts after Tor is bootstrapped, not alongside it..."
         docker compose restart tari
     fi

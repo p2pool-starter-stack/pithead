@@ -8,8 +8,11 @@ assert_eq "bare restart restarts tari after monerod's re-dial, once Tor is boots
     "$(grep 'compose restart' "$ROLOG" | tr '\n' ',')" \
     "[docker] compose restart,[docker] compose restart monerod,[docker] compose restart tari,"
 : >"$ROLOG"
+DOCKER_LOG="$ROLOG" TARI_RUNNING='' PATH="$RSTBIN:$PATH" run_sourced "$SANDBOX" stack_restart >/dev/null 2>&1
+assert_not_contains "a stack without a tari container never restarts tari" "$(cat "$ROLOG")" "compose restart tari"
+: >"$ROLOG"
 DOCKER_LOG="$ROLOG" TARI_RUNNING=false PATH="$RSTBIN:$PATH" run_sourced "$SANDBOX" stack_restart >/dev/null 2>&1
-assert_not_contains "a stopped tari is not started by the bare restart" "$(cat "$ROLOG")" "compose restart tari"
+assert_contains "a tari that exited during the restart is restarted after Tor too" "$(cat "$ROLOG")" "compose restart tari"
 : >"$ROLOG"
 DOCKER_LOG="$ROLOG" PATH="$RSTBIN:$PATH" run_sourced "$SANDBOX" stack_restart tor >/dev/null 2>&1
 assert_not_contains "restart tor leaves tari alone" "$(cat "$ROLOG")" "compose restart tari"
