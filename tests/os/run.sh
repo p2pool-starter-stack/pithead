@@ -59,6 +59,7 @@
 # --keep leaves the VM + disks for inspection.
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+usage='tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|rigkeep|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]'
 # shellcheck source=tests/os/hugepages-boot-verdict.sh
 . "$SCRIPT_DIR/hugepages-boot-verdict.sh"
 # shellcheck source=tests/os/secure-boot-boot-verdict.sh
@@ -186,6 +187,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
+        printf '%s\n' "$usage"
         sed -n '2,59p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
