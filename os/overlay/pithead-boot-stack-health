@@ -133,12 +133,13 @@ gate_blocked_only_by_network() {
         all(.[];
             test("^(Monero|Tari) node is NOT following the chain")
             or ($torup and test("^" + $sat))
-            or ($w and test("^(monerod|tari|wallet-rpc|tari-wallet) is (down|not ready)")))' \
+            or ($w and test("^(monerod|tari|wallet-rpc|tari-wallet) is (down|not ready)") and (test("estarting") | not)))' \
         "$BOOT_DOCTOR_JSON" >/dev/null 2>&1 || return 1
     local line blocked="" bad=0
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         case "$line" in
+        *[Rr]estarting*) bad=1 ;;
         'container monero: chain '* | 'container tari: chain '*) ;;
         'container tor: '* | 'container monerod: '* | 'container tari: '* | 'container wallet-rpc: '* | 'container tari-wallet: '*)
             [ "$1" = wedged ] || bad=1 ;;

@@ -125,6 +125,10 @@ assert_eq "one non-network row vetoes the whole window (caddy exited is the slot
 container caddy: exited" "$(_bnv_dj fail "$BNV_BRANCH_SAT")" J)" "not"
 assert_eq "a crash-looping p2pool row vetoes the window even while wedged" \
     "$(_bnv_net wedged "container p2pool: restarting (possible crash loop — check logs)" "$(_bnv_dj fail "$BNV_BRANCH_SAT")" J)" "not"
+assert_eq "a restarting chain node fail vetoes the window even while wedged (a crash loop is the slot, not the wedge)" \
+    "$(_bnv_net wedged '' "$(_bnv_dj fail "monerod is down (Restarting (1) 5 seconds ago) — a chain node down means the slot is not healthy to commit")" J)" "not"
+assert_eq "a restarting chain node row vetoes the window even while wedged" \
+    "$(_bnv_net wedged "container monerod: restarting (possible crash loop — check logs)" "$(_bnv_dj fail "$BNV_BRANCH_SAT")" J)" "not"
 assert_eq "no fails and no blocking rows leaves nothing to advise (a healthy gate passes on its own)" \
     "$(_bnv_net wedged '' "$(_bnv_dj)" J)" "not"
 assert_eq "warns are not fails: nothing to advise" \

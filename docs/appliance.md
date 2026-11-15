@@ -506,8 +506,8 @@ broke, and the old copy meets the same fault, because the broken state lives on 
 two copies share. The machine then keeps the new version, keeps serving the dashboard, and names the
 network fault in the boot log and in the update's recorded outcome, exactly as it names a held-back
 check. Mining stays down until the network recovers; nothing else does. A genuinely broken copy still
-goes back: a bad render, a container crash-looping with the network up, or a dashboard that never
-answers all spend the return to the previous version as before.
+goes back: a bad render, a container crash-looping (a chain node that keeps restarting counts even while Tor is stuck), or a
+dashboard that never answers all spend the return to the previous version as before.
 The machine refuses images that are unsigned, built for
 different hardware, or older than what it runs. The dashboard has no downgrade override.
 At the console, `cd /data/pithead && ./pithead os-update BUNDLE --allow-downgrade` installs
