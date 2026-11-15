@@ -1596,13 +1596,18 @@ page you are reading or the proxy in front of it would cut off the answer. The b
 confirmation naming what else is interrupted (restarting `tor` also restarts `monerod`; restarting
 `monerod` interrupts `wallet-rpc`; a wallet pauses its sync and payouts briefly), and sends nothing
 until you confirm. The button stays disabled while the host works, then shows the result or the
-host's reason for refusing.
+host's reason for refusing. A `tor` restart can take several minutes, because the host waits for
+Tor to report bootstrapped before it restarts `monerod`.
 
 The host decides, not the dashboard. It restarts only a service on its fixed list, with
 `docker compose restart <service>` under the same lock as `apply`, `upgrade` and `backup`. It
 refuses, with a reason and without queueing, while another of those operations holds the lock,
 while the LAN-only source rule for a published port is not in place, and when the same service was
-restarted in the last 120 seconds. Every request is recorded in the control audit log with the
+restarted in the last 120 seconds. After a `tor` restart it waits up to five minutes for Tor to
+report bootstrapped, then restarts a running `monerod` so it re-dials its peers through the new
+circuits, as `./pithead restart tor` does. If Tor does not bootstrap in that time, or `monerod`
+cannot be restarted, the result is `failed` and says to restart `monerod` once Tor is healthy.
+Every request is recorded in the control audit log with the
 actor, the action `svc-restart`, the service and the outcome (`started`, `rejected`, `applied` or
 `failed`).
 

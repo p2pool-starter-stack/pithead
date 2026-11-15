@@ -11,7 +11,7 @@
 
 import { Component, html } from "../app/preact.mjs";
 import { controlFetch, staleError } from "../config/controlclient.mjs";
-import { RestartAllControl, TorResetControl } from "./stackactions.mjs";
+import { RestartAllControl, TOR_RESET_POLL_MAX, TorResetControl } from "./stackactions.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const DIAG_POLL_MS = 2000;
@@ -224,7 +224,12 @@ export class DiagnosticsPanel extends Component {
   async runRestart(service) {
     this.setRestart(service, { phase: "waiting", result: null });
     try {
-      const result = await runDiag("svc-restart", { container: service }, `the ${service} restart`);
+      const result = await runDiag(
+        "svc-restart",
+        { container: service },
+        `the ${service} restart`,
+        service === "tor" ? TOR_RESET_POLL_MAX : undefined,
+      );
       this.setRestart(service, {
         phase: result.status === "applied" ? "done" : "failed",
         result,

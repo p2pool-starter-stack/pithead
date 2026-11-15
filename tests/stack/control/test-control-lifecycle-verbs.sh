@@ -140,6 +140,13 @@ SR="$SANDBOX/ctrl4062"
 mkdir -p "$SR/results" "$SR/audit" "$SR/bin"
 cat >"$SR/bin/docker" <<'EOF2'
 #!/usr/bin/env bash
+if [ "$1" = inspect ]; then
+    case "$2" in
+    tor) echo "${SR_TOR_HEALTH-healthy}" ;;
+    monerod) echo true ;;
+    esac
+    exit 0
+fi
 echo "$*" >>"$SR_DOCKER_LOG"
 [ "${SR_DOCKER_RC:-0}" -eq 0 ] || { echo "no such service" >&2; exit "$SR_DOCKER_RC"; }
 exit 0
@@ -166,7 +173,8 @@ sr_id() { printf 'c4062c40-0000-4000-8000-%012d' "$1"; }
 : >"$SR_DOCKER_LOG"
 sr_run "$(sr_req "$(sr_id 1)" '"tor"')"
 assert_eq "an allowlisted service restarts" "$(sr_status "$(sr_id 1)")" "applied"
-assert_eq "the restart runs exactly one compose restart of that service" "$(cat "$SR_DOCKER_LOG")" "compose restart tor"
+assert_eq "a tor restart re-dials monerod after Tor reports bootstrapped (#4063)" "$(cat "$SR_DOCKER_LOG")" \
+    $'compose restart tor\ncompose restart monerod'
 assert_contains "started and applied are audited with the actor and the service" \
     "$(cat "$SR/audit/control.log")" '"actor":"admin","action":"svc-restart","status":"applied","keys":"tor"'
 assert_contains "the audit also records the start" "$(cat "$SR/audit/control.log")" '"action":"svc-restart","status":"started","keys":"tor"'
@@ -183,6 +191,14 @@ assert_eq "the cooldown is per service" "$(sr_status "$(sr_id 3)")" "applied"
 printf '%s\n' "$(($(date +%s) - 1000))" >"$SR/svc-restart-tor"
 sr_run "$(sr_req "$(sr_id 4)" '"tor"')"
 assert_eq "an expired cooldown allows the restart again" "$(sr_status "$(sr_id 4)")" "applied"
+
+: >"$SR_DOCKER_LOG"
+rm -f "$SR/svc-restart-tor"
+SR_TOR_HEALTH=starting PITHEAD_TOR_REDIAL_POLLS=1 PITHEAD_TOR_REDIAL_POLL_S=0 sr_run "$(sr_req "$(sr_id 5)" '"tor"')"
+assert_eq "a tor restart whose Tor never bootstraps is a failed result (#4063)" "$(sr_status "$(sr_id 5)")" "failed"
+assert_contains "the failure says monerod was not re-dialled" "$(jq -r .error "$SR/results/$(sr_id 5).json")" "Restart monerod once Tor is healthy"
+assert_eq "monerod is not restarted before Tor bootstraps" "$(cat "$SR_DOCKER_LOG")" "compose restart tor"
+assert_contains "the re-dial failure is audited" "$(cat "$SR/audit/control.log")" '"action":"svc-restart","status":"failed","keys":"tor"'
 
 sr_allowed=""
 for svc in wallet-rpc tari tari-wallet p2pool xmrig-proxy; do

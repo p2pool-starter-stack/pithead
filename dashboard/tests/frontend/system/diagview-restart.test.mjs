@@ -88,6 +88,18 @@ test("a confirmed restart posts the closed request once, disables the button, an
   assert.equal(posts[0].headers["X-Pithead-Control"], "1");
 });
 
+test("a tor restart waits out the host's Tor bootstrap and monerod re-dial, which outlast the usual diagnostics wait", async () => {
+  let polls = 0;
+  const fetchStub = async (url) => {
+    if (url === "/api/control/svc-restart") return { status: 202, ok: false, json: async () => ({ id: ID }) };
+    polls += 1;
+    return polls < 150 ? { status: 202, ok: false } : okResult({ status: "applied", container: "tor" });
+  };
+  const panel = inst();
+  await withFastPoll(fetchStub, () => panel.runRestart("tor"));
+  assert.equal(panel.state.restarts.tor.phase, "done");
+});
+
 test("a host refusal or failure is shown verbatim as the restart result", async () => {
   for (const status of ["rejected", "failed"]) {
     const error = `host said no ${status}`;
