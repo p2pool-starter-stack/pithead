@@ -1,5 +1,6 @@
 import logging
 import os
+from functools import partial
 
 from mining_dashboard.client.docker.docker_control import DockerControl
 from mining_dashboard.client.monero.monero_wallet_client import MoneroWalletClient
@@ -27,6 +28,7 @@ from mining_dashboard.service.health.mining_guard import MiningGuard
 from mining_dashboard.service.health.monero_health import MoneroChainHealth
 from mining_dashboard.service.health.node_alert import tor_heal_status
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
+from mining_dashboard.service.health.p2pool_heal import P2PoolPeerHealer
 from mining_dashboard.service.health.tari_health import TariChainHealth
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
 from mining_dashboard.service.health.update_checker import GitHubReleaseClient, UpdateChecker
@@ -219,6 +221,10 @@ class DataSetupMixin:
         # tip, no peers, behind the explorer). Detection and alert only; the alert rides the same
         # always-on sender as the tor-heal note.
         self.tari_chain = TariChainHealth(notify=self.alert_service.tor_heal_alert)
+        self.p2pool_healer = P2PoolPeerHealer(
+            self.docker_control,
+            audit=partial(self._record_audit_event, "p2pool-heal", "p2pool-heal"),
+        )
         # Hashrate-degradation detector (Issue #99): flags a sustained total-hashrate drop and its
         # recovery. Runs every cycle (cheap, self-contained EMA baseline) so it can mark the chart
         # even with Telegram off; a loss also drives a hashrate_loss alert.

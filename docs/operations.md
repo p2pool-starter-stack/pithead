@@ -29,7 +29,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead lan-guard-check` | Check the live LAN-only source rule. If it is missing, remove the node start marker and stop the nodes that publish LAN ports; if a stop cannot be verified, try restoring the rule on all three fixed node ports and keep reporting failure until the stop is verified. Fired every two minutes by `pithead-lan.timer`; `up`, `apply` and `upgrade` install the timer while a LAN port is configured or still published by a node. Run `./pithead up` after fixing the firewall to restore access. |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
-| `./pithead recovery-bundle` | The appliance's journal-only twin of `support-bundle` ([#4038](https://github.com/p2pool-starter-stack/pithead/issues/4038)): no dashboard, no container engine, no network — it reads the journal of every Pithead unit over the window you ask for (`--hours N`, default 72, clamped host-side to 168), passes every line through the same redactor, refuses an archive over its own size cap rather than truncating one, writes the result `chmod 600` under `/data/pithead/support-bundles/` and prints its path — the console recipe for a box that failed boot gating, where the machine stays up for diagnosis and the only thing on screen tells you to read the journal. Refuses where no journal exists: there, use `support-bundle`. Review the archive, then share it the way [#3746](https://github.com/p2pool-starter-stack/pithead/issues/3746) lays out; a box whose dashboard answers collects the same artifact from the browser instead — the **Support bundle** card in [Dashboard › Backup view](dashboard.md#backup-view). |
+| `./pithead recovery-bundle` | The appliance's journal-only twin of `support-bundle` ([#4038](https://github.com/p2pool-starter-stack/pithead/issues/4038)): no dashboard, no container engine, no network — it reads the journal of every Pithead unit over the window you ask for (`--hours N`, default 72, clamped host-side to 168), passes every line through the same redactor, refuses an archive over its own size cap rather than truncating one, writes the result `chmod 600` under `/data/pithead/support-bundles/` and prints its path — the console recipe for a box that failed boot gating, where the machine stays up for diagnosis and the console advisory names this command (`/opt/pithead/pithead recovery-bundle`) beside the journal. Run it on tty1 or the serial console as root; the path it prints is the archive to copy off. Refuses where no journal exists: there, use `support-bundle`. Review the archive, then share it the way [#3746](https://github.com/p2pool-starter-stack/pithead/issues/3746) lays out; a box whose dashboard answers collects the same artifact from the browser instead — the **Support bundle** card in [Dashboard › Backup view](dashboard.md#backup-view). |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. If Compose shutdown fails, print its error and warn that containers may still be running, then continue the wipe (exit 0 on completion). |
 | `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host, including the egress firewall rules with their `pithead-egress.service` boot unit and `pithead-egress.timer` check, the LAN-only source rule and its `pithead-lan.timer` check, and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Refuses in a `pithead-vX.Y.Z` directory that `current` does not point at, because every version directory drives the same live stack: run it in the live directory, and delete an old version directory by hand. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
@@ -1028,6 +1028,24 @@ restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the fin
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
+
+**P2Pool has no peers.** P2Pool can log `no connections to other p2pool nodes` for hours while
+monerod and Tor look healthy; it then mines a private sidechain and its shares never reach the
+pool (#4077). The dashboard restarts P2Pool by itself, with no opt-in and no setting to tune. The
+bounds are fixed:
+
+- **Trigger:** the dashboard reads zero outgoing and zero incoming P2Pool connections continuously
+  for 15 minutes. A stats file it cannot read or that stopped updating, a stopped or restarting `p2pool` container (the
+  sync gate holds it stopped while the node syncs) and a box with no local `p2pool` container are
+  never a trigger.
+- **Recovery is the sidechain tip, not the container.** After a restart the outage stays open until
+  peers are back and the sidechain height then advances. A real rejoin took about 16 minutes (#4045), so the
+  next restart waits 20 minutes, then 40, then 80 if P2Pool is still peerless.
+- **Cap:** at most 3 automatic restarts in any 24 hours. After the third, the dashboard logs
+  `No more automatic action` once and stops until a restart ages out or the tip resumes; restart
+  by hand with `./pithead restart p2pool`.
+- **Trail:** every restart logs a `P2PoolHeal` warning in the dashboard log and writes a
+  `p2pool-heal` row (action `restart`, status `applied` or `unconfirmed`) to the audit log.
 
 **Monero node isolated or not advancing.**
 A local monerod can keep `synchronized: true` and a green RPC healthcheck while it has no outgoing
