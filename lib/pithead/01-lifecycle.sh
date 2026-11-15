@@ -354,12 +354,6 @@ stack_redial_monerod() {
     fi
 }
 
-stack_restart_tari_after_tor() {
-    [ "$(docker inspect tari --format '{{.State.Running}}' 2>/dev/null)" = true ] || return 0
-    log "Restarting tari so it starts after Tor is bootstrapped, not alongside it..."
-    docker compose restart tari
-}
-
 stack_restart() { # [tor|monerod]
     # Reject a bad argument BEFORE taking the lock (#1342). Validating inside the window makes a
     # typo wait out someone else's backup — up to PITHEAD_LOCK_TIMEOUT — only to be told it was a
@@ -377,8 +371,7 @@ stack_restart() { # [tor|monerod]
     "")
         log "Restarting stack..."
         docker compose restart
-        stack_redial_monerod
-        stack_restart_tari_after_tor
+        stack_redial_after_restart
         log "Stack restarted."
         ;;
     tor)

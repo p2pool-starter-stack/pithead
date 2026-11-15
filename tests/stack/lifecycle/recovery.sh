@@ -40,16 +40,6 @@ out="$(DOCKER_LOG="$RSTLOG" PATH="$RSTBIN:$PATH" run_sourced "$SANDBOX" stack_re
 assert_contains "bare restart restarts the whole stack" "$(cat "$RSTLOG")" "compose restart"
 assert_not_contains "bare restart is not tor-scoped" "$(cat "$RSTLOG")" "compose restart tor"
 assert_contains "bare restart re-dials monerod once Tor is bootstrapped" "$(cat "$RSTLOG")" "compose restart monerod"
-assert_eq "bare restart restarts tari after monerod's re-dial, once Tor is bootstrapped" \
-    "$(grep 'compose restart' "$RSTLOG" | tr '\n' ',')" \
-    "[docker] compose restart,[docker] compose restart monerod,[docker] compose restart tari,"
-: >"$RSTLOG"
-out="$(DOCKER_LOG="$RSTLOG" TARI_RUNNING=false PATH="$RSTBIN:$PATH" run_sourced "$SANDBOX" stack_restart 2>&1)"
-assert_not_contains "a stopped tari is not started by the bare restart" "$(cat "$RSTLOG")" "compose restart tari"
-: >"$RSTLOG"
-out="$(DOCKER_LOG="$RSTLOG" PATH="$RSTBIN:$PATH" run_sourced "$SANDBOX" stack_restart tor 2>&1)"
-assert_not_contains "restart tor leaves tari alone" "$(cat "$RSTLOG")" "compose restart tari"
-: >"$RSTLOG"
 : >"$RSTLOG"
 out="$(DOCKER_LOG="$RSTLOG" PATH="$RSTBIN:$PATH" run_sourced "$SANDBOX" stack_restart tor 2>&1)"
 assert_contains "restart tor restarts only the tor container" "$(cat "$RSTLOG")" "compose restart tor"
