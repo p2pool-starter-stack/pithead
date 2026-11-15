@@ -56,7 +56,7 @@ fail_boot() { # <what went wrong>
         exit 1
     fi
     if [ "$n" -ge 2 ]; then
-        echo "pithead-boot: this is failure $n — the bootloader already fell back and the other slot failed the same way, so the fault is not the slot. The machine stays up for diagnosis; the dashboard is down, see the journal (journalctl -u pithead-boot)." >&2
+        echo "pithead-boot: this is failure $n — the bootloader already fell back and the other slot failed the same way, so the fault is not the slot. The machine stays up for diagnosis; the dashboard is down, see the journal (journalctl -u pithead-boot), or run /opt/pithead/pithead recovery-bundle to write a redacted support bundle under /data/pithead/support-bundles." >&2
         exit 1
     fi
     echo "pithead-boot: rebooting now so the bootloader falls back to the previous slot" >&2
