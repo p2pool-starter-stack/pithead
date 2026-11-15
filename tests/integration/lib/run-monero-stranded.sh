@@ -45,6 +45,7 @@ monero_strand_abort() {
 
 monero_health_field() { jq_get "$(api_state)" ".monero.health.$1"; }
 _pred_monero_level() { [ "$(monero_health_field level)" = "$1" ]; }
+_pred_monero_red_peerless() { [ "$(monero_health_field level)" = red ] && monero_health_field reasons | grep -q "outgoing peers for"; }
 # monerod's real peer counts (#2921), from the fixed in-container helper that reads the admin RPC on the
 # container's loopback: the published RPC is restricted and answers 0 for every count. Empty when the
 # helper gives no reading, which no predicate below reads as zero or as peers.
@@ -256,7 +257,7 @@ run_monero_stranded() {
     fi
     assert_eq "monero-stranded: tor-recover reads the real fault zero" "$(monero_tor_recovery_out)" "0"
     # The bound (NODE_STALE_AFTER_SEC, 10 min) runs from the first zero reading; one poll of slack.
-    if wait_for $((600 + MONERO_POLL_SLACK)) 10 "Monero verdict red" _pred_monero_level red; then
+    if wait_for $((600 + MONERO_POLL_SLACK)) 10 "Monero verdict red for the peerless reading" _pred_monero_red_peerless; then
         it_pass "monero-stranded: red $(($(now_s) - ${t_zero:-$t0})) s after the first 0-peer reading: $(monero_health_field reasons)"
     else
         it_fail "monero-stranded: red within 10 min of the first 0-peer reading + one poll" "$(monero_strand_state)"
