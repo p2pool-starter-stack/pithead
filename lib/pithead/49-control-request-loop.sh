@@ -77,7 +77,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and . != "hours" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and . != "hours" and . != "since" and . != "until" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -203,12 +203,12 @@ control_prune_results() { # <control-dir>
     done
 
     local kept_b=0
-    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz 2>/dev/null || true); do
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz *.zip 2>/dev/null || true); do
         [ -f "$dir/$archive" ] || continue
         [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
         kept_b=$((kept_b + 1))
         if [ "$kept_b" -gt "$max_archives" ]; then
-            id=$(basename "$archive" .tar.gz)
+            id=$(basename "${archive%.zip}" .tar.gz)
             rm -f "$dir/$archive" "$dir/$id.json"
         fi
     done
@@ -220,6 +220,7 @@ control_prune_results() { # <control-dir>
         [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz" ] && continue
+        [ -f "$dir/$(basename "$result" .json).zip" ] && continue
         n=$((n + 1))
         if [ "$n" -gt "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
             rm -f "$dir/$result"
@@ -240,15 +241,17 @@ control_prune_results() { # <control-dir>
                 id="${f%.tar.gz.enc}"
                 rm -f "$dir/$f" "$dir/$id.json"
                 ;;
-            *.tar.gz)
+            *.tar.gz | *.zip)
                 [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
                 id="${f%.tar.gz}"
+                id="${id%.zip}"
                 rm -f "$dir/$f" "$dir/$id.json"
                 ;;
             *.json)
                 id="${f%.json}"
                 pair="$dir/$id.tar.gz.enc"
                 [ -f "$pair" ] || pair="$dir/$id.tar.gz"
+                [ -f "$pair" ] || pair="$dir/$id.zip"
                 if [ -f "$pair" ]; then
                     [ -n "$(find "$pair" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
                     rm -f "$dir/$f" "$pair"

@@ -173,7 +173,7 @@ RUN set -e \
 RUN printf 'PITHEAD_ENGINE=podman\n' >> /etc/environment \
     && printf 'vm.nr_hugepages=3072\n' > /etc/sysctl.d/99-pithead-hugepages.conf \
     && mkdir -p /etc/systemd/journald.conf.d \
-    && printf '[Journal]\nStorage=persistent\nSystemMaxUse=200M\n' > /etc/systemd/journald.conf.d/pithead.conf \
+    && printf '[Journal]\nStorage=persistent\nSystemMaxUse=400M\n' > /etc/systemd/journald.conf.d/pithead.conf \
     && mkdir -p /var/log/journal # bind-mount target for pithead-journal-persist.service (#1030)
 
 # Hardware/systemd watchdog: catch a soft-hung kernel or wedged init on an unattended headless

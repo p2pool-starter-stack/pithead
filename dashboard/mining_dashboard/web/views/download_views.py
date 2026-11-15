@@ -49,7 +49,7 @@ async def handle_support_bundle_download(request):
     archive_name = (res or {}).get("archive")
     if not res or res.get("status") != "applied" or not archive_name:
         raise web.HTTPNotFound(text="No completed support bundle for that id.")
-    path = os.path.join(config.CONTROL_RESULTS_DIR, f"{rid}.tar.gz")
+    path = os.path.join(config.CONTROL_RESULTS_DIR, f"{rid}.zip")
     return web.FileResponse(
         path, headers={"Content-Disposition": f'attachment; filename="{archive_name}"'}
     )

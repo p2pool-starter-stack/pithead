@@ -143,7 +143,7 @@ class TestSupportBundleDownload:
 
     async def test_applied_without_the_archive_on_disk_is_a_404(self, bundle_client, spool):
         rid = str(uuid.uuid4())
-        await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.tar.gz"})
+        await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.zip"})
         resp = await bundle_client.get("/api/control/support-bundle-download", params={"id": rid})
         assert resp.status == 404
 
@@ -151,11 +151,11 @@ class TestSupportBundleDownload:
         self, bundle_client, spool
     ):
         rid = str(uuid.uuid4())
-        await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.tar.gz"})
-        (spool / "results" / f"{rid}.tar.gz").write_bytes(b"tarbytes")
+        await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.zip"})
+        (spool / "results" / f"{rid}.zip").write_bytes(b"zipbytes")
         resp = await bundle_client.get("/api/control/support-bundle-download", params={"id": rid})
         assert resp.status == 200
-        assert await resp.read() == b"tarbytes"
+        assert await resp.read() == b"zipbytes"
         assert (
-            'attachment; filename="support-bundle-x.tar.gz"' in resp.headers["Content-Disposition"]
+            'attachment; filename="support-bundle-x.zip"' in resp.headers["Content-Disposition"]
         )
