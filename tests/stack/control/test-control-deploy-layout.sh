@@ -93,9 +93,11 @@ make_stubs "$L/bin"
 cp "$ROOT/build/tari/config.toml.template" "$L/build/tari/"
 SHARED="$SANDBOX/boxroot/data"
 seed_L() {
+    seed_node_onion_state "$SHARED/tor"
+    seed_node_onion_state "$L/data/tor"
     cat >"$L/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
+MONERO_ONION_ADDRESS=$TEST_MONERO_ONION
+TARI_ONION_ADDRESS=$TEST_TARI_ONION
 P2POOL_ONION_ADDRESS=p2pa.onion
 PROXY_AUTH_TOKEN=ORIGINALTOKEN
 HOST_IP=box.lan
