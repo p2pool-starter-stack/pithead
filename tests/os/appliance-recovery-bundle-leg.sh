@@ -38,6 +38,7 @@ grep -q recovery-leg-dummy-marker "$ex/bundle/journal/all.log" || { echo "recove
 jq -e '.window.oldest_retained_entry and (.journald.disk_usage | length > 0) and (.files | length > 20)' "$ex/bundle/manifest.json" >/dev/null || { echo "recovery bundle leg: manifest lacks the journal facts"; exit 1; }
 quadlet=$(jq -r '[.files[] | select(.path | test("^logs/(monerod|p2pool|tor|dashboard|caddy)\\.service\\.log$")) | select(.lines > 0)] | length' "$ex/bundle/manifest.json")
 echo "recovery bundle leg: quadlet container units with journal lines: $quadlet" >/dev/ttyS0
+[ "$quadlet" -ge 3 ] || { echo "recovery bundle leg: only $quadlet of 5 container units have journal lines, want at least 3"; exit 1; }
 rm -rf "$arch" "$out" "$ex" /etc/systemd/system/$dummy.service
 systemctl daemon-reload
 echo "recovery bundle leg: PASS $arch"

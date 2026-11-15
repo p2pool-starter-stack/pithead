@@ -38,7 +38,7 @@ entries = [
     (30 * 60, "kernel", True, "kernel: marker-30m"),
 ]
 for i in range(int(os.environ.get("SB_BULK", "0"))):
-    entries.append((5 * H - i, "p2pool.service", False, "p2pool: bulk-%04d %s" % (i, "x" * 80)))
+    entries.append((5 * H - i, "p2pool.service", False, "p2pool: bulk-%04d %s" % (i, "x" * (80 + i % 7))))
 entries = [e for e in entries if e[0] <= oldest * H]
 entries.sort(key=lambda e: -e[0])
 
@@ -142,6 +142,9 @@ assert_rc "no tarball is produced" \
 assert_eq "the spool archive is mode 600" "$(stat -c '%a' "$SB/results/$sid1.zip")" "600"
 assert_eq "the stock zip reader accepts the archive" \
     "$(python3 -I -m zipfile -t "$SB/results/$sid1.zip" >/dev/null 2>&1 && echo ok)" "ok"
+if command -v unzip >/dev/null 2>&1; then
+    assert_eq "the stock unzip accepts the archive" "$(unzip -tq "$SB/results/$sid1.zip" >/dev/null 2>&1 && echo ok)" "ok"
+fi
 assert_contains "support-bundle is audited applied" \
     "$(cat "$SB/audit/control.log")" '"action":"support-bundle","status":"applied"'
 assert_eq "the applied result carries the effective window" \
@@ -169,6 +172,10 @@ assert_eq "an installed pithead service the old list never held is collected" \
     "$(sb_man "$SB/extract1" '[.files[].path] | index("logs/pithead-zzdummy.service.log") != null')" "true"
 assert_eq "a quadlet-generated unit is collected" \
     "$(sb_man "$SB/extract1" '[.files[].path] | index("logs/quadletx.service.log") != null')" "true"
+assert_eq "an installed pithead timer is collected" \
+    "$(sb_man "$SB/extract1" '[.files[].path] | index("logs/pithead-zzdummy.timer.log") != null')" "true"
+assert_contains "the dummy unit's lines are in its file" \
+    "$(cat "$SB/extract1/bundle/logs/pithead-zzdummy.service.log")" "dummy: marker-1h"
 assert_eq "an unrelated installed unit is not collected" \
     "$(sb_man "$SB/extract1" '[.files[].path] | index("logs/unrelated.service.log") != null')" "false"
 assert_eq "the core units stay collected when they are not installed" \
@@ -302,6 +309,27 @@ assert_eq "the manifest marks the file truncated" \
     "$(sb_man "$SB/extractA" '.files[] | select(.path == "logs/p2pool.service.log") | .truncated')" "true"
 assert_eq "the manifest counts the dropped lines" \
     "$(sb_man "$SB/extractA" '.files[] | select(.path == "logs/p2pool.service.log") | .dropped_lines > 0 and .dropped_bytes > 0')" "true"
+assert_eq "a small file in the same bundle is not marked truncated" \
+    "$(sb_man "$SB/extractA" '.files[] | select(.path == "logs/tor.service.log") | .truncated')" "false"
+sidG="c403c403-0000-4000-8000-000000000010"
+rm -f "$SB/staged/.support-bundle-stamp"
+(
+    export PATH="$SB/bin:$PATH" SB_BULK=40
+    run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidG" support-bundle)" "$SB"
+) >/dev/null 2>&1
+sb_unzip "$SB/results/$sidG.zip" "$SB/extractG"
+sb_fit=$(wc -c <"$SB/extractG/bundle/logs/p2pool.service.log" | tr -d ' ')
+sidH="c403c403-0000-4000-8000-000000000011"
+rm -f "$SB/staged/.support-bundle-stamp"
+(
+    export PATH="$SB/bin:$PATH" SB_BULK=40 PITHEAD_SUPPORT_MAX_BYTES_PER_FILE="$sb_fit"
+    run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidH" support-bundle)" "$SB"
+) >/dev/null 2>&1
+sb_unzip "$SB/results/$sidH.zip" "$SB/extractH"
+assert_eq "a file exactly at its cap is kept whole and not marked truncated" \
+    "$(sb_man "$SB/extractH" '.files[] | select(.path == "logs/p2pool.service.log") | .truncated')" "false"
+assert_eq "the file at its cap holds every line" \
+    "$(grep -c 'bulk-' "$SB/extractH/bundle/logs/p2pool.service.log")" "40"
 
 echo "== control channel: a bundle over the total cap degrades under the policy instead of failing =="
 sidB="c403c403-0000-4000-8000-00000000000b"
@@ -350,6 +378,8 @@ assert_contains "the failure carries the reason" \
     "$(sb_man "$SB/extractC" '.failures[] | select(.step == "journal/kernel.log") | .reason')" "boom"
 assert_eq "the timed-out unit step is in the manifest as a timeout" \
     "$(sb_man "$SB/extractC" '.failures[] | select(.step == "logs/pithead-zzdummy.service.log") | .status')" "timeout"
+assert_contains "the whole journal still collected" \
+    "$(cat "$SB/extractC/bundle/journal/all.log")" "monerod: marker-50h"
 
 echo "== control channel: a second bundle inside a minute is rejected outright =="
 sidD="c403c403-0000-4000-8000-00000000000d"
@@ -391,6 +421,8 @@ rbw=$(
 sb_unzip "$rbw" "$SB/extractW"
 assert_eq "the CLI window selects the same content as the control request" \
     "$(sb_man "$SB/extractW" '(.window.requested.until | fromdate) - (.window.requested.since | fromdate)')" "9000"
+assert_not_contains "a line after the CLI window is absent" \
+    "$(cat "$SB/extractW/bundle/journal/all.log")" "dummy: marker-1h"
 bad_out=$(
     export PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/outbad"
     run_sourced_e "$SANDBOX" recovery_bundle --since "$(sb_iso -3600)" --until "$(sb_iso -7200)" 2>&1 || true

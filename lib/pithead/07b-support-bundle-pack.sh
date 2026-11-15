@@ -41,11 +41,9 @@ def cap_lines(lines, cap):
 
 
 def state_for(lines, installed, short):
-    if short:
-        return "journal_short"
     if lines == 0:
         return "empty" if installed else "missing"
-    return "ok"
+    return "journal_short" if short else "ok"
 
 
 def stream_cap(dest, cap, meta, installed, short, since, until):
