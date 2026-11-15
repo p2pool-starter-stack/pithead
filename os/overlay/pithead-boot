@@ -243,7 +243,7 @@ clear_migration_hold() { mutation_migration_cleanup clear "$@"; }
 RELEASE_UP_TRIES=${PITHEAD_RELEASE_UP_TRIES:-5}
 RELEASE_UP_PAUSE=${PITHEAD_RELEASE_UP_PAUSE:-10}
 release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 after the last try
-    clear_migration_hold "$@" || return 1
+    clear_migration_hold "$@" || echo "pithead-boot: FAULT — migration protection could not be cleared after commitment; the chain services are released anyway. Reboot, or run './pithead up' from /data/pithead and read 'journalctl -u pithead-boot' if they did not start." >&2
     echo "pithead-boot: slot committed — chain services released, the data migration runs now"
     local try
     for try in $(seq "$RELEASE_UP_TRIES"); do

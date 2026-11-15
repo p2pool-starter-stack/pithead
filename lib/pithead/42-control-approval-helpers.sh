@@ -342,6 +342,6 @@ control_audit() { # <audit-file> <id> <actor> <action> <status> [keys] [approver
         "$(printf '%s' "$3" | tr -cd 'A-Za-z0-9._@-')" \
         "$(printf '%s' "$4" | tr -cd 'a-z-')" \
         "$(printf '%s' "$5" | tr -cd 'a-z-')" \
-        "$(printf '%s' "${6:-}" | tr -cd 'A-Za-z0-9._ ')" \
+        "$(printf '%s' "${6:-}" | tr -cd 'A-Za-z0-9._ -')" \
         "$(printf '%s' "${7:-}" | tr -cd 'A-Za-z0-9._@-')" >>"$1"
 }
