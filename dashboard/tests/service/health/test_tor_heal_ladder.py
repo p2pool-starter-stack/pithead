@@ -133,3 +133,13 @@ async def test_lost_newnym_transport_is_retried_once_then_the_ladder_advances():
     assert submits.count("tor-newnym") == 3
     assert submits.count("tor-recover") == 1
     docker.stop.assert_awaited_once()
+
+
+def test_give_up_waits_for_the_last_action_cooldown():
+    now = [100000.0]
+    healer = _healer(now)
+    healer._attempts = 4
+    healer._failing_since = now[0] - 3600
+    healer._last_attempt = now[0]
+    assert healer.decide(False, now[0] + COOLDOWN_SEC - 1) is None
+    assert healer.decide(False, now[0] + COOLDOWN_SEC) == "exhausted"

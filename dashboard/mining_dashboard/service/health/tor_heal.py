@@ -148,10 +148,10 @@ class TorEgressHealer(TorHistoryMixin):
         # Transient blip guard: not broken until the failure streak spans the threshold.
         if (now - self._failing_since) < BROKEN_AFTER_SEC:
             return None
-        if self._attempts >= MAX_ATTEMPTS:
-            return "exhausted"
         if self._last_attempt is not None and (now - self._last_attempt) < COOLDOWN_SEC:
             return None
+        if self._attempts >= MAX_ATTEMPTS:
+            return "exhausted"
         if self._attempts >= NEWNYM_ATTEMPTS:
             self._disruptive = [t for t in self._disruptive if now - t < DISRUPTIVE_WINDOW_SEC]
             if len(self._disruptive) >= MAX_DISRUPTIVE_PER_DAY:

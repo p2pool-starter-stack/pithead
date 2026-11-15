@@ -157,7 +157,7 @@ printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nQUIT\r\n" "$cookie" | nc 
         it_fail "Tor NEWNYM-exhausted fault restored baseline config" "baseline apply failed"
 }
 
-_tor_newnym_exhausted_recovered() { # <epoch>
+_tor_newnym_exhausted_recovered() {
     rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following'
 }
 
