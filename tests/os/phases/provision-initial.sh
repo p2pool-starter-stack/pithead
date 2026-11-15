@@ -146,7 +146,7 @@ _phase_provision_initial_body() {
     # The host validates, installs config.json, and runs setup — which pulls the release images
     # (cosign-verified) and starts the stack. Pulls are the slow part; be generous.
     if ! _ssh "for i in \$(seq 120); do [ -f /data/pithead/config.json ] && exit 0; sleep 2; done; exit 1"; then
-        bad "the submitted config never became /data/pithead/config.json (validation output: $(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" | cut -c1-120))"
+        bad "the submitted config never became /data/pithead/config.json (validation output: $(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" | os_redact_addr | cut -c1-120))"
         return 1
     fi
     ok "config validated and installed by the host"

@@ -241,7 +241,7 @@ rig_setup_again_coordinator_leg() {
         tries=$((tries + 1))
     done
     [ "$tries" -lt 24 ] && ok "a coordinator's credentials card appeared on the set-up-again page" ||
-        bad "no coordinator card appeared — the config was not accepted (error: $(_ssh "cat $SA_SPOOL/error.txt" 2>/dev/null | cut -c1-160))"
+        bad "no coordinator card appeared — the config was not accepted (error: $(_ssh "cat $SA_SPOOL/error.txt" 2>/dev/null | os_redact_addr | cut -c1-160))"
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null || true
     rm -f "$jar"
     while [ "$n" -lt 18 ]; do

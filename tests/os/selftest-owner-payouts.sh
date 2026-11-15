@@ -139,6 +139,11 @@ grep -q '_wizard_provision_capture' "$HERE/migration-recovery.sh" &&
     out=$(printf 'peer %s ok\n--wallet %s --x\n' "$addr" "$addr" | os_redact_addr)
     case "$out" in *AAAAAAAAAAAAAAAAAAAA*) exit 2 ;; esac
     case "$out" in *'[redacted-address]'*) ;; *) exit 3 ;; esac
+    out=$(printf '\033[1;33m%s\033[0m\n' "$addr" | os_redact_addr)
+    case "$out" in *AAAAAAAAAAAAAAAAAAAA*) exit 4 ;; esac
+    out=$(printf "[ERROR] monero.wallet_address ('4AbCdE…') fails its checksum\n[ERROR] x ('4AbCdE…', 12 chars) bad\n" | os_redact_addr)
+    case "$out" in *4AbCdE*) exit 5 ;; esac
+    case "$out" in *'[redacted-prefix]'*) ;; *) exit 6 ;; esac
 ) || fail "os_redact_addr leaves an address in a log line (exit $?)"
 
 echo 'selftest-owner-payouts: PASS (overrides, fallbacks, early refusal, no values echoed, no donor id, no stray wallet literal)'

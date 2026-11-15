@@ -71,7 +71,7 @@ provisioning_setup_failed() { # 0 when either provisioning unit ended `failed` t
 
 provisioning_state() { # one line for a verdict: unit states + whether one ran, plus the wizard's error if it failed
     local r st
-    r=$(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" 2>/dev/null | tr -d '[:cntrl:]' | head -c 160)
+    r=$(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" 2>/dev/null | os_redact_addr | tr -d '[:cntrl:]' | head -c 160)
     st=$(provisioning_units)
     # shellcheck disable=SC2086  # intentional split: four fields on a guest that answered
     set -- $st
