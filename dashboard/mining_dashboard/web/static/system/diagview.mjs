@@ -36,9 +36,18 @@ export const DIAG_SERVICES = [
   ...DIAG_CONTAINERS.slice(3),
 ];
 
-// Doctor has no section/name field. These narrow tokens group its existing messages for display;
-// one cross-service check may appear under more than one service, while unmatched checks remain
-// visible under Machine checks. No check is dropped or rewritten.
+export const RESTART_IMPACT = {
+  tor: "Every Tor circuit drops and rebuilds, and monerod is restarted with it so it re-dials its peers; wallet-rpc is interrupted while monerod restarts.",
+  monerod:
+    "wallet-rpc is interrupted until monerod answers again, and the node's sync pauses briefly.",
+  "wallet-rpc": "Monero wallet sync and payouts pause briefly.",
+  tari: "tari-wallet is interrupted until the node answers again, and the node's sync pauses briefly.",
+  "tari-wallet": "Tari wallet sync and payouts pause briefly.",
+  p2pool: "xmrig-proxy is interrupted and miners reconnect once p2pool answers again.",
+  "xmrig-proxy": "Miners reconnect once the proxy answers again.",
+};
+export const DIAG_RESTARTABLE = Object.keys(RESTART_IMPACT);
+
 const SERVICE_HINTS = {
   tor: [/\btor\b/i, /\bonion\b/i, /\bsocks\b/i, /egress firewall/i],
   monerod: [/\bmonerod\b/i, /\bmonero node\b/i, /monero.*synchron/i],
@@ -159,7 +168,7 @@ const STATUS_CLS = { fail: "status-bad", warn: "status-warn", ok: "status-ok" };
 export class DiagnosticsPanel extends Component {
   constructor(props) {
     super(props);
-    this.state = { healthPhase: "idle", healthResult: null, logs: {} };
+    this.state = { healthPhase: "idle", healthResult: null, logs: {}, restarts: {} };
   }
 
   async runHealth() {
@@ -205,6 +214,57 @@ export class DiagnosticsPanel extends Component {
         },
       }));
     }
+  }
+
+  setRestart(service, restart) {
+    this.setState((state) => ({ restarts: { ...state.restarts, [service]: restart } }));
+  }
+
+  async runRestart(service) {
+    this.setRestart(service, { phase: "waiting", result: null });
+    try {
+      const result = await runDiag("svc-restart", { container: service }, `the ${service} restart`);
+      this.setRestart(service, {
+        phase: result.status === "applied" ? "done" : "failed",
+        result,
+      });
+    } catch (error) {
+      this.setRestart(service, {
+        phase: "failed",
+        result: { error: String(error.message || error) },
+      });
+    }
+  }
+
+  renderRestart(service) {
+    if (!DIAG_RESTARTABLE.includes(service)) return null;
+    const restart = this.state.restarts[service] || { phase: "idle", result: null };
+    const { phase, result } = restart;
+    return html`<div>
+      <button class="btn-toggle" disabled=${phase === "waiting" || phase === "confirm"}
+              onClick=${() => this.setRestart(service, { phase: "confirm", result })}>
+        Restart ${service}
+      </button>
+      ${
+        phase === "confirm"
+          ? html`<p class="status-warn">Restart ${service}? ${RESTART_IMPACT[service]}
+            <button class="btn-toggle active" onClick=${() => this.runRestart(service)}>
+              Confirm restart of ${service}
+            </button>
+            <button class="btn-toggle"
+                    onClick=${() => this.setRestart(service, { phase: "idle", result })}>
+              Cancel
+            </button></p>`
+          : null
+      }
+      ${phase === "waiting" ? html`<p class="text-muted">Waiting for the host to restart ${service}…</p>` : null}
+      ${phase === "done" ? html`<p class="status-ok">${service} was restarted.</p>` : null}
+      ${
+        phase === "failed"
+          ? html`<p class="status-bad">${(result && (result.error || result.note)) || `The host could not restart ${service}.`}</p>`
+          : null
+      }
+    </div>`;
   }
 
   renderChecks(rows) {
@@ -265,6 +325,7 @@ export class DiagnosticsPanel extends Component {
           : html`<p class="text-muted text-xs">Run the health check to see this service's checks.</p>`
       }
       ${this.renderLog(service.name)}
+      ${this.renderRestart(service.name)}
     </section>`;
   }
 

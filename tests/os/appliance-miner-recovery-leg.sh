@@ -57,15 +57,25 @@ miner_cleanup() {
     return "$failed"
 }
 miner_diagnostics() {
-    local recorded=no
+    local recorded=no journal
     [ ! -e "$T3375/strand" ] || recorded=yes
     printf 'pithead-t3375: failure phase=%s strand_recorded=%s\n' "${MINER_PHASE:-unknown}" "$recorded"
     printf 'pithead-t3375: local connections/accepted: '
     miner_counts || printf '%s\n' unreadable
     timeout 10 systemctl show pithead-t3375-watcher.service -p LoadState -p ActiveState -p Result -p ExecMainStatus || true
     timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u pithead-t3375-watcher.service || true
-    timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' \
-        -u pithead-miner-recovery.service -u xmrig.service || true
+    if [ -e "$T3375/backup-at" ]; then
+        if journal=$(timeout 10 journalctl --no-pager --since "@$(cat "$T3375/backup-at")" \
+            -u pithead-miner-recovery.service); then
+            printf '%s\n' "$journal"
+            miner_journal_receipt "$journal" || true
+        else
+            printf '%s\n' 'pithead-t3375: recovery_journal=unreadable'
+        fi
+    else
+        timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u pithead-miner-recovery.service || true
+    fi
+    timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u xmrig.service || true
 }
 miner_guest_exit() {
     local rc=$?
@@ -91,12 +101,23 @@ miner_watch_restore() {
     fi
     return "$failed"
 }
+miner_journal_receipt() {
+    local journal=$1 timer=absent
+    if grep -Fq 'disconnected for 300 seconds' <<<"$journal"; then timer=observed; fi
+    if grep -Fq 'proxy was recreated' <<<"$journal"; then
+        printf '%s\n' "pithead-t3375: fastpath_restart=observed timer_restart=$timer"
+        return 0
+    fi
+    printf '%s\n' "pithead-t3375: fastpath_restart=missing timer_restart=$timer"
+    return 1
+}
 miner_fastpath_receipt() {
-    [ -e /usr/local/sbin/pithead-miner-recovery ] || return 0
-    grep -Fq 'proxy was recreated' /usr/local/sbin/pithead-miner-recovery || return 0
-    timeout 10 journalctl --no-pager --since "@$(cat "$T3375/backup-at")" \
-        -u pithead-miner-recovery.service | grep -Fq 'proxy was recreated' || return 1
-    printf '%s\n' 'pithead-t3375: fastpath_restart=observed'
+    local bin=${PITHEAD_MINER_RECOVERY_BIN:-/usr/local/sbin/pithead-miner-recovery} journal
+    [ -e "$bin" ] || return 0
+    grep -Fq 'proxy was recreated' "$bin" || return 0
+    journal=$(timeout 10 journalctl --no-pager --since "@$(cat "$T3375/backup-at")" \
+        -u pithead-miner-recovery.service) || return 1
+    miner_journal_receipt "$journal"
 }
 miner_watch() {
     local end=$((SECONDS + 1200))
