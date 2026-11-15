@@ -124,7 +124,13 @@ dashboard_control_request() {
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        pending | accepted | running | downloading | installing | "") ;;
+        accepted)
+            [ "$route" = worker-apply ] && {
+                control_result_stamp_id "$out" "$rid"
+                return 0
+            }
+            ;;
+        pending | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
             control_result_stamp_id "$out" "$rid"
             return 0
