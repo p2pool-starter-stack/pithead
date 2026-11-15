@@ -1558,7 +1558,7 @@ Two read-only questions you can ask the host and three recovery actions, in the 
 as the config editor and under the same `dashboard.control.enabled` flag. The two questions change
 nothing: they run a check and report, which is why neither asks you to confirm. The actions change
 the machine and always ask first: restarting one service (see [Restart a service](#restart-a-service)),
-and **Restart all** and **Reset Tor state**, described at the end of this section.
+and **Restart all** and **Reset Tor state** (see [Restart all and reset Tor](#restart-all-and-reset-tor)).
 
 **Run health check** runs the host's own `pithead doctor` and shows what it found — the same
 checks the CLI prints, failures first, with the host's summary counts above them. This is the one
@@ -1646,6 +1646,8 @@ daemon, use the support bundle or the console.
 
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
+
+#### Restart all and reset Tor
 
 **Restart all** restarts every container of the stack through the host's `restart` verb. It asks
 you to type `RESTART`, and it says that mining stops briefly, that the dashboard goes offline and
