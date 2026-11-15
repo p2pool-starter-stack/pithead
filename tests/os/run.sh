@@ -243,6 +243,8 @@ source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 # shellcheck source=tests/os/phases/tor-heal.sh
 source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
+# shellcheck source=tests/os/phases/pool-heal.sh
+source "$SCRIPT_DIR/phases/pool-heal.sh" || exit $?
 require_host
 require_clean_bench
 if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
@@ -280,6 +282,7 @@ image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
 stack) _run_phase stack phase_stack ;;
 tor-heal) _run_phase tor-heal phase_tor_heal ;;
+p2pool-heal) _run_phase p2pool-heal phase_p2pool_heal ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
