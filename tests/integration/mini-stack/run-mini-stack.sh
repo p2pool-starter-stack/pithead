@@ -174,14 +174,9 @@ compose up -d >/dev/null 2>&1
 
 log "waiting for the dashboard API"
 wait_dashboard_api && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
-assert_payout_control_roundtrip # 0a. payout address approval crosses the dashboard/host boundary (#1959)
+assert_payout_control_roundtrip
+assert_svc_restart_control_roundtrip
 
-# 0. The /api/state payload must carry the #170 Stack Topology & Egress contract, derived live
-#    from config by the REAL dashboard. The pure derivation is unit-tested (tests/service/
-#    test_egress.py); this proves it survives the trip through build_state -> /api/state on a
-#    running server: both sections present, their summary shared verbatim with the map (so the
-#    header badge can't disagree with it), the topology's node set is the canonical one, and every
-#    edge lands on a placeable node (an off-map endpoint would vanish silently from the diagram).
 log "scenario 0: /api/state exposes a well-formed #170 topology + egress contract"
 contract="$(
     compose exec -T dashboard python3 - <<'PY' 2>&1

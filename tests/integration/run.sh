@@ -58,6 +58,7 @@ RUN_FAULTS=0
 FAULT_SSH=0
 FAULT_SSH_DEST=""
 RUN_AUTH_FAIL_CLOSED=0
+RUN_SVC_RESTART=0
 RUN_HARDENING=0
 RUN_ROTATE_ONION=0
 RUN_RIGFORGE=0
@@ -148,6 +149,8 @@ source "$HERE/lib/run-pool-peer-loss.sh" || exit $?
 source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-svc-restart.sh
+source "$HERE/lib/run-svc-restart.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$HERE/lib/run-rotate-onion.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
@@ -278,10 +281,8 @@ main() {
     fi
     local lifecycle_ok=1 _gated
     LIFECYCLE_STACK_INTACT=0
-    # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
-    # name every requested one in the summary instead of dropping it silently (#2755).
     if [ "$rig_control_ok" != 1 ]; then
-        for _gated in LIFECYCLE:lifecycle RESET_DASHBOARD:reset-dashboard ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
+        for _gated in LIFECYCLE:lifecycle RESET_DASHBOARD:reset-dashboard ROTATE_SECRETS:rotate-secrets FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed SVC_RESTART:svc-restart HARDENING:hardening \
             XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
             MERGEMINE_LOCALNET:mergemine-localnet FAILOVER_VIEW:failover-view SUBNET:subnet; do
             local _flag="RUN_${_gated%%:*}"
@@ -304,6 +305,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_RESET_DASHBOARD" = "1" ] && run_reset_dashboard
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_SECRETS" = "1" ] && run_rotate_secrets
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_SVC_RESTART" = "1" ] && run_svc_restart
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_ONION" = "1" ] && run_rotate_onion
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
