@@ -1603,13 +1603,12 @@ The host decides, not the dashboard. It restarts only a service on its fixed lis
 `docker compose restart <service>` under the same lock as `apply`, `upgrade` and `backup`. It
 refuses, with a reason and without queueing, while another of those operations holds the lock,
 while the LAN-only source rule for a published port is not in place, and when the same service was
-restarted in the last 120 seconds. After a `tor` restart it waits up to five minutes for Tor to
-report bootstrapped, then restarts a running `monerod` so it re-dials its peers through the new
-circuits, as `./pithead restart tor` does. If Tor does not bootstrap in that time, or `monerod`
-cannot be restarted, the result is `failed` and says to restart `monerod` once Tor is healthy.
-Every request is recorded in the control audit log with the
-actor, the action `svc-restart`, the service and the outcome (`started`, `rejected`, `applied` or
-`failed`).
+restarted in the last 120 seconds. After a `tor` restart it waits up to five minutes, still
+holding the lock, for Tor to report bootstrapped, then restarts a running `monerod` so it re-dials
+its peers through the new circuits, as `./pithead restart tor` does. If Tor does not bootstrap in
+that time, or `monerod` cannot be restarted, the result is `failed` and says to restart `monerod`
+once Tor is healthy. Every request is recorded in the control audit log with the actor, the action
+`svc-restart`, the service and the outcome (`started`, `rejected`, `applied` or `failed`).
 
 One thing reads differently here than at a terminal: the report is redacted on its way to the
 browser, so where `pithead doctor` prints your dashboard's onion address in full, this panel shows
