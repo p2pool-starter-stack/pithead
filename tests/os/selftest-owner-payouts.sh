@@ -104,9 +104,21 @@ if grep -nE '(^|[^A-Za-z_])\.?xvb\.donor_id *=|donor_id *:' "$HERE"/*.sh "$HERE"
     grep -v '/selftest-' | grep -q .; then
     fail "a guest config sets xvb.donor_id; it must stay auto so the identity is the owner's wallet prefix"
 fi
-strays=$(grep -lE '\b4[0-9AB][0-9A-Za-z]{90,}|\b12[0-9A-Za-z]{80,}' "$HERE"/*.sh "$HERE"/phases/*.sh "$HERE"/lib/*.sh |
-    grep -Ev '/selftest-|/lib/core\.sh$|/phases/media\.sh$|/appliance-tari-wallet-leg\.sh$' || true)
+strays=$(grep -HnE '\b4[0-9AB][0-9A-Za-z]{90,}|\b12[0-9A-Za-z]{80,}' "$HERE"/*.sh "$HERE"/phases/*.sh "$HERE"/lib/*.sh |
+    grep -Ev '^[^:]*(/selftest-[^:]*|/lib/core\.sh|/phases/media\.sh):' |
+    grep -Ev '/appliance-tari-wallet-leg\.sh:[0-9]+:TARI_WALLET_TEST_ADDRESS=' | cut -d: -f1,2 || true)
 [ -z "$strays" ] || fail "a wallet literal outside core.sh reaches a guest: $strays"
+
+(
+    export PITHEAD_OS_PAYOUT_MONERO=$OWNER_M PITHEAD_OS_PAYOUT_TARI=$OWNER_T PITHEAD_OS_TARI_NODE_HOST=tarihost-sentinel
+    source "$HERE/lib/core.sh" || exit 1
+    trap - EXIT
+    source "$HERE/appliance-tari-wallet-leg.sh" || exit 1
+    printf '{"monero":{"wallet_address":"%s"},"tari":{"wallet_address":"%s"},"local_miner":{"enabled":true}}' "$OWNER_M" "$OWNER_T" |
+        jq -c "$(tari_wallet_swap_filter)" |
+        jq -e --arg m "$OWNER_M" --arg t "$OWNER_T" \
+            '.local_miner.enabled == false and .tari.wallet_address != $t and .monero.wallet_address == $m' >/dev/null || exit 11
+) || fail "the Tari wallet leg swap leaves the miner on while node inputs are set (exit $?)"
 
 ! grep -qE 'HARNESS_(WALLET|TARI)' "$HERE/phases/media.sh" ||
     fail "media.sh uses the owner payouts; its sticks must keep their own throwaway addresses"

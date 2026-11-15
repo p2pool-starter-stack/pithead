@@ -50,6 +50,11 @@ tari_wallet_stop_ok() { # <stop-rc> <elapsed-s> <running>
     [ "$1" -eq 0 ] && [ "$2" -lt 25 ] && [ "$3" = false ]
 }
 
+# The built-in miner stays off for the swap window so no non-owner Tari identity can merge-mine.
+tari_wallet_swap_filter() {
+    printf '%s' ".tari.mode = \"local\" | .tari.wallet_address = \"$TARI_WALLET_TEST_ADDRESS\" | .tari.view_key = \"$TARI_WALLET_TEST_VIEW_KEY\" | .tari.spend_public_key = \"$TARI_WALLET_TEST_SPEND_KEY\" | .tari.payout_scan_birthday = \"1425\" | .local_miner.enabled = false"
+}
+
 phase_provision_tari_wallet() { # <phase-rc>
     local unexercised=bad deadline state restarts health owner argv node pid1 t0 stop_rc stop_s exit_code running dispositions before after version identity height balance after_version after_identity after_height after_balance image_name image_digest expected_image db_before db_after log_status snapshot_rc
     [ "${1:-0}" -eq 0 ] || unexercised=info
@@ -68,7 +73,7 @@ phase_provision_tari_wallet() { # <phase-rc>
     }
     if ! _ssh "set -eu
 cd /data/pithead
-jq -c '.tari.mode = \"local\" | .tari.wallet_address = \"$TARI_WALLET_TEST_ADDRESS\" | .tari.view_key = \"$TARI_WALLET_TEST_VIEW_KEY\" | .tari.spend_public_key = \"$TARI_WALLET_TEST_SPEND_KEY\" | .tari.payout_scan_birthday = \"1425\"' config.json >config.json.tari-wallet-test
+jq -c '$(tari_wallet_swap_filter)' config.json >config.json.tari-wallet-test
 mv config.json.tari-wallet-test config.json
 ./pithead apply -y" >/dev/null 2>&1; then
         bad "Tari wallet: ./pithead apply -y did not accept a view key and spend key"

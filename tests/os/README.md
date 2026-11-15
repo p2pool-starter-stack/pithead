@@ -310,9 +310,9 @@ the configured test registry fail before the image build. Release builds do not 
   RigForge feed must report a nonzero hashrate (`rig_share_hashrate_wait`). The M12 adopt leg
   (#3069, backported here in #3994) then runs (`tests/os/rig-adopt-leg.sh`): it enables the
   coordinator's control channel, previews and commits an adoption with typed `APPLY`, polls
-  until the worker reads adopted with a reachable API, pushes one reversible `max_temp_c`
-  change to `applied` by its exact `change_id`, checks the pools sha256 unchanged, restores the
-  original value, and proves the unpinned bench host still cannot reach the control port;
+  until the worker reads adopted with a reachable API, pushes one reversible
+  `watchdog_interval_min` change to `applied` by its exact `change_id`, checks the pools sha256
+  unchanged, restores the original value (a null stays null), and proves the unpinned bench host still cannot reach the control port;
   `selftest-rig-adopt.sh` covers those paths without a guest.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
