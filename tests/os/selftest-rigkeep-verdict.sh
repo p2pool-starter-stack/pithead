@@ -47,7 +47,7 @@ for change in \
     'del(.worker)'; do
     reject_case "$(jq -c "$change" <<<"$before")" "$after" "before: $change"
 done
-pass_case "$(jq -c '.access_token = "" | .miner_token = ""' <<<"$before")" "$before" both-tokens-absent-equal
+pass_case "$(jq -c '.access_token = "" | .miner_token = ""' <<<"$before")" "$before" token-kept-when-absent-before-equal
 for invalid in '' 'null' '{}' 'not-json' '['; do
     reject_case "$invalid" "$after" "malformed before: $invalid"
     reject_case "$before" "$invalid" "malformed after: $invalid"

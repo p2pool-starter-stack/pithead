@@ -328,7 +328,8 @@ the configured test registry fail before the image build. Release builds do not 
   for the installed system — the installer copies the running system but strips the harness
   marker, so the label is what travels), attaches it as removable USB
   beside the installed disk, chooses **Keep everything** on the wizard, and after the disk
-  boot asserts the newer system is on the disk (label v2, marker stripped), the rig mines, the new slot self-commits (`A_OK=1 A_TRY=0`),
+  boot asserts the newer system is on the disk (label v2, marker stripped), the rig mines,
+  the new slot self-commits (`A_OK=1 A_TRY=0`),
   and an identity snapshot (role, worker, pool, `rig.json` access token, miner token, container
   count) is unchanged — the access token kept, never re-minted; a rig whose token was absent is
   accepted only with one freshly minted. With a coordinator present the leg finally requires the
