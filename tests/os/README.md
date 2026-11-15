@@ -310,7 +310,7 @@ the configured test registry fail before the image build. Release builds do not 
   RigForge feed must report a nonzero hashrate (`rig_share_hashrate_wait`). The M12 adopt leg
   (#3069, backported here in #3994) then runs (`tests/os/rig-adopt-leg.sh`): it enables the
   coordinator's control channel, previews and commits an adoption with typed `APPLY`, polls
-  until the worker reads adopted with a reachable API, pushes one reversible `DONATION`
+  until the worker reads adopted with a reachable API, pushes one reversible `max_temp_c`
   change to `applied` by its exact `change_id`, checks the pools sha256 unchanged, restores the
   original value, and proves the unpinned bench host still cannot reach the control port;
   `selftest-rig-adopt.sh` covers those paths without a guest.
@@ -512,8 +512,12 @@ forgot.
 Guests that reach real nodes can mine on mainnet, so every guest configured by the battery pays
 the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (bench-ci supplies the
 owner's addresses); without them the harness uses its labelled throwaway addresses. The run
-refuses before any guest exists when a node input (host, username or password) is set and either
-payout variable is empty, naming the variable and never a value. XvB keeps its default
+refuses before any guest exists when `PITHEAD_OS_MONERO_NODE_HOST` or `PITHEAD_OS_TARI_NODE_HOST` is
+set and either payout variable is empty, naming the variable and never a value. The media guest
+never reaches a chain node, so its sticks use their own labelled throwaway addresses rather than
+the payouts. The v1.20.0 restore fixture (`tests/os/fixtures/v1.20.0`) deliberately restores a
+throwaway identity and a fixture donor id on a guest whose node hosts are the unreachable fixture
+address, so it never mines; the restore leg asserts that host is unchanged after the restore. XvB keeps its default
 `xvb.donor_id` of `auto`, the first 8 characters of that Monero address, so XvB hash is the
 owner's; `selftest-owner-payouts.sh` fails if any guest config sets the donor id explicitly.
 

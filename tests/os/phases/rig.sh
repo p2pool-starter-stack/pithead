@@ -152,7 +152,7 @@ phase_rig() {
         ok "the rig mines (xmrig unit active, process running) with no reboot in between"
     else
         bad "the rig never started mining (unit: $(_ssh 'systemctl is-active xmrig' 2>/dev/null || echo unknown))"
-        info "  firstboot journal tail: $(_ssh "journalctl -u pithead-firstboot -n 8 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+        info "  firstboot journal tail: $(_ssh "journalctl -u pithead-firstboot -n 8 --no-pager -o cat" 2>/dev/null | os_redact_addr | tr '\n' ' ' | cut -c1-300)"
     fi
     [ "$(_ssh 'cat /data/pithead/machine-role' | tr -d '\r\n')" = "rig" ] &&
         ok "the role marker says rig" || bad "the role marker is not rig"

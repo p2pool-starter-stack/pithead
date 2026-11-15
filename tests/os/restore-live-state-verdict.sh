@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 #
 # Shared by tests/os/run.sh's phase_install restore leg (drives it against a real KVM guest's
 # `podman ps` + `podman inspect p2pool`) and tests/stack/run.sh's fixture unit test (drives it
@@ -100,10 +102,10 @@ restore_p2pool_startup() {
         echo "P2Pool startup or controller restoration failed at $checkpoint (state: ${state:-unreadable})" | cut -c 1-240 >&2
         printf 'prior start time: %q\n' "${started_at:-unreadable}" | cut -c 1-240 >&2
         # Keep escape sequences visible when a raw daemon line fails the stop-log predicate.
-        printf '%s\n' "${stop_logs:-no prior stop logs}" | head -30 | while IFS= read -r line; do
+        printf '%s\n' "${stop_logs:-no prior stop logs}" | os_redact_addr | head -30 | while IFS= read -r line; do
             printf '%q\n' "$line" | cut -c 1-240 >&2
         done
-        _ssh "podman logs --tail 30 p2pool 2>&1; journalctl -k -b -n 200 --no-pager | grep -E 'p2pool.*(fault|segfault)' | tail -10" 2>&1 | head -40 | while IFS= read -r line; do
+        _ssh "podman logs --tail 30 p2pool 2>&1; journalctl -k -b -n 200 --no-pager | grep -E 'p2pool.*(fault|segfault)' | tail -10" 2>&1 | os_redact_addr | head -40 | while IFS= read -r line; do
             printf '%q\n' "$line" | cut -c 1-240 >&2
         done || true
     fi

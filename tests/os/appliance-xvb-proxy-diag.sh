@@ -27,7 +27,7 @@ _xvb_diag_field() { # <text-when-empty> <lines> <cmd...>
     shift 2
     out="$("$@")"
     rc=$?
-    out="$(printf '%s' "$out" | tr -d '\r' | tail -n "$lines" | tr '\n' ';')"
+    out="$(printf '%s' "$out" | tr -d '\r' | os_redact_addr | tail -n "$lines" | tr '\n' ';')"
     if [ "$rc" -ne 0 ]; then
         printf 'collect-failed rc=%s %s %s' "$rc" "$out" "$(_xvb_guest_stderr)"
     else

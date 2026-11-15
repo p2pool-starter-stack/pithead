@@ -51,10 +51,10 @@ _ssh() {
         [ "$scenario" != enable-fails ] || return 1
         touch "$scratch/enabled"
         ;;
-    *DONATION*)
-        [ "$ip" = "$rig_ip" ] || fail 'read donation from the coordinator'
+    *max_temp_c*)
+        [ "$ip" = "$rig_ip" ] || fail 'read max_temp_c from the coordinator'
         [ "$scenario" != missing-original ] || return 1
-        cat "$scratch/donation"
+        cat "$scratch/max_temp_c"
         ;;
     *sha256sum*)
         [ "$ip" = "$rig_ip" ] || fail 'read pools from the coordinator'
@@ -70,7 +70,7 @@ dashboard_curl() {
     '-fsSk -m 10 https://192.0.2.2/api/worker?name=kvm-rig-share')
         [ "$scenario" != missing-effective ] || return 1
         local value id="" row=accepted polls=0
-        value=$(cat "$scratch/donation")
+        value=$(cat "$scratch/max_temp_c")
         [ "$value" != unset ] || value=1
         if [ -f "$scratch/change-id" ]; then
             id=$(cat "$scratch/change-id")
@@ -90,7 +90,7 @@ dashboard_curl() {
             esac
         fi
         jq -nc --argjson value "$value" --arg id "$id" --arg row "$row" \
-            '{rig_config:{DONATION:$value},history: ([{change_id:"eeeeeeeeeeeeeeee",status:"applied"}] +
+            '{rig_config:{max_temp_c:$value},history: ([{change_id:"eeeeeeeeeeeeeeee",status:"applied"}] +
                 (if $id == "" then [] else [{change_id:$id,status:$row}] end))}'
         ;;
     '-fsSk -m 10 https://192.0.2.2/api/config') printf '{"workers":{"list":[{"name":"existing","token":{"__secret__":true}}]}}' ;;
@@ -119,7 +119,7 @@ dashboard_control_request() {
         ;;
     worker-apply)
         local value
-        value=$(printf '%s' "$2" | jq -er 'select(.worker == "kvm-rig-share") | .changes.DONATION') || fail 'wrong worker change'
+        value=$(printf '%s' "$2" | jq -er 'select(.worker == "kvm-rig-share") | .changes.max_temp_c') || fail 'wrong worker change'
         printf '%s\n' "$value" >>"$scratch/writes"
         if [ "$value" = "$original_value" ]; then
             [ "$scenario" != restore-fails ] || return 1
@@ -127,7 +127,7 @@ dashboard_control_request() {
             [ "$scenario" != write-fails ] || return 1
             [ "$scenario" != changed-pools ] || printf 'changed\n' >"$scratch/pools"
         fi
-        if [ "$scenario" != false-applied ]; then printf '%s\n' "$value" >"$scratch/donation"; fi
+        if [ "$scenario" != false-applied ]; then printf '%s\n' "$value" >"$scratch/max_temp_c"; fi
         local id=0000000000000001
         [ "$value" != "$original_value" ] || id=0000000000000002
         printf '%s\n' "$id" >"$scratch/change-id"
@@ -153,7 +153,7 @@ run_case() {
     case "$scenario" in absent-original | missing-effective) stored_value=unset original_value=1 ;; esac
     rm -f "$scratch/adopted" "$scratch/enabled" "$scratch/writes" "$scratch/change-id" "$scratch/history-polls"
     printf '0\n' >"$scratch/tick"
-    printf '%s\n' "$stored_value" >"$scratch/donation"
+    printf '%s\n' "$stored_value" >"$scratch/max_temp_c"
     printf 'original\n' >"$scratch/pools"
     : >"$scratch/requests"
     rig_adopt_leg >"$scratch/output" 2>&1 || rc=$?
@@ -161,7 +161,7 @@ run_case() {
     ! grep -Fq "$card_token" "$scratch/output" || fail "$scenario disclosed the card token"
     [ "$ip" = "$rig_ip" ] || fail "$scenario changed caller guest"
     if [ "$expected" = 0 ]; then
-        [ "$(cat "$scratch/donation")" = "$original_value" ] || fail 'donation was not restored'
+        [ "$(cat "$scratch/max_temp_c")" = "$original_value" ] || fail 'max_temp_c was not restored'
         [ "$(cat "$scratch/pools")" = original ] || fail 'pools were changed'
         [ "$(wc -l <"$scratch/writes")" -eq 2 ] || fail 'missing write or restore'
         [ "$(cat "$scratch/history-polls")" -ge 3 ] || fail 'accepted response bypassed history completion'
@@ -199,7 +199,7 @@ done
     for shape in accepted pending; do
         printf '0\n' >"$scratch/tick"
         : >"$scratch/spool-polls"
-        result=$(dashboard_control_request worker-apply '{"worker":"kvm-rig-share","changes":{"DONATION":0}}' 60) ||
+        result=$(dashboard_control_request worker-apply '{"worker":"kvm-rig-share","changes":{"max_temp_c":0}}' 60) ||
             fail "$shape worker response did not hand off to history polling"
         printf '%s' "$result" | jq -e '.status == "accepted" and .change_id == "0000000000000001"' >/dev/null ||
             fail 'worker acknowledgment lost its change id'

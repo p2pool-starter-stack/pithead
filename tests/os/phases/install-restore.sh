@@ -385,6 +385,11 @@ _phase_install_restore() {
         [ "$restored_config" = "$expected_config" ] &&
             ok "restore leg: restored non-default configuration matches the v1.20.0 fixture" ||
             bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
+        if [ "$restore_case" = n1 ]; then
+            [ "$(_ssh "jq -r '[.monero.remote.host, .tari.remote.host] | join(\" \")' /data/pithead/config.json" | tr -d '\r')" = "10.0.0.1 10.0.0.1" ] &&
+                ok "restore leg: the v1.20.0 fixture restored with its unreachable node hosts, so it never mines" ||
+                bad "restore leg: the v1.20.0 fixture's node hosts are no longer the unreachable fixture address"
+        fi
         restore_fixture_secret_verdict "$restore_case" "$expected_secrets"
         [ "$restore_case" != n1 ] || restore_fixture_migration_verdict
         restore_fixture_chain_verdict "$target_chain_sentinel"

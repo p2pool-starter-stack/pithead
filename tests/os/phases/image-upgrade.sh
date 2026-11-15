@@ -40,6 +40,25 @@ _image_upgrade_node_v4() { # <sub-step> <name-or-literal>
     printf '%s\n' "$address"
 }
 
+_image_upgrade_owner_config() { # <monero host> <tari host> <stage>; reference config on stdin
+    local stage="$3"
+    jq \
+        --arg monero_wallet "$HARNESS_WALLET" --arg tari_wallet "$HARNESS_TARI" \
+        --arg monero_host "$1" --argjson monero_rpc "$PITHEAD_OS_MONERO_RPC_PORT" \
+        --argjson monero_zmq "$PITHEAD_OS_MONERO_ZMQ_PORT" --arg tari_host "$2" \
+        --arg monero_user "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" \
+        --rawfile monero_pass "$stage/monero-pass" '
+            .monero.wallet_address = $monero_wallet |
+            .monero.mode = "remote" | .monero.remote.host = $monero_host |
+            .monero.remote.rpc_port = $monero_rpc | .monero.remote.zmq_port = $monero_zmq |
+            (if $monero_user != "" then .monero.node_username = $monero_user else . end) |
+            (if $monero_pass != "" then .monero.node_password = $monero_pass else . end) |
+            .tari.wallet_address = $tari_wallet | .tari.mode = "remote" |
+            .tari.remote.host = $tari_host | .p2pool.pool = "mini" |
+            .local_miner.enabled = true | .xvb.enabled = false
+        '
+}
+
 _image_upgrade_prepare_inputs() {
     local stage="$1" cosign_member rootfs_members rc monero_v4 tari_v4
     if rootfs_members="$(tar -tf os/build/pithead-root.tar 2>/dev/null)"; then
@@ -118,21 +137,8 @@ _image_upgrade_prepare_inputs() {
         _image_upgrade_input_failure generated-config 'printf <node-password> > <private-file>' "$rc"
         return "$rc"
     fi
-    if tar -xOf "$stage/v1.20.0.tar.gz" pithead/config.reference.json 2>/dev/null | jq \
-        --arg monero_wallet "$HARNESS_WALLET" --arg tari_wallet "$HARNESS_TARI" \
-        --arg monero_host "$monero_v4" --argjson monero_rpc "$PITHEAD_OS_MONERO_RPC_PORT" \
-        --argjson monero_zmq "$PITHEAD_OS_MONERO_ZMQ_PORT" --arg tari_host "$tari_v4" \
-        --arg monero_user "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" \
-        --rawfile monero_pass "$stage/monero-pass" '
-            .monero.wallet_address = $monero_wallet |
-            .monero.mode = "remote" | .monero.remote.host = $monero_host |
-            .monero.remote.rpc_port = $monero_rpc | .monero.remote.zmq_port = $monero_zmq |
-            (if $monero_user != "" then .monero.node_username = $monero_user else . end) |
-            (if $monero_pass != "" then .monero.node_password = $monero_pass else . end) |
-            .tari.wallet_address = $tari_wallet | .tari.mode = "remote" |
-            .tari.remote.host = $tari_host | .p2pool.pool = "mini" |
-            .local_miner.enabled = true | .xvb.enabled = false
-        ' >"$stage/config.json" 2>/dev/null; then
+    if tar -xOf "$stage/v1.20.0.tar.gz" pithead/config.reference.json 2>/dev/null |
+        _image_upgrade_owner_config "$monero_v4" "$tari_v4" "$stage" >"$stage/config.json" 2>/dev/null; then
         :
     else
         rc=$?

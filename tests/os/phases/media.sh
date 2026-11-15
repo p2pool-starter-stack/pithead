@@ -1,5 +1,8 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# Throwaway checksum-valid payouts: the media guest never reaches chain nodes, and the product console prints the address in full.
+MEDIA_WALLET="44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
+MEDIA_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
 _make_media_stick() {
     (
         local path="$1" json="$2" loop="" mnt="" backing="" source="" rc mount_rc tries=0 step="image creation"
@@ -112,7 +115,7 @@ phase_media() {
     mnt=$(mktemp -d)
     mount "${loop}p1" "$mnt"
     printf '{"monero":{"wallet_address":"%s"},"tari":{"wallet_address":"%s"},"p2pool":{"pool":"mini","stratum_password":"auto"}}' \
-        "$HARNESS_WALLET" "$HARNESS_TARI" >"$mnt/pithead-config.json"
+        "$MEDIA_WALLET" "$MEDIA_TARI" >"$mnt/pithead-config.json"
     umount "$mnt"
     rmdir "$mnt"
     losetup -d "$loop"
@@ -250,7 +253,7 @@ phase_media() {
 
     local stick2="${DISK%.img}-media-abort.img"
     _make_media_stick "$stick2" \
-        "{\"monero\":{\"wallet_address\":\"$HARNESS_WALLET\"},\"tari\":{\"wallet_address\":\"$HARNESS_TARI\"},\"p2pool\":{\"pool\":\"mini\",\"stratum_password\":\"auto\"}}" || {
+        "{\"monero\":{\"wallet_address\":\"$MEDIA_WALLET\"},\"tari\":{\"wallet_address\":\"$MEDIA_TARI\"},\"p2pool\":{\"pool\":\"mini\",\"stratum_password\":\"auto\"}}" || {
         bad "media abort fixture construction failed before guest attachment"
         return
     }

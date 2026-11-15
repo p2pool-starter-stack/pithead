@@ -108,4 +108,37 @@ strays=$(grep -lE '\b4[0-9AB][0-9A-Za-z]{90,}|\b12[0-9A-Za-z]{80,}' "$HERE"/*.sh
     grep -Ev '/selftest-|/lib/core\.sh$|/phases/media\.sh$|/appliance-tari-wallet-leg\.sh$' || true)
 [ -z "$strays" ] || fail "a wallet literal outside core.sh reaches a guest: $strays"
 
+! grep -qE 'HARNESS_(WALLET|TARI)' "$HERE/phases/media.sh" ||
+    fail "media.sh uses the owner payouts; its sticks must keep their own throwaway addresses"
+! grep -q 'DONATION' "$HERE/rig-adopt-leg.sh" ||
+    fail "rig-adopt-leg.sh touches DONATION on a guest that mines at the coordinator"
+
+(
+    export PITHEAD_OS_PAYOUT_MONERO=$OWNER_M PITHEAD_OS_PAYOUT_TARI=$OWNER_T
+    source "$HERE/lib/core.sh" || exit 1
+    trap - EXIT
+    source "$HERE/phases/image-upgrade.sh" || exit 1
+    stage=$(mktemp -d)
+    trap 'rm -f "$stage/monero-pass"; rmdir "$stage"' EXIT
+    : >"$stage/monero-pass"
+    PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083
+    printf '{}' | _image_upgrade_owner_config 192.0.2.1 192.0.2.2 "$stage" |
+        jq -e --arg m "$OWNER_M" --arg t "$OWNER_T" \
+            '.monero.wallet_address == $m and .tari.wallet_address == $t and .monero.remote.host == "192.0.2.1"' >/dev/null || exit 11
+) || fail "the image-upgrade guest config does not carry the owner payouts (exit $?)"
+
+grep -q 'stack_browser_config' <(sed -n '/^_provision_remote_node_coordinator()/,/^}/p' "$HERE/phases/stack.sh") ||
+    fail "the rig share-leg coordinator is not built by stack_browser_config"
+grep -q '_wizard_provision_capture' "$HERE/migration-recovery.sh" &&
+    grep -q 'provision_browser_submit' "$HERE/phases/provision-initial.sh" ||
+    fail "migration recovery no longer provisions through the payout-aware browser submit"
+
+(
+    source "$HERE/lib/redact-addr.sh" || exit 1
+    addr="4$(printf 'A%.0s' $(seq 94))"
+    out=$(printf 'peer %s ok\n--wallet %s --x\n' "$addr" "$addr" | os_redact_addr)
+    case "$out" in *AAAAAAAAAAAAAAAAAAAA*) exit 2 ;; esac
+    case "$out" in *'[redacted-address]'*) ;; *) exit 3 ;; esac
+) || fail "os_redact_addr leaves an address in a log line (exit $?)"
+
 echo 'selftest-owner-payouts: PASS (overrides, fallbacks, early refusal, no values echoed, no donor id, no stray wallet literal)'

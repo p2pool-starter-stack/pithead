@@ -16,6 +16,8 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 it_warn() { printf '  \033[1;33m!\033[0m %s\n' "$1" >&2; }
 it_err() { printf '  \033[1;31m!\033[0m %s\n' "$1" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/redact-addr.sh"
 KEY="$HOME/.ssh/pithead-os-test"
 ip=""
 SSH_ERR="/tmp/pithead-os-ssh.err"
