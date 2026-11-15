@@ -84,24 +84,46 @@ configure() {
     cp "$work/next-config" config.json
     ./pithead apply -y >"$work/apply.log" 2>&1
 }
-poison() {
-    docker compose stop tor >"$work/stop.log" 2>&1
+write_poison() {
     awk '!/^CircuitBuild/ && !/^TotalBuildTimes /' "$work/original-state" >"$data/state"
     printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >>"$data/state"
+}
+newnym_applied() { # <epoch>; count of host-applied NEWNYM results at or after the epoch
+    find "$control/results" -maxdepth 1 -name '*.json' -type f -exec \
+        jq -e --argjson started "$1" 'select(.action == "tor-newnym" and .status == "applied" and .ts >= $started)' {} \; 2>/dev/null |
+        grep 'tor-newnym' | wc -l
+}
+poison() {
+    docker compose stop tor >"$work/stop.log" 2>&1
+    write_poison
     docker compose start tor >"$work/start.log" 2>&1
-    # SETCONF is in-memory only: a recovery stop/start lifts DisableNetwork.
-    local reply
+    local reply stable=0
     for ((attempt = 0; attempt < 30; attempt++)); do
         reply=$(docker exec tor sh -c '
             cookie=$(xxd -p -c 256 /var/lib/tor/control_auth_cookie)
             printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nQUIT\r\n" "$cookie" |
                 nc -w 3 127.0.0.1 9051' 2>/dev/null | tr -d '\r') || reply=""
         if [ "$(printf '%s\n' "$reply" | grep -c '^250 OK$')" = 2 ]; then
-            saturated "$data/state"
-            return
+            break
         fi
         sleep 1
     done
+    [ "$attempt" -lt 30 ] || return 1
+    # Tor 0.4.8+ self-repairs a saturated history at load and rewrites the state file without
+    # the signature; a poisoned file only survives once that write has landed. Re-poison on
+    # every foreign rewrite and require a saturated file through three quiet checks.
+    for ((attempt = 0; attempt < 45; attempt++)); do
+        if saturated "$data/state"; then
+            stable=$((stable + 1))
+            [ "$stable" -ge 3 ] && return 0
+        else
+            write_poison
+            stable=0
+        fi
+        sleep 4
+    done
+    printf 'Tor keeps rewriting the poisoned state; last 2048 bytes:\n' >&2
+    tail -c 2048 "$data/state" >&2 || true
     return 1
 }
 # The disabled leg leaves Tor network-disabled; `pithead apply` waits for a healthy Tor, so
@@ -127,6 +149,10 @@ poison
 stage=observe-disabled
 deadline=$(($(date +%s) + 90 * 60))
 while [ "$(date +%s)" -lt "$deadline" ]; do
+    if ! saturated "$data/state"; then
+        [ "$(backup_count)" = "$before" ]
+        write_poison
+    fi
     saturated "$data/state"
     [ "$(backup_count)" = "$before" ]
     sleep 30
@@ -150,19 +176,42 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         diagnosed=1
         break
     fi
+    saturated "$data/state" || write_poison
     sleep 30
 done
 [ "$diagnosed" = 1 ]
 echo 'PASS: first-round saturated alert is delivered within 25 minutes (#3118)'
+# Tor >=0.4.8 rewrites its state on every clean shutdown, so the recovery's own stop would wipe
+# the poisoned file before the backup. Tor must stay up for the two applied NEWNYM rounds, and
+# once they land the script stops Tor itself: the recovery stop is then a no-op and the poisoned
+# file survives into the backup.
+stage=recovery-stop
+deadline=$((started + 70 * 60))
+while [ "$(date +%s)" -lt "$deadline" ] && [ "$(newnym_applied "$started")" -lt 2 ]; do
+    sleep 15
+done
+if [ "$(newnym_applied "$started")" -lt 2 ]; then
+    printf 'the self-heal never applied two NEWNYM rounds before the recovery window\n' >&2
+    exit 1
+fi
+docker compose stop tor >"$work/recovery-stop.log" 2>&1
+write_poison
 deadline=$((started + 95 * 60))
 stage=host-recovery
 applied=0
+halted=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
     if find "$control/results" -maxdepth 1 -name '*.json' -type f -exec \
         jq -e --argjson started "$started" 'select(.action == "tor-recover" and .status == "applied" and .ts >= $started)' {} \; 2>/dev/null |
         grep 'tor-recover' >/dev/null; then
         applied=1
         break
+    fi
+    if [ "$halted" = 0 ] && [ "$(backup_count)" -gt "$before" ]; then
+        halted=1
+    fi
+    if [ "$halted" = 0 ]; then
+        saturated "$data/state" || write_poison
     fi
     sleep 30
 done
