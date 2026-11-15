@@ -54,7 +54,13 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
                 return 1
             } ;; # the third push is the carry
             backup-fails:backup | down-fails:down | restore-fails:restore) return 1 ;;
-            apply-fails:apply) printf 'apply-boom PASSWORD=fixture-secret\n' && return 1 ;;
+            apply-fails:apply)
+                if [ "${RAWCHECK:-no}" = yes ]; then
+                    find "$OUT_DIR" -name '*.raw' 2>/dev/null | wc -l | tr -d ' ' >"$OUT_DIR/raw-at-apply"
+                fi
+                printf 'apply-boom PASSWORD=fixture-secret\n'
+                return 1
+                ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
@@ -168,7 +174,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             printf '|log=%s' "$(tr '\n' '~' <"$OUT_DIR/lifecycle-restore/apply.log")"
         fi
         if [ "${RAWCHECK:-no}" = yes ]; then
-            printf '|raw=%s' "$(find "$OUT_DIR" -name '*.raw' 2>/dev/null | wc -l | tr -d ' ')"
+            printf '|raw=%s' "$(cat "$OUT_DIR/raw-at-apply" 2>/dev/null)"
         fi
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
         [ "$RESTORE_CASE" != carry-rows-unreadable ] || printf '|applied=%s' "$([ -e "$OUT_DIR/dashboard-carry.apply.log" ] && echo yes || echo no)"
