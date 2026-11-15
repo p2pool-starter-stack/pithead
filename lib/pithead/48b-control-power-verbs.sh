@@ -41,16 +41,16 @@ control_power_refusal() { # <control-dir> — echoes the reason a power verb mus
 
 control_power_stop_stack() { # <action>
     [ -f "$ENV_FILE" ] || return 0
-    local out rc=0
+    local out try
     log "Stopping the stack before $1..."
-    out=$(timeout "${CONTROL_POWER_STOP_TIMEOUT_S:-300}" docker compose stop 2>&1) || rc=$?
-    if [ "$rc" -ne 0 ]; then
-        warn "Stack stop before $1 reported an error (exit $rc): $(printf '%s' "$out" | tail -n 5 | tr '\n' ' ' | cut -c1-400)"
-        local running
-        running=$(timeout 60 docker compose ps -q --status running 2>/dev/null) || return 1
-        [ -z "$running" ] || return 1
-    fi
-    log "Stack stopped before $1."
+    for try in 1 2; do
+        if out=$(timeout "${CONTROL_POWER_STOP_TIMEOUT_S:-300}" docker compose stop 2>&1); then
+            log "Stack stopped before $1."
+            return 0
+        fi
+        warn "Stack stop before $1 reported an error (attempt $try): $(printf '%s' "$out" | tail -n 5 | tr '\n' ' ' | cut -c1-400)"
+    done
+    warn "Stack stop before $1 did not complete; systemd stops the remaining services during the power-off."
 }
 
 control_power() { # <claimed-file> <id> <actor> <control-dir> <action>
@@ -96,10 +96,7 @@ control_power_run() ( # <control-dir> <id> <actor> <action> — isolate the lock
     fi
     control_write_result "$cdir/results" "$id" "$(jq -n --arg s "$result" '{status:$s,ts:(now|floor)}')"
     control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "$result"
-    if ! control_power_stop_stack "$action"; then
-        control_os_refuse "$cdir" "$id" "$actor" "$action" failed "the stack did not stop cleanly — the machine was not powered off and some services may be stopped; check the host journal, then restart the stack from the dashboard."
-        return 0
-    fi
+    control_power_stop_stack "$action"
     if ! systemctl "$target" >/dev/null 2>&1; then
         control_os_refuse "$cdir" "$id" "$actor" "$action" failed "systemctl $target failed — the machine is still running with its stack stopped; restart the stack from the dashboard."
         return 0

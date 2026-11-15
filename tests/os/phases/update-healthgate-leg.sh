@@ -196,10 +196,10 @@ phase_update_power_leg() {
     *'"actor":"admin","action":"power-reboot","status":"rebooting"'*) ok "leg 6: the power-reboot audit line survived the reboot" ;;
     *) bad "leg 6: no power-reboot audit line in the control log" ;;
     esac
-    if _ssh "journalctl -b -1 -u pithead-control.service --no-pager | grep -F 'Stack stopped before power-reboot'" >/dev/null 2>&1; then
-        ok "leg 6: the stack was stopped cleanly before the reboot was ordered"
+    if _ssh "journalctl -b -1 -u pithead-control.service --no-pager | grep -F 'Stopping the stack before power-reboot'" >/dev/null 2>&1; then
+        ok "leg 6: the stack stop ran before the reboot was ordered"
     else
-        bad "leg 6: the previous boot's control journal has no clean-stop line before the reboot"
+        bad "leg 6: the previous boot's control journal has no stack-stop line before the reboot"
     fi
     deadline=$(($(date +%s) + 900))
     until curl -sSk -u "$DASH_USER:$DASH_PASS" -o /dev/null -f -m 8 "https://$ip/api/state" 2>/dev/null; do
@@ -246,10 +246,10 @@ phase_update_power_leg() {
     *'"actor":"admin","action":"power-shutdown","status":"shutting-down"'*) ok "leg 6: the power-shutdown audit line is in the control log after the power-off" ;;
     *) bad "leg 6: no power-shutdown audit line in the control log" ;;
     esac
-    if _ssh "journalctl -b -1 -u pithead-control.service --no-pager | grep -F 'Stack stopped before power-shutdown'" >/dev/null 2>&1; then
-        ok "leg 6: the stack was stopped cleanly before the power-off"
+    if _ssh "journalctl -b -1 -u pithead-control.service --no-pager | grep -F 'Stopping the stack before power-shutdown'" >/dev/null 2>&1; then
+        ok "leg 6: the stack stop ran before the power-off"
     else
-        bad "leg 6: the previous boot's control journal has no clean-stop line before the power-off"
+        bad "leg 6: the previous boot's control journal has no stack-stop line before the power-off"
     fi
     deadline=$(($(date +%s) + 900))
     until curl -sSk -u "$DASH_USER:$DASH_PASS" -o /dev/null -f -m 8 "https://$ip/api/state" 2>/dev/null; do

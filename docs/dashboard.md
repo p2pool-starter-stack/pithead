@@ -1848,8 +1848,9 @@ The host refuses, with a reason in the result and a line in the control log, whe
 
 An accepted request writes its `rebooting` or `shutting-down` result and its audit line first, then
 stops the stack (`docker compose stop`, bounded at 5 minutes and honouring each service's grace
-period), then runs `systemctl reboot` or `systemctl poweroff`. A stack that does not stop, or a
-failed `systemctl`, writes a `failed` result instead.
+period), then runs `systemctl reboot` or `systemctl poweroff`. A stack stop that errors is
+retried once and then logged; systemd stops what is left during the power-off. A failed
+`systemctl` writes a `failed` result instead.
 
 ## Tips
 
