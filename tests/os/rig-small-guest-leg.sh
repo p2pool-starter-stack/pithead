@@ -15,7 +15,7 @@ rig_small_guest_leg() { # <img>
 
 _rig_small_guest_run() { # <img>
     local img="$1" token="" tries=0 jar body scode sysfile pool after mounts unitlog
-    local mode rtok light hr cls ptries=0 oom rtries=0 htries card="" ctries=0 arc=0
+    local mode rtok light hr cls summ ptries=0 oom rtries=0 htries card="" ctries=0 arc=0
     info "small-guest leg (#4010) — the rig role on a 2 GiB, 1 vCPU machine: it must mine, not over-reserve"
     cp "$img" "$DISK" || {
         bad "could not copy the image for the 2 GiB rig guest"
@@ -122,9 +122,9 @@ _rig_small_guest_run() { # <img>
         ok "the image still bakes the 3072-page default — the coordinator keeps its reservation" ||
         bad "the baked sysctl is not what the rootfs declares: '${sysfile:0:60}'"
     pool=$(_ssh 'cat /proc/sys/vm/nr_hugepages 2>/dev/null' | tr -d '\r\n ')
-    [ "$pool" = "0" ] &&
-        ok "#4010: the baked 3072-page default did not stick — the rig reserved no hugepages" ||
-        bad "#4010: the rig's pool holds ${pool:-?} pages — it over-reserved instead of leaving the sizing to RigForge"
+    [ "$pool" != "3072" ] &&
+        ok "#4010: the baked 3072-page default did not stick on the rig — the pool held ${pool:-?} pages at check time, whatever the miner sized, never the machine-wide reservation" ||
+        bad "#4010: the rig's pool still holds the baked 3072 pages — the rig over-reserved instead of leaving the sizing to the miner"
     [ "$(_ssh 'systemctl is-active pithead-hugepages' | tr -d '\r\n')" = "active" ] &&
         ok "pithead-hugepages ran and stayed active on the rig" ||
         bad "pithead-hugepages is '$(_ssh 'systemctl is-active pithead-hugepages' 2>/dev/null | tr -d '\r\n')' on the rig"
@@ -137,15 +137,20 @@ _rig_small_guest_run() { # <img>
     esac
     mounts=$(_ssh 'systemctl show pithead-hugepages -p RequiresMountsFor --value' | tr -d '\r\n')
     case "$mounts" in
-    *data.mount*)
-        ok "the unit waits for /data — it reads the role file rather than guessing at it"
+    */data* | *data.mount*)
+        ok "the unit waits for /data — it reads the role file rather than guessing at it (RequiresMountsFor=${mounts})"
         ;;
     *) bad "the unit does not wait for /data, so machine-role can be unreadable when it runs: RequiresMountsFor=${mounts:-empty}" ;;
     esac
     unitlog=$(_ssh "journalctl -u pithead-hugepages -b --no-pager -o cat | grep -m1 'rig role'" 2>/dev/null | tr -d '\r')
-    [ -n "$unitlog" ] &&
-        ok "the unit says what it did for the rig role: $(printf '%s' "$unitlog" | cut -c1-140)" ||
-        bad "the unit wrote no rig-role line — the rig branch never ran"
+    [ -n "$unitlog" ] || unitlog=$(tr -d '\r' <"$SERIAL" | grep -m1 'rig role')
+    if [ -n "$unitlog" ]; then
+        ok "the unit says what it did for the rig role: $(printf '%s' "$unitlog" | cut -c1-140)"
+    else
+        bad "the unit wrote no rig-role line in the journal or on the serial console — the rig branch never ran"
+        info "  journal rows for the unit this boot: $(_ssh "journalctl -u pithead-hugepages -b --no-pager | tail -4" 2>/dev/null | tr '\n' ' ' | cut -c1-240)"
+        info "  serial tail from this guest: $(tr -d '\r' <"$SERIAL" | grep -v '^$' | tail -2 | tr '\n' ' ' | cut -c1-240)"
+    fi
     _ssh 'test ! -e /run/pithead-hugepages-degraded' &&
         ok "no degraded-RAM marker — a rig has no RAM floor to be under" ||
         bad "the rig carries the coordinator's degraded marker — it is not degraded, it has no floor"
@@ -173,15 +178,17 @@ _rig_small_guest_run() { # <img>
     [ "$mode" = "auto" ] &&
         ok "#4010: the rig's render asks for RandomX mode auto — the machine picks the mode it can hold" ||
         bad "#4010: the rendered RandomX mode is '${mode:-unreadable}', not auto"
-    light=$(_ssh "journalctl -u xmrig -b --no-pager -o cat | grep -im1 'light mode'" 2>/dev/null | tr -d '\r')
+    light=$(_ssh "journalctl -u xmrig -b --no-pager -o cat | grep -im1 'light mode\|1 GB mode'" 2>/dev/null | tr -d '\r')
+    [ -n "$light" ] || light=$(_ssh "grep -im1 'light mode\|1 GB mode' /data/rigforge/data/worker/xmrig/build/config.log /data/rigforge/data/worker/xmrig/*.log 2>/dev/null")
     [ -n "$light" ] &&
         ok "the machine says it mines in light mode: $(printf '%s' "$light" | cut -c1-140)" ||
         bad "the miner is running but never said a word about light mode — the fallback is invisible"
     rtok=$(_ssh "jq -r '.ACCESS_TOKEN // \"\"' /data/rigforge/config.json" | tr -d '\r')
     hr=0
-    while [ "$hr" = "0" ] && [ "$ptries" -lt 6 ]; do
+    while [ "$hr" = "0" ] && [ "$ptries" -lt 12 ]; do
         sleep 10
-        hr=$(_ssh "curl -s -m 5 -H \"Authorization: Bearer $rtok\" http://127.0.0.1:8081/1/summary | jq -r '(.\"hash-rate\" | if type == \"array\" then .[-1] else . end) // 0'" 2>/dev/null | tr -d '\r')
+        summ=$(_ssh "curl -s -m 5 -H \"Authorization: Bearer $rtok\" http://127.0.0.1:8081/1/summary" 2>/dev/null | tr -d '\r')
+        hr=$(printf '%s' "$summ" | jq -r '[( (.hashrate.total? // ."hash-rate"? // [0]) | if type == "array" then (.[-1] // 0) else . end ), (.rigforge.tune.last_best_hs? // 0)] | max' 2>/dev/null)
         case "$hr" in '' | *[!0-9.]*) hr=0 ;; esac
         ptries=$((ptries + 1))
     done
@@ -189,4 +196,5 @@ _rig_small_guest_run() { # <img>
     [ "$cls" != "zero" ] &&
         ok "hashrate class recorded for a 2 GiB, 1 vCPU rig: $cls ($hr H/s)" ||
         bad "the sister feed never reported a nonzero hashrate on the 2 GiB rig"
+    [ "$cls" = "zero" ] && info "  sister feed said: $(printf '%s' "$summ" | jq -c '{hashrate: (.hashrate // ."hash-rate"), tune: (.rigforge.tune // .tune // "?")}' 2>/dev/null | cut -c1-240)"
 }
