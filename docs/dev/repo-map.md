@@ -37,7 +37,7 @@ pithead/
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
 | Containers | `build/<daemon>/` | Dockerfiles, entrypoints, healthchecks, and Monero's bounded archive downloader; CI builds the images, and `make test-tools` checks download recovery. |
-| Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. The rig share leg (`tests/os/rig-share-leg.sh`) adds the M11 hashrate floor and calls the adopt leg (`tests/os/rig-adopt-leg.sh`, `selftest-rig-adopt.sh`), which pushes a reversible config change through the coordinator control routes; `tests/os/require-complete-verdict.sh` (`selftest-require-complete.sh`) fails a `--require-complete` run on any missing-input skip. |
+| Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. The rig share leg (`tests/os/rig-share-leg.sh`) adds the M11 hashrate floor and calls the adopt leg (`tests/os/rig-adopt-leg.sh`, `selftest-rig-adopt.sh`), which pushes a reversible config change through the coordinator control routes; `tests/os/require-complete-verdict.sh` (`selftest-require-complete.sh`) fails a `--require-complete` run on any missing-input skip. `os/rootfs/fetch-archive.sh` bounds the baked RigForge archive fetch; `tests/os/selftest-archive-fetch.sh` runs its local transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--dry-run"` previews the plan. |
 | Manual QA | [Start here](manual-qa/README.md), `docs/dev/manual-qa/` | DIY, appliance and release guides retain the checklist step IDs; the start page holds the run sheet, result rules and glossary. |
 
@@ -164,6 +164,7 @@ Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
+The P2Pool zero-peer watchdog is `service/health/p2pool_heal.py`.
 The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
 the same host-gated recovery as the CLI.
 
@@ -380,6 +381,9 @@ through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
 to prove saturated-history recovery and the disabled control with production timers.
+The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
+zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
+cuts a live P2Pool's peers.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,

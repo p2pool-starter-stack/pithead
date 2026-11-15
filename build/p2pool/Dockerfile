@@ -9,7 +9,7 @@ RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && 
     wget ca-certificates libgomp1 socat \
     && rm -rf /var/lib/apt/lists/*
 
-RUN wget -O p2pool.tar.gz https://github.com/SChernykh/p2pool/releases/download/${P2POOL_VERSION}/p2pool-${P2POOL_VERSION}-linux-x64.tar.gz \
+RUN wget --tries=3 --timeout=180 --waitretry=10 -O p2pool.tar.gz https://github.com/SChernykh/p2pool/releases/download/${P2POOL_VERSION}/p2pool-${P2POOL_VERSION}-linux-x64.tar.gz \
     && echo "${P2POOL_HASH}  p2pool.tar.gz" | sha256sum -c - \
     && tar xzf p2pool.tar.gz \
     && mv p2pool-${P2POOL_VERSION}-linux-x64/p2pool /usr/local/bin/p2pool \
