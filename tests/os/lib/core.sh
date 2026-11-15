@@ -264,7 +264,7 @@ _rollback_cmd() {
 
 require_owner_payouts() {
     local v node=0 missing=""
-    for v in PITHEAD_OS_MONERO_NODE_HOST PITHEAD_OS_TARI_NODE_HOST PITHEAD_OS_MONERO_NODE_USERNAME PITHEAD_OS_MONERO_NODE_PASSWORD; do
+    for v in PITHEAD_OS_MONERO_NODE_HOST PITHEAD_OS_TARI_NODE_HOST; do
         [ -z "${!v:-}" ] || node=1
     done
     [ "$node" = 1 ] || return 0

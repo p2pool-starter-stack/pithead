@@ -166,7 +166,7 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
         # The red carried no payload, and reading the page off a kept guest is what finally said
         # which clause was wrong (#2050: it was this verdict's, not the product's). Name the
         # fields the verdict reads so the next failure is diagnosable from the log alone.
-        bad "host setup failure did not reopen a useful retained form (stage=$(printf '%s' "$state" | jq -rc '.stage // "none"' 2>/dev/null) error=$(printf '%s' "$state" | jq -rc '(.error // "") | .[0:60]' 2>/dev/null) wallet=$(printf '%s' "$state" | jq -rc '(.config.monero.wallet_address // "") | .[0:12]' 2>/dev/null) tari.mode=$(printf '%s' "$state" | jq -rc '.config.tari.mode // "none"' 2>/dev/null))"
+        bad "host setup failure did not reopen a useful retained form (stage=$(printf '%s' "$state" | jq -rc '.stage // "none"' 2>/dev/null) error=$(printf '%s' "$state" | jq -rc '(.error // "") | .[0:60]' 2>/dev/null) wallet_match=$(printf '%s' "$state" | jq -rc --arg w "$HARNESS_WALLET" '(.config.monero.wallet_address // "") == $w' 2>/dev/null) tari.mode=$(printf '%s' "$state" | jq -rc '.config.tari.mode // "none"' 2>/dev/null))"
         return 1
     fi
 }

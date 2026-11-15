@@ -35,7 +35,7 @@ restore_live_state_verdict() {
         ;;
     esac
     if [ "$live_wallet" != "$want" ]; then
-        echo "the stack is up but live state's wallet is '$live_wallet', not the restored '$want' — the restore landed a file but the running stack does not reflect it (#1091)"
+        echo "the stack is up but live state's wallet differs from the restored one — the restore landed a file but the running stack does not reflect it (#1091)"
         return 1
     fi
     echo "the restored container's configured wallet matches the archive; daemon startup is checked separately"

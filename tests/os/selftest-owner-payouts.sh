@@ -72,7 +72,7 @@ refused() {
     [ "$rc" -ne 0 ] || fail "accepted: $*"
     printf '%s' "$out"
 }
-for node in PITHEAD_OS_MONERO_NODE_HOST=nodehost-sentinel PITHEAD_OS_TARI_NODE_HOST=tarihost-sentinel PITHEAD_OS_MONERO_NODE_USERNAME=user-sentinel PITHEAD_OS_MONERO_NODE_PASSWORD=pass-sentinel; do
+for node in PITHEAD_OS_MONERO_NODE_HOST=nodehost-sentinel PITHEAD_OS_TARI_NODE_HOST=tarihost-sentinel; do
     out=$(refused "$node")
     case "$out" in *PITHEAD_OS_PAYOUT_MONERO*PITHEAD_OS_PAYOUT_TARI*) ;; *) fail "refusal does not name both variables for $node" ;; esac
     out=$(refused "$node" PITHEAD_OS_PAYOUT_MONERO="" PITHEAD_OS_PAYOUT_TARI=$OWNER_T)
@@ -85,7 +85,20 @@ for node in PITHEAD_OS_MONERO_NODE_HOST=nodehost-sentinel PITHEAD_OS_TARI_NODE_H
     guard "$node" PITHEAD_OS_PAYOUT_MONERO=$OWNER_M PITHEAD_OS_PAYOUT_TARI=$OWNER_T || fail "refused with both payouts set for $node"
 done
 guard PITHEAD_OS_RIG_SHARE_WINDOW_SEC=5 || fail "refused without node variables"
+guard PITHEAD_OS_MONERO_NODE_USERNAME=user-sentinel PITHEAD_OS_MONERO_NODE_PASSWORD=pass-sentinel || fail "refused on node credentials alone"
 guard PITHEAD_OS_MONERO_NODE_HOST="" || fail "refused with an empty node variable"
+
+(
+    source "$HERE/restore-live-state-verdict.sh" || exit 1
+    out=$(restore_live_state_verdict "dashboard caddy" "${OWNER_M}live" "$OWNER_M") && exit 2
+    case "$out" in *"$OWNER_M"*) exit 3 ;; esac
+) || fail "restore_live_state_verdict printed or accepted a wallet (exit $?)"
+
+run_sh="$HERE/run.sh"
+payout_line=$(grep -nx 'require_owner_payouts' "$run_sh" | head -1 | cut -d: -f1)
+host_line=$(grep -nx 'require_host' "$run_sh" | head -1 | cut -d: -f1)
+{ [ -n "$payout_line" ] && [ -n "$host_line" ] && [ "$payout_line" -lt "$host_line" ]; } ||
+    fail "run.sh does not call require_owner_payouts before require_host"
 
 if grep -nE '(^|[^A-Za-z_])\.?xvb\.donor_id *=|donor_id *:' "$HERE"/*.sh "$HERE"/phases/*.sh "$HERE"/lib/*.sh |
     grep -v '/selftest-' | grep -q .; then
