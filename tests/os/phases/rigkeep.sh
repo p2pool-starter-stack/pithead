@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154
 : "${OS_RUN_SUITE:?source via the suite runner}"
-_rigkeep_verdict() { # <before-json> <after-json>
+_rigkeep_verdict() {
     local before="$1" after="$2"
     jq -ne --argjson b "$before" --argjson a "$after" '
         ($a.role == "rig") and
@@ -27,7 +27,7 @@ _rigkeep_snapshot() {
             --argjson rig "$rig" \
             "{role:\$role,worker:\$rig.worker,pool:\$rig.pool,access_token:(\$rig.access_token // \"\"),miner_token:\$tok,marker:\$marker,containers:\$containers}"' 2>/dev/null
 }
-_rigkeep_commit_wait() { # <tries> — 0 once the new slot self-committed (A_OK=1 A_TRY=0)
+_rigkeep_commit_wait() {
     local n=0 genv=""
     while [ "$n" -lt "$1" ]; do
         genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
@@ -96,7 +96,7 @@ _rigkeep_run() {
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}"
-    # shellcheck disable=SC2034  # coord_user, coord_pass and rig_card are read through dynamic scope
+    # shellcheck disable=SC2034
     local coord_ip="" coord_user="" coord_pass="" rig_card="" adopted=0
     local before="" after="" marker="" genv="" img2="" token="" tries=0 jar="" scode="" hcode="" label=""
 
