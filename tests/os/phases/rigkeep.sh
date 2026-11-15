@@ -63,15 +63,16 @@ _rigkeep_adopt() {
         return 1
     }
     _setup_again_session || {
+        rm -f "$jar"
         bad "M13: no wizard session on the installed rig's set-up-again boot (#3995)"
         return 1
     }
-    new_card=$(_setup_again_rig_submit kvm-rig-share "$coord_ip:3333" .) || {
-        rm -f "$jar"
+    new_card=$(_setup_again_rig_submit kvm-rig-share "$coord_ip:3333" .)
+    rm -f "$jar"
+    [ -n "$new_card" ] || {
         bad "M13: re-pointing the installed rig at the coordinator failed (#3995)"
         return 1
     }
-    rm -f "$jar"
     printf '%s' "$new_card" | jq -e '.token | type == "string" and length > 0' >/dev/null || {
         bad "M13: no card token came back from the re-pointed rig (#3995)"
         return 1
@@ -180,18 +181,19 @@ _rigkeep_run() {
         return 1
     }
     scode=$(curl -sSk -b "$jar" --data "disk=vda&confirm=vda&wipe=keep" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
-    rm -f "$jar"
     [ "$scode" = "200" ] || {
+        rm -f "$jar"
         bad "M13: the Keep-everything submit returned ${scode:-none}, want 200 (#3995)"
         return 1
     }
     ok "M13: Keep everything accepted on the newer installer (#3995)"
     sleep 3
-    hcode=$(curl -sSk -o /dev/null -w '%{http_code}' -m 5 "https://$ip/api/handoff" 2>/dev/null)
+    hcode=$(curl -sSk -b "$jar" -o /dev/null -w '%{http_code}' -m 5 "https://$ip/api/handoff" 2>/dev/null)
+    rm -f "$jar"
     if [ "$hcode" = "404" ]; then
         ok "M13: Keep everything shows no credentials card — nothing is re-minted (#3995)"
     else
-        bad "M13: a handoff appeared on the Keep-everything reinstall (HTTP ${hcode:-none}) (#3995)"
+        bad "M13: no authenticated 404 on the Keep-everything handoff probe (HTTP ${hcode:-none}) (#3995)"
     fi
     tries=0
     while [ "$tries" -lt 90 ]; do
@@ -240,6 +242,16 @@ _rigkeep_run() {
     else
         bad "M13: identity drifted across Keep everything (was $(printf '%s' "$before" | jq -c 'del(.access_token, .miner_token)' 2>/dev/null), now $(printf '%s' "$after" | jq -c 'del(.access_token, .miner_token)' 2>/dev/null)) (#3995)"
     fi
+    genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
+    case "$genv" in *A_OK=1*) ok "M13: the reinstall seeded its slot good before the gate ran (#3995)" ;;
+    *) bad "M13: the reinstalled disk did not seed A_OK — grubenv: ${genv:-unreadable} (#3995)" ;; esac
+    _reboot_wait reboot 300 || {
+        bad "M13: the reinstalled rig never returned from the commit reboot (#3995)"
+        return 1
+    }
+    _rig_mining_up 24 &&
+        ok "M13: the reinstalled rig returns mining unaided after the commit reboot (#3995)" ||
+        bad "M13: the reinstalled rig stopped mining across the commit reboot (#3995)"
     genv=$(_rigkeep_commit_wait 18) &&
         ok "M13: the new image self-committed on the mining rig (A_OK=1 A_TRY=0) (#3995)" ||
         bad "M13: the new image never self-committed — grubenv: ${genv:-unreadable} (#3995)"
