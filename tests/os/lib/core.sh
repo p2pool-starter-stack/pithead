@@ -21,18 +21,11 @@ ip=""
 SSH_ERR="/tmp/pithead-os-ssh.err"
 HOST_SCRATCH="${TMPDIR:-/tmp}/pithead-os-scratch.$$"
 rm -f "$SERIAL.failed"
-# The wallet every phase submits. It must be checksum-VALID: p2pool refuses a well-formed but
-# checksum-invalid address at startup with a SIGABRT and crash-loops (#829), which killed the
-# provision phase's whole miner chain when the harness used `4` + 94×`A`. Host-side validation
-# only checks the shape, so the crash is the first honest verdict. XMRig's public donation
-# address: obviously not ours, plainly labelled, and any share it ever earned would be a donation.
+# Checksum-valid defaults (p2pool aborts on a bad checksum, #829); bench jobs override both with the owner's payouts.
 # shellcheck disable=SC2034  # shared through the assembled runner scope
-HARNESS_WALLET="44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
-# A real base58 Tari address: the wizard now decodes + checksum-validates it host-side, so a
-# made-up placeholder is (correctly) rejected before the flow ever reaches the credentials
-# handoff. Same throwaway address the stack suite uses.
+HARNESS_WALLET="${PITHEAD_OS_PAYOUT_MONERO:-44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg}"
 # shellcheck disable=SC2034  # shared through the assembled runner scope
-HARNESS_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+HARNESS_TARI="${PITHEAD_OS_PAYOUT_TARI:-126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ}"
 
 # Every remote call is bounded. CORRECTION (this comment used to claim Debian socket-activates sshd —
 # disproven): os/rootfs/Dockerfile only ever `systemctl enable`/`disable`s the plain ssh.service; no
@@ -269,6 +262,20 @@ _rollback_cmd() {
     printf 'rauc status mark-bad booted && reboot'
 }
 
+require_owner_payouts() {
+    local v node=0 missing=""
+    for v in PITHEAD_OS_MONERO_NODE_HOST PITHEAD_OS_TARI_NODE_HOST PITHEAD_OS_MONERO_NODE_USERNAME PITHEAD_OS_MONERO_NODE_PASSWORD; do
+        [ -z "${!v:-}" ] || node=1
+    done
+    [ "$node" = 1 ] || return 0
+    for v in PITHEAD_OS_PAYOUT_MONERO PITHEAD_OS_PAYOUT_TARI; do
+        [ -n "${!v:-}" ] || missing="$missing $v"
+    done
+    [ -z "$missing" ] || {
+        echo "refusing to run: node inputs are set but the owner payout variable(s) are empty:$missing" >&2
+        exit 2
+    }
+}
 require_host() {
     # timeout bounds every remote call (see _ssh) — without it each one dies 127 and the whole
     # run reads as a bricked guest, so it is a hard dependency, not a nicety.

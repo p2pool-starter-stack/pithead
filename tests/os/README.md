@@ -509,6 +509,14 @@ This is distinct from the remote-node row below, where a missing input stays a c
 **failure**: the classes are for rows the configuration excludes, never for inputs the bench
 forgot.
 
+Guests that reach real nodes can mine on mainnet, so every guest configured by the battery pays
+the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (bench-ci supplies the
+owner's addresses); without them the harness uses its labelled throwaway addresses. The run
+refuses before any guest exists when a node input (host, username or password) is set and either
+payout variable is empty, naming the variable and never a value. XvB keeps its default
+`xvb.donor_id` of `auto`, the first 8 characters of that Monero address, so XvB hash is the
+owner's; `selftest-owner-payouts.sh` fails if any guest config sets the donor id explicitly.
+
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_MONERO_ZMQ_PORT`, `PITHEAD_OS_TARI_NODE_HOST`, and
