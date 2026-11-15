@@ -166,6 +166,7 @@ are in `02f-tor-recovery-reasons.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
+The P2Pool zero-peer watchdog is `service/health/p2pool_heal.py`.
 The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
 the same host-gated recovery as the CLI.
 
@@ -384,6 +385,9 @@ The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated gue
 to prove saturated-history recovery and the disabled control with production timers, then
 `tor-heal-exhausted-guest.sh` to prove a spent NEWNYM budget still reaches the state reset on an
 unsaturated history.
+The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
+zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
+cuts a live P2Pool's peers.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,

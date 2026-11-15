@@ -141,6 +141,8 @@ source "$HERE/lib/run-faults.sh" || exit $?
 source "$HERE/lib/run-pool-sync-fault.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
 source "$HERE/lib/run-tor-probe-fault.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-pool-peer-loss.sh
+source "$HERE/lib/run-pool-peer-loss.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-egress-status.sh
 source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
