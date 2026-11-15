@@ -17,7 +17,7 @@ _rig_adopt_state() {
 
 _rig_adopt_snapshot() {
     local current pools ip="${rig_address:-$ip}"
-    current=$(_ssh "jq -er 'if has(\"max_temp_c\") then (.max_temp_c | if . == null then \"null\" elif type == \"number\" and . >= 0 and . <= 100 then . else error(\"bad\") end) else \"unset\" end' /data/rigforge/config.json") || return 1
+    current=$(_ssh "jq -er '(.watchdog_interval_min // 5) | if type == \"number\" and . == floor and . >= 1 and . <= 1440 then . else error(\"bad\") end' /data/rigforge/config.json") || return 1
     pools=$(_ssh "set -o pipefail; jq -ceS '.pools | select(type == \"array\" and length > 0)' /data/rigforge/config.json | sha256sum") || return 1
     printf '%s %s\n' "$current" "${pools%% *}"
 }
@@ -25,7 +25,7 @@ _rig_adopt_snapshot() {
 _rig_adopt_apply() {
     local value="$1" pools="$2" result snapshot deadline change_id status detail
     result=$(dashboard_control_request worker-apply "$(jq -nc --argjson value "$value" \
-        '{worker:"kvm-rig-share",changes:{max_temp_c:$value}}')" 240) || return 1
+        '{worker:"kvm-rig-share",changes:{watchdog_interval_min:$value}}')" 240) || return 1
     printf '%s' "$result" | jq -e '.status | IN("accepted", "applied")' >/dev/null || return 1
     change_id=$(printf '%s' "$result" | jq -er '.change_id | strings | select(test("^[0-9a-f]{16}$"))') || return 1
     deadline=$(($(date +%s) + 90))
@@ -58,28 +58,8 @@ _rig_adopt_apply() {
     return 1
 }
 
-_rig_adopt_restore() {
-    local original="$1" pools="$2" filter
-    case "$original" in
-    unset) filter='del(.max_temp_c)' ;;
-    null) filter='.max_temp_c = null' ;;
-    *)
-        _rig_adopt_apply "$original" "$pools"
-        return
-        ;;
-    esac
-    local ip="${rig_address:-$ip}"
-    _ssh "set -eu
-cd /data/rigforge
-umask 077
-staging=\$(mktemp config.json.restore.XXXXXX)
-jq '$filter' config.json > \"\$staging\"
-mv \"\$staging\" config.json" || return 1
-    [ "$(_rig_adopt_snapshot)" = "$original $pools" ]
-}
-
 _rig_adopt_round_trip() (
-    trap '_rig_adopt_restore "$original" "$pools" && printf "restored\n" || { printf "restore-failed\n"; exit 1; }' EXIT
+    trap '_rig_adopt_apply "$original" "$pools" && printf "restored\n" || { printf "restore-failed\n"; exit 1; }' EXIT
     trap 'exit 1' INT TERM
     _rig_adopt_apply "$probe" "$pools" || exit 1
     printf 'changed\n'
@@ -96,7 +76,7 @@ rig_adopt_leg() {
     }
     ok "M12: the coordinator shows the rig as not adopted (#3069)"
     baseline=$(_rig_adopt_snapshot) || {
-        bad "M12: original max_temp_c and pools could not be recorded (#3069)"
+        bad "M12: original watchdog_interval_min and pools could not be recorded (#3069)"
         return 1
     }
     read -r original pools <<<"$baseline"
@@ -132,16 +112,17 @@ mv "$staging" config.json
     }
     ok "M12: preview and typed APPLY adopt the rig with its API reachable (#3069)"
     local ip="$coord_ip"
-    probe=77
-    [ "$original" != 77 ] || probe=78
+    # A probe key the control path can set and restore exactly, with no effect on hashing, donation or identity.
+    probe=7
+    [ "$original" != 7 ] || probe=8
     flags=$(_rig_adopt_round_trip) || trip_rc=$?
     case "$flags" in *changed*) changed=1 ;; esac
     case "$flags" in *restored*) restored=1 ;; esac
     ip="$rig_address"
-    [ "$changed" = 1 ] && ok "M12: coordinator max_temp_c write applied on the rig with unchanged pools (#3069)" ||
-        bad "M12: coordinator max_temp_c write or unchanged pools assertion failed (#3069)"
-    [ "$restored" = 1 ] && ok "M12: original max_temp_c restored with unchanged pools (#3069)" ||
-        bad "M12: original max_temp_c restoration failed (#3069)"
+    [ "$changed" = 1 ] && ok "M12: coordinator watchdog_interval_min write applied on the rig with unchanged pools (#3069)" ||
+        bad "M12: coordinator watchdog_interval_min write or unchanged pools assertion failed (#3069)"
+    [ "$restored" = 1 ] && ok "M12: original watchdog_interval_min restored with unchanged pools (#3069)" ||
+        bad "M12: original watchdog_interval_min restoration failed (#3069)"
     local code
     code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' "http://$rig_address:8082/status" 2>/dev/null) || true
     if [ "$code" != 000 ]; then

@@ -74,9 +74,10 @@ physically backed, so the `doctor` line here stays hardware-only too.*
 after the accepted-share rows. It uses the existing two guests, enables the coordinator control
 channel, previews and commits an adoption with typed `APPLY`, and polls for an adopted worker with
 a reachable API. Worker descriptors reload on each poll; adoption does not require a separate
-dashboard restart. The leg changes `max_temp_c`, waits for the matching `change_id` in worker history
-to reach `applied`, checks the rig's own config and unchanged pools, restores the original effective
-value (read from the rig's reported config when the raw key is absent), and checks that the unpinned
+dashboard restart. The leg changes `watchdog_interval_min` (a key that never reaches the hash destination, donation or worker identity, and applies without restarting the miner), waits for the matching `change_id` in worker history
+to reach `applied`, checks the rig's own config and unchanged pools, and restores the original effective
+value through the same control path (5 when the raw key is absent or null, because RigForge's control path
+can set but never delete a key, so a raw key that was absent reads back as 5 after the restore). It then checks that the unpinned
 bench host still cannot reach the control port. It prints elapsed seconds without the card token.
 The form and inspector clicks remain manual.*
 

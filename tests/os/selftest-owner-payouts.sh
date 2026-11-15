@@ -157,4 +157,33 @@ grep -q 'submit did not return 200.*"\$sbody" | os_redact_addr | cut' "$HERE/pha
     case "$out" in *'033['*) ;; *) exit 10 ;; esac
 ) || fail "os_redact_addr leaves an address in a log line (exit $?)"
 
+(
+    source "$HERE/lib/redact-addr.sh" || exit 1
+    addr="4$(printf 'A%.0s' $(seq 94))"
+    fifo_dir=$(mktemp -d)
+    trap 'rm -f "$fifo_dir/out"; rmdir "$fifo_dir"' EXIT
+    mkfifo "$fifo_dir/in"
+    os_redact_addr_lines <"$fifo_dir/in" >"$fifo_dir/out" &
+    pid=$!
+    exec 3>"$fifo_dir/in"
+    printf 'live %s\n' "$addr" >&3
+    for _ in $(seq 50); do
+        [ -s "$fifo_dir/out" ] && break
+        sleep 0.1
+    done
+    [ -s "$fifo_dir/out" ] || exit 2
+    ! grep -q AAAAAAAAAAAAAAAAAAAA "$fifo_dir/out" || exit 3
+    printf 'tail %s' "$addr" >&3
+    exec 3>&-
+    wait "$pid" || exit 4
+    ! grep -q AAAAAAAAAAAAAAAAAAAA "$fifo_dir/out" || exit 5
+    [ "$(wc -l <"$fifo_dir/out")" -eq 2 ] || exit 6
+    rm -f "$fifo_dir/in"
+) || fail "os_redact_addr_lines holds back a live line or leaks an address (exit $?)"
+grep -q '| os_redact_addr_lines' "$HERE/phases/image-upgrade.sh" ||
+    fail "the image-upgrade guest stream is not redacted line by line"
+grep -q 'os_redact_addr | tail -c' "$HERE/phases/tor-heal.sh" &&
+    grep -q 'scrub <"$logfile" | tail -c' "$HERE/tor-heal-guest.sh" ||
+    fail "tor-heal output is cut by bytes before redaction"
+
 echo 'selftest-owner-payouts: PASS (overrides, fallbacks, early refusal, no values echoed, no donor id, no stray wallet literal)'

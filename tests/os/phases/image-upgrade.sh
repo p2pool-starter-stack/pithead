@@ -4,6 +4,8 @@
 IMAGE_UPGRADE_HOST_STAGE=""
 
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/input-failure.sh"
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/redact-addr.sh"
 _image_upgrade_input_failure() { image_upgrade_input_failure "$@"; }
 
 _image_upgrade_input_run() { # <sub-step> <redacted-command> <command...>
@@ -234,10 +236,9 @@ phase_image_upgrade() {
         bad "could not stage the private upgrade inputs inside the guest"
         return
     }
-    _ssh "bash /run/pithead-image-upgrade/image-upgrade-guest.sh $head" || {
-        rc=$?
-        guest_failure="$(_image_upgrade_read_guest_failure || true)"
-    }
+    _ssh "bash /run/pithead-image-upgrade/image-upgrade-guest.sh $head" | os_redact_addr_lines
+    rc=${PIPESTATUS[0]}
+    [ "$rc" -eq 0 ] || guest_failure="$(_image_upgrade_read_guest_failure || true)"
     miner_readiness="$(_image_upgrade_read_miner_readiness || true)"
     _image_upgrade_clear_guest_inputs || cleanup_rc=1
     if [ -n "$miner_readiness" ]; then

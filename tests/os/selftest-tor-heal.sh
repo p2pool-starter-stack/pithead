@@ -86,8 +86,8 @@ printf 'apply completed\n'
 STUB
     chmod +x pithead
     printf 'omitted-log-prefix\n' >"$work/diagnostic.log"
-    head -c 5000 /dev/zero | tr '\0' x >>"$work/diagnostic.log"
-    printf '\nretained-log-tail\n' >>"$work/diagnostic.log"
+    head -c 5000 /dev/zero | tr '\0' _ >>"$work/diagnostic.log"
+    printf '\nretained-log-tail --wallet 4%s\n' "$(head -c 94 /dev/zero | tr '\0' A)" >>"$work/diagnostic.log"
     # shellcheck disable=SC2034 # extracted restore() reads this guest global.
     sink_started=$3
     systemctl() {
@@ -99,7 +99,7 @@ STUB
         if [ "$*" = 'compose stop tor' ]; then return "$stop_rc"; fi
     }
     stop_rc=$2
-    eval "$(sed -n '/^restore() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
+    eval "$(sed -n '/^scrub() {/p;/^restore() {/,/^}/p' "$ROOT/tests/os/tor-heal-guest.sh")"
     trap restore EXIT
     exit "$1"
 )
@@ -111,6 +111,8 @@ grep -q 'Guest restoration exit: 0; original exit: 17' "$work/restore-original-f
 grep -q 'Guest command log: restore.log' "$work/restore-original-failure"
 grep -q 'retained-log-tail' "$work/restore-original-failure"
 if grep -q 'omitted-log-prefix' "$work/restore-original-failure"; then exit 1; fi
+if grep -q 'AAAAAAAAAAAAAAAAAAAA' "$work/restore-original-failure"; then exit 1; fi
+grep -q '\[redacted-address\]' "$work/restore-original-failure"
 [ ! -e "$work/restore-17-0/sink-stopped" ]
 if restore_case 0 19 1 >"$work/restore-failure"; then exit 1; else [ "$?" = 1 ]; fi
 grep -q 'Guest restoration exit: 1; original exit: 0' "$work/restore-failure"
