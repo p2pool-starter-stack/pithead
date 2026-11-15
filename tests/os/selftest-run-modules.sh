@@ -43,6 +43,8 @@ source "$HERE/phases/update.sh" || exit $?
 source "$HERE/phases/update-dashboard.sh" || exit $?
 # shellcheck source=tests/os/phases/update-healthgate-leg.sh
 source "$HERE/phases/update-healthgate-leg.sh" || exit $?
+# shellcheck source=tests/os/phases/update-wedged-tor-legs.sh
+source "$HERE/phases/update-wedged-tor-legs.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$HERE/phases/install.sh" || exit $?
 source "$HERE/phases/provision.sh" || exit $?
@@ -79,13 +81,11 @@ grep -Fq '"$SCRIPT_DIR/../integration/run.sh" --host' "$HERE/phases/stack.sh" ||
     exit 1
 }
 trap - EXIT
-if (
+if ! (
     PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083 \
         PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example
     _image_upgrade_inputs_valid
 ); then
-    :
-else
     echo "image-upgrade rejected the complete remote-node contract" >&2
     exit 1
 fi
