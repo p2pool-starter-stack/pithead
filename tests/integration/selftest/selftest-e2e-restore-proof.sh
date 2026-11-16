@@ -77,6 +77,8 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
             echo proof >>"${ALL_LOG:-/dev/null}"
             return 0
         }
+        wait_restore_mining_ready() { return 0; }
+        recheck_restore_mining() { return 0; }
         wallet_fixture_restore() { :; }
         wallet_fixture_verify() { :; }
         chain_restore_prepare() { echo chain_restore_prepare >>"${ALL_LOG:-/dev/null}"; }
