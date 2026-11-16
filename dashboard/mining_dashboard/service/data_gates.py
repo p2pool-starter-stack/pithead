@@ -49,6 +49,8 @@ def chain_synced(sync):
 class DataGateMixin:
     _rejected_at = None
     _readmit_wait = None
+    _stop_logged = False
+    _start_failed = False
 
     def _restore_sync_gate(self):
         """Tari-only resets preserve an earned release; full resets revoke it."""
@@ -91,6 +93,9 @@ class DataGateMixin:
         reasons = []
         if self.mining_guard.pause:
             reasons.append(self.mining_guard.pause["reason"])
+        pending = [k for k in self.mining_guard.holding_keys if k not in self.mining_guard.active]
+        if pending:
+            reasons.append("also holding inside its grace: " + ", ".join(pending))
         if monero_down:
             reasons.append("Monero node unreachable past the debounce")
         if _runtime().TARI_REQUIRED and tari_down:
@@ -106,7 +111,7 @@ class DataGateMixin:
         if self.mining_guard.holding:
             blockers.append(
                 "guard triggers still holding or recovering: "
-                + (", ".join(self.mining_guard.holding_keys) or "none")
+                + ", ".join(self.mining_guard.holding_keys)
             )
         return "; ".join(blockers)
 
@@ -120,15 +125,19 @@ class DataGateMixin:
         if required_down:
             self._readmit_wait = None
             if not self.workers_rejected:
-                logger.warning(
-                    f"Mining work is not valid ({self._rejection_reasons(monero_down, tari_down)}) — "
-                    f"stopping {container} so workers fail over to their backup pools."
-                )
+                if not self._stop_logged:
+                    self._stop_logged = True
+                    logger.warning(
+                        f"Mining work is not valid ({self._rejection_reasons(monero_down, tari_down)}) — "
+                        f"stopping {container} so workers fail over to their backup pools."
+                    )
                 if await self.docker_control.stop(container):
                     self.workers_rejected = True
+                    self._stop_logged = False
                     self._rejected_at = time.monotonic()
             return
 
+        self._stop_logged = False
         recovered = (
             self.monero_health.healthy
             and (not _runtime().TARI_REQUIRED or self.tari_health.healthy)
@@ -147,6 +156,7 @@ class DataGateMixin:
             since = self._rejected_at
             self._rejected_at = None
             self._readmit_wait = None
+            self._start_failed = False
             elapsed = (
                 f"{int(time.monotonic() - since)}s after it was stopped"
                 if since is not None
@@ -155,6 +165,9 @@ class DataGateMixin:
             logger.info(
                 f"Required nodes recovered — started {container} to readmit workers, {elapsed}."
             )
+        elif not self._start_failed:
+            self._start_failed = True
+            logger.warning(f"Readmitting workers failed: {container} did not start; retrying.")
 
     async def _stop_gate_containers(self, quiet):
         """Stop every ``SYNC_GATE_CONTAINERS`` container; shared by the #35 sync gate and the
