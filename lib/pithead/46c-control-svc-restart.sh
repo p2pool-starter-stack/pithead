@@ -2,6 +2,7 @@ readonly PITHEAD_SVC_RESTART_SERVICES="tor monerod wallet-rpc tari tari-wallet p
 readonly PITHEAD_SVC_RESTART_COOLDOWN_S=120
 readonly PITHEAD_SVC_RESTART_EX_GUARD=11
 readonly PITHEAD_SVC_RESTART_EX_COOLDOWN=12
+readonly PITHEAD_SVC_RESTART_EX_REDIAL=13
 
 control_svc_restart_locked() (
     local cdir="$1" service="$2" logf="$3" stamp last now
@@ -15,6 +16,7 @@ control_svc_restart_locked() (
     [ $((now - last)) -ge "$PITHEAD_SVC_RESTART_COOLDOWN_S" ] || exit "$PITHEAD_SVC_RESTART_EX_COOLDOWN"
     docker compose restart "$service" >"$logf" 2>&1 || exit 1
     printf '%s\n' "$now" >"$stamp"
+    [ "$service" != tor ] || (stack_redial_monerod) >>"$logf" 2>&1 || exit "$PITHEAD_SVC_RESTART_EX_REDIAL"
 )
 
 control_svc_restart() {
@@ -43,6 +45,12 @@ control_svc_restart() {
     "$PITHEAD_EX_LOCK_TIMEOUT") error="Another pithead operation is in progress; try again when it has finished." ;;
     "$PITHEAD_SVC_RESTART_EX_GUARD") error="The LAN-only source rule for the published ports is not in place, so a restart is refused. Run './pithead up' on the host." ;;
     "$PITHEAD_SVC_RESTART_EX_COOLDOWN") error="$service was restarted less than ${PITHEAD_SVC_RESTART_COOLDOWN_S}s ago; wait before restarting it again." ;;
+    "$PITHEAD_SVC_RESTART_EX_REDIAL")
+        control_write_result "$results" "$id" "$(jq -n '{status:"failed",action:"svc-restart",container:"tor",error:"tor restarted, but Tor did not report bootstrapped within the wait or monerod could not be restarted, so monerod may still hold dead peer connections. Restart monerod once Tor is healthy.",ts:(now|floor)}')"
+        control_audit "$auditf" "$id" "$actor" "svc-restart" "failed" "$service"
+        rm -f "$logf"
+        return 0
+        ;;
     *)
         error="The restart of $service failed on the host: $(tail -c 1500 "$logf" 2>/dev/null | bundle_redact_log)"
         control_write_result "$results" "$id" "$(jq -n --arg s "$service" --arg e "$error" '{status:"failed",action:"svc-restart",container:$s,error:$e,ts:(now|floor)}')"

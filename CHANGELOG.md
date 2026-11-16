@@ -15,8 +15,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - The host control channel has `power-reboot` and `power-shutdown` actions for an appliance. The host
   checks the typed `REBOOT` or `SHUTDOWN` word, refuses during an OS update or its uncommitted-slot
-  window, stops the stack cleanly, then runs `systemctl reboot` or `poweroff` (#4084, host half of #4052).
-
+  window, stops the stack, then runs `systemctl reboot` or `poweroff` (#4084, host half of #4052).
+- The Service diagnostics card has a **Restart all** button (typed `RESTART`, refused during an OS
+  update, an uncommitted slot, a held host lock or a restart in the last two minutes, and riding out the dashboard's own restart) and a
+  **Reset Tor state** button on the Tor card that runs the existing gated Tor recovery with its own
+  30-minute budget and returns the gate's refusal reason (#4064, #4063).
 - The dashboard and the configuration view now open on a sign-in page instead of the browser's
   password prompt. It has a "Remember me" box (30 days, renewed while in use; otherwise the session
   ends when the browser closes or after 8 hours idle) and a "Sign out" button. Changing the password
@@ -32,6 +35,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   previous version unspent for a copy that is genuinely broken. That includes the case where
   `compose up` itself refuses because Tor is unhealthy: the boot now goes on to the gate window
   instead of rebooting at once (#4049).
+- `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
+  bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
+  instead of staying at 0 peers when compose did not cycle it (#4063); a bare restart and Restart all then also restart the tari container, when the stack has one, so it starts after Tor (#4064).
 - A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
   changed version or the first successful refresh after the disconnected banner, shows "Pithead was
   updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2
