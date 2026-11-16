@@ -1726,7 +1726,7 @@ header the other control posts need.
 4. Click **Export logs**. The card shows that the host is collecting (a few minutes on a busy
    machine) and the download starts by itself when the zip is ready, as
    `support-bundle-<UTC timestamp>.zip`. Afterwards the card shows the window that came back in
-   the manifest, and a **Download again** link that works for about an hour.
+   the manifest, and a **Download again** link that works for at least an hour.
 5. To report a bug, open a [new issue](https://github.com/p2pool-starter-stack/pithead/issues/new),
    describe what you saw and when, and drag the zip into the comment box. GitHub accepts files up
    to 25 MB; for a larger zip, ask in the issue how to share it. The zip is redacted on the host,

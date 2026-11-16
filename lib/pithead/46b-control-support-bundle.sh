@@ -46,10 +46,9 @@ print(w["effective"]["since"],w["effective"]["until"],"1" if w["journal_short"] 
 }
 
 control_support_range() {
-    local id="$2" actor="$3" cdir="$4"
+    local id="$2" cdir="$4"
     local results="$cdir/results" epoch="" oldest="null"
     command -v journalctl >/dev/null 2>&1 && epoch=$(bundle_support_oldest_epoch)
     [ -z "$epoch" ] || oldest=$(jq -n --arg o "$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ)" '$o')
     control_write_result "$results" "$id" "$(jq -n --argjson o "$oldest" '{status:"applied",oldest:$o,ts:(now|floor)}')"
-    control_audit "$cdir/audit/control.log" "$id" "$actor" "support-bundle-range" "applied"
 }

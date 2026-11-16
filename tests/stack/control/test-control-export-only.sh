@@ -21,7 +21,7 @@ sb_run "$(sb_req "$rid1" support-bundle-range)"
 assert_eq "the range verb applies" "$(jq -r .status "$SB/results/$rid1.json")" "applied"
 assert_eq "the range names the oldest entry as an RFC 3339 UTC time" \
     "$(jq -r '.oldest | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$")' "$SB/results/$rid1.json")" "true"
-assert_contains "the range verb is audited" "$(cat "$SB/audit/control.log")" '"action":"support-bundle-range","status":"applied"'
+assert_not_contains "the read-only range verb writes no audit row" "$(cat "$SB/audit/control.log")" "support-bundle-range"
 
 echo "== control channel: with the switch off the runner serves only the export (#4129) =="
 oid1="c412c412-0000-4000-8000-000000000004"

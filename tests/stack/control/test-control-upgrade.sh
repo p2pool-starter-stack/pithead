@@ -350,7 +350,6 @@ assert_eq "upgrade on a source checkout is rejected" "$(jq -r '.status' "$RESULT
 assert_contains "source-checkout refusal points at git pull" "$(jq -r '.error' "$RESULTS/$UUPG.json" 2>/dev/null)" "git pull"
 rm -f "$RESULTS/$UUPG.json"
 
-# Channel off: the runner serves only the support bundle export; every other intent is claimed and rejected.
 seed_upgrade_env false
 reset_upgrade_state
 upgrade_intent "$UUPG" "v9.9.9"
@@ -785,7 +784,6 @@ assert_eq "verifier-missing refusal downloads no bundle" "$(grep -c 'releases/do
 rm -f "$UPG/cosign.pub" "$UPG/nodocker/jq"
 reset_upgrade_state
 
-# The runner no longer exits when the channel is off; it serves only the export.
 control_config main
 "$C/bin/docker" >/dev/null 2>&1 || true
 sed -i.bak 's/"control":{"enabled":true}/"control":{"enabled":false}/' "$C/config.json" 2>/dev/null || true

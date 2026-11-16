@@ -4,6 +4,8 @@ const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control
 const POLL_MS = 2000;
 const BUNDLE_POLL_MAX = 450;
 const RANGE_POLL_MAX = 15;
+const RANGE_CACHE_MS = 300000;
+let rangeCache = null;
 const BUNDLE_TIMEOUT =
   "Stopped waiting for the support bundle. The host keeps collecting, but this dashboard did not return; reload, then export again only after the earlier request has finished.";
 
@@ -118,8 +120,15 @@ export class SupportBundlePanel extends Component {
   }
 
   componentDidMount() {
+    if (rangeCache && Date.now() - rangeCache.at < RANGE_CACHE_MS) {
+      this.setState({ oldest: rangeCache.oldest });
+      return;
+    }
     fetchOldest()
-      .then((oldest) => this.setState({ oldest }))
+      .then((oldest) => {
+        rangeCache = { oldest, at: Date.now() };
+        this.setState({ oldest });
+      })
       .catch(() => {});
   }
 
@@ -202,7 +211,7 @@ export class SupportBundlePanel extends Component {
         ${
           phase === "done" && result
             ? html`<p class="text-muted text-xs" role="status">Downloaded
-              <span class="font-mono">${result.archive}</span> — window
+              <span class="font-mono">${result.archive}</span> — ${result.effective_since ? "window" : "requested window"}
               ${shown(result.effective_since || result.since)} to
               ${shown(result.effective_until || result.until)}${
                 result.journal_short
