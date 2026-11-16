@@ -129,7 +129,7 @@ bundle_support_collect() {
         cat /etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf 2>/dev/null || true) |
         grep -vE '^[[:space:]]*(#|;|$)' | bundle_redact_log || true)
     jsince=$(bundle_support_jtime "$eff_since")
-    juntil=$(bundle_support_jtime "$until")
+    juntil=$(bundle_support_jtime "$(date -u -d "$until + 1 second" +%Y-%m-%dT%H:%M:%SZ)")
 
     {
         echo "window_requested=$since/$until"

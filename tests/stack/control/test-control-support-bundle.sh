@@ -241,6 +241,15 @@ assert_not_contains "a line after the window is absent from the kernel file" \
 assert_eq "the manifest records the window that was asked for" \
     "$(sb_man "$SB/extract2" '(.window.requested.until | fromdate) - (.window.requested.since | fromdate)')" "9000"
 
+echo "== control channel: the end second is included whole, so the newest lines are not cut =="
+sidI="c403c403-0000-4000-8000-000000000012"
+rm -f "$SB/journal.log"
+sb_run "$(sb_req "$sidI" support-bundle ',"since":"2026-11-10T09:00:00Z","until":"2026-11-10T10:00:00Z"')"
+assert_contains "journalctl is asked to stop at the end of the requested second" \
+    "$(cat "$SB/journal.log")" "--until 2026-11-10 10:00:01 UTC"
+assert_eq "the manifest still records the requested end as asked" \
+    "$(jq -r .until "$SB/results/$sidI.json")" "2026-11-10T10:00:00Z"
+
 echo "== control channel: a start older than the oldest retained entry is clamped and flagged =="
 sid3="c403c403-0000-4000-8000-000000000003"
 sb_run "$(sb_req "$sid3" support-bundle ",\"since\":\"$(sb_iso -432000)\"")"
