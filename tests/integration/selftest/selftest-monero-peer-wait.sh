@@ -105,6 +105,10 @@ PEERS=""
 _pred_monero_zero_out && it_fail "no reading is not zero" "zero_out true with no helper output" || it_pass "no reading is not zero"
 _pred_monero_has_peers && it_fail "no reading is not peers" "has_peers true with no helper output" || it_pass "no reading is not peers"
 
+echo "== the restart predicate compares monerod's start time =="
+_pred_monerod_restarted_since T && it_fail "an unchanged start time is no restart" "restarted true at T" || it_pass "an unchanged start time is no restart"
+_pred_monerod_restarted_since OLD && it_pass "a changed start time is a restart" || it_fail "a changed start time is a restart" "restarted false"
+
 echo "== the RPC boundary rows =="
 boundary() { assert_monero_rpc_boundary 2>&1; }
 PEERS='{"outgoing":3,"incoming":0,"white":1,"grey":1}'
