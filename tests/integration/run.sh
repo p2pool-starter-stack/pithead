@@ -148,6 +148,8 @@ source "$HERE/lib/run-pool-peer-loss.sh" || exit $?
 source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-stack-actions.sh
+source "$HERE/lib/run-stack-actions.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-svc-restart.sh
 source "$HERE/lib/run-svc-restart.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
