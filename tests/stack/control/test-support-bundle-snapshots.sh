@@ -214,7 +214,7 @@ for f in doctor.json status/monerod.json status/tari.json status/p2pool.json tor
     network/networkctl.txt network/ip-addr.txt network/ip-route.txt network/resolvectl.txt network/nft-ruleset.txt \
     time/timedatectl.txt time/sync-units.txt containers/ps-a.txt containers/images.txt rauc.txt rauc-detailed.txt \
     boot-slot.txt coredumps.txt caddy/access.log support-dir/console-1.txt support-dir/sub/console-2.txt \
-    state-markers.txt dashboard/history.jsonl; do
+    state-markers.txt dashboard-history.jsonl; do
     assert_eq "$f is present and non-empty" "$([ -s "$B/$f" ] && echo yes || echo no)" "yes"
 done
 assert_eq "a clean snapshot collection records no failed step, doctor's own nonzero verdict included" \
@@ -269,11 +269,11 @@ assert_contains "the console capture went through the redactor" "$(cat "$B/suppo
 
 echo "== support bundle snapshots: the dashboard export has no row cap and covers every table =="
 assert_eq "all 6000 history rows in the window are exported" \
-    "$(jq -r 'select(.table == "history" and .row.t == "x") | 1' "$B/dashboard/history.jsonl" | wc -l | tr -d ' ')" "6000"
-assert_not_contains "a history row outside the window is absent" "$(cat "$B/dashboard/history.jsonl")" '"t": "old"'
-assert_contains "ping_failures are exported" "$(cat "$B/dashboard/history.jsonl")" '"table": "ping_failures"'
-assert_contains "the control audit events are exported" "$(cat "$B/dashboard/history.jsonl")" '"action": "support-bundle"'
-assert_contains "a table the database lacks is a recorded row, not silence" "$(cat "$B/dashboard/history.jsonl")" '"table": "share_stats"'
+    "$(jq -r 'select(.table == "history" and .row.t == "x") | 1' "$B/dashboard-history.jsonl" | wc -l | tr -d ' ')" "6000"
+assert_not_contains "a history row outside the window is absent" "$(cat "$B/dashboard-history.jsonl")" '"t": "old"'
+assert_contains "ping_failures are exported" "$(cat "$B/dashboard-history.jsonl")" '"table": "ping_failures"'
+assert_contains "the control audit events are exported" "$(cat "$B/dashboard-history.jsonl")" '"action": "support-bundle"'
+assert_contains "a table the database lacks is a recorded row, not silence" "$(cat "$B/dashboard-history.jsonl")" '"table": "share_stats"'
 
 echo "== support bundle snapshots: no seeded secret reaches any new file =="
 for secret in SEEDEDCOOKIE SEEDEDAUTHBASIC SEEDEDSETCOOKIE SEEDEDURLTOKEN SEEDEDBARETOKEN SEEDEDPATHTOKENSEEDEDPATHTOKEN SEEDEDSTATEKEY SEEDEDED25519SECRET \
@@ -288,8 +288,8 @@ grep -v '^DASHBOARD_DATA_DIR=' "$sn_env" >"$SN/env2"
 sn_run "$snid2" ok "PITHEAD_ENV_FILE=$SN/env2" "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1" "PITHEAD_SUPPORT_DIR=$SN/nodir"
 sb_unzip "$SB/results/$snid2.zip" "$SN/x2"
 assert_eq "the absent database is a skipped step in the manifest" \
-    "$(sb_man "$SN/x2" '[.failures[] | select(.step == "dashboard/history.jsonl") | .status] | first')" "skipped"
-assert_contains "the file says why" "$(cat "$SN/x2/bundle/dashboard/history.jsonl")" "no dashboard database"
+    "$(sb_man "$SN/x2" '[.failures[] | select(.step == "dashboard-history.jsonl") | .status] | first')" "skipped"
+assert_contains "the file says why" "$(cat "$SN/x2/bundle/dashboard-history.jsonl")" "no dashboard database"
 assert_eq "an absent support directory is a skipped step in the manifest" \
     "$(sb_man "$SN/x2" '[.failures[] | select(.step == "support-dir/README.txt") | .status] | first')" "skipped"
 

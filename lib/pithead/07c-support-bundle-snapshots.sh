@@ -393,8 +393,8 @@ bundle_support_snapshots() {
     [ -f "$db" ] || db="/data/pithead/dashboard/mining_data.db"
     [ -f "$db" ] || db="/data/mining_data.db"
     if [ -f "$db" ]; then
-        bundle_support_snap "$tmp" dashboard/history.jsonl python3 -I "$py" history "$db" "$_BS_SINCE_EPOCH" "$_BS_UNTIL_EPOCH"
+        bundle_support_snap "$tmp" dashboard-history.jsonl python3 -I "$py" history "$db" "$_BS_SINCE_EPOCH" "$_BS_UNTIL_EPOCH"
     else
-        bundle_support_snap_skip "$tmp" dashboard/history.jsonl "no dashboard database was found on this box"
+        bundle_support_snap_skip "$tmp" dashboard-history.jsonl "no dashboard database was found on this box"
     fi
 }
