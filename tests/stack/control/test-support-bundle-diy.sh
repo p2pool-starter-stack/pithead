@@ -11,7 +11,7 @@ cat >"$DB/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 [ -z "${DB_ENGINE_DOWN:-}" ] || { echo "Cannot connect to the Docker daemon" >&2; exit 1; }
 case "$*" in
-"compose ps --all --format {{.Name}}") printf 'stack-alpha-1\nstack-beta-1\n' ;;
+"compose ps --all --format {{.Name}}") echo "WARN the attribute version is obsolete" >&2; printf 'stack-alpha-1\nstack-beta-1\n' ;;
 "compose ps --all") printf 'NAME STATUS\nstack-alpha-1 running\nstack-beta-1 exited\n' ;;
 logs*)
     echo "$*" >>"$DB_DOCKER_LOG"
@@ -66,7 +66,7 @@ db_run() {
         set +e
         log() { :; }
         doctor_json() {
-            echo 'doctor report' >&2
+            echo "doctor report onion $DB_ONION" >&2
             echo '{"checks":[],"summary":{}}'
         }
         render_masked_config() {
@@ -116,6 +116,8 @@ assert_eq "appliance-only sources are not collected" \
     "$(db_man "$DB/x1" '[.files[].path] | map(select(startswith("journal/") or . == "rauc.txt")) | length')" "0"
 assert_eq "the manifest has the same top-level fields as the appliance zip" \
     "$(db_man "$DB/x1" '[has("manifest_version","pithead_version","collected_at","window","journald","size_policy","files","failures")] | all')" "true"
+assert_eq "a compose warning on stderr is not taken for a container" \
+    "$(db_man "$DB/x1" '[.files[].path | select(startswith("containers/"))] | length')" "2"
 assert_eq "a clean collection records no failed step" "$(db_man "$DB/x1" '.failures | length')" "0"
 assert_eq "a container file has an ok state and a window in the manifest" \
     "$(db_man "$DB/x1" '.files[] | select(.path == "containers/stack-alpha-1.log") | (.state == "ok") and (.window.until != null)')" "true"
@@ -147,3 +149,22 @@ assert_contains "a future end is refused" "$(db_run --until "$(db_iso 7200)")" "
 assert_contains "an unparsable time is refused" "$(db_run --since yesterday)" "RFC 3339"
 assert_contains "an unknown option is refused with usage" "$(db_run --bogus x)" "Usage: pithead support-bundle"
 assert_contains "--hours still works" "$(db_run --hours 5)" "RC:0"
+
+echo "== support-bundle (DIY): the dashboard control request builds the same zip (#4130) =="
+mkdir -p "$DB/ctl/results" "$DB/ctl/audit" "$DB/ctl/staged"
+printf '{"id":"d4130d41-0000-4000-8000-000000000001","action":"support-bundle","actor":"admin","since":"%s","until":"%s"}\n' \
+    "$(db_iso -7200)" "$(db_iso -600)" >"$DB/ctl/req.json"
+(
+    export PATH="$DB/bin:$PATH" PITHEAD_APPLIANCE=0 DB_ADDR DB_ONION DB_DOCKER_LOG="$DB/docker.log"
+    bash -Eeuo pipefail -c '
+        cd "$1"
+        source "$2"
+        doctor_json() { echo "{\"checks\":[]}"; }
+        render_masked_config() { return 0; }
+        control_process_request "$3" "$4"
+    ' _ "$DB/work" "$STACK" "$DB/ctl/req.json" "$DB/ctl"
+) >/dev/null 2>&1
+assert_eq "the control request applies" "$(jq -r .status "$DB/ctl/results/d4130d41-0000-4000-8000-000000000001.json")" "applied"
+db_unzip "$DB/ctl/results/d4130d41-0000-4000-8000-000000000001.zip" "$DB/x3"
+assert_contains "the control zip carries a container log" "$(cat "$DB/x3/bundle/containers/stack-beta-1.log")" "beta: stopped container marker"
+assert_contains "the control zip carries a DIY unit journal" "$(cat "$DB/x3/bundle/logs/pithead-egress.service.log")" "egress: journal marker"

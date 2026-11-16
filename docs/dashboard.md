@@ -1709,7 +1709,7 @@ spool with the same hour-window retention a backup gets: **Download bundle** app
 host's result says applied, and nothing leaves the box until you press it. Attach it to a report
 the way [#3746](https://github.com/p2pool-starter-stack/pithead/issues/3746) lays out. A box whose
 stack never came up cannot serve the dashboard, so it builds the same archive from the console
-instead: `pithead recovery-bundle` in [Operations](operations.md). On a Docker host the same card builds the same zip from every container's log for the window and the DIY egress and LAN-guard units; `./pithead support-bundle --since --until` writes it from a shell.
+instead: `pithead recovery-bundle` in [Operations](operations.md). On a Docker host the same card builds the same zip from every container's log for the window and the DIY egress and LAN-guard units; `./pithead support-bundle --since 2026-11-15T10:00:00Z --until 2026-11-15T12:00:00Z` writes it from a shell.
 
 **Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that

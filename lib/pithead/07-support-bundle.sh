@@ -164,9 +164,13 @@ bundle_support_journal_unreadable() {
 }
 
 bundle_support_diy_collect() {
-    local tmp="$1" cap="$2" since="$3" until="$4" juntil="$5" engine rc=0 names name
+    local tmp="$1" cap="$2" since="$3" until="$4" juntil="$5" engine rc=0 names name runner=()
+    command -v timeout >/dev/null 2>&1 && runner=(timeout "${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}")
     mkdir -p "$tmp/bundle/containers"
-    doctor_json >"$tmp/bundle/doctor.json" 2>"$tmp/bundle/doctor.txt" || rc=$?
+    doctor_json >"$tmp/doctor.raw.json" 2>"$tmp/doctor.raw.txt" || rc=$?
+    bundle_redact_log <"$tmp/doctor.raw.json" >"$tmp/bundle/doctor.json"
+    bundle_redact_log <"$tmp/doctor.raw.txt" >"$tmp/bundle/doctor.txt"
+    rm -f "$tmp/doctor.raw.json" "$tmp/doctor.raw.txt"
     [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle." >&2
     if [ -f "$CONFIG_FILE" ]; then
         render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
@@ -177,8 +181,9 @@ bundle_support_diy_collect() {
         bundle_redact_env <.env >"$tmp/bundle/env.redacted" 2>/dev/null || true
     fi
     engine=$(container_engine)
-    if command -v "$engine" >/dev/null 2>&1 && names=$("$engine" compose ps --all --format '{{.Name}}' 2>&1); then
-        "$engine" compose ps --all >"$tmp/bundle/compose-ps.txt" 2>&1 || true
+    if command -v "$engine" >/dev/null 2>&1 &&
+        names=$("${runner[@]}" "$engine" compose ps --all --format '{{.Name}}' 2>"$tmp/engine.err" </dev/null); then
+        "${runner[@]}" "$engine" compose ps --all </dev/null 2>&1 | bundle_redact_log >"$tmp/bundle/compose-ps.txt" || true
         while read -r name; do
             [ -n "$name" ] || continue
             bundle_support_capture "$tmp" "containers/$name.log" "$cap" 1 0 "$since" "$until" \
@@ -186,7 +191,7 @@ bundle_support_diy_collect() {
         done <<<"$names"
     else
         echo "container engine not reachable — no container state collected" >"$tmp/bundle/compose-ps.txt"
-        bundle_support_step_fail "$tmp" containers failed "container engine not reachable: ${names:-$engine not found}"
+        bundle_support_step_fail "$tmp" containers failed "container engine not reachable: $(head -n1 "$tmp/engine.err" 2>/dev/null || echo "$engine not found")"
     fi
 }
 
