@@ -183,18 +183,23 @@ echo "== unit: the gate loop commits on the advisory and the verdict carries it 
 # and by the `updated` verdict's jq naming `advisory`. Mutation run: delete the advisory line ->
 # red; write the verdict without `advisory` -> red.
 BOOTSCRIPT="$ROOT/os/overlay/pithead-boot"
+STACKHEALTH="$ROOT/os/overlay/pithead-boot-stack-health"
 bl_line() { grep -n -F -- "$1" "$BOOTSCRIPT" | head -1 | cut -d: -f1; }
+hv_line() { grep -n -F -- "$1" "$STACKHEALTH" | head -1 | cut -d: -f1; }
 l_remint=$(bl_line '        gate_remint_cert || true')
 l_adv=$(bl_line '        gate_cert_advisory_ready && gate_pass=1')
 l_pass=$(bl_line '    if [ "$gate_pass" = 1 ]; then')
 l_say=$(bl_line "with that recorded as advisory; run './pithead apply' on the machine to re-mint")
-l_verdict=$(bl_line 'advisory:(if $a == "" then [] else [$a] end)')
+l_call=$(bl_line 'boot_publish_os_update_verdict "$gate_advisory"')
+l_verdict=$(hv_line 'advisory:(if $a == "" then [] else [$a] end)')
+l_fn=$(hv_line 'boot_publish_os_update_verdict() {')
+l_next=$(hv_line 'gate_network_advisory_commit() {')
 assert_eq "every anchor is present" \
-    "$([ -n "$l_remint" ] && [ -n "$l_adv" ] && [ -n "$l_pass" ] && [ -n "$l_say" ] && [ -n "$l_verdict" ] && echo all)" "all"
+    "$([ -n "$l_remint" ] && [ -n "$l_adv" ] && [ -n "$l_pass" ] && [ -n "$l_say" ] && [ -n "$l_call" ] && [ -n "$l_verdict" ] && echo all)" "all"
 assert_eq "re-mint, then the advisory check, then the one commit condition, then the console line, then the verdict" \
-    "$([ "${l_remint:-0}" -lt "${l_adv:-0}" ] && [ "${l_adv:-0}" -lt "${l_pass:-0}" ] && [ "${l_pass:-0}" -lt "${l_say:-0}" ] && [ "${l_say:-0}" -lt "${l_verdict:-0}" ] && echo ordered)" "ordered"
+    "$([ "${l_remint:-0}" -lt "${l_adv:-0}" ] && [ "${l_adv:-0}" -lt "${l_pass:-0}" ] && [ "${l_pass:-0}" -lt "${l_say:-0}" ] && [ "${l_say:-0}" -lt "${l_call:-0}" ] && [ "${l_fn:-0}" -lt "${l_verdict:-0}" ] && [ "${l_verdict:-0}" -lt "${l_next:-0}" ] && echo ordered)" "ordered"
 assert_eq "the console line reports the advisory only when there is one, and names the remedy that now works" \
     "$(grep -c "doctor reports \${gate_advisory:-healthy}\${gate_advisory:+ as its only failing check} — booted slot committed\${gate_advisory:+ with that recorded as advisory; run './pithead apply' on the machine to re-mint}" "$BOOTSCRIPT")" "1"
 assert_eq "there is exactly ONE commit path — the advisory does not duplicate the commit block" "$(grep -c 'rauc status mark-good' "$BOOTSCRIPT")" "2"
-unset -f ar_run ap_line ga_run bl_line
-unset CA AP GA RS COVER DJ_COVER rs_out rf_out BOOTSCRIPT l_hold l_units l_refresh l_nothing l_release l_remint l_adv l_pass l_say l_verdict
+unset -f ar_run ap_line ga_run bl_line hv_line
+unset CA AP GA RS COVER DJ_COVER rs_out rf_out BOOTSCRIPT STACKHEALTH l_hold l_units l_refresh l_nothing l_release l_remint l_adv l_pass l_say l_call l_verdict l_fn l_next
