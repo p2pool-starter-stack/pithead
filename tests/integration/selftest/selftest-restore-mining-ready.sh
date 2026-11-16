@@ -99,7 +99,7 @@ drive_restore_rc() {
         cleanup_rotate_onion_fixture() { echo cleanup >>"$log"; }
         wait_synced() { echo synced >>"$log"; }; wait_bench_healthy() { echo healthy >>"$log"; }
         '"$MINING_STUB_SRC"'
-        verify_restore_proof() { echo proof >>"$log"; }
+        verify_restore_proof() { echo proof >>"$log"; return "${VERIFY_RC:-0}"; }
         recheck_restore_mining() { echo "recheck $1" >>"$log"; return "${RECHECK_RC:-0}"; }
         on_bench() { return 0; }
         eval "$RESTORE_SRC"
@@ -114,13 +114,15 @@ assert_eq "the wait runs after health and before the proof" \
     "$(drive_restore_rc 0)" "synced healthy mining proof cleanup recheck 600 "
 assert_eq "a failed wait fails the restore, still runs the proof and skips the re-check" \
     "$(drive_restore_rc 1)" "synced healthy mining proof cleanup exit:1 "
+assert_eq "a failed proof skips the re-check so no healthy line precedes the failure" \
+    "$(VERIFY_RC=1 drive_restore_rc 0)" "synced healthy mining proof cleanup exit:1 "
 assert_eq "a failed re-check fails the restore" \
     "$(RECHECK_RC=1 drive_restore_rc 0)" "synced healthy mining proof cleanup recheck 600 exit:1 "
 
 echo "== the re-check catches a dashboard stop after the first sample (#4167) =="
-drive_recheck() { # <timeout_s>; SEQ is the health of each poll (1 healthy, 0 stopped), last repeats
+drive_recheck() {
     (
-        # shellcheck disable=SC2034 # read by the sourced re-check
+        # shellcheck disable=SC2034
         RESTORE_DIR=/srv/code/baseline
         polls=0 out="" started=0
         ok() { out="$out|ok:$1"; }
@@ -151,7 +153,7 @@ SEQ=0 out="$(drive_recheck 1)"
 assert_eq "a proxy that stays stopped fails the re-check" "${out%% *}" "1"
 assert_contains "the failure names xmrig-proxy and the time waited" "$out" "xmrig-proxy (or P2Pool) still not running and healthy after waiting 1s"
 
-probe_health() { # <p2pool-state> <proxy-state> -> "<rc> <docker verbs used>"
+probe_health() {
     local dir rc
     dir="$(mktemp -d)"
     mkdir "$dir/bin"

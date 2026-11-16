@@ -537,7 +537,8 @@ via an `EXIT` trap):
    checks and just before "restore complete", finds P2Pool and xmrig-proxy running and healthy. If either is stopped, the
    harness waits up to 600 seconds for the dashboard to readmit it, logging the start and the
    elapsed time, and never starts it itself. A service still down at the bound fails the restore
-   with a message naming xmrig-proxy and the seconds waited.
+   with a message naming xmrig-proxy and the seconds waited. The re-check is skipped when an earlier restore or control proof has already failed,
+   so "baseline stack healthy again" never precedes a "RESTORE NOT PROVEN" verdict.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`

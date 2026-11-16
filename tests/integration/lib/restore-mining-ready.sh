@@ -13,7 +13,7 @@ _restore_mining_running() { # -> 0 when p2pool and xmrig-proxy are both running 
     on_bench "cd '$RESTORE_DIR' && running=\$(timeout --kill-after=2 10 docker compose ps --services --status running) && grep -Fxq p2pool <<<\"\$running\" && grep -Fxq xmrig-proxy <<<\"\$running\""
 }
 
-_restore_mining_healthy() { # -> 0 when p2pool and xmrig-proxy are running and none reports unhealthy
+_restore_mining_healthy() {
     on_bench "cd '$RESTORE_DIR' && for s in p2pool xmrig-proxy; do cid=\$(timeout --kill-after=2 10 docker compose ps -q \"\$s\" | head -n1) && [ -n \"\$cid\" ] && st=\$(timeout --kill-after=2 10 docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' \"\$cid\") && case \"\$st\" in 'running ' | 'running healthy') ;; *) exit 1 ;; esac || exit 1; done"
 }
 
@@ -56,7 +56,7 @@ wait_restore_mining_ready() { # <timeout_s> [interval_s]
     done
 }
 
-recheck_restore_mining() { # <timeout_s> [interval_s]
+recheck_restore_mining() {
     local timeout=${1:-600} start waited
     if _restore_mining_healthy; then
         ok "re-check: P2Pool and xmrig-proxy running and healthy after the restore proof"

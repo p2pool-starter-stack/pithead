@@ -305,7 +305,7 @@ restore_all() {
         [ "$CONTROL_VERDICT_BEFORE" = "stranded" ] &&
             warn "  This run DID strand them (verdict before the restore: stranded), and the restore did not put them back."
     fi
-    if [ "$restore_ready" = 1 ]; then
+    if [ "$restore_ready" = 1 ] && [ "$RESTORE_PROOF_FAILED" != 1 ] && [ "$CONTROL_PROOF_FAILED" != 1 ]; then
         if recheck_restore_mining 600; then ok "baseline stack healthy again"; else RESTORE_PROOF_FAILED=1; fi
     fi
     if [ "$RESTORE_PROOF_FAILED" = "1" ] || [ "$CONTROL_PROOF_FAILED" = "1" ]; then
