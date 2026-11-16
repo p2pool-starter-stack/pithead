@@ -3,9 +3,8 @@
 DataDirectory /var/lib/tor
 
 # --- Network Interfaces ---
-# SOCKS5 proxy interface for routing container traffic through Tor
-# Binds to 0.0.0.0 to accept connections from other services in the Docker network
-SocksPort 0.0.0.0:9050
+SocksPort __NETWORK_PREFIX__.25:9050
+WarnUnsafeSocks 0
 
 # Control interface. No other container uses it: Tari reaches Tor through the SOCKS port only, and
 # its onion is the Tari hidden service the entrypoint appends (#2653). Bind explicitly to this
