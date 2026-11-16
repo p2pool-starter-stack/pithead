@@ -16,6 +16,7 @@ rig_small_guest_leg() { # <img>
 _rig_small_guest_run() { # <img>
     local img="$1" token="" tries=0 jar body scode sysfile pool after mounts unitlog
     local mode rtok light hr cls summ bench="" bline="" hrsrc="sister feed" ptries=0 oom rtries=0 htries card="" ctries=0 arc=0
+    local SSH_TIMEOUT=180
     info "small-guest leg (#4010) — the rig role on a 2 GiB, 1 vCPU machine: it must mine, not over-reserve"
     cp "$img" "$DISK" || {
         bad "could not copy the image for the 2 GiB rig guest"
@@ -136,6 +137,7 @@ _rig_small_guest_run() { # <img>
     *) bad "the unit does not come after systemd-sysctl: After=${after:-empty}" ;;
     esac
     mounts=$(_ssh 'systemctl show pithead-hugepages -p RequiresMountsFor --value' | tr -d '\r\n')
+    [ -n "$mounts" ] || mounts=$(_ssh 'systemctl show pithead-hugepages -p RequiresMountsFor --value' | tr -d '\r\n')
     case "$mounts" in
     */data* | *data.mount*)
         ok "the unit waits for /data — it reads the role file rather than guessing at it (RequiresMountsFor=${mounts})"
@@ -192,7 +194,9 @@ _rig_small_guest_run() { # <img>
     hrsrc="sister feed"
     if [ "$hr" = "0" ] || [ -z "$light" ]; then
         info "  a black-holed pool assigns no work, so the feed and any mode line stay silent — measuring the machine's own bench in the rendered mode"
+        SSH_TIMEOUT=700
         bench=$(_ssh 'bx=$(readlink /proc/$(pgrep -x xmrig | head -1)/exe 2>/dev/null); [ -x "$bx" ] || bx=/data/rigforge/data/worker/xmrig/build/xmrig; timeout 100 systemctl stop xmrig; timeout 30 sh -c "echo 0 >/proc/sys/vm/nr_hugepages" 2>/dev/null; printf "{\"algo\":\"randomx\",\"pools\":[],\"randomx\":{\"mode\":\"light\"},\"colors\":false}" >/tmp/pb4010.json; echo "bench-cfg $(cat /tmp/pb4010.json)"; echo "bench-bin $("$bx" --version 2>&1 | head -1)"; echo "bench-help $(timeout 20 "$bx" --help 2>&1 | grep -iE "benchmark|dry-run" | tr "\n" " ")"; timeout 420 "$bx" -c /tmp/pb4010.json --benchmark=300 </dev/null 2>&1 | tail -80')
+        SSH_TIMEOUT=180
         bline=$(printf '%s' "$bench" | tr -d '\r' | grep -oE '[0-9]+([.][0-9]+)? (H|kH|MH)/s' | tail -1)
         [ -z "$light" ] && light=$(printf '%s' "$bench" | tr -d '\r' | grep -im1 'light mode\|1 GB mode')
         if [ "$hr" = "0" ] && [ -n "$bline" ]; then
