@@ -132,7 +132,7 @@ rm -f "$merged"
 
 echo "== unit: media_validate_config (reuses the pre-seed validation engine) =="
 cat >"$MC/good.json" <<EOF
-{"config_version":"$(sed 's/[-+].*//' "$ROOT/VERSION")","monero":{"wallet_address":"$VALID_PRIMARY","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"}}
+{"config_version":"$(sed 's/[-+].*//' "$ROOT/VERSION")","profile":"balance","monero":{"wallet_address":"$VALID_PRIMARY","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"mode":"local","wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"}}
 EOF
 cat >"$MC/bad.json" <<'EOF'
 {"monero":{"wallet_address":"nope"},"tari":{"wallet_address":"t"}}
@@ -181,7 +181,7 @@ assert_eq "media validation copies leave no migration backup" "$(find "$MC" -nam
 
 echo "== unit: media_config_diff / media_config_identical (masked, wallet shown in full) =="
 cat >"$MC/changed.json" <<EOF
-{"monero":{"wallet_address":"44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"},"dashboard":{"auth":{"password":"a-new-dashboard-password"}}}
+{"profile":"balance","monero":{"wallet_address":"44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"mode":"local","wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"},"dashboard":{"auth":{"password":"a-new-dashboard-password"}}}
 EOF
 diffout=$(
     export PITHEAD_MEDIA_BIN="$MC/pithead"

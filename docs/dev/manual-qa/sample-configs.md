@@ -77,7 +77,7 @@ no [stratum](README.md#glossary) password unless the user opts in (#3092).
 ```json
 {
     "monero": { "wallet_address": "PASTE_QA_MONERO_PRIMARY_ADDRESS" },
-    "tari": { "wallet_address": "PASTE_QA_TARI_ADDRESS" },
+    "tari": { "mode": "local", "wallet_address": "PASTE_QA_TARI_ADDRESS" },
     "p2pool": { "stratum_password": "auto" }
 }
 ```
@@ -97,6 +97,7 @@ up for QA).
         "view_key": "PASTE_QA_MONERO_PRIVATE_VIEW_KEY"
     },
     "tari": {
+        "mode": "local",
         "wallet_address": "PASTE_QA_TARI_ADDRESS",
         "view_key": "PASTE_QA_TARI_PRIVATE_VIEW_KEY"
     },
