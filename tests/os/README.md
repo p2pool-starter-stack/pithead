@@ -323,6 +323,28 @@ the configured test registry fail before the image build. Release builds do not 
   stick, no containers, volatile journald, an unaided reboot returns it mining, and the blank
   disk stays byte-for-byte untouched. Reaching the wizard again from a stick-run rig needs the
   bootloader path (#1318) and is not this leg's job.
+- **rigkeep** — M13 Keep everything over an installed rig's `/data`, #3995. Runs the install
+  phase's own rig-to-disk leg as setup (the same submit, card and boot-from-disk assertions),
+  then — when the bench carries a reserved remote node — boots the share leg's coordinator
+  guest, re-points the rig at its stratum through the set-up-again entry and adopts it through
+  the dashboard (#3069 path). It builds a newer image (marker v2 for the stick, build label v2
+  for the installed system — the installer copies the running system but strips the harness
+  marker, so the label is what travels), attaches it as removable USB
+  beside the installed disk, chooses **Keep everything** on the wizard, and after the disk
+  boot asserts the newer system is on the disk (label v2, marker stripped), the rig mines,
+  the new slot self-commits (`A_OK=1 A_TRY=0`),
+  and an identity snapshot (role, worker, pool, the miner's `.pools[0]["rig-id"]`, `rig.json`
+  access token, miner token, container count) is unchanged — the access token kept, never
+  re-minted; a rig whose token was absent is accepted only with one freshly minted, and likewise
+  the rig id must come back kept (equal to the before value) when one existed, or freshly minted
+  (a non-empty string) when none did — the leg seeds `rig-id` `kvm-m13-seed` into the worker
+  config after setup (a wizard-configured rig carries none) so the bench tests the kept branch.
+  With a coordinator present the leg finally requires the
+  dashboard to still read the same worker as adopted with a reachable API, nothing to redo.
+  A bench without the reserved node counts the adoption legs as `missing`; the reinstall half
+  runs regardless. `selftest-rigkeep-verdict.sh` covers the identity verdict, including every
+  way it must refuse drift; every fixture (coordinator guest, target disk) is deleted on
+  failure as well as success.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
   reboots. Asserts the exact diff appears on the console (the changed wallet address in full, read
@@ -431,11 +453,11 @@ the configured test registry fail before the image build. Release builds do not 
   (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
   diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|setup-defaults|rig|rigmedia|rigkeep|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|p2pool-heal|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate, including image-upgrade, fault, reset and stack, and the full run is required once for
-every RC candidate.
+crossupdate, tor-heal and p2pool-heal — since #3995 that includes rigkeep alongside image-upgrade,
+fault, reset and stack — and the full run is required once for every RC candidate.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input

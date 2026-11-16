@@ -3,7 +3,6 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -54,14 +53,13 @@
 #           a non-destructive --check, then --lifecycle --fault-injection --hardening
 #           --auth-fail-closed on remote-main-secure-tari. A bench with no reserved node is a
 #           counted `missing` phase skip; #2443 and #2444 run from neither invocation.
-#   all     every phase above except crossupdate, in that order — media, fault and reset included
-#           since #1064; rigmedia added since #2069; image-upgrade added for #2057; stack since #2062
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
 # --keep leaves the VM + disks for inspection.
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+usage='tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|rigkeep|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]'
 # shellcheck source=tests/os/hugepages-boot-verdict.sh
 . "$SCRIPT_DIR/hugepages-boot-verdict.sh"
 # shellcheck source=tests/os/secure-boot-boot-verdict.sh
@@ -189,7 +187,8 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
+        printf '%s\n' "$usage"
+        sed -n '2,59p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -231,6 +230,8 @@ source "$SCRIPT_DIR/phases/media.sh" || exit $?
 source "$SCRIPT_DIR/phases/rig.sh" || exit $?
 # shellcheck source=tests/os/phases/rigmedia.sh
 source "$SCRIPT_DIR/phases/rigmedia.sh" || exit $?
+# shellcheck source=tests/os/phases/rigkeep.sh
+source "$SCRIPT_DIR/phases/rigkeep.sh" || exit $?
 # shellcheck source=tests/os/phases/fault.sh
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
@@ -275,6 +276,7 @@ provision) _run_phase provision phase_provision ;;
 setup-defaults) _run_phase setup-defaults phase_setup_defaults ;;
 rig) _run_phase rig phase_rig ;;
 rigmedia) _run_phase rigmedia phase_rigmedia ;;
+rigkeep) _run_phase rigkeep phase_rigkeep ;;
 media) _run_phase media phase_media ;;
 fault) _run_phase fault phase_fault ;;
 reset) _run_phase reset phase_reset ;;
@@ -294,6 +296,7 @@ all)
     _run_phase setup-defaults phase_setup_defaults
     _run_phase rig phase_rig
     _run_phase rigmedia phase_rigmedia
+    _run_phase rigkeep phase_rigkeep
     _run_phase media phase_media
     _run_phase fault phase_fault
     _run_phase reset phase_reset
