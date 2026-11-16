@@ -530,6 +530,14 @@ via an `EXIT` trap):
    census run. A timeout leaves the restore unproved and prints the stage (`mining-services`),
    the gate marker and each service's state; the per-service identity check still runs and
    still fails any service that is not running.
+   The dashboard's mining guard can stop xmrig-proxy about 90 seconds after a guarded service
+   turns unhealthy, after those samples passed, and `restart: unless-stopped` never undoes that
+   stop ([#4167](https://github.com/p2pool-starter-stack/pithead/issues/4167)). So "baseline stack
+   healthy again" is logged only after a last re-check, after the proof steps and just before
+   "restore complete", finds P2Pool and xmrig-proxy running and healthy. If either is stopped, the
+   harness waits up to 600 seconds for the dashboard to readmit it, logging the start and the
+   elapsed time, and never starts it itself. A service still down at the bound fails the restore
+   with a message naming xmrig-proxy and the seconds waited.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
