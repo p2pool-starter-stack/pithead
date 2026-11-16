@@ -285,8 +285,6 @@ for evidence in 'could not hash the blank internal target disk' 'could not list 
     grep -Fq "$evidence" "$HERE/phases/rigmedia.sh" || exit 1
 done
 expected_all='phase_boot phase_update phase_install phase_provision phase_setup_defaults phase_rig phase_rigmedia phase_rigkeep phase_media phase_fault phase_reset phase_image_upgrade phase_stack'
-# #2356: _run_phase counts an empty phase as a missing skip; the phase function is the
-# second word on each line in the `all` arm.
 actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    _run_phase [a-z-]* \(phase_[a-z_]*\)$/\1/p' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_all" = "$expected_all" ] || exit 1
 (
