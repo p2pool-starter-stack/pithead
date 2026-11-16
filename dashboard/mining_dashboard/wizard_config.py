@@ -4,6 +4,7 @@ import re
 from copy import deepcopy
 
 from mining_dashboard.config.defaults import default_of
+from mining_dashboard.config.migration import migrate_to_2_1, migration_due
 
 _XVB_ALIASES = ("enabled", "url", "donor_id")
 _XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
@@ -19,7 +20,7 @@ def validate_machine_name(cfg: dict, previous: dict) -> None:
     dashboard = cfg.get("dashboard", {})
     if not isinstance(dashboard, dict):
         raise ValueError("dashboard must be an object")
-    host = dashboard.get("host", default_of("dashboard.host", legacy=True))
+    host = dashboard.get("host", default_of("dashboard.host"))
     if host == "auto":
         return
     saved = previous.get("dashboard", {})
@@ -142,7 +143,11 @@ def _known_only(cfg: dict, ref: dict, changes: list[str], prefix: str = "") -> d
 
 
 def prepare_config(
-    cfg: dict, reference: dict, *, reject_legacy_conflicts: bool = False
+    cfg: dict,
+    reference: dict,
+    *,
+    reject_legacy_conflicts: bool = False,
+    platform: str | None = None,
 ) -> tuple[dict, list[str]]:
     """Migrate removed aliases, then retain only names in the current reference schema.
 
@@ -150,6 +155,7 @@ def prepare_config(
     credential fields and persists across a failed install without copying their contents.
     """
     prepared = deepcopy(cfg)
+    due = migration_due(prepared)
     prepared.pop("config_version", None)
     conflicts = _legacy_conflicts(prepared)
     if reject_legacy_conflicts and conflicts:
@@ -157,6 +163,9 @@ def prepare_config(
         raise ValueError(f"removed 1.x keys differ from their replacements ({names})")
     changes: list[str] = []
     _migrate_legacy(prepared, changes)
+    if due and platform:
+        prepared, migrated = migrate_to_2_1(prepared, platform)
+        changes.extend(migrated)
     if reference:
         prepared = _known_only(prepared, reference, changes)
     return prepared, list(dict.fromkeys(changes))

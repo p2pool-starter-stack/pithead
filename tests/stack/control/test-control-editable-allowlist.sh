@@ -12,7 +12,7 @@ echo "== black-box: editable-allowlist commit round-trip, every key (#522) =="
 # env diff (pool flips P2POOL_FLAGS + P2POOL_PORT, both allowlisted).
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",mem_limit:"4g",prep_blocks_threads:4,prune:false},
-    tari:{wallet_address:"'"$VALID_TARI"'",mem_limit:"3g"}, p2pool:{pool:"main"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",mem_limit:"3g"}, p2pool:{pool:"main"},
     xvb:{enabled:true,donation_level:"donor"}, telegram:{daily_summary_time:"08:00"},
     dashboard:{secure:true,host:"box.lan",tari_required:true,check_for_updates:true,timezone:"UTC",
                hashrate_drop_threshold:50,hashrate_drop_minutes:10,
@@ -213,7 +213,7 @@ echo "== black-box: node-endpoint keys ignore remote.* on a non-remote chain (#1
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",
             remote:{host:"evil.example.com",rpc_port:9,zmq_port:9}},
-    tari:{wallet_address:"'"$VALID_TARI"'",remote:{host:"evil.example.com",grpc_port:9}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",remote:{host:"evil.example.com",grpc_port:9}},
     p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
@@ -255,7 +255,7 @@ assert_eq "tari.remote.host is inert when tari.mode is off" "$(env_now TARI_GRPC
 jq -n --arg w "$WALLET" '{
     monero:{mode:"remote",wallet_address:$w,node_username:"",node_password:"",
             remote:{host:"evil.example.com",rpc_port:9,zmq_port:9}},
-    tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"evil.example.com",grpc_port:9}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"evil.example.com",grpc_port:9}},
     p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
@@ -358,7 +358,7 @@ echo "== black-box: a settable key is never invisible to the approval gate (#192
 # parser never looks at it.
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
