@@ -210,13 +210,15 @@ kill "$SN_TOR_PID" 2>/dev/null || true
 assert_eq "the snapshot bundle applies" "$(jq -r .status "$SB/results/$snid1.json")" "applied"
 sb_unzip "$SB/results/$snid1.zip" "$SN/x1"
 B="$SN/x1/bundle"
+sn_bad=""
 for f in doctor.json status/monerod.json status/tari.json status/p2pool.json tor/control.txt tor/state-guards.txt \
     network/networkctl.txt network/ip-addr.txt network/ip-route.txt network/resolvectl.txt network/nft-ruleset.txt \
     time/timedatectl.txt time/sync-units.txt containers/ps-a.txt containers/images.txt rauc.txt rauc-detailed.txt \
     boot-slot.txt coredumps.txt caddy/access.log support-dir/console-1.txt support-dir/sub/console-2.txt \
     state-markers.txt dashboard-history.jsonl; do
-    assert_eq "$f is present and non-empty" "$([ -s "$B/$f" ] && echo yes || echo no)" "yes"
+    [ -s "$B/$f" ] || sn_bad="$sn_bad $f"
 done
+assert_eq "every snapshot file is present and non-empty" "$sn_bad" ""
 assert_eq "a clean snapshot collection records no failed step, doctor's own nonzero verdict included" \
     "$(sb_man "$SN/x1" '.failures | length')" "0"
 assert_eq "doctor.json holds the doctor document" "$(jq -r .summary.fail "$B/doctor.json")" "1"
@@ -276,10 +278,12 @@ assert_contains "the control audit events are exported" "$(cat "$B/dashboard-his
 assert_contains "a table the database lacks is a recorded row, not silence" "$(cat "$B/dashboard-history.jsonl")" '"table": "share_stats"'
 
 echo "== support bundle snapshots: no seeded secret reaches any new file =="
+sn_bad=""
 for secret in SEEDEDCOOKIE SEEDEDAUTHBASIC SEEDEDSETCOOKIE SEEDEDURLTOKEN SEEDEDBARETOKEN SEEDEDPATHTOKENSEEDEDPATHTOKEN SEEDEDSTATEKEY SEEDEDED25519SECRET \
     "$SN_COOKIE_HEX" seededrendquery seededsocksuser SEEDEDSUPPASS SEEDEDMARKERSECRET SEEDEDRPCPASS "$SB_ADDR" "$SB_ONION"; do
-    assert_not_contains "$secret is ABSENT from the whole zip" "$(grep -rF -- "$secret" "$SN/x1" || true)" "$secret"
+    grep -rqF -- "$secret" "$SN/x1" && sn_bad="$sn_bad leaked:${secret:0:6}"
 done
+assert_eq "no seeded secret is in any file of the whole zip" "$sn_bad" ""
 assert_contains "the query is replaced, not dropped silently" "$(cat "$B/caddy/access.log")" "?[redacted]"
 
 echo "== support bundle snapshots: a missing DB is a manifest entry, not silence =="
@@ -305,14 +309,13 @@ kill "$SN_TOR_PID" 2>/dev/null || true
 assert_eq "a bundle with four wedged services still applies" "$(jq -r .status "$SB/results/$snid3.json")" "applied"
 assert_eq "the run finished inside the stated total limit" "$([ $((t1 - t0)) -lt 120 ] && echo yes || echo no)" "yes"
 sb_unzip "$SB/results/$snid3.zip" "$SN/x3"
+sn_bad=""
 for step in status/monerod.json status/tari.json status/p2pool.json tor/control.txt; do
-    assert_eq "$step is recorded as timed out" \
-        "$(sb_man "$SN/x3" "[.failures[] | select(.step == \"$step\") | .status] | first")" "timeout"
-    assert_eq "$step records its elapsed time" \
-        "$(sb_man "$SN/x3" "[.failures[] | select(.step == \"$step\") | .elapsed_seconds >= 2] | first")" "true"
-    assert_eq "$step still has a file that says it is unavailable" \
-        "$(grep -c 'unavailable' "$SN/x3/bundle/$step" || true)" "1"
+    [ "$(sb_man "$SN/x3" "[.failures[] | select(.step == \"$step\") | .status] | first")" = timeout ] || sn_bad="$sn_bad notimeout:$step"
+    [ "$(sb_man "$SN/x3" "[.failures[] | select(.step == \"$step\") | .elapsed_seconds >= 2] | first")" = true ] || sn_bad="$sn_bad noelapsed:$step"
+    [ "$(grep -c 'unavailable' "$SN/x3/bundle/$step" || true)" = 1 ] || sn_bad="$sn_bad nofile:$step"
 done
+assert_eq "the wedged monerod, Tari, P2Pool and Tor steps are timed out with elapsed time and an unavailable file" "$sn_bad" ""
 assert_eq "an unavailable file is marked unavailable in the manifest" \
     "$(sb_man "$SN/x3" '[.files[] | select(.path == "status/tari.json") | .state] | first')" "unavailable"
 assert_contains "the journal still collected beside the wedged services" \
@@ -326,10 +329,11 @@ sed "s#^P2POOL_DATA_DIR=.*#P2POOL_DATA_DIR=$SN/nope#" "$sn_env" >"$SN/env3"
 sn_run "$snid4" refuse "PITHEAD_ENV_FILE=$SN/env3" "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1"
 sb_unzip "$SB/results/$snid4.zip" "$SN/x4"
 assert_eq "a bundle with four refusing services still applies" "$(jq -r .status "$SB/results/$snid4.json")" "applied"
+sn_bad=""
 for step in status/monerod.json status/tari.json tor/control.txt; do
-    assert_eq "$step is recorded as failed" \
-        "$(sb_man "$SN/x4" "[.failures[] | select(.step == \"$step\") | .status] | first")" "failed"
+    [ "$(sb_man "$SN/x4" "[.failures[] | select(.step == \"$step\") | .status] | first")" = failed ] || sn_bad="$sn_bad $step"
 done
+assert_eq "the refused monerod, Tari and Tor steps are recorded as failed" "$sn_bad" ""
 assert_contains "the monerod failure carries the reason" \
     "$(sb_man "$SN/x4" '[.failures[] | select(.step == "status/monerod.json") | .reason] | first')" "did not answer"
 assert_eq "P2Pool with no readable data-api file is recorded as failed" \
