@@ -68,14 +68,14 @@ out=$(cd "$DJ" && PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$DJ/variant" PATH="$
 assert_contains "release doctor warns that carried SSH is inert" "$out" "ssh.enabled is ignored on this release image"
 out=$(cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --bogus 2>&1 || true)
 assert_contains "doctor rejects unknown options" "$out" "Unknown option"
-# support-bundle: chmod-600 tarball; doctor.json inside; .env secrets redacted by key pattern —
+# support-bundle: chmod-600 zip; doctor.json inside; .env secrets redacted by key pattern —
 # this sandbox's own PROXY_AUTH_TOKEN must never appear in the bundle.
 (cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead support-bundle >/dev/null 2>&1) || true
-sb_tar=$(find "$DJ" -maxdepth 1 -name 'support-bundle-*.tar.gz' | head -1)
+sb_tar=$(find "$DJ" -maxdepth 1 -name 'support-bundle-*.zip' | head -1)
 assert_contains "support bundle written" "$sb_tar" "support-bundle-"
 assert_eq "support bundle is chmod 600" "$(stat -c '%a' "$sb_tar" 2>/dev/null || stat -f '%Lp' "$sb_tar" 2>/dev/null)" "600"
 mkdir -p "$DJ/sb-extract"
-tar -xzf "$sb_tar" -C "$DJ/sb-extract"
+python3 -I -m zipfile -e "$sb_tar" "$DJ/sb-extract" >/dev/null
 assert_eq "bundle carries doctor.json" "$(jq -r 'has("summary")' "$DJ/sb-extract/bundle/doctor.json" 2>/dev/null)" "true"
 assert_contains "bundle .env redacts token keys" "$(cat "$DJ/sb-extract/bundle/env.redacted")" "PROXY_AUTH_TOKEN=[redacted]"
 assert_eq "no raw secret value anywhere in the bundle" "$(grep -rc "ORIGINALTOKEN" "$DJ/sb-extract" | grep -vc ":0")" "0"

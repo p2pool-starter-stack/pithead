@@ -105,9 +105,8 @@ assert_contains "docker logs is asked for the window start" "$(cat "$DB/docker.l
 assert_contains "docker logs is asked for the window end, inclusive of its last second" \
     "$(cat "$DB/docker.log")" "--until $(date -u -d "$win_until + 1 second" +%Y-%m-%dT%H:%M:%SZ)"
 assert_contains "the egress unit's journal is collected" "$(cat "$DB/x1/bundle/logs/pithead-egress.service.log")" "egress: journal marker"
-for unit in pithead-egress.timer pithead-lan-guard.service pithead-lan-hold.service pithead-lan.timer; do
-    assert_eq "$unit has an entry in the manifest" "$(db_man "$DB/x1" "[.files[].path] | index(\"logs/$unit.log\") != null")" "true"
-done
+assert_eq "every DIY unit has an entry in the manifest" \
+    "$(db_man "$DB/x1" '[.files[].path] | map(select(. == "logs/pithead-egress.service.log" or . == "logs/pithead-egress.timer.log" or . == "logs/pithead-lan-guard.service.log" or . == "logs/pithead-lan-hold.service.log" or . == "logs/pithead-lan.timer.log")) | length')" "5"
 assert_eq "an installed DIY unit with nothing in the window is empty" \
     "$(db_man "$DB/x1" '.files[] | select(.path == "logs/pithead-egress.timer.log") | .state')" "empty"
 assert_eq "a DIY unit that is not installed is missing" \
@@ -127,7 +126,7 @@ assert_contains "the env keeps its structure" "$(cat "$DB/x1/bundle/env.redacted
 
 echo "== support-bundle (DIY): no seeded secret reaches the zip =="
 for secret in dockpassvalue egresspassvalue envseedsecret "$DB_ADDR" "$DB_ONION"; do
-    assert_not_contains "the seeded value ${secret:0:12} is ABSENT from the whole zip" "$(grep -rF "$secret" "$DB/x1" || true)" "$secret"
+    assert_not_contains "a seeded value is ABSENT from the whole zip" "$(grep -rF "$secret" "$DB/x1" || true)" "$secret"
 done
 assert_contains "the redactor fired on a container log" "$(cat "$DB/x1/bundle/containers/stack-alpha-1.log")" "[redacted"
 assert_contains "the redactor fired on a journal file" "$(cat "$DB/x1/bundle/logs/pithead-egress.service.log")" "[redacted]"
