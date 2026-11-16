@@ -394,7 +394,5 @@ _phase_provision_initial_body() {
 phase_provision_reserved_node_legs() {
     if [ "${OS_RESERVED_NODE_CONSUMER:-1}" = 1 ]; then
         phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad "reserved-node regression phase aborted before completing required checks"
-    else
-        info "reserved-node consumer legs not selected for this phase (#4123): it consumes no reserved-node proof; the full provision phase still runs them"
-    fi
+    else info "reserved-node consumer legs not selected for this phase (#4123): it consumes no reserved-node proof; the full provision phase still runs them"; fi
 }
