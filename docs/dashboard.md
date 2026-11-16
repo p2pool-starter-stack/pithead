@@ -1554,9 +1554,11 @@ that is gone from the dashboard, and the host's own `control.log` — which the 
 
 ### Service diagnostics
 
-Two read-only questions you can ask the host, in the same card stack as the config editor and
-under the same `dashboard.control.enabled` flag. Neither changes anything: they run a check and
-report, which is why neither asks you to confirm.
+Two read-only questions you can ask the host and three recovery actions, in the same card stack
+as the config editor and under the same `dashboard.control.enabled` flag. The two questions change
+nothing: they run a check and report, which is why neither asks you to confirm. The actions change
+the machine and always ask first: restarting one service (see [Restart a service](#restart-a-service)),
+and **Restart all** and **Reset Tor state** (see [Restart all and reset Tor](#restart-all-and-reset-tor)).
 
 **Run health check** runs the host's own `pithead doctor` and shows what it found — the same
 checks the CLI prints, failures first, with the host's summary counts above them. This is the one
@@ -1584,6 +1586,29 @@ you are looking at. Saving any change from the dashboard re-runs this machine's 
 regenerates a missing hidden service for the Monero node, the Tari node, or the dashboard itself — so
 those verdicts ask you to save a change rather than to find a console. P2Pool's is the exception:
 apply refuses to finish while that one is missing, so no dashboard surface can regenerate it.
+
+#### Restart a service
+
+Each service card with a restart control has a **Restart** button next to its log: `tor`,
+`monerod`, `wallet-rpc`, `tari`, `tari-wallet`, `p2pool` and `xmrig-proxy`. `dashboard`, `caddy`,
+`docker-proxy` and `docker-control` have none, and the host refuses them if asked: restarting the
+page you are reading or the proxy in front of it would cut off the answer. The button opens a
+confirmation naming what else is interrupted (restarting `tor` also restarts `monerod`; restarting
+`monerod` interrupts `wallet-rpc`; a wallet pauses its sync and payouts briefly), and sends nothing
+until you confirm. The button stays disabled while the host works, then shows the result or the
+host's reason for refusing. A `tor` restart can take several minutes, because the host waits for
+Tor to report bootstrapped before it restarts `monerod`.
+
+The host decides, not the dashboard. It restarts only a service on its fixed list, with
+`docker compose restart <service>` under the same lock as `apply`, `upgrade` and `backup`. It
+refuses, with a reason and without queueing, while another of those operations holds the lock,
+while the LAN-only source rule for a published port is not in place, and when the same service was
+restarted in the last 120 seconds. After a `tor` restart it waits up to five minutes, still
+holding the lock, for Tor to report bootstrapped, then restarts a running `monerod` so it re-dials
+its peers through the new circuits, as `./pithead restart tor` does. If Tor does not bootstrap in
+that time, or `monerod` cannot be restarted, the result is `failed` and says to restart `monerod`
+once Tor is healthy. Every request is recorded in the control audit log with the actor, the action
+`svc-restart`, the service and the outcome (`started`, `rejected`, `applied` or `failed`).
 
 One thing reads differently here than at a terminal: the report is redacted on its way to the
 browser, so where `pithead doctor` prints your dashboard's onion address in full, this panel shows
@@ -1626,6 +1651,31 @@ daemon, use the support bundle or the console.
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
 
+#### Restart all and reset Tor
+
+**Restart all** restarts every container of the stack through the host's `restart` verb. It asks
+you to type `RESTART`, and it says that mining stops briefly, that the dashboard goes offline and
+comes back on its own, and that the machine is not rebooted. The page then shows an offline state,
+polls the host's result every two seconds for up to ten minutes, and reloads when the restart
+finished; if the stack has not answered by then it says so and leaves the page for you to reload.
+The host refuses, and the panel shows its reason, while an OS update is downloading, installing,
+verifying or waiting for its reboot, while the new slot is still being committed (a restart then
+could roll the machine back), and while another host operation (a config apply, backup, restore or
+upgrade) holds the mutation lock; it reports busy instead of queueing. Every request is audited
+with its actor, action and status, and a second request inside two minutes of the last is rejected with the time left. After the restart the host waits for Tor to report bootstrapped
+and restarts monerod so it re-dials through the new Tor, then restarts the tari container, when the stack has one, so it starts after Tor. The restart verb is available on the DIY
+stack and the appliance.
+
+**Reset Tor state**, on the Tor card, asks the host to run the same gated `tor-recover apply` that
+the Tor auto-heal uses, as the signed-in user instead of `tor-heal`. Its confirmation names what it
+discards (Tor's circuit history, moved aside as a backup; onion addresses are kept) and that the
+host can refuse. Every gate stays in force: `tor.auto_heal` must be on, the circuit history must
+be saturated, a stalled Monero or Tor bootstrap must corroborate it, no other host operation may
+hold the lock, and the six-hour recovery cooldown applies. A refusal comes back as the gate's own
+sentence in the panel. The button also has its own 30-minute budget: a repeat inside it is
+rejected with the time left, so it cannot be pressed repeatedly. A successful reset restarts Tor
+and re-dials a running monerod.
+
 ## Backup view
 
 **Backup** is its own entry in the toggle above the chart, beside Simple, Advanced and
@@ -1645,19 +1695,60 @@ set up without a dashboard login, it points at **Set up again** in the boot menu
 labels it as the machine's own backup log, so commands in that log do not read as instructions for
 the browser.
 
-A second card lives on the same tab: **Support bundle**
-([#4036](https://github.com/p2pool-starter-stack/pithead/issues/4036)). One button asks the host to
-collect one redacted diagnostics archive for a bug report: journal lines of every Pithead unit over
-the window you ask for (the last 72 hours by default, 1 to 168), the dashboard's health history,
-the Tor bootstrap state, versions, the active RAUC slot, and the config's key shape with every
-value dropped. Every line passes the same redactor the diagnostics log tail uses on its way in;
-the host refuses a bundle over its own size cap rather than truncating one onto the wire; and the
-ask is audited like every other control request. The finished archive waits in the same results
-spool with the same hour-window retention a backup gets: **Download bundle** appears only once the
-host's result says applied, and nothing leaves the box until you press it. Attach it to a report
-the way [#3746](https://github.com/p2pool-starter-stack/pithead/issues/3746) lays out. A box whose
-stack never came up cannot serve the dashboard, so it builds the same archive from the console
-instead: `pithead recovery-bundle` in [Operations](operations.md).
+A second card lives on the same tab: **Export logs**
+([#4036](https://github.com/p2pool-starter-stack/pithead/issues/4036),
+[#4129](https://github.com/p2pool-starter-stack/pithead/issues/4129)). It collects one redacted
+`.zip` of the system journal for a bug report: the whole journal, the kernel log, the boot list and
+a per-unit journal for every Pithead and quadlet unit, the dashboard's health history, the Tor
+bootstrap state, versions, the active RAUC slot, and the config's key shape with every value
+dropped.
+
+**Export without the control channel.** The card and its routes work whatever
+`dashboard.control.enabled` says, and without turning on config editing. With the switch off, the
+host runner still answers the export and nothing else: it rejects every other request with the
+reason, and the config editor, restart, upgrade and the other control actions stay off. Every
+export route is behind the dashboard login when a dashboard password is set: the sign-in gate
+covers the whole API except the sign-in paths, so a request with no login is refused. When no
+password is set the export is served to whoever can reach the dashboard, like the rest of the
+dashboard, which is why the zip is redacted. The request still needs the `X-Pithead-Control`
+header the other control posts need.
+
+**To export logs:**
+
+1. Open the **Backup** tab and find the **Export logs** card. Under the heading it says how far
+   back the logs on this machine reach.
+2. Pick a **Time frame**: last 1 hour, 6 hours, 24 hours, 72 hours (the default) or 7 days, or
+   **Custom range** and give a start and an end (in the browser's time zone). A custom range with
+   no start or end, a start after the end or an end in the future is refused before anything
+   is sent.
+3. If the range reaches back further than the logs do, the card says so before you start; the
+   bundle then begins at the oldest retained entry.
+4. Click **Export logs**. The card shows that the host is collecting (a few minutes on a busy
+   machine) and the download starts by itself when the zip is ready, as
+   `support-bundle-<UTC timestamp>.zip`. Afterwards the card shows the window that came back in
+   the manifest, and a **Download again** link that works for at least an hour.
+5. To report a bug, open a [new issue](https://github.com/p2pool-starter-stack/pithead/issues/new),
+   describe what you saw and when, and drag the zip into the comment box. GitHub accepts files up
+   to 25 MB; for a larger zip, ask in the issue how to share it. The zip is redacted on the host,
+   but a public issue is public, so open `manifest.json` and a log or two first if the
+   machine's logs are sensitive to you.
+
+The card names its failures. A bad range is `Invalid range` with the reason; a second export less
+than a minute after the last says so; a failed collection shows the host's message; and a zip that
+was collected but cannot be fetched says the download is unavailable and that you should export
+again.
+
+**What is in the zip, and how big it gets.** `bundle/manifest.json` lists every file with its
+window, size and state, every step that failed or timed out, the requested and the effective
+window, the oldest retained journal entry and the journald disk usage and settings. Every line
+passes the same redactor the diagnostics log tail uses. A file over its 16 MiB budget keeps its
+oldest quarter and newest three quarters with a marker saying how many lines were dropped, the
+files together are held to 64 MiB, and the manifest records every cut: nothing is refused for
+size, and nothing is cut to 2 MiB. The request is audited like every other control request.
+The finished zip waits in the same results spool, with the same retention a backup gets, and
+nothing leaves the box until the download. A box whose stack never came up cannot serve the
+dashboard, so it builds the same zip from the console instead: `pithead recovery-bundle` in
+[Operations](operations.md).
 
 **Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that

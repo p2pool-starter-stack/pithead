@@ -18,22 +18,19 @@ from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
 
 logger = logging.getLogger("TorHeal")
 
-# Independent targets: any response on either fresh circuit proves clearnet egress works.
 PROBE_URL = "https://www.google.com/generate_204"
 SECOND_PROBE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
 PROBE_TIMEOUT_SEC = 15
 
-# Fixed, bounded cadence and attempt budget for this opt-in recovery.
 PROBE_INTERVAL_SEC = 5 * 60  # active probe cadence (only while the heal is enabled)
-BROKEN_AFTER_SEC = 15 * 60  # sustained failure before the first action
+FIRST_ACTION_AFTER_SEC = 5 * 60
+BROKEN_AFTER_SEC = 15 * 60
+FAST_PROBE_SEC = 60
 COOLDOWN_SEC = 30 * 60  # minimum gap between actions
 NEWNYM_ATTEMPTS = 2
 MAX_ATTEMPTS = 4
 MAX_DISRUPTIVE_PER_DAY = 4
 DISRUPTIVE_WINDOW_SEC = 24 * 3600
-# Consecutive OK probes required to declare an outage OVER once we've spent an action. A single
-# lucky 204 must NOT close the outage: under the issue's own scenario (overloaded Tor, egress
-# flapping) that would refill the budget and clear the cooldown every blip.
 RECOVERY_CONFIRM_PROBES = 2  # ~10 min sustained egress before the budget resets
 # Tor's stop: SIGTERM, `t` seconds of grace, then SIGKILL. Docker holds the request open until the
 # container is down, and a wedged Tor took over 60 s (#3032). The HTTP timeout outlasts grace + kill.
@@ -64,10 +61,9 @@ class TorEgressHealer(TorHistoryMixin):
         notify=None,
         clock=time.monotonic,
         restart_monerod=None,
+        ping_failing_since=None,
     ):
         self.enabled = TOR_AUTO_HEAL if enabled is None else enabled
-        # Cycle monerod after a successful tor restart (#972) — only when the node is local
-        # (a remote monerod has no container here and keeps its own tor).
         if restart_monerod is None:
             restart_monerod = MONERO_NODE_HOST == LOCAL_MONERO_HOST
         self._restart_monerod = restart_monerod
@@ -75,7 +71,9 @@ class TorEgressHealer(TorHistoryMixin):
         self._probe = probe or self._probe_egress
         self._notify = notify  # optional async callable(text) — the Telegram one-off
         self._clock = clock
+        self._ping_failing_since = ping_failing_since
         self._last_probe = None  # probe-cadence throttle
+        self._was_pinging_badly = False
         self._failing_since = None  # start of the current unbroken failure streak
         self._attempts = 0  # recovery actions spent on the current outage
         self._last_attempt = None  # cooldown anchor
@@ -101,10 +99,10 @@ class TorEgressHealer(TorHistoryMixin):
         self.circuits_wedged = False
         if self.enabled:
             logger.info(
-                "Tor egress self-heal enabled: probing every %ds; recovery after %dm "
+                "Tor egress self-heal enabled: probing every %ds; first recovery after %dm "
                 "broken, max %d attempts %dm apart.",
                 PROBE_INTERVAL_SEC,
-                BROKEN_AFTER_SEC // 60,
+                FIRST_ACTION_AFTER_SEC // 60,
                 MAX_ATTEMPTS,
                 COOLDOWN_SEC // 60,
             )
@@ -141,12 +139,12 @@ class TorEgressHealer(TorHistoryMixin):
             self._ok_streak = 0
             self._warned_exhausted = False
             return "recovered"
-        # ok is False — any failure breaks a would-be recovery streak.
         self._ok_streak = 0
         if self._failing_since is None:
-            self._failing_since = now
-        # Transient blip guard: not broken until the failure streak spans the threshold.
-        if (now - self._failing_since) < BROKEN_AFTER_SEC:
+            hint = self._ping_failing_since() if self._ping_failing_since else None
+            self._failing_since = hint if hint is not None and hint < now else now
+        threshold = FIRST_ACTION_AFTER_SEC if self._attempts == 0 else BROKEN_AFTER_SEC
+        if (now - self._failing_since) < threshold:
             return None
         if self._last_attempt is not None and (now - self._last_attempt) < COOLDOWN_SEC:
             return None
@@ -220,7 +218,12 @@ class TorEgressHealer(TorHistoryMixin):
         if not self.enabled:
             return
         now = self._clock()
-        if self._last_probe is not None and (now - self._last_probe) < PROBE_INTERVAL_SEC:
+        hint = self._ping_failing_since() if self._ping_failing_since else None
+        pinging_badly = self._attempts == 0 and hint is not None
+        interval = FAST_PROBE_SEC if pinging_badly else PROBE_INTERVAL_SEC
+        onset = pinging_badly and not self._was_pinging_badly
+        self._was_pinging_badly = pinging_badly
+        if not onset and self._last_probe is not None and (now - self._last_probe) < interval:
             return
         self._last_probe = now
         try:

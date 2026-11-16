@@ -278,6 +278,32 @@ empty_rc=$?
     ok "pruning an empty results/ neither fails nor trips the ERR trap (#3047)" ||
     bad "pruning an empty results/ neither fails nor trips the ERR trap (#3047)" "rc=$empty_rc stderr=$empty_err"
 unset PRE empty_err empty_rc
+PRZ="$SANDBOX/ctrl4127"
+mkdir -p "$PRZ/results"
+for n in 1 2 3; do
+    id="b0b0b0b0-0000-4000-8000-00000000040$n"
+    printf 'ZIP' >"$PRZ/results/$id.zip"
+    echo '{"status":"applied","archive":"support-bundle-x.zip","ts":0}' >"$PRZ/results/$id.json"
+    backdate "$PRZ/results/$id.zip" $((120 + n))
+    backdate "$PRZ/results/$id.json" $((120 + n))
+done
+export CONTROL_BACKUP_MAX_COUNT=1
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+assert_eq "support-bundle zips past their window are capped at the archive count" \
+    "$(find "$PRZ/results" -maxdepth 1 -name '*.zip' | wc -l | tr -d ' ')" "1"
+assert_eq "a pruned zip takes its own result JSON with it" \
+    "$(find "$PRZ/results" -maxdepth 1 -name '*.json' | wc -l | tr -d ' ')" "1"
+assert_eq "the newest zip and its result survive" \
+    "$([ -f "$PRZ/results/b0b0b0b0-0000-4000-8000-000000000401.zip" ] && [ -f "$PRZ/results/b0b0b0b0-0000-4000-8000-000000000401.json" ] && echo kept)" "kept"
+fresh_zip="b0b0b0b0-0000-4000-8000-000000000499"
+printf 'ZIP' >"$PRZ/results/$fresh_zip.zip"
+echo '{"status":"applied","archive":"support-bundle-y.zip","ts":0}' >"$PRZ/results/$fresh_zip.json"
+export CONTROL_BACKUP_MAX_COUNT=0
+run_sourced "$SANDBOX" control_prune_results "$PRZ" >/dev/null 2>&1
+assert_eq "a zip inside its download window survives regardless of count" \
+    "$([ -f "$PRZ/results/$fresh_zip.zip" ] && [ -f "$PRZ/results/$fresh_zip.json" ] && echo kept)" "kept"
+unset CONTROL_BACKUP_MAX_COUNT PRZ fresh_zip
+
 unset CONTROL_RESULTS_MAX_BYTES CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S
 unset CONTROL_BACKUP_DOWNLOAD_WINDOW_S
 unset -f backdate

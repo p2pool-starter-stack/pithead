@@ -26,9 +26,9 @@ class TestTorSocksClassification:
             requests.exceptions.ConnectionError(f"SOCKS5 error against {self.URL}"),
         ]
         for err in errs:
-            with patch.object(hc_mod, "bounded_get", side_effect=err):
+            with patch.object(hc_mod, "_fetch", side_effect=err):
                 assert c.ping() is False
-        assert [r[1] for r in rows] == ["tor_socks", "tor_socks"]
+        assert [r[1] for r in rows] == ["tor_socks"] * 4
 
     def test_real_socks5_error_reply_and_hung_handshake_are_tor_socks(self):
         import socket

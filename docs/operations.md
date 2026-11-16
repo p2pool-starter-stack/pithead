@@ -12,7 +12,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead apply` | Preview and apply `config.json` changes. Warns before disruptive ones and recreates only what changed. `-y` / `--yes` skips the prompt. |
 | `./pithead up` | Start the stack. |
 | `./pithead down` | Stop the stack. |
-| `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` rebuilds circuits when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts right after tor is healthy again so it re-dials its peers (#972). `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
+| `./pithead restart [tor\|monerod]` | Restart the stack, or one container. `restart tor` rebuilds circuits when Tor clearnet egress is stuck (#424) — every Tor circuit drops and rebuilds, mining onions included, and a local monerod restarts once the host has seen tor report bootstrapped (it polls for up to five minutes, then fails and names `restart monerod` instead of re-dialling a dead Tor) so it re-dials its peers (#972, #4063). A bare `restart` re-dials monerod the same way after the whole stack restarts. `restart monerod` re-dials peers on its own when the node reports not synchronized after a Tor restart. See [Tor egress broken while mining works](#troubleshooting). |
 | `./pithead upgrade` | Re-render the generated config, then **pull** (release bundle) or **rebuild** (source checkout) the images and restart. Run after downloading a newer bundle or a `git pull`. |
 | `./pithead logs [service]` | Follow logs for all containers, or a single service (e.g. `logs p2pool`). |
 | `./pithead status` | Show container status and health-check every expected service. Warns about anything down/unhealthy and exits non-zero if so (handy for cron/monitoring). Profile-aware, and treats a stopped `p2pool`/`xmrig-proxy` as intentional during a node-down failover or while the miner is held until the chains sync. |
@@ -29,7 +29,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead lan-guard-check` | Check the live LAN-only source rule. If it is missing, remove the node start marker and stop the nodes that publish LAN ports; if a stop cannot be verified, try restoring the rule on all three fixed node ports and keep reporting failure until the stop is verified. Fired every two minutes by `pithead-lan.timer`; `up`, `apply` and `upgrade` install the timer while a LAN port is configured or still published by a node. Run `./pithead up` after fixing the firewall to restore access. |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
-| `./pithead recovery-bundle` | The appliance's journal-only twin of `support-bundle` ([#4038](https://github.com/p2pool-starter-stack/pithead/issues/4038)): no dashboard, no container engine, no network — it reads the journal of every Pithead unit over the window you ask for (`--hours N`, default 72, clamped host-side to 168), passes every line through the same redactor, refuses an archive over its own size cap rather than truncating one, writes the result `chmod 600` under `/data/pithead/support-bundles/` and prints its path — the console recipe for a box that failed boot gating, where the machine stays up for diagnosis and the console advisory names this command (`/opt/pithead/pithead recovery-bundle`) beside the journal. Run it on tty1 or the serial console as root; the path it prints is the archive to copy off. Refuses where no journal exists: there, use `support-bundle`. Review the archive, then share it the way [#3746](https://github.com/p2pool-starter-stack/pithead/issues/3746) lays out; a box whose dashboard answers collects the same artifact from the browser instead — the **Support bundle** card in [Dashboard › Backup view](dashboard.md#backup-view). |
+| `./pithead recovery-bundle` | The appliance's journal-only twin of `support-bundle` ([#4038](https://github.com/p2pool-starter-stack/pithead/issues/4038)): no dashboard, no container engine, no network — it reads the system journal over the window you ask for, passes every line through the same redactor, writes one `chmod 600` `support-bundle-<UTC timestamp>.zip` under `/data/pithead/support-bundles/` and prints its path. The window is `--since TIME` and `--until TIME` (RFC 3339, for example `2026-11-15T10:00:00Z`; the end second is included whole; the end defaults to now, the start to 72 hours before it), or the older `--hours N` (default 72, clamped to 168). A start after the end, an unparsable time or an end in the future is refused and nothing is written. The zip holds `journal/all.log` (the whole system journal for the window), `journal/kernel.log` (`journalctl -k`), `journal/boots.txt` (`journalctl --list-boots`), one `logs/<unit>.log` per Pithead service and timer and per quadlet-generated unit installed on the box (the list is read from the installed unit files when the bundle is collected), the host facts, the RAUC status, the Tor bootstrap state and the dashboard history, plus `manifest.json`. The manifest lists every file with its window, size, state (`ok`, `empty` for a unit with no lines in the window, `missing` for a unit that is not installed and has no lines, `journal_short` when the file has lines but the journal starts after the requested start; the window block carries the same fact for the whole bundle) and truncation, every step that failed or timed out with its reason, the requested and the effective window, the oldest retained journal entry, the journald disk usage and settings, the Pithead version and the collection time. A start older than the oldest retained entry is clamped to it. **Size policy:** each capped file keeps the oldest quarter and the newest three quarters of a 16 MiB budget with a marker line inside the file saying how many lines and bytes were dropped; the files together are held to 64 MiB uncompressed by shrinking the largest first, and the manifest records every cut. Nothing is refused for size. Journald keeps up to 400 MiB (`SystemMaxUse`), enough for the 168 hours the dashboard offers at the log volume of about 2 MiB per hour the issue reports for a loaded test box (the 200 MiB cap held about 102 hours there; not re-measured when the cap was raised); a window older than the retained journal is flagged in the manifest rather than failing. It is the console recipe for a box that failed boot gating, where the machine stays up for diagnosis and the console advisory names this command (`/opt/pithead/pithead recovery-bundle`) beside the journal. Run it on tty1 or the serial console as root; the path it prints is the archive to copy off. Refuses where no journal exists: there, use `support-bundle`. Review the archive, then attach it to a bug report as the card's steps describe; a box whose dashboard answers collects the same artifact from the browser instead — the **Export logs** card in [Dashboard › Backup view](dashboard.md#backup-view), which works with or without the dashboard control channel. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. If Compose shutdown fails, print its error and warn that containers may still be running, then continue the wipe (exit 0 on completion). |
 | `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host, including the egress firewall rules with their `pithead-egress.service` boot unit and `pithead-egress.timer` check, the LAN-only source rule and its `pithead-lan.timer` check, and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Refuses in a `pithead-vX.Y.Z` directory that `current` does not point at, because every version directory drives the same live stack: run it in the live directory, and delete an old version directory by hand. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
@@ -47,6 +47,12 @@ wait limit means the request may still be queued or running on the host; it does
 show that the control runner is stuck. The `wallet-rpc` and `tari-wallet` checks still appear,
 but their logs stay in the owner-only support bundle because their ordinary output can carry
 wallet material the browser log redactor cannot safely recognize.
+
+Each service card with a **Restart** button (`tor`, `monerod`, `wallet-rpc`, `tari`, `tari-wallet`,
+`p2pool`, `xmrig-proxy`) restarts only that service after a confirmation that names what else is
+interrupted. The host refuses while another pithead operation holds the lock, while the LAN-only
+source rule is not in place, and within 120 seconds of the last restart of the same service; see
+[Restart a service](dashboard.md#restart-a-service).
 
 ### Appliance-only commands
 
@@ -940,8 +946,8 @@ so the heal also needs
 `dashboard.control.enabled: true` (the appliance sets it only when a dashboard login exists);
 without it the heal only probes and logs warnings, and sends a recovery note when egress returns.
 Doctor reports this configuration as INFO and names the login and control prerequisite or manual Tor restart. The dashboard probes every five minutes with a new SOCKS circuit per request.
-A failed request is corroborated against a second target before it counts toward the 15-minute
-outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart.
+A failed request is corroborated against a second target before it counts toward the outage
+window: 5 minutes to the first NEWNYM, 15 minutes to any later one. A Healthchecks ping that has failed on two circuits makes the healer probe every minute until its first action, and the window counts from that ping's first failure once a probe fails too; a ping failure alone never acts. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart.
 The ladder has four rungs, one per 30-minute cooldown and each only while the probes still fail:
 two NEWNYM refreshes, a host-gated `tor-recover` state reset, then one Tor container restart. The
 reset runs the host's gates (a reset reason, onion identity checks, the mutation lock and the
@@ -963,7 +969,7 @@ reset, then the restart, instead of repeating NEWNYM. A NEWNYM that fails or tim
 once per outage before it counts as spent. Each step and its probe
 evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
 circuits, duration and preceding action into the Telegram note; the action is not credited as the
-cause of recovery. On the first heal round, 15 minutes into sustained failure, the
+cause of recovery. On the first heal round, 5 minutes into sustained failure, the
 monitor asks the host for a read-only reading of Tor's circuit-history state, then refreshes it
 on later rounds. A saturated
 history (abandoned count and total build times both at 1000, no `CircuitBuildTimeBin`) is logged
@@ -978,7 +984,7 @@ restart together are capped at four per rolling 24 hours, a count held in the da
 asks the host to write a `tor-heal-exhausted` entry to its audit log, and warns until egress
 recovers. A Tor start the monitor did not cause (an operator, `./pithead` or
 Docker restart) opens a fresh outage window and resets the clock, budget and cooldown, so a Tor that
-restarts more often than every 15 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
+restarts more often than every 5 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
 state reset sends one alert per outage explaining the circuit state and guard reset.
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed
@@ -997,7 +1003,7 @@ two invalid circuit-timing warnings must appear in the last 200 log lines from t
 unreadable diagnostics refuse recovery. A third class covers a synchronized Monero behind dead
 egress: two failed heal rounds from the same sustained outage, recorded by the host at least
 15 minutes apart, plus a live check that both clearnet targets still fail through Tor's SOCKS.
-The healer requests these readings from the first round after 15 minutes of corroborated failure. Recovery clears the outage evidence; the persistent 24-hour
+The healer requests these readings from the first round after 5 minutes of corroborated failure. Recovery clears the outage evidence; the persistent 24-hour
 NEWNYM budget remains separate. After the automatic action budget is spent, read-only observations continue every 30 minutes.
 The host retains the last two spaced rounds. Evidence older than one hour since the last observation is
 refused. A Tor whose egress answers is refused. Without a saturated history, a reset
@@ -1038,7 +1044,13 @@ check) WARNs on the live state. Fix:
 ```
 
 Stack operations don't need the manual step: compose restarts monerod automatically whenever it
-restarts or recreates tor (`up`, `apply`, `upgrade`, `restart tor`), and the final `tor.auto_heal` container restart does the same. NEWNYM does not restart monerod. (#972)
+restarts or recreates tor (`up`, `apply`, `upgrade`), and `restart tor` and a bare `restart` (and so the dashboard's Restart all) wait for Tor to report bootstrapped and then restart a running monerod themselves, whether or not compose already cycled it (a bare `restart` then restarts the tari container too, when the stack has one, so it starts after Tor instead of alongside it); the final `tor.auto_heal` container restart restarts monerod itself once Tor is running. NEWNYM does not restart monerod. (#972, #4063)
+
+The dashboard also covers a Tor start it did not see happen, with or without `tor.auto_heal`
+(#4076). It notes every start of the tor container (an operator, `./pithead`, Docker or an
+update). Once Tor reports healthy (bootstrapped), a monerod that has held 0 outgoing peers for five
+minutes is restarted, once per Tor start. A monerod that was itself restarted in the meantime (by
+compose or the Tor heal) gets its own five minutes first.
 
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
@@ -1091,11 +1103,19 @@ alerts and recovers even while peer counts are unavailable; only the peerless ed
 counts. Remote and unreachable nodes have no chain verdict. The container's `docker inspect`
 health becomes `unhealthy` after 600 seconds without outgoing peers
 (`MONERO_HEALTH_PEERLESS_SEC`) or 30 minutes without height progress; it still prints its peer
-counts, so the card keeps reading them. The stack only reports: it restarts nothing. Fix:
+counts, so the card keeps reading them. A local monerod whose verdict stays peerless for five more
+minutes, while Tor reports healthy, is restarted by the dashboard (#4076).
+Restarts are spaced at least 30 minutes apart, capped at three per rolling 24 hours, logged
+(`Restarting monerod to re-dial its peers through Tor`) and recorded in the audit log. At the cap
+the dashboard logs once that it has stopped, and the manual fix stays:
 
 ```bash
 ./pithead restart monerod
 ```
+
+Only a running local monerod is cycled: a stopped one (held by the LAN-access guard on a DIY host, see #2749)
+is never started, and a remote node is never touched. The cap and spacing are held in the dashboard's
+memory, so a dashboard restart clears them.
 
 The clocks start when the dashboard first sees the node and again whenever it stops answering, so
 a dashboard restart or a monerod restart never reads as a stall; a node that does not answer shows

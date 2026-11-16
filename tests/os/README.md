@@ -273,7 +273,10 @@ the configured test registry fail before the image build. Release builds do not 
   bundle stamped with a version no release carries. Its copied build tree opts into the
   harness-only synthetic compose path, names its compose file explicitly, uses the resolved
   signing material, and records the file hash in `COMPOSE_SOURCE`, so the build does not need a
-  git origin or a local dev-key directory. The
+  git origin or a local dev-key directory. Its stamped bundle, its build log and the stamped
+  `pithead-os-rootfs-<marker>` image tag its build creates live inside the leg's own temp
+  directory, and the leg removes them all when it ends — success or failure — because nothing
+  the leg writes on the host may outlive the job (#3299). The
   resulting slot cannot bring the stack up and falls back uncommitted: the
   previous slot's boot must put the `/data` floor back from the record the raise left, and the same
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
@@ -342,8 +345,11 @@ the configured test registry fail before the image build. Release builds do not 
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
   Fault E (#4038) runs `recovery-bundle` on the fault guest with no container running and a
-  deliberately failed pithead unit; the archive must be mode 600 under `/data/pithead/support-bundles`,
-  hold that unit's journal line, and its path must appear on the serial console.
+  deliberately failed pithead unit and a dummy unit installed at run time; the archive is a zip taken with
+  `--since` and `--until`, mode 600 under `/data/pithead/support-bundles`, and must hold the failed unit's
+  journal line, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
+  the journal facts; its path must appear on the serial console, which also records how many quadlet
+  container units carried journal lines.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
   with local chains and the non-default nano pool. Each setup-again session separately checks
   the current boot journal for a minted token, the new-boot serial slice and tty1 text from

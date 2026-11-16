@@ -166,7 +166,7 @@ are in `02f-tor-recovery-reasons.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
-The P2Pool zero-peer watchdog is `service/health/p2pool_heal.py`.
+The P2Pool zero-peer watchdog is `service/health/p2pool_heal.py`. The peerless-monerod watchdog and the re-dial after any Tor start are `service/health/monerod_redial.py`.
 The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
 the same host-gated recovery as the CLI.
 

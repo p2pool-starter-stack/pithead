@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
+    FIRST_ACTION_AFTER_SEC,
     MAX_ATTEMPTS,
     NEWNYM_ATTEMPTS,
     PROBE_INTERVAL_SEC,
@@ -124,7 +125,7 @@ async def test_failed_probe_after_external_restart_waits_for_fresh_threshold():
     rig.tor_started += 3600
     await rig.step(True)
     await rig.step(False)
-    await rig.step(False, BROKEN_AFTER_SEC - PROBE_INTERVAL_SEC - 1)
+    await rig.step(False, FIRST_ACTION_AFTER_SEC - 1)
     assert rig.docker.calls == []
     assert rig.healer._attempts == 0
 

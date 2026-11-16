@@ -7,6 +7,7 @@ import pytest
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
+    FIRST_ACTION_AFTER_SEC,
     MAX_ATTEMPTS,
     PROBE_INTERVAL_SEC,
     RECOVERY_CONFIRM_PROBES,
@@ -77,18 +78,17 @@ class TestDecide:
         clock = _Clock()
         h = _healer(clock)
         h.decide(False, clock.t)
-        clock.t += BROKEN_AFTER_SEC - 1
+        clock.t += FIRST_ACTION_AFTER_SEC - 1
         assert h.decide(False, clock.t) is None
 
     def test_blip_that_recovers_resets_the_streak(self):
         clock = _Clock()
         h = _healer(clock)
         h.decide(False, clock.t)
-        clock.t += BROKEN_AFTER_SEC - 1
-        assert h.decide(True, clock.t) is None  # recovered on its own: no heal, no alert
-        # A new failure starts a fresh streak — the old one must not carry over.
+        clock.t += FIRST_ACTION_AFTER_SEC - 1
+        assert h.decide(True, clock.t) is None
         assert h.decide(False, clock.t) is None
-        clock.t += BROKEN_AFTER_SEC - 1
+        clock.t += FIRST_ACTION_AFTER_SEC - 1
         assert h.decide(False, clock.t) is None
 
     def test_no_second_heal_during_cooldown(self):

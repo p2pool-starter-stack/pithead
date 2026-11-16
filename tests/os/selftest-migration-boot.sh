@@ -79,6 +79,9 @@ last=$(grep '^rauc ' "${CALLS:?}" | tail -1)
 case "$*" in
 -f*/.os-data-floor.*) [ "${SYNC_FAIL_FLOOR:-0}" != 1 ] || exit 1 ;;
 esac
+if [ "$#" -eq 0 ] && [ "${SYNC_FAIL_CLEAR:-0}" = 1 ] && [ ! -e "${PITHEAD_MIGRATION_MARKER_FILE:-}" ]; then
+    exit 1
+fi
 EOF
 cat >"$T/bin/stat" <<'EOF'
 #!/usr/bin/env bash
@@ -118,7 +121,7 @@ fixture_env() {
     export PITHEAD_MIGRATION_MARKER_FILE="$1/.os-migration-pending"
     export PITHEAD_LOCK_FILE="$1/lock"
     export RAUC_BOOT_SLOT="$2" RAUC_MARK_GOOD_RC=0 RAUC_MARK_BAD_RC=0
-    export SYNC_FAIL_COMMIT=0 SYNC_FAIL_FLOOR=0
+    export SYNC_FAIL_COMMIT=0 SYNC_FAIL_FLOOR=0 SYNC_FAIL_CLEAR=0
 }
 
 ownership_case() (
@@ -163,6 +166,7 @@ gate_case() (
     export RAUC_MARK_BAD_RC="${CASE_MARK_BAD_RC:-0}"
     export SYNC_FAIL_COMMIT="${CASE_SYNC_FAIL_COMMIT:-0}"
     export SYNC_FAIL_FLOOR="${CASE_SYNC_FAIL_FLOOR:-0}"
+    export SYNC_FAIL_CLEAR="${CASE_SYNC_FAIL_CLEAR:-0}"
     # shellcheck source=/dev/null
     source "$dir/pithead"
     # shellcheck disable=SC2034 # read by the extracted production loop
@@ -252,6 +256,16 @@ gate_case "$RELEASE" B 1 >"$RELEASE/out" 2>&1 || fail 'candidate commit and rele
 assert_absent "$RELEASE/.os-data-floor.prev"
 assert_absent "$RELEASE/.os-migration-pending"
 assert_call "$RELEASE" 'pithead up'
+
+CLEAR_FAIL=$(new_fixture candidate-clear-fail 2.0.0 B '2.0.0|B')
+set +e
+CASE_SYNC_FAIL_CLEAR=1 gate_case "$CLEAR_FAIL" B 1 >"$CLEAR_FAIL/out" 2>&1
+rc=$?
+set -e
+[ "$rc" -eq 0 ] || fail "a committed boot failed because the migration hold could not be cleared"
+grep -Fq 'FAULT — migration protection could not be cleared after commitment' "$CLEAR_FAIL/out" ||
+    fail 'a failed migration-hold clear at the commit gate was not reported'
+assert_call "$CLEAR_FAIL" 'pithead up'
 
 if [ "$(uname -s)" = Linux ]; then
     RACE=$(new_fixture cleanup-race 1.5.0 A '2.0.0|B')

@@ -247,6 +247,7 @@ Useful flags (full list in `run.sh --help`):
 | `--candidate-image-key <trusted-cosign.pub>` | Name the separate externally anchored image-signing public key. This permits an ephemeral test key for the candidate bundle while retaining the project image trust root. |
 | `--xvb-routing-smoke` | From a known live `xvb.enabled=true`, `xvb.tor=true` baseline with hooked kernel DROP rules, prove the candidate wallet-bearing client in a temporary Tor-only Docker network, then use a strict apply that refuses to start containers unless those rules are installed. Observe the real proxy/dashboard move from P2Pool to XvB and naturally return, then restore exact enabled config, route, worker identities, hashes, and secrets. The isolated fetch proves the candidate client/network leg, not process attribution for the host-network dashboard. Requires `--safety-backup`; no recent PPLNS share is a failure. Every poll is bounded; worst case is about 45 minutes. |
 | `--auth-fail-closed` | Also empty `PROXY_AUTH_TOKEN` in `.env` and assert `pithead up` refuses to start (the live counterpart to the tier-1 compose-config check, [#153](https://github.com/p2pool-starter-stack/pithead/issues/153)/[#203](https://github.com/p2pool-starter-stack/pithead/issues/203)), then restore the exact token and recover. Token edits keep the temporary and replacement `.env` owner-only (0600), preserve its owner and group, and remove the temporary file on failure. Restore mismatches report no token values. `selftest-auth-fail-closed.sh` covers permissions under a 022 umask and a failed-restore negative control without a live stack. Destructive-then-restored; ssh or local mode. |
+| `--svc-restart` | Enable `dashboard.control`, restart `xmrig-proxy` through the control spool and assert the host runner applies it, the stack is healthy afterwards, the container's start time moved and the audit entry names the service; a repeat inside the cooldown and a service outside the allowlist are refused ([#4062](https://github.com/p2pool-starter-stack/pithead/issues/4062)). Local mode only; restores the baseline and removes the control units. |
 | `--rotate-onion` | Also run `rotate-dashboard-onion` on a reserved non-production fixture ([#2345](https://github.com/p2pool-starter-stack/pithead/issues/2345)). After the safety backup, `e2e.sh` creates a one-run Tor data directory and uses `pithead render` followed by the normal `rotate-dashboard-onion` path to mint and persist fresh dashboard, client-auth, and mining identities there after capturing the baseline chain snapshot and before deploying consumer containers; a provisioning failure refuses deployment. The bootstrap render explicitly adopts the reserved host's control and firewall units, as the following upgrade does; baseline restoration converges their original owner afterward. It binds the harness to that exact directory with a root-owned marker outside the mount, then removes the fixture and its credential snapshot after baseline convergence detaches its container mounts; no live identity is copied, and `--keep` is refused. The phase rotates the fixture again, then proves the new address answers over the real Tor network, the retired address becomes unreachable with its original key after a bounded transition, every fixture mining key stays unchanged, the Caddyfile names only the new vhost ([#546](https://github.com/p2pool-starter-stack/pithead/issues/546)'s regression), and `HOST_IP` survives the render ([#356](https://github.com/p2pool-starter-stack/pithead/issues/356)'s regression). Destructive-then-restored: keeps the client credential in a fingerprinted, owner-only file outside container mounts, swaps the saved Tor hidden-service key files back into place, verifies their fingerprints and hostname, renders the old address into the derived files, and proves it externally reachable again; the run-level EXIT restore does the same after a failed or interrupted phase. The wrapper retains the fixture and fails cleanup if either recovery copy remains after phase restoration. A missing, invalid, or unreachable fixture fails instead of skipping. |
 | `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). A failed phase stops every later requested phase, and the summary lists each of them under "did NOT run". |
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
@@ -529,6 +530,15 @@ via an `EXIT` trap):
    census run. A timeout leaves the restore unproved and prints the stage (`mining-services`),
    the gate marker and each service's state; the per-service identity check still runs and
    still fails any service that is not running.
+   The dashboard's mining guard can stop xmrig-proxy about 90 seconds after a guarded service
+   turns unhealthy, after those samples passed, and `restart: unless-stopped` never undoes that
+   stop ([#4167](https://github.com/p2pool-starter-stack/pithead/issues/4167)). So "baseline stack
+   healthy again" is logged only after a last re-check, after the proof steps and the control
+   checks and just before "restore complete", finds P2Pool and xmrig-proxy running and healthy. If either is stopped, the
+   harness waits up to 600 seconds for the dashboard to readmit it, logging the start and the
+   elapsed time, and never starts it itself. A service still down at the bound fails the restore
+   with a message naming xmrig-proxy and the seconds waited. The re-check is skipped when an earlier restore or control proof has already failed,
+   so "baseline stack healthy again" never precedes a "RESTORE NOT PROVEN" verdict.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
@@ -576,13 +586,13 @@ via an `EXIT` trap):
 
 `--mode`: `targeted` (default, lean) validates the dashboard and the sync logic against the
 already-synced node: `check` + `--lifecycle` (one controlled restart exercises the sync gate /
-node-down failover) + `--auth-fail-closed`, plus `--rigforge` and `--rigforge-control` when a rig is
+node-down failover) + `--auth-fail-closed` + `--svc-restart`, plus `--rigforge` and `--rigforge-control` when a rig is
 borrowed. No full config sweep, and never a re-sync. Container restarts reload the existing chain;
 monerod re-confirms the tip in seconds, but a recreated tari also has to rebuild its Tor circuits
 first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-starter-stack/pithead/issues/2455)) —
 `deploy_branch` waits on that before running the harness, since the harness reads the Tari panel
 once. `check` is pure reads only. `matrix` is the opt-in full destructive
-config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
+config sweep (lifecycle + fault-injection + auth-fail-closed + svc-restart + hardening + `--subnet`, plus the same
 two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates
 `targeted`, so keeping the write paths matrix-only left them out of the gate that decides whether a
@@ -598,7 +608,7 @@ you did not ask for cannot fail and skip one you did. The mode's scenario,
 the rig identity, the pregate and the restore still run. `--scenario <name>` alone only changes
 the scenario; it keeps the mode's and borrowed rig's phases. Only an allowlisted
 `run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--fault-injection-ssh`, `--auth-fail-closed`,
-`--hardening`, `--rotate-onion`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
+`--svc-restart`, `--hardening`, `--rotate-onion`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
 `--xvb-routing-smoke`, `--rotate-secrets`, `--sweep`, or `--scenario <name>` as two `--harness-arg` (the flag,
 then the name) — and anything else is refused before any bench work, never built into a shell string from
 the raw value. Not supported with `--mode check`, which runs nothing but `--check` by design. `--rotate-secrets`
