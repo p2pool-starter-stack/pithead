@@ -34,6 +34,7 @@ PROBE_TIMEOUT_SEC = 15
 PROBE_INTERVAL_SEC = 5 * 60  # active probe cadence (only while the heal is enabled)
 FIRST_ACTION_AFTER_SEC = 5 * 60  # sustained failure before the first NEWNYM
 BROKEN_AFTER_SEC = 15 * 60  # sustained failure before any later action
+FAST_PROBE_SEC = 60
 COOLDOWN_SEC = 30 * 60  # minimum gap between actions
 MAX_ATTEMPTS = 3  # two circuit refreshes, then one container restart
 # Consecutive OK probes required to declare an outage OVER once we've spent an action. A single
@@ -233,7 +234,11 @@ class TorEgressHealer(TorHistoryMixin):
         if not self.enabled:
             return
         now = self._clock()
-        if self._last_probe is not None and (now - self._last_probe) < PROBE_INTERVAL_SEC:
+        pinging_badly = self._attempts == 0 and (
+            self._ping_failing_since is not None and self._ping_failing_since() is not None
+        )
+        interval = FAST_PROBE_SEC if pinging_badly else PROBE_INTERVAL_SEC
+        if self._last_probe is not None and (now - self._last_probe) < interval:
             return
         self._last_probe = now
         try:

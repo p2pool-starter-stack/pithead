@@ -67,6 +67,29 @@ class TestFreshCircuitRetry:
         assert get.call_count == 1
 
 
+class TestServerErrorRetry:
+    def test_a_5xx_is_retried_once_on_a_fresh_circuit(self):
+        c = _client(tor_proxy="socks5h://tor:9050")
+        with patch.object(hc_mod, "_fetch", side_effect=[_resp(503), _resp(200)]) as get:
+            assert c.ping() is True
+        assert get.call_count == 2
+
+    def test_a_persistent_5xx_fails_after_two_attempts(self):
+        c = _client(tor_proxy="socks5h://tor:9050")
+        with patch.object(hc_mod, "_fetch", return_value=_resp(503)) as get:
+            assert c.ping() is False
+        assert get.call_count == 2
+
+    def test_a_rejection_clears_the_failing_streak(self):
+        c = _client(interval_seconds=0)
+        err = requests.exceptions.ConnectionError("x")
+        with patch.object(hc_mod, "_fetch", side_effect=[err, err, _resp(404)]):
+            c.ping()
+            assert c.failing_since is not None
+            c.ping()
+        assert c.failing_since is None
+
+
 class TestIndependentTask:
     async def test_run_pings_every_interval_whatever_the_data_loop_does(self):
         c = _client()
@@ -206,3 +229,36 @@ class TestFailingSince:
             assert c.failing_since == first
             c.ping()
         assert c.failing_since is None
+
+
+class TestDaemonThread:
+    async def test_the_ping_runs_off_the_default_executor_in_a_daemon_thread(self):
+        seen = []
+        result = await hc_mod._in_daemon_thread(
+            lambda: seen.append(threading.current_thread().daemon) or "ok"
+        )
+        assert (result, seen) == ("ok", [True])
+
+    async def test_an_exception_in_the_thread_reaches_the_caller(self):
+        def boom():
+            raise ValueError("x")
+
+        with pytest.raises(ValueError):
+            await hc_mod._in_daemon_thread(boom)
+
+    async def test_a_failed_cycle_still_waits_the_minimum_gap(self):
+        c = _client()
+        c.interval = 60
+        gaps = []
+
+        async def fake_sleep(delay):
+            gaps.append(delay)
+            raise asyncio.CancelledError
+
+        with (
+            patch.object(c, "ping", side_effect=lambda: time.sleep(0.01) or False),
+            patch.object(hc_mod.asyncio, "sleep", fake_sleep),
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await c.run()
+        assert gaps and gaps[0] >= 5

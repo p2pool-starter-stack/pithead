@@ -5,6 +5,7 @@ import json
 import logging
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from types import SimpleNamespace
@@ -22,6 +23,27 @@ _PING_TIMEOUT_SEC = 10
 _PING_DEADLINE_SEC = 25
 _PING_HARD_LIMIT_SEC = 30
 _PING_INTERVAL_SEC = 60
+_PING_MIN_GAP_SEC = 5
+
+
+async def _in_daemon_thread(fn):
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+
+    def settle(setter, value):
+        if not fut.done():
+            setter(value)
+
+    def work():
+        try:
+            result = fn()
+        except Exception as e:
+            loop.call_soon_threadsafe(settle, fut.set_exception, e)
+        else:
+            loop.call_soon_threadsafe(settle, fut.set_result, result)
+
+    threading.Thread(target=work, daemon=True).start()
+    return await fut
 
 
 class PingFailure(requests.RequestException):
@@ -128,10 +150,13 @@ class HealthchecksClient:
                     self._last_ping = now
                     self.failing_since = None
                     return True
+                self.failing_since = None
+                self._record("http_status", f"HTTP {resp.status_code}")
+                if attempt == 0 and resp.status_code >= 500:
+                    continue
                 if self._last_ping_ok is not False:
                     logger.warning("Healthchecks ping rejected: HTTP %s.", resp.status_code)
                 self._last_ping_ok = False
-                self._record("http_status", f"HTTP {resp.status_code}")
                 return False
             except requests.RequestException as e:
                 logger.debug("Healthchecks ping failed (offline?): %s", e)
@@ -150,12 +175,17 @@ class HealthchecksClient:
         while True:
             started = time.monotonic()
             try:
-                await asyncio.to_thread(self.ping)
+                await _in_daemon_thread(self.ping)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 logger.debug("Healthchecks ping task error: %s", e)
-            await asyncio.sleep(max(0, self.interval - (time.monotonic() - started)))
+            await asyncio.sleep(
+                max(
+                    min(self.interval, _PING_MIN_GAP_SEC),
+                    self.interval - (time.monotonic() - started),
+                )
+            )
 
     def _record(self, reason, detail=""):
         if not self._record_failure:
