@@ -216,7 +216,9 @@ class DataSetupMixin:
         # to restart tor when clearnet egress is stuck on a failing guard; the recovery
         # note rides the Telegram notifier, which works again exactly when the heal worked.
         self.tor_healer = TorEgressHealer(
-            self.docker_control, notify=self.alert_service.tor_heal_alert
+            self.docker_control,
+            notify=self.alert_service.tor_heal_alert,
+            ping_failing_since=lambda: self.healthchecks.failing_since,
         )
         self.monerod_redial = MonerodRedial(
             self.docker_control, audit=self._audit_monerod_restart, enabled=monero_is_local()

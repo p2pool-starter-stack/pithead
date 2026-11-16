@@ -77,6 +77,31 @@ class TestSupportBundleSubmit:
         assert resp.status == 202
         assert spooled(spool)["hours"] == 9999
 
+    async def test_an_explicit_start_and_end_are_spooled_for_the_host_to_validate(
+        self, bundle_client, spool
+    ):
+        resp = await bundle_client.post(
+            "/api/control/support-bundle",
+            headers=CONTROL_HEADERS,
+            json={"since": "2026-11-15T10:00:00Z", "until": "2026-11-15T12:00:00Z"},
+        )
+        assert resp.status == 202
+        intent = spooled(spool)
+        assert intent["since"] == "2026-11-15T10:00:00Z"
+        assert intent["until"] == "2026-11-15T12:00:00Z"
+        assert "hours" not in intent
+
+    @pytest.mark.parametrize("key", ["since", "until"])
+    @pytest.mark.parametrize("value", [5, None, "", "x" * 41, ["2026-11-15T10:00:00Z"]])
+    async def test_a_malformed_time_is_a_400_and_spools_nothing(
+        self, bundle_client, spool, key, value
+    ):
+        resp = await bundle_client.post(
+            "/api/control/support-bundle", headers=CONTROL_HEADERS, json={key: value}
+        )
+        assert resp.status == 400
+        assert not list((spool / "requests").glob("*.json"))
+
     @pytest.mark.parametrize("hours", [True, 0, -1, "24", None, [24]])
     async def test_a_malformed_window_is_a_400_and_spools_nothing(
         self, bundle_client, spool, hours
@@ -143,7 +168,7 @@ class TestSupportBundleDownload:
 
     async def test_applied_without_the_archive_on_disk_is_a_404(self, bundle_client, spool):
         rid = str(uuid.uuid4())
-        await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.tar.gz"})
+        await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.zip"})
         resp = await bundle_client.get("/api/control/support-bundle-download", params={"id": rid})
         assert resp.status == 404
 
@@ -151,11 +176,9 @@ class TestSupportBundleDownload:
         self, bundle_client, spool
     ):
         rid = str(uuid.uuid4())
-        await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.tar.gz"})
-        (spool / "results" / f"{rid}.tar.gz").write_bytes(b"tarbytes")
+        await self._result(spool, rid, {"status": "applied", "archive": "support-bundle-x.zip"})
+        (spool / "results" / f"{rid}.zip").write_bytes(b"zipbytes")
         resp = await bundle_client.get("/api/control/support-bundle-download", params={"id": rid})
         assert resp.status == 200
-        assert await resp.read() == b"tarbytes"
-        assert (
-            'attachment; filename="support-bundle-x.tar.gz"' in resp.headers["Content-Disposition"]
-        )
+        assert await resp.read() == b"zipbytes"
+        assert 'attachment; filename="support-bundle-x.zip"' in resp.headers["Content-Disposition"]

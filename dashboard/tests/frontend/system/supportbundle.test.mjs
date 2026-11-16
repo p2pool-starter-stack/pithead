@@ -38,7 +38,7 @@ test("runSupportBundle posts the requested window, skips 'running', returns id +
     }
     polls++;
     if (polls === 1) return okResult({ status: "running" });
-    return okResult({ status: "applied", archive: "support-bundle-x.tar.gz", hours: 24, ts: 1 });
+    return okResult({ status: "applied", archive: "support-bundle-x.zip", hours: 24, ts: 1 });
   };
   const out = await withFastPoll(fetchStub, () => runSupportBundle(24));
   assert.equal(out.id, ID);
@@ -54,7 +54,7 @@ test("no stated window sends no hours key — the host states its own default", 
       body = opts.body;
       return { status: 202, ok: false, json: async () => ({ id: ID, status: "pending" }) };
     }
-    return okResult({ status: "applied", archive: "a.tar.gz", hours: DEFAULT_HOURS });
+    return okResult({ status: "applied", archive: "a.zip", hours: DEFAULT_HOURS });
   };
   const out = await withFastPoll(fetchStub, () => runSupportBundle(0));
   assert.equal(body, JSON.stringify({}));

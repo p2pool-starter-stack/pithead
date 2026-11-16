@@ -154,6 +154,8 @@ echo "== unit: image builds retry apt update (#1802) =="
 for image in monero p2pool xmrig-proxy; do assert_contains "image build retries apt update with delayed, bounded backoff (#1802)" "$(cat "$ROOT/build/$image/Dockerfile")" 'for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done'; done
 echo "== unit: image builds pull base security fixes past the digest pin (#3923, #3929) =="
 for alpine_image in build/tor tests/integration/tor-client tests/netwatch; do assert_contains "alpine image build pulls the base's musl past the digest pin with the openssl libs (#3929)" "$(cat "$ROOT/$alpine_image/Dockerfile")" 'apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils'; done
+assert_contains "tor image pins the apk tor package to an explicit version (#4125)" "$(cat "$ROOT/build/tor/Dockerfile")" '"tor=${TOR_VERSION}"'
+assert_contains "tor image build fails unless the installed tor reports the pinned version (#4125)" "$(cat "$ROOT/build/tor/Dockerfile")" 'tor --version | grep -F "Tor version ${TOR_VERSION%-r*}."'
 assert_contains "netwatch build pulls the base's zlib with the rest (#3929)" "$(cat "$ROOT/tests/netwatch/Dockerfile")" 'musl musl-utils zlib'
 for debian_image in dashboard os/rootfs; do assert_contains "debian image build lists zlib1g to pull its security build (#3923)" "$(cat "$ROOT/$debian_image/Dockerfile")" 'zlib1g'; done
 echo "== unit: patch-coverage overlap self-test (#1000) =="

@@ -344,6 +344,7 @@ for row in \
     "tari-wallet|docker-compose.yml|ghcr.io/tari-project/minotari_console_wallet:" \
     "caddy|docker-compose.yml|caddy:" \
     "socket-proxy|docker-compose.yml|tecnativa/docker-socket-proxy:" \
+    "tor|build/tor/Dockerfile|-r" \
     "tor-base|build/tor/Dockerfile|:"; do
     comp="${row%%|*}"
     rest="${row#*|}"
@@ -368,6 +369,15 @@ for row in \
         bad "pin $comp resolves to its own image in $pin_rel" "got '$pv', expected to contain '$pin_want'"
     fi
 done
+# shellcheck disable=SC1090
+tor_pin="$(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    pin tor
+)"
+if [[ "$tor_pin" =~ ^[0-9]+(\.[0-9]+)+-r[0-9]+$ ]]; then ok "pin tor is an exact apk version-revision (#4125)"; else bad "pin tor is an exact apk version-revision (#4125)" "got '$tor_pin'"; fi
 # The top-level VERSION file is the single source of truth (#44); the dashboard's Python package
 # metadata must stay in lockstep so a release can't ship two different "stack versions".
 ver_file="$(tr -d ' \t\r\n' <"$ROOT/VERSION")"
