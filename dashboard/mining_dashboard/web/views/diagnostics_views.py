@@ -160,6 +160,7 @@ async def handle_tor_reset(request):
 async def handle_support_bundle(request):
     _require_control_header(request)
     hours = None
+    window = {}
     if request.can_read_body:
         try:
             body = await request.json()
@@ -171,9 +172,15 @@ async def handle_support_bundle(request):
             hours = body.get("hours")
             if isinstance(hours, bool) or not isinstance(hours, int) or hours < 1:
                 raise web.HTTPBadRequest(text="'hours' must be a positive integer.")
+        for key in ("since", "until"):
+            if key in body:
+                value = body[key]
+                if not isinstance(value, str) or not 0 < len(value) <= 40:
+                    raise web.HTTPBadRequest(text=f"'{key}' must be an RFC 3339 time string.")
+                window[key] = value
     try:
         rid = diagnostics_service.submit_support_bundle(
-            hours, request.headers.get("X-Auth-User", "")
+            hours, request.headers.get("X-Auth-User", ""), **window
         )
     except Exception:
         logger.exception("Error submitting support-bundle request")

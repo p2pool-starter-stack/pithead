@@ -62,8 +62,12 @@ def submit_svc_restart(container: str, actor: str = "") -> str:
     )
 
 
-def submit_support_bundle(hours=None, actor: str = "") -> str:
+def submit_support_bundle(hours=None, actor: str = "", since=None, until=None) -> str:
     intent = {"id": str(uuid.uuid4()), "action": "support-bundle", "actor": actor}
     if hours is not None:
         intent["hours"] = hours
+    if since is not None:
+        intent["since"] = since
+    if until is not None:
+        intent["until"] = until
     return request_spool.write(intent)
