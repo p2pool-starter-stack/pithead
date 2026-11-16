@@ -136,6 +136,8 @@ source "$HERE/lib/run-lifecycle.sh" || exit $?
 source "$HERE/lib/run-reset-dashboard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rotate-secrets.sh
 source "$HERE/lib/run-rotate-secrets.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-dashboard-log.sh
+source "$HERE/lib/run-dashboard-log.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-pool-sync-fault.sh
