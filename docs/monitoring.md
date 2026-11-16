@@ -30,13 +30,14 @@ pings and nothing is logged.
    months of history) is plenty for one stack. (Prefer to self-host? See
    [Self-hosting](#self-hosting-your-own-instance) below.)
 2. Create a new check. Name it something like `pithead`.
-3. Set its schedule. The recommended values, which match Pithead's fixed 60-second ping interval:
-   - **Period — 1 minute.** How often Healthchecks.io *expects* a ping. The stack pings once a
-     minute, so a 1-minute period tracks it closely.
-   - **Grace — 5 minutes.** How long after a missed period before you're alerted. This slack
-     absorbs a brief blip — e.g. a quick dashboard-container restart — without a false alarm,
-     so you're only alerted after roughly **6 minutes** of true silence. Shorten it for faster
-     alerts (more false positives on blips), lengthen it to tolerate longer restarts.
+3. Set its schedule. The recommended values pair with Pithead's fixed 60-second ping and with
+   the Tor egress healer's first repair, which comes 5 minutes after egress fails:
+   - **Period — 5 minutes.** How often Healthchecks.io *expects* a ping.
+   - **Grace — 5 minutes.** How long after a missed period before you're alerted. Period plus
+     grace is about **10 minutes** of true silence, longer than the healer's time to first
+     action, so a Tor fault the stack can repair is repaired before the alert fires. Keep period
+     plus grace above 5 minutes. Shorten it for faster alerts (more false positives on Tor
+     faults and dashboard restarts), lengthen it to tolerate longer ones.
 4. Copy the check's **ping URL** — it looks like `https://hc-ping.com/<uuid>`.
 
 ### 2. Choose where alerts go
@@ -79,10 +80,17 @@ the whole host) and, once the period + grace elapses, Healthchecks.io alerts you
 
 ## How it works
 
-- The dashboard's existing data-collection loop sends the ping each cycle, so it reuses the
-  process that's already running — no extra container or daemon. If the host dies, the
-  dashboard dies with it, the pings stop, and the alert fires. If only the dashboard container
-  restarts briefly, the **grace period** absorbs the gap.
+- A task of its own in the dashboard process sends the ping every 60 seconds, started at dashboard
+  startup and independent of the data-collection loop, so a stalled collector or a long `apply`
+  lock does not delay it. Each attempt runs in a child process that is killed
+  after 30 seconds, whatever the endpoint sends, so a stalled or trickling endpoint cannot hold the
+  ping. A failed attempt is retried once, in the same cycle, on a fresh isolated Tor circuit, and
+  both attempts are recorded. If the host
+  dies, the dashboard dies with it, the pings stop, and the alert fires. If only the dashboard
+  container restarts briefly, the **grace period** absorbs the gap.
+- **What the check means: host up and Tor egress working.** The ping travels over Tor, so the
+  check goes red when the host is down, when the dashboard is not running, or when Tor egress
+  stays broken. It does not mean the host alone is down.
 - **Liveness only — is the *stack* up.** This is a pure dead-man's switch: it reports that the
   dashboard loop (and therefore the host) is alive, nothing more. It deliberately does **not** try
   to say whether a node is synced or a miner is connected. In-stack health — monerod or Tari down
@@ -157,8 +165,9 @@ Two things to know:
 
 - **Tor is part of the ping path.** If the Tor container is down while the host is up, the ping
   can't get out and the check will eventually alert, reading as "host down" while the host is up.
-  The 5-minute grace absorbs brief Tor blips, and pings retry every cycle, so only a sustained Tor
-  outage trips it. That's usually what you want (Tor down *is* a problem worth knowing about, and
+  With `tor.auto_heal` on and `dashboard.control.enabled: true`, the first repair (a circuit
+  refresh) comes 5 minutes after egress fails, inside the recommended period plus grace, and pings retry every minute, so only a
+  sustained Tor outage trips it. That's usually what you want (Tor down *is* a problem worth knowing about, and
   it silences the [Telegram alerts](telegram.md#privacy-and-secrets) too). One such outage is
   Tor stuck on a **failing guard** — bootstrapped, mining fine, but clearnet exits dead (#424):
   `./pithead doctor` diagnoses it. `tor.auto_heal: true` tries bounded circuit

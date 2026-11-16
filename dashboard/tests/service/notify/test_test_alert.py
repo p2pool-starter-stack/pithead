@@ -32,7 +32,7 @@ def test_unconfigured_sinks_and_healthchecks_are_reported(monkeypatch):
         healthchecks_mod, "HEALTHCHECKS_PING_URL", "https://healthchecks.invalid/secret"
     )
 
-    with patch.object(healthchecks_mod, "bounded_get") as healthchecks_ping:
+    with patch.object(healthchecks_mod, "_fetch") as healthchecks_ping:
         assert test_alert.run_test_alert(TelegramNotifier(), [], output) is True
     healthchecks_ping.assert_not_called()
     assert output.getvalue().splitlines() == [
