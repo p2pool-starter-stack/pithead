@@ -11,6 +11,16 @@ _pred_rig_pool_differs() {
     [ -n "$pool" ] && [ "$pool" != "$RIG_POOL_BEFORE" ]
 }
 _pred_rig_pool_returned() { [ "$(_rig_active_pool)" = "$RIG_POOL_BEFORE" ]; }
+_assert_dashboard_logged() {
+    local label="$1" pattern="$2" line
+    line="$(rx "docker compose logs --no-color dashboard 2>&1 | grep -aE $(quote_arg "$pattern") | tail -n 1 | cut -c 1-400" 2>/dev/null)"
+    if [ -n "$line" ]; then
+        it_step "dashboard log: ${line}"
+        it_pass "$label"
+    else
+        it_fail "$label" "no dashboard log line matching ${pattern}"
+    fi
+}
 _rig_pool_leg() {
     if wait_for "$1" 10 "$3" "$2"; then
         it_pass "$3"
@@ -40,6 +50,7 @@ fault_node_down() {
     # After the node-health debounce, stopping xmrig-proxy sends workers to backup pools (#31).
     wait_for 180 10 "xmrig-proxy stopped by failover" _pred_proxy_stopped || true
     assert_eq "xmrig-proxy stopped for failover" "$(svc_state_of "$(service_state xmrig-proxy)")" "exited"
+    _assert_dashboard_logged "dashboard logged why xmrig-proxy was stopped (#4165)" 'Mining work is not valid \(.*Monero'
     [ -z "$RIG_POOL_BEFORE" ] || _rig_pool_leg 180 _pred_rig_pool_differs "borrowed rig failed over to its backup pool when the stratum closed (#4046)"
     it_step "recover: start monerod…"
     rx "docker compose start monerod" >/dev/null 2>&1
@@ -48,6 +59,7 @@ fault_node_down() {
     pithead status >/dev/null 2>&1
     assert_rc "status OK after monerod recovery" "$?" "0"
     wait_for 120 5 "readmission after the 60s node-health debounce (#31)" _pred_failover_armed && it_pass "xmrig-proxy readmitted after node-down recovery (#31)" || it_fail "xmrig-proxy readmitted after node-down recovery (#31)" "not readmitted within 120s"
+    _assert_dashboard_logged "dashboard logged the readmission with seconds since the stop (#4165)" 'started xmrig-proxy to readmit workers, [0-9]+s after it was stopped'
     [ -z "$RIG_POOL_BEFORE" ] || _rig_pool_leg 300 _pred_rig_pool_returned "borrowed rig returned to the stack's pool on its own after readmission (#4046)"
 }
 
