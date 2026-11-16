@@ -649,7 +649,7 @@ assert_eq "tor entrypoint writes NO bare /tmp/torrc outside that default (#1104)
     "$(grep -vE '^\s*#' "$TOR_ENTRY" | grep -cF '/tmp/torrc')" "1"
 tor_onion_on="$(tor_torrc true)"
 assert_contains "torrc raises MaxClientCircuitsPending to 64 (#4078)" "$tor_onion_on" "MaxClientCircuitsPending 64"
-assert_eq "torrc binds SocksPort to the bridge, sets WarnUnsafeSocks 0, never binds a public address (#4047)" "$(printf '%s\n' "$tor_onion_on" | grep -cE '^(SocksPort 10\.9\.0\.25:9050|WarnUnsafeSocks 0)$')/$(printf '%s\n' "$tor_onion_on" | grep -E '^(SocksPort|ControlPort) ' | grep -cE ' (0\.0\.0\.0|\[::\]):|^(SocksPort|ControlPort) [0-9]+$')" "2/0"
+assert_eq "torrc binds SocksPort to the bridge, sets WarnUnsafeSocks 0, never binds a public address (#4047)" "$(printf '%s\n' "$tor_onion_on" | grep -cE '^(SocksPort 10\.9\.0\.25:9050|WarnUnsafeSocks 0)$')/$(printf '%s\n' "$tor_onion_on" | grep -E '^(SocksPort|ControlPort) ' | grep -vcE '^(SocksPort|ControlPort) (10\.9\.0\.[0-9]+|127\.0\.0\.1):[0-9]+$')" "2/0"
 assert_contains "tor entrypoint: dashboard HiddenService appended when enabled (#343)" \
     "$tor_onion_on" "HiddenServiceDir /var/lib/tor/dashboard/"
 assert_contains "tor entrypoint: onion vhost targets the bridge gateway .1 (#343)" \
