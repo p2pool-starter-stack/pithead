@@ -28,6 +28,7 @@ fault_tor_probe_egress() {
         return
     fi
     fault_rules_clear_all
+    tor_newnym_budget_reset
     if ! wait_for 180 10 "proxy workers online for Tor fault" _tor_probe_mining_sample >/dev/null; then
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
@@ -115,6 +116,10 @@ _tor_probe_recovered() { # <epoch>
     rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following NEWNYM:'
 }
 
+tor_newnym_budget_reset() {
+    rx "sudo -n rm -f $(quote_arg "$(env_on_box CONTROL_DIR)")/tor-newnym-budget" >/dev/null 2>&1 || true
+}
+
 fault_tor_newnym_exhausted() {
     local epoch control reply identities after snippet recovered=0
     fault_rules_clear_all
@@ -153,6 +158,7 @@ printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nQUIT\r\n" "$cookie" | nc 
         after=$(rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_identities \"\$dir\""' 2>/dev/null)
         assert_eq "Tor onion identities survived the reset" "$after" "$identities"
     fi
+    tor_newnym_budget_reset
     push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 ||
         it_fail "Tor NEWNYM-exhausted fault restored baseline config" "baseline apply failed"
 }
