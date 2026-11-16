@@ -150,12 +150,12 @@ bundle_redact_log() {
 
 bundle_support_journal_unreadable() {
     local out
-    out=$(journalctl -n 1 --no-pager 2>&1 </dev/null) || {
+    out=$(journalctl --system -n 1 --no-pager 2>&1 </dev/null) || {
         printf '%s' "$out" | tr '\n' ' ' | cut -c1-200
         return 0
     }
     case "$out" in
-    *"insufficient permissions"* | *"Permission denied"*)
+    *"insufficient permissions"* | *"Permission denied"* | *"not seeing messages from other users and the system"*)
         printf '%s' "$out" | tr '\n' ' ' | cut -c1-200
         return 0
         ;;
@@ -173,7 +173,7 @@ bundle_support_diy_collect() {
     rm -f "$tmp/doctor.raw.json" "$tmp/doctor.raw.txt"
     [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle." >&2
     if [ -f "$CONFIG_FILE" ]; then
-        render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
+        [ -f "$tmp/scratch/masked/config.json" ] || render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
         [ -f "$tmp/scratch/masked/config.json" ] &&
             bundle_mask_config <"$tmp/scratch/masked/config.json" >"$tmp/bundle/config.masked.json"
     fi

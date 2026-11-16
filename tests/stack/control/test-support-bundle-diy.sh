@@ -33,6 +33,12 @@ case "$*" in
 *"-n 1"*)
     if [ -n "${DB_JOURNAL_DENIED:-}" ]; then
         echo "No journal files were opened due to insufficient permissions." >&2
+        exit 1
+    fi
+    if [ -n "${DB_JOURNAL_PARTIAL:-}" ]; then
+        echo "Hint: You are currently not seeing messages from other users and the system." >&2
+        echo "      Users in groups 'adm', 'systemd-journal' can see all messages." >&2
+        echo "      Pass -q to turn off this notice." >&2
     fi
     exit 0
     ;;
@@ -140,6 +146,17 @@ assert_contains "the journal failure is in the manifest" "$(db_man "$DB/x2" '[.f
 assert_eq "no unit file claims an empty journal when it could not be read" \
     "$(db_man "$DB/x2" '[.files[].path] | map(select(startswith("logs/"))) | length')" "0"
 assert_contains "the container list says the engine was not reachable" "$(cat "$DB/x2/bundle/compose-ps.txt")" "not reachable"
+
+echo "== support-bundle (DIY): a user who sees only their own journal gets a journal failure, not empty units =="
+out="$(DB_JOURNAL_PARTIAL=1 db_run)"
+assert_contains "the verb succeeds with partial journal access" "$out" "RC:0"
+db_unzip "$(db_zips)" "$DB/x4"
+assert_contains "partial journal access is a journal failure in the manifest" \
+    "$(db_man "$DB/x4" '[.failures[] | select(.step == "journal") | .reason] | join(" ")')" "not seeing messages from other users and the system"
+assert_eq "partial journal access lists no DIY unit as present and empty" \
+    "$(db_man "$DB/x4" '[.files[].path] | map(select(startswith("logs/"))) | length')" "0"
+assert_eq "partial journal access still collects the container logs" \
+    "$(db_man "$DB/x4" '[.files[].path | select(startswith("containers/"))] | length')" "2"
 
 echo "== support-bundle (DIY): the window is validated like recovery-bundle =="
 assert_contains "a start after the end is refused" "$(db_run --since "$(db_iso -60)" --until "$(db_iso -3600)")" "after end time"

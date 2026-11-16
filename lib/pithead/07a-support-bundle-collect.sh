@@ -192,7 +192,7 @@ bundle_support_collect() {
     fi
 
     if [ -n "${CONFIG_FILE:-}" ] && [ -f "$CONFIG_FILE" ]; then
-        render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
+        [ -f "$tmp/scratch/masked/config.json" ] || render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
         if [ -f "$tmp/scratch/masked/config.json" ]; then
             bundle_mask_config <"$tmp/scratch/masked/config.json" |
                 jq 'def j: if type=="object" then with_entries(.value |= j) elif type=="array" then map(j) else null end; j' 2>/dev/null |
