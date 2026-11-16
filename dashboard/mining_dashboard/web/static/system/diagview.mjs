@@ -11,6 +11,7 @@
 
 import { Component, html } from "../app/preact.mjs";
 import { controlFetch, staleError } from "../config/controlclient.mjs";
+import { RestartAllControl, TOR_RESET_POLL_MAX, TorResetControl } from "./stackactions.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const DIAG_POLL_MS = 2000;
@@ -223,7 +224,12 @@ export class DiagnosticsPanel extends Component {
   async runRestart(service) {
     this.setRestart(service, { phase: "waiting", result: null });
     try {
-      const result = await runDiag("svc-restart", { container: service }, `the ${service} restart`);
+      const result = await runDiag(
+        "svc-restart",
+        { container: service },
+        `the ${service} restart`,
+        service === "tor" ? TOR_RESET_POLL_MAX : undefined,
+      );
       this.setRestart(service, {
         phase: result.status === "applied" ? "done" : "failed",
         result,
@@ -326,6 +332,7 @@ export class DiagnosticsPanel extends Component {
       }
       ${this.renderLog(service.name)}
       ${this.renderRestart(service.name)}
+      ${service.name === "tor" ? html`<${TorResetControl} run=${runDiag} />` : null}
     </section>`;
   }
 
@@ -347,6 +354,7 @@ export class DiagnosticsPanel extends Component {
       below; open a service's recent log only when you need it.</p>
       <button class="btn-toggle active" disabled=${healthPhase === "waiting"}
               onClick=${() => this.runHealth()}>Run health check</button>
+      <${RestartAllControl} />
       ${
         healthPhase === "waiting"
           ? html`<p class="text-muted">Waiting for the host to return the health check…</p>`

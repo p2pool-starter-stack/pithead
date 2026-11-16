@@ -7,7 +7,7 @@ _svc_restart_request() {
     _spool_write "$cdir/requests/$id.json" \
         "$(jq -nc --arg id "$id" --arg s "$service" '{id:$id,action:"svc-restart",actor:"itest",container:$s}')"
     SVC_RESTART_ID="$id"
-    SVC_RESTART_STATUS="$(_wait_control_status "$cdir" "$id" "" 120 || echo timeout)"
+    SVC_RESTART_STATUS="$(_wait_control_status "$cdir" "$id" "" "${3:-120}" || echo timeout)"
 }
 
 run_svc_restart() {
@@ -56,6 +56,16 @@ run_svc_restart() {
 
         _svc_restart_request "$cdir" caddy
         assert_eq "svc-restart of a service outside the allowlist is rejected (#4062)" "$SVC_RESTART_STATUS" "rejected"
+
+        local monerod_before
+        monerod_before="$(_container_started_ns monerod)"
+        it_step "svc-restart tor through the control spool: monerod must be re-dialled once Tor is bootstrapped (#4063)…"
+        _svc_restart_request "$cdir" tor 600
+        assert_eq "svc-restart of tor applied after the monerod re-dial (#4063)" "$SVC_RESTART_STATUS" "applied"
+        wait_status_ok 240 || true
+        assert_eq "svc-restart of tor restarted monerod (#4063)" \
+            "$([ "$(_container_started_ns monerod)" -gt "$monerod_before" ] 2>/dev/null && echo yes || echo no)" "yes"
+        _monerod_started_after_tor "monerod re-dialled after the dashboard's svc-restart of tor: started after tor (#4063)"
     fi
 
     it_step "restoring baseline (disables control, removes the path unit)…"

@@ -42,7 +42,8 @@ const restartPost = (opts) => JSON.parse(opts.body);
 
 test("every restartable service shows a Restart button and the four platform services show none", () => {
   const out = renderToString(inst().render());
-  assert.equal((out.match(/<button[^>]*>Restart [a-z0-9-]+/g) || []).length, DIAG_RESTARTABLE.length);
+  const named = [...out.matchAll(/<button[^>]*>Restart ([a-z0-9-]+)/g)].map((m) => m[1]).filter((n) => n !== "all");
+  assert.deepEqual(named.sort(), [...DIAG_RESTARTABLE].sort());
   for (const service of ["wallet-rpc", "tari-wallet", "tor", "monerod"]) {
     assert.match(out, new RegExp(`<button[^>]*>Restart ${service}\\b`));
   }
@@ -85,6 +86,18 @@ test("a confirmed restart posts the closed request once, disables the button, an
   assert.equal(posts.length, 1);
   assert.deepEqual(posts[0].body, { container: "tor" });
   assert.equal(posts[0].headers["X-Pithead-Control"], "1");
+});
+
+test("a tor restart waits out the host's Tor bootstrap and monerod re-dial, which outlast the usual diagnostics wait", async () => {
+  let polls = 0;
+  const fetchStub = async (url) => {
+    if (url === "/api/control/svc-restart") return { status: 202, ok: false, json: async () => ({ id: ID }) };
+    polls += 1;
+    return polls < 150 ? { status: 202, ok: false } : okResult({ status: "applied", container: "tor" });
+  };
+  const panel = inst();
+  await withFastPoll(fetchStub, () => panel.runRestart("tor"));
+  assert.equal(panel.state.restarts.tor.phase, "done");
 });
 
 test("a host refusal or failure is shown verbatim as the restart result", async () => {
