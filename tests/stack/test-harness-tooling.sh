@@ -150,6 +150,9 @@ echo "== unit: verify-healthcheck-scripts against the real tree (#1098) =="
 bash "$ROOT/scripts/lint/verify-healthcheck-scripts.sh" >/dev/null 2>&1
 assert_rc "every real healthcheck script exists where its own Dockerfile promises (#1098)" "$?" "0"
 
+echo "== unit: tor pin bump self-test (#4125) =="
+bash "$ROOT/scripts/watch/tor-bump.sh" --self-test >/dev/null 2>&1
+assert_rc "tor-bump self-test passes (#4125)" "$?" "0"
 echo "== unit: image builds retry apt update (#1802) =="
 for image in monero p2pool xmrig-proxy; do assert_contains "image build retries apt update with delayed, bounded backoff (#1802)" "$(cat "$ROOT/build/$image/Dockerfile")" 'for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done'; done
 echo "== unit: image builds pull base security fixes past the digest pin (#3923, #3929) =="

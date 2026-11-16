@@ -344,6 +344,7 @@ for row in \
     "tari-wallet|docker-compose.yml|ghcr.io/tari-project/minotari_console_wallet:" \
     "caddy|docker-compose.yml|caddy:" \
     "socket-proxy|docker-compose.yml|tecnativa/docker-socket-proxy:" \
+    "tor|build/tor/Dockerfile|-r" \
     "tor-base|build/tor/Dockerfile|:"; do
     comp="${row%%|*}"
     rest="${row#*|}"
