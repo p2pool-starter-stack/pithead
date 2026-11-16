@@ -4,7 +4,6 @@ DataDirectory /var/lib/tor
 
 # --- Network Interfaces ---
 SocksPort __NETWORK_PREFIX__.25:9050
-SocksPort 127.0.0.1:9050
 WarnUnsafeSocks 0
 
 # Control interface. No other container uses it: Tari reaches Tor through the SOCKS port only, and
