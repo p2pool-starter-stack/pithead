@@ -4,7 +4,7 @@ export TMPDIR="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:?}/provision-legs-selftest.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-# shellcheck disable=SC2034 # sourced phase files read this global.
+# shellcheck disable=SC2034
 OS_RUN_SUITE=1 SCRIPT_DIR="$ROOT/tests/os"
 ok() { printf '%s\n' "$*" >>"$work/pass"; }
 bad() { printf '%s\n' "$*" >>"$work/fail"; }
