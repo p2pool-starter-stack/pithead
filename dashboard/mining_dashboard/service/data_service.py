@@ -586,6 +586,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
 
                     await self.tor_healer.check()
                     await self.p2pool_healer.check(p2pool_stats)
+                    await self.monerod_redial.check(monero_sync.get("health"))
 
                     # 7. External XvB stats sync over Tor (#163), throttled to every 10th iteration,
                     # and ONLY when XvB is enabled — disabling XvB must stop the egress entirely.
