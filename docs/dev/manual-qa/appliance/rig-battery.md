@@ -108,7 +108,8 @@ the install/self-commit half. The Keep-everything pass is automated for **disk-i
 (the migration case) by the `rigkeep` KVM phase (`tests/os/phases/rigkeep.sh`, #3995): it installs
 the rig to its internal disk, adopts it on a remote-node coordinator, boots a newer image as
 removable USB beside that disk, chooses **Keep everything**, and asserts the role, `rig.json`,
-worker, pool and access token come back unchanged, the rig mines on the new image, the new slot
+worker, pool, miner rig id (kept when present, freshly minted when absent —
+`.pools[0]["rig-id"]` of the xmrig build config) and access token come back unchanged, the rig mines on the new image, the new slot
 self-commits (`A_OK=1 A_TRY=0`), and the coordinator still reads the same adopted worker with
 nothing to redo. A rig that runs from its stick never takes this path — its run-from-USB row is
 M14's `rigmedia` phase, and its stick update stays manual until that leg lands (#4018). What

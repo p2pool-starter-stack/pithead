@@ -14,7 +14,9 @@ _rigkeep_verdict() {
         ($a.pool == $b.pool) and
         ($a.access_token | test("^[0-9a-f]{32}$")) and
         ($a.miner_token == $a.access_token) and
-        (if ($b.access_token | test("^[0-9a-f]{32}$")) then $a.access_token == $b.access_token else true end)
+        (if ($b.access_token | test("^[0-9a-f]{32}$")) then $a.access_token == $b.access_token else true end) and
+        ((($a.rig_id // "") | type) == "string") and ((($a.rig_id // "") | length) > 0) and
+        ((($b.rig_id // "") == "") or $a.rig_id == $b.rig_id)
     ' >/dev/null 2>&1
 }
 _rigkeep_snapshot() {
@@ -23,9 +25,10 @@ _rigkeep_snapshot() {
         jq -nc --arg role "$(cat /data/pithead/machine-role)" \
             --arg tok "$(jq -r ".ACCESS_TOKEN // \"\"" /data/rigforge/config.json)" \
             --arg marker "$(cat /etc/pithead-test-marker 2>/dev/null)" \
+            --arg rig_id "$(jq -r ".pools[0][\"rig-id\"] // \"\"" /data/rigforge/data/worker/xmrig/build/config.json 2>/dev/null)" \
             --arg containers "$(podman ps -aq | wc -l | tr -d " ")" \
             --argjson rig "$rig" \
-            "{role:\$role,worker:\$rig.worker,pool:\$rig.pool,access_token:(\$rig.access_token // \"\"),miner_token:\$tok,marker:\$marker,containers:\$containers}"' 2>/dev/null
+            "{role:\$role,worker:\$rig.worker,pool:\$rig.pool,access_token:(\$rig.access_token // \"\"),miner_token:\$tok,rig_id:\$rig_id,marker:\$marker,containers:\$containers}"' 2>/dev/null
 }
 _rigkeep_commit_wait() {
     local n=0 genv=""
@@ -243,7 +246,7 @@ _rigkeep_run() {
         bad "M13: the reinstalled rig is not mining on the new image (#3995)"
     after=$(_rigkeep_snapshot)
     if _rigkeep_verdict "$before" "$after"; then
-        ok "M13: role, worker, pool and access token survived Keep everything unchanged (#3995)"
+        ok "M13: role, worker, pool, rig id and access token survived Keep everything unchanged (#3995)"
     else
         bad "M13: identity drifted across Keep everything (was $(printf '%s' "$before" | jq -c 'del(.access_token, .miner_token)' 2>/dev/null), now $(printf '%s' "$after" | jq -c 'del(.access_token, .miner_token)' 2>/dev/null)) (#3995)"
     fi

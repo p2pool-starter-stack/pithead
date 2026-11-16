@@ -333,9 +333,11 @@ the configured test registry fail before the image build. Release builds do not 
   beside the installed disk, chooses **Keep everything** on the wizard, and after the disk
   boot asserts the newer system is on the disk (label v2, marker stripped), the rig mines,
   the new slot self-commits (`A_OK=1 A_TRY=0`),
-  and an identity snapshot (role, worker, pool, `rig.json` access token, miner token, container
-  count) is unchanged — the access token kept, never re-minted; a rig whose token was absent is
-  accepted only with one freshly minted. With a coordinator present the leg finally requires the
+  and an identity snapshot (role, worker, pool, the miner's `.pools[0]["rig-id"]`, `rig.json`
+  access token, miner token, container count) is unchanged — the access token kept, never
+  re-minted; a rig whose token was absent is accepted only with one freshly minted, and likewise
+  the rig id must come back kept (equal to the before value) when one existed, or freshly minted
+  (a non-empty string) when none did. With a coordinator present the leg finally requires the
   dashboard to still read the same worker as adopted with a reachable API, nothing to redo.
   A bench without the reserved node counts the adoption legs as `missing`; the reinstall half
   runs regardless. `selftest-rigkeep-verdict.sh` covers the identity verdict, including every
