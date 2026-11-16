@@ -66,6 +66,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   defers the render and the restart to the next tick, and when an apply lands in the same tick gap
   as an address change the apply's restart stands (#3987).
 
+### Notes
+
+- **RigForge-only appliances: stay on 2.0.3.** This release changes nothing on a rig: RigForge 1.18.1
+  and XMRig 6.26.0 are the same as in 2.0.3. Updating a rig still needs the USB stick, and re-flashing
+  a rig that runs from its stick wipes its setup and token, so it must be adopted again. Updating rigs
+  from the Pithead dashboard is planned for 2.0.5 (#1837).
+
 ## [2.0.3] - 2026-11-10
 
 Pithead 2.0.3 is a patch release after 2.0.2. It bakes RigForge 1.18.1 into the appliance image,
