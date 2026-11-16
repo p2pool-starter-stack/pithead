@@ -25,6 +25,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
+  on the data partition is saturated — no longer costs the committed slot its fallback. The boot
+  health gate commits when the dashboard answers and every failing check is that network fault,
+  names the fault in the boot log and in the update's recorded outcome, and leaves the return to the
+  previous version unspent for a copy that is genuinely broken. That includes the case where
+  `compose up` itself refuses because Tor is unhealthy: the boot now goes on to the gate window
+  instead of rebooting at once (#4049).
 - `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
   bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
   instead of staying at 0 peers when compose did not cycle it (#4063); a bare restart and Restart all then also restart the tari container, when the stack has one, so it starts after Tor (#4064).
