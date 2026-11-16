@@ -192,13 +192,15 @@ _rig_small_guest_run() { # <img>
     hrsrc="sister feed"
     if [ "$hr" = "0" ] || [ -z "$light" ]; then
         info "  a black-holed pool assigns no work, so the feed and any mode line stay silent — measuring the machine's own bench in the rendered mode"
-        bench=$(_ssh 'bx=$(readlink /proc/$(pgrep -x xmrig | head -1)/exe 2>/dev/null); [ -x "$bx" ] || bx=/data/rigforge/data/worker/xmrig/build/xmrig; timeout 100 systemctl stop xmrig; timeout 30 sh -c "echo 0 >/proc/sys/vm/nr_hugepages" 2>/dev/null; printf "{\"pools\":[],\"randomx\":{\"mode\":\"light\"},\"colors\":false}" >/tmp/pb4010.json; timeout 420 "$bx" -c /tmp/pb4010.json --benchmark </dev/null 2>&1 | tail -80')
+        bench=$(_ssh 'bx=$(readlink /proc/$(pgrep -x xmrig | head -1)/exe 2>/dev/null); [ -x "$bx" ] || bx=/data/rigforge/data/worker/xmrig/build/xmrig; timeout 100 systemctl stop xmrig; timeout 30 sh -c "echo 0 >/proc/sys/vm/nr_hugepages" 2>/dev/null; printf "{\"algo\":\"randomx\",\"pools\":[],\"randomx\":{\"mode\":\"light\"},\"colors\":false}" >/tmp/pb4010.json; echo "bench-cfg $(cat /tmp/pb4010.json)"; echo "bench-bin $("$bx" --version 2>&1 | head -1)"; timeout 420 "$bx" -c /tmp/pb4010.json --dry-run --benchmark </dev/null 2>&1 | tail -80')
         bline=$(printf '%s' "$bench" | tr -d '\r' | grep -oE '[0-9]+([.][0-9]+)? (H|kH|MH)/s' | tail -1)
         [ -z "$light" ] && light=$(printf '%s' "$bench" | tr -d '\r' | grep -im1 'light mode\|1 GB mode')
         if [ "$hr" = "0" ] && [ -n "$bline" ]; then
             hr=$(printf '%s' "$bline" | awk '{ v = $1 + 0; if ($2 == "kH/s") v *= 1000; if ($2 == "MH/s") v *= 1000000; print v }')
             hrsrc="local bench"
         fi
+        info "  bench head: $(printf '%s' "$bench" | tr '\r\n' '  ' | cut -c1-360)"
+        info "  bench tail: $(printf '%s' "$bench" | tr '\r\n' '  ' | tail -c 360)"
     fi
     [ -n "$light" ] &&
         ok "the machine says it mines in light mode: $(printf '%s' "$light" | cut -c1-140)" ||
@@ -209,6 +211,5 @@ _rig_small_guest_run() { # <img>
         bad "neither the sister feed nor the machine's own bench produced a nonzero hashrate on the 2 GiB rig"
     if [ "$cls" = "zero" ]; then
         info "  sister feed said: $(printf '%s' "$summ" | jq -c '{hashrate: (.hashrate // ."hash-rate"), tune: (.rigforge.tune // .tune // "?")}' 2>/dev/null | cut -c1-240)"
-        info "  bench tail: $(printf '%s' "$bench" | tr '\r\n' '  ' | tail -c 280)"
     fi
 }
