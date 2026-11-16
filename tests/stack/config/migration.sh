@@ -10,7 +10,7 @@ mg_normalize() {
     local line
     while IFS= read -r line; do
         case "$line" in
-        PITHEAD_PROFILE=* | COMPOSE_PROJECT_NAME=*) continue ;;
+        PITHEAD_PROFILE=* | COMPOSE_PROJECT_NAME=* | TELEGRAM_ENABLED=* | TELEGRAM_EVENT_*=* | TELEGRAM_LEVEL=*) continue ;;
         P2POOL_FLAGS=*)
             line=${line% --no-clearnet-p2p}
             line=${line% --no-upnp}
@@ -39,7 +39,7 @@ for mg_input in "$MG_DATA"/inputs/*.json; do
         mkdir -p "$mg_dir/render"
         cp "$mg_input" "$mg_dir/config.json"
         cp "$ROOT/VERSION" "$mg_dir/VERSION"
-        PITHEAD_APPLIANCE="$mg_flag" run_sourced "$mg_dir" migrate_config_to_2_1 >/dev/null 2>&1
+        PITHEAD_APPLIANCE="$mg_flag" run_sourced "$mg_dir" eval 'migrate_config_to_2_1; migrate_telegram_alert_level' >/dev/null 2>&1
         assert_rc "$mg_name $mg_platform migrates" "$?" 0
         assert_eq "$mg_name $mg_platform migrated settings" \
             "$(jq -S 'del(.config_version)' "$mg_dir/config.json")" "$(cat "$MG_DATA/migrated/$mg_name.$mg_platform.json")"
@@ -47,11 +47,12 @@ for mg_input in "$MG_DATA"/inputs/*.json; do
         assert_eq "$mg_name $mg_platform migrated mode" "$(file_mode "$mg_dir/config.json")" 600
         assert_eq "$mg_name $mg_platform backup mode" "$(file_mode "$mg_dir/config.json.bak-2.0")" 600
         cp "$mg_dir/config.json" "$mg_dir/once"
-        PITHEAD_APPLIANCE="$mg_flag" run_sourced "$mg_dir" migrate_config_to_2_1 >/dev/null 2>&1
+        PITHEAD_APPLIANCE="$mg_flag" run_sourced "$mg_dir" eval 'migrate_config_to_2_1; migrate_telegram_alert_level' >/dev/null 2>&1
         cmp -s "$mg_dir/config.json" "$mg_dir/once" && ok "$mg_name $mg_platform second run changes nothing" || bad "$mg_name $mg_platform second run changes nothing" changed
         if mg_got=$(PITHEAD_APPLIANCE="$mg_flag" mg_render "$mg_dir/render" "$mg_input" "$mg_flag"); then
             assert_eq "$mg_name $mg_platform renders the v2.0.0 environment" "$(mg_normalize <<<"$mg_got")" \
                 "$(mg_normalize <"$MG_FX/golden/$mg_name.$mg_platform.env")"
+            case "$mg_got" in *$'\nTELEGRAM_LEVEL='"$(jq -r '.telegram.level // "off"' "$mg_dir/config.json")"$'\n'*) ok "$mg_name $mg_platform renders the migrated Telegram level" ;; *) bad "$mg_name $mg_platform renders the migrated Telegram level" "differs" ;; esac
             if [ "$(jq -r .profile "$mg_dir/config.json")" = privacy ]; then
                 assert_contains "$mg_name $mg_platform privacy keeps inbound peering on Tor" "$mg_got" "--no-clearnet-p2p"
             else
