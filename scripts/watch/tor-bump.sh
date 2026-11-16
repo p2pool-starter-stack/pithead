@@ -44,7 +44,7 @@ detect() {
         echo "no valid TOR_VERSION pin in $DOCKERFILE" >&2
         return 1
     }
-    latest="$(curl -fsSL --retry 3 "$INDEX_URL" | tar -xzO APKINDEX | index_tor_version)"
+    latest="$(curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 20000000 --retry 3 "$INDEX_URL" | tar -xzO APKINDEX | index_tor_version)"
     [ "$(printf '%s\n' "$latest" | wc -l | tr -d ' ')" = 1 ] && [[ "$latest" =~ $VERSION_RE ]] ||
         {
             echo "APKINDEX did not carry exactly one valid tor version: '$latest'" >&2

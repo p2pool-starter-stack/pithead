@@ -37,12 +37,15 @@ jobs:
             echo "PR for ${LATEST} already open"
             exit 0
           fi
-          bash scripts/watch/tor-bump.sh apply "$LATEST"
-          git checkout -b "$branch"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "build/tor: bump the Tor pin to ${LATEST}"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          if [ -z "$(git ls-remote --heads origin "$branch")" ]; then
+            bash scripts/watch/tor-bump.sh apply "$LATEST"
+            git checkout -b "$branch"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -am "build/tor: bump the Tor pin to ${LATEST}"
+            gh auth setup-git
+            git push origin "$branch"
+          fi
           cat >pr-body.md <<EOF
           ## What's the problem
           Alpine now carries tor ${LATEST}; \`build/tor/Dockerfile\` pins ${CURRENT}, so the image build fails once the repository drops the old package (#4125).
