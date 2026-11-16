@@ -49,6 +49,14 @@ for a guest-local alert sink. It restores its original config and state on exit,
 state only after Tor stops. Failures report the current stage, bounded command logs and
 the restoration result separately from the test result; no shared Tor is poisoned.
 
+Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
+and a half hours after provisioning, and the tier's default run window ends the job after the
+second gate has passed but before the host recovery applies. The phase vocabulary of this
+harness is machine-read in two places: `run.sh` prints its `--phase` usage line for `--help`,
+and the bench-ci client derives the phases a tier4-kvm submission may name from that same line
+(`bench_ci/catalogue.py`, `_KVM_PHASE_RE`); a new phase must be added to both that line and
+the argument case or bench-ci rejects it as `not available at this commit`.
+
 Two Tor behaviours decide how the poison is applied and cleared (#4122). Tor 0.4.8+ self-repairs
 a saturated circuit-build history when it loads one and rewrites the state file without the
 signature; it also rewrites the state file on every clean shutdown. So the guest writes the
