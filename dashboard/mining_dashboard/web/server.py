@@ -581,6 +581,7 @@ def create_app(state_manager, latest_data_ref):
             web.get("/api/xvb-standby", handle_xvb_standby),
             web.get("/metrics", handle_metrics),
             web.get("/api/access", handle_access_log),
+            *diagnostics_views.support_routes(),
         ]
     )
     # Control channel (#33): routes exist only when the feature is on — off means 404, not 403.

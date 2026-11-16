@@ -20,3 +20,7 @@ class TestControlRoutesDisabled:
         assert (await client.post("/api/control/os-update", json={})).status == 404
         # The config-change audit view is a control-channel artifact — absent with it (#349).
         assert (await client.get("/api/audit")).status == 404
+
+    async def test_the_support_bundle_export_is_not_a_control_route(self, client):
+        assert (await client.post("/api/control/support-bundle")).status == 403
+        assert (await client.get("/api/control/support-bundle-download?id=x")).status == 400
