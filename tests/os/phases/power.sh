@@ -12,7 +12,7 @@ phase_power() {
     DASH_PASS=$pv_pass
     info "power — host power-reboot and power-shutdown on the committed, provisioned guest (#4084)"
     local cdir=/data/pithead/data/control before out id deadline audit
-    local rid_bad="4084aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" rid_reboot="4084bbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    local rid_bad="4084aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     local plant="for i in \$(seq 90); do [ -f $cdir/results/\$id.json ] && break; sleep 2; done; jq -c . $cdir/results/\$id.json"
     before=$(_boot_id) || {
         bad "power: could not read the boot id before the power probes"
@@ -25,8 +25,13 @@ phase_power() {
     else
         bad "power: a wrong confirm word was not rejected cleanly (got: $(printf '%s' "$out" | cut -c1-200))"
     fi
-    id=$rid_reboot
-    out=$(_ssh "id=$id; printf '%s\n' '{\"id\":\"$id\",\"action\":\"power-reboot\",\"actor\":\"admin\",\"confirm\":\"REBOOT\"}' > $cdir/requests/$id.json; $plant" 2>/dev/null)
+    local attempt
+    for attempt in $(seq 1 40); do
+        id=$(printf '4084bb%02d-bbbb-4bbb-8bbb-bbbbbbbbbbbb' "$attempt")
+        out=$(_ssh "id=$id; printf '%s\n' '{\"id\":\"$id\",\"action\":\"power-reboot\",\"actor\":\"admin\",\"confirm\":\"REBOOT\"}' > $cdir/requests/$id.json; $plant" 2>/dev/null)
+        printf '%s' "$out" | jq -r '.error // ""' | grep -q 'lock' || break
+        sleep 15
+    done
     if [ "$(printf '%s' "$out" | jq -r '.status')" = "rebooting" ]; then
         ok "power: power-reboot answered rebooting"
     else
@@ -58,8 +63,7 @@ phase_power() {
         sleep 10
     done
     ok "power: the stack and dashboard came back after the reboot"
-    _ssh "rm -f $cdir/results/$rid_reboot.json $cdir/power-cooldown"
-    local attempt
+    _ssh "rm -f $cdir/power-cooldown"
     for attempt in $(seq 1 40); do
         id=$(printf '4084cc%02d-cccc-4ccc-8ccc-cccccccccccc' "$attempt")
         out=$(_ssh "id=$id; printf '%s\n' '{\"id\":\"$id\",\"action\":\"power-shutdown\",\"actor\":\"admin\",\"confirm\":\"SHUTDOWN\"}' > $cdir/requests/$id.json; $plant" 2>/dev/null)
