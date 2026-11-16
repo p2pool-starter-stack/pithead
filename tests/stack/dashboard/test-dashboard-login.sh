@@ -25,6 +25,10 @@ assert_contains "login: basic auth still gates scripts and API clients" "$caddy_
 assert_contains "login: the basic-auth actor reaches the dashboard" "$caddy_on" "        request_header X-Auth-User {http.auth.user.id}"
 assert_contains "login: client-supplied actor header is stripped first" "$caddy_on" "request_header -X-Auth-User"
 assert_contains "login: the sign-in endpoints skip the gate" "$caddy_on" "@pithead_public path /login /api/auth/login /api/auth/logout"
+public_line=$(printf '%s\n' "$caddy_on" | grep -F "@pithead_public path")
+for route in /api/control/support-bundle /api/control/support-bundle-range /api/control/support-bundle-result /api/control/support-bundle-download; do
+    assert_not_contains "login: the support bundle export route $route is not on the public list" "$public_line" "$route"
+done
 assert_contains "login: basic auth is matched case-insensitively (RFC 7617)" "$caddy_on" "header_regexp Authorization (?i)^basic\\s"
 assert_contains "login: a session cookie wins over cached basic credentials" "$caddy_on" "not header_regexp Cookie (^|;\\s*)pithead_session="
 assert_contains "login: a browser page load with basic credentials goes to the sign-in page" "$caddy_on" "redir @pithead_page /login 303"

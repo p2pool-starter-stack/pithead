@@ -1695,21 +1695,60 @@ set up without a dashboard login, it points at **Set up again** in the boot menu
 labels it as the machine's own backup log, so commands in that log do not read as instructions for
 the browser.
 
-A second card lives on the same tab: **Support bundle**
-([#4036](https://github.com/p2pool-starter-stack/pithead/issues/4036)). One button asks the host to
-collect one redacted diagnostics archive for a bug report: the whole system journal, the kernel log and
-a per-unit journal for every Pithead and quadlet unit over the window you ask for (the last 72
-hours by default; the control request also takes an explicit RFC 3339 `since` and `until`), the
-dashboard's health history, the Tor bootstrap state, versions, the active RAUC slot, and the config's key shape with every
-value dropped. Every line passes the same redactor the diagnostics log tail uses on its way in;
-the host keeps the oldest and newest lines of any file over its size cap and says what it dropped,
-in the file and in `manifest.json`, rather than refusing the bundle; and the ask is audited like every other control request.
-The finished archive is one `.zip` and waits in the same results
-spool with the same hour-window retention a backup gets: **Download bundle** appears only once the
-host's result says applied, and nothing leaves the box until you press it. Attach it to a report
-the way [#3746](https://github.com/p2pool-starter-stack/pithead/issues/3746) lays out. A box whose
-stack never came up cannot serve the dashboard, so it builds the same archive from the console
-instead: `pithead recovery-bundle` in [Operations](operations.md).
+A second card lives on the same tab: **Export logs**
+([#4036](https://github.com/p2pool-starter-stack/pithead/issues/4036),
+[#4129](https://github.com/p2pool-starter-stack/pithead/issues/4129)). It collects one redacted
+`.zip` of the system journal for a bug report: the whole journal, the kernel log, the boot list and
+a per-unit journal for every Pithead and quadlet unit, the dashboard's health history, the Tor
+bootstrap state, versions, the active RAUC slot, and the config's key shape with every value
+dropped.
+
+**Export without the control channel.** The card and its routes work whatever
+`dashboard.control.enabled` says, and without turning on config editing. With the switch off, the
+host runner still answers the export and nothing else: it rejects every other request with the
+reason, and the config editor, restart, upgrade and the other control actions stay off. Every
+export route is behind the dashboard login when a dashboard password is set: the sign-in gate
+covers the whole API except the sign-in paths, so a request with no login is refused. When no
+password is set the export is served to whoever can reach the dashboard, like the rest of the
+dashboard, which is why the zip is redacted. The request still needs the `X-Pithead-Control`
+header the other control posts need.
+
+**To export logs:**
+
+1. Open the **Backup** tab and find the **Export logs** card. Under the heading it says how far
+   back the logs on this machine reach.
+2. Pick a **Time frame**: last 1 hour, 6 hours, 24 hours, 72 hours (the default) or 7 days, or
+   **Custom range** and give a start and an end (in the browser's time zone). A custom range with
+   no start or end, a start after the end or an end in the future is refused before anything
+   is sent.
+3. If the range reaches back further than the logs do, the card says so before you start; the
+   bundle then begins at the oldest retained entry.
+4. Click **Export logs**. The card shows that the host is collecting (a few minutes on a busy
+   machine) and the download starts by itself when the zip is ready, as
+   `support-bundle-<UTC timestamp>.zip`. Afterwards the card shows the window that came back in
+   the manifest, and a **Download again** link that works for about an hour.
+5. To report a bug, open a [new issue](https://github.com/p2pool-starter-stack/pithead/issues/new),
+   describe what you saw and when, and drag the zip into the comment box. GitHub accepts files up
+   to 25 MB; for a larger zip, ask in the issue how to share it. The zip is redacted on the host,
+   but a public issue is public, so open `manifest.json` and a log or two first if the
+   machine's logs are sensitive to you.
+
+The card names its failures. A bad range is `Invalid range` with the reason; a second export less
+than a minute after the last says so; a failed collection shows the host's message; and a zip that
+was collected but cannot be fetched says the download is unavailable and that you should export
+again.
+
+**What is in the zip, and how big it gets.** `bundle/manifest.json` lists every file with its
+window, size and state, every step that failed or timed out, the requested and the effective
+window, the oldest retained journal entry and the journald disk usage and settings. Every line
+passes the same redactor the diagnostics log tail uses. A file over its 16 MiB budget keeps its
+oldest quarter and newest three quarters with a marker saying how many lines were dropped, the
+files together are held to 64 MiB, and the manifest records every cut: nothing is refused for
+size, and nothing is cut to 2 MiB. The request is audited like every other control request.
+The finished zip waits in the same results spool, with the same retention a backup gets, and
+nothing leaves the box until the download. A box whose stack never came up cannot serve the
+dashboard, so it builds the same zip from the console instead: `pithead recovery-bundle` in
+[Operations](operations.md).
 
 **Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that

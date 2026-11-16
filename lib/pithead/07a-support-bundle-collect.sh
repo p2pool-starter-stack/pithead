@@ -92,6 +92,14 @@ bundle_support_units() {
     done
 }
 
+bundle_support_oldest_epoch() {
+    local epoch
+    epoch=$( (journalctl -o short-unix --no-pager -q 2>/dev/null || true) | head -n1 | cut -d' ' -f1)
+    epoch=${epoch%%.*}
+    case "$epoch" in '' | *[!0-9]*) epoch="" ;; esac
+    printf '%s' "$epoch"
+}
+
 bundle_support_collect() {
     local outdir="$1" since="$2" until="$3" ts out tmp unit installed db rc=0
     local file_cap="${PITHEAD_SUPPORT_MAX_BYTES_PER_FILE:-16777216}"
@@ -112,9 +120,7 @@ bundle_support_collect() {
 
     local jd="" jcfg=""
     if command -v journalctl >/dev/null 2>&1; then
-        oldest_epoch=$( (journalctl -o short-unix --no-pager -q 2>/dev/null || true) | head -n1 | cut -d' ' -f1)
-        oldest_epoch=${oldest_epoch%%.*}
-        case "$oldest_epoch" in '' | *[!0-9]*) oldest_epoch="" ;; esac
+        oldest_epoch=$(bundle_support_oldest_epoch)
         if [ -n "$oldest_epoch" ]; then
             oldest_iso=$(date -u -d "@$oldest_epoch" +%Y-%m-%dT%H:%M:%SZ)
             if [ "$oldest_epoch" -gt "$since_epoch" ]; then

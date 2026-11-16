@@ -223,7 +223,6 @@ if in_block 3; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-secret-and-dial-guards.sh" && domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?" || domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-ssrf-host-local.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-ssrf-host-local.sh" && domain_ran test-control-ssrf-host-local.sh "$_d0" "$?" || domain_ran test-control-ssrf-host-local.sh "$_d0" "$?"
-
 fi
 
 # Keep the approval/SSRF dependency group together; independent round trips get their own budget.
@@ -283,6 +282,8 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-diagnostics.sh" && domain_ran test-control-diagnostics.sh "$_d0" "$?" || domain_ran test-control-diagnostics.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-support-bundle.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-support-bundle.sh" && domain_ran test-control-support-bundle.sh "$_d0" "$?" || domain_ran test-control-support-bundle.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-control-export-only.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-export-only.sh" && domain_ran test-control-export-only.sh "$_d0" "$?" || domain_ran test-control-export-only.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-grub-hugepages.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-grub-hugepages.sh" && domain_ran test-grub-hugepages.sh "$_d0" "$?" || domain_ran test-grub-hugepages.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-setup.sh disable=SC2015
@@ -308,7 +309,6 @@ if in_block 5; then
 
     # shellcheck source=tests/stack/appliance/test-appliance-rig-token-landing.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-token-landing.sh" && domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?" || domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/appliance/test-appliance-wizard-spool.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-wizard-spool.sh" && domain_ran test-appliance-wizard-spool.sh "$_d0" "$?" || domain_ran test-appliance-wizard-spool.sh "$_d0" "$?"
 

@@ -350,16 +350,16 @@ assert_eq "upgrade on a source checkout is rejected" "$(jq -r '.status' "$RESULT
 assert_contains "source-checkout refusal points at git pull" "$(jq -r '.error' "$RESULTS/$UUPG.json" 2>/dev/null)" "git pull"
 rm -f "$RESULTS/$UUPG.json"
 
-# Channel off: the runner refuses to process ANYTHING — the intent stays unclaimed, no result.
+# Channel off: the runner serves only the support bundle export; every other intent is claimed and rejected.
 seed_upgrade_env false
 reset_upgrade_state
 upgrade_intent "$UUPG" "v9.9.9"
 out="$(urun)"
-assert_rc "upgrade runner refuses when the channel is off" "$?" "1"
-assert_contains "channel-off refusal names the flag" "$out" "not enabled"
-[ -f "$UPGREQS/$UUPG.json" ] && ok "channel-off intent left unclaimed" || bad "channel-off intent left unclaimed" "claimed"
-[ ! -f "$UPGRESULTS/$UUPG.json" ] && ok "channel-off intent gets no result" || bad "channel-off intent gets no result" "result written"
-rm -f "$UPGREQS/$UUPG.json"
+assert_rc "upgrade runner rejects instead of failing when the channel is off" "$?" "0"
+[ ! -f "$UPGREQS/$UUPG.json" ] && ok "channel-off intent is claimed" || bad "channel-off intent is claimed" "left in the spool"
+assert_eq "channel-off upgrade is rejected" "$(jq -r '.status' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "rejected"
+assert_contains "channel-off rejection names the flag" "$(jq -r '.error' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "dashboard.control.enabled"
+rm -f "$UPGRESULTS/$UUPG.json"
 seed_upgrade_env true
 
 # #1023: no cosign on the host -> refused before a single dial, whether or not this install already
@@ -785,11 +785,11 @@ assert_eq "verifier-missing refusal downloads no bundle" "$(grep -c 'releases/do
 rm -f "$UPG/cosign.pub" "$UPG/nodocker/jq"
 reset_upgrade_state
 
-# The runner refuses to run at all when the channel is off (fail-closed).
+# The runner no longer exits when the channel is off; it serves only the export.
 control_config main
 "$C/bin/docker" >/dev/null 2>&1 || true
 sed -i.bak 's/"control":{"enabled":true}/"control":{"enabled":false}/' "$C/config.json" 2>/dev/null || true
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 out="$(run_pending)"
-assert_rc "runner refuses when the channel is disabled" "$?" "1"
-assert_contains "runner disabled message" "$out" "not enabled"
+assert_rc "runner runs in export-only mode when the channel is disabled" "$?" "0"
+assert_not_contains "runner no longer refuses with a not-enabled error" "$out" "not enabled"

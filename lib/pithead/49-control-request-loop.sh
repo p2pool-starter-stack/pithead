@@ -87,6 +87,11 @@ control_process_request() { # <claimed-file> <control-dir>
     # writes the file, so re-validate it against the basic_auth username charset.
     printf '%s' "$actor" | grep -qE '^[A-Za-z0-9._@-]{0,64}$' || actor="untrusted"
     action=$(jq -r '.action // ""' "$file")
+    if [ "${CONTROL_EXPORT_ONLY:-0}" = 1 ] && [ "$action" != support-bundle ] && [ "$action" != support-bundle-range ]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"the dashboard control channel is off (dashboard.control.enabled); only the support bundle export is available",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "${action:-none}" "rejected"
+        return 0
+    fi
     case "$action" in
     egress-sync)
         chain=$(jq -r 'if ((keys | sort) == ["action","actor","chain","id"])
@@ -154,6 +159,7 @@ control_process_request() { # <claimed-file> <control-dir>
     diag-logs) control_diag_logs "$file" "$id" "$actor" "$cdir" ;;
     svc-restart) control_svc_restart "$file" "$id" "$actor" "$cdir" ;;
     support-bundle) control_support_bundle "$file" "$id" "$actor" "$cdir" ;;
+    support-bundle-range) control_support_range "$file" "$id" "$actor" "$cdir" ;;
     onion-client-key) control_onion_client_key "$id" "$actor" "$cdir" ;;
     *)
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unknown action",ts:(now|floor)}')"
@@ -289,15 +295,15 @@ control_run_pending() {
     # Claims below are `.claim.$$`. A child `apply -y` a handler runs inherits this, so its runner
     # drain (control_runner_wait_idle) does not wait on its own parent's claim (#2363).
     export PITHEAD_CONTROL_RUNNER_PID=$$
-    [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
-        error "The dashboard control channel is not enabled (dashboard.control.enabled)."
+    CONTROL_EXPORT_ONLY=0
+    [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] || CONTROL_EXPORT_ONLY=1
     local cdir
     cdir=$(env_get CONTROL_DIR)
     [ -n "$cdir" ] || cdir="$PWD/data/control"
     mkdir -p "$cdir/staged" "$cdir/results" "$cdir/audit"
     # Freshen the pre-masked prefill copy (#440) before draining: hand-edits to config.json since
     # the last apply show up in the editor form. A commit re-renders it again via its `apply -y`.
-    render_masked_config "$cdir"
+    [ "$CONTROL_EXPORT_ONLY" = 1 ] || render_masked_config "$cdir"
     # Time-bounded DoS sweep (#33 hardening): drop staged/ copies and stray requests/ files older
     # than an hour that no commit ever claimed, so a burst that is never committed cannot pile up
     # (staged intents already expire per-commit at 10 min; this bounds accumulation regardless).
