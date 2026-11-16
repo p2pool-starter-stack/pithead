@@ -967,7 +967,7 @@ restart: the dashboard warns and retries after 30 minutes while the outage persi
 cannot take another automatic action until the host accepts a request. Each step and its probe
 evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
 circuits, duration and preceding action into the Telegram note; the action is not credited as the
-cause of recovery. On the first heal round, 15 minutes into sustained failure, the
+cause of recovery. On the first heal round, 5 minutes into sustained failure, the
 monitor asks the host for a read-only reading of Tor's circuit-history state, then refreshes it
 on later rounds. A saturated
 history (abandoned count and total build times both at 1000, no `CircuitBuildTimeBin`) is logged
@@ -975,7 +975,7 @@ on each such round, sent once per outage to the alert sinks (failed delivery ret
 `./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. The doctor check does not require an outage record or auto-heal: saturated history plus live egress failure is enough for a FAIL. The action budget is three per outage; after that the
 monitor warns until egress recovers. A Tor start the monitor did not cause (an operator, `./pithead` or
 Docker restart) opens a fresh outage window and resets the clock, budget and cooldown, so a Tor that
-restarts more often than every 15 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
+restarts more often than every 5 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
 state reset sends one alert per outage explaining the saturated history and guard reset.
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed
@@ -993,7 +993,7 @@ two invalid circuit-timing warnings must appear in the last 200 log lines from t
 unreadable diagnostics refuse recovery. A third class covers a synchronized Monero behind dead
 egress: two failed heal rounds from the same sustained outage, recorded by the host at least
 15 minutes apart, plus a live check that both clearnet targets still fail through Tor's SOCKS.
-The healer requests these readings from the first round after 15 minutes of corroborated failure. Recovery clears the outage evidence; the persistent 24-hour
+The healer requests these readings from the first round after 5 minutes of corroborated failure. Recovery clears the outage evidence; the persistent 24-hour
 NEWNYM budget remains separate. After the automatic action budget is spent, read-only observations continue every 30 minutes.
 The host retains the last two spaced rounds. Evidence older than one hour since the last observation is
 refused. A Tor whose egress answers is refused. It uses sudo for read-only access to Tor-owned state

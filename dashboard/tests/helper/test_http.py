@@ -101,6 +101,27 @@ class TestBoundedGet:
             BoundedResponse(502, b"", "utf-8").raise_for_status()
 
 
+class TestBoundedDeadline:
+    def _trickle(self, n, delay):
+        for _ in range(n):
+            time.sleep(delay)
+            yield b"x"
+
+    def test_a_trickling_body_past_the_deadline_times_out(self):
+        resp = _streaming_resp([])
+        resp.iter_content.return_value = self._trickle(100, 0.05)
+        with patch("mining_dashboard.helper.http.requests.get", return_value=resp):
+            started = time.monotonic()
+            with pytest.raises(requests.Timeout):
+                bounded_get("https://example.test/x", deadline=0.2)
+        assert time.monotonic() - started < 1
+
+    def test_a_body_inside_the_deadline_is_returned(self):
+        resp = _streaming_resp([b"ok"])
+        with patch("mining_dashboard.helper.http.requests.get", return_value=resp):
+            assert bounded_get("https://example.test/x", deadline=5).content == b"ok"
+
+
 class _Stream:
     """An aiohttp ``StreamReader``: ``read(n)`` is a SHORT read, returning what is buffered rather
     than ``n`` bytes. Measured against a real aiohttp server while fixing #1347 — one ``read(1000)``

@@ -32,7 +32,8 @@ PROBE_TIMEOUT_SEC = 15
 
 # Fixed, bounded cadence and attempt budget for this opt-in recovery.
 PROBE_INTERVAL_SEC = 5 * 60  # active probe cadence (only while the heal is enabled)
-BROKEN_AFTER_SEC = 15 * 60  # sustained failure before the first action
+FIRST_ACTION_AFTER_SEC = 5 * 60  # sustained failure before the first NEWNYM
+BROKEN_AFTER_SEC = 15 * 60  # sustained failure before any later action
 COOLDOWN_SEC = 30 * 60  # minimum gap between actions
 MAX_ATTEMPTS = 3  # two circuit refreshes, then one container restart
 # Consecutive OK probes required to declare an outage OVER once we've spent an action. A single
@@ -153,7 +154,8 @@ class TorEgressHealer(TorHistoryMixin):
         if self._failing_since is None:
             self._failing_since = now
         # Transient blip guard: not broken until the failure streak spans the threshold.
-        if (now - self._failing_since) < BROKEN_AFTER_SEC:
+        threshold = FIRST_ACTION_AFTER_SEC if self._attempts == 0 else BROKEN_AFTER_SEC
+        if (now - self._failing_since) < threshold:
             return None
         # Retry cap: past the budget we never restart again this outage — warn instead.
         if self._attempts >= MAX_ATTEMPTS:

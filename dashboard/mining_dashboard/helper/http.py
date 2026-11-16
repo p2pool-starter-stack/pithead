@@ -18,6 +18,7 @@ the rest of that set behind the same two helpers — ``bounded_get`` for the ``r
 """
 
 import json
+import time
 
 import requests
 
@@ -72,7 +73,9 @@ class BoundedResponse:
             raise requests.HTTPError(f"HTTP {self.status_code}")
 
 
-def bounded_request(method, url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, session=None, **kwargs):
+def bounded_request(
+    method, url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, session=None, deadline=None, **kwargs
+):
     """``requests`` with a hard response-size cap, for any method.
 
     ``session`` takes a caller's own ``requests.Session`` so bounding a read never costs it the
@@ -85,9 +88,12 @@ def bounded_request(method, url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, sessi
     through unchanged; raises exactly what ``requests`` raises otherwise.
     """
     caller = getattr(session if session is not None else requests, method.lower())
+    stop_at = time.monotonic() + deadline if deadline is not None else None
     with caller(url, stream=True, timeout=timeout, **kwargs) as resp:
         chunks, size = [], 0
         for chunk in resp.iter_content(chunk_size=65536):
+            if stop_at is not None and time.monotonic() > stop_at:
+                raise requests.Timeout(f"response not complete within {deadline}s: {url}")
             size += len(chunk)
             if size > max_bytes:
                 raise ResponseTooLarge(f"response body exceeded {max_bytes} bytes: {url}")

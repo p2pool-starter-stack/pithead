@@ -1,32 +1,9 @@
-"""Healthchecks.io dead-man's-switch pinger (Issue #79).
+"""Healthchecks.io dead-man's-switch pinger. Behaviour is described in docs/monitoring.md."""
 
-A thin, self-contained client the data loop calls once per cycle to ping a unique
-Healthchecks.io URL. The value is in what *stops* happening: if the host dies, the
-dashboard dies with it, the pings stop, and Healthchecks.io fires an alert on the absence
-of a ping — evaluated on *their* servers, so it survives the very outage (power loss, kernel
-panic, NIC death) an in-stack notifier can't report from a dead machine.
-
-Design notes:
-- **Off until configured.** No ``ping_url`` → the client is a no-op: :meth:`ping` returns
-  immediately, opens no socket, and logs nothing. Setting a URL is what turns it on.
-- **Always over Tor.** The ping rides the bridge Tor SOCKS proxy so the endpoint sees a Tor
-  exit, not the host IP — it's never a clearnet beacon.
-- **Fails silently, but rejection is loud.** A ping that can't *reach* the endpoint (offline, or
-  Tor momentarily down) is logged at DEBUG only, consistent with the stack's offline check
-  discipline (#59). A ping the endpoint *rejects* (non-2xx — a revoked or typo'd URL) is a
-  different failure mode: it doesn't self-heal, so it logs a WARNING, once, on the transition
-  from OK to rejected (and an INFO on recovery) — #560.
-- **Throttled.** :data:`interval` is a floor between pings; the loop calls every cycle but we
-  only hit the network once per interval. The throttle clock only advances on a *successful*
-  send, so while offline we keep retrying every cycle rather than backing off.
-
-Manual setup: the operator pastes the full ping URL from Healthchecks.io (hosted or a
-Tor-reachable self-hosted instance). Auto-provisioning via the Management API (which would
-mean storing a powerful API key) is intentionally left out — see ``docs/monitoring.md``.
-"""
-
+import asyncio
 import logging
 import time
+import uuid
 
 import requests
 
@@ -38,19 +15,13 @@ from mining_dashboard.helper.http import bounded_get
 
 logger = logging.getLogger("Healthchecks")
 
-# A ping is a tiny request; keep the timeout short so a hung endpoint can't stall the loop's
-# worker thread for long. Healthchecks.io recommends GET/HEAD/POST to the ping URL.
-_PING_TIMEOUT_SEC = 10
-
-# Throttle floor between pings (the loop runs faster, but we only hit the network this often). Fixed,
-# not configurable: 60s pairs with the recommended 1-min Healthchecks period, and no operator needs
-# to tune a dead-man's-switch cadence.
+_PING_TIMEOUT_SEC = 5
+_PING_DEADLINE_SEC = 25
+_PING_CYCLE_LIMIT_SEC = 2 * (_PING_DEADLINE_SEC + _PING_TIMEOUT_SEC)
 _PING_INTERVAL_SEC = 60
 
 
 class HealthchecksClient:
-    """Pings a Healthchecks.io check on a throttle; safe to call every loop cycle."""
-
     def __init__(
         self,
         ping_url,
@@ -59,21 +30,16 @@ class HealthchecksClient:
         clock=time.monotonic,
         record_failure=None,
     ):
-        # A ping URL is the on/off switch: paste the full URL Healthchecks.io shows you (hosted or a
-        # Tor-reachable self-hosted instance) to enable; leave it blank to keep the switch off.
-        # Anything that isn't an http(s) URL is treated as unset (a no-op), never a silent bad ping.
         url = (ping_url or "").strip()
         self.url = url.rstrip("/") if url.startswith(("http://", "https://")) else ""
         self.enabled = bool(self.url)
         self.interval = max(0, int(interval_seconds or 0))
-        # Route the ping over the bridge Tor SOCKS (socks5h, so the host resolves through Tor too),
-        # so the endpoint sees a Tor exit, not the host IP. tor_proxy is a test seam; from_config
-        # always injects it.
+        self._tor_proxy = tor_proxy
         self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
         self._clock = clock
         self._record_failure = record_failure
-        self._last_ping = None  # monotonic time of the last *successful* send
-        self._last_ping_ok = None  # tri-state (None/True/False): logs only on state change
+        self._last_ping = None
+        self._last_ping_ok = None
 
         if self.enabled:
             logger.info(
@@ -91,21 +57,17 @@ class HealthchecksClient:
         )
 
     def _due(self, now):
-        """Whether enough time has passed since the last successful ping to send another."""
         if self._last_ping is None:
             return True
         return (now - self._last_ping) >= self.interval
 
+    def _isolated_proxies(self):
+        if not self._tor_proxy:
+            return None
+        proxy = self._tor_proxy.replace("://", f"://{uuid.uuid4().hex}:isolate@", 1)
+        return {"http": proxy, "https": proxy}
+
     def ping(self) -> bool:
-        """Send one liveness heartbeat if due. Never raises.
-
-        This is a pure dead-man's switch: it only reports that the stack (this dashboard loop) is
-        alive. Node-health alerting — monerod/Tari down while the box is up — is out of scope and
-        handled in-stack by the Telegram alerter (#121), which can say more than a red check can.
-
-        Returns ``True`` if a request was sent and accepted (2xx), else ``False`` (not configured,
-        throttled, the request failed, or the endpoint rejected it — a revoked/typo'd URL, #560).
-        """
         if not self.url:
             return False
 
@@ -113,29 +75,47 @@ class HealthchecksClient:
         if not self._due(now):
             return False
 
-        try:
-            resp = bounded_get(self.url, timeout=_PING_TIMEOUT_SEC, proxies=self._proxies)
-            if 200 <= resp.status_code < 300:
-                if self._last_ping_ok is False:
-                    logger.info(
-                        "Healthchecks ping recovered (was failing, now %s).", resp.status_code
-                    )
-                self._last_ping_ok = True
-                self._last_ping = now
-                return True
-            if self._last_ping_ok is not False:
-                logger.warning("Healthchecks ping rejected: HTTP %s.", resp.status_code)
-            self._last_ping_ok = False
-            self._record("http_status", f"HTTP {resp.status_code}")
-            return False
-        except requests.RequestException as e:
-            logger.debug("Healthchecks ping failed (offline?): %s", e)
-            self._record(_failure_class(e, self._proxies is not None), type(e).__name__)
-            return False
-        except Exception as e:  # pragma: no cover - defensive; never break the loop
-            logger.debug("Healthchecks unexpected error: %s", e)
-            self._record("connect", type(e).__name__)
-            return False
+        for attempt in range(2):
+            proxies = self._proxies if attempt == 0 else self._isolated_proxies()
+            try:
+                resp = bounded_get(
+                    self.url,
+                    timeout=_PING_TIMEOUT_SEC,
+                    deadline=_PING_DEADLINE_SEC,
+                    proxies=proxies,
+                )
+                if 200 <= resp.status_code < 300:
+                    if self._last_ping_ok is False:
+                        logger.info("Healthchecks ping recovered.")
+                    self._last_ping_ok = True
+                    self._last_ping = now
+                    return True
+                if self._last_ping_ok is not False:
+                    logger.warning("Healthchecks ping rejected: HTTP %s.", resp.status_code)
+                self._last_ping_ok = False
+                self._record("http_status", f"HTTP {resp.status_code}")
+                return False
+            except requests.RequestException as e:
+                logger.debug("Healthchecks ping failed (offline?): %s", e)
+                self._record(_failure_class(e, proxies is not None), type(e).__name__)
+            except Exception as e:  # pragma: no cover
+                logger.debug("Healthchecks unexpected error: %s", e)
+                self._record("connect", type(e).__name__)
+                return False
+        return False
+
+    async def run(self):
+        if not self.enabled:
+            return
+        while True:
+            started = time.monotonic()
+            try:
+                await asyncio.wait_for(asyncio.to_thread(self.ping), _PING_CYCLE_LIMIT_SEC)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug("Healthchecks ping task error: %s", e)
+            await asyncio.sleep(max(0, self.interval - (time.monotonic() - started)))
 
     def _record(self, reason, detail=""):
         if not self._record_failure:

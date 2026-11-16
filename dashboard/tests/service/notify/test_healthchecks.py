@@ -200,9 +200,8 @@ class TestPingFailsSilently:
             caplog.at_level(logging.DEBUG, logger="Healthchecks"),
         ):
             assert c.ping() is False
-            # Throttle clock did NOT advance on failure → the very next call retries immediately.
             assert c.ping() is False
-        assert get.call_count == 2
+        assert get.call_count == 4
         # No noisy WARNING/ERROR — offline is expected and logged at debug only (#59 discipline).
         assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
@@ -212,11 +211,11 @@ class TestPingFailsSilently:
         with patch.object(
             hc_mod,
             "bounded_get",
-            side_effect=[requests.exceptions.ConnectionError("x"), _resp(200)],
+            side_effect=[requests.exceptions.ConnectionError("x")] * 2 + [_resp(200)],
         ):
-            assert c.ping() is False  # failed, no throttle advance
-            assert c.ping() is True  # retried immediately, succeeded → throttle set
-            assert c.ping() is False  # now throttled
+            assert c.ping() is False
+            assert c.ping() is True
+            assert c.ping() is False
 
 
 class TestFromConfig:
@@ -330,12 +329,14 @@ class TestFailureRecording:
             "bounded_get",
             side_effect=[
                 requests.exceptions.ConnectionError(f"reset by peer on {self.URL}"),
+                requests.exceptions.ConnectionError(f"reset by peer on {self.URL}"),
+                requests.exceptions.Timeout(f"timed out against {self.URL}"),
                 requests.exceptions.Timeout(f"timed out against {self.URL}"),
             ],
         ):
             assert self._client(rec).ping() is False
             assert self._client(rec).ping() is False
-        assert [r[1] for r in rows] == ["connect", "connect"]
+        assert [r[1] for r in rows] == ["connect"] * 4
 
     def test_no_stored_field_ever_contains_the_ping_url(self):
         rows, rec = self._recorder()
@@ -350,7 +351,7 @@ class TestFailureRecording:
                 assert c.ping() is False
         with patch.object(hc_mod, "bounded_get", return_value=_resp(403)):
             assert c.ping() is False
-        assert len(rows) == 4
+        assert len(rows) == 7
         for _ts, reason, detail in rows:
             assert self.URL not in str(detail)
             assert "secret-ping-token" not in f"{reason}{detail}"
