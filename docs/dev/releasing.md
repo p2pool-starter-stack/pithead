@@ -89,12 +89,8 @@ repository would otherwise change the Tor in the image between builds with no co
 the repository no longer carries, and the build then runs `tor --version` and fails unless it reports the
 pinned version. The Dockerfile also names the base's openssl and musl libs in `--upgrade` and installs
 netcat for the bootstrap healthcheck; it deliberately omits `xxd`, which busybox already provides (#1372).
-[`tor-bump.yml`](../../.github/workflows/tor-bump.yml) runs daily, reads the Alpine v3.24 community
-`APKINDEX` through `scripts/watch/tor-bump.sh`, and opens a `dependencies` PR against `develop` that edits only
-the pin when Alpine carries a newer tor (Dependabot has no apk ecosystem). A bump PR needs the `tier4-kvm`
-`tor-heal` phase green at its head before merge: it is the live proof of Tor's state-file behaviour. The
-workflow pushes with the `TOR_BUMP_TOKEN` secret when set, because a push by `github.token` starts no CI on
-the PR. The release notes name the shipped Tor in the `tor` pin row.
+Bump `TOR_VERSION` by hand, and re-run the `tier4-kvm` `tor-heal` phase on the result: it is the live proof
+of Tor's state-file behaviour. The release notes name the shipped Tor in the `tor` pin row.
 
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
