@@ -262,3 +262,16 @@ class TestDaemonThread:
             with pytest.raises(asyncio.CancelledError):
                 await c.run()
         assert gaps and gaps[0] >= 5
+
+
+class TestCancellation:
+    async def test_cancelling_while_a_ping_is_in_flight_ends_the_task(self):
+        c = _client()
+        release = threading.Event()
+        with patch.object(c, "ping", side_effect=lambda: release.wait(2)):
+            task = asyncio.create_task(c.run())
+            await asyncio.sleep(0.1)
+            task.cancel()
+            results = await asyncio.gather(task, return_exceptions=True)
+            release.set()
+        assert isinstance(results[0], asyncio.CancelledError)
