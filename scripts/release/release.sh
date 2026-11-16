@@ -263,6 +263,7 @@ pin() {
     p2pool) grep -oE '^ARG P2POOL_VERSION=.*' build/p2pool/Dockerfile | cut -d= -f2 ;;
     monero) grep -oE '^ARG MONERO_VERSION=.*' build/monero/Dockerfile | cut -d= -f2 ;;
     xmrig-proxy) grep -oE '^ARG XMRIG_PROXY_VERSION=.*' build/xmrig-proxy/Dockerfile | cut -d= -f2 ;;
+    tor) grep -oE '^ARG TOR_VERSION=.*' build/tor/Dockerfile | cut -d= -f2 ;;
     tor-base) grep -oE '^FROM [^ ]+' build/tor/Dockerfile | head -1 | awk '{print $2}' ;;
     # `tari` is the NODE, deliberately, because scripts/watch/pin-watch.sh reads this arm for upstream
     # currency and both Tari images come from one upstream repo — a second row there would say the
