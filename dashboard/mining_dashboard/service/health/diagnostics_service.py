@@ -71,3 +71,9 @@ def submit_support_bundle(hours=None, actor: str = "", since=None, until=None) -
     if until is not None:
         intent["until"] = until
     return request_spool.write(intent)
+
+
+def submit_support_range(actor: str = "") -> str:
+    return request_spool.write(
+        {"id": str(uuid.uuid4()), "action": "support-bundle-range", "actor": actor}
+    )

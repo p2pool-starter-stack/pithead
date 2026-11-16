@@ -64,6 +64,7 @@ wallet_fixture_verify() { return 0; }
 recreate_test_checkout_containers() { return 0; }
 verify_restore_proof() { return 0; }
 wait_restore_mining_ready() { return 0; }
+recheck_restore_mining() { return 0; }
 on_bench() { printf '%s\n' "$*" >>"$TEST_WORK/restore.calls"; return 0; }
 deploy_keeping_chain() { return 0; }
 wait_bench_healthy() { return 0; }

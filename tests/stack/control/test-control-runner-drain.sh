@@ -40,8 +40,10 @@ pcd_run() { # <claim: yes|no> <clears-on-first-wait: yes|no> [enabled=false] [ow
         fi
         unset PITHEAD_LOCK_HELD
         [ "${4:-false}" = true ] && export PITHEAD_CONTROL_RUNNER_PID=1 || unset PITHEAD_CONTROL_RUNNER_PID
+        mode=remove
+        [ "${3:-false}" = true ] && mode=""
         PITHEAD_ENGINE=podman PITHEAD_UNIT_DIR="$PCD/units" DASHBOARD_CONTROL_ENABLED="${3:-false}" \
-            CONTROL_DIR="$PCD/mine/data/control" provision_control_runner 2>&1
+            CONTROL_DIR="$PCD/mine/data/control" provision_control_runner ${mode:+"$mode"} 2>&1
         cat "$PCD/calls" 2>/dev/null
     )
 }

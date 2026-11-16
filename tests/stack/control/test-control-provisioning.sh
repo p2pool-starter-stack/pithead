@@ -62,7 +62,7 @@ pcr_run() { # <owner-dir|-> <run-dir> — seed units owned by owner-dir ('-' = n
         log() { :; }
         sudo() { echo "sudo:$*"; } # record instead of executing; the disable call's output is redirected in-function
         unset CONTROL_DIR
-        PITHEAD_UNIT_DIR="$PCR/units" DASHBOARD_CONTROL_ENABLED=false provision_control_runner
+        PITHEAD_UNIT_DIR="$PCR/units" provision_control_runner remove
     )
 }
 
@@ -122,8 +122,11 @@ pci_run() { # <owner-dir|-|garbage> <run-dir> [steal-env] [fn-arg] — seed a se
         log() { :; }
         # Record instead of executing — into a side file, because the install branch redirects
         # `sudo tee`'s stdout to /dev/null, so an echoing stub would be invisible there.
-        sudo() { echo "sudo:$*" >>"$PCI/calls"; }
-        PITHEAD_UNIT_DIR="$PCI/units" DASHBOARD_CONTROL_ENABLED=true \
+        sudo() {
+            echo "sudo:$*" >>"$PCI/calls"
+            [ -z "${PCI_SUDO_FAIL:-}" ]
+        }
+        PITHEAD_UNIT_DIR="$PCI/units" DASHBOARD_CONTROL_ENABLED="${PCI_CONTROL:-true}" \
             CONTROL_DIR="$2/data/control" PITHEAD_STEAL_CONTROL_UNITS="${3:-0}" \
             provision_control_runner ${4:+"$4"} 2>&1
         cat "$PCI/calls" 2>/dev/null
@@ -149,6 +152,11 @@ assert_contains "install: own drifted unit -> converged (rewritten in place)" \
     "$(pci_run "$PCI/mine" "$PCI/mine")" "sudo:tee $PCI/units/pithead-control.service"
 assert_contains "install: no units at all -> fresh install unaffected by the guard" \
     "$(pci_run - "$PCI/mine")" "sudo:tee $PCI/units/pithead-control.service"
+assert_contains "install: control off -> the runner is still installed for the support bundle export (#4129)" \
+    "$(PCI_CONTROL=false pci_run - "$PCI/mine")" "sudo:tee $PCI/units/pithead-control.service"
+out="$(PCI_CONTROL=false PCI_SUDO_FAIL=1 pci_run - "$PCI/mine")"
+assert_contains "install: control off and no passwordless sudo -> warns and installs nothing, apply keeps going" "$out" "passwordless sudo is not available"
+assert_not_contains "install: control off and no passwordless sudo -> no unit written" "$out" "sudo:tee"
 unset PCI pci_run out
 
 echo "== unit: the rendered control unit PINS the engine it was provisioned with (#2059) =="
