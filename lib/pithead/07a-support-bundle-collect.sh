@@ -90,7 +90,10 @@ bundle_support_capture() {
         prc=(0 0 0 0) || prc=("${PIPESTATUS[@]}")
     case "${prc[0]}" in
     124 | 137) bundle_support_step_fail "$tmp" "$rel" timeout "timed out after ${limit}s" $((SECONDS - t0)) ;;
-    0) ;;
+    0)
+        [ "${prc[1]}" -eq 0 ] && [ "${prc[2]}" -eq 0 ] && [ "${prc[3]}" -eq 0 ] ||
+            bundle_support_step_fail "$tmp" "$rel" failed "the redaction or capture stage failed (exit ${prc[1]}/${prc[2]}/${prc[3]})" $((SECONDS - t0))
+        ;;
     *)
         case " ${BUNDLE_OK_RC:-} " in
         *" ${prc[0]} "*) ;;
@@ -108,7 +111,7 @@ bundle_support_jtime() {
 
 bundle_support_units() {
     local installed unit flat
-    installed=$( (systemctl list-unit-files --type=service --type=timer --no-legend --no-pager 2>/dev/null || true) |
+    installed=$( (bundle_support_t systemctl list-unit-files --type=service --type=timer --no-legend --no-pager 2>/dev/null || true) |
         awk '$1 ~ /^pithead/ || $2 == "generated" {print $1}' | sort -u)
     flat=" ${installed//$'\n'/ } "
     for unit in $installed; do printf '%s 1\n' "$unit"; done
@@ -167,9 +170,9 @@ bundle_support_collect() {
         echo
         [ -r /etc/os-release ] && cat /etc/os-release
         echo
-        df -h / /data 2>/dev/null
+        bundle_support_t df -h / /data 2>/dev/null
         echo
-        free -h 2>/dev/null
+        bundle_support_t free -h 2>/dev/null
     } 2>&1 | bundle_redact_log >"$tmp/bundle/host.txt"
 
     _BS_CAP=$file_cap _BS_SINCE=$eff_since _BS_UNTIL=$until _BS_SINCE_EPOCH=$since_epoch _BS_UNTIL_EPOCH=$until_epoch
@@ -209,7 +212,7 @@ bundle_support_collect() {
         --argjson short "$short" --arg jd "$jd" --arg jcfg "$jcfg" \
         --arg ver "${PITHEAD_VERSION:-unknown}" --arg at "$(date -u +%FT%TZ)" \
         --argjson fcap "$file_cap" --argjson tcap "$total_cap" \
-        --argjson lstep "${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}" --argjson lsnap "${PITHEAD_SUPPORT_SNAP_TIMEOUT:-20}" \
+        --argjson lstep "${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}" --argjson lsnap "${PITHEAD_SUPPORT_SNAP_TIMEOUT:-20}" --argjson ldoc "${PITHEAD_SUPPORT_DOCTOR_TIMEOUT:-90}" \
         --argjson ltotal "${PITHEAD_SUPPORT_TOTAL_TIMEOUT:-1500}" '{
             manifest_version: 1,
             pithead_version: $ver,
@@ -220,7 +223,7 @@ bundle_support_collect() {
                 oldest_retained_entry: (if $oldest == "" then null else $oldest end),
                 journal_short: ($short == 1)
             },
-            limits: {journal_step_seconds: $lstep, snapshot_step_seconds: $lsnap, total_seconds: $ltotal},
+            limits: {journal_step_seconds: $lstep, snapshot_step_seconds: $lsnap, doctor_step_seconds: $ldoc, total_seconds: $ltotal},
             journald: {disk_usage: $jd, effective_settings: ($jcfg | split("\n") | map(select(. != "")))},
             size_policy: {
                 per_file_cap_bytes: $fcap,

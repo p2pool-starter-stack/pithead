@@ -144,6 +144,7 @@ def line(age, uri="/", cookie="session=SEEDEDCOOKIE", status=200):
 with open(sn + "/caddy/access.log", "w") as fh:
     fh.write(line(H, "/api/x?token=SEEDEDURLTOKEN&page=2", status=401))
     fh.write(line(100 * H, "/too-old"))
+    fh.write(line(H, "/hook/SEEDEDPATHTOKENSEEDEDPATHTOKEN?SEEDEDBARETOKEN"))
 with open(sn + "/caddy/access-2026-11-10T00-00-00.000.log", "w") as fh:
     fh.write(line(5 * H, "/rotated-plain"))
 with gzip.open(sn + "/caddy/access-2026-11-09T00-00-00.000.log.gz", "wt") as fh:
@@ -258,6 +259,8 @@ assert_contains "the current log's line is present" "$(cat "$B/caddy/access.log"
 assert_contains "a rotated plain generation is present" "$(cat "$B/caddy/access.log")" "/rotated-plain"
 assert_contains "a rotated gzip generation is present" "$(cat "$B/caddy/access.log")" "/rotated-gzip"
 assert_not_contains "a line before the window is absent" "$(cat "$B/caddy/access.log")" "/too-old"
+assert_not_contains "a bare query token is removed" "$(cat "$B/caddy/access.log")" "SEEDEDBARETOKEN"
+assert_not_contains "a path-segment token is removed" "$(cat "$B/caddy/access.log")" "SEEDEDPATHTOKENSEEDEDPATHTOKEN"
 assert_contains "the failed login status stays" "$(cat "$B/caddy/access.log")" '"status": 401'
 
 echo "== support bundle snapshots: the support directory is included whole and redacted =="
@@ -273,11 +276,11 @@ assert_contains "the control audit events are exported" "$(cat "$B/dashboard/his
 assert_contains "a table the database lacks is a recorded row, not silence" "$(cat "$B/dashboard/history.jsonl")" '"table": "share_stats"'
 
 echo "== support bundle snapshots: no seeded secret reaches any new file =="
-for secret in SEEDEDCOOKIE SEEDEDAUTHBASIC SEEDEDSETCOOKIE SEEDEDURLTOKEN SEEDEDSTATEKEY SEEDEDED25519SECRET \
+for secret in SEEDEDCOOKIE SEEDEDAUTHBASIC SEEDEDSETCOOKIE SEEDEDURLTOKEN SEEDEDBARETOKEN SEEDEDPATHTOKENSEEDEDPATHTOKEN SEEDEDSTATEKEY SEEDEDED25519SECRET \
     "$SN_COOKIE_HEX" seededrendquery seededsocksuser SEEDEDSUPPASS SEEDEDMARKERSECRET SEEDEDRPCPASS "$SB_ADDR" "$SB_ONION"; do
     assert_not_contains "$secret is ABSENT from the whole zip" "$(grep -rF -- "$secret" "$SN/x1" || true)" "$secret"
 done
-assert_contains "the URL's non-secret parameter name survives" "$(cat "$B/caddy/access.log")" "page="
+assert_contains "the query is replaced, not dropped silently" "$(cat "$B/caddy/access.log")" "?[redacted]"
 
 echo "== support bundle snapshots: a missing DB is a manifest entry, not silence =="
 snid2="c412c412-0000-4000-8000-000000000002"
@@ -310,6 +313,8 @@ for step in status/monerod.json status/tari.json status/p2pool.json tor/control.
     assert_eq "$step still has a file that says it is unavailable" \
         "$(grep -c 'unavailable' "$SN/x3/bundle/$step" || true)" "1"
 done
+assert_eq "an unavailable file is marked unavailable in the manifest" \
+    "$(sb_man "$SN/x3" '[.files[] | select(.path == "status/tari.json") | .state] | first')" "unavailable"
 assert_contains "the journal still collected beside the wedged services" \
     "$(cat "$SN/x3/bundle/journal/all.log")" "monerod: marker-50h"
 rm -f "$SN/p2pool/stats/local/p2p"
@@ -317,7 +322,8 @@ printf '{"connections":9}' >"$SN/p2pool/stats/local/p2p"
 
 echo "== support bundle snapshots: each refused service is a recorded failure with its reason =="
 snid4="c412c412-0000-4000-8000-000000000004"
-sn_run "$snid4" refuse "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1" "P2POOL_DATA_DIR=$SN/nope"
+sed "s#^P2POOL_DATA_DIR=.*#P2POOL_DATA_DIR=$SN/nope#" "$sn_env" >"$SN/env3"
+sn_run "$snid4" refuse "PITHEAD_ENV_FILE=$SN/env3" "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1"
 sb_unzip "$SB/results/$snid4.zip" "$SN/x4"
 assert_eq "a bundle with four refusing services still applies" "$(jq -r .status "$SB/results/$snid4.json")" "applied"
 for step in status/monerod.json status/tari.json tor/control.txt; do
@@ -326,6 +332,8 @@ for step in status/monerod.json status/tari.json tor/control.txt; do
 done
 assert_contains "the monerod failure carries the reason" \
     "$(sb_man "$SN/x4" '[.failures[] | select(.step == "status/monerod.json") | .reason] | first')" "did not answer"
+assert_eq "P2Pool with no readable data-api file is recorded as failed" \
+    "$(sb_man "$SN/x4" '[.failures[] | select(.step == "status/p2pool.json") | .status] | first')" "failed"
 assert_eq "the refused monerod file says it is unreachable" "$(jq -r .reachable "$SN/x4/bundle/status/monerod.json")" "false"
 
 echo "== support bundle snapshots: a total limit that runs out skips steps and still produces the bundle =="

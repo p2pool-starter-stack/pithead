@@ -1,6 +1,6 @@
 bundle_support_snap_py() {
     cat <<'PY'
-import gzip, json, os, re, socket, sqlite3, stat, subprocess, sys, time
+import gzip, ipaddress, json, os, re, socket, sqlite3, stat, subprocess, sys, time
 
 
 def unavailable(service, reason, **extra):
@@ -149,6 +149,8 @@ def tor_reply(fh):
 def tor(datadir, addr):
     host, _, port = addr.rpartition(":")
     try:
+        if not (ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback):
+            raise ValueError("control address is not private")
         with open(os.path.join(datadir, "control_auth_cookie"), "rb") as fh:
             cookie = fh.read().hex()
         sock = socket.create_connection((host, int(port)), timeout=5)
@@ -180,7 +182,8 @@ def caddy(directory, since, until):
     except OSError as exc:
         sys.stderr.write("the Caddy log directory is not readable: %s\n" % type(exc).__name__)
         sys.exit(3)
-    sensitive = re.compile(r"authorization|cookie|token|secret|key|passw|auth", re.I)
+    safe = {"user-agent", "content-type", "content-length", "accept", "accept-language", "accept-encoding", "host",
+            "x-forwarded-for", "x-forwarded-proto", "server", "cache-control", "connection"}
     for name in names:
         path = os.path.join(directory, name)
         if not os.path.isfile(path) or os.path.islink(path) or os.path.getmtime(path) < since:
@@ -199,18 +202,20 @@ def caddy(directory, since, until):
                 for headers in (request.get("headers") if isinstance(request, dict) else None, entry.get("resp_headers")):
                     if isinstance(headers, dict):
                         for header in headers:
-                            if sensitive.search(header):
+                            if header.lower() not in safe:
                                 headers[header] = ["[redacted]"]
                 if isinstance(request, dict):
                     for field in ("uri", "url"):
                         if isinstance(request.get(field), str):
-                            request[field] = re.sub(r"([?&;][^=&#;\s]*=)[^&#;\s]*", r"\1[redacted]", request[field])
+                            path, mark, _query = request[field].partition("?")
+                            path = re.sub(r"[A-Za-z0-9_.~%-]{20,}", "[redacted]", path)
+                            request[field] = path + (mark + "[redacted]" if mark else "")
                 print(json.dumps(entry, sort_keys=True))
 
 
 HISTORY_TABLES = (
     ("history", "timestamp"), ("events", "ts"), ("share_stats", "ts"), ("blocks", "ts"), ("shares", "ts"),
-    ("xvb_history", "ts"), ("network_history", "ts"), ("disk_growth", "ts"), ("worker_history", "ts"),
+    ("xvb_history", "ts"), ("network_history", "ts"), ("disk_growth", "ts"), ("worker_history", "ts"), ("raffle_wins", "ts"),
     ("ping_failures", "ts"), ("audit_events", "ts"),
 )
 
@@ -243,7 +248,7 @@ def history(db, since, until):
 
 
 def markers(root):
-    skip = re.compile(r"key|secret|token|cookie|pass|seed|mnemonic|wallet|cred|auth|\.pem$", re.I)
+    skip = re.compile(r"key|secret|token|cookie|pass|seed|mnemonic|wallet|cred|auth|url|login|env|host|rpc|user|addr|onion|private|\.pem$", re.I)
     count = 0
     for base, dirs, names in os.walk(root):
         depth = base[len(root):].count(os.sep)
@@ -266,7 +271,7 @@ def markers(root):
                         body = fh.read(256).strip()
                 except OSError:
                     continue
-                if body:
+                if body and not re.search(r"[A-Za-z0-9+/_-]{24,}|://", body):
                     print("    content: %s" % body.replace("\n", " | "))
 
 
@@ -279,6 +284,11 @@ if __name__ == "__main__":
 PY
 }
 
+bundle_support_mark_unavailable() {
+    printf '{"state":"unavailable","lines":1,"window":{"since":"%s","until":"%s"},"truncated":false,"dropped_lines":0,"dropped_bytes":0}' \
+        "$_BS_SINCE" "$_BS_UNTIL" >"$1/meta/${2//\//__}.json"
+}
+
 bundle_support_snap() {
     local tmp="$1" rel="$2" f
     shift 2
@@ -287,25 +297,31 @@ bundle_support_snap() {
     if ! command -v "$1" >/dev/null 2>&1; then
         bundle_support_step_fail "$tmp" "$rel" not_installed "$1 is not installed" 0
         printf 'unavailable: %s is not installed\n' "$1" >"$f"
+        bundle_support_mark_unavailable "$tmp" "$rel"
         return 0
     fi
     BUNDLE_STEP_LIMIT="${BUNDLE_STEP_LIMIT:-${PITHEAD_SUPPORT_SNAP_TIMEOUT:-20}}" \
         bundle_support_capture "$tmp" "$rel" "$_BS_CAP" 1 0 "$_BS_SINCE" "$_BS_UNTIL" "$@" || true
-    [ -s "$f" ] || printf 'unavailable: this step produced no output; see failures in manifest.json\n' >"$f"
+    if [ ! -s "$f" ]; then
+        printf 'unavailable: this step produced no output; see failures in manifest.json\n' >"$f"
+        bundle_support_mark_unavailable "$tmp" "$rel"
+    fi
 }
 
 bundle_support_snap_skip() {
     local tmp="$1" rel="$2" why="$3"
     mkdir -p "$tmp/bundle/$(dirname "$rel")"
     printf 'unavailable: %s\n' "$why" >"$tmp/bundle/$rel"
+    bundle_support_mark_unavailable "$tmp" "$rel"
     bundle_support_step_fail "$tmp" "$rel" skipped "$why" 0
 }
 
 bundle_support_snapshots() {
-    local tmp="$1" engine profiles prefix tor_addr rpc_url tari_addr p2dir tordir cdir db sdir state f rel n
+    local tmp="$1" engine profiles prefix tor_addr rpc_url tari_addr p2dir tordir cdir db sdir f rel n
     local nfmt='{{.Names}} state={{.State}} status={{.Status}} exit_code={{.ExitCode}} image={{.Image}} image_id={{.ImageID}}'
     local py="$tmp/snap.py"
     engine=$(container_engine)
+    [ "$engine" = podman ] || nfmt='{{.Names}} state={{.State}} status={{.Status}} image={{.Image}}'
     profiles=$(env_get COMPOSE_PROFILES 2>/dev/null || true)
     prefix=$(env_get NETWORK_PREFIX 2>/dev/null || true)
     tor_addr="${PITHEAD_SUPPORT_TOR_CONTROL:-${prefix:+$prefix.25}:9051}"
@@ -334,7 +350,7 @@ bundle_support_snapshots() {
     fi
     bundle_support_snap "$tmp" status/p2pool.json python3 -I "$py" p2pool "$p2dir/stats"
     bundle_support_snap "$tmp" tor/control.txt python3 -I "$py" tor "$tordir" "$tor_addr"
-    bundle_support_snap "$tmp" tor/state-guards.txt awk '/^(TorVersion|LastWritten|Guard) /' "$tordir/state"
+    bundle_support_snap "$tmp" tor/state-guards.txt awk '/^(TorVersion|LastWritten|Guard) / { gsub(/bridge_addr=[^ ]+/, "bridge_addr=[redacted]"); print }' "$tordir/state"
 
     bundle_support_snap "$tmp" network/networkctl.txt networkctl status --no-pager
     bundle_support_snap "$tmp" network/ip-addr.txt ip addr
@@ -359,18 +375,18 @@ bundle_support_snapshots() {
         n=0
         while IFS= read -r -d '' f; do
             n=$((n + 1))
-            if [ "$n" -gt 200 ]; then
-                bundle_support_step_fail "$tmp" support-dir failed "more than 200 files; the rest are not included" 0
+            if [ "$n" -gt 2000 ]; then
+                bundle_support_step_fail "$tmp" support-dir failed "more than 2000 files; the rest are not included" 0
                 break
             fi
             rel="support-dir/$(printf '%s' "${f#"$sdir"/}" | tr -c 'A-Za-z0-9._/-' '_')"
+            [ -e "$tmp/bundle/$rel" ] && rel="$rel.$n"
             bundle_support_snap "$tmp" "$rel" cat -- "$f"
         done < <(find "$sdir" -type f -print0 2>/dev/null | sort -z)
     else
         bundle_support_snap_skip "$tmp" support-dir/README.txt "no $sdir directory on this box"
     fi
-    state="${PITHEAD_STATE_ROOT:-/data/pithead}"
-    bundle_support_snap "$tmp" state-markers.txt python3 -I "$py" markers "$state"
+    bundle_support_snap "$tmp" state-markers.txt python3 -I "$py" markers "${PITHEAD_STATE_ROOT:-/data/pithead}"
 
     db="${DASHBOARD_DATA_DIR:-}/mining_data.db"
     [ -f "$db" ] || db="$(env_get DASHBOARD_DATA_DIR 2>/dev/null || true)/mining_data.db"
