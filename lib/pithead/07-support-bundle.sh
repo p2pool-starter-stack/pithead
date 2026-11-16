@@ -148,66 +148,68 @@ bundle_redact_log() {
         -e "$xmr_shape"
 }
 
-stack_support_bundle() {
-    _reject_options support-bundle "$@"
-    local ts out tmp rc=0
-    ts=$(date -u +%Y%m%dT%H%M%SZ)
-    out="$PWD/support-bundle-$ts.tar.gz"
-    tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"; exit 130' INT TERM HUP
-    mkdir -p "$tmp/bundle/logs"
+bundle_support_journal_unreadable() {
+    local out
+    out=$(journalctl -n 1 --no-pager 2>&1 </dev/null) || {
+        printf '%s' "$out" | tr '\n' ' ' | cut -c1-200
+        return 0
+    }
+    case "$out" in
+    *"insufficient permissions"* | *"Permission denied"*)
+        printf '%s' "$out" | tr '\n' ' ' | cut -c1-200
+        return 0
+        ;;
+    esac
+    return 1
+}
 
-    log "Collecting diagnostics (read-only)..."
-    {
-        echo "pithead ${PITHEAD_VERSION:-unknown}"
-        uname -a
-        echo
-        df -h 2>/dev/null || true
-        echo
-        free -h 2>/dev/null || true
-    } >"$tmp/bundle/host.txt" 2>&1
+bundle_support_diy_collect() {
+    local tmp="$1" cap="$2" since="$3" until="$4" juntil="$5" engine rc=0 names name
+    mkdir -p "$tmp/bundle/containers"
     doctor_json >"$tmp/bundle/doctor.json" 2>"$tmp/bundle/doctor.txt" || rc=$?
-    [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle."
-
-    # Masked config: the same jq walk the dashboard prefill uses; every set secret leaf becomes
-    # {"__secret__": true}. Rendered into the scratch dir, never into the live control spool.
+    [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle." >&2
     if [ -f "$CONFIG_FILE" ]; then
-        render_masked_config "$tmp/scratch" 2>/dev/null || true
+        render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
         [ -f "$tmp/scratch/masked/config.json" ] &&
             bundle_mask_config <"$tmp/scratch/masked/config.json" >"$tmp/bundle/config.masked.json"
     fi
-    # .env with secret-bearing values stripped by the survivor allowlist above; structure (ports,
-    # dirs, modes) stays — that is what support actually needs.
     if [ -f .env ]; then
         bundle_redact_env <.env >"$tmp/bundle/env.redacted" 2>/dev/null || true
     fi
-
-    # Container state + recent logs, when an engine is reachable. bundle_redact_log guards the
-    # launch lines services echo — the credential flags, the wallet addresses and the service
-    # onion — plus any Monero address and any onion in body text (#1750).
-    if docker compose ps >"$tmp/bundle/compose-ps.txt" 2>/dev/null; then
-        local svc
-        for svc in $(docker compose ps --all --format '{{.Service}}' 2>/dev/null); do
-            docker compose logs --no-color --tail 200 "$svc" 2>/dev/null |
-                bundle_redact_log >"$tmp/bundle/logs/$svc.log" || true
-        done
+    engine=$(container_engine)
+    if command -v "$engine" >/dev/null 2>&1 && names=$("$engine" compose ps --all --format '{{.Name}}' 2>&1); then
+        "$engine" compose ps --all >"$tmp/bundle/compose-ps.txt" 2>&1 || true
+        while read -r name; do
+            [ -n "$name" ] || continue
+            bundle_support_capture "$tmp" "containers/$name.log" "$cap" 1 0 "$since" "$until" \
+                sh -c 'exec "$1" logs --timestamps --since "$2" --until "$3" "$4" 2>&1' sh "$engine" "$since" "$juntil" "$name" || true
+        done <<<"$names"
     else
         echo "container engine not reachable — no container state collected" >"$tmp/bundle/compose-ps.txt"
+        bundle_support_step_fail "$tmp" containers failed "container engine not reachable: ${names:-$engine not found}"
     fi
+}
 
-    tar -czf "$tmp/bundle.tar.gz" -C "$tmp" bundle || {
-        rm -rf "$tmp"
+stack_support_bundle() {
+    local usage="Usage: pithead support-bundle [--hours N] [--since TIME] [--until TIME]" out outdir arch
+    bundle_support_cli_window "$usage" "$@"
+    outdir=$(mktemp -d)
+    trap 'rm -rf "$outdir"; exit 130' INT TERM HUP
+    log "Collecting diagnostics (read-only)..."
+    # shellcheck disable=SC2086
+    arch=$(bundle_support_collect "$outdir" $BUNDLE_WINDOW) || {
+        rm -rf "$outdir"
         trap - INT TERM HUP
         return 1
     }
-    chmod 600 "$tmp/bundle.tar.gz"
-    mv -f "$tmp/bundle.tar.gz" "$out" || {
-        rm -rf "$tmp"
+    out="$PWD/$(basename "$arch")"
+    mv -f "$arch" "$out" || {
+        rm -rf "$outdir"
         trap - INT TERM HUP
         return 1
     }
-    rm -rf "$tmp"
+    rm -rf "$outdir"
     trap - INT TERM HUP
     log "Support bundle written: $out"
-    log "Secrets are redacted at collection, but REVIEW the contents before sharing: tar -tzf $(basename "$out")"
+    log "Secrets are redacted at collection, but REVIEW the contents before sharing: unzip -l $(basename "$out")"
 }

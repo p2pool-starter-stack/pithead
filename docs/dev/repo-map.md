@@ -99,7 +99,7 @@ and reboot with setup still open before the final provisioned reboot.
 SQLite WALs, including archived WAL rows and a clean-sidecar control.
 
 The DIY lifecycle support-bundle leg is `tests/integration/lib/run-support-bundle.sh`;
-`check-support-bundle.py` in the same directory inspects archives without extraction.
+`check-support-bundle.py` in the same directory inspects the zip without extraction.
 `tests/integration/selftest/selftest-support-bundle.sh` supplies archive and restoration
 failure controls through the integration selftest target.
 The leg's credential fixture rotates the stratum password, so borrowed rigs stay locked out

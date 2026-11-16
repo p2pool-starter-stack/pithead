@@ -13,6 +13,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
+  same windowed `.zip` and manifest as the appliance: every container's full log for the window instead of
+  the last 200 lines, the DIY egress and LAN-guard units from the journal, and an engine or journal that
+  cannot be read recorded in the manifest (#4130).
 - The Service diagnostics card has a **Restart all** button (typed `RESTART`, refused during an OS
   update, an uncommitted slot, a held host lock or a restart in the last two minutes, and riding out the dashboard's own restart) and a
   **Reset Tor state** button on the Tor card that runs the existing gated Tor recovery with its own
