@@ -33,6 +33,10 @@ no unexpected-abort message or debug advice. `selftest-tor-recovery-refusal.sh` 
 this guest script against the generated CLI and a pre-fix dispatch negative control,
 without a container or guest. The live result requires a KVM job on the PR head.
 
+The opt-in `power` phase (#4084) provisions a guest, then sends the host `power-reboot` and `power-shutdown` verbs
+through the control spool: a wrong word is rejected, the reboot gives a new boot id, the shutdown leaves the domain
+shut off until the harness starts it, and each leaves its audit line and a stack-stop line in the control journal.
+
 The opt-in `p2pool-heal` phase (#4077) provisions a guest. When the guest P2Pool reports readable peerless stats, it
 observes the dashboard restart it (within 50 minutes), keep at least 20 minutes between restarts, stay within three
 and leave P2Pool running. A stock guest P2Pool reports no stats, so the phase instead runs the dashboard's healer

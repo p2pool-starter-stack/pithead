@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|power|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -245,6 +245,8 @@ source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
 # shellcheck source=tests/os/phases/pool-heal.sh
 source "$SCRIPT_DIR/phases/pool-heal.sh" || exit $?
+# shellcheck source=tests/os/phases/power.sh
+source "$SCRIPT_DIR/phases/power.sh" || exit $?
 require_host
 require_clean_bench
 if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
@@ -283,6 +285,7 @@ crossupdate) _run_phase crossupdate phase_crossupdate ;;
 stack) _run_phase stack phase_stack ;;
 tor-heal) _run_phase tor-heal phase_tor_heal ;;
 p2pool-heal) _run_phase p2pool-heal phase_p2pool_heal ;;
+power) _run_phase power phase_power ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
