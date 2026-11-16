@@ -7,6 +7,8 @@ source "$HERE/lifecycle/recovery.sh" || return $?
 # caddy-pending.sh reuses the sandbox recovery.sh leaves converged, so it must source right after it.
 # shellcheck source=tests/stack/lifecycle/caddy-pending.sh
 source "$HERE/lifecycle/caddy-pending.sh" || return $?
+# shellcheck source=tests/stack/lifecycle/restart-order.sh
+source "$HERE/lifecycle/restart-order.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/pull-policy.sh
 source "$HERE/lifecycle/pull-policy.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/lock-core.sh

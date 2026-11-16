@@ -1554,10 +1554,11 @@ that is gone from the dashboard, and the host's own `control.log` — which the 
 
 ### Service diagnostics
 
-Two read-only questions you can ask the host and one recovery action, in the same card stack as
-the config editor and under the same `dashboard.control.enabled` flag. The two questions change
-nothing: they run a check and report, which is why neither asks you to confirm. The restart does
-change the machine and always asks first (see [Restart a service](#restart-a-service)).
+Two read-only questions you can ask the host and three recovery actions, in the same card stack
+as the config editor and under the same `dashboard.control.enabled` flag. The two questions change
+nothing: they run a check and report, which is why neither asks you to confirm. The actions change
+the machine and always ask first: restarting one service (see [Restart a service](#restart-a-service)),
+and **Restart all** and **Reset Tor state** (see [Restart all and reset Tor](#restart-all-and-reset-tor)).
 
 **Run health check** runs the host's own `pithead doctor` and shows what it found — the same
 checks the CLI prints, failures first, with the host's summary counts above them. This is the one
@@ -1595,15 +1596,19 @@ page you are reading or the proxy in front of it would cut off the answer. The b
 confirmation naming what else is interrupted (restarting `tor` also restarts `monerod`; restarting
 `monerod` interrupts `wallet-rpc`; a wallet pauses its sync and payouts briefly), and sends nothing
 until you confirm. The button stays disabled while the host works, then shows the result or the
-host's reason for refusing.
+host's reason for refusing. A `tor` restart can take several minutes, because the host waits for
+Tor to report bootstrapped before it restarts `monerod`.
 
 The host decides, not the dashboard. It restarts only a service on its fixed list, with
 `docker compose restart <service>` under the same lock as `apply`, `upgrade` and `backup`. It
 refuses, with a reason and without queueing, while another of those operations holds the lock,
 while the LAN-only source rule for a published port is not in place, and when the same service was
-restarted in the last 120 seconds. Every request is recorded in the control audit log with the
-actor, the action `svc-restart`, the service and the outcome (`started`, `rejected`, `applied` or
-`failed`).
+restarted in the last 120 seconds. After a `tor` restart it waits up to five minutes, still
+holding the lock, for Tor to report bootstrapped, then restarts a running `monerod` so it re-dials
+its peers through the new circuits, as `./pithead restart tor` does. If Tor does not bootstrap in
+that time, or `monerod` cannot be restarted, the result is `failed` and says to restart `monerod`
+once Tor is healthy. Every request is recorded in the control audit log with the actor, the action
+`svc-restart`, the service and the outcome (`started`, `rejected`, `applied` or `failed`).
 
 One thing reads differently here than at a terminal: the report is redacted on its way to the
 browser, so where `pithead doctor` prints your dashboard's onion address in full, this panel shows
@@ -1645,6 +1650,31 @@ daemon, use the support bundle or the console.
 
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
+
+#### Restart all and reset Tor
+
+**Restart all** restarts every container of the stack through the host's `restart` verb. It asks
+you to type `RESTART`, and it says that mining stops briefly, that the dashboard goes offline and
+comes back on its own, and that the machine is not rebooted. The page then shows an offline state,
+polls the host's result every two seconds for up to ten minutes, and reloads when the restart
+finished; if the stack has not answered by then it says so and leaves the page for you to reload.
+The host refuses, and the panel shows its reason, while an OS update is downloading, installing,
+verifying or waiting for its reboot, while the new slot is still being committed (a restart then
+could roll the machine back), and while another host operation (a config apply, backup, restore or
+upgrade) holds the mutation lock; it reports busy instead of queueing. Every request is audited
+with its actor, action and status, and a second request inside two minutes of the last is rejected with the time left. After the restart the host waits for Tor to report bootstrapped
+and restarts monerod so it re-dials through the new Tor, then restarts the tari container, when the stack has one, so it starts after Tor. The restart verb is available on the DIY
+stack and the appliance.
+
+**Reset Tor state**, on the Tor card, asks the host to run the same gated `tor-recover apply` that
+the Tor auto-heal uses, as the signed-in user instead of `tor-heal`. Its confirmation names what it
+discards (Tor's circuit history, moved aside as a backup; onion addresses are kept) and that the
+host can refuse. Every gate stays in force: `tor.auto_heal` must be on, the circuit history must
+be saturated, a stalled Monero or Tor bootstrap must corroborate it, no other host operation may
+hold the lock, and the six-hour recovery cooldown applies. A refusal comes back as the gate's own
+sentence in the panel. The button also has its own 30-minute budget: a repeat inside it is
+rejected with the time left, so it cannot be pressed repeatedly. A successful reset restarts Tor
+and re-dials a running monerod.
 
 ## Backup view
 
