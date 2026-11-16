@@ -148,6 +148,7 @@ test-control-diagnostics.sh|_c
 test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
+test-control-lifecycle-verbs.sh|1
 test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
 test-control-secret-and-dial-guards.sh|HOOKS

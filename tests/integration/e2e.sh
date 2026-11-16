@@ -261,7 +261,7 @@ restore_all() {
     # STACK_VERSION=dev for any source checkout (export_build_provenance), so baseline and branch SHARE the
     # `:dev` tag, which deploy_branch's build has already overwritten. `apply && up` then brings the BRANCH
     # back up under the baseline's name; a failed upgrade must not fall back to apply/up.
-    local restore_cmd="./pithead apply -y && ./pithead up"
+    local restore_cmd="./pithead apply -y && ./pithead up" restore_ready=0
     if on_bench "test -f '$RESTORE_DIR/dashboard/Dockerfile'"; then
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade"
@@ -275,7 +275,7 @@ restore_all() {
         fi
         # Job 1677: status passed before the sync gate stopped p2pool. Wait for its release.
         if wait_synced 1500 restore && wait_bench_healthy 300 && wait_restore_mining_ready 1500; then
-            ok "baseline stack healthy again"
+            restore_ready=1
         else
             warn "baseline stack did not regain synced chains and running mining services before restore proof"
             RESTORE_PROOF_FAILED=1
@@ -304,6 +304,9 @@ restore_all() {
         warn "  This is separate from the credential proof above and needs a different repair — see the lines above."
         [ "$CONTROL_VERDICT_BEFORE" = "stranded" ] &&
             warn "  This run DID strand them (verdict before the restore: stranded), and the restore did not put them back."
+    fi
+    if [ "$restore_ready" = 1 ] && [ "$RESTORE_PROOF_FAILED" != 1 ] && [ "$CONTROL_PROOF_FAILED" != 1 ]; then
+        if recheck_restore_mining 600; then ok "baseline stack healthy again"; else RESTORE_PROOF_FAILED=1; fi
     fi
     if [ "$RESTORE_PROOF_FAILED" = "1" ] || [ "$CONTROL_PROOF_FAILED" = "1" ]; then
         if [ "$RESTORE_PROOF_FAILED" = "1" ]; then

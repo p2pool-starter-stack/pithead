@@ -99,7 +99,8 @@ drive_restore_rc() {
         cleanup_rotate_onion_fixture() { echo cleanup >>"$log"; }
         wait_synced() { echo synced >>"$log"; }; wait_bench_healthy() { echo healthy >>"$log"; }
         '"$MINING_STUB_SRC"'
-        verify_restore_proof() { echo proof >>"$log"; }
+        verify_restore_proof() { echo proof >>"$log"; return "${VERIFY_RC:-0}"; }
+        recheck_restore_mining() { echo "recheck $1" >>"$log"; return "${RECHECK_RC:-0}"; }
         on_bench() { return 0; }
         eval "$RESTORE_SRC"
         # A failed restore ends in `exit 1`; record it instead of ending this shell.
@@ -110,9 +111,78 @@ drive_restore_rc() {
     ' 2>/dev/null
 }
 assert_eq "the wait runs after health and before the proof" \
-    "$(drive_restore_rc 0)" "synced healthy mining proof cleanup "
-assert_eq "a failed wait fails the restore but still runs the proof" \
+    "$(drive_restore_rc 0)" "synced healthy mining proof cleanup recheck 600 "
+assert_eq "a failed wait fails the restore, still runs the proof and skips the re-check" \
     "$(drive_restore_rc 1)" "synced healthy mining proof cleanup exit:1 "
+assert_eq "a failed proof skips the re-check so no healthy line precedes the failure" \
+    "$(VERIFY_RC=1 drive_restore_rc 0)" "synced healthy mining proof cleanup exit:1 "
+assert_eq "a failed re-check fails the restore" \
+    "$(RECHECK_RC=1 drive_restore_rc 0)" "synced healthy mining proof cleanup recheck 600 exit:1 "
+
+echo "== the re-check catches a dashboard stop after the first sample (#4167) =="
+drive_recheck() {
+    (
+        # shellcheck disable=SC2034
+        RESTORE_DIR=/srv/code/baseline
+        polls=0 out="" started=0
+        ok() { out="$out|ok:$1"; }
+        warn() { out="$out|warn:$1"; }
+        on_bench() {
+            case "$1" in
+            *"docker inspect"*)
+                local i=$polls
+                polls=$((polls + 1))
+                [ "${SEQ:$((i < ${#SEQ} ? i : ${#SEQ} - 1)):1}" = 1 ]
+                ;;
+            *"compose up"* | *"docker start"* | *"compose start"*) started=1 ;;
+            *) echo 'restore-mining: stage=mining-services marker=absent p2pool=running proxy=exited' ;;
+            esac
+        }
+        recheck_restore_mining "$1" 0
+        rc=$?
+        printf '%s %s %s%s\n' "$rc" "$polls" "$started" "$out"
+    )
+}
+SEQ=1 out="$(drive_recheck 5)"
+assert_contains "a stack still healthy passes at once" "$out" "0 1 0|ok:re-check"
+SEQ=0001 out="$(drive_recheck 5)"
+assert_eq "a stop at the re-check is waited out and passes once readmitted" "${out%% *}" "0"
+assert_contains "the wait start is logged" "$out" "waiting up to 5s for the dashboard to readmit"
+assert_contains "the elapsed time is logged" "$out" "healthy again after waiting"
+SEQ=0 out="$(drive_recheck 1)"
+assert_eq "a proxy that stays stopped fails the re-check" "${out%% *}" "1"
+assert_contains "the failure names xmrig-proxy and the time waited" "$out" "xmrig-proxy (or P2Pool) still not running and healthy after waiting 1s"
+
+probe_health() {
+    local dir rc
+    dir="$(mktemp -d)"
+    mkdir "$dir/bin"
+    cat >"$dir/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+echo "$1 $2" >>"$CALLS"
+case "$1 $2" in
+"compose ps") [ "${*: -1}" = gone ] || printf 'cid-%s\n' "${*: -1}" ;;
+"inspect --format") case "${*: -1}" in cid-p2pool) printf '%s\n' "$P2P" ;; cid-xmrig-proxy) printf '%s\n' "$PROXY" ;; esac ;;
+esac
+DOCKER
+    chmod +x "$dir/bin/docker"
+    (
+        export PATH="$dir/bin:$PATH" CALLS="$dir/calls" P2P="$1" PROXY="$2"
+        RESTORE_DIR="$dir"
+        on_bench() { bash -c "$1"; }
+        _restore_mining_healthy
+    )
+    rc=$?
+    printf '%s %s' "$rc" "$(sort -u "$dir/calls" | tr '\n' ',')"
+    rm -rf "$dir"
+}
+assert_eq "running services with and without a healthcheck are healthy" \
+    "$(probe_health 'running healthy' 'running ' | cut -d' ' -f1)" "0"
+assert_eq "an unhealthy proxy is not healthy" "$(probe_health 'running healthy' 'running unhealthy' | cut -d' ' -f1)" "1"
+assert_eq "a starting p2pool is not healthy" "$(probe_health 'running starting' 'running healthy' | cut -d' ' -f1)" "1"
+assert_eq "a stopped proxy is not healthy" "$(probe_health 'running healthy' 'exited ' | cut -d' ' -f1)" "1"
+assert_eq "the probe only lists and inspects, never starts" \
+    "$(probe_health 'running healthy' 'exited ' | cut -d' ' -f2-)" "compose ps,inspect --format,"
 
 echo ""
 printf 'restore-mining-ready self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"

@@ -574,18 +574,9 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                             )
                         self._last_worker_capture = now_ts
 
-                    # 6b. Healthchecks.io dead-man's switch (Issue #79). Ping each cycle so the
-                    # external monitor alerts on the *absence* of a ping if the host ever dies
-                    # (power loss, crash, NIC death) — a pure "is the stack alive" liveness signal.
-                    # Node-health alerting (a node down while the box is up) is out of scope here;
-                    # that's the Telegram alerter's job (#121). The client throttles and fails
-                    # silently; `enabled` is just "a ping URL is set", so an unconfigured stack
-                    # never pings.
-                    if self.healthchecks.enabled:
-                        await asyncio.to_thread(self.healthchecks.ping)
-
                     await self.tor_healer.check()
                     await self.p2pool_healer.check(p2pool_stats)
+                    await self.monerod_redial.check(monero_sync.get("health"))
 
                     # 7. External XvB stats sync over Tor (#163), throttled to every 10th iteration,
                     # and ONLY when XvB is enabled — disabling XvB must stop the egress entirely.
