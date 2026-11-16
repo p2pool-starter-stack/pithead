@@ -13,14 +13,33 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- The Service diagnostics card has a **Restart all** button (typed `RESTART`, refused during an OS
+  update, an uncommitted slot, a held host lock or a restart in the last two minutes, and riding out the dashboard's own restart) and a
+  **Reset Tor state** button on the Tor card that runs the existing gated Tor recovery with its own
+  30-minute budget and returns the gate's refusal reason (#4064, #4063).
 - The dashboard and the configuration view now open on a sign-in page instead of the browser's
   password prompt. It has a "Remember me" box (30 days, renewed while in use; otherwise the session
   ends when the browser closes or after 8 hours idle) and a "Sign out" button. Changing the password
   ends every session, wrong passwords are rate-limited, and scripts keep using HTTP basic auth with
   the same credentials (#4089).
+- The dashboard's **Export logs** card (Backup tab) has a time-frame picker (last 1 h, 6 h, 24 h, 72 h or 7 days, or a custom start and end), shows how far back the logs reach and flags a range that goes further, and collects and downloads the `support-bundle-<UTC timestamp>.zip` with one click, showing the window the manifest recorded. It is always available, on the appliance and on DIY, whether or not `dashboard.control.enabled` is on: with the switch off the host runner serves only the export, and config editing, restart and the other control actions stay off. With a dashboard password set, every export route needs the login (#4129).
+
+### Changed
+
+- The appliance support bundle (the dashboard's **Support bundle** card and `pithead recovery-bundle`) is now one `.zip` for a chosen start and end time (`--since` and `--until` on the CLI, `since` and `until` on the control request; `hours` still works). It holds the whole system journal, the kernel log, the boot list and a journal per Pithead and quadlet unit read from the installed unit files, redacted, with a `manifest.json` that records the windows, the oldest retained entry, the journald usage and every truncated, empty, missing or failed file. Oversize files keep their oldest and newest lines instead of the bundle being refused, and the journald cap is raised from 200 MiB to 400 MiB to cover 168 hours at the log volume reported for a loaded test box (#4127).
 
 ### Fixed
 
+- On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
+  on the data partition is saturated — no longer costs the committed slot its fallback. The boot
+  health gate commits when the dashboard answers and every failing check is that network fault,
+  names the fault in the boot log and in the update's recorded outcome, and leaves the return to the
+  previous version unspent for a copy that is genuinely broken. That includes the case where
+  `compose up` itself refuses because Tor is unhealthy: the boot now goes on to the gate window
+  instead of rebooting at once (#4049).
+- `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
+  bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
+  instead of staying at 0 peers when compose did not cycle it (#4063); a bare restart and Restart all then also restart the tari container, when the stack has one, so it starts after Tor (#4064).
 - A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
   changed version or the first successful refresh after the disconnected banner, shows "Pithead was
   updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2
@@ -48,6 +67,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   lock, so its restart no longer overlaps an apply, an `up` or a control operation; a busy lock
   defers the render and the restart to the next tick, and when an apply lands in the same tick gap
   as an address change the apply's restart stands (#3987).
+
+### Notes
+
+- **RigForge-only appliances: stay on 2.0.3.** This release changes nothing on a rig: RigForge 1.18.1
+  and XMRig 6.26.0 are the same as in 2.0.3. Updating a rig still needs the USB stick, and re-flashing
+  a rig that runs from its stick wipes its setup and token, so it must be adopted again. Updating rigs
+  from the Pithead dashboard is planned for 2.0.5 (#1837).
 
 ## [2.0.3] - 2026-11-10
 

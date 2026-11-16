@@ -77,7 +77,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and . != "hours" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and . != "hours" and . != "since" and . != "until" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -87,6 +87,11 @@ control_process_request() { # <claimed-file> <control-dir>
     # writes the file, so re-validate it against the basic_auth username charset.
     printf '%s' "$actor" | grep -qE '^[A-Za-z0-9._@-]{0,64}$' || actor="untrusted"
     action=$(jq -r '.action // ""' "$file")
+    if [ "${CONTROL_EXPORT_ONLY:-0}" = 1 ] && [ "$action" != support-bundle ] && [ "$action" != support-bundle-range ]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"the dashboard control channel is off (dashboard.control.enabled); only the support bundle export is available",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "${action:-none}" "rejected"
+        return 0
+    fi
     case "$action" in
     egress-sync)
         chain=$(jq -r 'if ((keys | sort) == ["action","actor","chain","id"])
@@ -111,6 +116,17 @@ control_process_request() { # <claimed-file> <control-dir>
             control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
         else
             control_tor_recover "$cdir" "$id" "$actor"
+        fi
+        ;;
+    tor-reset)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",action:"tor-reset",error:"Tor auto-heal is off (TOR_AUTO_HEAL), so the Tor state reset is unavailable",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        elif [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ] || [ "$actor" = tor-heal ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",action:"tor-reset",error:"invalid reset request",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        else
+            control_tor_reset "$cdir" "$id" "$actor"
         fi
         ;;
     tor-history)
@@ -143,6 +159,7 @@ control_process_request() { # <claimed-file> <control-dir>
     diag-logs) control_diag_logs "$file" "$id" "$actor" "$cdir" ;;
     svc-restart) control_svc_restart "$file" "$id" "$actor" "$cdir" ;;
     support-bundle) control_support_bundle "$file" "$id" "$actor" "$cdir" ;;
+    support-bundle-range) control_support_range "$file" "$id" "$actor" "$cdir" ;;
     onion-client-key) control_onion_client_key "$id" "$actor" "$cdir" ;;
     *)
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unknown action",ts:(now|floor)}')"
@@ -203,12 +220,12 @@ control_prune_results() { # <control-dir>
     done
 
     local kept_b=0
-    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz 2>/dev/null || true); do
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz *.zip 2>/dev/null || true); do
         [ -f "$dir/$archive" ] || continue
         [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
         kept_b=$((kept_b + 1))
         if [ "$kept_b" -gt "$max_archives" ]; then
-            id=$(basename "$archive" .tar.gz)
+            id=$(basename "${archive%.zip}" .tar.gz)
             rm -f "$dir/$archive" "$dir/$id.json"
         fi
     done
@@ -220,6 +237,7 @@ control_prune_results() { # <control-dir>
         [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz" ] && continue
+        [ -f "$dir/$(basename "$result" .json).zip" ] && continue
         n=$((n + 1))
         if [ "$n" -gt "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
             rm -f "$dir/$result"
@@ -240,15 +258,17 @@ control_prune_results() { # <control-dir>
                 id="${f%.tar.gz.enc}"
                 rm -f "$dir/$f" "$dir/$id.json"
                 ;;
-            *.tar.gz)
+            *.tar.gz | *.zip)
                 [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
                 id="${f%.tar.gz}"
+                id="${id%.zip}"
                 rm -f "$dir/$f" "$dir/$id.json"
                 ;;
             *.json)
                 id="${f%.json}"
                 pair="$dir/$id.tar.gz.enc"
                 [ -f "$pair" ] || pair="$dir/$id.tar.gz"
+                [ -f "$pair" ] || pair="$dir/$id.zip"
                 if [ -f "$pair" ]; then
                     [ -n "$(find "$pair" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
                     rm -f "$dir/$f" "$pair"
@@ -275,15 +295,15 @@ control_run_pending() {
     # Claims below are `.claim.$$`. A child `apply -y` a handler runs inherits this, so its runner
     # drain (control_runner_wait_idle) does not wait on its own parent's claim (#2363).
     export PITHEAD_CONTROL_RUNNER_PID=$$
-    [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
-        error "The dashboard control channel is not enabled (dashboard.control.enabled)."
+    CONTROL_EXPORT_ONLY=0
+    [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] || CONTROL_EXPORT_ONLY=1
     local cdir
     cdir=$(env_get CONTROL_DIR)
     [ -n "$cdir" ] || cdir="$PWD/data/control"
     mkdir -p "$cdir/staged" "$cdir/results" "$cdir/audit"
     # Freshen the pre-masked prefill copy (#440) before draining: hand-edits to config.json since
     # the last apply show up in the editor form. A commit re-renders it again via its `apply -y`.
-    render_masked_config "$cdir"
+    [ "$CONTROL_EXPORT_ONLY" = 1 ] || render_masked_config "$cdir"
     # Time-bounded DoS sweep (#33 hardening): drop staged/ copies and stray requests/ files older
     # than an hour that no commit ever claimed, so a burst that is never committed cannot pile up
     # (staged intents already expire per-commit at 10 min; this bounds accumulation regardless).

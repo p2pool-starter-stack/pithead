@@ -77,6 +77,7 @@ write_manifest() {
         printf -- '- p2pool: `%s`\n' "$(pin p2pool)"
         printf -- '- monerod: `%s`\n' "$(pin monero)"
         printf -- '- xmrig-proxy: `%s`\n' "$(pin xmrig-proxy)"
+        printf -- '- tor: `%s`\n' "$(pin tor)"
         printf -- '- tor base: `%s`\n' "$(pin tor-base)"
         printf -- '- tari node: `%s`\n' "$(pin tari)"
         printf -- '- tari console wallet: `%s`\n' "$(pin tari-wallet)"

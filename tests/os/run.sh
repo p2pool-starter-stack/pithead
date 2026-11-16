@@ -146,6 +146,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/setup-failure-recovery-leg.sh"
 # shellcheck source=tests/os/control-runner-recovery-leg.sh
 . "$SCRIPT_DIR/control-runner-recovery-leg.sh"
+# shellcheck source=tests/os/appliance-support-bundle-leg.sh
+. "$SCRIPT_DIR/appliance-support-bundle-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
 # shellcheck source=tests/os/wizard-console-leg.sh
@@ -217,6 +219,8 @@ source "$SCRIPT_DIR/phases/update.sh" || exit $?
 source "$SCRIPT_DIR/phases/update-dashboard.sh" || exit $?
 # shellcheck source=tests/os/phases/update-healthgate-leg.sh
 source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
+# shellcheck source=tests/os/phases/update-wedged-tor-legs.sh
+source "$SCRIPT_DIR/phases/update-wedged-tor-legs.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
