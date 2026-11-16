@@ -112,12 +112,17 @@ _rigkeep_run() {
         _rigkeep_adopt || return 1
     fi
 
+    _ssh 'f=/data/rigforge/data/worker/xmrig/build/config.json
+        jq ".pools[0][\"rig-id\"] = \"kvm-m13-seed\"" "$f" > "$f.tmp" && mv "$f.tmp" "$f" && chmod 600 "$f"' >/dev/null || {
+        bad "M13: could not seed a rig id into the miner config (#3995)"
+        return 1
+    }
     before=$(_rigkeep_snapshot)
-    printf '%s' "$before" | jq -e '(.worker | type) == "string" and (.pool | type) == "string" and .role == "rig"' >/dev/null || {
+    printf '%s' "$before" | jq -e '(.worker | type) == "string" and (.pool | type) == "string" and .role == "rig" and .rig_id == "kvm-m13-seed"' >/dev/null || {
         bad "M13: the rig's identity before the reinstall is unreadable (#3995)"
         return 1
     }
-    ok "M13: identity snapshot recorded before the reinstall (#3995)"
+    ok "M13: identity snapshot with the seeded rig id recorded before the reinstall (#3995)"
 
     img2=$(_build_image v2 v2) || {
         bad "M13: building the newer image (marker v2, build label v2) failed (/tmp/os-fault-build.log)"
