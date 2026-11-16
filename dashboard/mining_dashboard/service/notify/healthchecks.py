@@ -1,5 +1,3 @@
-"""Healthchecks.io dead-man's-switch pinger. Behaviour is described in docs/monitoring.md."""
-
 import asyncio
 import json
 import logging
@@ -96,7 +94,6 @@ class HealthchecksClient:
         self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
         self._clock = clock
         self._record_failure = record_failure
-        self._last_ping = None
         self._last_ping_ok = None
         self.failing_since = None
 
@@ -115,11 +112,6 @@ class HealthchecksClient:
             record_failure=record_failure,
         )
 
-    def _due(self, now):
-        if self._last_ping is None:
-            return True
-        return (now - self._last_ping) >= self.interval
-
     def _isolated_proxies(self):
         if not self._tor_proxy:
             return None
@@ -131,9 +123,6 @@ class HealthchecksClient:
             return False
 
         now = self._clock()
-        if not self._due(now):
-            return False
-
         for attempt in range(2):
             proxies = self._proxies if attempt == 0 else self._isolated_proxies()
             try:
@@ -147,7 +136,6 @@ class HealthchecksClient:
                     if self._last_ping_ok is False:
                         logger.info("Healthchecks ping recovered.")
                     self._last_ping_ok = True
-                    self._last_ping = now
                     self.failing_since = None
                     return True
                 self.failing_since = None

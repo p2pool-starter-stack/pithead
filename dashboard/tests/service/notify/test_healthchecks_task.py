@@ -1,5 +1,3 @@
-"""Healthchecks ping: fresh-circuit retry, deadline and the independent ping task."""
-
 import asyncio
 import socket
 import threading

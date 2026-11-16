@@ -88,7 +88,7 @@ class TestPingSuccess:
 class TestPingRejected:
     """#560: a non-2xx response (revoked/typo'd ping URL) must not count as accepted."""
 
-    def test_404_returns_false_and_does_not_advance_throttle(self, caplog):
+    def test_404_returns_false_and_the_next_call_pings_again(self, caplog):
         clock = _Clock(1000.0)
         c = _client(clock=clock, interval_seconds=60)
         with (
@@ -96,17 +96,15 @@ class TestPingRejected:
             caplog.at_level(logging.WARNING, logger="Healthchecks"),
         ):
             assert c.ping() is False
-            # Throttle didn't advance -> the very next cycle retries immediately.
             assert c.ping() is False
         assert [r for r in caplog.records if r.levelno == logging.WARNING and "404" in r.message]
 
-    def test_200_still_returns_true_and_advances_throttle(self):
-        # Regression guard: the happy path must keep working once status is checked.
+    def test_200_still_returns_true_and_the_next_call_pings_again(self):
         clock = _Clock(1000.0)
         c = _client(clock=clock, interval_seconds=60)
         with patch.object(hc_mod, "_fetch", return_value=_resp(200)):
             assert c.ping() is True
-            assert c.ping() is False  # throttled, since the first ping DID advance the clock
+            assert c.ping() is True
         clock.t += 61
         with patch.object(hc_mod, "_fetch", return_value=_resp(200)):
             assert c.ping() is True
@@ -162,31 +160,16 @@ class TestTorRouting:
         assert get.call_args.kwargs["proxies"]["https"] == "socks5h://172.28.0.25:9050"
 
 
-class TestThrottle:
-    def test_second_immediate_ping_is_throttled(self):
-        clock = _Clock(1000.0)
-        c = _client(clock=clock, interval_seconds=60)
-        with patch.object(hc_mod, "_fetch", return_value=_resp(200)) as get:
-            assert c.ping() is True  # first ping goes out
-            assert c.ping() is False  # within the interval → skipped
-        get.assert_called_once()
-
-    def test_ping_again_after_interval_elapses(self):
+class TestPingAttempts:
+    def test_ping_always_attempts_whatever_the_last_success_was(self):
         clock = _Clock(1000.0)
         c = _client(clock=clock, interval_seconds=60)
         with patch.object(hc_mod, "_fetch", return_value=_resp(200)) as get:
             assert c.ping() is True
-            clock.t += 61  # interval elapsed
             assert c.ping() is True
-        assert get.call_count == 2
-
-    def test_zero_interval_pings_every_call(self):
-        clock = _Clock(1000.0)
-        c = _client(clock=clock, interval_seconds=0)
-        with patch.object(hc_mod, "_fetch", return_value=_resp(200)) as get:
+            clock.t += 61
             assert c.ping() is True
-            assert c.ping() is True
-        assert get.call_count == 2
+        assert get.call_count == 3
 
 
 class TestPingFailsSilently:
@@ -205,17 +188,17 @@ class TestPingFailsSilently:
         # No noisy WARNING/ERROR — offline is expected and logged at debug only (#59 discipline).
         assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
-    def test_success_after_failure_advances_throttle(self):
+    def test_success_after_failure_keeps_pinging(self):
         clock = _Clock(1000.0)
         c = _client(clock=clock, interval_seconds=60)
         with patch.object(
             hc_mod,
             "_fetch",
-            side_effect=[requests.exceptions.ConnectionError("x")] * 2 + [_resp(200)],
+            side_effect=[requests.exceptions.ConnectionError("x")] * 2 + [_resp(200), _resp(200)],
         ):
             assert c.ping() is False
             assert c.ping() is True
-            assert c.ping() is False
+            assert c.ping() is True
 
 
 class TestFromConfig:
@@ -257,7 +240,7 @@ class TestFailureRecording:
             assert self._client(rec).ping() is True
         assert rows == []
 
-    def test_unconfigured_and_throttled_paths_record_nothing(self):
+    def test_unconfigured_and_successful_paths_record_nothing(self):
         rows, rec = self._recorder()
         assert _client(ping_url="", record_failure=rec).ping() is False
         assert rows == []
@@ -265,9 +248,7 @@ class TestFailureRecording:
         c = self._client(rec, clock=clock)
         with patch.object(hc_mod, "_fetch", return_value=_resp(200)):
             assert c.ping() is True
-        rows.clear()
-        with patch.object(hc_mod, "_fetch", return_value=_resp(200)):
-            assert c.ping() is False
+            assert c.ping() is True
         assert rows == []
 
     def test_rejection_is_recorded_as_http_status_with_the_status_in_detail(self):

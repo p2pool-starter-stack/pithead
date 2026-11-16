@@ -1,5 +1,3 @@
-"""Tor egress healer: the first NEWNYM comes inside the owner's alert window."""
-
 from unittest.mock import AsyncMock, patch
 
 from mining_dashboard.service.health.tor_heal import (
@@ -102,6 +100,17 @@ class TestProbeCadenceThroughCheck:
         assert h._attempts == 1
         assert h._pending_refresh == "tor-newnym"
         assert clock.t - 1000.0 <= 6 * 60 + 1
+
+    async def test_a_fresh_ping_failure_starts_a_probe_without_waiting_for_the_cadence(self):
+        clock = _Clock()
+        ping_since = [None]
+        h = self._healer(clock, ping_since)
+        h._probe = lambda: (True, "ok")
+        await self._check(h, clock, 0)
+        assert h._last_probe == 1000.0
+        ping_since[0] = clock.t + 10
+        await self._check(h, clock, 20)
+        assert h._last_probe == 1020.0
 
     async def test_healthy_pings_keep_the_five_minute_probe_cadence(self):
         clock = _Clock()
