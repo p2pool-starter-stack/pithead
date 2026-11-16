@@ -111,11 +111,11 @@ drive_restore_rc() {
     ' 2>/dev/null
 }
 assert_eq "the wait runs after health and before the proof" \
-    "$(drive_restore_rc 0)" "synced healthy mining proof recheck 600 cleanup "
+    "$(drive_restore_rc 0)" "synced healthy mining proof cleanup recheck 600 "
 assert_eq "a failed wait fails the restore, still runs the proof and skips the re-check" \
     "$(drive_restore_rc 1)" "synced healthy mining proof cleanup exit:1 "
 assert_eq "a failed re-check fails the restore" \
-    "$(RECHECK_RC=1 drive_restore_rc 0)" "synced healthy mining proof recheck 600 cleanup exit:1 "
+    "$(RECHECK_RC=1 drive_restore_rc 0)" "synced healthy mining proof cleanup recheck 600 exit:1 "
 
 echo "== the re-check catches a dashboard stop after the first sample (#4167) =="
 drive_recheck() { # <timeout_s>; SEQ is the health of each poll (1 healthy, 0 stopped), last repeats
@@ -150,7 +150,37 @@ assert_contains "the elapsed time is logged" "$out" "healthy again after waiting
 SEQ=0 out="$(drive_recheck 1)"
 assert_eq "a proxy that stays stopped fails the re-check" "${out%% *}" "1"
 assert_contains "the failure names xmrig-proxy and the time waited" "$out" "xmrig-proxy (or P2Pool) still not running and healthy after waiting 1s"
-assert_contains "the harness never starts a service" "$out" " 0|warn"
+
+probe_health() { # <p2pool-state> <proxy-state> -> "<rc> <docker verbs used>"
+    local dir rc
+    dir="$(mktemp -d)"
+    mkdir "$dir/bin"
+    cat >"$dir/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+echo "$1 $2" >>"$CALLS"
+case "$1 $2" in
+"compose ps") [ "${*: -1}" = gone ] || printf 'cid-%s\n' "${*: -1}" ;;
+"inspect --format") case "${*: -1}" in cid-p2pool) printf '%s\n' "$P2P" ;; cid-xmrig-proxy) printf '%s\n' "$PROXY" ;; esac ;;
+esac
+DOCKER
+    chmod +x "$dir/bin/docker"
+    (
+        export PATH="$dir/bin:$PATH" CALLS="$dir/calls" P2P="$1" PROXY="$2"
+        RESTORE_DIR="$dir"
+        on_bench() { bash -c "$1"; }
+        _restore_mining_healthy
+    )
+    rc=$?
+    printf '%s %s' "$rc" "$(sort -u "$dir/calls" | tr '\n' ',')"
+    rm -rf "$dir"
+}
+assert_eq "running services with and without a healthcheck are healthy" \
+    "$(probe_health 'running healthy' 'running ' | cut -d' ' -f1)" "0"
+assert_eq "an unhealthy proxy is not healthy" "$(probe_health 'running healthy' 'running unhealthy' | cut -d' ' -f1)" "1"
+assert_eq "a starting p2pool is not healthy" "$(probe_health 'running starting' 'running healthy' | cut -d' ' -f1)" "1"
+assert_eq "a stopped proxy is not healthy" "$(probe_health 'running healthy' 'exited ' | cut -d' ' -f1)" "1"
+assert_eq "the probe only lists and inspects, never starts" \
+    "$(probe_health 'running healthy' 'exited ' | cut -d' ' -f2-)" "compose ps,inspect --format,"
 
 echo ""
 printf 'restore-mining-ready self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"

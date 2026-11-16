@@ -283,9 +283,6 @@ restore_all() {
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
         verify_restore_proof && wallet_fixture_verify || RESTORE_PROOF_FAILED=1
-        if [ "$restore_ready" = 1 ]; then
-            if recheck_restore_mining 600; then ok "baseline stack healthy again"; else RESTORE_PROOF_FAILED=1; fi
-        fi
     else
         warn "baseline restore command failed in $RESTORE_DIR — check the command output above."
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
@@ -307,6 +304,9 @@ restore_all() {
         warn "  This is separate from the credential proof above and needs a different repair — see the lines above."
         [ "$CONTROL_VERDICT_BEFORE" = "stranded" ] &&
             warn "  This run DID strand them (verdict before the restore: stranded), and the restore did not put them back."
+    fi
+    if [ "$restore_ready" = 1 ]; then
+        if recheck_restore_mining 600; then ok "baseline stack healthy again"; else RESTORE_PROOF_FAILED=1; fi
     fi
     if [ "$RESTORE_PROOF_FAILED" = "1" ] || [ "$CONTROL_PROOF_FAILED" = "1" ]; then
         if [ "$RESTORE_PROOF_FAILED" = "1" ]; then
