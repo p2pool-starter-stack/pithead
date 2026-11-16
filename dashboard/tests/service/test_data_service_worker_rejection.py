@@ -232,12 +232,17 @@ class TestMiningGuardRejection:
             ),
         ],
     )
-    async def test_invalid_work_stops_the_proxy_and_names_the_trigger(self, kwargs, needle):
+    async def test_invalid_work_stops_the_proxy_and_names_the_trigger(self, kwargs, needle, caplog):
+        caplog.set_level("INFO", logger="DataService")
         svc = self._svc()
         await self._hold_past_grace(svc, **kwargs)
         assert svc.workers_rejected is True
         svc.docker_control.stop.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
         assert needle in svc.mining_guard.pause["reason"]
+        stop_lines = [
+            r.getMessage() for r in caplog.records if "Mining work is not valid" in r.getMessage()
+        ]
+        assert len(stop_lines) == 1 and needle in stop_lines[0]
 
     async def test_isolation_inside_grace_does_not_stop_the_proxy(self):
         svc = self._svc()
@@ -292,3 +297,65 @@ class TestMiningGuardRejection:
             await self._cycle(svc, containers={})
             assert svc.workers_rejected is True
         svc.docker_control.start.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "monero_down,tari_down,needle",
+        [
+            (True, False, "Monero node unreachable past the debounce"),
+            (False, True, "Tari node unreachable past the debounce"),
+        ],
+    )
+    async def test_debounce_trigger_is_named(self, monero_down, tari_down, needle, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        await svc._apply_worker_rejection(monero_down, tari_down)
+        assert needle in caplog.text
+
+    async def test_stop_line_carries_guard_and_debounce_reasons(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        down = {"tor": {"running": True, "restarting": False, "health": "unhealthy"}}
+        await self._hold_past_grace(svc, containers=down)
+        svc.workers_rejected = False
+        await svc._apply_worker_rejection(True, False)
+        line = [m for m in caplog.messages if "Mining work is not valid" in m][-1]
+        assert "Tor container is unhealthy; Monero node unreachable past the debounce" in line
+
+    async def test_readmission_line_has_elapsed_seconds(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        with patch.object(ds_mod.time, "monotonic", side_effect=[100.0, 142.0]):
+            await svc._apply_worker_rejection(True, False)
+            await svc._apply_worker_rejection(False, False)
+        assert svc.workers_rejected is False
+        assert "to readmit workers, 42s after it was stopped" in caplog.text
+
+    async def test_readmission_after_restart_says_the_stop_predates_the_process(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.workers_rejected = True
+        await svc._apply_worker_rejection(False, False)
+        assert "after a stop that predates this dashboard process" in caplog.text
+
+    async def test_blocked_readmission_logs_once_per_change(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.workers_rejected = True
+        svc.monero_health.healthy = False
+        for _ in range(3):
+            await svc._apply_worker_rejection(False, False)
+        svc.tari_health.healthy = False
+        with patch.object(ds_mod, "TARI_REQUIRED", True):
+            await svc._apply_worker_rejection(False, False)
+        lines = [m for m in caplog.messages if "stays stopped" in m]
+        assert len(lines) == 2
+        assert "Monero node not yet confirmed healthy" in lines[0]
+        assert "Tari node not yet confirmed healthy" in lines[1]
+
+    async def test_blocked_readmission_names_guard_triggers(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.workers_rejected = True
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        await self._cycle(svc, p2pool=isolated)
+        assert "guard triggers still holding or recovering: p2pool_peers" in caplog.text
