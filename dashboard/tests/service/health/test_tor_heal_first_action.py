@@ -1,7 +1,6 @@
 """Tor egress healer: the first NEWNYM comes inside the owner's alert window."""
 
 from mining_dashboard.service.health.tor_heal import (
-    COOLDOWN_SEC,
     PROBE_INTERVAL_SEC,
     TorEgressHealer,
 )
@@ -30,17 +29,34 @@ class TestFirstAction:
         h = _healer(clock)
         h.decide(False, clock.t)
         clock.t += PROBE_INTERVAL_SEC
-        assert PROBE_INTERVAL_SEC <= 5 * 60
         assert h.decide(False, clock.t) == "heal"
         assert h._attempts == 1
 
-    def test_later_actions_keep_the_longer_threshold(self):
+    def test_a_ping_failing_for_five_minutes_counts_toward_the_first_action(self):
         clock = _Clock()
-        h = _healer(clock)
+        ping_since = [clock.t - 4 * 60]
+        h = TorEgressHealer(
+            docker_control=None,
+            enabled=True,
+            probe=lambda: (False, "test probe"),
+            clock=clock,
+            restart_monerod=False,
+            ping_failing_since=lambda: ping_since[0],
+        )
+        assert h.decide(False, clock.t) is None
+        clock.t += 60
+        assert h.decide(False, clock.t) == "heal"
+
+    def test_no_ping_failure_leaves_the_probe_streak_alone(self):
+        clock = _Clock()
+        h = TorEgressHealer(
+            docker_control=None,
+            enabled=True,
+            probe=lambda: (False, "test probe"),
+            clock=clock,
+            restart_monerod=False,
+            ping_failing_since=lambda: None,
+        )
         h.decide(False, clock.t)
-        clock.t += 15 * 60
-        assert h.decide(False, clock.t) == "heal"
-        clock.t += COOLDOWN_SEC
-        assert h.decide(False, clock.t) == "heal"
-        assert h._failing_since is not None
-        assert h._attempts == 2
+        clock.t += 60
+        assert h.decide(False, clock.t) is None

@@ -1,9 +1,13 @@
 """Healthchecks.io dead-man's-switch pinger. Behaviour is described in docs/monitoring.md."""
 
 import asyncio
+import json
 import logging
+import subprocess
+import sys
 import time
 import uuid
+from types import SimpleNamespace
 
 import requests
 
@@ -11,14 +15,46 @@ from mining_dashboard.config.config import (
     HEALTHCHECKS_PING_URL,
     TOR_SOCKS_PROXY,
 )
-from mining_dashboard.helper.http import bounded_get
 
 logger = logging.getLogger("Healthchecks")
 
-_PING_TIMEOUT_SEC = 5
+_PING_TIMEOUT_SEC = 10
 _PING_DEADLINE_SEC = 25
-_PING_CYCLE_LIMIT_SEC = 2 * (_PING_DEADLINE_SEC + _PING_TIMEOUT_SEC)
+_PING_HARD_LIMIT_SEC = 30
 _PING_INTERVAL_SEC = 60
+
+
+class PingFailure(requests.RequestException):
+    def __init__(self, reason, name):
+        super().__init__(name)
+        self.reason = reason
+        self.name = name
+
+
+def _fetch(url, timeout, deadline, proxies=None):
+    request = {
+        "url": url,
+        "proxy": (proxies or {}).get("https"),
+        "timeout": timeout,
+        "deadline": deadline,
+    }
+    try:
+        done = subprocess.run(
+            [sys.executable, "-m", "mining_dashboard.service.notify.healthchecks_child"],
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            timeout=_PING_HARD_LIMIT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        raise PingFailure("tor_socks" if proxies else "connect", "Timeout") from None
+    try:
+        out = json.loads(done.stdout)
+    except ValueError:
+        raise PingFailure("connect", "ChildError") from None
+    if "status" in out:
+        return SimpleNamespace(status_code=out["status"])
+    raise PingFailure(out["reason"], out["name"])
 
 
 class HealthchecksClient:
@@ -40,6 +76,7 @@ class HealthchecksClient:
         self._record_failure = record_failure
         self._last_ping = None
         self._last_ping_ok = None
+        self.failing_since = None
 
         if self.enabled:
             logger.info(
@@ -78,7 +115,7 @@ class HealthchecksClient:
         for attempt in range(2):
             proxies = self._proxies if attempt == 0 else self._isolated_proxies()
             try:
-                resp = bounded_get(
+                resp = _fetch(
                     self.url,
                     timeout=_PING_TIMEOUT_SEC,
                     deadline=_PING_DEADLINE_SEC,
@@ -89,6 +126,7 @@ class HealthchecksClient:
                         logger.info("Healthchecks ping recovered.")
                     self._last_ping_ok = True
                     self._last_ping = now
+                    self.failing_since = None
                     return True
                 if self._last_ping_ok is not False:
                     logger.warning("Healthchecks ping rejected: HTTP %s.", resp.status_code)
@@ -97,11 +135,13 @@ class HealthchecksClient:
                 return False
             except requests.RequestException as e:
                 logger.debug("Healthchecks ping failed (offline?): %s", e)
-                self._record(_failure_class(e, proxies is not None), type(e).__name__)
+                self._record(_failure_class(e, proxies is not None), _failure_name(e))
             except Exception as e:  # pragma: no cover
                 logger.debug("Healthchecks unexpected error: %s", e)
                 self._record("connect", type(e).__name__)
                 return False
+        if self.failing_since is None:
+            self.failing_since = now
         return False
 
     async def run(self):
@@ -110,7 +150,7 @@ class HealthchecksClient:
         while True:
             started = time.monotonic()
             try:
-                await asyncio.wait_for(asyncio.to_thread(self.ping), _PING_CYCLE_LIMIT_SEC)
+                await asyncio.to_thread(self.ping)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -126,7 +166,13 @@ class HealthchecksClient:
             pass
 
 
+def _failure_name(exc):
+    return exc.name if isinstance(exc, PingFailure) else type(exc).__name__
+
+
 def _failure_class(exc, via_proxy=False):
+    if isinstance(exc, PingFailure):
+        return exc.reason
     if isinstance(exc, requests.exceptions.ProxyError):
         return "tor_socks"
     cause = exc.__cause__ or exc.__context__

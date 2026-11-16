@@ -946,8 +946,8 @@ and a refresh must be confirmed before the final restart, so the heal also needs
 `dashboard.control.enabled: true` (the appliance sets it only when a dashboard login exists);
 without it the heal only probes and logs warnings, and sends a recovery note when egress returns.
 Doctor reports this configuration as INFO and names the login and control prerequisite or manual Tor restart. The dashboard probes every five minutes with a new SOCKS circuit per request.
-A failed request is corroborated against a second target before it counts toward the 15-minute
-outage window. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
+A failed request is corroborated against a second target before it counts toward the outage
+window: 5 minutes to the first NEWNYM, 15 minutes to any later one. A Healthchecks ping that has failed on two circuits also counts from its first failure. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
 continued failure after accepted refreshes permits one final action. With saturated circuit history,
 the dashboard submits `tor-recover`; the host runs the existing recovery gates, including the
 persistent six-hour cooldown, and backs up state before resetting guards. A refused or failed

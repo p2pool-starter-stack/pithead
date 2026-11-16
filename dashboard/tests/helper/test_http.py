@@ -273,7 +273,7 @@ class TestWiringDriftGuard:
             pkg / "service" / "xvb" / "price_feed.py",
             pkg / "client" / "xvb_client.py",
             pkg / "service" / "health" / "tor_heal.py",
-            pkg / "service" / "notify" / "healthchecks.py",
+            pkg / "service" / "notify" / "healthchecks_child.py",
         ]
         direct_call = re.compile(r"requests\.(get|post|put|delete|head|request)\(")
         for mod in external:

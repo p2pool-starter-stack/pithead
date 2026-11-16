@@ -82,9 +82,10 @@ the whole host) and, once the period + grace elapses, Healthchecks.io alerts you
 
 - A task of its own in the dashboard process sends the ping every 60 seconds, started at dashboard
   startup and independent of the data-collection loop, so a stalled collector or a long `apply`
-  lock does not delay it. Each attempt has a 25-second total deadline, checked while the reply is
-  read, on top of a 5-second timeout per socket operation. A failed attempt is retried once, in
-  the same cycle, on a fresh isolated Tor circuit, and both attempts are recorded. If the host
+  lock does not delay it. Each attempt runs in a child process that is killed
+  after 30 seconds, whatever the endpoint sends, so a stalled or trickling endpoint cannot hold the
+  ping. A failed attempt is retried once, in the same cycle, on a fresh isolated Tor circuit, and
+  both attempts are recorded. If the host
   dies, the dashboard dies with it, the pings stop, and the alert fires. If only the dashboard
   container restarts briefly, the **grace period** absorbs the gap.
 - **What the check means: host up and Tor egress working.** The ping travels over Tor, so the
@@ -164,8 +165,8 @@ Two things to know:
 
 - **Tor is part of the ping path.** If the Tor container is down while the host is up, the ping
   can't get out and the check will eventually alert, reading as "host down" while the host is up.
-  With `tor.auto_heal` on, the first repair (a circuit refresh) comes 5 minutes after egress
-  fails, inside the recommended period plus grace, and pings retry every minute, so only a
+  With `tor.auto_heal` on and `dashboard.control.enabled: true`, the first repair (a circuit
+  refresh) comes 5 minutes after egress fails, inside the recommended period plus grace, and pings retry every minute, so only a
   sustained Tor outage trips it. That's usually what you want (Tor down *is* a problem worth knowing about, and
   it silences the [Telegram alerts](telegram.md#privacy-and-secrets) too). One such outage is
   Tor stuck on a **failing guard** — bootstrapped, mining fine, but clearnet exits dead (#424):
