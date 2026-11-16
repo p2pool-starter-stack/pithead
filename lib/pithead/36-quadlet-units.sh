@@ -1,14 +1,7 @@
-# Fixture parity preserves the unit sets previously proven on the bench; drift needs a live re-proof.
 render_quadlet_units() {
     local envf="$1" outdir="$2"
     [ -f "$envf" ] || error "render-quadlet: env file not found: $envf"
     _qenv() { env_get_file "$envf" "$1"; }
-    # systemd.exec space-splits Environment=, so a value holding a space silently loses its tail
-    # (#2040). Every .env value goes through here, not a per-key "looks token-shaped" list, which
-    # rots. Quotes wrap the WHOLE assignment (Environment="A=1 2" B=3); \ and " are escaped, and
-    # % is DOUBLED because systemd expands specifiers in unit files — a password holding %H would
-    # otherwise become the hostname. `$` is deliberately NOT escaped: ${VAR} expands in ExecStart,
-    # never in an Environment value. $2 is the .env key when it differs (TZ <- DASHBOARD_TZ).
     _qenvq() {
         local v
         v=$(env_get_file "$envf" "${2:-$1}")
