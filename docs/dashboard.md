@@ -1700,8 +1700,9 @@ A second card lives on the same tab: **Support bundle**
 collect one redacted diagnostics archive for a bug report: the whole system journal, the kernel log and
 a per-unit journal for every Pithead and quadlet unit over the window you ask for (the last 72
 hours by default; the control request also takes an explicit RFC 3339 `since` and `until`), the
-dashboard's health history, the Tor bootstrap state, versions, the active RAUC slot, and the config's key shape with every
-value dropped. Every line passes the same redactor the diagnostics log tail uses on its way in;
+dashboard's health history, `doctor` output, monerod, Tari and P2Pool status, Tor control-port and guard state, network, time and
+container state, Caddy access logs for the window, the files saved under `/data/pithead/support/`, versions, the RAUC slot state, and the config's key shape with every
+value dropped; every step has a time limit, so a wedged service shows up in `manifest.json` instead of stalling the bundle. Every line passes the same redactor the diagnostics log tail uses on its way in;
 the host keeps the oldest and newest lines of any file over its size cap and says what it dropped,
 in the file and in `manifest.json`, rather than refusing the bundle; and the ask is audited like every other control request.
 The finished archive is one `.zip` and waits in the same results
