@@ -179,7 +179,7 @@ sn_env="$SN/env"
 printf 'COMPOSE_PROFILES=local_node,local_tari\nNETWORK_PREFIX=\nMONERO_RPC_URL=http://127.0.0.1:18081\nMONERO_NODE_USERNAME=rpcuser\nMONERO_NODE_PASSWORD=SEEDEDRPCPASS\nTARI_GRPC_ADDRESS=127.0.0.1:18142\nP2POOL_DATA_DIR=%s\nTOR_DATA_DIR=%s\nCADDY_LOG_DIR=%s\nDASHBOARD_DATA_DIR=%s\n' \
     "$SN/p2pool" "$SN/tor" "$SN/caddy" "$SN/dash" >"$sn_env"
 
-sn_run() { # <id> <svc mode: ok|hang|refuse> [extra VAR=val ...]
+sn_run() { # <id> <svc mode: fine|hang|refuse> [extra VAR=val ...]
     local id="$1" svc="$2"
     shift 2
     rm -f "$SB/staged/.support-bundle-stamp" "$SN/port"
@@ -203,9 +203,9 @@ sn_tor() { # <mode>
 
 echo "== support bundle snapshots: every source is collected and present (#4128) =="
 rm -f "$SN/curl.log"
-sn_tor ok
+sn_tor fine
 snid1="c412c412-0000-4000-8000-000000000001"
-sn_run "$snid1" ok "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:$(cat "$SN/port")"
+sn_run "$snid1" fine "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:$(cat "$SN/port")"
 kill "$SN_TOR_PID" 2>/dev/null || true
 assert_eq "the snapshot bundle applies" "$(jq -r .status "$SB/results/$snid1.json")" "applied"
 sb_unzip "$SB/results/$snid1.zip" "$SN/x1"
@@ -289,7 +289,7 @@ assert_contains "the query is replaced, not dropped silently" "$(cat "$B/caddy/a
 echo "== support bundle snapshots: a missing DB is a manifest entry, not silence =="
 snid2="c412c412-0000-4000-8000-000000000002"
 grep -v '^DASHBOARD_DATA_DIR=' "$sn_env" >"$SN/env2"
-sn_run "$snid2" ok "PITHEAD_ENV_FILE=$SN/env2" "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1" "PITHEAD_SUPPORT_DIR=$SN/nodir"
+sn_run "$snid2" fine "PITHEAD_ENV_FILE=$SN/env2" "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1" "PITHEAD_SUPPORT_DIR=$SN/nodir"
 sb_unzip "$SB/results/$snid2.zip" "$SN/x2"
 assert_eq "the absent database is a skipped step in the manifest" \
     "$(sb_man "$SN/x2" '[.failures[] | select(.step == "dashboard-history.jsonl") | .status] | first')" "skipped"
