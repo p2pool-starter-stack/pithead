@@ -32,7 +32,7 @@ def local_miner_enabled(path=None) -> bool:
             return (
                 json.load(f)
                 .get("local_miner", {})
-                .get("enabled", default_of("local_miner.enabled", legacy=True))
+                .get("enabled", default_of("local_miner.enabled"))
                 is True
             )
     except (OSError, ValueError, AttributeError):
@@ -144,9 +144,7 @@ WALLET_RPC_PASSWORD = os.environ.get("WALLET_RPC_PASSWORD", "")
 # Unique Donor ID for the XMRvsBeast pool
 XVB_DONOR_ID = os.environ.get("XVB_DONOR_ID", "")
 
-ENABLE_XVB = (
-    os.environ.get("XVB_ENABLED", str(default_of("xvb.enabled", legacy=True))).lower() == "true"
-)
+ENABLE_XVB = os.environ.get("XVB_ENABLED", str(default_of("xvb.enabled"))).lower() == "true"
 
 PITHEAD_PROFILE = os.environ.get("PITHEAD_PROFILE", "balance")
 TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "socks5h://172.28.0.25:9050")
@@ -283,11 +281,9 @@ DOCKER_CONTROL_URL = os.environ.get("DOCKER_CONTROL_URL", "tcp://127.0.0.1:12376
 LOG_TAIL_LINES = int(os.environ.get("LOG_TAIL_LINES", 100))
 DOCKER_TIMEOUT = int(os.environ.get("DOCKER_TIMEOUT", 5))
 
-TARI_MODE = os.environ.get("TARI_MODE", default_of("tari.mode", legacy=True)).strip().lower()
+TARI_MODE = os.environ.get("TARI_MODE", default_of("tari.mode")).strip().lower()
 TARI_REQUIRED = (
-    os.environ.get("TARI_REQUIRED", str(default_of("dashboard.tari_required", legacy=True)))
-    .strip()
-    .lower()
+    os.environ.get("TARI_REQUIRED", str(default_of("dashboard.tari_required"))).strip().lower()
     == "true"
 )
 

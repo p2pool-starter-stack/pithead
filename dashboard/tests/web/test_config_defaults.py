@@ -24,7 +24,7 @@ def test_all_new_install_paths_materialize_the_platform_default(platform, path):
         new_install_defaults(platform),
         build_config({}, platform=platform),
         answers,
-        explicit_wizard_config(answers, effective_defaults(legacy=True)),
+        explicit_wizard_config(answers, effective_defaults()),
     ):
         assert config[block][key] == expected
 
@@ -37,7 +37,7 @@ def test_explicit_browser_answers_survive_default_stripping(platform, path):
     value = cfg[block][key]
     value = not value if isinstance(value, bool) else "chosen"
     cfg[block][key] = value
-    assert explicit_wizard_config(cfg, effective_defaults(legacy=True))[block][key] == value
+    assert explicit_wizard_config(cfg, effective_defaults())[block][key] == value
 
 
 @pytest.mark.parametrize("platform", ["diy", "appliance"])
@@ -48,12 +48,12 @@ def test_no_javascript_preserves_explicit_miner_and_host_answers(platform):
     assert build_config({"local_miner": "on"}, platform=platform)["local_miner"]["enabled"] is True
 
 
-@pytest.mark.parametrize("entry", TABLE["LEGACY_ABSENT"], ids=lambda e: e["path"])
-def test_legacy_absent_values_are_named_and_retired_by_migration(entry):
+@pytest.mark.parametrize(
+    "entry", TABLE["migrations"]["2.1.0"]["v2_absent"], ids=lambda e: e["path"]
+)
+def test_v2_absent_values_differ_from_the_current_default(entry):
     platform = entry.get("platform", "diy")
-    assert default_of(entry["path"], platform, legacy=True) == entry["value"]
     assert default_of(entry["path"], platform) != entry["value"]
-    assert entry["retired_by"] == "pithead#3576"
 
 
 @pytest.mark.parametrize(
@@ -63,7 +63,7 @@ def test_legacy_absent_values_are_named_and_retired_by_migration(entry):
 def test_existing_appliance_editor_preserves_v2_absent_values(
     tmp_path, monkeypatch, path, expected, explicit
 ):
-    reference = effective_defaults(legacy=True)
+    reference = effective_defaults()
     golden = json.loads(
         (Path(__file__).parents[1] / "fixtures/config-2.0.0/reference.json").read_text()
     )
@@ -109,9 +109,7 @@ async def test_sparse_browser_submit_materializes_defaults_without_replacing_ans
 
     monkeypatch.setenv("WIZARD_SPOOL", str(tmp_path))
     monkeypatch.setenv("WIZARD_TOKEN", "fixture-token")
-    tmp_path.joinpath("config.reference.json").write_text(
-        json.dumps(effective_defaults(legacy=True))
-    )
+    tmp_path.joinpath("config.reference.json").write_text(json.dumps(effective_defaults()))
     tmp_path.joinpath("platform.txt").write_text(platform)
     payload = {"monero": {"wallet_address": "fixture-wallet"}}
     if explicit == "legacy":

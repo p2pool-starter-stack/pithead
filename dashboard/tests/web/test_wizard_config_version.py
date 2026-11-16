@@ -1,7 +1,12 @@
 # ruff: noqa: F401, F811
 import json
+from pathlib import Path
 
+import pytest
+
+from mining_dashboard.config.defaults import effective_defaults
 from mining_dashboard.wizard import server as wizard
+from mining_dashboard.wizard_config import prepare_config
 
 from ._wizard_support import _auth, client, seeded, spool  # noqa: F401
 
@@ -25,3 +30,19 @@ async def test_wizard_never_shows_or_submits_host_stamp(client, seeded):
     assert response.status == 200
     assert "config_version" not in json.loads(seeded.joinpath("config.json").read_text())
     assert "config_version" not in seeded.joinpath("last-attempt.json").read_text()
+
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/config-2.0.0"
+INPUTS = sorted((FIXTURES / "inputs").glob("*.json"))
+
+
+@pytest.mark.parametrize("platform", ["diy", "appliance"])
+@pytest.mark.parametrize("path", INPUTS, ids=lambda path: path.stem)
+def test_prepare_config_migrates_every_fixture_like_the_host(path, platform):
+    migrated, changes = prepare_config(
+        json.loads(path.read_text()), effective_defaults(), platform=platform
+    )
+    golden = FIXTURES / "migrated" / f"{path.stem}.{platform}.json"
+    assert migrated == json.loads(golden.read_text())
+    assert changes[0].startswith("profile → ")
+    assert not any(secret in " ".join(changes) for secret in ("fixture-", "123456:TOKEN"))

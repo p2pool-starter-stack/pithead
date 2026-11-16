@@ -364,6 +364,7 @@ async def _submit_locked(request: web.Request) -> web.Response:
     _spool_write_text("stick", "1" if str(form.get("disk", "")).strip() == "usb" else "0")
     raw = str(form.get("config", "")).strip()
     ref = _reference()
+    host_platform = (_spool_read("platform.txt") or "appliance").strip()
     # Keep-everything reinstall: the preserved config wins, so the submission carries NO config
     # and nothing here may write one — a config candidate would provision over the survivor,
     # and a handoff card would show credentials the machine will never serve. Disk gates only.
@@ -397,7 +398,7 @@ async def _submit_locked(request: web.Request) -> web.Response:
         else:
             cfg = build_config(
                 dict(form),
-                platform=(_spool_read("platform.txt") or "appliance").strip(),
+                platform=host_platform,
                 tari_default=tari_disk_default(
                     _spool_json("disk-budget.json") or {},
                     _disks(),
@@ -412,11 +413,10 @@ async def _submit_locked(request: web.Request) -> web.Response:
     except (ValueError, TypeError):
         return web.json_response({"error": "Not valid JSON: enter a JSON object."}, status=400)
     try:
-        cfg, changes = prepare_config(cfg, ref, reject_legacy_conflicts=True)
+        cfg_platform = host_platform if "config_version" in cfg else None
+        cfg, changes = prepare_config(cfg, ref, reject_legacy_conflicts=True, platform=cfg_platform)
         if not _last_attempt():
-            defaults, _ = prepare_config(
-                new_install_defaults((_spool_read("platform.txt") or "appliance").strip()), ref
-            )
+            defaults, _ = prepare_config(new_install_defaults(host_platform), ref)
             cfg = deep_merge(defaults, cfg)
         validate_machine_name(cfg, _last_attempt())
     except ValueError as exc:
