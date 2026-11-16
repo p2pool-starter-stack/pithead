@@ -171,7 +171,7 @@ trigger_dashboard_xvb_fetch() {
     local payload inner
     payload="$(base64 <"$HERE/lib/xvb-egress-probe.py" | tr -d '\n')"
     inner="read -r MONERO_WALLET_ADDRESS; export MONERO_WALLET_ADDRESS; printf %s $(quote_arg "$payload") | base64 -d | python3 -"
-    rx "net=pithead-xvb-probe-\$\$; cleanup() { docker network disconnect -f \"\$net\" tor >/dev/null 2>&1 || true; docker network rm \"\$net\" >/dev/null 2>&1 || true; }; trap cleanup EXIT; docker network create --internal \"\$net\" >/dev/null && docker network connect --alias tor \"\$net\" tor && wallet=\$(grep -E '^MONERO_WALLET_ADDRESS=' .env | head -n1 | cut -d= -f2-) && image=\$(docker inspect dashboard --format '{{.Config.Image}}') && [ -n \"\$wallet\" ] && [ -n \"\$image\" ] && printf '%s\\n' \"\$wallet\" | docker run --rm -i --network \"\$net\" -e TOR_SOCKS_PROXY=socks5h://tor:9050 --entrypoint sh \"\$image\" -c $(quote_arg "$inner") >/dev/null 2>&1"
+    rx "wallet=\$(grep -E '^MONERO_WALLET_ADDRESS=' .env | head -n1 | cut -d= -f2-) && torip=\$(docker inspect tor --format '{{(index .NetworkSettings.Networks \"mining_net\").IPAddress}}') && image=\$(docker inspect dashboard --format '{{.Config.Image}}') && [ -n \"\$wallet\" ] && [ -n \"\$torip\" ] && [ -n \"\$image\" ] && printf '%s\\n' \"\$wallet\" | docker run --rm -i --network mining_net -e TOR_SOCKS_PROXY=socks5h://\$torip:9050 --entrypoint sh \"\$image\" -c $(quote_arg "$inner") >/dev/null 2>&1"
 }
 
 run_xvb_routing_smoke() {
