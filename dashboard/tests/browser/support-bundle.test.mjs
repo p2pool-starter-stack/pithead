@@ -14,7 +14,9 @@ const NAME = "support-bundle-20261115T120000Z.zip";
 
 async function fakeHost(page, { oldest, outcome }) {
   const posts = [];
+  posts.ranged = 0;
   await page.route("**/api/control/support-bundle-range", async (route) => {
+    posts.ranged++;
     await route.fulfill({ status: 202, json: { id: "range-1" } });
   });
   await page.route("**/api/control/support-bundle", async (route) => {
@@ -57,11 +59,10 @@ test("one click on a custom range collects and downloads a zip holding that wind
   const oldest = "2020-01-01T00:00:00Z";
   const posts = await fakeHost(page, { oldest, outcome: applied });
   await mount(ui);
+  await page.getByLabel("Time frame").selectOption("custom");
   await expect(
     page.getByText("Logs on this system reach back to 2020-01-01 00:00:00 UTC"),
   ).toBeVisible();
-
-  await page.getByLabel("Time frame").selectOption("custom");
   await page.locator('input[name="since"]').fill("2026-11-15T09:00");
   await page.locator('input[name="until"]').fill("2026-11-15T11:00");
   const download = page.waitForEvent("download");
@@ -94,8 +95,10 @@ test("a preset sends its hours and a range past the oldest log is flagged first"
     }),
   });
   await mount(ui);
-  await expect(page.getByRole("note")).toContainText("The bundle will start there");
+  await expect(page.getByText("Pick a time frame to see how far back")).toBeVisible();
+  expect(posts.ranged).toBe(0);
   await page.getByLabel("Time frame").selectOption("1");
+  await expect(page.getByText("Logs on this system reach back to")).toBeVisible();
   await expect(page.getByRole("note")).toHaveCount(0);
   await page.getByLabel("Time frame").selectOption("6");
   await expect(page.getByRole("note")).toBeVisible();
@@ -114,7 +117,7 @@ test("an invalid range is refused with a clear message and sends nothing", async
   await page.locator('input[name="until"]').fill("2026-11-15T09:00");
   await page.getByRole("button", { name: "Export logs" }).click();
   await expect(page.getByRole("alert")).toContainText("the start must be before the end");
-  expect(posts).toEqual([]);
+  expect(posts.length).toBe(0);
 });
 
 test("a host rate limit and a failed collect each show their own message", async ({ page, ui }) => {

@@ -70,6 +70,14 @@ class TestSupportBundleWithTheControlSwitchOff:
         assert (await off_client.post("/api/control/support-bundle", json={})).status == 403
         assert (await off_client.post("/api/control/support-bundle-range")).status == 403
 
+    async def test_a_failing_range_submit_is_a_500(self, off_client, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("the spool is on fire")
+
+        monkeypatch.setattr(diagnostics_service, "submit_support_range", boom)
+        resp = await off_client.post("/api/control/support-bundle-range", headers=CONTROL_HEADERS)
+        assert resp.status == 500
+
     async def test_the_oldest_log_ask_spools_the_range_verb_with_the_switch_off(
         self, off_client, spool
     ):

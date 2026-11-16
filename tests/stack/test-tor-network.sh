@@ -378,6 +378,7 @@ apply_order=$(
     mv() { :; }
     inject_service_configs() { :; }
     generate_caddyfile() { :; }
+    provision_control_runner() { :; }
     migrate_compose_project() { :; }
     announce_dashboard_url() { :; }
     log() { :; }

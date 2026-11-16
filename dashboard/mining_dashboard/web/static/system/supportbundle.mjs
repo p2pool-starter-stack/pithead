@@ -119,7 +119,9 @@ export class SupportBundlePanel extends Component {
     };
   }
 
-  componentDidMount() {
+  loadOldest() {
+    if (this.asked) return;
+    this.asked = true;
     if (rangeCache && Date.now() - rangeCache.at < RANGE_CACHE_MS) {
       this.setState({ oldest: rangeCache.oldest });
       return;
@@ -170,14 +172,17 @@ export class SupportBundlePanel extends Component {
         <p class="text-muted text-xs">${
           oldest
             ? `Logs on this system reach back to ${shown(oldest)}.`
-            : "How far back the logs reach is not known yet."
+            : "Pick a time frame to see how far back the logs reach."
         }</p>
         <label class="text-muted text-xs">Time frame
             <select class="btn-toggle" disabled=${busy} value=${preset}
-                    onChange=${(e) =>
+                    onFocus=${() => this.loadOldest()}
+                    onChange=${(e) => {
+                      this.loadOldest();
                       this.setState({
                         preset: e.target.value === "custom" ? "custom" : Number(e.target.value),
-                      })}>
+                      });
+                    }}>
                 ${PRESETS.map(
                   (p) =>
                     html`<option value=${p.hours} selected=${preset === p.hours}>${p.label}</option>`,
