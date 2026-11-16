@@ -89,11 +89,11 @@ self_test() {
 }
 
 case "${1:-}" in
-    detect) detect ;;
-    apply) apply_pin "${2:?usage: tor-bump.sh apply VERSION}" ;;
-    --self-test) self_test ;;
-    *)
-        echo "usage: tor-bump.sh detect | apply VERSION | --self-test" >&2
-        exit 2
-        ;;
+detect) detect ;;
+apply) apply_pin "${2:?usage: tor-bump.sh apply VERSION}" ;;
+--self-test) self_test ;;
+*)
+    echo "usage: tor-bump.sh detect | apply VERSION | --self-test" >&2
+    exit 2
+    ;;
 esac
