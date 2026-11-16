@@ -26,7 +26,10 @@ newer_than() {
 
 apply_pin() {
     local version="$1" tmp
-    [[ "$version" =~ $VERSION_RE ]] || { echo "refusing malformed version '$version'" >&2; return 1; }
+    [[ "$version" =~ $VERSION_RE ]] || {
+        echo "refusing malformed version '$version'" >&2
+        return 1
+    }
     tmp="$(mktemp)"
     sed "s/^ARG TOR_VERSION=.*/ARG TOR_VERSION=${version}/" "$DOCKERFILE" >"$tmp"
     cat "$tmp" >"$DOCKERFILE"
@@ -37,10 +40,16 @@ apply_pin() {
 detect() {
     local current latest
     current="$(current_pin)"
-    [[ "$current" =~ $VERSION_RE ]] || { echo "no valid TOR_VERSION pin in $DOCKERFILE" >&2; return 1; }
+    [[ "$current" =~ $VERSION_RE ]] || {
+        echo "no valid TOR_VERSION pin in $DOCKERFILE" >&2
+        return 1
+    }
     latest="$(curl -fsSL --retry 3 "$INDEX_URL" | tar -xzO APKINDEX | index_tor_version)"
     [ "$(printf '%s\n' "$latest" | wc -l | tr -d ' ')" = 1 ] && [[ "$latest" =~ $VERSION_RE ]] ||
-        { echo "APKINDEX did not carry exactly one valid tor version: '$latest'" >&2; return 1; }
+        {
+            echo "APKINDEX did not carry exactly one valid tor version: '$latest'" >&2
+            return 1
+        }
     if newer_than "$latest" "$current"; then
         printf 'stale=true\ncurrent=%s\nlatest=%s\n' "$current" "$latest"
     else
@@ -52,7 +61,10 @@ self_test() {
     local fail=0 t d out
     t="$(mktemp -d)"
     trap 'rm -rf "$t"' RETURN
-    check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: got '$2', want '$3'"; fail=1; fi; }
+    check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else
+        echo "FAIL $1: got '$2', want '$3'"
+        fail=1
+    fi; }
     printf 'C:x\nP:tor-doc\nV:9.9.9-r0\n\nC:y\nP:tor\nV:0.4.9.18-r1\n\nC:z\nP:torsocks\nV:9.9.9-r0\n' >"$t/index"
     check "index parse picks only the tor package" "$(index_tor_version <"$t/index")" "0.4.9.18-r1"
     check "index without tor yields nothing" "$(printf 'P:tor-doc\nV:1-r0\n' | index_tor_version)" ""
@@ -77,8 +89,11 @@ self_test() {
 }
 
 case "${1:-}" in
-detect) detect ;;
-apply) apply_pin "${2:?usage: tor-bump.sh apply VERSION}" ;;
---self-test) self_test ;;
-*) echo "usage: tor-bump.sh detect | apply VERSION | --self-test" >&2; exit 2 ;;
+    detect) detect ;;
+    apply) apply_pin "${2:?usage: tor-bump.sh apply VERSION}" ;;
+    --self-test) self_test ;;
+    *)
+        echo "usage: tor-bump.sh detect | apply VERSION | --self-test" >&2
+        exit 2
+        ;;
 esac
