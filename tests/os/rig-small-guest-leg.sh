@@ -194,8 +194,8 @@ _rig_small_guest_run() { # <img>
     hrsrc="sister feed"
     if [ "$hr" = "0" ] || [ -z "$light" ]; then
         info "  a black-holed pool assigns no work, so the feed and any mode line stay silent — measuring the machine's own bench in the rendered mode"
-        SSH_TIMEOUT=700
-        bench=$(_ssh 'bx=$(readlink /proc/$(pgrep -x xmrig | head -1)/exe 2>/dev/null); [ -x "$bx" ] || bx=/data/rigforge/data/worker/xmrig/build/xmrig; timeout 100 systemctl stop xmrig; timeout 30 sh -c "echo 0 >/proc/sys/vm/nr_hugepages" 2>/dev/null; printf "{\"algo\":\"randomx\",\"pools\":[],\"randomx\":{\"mode\":\"light\"},\"colors\":false}" >/tmp/pb4010.json; echo "bench-cfg $(cat /tmp/pb4010.json)"; echo "bench-bin $("$bx" --version 2>&1 | head -1)"; echo "bench-help $(timeout 20 "$bx" --help 2>&1 | grep -iE "benchmark|dry-run" | tr "\n" " ")"; timeout 420 "$bx" -c /tmp/pb4010.json --benchmark=300 </dev/null 2>&1 | tail -80')
+        SSH_TIMEOUT=2600
+        bench=$(_ssh 'bx=$(readlink /proc/$(pgrep -x xmrig | head -1)/exe 2>/dev/null); [ -x "$bx" ] || bx=/data/rigforge/data/worker/xmrig/build/xmrig; timeout 100 systemctl stop xmrig; timeout 30 sh -c "echo 0 >/proc/sys/vm/nr_hugepages" 2>/dev/null; printf "{\"algo\":\"randomx\",\"pools\":[],\"randomx\":{\"mode\":\"light\"},\"colors\":false}" >/tmp/pb4010.json; echo "bench-cfg $(cat /tmp/pb4010.json)"; echo "bench-bin $("$bx" --version 2>&1 | head -1)"; echo "bench-help $(timeout 20 "$bx" --help 2>&1 | grep -iE "benchmark|dry-run" | tr "\n" " ")"; timeout 2400 "$bx" -c /tmp/pb4010.json --bench=1048576 </dev/null 2>&1 | tail -80')
         SSH_TIMEOUT=180
         bline=$(printf '%s' "$bench" | tr -d '\r' | grep -oE '[0-9]+([.][0-9]+)? (H|kH|MH)/s' | tail -1)
         [ -z "$light" ] && light=$(printf '%s' "$bench" | tr -d '\r' | grep -im1 'light mode\|1 GB mode')
