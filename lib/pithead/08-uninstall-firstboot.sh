@@ -378,8 +378,10 @@ firstboot_consume_rig() (
     fi
     reachable=0
     if [ "$tls" = true ]; then
-        timeout 5 openssl s_client -host "$host" -port "$port" -showcerts </dev/null 2>/dev/null |
-            grep -q -- "BEGIN CERTIFICATE" && reachable=1
+        if [ "${host#-}" = "$host" ]; then
+            timeout 5 openssl s_client -host "$host" -port "$port" -showcerts </dev/null 2>/dev/null |
+                grep -q -- "BEGIN CERTIFICATE" && reachable=1
+        fi
     else
         timeout 5 bash -c '</dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null && reachable=1
     fi

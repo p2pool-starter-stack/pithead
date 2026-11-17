@@ -143,6 +143,11 @@ grep -q "tls_fingerprint" "$work/fpx/spool/error.txt" &&
     ok "short fingerprint refused" ||
     bad "fingerprint shape refusal"
 
+run_case dashhost '{"pool":"-verify:5555","worker":"shed-3","tls":true}' 0
+grep -q "cannot reach a pool at -verify:5555" "$work/dashhost/spool/rig-warning.txt" &&
+    ok "a host-shaped dash never reaches openssl as an option (unreachable, accepted)" ||
+    bad "dash-host TLS dial guard"
+
 run_case nopaired "{\"pool\":\"127.0.0.1:$TLS_PORT\",\"worker\":\"shed-3\"}" 0
 [ "$(jq -r 'has("paired")' "$work/nopaired/rig.json")" = "false" ] &&
     ok "rig.json without paired omits the key (read-default true)" ||
