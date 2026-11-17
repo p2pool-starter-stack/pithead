@@ -174,19 +174,21 @@ the test. Monero and onion log scrubbing below still require the manual checks.
 1. Make a support bundle:
 
    ```bash
-   ./pithead support-bundle
+   ./pithead support-bundle --since 2026-11-15T10:00:00Z
    ```
 
-2. Open the archive it names, and check its mode (`ls -l` on it).
+   Use a start time a few hours back.
+
+2. Open the zip it names, and check its mode (`ls -l` on it).
 3. Search it for the dashboard password, the stratum password and the bot token.
-4. Search the files under `logs/` for the Monero payout address and for [onion](../README.md#glossary) (`.onion`) addresses.
+4. Search the files under `containers/` for the Monero payout address and for [onion](../README.md#glossary) (`.onion`) addresses.
 
 **What you should see:**
 
 - The archive is mode 600 (`ls -l` shows `-rw-------`).
-- It holds doctor output, a masked config and the last log lines.
+- It is a `.zip` holding doctor output, a masked config, `manifest.json`, and a full log per container for the window, stopped containers included.
 - The dashboard password, the stratum password and the bot token do not appear anywhere in it.
-- The Monero payout address and `.onion` addresses do not appear in the files under `logs/`: `[redacted-address]` and `[redacted].onion` stand in their place.
+- The Monero payout address and `.onion` addresses do not appear in the files under `containers/`: `[redacted-address]` and `[redacted].onion` stand in their place.
 - A Tari address in the body of a log line can survive; that gap is known and stated in the code.
 - `config.masked.json` keeps the payout addresses in clear by design: they are not secrets there.
 

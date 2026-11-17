@@ -13,6 +13,10 @@ _restore_mining_running() { # -> 0 when p2pool and xmrig-proxy are both running 
     on_bench "cd '$RESTORE_DIR' && running=\$(timeout --kill-after=2 10 docker compose ps --services --status running) && grep -Fxq p2pool <<<\"\$running\" && grep -Fxq xmrig-proxy <<<\"\$running\""
 }
 
+_restore_mining_healthy() {
+    on_bench "cd '$RESTORE_DIR' && for s in p2pool xmrig-proxy; do cid=\$(timeout --kill-after=2 10 docker compose ps -q \"\$s\" | head -n1) && [ -n \"\$cid\" ] && st=\$(timeout --kill-after=2 10 docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' \"\$cid\") && case \"\$st\" in 'running ' | 'running healthy') ;; *) exit 1 ;; esac || exit 1; done"
+}
+
 # Fixed grammar only: the gate marker and each service's container state, never values.
 restore_mining_diagnostics() {
     local out
@@ -49,5 +53,28 @@ wait_restore_mining_ready() { # <timeout_s> [interval_s]
             return 1
         fi
         sleep "${2:-5}"
+    done
+}
+
+recheck_restore_mining() {
+    local timeout=${1:-600} start waited
+    if _restore_mining_healthy; then
+        ok "re-check: P2Pool and xmrig-proxy running and healthy after the restore proof"
+        return 0
+    fi
+    start=$(date +%s)
+    warn "re-check: P2Pool or xmrig-proxy not running and healthy; waiting up to ${timeout}s for the dashboard to readmit them (the harness never starts them)"
+    while :; do
+        sleep "${2:-5}"
+        waited=$(($(date +%s) - start))
+        if _restore_mining_healthy; then
+            ok "re-check: P2Pool and xmrig-proxy running and healthy again after waiting ${waited}s"
+            return 0
+        fi
+        if [ "$waited" -ge "$timeout" ]; then
+            warn "xmrig-proxy (or P2Pool) still not running and healthy after waiting ${waited}s for the dashboard to readmit it — restore not proven"
+            warn "  $(restore_mining_diagnostics)"
+            return 1
+        fi
     done
 }

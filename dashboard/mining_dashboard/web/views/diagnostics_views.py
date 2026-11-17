@@ -188,9 +188,55 @@ async def handle_support_bundle(request):
     return web.json_response({"id": rid, "status": "pending"}, status=202)
 
 
-def control_routes():
+async def handle_support_range(request):
+    _require_control_header(request)
+    try:
+        rid = diagnostics_service.submit_support_range(request.headers.get("X-Auth-User", ""))
+    except Exception:
+        logger.exception("Error submitting support-bundle-range request")
+        return web.json_response({"error": "Failed to submit the request."}, status=500)
+    return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
+SUPPORT_RESULT_KEYS = (
+    "status",
+    "error",
+    "archive",
+    "since",
+    "until",
+    "hours",
+    "oldest",
+    "effective_since",
+    "effective_until",
+    "journal_short",
+    "ts",
+)
+
+
+async def handle_support_result(request):
+    try:
+        res = control_service.result(request.query.get("id", ""))
+    except ValueError:
+        raise web.HTTPBadRequest(text="'id' must be a UUID.") from None
+    if res is None:
+        return web.json_response({"status": "pending"}, status=202)
+    return web.json_response({k: res[k] for k in SUPPORT_RESULT_KEYS if k in res})
+
+
+def support_routes():
     from mining_dashboard.web.views import download_views
 
+    return [
+        web.post("/api/control/support-bundle", handle_support_bundle),
+        web.post("/api/control/support-bundle-range", handle_support_range),
+        web.get("/api/control/support-bundle-result", handle_support_result),
+        web.get(
+            "/api/control/support-bundle-download", download_views.handle_support_bundle_download
+        ),
+    ]
+
+
+def control_routes():
     return [
         web.post("/api/control/diag-doctor", handle_diag_doctor),
         web.post("/api/control/diag-logs", handle_diag_logs),
@@ -198,8 +244,4 @@ def control_routes():
         web.post("/api/control/onion-client-key", handle_onion_key),
         web.post("/api/control/restart", handle_restart_all),
         web.post("/api/control/tor-reset", handle_tor_reset),
-        web.post("/api/control/support-bundle", handle_support_bundle),
-        web.get(
-            "/api/control/support-bundle-download", download_views.handle_support_bundle_download
-        ),
     ]

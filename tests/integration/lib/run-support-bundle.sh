@@ -21,12 +21,16 @@ run_support_bundle() {
             umask 077
             export TMPDIR=\"\${TMPDIR:-/tmp}\"
             marker=\$(mktemp \"\$TMPDIR/support-bundle-marker.XXXXXX\")
-            trap 'find . -maxdepth 1 -name support-bundle-\\*.tar.gz -newer \"\$marker\" -exec rm -f {} +; rm -f \"\$marker\"' EXIT
+            trap 'find . -maxdepth 1 -name support-bundle-\\*.zip -newer \"\$marker\" -exec rm -f {} +; rm -f \"\$marker\"' EXIT
             sleep 1
-            timeout 180 $IT_PITHEAD support-bundle >/dev/null 2>&1
-            archive=\$(find . -maxdepth 1 -name 'support-bundle-*.tar.gz' -newer \"\$marker\")
+            since=\$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            timeout --kill-after=2 30 docker compose exec -T dashboard python3 -c 'open(\"/proc/1/fd/1\", \"w\").write(\"support-bundle seed --rpc-login seed:$nonce\\n\")'
+            sleep 2
+            until=\$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            timeout 180 $IT_PITHEAD support-bundle --since \"\$since\" --until \"\$until\" >/dev/null 2>&1
+            archive=\$(find . -maxdepth 1 -name 'support-bundle-*.zip' -newer \"\$marker\")
             test -n \"\$archive\"
-            python3 - \"\$archive\" config.json .env" --stdin <"$(dirname "${BASH_SOURCE[0]}")/check-support-bundle.py"; then
+            python3 - \"\$archive\" config.json .env \"\$since\" \"\$until\" $nonce" --stdin <"$(dirname "${BASH_SOURCE[0]}")/check-support-bundle.py"; then
             it_pass "live support-bundle is private, complete and contains no fixture credentials"
         else
             it_fail "live support-bundle is private, complete and contains no fixture credentials" "collection or archive inspection failed; contents withheld"

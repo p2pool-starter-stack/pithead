@@ -13,6 +13,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
+  same windowed `.zip` and manifest as the appliance: every container's full log for the window instead of
+  the last 200 lines, the DIY egress and LAN-guard units from the journal, and an engine or journal that
+  cannot be read recorded in the manifest (#4130).
 - The Service diagnostics card has a **Restart all** button (typed `RESTART`, refused during an OS
   update, an uncommitted slot, a held host lock or a restart in the last two minutes, and riding out the dashboard's own restart) and a
   **Reset Tor state** button on the Tor card that runs the existing gated Tor recovery with its own
@@ -22,6 +26,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   ends when the browser closes or after 8 hours idle) and a "Sign out" button. Changing the password
   ends every session, wrong passwords are rate-limited, and scripts keep using HTTP basic auth with
   the same credentials (#4089).
+- The dashboard's **Export logs** card (Backup tab) has a time-frame picker (last 1 h, 6 h, 24 h, 72 h or 7 days, or a custom start and end), shows how far back the logs reach and flags a range that goes further, and collects and downloads the `support-bundle-<UTC timestamp>.zip` with one click, showing the window the manifest recorded. It is always available, on the appliance and on DIY, whether or not `dashboard.control.enabled` is on: with the switch off the host runner serves only the export, and config editing, restart and the other control actions stay off. With a dashboard password set, every export route needs the login (#4129).
 
 ### Changed
 
