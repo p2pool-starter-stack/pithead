@@ -160,6 +160,7 @@ SCENARIOS = {
         "initial_rejected": True,
         "ever_up": False,
         "clear_at": 0,
+        "floor": NODE_RECOVERY_AFTER_SEC,
         "expect_stop": False,
         "steps": [(t, containers()) for t in (0, 30, 60, 90)],
     },
@@ -217,8 +218,12 @@ def _svc(initial_rejected, ever_up, clock, starts, stops):
     sm.load_snapshot.return_value = None
     svc = DataService(sm, MagicMock(), MagicMock())
     svc.docker_control = MagicMock()
-    svc.docker_control.stop = AsyncMock(side_effect=lambda _name: stops.append(clock.now) or True)
-    svc.docker_control.start = AsyncMock(side_effect=lambda _name: starts.append(clock.now) or True)
+    svc.docker_control.stop = AsyncMock(
+        side_effect=lambda name: stops.append((name, clock.now)) or True
+    )
+    svc.docker_control.start = AsyncMock(
+        side_effect=lambda name: starts.append((name, clock.now)) or True
+    )
     svc.miner_released = True
     svc.workers_rejected = initial_rejected
     svc.monero_health.ever_up = ever_up
@@ -261,18 +266,21 @@ async def test_readmission_bound_after_stack_operation(name):
                 rejected_during_hold = True
 
     if spec["expect_stop"]:
-        assert stops and stops[0] < spec["clear_at"], (
+        assert stops and stops[0][1] < spec["clear_at"], (
             f"{name}: proxy never stopped before the clear"
         )
         assert len(stops) == 1, f"{name}: proxy stopped {len(stops)} times"
     else:
         svc.docker_control.stop.assert_not_awaited()
     assert starts, f"{name}: xmrig-proxy was never readmitted within the scripted window"
-    assert starts[0] >= spec["clear_at"], (
-        f"{name}: readmitted at {starts[0]} before the last trigger cleared at {spec['clear_at']}"
+    assert {c for c, _ in starts + stops} == {ds_mod.REJECT_WORKERS_CONTAINER}
+    floor = spec.get("floor", spec["clear_at"])
+    assert starts[0][1] >= floor, (
+        f"{name}: readmitted at {starts[0][1]}, before the floor {floor} "
+        "(last trigger clearing, or confirmed node health where none ever held)"
     )
-    assert starts[0] <= spec["clear_at"] + BOUND, (
-        f"{name}: readmitted at {starts[0]}, later than the bound "
+    assert starts[0][1] <= spec["clear_at"] + BOUND, (
+        f"{name}: readmitted at {starts[0][1]}, later than the bound "
         f"{spec['clear_at']}+{BOUND} from the last trigger clearing"
     )
     assert len(starts) == 1

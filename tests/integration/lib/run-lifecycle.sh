@@ -97,7 +97,7 @@ _run_lifecycle() {
     # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
-        prove_readmit_after_recreate || lifecycle_ok=0
+        prove_readmit_after_recreate
     else
         it_skip_leg "xmrig-proxy readmission bound after the pool recreate (#4166)" "remote mode: no local guarded services to watch" "by-design"
     fi
@@ -421,7 +421,7 @@ prove_readmit_after_recreate() {
     else
         it_fail "xmrig-proxy running within the readmission bound after the pool recreate (#4166)" \
             "xmrig-proxy still not running ${READMIT_BOUND_SEC}s after monerod, p2pool and tor reported healthy; dashboard reason lines:"
-        rx "timeout 30 docker compose logs --no-color --since 10m dashboard 2>&1 | grep -a -e 'not valid' -e 'readmit' -e 'holding' | tail -n 5" 2>/dev/null |
+        rx "timeout 30 docker compose logs --no-color --since 60m dashboard 2>&1 | grep -a -e 'not valid' -e 'readmit' -e 'holding' | tail -n 5" 2>/dev/null |
             redact | sed 's/^/        /'
     fi
 }
