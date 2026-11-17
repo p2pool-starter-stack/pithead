@@ -57,6 +57,30 @@ class MonerodRestartBudget:
                 DAILY_CAP,
             )
 
+    async def cycle_after_tor_restart(self, docker, now):
+        if not self.allow(now):
+            self.warn_cap()
+            logger.info(
+                "Tor restarted; the monerod re-dial is held by the shared monerod restart "
+                "budget (#4076)."
+            )
+            return
+        self.spend(now)
+        logger.warning(
+            "Restarting monerod alongside tor so it re-dials its peers through the fresh Tor (#972)."
+        )
+        m_stopped = await docker.stop(
+            "monerod",
+            stop_timeout=MONEROD_STOP_GRACE_SEC,
+            request_timeout=MONEROD_STOP_REQUEST_TIMEOUT_SEC,
+        )
+        m_started = await docker.start("monerod", request_timeout=MONEROD_START_REQUEST_TIMEOUT_SEC)
+        if not (m_stopped and m_started):
+            logger.warning(
+                "monerod restart alongside tor could not be issued; if the node stays out of "
+                "sync, restart it manually: './pithead restart monerod' (#972)."
+            )
+
 
 class MonerodRedial:
     def __init__(self, docker_control, audit=None, enabled=True, clock=time.monotonic, budget=None):
@@ -112,6 +136,7 @@ class MonerodRedial:
         tor_ready = bool(tor.get("running")) and tor.get("health") == "healthy"
         if not tor_ready:
             self._reset_clocks()
+            self._circuit_since = None
             return
         if verdict.get("peerless"):
             self._peerless_since = self._peerless_since if self._peerless_since is not None else now
@@ -135,7 +160,7 @@ class MonerodRedial:
         if circuit is True:
             if self._circuit_since is None:
                 self._circuit_since = now
-        elif circuit is False:
+        else:
             self._circuit_since = None
         proven = self._circuit_since is not None and now - self._circuit_since >= TOR_PROVEN_SEC
         height = verdict.get("height")

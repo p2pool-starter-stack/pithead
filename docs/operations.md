@@ -750,7 +750,7 @@ or invalid-reply failure. Raw control replies and relay summaries are omitted. E
 also reads `status/circuit-established` from the same control session and publishes it in the
 history as a `pithead-tor-circuit {"established":true|false}` line, which the dashboard reads with
 `docker inspect` to prove Tor is carrying circuits (#4076); a malformed or duplicated circuit value
-is an invalid reply, and the verdict gate itself stays the bootstrap `TAG=done`. Pass `-y` / `--yes`
+is dropped without a line (the dashboard then reads no proof), and the verdict gate itself stays the bootstrap `TAG=done`. Pass `-y` / `--yes`
 to skip both prompts (low-space warning, stop-the-stack question).
 
 Include the blockchains (larger, slower) with:

@@ -61,17 +61,17 @@ printf '%s\n' "$reply" | tr -d '\r' | awk '
         next
     }
     /^250-status\/circuit-established=/ {
-        if (++circuit_seen != 1) invalid = 1
+        if (++circuit_seen != 1) circuit_bad = 1
         else if ($0 == "250-status/circuit-established=1") established = 1
         else if ($0 == "250-status/circuit-established=0") established = 0
-        else invalid = 1
+        else circuit_bad = 1
         next
     }
     /^250 OK$/ { if (++completed != 1 || bootstrap != 1) invalid = 1; next }
     /^250 closing connection$/ { if (!completed || ++closed != 1) invalid = 1; next }
     { invalid = 1 }
     END {
-        if (circuit_seen == 1 && !invalid) printf "pithead-tor-circuit {\"established\":%s}\n", (established ? "true" : "false")
+        if (circuit_seen == 1 && !circuit_bad && !invalid) printf "pithead-tor-circuit {\"established\":%s}\n", (established ? "true" : "false")
         if (!authenticated) {
             print "Tor health: control authentication failed."
         } else if (invalid || bootstrap != 1 || completed != 1 || closed != 1 || progress_count != 1 || tag_count != 1 || progress + 0 > 100) {

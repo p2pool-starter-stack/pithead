@@ -117,12 +117,13 @@ expect "bootstrapped Tor without an established circuit is still healthy" \
     "$(hc_run fixed "$HC_DONE
 250-status/circuit-established=0" "${HC_CMDS[@]}")" "healthy"
 expect "unestablished circuit is published as false" "$(cat "$HC_D/output")" 'pithead-tor-circuit {"established":false}'
-expect "circuit value is never guessed" "$(hc_run fixed "$HC_DONE
-250-status/circuit-established=yes" "${HC_CMDS[@]}")" "unhealthy"
-expect "malformed circuit invalidates the reply" "$(cat "$HC_D/output")" "Tor health: bootstrap reply unavailable."
-expect "duplicate circuit line invalidates the reply" "$(hc_run fixed "$HC_DONE
+expect "circuit value is never guessed, and never gates health" "$(hc_run fixed "$HC_DONE
+250-status/circuit-established=yes" "${HC_CMDS[@]}")" "healthy"
+expect "malformed circuit publishes nothing" "$(cat "$HC_D/output")" ""
+expect "duplicate circuit line publishes nothing and never gates health" "$(hc_run fixed "$HC_DONE
 250-status/circuit-established=1
-250-status/circuit-established=1" "${HC_CMDS[@]}")" "unhealthy"
+250-status/circuit-established=1" "${HC_CMDS[@]}")" "healthy"
+expect "duplicate circuit line leaves history quiet" "$(cat "$HC_D/output")" ""
 expect "stall with a circuit publishes both lines" \
     "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=95 TAG=circuit_create
 250-status/circuit-established=1' "${HC_CMDS[@]}")" "unhealthy"

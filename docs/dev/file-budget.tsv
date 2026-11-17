@@ -7,7 +7,6 @@ dashboard/mining_dashboard/config/config.py	689
 dashboard/mining_dashboard/service/control_service.py	414
 dashboard/mining_dashboard/service/data_helpers.py	430
 dashboard/mining_dashboard/service/data_service.py	635
-dashboard/mining_dashboard/service/health/tor_heal.py	409
 dashboard/mining_dashboard/service/notify/alert_edges.py	453
 dashboard/mining_dashboard/service/notify/alert_service.py	518
 dashboard/mining_dashboard/service/notify/telegram_formatters.py	501
@@ -28,7 +27,7 @@ dashboard/tests/collector/test_containers.py	410
 dashboard/tests/config/test_config.py	445
 dashboard/tests/frontend/system/osupdate.test.mjs	427
 dashboard/tests/frontend/workers/workerview.test.mjs	409
-dashboard/tests/service/health/test_monerod_redial.py	473
+dashboard/tests/service/health/test_monerod_redial.py	487
 dashboard/tests/service/health/test_tor_heal.py	459
 dashboard/tests/service/network/test_egress.py	448
 dashboard/tests/service/test_annotation_coverage.py	579

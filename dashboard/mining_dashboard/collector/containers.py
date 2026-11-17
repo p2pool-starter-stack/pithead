@@ -101,7 +101,6 @@ def parse_monero_peers(payload, now=None):
 
 
 TOR_CIRCUIT_MARKER = "pithead-tor-circuit "
-# Tor's healthcheck runs every 30 s; an observation older than three runs is stale.
 TOR_CIRCUIT_FRESH_SEC = 90
 
 
