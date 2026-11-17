@@ -363,10 +363,12 @@ GUI update and reboot with a nonpersistent guest address present before and afte
 only after observing a new boot,
 its absence and Caddy running. `image-upgrade-browser.mjs` keeps the original browser
 tab, accepts the initial certificate once, and checks the served fingerprint, key and
-canonical SANs plus automatic recovery. The browser runs in a digest-pinned container;
+canonical SANs plus automatic recovery. The browser runs in a container pinned by tag and
+digest to the Playwright release matching the locked `@playwright/test`;
 SSH credentials stay on the host; Node runs only inside the browser container.
 `selftest-image-upgrade-browser.sh` exercises the
-certificate comparison and bounded orchestration controls without Docker or a guest.
+certificate comparison and bounded orchestration controls without Docker or a guest and
+fails when the image pin drifts from the locked library version.
 
 The lifecycle phase uses `tests/integration/lib/run-tari-background-sync.sh` to prove
 continued Monero hashing through a Tari off-to-local apply and warm-chain catch-up.
