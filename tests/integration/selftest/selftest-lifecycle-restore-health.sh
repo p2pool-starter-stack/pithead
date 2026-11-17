@@ -102,6 +102,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             return 1
         }; }
         run_password_tls_continuity() { :; }
+        prove_readmit_after_recreate() { :; }
         sync_gate_marker_state() {
             case "$RESTORE_CASE:$RESTORED" in
             marker-before-fails:* | marker-after-fails:yes) return 1 ;;
