@@ -10,6 +10,9 @@ trap 'rm -rf "$TD"' EXIT
 mkdir -p "$TD/bin" "$TD/wallet" "$TD/cgroup/memory"
 export WALLET_TEST_CGROUP="$TD/cgroup" WALLET_TEST_PROC_STATUS="$TD/process-status"
 export WALLET_TEST_PROC_IO="$TD/process-io" WALLET_DIR="$TD/wallet"
+export WALLET_TEST_TARI_DIR="$TD/tariwallet"
+mkdir -p "$WALLET_TEST_TARI_DIR/db/mainnet/logs/wallet"
+printf '2026-11-11 17:00:00 INFO scanned block at height 384770 of 385461\n' >"$WALLET_TEST_TARI_DIR/db/mainnet/logs/wallet/wallet.log"
 printf 'rchar: 2000000000\nread_bytes: 400000000\n' >"$TD/process-io"
 printf 'cache-fixture' >"$TD/wallet/payout-wallet"
 printf 'keys-fixture' >"$TD/wallet/payout-wallet.keys"
@@ -25,14 +28,18 @@ printf '%s\n' "$*" >>"$WALLET_TEST_COMMANDS"
 case "$1" in
 inspect)
     case "$*" in
+    *tari-wallet*)
+        [ -z "${WALLET_TEST_TARI_ABSENT:-}" ] || exit 1
+        echo '{"Log":[{"Output":"tari_scan_height=0 PASSWORD=diagnostic-secret"}]}' ;;
     *'id={{.Id}}'*) echo 'id=abc started=now exit=0 oom_killed=false restarts=40 health={"Log":[{"Output":"wallet_rpc=answering wallet_height=10 daemon_height=1000"}]}' ;;
     *State.Health*) echo '{"Log":[{"Output":"wallet_rpc=unreachable scan_grace=active PASSWORD=diagnostic-secret"}]}' ;;
     *) echo 'id=abc started=now exit=0 oom_killed=false restarts=40' ;;
     esac ;;
+logs) echo 'ERROR base node connection failed PASSWORD=diagnostic-secret' ;;
 exec)
     case "$*" in
     *'test ! -e'*) exit "${WALLET_TEST_MARKER_RC:-1}" ;;
-    *) script=$(printf '%s' "$5" | sed "s|/sys/fs/cgroup|$WALLET_TEST_CGROUP|g; s|/proc/1/status|$WALLET_TEST_PROC_STATUS|g; s|/proc/1/io|$WALLET_TEST_PROC_IO|g")
+    *) script=$(printf '%s' "$5" | sed "s|/sys/fs/cgroup|$WALLET_TEST_CGROUP|g; s|/proc/1/status|$WALLET_TEST_PROC_STATUS|g; s|/proc/1/io|$WALLET_TEST_PROC_IO|g; s|/var/tari/wallet|$WALLET_TEST_TARI_DIR|g")
        sh -c "$script" ;;
 
     esac ;;
@@ -95,8 +102,14 @@ export IT_PITHEAD=true
 api_state() { echo '{}'; }
 capture_artifacts route "$TD/out" >/dev/null 2>&1
 assert_contains "failure capture routes wallet health into its artifact directory" "$(cat "$TD/out/route/wallet-health.json")" 'scan_grace=active'
+assert_contains "failure capture routes Tari wallet health into its artifact directory (#4031)" "$(cat "$TD/out/route/tari-wallet-health.json")" 'tari_scan_height=0'
 assert_contains "failure capture routes retained events into its artifact directory" "$(cat "$TD/out/route/wallet-memory-events.txt")" 'action=die exit=137'
 assert_contains "wallet health grace reason is retained" "$(cat "$TD/wallet-health.json")" 'scan_grace=active'
+assert_contains "Tari wallet health is captured when the profile is up (#4031)" "$(cat "$TD/tari-wallet-health.json")" 'tari_scan_height=0'
+assert_contains "Tari wallet startup log is captured (#4031)" "$(cat "$TD/tari-wallet-log.txt")" 'base node connection failed'
+assert_contains "Tari wallet scan position is captured from its own log (#4031)" "$(cat "$TD/tari-wallet-scan-log.txt")" 'scanned block at height 384770'
+assert_contains "the scan-log capture stays bounded (#4031)" "$(cat "$WALLET_TEST_COMMANDS")" 'tail -n 40'
+assert_eq "Tari wallet captures pass through redaction (#4031)" "$(cat "$TD/tari-wallet-health.json" "$TD/tari-wallet-log.txt" | grep -c diagnostic-secret)" "0"
 assert_contains "wallet health output passes through redaction" "$(cat "$TD/wallet-health.json")" 'PASSWORD=<redacted>'
 assert_eq "raw diagnostic secret is absent" "$(grep -c diagnostic-secret "$TD/wallet-health.json")" 0
 body="$(_pred_monero_wallet_caught_up)"
@@ -193,5 +206,9 @@ fails="$(
     echo "$IT_FAIL"
 )"
 assert_eq "catch-up alone cannot bypass reachability and address checks" "$fails" 2
+mkdir -p "$TD/absent"
+WALLET_TEST_TARI_ABSENT=1 capture_wallet_diagnostics "$TD/absent" >/dev/null 2>&1
+assert_eq "absent Tari wallet writes no Tari artifacts (#4031)" "$(find "$TD/absent" -name 'tari-wallet-*' | wc -l | tr -d ' ')" "0"
+assert_contains "monero wallet health survives an absent Tari wallet (#4031)" "$(cat "$TD/absent/wallet-health.json")" 'scan_grace=active'
 printf 'selftest-wallet-diagnostics: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
