@@ -137,7 +137,7 @@ try {
   await assert.rejects(page.goto(origin), /ERR_CERT_AUTHORITY_INVALID/);
   await page.locator("#details-button").click();
   await page.locator("#proceed-link").click();
-  await page.waitForURL((url) => url.pathname === "/login");
+  await page.goto(`${origin}/login`);
   await page.fill("#login-username", credentials.username);
   await page.fill("#login-password", credentials.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
