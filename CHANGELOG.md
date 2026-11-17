@@ -17,6 +17,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   same windowed `.zip` and manifest as the appliance: every container's full log for the window instead of
   the last 200 lines, the DIY egress and LAN-guard units from the journal, and an engine or journal that
   cannot be read recorded in the manifest (#4130).
+- The appliance support bundle (the **Support bundle** card and `pithead recovery-bundle`) now carries state snapshots beside the journal: `doctor.json`, monerod, Tari and P2Pool status, Tor control-port and guard state (never a key), network, time, container (exit codes and image digests), RAUC, boot-slot and coredump records, Caddy access logs for the window with credentials removed, the files saved under `/data/pithead/support/`, a `/data/pithead` marker listing, and an uncapped dashboard history export with `ping_failures` and the control audit events. Every step has a time limit and the whole collection a total limit; a step that times out or fails is recorded in `manifest.json` and the bundle is still produced (#4128).
 - The Service diagnostics card has a **Restart all** button (typed `RESTART`, refused during an OS
   update, an uncommitted slot, a held host lock or a restart in the last two minutes, and riding out the dashboard's own restart) and a
   **Reset Tor state** button on the Tor card that runs the existing gated Tor recovery with its own
