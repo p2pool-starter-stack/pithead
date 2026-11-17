@@ -3,8 +3,6 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|all]
-#
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
 #   update  build a v2 bundle; install, boot the spare, auto-rollback uncommitted, commit, and
@@ -191,7 +189,8 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
+        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|p2pool-heal|all]\n'
+        sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)

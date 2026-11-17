@@ -4,7 +4,7 @@
 source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 phase_p2pool_heal() {
     # shellcheck disable=SC2034
-    local img token="" jar="" scode="" marker="" tries=0 code="" pv_user="" pv_pass="" PROVISION_DASHBOARD_HOST=fixture-box rc=0
+    local img token="" jar="" scode="" marker="" tries=0 code="" pv_user="" pv_pass="" PROVISION_DASHBOARD_HOST=fixture-box rc=0 OS_RESERVED_NODE_CONSUMER=0
     _phase_provision_initial || {
         bad "p2pool-heal: guest provisioning failed before observation"
         return 1
