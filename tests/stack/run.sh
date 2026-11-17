@@ -274,14 +274,14 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-lifecycle-verbs.sh" && domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?" || domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-backup.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-backup.sh" && domain_ran test-control-backup.sh "$_d0" "$?" || domain_ran test-control-backup.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/doctor/test-doctor-exposure.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-exposure.sh" && domain_ran test-doctor-exposure.sh "$_d0" "$?" || domain_ran test-doctor-exposure.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-diagnostics.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-diagnostics.sh" && domain_ran test-control-diagnostics.sh "$_d0" "$?" || domain_ran test-control-diagnostics.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-support-bundle.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-support-bundle.sh" && domain_ran test-control-support-bundle.sh "$_d0" "$?" || domain_ran test-control-support-bundle.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/control/test-support-bundle-diy.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/control/test-support-bundle-diy.sh" && domain_ran test-support-bundle-diy.sh "$_d0" "$?" || domain_ran test-support-bundle-diy.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-export-only.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-export-only.sh" && domain_ran test-control-export-only.sh "$_d0" "$?" || domain_ran test-control-export-only.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-grub-hugepages.sh disable=SC2015

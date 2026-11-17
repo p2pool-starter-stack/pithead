@@ -271,7 +271,7 @@ The words the guides use, in alphabetical order.
   dashboard); the stack machine is the computer it runs on.
 - **Stratum**: the protocol miners use to talk to the pool, on port 3333. A stratum password is
   optional; stratum TLS encrypts the connection.
-- **Support bundle**: the archive `./pithead support-bundle` writes for a bug report, with the
+- **Support bundle**: the `.zip` `./pithead support-bundle` writes for a bug report, with the
   config masked and secrets redacted.
 - **Sync, Sync Mode**: a node syncs by downloading and checking its whole blockchain; a first
   sync takes hours to days. Meanwhile the dashboard shows **Sync Mode** and the miner is held.
