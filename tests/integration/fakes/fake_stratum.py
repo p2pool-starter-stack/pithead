@@ -3,6 +3,9 @@ import socketserver
 import sys
 import threading
 
+MAX_LINE = 65536
+MAX_LINES = 1000
+
 JOB = {
     "blob": "0c0c" + "00" * 74,
     "job_id": "failover-view",
@@ -15,10 +18,13 @@ JOB = {
 
 class Handler(socketserver.StreamRequestHandler):
     def handle(self):
-        for raw in self.rfile:
+        self.request.settimeout(30)
+        for _ in range(MAX_LINES):
             try:
-                msg = json.loads(raw)
-            except ValueError:
+                msg = json.loads(self.rfile.readline(MAX_LINE))
+            except (OSError, ValueError):
+                return
+            if not isinstance(msg, dict):
                 return
             method = msg.get("method")
             if method == "login":
