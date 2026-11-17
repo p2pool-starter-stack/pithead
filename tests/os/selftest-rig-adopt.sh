@@ -121,6 +121,8 @@ dashboard_control_request() {
         local value
         printf '%s' "$2" | jq -e '[.changes | keys[] | select(. == "DONATION" or . == "donate-level")] | length == 0' >/dev/null ||
             fail 'leg wrote a donation key to the mining rig (#4184)'
+        printf '%s' "$2" | jq -e '.changes.watchdog_interval_min | type == "number" and . >= 1 and . <= 1440' >/dev/null ||
+            fail 'watchdog_interval_min probe outside RigForge 1-1440'
         value=$(printf '%s' "$2" | jq -er 'select(.worker == "kvm-rig-share") | .changes.watchdog_interval_min') || fail 'wrong worker change'
         printf '%s\n' "$value" >>"$scratch/writes"
         if [ "$value" = "$original_value" ]; then
