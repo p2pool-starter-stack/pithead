@@ -326,6 +326,20 @@ async def test_an_outage_with_no_circuit_reading_restarts_the_proof(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_monerod_downtime_restarts_the_proof(monkeypatch):
+    rig = _Rig(monkeypatch)
+    rig.tor["circuit"] = True
+    await rig.run(mr.TOR_PROVEN_SEC * 2, peers_out=8, height=100, target=135)
+    rig.monerod["running"] = False
+    await rig.run(mr.TOR_PROVEN_SEC * 3, peers_out=8, height=100, target=135)
+    rig.monerod["running"] = True
+    await rig.run(
+        mr.STALL_RESTART_SEC + mr.CHECK_INTERVAL_SEC * 2, peers_out=8, height=100, target=135
+    )
+    assert rig.restarts == 0
+
+
+@pytest.mark.asyncio
 async def test_a_frozen_height_through_a_tor_outage_does_not_fire_at_recovery(monkeypatch):
     rig = _Rig(monkeypatch)
     rig.tor.update(health="unhealthy", circuit=False)

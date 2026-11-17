@@ -121,6 +121,7 @@ class MonerodRedial:
         if tor_started is not None:
             if self._tor_started is not None and tor_started > self._tor_started:
                 self._pending_tor_start = tor_started
+                self._circuit_since = None
             self._tor_started = tor_started
         if not monerod.get("running"):
             self._reset_clocks()
@@ -136,7 +137,6 @@ class MonerodRedial:
         tor_ready = bool(tor.get("running")) and tor.get("health") == "healthy"
         if not tor_ready:
             self._reset_clocks()
-            self._circuit_since = None
             return
         if verdict.get("peerless"):
             self._peerless_since = self._peerless_since if self._peerless_since is not None else now
@@ -198,6 +198,7 @@ class MonerodRedial:
 
     def _reset_clocks(self):
         self._settle_since = None
+        self._circuit_since = None
         self._peerless_since = None
         self._reset_stall_clocks()
 
