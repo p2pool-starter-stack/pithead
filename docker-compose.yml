@@ -159,9 +159,6 @@ services:
     memswap_limit: 2g
     restart: unless-stopped
     logging: *default-logging
-    # Distinct entrypoint on the shared image: creates the view-only wallet from keys on first run,
-    # then serves monero-wallet-rpc against the local monerod. The view key reaches it via env + a
-    # tmpfs file, NEVER the command line (#90).
     entrypoint: ["/usr/local/bin/wallet-entrypoint.sh"]
     # Run non-root (#255) — same uid the wallets named volume inherits from the image.
     security_opt:
@@ -698,10 +695,6 @@ services:
       - P2POOL_CLEARNET=${P2POOL_CLEARNET:-false}
       - P2POOL_URL=${P2POOL_URL}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS}
-      # Payout confirmation (#381): poll the view-only wallet-rpc for confirmed incoming payouts.
-      # Enabled only when a view key is set on a local node (pithead renders true); off = the
-      # dashboard never polls and the wallet-rpc container isn't started. Creds authenticate the
-      # loopback-published wallet-rpc; the URL is the host-loopback publish (network_mode: host).
       - PAYOUT_CONFIRM_ENABLED=${PAYOUT_CONFIRM_ENABLED:-false}
       - MONERO_WALLET_RPC_URL=${MONERO_WALLET_RPC_URL:-http://127.0.0.1:18082/json_rpc}
       - WALLET_RPC_USERNAME=${WALLET_RPC_USERNAME:-wallet}
