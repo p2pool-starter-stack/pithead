@@ -1107,7 +1107,8 @@ that prints nothing cannot see this class at all.
 The progress line names the accepted request's `change_id`, so a timed-out readback can be matched
 to that request's rig-side status and journal rather than a nearby change. The host CLI rejects a
 rig response whose change ID is not 16 lowercase hex digits before returning it to the dashboard.
-For a DONATION revert, each readback poll also logs one bounded JSON sample: the dashboard's
+For a DONATION revert — harness machinery the harness retains for any DONATION write, though no
+e2e leg drives one against a real rig since #4184 — each readback poll also logs one bounded JSON sample: the dashboard's
 `/api/worker` DONATION, matching history status, dashboard snapshot time and worker state,
 and RigForge generation stamp and stale verdict, and the rig's direct `/1/summary` DONATION and generation stamp plus exact-ID
 `/status`. Status and history fields accept only their documented enums; other values and failed
