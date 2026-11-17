@@ -1,0 +1,95 @@
+name: Tor pin bump
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: Open a PR when Alpine carries a newer tor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: develop
+          persist-credentials: false
+      - name: Detect a newer tor in the Alpine repository
+        id: detect
+        run: bash scripts/watch/tor-bump.sh detect >>"$GITHUB_OUTPUT"
+      - name: Push the bump and open its PR
+        if: steps.detect.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.detect.outputs.current }}
+          LATEST: ${{ steps.detect.outputs.latest }}
+          BRANCH: ${{ steps.detect.outputs.branch }}
+        run: |
+          set -Eeuo pipefail
+          branch="bot/tor-${LATEST}"
+          state="$(gh pr list --state all --head "$branch" --json state --jq '.[0].state // "none"')"
+          if [ "$state" = OPEN ]; then
+            echo "PR for ${LATEST} is already open"
+            exit 0
+          fi
+          if [ "$state" != none ]; then
+            echo "PR for ${LATEST} is ${state}; not reopening it"
+            exit 0
+          fi
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git fetch origin "$branch"
+            git checkout -B "$branch" FETCH_HEAD
+          else
+            git checkout -B "$branch"
+          fi
+          bash scripts/watch/tor-bump.sh apply "$LATEST"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add build/tor/Dockerfile
+          if git diff --cached --quiet; then
+            echo "branch ${branch} already pins ${LATEST}"
+          else
+            git commit -m "build/tor: bump the Tor pin to ${LATEST}"
+          fi
+          gh auth setup-git
+          git push origin "$branch"
+          cat >pr-body.md <<EOF
+          ## What's the problem
+
+          Alpine v${BRANCH} now carries tor ${LATEST}; \`build/tor/Dockerfile\` pins ${CURRENT}. When Alpine drops the pinned package the image build fails loudly (#4125), so the pin has to move.
+
+          ## How I fixed it
+
+          Automated bump of \`ARG TOR_VERSION\` only, opened by the daily watcher from #4158 (\`.github/workflows/tor-bump.yml\` running \`scripts/watch/tor-bump.sh\`).
+
+          ## Here is the proof
+
+          Pending: the \`tier4-kvm\` \`tor-heal\` phase must be green at this head before merge, as \`docs/dev/releasing.md\` requires for a Tor pin bump — it is the live proof of Tor's state-file behaviour. Tiers 1 to 3 run from the first push to this branch; a PR opened with the Actions token triggers no \`pull_request\` checks of its own.
+          EOF
+          gh pr create --base develop --head "$branch" --label dependencies \
+            --title "build/tor: bump the Tor pin to ${LATEST}" --body-file pr-body.md
+      - name: Close bump PRs this run supersedes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ steps.detect.outputs.stale == 'true' && format('bot/tor-{0}', steps.detect.outputs.latest) || '' }}
+        run: |
+          set -Eeuo pipefail
+          if [ -n "$KEEP" ]; then
+            reason="Superseded by the daily tor bump run: ${KEEP} carries the newer Alpine tor (#4158)."
+          else
+            reason="The pin already matches what Alpine carries; this bump PR is no longer needed (#4158)."
+          fi
+          gh pr list --state open --json number,headRefName,author \
+            --jq 'map(select(.author.login == "github-actions" and (.headRefName | startswith("bot/tor-")))) | .[] | [.number, .headRefName] | @tsv' |
+            while IFS=$'\t' read -r number head; do
+              if [ "$head" != "$KEEP" ]; then
+                gh pr close "$number" --comment "$reason"
+              fi
+            done
