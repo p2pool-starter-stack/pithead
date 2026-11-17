@@ -197,6 +197,18 @@ phase_provision_hostname_regressions() { # <dashboard-user> <dashboard-password>
     # shellcheck disable=SC2154  # handoff_body is the initial leg's local (dynamic scope)
     assert_appliance_hostname_identity fixture-box "wizard hostname" "$DASH_USER" "$DASH_PASS" "$handoff_body" || return
 
+    if dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
+        jq -e '.dashboard.host == "fixture-box"' >/dev/null; then
+        ok "the chosen machine name is what config.json keeps, not the prefill sentinel"
+    else
+        bad "day-two config lost the chosen machine name — wizard field never landed"
+    fi
+    if printf '%s' "${handoff_body:-}" | jq -e 'has("warning") | not' >/dev/null; then
+        ok "a free name yields a credentials card with no warning"
+    else
+        bad "the wizard's clean-name card carried a warning: $(printf '%s' "${handoff_body:-}" | jq -r '.warning' 2>/dev/null)"
+    fi
+
     # Preview is pure even though this name change requires the combined configuration approval
     # path. Compare the privileged side effects as well as config: a dry-run that restarted Avahi
     # or minted a certificate would be visible here even if config.json stayed unchanged.

@@ -46,7 +46,9 @@ from mining_dashboard.wizard.defaults import (
 from mining_dashboard.wizard.form import build_config
 from mining_dashboard.wizard_config import (
     deep_merge,
+    prefill_machine_name,
     prepare_config,
+    validate_machine_label,
     validate_machine_name,
 )
 from mining_dashboard.wizard_install import validate_install_request
@@ -254,17 +256,15 @@ async def wizard_state(request: web.Request) -> web.Response:
     if changes:
         remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
     budget = _spool_json("disk-budget.json") or {}
+    platform = (_spool_read("platform.txt") or "appliance").strip()
     raw_handoff = _spool_read("handoff.json", handoff_dir()) if stage == "handoff" else None
     return web.json_response(
         {
             "stage": stage,
             "mode": "installer" if installer_mode() else "setup",
-            "config": deep_merge(
-                ref,
-                attempt
-                or new_machine_answers(
-                    budget, _disks(), (_spool_read("platform.txt") or "appliance").strip()
-                ),
+            "config": prefill_machine_name(
+                deep_merge(ref, attempt or new_machine_answers(budget, _disks(), platform)),
+                platform,
             ),
             "reference": ref,
             "new_machine": not bool(attempt),
@@ -304,10 +304,6 @@ def _publish_install_request(request: dict) -> None:
 
 
 def _submit_rig(form: dict) -> web.Response:
-    """The RigForge role's submission: no pithead config at all — a pool address, a worker name,
-    an optional stratum password, on their own spool channel. The coordinator flow stays
-    byte-for-byte untouched because nothing goes near config.json; the HOST dials the pool. On the
-    medium the disk gates match every other role, bar one target: "usb" runs from the stick."""
     pool = str(form.get("rig_pool", "")).strip()
     host, _, port = pool.rpartition(":")
     if not host or not port.isdigit():
@@ -315,6 +311,11 @@ def _submit_rig(form: dict) -> web.Response:
             {"error": "enter the pool address as host:port — a Pithead answers on port 3333"},
             status=400,
         )
+    worker = str(form.get("rig_worker", "")).strip()
+    try:
+        validate_machine_label(worker)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     stick = installer_mode() and str(form.get("disk", "")).strip() == "usb"
     install = None
     if installer_mode() and not stick:
@@ -323,7 +324,6 @@ def _submit_rig(form: dict) -> web.Response:
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
     rig = {"pool": pool}
-    worker = str(form.get("rig_worker", "")).strip()
     if worker:
         rig["worker"] = worker
     password = str(form.get("rig_password", "")).strip()
