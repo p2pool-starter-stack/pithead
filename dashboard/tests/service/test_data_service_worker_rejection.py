@@ -381,3 +381,15 @@ class TestMiningGuardRejection:
         await self._cycle(svc, p2pool=isolated)
         await svc._apply_worker_rejection(True, False)
         assert "also holding inside its grace: p2pool_peers" in caplog.text
+
+    async def test_persisted_stop_names_the_holding_triggers_once(self, caplog):
+        caplog.set_level("INFO", logger="DataService")
+        svc = self._svc()
+        svc.workers_rejected = True
+        for _ in range(3):
+            await svc._apply_worker_rejection(True, False)
+        lines = [m for m in caplog.messages if "already stopped when this dashboard started" in m]
+        assert len(lines) == 1
+        assert "persisted workers_rejected" in lines[0]
+        assert "Monero node unreachable past the debounce" in lines[0]
+        svc.docker_control.stop.assert_not_called()

@@ -14,6 +14,7 @@ fault_node_down() {
     else
         it_skip_leg "rig pool failover and fail-back (#4046)" "no rig host or token" "missing"
     fi
+    FAULT_SINCE="$(rx "date -u +%Y-%m-%dT%H:%M:%SZ")"
     it_step "fault: stop monerod (required node down)…"
     rx "docker compose stop monerod" >/dev/null 2>&1
     wait_for 60 5 "status to report a problem" _pred_status_down || true

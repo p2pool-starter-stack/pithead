@@ -191,6 +191,9 @@ stack_support_bundle() {
             docker compose logs --no-color --tail 200 "$svc" 2>/dev/null |
                 bundle_redact_log >"$tmp/bundle/logs/$svc.log" || true
         done
+        docker compose logs --no-color dashboard 2>/dev/null |
+            grep -aE 'Mining work is not valid|xmrig-proxy stays stopped|to readmit workers|Readmitting workers failed' |
+            bundle_redact_log >"$tmp/bundle/logs/dashboard-mining-guard.log" || true
     else
         echo "container engine not reachable — no container state collected" >"$tmp/bundle/compose-ps.txt"
     fi

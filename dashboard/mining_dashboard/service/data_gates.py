@@ -51,6 +51,7 @@ class DataGateMixin:
     _readmit_wait = None
     _stop_logged = False
     _start_failed = False
+    _persisted_logged = False
 
     def _restore_sync_gate(self):
         """Tari-only resets preserve an earned release; full resets revoke it."""
@@ -124,6 +125,12 @@ class DataGateMixin:
         )
         if required_down:
             self._readmit_wait = None
+            if self.workers_rejected and self._rejected_at is None and not self._persisted_logged:
+                self._persisted_logged = True
+                logger.warning(
+                    f"{container} was already stopped when this dashboard started (persisted "
+                    f"workers_rejected); still held by: {self._rejection_reasons(monero_down, tari_down)}."
+                )
             if not self.workers_rejected:
                 if not self._stop_logged:
                     self._stop_logged = True
