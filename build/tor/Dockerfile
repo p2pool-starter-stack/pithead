@@ -1,6 +1,6 @@
 # Pinned to a named minor version by digest (#135, #373). The digest is authoritative; the tag
 # names the Alpine minor line (3.24) so Dependabot's patch-update policy has a real version to track.
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 ARG TOR_VERSION=0.4.9.17-r0
 RUN apk add --no-cache --upgrade libcrypto3 libssl3 musl musl-utils "tor=${TOR_VERSION}" netcat-openbsd \
