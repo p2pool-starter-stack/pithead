@@ -49,6 +49,33 @@ for a guest-local alert sink. It restores its original config and state on exit,
 state only after Tor stops. Failures report the current stage, bounded command logs and
 the restoration result separately from the test result; no shared Tor is poisoned.
 
+Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
+and a half hours after provisioning, and the tier's default run window ends the job after the
+second gate has passed but before the host recovery applies. The phase vocabulary of this
+harness is machine-read in two places: `run.sh` prints its `--phase` usage line for `--help`,
+and the bench-ci client derives the phases a tier4-kvm submission may name from that same line
+(`bench_ci/catalogue.py`, `_KVM_PHASE_RE`); a new phase must be added to both that line and
+the argument case or bench-ci rejects it as `not available at this commit`.
+
+Two Tor behaviours decide how the poison is applied and cleared (#4122). Tor 0.4.8+ self-repairs
+a saturated circuit-build history when it loads one and rewrites the state file without the
+signature; it also rewrites the state file on every clean shutdown. So the guest writes the
+poisoned state while Tor is stopped, starts Tor, sets `DisableNetwork` through the control port,
+and then re-poisons every time Tor's own write lands, returning only once the file has held the
+signature through three quiet checks; the observation loops re-assert saturation and re-poison a
+Tor rewrite, but a state backup appearing while auto-heal is off is still a hard failure — that
+is the product's own footprint. Because the recovery's own stop would wipe the poisoned file,
+the script keeps Tor running for the ladder's two applied NEWNYM rounds (each confirmed through
+the host control results) and then stops Tor itself; the recovery's stop is then a no-op and the
+poisoned file survives into the backup. The disabled leg still proves the product leaves a
+saturated state alone: no backup may ever appear in that window.
+
+Both heal phases reuse the initial-provision prelude but consume no reserved-node proof, so they
+declare themselves non-consumers and the prelude selects neither the reserved-node consumer legs
+nor the XvB routing leg (#4123); `selftest-provision-legs.sh` pins that selection. The full
+`provision` phase keeps running both legs and still fails them when the bench provides no
+reserved-node inputs.
+
 It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 
 ```bash
