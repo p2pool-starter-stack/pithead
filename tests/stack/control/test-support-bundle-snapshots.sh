@@ -179,7 +179,7 @@ sn_env="$SN/env"
 printf 'COMPOSE_PROFILES=local_node,local_tari\nNETWORK_PREFIX=\nMONERO_RPC_URL=http://127.0.0.1:18081\nMONERO_NODE_USERNAME=rpcuser\nMONERO_NODE_PASSWORD=SEEDEDRPCPASS\nTARI_GRPC_ADDRESS=127.0.0.1:18142\nP2POOL_DATA_DIR=%s\nTOR_DATA_DIR=%s\nCADDY_LOG_DIR=%s\nDASHBOARD_DATA_DIR=%s\n' \
     "$SN/p2pool" "$SN/tor" "$SN/caddy" "$SN/dash" >"$sn_env"
 
-sn_run() { # <id> <svc mode: fine|hang|refuse> [extra VAR=val ...]
+sn_run() {
     local id="$1" svc="$2"
     shift 2
     rm -f "$SB/staged/.support-bundle-stamp" "$SN/port"
@@ -191,7 +191,7 @@ sn_run() { # <id> <svc mode: fine|hang|refuse> [extra VAR=val ...]
         run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$id" support-bundle)" "$SB"
     ) >/dev/null 2>&1
 }
-sn_tor() { # <mode>
+sn_tor() {
     python3 -I "$SN/bin/torfake" "$1" "$SN/port" "$SN_COOKIE_HEX" &
     SN_TOR_PID=$!
     local i=0
