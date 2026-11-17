@@ -1,0 +1,109 @@
+# shellcheck shell=bash
+# shellcheck source=tests/os/support-bundle-verdict.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/support-bundle-verdict.sh"
+
+SB_PROOF_LIMIT=300
+
+_sb_guest() { SSH_TIMEOUT=240 _ssh "bash -s -- $1 $2" <"$SCRIPT_DIR/support-bundle-guest-seed.sh"; }
+
+_sb_export() { # <since> <until> <dir>; sets SB_ROOT, SB_RID, SB_ERR
+    local resp status deadline
+    SB_ERR=""
+    resp=$(dashboard_control_post support-bundle "$(jq -nc --arg s "$1" --arg u "$2" '{since:$s,until:$u}')" 45)
+    SB_RID=$(printf '%s' "$resp" | sed '$d' | jq -r '.id // ""' 2>/dev/null)
+    if [ -z "$SB_RID" ] || [ "$(printf '%s' "$resp" | tail -n1)" != 202 ]; then
+        SB_ERR="the request was not accepted ($(printf '%s' "$resp" | tail -n1))"
+        return 1
+    fi
+    deadline=$(($(date +%s) + SB_PROOF_LIMIT))
+    status=pending
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        status=$(_support_bundle_status "$SB_RID")
+        case "$status" in applied | failed | rejected) break ;; esac
+        sleep 3
+    done
+    [ "$status" = applied ] || {
+        SB_ERR="the request ended as '$status' within ${SB_PROOF_LIMIT}s"
+        return 1
+    }
+    dashboard_curl -fsSk -m 120 -o "$3/bundle.zip" "https://$ip/api/control/support-bundle-download?id=$SB_RID" || {
+        SB_ERR="the dashboard download failed"
+        return 1
+    }
+    python3 -I -m zipfile -e "$3/bundle.zip" "$3/x" >/dev/null 2>&1 || {
+        SB_ERR="the download is not a readable zip"
+        return 1
+    }
+    SB_ROOT="$3/x/bundle"
+}
+
+_sb_round() { # <label> <mode> <since> <until> <tag> <canaries> <dir>
+    local t0=$SECONDS reasons
+    mkdir -p "$7/$2"
+    if ! _sb_export "$3" "$4" "$7/$2"; then
+        bad "support bundle ($1): $SB_ERR"
+        return 1
+    fi
+    if reasons=$(support_bundle_verdict "$SB_ROOT" "$2" "sbproof-in-$5" "sbproof-before-$5" "sbproof-after-$5" "$6"); then
+        ok "support bundle ($1): complete, window-bounded and redacted in $((SECONDS - t0))s (limit ${SB_PROOF_LIMIT}s)"
+    else
+        bad "support bundle ($1): $(printf '%s' "$reasons" | tr '\n' ';')"
+        return 1
+    fi
+}
+
+phase_provision_support_bundle_proof() { # <ip> <dashboard-user> <dashboard-password>
+    # shellcheck disable=SC2034 # DASH_USER/DASH_PASS: read by dashboard_curl via dynamic scope
+    local ip="$1" DASH_USER="$2" DASH_PASS="$3" tag dir canaries out since until code off=0
+    tag=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
+    dir=$(mktemp -d)
+    canaries="$dir/canaries"
+    if _control_requests_drained && approval_capture_restore_snapshot &&
+        _ssh 'cd /data/pithead && jq ".dashboard.control.enabled = false" config.json >config.sbproof && install -m 600 config.sbproof config.json && rm -f config.sbproof && ./pithead apply -y >/dev/null' &&
+        sensitive_live_config >/dev/null &&
+        _ssh 'grep -Eq "^DASHBOARD_CONTROL_ENABLED=.?false.?$" /data/pithead/.env'; then
+        off=1
+        ok "support bundle proof runs with the dashboard control channel switched off"
+    else
+        bad "support bundle proof: could not switch the control channel off"
+    fi
+    if [ "$off" = 1 ] && out=$(_sb_guest "$tag" window); then
+        printf '%s\n' "$out" | sed -n 's/^CANARY //p' >"$canaries"
+        read -r since until <<<"$(printf '%s\n' "$out" | sed -n 's/^WINDOW //p')"
+    else
+        bad "support bundle proof: seeding the window and the secrets on the guest failed"
+        since=""
+    fi
+    if [ -n "$since" ] && _sb_round "baseline" baseline "$since" "$until" "$tag" "$canaries" "$dir"; then
+        info "support bundle listing: $(python3 -I -m zipfile -l "$dir/baseline/bundle.zip" 2>/dev/null | awk 'NR > 1 {print $1}' | tr '\n' ' ')"
+        code=$(curl -sSk -m 15 -o /dev/null -w '%{http_code}' "https://$ip/api/control/support-bundle-download?id=$SB_RID")
+        case "$code" in
+        401 | 403) ok "an unauthenticated download of the support bundle is refused (HTTP $code)" ;;
+        *) bad "an unauthenticated download of the support bundle answered HTTP ${code:-none}" ;;
+        esac
+        code=$(curl -sSk -m 15 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H 'X-Pithead-Control: 1' --data '{}' "https://$ip/api/control/support-bundle")
+        case "$code" in
+        401 | 403) ok "an unauthenticated support bundle request is refused (HTTP $code)" ;;
+        *) bad "an unauthenticated support bundle request answered HTTP ${code:-none}" ;;
+        esac
+        if _sb_guest "$tag" wedge-tor; then
+            _sb_round "Tor wedged" tor-wedged "$since" "$until" "$tag" "$canaries" "$dir" || true
+            _sb_guest "$tag" release-tor || bad "support bundle proof: Tor did not recover after the wedge"
+        else
+            bad "support bundle proof: could not wedge Tor on the guest"
+        fi
+        if _sb_guest "$tag" stop-monerod; then
+            _sb_round "monerod stopped" monerod-stopped "$since" "$until" "$tag" "$canaries" "$dir" || true
+            _sb_guest "$tag" start-monerod || bad "support bundle proof: monerod did not start again"
+        else
+            bad "support bundle proof: could not stop monerod on the guest"
+        fi
+    fi
+    [ "$off" = 0 ] || _sb_guest "$tag" cleanup || true
+    if approval_restore_pending && sensitive_live_config >/dev/null; then
+        ok "support bundle proof restored the control channel and the original configuration"
+    else
+        bad "support bundle proof: could not restore the original configuration"
+    fi
+    rm -rf "$dir"
+}
