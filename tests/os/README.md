@@ -340,8 +340,10 @@ the configured test registry fail before the image build. Release builds do not 
   RigForge feed must report a nonzero hashrate (`rig_share_hashrate_wait`). The M12 adopt leg
   (#3069, backported here in #3994) then runs (`tests/os/rig-adopt-leg.sh`): it enables the
   coordinator's control channel, previews and commits an adoption with typed `APPLY`, polls
-  until the worker reads adopted with a reachable API, pushes one reversible `DONATION`
-  change to `applied` by its exact `change_id`, checks the pools sha256 unchanged, restores the
+  until the worker reads adopted with a reachable API, pushes one reversible `watchdog_interval_min`
+  change to `applied` by its exact `change_id` — never `DONATION`: the rig mines to the
+  coordinator's stratum during this leg, and the only probe from a fleet-standard `DONATION` 0 is
+  upward, which donates the dev fee to XMRig (#4184) —, checks the pools sha256 unchanged, restores the
   original value, and proves the unpinned bench host still cannot reach the control port;
   `selftest-rig-adopt.sh` covers those paths without a guest.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
@@ -352,7 +354,9 @@ the configured test registry fail before the image build. Release builds do not 
   bootloader path (#1318) and is not this leg's job.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
-  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, read
+  reboots. The wallet the stick changes to is the named throwaway `MEDIA_WALLET_ALT` — the same
+  never-fundable key the v1.20.0 restore fixture derives from its public seed — so no payout
+  identity in this phase is a real donation address (#4184). Asserts the exact diff appears on the console (the changed wallet address in full, read
   directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling

@@ -53,6 +53,7 @@ tests/integration/selftest/selftest-abort-traps.sh	408
 tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-lifecycle-miners.sh	424
 tests/integration/selftest/selftest-live-gates.sh	453
+tests/integration/selftest/selftest-rigforge-writable-keys.sh	402
 tests/integration/selftest/selftest-zmq-probe.sh	431
 tests/integration/selftest/selftest.sh	685
 tests/os/appliance-approval-verdict.sh	449
