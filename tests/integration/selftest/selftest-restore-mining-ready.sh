@@ -167,7 +167,7 @@ assert_contains "the failure names xmrig-proxy and the time waited" "$out" "xmri
 echo "== the never-readmitted stop names the dashboard's reason and saves the evidence (#4168) =="
 evidence_dir="$(mktemp -d)"
 reason_log='2026-11-15T22:57:02Z dashboard | WARNING Mining work is not valid (Monero node unhealthy: monerod stopped) — stopping xmrig-proxy so workers fail over to their backup pools.
-2026-11-15T22:57:03Z dashboard | INFO restart PASSWORD=fixture-4168'
+2026-11-15T22:57:03Z dashboard | INFO restart PASSWORD=test4168test4168'
 SEQ=0
 FAKE_DASHBOARD_LOG="$reason_log"
 out="$(drive_recheck 1 "$evidence_dir")"
@@ -183,7 +183,7 @@ else
 fi
 if grep -q 'Mining work is not valid (Monero node unhealthy: monerod stopped)' "$evidence_dir/results/restore-mining-dashboard-log.txt" &&
     grep -q 'PASSWORD=<redacted>' "$evidence_dir/results/restore-mining-dashboard-log.txt" &&
-    ! grep -q 'fixture-4168' "$evidence_dir/results/restore-mining-dashboard-log.txt"; then
+    ! grep -q 'test4168test4168' "$evidence_dir/results/restore-mining-dashboard-log.txt"; then
     it_pass "the saved dashboard tail keeps the reason line and drops the planted secret (#4168)"
 else
     it_fail "the saved dashboard tail keeps the reason line and drops the planted secret (#4168)" "reason or redaction missing in the saved tail"
