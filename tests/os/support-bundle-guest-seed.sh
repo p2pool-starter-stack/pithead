@@ -20,6 +20,11 @@ window)
     printf 'TorKey %s\nGuard in=sbproof bridge_addr=%s\n' "$torkey" "$torkey" >>"$tordir/state"
     printf '{"ts":%s,"request":{"uri":"/api/%s","headers":{"Cookie":["%s"],"User-Agent":["sbproof"]}},"resp_headers":{"Set-Cookie":["%s"]}}\n' \
         "$(date -u +%s)" "$token" "$cookie" "$cookie" >"$caddy_file"
+    journalctl --sync
+    journalctl -t sbproof --no-pager -o cat | grep -qF -- "$token" || exit 11
+    journalctl -u tor.service --no-pager -o cat | grep -qF -- "$login" || exit 12
+    grep -qF -- "$torkey" "$tordir/state" || exit 13
+    grep -qF -- "$cookie" "$caddy_file" || exit 14
     sleep 1
     until=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     sleep 2
@@ -27,6 +32,7 @@ window)
     printf 'WINDOW %s %s\n' "$since" "$until"
     ;;
 cleanup)
+    podman kill -s CONT tor >/dev/null 2>&1 || true
     rm -f "$caddy_file"
     if [ -f "$tordir/state" ]; then
         grep -v "sbproofkey-$tag" "$tordir/state" >"$tordir/state.sbproof" || true

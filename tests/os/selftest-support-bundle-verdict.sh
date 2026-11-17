@@ -8,7 +8,7 @@ trap 'rm -rf "$td"' EXIT
 printf 'SECRET-ONE\nSECRET-TWO\n' >"$td/canaries"
 : >"$td/empty"
 
-fixture() { # <dir>
+fixture() {
     local d="$1" rel
     mkdir -p "$d"
     for rel in $SB_PROOF_REQUIRED; do
@@ -21,7 +21,7 @@ fixture() { # <dir>
         '{manifest_version: 1, files: ., failures: [{step: "tor/control.txt", status: "timeout"}, {step: "status/monerod.json", status: "failed"}]}' >"$d/manifest.json"
 }
 
-expect() { # <label> <want: pass|fail> <dir> <mode> [canaries]
+expect() {
     local rc=0
     support_bundle_verdict "$3" "$4" sbproof-in-T sbproof-before-T sbproof-after-T "${5:-$td/canaries}" >"$td/out" 2>&1 || rc=$?
     if [ "$2" = pass ] && [ "$rc" -ne 0 ]; then

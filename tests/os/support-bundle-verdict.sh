@@ -1,11 +1,11 @@
 # shellcheck shell=bash
-SB_PROOF_REQUIRED="journal/all.log journal/kernel.log journal/boots.txt host.txt doctor.json status/monerod.json status/tari.json status/p2pool.json tor/control.txt tor/state-guards.txt tor.txt network/ip-addr.txt network/ip-route.txt time/timedatectl.txt containers/ps-a.txt containers/images.txt rauc.txt boot-slot.txt coredumps.txt caddy/access.log state-markers.txt"
+SB_PROOF_REQUIRED="journal/all.log journal/kernel.log journal/boots.txt host.txt doctor.json status/monerod.json status/tari.json status/p2pool.json tor/control.txt tor/state-guards.txt tor.txt network/ip-addr.txt network/ip-route.txt time/timedatectl.txt containers/ps-a.txt containers/images.txt rauc.txt rauc-detailed.txt network/networkctl.txt network/resolvectl.txt network/nft-ruleset.txt time/sync-units.txt dashboard-history.jsonl boot-slot.txt coredumps.txt caddy/access.log state-markers.txt"
 
 _sb_step_failed() {
     jq -e --arg s "$2" '.failures | map(select(.step == $s and (.status == "failed" or .status == "timeout"))) | length > 0' "$1" >/dev/null 2>&1
 }
 
-support_bundle_verdict() { # <extracted bundle dir> <baseline|tor-wedged|monerod-stopped> <in> <before> <after> <canary file>
+support_bundle_verdict() {
     local dir="$1" mode="$2" in_mark="$3" before="$4" after="$5" canaries="$6" manifest="$1/manifest.json" rel n=0 line rc=0
     if ! { [ -s "$manifest" ] && jq -e '.manifest_version == 1 and (.files | length > 0)' "$manifest" >/dev/null 2>&1; }; then
         echo "manifest.json is missing, empty or not a version 1 manifest"

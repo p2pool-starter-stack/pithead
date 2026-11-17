@@ -6,7 +6,7 @@ SB_PROOF_LIMIT=300
 
 _sb_guest() { SSH_TIMEOUT=240 _ssh "bash -s -- $1 $2" <"$SCRIPT_DIR/support-bundle-guest-seed.sh"; }
 
-_sb_export() { # <since> <until> <dir>; sets SB_ROOT, SB_RID, SB_ERR
+_sb_export() {
     local resp status deadline
     SB_ERR=""
     resp=$(dashboard_control_post support-bundle "$(jq -nc --arg s "$1" --arg u "$2" '{since:$s,until:$u}')" 45)
@@ -37,7 +37,7 @@ _sb_export() { # <since> <until> <dir>; sets SB_ROOT, SB_RID, SB_ERR
     SB_ROOT="$3/x/bundle"
 }
 
-_sb_round() { # <label> <mode> <since> <until> <tag> <canaries> <dir>
+_sb_round() {
     local t0=$SECONDS reasons
     mkdir -p "$7/$2"
     if ! _sb_export "$3" "$4" "$7/$2"; then
@@ -52,8 +52,8 @@ _sb_round() { # <label> <mode> <since> <until> <tag> <canaries> <dir>
     fi
 }
 
-phase_provision_support_bundle_proof() { # <ip> <dashboard-user> <dashboard-password>
-    # shellcheck disable=SC2034 # DASH_USER/DASH_PASS: read by dashboard_curl via dynamic scope
+phase_provision_support_bundle_proof() {
+    # shellcheck disable=SC2034
     local ip="$1" DASH_USER="$2" DASH_PASS="$3" tag dir canaries out since until code off=0
     tag=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
     dir=$(mktemp -d)
@@ -86,20 +86,14 @@ phase_provision_support_bundle_proof() { # <ip> <dashboard-user> <dashboard-pass
         401 | 403) ok "an unauthenticated support bundle request is refused (HTTP $code)" ;;
         *) bad "an unauthenticated support bundle request answered HTTP ${code:-none}" ;;
         esac
-        if _sb_guest "$tag" wedge-tor; then
-            _sb_round "Tor wedged" tor-wedged "$since" "$until" "$tag" "$canaries" "$dir" || true
-            _sb_guest "$tag" release-tor || bad "support bundle proof: Tor did not recover after the wedge"
-        else
-            bad "support bundle proof: could not wedge Tor on the guest"
-        fi
-        if _sb_guest "$tag" stop-monerod; then
-            _sb_round "monerod stopped" monerod-stopped "$since" "$until" "$tag" "$canaries" "$dir" || true
-            _sb_guest "$tag" start-monerod || bad "support bundle proof: monerod did not start again"
-        else
-            bad "support bundle proof: could not stop monerod on the guest"
-        fi
+        _sb_guest "$tag" wedge-tor || bad "support bundle proof: could not wedge Tor on the guest"
+        _sb_round "Tor wedged" tor-wedged "$since" "$until" "$tag" "$canaries" "$dir" || true
+        _sb_guest "$tag" release-tor || bad "support bundle proof: Tor did not recover after the wedge"
+        _sb_guest "$tag" stop-monerod || bad "support bundle proof: could not stop monerod on the guest"
+        _sb_round "monerod stopped" monerod-stopped "$since" "$until" "$tag" "$canaries" "$dir" || true
+        _sb_guest "$tag" start-monerod || bad "support bundle proof: monerod did not start again"
     fi
-    [ "$off" = 0 ] || _sb_guest "$tag" cleanup || true
+    [ "$off" = 0 ] || _sb_guest "$tag" cleanup || bad "support bundle proof: cleanup of the seeded fixtures failed"
     if approval_restore_pending && sensitive_live_config >/dev/null; then
         ok "support bundle proof restored the control channel and the original configuration"
     else
