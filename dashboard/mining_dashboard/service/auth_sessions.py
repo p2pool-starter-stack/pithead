@@ -29,8 +29,12 @@ def create_schema(store):
 
 def _write(store, sql, params):
     try:
-        with store._db_lock, store._conn:
-            store._conn.execute(sql, params)
+        with store._db_lock:
+            conn = store._conn
+            if conn is None:
+                return
+            with conn:
+                conn.execute(sql, params)
     except sqlite3.Error as e:
         store._db_error("Session Write Error", e)
 
@@ -55,19 +59,22 @@ def issue(store, username, epoch, remember):
     token = secrets.token_urlsafe(32)
     now = time.time()
     try:
-        with store._db_lock, store._conn:
+        with store._db_lock:
             conn = store._conn
-            _prune(conn, now)
-            conn.execute("DELETE FROM dashboard_sessions WHERE epoch != ?", (epoch,))
-            conn.execute(
-                "DELETE FROM dashboard_sessions WHERE id IN "
-                "(SELECT id FROM dashboard_sessions ORDER BY touched DESC LIMIT -1 OFFSET ?)",
-                (MAX_SESSIONS - 1,),
-            )
-            conn.execute(
-                "INSERT INTO dashboard_sessions VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (_digest(token), username, epoch, int(remember), now, now, now),
-            )
+            if conn is None:
+                raise sqlite3.OperationalError("session store has no connection")
+            with conn:
+                _prune(conn, now)
+                conn.execute("DELETE FROM dashboard_sessions WHERE epoch != ?", (epoch,))
+                conn.execute(
+                    "DELETE FROM dashboard_sessions WHERE id IN "
+                    "(SELECT id FROM dashboard_sessions ORDER BY touched DESC LIMIT -1 OFFSET ?)",
+                    (MAX_SESSIONS - 1,),
+                )
+                conn.execute(
+                    "INSERT INTO dashboard_sessions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (_digest(token), username, epoch, int(remember), now, now, now),
+                )
     except sqlite3.Error as e:
         store._db_error("Session Write Error", e)
         raise
@@ -80,7 +87,10 @@ def validate(store, token, epoch) -> tuple[str, bool, bool] | None:
     now = time.time()
     try:
         with store._db_lock:
-            row = store._conn.execute(
+            conn = store._conn
+            if conn is None:
+                return None
+            row = conn.execute(
                 "SELECT * FROM dashboard_sessions WHERE id=?", (_digest(token),)
             ).fetchone()
     except sqlite3.Error as e:

@@ -143,3 +143,26 @@ class TestFullDataDisk:
         assert auth_sessions.validate(store, token, "e") is None
         assert store._db_lock.acquire(timeout=1)
         store._db_lock.release()
+
+
+class TestNoConnection:
+    @pytest.fixture
+    def store(self):
+        sm = StateManager(db_path=":memory:")
+        auth_sessions.create_schema(sm)
+        token = auth_sessions.issue(sm, "admin", "e", False)
+        sm._conn = None
+        yield sm, token
+
+    def test_validate_refuses_without_raising(self, store):
+        sm, token = store
+        assert auth_sessions.validate(sm, token, "e") is None
+
+    def test_revoke_is_a_noop(self, store):
+        sm, token = store
+        auth_sessions.revoke(sm, token)
+
+    def test_issue_raises_a_sqlite_error_for_the_503_path(self, store):
+        sm, _ = store
+        with pytest.raises(sqlite3.Error):
+            auth_sessions.issue(sm, "admin", "e", False)
