@@ -131,3 +131,15 @@ class TestFullDataDisk:
         full_disk(store, statements=("CREATE",))
         auth_sessions.create_schema(store)
         assert store.is_db_healthy() is False
+
+    def test_create_schema_survives_a_closed_store(self, store, monkeypatch):
+        monkeypatch.setattr(store, "_conn", None)
+        auth_sessions.create_schema(store)
+
+    def test_a_corrupt_read_recovers_without_wedging_the_store(self, store, full_disk):
+        token = auth_sessions.issue(store, "admin", "e", False)
+        full_disk(store, statements=("SELECT",), message="database disk image is malformed")
+        assert auth_sessions.validate(store, token, "e") is None
+        assert auth_sessions.validate(store, token, "e") is None
+        assert store._db_lock.acquire(timeout=1)
+        store._db_lock.release()

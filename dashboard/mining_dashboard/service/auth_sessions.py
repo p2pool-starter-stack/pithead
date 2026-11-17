@@ -12,6 +12,8 @@ MAX_SESSIONS = 64
 
 def create_schema(store):
     for _ in range(2):
+        if store._conn is None:
+            return
         try:
             with store._db_lock, store._conn:
                 store._conn.execute(
@@ -72,18 +74,18 @@ def issue(store, username, epoch, remember):
     return token
 
 
-def validate(store, token, epoch):
+def validate(store, token, epoch) -> tuple[str, bool, bool] | None:
     if not token or len(token) > 128 or not epoch:
         return None
     now = time.time()
-    with store._db_lock:
-        try:
+    try:
+        with store._db_lock:
             row = store._conn.execute(
                 "SELECT * FROM dashboard_sessions WHERE id=?", (_digest(token),)
             ).fetchone()
-        except sqlite3.Error as e:
-            store._db_error("Session Read Error", e)
-            return None
+    except sqlite3.Error as e:
+        store._db_error("Session Read Error", e)
+        return None
     if not row:
         return None
     if row["epoch"] != epoch or row["touched"] <= now - lifetime(row["remember"]):

@@ -507,7 +507,9 @@ the page is served over HTTPS.
   `dashboard.auth.username` and running `apply` ends every session, this one included.
 - **On a full data disk** the dashboard keeps answering: a signed-in session stays signed in
   (its housekeeping writes are logged, not fatal), while signing in fails with a message that
-  the data disk is full.
+  the data disk is full. Signing out on a full disk removes the browser cookie but the
+  server-side delete can fail, so a copied session stays usable until its normal expiry once
+  the disk is writable again.
 - **Wrong passwords:** five failures from one address in a minute lock sign-in from that address
   for the rest of the minute. Each attempt appears in the access log shown in the Security panel.
   Basic-auth requests are not rate-limited. On the onion address every visitor reaches the

@@ -43,7 +43,7 @@ def state_manager():
 
 @pytest.fixture
 def full_disk(monkeypatch):
-    def make(store, statements=("INSERT", "UPDATE", "DELETE", "CREATE")):
+    def make(store, statements=("INSERT", "UPDATE", "DELETE", "CREATE"), message=None):
         if isinstance(statements, str):
             statements = (statements,)
         inner = store._conn
@@ -51,6 +51,8 @@ def full_disk(monkeypatch):
         class FullDiskConnection:
             def execute(self, sql, *args, **kwargs):
                 if sql.lstrip().upper().startswith(tuple(statements)):
+                    if message:
+                        raise sqlite3.DatabaseError(message)
                     raise sqlite3.OperationalError("database or disk is full")
                 return inner.execute(sql, *args, **kwargs)
 
