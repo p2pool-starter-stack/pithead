@@ -330,7 +330,7 @@ _restore_waits_for_control_drain_self_test() (
 _remote_node_regressions_run_last_self_test() {
     local here="$1" gate_line call_line
     gate_line=$(grep -n 'no sync-gate hold in the dashboard log' "$here/phases/provision-initial.sh" | cut -d: -f1 | head -1)
-    call_line=$(grep -n 'phase_provision_remote_node_regressions "' "$here/phases/provision-initial.sh" | cut -d: -f1 | head -1)
+    call_line=$(grep -n 'phase_provision_reserved_node_legs' "$here/phases/provision-initial.sh" | cut -d: -f1 | head -1)
     [ -n "$gate_line" ] && [ -n "$call_line" ] && [ "$call_line" -gt "$gate_line" ]
 }
 

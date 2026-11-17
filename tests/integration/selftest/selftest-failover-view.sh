@@ -11,22 +11,22 @@ echo "== failover view: aggregates, banner, fake stratum and pool reorder =="
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 fail=0
-check() { # <desc> <expected-rc> <command...>
+check() {
     local desc="$1" want="$2" rc
     shift 2
     "$@" >/dev/null 2>&1
     rc=$?
-    { [ "$rc" = "$want" ] || { [ "$want" = 1 ] && [ "$rc" != 0 ]; }; } || {
+    { [ "$rc" = "$want" ] || { [ "$want" = refused ] && [ "$rc" -ge 1 ] && [ "$rc" -le 5 ]; }; } || {
         echo "FAIL: $desc (rc=$rc, want $want)" >&2
         fail=1
     }
 }
 
-row() { # <name> <status> <state> <h15> <h60> <telemetry>
+row() {
     jq -cn --arg n "$1" --arg s "$2" --arg m "$3" --argjson h15 "$4" --argjson h60 "$5" --argjson t "$6" \
         '{name:$n,status:$s,mining:{state:$m,pool:"pool.example:3399"},h15:$h15,h60:$h60,telemetry_h60:$t}'
 }
-state() { # <alive> <total> <badge-or-empty> <rows...>
+state() {
     local alive="$1" total="$2" badge="$3"
     shift 3
     jq -cn --argjson alive "$alive" --arg total "$total" --arg badge "$badge" --slurpfile rows <(printf '%s\n' "$@") \
@@ -45,15 +45,64 @@ paused_two="$(state 0 "0.00 H/s" "Mining paused here: node out of sync, 2 rigs o
 
 check "healthy both-here aggregates agree" 0 _failover_aggregates_json "$here"
 check "a moved rig drops out of both aggregates" 0 _failover_aggregates_json "$moved"
-check "telemetry blended into Total Hashrate is refused" 1 _failover_aggregates_json "$blended"
-check "a moved rig still counted in Workers Alive is refused" 1 _failover_aggregates_json "$alive_blended"
+check "telemetry blended into Total Hashrate is refused" refused _failover_aggregates_json "$blended"
+check "a moved rig still counted in Workers Alive is refused" refused _failover_aggregates_json "$alive_blended"
 check "the 1m fallback is what the total uses" 0 _failover_aggregates_json "$fallback"
-check "malformed totals are refused" 1 _failover_aggregates_json '{"proxy_workers":1,"hashrate":{"total":"n/a"},"workers":[]}'
+check "malformed totals are refused" refused _failover_aggregates_json '{"proxy_workers":1,"hashrate":{"total":"n/a"},"workers":[]}'
 check "banner names one rig singular" 0 _failover_banner_matches "$paused_one"
-check "banner with the wrong rig count is refused" 1 _failover_banner_matches "$paused_wrong"
-check "banner without the rig count is refused" 1 _failover_banner_matches "$paused_bare"
+check "banner with the wrong rig count is refused" refused _failover_banner_matches "$paused_wrong"
+check "banner without the rig count is refused" refused _failover_banner_matches "$paused_bare"
 check "banner names two rigs plural" 0 _failover_banner_matches "$paused_two"
-check "no banner and no rig on a backup pool is refused" 1 _failover_banner_matches "$here"
+check "no banner and no rig on a backup pool is refused" refused _failover_banner_matches "$here"
+snapshot_rc() (
+    body="$1"
+    # shellcheck disable=SC2329
+    api_state() { printf '%s' "$body"; }
+    _failover_snapshot
+)
+check "a valid state snapshot is accepted" 0 snapshot_rc "$here"
+check "an empty object is not a state snapshot" refused snapshot_rc '{}'
+check "a non-JSON body is not a state snapshot" refused snapshot_rc 'oops'
+paused_noreason="$(state 1 "2.00 kH/s" "Mining paused here: , 1 rig on backup pool" "$(row rig1 online on_backup 0 0 1200)")"
+big="$(state 1 "5.04 MH/s" "" "$(row rig1 online on_backup 0 0 40000)" "$(row rig2 online mining_here 5000000 5000000 5000000)")"
+big_ok="$(state 1 "5.00 MH/s" "" "$(row rig1 online on_backup 0 0 40000)" "$(row rig2 online mining_here 5000000 5000000 5000000)")"
+check "a banner with an empty reason is refused" refused _failover_banner_matches "$paused_noreason"
+check "a borrowed rig blended into a large Pithead's total is refused" refused _failover_aggregates_json "$big"
+check "a large Pithead's exact total passes" 0 _failover_aggregates_json "$big_ok"
+check "a missing predicate is not read as a refusal" 127 _failover_no_such_predicate "$here"
+
+(
+    rx() { printf '%s' "$1" >"$WORK/stop"; }
+    FAILOVER_POOL_DIR=/tmp/failover-pool.test
+    _failover_pool_stop
+)
+stop_cmd="$(cat "$WORK/stop" 2>/dev/null)"
+[[ "$stop_cmd" == *'/pid'* && "$stop_cmd" != *pkill* ]] || {
+    echo "FAIL: the pool stop must signal the recorded pid and never pkill -f its own command line" >&2
+    fail=1
+}
+ran="$(
+    trap - EXIT
+    # shellcheck disable=SC2329
+    _failover_view_restore() { printf restored; }
+    _failover_trap_arm
+    exit 3
+)"
+[ "$ran" = restored ] || {
+    echo "FAIL: an abort after the trap is armed must restore" >&2
+    fail=1
+}
+[ "$(
+    trap 'printf foreign' EXIT
+    # shellcheck disable=SC2329
+    _failover_view_restore() { printf restored; }
+    _failover_trap_arm
+    exit 0
+)" = restoredforeign ] || {
+    echo "FAIL: the abort trap must restore first and then run the foreign EXIT trap" >&2
+    fail=1
+}
+
 [ "$(_failover_row_field "$moved" rig1 '.mining.state')" = on_backup ] || {
     echo "FAIL: row field lookup" >&2
     fail=1

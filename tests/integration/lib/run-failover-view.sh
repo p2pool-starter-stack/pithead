@@ -10,7 +10,7 @@ _failover_row_field() {
 
 _failover_snapshot() {
     FAILOVER_STATE="$(api_state)"
-    [ -n "$FAILOVER_STATE" ]
+    printf '%s' "$FAILOVER_STATE" | jq -e 'type == "object" and (.workers | type) == "array" and (.badges | type) == "array"' >/dev/null 2>&1
 }
 
 _pred_failover_row_state() {
@@ -30,7 +30,8 @@ _failover_aggregates_json() {
         [.workers[]? | select(.status == "online" and ((.mining.state // "unknown") | IN("on_backup", "not_connected") | not))] as $here
         | (($here | map(eff) | add) // 0) as $expected
         | (.hashrate.total | hs) as $total
-        | .proxy_workers == ($here | length) and (($total - $expected) | fabs) <= 10 + $expected * 0.01' >/dev/null 2>&1
+        | (.hashrate.total | capture("^[0-9.]+ (?<u>[kMG]?)H/s$").u | {"": 1, "k": 1e3, "M": 1e6, "G": 1e9}[.]) as $unit
+        | .proxy_workers == ($here | length) and (($total - $expected) | fabs) <= $unit * 0.005 + 1' >/dev/null 2>&1
 }
 
 _pred_failover_aggregates_here() {
@@ -57,7 +58,7 @@ _failover_banner_matches() {
     local banner suffix
     banner="$(_failover_banner "$1")"
     suffix="$(_failover_moved_suffix "$1")" || return 1
-    [ -n "$banner" ] && [[ "$banner" == *"$suffix" ]]
+    [[ "$banner" == "Mining paused here: "?*"$suffix" ]]
 }
 
 _pred_failover_banner_names_rigs() {
@@ -70,7 +71,7 @@ _pred_failover_banner_absent() {
 
 _failover_pool_start() {
     local out
-    out="$(rx "d=\$(mktemp -d \"\${TMPDIR:-/tmp}/failover-pool.XXXXXX\") && cat >\"\$d/fake_stratum.py\" && : >\"\$d/log\" && { setsid nohup timeout 3600 python3 \"\$d/fake_stratum.py\" 0.0.0.0 $FAILOVER_POOL_PORT \"\$d/log\" </dev/null >\"\$d/out\" 2>&1 & } && echo \"\$d\"" --stdin <"$HERE/fakes/fake_stratum.py")" || return 1
+    out="$(rx "d=\$(mktemp -d \"\${TMPDIR:-/tmp}/failover-pool.XXXXXX\") && cat >\"\$d/fake_stratum.py\" && : >\"\$d/log\" && { setsid nohup timeout 3600 python3 \"\$d/fake_stratum.py\" 0.0.0.0 $FAILOVER_POOL_PORT \"\$d/log\" </dev/null >\"\$d/out\" 2>&1 & echo \$! >\"\$d/pid\"; } && echo \"\$d\"" --stdin <"$HERE/fakes/fake_stratum.py")" || return 1
     FAILOVER_POOL_DIR="$(printf '%s\n' "$out" | tail -n 1)"
     case "$FAILOVER_POOL_DIR" in /*/failover-pool.*) ;; *)
         FAILOVER_POOL_DIR=""
@@ -90,26 +91,36 @@ _failover_pool_logins() {
 
 _failover_pool_stop() {
     [ -n "${FAILOVER_POOL_DIR:-}" ] || return 0
-    rx "pkill -f $(quote_arg "$FAILOVER_POOL_DIR/fake_stratum.py"); rm -rf $(quote_arg "$FAILOVER_POOL_DIR")" >/dev/null 2>&1 || true
+    rx "kill \$(cat $(quote_arg "$FAILOVER_POOL_DIR/pid") 2>/dev/null) 2>/dev/null; rm -rf $(quote_arg "$FAILOVER_POOL_DIR")" >/dev/null 2>&1 || true
     FAILOVER_POOL_DIR=""
 }
 
 _failover_pin_rig() {
-    local cfg
+    local cfg current
     if [ -z "$RIG_HOST" ] || [ -z "${IT_RIG_TOKEN:-}" ]; then
         it_fail "failover-view has the rig host and token to pin the rig (#4074)" "--rig-host or the rig token is missing"
         return 1
     fi
-    cfg="$(rx 'cat config.json' | IT_RIG_TOKEN="$IT_RIG_TOKEN" jq --arg n "$RIG_NAME" --arg h "$RIG_HOST" --argjson cp "$RIG_CONTROL_PORT" '
+    current="$(rx 'cat config.json')" && [ -n "$BASELINE_CONFIG" ] && printf '%s' "$current" | jq -e 'type == "object"' >/dev/null 2>&1 || {
+        it_fail "failover-view read config.json and has a baseline to restore (#4074)" "config.json is unreadable or not an object, or no baseline was captured"
+        return 1
+    }
+    cfg="$(printf '%s' "$current" | IT_RIG_TOKEN="$IT_RIG_TOKEN" jq --arg n "$RIG_NAME" --arg h "$RIG_HOST" --argjson cp "$RIG_CONTROL_PORT" '
         del(.dashboard.workers)
-        | .workers.list = ((.workers.list // []) | map(select(.name != $n)) + [{name:$n, host:$h, port:8081, control_port:$cp, token:env.IT_RIG_TOKEN}])')" || return 1
+        | .workers.list = ((.workers.list // []) | map(select(.name != $n)) + [{name:$n, host:$h, port:8081, control_port:$cp, token:env.IT_RIG_TOKEN}])')" || {
+        it_fail "failover-view built the pinned-rig config (#4074)" "config.json could not be read or rewritten"
+        return 1
+    }
     FAILOVER_CONFIG_PUSHED=1
     push_config "$cfg" && pithead apply -y >/dev/null 2>&1 || {
         it_fail "failover-view pinned the rig in workers.list (#4074)" "config push or apply failed"
         return 1
     }
     wait_status_ok 240 || true
-    wait_for 120 5 "the dashboard to poll the pinned rig" _pred_failover_row_polled
+    wait_for 120 5 "the dashboard to poll the pinned rig" _pred_failover_row_polled || {
+        it_fail "the dashboard polled the pinned rig within 120s (#4074)" "the rig row never reported api_ok"
+        return 1
+    }
 }
 
 _pred_failover_row_polled() {
@@ -121,9 +132,13 @@ _failover_view_restore() {
         push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 || it_fail "failover-view restored the baseline config (#4074)" "config push or apply failed"
         wait_status_ok 240 || true
     fi
-    rx "docker compose up -d monerod" >/dev/null 2>&1 || true
-    wait_for 240 5 "monerod healthy after the failover view" _pred_monerod_healthy || true
-    wait_for 180 5 "xmrig-proxy readmitted after the failover view" _pred_failover_armed || true
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
+        rx "docker compose up -d monerod" >/dev/null 2>&1 || true
+        wait_for 240 5 "monerod healthy after the failover view" _pred_monerod_healthy ||
+            it_fail "monerod is healthy after the failover view (#4074)" "it did not recover within 240s"
+    fi
+    wait_for 180 5 "xmrig-proxy readmitted after the failover view" _pred_failover_armed ||
+        it_fail "xmrig-proxy is readmitted after the failover view (#4074)" "it was not readmitted within 180s"
     wait_borrow_rearm rearm || true
     _failover_pool_stop
 }
@@ -171,11 +186,11 @@ _failover_view_legs() {
     fi
     _failover_view_transition "Workers Alive dropped and Total Hashrate counts only this Pithead" _pred_failover_alive_below "$alive0"
     if [ -n "$(_failover_row_field "$FAILOVER_STATE" "$RIG_NAME" '.telemetry_h60')" ]; then
-        it_pass "the rig's own telemetry hashrate stays on its row, outside the totals (#4074)"
+        it_pass "the rig's own telemetry hashrate stays on its row (#4074)"
     else
         it_skip_leg "telemetry hashrate shown beside an off-Pithead rig (#4074)" "the rig reported no telemetry hashrate" missing
     fi
-    assert_contains "the served Workers table labels a rig on a backup pool (#4074)" \
+    assert_contains "the served Workers table module carries the backup-pool label (#4074)" \
         "$(rx 'curl -fsS --max-time 10 http://127.0.0.1:8000/static/app/miningnote.mjs' 2>/dev/null)" "on backup pool"
     _failover_view_transition "no paused banner while this Pithead is serving" _pred_failover_banner_absent
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
@@ -194,6 +209,7 @@ _failover_view_legs() {
     wait_borrow_rearm rearm || return
     _failover_view_transition "rig row reads mining here again" _pred_failover_row_state mining_here
     _failover_view_transition "Workers Alive and Total Hashrate count the returned rig" _pred_failover_aggregates_here
+    _failover_view_transition "no paused banner after the rig returns" _pred_failover_banner_absent
     if [ "$(jq_get "$FAILOVER_STATE" '.proxy_workers')" -ge "$alive0" ] 2>/dev/null; then
         it_pass "Workers Alive is back to ${alive0} or more (#4074)"
     else
@@ -201,8 +217,34 @@ _failover_view_legs() {
     fi
 }
 
+_failover_view_abort() {
+    local rc=$?
+    trap - EXIT
+    _failover_view_restore
+    [ -z "${_FAILOVER_FOREIGN_TRAP:-}" ] || eval "$_FAILOVER_FOREIGN_TRAP"
+    return "$rc"
+}
+
+_failover_trap_arm() {
+    local cur parsed
+    cur="$(trap -p EXIT)"
+    _FAILOVER_FOREIGN_TRAP=""
+    if [ -n "$cur" ]; then
+        eval "parsed=($cur)"
+        _FAILOVER_FOREIGN_TRAP="${parsed[2]}"
+    fi
+    trap _failover_view_abort EXIT
+}
+
+_failover_trap_disarm() {
+    trap - EXIT
+    # shellcheck disable=SC2064
+    [ -z "${_FAILOVER_FOREIGN_TRAP:-}" ] || trap "$_FAILOVER_FOREIGN_TRAP" EXIT
+    _FAILOVER_FOREIGN_TRAP=""
+}
+
 run_failover_view() {
-    # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
+    # shellcheck disable=SC2034
     IT_CURRENT_SCENARIO="failover-view"
     echo ""
     it_log "── failover-view phase (#4074) ─────────────────────"
@@ -212,6 +254,8 @@ run_failover_view() {
     fi
     FAILOVER_POOL_DIR=""
     FAILOVER_CONFIG_PUSHED=0
+    _failover_trap_arm
     _failover_pin_rig && _failover_view_legs
     _failover_view_restore
+    _failover_trap_disarm
 }
