@@ -72,6 +72,9 @@ TLS_PORT=$(cat "$work/tls.port")
 consume_case() (
     dir="$1"
     spool="$2"
+    if [ -n "${3:-}" ]; then
+        PATH="$3:$PATH"
+    fi
     cd "$dir"
     source "$ROOT/pithead" >/dev/null 2>&1
     wizard_submission_ready() { return 0; }
@@ -81,7 +84,7 @@ consume_case() (
     firstboot_consume_rig "$spool"
 )
 run_case() {
-    local label="$1" body="$2" expect_rc="$3"
+    local label="$1" body="$2" expect_rc="$3" path_dir="${4:-}"
     shift 3
     local dir spool rc
     dir="$work/$label"
@@ -89,7 +92,7 @@ run_case() {
     mkdir -p "$dir" "$spool"
     printf '%s' "$body" >"$spool/rig-request.json"
     rc=0
-    consume_case "$dir" "$spool" >"$dir/out.log" 2>&1 || rc=$?
+    consume_case "$dir" "$spool" "$path_dir" >"$dir/out.log" 2>&1 || rc=$?
     [ "$rc" = "$expect_rc" ] &&
         ok "$label rc $rc" ||
         bad "$label rc: expected $expect_rc got $rc"
@@ -147,6 +150,21 @@ run_case dashhost '{"pool":"-verify:5555","worker":"shed-3","tls":true}' 0
 grep -q "cannot reach a pool at -verify:5555" "$work/dashhost/spool/rig-warning.txt" &&
     ok "a host-shaped dash never reaches openssl as an option (unreachable, accepted)" ||
     bad "dash-host TLS dial guard"
+
+mkdir -p "$work/stubbin"
+cat >"$work/stubbin/openssl" <<STUB
+#!/bin/sh
+printf 'openssl %s\n' "\$*" >> '$work/openssl.calls'
+printf -- '-----BEGIN CERTIFICATE-----\n'
+exit 0
+STUB
+chmod +x "$work/stubbin/openssl"
+
+run_case dashnever "{\"pool\":\"-verify:$TLS_PORT\",\"worker\":\"shed-3\",\"tls\":true}" 0 "$work/stubbin"
+grep -q "cannot reach a pool at -verify:$TLS_PORT" "$work/dashnever/spool/rig-warning.txt" &&
+    [ ! -e "$work/openssl.calls" ] &&
+    ok "openssl is never handed a dash-leading host: stub uninvoked, accepted with warning" ||
+    bad "dash host reached openssl or skipped the warning"
 
 run_case nopaired "{\"pool\":\"127.0.0.1:$TLS_PORT\",\"worker\":\"shed-3\"}" 0
 [ "$(jq -r 'has("paired")' "$work/nopaired/rig.json")" = "false" ] &&
