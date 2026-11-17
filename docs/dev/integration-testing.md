@@ -541,13 +541,18 @@ via an `EXIT` trap):
    with a message naming xmrig-proxy, the seconds waited and the dashboard's rejection reason —
    the last `Mining work is not valid (…)` line of the baseline dashboard container log (the
    monero-down or tari-down reason sits inside its parentheses) — or the message says explicitly
-   that no reason line was found ([#4168](https://github.com/p2pool-starter-stack/pithead/issues/4168)).
-   Before either capture moment the harness saves the evidence the next stack recreate would
-   destroy: the dashboard log tail (last 400 lines, capped at 64 KiB) to
-   `results/restore-mining-dashboard-log.txt` and each service's state, health status and failing
-   streak to `results/restore-mining-services.txt`, both under the e2e results dir the job
-   collects as artifacts, the dashboard tail passed through the harness's `redact()` (the same
-   redaction the other saved container logs use) and the service lines kept to a fixed grammar.
+   that no reason line was found, or that the dashboard log could not be read
+   ([#4168](https://github.com/p2pool-starter-stack/pithead/issues/4168)).
+   The re-check first clears the two evidence files, so a green run cannot collect a previous
+   run's; at both capture moments — when the wait starts and at expiry — the harness saves the
+   evidence the next stack recreate would destroy: the dashboard log tail (last 400 lines, capped
+   at 64 KiB) to `results/restore-mining-dashboard-log.txt` and each service's state, health
+   status and failing streak to `results/restore-mining-services.txt`, both under the e2e results
+   dir the job collects as artifacts. The dashboard tail goes through the harness's `redact()`,
+   the same redaction the other saved container logs use: KEY=value and JSON-key masking over the
+   shared key vocabulary, credential `--flags`, wallet and merge-mine addresses, long base64/hex
+   blobs, the generated dashboard password by literal, onion hostnames and private IPv4/IPv6
+   addresses; the service lines are kept to a fixed grammar that can carry no free text.
    The re-check is skipped when an earlier restore or control proof has already failed,
    so "baseline stack healthy again" never precedes a "RESTORE NOT PROVEN" verdict.
    `selftest-restore-mining-ready.sh` pins the reason capture, the explicit no-reason wording,

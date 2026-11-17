@@ -124,7 +124,7 @@ drive_recheck() {
     (
         # shellcheck disable=SC2034
         RESTORE_DIR=/srv/code/baseline
-        E2E_DIR="${E2E_DIR:-$(mktemp -d)}"
+        E2E_DIR="${2:-$(mktemp -d)}"
         polls=0 out="" started=0
         ok() { out="$out|ok:$1"; }
         warn() { out="$out|warn:$1"; }
@@ -136,8 +136,13 @@ drive_recheck() {
                 [ "${SEQ:$((i < ${#SEQ} ? i : ${#SEQ} - 1)):1}" = 1 ]
                 ;;
             *"compose up"* | *"docker start"* | *"compose start"*) started=1 ;;
-            *"compose logs"*) printf '%s\n' "${FAKE_DASHBOARD_LOG:-2026-11-15T22:57:00Z dashboard | INFO mining poll}" ;;
+            *"rm -f"*) : ;;
+            *"compose logs"*)
+                printf '%s\n' "${FAKE_DASHBOARD_LOG:-2026-11-15T22:57:00Z dashboard | INFO mining poll}"
+                return "${FAKE_LOG_RC:-0}"
+                ;;
             *"cat >"*)
+                [ "${FAKE_WRITE_FAIL:-0}" = 1 ] && return 1
                 artifact="$(printf '%s\n' "$1" | sed -n "s/.*cat > \(.*\)$/\1/p" | tr -d "'")"
                 mkdir -p "$(dirname "$artifact")" && cat >"$artifact"
                 ;;
@@ -163,7 +168,9 @@ echo "== the never-readmitted stop names the dashboard's reason and saves the ev
 evidence_dir="$(mktemp -d)"
 reason_log='2026-11-15T22:57:02Z dashboard | WARNING Mining work is not valid (Monero node unhealthy: monerod stopped) — stopping xmrig-proxy so workers fail over to their backup pools.
 2026-11-15T22:57:03Z dashboard | INFO restart PASSWORD=fixture-secret-4168'
-SEQ=0 out="$(E2E_DIR="$evidence_dir" FAKE_DASHBOARD_LOG="$reason_log" drive_recheck 1)"
+SEQ=0
+FAKE_DASHBOARD_LOG="$reason_log"
+out="$(drive_recheck 1 "$evidence_dir")"
 assert_eq "a stop that is never readmitted fails the restore (#4168)" "${out%% *}" "1"
 assert_contains "the failure carries the dashboard's rejection reason (#4168)" "$out" \
     "restore not proven; dashboard rejection reason: Mining work is not valid (Monero node unhealthy: monerod stopped)"
@@ -181,9 +188,20 @@ if grep -q 'Mining work is not valid (Monero node unhealthy: monerod stopped)' "
 else
     it_fail "the saved dashboard tail keeps the reason line and drops the planted secret (#4168)" "reason or redaction missing in the saved tail"
 fi
-SEQ=0 out="$(E2E_DIR="$(mktemp -d)" FAKE_DASHBOARD_LOG='2026-11-15T22:57:02Z dashboard | INFO nothing stopped me' drive_recheck 1)"
+FAKE_LOG_RC=0
+FAKE_DASHBOARD_LOG='2026-11-15T22:57:02Z dashboard | INFO nothing stopped me'
+out="$(drive_recheck 1)"
 assert_contains "no reason line is reported explicitly (#4168)" "$out" \
     "no dashboard rejection reason was found in the dashboard log tail"
+out="$(FAKE_LOG_RC=3 drive_recheck 1)"
+assert_contains "an unreadable dashboard log says so instead of claiming no reason (#4168)" "$out" \
+    "the baseline dashboard container log could not be read, so no rejection reason could be taken from it"
+FAKE_LOG_RC=0
+out="$(FAKE_WRITE_FAIL=1 drive_recheck 1)"
+assert_contains "a failed evidence save warns rather than passing silently (#4168)" "$out" \
+    "could not save the restore-mining evidence"
+FAKE_WRITE_FAIL=0
+FAKE_DASHBOARD_LOG=''
 
 stub="$(mktemp -d)"
 capture_out="$(

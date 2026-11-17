@@ -57,12 +57,17 @@ wait_restore_mining_ready() { # <timeout_s> [interval_s]
 }
 
 restore_mining_rejection_reason() {
-    grep -o 'Mining work is not valid ([^)]*)' | tail -n1
+    grep -o 'Mining work is not valid ([^)]*)' | tail -n1 | tr -d '\000-\011\013-\037\177'
 }
 
-capture_restore_mining_evidence() {
-    local dir="$E2E_DIR/results" log services saved=0
-    log="$(on_bench "cd '$RESTORE_DIR' && timeout --kill-after=2 15 docker compose logs --no-color --tail 400 dashboard 2>&1" 2>/dev/null | redact | tail -c 65536)" || log=""
+_restore_mining_clear_evidence() {
+    on_bench "rm -f $(quote_arg "$E2E_DIR/results/restore-mining-dashboard-log.txt") $(quote_arg "$E2E_DIR/results/restore-mining-services.txt")" 2>/dev/null
+}
+
+capture_restore_mining_evidence() { # -> exit 3 when the dashboard log could not be read; prints the redacted tail
+    local dir="$E2E_DIR/results" log services saved=0 rc=0
+    log="$(on_bench "cd '$RESTORE_DIR' && timeout --kill-after=2 15 docker compose logs --no-color --tail 400 dashboard" 2>/dev/null | redact | tail -c 65536)" || rc=3
+    [ -n "$log" ] || log=""
     printf '%s\n' "$log" |
         on_bench "mkdir -p $(quote_arg "$dir") && cat > $(quote_arg "$dir/restore-mining-dashboard-log.txt")" 2>/dev/null || saved=1
     services="$(
@@ -90,10 +95,12 @@ PROBE
         on_bench "mkdir -p $(quote_arg "$dir") && cat > $(quote_arg "$dir/restore-mining-services.txt")" 2>/dev/null || saved=1
     [ "$saved" = 0 ] || warn "  could not save the restore-mining evidence under $dir"
     printf '%s\n' "$log"
+    return "$rc"
 }
 
 recheck_restore_mining() {
-    local timeout=${1:-600} start waited reason log
+    local timeout=${1:-600} start waited reason log rc
+    _restore_mining_clear_evidence
     if _restore_mining_healthy; then
         ok "re-check: P2Pool and xmrig-proxy running and healthy after the restore proof"
         return 0
@@ -110,9 +117,12 @@ recheck_restore_mining() {
         fi
         if [ "$waited" -ge "$timeout" ]; then
             log="$(capture_restore_mining_evidence)"
+            rc=$?
             reason="$(printf '%s\n' "$log" | restore_mining_rejection_reason)"
             if [ -n "$reason" ]; then
                 warn "xmrig-proxy (or P2Pool) still not running and healthy after waiting ${waited}s for the dashboard to readmit it — restore not proven; dashboard rejection reason: $reason"
+            elif [ "$rc" = 3 ]; then
+                warn "xmrig-proxy (or P2Pool) still not running and healthy after waiting ${waited}s for the dashboard to readmit it — restore not proven; the baseline dashboard container log could not be read, so no rejection reason could be taken from it"
             else
                 warn "xmrig-proxy (or P2Pool) still not running and healthy after waiting ${waited}s for the dashboard to readmit it — restore not proven; no dashboard rejection reason was found in the dashboard log tail"
             fi
