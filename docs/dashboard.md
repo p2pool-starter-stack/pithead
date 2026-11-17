@@ -1699,9 +1699,11 @@ A second card lives on the same tab: **Export logs**
 ([#4036](https://github.com/p2pool-starter-stack/pithead/issues/4036),
 [#4129](https://github.com/p2pool-starter-stack/pithead/issues/4129)). It collects one redacted
 `.zip` of the system journal for a bug report: the whole journal, the kernel log, the boot list and
-a per-unit journal for every Pithead and quadlet unit, the dashboard's health history, the Tor
-bootstrap state, versions, the active RAUC slot, and the config's key shape with every value
-dropped.
+a per-unit journal for every Pithead and quadlet unit, the dashboard's health history, `doctor` output,
+monerod, Tari and P2Pool status, Tor control-port and guard state, network, time and container state,
+Caddy access logs for the window, the files saved under `/data/pithead/support/`, versions, the RAUC
+slot state, and the config's key shape with every value dropped. Every step has a time limit, so a
+wedged service shows up in `manifest.json` instead of stalling the export.
 
 **Export without the control channel.** The card and its routes work whatever
 `dashboard.control.enabled` says, and without turning on config editing. With the switch off, the

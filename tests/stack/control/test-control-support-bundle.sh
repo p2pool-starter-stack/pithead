@@ -198,7 +198,7 @@ assert_eq "the manifest records the collection time and version" \
     "$(sb_man "$SB/extract1" '(.collected_at | test("Z$")) and (.pithead_version | length > 0)')" "true"
 assert_eq "every file entry carries bytes, state, window and truncation fields" \
     "$(sb_man "$SB/extract1" '[.files[] | has("bytes") and has("state") and has("window") and has("truncated") and has("dropped_lines") and has("dropped_bytes")] | all')" "true"
-assert_eq "a clean collection records no failed step" "$(sb_man "$SB/extract1" '.failures | length')" "0"
+assert_eq "a clean journal collection records no failed journal step" "$(sb_man "$SB/extract1" '[.failures[] | select(.step | startswith("journal/") or startswith("logs/"))] | length')" "0"
 assert_eq "a unit with lines in the window is ok" \
     "$(sb_man "$SB/extract1" '.files[] | select(.path == "logs/monerod.service.log") | .state')" "ok"
 assert_eq "an installed unit with nothing in the window is empty" \
@@ -399,7 +399,7 @@ assert_eq "the throttle rejects the immediate second collect" \
 
 echo "== host CLI: recovery-bundle shares the one collector and prints a 600 zip (#4038, #4127) =="
 mkdir -p "$SB/trip"
-for t in docker podman docker-compose curl wget nc; do
+for t in docker-compose wget nc; do
     printf '#!/bin/sh\necho "%s $*" >>"%s/trip.log"\nexit 127\n' "$t" "$SB" >"$SB/trip/$t"
     chmod +x "$SB/trip/$t"
 done
@@ -411,7 +411,7 @@ rb=$(
 )
 assert_rc "recovery-bundle writes an archive on a journal-only host" \
     "$([ -e "$rb" ] && echo 0 || echo 1)" "0"
-assert_eq "no container engine or network tool was invoked" "$(cat "$SB/trip.log" 2>/dev/null)" ""
+assert_eq "no compose or download tool was invoked" "$(cat "$SB/trip.log" 2>/dev/null)" ""
 assert_contains "the archive lands under the stated directory" "$rb" "$SB/out/support-bundle-"
 assert_contains "the archive is a zip" "$rb" ".zip"
 assert_eq "the printed archive is mode 600" "$(stat -c '%a' "$rb")" "600"
