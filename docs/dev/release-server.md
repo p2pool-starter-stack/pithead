@@ -434,10 +434,11 @@ forwards it to both pre-gates and its detached run; other callers keep the opt-i
 While a lent rig is locked, RigForge answers a remote upgrade or apply with the terminal status
 `busy` (rigforge#670), and the dashboard records `busy` in the rig's change history with its reason.
 RigForge exempts only a harness that holds the `/run/rigforge-rig-owner` marker after swapping in its
-own random token and a loopback-only `api_allow_from`. Pithead's `rigforge-upgrade` leg reaches the
-rig from the bench through the stack under test, never over loopback, so it does not write the marker,
-and on a lent rig running such a release the leg fails with `busy`. rigforge#687 tracks the contract
-for a remote borrowing stack.
+own random token and a loopback-only `api_allow_from`, and it keeps no path for a remote borrowing
+stack (rigforge#687, closed as not planned). Pithead's `rigforge-upgrade` leg reaches the rig from
+the bench through the stack under test, never over loopback, so it holds no marker: on a lent rig
+running a RigForge release with that guard, the leg reports a by-design skip when the upgrade ends
+`busy`, and the one-click upgrade path is proven only on a rig that is not lent.
 
 **CHECK** — and **FREE**, which is not a step for anyone. A harness frees the lock by dying:
 it holds it on an inherited descriptor, so the kernel drops it when the run ends, however it
