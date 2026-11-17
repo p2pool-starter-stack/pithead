@@ -55,6 +55,16 @@ apply_pin() {
     [ "$(current_pin)" = "$version" ]
 }
 
+superseded() {
+    local want="${1:-}"
+    jq -r --arg want "$want" '
+        def trusted: ((.author.login // "") | sub("^app/"; "") | sub("\\[bot\\]$"; "")) == "github-actions";
+        def ours: ((.headRefName // "") | startswith("bot/tor-"));
+        (map(select(trusted and ours and .headRefName == $want)) | .[0].headRefName // "") as $keep |
+        map(select(trusted and ours))[] |
+        [ (.number | tostring), .headRefName, (if .headRefName == $keep then "keep" else "close" end) ] | @tsv'
+}
+
 detect() {
     local current latest branch url
     current="$(current_pin)"
@@ -121,6 +131,18 @@ self_test() {
         $'FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6\nARG TOR_VERSION=0.4.9.18-r1\nRUN x "tor=${TOR_VERSION}"'
     check "apply_pin refuses a malformed version" "$(apply_pin '1; rm -rf /' 2>/dev/null && echo applied || echo refused)" refused
     check "refusal leaves the file untouched" "$(current_pin)" "0.4.9.18-r1"
+    printf '[{"number":1,"headRefName":"bot/tor-0.4.9.18-r1","author":{"login":"app/github-actions"}},{"number":2,"headRefName":"bot/tor-0.4.9.17-r0","author":{"login":"github-actions[bot]"}},{"number":3,"headRefName":"bot/tor-9.9.9-r0","author":{"login":"github-actions"}},{"number":4,"headRefName":"bot/tor-8.8.8-r0","author":{"login":"app/dependabot"}},{"number":5,"headRefName":"bot/tor-7.7.7-r0","author":{"login":"some-human"}},{"number":6,"headRefName":"feature/tor-idea","author":{"login":"app/github-actions"}},{"number":7,"headRefName":null,"author":{"login":"app/github-actions"}}]' >"$t/prs.json"
+    check "superseded keeps only the want head across all three author shapes" \
+        "$(superseded bot/tor-0.4.9.18-r1 <"$t/prs.json")" \
+        $'1\tbot/tor-0.4.9.18-r1\tkeep\n2\tbot/tor-0.4.9.17-r0\tclose\n3\tbot/tor-9.9.9-r0\tclose'
+    check "superseded with a want nothing serves keeps none" \
+        "$(superseded bot/tor-0.4.9.99-r0 <"$t/prs.json" | grep -cF keep)" "0"
+    check "superseded with no want closes every own head" \
+        "$(superseded '' <"$t/prs.json" | wc -l | tr -d ' ')" "3"
+    check "superseded excludes foreign authors, foreign heads and null refs" \
+        "$(superseded bot/tor-0.4.9.18-r1 <"$t/prs.json" | grep -cE '^[4567]')" "0"
+    check "superseded on an empty list prints nothing" \
+        "$(printf '[]' | superseded bot/tor-0.4.9.18-r1 | wc -l | tr -d ' ')" "0"
     [ "$fail" = 0 ] && echo "tor-bump self-test OK"
     return "$fail"
 }
@@ -128,9 +150,10 @@ self_test() {
 case "${1:-}" in
 detect) detect ;;
 apply) apply_pin "${2:?usage: tor-bump.sh apply VERSION}" ;;
+superseded) superseded "${2:-}" ;;
 --self-test) self_test ;;
 *)
-    echo "usage: tor-bump.sh detect | apply VERSION | --self-test" >&2
+    echo "usage: tor-bump.sh detect | apply VERSION | superseded [WANT] | --self-test" >&2
     exit 2
     ;;
 esac

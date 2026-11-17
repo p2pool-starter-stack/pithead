@@ -95,14 +95,9 @@ jobs:
           if [ "$STALE" = true ]; then
             want="bot/tor-${LATEST}"
           fi
-          rows="$(gh pr list --state open --limit 200 --json number,headRefName,author \
-            --jq 'map(select((.author.login // "" | sub("\\[bot\\]$"; "")) == "github-actions" and ((.headRefName // "") | startswith("bot/tor-")))) | .[] | [.number, .headRefName] | @tsv')"
-          keep=""
-          while IFS=$'\t' read -r _ head; do
-            if [ "$head" = "$want" ]; then
-              keep="$head"
-            fi
-          done <<< "$rows"
+          rows="$(gh pr list --state open --limit 200 --json number,headRefName,author |
+            bash scripts/watch/tor-bump.sh superseded "$want")"
+          keep="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == "keep" { print $2; exit }')"
           if [ -n "$keep" ]; then
             reason="Superseded by ${keep}, which carries the Alpine tor this run considers newest (#4158)."
           elif [ "$STALE" = true ]; then
@@ -110,8 +105,8 @@ jobs:
           else
             reason="The pin already matches what Alpine carries; this bump PR is no longer needed (#4158)."
           fi
-          while IFS=$'\t' read -r number head; do
-            if [ "$head" != "$keep" ]; then
+          while IFS=$'\t' read -r number _head flag; do
+            if [ "$flag" = close ]; then
               gh pr close "$number" --comment "$reason"
             fi
           done <<< "$rows"
