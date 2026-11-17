@@ -124,6 +124,7 @@ drive_recheck() {
     (
         # shellcheck disable=SC2034
         RESTORE_DIR=/srv/code/baseline
+        E2E_DIR="${E2E_DIR:-$(mktemp -d)}"
         polls=0 out="" started=0
         ok() { out="$out|ok:$1"; }
         warn() { out="$out|warn:$1"; }
@@ -135,6 +136,11 @@ drive_recheck() {
                 [ "${SEQ:$((i < ${#SEQ} ? i : ${#SEQ} - 1)):1}" = 1 ]
                 ;;
             *"compose up"* | *"docker start"* | *"compose start"*) started=1 ;;
+            *"compose logs"*) printf '%s\n' "${FAKE_DASHBOARD_LOG:-2026-11-15T22:57:00Z dashboard | INFO mining poll}" ;;
+            *"cat >"*)
+                artifact="$(printf '%s\n' "$1" | sed -n "s/.*cat > \(.*\)$/\1/p" | tr -d "'")"
+                mkdir -p "$(dirname "$artifact")" && cat >"$artifact"
+                ;;
             *) echo 'restore-mining: stage=mining-services marker=absent p2pool=running proxy=exited' ;;
             esac
         }
@@ -152,6 +158,79 @@ assert_contains "the elapsed time is logged" "$out" "healthy again after waiting
 SEQ=0 out="$(drive_recheck 1)"
 assert_eq "a proxy that stays stopped fails the re-check" "${out%% *}" "1"
 assert_contains "the failure names xmrig-proxy and the time waited" "$out" "xmrig-proxy (or P2Pool) still not running and healthy after waiting 1s"
+
+echo "== the never-readmitted stop names the dashboard's reason and saves the evidence (#4168) =="
+evidence_dir="$(mktemp -d)"
+reason_log='2026-11-15T22:57:02Z dashboard | WARNING Mining work is not valid (Monero node unhealthy: monerod stopped) — stopping xmrig-proxy so workers fail over to their backup pools.
+2026-11-15T22:57:03Z dashboard | INFO restart PASSWORD=fixture-secret-4168'
+SEQ=0 out="$(E2E_DIR="$evidence_dir" FAKE_DASHBOARD_LOG="$reason_log" drive_recheck 1)"
+assert_eq "a stop that is never readmitted fails the restore (#4168)" "${out%% *}" "1"
+assert_contains "the failure carries the dashboard's rejection reason (#4168)" "$out" \
+    "restore not proven; dashboard rejection reason: Mining work is not valid (Monero node unhealthy: monerod stopped)"
+assert_contains "the expiry capture never starts xmrig-proxy (#4168)" "$out" " 0|warn:re-check"
+if [ -s "$evidence_dir/results/restore-mining-dashboard-log.txt" ] &&
+    [ -s "$evidence_dir/results/restore-mining-services.txt" ]; then
+    it_pass "both evidence files are saved before any recreate (#4168)"
+else
+    it_fail "both evidence files are saved before any recreate (#4168)" "dashboard log or services file missing under $evidence_dir/results"
+fi
+if grep -q 'Mining work is not valid (Monero node unhealthy: monerod stopped)' "$evidence_dir/results/restore-mining-dashboard-log.txt" &&
+    grep -q 'PASSWORD=<redacted>' "$evidence_dir/results/restore-mining-dashboard-log.txt" &&
+    ! grep -q 'fixture-secret-4168' "$evidence_dir/results/restore-mining-dashboard-log.txt"; then
+    it_pass "the saved dashboard tail keeps the reason line and drops the planted secret (#4168)"
+else
+    it_fail "the saved dashboard tail keeps the reason line and drops the planted secret (#4168)" "reason or redaction missing in the saved tail"
+fi
+SEQ=0 out="$(E2E_DIR="$(mktemp -d)" FAKE_DASHBOARD_LOG='2026-11-15T22:57:02Z dashboard | INFO nothing stopped me' drive_recheck 1)"
+assert_contains "no reason line is reported explicitly (#4168)" "$out" \
+    "no dashboard rejection reason was found in the dashboard log tail"
+
+stub="$(mktemp -d)"
+capture_out="$(
+    mkdir -p "$stub/bin"
+    cat >"$stub/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+case "$1 $2" in
+"compose ps") printf 'cid-%s\n' "${*: -1}" ;;
+"inspect --format")
+    case "${*: -1}" in
+    cid-p2pool) echo 'running unhealthy 13' ;;
+    cid-xmrig-proxy) echo 'exited none 0' ;;
+    cid-dashboard) echo 'running healthy 0' ;;
+    esac
+    ;;
+"compose logs")
+    printf '%s\n' \
+        '2026-11-15T22:57:02Z dashboard | WARNING Mining work is not valid (Tari node unreachable) — stopping xmrig-proxy so workers fail over to their backup pools.' \
+        'RPC probe --login=hunter2rpc'
+    ;;
+esac
+DOCKER
+    chmod +x "$stub/bin/docker"
+    (
+        export PATH="$stub/bin:$PATH"
+        RESTORE_DIR="$stub"
+        E2E_DIR="$stub/e2e"
+        on_bench() { bash -c "$1"; }
+        warn() { :; }
+        capture_restore_mining_evidence
+    )
+)"
+assert_eq "the reason extractor returns the whole fixed line (#4168)" \
+    "$(printf '%s\n' "$capture_out" | restore_mining_rejection_reason)" \
+    "Mining work is not valid (Tari node unreachable)"
+assert_eq "the services file carries each service's state, health and failing streak (#4168)" \
+    "$(cat "$stub/e2e/results/restore-mining-services.txt")" \
+    'restore-mining: service=p2pool state=running health=unhealthy failing_streak=13
+restore-mining: service=xmrig-proxy state=exited health=none failing_streak=0
+restore-mining: service=dashboard state=running health=healthy failing_streak=0'
+if grep -q -- '--login=<redacted>' "$stub/e2e/results/restore-mining-dashboard-log.txt" &&
+    ! grep -q 'hunter2rpc' "$stub/e2e/results/restore-mining-dashboard-log.txt"; then
+    it_pass "the saved evidence goes through the harness redaction (#4168)"
+else
+    it_fail "the saved evidence goes through the harness redaction (#4168)" "planted login visible in the saved tail"
+fi
+rm -rf "$evidence_dir" "$stub"
 
 probe_health() {
     local dir rc

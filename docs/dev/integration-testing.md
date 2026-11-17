@@ -538,8 +538,20 @@ via an `EXIT` trap):
    checks and just before "restore complete", finds P2Pool and xmrig-proxy running and healthy. If either is stopped, the
    harness waits up to 600 seconds for the dashboard to readmit it, logging the start and the
    elapsed time, and never starts it itself. A service still down at the bound fails the restore
-   with a message naming xmrig-proxy and the seconds waited. The re-check is skipped when an earlier restore or control proof has already failed,
+   with a message naming xmrig-proxy, the seconds waited and the dashboard's rejection reason —
+   the last `Mining work is not valid (…)` line of the baseline dashboard container log (the
+   monero-down or tari-down reason sits inside its parentheses) — or the message says explicitly
+   that no reason line was found ([#4168](https://github.com/p2pool-starter-stack/pithead/issues/4168)).
+   Before either capture moment the harness saves the evidence the next stack recreate would
+   destroy: the dashboard log tail (last 400 lines, capped at 64 KiB) to
+   `results/restore-mining-dashboard-log.txt` and each service's state, health status and failing
+   streak to `results/restore-mining-services.txt`, both under the e2e results dir the job
+   collects as artifacts, the dashboard tail passed through the harness's `redact()` (the same
+   redaction the other saved container logs use) and the service lines kept to a fixed grammar.
+   The re-check is skipped when an earlier restore or control proof has already failed,
    so "baseline stack healthy again" never precedes a "RESTORE NOT PROVEN" verdict.
+   `selftest-restore-mining-ready.sh` pins the reason capture, the explicit no-reason wording,
+   both artifact files and the redaction.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
