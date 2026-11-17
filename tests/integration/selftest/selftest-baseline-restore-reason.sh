@@ -10,7 +10,7 @@ source "$HERE/lib/run-safety.sh"
 
 echo "== restore_baseline names which step failed and keeps its sanitized output (#3641) =="
 
-_baseline_case() { # <config-rc> <apply-rc> <health-rc> -> reason|SAFETY_RESTORE_FAILED[|apply-log]
+_baseline_case() {
     (
         KEEP_STATE=0 BASELINE_CONFIG='baseline' BASELINE_SECRET_FP=fp SAFETY_RESTORE_FAILED=0
         td="$(mktemp -d)" || exit 1
