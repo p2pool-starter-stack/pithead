@@ -16,7 +16,7 @@ check() {
     shift 2
     "$@" >/dev/null 2>&1
     rc=$?
-    { [ "$rc" = "$want" ] || { [ "$want" = refused ] && [ "$rc" != 0 ] && [ "$rc" != 127 ]; }; } || {
+    { [ "$rc" = "$want" ] || { [ "$want" = refused ] && [ "$rc" -ge 1 ] && [ "$rc" -le 5 ]; }; } || {
         echo "FAIL: $desc (rc=$rc, want $want)" >&2
         fail=1
     }

@@ -113,7 +113,10 @@ _failover_pin_rig() {
         return 1
     }
     wait_status_ok 240 || true
-    wait_for 120 5 "the dashboard to poll the pinned rig" _pred_failover_row_polled
+    wait_for 120 5 "the dashboard to poll the pinned rig" _pred_failover_row_polled || {
+        it_fail "the dashboard polled the pinned rig within 120s (#4074)" "the rig row never reported api_ok"
+        return 1
+    }
 }
 
 _pred_failover_row_polled() {
@@ -127,9 +130,11 @@ _failover_view_restore() {
     fi
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         rx "docker compose up -d monerod" >/dev/null 2>&1 || true
-        wait_for 240 5 "monerod healthy after the failover view" _pred_monerod_healthy || true
+        wait_for 240 5 "monerod healthy after the failover view" _pred_monerod_healthy ||
+            it_fail "monerod is healthy after the failover view (#4074)" "it did not recover within 240s"
     fi
-    wait_for 180 5 "xmrig-proxy readmitted after the failover view" _pred_failover_armed || true
+    wait_for 180 5 "xmrig-proxy readmitted after the failover view" _pred_failover_armed ||
+        it_fail "xmrig-proxy is readmitted after the failover view (#4074)" "it was not readmitted within 180s"
     wait_borrow_rearm rearm || true
     _failover_pool_stop
 }
