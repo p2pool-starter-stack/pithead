@@ -106,9 +106,28 @@ expect "healthy on a bootstrapped control port, image commands only" \
 # What catches that mutation is the drop-loop below, because `tr` stops being needed at all.)
 expect "sends AUTHENTICATE <64 lowercase hex> / GETINFO / QUIT, nothing else" \
     "$(tr -d '\r' <"$HC_D/sent")" "AUTHENTICATE $HC_HEX
-GETINFO status/bootstrap-phase
+GETINFO status/bootstrap-phase status/circuit-established
 QUIT"
 expect "healthy polls leave health history quiet" "$(cat "$HC_D/output")" ""
+expect "established circuit is published" \
+    "$(hc_run fixed "$HC_DONE
+250-status/circuit-established=1" "${HC_CMDS[@]}")" "healthy"
+expect "established circuit line" "$(cat "$HC_D/output")" 'pithead-tor-circuit {"established":true}'
+expect "bootstrapped Tor without an established circuit is still healthy" \
+    "$(hc_run fixed "$HC_DONE
+250-status/circuit-established=0" "${HC_CMDS[@]}")" "healthy"
+expect "unestablished circuit is published as false" "$(cat "$HC_D/output")" 'pithead-tor-circuit {"established":false}'
+expect "circuit value is never guessed" "$(hc_run fixed "$HC_DONE
+250-status/circuit-established=yes" "${HC_CMDS[@]}")" "unhealthy"
+expect "malformed circuit invalidates the reply" "$(cat "$HC_D/output")" "Tor health: bootstrap reply unavailable."
+expect "duplicate circuit line invalidates the reply" "$(hc_run fixed "$HC_DONE
+250-status/circuit-established=1
+250-status/circuit-established=1" "${HC_CMDS[@]}")" "unhealthy"
+expect "stall with a circuit publishes both lines" \
+    "$(hc_run fixed '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=95 TAG=circuit_create
+250-status/circuit-established=1' "${HC_CMDS[@]}")" "unhealthy"
+expect "stall publishes the circuit line beside the progress line" "$(cat "$HC_D/output")" 'pithead-tor-circuit {"established":true}
+Tor health: bootstrap progress=95 tag=circuit_create.'
 expect "unhealthy mid-bootstrap — TAG=done is the gate, not a live port" \
     "$(hc_run fixed "$HC_MID" "${HC_CMDS[@]}")" "unhealthy"
 expect "unhealthy with no cookie file (control port not up yet)" \

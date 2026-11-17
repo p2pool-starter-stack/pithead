@@ -100,6 +100,43 @@ def parse_monero_peers(payload, now=None):
     return dict(_NO_PEERS)
 
 
+TOR_CIRCUIT_MARKER = "pithead-tor-circuit "
+# Tor's healthcheck runs every 30 s; an observation older than three runs is stale.
+TOR_CIRCUIT_FRESH_SEC = 90
+
+
+def parse_tor_circuit(payload, now=None) -> bool | None:
+    now = time.time() if now is None else now
+    state = payload.get("State") if isinstance(payload, dict) else None
+    health = state.get("Health") if isinstance(state, dict) else None
+    log = health.get("Log") if isinstance(health, dict) else None
+    started = _epoch(state.get("StartedAt")) if isinstance(state, dict) else None
+    if not isinstance(log, list) or not log or started is None or not isinstance(log[-1], dict):
+        return None
+    last = log[-1]
+    began, ended = _epoch(last.get("Start")), _epoch(last.get("End"))
+    if (
+        began is None
+        or ended is None
+        or began < started
+        or ended < began
+        or now - ended > TOR_CIRCUIT_FRESH_SEC
+        or ended - now > 5
+    ):
+        return None
+    for line in str(last.get("Output") or "").splitlines():
+        if not line.startswith(TOR_CIRCUIT_MARKER):
+            continue
+        try:
+            obs = json.loads(line[len(TOR_CIRCUIT_MARKER) :])
+        except ValueError:
+            return None
+        if not isinstance(obs, dict) or type(obs.get("established")) is not bool:
+            return None
+        return obs["established"]
+    return None
+
+
 def _epoch(ts: str | None) -> float | None:
     """Docker's RFC 3339 UTC timestamp (nanoseconds, ``Z``) as epoch seconds, or ``None``."""
     try:
@@ -171,6 +208,8 @@ async def get_container_health():
                         and started < boot
                     ),
                 }
+                if name == "tor":
+                    states[name]["circuit"] = parse_tor_circuit(payload)
     except Exception as e:
         logger.debug("Container health sweep failed: %s", e)
     return states
