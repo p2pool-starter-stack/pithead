@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+DST=/var/lib/pithead
+case "$1" in
+remove | deconfigure)
+    if [ -x "$DST/pithead" ] && [ -f "$DST/.env" ]; then
+        (cd "$DST" && ./pithead down) ||
+            echo "pithead: could not stop the stack; run 'sudo pithead down' once it can." >&2
+    fi
+    ;;
+esac
+exit 0

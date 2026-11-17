@@ -32,6 +32,10 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
         _upg_reject "this install builds from source — upgrade from the host with 'git pull' then './pithead upgrade'."
         return 0
     fi
+    if is_apt_install; then
+        _upg_reject "this install is owned by the pithead APT package — update it on the host with '$APT_UPDATE_COMMAND'; nothing was changed."
+        return 0
+    fi
     # Ordered BEFORE the cosign precondition on purpose: an appliance cannot take a tarball
     # upgrade at all, whatever the host holds, so the appliance answer is the informative one.
     if is_appliance; then

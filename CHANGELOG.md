@@ -13,6 +13,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- Ubuntu 24.04 amd64 hosts can install and update Pithead through a signed APT repository on GitHub Pages, or from the `.deb` attached to each stable release. `apt upgrade` is the only update step: the package moves the running stack to the new images, and an APT install has no in-app updater (#3459).
 - Appliance reboot and clean power-off in the lean UI preview's Advanced > Maintenance section,
   with typed confirmation and host-side cooldowns (#2384).
 - The appliance update channel is read as untrusted data: https-only fetches to the release hosts

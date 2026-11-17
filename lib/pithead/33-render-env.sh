@@ -169,6 +169,8 @@ render_env() {
     # out entirely (see docs/privacy.md). Only an explicit `false` disables it.
     local check_for_updates
     check_for_updates=$(jq -r 'if .dashboard.check_for_updates == false then "false" else "true" end' "$CONFIG_FILE")
+    local install_route=""
+    ! is_apt_install || install_route=apt
 
     local worker_api_port worker_api_auth worker_api_token worker_api_tokens_json
     worker_api_port=$(jq -r '.workers.api_port // 8080' "$CONFIG_FILE")
@@ -355,6 +357,7 @@ XVB_DONATION_LEVEL=$(dotenv_render_value "$xvb_donation_level")
 TARI_REQUIRED=$(dotenv_render_value "$tari_required")
 DASHBOARD_FAIL_CLOSED=$(dotenv_render_value "$fail_closed")
 DASHBOARD_CHECK_UPDATES=$(dotenv_render_value "$check_for_updates")
+PITHEAD_INSTALL_ROUTE=$(dotenv_render_value "$install_route")
 TARI_MEM_LIMIT=$(dotenv_render_value "$tari_mem_limit")
 HEALTHCHECKS_PING_URL=$(dotenv_render_value "$hc_ping_url")
 XVB_STANDBY_SOURCE=$(dotenv_render_value "$xvb_standby_source")

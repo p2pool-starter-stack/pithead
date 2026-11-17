@@ -145,6 +145,19 @@ class TestControlRoutesEnabled:
             "version": "v9.9.9",
         }
 
+    async def test_upgrade_refused_on_an_apt_install(
+        self, control_client, control_spool, monkeypatch
+    ):
+        import mining_dashboard.config.config as cfg
+
+        monkeypatch.setattr(cfg, "INSTALL_ROUTE", "apt")
+        resp = await control_client.post(
+            "/api/control/upgrade", json={"version": "v9.9.9"}, headers=CONTROL_HEADERS
+        )
+        assert resp.status == 409
+        assert "sudo apt update && sudo apt upgrade" in (await resp.json())["error"]
+        assert list((control_spool / "requests").iterdir()) == []
+
     @pytest.mark.parametrize(
         "version",
         ["", "9.9.9", "latest", "v9.9", "v9.9.9; rm -rf /", "v9.9.9\n", 42, None],

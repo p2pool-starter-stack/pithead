@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+SRC=/usr/share/pithead
+DST=/var/lib/pithead
+case "$1" in configure | reconfigure) ;; *) exit 0 ;; esac
+mkdir -p "$DST"
+manifest="$DST/.pithead-package-files"
+(cd "$SRC" && find . -type f | sort) >"$manifest.new"
+if [ -f "$manifest" ]; then
+    comm -23 "$manifest" "$manifest.new" | while IFS= read -r f; do
+        rm -f "$DST/$f"
+    done
+fi
+cp -a "$SRC/." "$DST/"
+mv "$manifest.new" "$manifest"
+if [ -f "$DST/.env" ] && grep -qx 'DEPLOYMENT_COMPLETED=true' "$DST/.env" &&
+    command -v docker >/dev/null 2>&1 &&
+    [ -n "$(docker ps -q --filter label=com.docker.compose.project=pithead 2>/dev/null)" ]; then
+    (cd "$DST" && PITHEAD_APT_POSTINST=1 ./pithead upgrade)
+fi
+exit 0

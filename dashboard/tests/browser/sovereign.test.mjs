@@ -277,3 +277,11 @@ for (const [query, pageName, section] of [
     ).toBeVisible();
   });
 }
+
+test("an APT install names the apt command beside the update link", async ({ page, ui }) => {
+  ui.state.update = { available: true, latest: "v9.9.9", url: "https://example.invalid/rel" };
+  ui.state.apt_update_command = "sudo apt update && sudo apt upgrade";
+  await ui.openPreview("?page=machines");
+  await expect(page.getByRole("link", { name: "Update available", exact: true })).toBeVisible();
+  await expect(page.getByText("Update with sudo apt update && sudo apt upgrade")).toBeVisible();
+});

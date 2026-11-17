@@ -30,6 +30,19 @@ publish() {
         cosign verify-blob --key cosign.pub --signature "$bundle_sig" --insecure-ignore-tlog=true "$bundle" ||
             die "Install bundle signature verification failed."
     fi
+    local apt_assets=()
+    if apt_channel_enabled; then
+        local deb="$WORKDIR/pithead_${STACK_VERSION}_amd64.deb" feed="$WORKDIR/pithead-apt-feed.tar.gz"
+        if [ "$DRY_RUN" -eq 0 ]; then
+            bash scripts/release/apt.sh deb "$bundle" "$STACK_VERSION" "$deb" || die "Could not build the Debian package."
+            bash scripts/release/apt.sh feed "$deb" "$WORKDIR/apt-feed" "$APT_FPR" packaging/apt/pithead.asc || die "Could not build and sign the APT feed."
+            bash scripts/release/apt.sh verify "$WORKDIR/apt-feed" packaging/apt/pithead.asc "$APT_FPR" ||
+                die "The signed APT feed does not verify against the pinned key."
+            tar -czf "$feed" -C "$WORKDIR/apt-feed" .
+        fi
+        sign_bundle "$deb" "$deb.sig"
+        apt_assets=("$deb" "$deb.sig" "$feed")
+    fi
     command -v gh >/dev/null 2>&1 || die "gh is required to create the release draft."
     confirm "Create git tag $TAG, push it, fast-forward main, and create a complete release draft?" || {
         warn "Draft creation cancelled. Images are promoted; preserve the verified artifacts."
@@ -42,7 +55,7 @@ publish() {
     local notes="$WORKDIR/notes.md" name
     changelog_notes >"$notes"
     cat "$manifest" >>"$notes"
-    local assets=("$bundle" "$bundle_sig" "$manifest")
+    local assets=("$bundle" "$bundle_sig" "$manifest" ${apt_assets[@]+"${apt_assets[@]}"})
     for name in "pithead-os-$TAG.img.xz" "pithead-os-$TAG.raucb"; do
         assets+=("$WORKDIR/appliance/$name" "$WORKDIR/appliance/$name.sha256")
     done
