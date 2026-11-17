@@ -1,6 +1,7 @@
 readonly PITHEAD_SUPPORT_DEFAULT_HOURS=72
 readonly PITHEAD_SUPPORT_MAX_HOURS=168
 readonly PITHEAD_SUPPORT_UNITS="pithead-boot.service pithead-boot-version.service pithead-address-watch.service pithead-miner-recovery.service dashboard.service caddy.service tor.service monerod.service tari.service p2pool.service xmrig-proxy.service docker-proxy.service docker-control.service xmrig.service rauc.service"
+readonly PITHEAD_DIY_SUPPORT_UNITS="pithead-egress.service pithead-egress.timer pithead-lan-guard.service pithead-lan-hold.service pithead-lan.timer"
 
 bundle_support_clamp_hours() {
     local h="$1"
@@ -110,12 +111,13 @@ bundle_support_jtime() {
 }
 
 bundle_support_units() {
-    local installed unit flat
+    local installed unit flat units="$PITHEAD_SUPPORT_UNITS"
+    is_appliance || units="$PITHEAD_DIY_SUPPORT_UNITS"
     installed=$( (bundle_support_t systemctl list-unit-files --type=service --type=timer --no-legend --no-pager 2>/dev/null || true) |
         awk '$1 ~ /^pithead/ || $2 == "generated" {print $1}' | sort -u)
     flat=" ${installed//$'\n'/ } "
     for unit in $installed; do printf '%s 1\n' "$unit"; done
-    for unit in $PITHEAD_SUPPORT_UNITS; do
+    for unit in $units; do
         case "$flat" in *" $unit "*) ;; *) printf '%s 0\n' "$unit" ;; esac
     done
 }
@@ -132,7 +134,7 @@ bundle_support_collect() {
     local outdir="$1" since="$2" until="$3" ts out tmp unit installed rc=0
     local file_cap="${PITHEAD_SUPPORT_MAX_BYTES_PER_FILE:-16777216}"
     local total_cap="${PITHEAD_SUPPORT_MAX_TOTAL_BYTES:-67108864}"
-    local eff_since="$since" short=0 oldest_epoch="" oldest_iso="" since_epoch until_epoch jsince juntil
+    local eff_since="$since" jmode=ok jwhy="" short=0 oldest_epoch="" oldest_iso="" since_epoch until_epoch jsince juntil
     mkdir -p "$outdir" || return 1
     chmod 700 "$outdir" 2>/dev/null || true
     ts=$(date -u +%Y%m%dT%H%M%SZ)
@@ -149,7 +151,11 @@ bundle_support_collect() {
     until_epoch=$(date -u -d "$until" +%s 2>/dev/null) || until_epoch=0
 
     local jd="" jcfg=""
-    if command -v journalctl >/dev/null 2>&1; then
+    command -v journalctl >/dev/null 2>&1 || jmode=absent
+    if [ "$jmode" = ok ] && ! is_appliance && jwhy=$(bundle_support_journal_unreadable); then
+        jmode=unreadable
+    fi
+    if [ "$jmode" != absent ]; then
         oldest_epoch=$(bundle_support_oldest_epoch)
         if [ -n "$oldest_epoch" ]; then
             oldest_iso=$(date -u -d "@$oldest_epoch" +%Y-%m-%dT%H:%M:%SZ)
@@ -181,31 +187,45 @@ bundle_support_collect() {
         bundle_support_t free -h 2>/dev/null
     } 2>&1 | bundle_redact_log >"$tmp/bundle/host.txt"
 
-    _BS_CAP=$file_cap _BS_SINCE=$eff_since _BS_UNTIL=$until _BS_SINCE_EPOCH=$since_epoch _BS_UNTIL_EPOCH=$until_epoch
-    bundle_support_snapshots "$tmp"
+    if is_appliance; then
+        _BS_CAP=$file_cap _BS_SINCE=$eff_since _BS_UNTIL=$until _BS_SINCE_EPOCH=$since_epoch _BS_UNTIL_EPOCH=$until_epoch
+        bundle_support_snapshots "$tmp"
+    fi
 
-    if command -v journalctl >/dev/null 2>&1; then
+    if [ "$jmode" = unreadable ]; then
+        printf 'journal not readable by this user — no journal entries collected\n' >"$tmp/bundle/journal.txt"
+        bundle_support_step_fail "$tmp" journal failed "journal not readable: $jwhy"
+    elif [ "$jmode" = ok ]; then
         local jargs=(--since "$jsince" --until "$juntil" --no-pager --utc)
-        bundle_support_capture "$tmp" journal/all.log "$file_cap" 1 "$short" "$eff_since" "$until" \
-            journalctl "${jargs[@]}" || true
-        bundle_support_capture "$tmp" journal/kernel.log "$file_cap" 1 "$short" "$eff_since" "$until" \
-            journalctl -k "${jargs[@]}" || true
-        bundle_support_capture "$tmp" journal/boots.txt "$file_cap" 1 0 "$eff_since" "$until" \
-            journalctl --list-boots --no-pager || true
+        if is_appliance; then
+            bundle_support_capture "$tmp" journal/all.log "$file_cap" 1 "$short" "$eff_since" "$until" \
+                journalctl "${jargs[@]}" || true
+            bundle_support_capture "$tmp" journal/kernel.log "$file_cap" 1 "$short" "$eff_since" "$until" \
+                journalctl -k "${jargs[@]}" || true
+            bundle_support_capture "$tmp" journal/boots.txt "$file_cap" 1 0 "$eff_since" "$until" \
+                journalctl --list-boots --no-pager || true
+        fi
         while read -r unit installed; do
             [ -n "$unit" ] || continue
             bundle_support_capture "$tmp" "logs/$unit.log" "$file_cap" "$installed" "$short" "$eff_since" "$until" \
                 journalctl -u "$unit" "${jargs[@]}" || true
         done < <(bundle_support_units)
-        grep -Ei 'bootstrap|circuit' "$tmp/bundle/logs/tor.service.log" >"$tmp/bundle/tor.txt" 2>/dev/null ||
-            printf 'no tor bootstrap or circuit lines in the window\n' >"$tmp/bundle/tor.txt"
+        if is_appliance; then
+            grep -Ei 'bootstrap|circuit' "$tmp/bundle/logs/tor.service.log" >"$tmp/bundle/tor.txt" 2>/dev/null ||
+                printf 'no tor bootstrap or circuit lines in the window\n' >"$tmp/bundle/tor.txt"
+        fi
     else
         printf 'journalctl not present — no journal entries collected\n' >"$tmp/bundle/journal.txt"
         bundle_support_step_fail "$tmp" journal failed "journalctl not present"
     fi
 
+    if ! is_appliance; then
+        bundle_support_diy_collect "$tmp" "$file_cap" "$since" "$until" \
+            "$(date -u -d "$until + 1 second" +%Y-%m-%dT%H:%M:%SZ)"
+    fi
+
     if [ -n "${CONFIG_FILE:-}" ] && [ -f "$CONFIG_FILE" ]; then
-        render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
+        [ -f "$tmp/scratch/masked/config.json" ] || render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
         if [ -f "$tmp/scratch/masked/config.json" ]; then
             bundle_mask_config <"$tmp/scratch/masked/config.json" |
                 jq 'def j: if type=="object" then with_entries(.value |= j) elif type=="array" then map(j) else null end; j' 2>/dev/null |
@@ -246,8 +266,9 @@ bundle_support_collect() {
     printf '%s\n' "$out"
 }
 
-recovery_bundle() {
-    local hours="" since="" until="" outdir arch win usage="Usage: pithead recovery-bundle [--hours N] [--since TIME] [--until TIME]"
+bundle_support_cli_window() {
+    local usage="$1" hours="" since="" until=""
+    shift
     while [ "$#" -gt 0 ]; do
         [ "$#" -ge 2 ] || error "$usage"
         case "$1" in
@@ -258,12 +279,17 @@ recovery_bundle() {
         esac
         shift 2
     done
+    BUNDLE_WINDOW=$(bundle_support_window "$since" "$until" "${hours:-$PITHEAD_SUPPORT_DEFAULT_HOURS}" 2>&1) || error "$BUNDLE_WINDOW"
+}
+
+recovery_bundle() {
+    local outdir arch usage="Usage: pithead recovery-bundle [--hours N] [--since TIME] [--until TIME]"
+    bundle_support_cli_window "$usage" "$@"
     command -v journalctl >/dev/null 2>&1 ||
         error "recovery-bundle needs the appliance journal. On a host with a container engine use: $0 support-bundle"
-    win=$(bundle_support_window "$since" "$until" "${hours:-$PITHEAD_SUPPORT_DEFAULT_HOURS}" 2>&1) || error "$win"
     outdir="${PITHEAD_RECOVERY_BUNDLE_DIR:-/data/pithead/support-bundles}"
     # shellcheck disable=SC2086
-    arch=$(bundle_support_collect "$outdir" $win) ||
+    arch=$(bundle_support_collect "$outdir" $BUNDLE_WINDOW) ||
         error "Could not collect a support bundle — nothing was written."
     log "Support bundle written: $arch"
 }

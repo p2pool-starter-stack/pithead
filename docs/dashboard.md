@@ -1752,6 +1752,8 @@ nothing leaves the box until the download. A box whose stack never came up canno
 dashboard, so it builds the same zip from the console instead: `pithead recovery-bundle` in
 [Operations](operations.md).
 
+**On a Docker host** the same card builds the same zip from every container's log for the window (stopped containers included) and the journal of the DIY egress and LAN-guard units, with the host's `doctor` report, the masked config and the redacted `.env`; `./pithead support-bundle --since 2026-11-15T10:00:00Z --until 2026-11-15T12:00:00Z` writes it from a shell. A journal this user cannot read, or a stopped engine, is listed under `failures` in `manifest.json` instead of failing the export.
+
 **Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that
 window, only the 3 most recent archives are kept, backups and support bundles alike. An expired

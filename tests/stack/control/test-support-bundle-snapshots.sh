@@ -184,7 +184,7 @@ sn_run() { # <id> <svc mode: fine|hang|refuse> [extra VAR=val ...]
     shift 2
     rm -f "$SB/staged/.support-bundle-stamp" "$SN/port"
     (
-        export PATH="$SN/bin:$SB/bin:$PATH" PITHEAD_ENV_FILE="$sn_env" PITHEAD_ENGINE=podman PITHEAD_SELF="$SN/bin/pithead-stub" \
+        export PITHEAD_APPLIANCE=1 PATH="$SN/bin:$SB/bin:$PATH" PITHEAD_ENV_FILE="$sn_env" PITHEAD_ENGINE=podman PITHEAD_SELF="$SN/bin/pithead-stub" \
             SN_CURL_LOG="$SN/curl.log" SN_SVC="$svc" PITHEAD_SUPPORT_DIR="$SN/support" PITHEAD_STATE_ROOT="$SN/state"
         local kv
         for kv in "$@"; do export "${kv?}"; done
