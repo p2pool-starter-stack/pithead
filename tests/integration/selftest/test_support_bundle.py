@@ -1,12 +1,11 @@
 import importlib.util
-import io
 import json
 import os
 import subprocess
 import sys
-import tarfile
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 PROBE = Path(__file__).resolve().parents[1] / "lib/check-support-bundle.py"
@@ -20,7 +19,7 @@ class SupportBundleTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.archive = self.root / "bundle.tar.gz"
+        self.archive = self.root / "bundle.zip"
         self.config = self.root / "config.json"
         self.env = self.root / "env"
         self.secrets = [
@@ -36,6 +35,9 @@ class SupportBundleTest(unittest.TestCase):
             + self.secrets[2]
             + "\n"
         )
+        self.since = "2026-11-15T10:00:00Z"
+        self.until = "2026-11-15T11:00:00Z"
+        self.nonce = "seednonce0123456789"
         self.files = {
             "bundle/host.txt": b"host facts",
             "bundle/doctor.json": b'{"checks":[{"status":"ok"}],"summary":{"ok":1}}',
@@ -45,7 +47,22 @@ class SupportBundleTest(unittest.TestCase):
             ).encode(),
             "bundle/env.redacted": b"PROXY_STRATUM_PASSWORD=[redacted]\nTELEGRAM_BOT_TOKEN=[redacted]\nDASHBOARD_AUTH_HASH_B64=[redacted]\n",
             "bundle/compose-ps.txt": b"dashboard running",
-            "bundle/logs/dashboard.log": b"service started",
+            "bundle/containers/stack-dashboard-1.log": b"seed --rpc-login [redacted]",
+            "bundle/manifest.json": json.dumps(self.manifest()).encode(),
+        }
+
+    def manifest(self, since=None, failures=()):
+        since = since or self.since
+        return {
+            "window": {"requested": {"since": since, "until": self.until}},
+            "failures": list(failures),
+            "files": [
+                {
+                    "path": "containers/stack-dashboard-1.log",
+                    "state": "ok",
+                    "window": {"since": self.since, "until": self.until},
+                }
+            ],
         }
 
     def config_data(self, values):
@@ -56,15 +73,13 @@ class SupportBundleTest(unittest.TestCase):
         }
 
     def write_bundle(self, files=None, mode=0o600):
-        with tarfile.open(self.archive, "w:gz") as archive:
+        with zipfile.ZipFile(self.archive, "w") as archive:
             for name, value in (self.files if files is None else files).items():
-                member = tarfile.TarInfo(name)
-                member.size = len(value)
-                archive.addfile(member, io.BytesIO(value))
+                archive.writestr(name, value)
         os.chmod(self.archive, mode)
 
     def check(self):
-        probe.check_bundle(self.archive, self.config, self.env)
+        probe.check_bundle(self.archive, self.config, self.env, self.since, self.until, self.nonce)
 
     def test_complete_bundle(self):
         self.write_bundle()
@@ -135,10 +150,44 @@ class SupportBundleTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.check()
 
+    def test_seeded_container_secret_in_any_file_is_rejected(self):
+        for name in self.files:
+            with self.subTest(name=name):
+                self.write_bundle(self.files | {name: self.nonce.encode()})
+                with self.assertRaises(ValueError):
+                    self.check()
+
+    def test_window_and_manifest_are_checked(self):
+        wrong = self.manifest(since="2026-11-15T09:00:00Z")
+        failed = self.manifest(failures=[{"step": "containers", "status": "failed", "reason": "x"}])
+        for manifest in (wrong, failed):
+            with self.subTest(manifest=manifest):
+                self.write_bundle(
+                    self.files | {"bundle/manifest.json": json.dumps(manifest).encode()}
+                )
+                with self.assertRaises(ValueError):
+                    self.check()
+
+    def test_unredacted_seed_line_and_missing_container_logs_are_rejected(self):
+        for content in (b"seed --rpc-login something", b""):
+            with self.subTest(content=content):
+                self.write_bundle(self.files | {"bundle/containers/stack-dashboard-1.log": content})
+                with self.assertRaises(ValueError):
+                    self.check()
+
     def test_failure_output_withholds_sensitive_contents(self):
         self.write_bundle(self.files | {"bundle/doctor.txt": self.secrets[0].encode()})
         result = subprocess.run(  # noqa: S603
-            [sys.executable, str(PROBE), str(self.archive), str(self.config), str(self.env)],
+            [
+                sys.executable,
+                str(PROBE),
+                str(self.archive),
+                str(self.config),
+                str(self.env),
+                self.since,
+                self.until,
+                self.nonce,
+            ],
             capture_output=True,
         )
         self.assertEqual(result.returncode, 1)

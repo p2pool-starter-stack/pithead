@@ -255,7 +255,7 @@ def main():
                     f"{work}:/work",
                     "-w",
                     "/work",
-                    "mcr.microsoft.com/playwright@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f",
+                    "mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe",
                     "bash",
                     "-lc",
                     'npm ci --ignore-scripts >/dev/null </dev/null && node image-upgrade-browser.mjs "$1"',
@@ -338,9 +338,6 @@ def main():
             cleanup_failed = True
         if stderr_path.exists():
             raw_stderr = stderr_path.read_bytes()[-65536:]
-        if result != 0 and raw_stderr:
-            with private_binary_file(host_directory / "browser-stderr.log") as destination:
-                destination.write(raw_stderr)
         if cleanup_failed:
             result = 1
         if result != 0:
@@ -362,8 +359,7 @@ def main():
             )
             if excerpt:
                 print(excerpt, file=sys.stderr)
-        if not cleanup_failed and (result == 0 or not raw_stderr):
-            shutil.rmtree(host_directory)
+        shutil.rmtree(host_directory, ignore_errors=True)
     return result
 
 

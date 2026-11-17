@@ -1,10 +1,8 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
 phase_tor_heal() {
-    # Provision the normal local-node appliance: recovery verifies local Monero peers.
-    # These locals are shared with the existing initial-provision fixture through dynamic scope.
     # shellcheck disable=SC2034
-    local img token="" jar="" scode="" marker="" tries=0 code="" pv_user="" pv_pass="" PROVISION_DASHBOARD_HOST=fixture-box
+    local img token="" jar="" scode="" marker="" tries=0 code="" pv_user="" pv_pass="" PROVISION_DASHBOARD_HOST=fixture-box OS_RESERVED_NODE_CONSUMER=0
     _phase_provision_initial || {
         bad "tor-heal: local-node guest provisioning failed before fault injection"
         return 1

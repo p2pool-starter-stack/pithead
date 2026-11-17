@@ -1,6 +1,7 @@
 readonly PITHEAD_SUPPORT_DEFAULT_HOURS=72
 readonly PITHEAD_SUPPORT_MAX_HOURS=168
 readonly PITHEAD_SUPPORT_UNITS="pithead-boot.service pithead-boot-version.service pithead-address-watch.service pithead-miner-recovery.service dashboard.service caddy.service tor.service monerod.service tari.service p2pool.service xmrig-proxy.service docker-proxy.service docker-control.service xmrig.service rauc.service"
+readonly PITHEAD_DIY_SUPPORT_UNITS="pithead-egress.service pithead-egress.timer pithead-lan-guard.service pithead-lan-hold.service pithead-lan.timer"
 
 bundle_support_clamp_hours() {
     local h="$1"
@@ -56,24 +57,52 @@ print(since.strftime("%Y-%m-%dT%H:%M:%SZ"), until.strftime("%Y-%m-%dT%H:%M:%SZ")
 bundle_support_step_fail() {
     local tmp="$1" step="$2" kind="$3" why
     why=$(printf '%s' "$4" | bundle_redact_log | tr '\t\n' '  ' | cut -c1-200)
-    printf '%s\t%s\t%s\n' "$step" "$kind" "$why" >>"$tmp/steps.tsv"
+    printf '%s\t%s\t%s\t%s\n' "$step" "$kind" "$why" "${5:-0}" >>"$tmp/steps.tsv"
+}
+
+bundle_support_t() {
+    if command -v timeout >/dev/null 2>&1; then timeout -k 5 15 "$@"; else "$@"; fi
+}
+
+bundle_redact_addrs() {
+    sed -E \
+        -e 's#[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]+)?#[redacted-ip]#g' \
+        -e 's#([0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(/[0-9]+)?#[redacted-ip6]#g'
 }
 
 bundle_support_capture() {
     local tmp="$1" rel="$2" cap="$3" installed="$4" short="$5" since="$6" until="$7" prc
     shift 7
-    local meta="$tmp/meta/${rel//\//__}.json" err="$tmp/err" runner=()
-    command -v timeout >/dev/null 2>&1 && runner=(timeout "${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}")
-    mkdir -p "$tmp/bundle/$(dirname "$rel")" "$tmp/meta"
-    "${runner[@]}" "$@" 2>"$err" </dev/null | bundle_redact_log |
-        python3 -I "$tmp/cap.py" "$tmp/bundle/$rel" "$cap" "$meta" "$installed" "$short" "$since" "$until" &&
-        prc=(0 0 0) || prc=("${PIPESTATUS[@]}")
-    if [ "${prc[0]}" -eq 124 ]; then
-        bundle_support_step_fail "$tmp" "$rel" timeout "timed out after ${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}s"
-    elif [ "${prc[0]}" -ne 0 ]; then
-        bundle_support_step_fail "$tmp" "$rel" failed "exit ${prc[0]}: $(head -n1 "$err" 2>/dev/null)"
+    local meta="$tmp/meta/${rel//\//__}.json" err="$tmp/err" runner=() filt=cat t0=$SECONDS
+    local limit="${BUNDLE_STEP_LIMIT:-${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}}" left
+    if [ -n "${_BUNDLE_DEADLINE:-}" ]; then
+        left=$((_BUNDLE_DEADLINE - SECONDS))
+        if [ "$left" -le 0 ]; then
+            bundle_support_step_fail "$tmp" "$rel" skipped "total time limit of ${PITHEAD_SUPPORT_TOTAL_TIMEOUT:-1500}s reached before this step ran" 0
+            return 1
+        fi
+        [ "$limit" -gt "$left" ] && limit=$left
     fi
-    [ "${prc[1]}" -eq 0 ] && [ "${prc[2]}" -eq 0 ] || return 1
+    command -v timeout >/dev/null 2>&1 && runner=(timeout -k 5 "$limit")
+    [ -n "${BUNDLE_ADDR_REDACT:-}" ] && filt=bundle_redact_addrs
+    mkdir -p "$tmp/bundle/$(dirname "$rel")" "$tmp/meta"
+    "${runner[@]}" "$@" 2>"$err" </dev/null | bundle_redact_log | "$filt" |
+        python3 -I "$tmp/cap.py" "$tmp/bundle/$rel" "$cap" "$meta" "$installed" "$short" "$since" "$until" &&
+        prc=(0 0 0 0) || prc=("${PIPESTATUS[@]}")
+    case "${prc[0]}" in
+    124 | 137) bundle_support_step_fail "$tmp" "$rel" timeout "timed out after ${limit}s" $((SECONDS - t0)) ;;
+    0)
+        [ "${prc[1]}" -eq 0 ] && [ "${prc[2]}" -eq 0 ] && [ "${prc[3]}" -eq 0 ] ||
+            bundle_support_step_fail "$tmp" "$rel" failed "the redaction or capture stage failed (exit ${prc[1]}/${prc[2]}/${prc[3]})" $((SECONDS - t0))
+        ;;
+    *)
+        case " ${BUNDLE_OK_RC:-} " in
+        *" ${prc[0]} "*) ;;
+        *) bundle_support_step_fail "$tmp" "$rel" failed "exit ${prc[0]}: $(head -n1 "$err" 2>/dev/null)" $((SECONDS - t0)) ;;
+        esac
+        ;;
+    esac
+    [ "${prc[1]}" -eq 0 ] && [ "${prc[2]}" -eq 0 ] && [ "${prc[3]}" -eq 0 ] || return 1
 }
 
 bundle_support_jtime() {
@@ -82,29 +111,30 @@ bundle_support_jtime() {
 }
 
 bundle_support_units() {
-    local installed unit flat
-    installed=$( (systemctl list-unit-files --type=service --type=timer --no-legend --no-pager 2>/dev/null || true) |
+    local installed unit flat units="$PITHEAD_SUPPORT_UNITS"
+    is_appliance || units="$PITHEAD_DIY_SUPPORT_UNITS"
+    installed=$( (bundle_support_t systemctl list-unit-files --type=service --type=timer --no-legend --no-pager 2>/dev/null || true) |
         awk '$1 ~ /^pithead/ || $2 == "generated" {print $1}' | sort -u)
     flat=" ${installed//$'\n'/ } "
     for unit in $installed; do printf '%s 1\n' "$unit"; done
-    for unit in $PITHEAD_SUPPORT_UNITS; do
+    for unit in $units; do
         case "$flat" in *" $unit "*) ;; *) printf '%s 0\n' "$unit" ;; esac
     done
 }
 
 bundle_support_oldest_epoch() {
     local epoch
-    epoch=$( (journalctl -o short-unix --no-pager -q 2>/dev/null || true) | head -n1 | cut -d' ' -f1)
+    epoch=$( (bundle_support_t journalctl -o short-unix --no-pager -q 2>/dev/null || true) | head -n1 | cut -d' ' -f1)
     epoch=${epoch%%.*}
     case "$epoch" in '' | *[!0-9]*) epoch="" ;; esac
     printf '%s' "$epoch"
 }
 
 bundle_support_collect() {
-    local outdir="$1" since="$2" until="$3" ts out tmp unit installed db rc=0
+    local outdir="$1" since="$2" until="$3" ts out tmp unit installed rc=0
     local file_cap="${PITHEAD_SUPPORT_MAX_BYTES_PER_FILE:-16777216}"
     local total_cap="${PITHEAD_SUPPORT_MAX_TOTAL_BYTES:-67108864}"
-    local eff_since="$since" short=0 oldest_epoch="" oldest_iso="" since_epoch until_epoch jsince juntil
+    local eff_since="$since" jmode=ok jwhy="" short=0 oldest_epoch="" oldest_iso="" since_epoch until_epoch jsince juntil
     mkdir -p "$outdir" || return 1
     chmod 700 "$outdir" 2>/dev/null || true
     ts=$(date -u +%Y%m%dT%H%M%SZ)
@@ -115,11 +145,17 @@ bundle_support_collect() {
     bundle_support_cap_py >"$tmp/cap.py"
     bundle_support_pack_py >"$tmp/pack.py"
     : >"$tmp/steps.tsv"
+    bundle_support_snap_py >"$tmp/snap.py"
+    _BUNDLE_DEADLINE=$((SECONDS + ${PITHEAD_SUPPORT_TOTAL_TIMEOUT:-1500}))
     since_epoch=$(date -u -d "$since" +%s 2>/dev/null) || since_epoch=0
     until_epoch=$(date -u -d "$until" +%s 2>/dev/null) || until_epoch=0
 
     local jd="" jcfg=""
-    if command -v journalctl >/dev/null 2>&1; then
+    command -v journalctl >/dev/null 2>&1 || jmode=absent
+    if [ "$jmode" = ok ] && ! is_appliance && jwhy=$(bundle_support_journal_unreadable); then
+        jmode=unreadable
+    fi
+    if [ "$jmode" != absent ]; then
         oldest_epoch=$(bundle_support_oldest_epoch)
         if [ -n "$oldest_epoch" ]; then
             oldest_iso=$(date -u -d "@$oldest_epoch" +%Y-%m-%dT%H:%M:%SZ)
@@ -129,9 +165,9 @@ bundle_support_collect() {
                 [ "$oldest_epoch" -gt "$until_epoch" ] && eff_since="$until"
             fi
         fi
-        jd=$(journalctl --disk-usage 2>&1 | bundle_redact_log | head -n1 || true)
+        jd=$(bundle_support_t journalctl --disk-usage 2>&1 | bundle_redact_log | head -n1 || true)
     fi
-    jcfg=$( (systemd-analyze cat-config systemd/journald.conf 2>/dev/null ||
+    jcfg=$( (bundle_support_t systemd-analyze cat-config systemd/journald.conf 2>/dev/null ||
         cat /etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf 2>/dev/null || true) |
         grep -vE '^[[:space:]]*(#|;|$)' | bundle_redact_log || true)
     jsince=$(bundle_support_jtime "$eff_since")
@@ -146,41 +182,50 @@ bundle_support_collect() {
         echo
         [ -r /etc/os-release ] && cat /etc/os-release
         echo
-        df -h / /data 2>/dev/null
+        bundle_support_t df -h / /data 2>/dev/null
         echo
-        free -h 2>/dev/null
+        bundle_support_t free -h 2>/dev/null
     } 2>&1 | bundle_redact_log >"$tmp/bundle/host.txt"
 
-    if command -v journalctl >/dev/null 2>&1; then
+    if is_appliance; then
+        _BS_CAP=$file_cap _BS_SINCE=$eff_since _BS_UNTIL=$until _BS_SINCE_EPOCH=$since_epoch _BS_UNTIL_EPOCH=$until_epoch
+        bundle_support_snapshots "$tmp"
+    fi
+
+    if [ "$jmode" = unreadable ]; then
+        printf 'journal not readable by this user — no journal entries collected\n' >"$tmp/bundle/journal.txt"
+        bundle_support_step_fail "$tmp" journal failed "journal not readable: $jwhy"
+    elif [ "$jmode" = ok ]; then
         local jargs=(--since "$jsince" --until "$juntil" --no-pager --utc)
-        bundle_support_capture "$tmp" journal/all.log "$file_cap" 1 "$short" "$eff_since" "$until" \
-            journalctl "${jargs[@]}" || true
-        bundle_support_capture "$tmp" journal/kernel.log "$file_cap" 1 "$short" "$eff_since" "$until" \
-            journalctl -k "${jargs[@]}" || true
-        bundle_support_capture "$tmp" journal/boots.txt "$file_cap" 1 0 "$eff_since" "$until" \
-            journalctl --list-boots --no-pager || true
+        if is_appliance; then
+            bundle_support_capture "$tmp" journal/all.log "$file_cap" 1 "$short" "$eff_since" "$until" \
+                journalctl "${jargs[@]}" || true
+            bundle_support_capture "$tmp" journal/kernel.log "$file_cap" 1 "$short" "$eff_since" "$until" \
+                journalctl -k "${jargs[@]}" || true
+            bundle_support_capture "$tmp" journal/boots.txt "$file_cap" 1 0 "$eff_since" "$until" \
+                journalctl --list-boots --no-pager || true
+        fi
         while read -r unit installed; do
             [ -n "$unit" ] || continue
             bundle_support_capture "$tmp" "logs/$unit.log" "$file_cap" "$installed" "$short" "$eff_since" "$until" \
                 journalctl -u "$unit" "${jargs[@]}" || true
         done < <(bundle_support_units)
-        grep -Ei 'bootstrap|circuit' "$tmp/bundle/logs/tor.service.log" >"$tmp/bundle/tor.txt" 2>/dev/null ||
-            printf 'no tor bootstrap or circuit lines in the window\n' >"$tmp/bundle/tor.txt"
+        if is_appliance; then
+            grep -Ei 'bootstrap|circuit' "$tmp/bundle/logs/tor.service.log" >"$tmp/bundle/tor.txt" 2>/dev/null ||
+                printf 'no tor bootstrap or circuit lines in the window\n' >"$tmp/bundle/tor.txt"
+        fi
     else
         printf 'journalctl not present — no journal entries collected\n' >"$tmp/bundle/journal.txt"
         bundle_support_step_fail "$tmp" journal failed "journalctl not present"
     fi
 
-    {
-        if command -v rauc >/dev/null 2>&1; then
-            rauc status 2>/dev/null | bundle_redact_log || echo "rauc status failed"
-        else
-            echo "rauc not present"
-        fi
-    } >"$tmp/bundle/rauc.txt" 2>&1
+    if ! is_appliance; then
+        bundle_support_diy_collect "$tmp" "$file_cap" "$since" "$until" \
+            "$(date -u -d "$until + 1 second" +%Y-%m-%dT%H:%M:%SZ)"
+    fi
 
     if [ -n "${CONFIG_FILE:-}" ] && [ -f "$CONFIG_FILE" ]; then
-        render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
+        [ -f "$tmp/scratch/masked/config.json" ] || render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
         if [ -f "$tmp/scratch/masked/config.json" ]; then
             bundle_mask_config <"$tmp/scratch/masked/config.json" |
                 jq 'def j: if type=="object" then with_entries(.value |= j) elif type=="array" then map(j) else null end; j' 2>/dev/null |
@@ -188,43 +233,13 @@ bundle_support_collect() {
         fi
     fi
 
-    db="${DASHBOARD_DATA_DIR:-}/mining_data.db"
-    [ -f "$db" ] || db="/data/pithead/dashboard/mining_data.db"
-    [ -f "$db" ] || db="/data/mining_data.db"
-    if command -v python3 >/dev/null 2>&1 && [ -f "$db" ]; then
-        PITHEAD_SUPPORT_DB="$db" PITHEAD_SUPPORT_SINCE="$since_epoch" PITHEAD_SUPPORT_UNTIL="$until_epoch" python3 -I -c '
-import json, os, sqlite3, sys
-db = os.environ["PITHEAD_SUPPORT_DB"]
-since = float(os.environ["PITHEAD_SUPPORT_SINCE"])
-until = float(os.environ["PITHEAD_SUPPORT_UNTIL"])
-try:
-    conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
-    conn.row_factory = sqlite3.Row
-    out = {"row_limit_per_table": 5000}
-    for table, tcol, cols in (
-        ("history", "timestamp", "timestamp, v, v_p2pool, v_xvb"),
-        ("events", "ts", "ts, type, detail"),
-    ):
-        try:
-            rows = conn.execute(
-                "SELECT %s FROM (SELECT %s FROM %s WHERE %s >= ? AND %s <= ? ORDER BY %s DESC LIMIT 5000) ORDER BY %s ASC"
-                % (cols, cols, table, tcol, tcol, tcol, tcol),
-                (since, until),
-            ).fetchall()
-            out[table] = [dict(r) for r in rows]
-        except sqlite3.Error:
-            out[table] = None
-    print(json.dumps(out))
-except sqlite3.Error:
-    sys.exit(1)
-' 2>/dev/null | bundle_redact_log >"$tmp/bundle/dashboard.history.json" || true
-    fi
-
     jq -n \
         --arg rs "$since" --arg ru "$until" --arg es "$eff_since" --arg oldest "$oldest_iso" \
         --argjson short "$short" --arg jd "$jd" --arg jcfg "$jcfg" \
         --arg ver "${PITHEAD_VERSION:-unknown}" --arg at "$(date -u +%FT%TZ)" \
-        --argjson fcap "$file_cap" --argjson tcap "$total_cap" '{
+        --argjson fcap "$file_cap" --argjson tcap "$total_cap" \
+        --argjson lstep "${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}" --argjson lsnap "${PITHEAD_SUPPORT_SNAP_TIMEOUT:-20}" --argjson ldoc "${PITHEAD_SUPPORT_DOCTOR_TIMEOUT:-90}" \
+        --argjson ltotal "${PITHEAD_SUPPORT_TOTAL_TIMEOUT:-1500}" '{
             manifest_version: 1,
             pithead_version: $ver,
             collected_at: $at,
@@ -234,6 +249,7 @@ except sqlite3.Error:
                 oldest_retained_entry: (if $oldest == "" then null else $oldest end),
                 journal_short: ($short == 1)
             },
+            limits: {journal_step_seconds: $lstep, snapshot_step_seconds: $lsnap, doctor_step_seconds: $ldoc, total_seconds: $ltotal},
             journald: {disk_usage: $jd, effective_settings: ($jcfg | split("\n") | map(select(. != "")))},
             size_policy: {
                 per_file_cap_bytes: $fcap,
@@ -250,8 +266,9 @@ except sqlite3.Error:
     printf '%s\n' "$out"
 }
 
-recovery_bundle() {
-    local hours="" since="" until="" outdir arch win usage="Usage: pithead recovery-bundle [--hours N] [--since TIME] [--until TIME]"
+bundle_support_cli_window() {
+    local usage="$1" hours="" since="" until=""
+    shift
     while [ "$#" -gt 0 ]; do
         [ "$#" -ge 2 ] || error "$usage"
         case "$1" in
@@ -262,12 +279,17 @@ recovery_bundle() {
         esac
         shift 2
     done
+    BUNDLE_WINDOW=$(bundle_support_window "$since" "$until" "${hours:-$PITHEAD_SUPPORT_DEFAULT_HOURS}" 2>&1) || error "$BUNDLE_WINDOW"
+}
+
+recovery_bundle() {
+    local outdir arch usage="Usage: pithead recovery-bundle [--hours N] [--since TIME] [--until TIME]"
+    bundle_support_cli_window "$usage" "$@"
     command -v journalctl >/dev/null 2>&1 ||
         error "recovery-bundle needs the appliance journal. On a host with a container engine use: $0 support-bundle"
-    win=$(bundle_support_window "$since" "$until" "${hours:-$PITHEAD_SUPPORT_DEFAULT_HOURS}" 2>&1) || error "$win"
     outdir="${PITHEAD_RECOVERY_BUNDLE_DIR:-/data/pithead/support-bundles}"
     # shellcheck disable=SC2086
-    arch=$(bundle_support_collect "$outdir" $win) ||
+    arch=$(bundle_support_collect "$outdir" $BUNDLE_WINDOW) ||
         error "Could not collect a support bundle — nothing was written."
     log "Support bundle written: $arch"
 }

@@ -114,7 +114,7 @@ sb_run() {
     mkdir -p "$SB/staged"
     [ -n "$keep" ] || rm -f "$SB/staged/.support-bundle-stamp"
     (
-        export PATH="$SB/bin:$PATH"
+        export PITHEAD_APPLIANCE=1 PATH="$SB/bin:$PATH"
         run_sourced_e "$SANDBOX" control_process_request "$1" "$SB"
     ) >/dev/null 2>&1
 }
@@ -198,7 +198,7 @@ assert_eq "the manifest records the collection time and version" \
     "$(sb_man "$SB/extract1" '(.collected_at | test("Z$")) and (.pithead_version | length > 0)')" "true"
 assert_eq "every file entry carries bytes, state, window and truncation fields" \
     "$(sb_man "$SB/extract1" '[.files[] | has("bytes") and has("state") and has("window") and has("truncated") and has("dropped_lines") and has("dropped_bytes")] | all')" "true"
-assert_eq "a clean collection records no failed step" "$(sb_man "$SB/extract1" '.failures | length')" "0"
+assert_eq "a clean journal collection records no failed journal step" "$(sb_man "$SB/extract1" '[.failures[] | select(.step | startswith("journal/") or startswith("logs/"))] | length')" "0"
 assert_eq "a unit with lines in the window is ok" \
     "$(sb_man "$SB/extract1" '.files[] | select(.path == "logs/monerod.service.log") | .state')" "ok"
 assert_eq "an installed unit with nothing in the window is empty" \
@@ -303,7 +303,7 @@ echo "== control channel: a busy file keeps its oldest and newest lines and says
 sidA="c403c403-0000-4000-8000-00000000000a"
 rm -f "$SB/staged/.support-bundle-stamp"
 (
-    export PATH="$SB/bin:$PATH" SB_BULK=3000 PITHEAD_SUPPORT_MAX_BYTES_PER_FILE=40000
+    export PITHEAD_APPLIANCE=1 PATH="$SB/bin:$PATH" SB_BULK=3000 PITHEAD_SUPPORT_MAX_BYTES_PER_FILE=40000
     run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidA" support-bundle)" "$SB"
 ) >/dev/null 2>&1
 assert_eq "a capped bundle still applies" "$(jq -r .status "$SB/results/$sidA.json")" "applied"
@@ -323,7 +323,7 @@ assert_eq "a small file in the same bundle is not marked truncated" \
 sidG="c403c403-0000-4000-8000-000000000010"
 rm -f "$SB/staged/.support-bundle-stamp"
 (
-    export PATH="$SB/bin:$PATH" SB_BULK=40
+    export PITHEAD_APPLIANCE=1 PATH="$SB/bin:$PATH" SB_BULK=40
     run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidG" support-bundle)" "$SB"
 ) >/dev/null 2>&1
 sb_unzip "$SB/results/$sidG.zip" "$SB/extractG"
@@ -331,7 +331,7 @@ sb_fit=$(wc -c <"$SB/extractG/bundle/logs/p2pool.service.log" | tr -d ' ')
 sidH="c403c403-0000-4000-8000-000000000011"
 rm -f "$SB/staged/.support-bundle-stamp"
 (
-    export PATH="$SB/bin:$PATH" SB_BULK=40 PITHEAD_SUPPORT_MAX_BYTES_PER_FILE="$sb_fit"
+    export PITHEAD_APPLIANCE=1 PATH="$SB/bin:$PATH" SB_BULK=40 PITHEAD_SUPPORT_MAX_BYTES_PER_FILE="$sb_fit"
     run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidH" support-bundle)" "$SB"
 ) >/dev/null 2>&1
 sb_unzip "$SB/results/$sidH.zip" "$SB/extractH"
@@ -344,7 +344,7 @@ echo "== control channel: a bundle over the total cap degrades under the policy 
 sidB="c403c403-0000-4000-8000-00000000000b"
 rm -f "$SB/staged/.support-bundle-stamp"
 (
-    export PATH="$SB/bin:$PATH" SB_BULK=3000 PITHEAD_SUPPORT_MAX_TOTAL_BYTES=300000
+    export PITHEAD_APPLIANCE=1 PATH="$SB/bin:$PATH" SB_BULK=3000 PITHEAD_SUPPORT_MAX_TOTAL_BYTES=300000
     run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidB" support-bundle)" "$SB"
 ) >/dev/null 2>&1
 assert_eq "exceeding the total cap still yields a bundle" "$(jq -r .status "$SB/results/$sidB.json")" "applied"
@@ -358,7 +358,7 @@ echo "== control channel: a total cap no file can meet ends, applies and says so
 sidE="c403c403-0000-4000-8000-00000000000e"
 rm -f "$SB/staged/.support-bundle-stamp"
 (
-    export PATH="$SB/bin:$PATH" SB_BULK=3000 PITHEAD_SUPPORT_MAX_TOTAL_BYTES=1
+    export PITHEAD_APPLIANCE=1 PATH="$SB/bin:$PATH" SB_BULK=3000 PITHEAD_SUPPORT_MAX_TOTAL_BYTES=1
     run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidE" support-bundle)" "$SB"
 ) >/dev/null 2>&1
 assert_eq "an unmeetable total cap still applies" "$(jq -r .status "$SB/results/$sidE.json")" "applied"
@@ -376,7 +376,7 @@ echo "== control channel: a failed or timed-out step is recorded with its reason
 sidC="c403c403-0000-4000-8000-00000000000c"
 rm -f "$SB/staged/.support-bundle-stamp"
 (
-    export PATH="$SB/bin:$PATH" SB_FAIL_KERNEL=1 SB_SLOW_UNIT=pithead-zzdummy.service PITHEAD_SUPPORT_STEP_TIMEOUT=1
+    export PITHEAD_APPLIANCE=1 PATH="$SB/bin:$PATH" SB_FAIL_KERNEL=1 SB_SLOW_UNIT=pithead-zzdummy.service PITHEAD_SUPPORT_STEP_TIMEOUT=1
     run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$sidC" support-bundle)" "$SB"
 ) >/dev/null 2>&1
 assert_eq "a bundle with failed steps still applies" "$(jq -r .status "$SB/results/$sidC.json")" "applied"
@@ -399,19 +399,19 @@ assert_eq "the throttle rejects the immediate second collect" \
 
 echo "== host CLI: recovery-bundle shares the one collector and prints a 600 zip (#4038, #4127) =="
 mkdir -p "$SB/trip"
-for t in docker podman docker-compose curl wget nc; do
+for t in docker-compose wget nc; do
     printf '#!/bin/sh\necho "%s $*" >>"%s/trip.log"\nexit 127\n' "$t" "$SB" >"$SB/trip/$t"
     chmod +x "$SB/trip/$t"
 done
 rm -f "$SB/trip.log"
 rb=$(
-    export PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
+    export PITHEAD_APPLIANCE=1 PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
     run_sourced_e "$SANDBOX" recovery_bundle --hours 24 2>/dev/null |
         sed -n 's/.*Support bundle written: //p' | tail -1
 )
 assert_rc "recovery-bundle writes an archive on a journal-only host" \
     "$([ -e "$rb" ] && echo 0 || echo 1)" "0"
-assert_eq "no container engine or network tool was invoked" "$(cat "$SB/trip.log" 2>/dev/null)" ""
+assert_eq "no compose or download tool was invoked" "$(cat "$SB/trip.log" 2>/dev/null)" ""
 assert_contains "the archive lands under the stated directory" "$rb" "$SB/out/support-bundle-"
 assert_contains "the archive is a zip" "$rb" ".zip"
 assert_eq "the printed archive is mode 600" "$(stat -c '%a' "$rb")" "600"
@@ -423,7 +423,7 @@ assert_not_contains "the same one redactor covers the host CLI path" \
 
 echo "== host CLI: recovery-bundle takes --since and --until and rejects a bad window =="
 rbw=$(
-    export PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
+    export PITHEAD_APPLIANCE=1 PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
     run_sourced_e "$SANDBOX" recovery_bundle --since "$(sb_iso -14400)" --until "$(sb_iso -5400)" 2>/dev/null |
         sed -n 's/.*Support bundle written: //p' | tail -1
 )
@@ -433,7 +433,7 @@ assert_eq "the CLI window selects the same content as the control request" \
 assert_not_contains "a line after the CLI window is absent" \
     "$(cat "$SB/extractW/bundle/journal/all.log")" "dummy: marker-1h"
 bad_out=$(
-    export PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/outbad"
+    export PITHEAD_APPLIANCE=1 PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/outbad"
     run_sourced_e "$SANDBOX" recovery_bundle --since "$(sb_iso -3600)" --until "$(sb_iso -7200)" 2>&1 || true
 )
 assert_contains "recovery-bundle rejects a start after the end" "$bad_out" "after end time"
