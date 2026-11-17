@@ -1,14 +1,15 @@
 # shellcheck shell=bash
 
+FAILOVER_POOL_PORT=3399
+
 # Reapply the temporary pool fixture without minting another restore anchor. RigForge correctly
 # regenerates xmrig's rendered config after bootstrap/control applies; e2e.sh's original backup
 # remains the one and only restore source (#1994).
 repoint_miner() {
-    # Inject a bench pool if needed, then keep it primary with the rig's original pools as failover.
-    # ponytail: :3333 is the seeded canonical stratum port the bench runs.
     on_miner "
         jq --arg b '$BENCH_HOST' '
-            (if any(.pools[]?; .url | ascii_downcase | contains(\$b)) then .
+            (.pools |= map(select((.[\"rig-id\"] // \"\") != \"pithead-e2e-failover\")))
+            | (if any(.pools[]?; .url | ascii_downcase | contains(\$b)) then .
              else .pools = ([ (.pools[0]) + {url: (\$b + \":3333\"), tls: false, daemon: false, \"rig-id\": \"pithead-e2e\"} ] + .pools) end)
             | .pools |= ([.[] | select(.url | ascii_downcase | contains(\$b))] + [.[] | select(.url | ascii_downcase | contains(\$b) | not)])' \
             '$MINER_XMRIG_CONFIG' > '$MINER_XMRIG_CONFIG.e2e.tmp' \
@@ -25,6 +26,17 @@ repoint_miner() {
         ;;
     esac
     miner_reload
+}
+
+failover_miner_pool() {
+    on_miner "
+        jq --arg b '$BENCH_HOST' --arg f '$BENCH_HOST:$1' '
+            [.pools[] | select(.url | ascii_downcase | contains(\$b))] as \$here
+            | .pools = ([ (\$here[0] + {url: \$f, \"rig-id\": \"pithead-e2e-failover\"}) ] + .pools)' \
+            '$MINER_XMRIG_CONFIG' > '$MINER_XMRIG_CONFIG.e2e.tmp' \
+        && mv '$MINER_XMRIG_CONFIG.e2e.tmp' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG'
+    " || return 1
+    miner_reload && wait_for 60 2 "the failed-over miner service" miner_service_active
 }
 
 # Stdin keeps the credential out of command lines.
@@ -86,6 +98,12 @@ handle_borrow_rearm() { # <request> <ack> <run-id>
             [ "$attempt" = 4 ] && return 1
             warn "re-arm attempt $attempt: the borrowed rig did not reach the test bench; restarting it again"
         done
+        printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
+        return
+        ;;
+    failover-pool)
+        step "moving the reserved miner to the harness's second pool…"
+        failover_miner_pool "$FAILOVER_POOL_PORT" || return 1
         printf '%s' "$record" | on_bench "cat > '$ack.tmp' && mv '$ack.tmp' '$ack'"
         return
         ;;

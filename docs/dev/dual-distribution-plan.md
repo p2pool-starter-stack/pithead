@@ -90,6 +90,13 @@ the DIY channel changes nothing.
      `HealthStartPeriod=`; `--remove-orphans` → obsolete, systemd owns lifecycle.
   5. Tooling uses stop-then-start: `systemctl restart` racing an in-flight start job
      fails spuriously.
+  6. Each `Environment=` value taken from `.env` is one quoted assignment
+     (`Environment="A=1 2" B=3`) and every such value passes the same escaper —
+     `systemd.exec` space-splits the line, so a value holding a space silently
+     lost its tail before #2040. `\`,
+     `"` and `%` are escaped, `%` doubled (systemd expands specifiers in unit
+     files); `$` stays literal so `${VAR}` expands in `ExecStart`, never in an
+     `Environment=` value.
 - Docker-API consumers (dashboard start/stop/logs via the two socket proxies) point at
   Podman's Docker-compat socket on the appliance; the four endpoints used
   (`GET containers/json`, `GET logs`, `POST start`, `POST stop`) are spike-verified.
