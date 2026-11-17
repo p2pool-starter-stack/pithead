@@ -44,7 +44,9 @@ jobs:
             echo "PR for ${LATEST} is ${state}; not reopening it"
             exit 0
           fi
+          pre=no
           if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            pre=yes
             git fetch origin "$branch"
             git checkout -B "$branch" FETCH_HEAD
           else
@@ -54,13 +56,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add build/tor/Dockerfile
-          if git diff --cached --quiet; then
-            echo "branch ${branch} already pins ${LATEST}"
-          else
+          committed=no
+          if ! git diff --cached --quiet; then
             git commit -m "build/tor: bump the Tor pin to ${LATEST}"
+            committed=yes
+          fi
+          if [ "$pre" = no ] && [ "$committed" = no ]; then
+            echo "the pin or the index moved during this run; nothing to propose"
+            exit 0
           fi
           gh auth setup-git
-          git push origin "$branch"
+          if [ "$committed" = yes ]; then
+            git push origin "$branch"
+          fi
           cat >pr-body.md <<EOF
           ## What's the problem
 
@@ -79,18 +87,31 @@ jobs:
       - name: Close bump PRs this run supersedes
         env:
           GH_TOKEN: ${{ github.token }}
-          KEEP: ${{ steps.detect.outputs.stale == 'true' && format('bot/tor-{0}', steps.detect.outputs.latest) || '' }}
+          STALE: ${{ steps.detect.outputs.stale }}
+          LATEST: ${{ steps.detect.outputs.latest }}
         run: |
           set -Eeuo pipefail
-          if [ -n "$KEEP" ]; then
-            reason="Superseded by the daily tor bump run: ${KEEP} carries the newer Alpine tor (#4158)."
+          want=""
+          if [ "$STALE" = true ]; then
+            want="bot/tor-${LATEST}"
+          fi
+          rows="$(gh pr list --state open --limit 200 --json number,headRefName,author \
+            --jq 'map(select((.author.login // "" | sub("\\[bot\\]$"; "")) == "github-actions" and ((.headRefName // "") | startswith("bot/tor-")))) | .[] | [.number, .headRefName] | @tsv')"
+          keep=""
+          while IFS=$'\t' read -r _ head; do
+            if [ "$head" = "$want" ]; then
+              keep="$head"
+            fi
+          done <<< "$rows"
+          if [ -n "$keep" ]; then
+            reason="Superseded by ${keep}, which carries the Alpine tor this run considers newest (#4158)."
+          elif [ "$STALE" = true ]; then
+            reason="The daily tor bump run wants ${LATEST} and has no open PR for it (a closed one is taken as declined), so this bump PR no longer tracks Alpine (#4158)."
           else
             reason="The pin already matches what Alpine carries; this bump PR is no longer needed (#4158)."
           fi
-          gh pr list --state open --limit 200 --json number,headRefName,author \
-            --jq 'map(select((.author.login // "" | sub("\\[bot\\]$"; "")) == "github-actions" and ((.headRefName // "") | startswith("bot/tor-")))) | .[] | [.number, .headRefName] | @tsv' |
-            while IFS=$'\t' read -r number head; do
-              if [ "$head" != "$KEEP" ]; then
-                gh pr close "$number" --comment "$reason"
-              fi
-            done
+          while IFS=$'\t' read -r number head; do
+            if [ "$head" != "$keep" ]; then
+              gh pr close "$number" --comment "$reason"
+            fi
+          done <<< "$rows"
