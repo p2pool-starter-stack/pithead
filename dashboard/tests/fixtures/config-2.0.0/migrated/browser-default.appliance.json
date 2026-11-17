@@ -1,0 +1,28 @@
+{
+  "dashboard": {
+    "host": "pithead",
+    "tari_required": true
+  },
+  "local_miner": {
+    "enabled": true
+  },
+  "monero": {
+    "clearnet_initial_sync": false,
+    "mem_limit": "4g",
+    "node_password": "fixture-rpc-password",
+    "node_username": "fixture",
+    "wallet_address": "48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD"
+  },
+  "profile": "balance",
+  "tari": {
+    "clearnet_initial_sync": false,
+    "mem_limit": "8g",
+    "mode": "off"
+  },
+  "tor": {
+    "auto_heal": false
+  },
+  "xvb": {
+    "enabled": false
+  }
+}

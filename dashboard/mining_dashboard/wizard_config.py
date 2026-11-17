@@ -4,10 +4,24 @@ import re
 from copy import deepcopy
 
 from mining_dashboard.config.defaults import default_of
+from mining_dashboard.config.migration import migrate_to_2_1, migration_due
 
 _XVB_ALIASES = ("enabled", "url", "donor_id")
 _XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
 _WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "watts"}
+
+MACHINE_NAME_RULE = (
+    "Name this machine: 1–63 lowercase letters, digits or hyphens, starting and ending "
+    "with a letter or digit; auto and localhost are reserved."
+)
+
+
+def validate_machine_label(name: str) -> None:
+    if name and (
+        not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", name)
+        or name in ("auto", "localhost")
+    ):
+        raise ValueError(MACHINE_NAME_RULE)
 
 
 def validate_machine_name(cfg: dict, previous: dict) -> None:
@@ -19,7 +33,7 @@ def validate_machine_name(cfg: dict, previous: dict) -> None:
     dashboard = cfg.get("dashboard", {})
     if not isinstance(dashboard, dict):
         raise ValueError("dashboard must be an object")
-    host = dashboard.get("host", default_of("dashboard.host", legacy=True))
+    host = dashboard.get("host", default_of("dashboard.host"))
     if host == "auto":
         return
     saved = previous.get("dashboard", {})
@@ -30,12 +44,20 @@ def validate_machine_name(cfg: dict, previous: dict) -> None:
         and re.fullmatch(r"[a-zA-Z0-9._:-]{0,253}", host)
     ):
         return
-    if not isinstance(host, str) or not re.fullmatch(
-        r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", host
+    if (
+        not isinstance(host, str)
+        or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", host)
+        or host == "localhost"
     ):
-        raise ValueError(
-            "Name this machine must be 1–63 letters, digits or hyphens, starting and ending with a letter or digit"
-        )
+        raise ValueError(MACHINE_NAME_RULE)
+
+
+def prefill_machine_name(cfg: dict, platform: str) -> dict:
+    dflt = default_of("dashboard.host", platform)
+    dash = cfg.get("dashboard")
+    if dflt != "auto" and isinstance(dash, dict) and dash.get("host") == "auto":
+        cfg["dashboard"] = {**dash, "host": dflt}
+    return cfg
 
 
 def _change(changes: list[str], path: str, replacement: str | None = None) -> None:
@@ -142,7 +164,11 @@ def _known_only(cfg: dict, ref: dict, changes: list[str], prefix: str = "") -> d
 
 
 def prepare_config(
-    cfg: dict, reference: dict, *, reject_legacy_conflicts: bool = False
+    cfg: dict,
+    reference: dict,
+    *,
+    reject_legacy_conflicts: bool = False,
+    platform: str | None = None,
 ) -> tuple[dict, list[str]]:
     """Migrate removed aliases, then retain only names in the current reference schema.
 
@@ -150,6 +176,7 @@ def prepare_config(
     credential fields and persists across a failed install without copying their contents.
     """
     prepared = deepcopy(cfg)
+    due = migration_due(prepared)
     prepared.pop("config_version", None)
     conflicts = _legacy_conflicts(prepared)
     if reject_legacy_conflicts and conflicts:
@@ -157,6 +184,9 @@ def prepare_config(
         raise ValueError(f"removed 1.x keys differ from their replacements ({names})")
     changes: list[str] = []
     _migrate_legacy(prepared, changes)
+    if due and platform:
+        prepared, migrated = migrate_to_2_1(prepared, platform)
+        changes.extend(migrated)
     if reference:
         prepared = _known_only(prepared, reference, changes)
     return prepared, list(dict.fromkeys(changes))

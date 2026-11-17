@@ -12,7 +12,7 @@ declare -F gate_try >/dev/null || {
 echo "== black-box: confirmed worker secrets and dial targets stay bound (#1959) =="
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     workers:{api_port:8080,api_auth:"token",api_token:"fleet-token",list:[
       {name:"rig-1",host:"192.168.1.50",control_port:8082,token:"rig-token",api_token:"rig-read-token"}]},
     notifications:{webhooks:["https://example.com/hook"],

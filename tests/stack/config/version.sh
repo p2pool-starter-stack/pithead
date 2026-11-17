@@ -4,7 +4,7 @@ echo "== unit: configuration version stamp =="
 CV="$SANDBOX/config-version"
 mkdir -p "$CV"
 cp "$ROOT/VERSION" "$CV/VERSION"
-printf '{"monero":{"wallet_address":"%s","node_username":"u","node_password":"p"},"tari":{"mode":"off"},"dashboard":{"secure":false}}\n' "$VALID_PRIMARY" >"$CV/config.json"
+printf '{"profile":"balance","monero":{"wallet_address":"%s","node_username":"u","node_password":"p"},"tari":{"mode":"off"},"dashboard":{"secure":false}}\n' "$VALID_PRIMARY" >"$CV/config.json"
 cp "$CV/config.json" "$CV/before"
 out=$(run_sourced "$CV" eval 'PITHEAD_DRY_RUN=1; parse_and_validate_config' 2>&1)
 assert_rc "dry validation succeeds" "$?" 0

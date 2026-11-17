@@ -12,7 +12,7 @@ echo "== black-box: editable-allowlist commit round-trip, every key (#522) =="
 # env diff (pool flips P2POOL_FLAGS + P2POOL_PORT, both allowlisted).
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",mem_limit:"4g",prep_blocks_threads:4,prune:false},
-    tari:{wallet_address:"'"$VALID_TARI"'",mem_limit:"3g"}, p2pool:{pool:"main"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",mem_limit:"3g"}, p2pool:{pool:"main"},
     xvb:{enabled:true,donation_level:"donor"}, telegram:{daily_summary_time:"08:00"},
     dashboard:{secure:true,host:"box.lan",tari_required:true,check_for_updates:true,timezone:"UTC",
                hashrate_drop_threshold:50,hashrate_drop_minutes:10,
@@ -50,7 +50,6 @@ for ev in node_down node_recovered worker_offline worker_recovered worker_joined
     roundtrip_key "TELEGRAM_EVENT_$(printf '%s' "$ev" | tr 'a-z' 'A-Z')" \
         ".telegram.events.${ev}=false" ".telegram.events.${ev}" "false"
 done
-
 echo "== black-box: confirm-allowlist commit round-trip behind the typed APPLY (#1929) =="
 roundtrip_confirm() {
     COVERED="$COVERED $(printf '%s' "$1" | tr '/' ' ')"
@@ -62,7 +61,6 @@ roundtrip_confirm() {
     assert_eq "$1 landed in config.json" "$(jq -r "$3" "$C/config.json")" "$4"
 }
 env_now() { run_sourced "$C" env_get_file "$C/.env" "$1"; }
-
 # TARI_MODE, the #1929 subject: an operator turns merge-mining off and back on from the dashboard.
 # Asserted on the RENDERED .env rather than config.json alone — config.json is what the gate wrote,
 # .env shows the launched profile and sync-gate flag.
@@ -81,7 +79,6 @@ roundtrip_confirm "TARI_MODE" '.tari.mode="local"' '.tari.mode' "local"
 assert_eq "back on renders TARI_MODE=local" "$(env_now TARI_MODE)" "local"
 assert_contains "back on restores the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
 assert_contains "back on restores the Tari onion profile" "$(env_now TOR_COMPOSE_PROFILES)" "local_tari"
-
 # The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
 # ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.
 # This fake host keeps the installed firewall transaction for the live readback required when a
@@ -174,6 +171,10 @@ rm -f "$C/bin/getent" "$C/bin/curl"
 cp "$C/local.before-login-preflight.json" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 
+roundtrip_confirm "MONERO_BACKUP_NODES add" '.monero.backup_nodes=[{host:"192.168.50.8",rpc_port:28081,zmq_port:28083,rpc_login:"backup:password"}]' '.monero.backup_nodes | length' "1"
+roundtrip_confirm "MONERO_BACKUP_NODES/P2POOL_BACKUP_ARGS_B64" '.monero.backup_nodes=[]' '.monero.backup_nodes | length' "0"
+assert_eq "backup removal clears the node list and P2Pool backup arguments" "$(env_now MONERO_BACKUP_NODES)|$(env_now P2POOL_BACKUP_ARGS_B64)" "[]|"
+
 echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="
 cp "$C/config.json" "$C/before-profile.json"
 for target_profile in privacy performance balance; do
@@ -201,7 +202,6 @@ assert_eq "every CONTROL_DASHBOARD_CONFIRM_KEYS key round-trips (or is exempt by
 for k in $CONFIRM_TIER1_EXEMPT; do
     assert_contains "exempt key $k is a real confirm key" " $(allow_set CONTROL_DASHBOARD_CONFIRM_KEYS) " " $k "
 done
-
 echo "== black-box: node-endpoint keys ignore remote.* on a non-remote chain (#1924) =="
 # 43-control-approval-and-preview.sh decides WHETHER TO PROBE from the changed porcelain key;
 # preflight_remote_nodes decides WHETHER TO DIAL from the staged chain MODE. Those are different
@@ -213,7 +213,7 @@ echo "== black-box: node-endpoint keys ignore remote.* on a non-remote chain (#1
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",
             remote:{host:"evil.example.com",rpc_port:9,zmq_port:9}},
-    tari:{wallet_address:"'"$VALID_TARI"'",remote:{host:"evil.example.com",grpc_port:9}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",remote:{host:"evil.example.com",grpc_port:9}},
     p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
@@ -255,7 +255,7 @@ assert_eq "tari.remote.host is inert when tari.mode is off" "$(env_now TARI_GRPC
 jq -n --arg w "$WALLET" '{
     monero:{mode:"remote",wallet_address:$w,node_username:"",node_password:"",
             remote:{host:"evil.example.com",rpc_port:9,zmq_port:9}},
-    tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"evil.example.com",grpc_port:9}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"evil.example.com",grpc_port:9}},
     p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
@@ -358,7 +358,7 @@ echo "== black-box: a settable key is never invisible to the approval gate (#192
 # parser never looks at it.
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)

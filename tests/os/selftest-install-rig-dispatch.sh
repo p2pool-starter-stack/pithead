@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/lib/pithead/08-uninstall-firstboot.sh"
 # shellcheck source=lib/pithead/11a-wizard-spool.sh
 source "$ROOT/lib/pithead/11a-wizard-spool.sh"
+# shellcheck source=lib/pithead/31a-appliance-hostname.sh
+source "$ROOT/lib/pithead/31a-appliance-hostname.sh"
 # shellcheck source=lib/pithead/12-firstboot-wizard.sh
 source "$ROOT/lib/pithead/12-firstboot-wizard.sh"
 # shellcheck source=lib/pithead/12a-wizard-page.sh
@@ -18,6 +20,7 @@ wizard_clear_restore_state() { :; }
 clear_setup_candidate() { :; }
 clear_restore_submission() { :; }
 clear_restore_carry() { :; }
+is_appliance() { return 1; }
 machine_role() { printf pithead; }
 setup_again_mode() { return 1; }
 installer_mode_available() { return 0; }
@@ -72,6 +75,7 @@ fixture_engine() {
     esac
     touch data/firstboot/submission-staging data/firstboot/submission-active
 }
+machine_name_warning() { [ "$case_name" != rig ] || printf 'fixture collision for %s' "$1"; }
 write_handoff_card() {
     cat >card.json
     printf 'card\n' >>trace
@@ -95,6 +99,11 @@ consume_install_request() {
     printf 'install\n' >>trace
     if [ "$case_name" != bare-keep ]; then
         jq -e '.role == "rig" and .worker == "fixture-rig" and .token == "0123456789abcdef0123456789abcdef"' card.json >/dev/null || return 1
+        if [ "$case_name" = rig ]; then
+            jq -e '.warning == "fixture collision for fixture-rig"' card.json >/dev/null || return 1
+        else
+            jq -e 'has("warning") | not' card.json >/dev/null || return 1
+        fi
         jq -e '.access_token == "0123456789abcdef0123456789abcdef"' "$PRESEED_DIR/staged.json" >/dev/null || return 1
     fi
 }

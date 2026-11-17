@@ -125,6 +125,13 @@ longer from a USB stick** — prints the address and a one-time token:
   SHA-256: A1:B2:C3:...
 ```
 
+**Setup downloads no container images.** The image carries Tor, Monero, P2Pool, XMRig-proxy,
+the dashboard, Caddy and the socket proxy, so a first boot behind a Tor-hostile or fully
+offline network still completes provisioning. Before Tor is up the machine sends only DHCP and
+DNS requests, time synchronization, and one clock check against `www.debian.org`; it never asks
+`ghcr.io` for anything. Turning Tari on later does fetch its images; see
+[Privacy](privacy.md#build--setup-time-egress).
+
 **Your browser will warn you once, and that is expected.** The machine makes its own
 certificate — the *same* one it keeps using for the dashboard afterwards, so you accept it once
 and the warning does not return across updates, stopped-stack restores, or dashboard password
@@ -220,7 +227,7 @@ or Tari node required.
 | **RigForge** | A rig: just the miner, pointed at a Pithead you already have running. No coordinator, no containers, no chains, no dashboard. |
 
 Picking **RigForge** collapses the rest of the page to three questions — the pool address
-(`host:port`), a worker name, and an optional stratum password — because a rig holds no payout
+(`host:port`), a name for the machine (the worker name, also its hostname), and an optional stratum password — because a rig holds no payout
 addresses, runs no node, and serves nothing to log into. If a Pithead already answers on the
 network at `pithead.local:3333`, its address is filled in for you; otherwise enter it by hand
 from that machine's own "Point miners at" line. Confirming shows a summary card with the worker

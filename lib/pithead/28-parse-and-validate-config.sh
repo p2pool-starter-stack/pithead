@@ -1,6 +1,7 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
     validate_config_document
+    migrate_config_to_2_1
     validate_webhook_config
     case "$(profile_name)" in
     performance | balance | privacy) ;;
@@ -153,6 +154,7 @@ parse_and_validate_config() {
             error "monero.view_key is set but the Privacy profile scans payouts only through Tor, and Tor cannot reach monero.remote.host \"$MONERO_REMOTE_HOST\" (private or local address). Use a publicly reachable node, switch profile, or unset monero.view_key."
         fi
     fi
+    validate_monero_backups
     if [ "$TARI_MODE" == "remote" ]; then
         TARI_REMOTE_HOST=$(jq -r '.tari.remote.host // empty' "$CONFIG_FILE")
         [ -n "$TARI_REMOTE_HOST" ] || error "tari.mode is \"remote\" but tari.remote.host is not set in $CONFIG_FILE."

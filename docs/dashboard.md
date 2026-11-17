@@ -32,7 +32,8 @@ The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
 and asks the operator to sign in again when the session expires. Earnings shows recorded payouts
-and Machines lists the rigs; Overview is described below and the Settings bodies are still being built. The preview does not
+and Machines lists the rigs; Overview and the Settings LAN access group are described below, and
+the remaining Settings bodies are still being built. The preview does not
 announce a cutover from the legacy UI. The
 drawer supplies its container and Appearance controls. Advanced > Maintenance offers **Reboot**
 and **Power off** on an appliance with dashboard control enabled; these controls are absent on DIY.
@@ -66,6 +67,24 @@ the existing preview, typed confirmations and apply-result contract. Electricity
 kWh in the configured currency; zero leaves power cost unset. Read-only hosts and disconnected
 sessions show neither control. Tier and expert Earnings settings remain in Advanced under the
 Settings work. The preview adds no hashrate scenario, coin tabs or assumptions toggle.
+
+### LAN access in the lean preview
+
+Settings opens with a **LAN access** group: one switch each for the Monero wallet RPC
+(`monero.rpc_lan_access`), Monero ZMQ (`monero.zmq_lan_access`) and Tari gRPC
+(`tari.grpc_lan_access`), each with a one-line purpose. A switched-on service shows the exact
+address to use — the host and the port it publishes (18081, 18083, 18142) — with the detected LAN
+IP beside it and a copy button, plus a short note on connecting a wallet or a second stack. The
+group only ever shares these ports on the local network or a machine-local VPN: the stack's LAN-only
+source rule limits them to local-network and CGNAT/VPN sources, and the panel says so. Reviewing a
+change runs the host's existing
+apply path — preview, confirmation, commit — so the confirmation and audit entry are the ones the
+control channel already keeps, and only the affected services restart. **Check the LAN rule now**
+runs the host diagnostics and reads its LAN-guard rows; a switch that is on without its rule is
+reported as a fault, never as working, and a successful apply triggers the check. After an apply
+the panel holds the switches until you go back to the switches, which re-reads the host. The group
+is on the Settings page always; the switches need an active session on a host whose control channel
+is on, and without one the page says so.
 
 ### Machines in the lean preview
 
