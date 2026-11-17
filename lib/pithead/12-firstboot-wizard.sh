@@ -123,7 +123,7 @@ firstboot_wizard() {
         [ -n "$cert_fp" ] || warn "Could not generate a setup certificate — the setup page will be plain HTTP."
         rm -f "$spool/handoff.json" "$spool/handoff-ack" "$spool/installing" \
             "$spool/installed" "$spool/applied" "$spool/install-request" \
-            "$spool/rig-request.json" "$spool/role" \
+            "$spool/rig-request.json" "$spool/role" "$spool/rig-warning.txt" \
             "$spool/keep-role" "$spool/stick"
         wizard_clear_submission_transaction "$spool" || error "Could not clear the previous setup transaction."
         clear_restore_submission "$spool" "$restore_spool" || error "Could not clear the previous restore submission."
@@ -172,11 +172,20 @@ firstboot_wizard() {
                 local rig_worker rig_pool rig_token
                 rig_worker=$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)
                 rig_pool=$(jq -r '.pool // ""' "$PWD/rig.json" 2>/dev/null)
-                rig_token=$(rig_access_token) || rig_token="" # empty here = the render leg refuses below
-                # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE, no login) and
-                # this box's address; an unresolvable pool host (#1867) adds control:"off" and why instead.
-                local rig_warning
+                rig_token=$(rig_access_token) || rig_token=""
+                local rig_warning pool_warning
+                pool_warning=""
                 rig_warning=$(machine_name_warning "$rig_worker" rig)
+                if [ -f "$spool/rig-warning.txt" ]; then
+                    pool_warning=$(tr -d '[:cntrl:]' <"$spool/rig-warning.txt" | tail -c 240)
+                fi
+                if [ -n "$pool_warning" ]; then
+                    if [ -n "$rig_warning" ]; then
+                        rig_warning="$rig_warning — $pool_warning"
+                    else
+                        rig_warning="$pool_warning"
+                    fi
+                fi
                 [ -z "$rig_warning" ] || _console "" "Warning: $rig_warning"
                 jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
                     --arg reason "the pool host does not resolve to an IPv4 address to pin it to" --arg warn "$rig_warning" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end) + (if $warn == "" then {} else {warning: $warn} end)' | write_handoff_card "$card_spool"

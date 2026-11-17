@@ -220,3 +220,38 @@ def strip_defaults(cfg: dict, ref: dict) -> dict:
         elif k not in ref or v != ref[k]:
             out[k] = v
     return out
+
+
+_RIG_FINGERPRINT_RE = re.compile(r"[0-9A-Fa-f]{64}")
+
+
+def _rig_bool(value: object, label: str) -> bool | None:
+    raw = str(value if value is not None else "").strip().lower()
+    if raw == "":
+        return None
+    if raw in ("1", "true", "on"):
+        return True
+    if raw in ("0", "false", "off"):
+        return False
+    raise ValueError(f"{label} must be true or false")
+
+
+def rig_request(pool: str, worker: str, form: dict) -> dict:
+    kind: dict = {"pool": pool}
+    if worker:
+        kind["worker"] = worker
+    password = str(form.get("rig_password", "")).strip()
+    if password:
+        kind["stratum_password"] = password
+    tls = _rig_bool(form.get("rig_tls"), "tls")
+    if tls is not None:
+        kind["tls"] = tls
+    paired = _rig_bool(form.get("rig_paired"), "paired")
+    if paired is not None:
+        kind["paired"] = paired
+    fingerprint = str(form.get("rig_tls_fingerprint", "")).strip()
+    if fingerprint:
+        if not _RIG_FINGERPRINT_RE.fullmatch(fingerprint):
+            raise ValueError("tls_fingerprint must be the certificate SHA-256 as 64 hex characters")
+        kind["tls_fingerprint"] = fingerprint
+    return kind

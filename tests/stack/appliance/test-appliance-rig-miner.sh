@@ -76,8 +76,8 @@ assert_contains "the rejection names the format" "$(cat "$RCSB/spool/error.txt")
 printf '{"pool":"10.0.0.5:3333","worker":"shed-3","stratum_password":"pw-fixture"}' >"$RCSB/spool/rig-request.json"
 printf '#!/bin/bash\nexit 1\n' >"$RCSB/bin/timeout"
 PATH="$RCSB/bin:$PATH" run_sourced "$RCSB" firstboot_consume_rig "$RCSB/spool" >/dev/null 2>&1
-assert_rc "unreachable pool -> rc 1 (validate before erase)" "$?" "1"
-assert_contains "the failure names the endpoint" "$(cat "$RCSB/spool/error.txt")" "10.0.0.5:3333"
+assert_rc "unreachable pool -> rc 0 (an outage is not a rejected submission)" "$?" "0"
+assert_contains "the warning names the endpoint" "$(cat "$RCSB/spool/rig-warning.txt")" "10.0.0.5:3333"
 
 printf '{"pool":"10.0.0.5:3333","worker":"shed-3","stratum_password":"pw-fixture"}' >"$RCSB/spool/rig-request.json"
 printf '#!/bin/bash\nexit 0\n' >"$RCSB/bin/timeout"

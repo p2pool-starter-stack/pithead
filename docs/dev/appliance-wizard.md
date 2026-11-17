@@ -135,7 +135,7 @@ reshapes to the answer the same way the disk choice already reshapes the form:
 |---|---|---|
 | Pithead | today's flow, byte for byte — the regression bar | `config.json` (the whole contract above) |
 | Pithead + RigForge | the default. Pithead's form, opening with the mine-on-this-machine switch already on. The role IS `local_miner.enabled` — the select and the switch are two views of ONE value, so moving either moves the other, and choosing Pithead submits today's config unchanged | `config.json` with `local_miner.enabled: true`; the boot contract's step 5 starts the miner |
-| RigForge | collapses to a pool address, a worker name and an optional stratum password. The pool field opens pre-filled when the host found a Pithead answering `pithead.local:3333` — dialed HOST-side and published to the spool as `rig-defaults.json`, the way the disk inventory travels, failing open to an empty field. The disk section gains **Run from this USB stick** as a first-class target: a rig holds almost no state, so the stick can BE the system — no erase, no commitment on machines whose disks belong to something else. The card shows the worker name and where it points; a rig has no dashboard and no login | `machine-role` + `rig.json` (below) |
+| RigForge | collapses to a pool address, a worker name and an optional stratum password, plus the optional pool-kind keys `tls`, `tls_fingerprint` and `paired` (#4065, below). The pool field opens pre-filled when the host found a Pithead answering `pithead.local:3333` — dialed HOST-side and published to the spool as `rig-defaults.json`, the way the disk inventory travels, failing open to an empty field. The disk section gains **Run from this USB stick** as a first-class target: a rig holds almost no state, so the stick can BE the system — no erase, no commitment on machines whose disks belong to something else. The card shows the worker name and where it points; a rig has no dashboard and no login | `machine-role` + `rig.json` (below) |
 
 Validation-before-erase, the card-then-ack gate, self-power-off and the headless first boot
 apply to every fresh install. On a disk holding an existing installation, keep preserves the
@@ -145,8 +145,21 @@ bare keep-reinstall shortcut accepts neither a role marker nor a rig request, in
 an unusable request entry.
 
 The rig submission travels on its own spool channel (`rig-request.json`; the server never
-writes a `config.json` candidate for it), and the host dials the pool BEFORE anything
-irreversible — the same discipline the wizard server gives remote nodes.
+writes a `config.json` candidate for it), and the host validates before it lands. Wrong types
+are refused at submit with a 400 and re-checked host-side (`rig_refuse`): `tls` and `paired`
+must be booleans, `tls_fingerprint` a string of 64 hex characters, and the pool address must
+keep its `host:port` shape — that refusal stays exactly as it was. Absent means `tls: false`,
+no pin, `paired: true`; `paired` is never inferred from the address (#4065).
+
+The host then dials the pool. With `tls` true the check completes a TLS handshake — a port
+that answers plain TCP but not TLS reads unreachable — otherwise a plain TCP connect decides.
+A failed dial is not a rejected submission: an unrelated pool outage must not become a setup
+failure. The answers land as `rig.json` anyway and the `rig-warning.txt` spool sidecar tells
+the confirmation screen why the pool was not answered; the card carries the same text in its
+`warning` beside any machine-name warning. Like the other submission sidecars, every new
+submission clears `rig-warning.txt`. `render_rig_miner_config` emits `tls: true` and
+`tls-fingerprint` into `pools[]` when set and omits both when unset — a fingerprint without
+`tls: true` is never emitted, because RigForge refuses that pair.
 
 ### The remote-node probe report
 
@@ -211,7 +224,7 @@ What the boot path reads, written by the host at the moment a role is accepted:
 | File (under `/data/pithead`) | Meaning |
 |---|---|
 | `machine-role` | `pithead`, `both` or `rig`. Absent means `pithead` — every machine provisioned before this contract. The coordinator values are derivable from `config.json` (both IS `local_miner.enabled`); the rig value is load-bearing, because a rig has no `config.json` at all. |
-| `rig.json` | rig role only: `pool`, `worker`, `access_token` and `stratum_password` when one was set. |
+| `rig.json` | rig role only: `pool`, `worker`, `access_token` and `stratum_password` when one was set, plus `tls`, `tls_fingerprint` and `paired` verbatim when the wizard sent them — absent reads `tls: false`, no pin, `paired: true`, so every rig.json predating #4065 keeps working. |
 
 A rig install to a disk stages the accepted answers as `pithead-rig.json` on the ESP —
 carried to the target by `pithead-install` beside the config and token pre-seeds — and the
