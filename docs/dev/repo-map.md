@@ -362,8 +362,8 @@ GUI update and reboot with a nonpersistent guest address present before and afte
 `image-upgrade-browser-host.py` uses the host Python runtime to restore that address
 only after observing a new boot,
 its absence and Caddy running. `image-upgrade-browser.mjs` keeps the original browser
-tab, accepts the initial certificate once, and checks the served fingerprint, key and
-canonical SANs plus automatic recovery. The browser runs in a container pinned by tag and
+tab, accepts the initial certificate once, signs in through the sign-in page, and checks
+the served fingerprint, key and canonical SANs plus automatic recovery. The browser runs in a container pinned by tag and
 digest to the Playwright release matching the locked `@playwright/test`;
 SSH credentials stay on the host; Node runs only inside the browser container.
 `selftest-image-upgrade-browser.sh` exercises the

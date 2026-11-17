@@ -38,6 +38,11 @@ for required in \
     'const credentials = JSON.parse' \
     'assert.rejects(page.goto(origin), /ERR_CERT_AUTHORITY_INVALID/)' \
     'page.locator("#proceed-link").click()' \
+    'await page.waitForURL((url) => url.pathname === "/login")' \
+    'page.fill("#login-username", credentials.username)' \
+    'page.fill("#login-password", credentials.password)' \
+    'name: "Sign in"' \
+    'await page.waitForURL((url) => url.pathname !== "/login")' \
     'name: "Check now"' \
     'name: "Download"' \
     'name: "Install"' \

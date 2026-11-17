@@ -137,6 +137,11 @@ try {
   await assert.rejects(page.goto(origin), /ERR_CERT_AUTHORITY_INVALID/);
   await page.locator("#details-button").click();
   await page.locator("#proceed-link").click();
+  await page.waitForURL((url) => url.pathname === "/login");
+  await page.fill("#login-username", credentials.username);
+  await page.fill("#login-password", credentials.password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL((url) => url.pathname !== "/login");
   await page.getByRole("button", { name: "OS updates", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "System update" });
   await dialog.getByRole("button", { name: "Check now", exact: true }).click();
