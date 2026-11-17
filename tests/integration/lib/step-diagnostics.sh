@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034 # IT_STEP_* are consumed by the lib/run-*.sh callers
+# shellcheck disable=SC2034
 it_run_logged() {
     local dir="$1" step="$2" raw="" rc=0
     shift 2
