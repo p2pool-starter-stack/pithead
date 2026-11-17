@@ -34,7 +34,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           branch="bot/tor-${LATEST}"
-          state="$(gh pr list --state all --head "$branch" --json state --jq '.[0].state // "none"')"
+          state="$(gh pr list --state all --head "$branch" --json state \
+            --jq 'map(.state) | if index("OPEN") then "OPEN" elif length > 0 then .[0] else "none" end')"
           if [ "$state" = OPEN ]; then
             echo "PR for ${LATEST} is already open"
             exit 0
@@ -86,8 +87,8 @@ jobs:
           else
             reason="The pin already matches what Alpine carries; this bump PR is no longer needed (#4158)."
           fi
-          gh pr list --state open --json number,headRefName,author \
-            --jq 'map(select(.author.login == "github-actions" and (.headRefName | startswith("bot/tor-")))) | .[] | [.number, .headRefName] | @tsv' |
+          gh pr list --state open --limit 200 --json number,headRefName,author \
+            --jq 'map(select((.author.login // "" | sub("\\[bot\\]$"; "")) == "github-actions" and ((.headRefName // "") | startswith("bot/tor-")))) | .[] | [.number, .headRefName] | @tsv' |
             while IFS=$'\t' read -r number head; do
               if [ "$head" != "$KEEP" ]; then
                 gh pr close "$number" --comment "$reason"
