@@ -10,7 +10,7 @@ _failover_row_field() {
 
 _failover_snapshot() {
     FAILOVER_STATE="$(api_state)"
-    [ -n "$FAILOVER_STATE" ]
+    printf '%s' "$FAILOVER_STATE" | jq -e 'type == "object" and (.workers | type) == "array" and (.badges | type) == "array"' >/dev/null 2>&1
 }
 
 _pred_failover_row_state() {
@@ -96,12 +96,16 @@ _failover_pool_stop() {
 }
 
 _failover_pin_rig() {
-    local cfg
+    local cfg current
     if [ -z "$RIG_HOST" ] || [ -z "${IT_RIG_TOKEN:-}" ]; then
         it_fail "failover-view has the rig host and token to pin the rig (#4074)" "--rig-host or the rig token is missing"
         return 1
     fi
-    cfg="$(rx 'cat config.json' | IT_RIG_TOKEN="$IT_RIG_TOKEN" jq --arg n "$RIG_NAME" --arg h "$RIG_HOST" --argjson cp "$RIG_CONTROL_PORT" '
+    current="$(rx 'cat config.json')" && [ -n "$BASELINE_CONFIG" ] && printf '%s' "$current" | jq -e 'type == "object"' >/dev/null 2>&1 || {
+        it_fail "failover-view read config.json and has a baseline to restore (#4074)" "config.json is unreadable or not an object, or no baseline was captured"
+        return 1
+    }
+    cfg="$(printf '%s' "$current" | IT_RIG_TOKEN="$IT_RIG_TOKEN" jq --arg n "$RIG_NAME" --arg h "$RIG_HOST" --argjson cp "$RIG_CONTROL_PORT" '
         del(.dashboard.workers)
         | .workers.list = ((.workers.list // []) | map(select(.name != $n)) + [{name:$n, host:$h, port:8081, control_port:$cp, token:env.IT_RIG_TOKEN}])')" || {
         it_fail "failover-view built the pinned-rig config (#4074)" "config.json could not be read or rewritten"
@@ -205,6 +209,7 @@ _failover_view_legs() {
     wait_borrow_rearm rearm || return
     _failover_view_transition "rig row reads mining here again" _pred_failover_row_state mining_here
     _failover_view_transition "Workers Alive and Total Hashrate count the returned rig" _pred_failover_aggregates_here
+    _failover_view_transition "no paused banner after the rig returns" _pred_failover_banner_absent
     if [ "$(jq_get "$FAILOVER_STATE" '.proxy_workers')" -ge "$alive0" ] 2>/dev/null; then
         it_pass "Workers Alive is back to ${alive0} or more (#4074)"
     else
@@ -239,7 +244,7 @@ _failover_trap_disarm() {
 }
 
 run_failover_view() {
-    # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
+    # shellcheck disable=SC2034
     IT_CURRENT_SCENARIO="failover-view"
     echo ""
     it_log "── failover-view phase (#4074) ─────────────────────"

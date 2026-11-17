@@ -54,6 +54,15 @@ check "banner with the wrong rig count is refused" refused _failover_banner_matc
 check "banner without the rig count is refused" refused _failover_banner_matches "$paused_bare"
 check "banner names two rigs plural" 0 _failover_banner_matches "$paused_two"
 check "no banner and no rig on a backup pool is refused" refused _failover_banner_matches "$here"
+snapshot_rc() (
+    body="$1"
+    # shellcheck disable=SC2329
+    api_state() { printf '%s' "$body"; }
+    _failover_snapshot
+)
+check "a valid state snapshot is accepted" 0 snapshot_rc "$here"
+check "an empty object is not a state snapshot" refused snapshot_rc '{}'
+check "a non-JSON body is not a state snapshot" refused snapshot_rc 'oops'
 paused_noreason="$(state 1 "2.00 kH/s" "Mining paused here: , 1 rig on backup pool" "$(row rig1 online on_backup 0 0 1200)")"
 big="$(state 1 "5.04 MH/s" "" "$(row rig1 online on_backup 0 0 40000)" "$(row rig2 online mining_here 5000000 5000000 5000000)")"
 big_ok="$(state 1 "5.00 MH/s" "" "$(row rig1 online on_backup 0 0 40000)" "$(row rig2 online mining_here 5000000 5000000 5000000)")"
