@@ -87,7 +87,6 @@ parse_and_validate_config() {
         if [ "$TARI_MODE" != "local" ]; then
             error "tari.view_key is set but tari.mode is \"$TARI_MODE\". Payout confirmation through a remote node is supported for Monero only; the Tari wallet scans through the local Tari node, so it needs tari.mode: local — unset tari.view_key, or use a local Tari node."
         fi
-        # Tari view / public-spend keys are 64 lowercase hex chars (32-byte Ristretto scalar / point).
         if ! printf '%s' "$TARI_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
             error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (Tari Universe: 'view_private_key_hex' in config_wallet.json; minotari_console_wallet: export-view-key-and-spend-key). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#TARI_VIEW_KEY} chars."
         fi
@@ -120,8 +119,6 @@ parse_and_validate_config() {
         PAYOUT_NODE_REMOTE=true
         [ "$(profile_name)" != privacy ] || PAYOUT_NODE_PROXY="${NETWORK_PREFIX}.25:9050"
     fi
-    # Fail-closed Tor-only egress firewall (#270); default on. Renders to .env so `up` can read it.
-    # config_bool (not a plain `// true`) so an explicit false actually disables it — see #294.
     TOR_EGRESS_FIREWALL=$(normalize_bool "$(config_bool '.network.tor_egress_firewall' true)")
     # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits, so the
     # stack never restarts its privacy boundary unbidden. Renders to .env for the dashboard,
@@ -156,9 +153,6 @@ parse_and_validate_config() {
             error "monero.view_key is set but the Privacy profile scans payouts only through Tor, and Tor cannot reach monero.remote.host \"$MONERO_REMOTE_HOST\" (private or local address). Use a publicly reachable node, switch profile, or unset monero.view_key."
         fi
     fi
-    # tari.mode remote (#103), mirroring monero.mode above: a third-party (or fleet-shared) Tari
-    # base node needs a host — an empty one would render an empty TARI_GRPC_ADDRESS and mining can't
-    # merge-mine, so abort at validation rather than let that reach the containers silently.
     if [ "$TARI_MODE" == "remote" ]; then
         TARI_REMOTE_HOST=$(jq -r '.tari.remote.host // empty' "$CONFIG_FILE")
         [ -n "$TARI_REMOTE_HOST" ] || error "tari.mode is \"remote\" but tari.remote.host is not set in $CONFIG_FILE."

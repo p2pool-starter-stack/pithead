@@ -42,13 +42,10 @@ daemon_block_count() {
         "http://$node_host:${MONERO_RPC_PORT:-18081}/json_rpc"
 }
 
-# $1 = JSON field; prints its first integer value from stdin, or nothing.
 json_int() {
     tr -d ' \n' | sed -n "s/.*\"$1\":\([0-9][0-9]*\).*/\1/p"
 }
 
-# The wallet has scanned to the daemon's tip (a couple of blocks' slack for a block landing between
-# the two reads). An unreadable daemon count counts as caught up: strict is the safe default.
 caught_up() {
     daemon_h="$(daemon_block_count 2>/dev/null | json_int count)"
     [ -n "$daemon_h" ] || [ "${PAYOUT_NODE_REMOTE:-false}" != true ] || return 1

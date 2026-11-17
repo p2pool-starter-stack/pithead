@@ -4,20 +4,13 @@ umask 077
 
 WALLET_DIR="${WALLET_DIR:-/home/ubuntu/wallets}"
 WALLET_FILE="" # selected after the test-source guard
-# Marker (#718, #2756, #2720): touched on every start, cleared by the healthcheck once the wallet has
-# scanned to monerod's tip. While it exists, an unreachable RPC means "still scanning": for the
-# genesis default the first scan is HOURS, and a reopened wallet catches up on every block it missed
-# while stopped; monero-wallet-rpc is single-threaded and won't answer during either.
-# It lives in the volume so it persists across container recreates until the scan actually finishes.
 SCAN_MARKER="$WALLET_DIR/.payout-scanning"
-GEN_JSON="${GEN_JSON:-/tmp/gen.json}" # tmpfs; holds the view key for the create-from-keys step only
+GEN_JSON="${GEN_JSON:-/tmp/gen.json}"
 case "${MONERO_NODE_HOST:-127.0.0.1}" in
 *:*) DAEMON_ADDRESS="[${MONERO_NODE_HOST}]:${MONERO_RPC_PORT:-18081}" ;;
 *) DAEMON_ADDRESS="${MONERO_NODE_HOST:-127.0.0.1}:${MONERO_RPC_PORT:-18081}" ;;
 esac
 
-# Fresh wallets start 100 blocks behind the local tip (about 200 minutes).
-# Never fall back to genesis when the node is unavailable: restart and retry instead.
 resolve_scan_height() {
     local want="${PAYOUT_SCAN_HEIGHT:-auto}" count timeout=10
     [ -z "${PAYOUT_NODE_PROXY:-}" ] || timeout=30
@@ -149,12 +142,6 @@ set -- \
 if [ "${PAYOUT_NODE_REMOTE:-false}" = true ]; then set -- "$@" --untrusted-daemon; else set -- "$@" --trusted-daemon; fi
 [ -z "${PAYOUT_NODE_PROXY:-}" ] || set -- "$@" --proxy "$PAYOUT_NODE_PROXY" --daemon-ssl-allow-any-cert
 
-# Mark a scan on EVERY start (#718, #2756): a first creation scans from the restore height (genesis
-# is hours); a reopen catches up from the height the wallet last stored, which after a long stop, a
-# remote-node spell or an unsaved scan is just as long. monero-wallet-rpc does not answer while it
-# scans. The healthcheck tolerates an unreachable RPC while this marker exists, within a 24h grace
-# by default, and clears it once the wallet reaches monerod's tip (#2720). An existing marker keeps
-# its mtime, so a wallet that crash-loops without catching up still turns unhealthy after the grace.
 [ -f "$SCAN_MARKER" ] || touch "$SCAN_MARKER" 2>/dev/null || true
 
 if [ ! -f "$WALLET_FILE" ]; then

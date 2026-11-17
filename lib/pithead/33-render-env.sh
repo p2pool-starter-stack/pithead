@@ -444,7 +444,5 @@ EOF
         [ "${PAYOUT_NODE_REMOTE:-false}" != true ] ||
             printf 'PAYOUT_NODE_REMOTE=true\nPAYOUT_NODE_PROXY=%s\n' "$(dotenv_render_value "${PAYOUT_NODE_PROXY:-}")" >>"$target"
     )
-    # Contains the node RPC password; keep it owner-only (belt-and-braces — the umask above
-    # already created it 600; a chmod failure now aborts loudly instead of passing silently).
     chmod 600 "$target"
 }

@@ -324,7 +324,6 @@ describe_change() {
         fi
         ;;
     WALLET_RPC_PASSWORD)
-        # Secret (#381): auto-generated wallet-rpc login — never echo the value.
         msg="Payout wallet-rpc credential updated."
         ;;
     PAYOUT_CONFIRM_ENABLED)
