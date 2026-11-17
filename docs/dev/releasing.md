@@ -181,6 +181,46 @@ Release notes, where operators actually read it. The branch model itself is in
 
 [#1076]: https://github.com/p2pool-starter-stack/pithead/issues/1076
 
+### Forward merges into release-line branches
+
+Work for upcoming releases integrates on release-line branches named `develop-vX.Y.Z`: the
+patch line while a patch cut is in flight (for example `develop-v2.0.3`) and the next feature
+line (`develop-v2.1.0`). After every patch release is published, forward-merge `develop` into
+each open release-line branch, so the cut commit and every fix on `develop` reach those lines.
+
+The `develop-v*` branches carry the same protection as `develop`: the same required checks and
+`adversarial-review` status, one approving review, stale approvals dismissed, admins included,
+and no force-push or deletion. A direct push is refused, so a forward merge travels as a PR.
+Cut a `forward/` branch from the target, merge `develop` into it, and push it:
+
+```bash
+git fetch origin develop develop-v2.1.0
+git switch -c forward/develop-into-develop-v2.1.0 origin/develop-v2.1.0
+git merge --no-ff origin/develop
+git push origin forward/develop-into-develop-v2.1.0
+```
+
+Resolve conflicts on that branch. Version metadata takes `develop`'s values: `VERSION`, the
+`version` line in `dashboard/pyproject.toml`, and the `mining-dashboard` entry in
+`dashboard/uv.lock` must equal `develop`'s, or lifecycle end-to-end proofs on the release-line
+head fail on version skew ([#3664]). Until the forward merge lands,
+lifecycle and safety-backup proofs on a lagging release line wait for it: the seeded `config.json` carries the live stamp and is never rewritten.
+
+Open the PR from the `forward/` branch into the target. Never use `develop` itself as the head:
+conflict resolutions need a branch of their own, and a head that is `develop` changes under
+review every time `develop` moves. Once the checks, the review status, and the approval are on
+the head, merge with a merge commit:
+
+```bash
+gh pr merge <n> --merge
+```
+
+This is the one PR that is not squashed. A squash or rebase mints new commits, so `develop`
+never becomes an ancestor of the release line, and every later forward merge conflicts again on
+changes that were already merged. Merge commits are enabled on the repository for this case only.
+
+[#3664]: https://github.com/p2pool-starter-stack/pithead/issues/3664
+
 ### Pipeline: stage → smoke-test → promote
 
 Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
@@ -452,6 +492,29 @@ printf 'KVM jobs: %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_PROV_ID"
 Read all four completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
+
+Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be tagged; a job whose
+`commit` differs from it is not evidence for the release, however recently it passed. Any change
+after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
+rerun the boot, rig, provision and crossupdate jobs on the new SHA and read them again before
+submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
+`bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
+release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
+`scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
+procedural step the operator verifies, not a tool enforcement. The
+2.0.2 release shipped one commit after the commit its crossupdate and provision jobs proved
+([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)). Each job is capped at 240
+minutes.
+
+The update fault leg (`update` phase, leg 5) installs a bundle whose dashboard healthcheck fails
+through the dashboard's own update door, so the in-flight flag is armed. After the fallback it
+requires the flag's `blocking` list to name the dashboard container and the served banner module to
+carry its `Blocked by:` clause. Both slots of that phase are built from one tree, so they share a
+version and pithead-boot writes no `rolled_back` verdict there; the verdict itself is asserted by
+the real-upgrade scenario ([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)),
+whose slots differ. On any failure the job keeps the failed boot's
+`pithead-boot` journal, the verdict JSON, grubenv and the doctor output in
+`pithead-os-serial.log.leg5-evidence` and prints it, bounded, to the job log.
 
 Immediately before submitting e2e, have Devops prepare the canonical payout wallet on **every**
 bench eligible for this e2e leg. Submit `wallet-prepare` with empty options to each owning bench's

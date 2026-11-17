@@ -281,3 +281,15 @@ check_appliance_cert() {
         dr_fail_surface dashboard-certificate-expiry "The dashboard certificate has EXPIRED ($enddate) — browsers will refuse it. Run './pithead apply' to re-mint." "The dashboard certificate has EXPIRED ($enddate) — browsers will refuse it. This machine only re-mints it when the set of names it answers to changes, so it will not renew on its own; replacing it needs console access."
     fi
 }
+
+check_dashboard_host_drift() {
+    is_appliance && return 0
+    local configured rendered current
+    configured=$(resolve_default "$(config_get .dashboard.host 2>/dev/null)" "")
+    [ -z "$configured" ] || [ "$configured" = auto ] || return 0
+    rendered=$(env_get HOST_IP)
+    current=$(hostname)
+    [ -n "$rendered" ] && [ -n "$current" ] && [ "$rendered" != "$current" ] || return 0
+    local msg="The machine's hostname is '$current' but .env still advertises '$rendered' — run './pithead apply' to refresh the dashboard address, then repoint any rigs pinned to the old name."
+    dr_warn_surface dashboard-host "$msg" "$msg"
+}

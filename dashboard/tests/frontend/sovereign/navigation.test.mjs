@@ -88,9 +88,11 @@ test("chart query updates remain in navigation history and keep deep-link target
   assert.equal(query.get("from"), "100");
   assert.equal(query.get("tab"), "kept");
   navigation.query({ range: "24h", from: null, to: null });
+  assert.equal(new URL(win.location.href).searchParams.get("worker"), "rig-alpha");
   navigation.go("overview");
   query = new URL(win.location.href).searchParams;
   assert.equal(query.has("from"), false);
+  assert.equal(query.has("worker"), false);
   assert.equal(query.get("range"), "24h");
   navigation.close();
 });

@@ -276,9 +276,6 @@ update_current_symlink() {
     return 0
 }
 
-# Decide the hostname the dashboard is reached at: an explicit dashboard.host wins; otherwise
-# "auto"/unset means this machine's hostname, re-derived each run (so reverting to "auto" takes
-# effect). Interactive setup prompts, defaulting to any previously-set value then the hostname.
 resolve_dashboard_host() {
     local allow_prompt="${1:-}"
     # An interactive ask with no terminal is an EOF that silently picks the bare hostname —
@@ -291,12 +288,36 @@ resolve_dashboard_host() {
         machine_name=$(appliance_hostname_label)
         [ -z "$machine_name" ] || HOST_IP="$machine_name.local"
         log "Using dashboard hostname '$HOST_IP' from $CONFIG_FILE."
-    elif [ "$allow_prompt" == "interactive" ]; then
-        local default_host
+    elif [ "$allow_prompt" == "interactive" ] && is_appliance; then
+        local default_host input_host tmp
         default_host="${PRESERVED_HOST_IP:-$(hostname)}"
-        echo "The stack needs to know what hostname you will use to access the dashboard in your browser."
-        read -r -p "Enter Hostname [$default_host]: " input_host || true
-        HOST_IP="${input_host:-$default_host}"
+        default_host="${default_host%.local}"
+        echo "This machine announces itself on the local network under one name."
+        while :; do
+            read -r -p "Machine name [$default_host]: " input_host || true
+            [ -n "$input_host" ] || {
+                input_host=""
+                break
+            }
+            if is_machine_name_label "$input_host"; then
+                break
+            fi
+            printf '%s\n' "$MACHINE_NAME_RULE"
+        done
+        if [ -n "$input_host" ] && [ "$input_host" != "$(hostname)" ]; then
+            DASHBOARD_HOST="$input_host"
+            if [ -f "${CONFIG_FILE:-}" ] && tmp=$(mktemp) &&
+                jq --arg n "$input_host" '(.dashboard //= {}) | .dashboard.host = $n' "$CONFIG_FILE" >"$tmp" &&
+                mv "$tmp" "$CONFIG_FILE" && chmod 600 "$CONFIG_FILE"; then
+                :
+            else
+                rm -f "${tmp:-}"
+                warn "Could not save the machine name to ${CONFIG_FILE:-config.json} — it applies to this run only."
+            fi
+        elif [ -n "$input_host" ]; then
+            DASHBOARD_HOST="$input_host"
+        fi
+        HOST_IP="${DASHBOARD_HOST:-$default_host}.local"
     else
         # "auto"/unset on a non-interactive run (e.g. apply): always the machine hostname, so
         # setting dashboard.host back to "auto" reverts HOST_IP instead of keeping a stale value.

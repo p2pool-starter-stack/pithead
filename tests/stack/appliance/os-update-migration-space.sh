@@ -68,6 +68,7 @@ EOF
 chmod +x "$MS/bin/rauc"
 touch "$MS/bundle.raucb"
 printf 'release\n' >"$MS/variant-release"
+printf 'rauc.slot=A\n' >"$MS/cmdline"
 printf "RAUC_META_PITHEAD_VARIANT='release'\nRAUC_META_PITHEAD_VERSION='2.0.0'\nRAUC_META_PITHEAD_DATA_MIGRATION='true'\nRAUC_META_PITHEAD_MINIMUM_OS_VERSION='2.0.0'\n" >"$MS/info-mig.txt"
 ms_os_update() { # <avail GiB> — os-update of the migrating bundle, stdin closed
     rm -f "$MS/floor" "$MS/floor.prev" "$MS/marker"
@@ -79,7 +80,7 @@ ms_os_update() { # <avail GiB> — os-update of the migrating bundle, stdin clos
         source "$STACK"
         set +e
         MS_AVAIL_KB=$(($1 * 1048576)) RAUC_LOG="$MS/rauc.log" RAUC_INFO_OUT="$MS/info-mig.txt" \
-            PITHEAD_VERSION=1.20.0 PITHEAD_VARIANT_FILE="$MS/variant-release" \
+            PITHEAD_VERSION=1.20.0 PITHEAD_VARIANT_FILE="$MS/variant-release" PITHEAD_CMDLINE="$MS/cmdline" \
             PITHEAD_DATA_FLOOR_FILE="$MS/floor" PITHEAD_MIGRATION_MARKER_FILE="$MS/marker" \
             os_update bundle.raucb </dev/null
     )
@@ -93,7 +94,7 @@ assert_eq "…and no /data floor raised" "$([ -f "$MS/floor" ] && echo present |
 ms_os_update 200 >/dev/null 2>&1
 assert_rc "os-update of a migrating bundle with room exits 0" "$?" "0"
 assert_contains "…and installs" "$(cat "$MS/rauc.log")" "install bundle.raucb"
-assert_eq "…and marks the migration pending" "$(tr -d ' \n' <"$MS/marker" 2>/dev/null)" "2.0.0"
+assert_eq "…and marks the migration pending for the spare slot" "$(tr -d ' \n' <"$MS/marker" 2>/dev/null)" "2.0.0|B"
 
 echo "== black-box: the dashboard's os-verify and os-install refuse it too, and keep the download (#2645) =="
 MSC="$MS/control"
@@ -128,7 +129,7 @@ ms_verb() { # <action> <avail GiB> — one staged bundle, one request, one drain
     printf '{"id":"%s","action":"%s","actor":"admin"}\n' "$MSU" "$1" >"$MSC/data/control/requests/$MSU.json"
     (cd "$MSC" && PATH="$MSC/bin:$PATH" MS_AVAIL_KB=$(($2 * 1048576)) RAUC_LOG="$MS/rauc.log" \
         RAUC_INFO_OUT="$MSC/info-mig.txt" PITHEAD_APPLIANCE=1 PITHEAD_OS_UPDATE_DIR="$MSDIR" \
-        PITHEAD_VARIANT_FILE="$MS/variant-release" PITHEAD_DATA_FLOOR_FILE="$MSC/floor" \
+        PITHEAD_VARIANT_FILE="$MS/variant-release" PITHEAD_DATA_FLOOR_FILE="$MSC/floor" PITHEAD_CMDLINE="$MS/cmdline" \
         PITHEAD_RAUC_SYSTEM_CONF="$MSC/system.conf" PITHEAD_MIGRATION_MARKER_FILE="$MSC/marker" \
         ./pithead control-run-pending >/dev/null 2>&1)
 }

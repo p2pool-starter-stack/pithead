@@ -21,6 +21,7 @@
 # only while that tag does not exist yet (mid release-prep). See the function for why.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+source os/bake-images.sh
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -174,19 +175,6 @@ stage_compose() { # <version-tag> <stage-dir>  -> prints the COMPOSE_SOURCE line
     cat "$dir/COMPOSE_SOURCE" || return 1
 }
 
-# A bench build that leaves the DEFAULT registry in place will ask it for
-# pithead-<service>:$STACK_VERSION at first boot. Only the wizard's image is baked (below), so
-# every other service is a pull — and an UNRELEASED version has no such tags anywhere public.
-# The appliance then provisions, publishes its dashboard credentials, and comes up with ZERO
-# containers; five battery legs report that and take up to 25 minutes each to do it (#2043).
-#
-# The refs are the same ones verify_release_images checks, and the same five the bench publishes
-# to a local registry before a battery. Refuse here, in seconds, naming the remedy — the failure
-# is in the BUILD's configuration, not in the appliance, and the battery cannot tell the
-# difference from the inside.
-#
-# An unreachable registry refuses too, and correctly: an appliance built against a registry this
-# host cannot read is an appliance that cannot pull either.
 require_pullable_services() { # <registry> <stack-version>
     local registry="$1" version="$2" svc missing=""
     for svc in tor monero p2pool xmrig-proxy dashboard; do
@@ -197,9 +185,8 @@ require_pullable_services() { # <registry> <stack-version>
     {
         echo "build-image: refusing a bench build whose services could not be resolved."
         echo "  ${registry} cannot serve:${missing}"
-        echo "  VERSION is ${version#v} and only the wizard image is baked, so every other service"
-        echo "  is a pull at first boot. This image would provision and then run ZERO containers,"
-        echo "  and the battery would spend up to 25 minutes per leg discovering it (#2043)."
+        echo "  VERSION is ${version#v} and the build bakes these images from the registry, so"
+        echo "  every one of them must resolve at build time (#2043, #978)."
         echo "  Publish the five first-party images to a registry this host and the guest can both"
         echo "  reach, then rebuild with PITHEAD_REGISTRY=<host:port> (and PITHEAD_REGISTRY_CA=<ca.crt>"
         echo "  when that registry is TLS). See tests/os/README.md."
@@ -218,10 +205,6 @@ fi
 # full Docker build consumes the repository root as its context.
 bash scripts/build-pithead.sh
 
-# Bake the wizard's container image into the appliance: first boot must reach the setup page
-# without a registry (the operator may have no working network config yet, and the plan's
-# offline-first-boot property depends on it). The rest of the release's images are pulled at
-# provision time for now — baking the full set is tracked with the appliance-size work.
 STACK_VERSION="v$(tr -d ' \t\r\n' <VERSION)"
 # os/build/ is git-ignored, so staging there keeps the tree clean (the build stamps itself dirty
 # otherwise, and mkimage refuses a dirty stamp). The Dockerfile COPYs both files from this path.
@@ -291,11 +274,17 @@ if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
     docker pull -q "$WIZARD_SOURCE" >/dev/null
     docker tag "$WIZARD_SOURCE" "$WIZARD_IMAGE"
 elif [ "${PITHEAD_WIZARD_FROM_REGISTRY:-0}" = "1" ]; then
+    verify_baked_image "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-dashboard@$(grep -oE 'pithead-dashboard:[^[:space:]]*@sha256:[0-9a-f]{64}' os/build/stage/docker-compose.yml | grep -oE 'sha256:[0-9a-f]{64}' | head -1)" || exit 1
     docker pull -q "$WIZARD_IMAGE" >/dev/null
 else
     docker build -q -t "$WIZARD_IMAGE" dashboard >/dev/null
 fi
 docker save "$WIZARD_IMAGE" | gzip -1 >os/rootfs/images/dashboard.tar.gz
+if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
+    bake_service_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "${PITHEAD_PIN_TAG:-$STACK_VERSION}" || exit 1
+fi
+echo "==> baked image archives:"
+du -b os/rootfs/images/*.tar.gz | awk '{printf "    %s %d bytes\n", $2, $1}'
 
 BUILD_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 BUILD_DIRTY=""
@@ -367,5 +356,13 @@ if [ -n "$TEST_REGISTRY" ]; then
     (cd "$stage" && find etc opt -type f) |
         tar --append -f os/build/pithead-root.tar --owner=0 --group=0 --mode=0644 -C "$stage" -T -
     rm -r "$stage"
+fi
+rootfs_mib=$(($(stat -c %s os/build/pithead-root.tar) / 1048576))
+slot_mib=4096
+headroom_floor_mib=1536
+echo "==> rootfs headroom: ${rootfs_mib} MiB used of the ${slot_mib} MiB slot, $((slot_mib - rootfs_mib)) MiB margin"
+if [ "$rootfs_mib" -gt $((slot_mib - headroom_floor_mib)) ]; then
+    echo "build-image: rootfs of ${rootfs_mib} MiB leaves less than the ${headroom_floor_mib} MiB floor below the ${slot_mib} MiB slot" >&2
+    exit 1
 fi
 echo "==> rootfs: os/build/pithead-root.tar ($(du -h os/build/pithead-root.tar | cut -f1))"

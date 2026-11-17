@@ -61,7 +61,7 @@ echo "== unit: the unchanged branch of apply calls the refresh under the lock, b
 # order row goes red.
 AP="$ROOT/lib/pithead/40-apply-and-render.sh"
 ap_line() { grep -n -F -- "$1" "$AP" | head -1 | cut -d: -f1; }
-l_hold=$(ap_line '            mutation_lock_acquire apply')
+l_hold=$(ap_line '            apply_lock_revision "$revision"')
 l_units=$(ap_line '            provision_control_runner')
 l_refresh=$(ap_line '            apply_refresh_appliance_tls')
 l_nothing=$(ap_line '            log "No configuration changes detected. Nothing to apply."')

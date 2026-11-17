@@ -113,32 +113,14 @@ firstboot_wizard() {
         warn "Booted from removable media with no internal disk to install onto."
         warn "Running the stack from a USB stick is unsupported — it is too slow for the chain and the stick will wear out."
     fi
-    # Offline first boot: the appliance carries the wizard image as an archive (os/rootfs/images),
-    # because at this point the operator may have no working network yet — that is what they are
-    # here to configure. The loader is the boot path's own (see load_baked_images): naming the
-    # image forces a load when the tag is missing entirely, whatever the digest record says.
-    load_baked_images "$image"
-    # Double quotes on purpose: $engine expands NOW, at trap definition. It is a local, and the
-    # trap also fires after this function's locals are gone — where set -u would turn the trap
-    # itself into the crash that masks whatever actually failed. The spool paths expand now for
-    # the same reason, so the trap can still clear this session's restore and setup secrets.
+    PITHEAD_LOAD_ONLY="dashboard caddy" load_baked_images "$image"
     local cert_fp=""
 
-    # shellcheck disable=SC2064  # expand-now is the point (see above)
-    trap "'$engine' rm -f pithead-wizard >/dev/null 2>&1 || true; clear_restore_submission '$spool' '$restore_spool' || true; clear_setup_candidate '$restore_spool/config.json' '$restore_spool/handoff.json' || true; clear_restore_carry || true" EXIT
+    # shellcheck disable=SC2064
+    trap "wizard_clear_announcement || true; '$engine' rm -f pithead-wizard >/dev/null 2>&1 || true; clear_restore_submission '$spool' '$restore_spool' || true; clear_setup_candidate '$restore_spool/config.json' '$restore_spool/handoff.json' || true; clear_restore_carry || true" EXIT
     while :; do
-        # Re-stage per session, and re-derive the fingerprint with it: the accept path removes the
-        # spool, so a retry that reused a cert_fp computed once would advertise HTTPS and a
-        # fingerprint for a certificate the container can no longer read (#1063).
         cert_fp=$(stage_wizard_spool "$spool") || error "Could not prepare the setup page files."
         [ -n "$cert_fp" ] || warn "Could not generate a setup certificate — the setup page will be plain HTTP."
-        # Every wizard session starts with CLEAN flow state. The spool lives on this medium's
-        # /data, which survives reboots — so a fleet stick that installed machine 1 still
-        # carries its handoff.json, ack and installed markers, and machine 2's boot would open
-        # on the switch-off page with machine 1's stale credentials card still answering.
-        # error.txt and last-attempt.json survive on purpose: they are the retry context the
-        # failed-provisioning path just wrote for the reopened page. The restore passphrase and
-        # an installer's config candidate live in the volatile restore spool and go every round.
         rm -f "$spool/handoff.json" "$spool/handoff-ack" "$spool/installing" \
             "$spool/installed" "$spool/applied" "$spool/install-request" \
             "$spool/rig-request.json" "$spool/role" \
@@ -193,8 +175,11 @@ firstboot_wizard() {
                 rig_token=$(rig_access_token) || rig_token="" # empty here = the render leg refuses below
                 # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE, no login) and
                 # this box's address; an unresolvable pool host (#1867) adds control:"off" and why instead.
+                local rig_warning
+                rig_warning=$(machine_name_warning "$rig_worker" rig)
+                [ -z "$rig_warning" ] || _console "" "Warning: $rig_warning"
                 jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
-                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end)' | write_handoff_card "$card_spool"
+                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" --arg warn "$rig_warning" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end) + (if $warn == "" then {} else {warning: $warn} end)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
@@ -311,6 +296,9 @@ firstboot_wizard() {
                 local DASHBOARD_HOST stratum_addr dash_user dash_pass miner_connection
                 miner_connection=$(wizard_prepare_miner_connection "$candidate" "$installer" "$spool") || error "Could not prepare miner connection credentials safely."
                 DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host "$candidate" 2>/dev/null)" "")
+                local name_warning
+                name_warning=$(machine_name_warning "$DASHBOARD_HOST" machine)
+                [ -z "$name_warning" ] || _console "" "Warning: $name_warning"
                 reconcile_appliance_hostname
                 stratum_addr="stratum+$(jq -r 'if .p2pool.stratum_tls == true then "ssl" else "tcp" end' "$candidate")://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$candidate")
@@ -322,8 +310,8 @@ firstboot_wizard() {
                 # credentials must not vanish with it.
                 jq -n --arg u "$dash_user" --arg p "$dash_pass" \
                     --arg d "https://$(hostname).local" --arg s "$stratum_addr" \
-                    --argjson miner "$miner_connection" \
-                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner' | write_handoff_card "$card_spool"
+                    --arg w "$name_warning" --argjson miner "$miner_connection" \
+                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner + (if $w != "" then {warning:$w} else {} end)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
@@ -449,7 +437,7 @@ firstboot_wizard() {
                 return 0
             fi
             if ! "$engine" inspect -f '{{.State.Running}}' pithead-wizard 2>/dev/null | grep -q true; then
-                warn "Wizard stopped (token lockout or crash) — minting a fresh token and restarting it."
+                warn "Wizard stopped — restarting the setup page."
                 break
             fi
             sleep 2

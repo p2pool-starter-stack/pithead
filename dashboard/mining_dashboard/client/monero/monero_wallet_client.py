@@ -159,3 +159,8 @@ class MoneroWalletClient:
         """Return the wallet's own address, or None when RPC did not answer."""
         result = self._rpc("get_address")
         return [result["address"]] if result and result.get("address") else None
+
+    def height(self):
+        result = self._rpc("get_height")
+        height = result.get("height") if result else None
+        return height if type(height) is int and height >= 0 else None

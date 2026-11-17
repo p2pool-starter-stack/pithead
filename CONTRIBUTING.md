@@ -281,8 +281,10 @@ The Dependabot equivalent of the first check is to group its PRs by `baseRefName
 - A PR into `develop` merges on green required checks plus the `adversarial-review`
   status recorded on its head SHA by a session that did not author it, human-driven
   or automated; see [AI workflow](docs/dev/ai-workflow.md#review-and-handoff). The
-  merge is a squash, and only the owner's account performs it. A PR into `main` also
-  needs the [code owner](.github/CODEOWNERS).
+  merge is a squash, and only the owner's account performs it. The one exception to the
+  squash is a forward merge into a `develop-v*` line; see
+  [Releasing](docs/dev/releasing.md#forward-merges-into-release-line-branches). A PR into
+  `main` also needs the [code owner](.github/CODEOWNERS).
 
 ## Style
 

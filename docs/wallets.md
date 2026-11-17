@@ -12,7 +12,9 @@ instead of a public one.
 
 ## Enable RPC access
 
-The node's RPC (`18081`) is localhost-only by default. Turn on
+The node's RPC (`18081`) is localhost-only by default. On the lean preview dashboard
+(`/ui-preview`), open **Settings › LAN access**, turn on **Monero wallet RPC** and review the
+change — the panel shows the exact address to use once the switch is on. Everywhere else, turn on
 [`monero.rpc_lan_access`](configuration.md#configuration-reference), then apply:
 
 ```jsonc

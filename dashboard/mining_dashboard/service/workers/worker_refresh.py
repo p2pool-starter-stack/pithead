@@ -39,12 +39,9 @@ REFRESH_ATTEMPTS = 6
 REFRESH_DELAY_S = 10.0
 
 
-async def _poll_until_matched(worker_client, ip, name, target, entry, attempts, delay_s, sleep):
-    """Probe ``ip``/``name`` up to ``attempts`` times, merging each reachable read's ``rigforge``
-    block into ``entry`` in place (same field the main poll loop merges, ``_merge_direct_stats``).
-    Stops as soon as the reported version matches ``target`` (parsed SemVer) or the attempts run
-    out; a target that doesn't parse (caller passed something odd) stops after the first reachable
-    read instead of spinning for nothing."""
+async def _poll_until_matched(
+    worker_client, latest_data, ip, name, target, attempts, delay_s, sleep
+):
     for _ in range(attempts):
         await sleep(delay_s)
         try:
@@ -55,7 +52,13 @@ async def _poll_until_matched(worker_client, ip, name, target, entry, attempts, 
         rf = parse_rigforge(payload) if payload else None
         if rf is None:
             continue
-        entry["rigforge"] = rf
+        current = next((w for w in latest_data.get("workers") or [] if w.get("name") == name), None)
+        if current is None or current.get("ip") != ip:
+            return False
+        held = (current.get("rigforge") or {}).get("generated_at") or ""
+        if held > (rf.get("generated_at") or ""):
+            continue
+        current["rigforge"] = rf
         if rf.get("stale"):
             continue
         reported = parse_semver(rf.get("version"))
@@ -84,11 +87,18 @@ async def refresh_worker_after_upgrade(
     target = parse_semver(target_version)
     if worker_client is not None:
         return await _poll_until_matched(
-            worker_client, entry["ip"], name, target, entry, attempts, delay_s, sleep
+            worker_client, latest_data, entry["ip"], name, target, attempts, delay_s, sleep
         )
     async with ClientSession() as session:
         return await _poll_until_matched(
-            XMRigWorkerClient(session), entry["ip"], name, target, entry, attempts, delay_s, sleep
+            XMRigWorkerClient(session),
+            latest_data,
+            entry["ip"],
+            name,
+            target,
+            attempts,
+            delay_s,
+            sleep,
         )
 
 

@@ -124,12 +124,6 @@ export class WizardApp extends Component {
     tick();
   }
 
-  // A dropped connection reads identically to the lockout to the operator: the machine
-  // exits right after refusing the last attempt, so a network failure gets the same
-  // actionable message as the 429 it raced.
-  static LOCKOUT_MESSAGE =
-    "Too many attempts — the machine printed a fresh token on its console; enter that one.";
-
   auth = async (e) => {
     e.preventDefault();
     try {
@@ -139,12 +133,16 @@ export class WizardApp extends Component {
       });
       if (res.ok && (await this.loadState())) return;
       if (res.status === 429) {
-        this.setState({ error: WizardApp.LOCKOUT_MESSAGE });
+        const retryAfter = Number.parseInt(res.headers?.get("Retry-After") || "60", 10);
+        const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60;
+        this.setState({
+          error: `Too many attempts. Try the same token again in ${seconds} seconds.`,
+        });
         return;
       }
       this.setState({ error: "Wrong token." });
     } catch {
-      this.setState({ error: WizardApp.LOCKOUT_MESSAGE });
+      this.setState({ error: "Could not reach this machine. Retry when it is available." });
     }
   };
 

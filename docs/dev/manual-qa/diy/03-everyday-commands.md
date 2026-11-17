@@ -164,6 +164,11 @@ This part tests the `./pithead` commands an operator runs day to day: version, s
 
 ### 3.7 Support bundle
 
+The DIY lifecycle phase automates archive permissions, expected diagnostics and absence
+of dashboard, stratum and Telegram fixture credentials through
+`tests/integration/lib/run-support-bundle.sh` (#3081). Telegram stays disabled during
+the test. Monero and onion log scrubbing below still require the manual checks.
+
 **What you do:**
 
 1. Make a support bundle:

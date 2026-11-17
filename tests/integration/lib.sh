@@ -172,7 +172,8 @@ resolve_overrides() {
             SKIP_REASON="needs --remote-monero-host"
             return 1
         }
-        out="$out monero.remote.host=$REMOTE_MONERO_HOST monero.view_key="
+        out="$out monero.remote.host=$REMOTE_MONERO_HOST"
+        printf '%s' "$overrides" | tr ' ' '\n' | grep -qx 'payout_confirm=env' || out="$out monero.view_key="
         out="$out${REMOTE_MONERO_RPC_PORT:+ monero.remote.rpc_port=$REMOTE_MONERO_RPC_PORT}${REMOTE_MONERO_ZMQ_PORT:+ monero.remote.zmq_port=$REMOTE_MONERO_ZMQ_PORT}"
     fi
 
@@ -195,7 +196,7 @@ resolve_overrides() {
             return 1
         }
         [ -z "${IT_MONERO_VIEW_KEY:-}" ] || out="${out:+$out }monero.view_key=$IT_MONERO_VIEW_KEY"
-        [ -z "$tari_pair" ] || out="${out:+$out }tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
+        [ -z "$tari_pair" ] || [ "$tari_mode" = off ] || out="${out:+$out }tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
     fi
 
     RESOLVED="$out"
@@ -247,20 +248,16 @@ pool_label() {
     esac
 }
 
-# --- Target I/O (SSH or local) ----------------------------------------------
-# Globals set by the runner: IT_MODE (ssh|local), IT_SSH_DEST, IT_SSH_OPTS (array),
-# IT_REMOTE_DIR, IT_PITHEAD (the pithead invocation, e.g. "./pithead" or "sudo ./pithead").
-
-# Run a shell snippet on the target, in the stack directory. The snippet is our own trusted
-# code; we never interpolate untrusted data into it. Returns the remote command's exit code.
 rx() {
     local snippet="$1"
     if [ "$IT_MODE" = "local" ]; then
         (cd "$IT_REMOTE_DIR" && bash -c "$snippet")
     else
-        local remote stdin_flag=(-n)
-        remote="cd $(quote_arg "$IT_REMOTE_DIR") && { $snippet; }"
-        # Default -n protects scenario loops; --stdin opts in for a dedicated input pipe.
+        local remote prefix="" stdin_flag=(-n)
+        if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+            prefix="export IT_SCRATCH_DIR=$(quote_arg "$IT_SCRATCH_DIR"); export TMPDIR=\"\$IT_SCRATCH_DIR\"; "
+        fi
+        remote="${prefix}cd $(quote_arg "$IT_REMOTE_DIR") && { $snippet; }"
         [ "${2:-}" != --stdin ] || stdin_flag=()
         ssh "${stdin_flag[@]}" "${IT_SSH_OPTS[@]}" "$IT_SSH_DEST" "$remote"
     fi

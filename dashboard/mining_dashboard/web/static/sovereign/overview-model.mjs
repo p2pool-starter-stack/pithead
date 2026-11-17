@@ -52,7 +52,7 @@ export function attention(state) {
   );
   for (const worker of workers)
     if (worker.status === "offline")
-      add("rig", `${worker.name}: offline. Check its connection.`, "machines", "pool-and-rigs", {
+      add("rig", `${worker.name}: offline. Check its connection.`, "machines", null, {
         worker: worker.name,
       });
   for (const chain of ["monero", ...(state.overview?.tari_enabled ? ["tari"] : [])]) {

@@ -64,6 +64,11 @@ export function findRig(workers, name, occurrence) {
   ];
 }
 
+export function destinationRow(workers, name) {
+  if (!name) return undefined;
+  return rigRows(workers).find((row) => row.name === name);
+}
+
 export function rigSettings(connection) {
   if (!connection?.url) return null;
   return connection.password_set && connection.password

@@ -178,13 +178,13 @@ integration_expected=$(
     find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
         ! -name rig-supply.sh ! -name restore-proof.sh ! -name restore-unit-state.sh ! -name restore-chain-sync.sh ! -name chain-keep.sh ! -name restore-mining-ready.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh ! -name inline-pregate-remote.sh \
-        ! -name harness-args.sh ! -name e2e-env.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-tari-background-sync.sh ! -name run-lifecycle-tls.sh \
-        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh ! -name tor-control-dial.sh ! -name worker-detail-diagnostics.sh \
+        ! -name harness-args.sh ! -name e2e-env.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-lifecycle-miners.sh ! -name run-tari-background-sync.sh ! -name run-lifecycle-tls.sh \
+        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh ! -name tor-control-dial.sh ! -name worker-detail-diagnostics.sh ! -name onion-baseline-diagnostics.sh ! -name lan-guard-snapshot.sh \
         ! -name backup-window.sh ! -name safety-backup.sh \
         ! -name remote-endpoints.sh ! -name wallet-fixture.sh ! -name wallet-fixture-recovery.sh \
-        ! -name readiness-churn.sh ! -name restore-dashboard-guest.sh ! -name reset-restore-web.sh ! -name reset-restore-startup.sh ! -name lifecycle-pool.sh ! -name disk-enospc-target.sh \
+        ! -name readiness-churn.sh ! -name restore-dashboard-guest.sh ! -name reset-restore-web.sh ! -name reset-restore-startup.sh ! -name reset-restore-miner.sh ! -name lifecycle-pool.sh ! -name disk-enospc-target.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh \
-        ! -name miner-connection.sh ! -name tari-readiness.sh ! -name xvb-off-dwell.sh -print |
+        ! -name lan-crash-evidence.sh ! -name miner-connection.sh ! -name tari-readiness.sh ! -name xvb-off-dwell.sh -print |
         sed 's|^tests/integration/||'
 )
 integration_expected=$(printf '%s\n' "$integration_expected" | sort)

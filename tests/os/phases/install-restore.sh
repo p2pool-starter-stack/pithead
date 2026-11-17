@@ -219,7 +219,7 @@ _phase_install_restore() {
             rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
             return 1
         }
-        _ssh "mount -o remount,rw /boot/efi 2>/dev/null || true; printf '%s' '{\"fixture\":\"fleet-config-secret\"}' >/boot/efi/pithead-config.json; printf '%s' 'pit-FLEET1' >/boot/efi/pithead-token.txt; printf '%s' '{\"access_token\":\"0123456789abcdef0123456789abcdef\",\"stratum_password\":\"fleet-rig-secret\"}' >/boot/efi/pithead-rig.json; chmod 600 /boot/efi/pithead-config.json /boot/efi/pithead-token.txt /boot/efi/pithead-rig.json" || {
+        _ssh "mount -o remount,rw /boot/efi 2>/dev/null || true; printf '%s' '{\"fixture\":\"fleet-config-secret\"}' >/boot/efi/pithead-config.json; printf '%s' 'pit-SYNTHETIC-FLEET1' >/boot/efi/pithead-token.txt; printf '%s' '{\"access_token\":\"0123456789abcdef0123456789abcdef\",\"stratum_password\":\"fleet-rig-secret\"}' >/boot/efi/pithead-rig.json; chmod 600 /boot/efi/pithead-config.json /boot/efi/pithead-token.txt /boot/efi/pithead-rig.json" || {
             bad "restore leg: could not seed unrelated installer credentials"
             rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
             return 1

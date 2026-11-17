@@ -22,6 +22,10 @@ export function osBadgeLabel(os, passive) {
     const target = os.version ? vtag(os.version) : "the installed release";
     return `Reboot to finish the update to ${target}`;
   }
+  if (os.step === "verifying") {
+    const target = os.version ? vtag(os.version) : "the installed release";
+    return `Verifying the update to ${target} — leave the machine running`;
+  }
   if (passive && passive.available) return `OS update ${passive.latest}`;
   return "OS updates";
 }
@@ -35,6 +39,13 @@ export function rebootAskPane({ version, onNotNow, onReboot }) {
           <button class="btn-toggle" onClick=${onNotNow}>Not now</button>
           <button class="btn-toggle active" onClick=${onReboot}>Reboot</button>
       </div>`;
+}
+
+export function verifyingPane({ version }) {
+  return html`<p class="status-ok">Verifying ${version || "the installed update"} — leave the machine running.</p>
+      <p class="text-muted">The new version booted and its health checks are still running. Do not
+      reboot while this is in progress: when the checks pass the machine keeps the new version, and
+      if they fail it returns to the previous one on its own. Mining resumes when the stack is up.</p>`;
 }
 
 // The typed gate, one click behind the ask. Mining pauses here, so the confirmation is deliberate

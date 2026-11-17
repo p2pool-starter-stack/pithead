@@ -485,9 +485,7 @@ assert_contains "the hold changes nothing for a miner" "$(rcv p2pool running 'Up
 unset -f rcv
 
 echo "== unit: pithead-sync's rigforge leg — program replaced, state preserved, prebuilt seeded =="
-# The baked tree is program; config.json (pithead-rendered) and the data/ workspace (the XMRig
-# build cache) are state. The prebuilt binary seeds the workspace so the appliance never needs
-# RigForge's clone path — github over clearnet, unreachable from a Tor-only box.
+# The baked tree is program, config.json and data/ are state, and the prebuilt seeds data/ for a Tor-only box.
 SYNCSCRIPT="$ROOT/os/overlay/pithead-sync"
 mk_tmpdir SSB
 mkdir -p "$SSB/opt-pithead" "$SSB/opt-rigforge/util" "$SSB/opt-rigforge/prebuilt/xmrig/build"
@@ -510,10 +508,8 @@ run_sync >/dev/null 2>&1
 assert_rc "sync runs clean" "$?" "0"
 [ -x "$SSB/data/rigforge/rigforge.sh" ] && ok "rigforge program delivered beside pithead's" ||
     bad "rigforge program delivered beside pithead's" "missing"
-assert_eq "prebuilt seeded into the workspace where 'already built' finds it" \
-    "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig" 2>/dev/null)" "bin-v2"
-assert_eq "the commit marker rides with the seed" \
-    "$(cat "$SSB/data/rigforge/data/worker/xmrig/.rigforge-commit" 2>/dev/null)" "commit-B"
+assert_eq "prebuilt seeded into the workspace where 'already built' finds it" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig" 2>/dev/null)" "bin-v2"
+assert_eq "the commit marker rides with the seed" "$(cat "$SSB/data/rigforge/data/worker/xmrig/.rigforge-commit" 2>/dev/null)" "commit-B"
 assert_eq "the debug registry CA reaches the runtime verifier" "$(cat "$SSB/data/pithead/cosign.registry-ca.crt" 2>/dev/null)" "pithead-program"
 [ -e "$SSB/data/rigforge/prebuilt" ] && bad "prebuilt/ is a seed, never a synced tree" "synced" ||
     ok "prebuilt/ is a seed, never a synced tree"
@@ -525,8 +521,11 @@ assert_eq "config.json (state) survives the resync" "$(cat "$SSB/data/rigforge/c
 assert_eq "a same-pin native rebuild is left alone" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
 rm -f "$SSB/opt-pithead/cosign.registry-ca.crt" && run_sync >/dev/null 2>&1
 [ ! -e "$SSB/data/pithead/cosign.registry-ca.crt" ] && ok "a later release removes the stale debug registry CA" || bad "a later release removes the stale debug registry CA" "still present"
-# A new pin arrives with a new image AND its new prebuilt: the cached build is replaced, so the
-# on-box clone path never needs to run.
+printf '0\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-donate-min" && run_sync >/dev/null 2>&1
+assert_eq "a same-pin build missing the donate minimum marker is replaced by the prebuilt" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "bin-v2"
+printf 'native-rebuild' >"$SSB/data/rigforge/data/worker/xmrig/build/xmrig" && run_sync >/dev/null 2>&1
+assert_eq "a same-pin build that carries the marker is left alone" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
+# A new pin arrives with a new image and its new prebuilt, so the cached build is replaced.
 printf 'commit-C\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-commit"
 printf 'bin-v3' >"$SSB/opt-rigforge/prebuilt/xmrig/build/xmrig"
 printf 'program-v3' >"$SSB/opt-rigforge/rigforge.sh"

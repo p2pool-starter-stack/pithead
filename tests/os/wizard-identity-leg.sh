@@ -36,8 +36,8 @@ wizard_identity_request() {
 }
 
 phase_wizard_identity() {
-    local old_token new_token printed served attempt code deadline jar certificate pin
-    old_token=$(wizard_console_token "$SERIAL")
+    local token printed served attempt code jar certificate pin
+    token=$(wizard_console_token "$SERIAL")
     printed=$(wizard_console_fingerprint "$SERIAL") || printed=""
     certificate=$(wizard_served_certificate) || certificate=""
     served=$(printf '%s' "$certificate" | wizard_certificate_fingerprint) || served=""
@@ -48,7 +48,7 @@ phase_wizard_identity() {
         bad "console SHA-256 fingerprint is missing, malformed or differs from the served certificate"
         return
     fi
-    if [ -z "$old_token" ]; then
+    if [ -z "$token" ]; then
         bad "console did not print a usable one-time setup token"
         return
     fi
@@ -61,44 +61,26 @@ phase_wizard_identity() {
         fi
     done
     ok "five wrong setup tokens return four HTTP 403 refusals then HTTP 429"
-    deadline=$(($(date +%s) + 120))
-    new_token=""
-    while [ "$(date +%s)" -lt "$deadline" ]; do
-        new_token=$(wizard_console_token "$SERIAL")
-        if [ -n "$new_token" ] && [ "$new_token" != "$old_token" ]; then
-            code=$(curl --noproxy '*' -sk --pinnedpubkey "$pin" -m 10 -o /dev/null -w '%{http_code}' "https://$ip/" 2>/dev/null) || code=""
-            [ "$code" != 200 ] || break
-        fi
-        sleep 2
-    done
-    if [ -z "$new_token" ] || [ "$new_token" = "$old_token" ] || [ "$code" != 200 ]; then
-        bad "lockout did not print a fresh console token and reopen the setup page within 120 seconds"
-        return
-    fi
-    printed=$(wizard_console_fingerprint "$SERIAL") || printed=""
-    served=$(wizard_served_certificate | wizard_certificate_fingerprint) || served=""
-    if [ -z "$printed" ] || [ "$printed" != "$served" ]; then
-        bad "the restarted setup certificate differs from the latest console fingerprint"
-        return
-    fi
-    ok "lockout prints a fresh console token and reopens the setup page"
-    code=$(printf '%s' "$old_token" | wizard_identity_request --data-urlencode token@-) || code=""
-    if [ "$code" != 403 ]; then
-        bad "the previous console token was not refused after lockout"
-        return
-    fi
     jar=$(mktemp) || {
         bad "could not create a private setup session cookie jar"
         return
     }
-    code=$(printf '%s' "$new_token" | wizard_identity_request -c "$jar" --data-urlencode token@-) || code=""
+    code=$(printf '%s' "$token" | wizard_identity_request -c "$jar" --data-urlencode token@-) || code=""
+    if [ "$code" != 429 ] || grep -q wizard_session "$jar"; then
+        rm -f "$jar"
+        bad "the correct console token was not held at HTTP 429 during the cooldown"
+        return
+    fi
+    ok "the correct console token waits out the cooldown from the throttled client"
+    sleep 65
+    code=$(printf '%s' "$token" | wizard_identity_request -c "$jar" --data-urlencode token@-) || code=""
     if [ "$code" != 302 ]; then
         rm -f "$jar"
-        bad "the fresh console token did not authenticate"
+        bad "the same console token did not authenticate after the cooldown"
         return
     fi
     code=$(curl --noproxy '*' -sk --pinnedpubkey "$pin" -m 10 -b "$jar" -o /dev/null -w '%{http_code}' "https://$ip/api/wizard-state" 2>/dev/null) || code=""
     rm -f "$jar"
-    [ "$code" = 200 ] && ok "the previous token is refused and the fresh token opens authenticated wizard state" ||
-        bad "the fresh console token did not open authenticated wizard state"
+    [ "$code" = 200 ] && ok "the same console token opens authenticated wizard state after the cooldown" ||
+        bad "the authenticated session did not open wizard state after the cooldown"
 }

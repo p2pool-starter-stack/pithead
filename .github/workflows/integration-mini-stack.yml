@@ -39,6 +39,8 @@ jobs:
         run: bash tests/integration/mini-stack/test-boot-health-proxy.sh
       - name: Start and check the real view-only wallets
         run: bash tests/integration/mini-stack/test-real-wallets.sh
+      - name: Check the real wallet's SOCKS route for a remote node
+        run: bash tests/integration/mini-stack/test-wallet-socks.sh
       - name: Dump dashboard logs on failure
         if: failure()
         run: docker compose -f tests/integration/mini-stack/docker-compose.fake.yml logs --no-color || true

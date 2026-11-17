@@ -43,6 +43,7 @@ StandardOutput=journal+console
 StandardError=journal+console
 ExecStartPre=/bin/sh -c 'timedatectl show -p NTPSynchronized --value | grep -qx yes || htpdate -s www.debian.org || true'
 ExecStart=/data/pithead/pithead firstboot-wizard
+ExecStopPost=-/usr/bin/rm -f /run/issue.d/pithead-setup.issue
 TimeoutStartSec=infinity
 
 [Install]

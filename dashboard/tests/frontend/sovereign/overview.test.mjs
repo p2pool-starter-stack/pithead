@@ -57,7 +57,11 @@ test("mixed conditions use the approved display order and stable worker ordering
   assert.deepEqual(items.slice(0, 3).map((item) => item.text.split(":")[0]), ["a", "a", "z"]);
   for (const item of items) {
     const url = new URL(item.href, "https://example.test/ui-preview");
-    assert.ok(url.searchParams.get("page")); assert.ok(url.searchParams.get("advanced"));
+    assert.ok(url.searchParams.get("page"));
+    if (item.kind === "rig") {
+      assert.equal(url.searchParams.get("worker"), item.text.split(":")[0]);
+      assert.equal(url.searchParams.has("advanced"), false);
+    } else assert.ok(url.searchParams.get("advanced"));
   }
   state.profile.name = "Performance";
   assert.equal(attention(state).some((item) => item.kind === "tor"), false);

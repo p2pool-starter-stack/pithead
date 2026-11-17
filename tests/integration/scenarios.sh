@@ -77,6 +77,7 @@ remote-main-stratum-tls	monero.mode=remote p2pool.pool=mini xvb.enabled=true das
 local-pruned-main-firewall-off	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.tor_egress_firewall=false
 local-pruned-main-payout-pairs	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-payout-confirm	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true payout_confirm=env
+remote-main-payout-confirm	monero.mode=remote p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=false tari.mode=off tari.view_key= tari.spend_public_key= payout_confirm=env
 local-pruned-main-insecure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=false dashboard.tari_required=true
 EOF
 }

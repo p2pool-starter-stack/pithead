@@ -39,10 +39,6 @@ render_env() {
     tari_grpc_lan=$(jq -r '.tari.grpc_lan_access // false' "$CONFIG_FILE")
     if [ "$tari_grpc_lan" == "true" ]; then tari_grpc_bind="0.0.0.0"; else tari_grpc_bind="127.0.0.1"; fi
 
-    # On-chain payout confirmation (#381): the view-only wallet-rpc service only starts when its
-    # compose profile is active, which is only when a view key is set on a local node. Off = no
-    # container, dashboard unchanged. PAYOUT_CONFIRM_ENABLED is set by parse_and_validate_config
-    # (which also refuses a view key on a remote node and validates the key/height).
     if [ "${PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
         profiles="${profiles:+$profiles,}payout_confirm"
     fi
@@ -287,11 +283,8 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    # Tari view-only wallet secret delivery (#462): the view key, spend key and wallet password ride an
-    # owner-only data/ file bind-mounted at /run/secrets (never `environment:`, which `docker inspect`
-    # shows). The mount keeps its owner, so it must be the container's APP_UID (#2731). Built as a temp
-    # file then renamed, so a planted symlink is replaced, not followed. REAL .env target only.
     local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
+    local tari_secret_target="${2:-$tari_secret_file}"
     if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
         tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
@@ -299,14 +292,12 @@ render_env() {
             "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp" &&
             tari_foreign=$(find "$tari_secret_tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
             { [ -z "$tari_foreign" ] || chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp"; } &&
-            mv -f "$tari_secret_tmp" "$tari_secret_file" && tari_secret_ok=true
+            mv -fT -- "$tari_secret_tmp" "$tari_secret_target" && tari_secret_ok=true
         # An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
-        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
+        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "$tari_secret_target" = "$tari_secret_file" ] && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
             error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
     fi
 
-    # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
-    # before the heredoc so embedded line breaks become quoted escapes, not dotenv assignments.
     (
         umask 077
         cat <<EOF >"$target"
@@ -317,6 +308,8 @@ DASHBOARD_DATA_DIR=$(dotenv_render_value "$DASHBOARD_DIR")
 TOR_DATA_DIR=$(dotenv_render_value "$TOR_DATA_DIR")
 MONERO_NODE_USERNAME=$(dotenv_render_value "$MONERO_USER")
 MONERO_NODE_PASSWORD=$(dotenv_render_value "$MONERO_PASS")
+P2POOL_BACKUP_ARGS_B64=$(dotenv_render_value "$(monero_backup_args)")
+MONERO_BACKUP_NODES=$(dotenv_render_value "$(jq -c '.monero.backup_nodes // []' "$CONFIG_FILE")")
 MONERO_WALLET_ADDRESS=$(dotenv_render_value "$MONERO_WALLET")
 MONERO_VIEW_KEY=$(dotenv_render_value "$MONERO_VIEW_KEY")
 PAYOUT_SCAN_HEIGHT=$(dotenv_render_value "$PAYOUT_SCAN_HEIGHT")
@@ -448,8 +441,8 @@ PITHEAD_TLS_DIR=$(dotenv_render_value "$(appliance_tls_dir)")
 HOST_PORT=$(dotenv_render_value "$HOST_PORT")
 DEPLOYMENT_COMPLETED=$(dotenv_render_value "${DEPLOYMENT_COMPLETED:-false}")
 EOF
+        [ "${PAYOUT_NODE_REMOTE:-false}" != true ] ||
+            printf 'PAYOUT_NODE_REMOTE=true\nPAYOUT_NODE_PROXY=%s\n' "$(dotenv_render_value "${PAYOUT_NODE_PROXY:-}")" >>"$target"
     )
-    # Contains the node RPC password; keep it owner-only (belt-and-braces — the umask above
-    # already created it 600; a chmod failure now aborts loudly instead of passing silently).
     chmod 600 "$target"
 }

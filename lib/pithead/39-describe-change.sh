@@ -8,7 +8,7 @@ describe_change() {
             ;;
         esac
     fi
-    if describe_profile_change "$key" "$old" "$new" || describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
+    if describe_profile_change "$key" "$old" "$new" || describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new" || describe_payout_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
     fi
@@ -125,16 +125,7 @@ describe_change() {
             msg="Stratum access-password DISABLED — any rig that can reach :3333 may mine again."
         elif [ -z "$old" ]; then
             flag=DEST
-            # The DIY hint points at .env / 'status' to recover an auto-generated password; the
-            # appliance has neither a shell nor a dashboard surface that reveals a secret value
-            # (#33's own trust boundary — masked config never round-trips a secret to the
-            # container), so there is no remedy to name here. Drop the instruction rather than
-            # invent one (#1139).
-            if is_appliance; then
-                msg="Stratum access-password ENABLED — rigs must now send the matching 'pass' or they're rejected; the xmrig-proxy container is recreated."
-            else
-                msg="Stratum access-password ENABLED — rigs must now send the matching 'pass' (find it in .env / './pithead status') or they're rejected; the xmrig-proxy container is recreated."
-            fi
+            msg="Stratum access-password ENABLED — rigs must now send the matching 'pass' (find it in the dashboard's Connect a miner panel) or they're rejected; the xmrig-proxy container is recreated."
         else
             flag=DEST
             msg="Stratum access-password CHANGED — update every rig's 'pass' to match or they're rejected; the xmrig-proxy container is recreated."
@@ -173,11 +164,11 @@ describe_change() {
         flag=CONFIRM msg="${key%%_*} node endpoint ($key): ${old:-unset} → $new — the stack points its RPC client THERE and trusts the chain data, block templates and share heights that address returns. Confirm-gated, not free-commit, because it moves TRUST rather than disk; the host probes the new endpoint before accepting it, and putting the old address back reverses it."
         [ "$key" != TARI_GRPC_ADDRESS ] || msg+=" Monero mining continues; merge-mining starts when Tari has synced (on an already-mining machine)."
         ;;
+    MONERO_BACKUP_NODES | P2POOL_BACKUP_ARGS_B64)
+        flag=CONFIRM
+        msg="Monero backup nodes changed — the stack trusts each configured endpoint for chain data and block templates; credentials are hidden."
+        ;;
     MONERO_NODE_USERNAME | MONERO_NODE_PASSWORD)
-        # #2333/#2367: confirm-gated like the endpoint fields above, never a refusal — the owner's
-        # ruling on both issues. Never echo $old/$new: this is the one warning in this function
-        # whose subject is a secret, and CONTROL_SECRET_PATHS masks it everywhere else for the
-        # same reason.
         flag=CONFIRM
         msg="Monero node RPC login changed ($key) — the stack authenticates to its configured node with this credential from now on. If the new value is wrong, the node connection fails closed rather than falling back to the old one; put the old value back to reverse it."
         ;;
@@ -332,21 +323,7 @@ describe_change() {
             msg="Tari clearnet sync DISABLED — the Tari base node returns to Tor-only transport. tari is recreated."
         fi
         ;;
-    MONERO_VIEW_KEY)
-        # Secret (#381): the private view key reveals every incoming payout amount/time — never
-        # echo its value into the change preview / logs.
-        if [ -z "$new" ]; then
-            msg="Payout confirmation view key CLEARED — the view-only wallet-rpc is removed."
-        elif [ -z "$old" ]; then
-            flag=DEST
-            msg="Payout confirmation view key SET — a view-only monero-wallet-rpc starts and scans the local node for confirmed payouts (it can see incoming amounts, never spend)."
-        else
-            flag=DEST
-            msg="Payout confirmation view key CHANGED — a new view-only wallet is opened for this address (the previous one is kept)."
-        fi
-        ;;
     WALLET_RPC_PASSWORD)
-        # Secret (#381): auto-generated wallet-rpc login — never echo the value.
         msg="Payout wallet-rpc credential updated."
         ;;
     PAYOUT_CONFIRM_ENABLED)

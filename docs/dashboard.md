@@ -32,7 +32,8 @@ The `/api/state` field `tari_gates_sync` reports that effective Tari gate.
 
 The preview keeps the last successful snapshot when polling fails, labels it stale, offers Retry,
 and asks the operator to sign in again when the session expires. Earnings shows recorded payouts
-and Machines lists the rigs; Overview is described below and the Settings bodies are still being built. The preview does not
+and Machines lists the rigs; Overview and the Settings LAN access group are described below, and
+the remaining Settings bodies are still being built. The preview does not
 announce a cutover from the legacy UI. The
 drawer supplies its container and Appearance controls. Advanced > Maintenance offers **Reboot**
 and **Power off** on an appliance with dashboard control enabled; these controls are absent on DIY.
@@ -66,6 +67,24 @@ the existing preview, typed confirmations and apply-result contract. Electricity
 kWh in the configured currency; zero leaves power cost unset. Read-only hosts and disconnected
 sessions show neither control. Tier and expert Earnings settings remain in Advanced under the
 Settings work. The preview adds no hashrate scenario, coin tabs or assumptions toggle.
+
+### LAN access in the lean preview
+
+Settings opens with a **LAN access** group: one switch each for the Monero wallet RPC
+(`monero.rpc_lan_access`), Monero ZMQ (`monero.zmq_lan_access`) and Tari gRPC
+(`tari.grpc_lan_access`), each with a one-line purpose. A switched-on service shows the exact
+address to use — the host and the port it publishes (18081, 18083, 18142) — with the detected LAN
+IP beside it and a copy button, plus a short note on connecting a wallet or a second stack. The
+group only ever shares these ports on the local network or a machine-local VPN: the stack's LAN-only
+source rule limits them to local-network and CGNAT/VPN sources, and the panel says so. Reviewing a
+change runs the host's existing
+apply path — preview, confirmation, commit — so the confirmation and audit entry are the ones the
+control channel already keeps, and only the affected services restart. **Check the LAN rule now**
+runs the host diagnostics and reads its LAN-guard rows; a switch that is on without its rule is
+reported as a fault, never as working, and a successful apply triggers the check. After an apply
+the panel holds the switches until you go back to the switches, which re-reads the host. The group
+is on the Settings page always; the switches need an active session on a host whose control channel
+is on, and without one the page says so.
 
 ### Machines in the lean preview
 
@@ -116,6 +135,11 @@ each added, repointed or removed rig, and apply only after typed APPLY; removing
 dashboard managing it and leaves the miner running. The configuration editor follows as a Table or JSON with the existing writable keys, validation, Load
 from file and apply polling. Close is disabled while a configuration apply runs; an in-progress
 upgrade is not held. Closing the inspector returns focus to the rig and keeps the list's scroll position.
+A `worker` destination from a link such as Overview's offline-rig attention item opens that rig's
+inspector when the page loads; a name no rig reports shows the list as normal. Closing an inspector
+that a destination link opened returns focus to the page title, and navigating away closes it —
+but while an edit is unsaved or an apply runs, the inspector counts as an unsaved change, so
+browser Back asks first and keeps the dialog, exactly like the inspector's own Close guards.
 The inspector shows no chart ranges and no per-rig change history. **Restart** is not offered:
 no rig restart verb exists yet ([#3825](https://github.com/p2pool-starter-stack/pithead/issues/3825)).
 
@@ -137,7 +161,8 @@ Unavailable project or XMRig readings are disclosed rather than inferred as Off.
 Attention conditions use the approved display order: offline rigs, unsynced nodes, Tor
 under Balance or Privacy, disk, update, backup, wallet change, configuration, failed shares
 and pool-tier advice. This is display order, not a severity ranking. Duplicate rig names
-are ordered by their connection identity. Pool advice consumes the backend field owned by the automatic-defaults implementation:
+are ordered by their connection identity. The offline-rig item names the rig and links to
+Machines carrying a `worker` destination; following it opens that rig's inspector directly. Pool advice consumes the backend field owned by the automatic-defaults implementation:
 24 hours of measured hashrate, with provisional bands below 10 kH/s for nano, 10 to below
 100 kH/s for mini, and 100 kH/s or above for main. Insufficient history or an already
 suitable tier produces no suggestion. Overview never calculates a second policy or switches
@@ -587,7 +612,7 @@ wins row tracks only that wins keep landing.
 
 Rows degrade honestly rather than guess: a stream with [payout confirmation](#payout-confirmation)
 off shows a link into Configuration instead of a zero that would read as "earned nothing" — except
-Tari under a remote node, where the view key that link points at is one `tari.mode: remote` rejects,
+Tari under a remote node, where `tari.mode: remote` rejects the view key that link points at,
 so the Tari row instead says confirmation isn't available there; the XvB row disappears when XvB is
 off; a `*` marks a window that reaches back past the oldest recorded payout.
 
@@ -684,11 +709,13 @@ doesn't come back to a live hashrate — rolls it back on its own. The panel sho
 (applied / rejected / rolled back — or failed with the rig's reason, when its own rollback
 path broke) and appends it to the history.
 
-> NOTE: `DONATION` below the rig's built-in minimum has no effect. Appliance rigs run stock XMRig,
-> which ignores a donate level under 1 and keeps donating 1%; a RigForge-built rig applies a lower level
-> without a rebuild, except builds older than 1.18.1, which need an upgrade first. Worker Inspect shows the
-> value in the rig's `config.json`, not the rate the miner runs, because the rig's feed does not
-> report XMRig's live donate level.
+> NOTE: An appliance rig defaults `DONATION` to 0 and honours any value from 0 up; the compiled
+> minimum is 0 from RigForge 1.18.1, and a RigForge build older than that needs an upgrade first. Worker
+> Inspect shows the value in the rig's `config.json`, not the rate the miner runs, because the rig's feed
+> does not report XMRig's live donate level.
+>
+> A `pools` edit from Worker Inspect on an appliance rig is refused with `appliance-pools-read-only`;
+> change the pool in Pithead configuration instead.
 
 > **Remote rig control is beta in 2.0.0.** An appliance rig listens for control at every boot,
 > pinned to the coordinator and gated by its token; dashboard writes need the rig adopted first.
@@ -803,6 +830,10 @@ dashboard can account for — because someone applied a change through it, or th
 its own — the line goes quiet, even though the earlier move stands. The durable record is the
 `rig-drift` row in the Security panel, which is written once and never withdrawn; this line is a
 statement about the config in front of you.
+
+A revision that moves in the same poll that shows a different RigForge version is a re-base by the
+upgrade, not an edit, so it writes no `rig-drift` row and raises no line. A dashboard upgraded
+past a rig's last seen version has no stored version for it and treats its first move the same way.
 
 Neither check has an all-clear. Both either report a disagreement or say nothing at all, and their
 silence is not evidence: a clear line would be a reassurance bounded by everything listed above,
@@ -1076,12 +1107,24 @@ feed (with age) or config.json — so no fiat figure is ever unattributed.
 Everything above is a **model**. The earnings card also shows what actually landed in your wallet,
 when you give the stack a way to check the chain. Set `monero.view_key` (the private **view** key
 for your payout address) and the stack runs a **view-only** `monero-wallet-rpc` against your local
-node, scanning for confirmed incoming payouts. P2Pool pays each miner's share directly in a Monero
+node or, with `monero.mode: remote`, the remote node you configured (see
+[Payout confirmation through a remote Monero node](#payout-confirmation-through-a-remote-monero-node)), scanning for confirmed incoming payouts. P2Pool pays each miner's share directly in a Monero
 block's coinbase, so the wallet is the only ground truth that a payout arrived. The Monero tab of
 the earnings card then shows a **Confirmed on-chain** block under the estimate — and a
 `payout_confirmed` alert fires once per payout (Telegram and the other sinks). The Tari tab carries
 the same **Confirmed on-chain** block in XTM once Tari payout confirmation is on (see the Tari note
 below).
+
+Receipt history and scan progress are separate for each configured wallet on each chain.
+Switching from wallet A to B starts B's history independently; switching back restores A's
+receipts and cursor. Dashboard totals, chart markers, Telegram earnings and completeness
+markers use only the current wallet. Equivalent Tari address encodings share one identity.
+
+On upgrade, receipts saved without a wallet identity remain in the database under `unknown`.
+They do not contribute to current totals or scan progress. The first scan for each wallet
+starts from height zero and records the receipts it finds under that wallet's identity;
+rediscovered legacy receipts can therefore trigger confirmation alerts again. No receipts
+are assigned to a wallet merely because it is configured during the upgrade.
 
 | Figure | What it sums |
 |---|---|
@@ -1089,7 +1132,7 @@ below).
 | **Confirmed 24h** | The trailing 24 hours from now. Deliberately a different span from **Yesterday**, so the two disagree during the day. |
 | **Running 7d** | The trailing 7 days from now. |
 | **Running 30d** | The trailing 30 days from now. |
-| **Confirmed all-time** | Every payout recorded, however far back. |
+| **Confirmed all-time** | Every payout recorded for the current wallet, however far back. |
 | **Last payout** | Time since the most recent confirmed payout, hover for the payout count. |
 
 A running window is marked with a `*` when it reaches back further than the oldest payout on
@@ -1135,8 +1178,7 @@ health grace does not delay the card or alert.
 > backend process. It stays on the box: the view-only `monero-wallet-rpc` is published only to the
 > host loopback (`127.0.0.1:18082`), runs
 > non-root with a read-only root filesystem, and authenticates the dashboard with a generated
-> password. **Phase 1 is local node only** — scanning through a third-party daemon would change the
-> trust story, so a view key set with `monero.mode: remote` is refused. To change payout wallets, replace
+> password. To change payout wallets, replace
 > the address and its matching `monero.view_key`; apply rejects a mismatched pair. Leave `monero.view_key` empty (the
 > default) and none of this runs — the card shows only the estimate.
 
@@ -1159,6 +1201,37 @@ and provide readable logs with no database-integrity errors before the forced st
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
 2022-01-01, as Tari Universe's `wallet_birthday`), not a block height. The wallet scans only through
 the local node's wallet HTTP service on the internal network, never Tari's public fallback node. Leave `tari.view_key` empty and none of the Tari half runs.
+
+#### Payout confirmation through a remote Monero node
+
+With `monero.mode: remote`, setting `monero.view_key` starts the same view-only wallet without a local
+`monerod` and points it at `monero.remote.host`, `rpc_port` and the node login. Nothing else changes:
+leave the key empty and no wallet is rendered. It is opt-in and adds no configuration key.
+
+- **Trust.** The remote node's operator sees the wallet's scan requests and their timing, and can hide
+  or misreport payouts. The wallet runs with `--untrusted-daemon`. The view key is never sent to the node. The change
+  preview names the node and the route and needs typed `APPLY`.
+- **Route by profile.** Privacy scans only through Tor, and apply refuses a node Tor cannot reach
+  (a private, loopback, link-local or CGNAT address, or an unqualified or `.local` name) with a one-line
+  reason. The wallet hands a hostname to Tor unresolved, so the host does no DNS lookup for it.
+  `monero-wallet-rpc` starts behind a proxy only with daemon certificate checks off
+  (`--daemon-ssl-allow-any-cert`), which changes nothing for a plain-HTTP node.
+  Balance and Performance connect directly. Under Balance the egress firewall stays on and
+  admits only private-network addresses, so Balance reaches a remote node on your LAN or over WireGuard,
+  not a public one. Performance has no firewall.
+- **Failure is visible.** The Earnings page says "Tracking may be incomplete" with the reason when the
+  node is unreachable or still syncing, the wallet is not answering, a scan failed, or the wallet has
+  scanned more than 10 blocks fewer than the node reports. An empty history is never shown as
+  complete, and nothing falls back to a local node. "Complete" means the wallet reached the height
+  the node reports, so it is the node's word: it cannot prove the node hid a payout.
+- **Plaintext hop.** The wallet's RPC login and requests reach a direct remote node unencrypted, like
+  the other remote-node legs, so use a LAN or WireGuard node, or Privacy's Tor route.
+- **Tari is not supported.** `tari.view_key` with `tari.mode: remote` is refused and the message says
+  payout confirmation through a remote node is Monero only. The pinned Tari wallet scans only through the local node's
+  wallet HTTP service.
+- **Same secrets.** The view key reaches the wallet the same way as with a local node, as an environment
+  value of the wallet container and an owner-only `.env`; it appears in no log or command line. No spend
+  key is read, stored or rendered.
 
 Each address/view-key pair keeps a separate view-only wallet. Changing the pair opens its wallet
 and keeps the previous one; reverting reopens the saved scan progress. Apply verifies that each
@@ -1911,10 +1984,16 @@ when there is a target to download.
    or reboot at the console. Reboot pauses mining — typically under five minutes. The page
    waits and reconnects when the dashboard returns.
 
-After the reboot the machine health-checks itself before committing the new version — the same
-gate every appliance boot runs. A banner reports the outcome: updated to the new version, or
-rolled back to the previous one automatically because a check did not pass inside the window.
-When the host records which check held the gate, the banner names it. A rollback on its own is
+After the reboot the machine is already running the new version, and it health-checks itself
+before committing it — the same gate every appliance boot runs. While that verification is in
+progress the header says **"Verifying the update to vX — leave the machine running"**, and
+nothing on the page asks for a second reboot: a reboot now would fall back to the previous
+version before the update ever had its checks decided, so the host refuses one and says why,
+in the message and in the control log. A banner reports the outcome: updated to the new
+version, or rolled back to the previous one automatically because a check did not pass inside
+the window. When the host records which check held the gate, the banner names it. An update
+interrupted before its verification reached a verdict — a power cut mid-verification, say — is
+reported as interrupted, not as failed health checks. A rollback on its own is
 not evidence that the release was faulty: a check can fail for a reason the update did not cause,
 and the named cause is what tells the two apart before you retry. Either way the machine ends on
 a working system; wallets, settings, and chain data live on the data partition and are never part

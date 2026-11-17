@@ -17,13 +17,13 @@ install_bin() { printf '%s' "${PITHEAD_INSTALL_BIN:-/usr/local/sbin/pithead-inst
 # only on the console, so every machine needs a monitor walked to it once.
 PRESEED_DIR="${PITHEAD_PRESEED_DIR:-/boot/efi}"
 
-# A pre-seeded token, sanitised. Anything outside the token alphabet is dropped rather than
-# interpreted — this string is operator input arriving from a filesystem anyone can write.
 preseed_token() {
-    local f="$PRESEED_DIR/pithead-token.txt" t
+    local f="$PRESEED_DIR/pithead-token.txt" t effective
     [ -f "$f" ] || return 1
     t=$(tr -dc 'A-Za-z0-9-' <"$f" 2>/dev/null | head -c 32)
-    [ "${#t}" -ge 4 ] || return 1
+    effective="$t"
+    case "$effective" in [Pp][Ii][Tt]-*) effective="${effective:4}" ;; esac
+    [ "${#effective}" -ge 16 ] || return 1
     printf '%s' "$t"
 }
 

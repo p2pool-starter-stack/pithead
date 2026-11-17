@@ -32,21 +32,14 @@ esac
 # INFO — and the secret value must NEVER appear in the change preview.
 assert_contains "stratum pw enable is DEST" "$(run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD '' s3cr3t)" "DEST"
 assert_contains "stratum pw disable is INFO" "$(run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD s3cr3t '')" "INFO"
-# Appliance (#1139): the DIY hint points at .env / './pithead status' to recover the password —
-# neither exists without a shell, and the dashboard never round-trips a secret value either (#33),
-# so there is no remedy to name. The appliance-lane message drops the instruction instead of
-# inventing one.
-#
-# MUTATION PROOF: drop the is_appliance branch (always emit the DIY message) and the "names no CLI
-# verb" assertion below goes red; force the appliance branch unconditionally and the unchanged-DIY
-# assertion at line ~574's sibling below goes red — neither direction passes both.
 stratum_pw_appliance="$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD '' s3cr3t)"
 assert_contains "appliance stratum pw enable is still DEST" "$stratum_pw_appliance" "DEST"
+assert_contains "appliance stratum pw enable directs to the dashboard" "$stratum_pw_appliance" "Connect a miner"
 case "$stratum_pw_appliance" in
 *"./pithead"* | *".env"*) bad "appliance stratum pw enable names no CLI verb or .env" "still says: $stratum_pw_appliance" ;;
 *) ok "appliance stratum pw enable names no CLI verb or .env" ;;
 esac
-assert_contains "DIY stratum pw enable advice is unchanged" "$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD '' s3cr3t)" "find it in .env / './pithead status'"
+assert_contains "DIY stratum pw enable directs to the dashboard" "$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD '' s3cr3t)" "Connect a miner"
 case "$(run_sourced "$SANDBOX" describe_change PROXY_STRATUM_PASSWORD oldpw newpw)" in
 *oldpw* | *newpw*) bad "stratum pw change hides the secret" "value leaked into the change preview" ;;
 *DEST*) ok "stratum pw change hides the secret (DEST, no value shown)" ;;
@@ -638,13 +631,11 @@ if bash "$ROOT/tests/stack/standalone/test_config_defaults.sh"; then
 else
     bad "shared defaults and v2.0.0 compatibility contracts" "See the failed standalone assertions above."
 fi
-echo "== unit: config.core-keys.json — valid JSON, stays inside config.reference.json (#502/#529) =="
+echo "== unit: config.core-keys.json is the Essentials tier of the defaults table (#3576) =="
 CORE_KEYS="$(jq -r '.[]' "$ROOT/config.core-keys.json" 2>/dev/null)"
-if [ -z "$CORE_KEYS" ]; then
-    bad "config.core-keys.json parses to a non-empty array" "got nothing — check the file exists and is valid JSON"
-else
-    ok "config.core-keys.json parses to a non-empty array"
-fi
+assert_eq "config.core-keys.json is the defaults table's essential tier" \
+    "$(jq -c . "$ROOT/config.core-keys.json" 2>/dev/null)" "$(jq -c .tiers.essential "$ROOT/dashboard/mining_dashboard/config/defaults.json")"
+[ "$(printf '%s\n' "$CORE_KEYS" | grep -c .)" -le 15 ] && ok "the Essentials tier holds 15 keys or fewer" || bad "the Essentials tier holds 15 keys or fewer" "too many"
 REF_PATHS_CORE="$(jq -r '[paths | map(select(type=="string")) | join(".")] | unique[]' "$ROOT/config.reference.json")"
 core_checked=0
 core_missing=0
@@ -685,3 +676,4 @@ case "$render_out" in
 esac
 unset RSUT render_out
 source "$HERE/config/version.sh"
+source "$HERE/config/migration.sh"

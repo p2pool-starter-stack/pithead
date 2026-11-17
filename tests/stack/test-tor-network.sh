@@ -360,9 +360,6 @@ up_sig_order=$(
 assert_eq "first-install up verifies release-image signatures before 'compose up' (#452)" \
     "$(printf '%s\n' "$up_sig_order" | grep -xE 'verify|compose' | tr '\n' ',')" "verify,compose,"
 
-# apply had the same after-compose ordering bug as #272's stack_upgrade — fixed alongside #291. Take
-# the no-change-but-incomplete-marker retry path so apply recreates containers without the interactive
-# diff (env_changed_keys returns nothing; a pre-seeded .apply-incomplete marker forces the retry).
 apply_order=$(
     cd "$SANDBOX" || exit
     # shellcheck disable=SC1090
@@ -388,6 +385,8 @@ apply_order=$(
     docker() { :; }
     apply_tor_egress_firewall() { echo firewall; }
     compose_up_checked() { echo compose; }
+    printf '{}\n' >config.json
+    : >.env
     : >".env.apply-incomplete" # force the retry path
     apply
 )
@@ -537,7 +536,7 @@ assert_contains "tari: resolver pointed at dead local sinkhole (#162)" "$TARI_SV
 
 echo "== black-box: tor.auto_heal renders to .env (#424) =="
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "profile":"balance", "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "Balance defaults Tor auto-heal on" "$(run_sourced "$V" env_get_file "$V/.env" TOR_AUTO_HEAL)" "true"
 seed_env

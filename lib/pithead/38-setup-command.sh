@@ -20,6 +20,7 @@ setup() {
 setup_confirmed() {
     mutation_lock_acquire setup
 
+    ! is_appliance || load_baked_images
     check_prerequisites
     ensure_config_exists
     ensure_onion_password
@@ -27,7 +28,10 @@ setup_confirmed() {
     preflight_resources
     check_stratum_exposure setup
     load_preserved_state
-    resolve_dashboard_host
+    resolve_dashboard_host "interactive"
+    local name_warning
+    name_warning=$(machine_name_warning "${DASHBOARD_HOST:-}" machine)
+    [ -z "$name_warning" ] || warn "$name_warning"
     reconcile_appliance_hostname
     prepare_directories
     render_env
@@ -53,7 +57,7 @@ setup_confirmed() {
         echo "Please run: 'sudo reboot' now."
         echo "After reboot, start the stack with: '$0 up'"
     else
-        prompt_start_stack
-        provision_local_miner || true
+        PITHEAD_DEFER_LOCAL_MINER=1 prompt_start_stack
+        [ "${PITHEAD_DEFER_LOCAL_MINER:-0}" = 1 ] || provision_local_miner || true
     fi
 }

@@ -1,0 +1,45 @@
+{
+  "dashboard": {
+    "host": "rigbox",
+    "tari_required": false,
+    "timezone": "UTC"
+  },
+  "local_miner": {
+    "enabled": true
+  },
+  "monero": {
+    "clearnet_initial_sync": false,
+    "mem_limit": "4g",
+    "mode": "remote",
+    "node_password": "rpcpass",
+    "node_username": "rpcuser",
+    "remote": {
+      "host": "monero.remote.example",
+      "rpc_port": 18089,
+      "zmq_port": 18091
+    },
+    "wallet_address": "48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD"
+  },
+  "p2pool": {
+    "pool": "nano",
+    "stratum_password": "fixture-stratum-pass"
+  },
+  "tari": {
+    "clearnet_initial_sync": false,
+    "mem_limit": "8g",
+    "mode": "remote",
+    "remote": {
+      "grpc_port": 18150,
+      "host": "tari.remote.example"
+    },
+    "wallet_address": "126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+  },
+  "telegram": {
+    "bot_token": "123456:TOKEN",
+    "chat_id": "-100123",
+    "enabled": true
+  },
+  "xvb": {
+    "enabled": false
+  }
+}
