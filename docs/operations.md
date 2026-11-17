@@ -993,8 +993,10 @@ evidence and is one of the reasons the host accepts a state reset; an answering 
 overridden by it, because a busy Tor can sit at that ceiling while egress works. The action budget is four per outage, and the reset and
 restart together are capped at four per rolling 24 hours, a count held in the dashboard's memory
 (a dashboard restart clears it; the host's six-hour reset cooldown persists); at either limit the monitor logs once,
-asks the host to write a `tor-heal-exhausted` entry to its audit log, and warns until egress
-recovers. A Tor start the monitor did not cause (an operator, `./pithead` or
+asks the host to write a `tor-heal-exhausted` entry to its audit log, then keeps probing at most
+every 15 minutes and re-alerts at most once an hour — naming that it is past its cap and how long
+the outage has lasted — until a probe passes, which sends one recovery notice and clears the
+exhausted state. A Tor start the monitor did not cause (an operator, `./pithead` or
 Docker restart) opens a fresh outage window and resets the clock, budget and cooldown, so a Tor that
 restarts more often than every 5 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
 state reset sends one alert per outage explaining the circuit state and guard reset.

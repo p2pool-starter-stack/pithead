@@ -7,6 +7,7 @@ import pytest
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
+    EXHAUSTED_PROBE_SEC,
     FIRST_ACTION_AFTER_SEC,
     MAX_ATTEMPTS,
     PROBE_INTERVAL_SEC,
@@ -186,7 +187,7 @@ class TestDecide:
             assert docker.start.await_count == (2 if started else 3)
             h._probe = lambda: (True, "fresh circuit answered")
             for _ in range(RECOVERY_CONFIRM_PROBES):
-                clock.t += PROBE_INTERVAL_SEC
+                clock.t += EXHAUSTED_PROBE_SEC
                 await h.check()
         assert any(f"recovered following {expected}:" in r.message for r in caplog.records)
         assert not any("refunded" in r.message for r in caplog.records)

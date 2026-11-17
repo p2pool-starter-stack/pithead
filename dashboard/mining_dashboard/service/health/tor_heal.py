@@ -31,6 +31,8 @@ NEWNYM_ATTEMPTS = 2
 MAX_ATTEMPTS = 4
 MAX_DISRUPTIVE_PER_DAY = 4
 DISRUPTIVE_WINDOW_SEC = 24 * 3600
+EXHAUSTED_PROBE_SEC = 15 * 60
+RE_ALERT_SEC = 60 * 60
 RECOVERY_CONFIRM_PROBES = 2  # ~10 min sustained egress before the budget resets
 # Tor's stop: SIGTERM, `t` seconds of grace, then SIGKILL. Docker holds the request open until the
 # container is down, and a wedged Tor took over 60 s (#3032). The HTTP timeout outlasts grace + kill.
@@ -79,6 +81,8 @@ class TorEgressHealer(TorHistoryMixin):
         self._last_attempt = None  # cooldown anchor
         self._ok_streak = 0  # consecutive OK probes (sustained-recovery counter, post-restart)
         self._warned_exhausted = False
+        self._exhausted_alerted_at = None
+        self._past_cap = False
         self._disruptive = []
         self._pending_recovery = None
         self._tor_started = None  # last seen Tor container start (epoch); None until observed
@@ -138,6 +142,8 @@ class TorEgressHealer(TorHistoryMixin):
             self._last_attempt = None
             self._ok_streak = 0
             self._warned_exhausted = False
+            self._exhausted_alerted_at = None
+            self._past_cap = False
             return "recovered"
         self._ok_streak = 0
         if self._failing_since is None:
@@ -149,15 +155,19 @@ class TorEgressHealer(TorHistoryMixin):
         if self._last_attempt is not None and (now - self._last_attempt) < COOLDOWN_SEC:
             return None
         if self._attempts >= MAX_ATTEMPTS:
+            self._past_cap = True
             return "exhausted"
         if self._attempts >= NEWNYM_ATTEMPTS:
             self._disruptive = [t for t in self._disruptive if now - t < DISRUPTIVE_WINDOW_SEC]
             if len(self._disruptive) >= MAX_DISRUPTIVE_PER_DAY:
+                self._past_cap = True
                 return "exhausted"
             self._disruptive.append(now)
         self._attempts += 1
         self._last_attempt = now
         self._warned_exhausted = False
+        self._exhausted_alerted_at = None
+        self._past_cap = False
         return "heal"
 
     async def _observe_tor_start(self) -> None:
@@ -171,6 +181,8 @@ class TorEgressHealer(TorHistoryMixin):
             self._last_attempt = None
             self._ok_streak = 0
             self._warned_exhausted = False
+            self._exhausted_alerted_at = None
+            self._past_cap = False
             self._newnym_unconfirmed = False
             self._newnym_retried = False
             self.circuits_wedged = False
@@ -221,6 +233,8 @@ class TorEgressHealer(TorHistoryMixin):
         hint = self._ping_failing_since() if self._ping_failing_since else None
         pinging_badly = self._attempts == 0 and hint is not None
         interval = FAST_PROBE_SEC if pinging_badly else PROBE_INTERVAL_SEC
+        if self._past_cap:
+            interval = EXHAUSTED_PROBE_SEC
         onset = pinging_badly and not self._was_pinging_badly
         self._was_pinging_badly = pinging_badly
         if not onset and self._last_probe is not None and (now - self._last_probe) < interval:
@@ -369,6 +383,29 @@ class TorEgressHealer(TorHistoryMixin):
                         control_service.submit("tor-heal-exhausted", actor="tor-heal")
                     except OSError:
                         logger.warning("Tor heal exhaustion could not be audited by the host")
+                if self._exhausted_alerted_at is None or (
+                    now - self._exhausted_alerted_at >= RE_ALERT_SEC
+                ):
+                    self._exhausted_alerted_at = now
+                    logger.warning(
+                        "Tor auto-heal is past its cap (%d attempts, %d disruptive in the last "
+                        "day, cap %d) with egress still broken %.0f minutes into the outage; "
+                        "probing every %d minutes and re-alerting hourly until it recovers: %s",
+                        self._attempts,
+                        len(self._disruptive),
+                        MAX_DISRUPTIVE_PER_DAY,
+                        outage_minutes,
+                        EXHAUSTED_PROBE_SEC // 60,
+                        evidence,
+                    )
+                    if self._notify is not None:
+                        await self._notify(
+                            f"\U0001f9c5 Tor auto-heal is past its cap: {self._attempts} attempts "
+                            f"spent ({len(self._disruptive)} disruptive in the last day, "
+                            f"cap {MAX_DISRUPTIVE_PER_DAY}); outage {outage_minutes:.0f} minutes; "
+                            f"probing every {EXHAUSTED_PROBE_SEC // 60} minutes and re-alerting "
+                            f"hourly until Tor recovers. Failed probes {evidence}."
+                        )
             elif action == "recovered":
                 logger.info(
                     "Tor clearnet egress recovered following %s: failed probes %s; recovery probe %s",

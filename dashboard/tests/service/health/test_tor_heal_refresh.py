@@ -285,7 +285,16 @@ async def test_exhausted_heal_keeps_history_and_undelivered_alerts_alive():
     now = [1000.0]
     docker = AsyncMock()
     docker.stop.return_value = docker.start.return_value = True
-    notify = AsyncMock(side_effect=[None, None, "recovery delivered", "history delivered"])
+    notify = AsyncMock(
+        side_effect=[
+            None,
+            None,
+            "recovery delivered",
+            "history delivered",
+            "cap alert delivered",
+            "re-alert delivered",
+        ]
+    )
     healer = TorEgressHealer(
         docker,
         enabled=True,
@@ -303,7 +312,8 @@ async def test_exhausted_heal_keeps_history_and_undelivered_alerts_alive():
     assert submits.count("tor-newnym") == 2
     assert submits.count("tor-history") >= 3
     assert healer._warned_saturated is True
-    assert notify.await_count == 4
+    assert notify.await_count == 6
+    assert sum("past its cap" in c.args[0] for c in notify.await_args_list) == 2
     assert submits.count("tor-recover") == 1
     docker.stop.assert_awaited_once()
     docker.start.assert_awaited_once()

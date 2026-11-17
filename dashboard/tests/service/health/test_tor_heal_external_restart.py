@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
+    EXHAUSTED_PROBE_SEC,
     FIRST_ACTION_AFTER_SEC,
     MAX_ATTEMPTS,
     NEWNYM_ATTEMPTS,
@@ -193,7 +194,7 @@ async def test_external_restart_rearms_the_exhausted_warning(caplog):
     rig = _Rig()
     await rig.exhaust()
     h = rig.healer
-    await rig.step(True)
+    await rig.step(True, EXHAUSTED_PROBE_SEC)
     assert h._ok_streak == 1
     h._newnym_unconfirmed = True
     rig.tor_started += 3600

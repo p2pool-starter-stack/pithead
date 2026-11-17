@@ -39,4 +39,6 @@ def test_build_state_reports_a_tor_outage_and_the_spent_attempt_cap(_data, _stat
         alert["heal"][0]
         == f"Tor auto-heal last action: Tor restart, 5 min ago (attempt {MAX_ATTEMPTS} of {MAX_ATTEMPTS})."
     )
-    assert alert["heal"][1].startswith(f"Tor auto-heal stopped after {MAX_ATTEMPTS} attempts")
+    assert alert["heal"][1].startswith(
+        f"Tor auto-heal is past its cap after {MAX_ATTEMPTS} attempts"
+    )
