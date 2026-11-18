@@ -361,21 +361,16 @@ firstboot_consume_rig() ( # <spool-dir>
     req="$snap"
     pool=$(jq -r '.pool // ""' "$req" 2>/dev/null | tr -d '[:cntrl:]')
     worker=$(jq -r '.worker // ""' "$req" 2>/dev/null | tr -d '[:cntrl:]')
+    [ -z "$worker" ] || is_machine_name_label "$worker" || rig_refuse "$spool" "$MACHINE_NAME_RULE" || return 1
     host="${pool%:*}"
     port="${pool##*:}"
     host="${host#\[}"
     host="${host%\]}"
     if [ "$host" = "$pool" ] || ! is_valid_host "$host" || ! is_valid_port "$port"; then
-        printf 'the pool address must look like host:port — a Pithead answers on port 3333' | wizard_spool_publish "$spool" error.txt cat
-        rm -f "$spool/rig-request.json"
-        wizard_clear_submission_transaction "$spool" || return 1
-        return 1
+        rig_refuse "$spool" 'the pool address must look like host:port — a Pithead answers on port 3333' || return 1
     fi
     if ! timeout 5 bash -c '</dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null; then
-        printf 'cannot reach a pool at %s:%s — check the address, and that the Pithead is up' "$host" "$port" | wizard_spool_publish "$spool" error.txt cat
-        rm -f "$spool/rig-request.json"
-        wizard_clear_submission_transaction "$spool" || return 1
-        return 1
+        rig_refuse "$spool" "cannot reach a pool at $host:$port — check the address, and that the Pithead is up" || return 1
     fi
     # The control token (#1836) survives a "Set up again" that keeps the role AND the worker name
     # (#1318): the coordinator adopted THIS worker with THIS token. Any other change mints a new one.

@@ -432,3 +432,24 @@ assert_contains "doctor runs to the summary" "$out" "Diagnostics summary"
 assert_contains "doctor flags the unreachable daemon" "$out" "Docker daemon is not reachable"
 assert_rc "doctor exits 1 on a critical FAIL" "$rc" "1"
 assert_contains "doctor header carries the version (#386)" "$out" "Version: pithead v9.9.9"
+
+echo "== unit: DIY dashboard-host drift warning (#3810) =="
+drift_run() {
+    (
+        cd "$SANDBOX" || exit 1
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
+        source "$STACK"
+        set +e
+        is_appliance() { [ "${FAKE_APPLIANCE:-0}" = 1 ]; }
+        config_get() { printf '%s' "${FAKE_CFG_HOST-auto}"; }
+        env_get() { printf '%s' "${FAKE_ENV_HOST-old-box}"; }
+        hostname() { printf '%s' "${FAKE_OS_HOST-new-box}"; }
+        check_dashboard_host_drift
+    ) 2>&1
+}
+out="$(drift_run)"
+assert_contains "auto + drift warns with the apply hint" "$out" "run './pithead apply'"
+assert_contains "the warning names both the hostname and the stale address" "$out" "'new-box' but .env still advertises 'old-box'"
+assert_eq "an explicit dashboard.host pin stays quiet" "$(FAKE_CFG_HOST=garden-box drift_run)" ""
+assert_eq "no drift stays quiet" "$(FAKE_ENV_HOST=new-box drift_run)" ""
+assert_eq "the appliance reconciles instead of warning" "$(FAKE_APPLIANCE=1 drift_run)" ""
