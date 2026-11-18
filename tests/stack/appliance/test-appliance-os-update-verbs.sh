@@ -419,7 +419,7 @@ rm -f "$OSC/os-update-test-base" "$OSC/test-marker" "$OSRES/$UOS.json" "$OSDIR/.
 
 echo "== black-box: a rate-limited os-check names the remedy that works (#1081) =="
 printf '%s' '{"message":"API rate limit exceeded for this IP.","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api"}' >"$OSC/api-403.json"
-rm -f "$OSDIR/target.json" "$OSDIR/.check-stamp" "$OSDIR/.check-stamp-short" # starts clean regardless of what leaked above
+rm -f "$OSDIR/target.json" "$OSDIR/.check-stamp" "$OSDIR/.check-stamp-short"
 os_reset
 os_intent "$UOS" os-check
 osrun CURL_API_RESPONSE="$OSC/api-403.json" GH_STUB_CODE=403 >/dev/null
