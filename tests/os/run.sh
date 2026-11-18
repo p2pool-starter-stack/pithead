@@ -189,7 +189,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|p2pool-heal|all]\n'
+        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|tor-heal-exhausted|p2pool-heal|all]\n'
         sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
@@ -244,6 +244,8 @@ source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 # shellcheck source=tests/os/phases/tor-heal.sh
 source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
+# shellcheck source=tests/os/phases/tor-heal-exhausted.sh
+source "$SCRIPT_DIR/phases/tor-heal-exhausted.sh" || exit $?
 # shellcheck source=tests/os/phases/pool-heal.sh
 source "$SCRIPT_DIR/phases/pool-heal.sh" || exit $?
 require_host
@@ -283,6 +285,7 @@ image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
 stack) _run_phase stack phase_stack ;;
 tor-heal) _run_phase tor-heal phase_tor_heal ;;
+tor-heal-exhausted) _run_phase tor-heal-exhausted phase_tor_heal_exhausted ;;
 p2pool-heal) _run_phase p2pool-heal phase_p2pool_heal ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer

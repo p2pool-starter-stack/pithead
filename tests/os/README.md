@@ -49,6 +49,13 @@ for a guest-local alert sink. It restores its original config and state on exit,
 state only after Tor stops. Failures report the current stage, bounded command logs and
 the restoration result separately from the test result; no shared Tor is poisoned.
 
+The opt-in `tor-heal-exhausted` phase provisions its own local-node guest and proves the
+ladder's rejected-NEWNYM rung: with no saturated history, a host-rejected NEWNYM must advance
+to the host state reset and Tor must recover unattended (#4075). It is a separate phase because
+the `tor-heal` ladder alone consumes about three and a half hours of the 240-minute bench
+window, and both legs must run to their own bounded end. `selftest-tor-heal-exhausted.sh`
+exercises its wrapper without a guest.
+
 Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
 and a half hours after provisioning, and the tier's default run window ends the job after the
 second gate has passed but before the host recovery applies. The phase vocabulary of this
