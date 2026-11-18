@@ -10,4 +10,4 @@ head -c 1048576 /dev/zero | tr '\0' x >>"$SERIAL"
 serial_has 'pithead\[[0-9]+\]: \[pithead\] Setup closed: the saved settings are kept'
 if serial_has 'absent from serial'; then exit 1; fi
 grep -Fq "serial_has 'pithead" "$(dirname "$0")/setup-again-leg.sh"
-grep -Fq 'if serial_has "$new_wallet"; then' "$(dirname "$0")/phases/media.sh"
+grep -Fq 'if serial_has "$MEDIA_WALLET_ALT"; then' "$(dirname "$0")/phases/media.sh"

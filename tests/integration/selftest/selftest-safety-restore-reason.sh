@@ -31,10 +31,17 @@ _restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <se
         SAFETY_ARCHIVE=/tmp/a.tar.gz SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
         BASELINE_CONFIG='baseline' BASELINE_EXACT_SECRET_FP=$'wallet=wallet-before\nproxy=proxy-before'
         _restore_rc="$1" _up_rc="$2" _health_rc="$3" _config_state="${4:-match}" _secret_state="${5:-match}"
+        _reason_td="$(mktemp -d)" || exit 1
+        trap 'cd / && rm -rf "$_reason_td"' EXIT
+        cd "$_reason_td" || exit 1
+        OUT_DIR=results
         pithead() {
             case "$1" in
             down) return 0 ;;
-            restore) return "$_restore_rc" ;;
+            restore)
+                [ "$_restore_rc" = 0 ] || printf 'restore-boom PASSWORD=fixture-secret\n'
+                return "$_restore_rc"
+                ;;
             up) return 0 ;;
             esac
         }
@@ -51,13 +58,27 @@ _restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <se
         it_log() { :; }
         safety_restore_exact >/dev/null 2>&1
         printf '%s' "$SAFETY_RESTORE_FAIL_REASON"
+        if [ "${STEP_LOGS:-no}" = yes ] && [ -s "results/safety-restore/restore.log" ]; then
+            printf '|%s' "$(tr '\n' '~' <"results/safety-restore/restore.log")"
+        fi
     )
 }
 
 echo "== safety_restore_exact names which check failed, not a generic verdict (#2062, #2362) =="
 
-assert_eq "restore failure is named" "$(_restore_reason 1 0 0 match match)" "pithead restore failed"
-assert_eq "startup failure is named" "$(_restore_reason 0 1 0 match match)" "stack did not come back up"
+assert_eq "restore failure is named with its rc and retained log (#3641)" \
+    "$(_restore_reason 1 0 0 match match)" \
+    "pithead restore returned non-zero (rc 1); see results/safety-restore/restore.log"
+assert_eq "startup failure is named with its rc and retained log (#3641)" \
+    "$(_restore_reason 0 1 0 match match)" \
+    "stack did not come back up (rc 1); see results/safety-restore/up.log"
+assert_eq "the failed restore retains its redacted output (#3641)" \
+    "$(STEP_LOGS=yes _restore_reason 1 0 0 match match)" \
+    "pithead restore returned non-zero (rc 1); see results/safety-restore/restore.log|restore-boom PASSWORD=<redacted>~"
+case "$(STEP_LOGS=yes _restore_reason 1 0 0 match match)" in
+*fixture-secret*) it_fail "the retained restore log drops the planted secret value (#3641)" ;;
+*) it_pass "the retained restore log drops the planted secret value (#3641)" ;;
+esac
 assert_eq "health failure is named" "$(_restore_reason 0 0 1 match match)" "pithead status did not become healthy within 240s"
 assert_eq "a healthy restore leaves no reason" "$(_restore_reason 0 0 0 match match)" ""
 assert_eq "a config drift is named, distinctly from restore/secrets" \

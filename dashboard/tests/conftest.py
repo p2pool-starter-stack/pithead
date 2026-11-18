@@ -3,6 +3,8 @@
 Everything here keeps tests hermetic: no real database on disk, no network, no containers.
 """
 
+import sqlite3
+
 import pytest
 
 from mining_dashboard.service.storage_service import StateManager
@@ -37,3 +39,36 @@ def state_manager():
     sm = StateManager(db_path=":memory:")
     yield sm
     sm.close()
+
+
+@pytest.fixture
+def full_disk(monkeypatch):
+    def make(store, statements=("INSERT", "UPDATE", "DELETE", "CREATE"), message=None):
+        if isinstance(statements, str):
+            statements = (statements,)
+        inner = store._conn
+
+        class FullDiskConnection:
+            def execute(self, sql, *args, **kwargs):
+                if sql.lstrip().upper().startswith(tuple(statements)):
+                    if message:
+                        raise sqlite3.DatabaseError(message)
+                    raise sqlite3.OperationalError("database or disk is full")
+                return inner.execute(sql, *args, **kwargs)
+
+            def cursor(self):
+                return inner.cursor()
+
+            def close(self):
+                return inner.close()
+
+            def __enter__(self):
+                inner.__enter__()
+                return self
+
+            def __exit__(self, *exc):
+                return inner.__exit__(*exc)
+
+        monkeypatch.setattr(store, "_conn", FullDiskConnection())
+
+    return make
