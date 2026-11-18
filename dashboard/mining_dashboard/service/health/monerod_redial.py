@@ -95,6 +95,7 @@ class MonerodRedial:
         self._monerod_started = None
         self._pending_tor_start = None
         self._peers_since = None
+        self._was_synced = False
         self._settle_since = None
         self._peerless_since = None
         self._circuit_since = None
@@ -136,6 +137,9 @@ class MonerodRedial:
             self._settle_since = None
             self._reset_clocks()
             self._stall_height = None
+            self._was_synced = False
+        if verdict.get("height") and not verdict.get("syncing"):
+            self._was_synced = True
         tor_ready = bool(tor.get("running")) and tor.get("health") == "healthy"
         if not tor_ready:
             self._reset_clocks()
@@ -179,7 +183,7 @@ class MonerodRedial:
         if not proven or not behind:
             self._reset_stall_clocks()
             return
-        if verdict.get("syncing") or target - height > SYNC_GAP_BLOCKS:
+        if not self._was_synced or target - height > SYNC_GAP_BLOCKS:
             threshold = STALL_SYNC_SEC
         else:
             threshold = STALL_RESTART_SEC

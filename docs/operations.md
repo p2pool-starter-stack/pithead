@@ -1115,8 +1115,11 @@ healthy (bootstrapped 100%) and Tor's own healthcheck reports `status/circuit-es
 consecutive minutes (the same `State.Health.Log` channel the peer counts travel on; a missing or
 malformed circuit line is no reading, never a proven Tor). Its stall clock starts when Tor becomes
 proven, so a height frozen through a Tor outage is never counted and never fires at the moment Tor
-recovers. The stall threshold is 10 minutes, or 30 minutes while the node is in initial sync or the
-target sits more than 72 blocks above the height; it never fires while the height is advancing. A
+recovers. The stall threshold is 10 minutes, or 30 minutes until the dashboard has seen this monerod run
+report itself synchronized (initial sync, and again after a restart) or while the target sits more
+than 72 blocks above the height; the trigger reads the target height `get_info` reports only while the node is not
+synchronized, so a node that stays synchronized while wedged is not seen by it (the 30-minute
+height verdict still alerts); it never fires while the height is advancing. A
 peer gap shorter than 90 seconds pauses the stall clock without resetting it and never fires the
 trigger; after a longer gap the clock starts afresh. Before a stall restart the dashboard records
 the height, target height and peer counts — and nothing else — in the log line and the audit row.

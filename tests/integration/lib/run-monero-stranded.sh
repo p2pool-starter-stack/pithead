@@ -156,6 +156,13 @@ assert_monero_rpc_boundary() {
             curl -fsS --max-time 8 --digest -u "$u:$p" http://127.0.0.1:18081/get_info | jq -c "{restricted, o: .outgoing_connections_count}"' 2>/dev/null)" '"restricted":true'
 }
 _pred_monerod_restarted_since() { [ "$(monero_started_at)" != "$1" ]; }
+_pred_tor_circuit_line_live() {
+    rx "docker inspect --format '{{range .State.Health.Log}}{{println .Output}}{{end}}' tor" 2>/dev/null |
+        grep -q 'pithead-tor-circuit {"established":true}'
+}
+_pred_dashboard_reads_tor_circuit() {
+    [ "$(rx "docker exec dashboard python3 -c 'import asyncio; from mining_dashboard.collector.containers import get_container_health; print(asyncio.run(get_container_health())[\"tor\"].get(\"circuit\"))'" 2>/dev/null)" = "True" ]
+}
 monero_started_at() { rx "docker inspect -f '{{.State.StartedAt}}' monerod" 2>/dev/null; }
 monero_strand_state() { echo "verdict '$(monero_health_field level)', peers $(monero_health_field peers_out) out / $(monero_health_field peers_in) in, docker health '$(rx "docker inspect -f '{{.State.Health.Status}}' monerod" 2>/dev/null)'"; }
 
@@ -217,6 +224,18 @@ run_monero_stranded() {
     fi
     trap monero_strand_abort EXIT
     started="$(monero_started_at)"
+
+    it_step "tor circuit proof: the live healthcheck line and the dashboard's reading of it (#4076)…"
+    if wait_for 300 15 "tor healthcheck publishing an established circuit" _pred_tor_circuit_line_live; then
+        it_pass "monero-stranded: the live tor healthcheck publishes pithead-tor-circuit established"
+    else
+        it_fail "monero-stranded: the live tor healthcheck publishes pithead-tor-circuit established" "$(rx "docker inspect --format '{{json .State.Health}}' tor" 2>&1 | redact | tail -c 600)"
+    fi
+    if wait_for 300 15 "dashboard reading tor.circuit as true" _pred_dashboard_reads_tor_circuit; then
+        it_pass "monero-stranded: the dashboard reads the live tor circuit as established"
+    else
+        it_fail "monero-stranded: the dashboard reads the live tor circuit as established" "tor.circuit was not True within 300 s"
+    fi
 
     it_step "external Tor start: restart the tor container outside the stack's own operations, and keep monerod stranded (#4076)…"
     rx "docker restart tor" >/dev/null 2>&1

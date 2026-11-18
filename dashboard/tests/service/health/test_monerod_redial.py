@@ -25,8 +25,9 @@ async def _no_sleep(_):
 
 
 class _Rig:
-    def __init__(self, monkeypatch, enabled=True, ok=True, budget=None):
+    def __init__(self, monkeypatch, enabled=True, ok=True, budget=None, warm=True):
         self.t = 1000.0
+        self.warm = warm
         self.docker = _Docker(ok)
         self.audits = []
         self.tor = {"running": True, "health": "healthy", "started_at": 100.0}
@@ -57,6 +58,11 @@ class _Rig:
         syncing=False,
         peers_in=None,
     ):
+        if self.warm and height is not None:
+            self.warm = False
+            await self.redial.check(
+                {"peers_visible": peers_out is not None, "peers_out": peers_out, "height": height}
+            )
         self.t += seconds
         verdict = {
             "peers_visible": peers_out is not None,
@@ -69,7 +75,7 @@ class _Rig:
             verdict["target_height"] = target
         if peers_in is not None:
             verdict["peers_in"] = peers_in
-        if syncing:
+        if syncing or (target is not None and height is not None and target > height):
             verdict["syncing"] = True
         await self.redial.check(verdict)
 
@@ -277,7 +283,7 @@ async def test_frozen_height_below_target_restarts_monerod_alone_once(monkeypatc
     assert reason.startswith("stalled:")
     assert "height 100" in reason and "target 135" in reason
     assert "peers_out 8" in reason and "peers_in 2" in reason
-    await rig.run(mr.COOLDOWN_SEC - mr.CHECK_INTERVAL_SEC * 2, peers_out=8, height=100, target=135)
+    await rig.run(mr.COOLDOWN_SEC - mr.CHECK_INTERVAL_SEC * 5, peers_out=8, height=100, target=135)
     assert rig.restarts == 1
 
 
@@ -370,7 +376,7 @@ async def test_a_frozen_height_through_a_tor_outage_does_not_fire_at_recovery(mo
 
 @pytest.mark.asyncio
 async def test_initial_sync_gets_the_longer_stall_threshold(monkeypatch):
-    rig = _Rig(monkeypatch)
+    rig = _Rig(monkeypatch, warm=False)
     rig.tor["circuit"] = True
     await rig.run(
         mr.TOR_PROVEN_SEC + mr.STALL_RESTART_SEC + mr.CHECK_INTERVAL_SEC,
@@ -510,3 +516,26 @@ async def test_budget_cooldown_and_cap_open_independently_of_the_actor():
     assert not budget.allow(mr.COOLDOWN_SEC * 3)
     assert not budget.allow(mr.DAY_SEC - 1)
     assert budget.allow(mr.DAY_SEC + 1)
+
+
+@pytest.mark.asyncio
+async def test_a_real_chain_health_verdict_reaches_the_ten_minute_threshold(monkeypatch):
+    from mining_dashboard.service.health.monero_health import MoneroChainHealth
+
+    rig = _Rig(monkeypatch, warm=False)
+    rig.tor["circuit"] = True
+    health = MoneroChainHealth(clock=lambda: rig.t)
+
+    async def observe(sync):
+        sync = {"reachable": True, "peers_out": 8, "peers_in": 2, **sync}
+        await rig.redial.check(health.observe(sync))
+
+    synced = {"is_syncing": False, "synchronized": True, "height": 100}
+    wedged = {"is_syncing": True, "current": 100, "target": 135, "height": 100}
+    await observe(synced)
+    end = rig.t + mr.TOR_PROVEN_SEC + mr.STALL_RESTART_SEC + mr.CHECK_INTERVAL_SEC * 2
+    while rig.t < end:
+        rig.t += mr.CHECK_INTERVAL_SEC
+        await observe(wedged)
+    assert rig.restarts == 1
+    assert rig.audits[0][0].startswith("stalled:")
