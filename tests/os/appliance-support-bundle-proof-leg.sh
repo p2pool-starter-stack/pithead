@@ -52,20 +52,30 @@ _sb_round() {
     fi
 }
 
+_sb_control_off() {
+    SB_STAGE=drain
+    _control_requests_drained || return 1
+    SB_STAGE=snapshot
+    approval_capture_restore_snapshot || return 1
+    SB_STAGE=apply
+    _ssh 'cd /data/pithead && jq ".dashboard.control.enabled = false" config.json >config.sbproof && install -m 600 config.sbproof config.json && rm -f config.sbproof && ./pithead apply -y >/dev/null' || return 1
+    SB_STAGE=dashboard
+    sensitive_live_config >/dev/null || return 1
+    SB_STAGE=dotenv
+    _ssh 'grep -Eq "^DASHBOARD_CONTROL_ENABLED=.?false.?$" /data/pithead/.env'
+}
+
 phase_provision_support_bundle_proof() {
     # shellcheck disable=SC2034
     local ip="$1" DASH_USER="$2" DASH_PASS="$3" tag dir canaries out since until code off=0
     tag=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
     dir=$(mktemp -d)
     canaries="$dir/canaries"
-    if _control_requests_drained && approval_capture_restore_snapshot &&
-        _ssh 'cd /data/pithead && jq ".dashboard.control.enabled = false" config.json >config.sbproof && install -m 600 config.sbproof config.json && rm -f config.sbproof && ./pithead apply -y >/dev/null' &&
-        sensitive_live_config >/dev/null &&
-        _ssh 'grep -Eq "^DASHBOARD_CONTROL_ENABLED=.?false.?$" /data/pithead/.env'; then
+    if _sb_control_off; then
         off=1
         ok "support bundle proof runs with the dashboard control channel switched off"
     else
-        bad "support bundle proof: could not switch the control channel off"
+        bad "support bundle proof: could not switch the control channel off (stage: $SB_STAGE; guest stderr: $(tail -c 400 "$SSH_ERR" 2>/dev/null | tr '\r\n' '  '))"
     fi
     if [ "$off" = 1 ] && out=$(_sb_guest "$tag" window); then
         printf '%s\n' "$out" | sed -n 's/^CANARY //p' >"$canaries"
