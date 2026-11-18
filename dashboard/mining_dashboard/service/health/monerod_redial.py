@@ -9,6 +9,7 @@ logger = logging.getLogger("MonerodRedial")
 CHECK_INTERVAL_SEC = 60
 REDIAL_SETTLE_SEC = 300
 WATCHDOG_GRACE_SEC = 300
+PEERS_BACK_SEC = 600
 COOLDOWN_SEC = 30 * 60
 DAILY_CAP = 3
 DAY_SEC = 24 * 60 * 60
@@ -93,6 +94,7 @@ class MonerodRedial:
         self._tor_started = None
         self._monerod_started = None
         self._pending_tor_start = None
+        self._peers_since = None
         self._settle_since = None
         self._peerless_since = None
         self._circuit_since = None
@@ -143,7 +145,11 @@ class MonerodRedial:
         else:
             self._peerless_since = None
         if peers:
-            self._pending_tor_start = None
+            self._peers_since = self._peers_since if self._peers_since is not None else now
+            if now - self._peers_since >= PEERS_BACK_SEC:
+                self._pending_tor_start = None
+        else:
+            self._peers_since = None
         if self._pending_tor_start is not None and peers == 0:
             self._settle_since = self._settle_since if self._settle_since is not None else now
         else:
@@ -198,6 +204,7 @@ class MonerodRedial:
 
     def _reset_clocks(self):
         self._settle_since = None
+        self._peers_since = None
         self._circuit_since = None
         self._peerless_since = None
         self._reset_stall_clocks()

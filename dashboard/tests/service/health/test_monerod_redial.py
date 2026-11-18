@@ -108,6 +108,17 @@ async def test_stale_peers_while_tor_boots_do_not_cancel_the_redial(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_peers_that_are_stale_after_a_tor_start_and_then_drop_still_redial(monkeypatch):
+    rig = _Rig(monkeypatch)
+    await rig.step(peers_out=8)
+    rig.tor["started_at"] = 900.0
+    await rig.run(mr.CHECK_INTERVAL_SEC * 5, peers_out=6)
+    await rig.run(mr.REDIAL_SETTLE_SEC + mr.CHECK_INTERVAL_SEC * 2, peers_out=0)
+    assert rig.restarts == 1
+    assert rig.audits == [("tor-start", "applied")]
+
+
+@pytest.mark.asyncio
 async def test_no_redial_before_tor_reports_a_circuit(monkeypatch):
     rig = _Rig(monkeypatch)
     await rig.step(peers_out=8)
@@ -125,7 +136,7 @@ async def test_monerod_that_recovers_by_itself_is_left_alone(monkeypatch):
     await rig.step(peers_out=8)
     rig.tor["started_at"] = 900.0
     await rig.step(peers_out=0)
-    await rig.run(mr.REDIAL_SETTLE_SEC, peers_out=5)
+    await rig.run(mr.PEERS_BACK_SEC + mr.CHECK_INTERVAL_SEC, peers_out=5)
     await rig.run(mr.REDIAL_SETTLE_SEC * 3, peers_out=0)
     assert rig.restarts == 0
 
