@@ -326,6 +326,9 @@ run_monero_stranded() {
     # shellcheck disable=SC2064  # restore the saved trap text as it was, expanded now on purpose
     [ -n "${_MONERO_STRAND_FOREIGN_TRAP:-}" ] && trap "$_MONERO_STRAND_FOREIGN_TRAP" EXIT
     assert_eq "monero-stranded: no $MONERO_STRAND_TAG rule left behind" "$(monero_strand_count)" "0"
-    [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "monero-stranded" "$OUT_DIR"
+    if [ "$IT_FAIL" -gt "$fails_before" ]; then
+        capture_artifacts "monero-stranded" "$OUT_DIR"
+        rx "docker logs --tail=20000 dashboard" 2>&1 | redact >"${OUT_DIR}/monero-stranded/dashboard.log" || true
+    fi
     return 0
 }
