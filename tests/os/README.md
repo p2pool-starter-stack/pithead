@@ -150,6 +150,15 @@ it adds no image layer after signing. Missing markers, another commit or a refer
 the configured test registry fail before the image build. Release builds do not use this mapping.
 `selftest-marker-images.sh` checks selection, rejection and the pinned/archive source contract.
 
+NOTE: the OS-update test seam is gated on that marker. A root-owned `os-update-test-base` file
+beside the checkout redirects the release lookup and the bundle download to a bench-local URL and
+drops the Tor SOCKS, which cannot reach the bench; it is honoured only while `/etc/pithead-test-marker`
+exists. The file ships solely in harness-built images and `pithead-install` deletes it, so a release
+image — and any installed disk — ignores a planted seam file and keeps fetching over Tor. Bundle
+verification runs for real either way, so the seam can redirect where the bytes come from, never
+what installs. Tier-1 sandboxes pin the gate through `PITHEAD_TEST_MARKER_FILE`; they never read
+the host's `/etc`.
+
 ## Phases
 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd

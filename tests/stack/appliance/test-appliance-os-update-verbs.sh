@@ -138,9 +138,10 @@ osrun() { # [env pairs...] — drain the spool inside the appliance sandbox
         PITHEAD_VARIANT_FILE="$OSC/variant-release" PITHEAD_DATA_FLOOR_FILE="$OSC/floor" \
         PITHEAD_RAUC_SYSTEM_CONF="$OSC/system.conf" PITHEAD_OS_DL_ATTEMPT=60 \
         PITHEAD_MIGRATION_MARKER_FILE="$OSC/marker-scratch" \
+        PITHEAD_TEST_MARKER_FILE="$OSC/test-marker" \
         env "$@" ./pithead control-run-pending 2>&1)
 }
-os_intent() { # <id> <action> [version]
+os_intent() {
     if [ "$#" -ge 3 ]; then
         printf '{"id":"%s","action":"%s","actor":"admin","version":"%s"}\n' "$1" "$2" "$3" >"$OSREQS/$1.json"
     else
@@ -408,20 +409,14 @@ assert_eq "the second os verb in the same drain is rejected" "$(jq -r '.status' 
 assert_contains "the budget refusal says retry" "$(jq -r '.error' "$OSRES/$UOS2.json" 2>/dev/null)" "retry"
 rm -f "$OSRES/$UOS.json" "$OSRES/$UOS2.json"
 
-# The battery's test seam only redirects for a ROOT-owned file: written by anyone else it is
-# ignored and the flow stays on the GitHub-over-Tor path. Running unprivileged here, our own
-# file IS owner-matched — assert the redirect engages, which is the seam's whole contract.
+printf 'tier-1\n' >"$OSC/test-marker"
 printf 'http://bench.invalid/updates' >"$OSC/os-update-test-base"
 rm -f "$OSDIR/target.json" "$OSDIR/.check-stamp" "$OSDIR/.check-stamp-short"
 os_intent "$UOS" os-check
 osrun >/dev/null
 assert_contains "the test seam redirects the release lookup" "$(cat "$OSC/curl.log")" "bench.invalid/updates/releases-latest.json"
-rm -f "$OSC/os-update-test-base" "$OSRES/$UOS.json" "$OSDIR/.check-stamp-short" # the stub's exit-22 catch-all makes this bench dial rc 2 too (#1050 review) — clear it or it leaks into the next test
+rm -f "$OSC/os-update-test-base" "$OSC/test-marker" "$OSRES/$UOS.json" "$OSDIR/.check-stamp-short"
 
-# #1081 reached only the two DIY lookups. The appliance's os-check kept its own `curl -fsS`, and
-# `-f` collapses every non-2xx into one exit code — so a spent GitHub budget came out of the
-# dashboard as "could not reach the release API over Tor", pointing at a doctor run that reports
-# Tor healthy, on a box with no shell to run it from. It goes through the shared fetch now.
 echo "== black-box: a rate-limited os-check names the remedy that works (#1081) =="
 printf '%s' '{"message":"API rate limit exceeded for this IP.","documentation_url":"https://docs.github.com/rest/overview/rate-limits-for-the-rest-api"}' >"$OSC/api-403.json"
 rm -f "$OSDIR/target.json" "$OSDIR/.check-stamp" "$OSDIR/.check-stamp-short" # starts clean regardless of what leaked above
