@@ -299,13 +299,20 @@ clear before it releases:
 | `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |
 
 The current-reading rows exist so that a dashboard restart during a pause cannot readmit rigs onto
-a node that is still peerless or unsynchronized. A trigger whose input cannot be read (the Docker
-proxy, P2Pool's stats or its logs) keeps its current state for 10 minutes, then drops out. A failed
-read alone never ends a pause sooner. A monerod that is unreachable is the existing
+a node that is still peerless or unsynchronized. A trigger that has fired keeps firing for 10
+minutes even when its input cannot be read (the Docker proxy, P2Pool's stats or its logs), then
+drops out; a failed read alone never ends a pause sooner. A trigger that has not fired drops out
+the moment its reading goes away: a recreate rotates P2Pool's stats, and a hold no reading
+supports must not keep the proxy stopped with nothing to show for it. A monerod that is
+unreachable is the existing
 outage above. A brief dip inside the wait stops nothing. The `Workers rejected` badge names the
 active trigger and when it began, and `/api/state` carries the same as `mining_pause`; the time is
 when the trigger began holding, not when it fired. A trigger clears after 60 seconds
-(`NODE_RECOVERY_AFTER_SEC`) without it, and readmission waits for every trigger to clear. The
+(`NODE_RECOVERY_AFTER_SEC`) without it, and readmission waits for every trigger to clear; once the
+last one has, the proxy starts again on the next poll cycle. A guarded container inside its
+healthcheck start period (`starting`) counts as a fault like `unhealthy`: it holds, and after
+`apply`, Restart all or a per-service restart the proxy is readmitted once every container
+reports healthy and the recovery window has passed. The
 dashboard stops only `xmrig-proxy`: the stratum port closes, connected rigs get a disconnect, and
 P2Pool keeps running. The built-in local miner is a rig on the same stratum, so it stops with them.
 
