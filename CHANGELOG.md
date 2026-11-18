@@ -28,6 +28,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   ends every session, wrong passwords are rate-limited, and scripts keep using HTTP basic auth with
   the same credentials (#4089).
 - The dashboard's **Export logs** card (Backup tab) has a time-frame picker (last 1 h, 6 h, 24 h, 72 h or 7 days, or a custom start and end), shows how far back the logs reach and flags a range that goes further, and collects and downloads the `support-bundle-<UTC timestamp>.zip` with one click, showing the window the manifest recorded. It is always available, on the appliance and on DIY, whether or not `dashboard.control.enabled` is on: with the switch off the host runner serves only the export, and config editing, restart and the other control actions stay off. With a dashboard password set, every export route needs the login (#4129).
+- The appliance update channel is read as untrusted data: https-only fetches to the release hosts
+  over Tor with remote DNS, response size caps, release-tag validation before any URL or path, and
+  stale or replayed channel reporting in Check for updates (#4011).
 
 ### Changed
 
