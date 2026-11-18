@@ -440,7 +440,8 @@ the #54 matrix per cut, same mandate as the targeted e2e.
   (`build/*`, `dashboard/`, `docker-compose.yml`, `os/rootfs`), the weekly CI sweeps rebuild and
   Trivy-scan the stack images (ci.yml) and the rootfs (os-rootfs.yml), and
   pin-watch.yml files an issue when one of the hand-pinned upstreams (docker-compose,
-  cosign, and the baked RigForge tree) falls behind its latest release. A
+  cosign, and the baked RigForge tree) falls behind its latest release, and
+  tor-bump.yml opens a `dependencies` PR when Alpine ships a newer tor (#4158). A
   security-relevant bump landing on the integration branch is a release trigger,
   not just a green check.
 

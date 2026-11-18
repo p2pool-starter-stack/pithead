@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+MEDIA_WALLET_ALT="445dvgb2rcBcPz2n2tiGLMgURfpBxV27DBsSgz4MEqXUHLtmmYeu1wL6iNu7fPJpwdUwtbvWS7MX9KZiyKonEg3NGKQgwhk"
 _make_media_stick() {
     (
         local path="$1" json="$2" loop="" mnt="" backing="" source="" rc mount_rc tries=0 step="image creation"
@@ -161,9 +162,8 @@ phase_media() {
         bad "no generated dashboard password before the media apply — nothing to preserve"
 
     local stick1="${DISK%.img}-media-apply.img"
-    local new_wallet="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
     _make_media_stick "$stick1" \
-        "{\"monero\":{\"wallet_address\":\"$new_wallet\"},\"p2pool\":{\"pool\":\"nano\"}}" || {
+        "{\"monero\":{\"wallet_address\":\"$MEDIA_WALLET_ALT\"},\"p2pool\":{\"pool\":\"nano\"}}" || {
         bad "media apply fixture construction failed before guest attachment"
         return
     }
@@ -178,7 +178,7 @@ phase_media() {
     wait_serial "staged configuration differs from the running one" 180 &&
         ok "the exact diff is shown on the console before anything applies" ||
         bad "no diff banner appeared on the console"
-    if serial_has "$new_wallet"; then
+    if serial_has "$MEDIA_WALLET_ALT"; then
         ok "the changed wallet address is shown in full — verifying it is the point"
     else
         bad "the changed wallet address never appeared on the console"

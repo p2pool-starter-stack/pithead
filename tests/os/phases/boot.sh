@@ -166,6 +166,13 @@ GETTY_DROPIN
         bad "$verdict"
     fi
 
+    [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
+        ok "both Debian Tor units ship masked on a fresh coordinator boot" ||
+        bad "a Debian Tor unit is not masked on a fresh coordinator boot: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"
+    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null')" ] &&
+        ok "no Tor process on a fresh coordinator boot" ||
+        bad "tor runs on a fresh coordinator boot"
+
     local id_before id_after jd_before jd_after jb jt0 jt1 kb0 jt_st jt_mu jt_un jt_kb jt_age
     id_before=$(_ssh cat /etc/machine-id)
     jd_before=$(_ssh 'ls /var/log/journal | wc -l' | tr -d '\r\n ')

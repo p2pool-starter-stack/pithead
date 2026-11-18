@@ -224,38 +224,37 @@ STUB_HISTORY='[{"change_id":"c-DONATION","status":"applied"},
                {"change_id":"c-watchdog_interval_min","status":"applied"},
                {"change_id":"c-pools","status":"applied"}]'
 
-echo "== run_rigforge_writable_keys: DONATION only ever moves TOWARD zero =="
-# A rig already donating is nudged DOWN to 0, never up: the probe can only reduce what a borrowed
-# rig gives away. Only a rig at 0 gets a nonzero probe. Kills a fixed `orig+1`.
+echo "== run_rigforge_writable_keys: DONATION and donate-level are NEVER written (#4184) =="
 STUB_DETAIL='{"rig_config":{"DONATION":5,"watchdog_interval_min":5}}'
 reset_applies
 quietly run_rigforge_writable_keys rig1 >/dev/null
-assert_eq "a rig donating 5 is probed DOWN to 0" "$(applies | sed -n 1p)" '{"DONATION":0}'
-assert_eq "and restored to 5" "$(applies | sed -n 2p)" '{"DONATION":5}'
-
+assert_eq "a rig already donating is left at its own value: no DONATION apply at any value (#4184)" \
+    "$(applies | grep -c DONATION)" "0"
+assert_eq "and no donate-level apply either (#4184)" "$(applies | grep -c donate)" "0"
 STUB_DETAIL='{"rig_config":{"DONATION":0,"watchdog_interval_min":5}}'
 reset_applies
 quietly run_rigforge_writable_keys rig1 >/dev/null
-assert_eq "a rig donating 0 is probed to a nonzero value" \
-    "$(applies | sed -n 1p)" '{"DONATION":1}'
-assert_eq "and restored to 0" "$(applies | sed -n 2p)" '{"DONATION":0}'
+assert_eq "a rig at 0 — the shape that used to be probed with 1 — still gets no DONATION apply (#4184)" \
+    "$(applies | grep -c DONATION)" "0"
+assert_eq "and the leg still proves the scalar write path on watchdog_interval_min (#4184)" \
+    "$(applies | sed -n 1p)" '{"watchdog_interval_min":6}'
 
 echo "== run_rigforge_writable_keys: watchdog_interval_min stays inside RigForge's 1-1440 =="
-assert_eq "a mid-range interval steps up" "$(applies | sed -n 3p)" '{"watchdog_interval_min":6}'
-assert_eq "and is restored" "$(applies | sed -n 4p)" '{"watchdog_interval_min":5}'
+assert_eq "a mid-range interval steps up" "$(applies | sed -n 1p)" '{"watchdog_interval_min":6}'
+assert_eq "and is restored" "$(applies | sed -n 2p)" '{"watchdog_interval_min":5}'
 # Kills a bare `orig+1`, which would POST 1441 and take a real rejected from the rig (rigforge.sh:556).
 STUB_DETAIL='{"rig_config":{"DONATION":0,"watchdog_interval_min":1440}}'
 reset_applies
 quietly run_rigforge_writable_keys rig1 >/dev/null
 assert_eq "a rig already at the 1440 ceiling steps DOWN instead" \
-    "$(applies | sed -n 3p)" '{"watchdog_interval_min":1439}'
+    "$(applies | sed -n 1p)" '{"watchdog_interval_min":1439}'
 
 echo "== run_rigforge_writable_keys: an out-of-contract value FAILS, it does not get written back =="
 # A rig reporting a nonsense interval is a real finding, not something to round-trip politely.
 STUB_DETAIL='{"rig_config":{"DONATION":0,"watchdog_interval_min":0}}'
 reset_applies
 counts="$(quietly run_rigforge_writable_keys rig1)"
-assert_eq "an interval outside 1-1440 reds, and only it (the DONATION leg is unaffected)" "$counts" "5,1"
+assert_eq "an interval outside 1-1440 reds, and only it" "$counts" "0,1"
 assert_eq "and no watchdog_interval_min apply was POSTed at all" \
     "$(applies | grep -c watchdog_interval_min)" "0"
 
@@ -278,7 +277,11 @@ assert_contains "autotune refusal is a by-design verdict row" "$refusal_rows" \
     "[by-design] leg      autotune write (#1236) — starts a real tuning run on borrowed production hardware"
 assert_contains "watchdog refusal is a by-design verdict row" "$refusal_rows" \
     "[by-design] leg      watchdog write (#1236) — would remove thermal protection from borrowed production hardware"
-assert_contains "both permanent refusals are counted as by-design" "$refusal_rows" "2|"
+assert_contains "DONATION refusal is a by-design verdict row" "$refusal_rows" \
+    "[by-design] leg      DONATION write (#1236) — a rig at DONATION 0 can only be probed upward"
+assert_contains "three permanent refusals are counted as by-design" "$refusal_rows" "3|"
+assert_eq "DONATION is never applied — its upward-only probe donates the rig's dev fee (#4184)" \
+    "$(applies | grep -c DONATION)" "0"
 assert_eq "autotune is never applied — it would start a real tuning run" \
     "$(applies | grep -c autotune)" "0"
 assert_eq "watchdog is never applied — it would drop thermal protection" \
@@ -290,8 +293,8 @@ assert_eq "no pools apply comes out of the #1236 legs, self-derived or otherwise
     "$(applies | grep -c pools)" "0"
 assert_eq "max_temp_c is not duplicated here — the #513 leg already round-trips it" \
     "$(applies | grep -c max_temp_c)" "0"
-assert_eq "only DONATION and watchdog_interval_min are driven (2 keys, 4 applies)" \
-    "$(applies | grep -c .)" "4"
+assert_eq "only watchdog_interval_min is driven (1 key, 2 applies) (#4184)" \
+    "$(applies | grep -c .)" "2"
 
 echo "== run_rigforge_writable_keys: an unreadable rig skips LOUDLY and writes nothing =="
 STUB_DETAIL='{"rig_config":null}'

@@ -2,6 +2,7 @@ import asyncio
 import base64
 import ipaddress
 import logging
+import sqlite3
 import time
 from pathlib import Path
 
@@ -146,9 +147,17 @@ async def login(request):
         return web.json_response({"error": "Invalid username or password."}, status=401)
 
     remember = remember is True
-    token = await asyncio.to_thread(
-        auth_sessions.issue, request.app["state_manager"], username, epoch, remember
-    )
+    try:
+        token = await asyncio.to_thread(
+            auth_sessions.issue, request.app["state_manager"], username, epoch, remember
+        )
+    except sqlite3.Error:
+        logger.warning("Sign-in refused: the session store cannot write")
+        return web.json_response(
+            {"error": "The data disk is full, so sign-in cannot save your session."},
+            status=503,
+            headers={"Cache-Control": "no-store"},
+        )
     response = web.json_response({"ok": True}, headers={"Cache-Control": "no-store"})
     _set_cookie(request, response, token, remember)
     return response
