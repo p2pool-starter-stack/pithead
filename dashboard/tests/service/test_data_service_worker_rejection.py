@@ -315,7 +315,7 @@ class TestMiningGuardRejection:
         assert svc.workers_rejected is False
         svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
 
-    async def test_a_persisted_rejection_readmits_on_the_first_healthy_cycle(self):
+    async def test_a_rejected_proxy_without_triggers_readmits_on_the_first_cycle(self):
         svc = self._svc()
         svc.workers_rejected = True
         await self._cycle(svc)
