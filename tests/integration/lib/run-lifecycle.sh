@@ -93,16 +93,12 @@ _run_lifecycle() {
             "$(rx "stat -c %u $(quote_arg "$own_probe") 2>/dev/null")" "1000"
         rx "sudo rm -f $(quote_arg "$own_probe")" >/dev/null 2>&1 || true
     fi
-    # .pool.type lags a sidechain switch until peers on the new chain connect — wait + three-way
-    # verdict, don't assert cold on a peer-timing state (#54, #687).
     assert_pool_switched "pool actually changed" "$(pool_label "$other")"
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         prove_readmit_after_recreate
     else
         it_skip_leg "xmrig-proxy readmission bound after the pool recreate (#4166)" "remote mode: no local guarded services to watch" "by-design"
     fi
-    # Node-down failover (#31): stop monerod -> status non-zero (node down), dashboard rejects
-    # workers (xmrig-proxy stopped) -> start monerod -> readmitted -> status 0 again.
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
         it_step "stopping monerod to exercise node-down failover…"
         lifecycle_mining_step node-down rx "docker compose stop monerod >/dev/null 2>&1"
@@ -388,11 +384,6 @@ _pred_guarded_services_healthy() {
     [ "$(svc_state_of "$s")" = "running" ] && { [ "$(svc_health_of "$s")" = "healthy" ] || [ "$(svc_health_of "$s")" = "none" ]; }
 }
 _pred_failover_armed() {
-    # `/api/state` never carried the raw monero_sync/miner_released/workers_rejected fields
-    # (docs/dev/testing-strategy.md §F: this class of internal state is surfaced through
-    # `sync.monero.state` and the badges list, never as its own machine-queryable booleans) —
-    # so read the same contract the dashboard's own client reads, not internal names that were
-    # never part of the response.
     local st badges
     st="$(api_state)"
     badges="$(jq_get "$st" '.badges | map(.text) | join("")')"
