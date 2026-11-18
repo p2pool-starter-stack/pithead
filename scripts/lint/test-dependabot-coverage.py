@@ -8,6 +8,8 @@ DIR_LIST_ITEM = re.compile(r'^\s{6}- "(/[^"]+)"$', re.M)
 DIR_SINGLE = re.compile(r'^\s*directory: "(/[^"]*)"$', re.M)
 COPY_FROM = re.compile(r"--from=([^\s]+)")
 IGNORE_KEY = re.compile(r"(?m)^    ignore:$")
+LABELS_KEY = re.compile(r"(?m)^    labels:")
+DEPENDENCY_NAME = re.compile(r'dependency-name: "([^"]+)"')
 UV_STAGE = re.compile(r"(?m)^FROM ghcr\.io/astral-sh/uv:[0-9][^\s]* AS uv$")
 
 
@@ -34,7 +36,9 @@ def manifest_ok(ecosystem, directory):
     for path in matched:
         if ecosystem == "docker" and not (path / "Dockerfile").is_file():
             return f"docker entry {directory} has no Dockerfile"
-        if ecosystem == "docker-compose" and not list(path.glob("docker-compose*.yml")):
+        if ecosystem == "docker-compose" and not (
+            list(path.glob("docker-compose*.y*ml")) or list(path.glob("compose*.y*ml"))
+        ):
             return f"docker-compose entry {directory} has no compose file"
         if ecosystem == "github-actions" and path == pathlib.Path("."):
             if not (ROOT / ".github/workflows").is_dir():
@@ -56,7 +60,7 @@ def check_entries(text, problems):
     by_eco = {}
     for ecosystem, body in rows:
         by_eco.setdefault(ecosystem, []).append(body)
-    if "labels:" in text:
+    if LABELS_KEY.search(text):
         problems.append("entries must keep the default `dependencies` label (no labels: key)")
     actions = by_eco.get("github-actions", [])
     if not any("/.github/actions/*" in directories(body) for body in actions):
@@ -76,12 +80,12 @@ def check_entries(text, problems):
                 "/tests/runner must not sit in the ignore-blocked shipped-image docker entry"
             )
     compose = by_eco.get("docker-compose", [])
-    if not any(
-        "/tests/integration/mini-stack" in directories(body) and not IGNORE_KEY.search(body)
-        for body in compose
-    ):
+    mini = [body for body in compose if "/tests/integration/mini-stack" in directories(body)]
+    if not mini:
+        problems.append("a docker-compose entry for /tests/integration/mini-stack must exist")
+    elif not set(DEPENDENCY_NAME.findall(mini[0])) <= {"pithead-dashboard"}:
         problems.append(
-            "/tests/integration/mini-stack must sit in a docker-compose entry without an ignore block"
+            "the mini-stack docker-compose entry may ignore only the locally built pithead-dashboard image"
         )
     if not any("/" in directories(body) for body in compose):
         problems.append("the root docker-compose.yml entry must stay in place")
@@ -119,7 +123,7 @@ def check_uv_stage(text, name, problems):
 
 def check_copy_from(dockerfiles, problems):
     for path in dockerfiles:
-        for ref in COPY_FROM.findall(path.read_text()):
+        for ref in COPY_FROM.findall(re.sub(r"(?m)^\s*#.*$", "", path.read_text())):
             if "/" in ref or "." in ref:
                 problems.append(
                     f"{path}: COPY --from={ref} is an image reference; Dependabot only reads FROM"
