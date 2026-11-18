@@ -17,8 +17,10 @@ the rest of that set behind the same two helpers — ``bounded_get`` for the ``r
 ``bounded_read`` for the ``aiohttp`` ones.
 """
 
+import ipaddress
 import json
 import time
+from urllib.parse import urlsplit
 
 import requests
 
@@ -73,20 +75,50 @@ class BoundedResponse:
             raise requests.HTTPError(f"HTTP {self.status_code}")
 
 
+_CGNAT_V4 = ipaddress.ip_network("100.64.0.0/10")
+
+
+class NoUsableProxy(requests.RequestException):
+    pass
+
+
+def _proxy_covers(proxies, scheme):
+    if isinstance(proxies, str):
+        return bool(proxies.strip())
+    if not proxies or not hasattr(proxies, "get"):
+        return False
+    return bool(str(proxies.get(scheme) or "").strip())
+
+
+def _refuse_direct_public(url, proxies):
+    parts = urlsplit(url)
+    host = parts.hostname
+    if host:
+        try:
+            addr = ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if (
+                addr.is_private
+                or addr.is_loopback
+                or addr.is_link_local
+                or (addr.version == 4 and addr in _CGNAT_V4)
+            ):
+                return
+    scheme = parts.scheme.lower()
+    if _proxy_covers(proxies, scheme):
+        return
+    raise NoUsableProxy(
+        f"refusing unproxied connection to {url!r}: host is not a private IP literal "
+        f"and no usable {scheme} proxy was given (#4146)"
+    )
+
+
 def bounded_request(
     method, url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, session=None, deadline=None, **kwargs
 ):
-    """``requests`` with a hard response-size cap, for any method.
-
-    ``session`` takes a caller's own ``requests.Session`` so bounding a read never costs it the
-    connection pooling or the retry adapter it configured (#1360 — the xmrig-proxy client polls
-    twice a cycle and mounts a deliberate ``Retry``). Defaults to the module, i.e. plain
-    ``requests.<method>``.
-
-    Streams the body and raises ``ResponseTooLarge`` once it exceeds ``max_bytes``, instead of
-    buffering an unbounded payload. Passes ``proxies`` / ``params`` / ``headers`` / ``json``
-    through unchanged; raises exactly what ``requests`` raises otherwise.
-    """
+    _refuse_direct_public(url, kwargs.get("proxies"))
     caller = getattr(session if session is not None else requests, method.lower())
     stop_at = time.monotonic() + deadline if deadline is not None else None
     with caller(url, stream=True, timeout=timeout, **kwargs) as resp:

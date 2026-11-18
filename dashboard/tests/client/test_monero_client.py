@@ -61,12 +61,12 @@ class TestGetInfo:
         assert mock_get.call_args.kwargs["allow_redirects"] is False
 
     def test_network_error_returns_none_without_logging_the_endpoint(self, caplog):
-        client = MoneroClient(url="http://private-node.example:18081", username="u", password="p")
+        client = MoneroClient(url="http://10.40.0.7:18081", username="u", password="p")
         with patch.object(
             monero_mod.requests, "get", side_effect=requests.ConnectionError("refused")
         ):
             assert client.get_info() is None
-        assert "private-node.example" not in caplog.text
+        assert "10.40.0.7" not in caplog.text
         assert "ConnectionError" in caplog.text
 
     def test_non_200_returns_none(self):

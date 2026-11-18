@@ -210,6 +210,13 @@ What the running stack sends to the internet, connection by connection.
 resolved on the clearnet either. The host-networked dashboard reaches the bridge's Tor SOCKS at
 `172.28.0.25:9050`.
 
+The shared HTTP helper refuses to connect directly (#4146): unless the URL's host is a private IP
+literal — loopback, RFC 1918, link-local, CGNAT `100.64.0.0/10`, IPv6 `::1`, or ULA `fc00::/7` — the
+request must carry a usable proxy for its scheme, and the refusal raises before any socket opens. A
+hostname is never a private literal; it can't be proven private without a DNS lookup. `TOR_SOCKS_PROXY`
+is a required setting: with it empty or unset the dashboard refuses to start, and every Tor-routed
+fetch above reports a failure instead of silently reaching the endpoint over the host IP.
+
 A remote node given as a hostname (`monero.remote.host` or `tari.remote.host`) is the exception:
 p2pool's socat bridge (above) only moves the TCP connection itself off the SOCKS5 proxy, so the
 DNS lookup that turns that hostname into an IP still happens on the clearnet, via the container's
