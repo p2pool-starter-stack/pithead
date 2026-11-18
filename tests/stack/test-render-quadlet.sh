@@ -180,3 +180,14 @@ assert_eq "#4252 arming: the compose parse sees the socket-proxy pin (control)" 
     "$(printf '%s\n' "$compose_proxy" | grep -cE '^tecnativa/docker-socket-proxy:v[0-9.]+@sha256:[0-9a-f]{64}$')" "1"
 assert_eq "#4252: an untouched service still renders its own compose ref, not the bumped one" \
     "$(sed -n 's/^Image=//p' "$QBUMP/docker-proxy.container" "$QBUMP/docker-control.container" | sort -u)" "docker.io/$compose_proxy"
+QNOIMG="$SANDBOX/quadlet-compose-no-img-out"
+sed '/^    image: caddy:/d' "$ROOT/docker-compose.yml" >"$SANDBOX/compose-noimg.yml"
+assert_eq "#4252 arming: the compose copy really lost the caddy image line" \
+    "$(grep -c '^    image: caddy:' "$SANDBOX/compose-noimg.yml")" "0"
+QNOIMGRC=0
+QNOIMGOUT=$( (QUADLET_COMPOSE_FILE="$SANDBOX/compose-noimg.yml" \
+    run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QNOIMG" 2>&1)) || QNOIMGRC=$?
+assert_eq "#4252: a compose file without the service pin exits non-zero" "$QNOIMGRC" "1"
+assert_contains "#4252: the refusal names the service and the compose file" "$QNOIMGOUT" "no image for service caddy"
+assert_eq "#4252: the refusal happens before any unit file is created" \
+    "$(find "$QNOIMG" 2>/dev/null | wc -l | tr -d ' ')" "0"

@@ -30,7 +30,7 @@ render_quadlet_units() {
     _qcompose_image() {
         local img repo
         img=$(awk -v s="  $1:" '$0==s{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2;exit}' "$composef")
-        [ -n "$img" ] || error "render-quadlet: no image for service $1 in $composef."
+        [ -n "$img" ] || return 1
         repo="${img%%/*}"
         if [ "$repo" = "$img" ]; then
             printf 'docker.io/library/%s' "$img"
@@ -38,6 +38,14 @@ render_quadlet_units() {
             printf '%s' "$img"
         else printf 'docker.io/%s' "$img"; fi
     }
+    _qcompose_require() {
+        _qcompose_image "$1" >/dev/null || error "render-quadlet: $composef has no image for service $1. Refusing to render; no output was created."
+    }
+    _qcompose_require caddy
+    _qcompose_require docker-proxy
+    _qcompose_require docker-control
+    case ",$profiles," in *,local_tari,*) _qcompose_require tari ;; esac
+    case ",$profiles," in *,tari_payout_confirm,*) _qcompose_require tari-wallet ;; esac
     mkdir -p "$outdir"
     cat >"$outdir/mining.network" <<EOF
 [Network]
