@@ -16,6 +16,8 @@
 #
 # Node is the awkward pin (CI runs 20, Debian ships 18), so the base solves it. Python is uv's
 # job: dashboard/.python-version pins 3.11 and uv fetches it on first run.
+FROM ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 AS uv
+
 FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
 
 # The versions come from the Makefile — it is the one place either is written (#1679, #1688) — and
@@ -124,7 +126,7 @@ RUN arch="$(dpkg --print-architecture)" \
 # uv, pinned to the digest ci.yml installs (#2078: one uv, one lock, both sides). 0.10.10 carried
 # two fixable HIGH CVEs in its own vendored Rust deps (quinn-proto GHSA-4w2j-m93h-cj5j,
 # rustls-webpki GHSA-82j2-j2ch-gfr8) — measured on this exact digest, clean on this one (#2084).
-COPY --from=ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /uvx /usr/local/bin/
+COPY --from=uv /uv /uvx /usr/local/bin/
 
 # The suite expects a NON-ROOT user: several fixtures assert permission-denied, and root bypasses
 # every one of them — they would pass while proving nothing. UID/GID come from the invoking host so

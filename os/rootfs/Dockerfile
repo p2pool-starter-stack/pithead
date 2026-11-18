@@ -28,13 +28,17 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosig
             -X sigs.k8s.io/release-utils/version.gitTreeState=dirty" \
         -o /out/cosign ./cmd/cosign
 
-RUN /out/docker-compose version && /out/cosign version \
-    && /out/docker-compose version | grep -qF "${COMPOSE_VERSION}" \
-    && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
-    && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.10" \
-    && go version /out/cosign | grep -qxF "/out/cosign: go1.26.10" \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
+RUN set -eu; \
+    /out/docker-compose version && /out/cosign version; \
+    /out/docker-compose version | grep -qF "${COMPOSE_VERSION}"; \
+    /out/cosign version | grep -qF "${COSIGN_VERSION}"; \
+    go version /out/docker-compose | grep -qxF "/out/docker-compose: $(go env GOVERSION)"; \
+    go version /out/cosign | grep -qxF "/out/cosign: $(go env GOVERSION)"; \
+    for mod in github.com/klauspost/compress github.com/go-jose/go-jose/v4; do \
+    ver=$(printf '%s\n' ${COSIGN_GO_RAISES} | sed -n "s|^${mod}@||p"); \
+    { [ -n "$ver" ] || { echo "COSIGN_GO_RAISES no longer raises ${mod} — keep the raise or the guard loses its subject" >&2; exit 1; }; }; \
+    go version -m /out/cosign | grep -qE "^[[:space:]]+dep[[:space:]]+$(printf '%s' "$mod" | sed 's/\./\\./g')[[:space:]]+$(printf '%s' "$ver" | sed 's/\./\\./g')[[:space:]]"; \
+    done
 
 # ---------------------------------------------------------------------------------------------
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
