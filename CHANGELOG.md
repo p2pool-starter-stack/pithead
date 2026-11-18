@@ -38,6 +38,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- The dashboard keeps answering when its data disk is full (a 2.0.4 sign-in regression): an existing
+  session still passes the sign-in gate when the session store cannot write, a dashboard restarted
+  on a full data dir still starts and reports `db_healthy:false`, and signing in reports that the
+  data disk is full instead of failing with a server error (#4199).
 - On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
   on the data partition is saturated — no longer costs the committed slot its fallback. The boot
   health gate commits when the dashboard answers and every failing check is that network fault,

@@ -292,7 +292,7 @@ and require tier-4 appliance proof when changed.
 | system levels (cpu/mem/disk/hugepages), worker pool/online, chart outage breaks | metrics | 1 ✅ |
 | dashboard DB writes failing → `db_healthy:false` (#131) | data dir read-only | 1 ✅ (flag logic) · 4 ▶ (`--fault-injection`, #202) |
 | `/metrics` Prometheus exposition (#379), through Caddy + basic_auth | scrape | 1 ✅ (format) · 4 ▶ (`--check`) |
-| Dashboard sign-in page (#4089): session cookie versus remember lifetime, sign out, session end on password change, per-address rate limit, basic auth still accepted, no-password mode, Caddy session gate and loopback verifier render | scripted HTTP through real Caddy and the dashboard image | 1 ✅ (`dashboard/tests/web/test_auth.py`, `dashboard/tests/service/test_auth_sessions.py`, `tests/stack/dashboard/test-dashboard-login.sh`) · 3 ✅ (`tests/integration/mini-stack/test-boot-health-proxy.sh` login and rotated legs) |
+| Dashboard sign-in page (#4089): session cookie versus remember lifetime, sign out, session end on password change, per-address rate limit, basic auth still accepted, no-password mode, Caddy session gate and loopback verifier render, sessions survive a full data disk (#4199) | scripted HTTP through real Caddy and the dashboard image | 1 ✅ (`dashboard/tests/web/test_auth.py`, `dashboard/tests/service/test_auth_sessions.py`, `tests/stack/dashboard/test-dashboard-login.sh`) · 3 ✅ (`tests/integration/mini-stack/test-boot-health-proxy.sh` login and rotated legs) |
 | `share_stats` series populated on a mining box (#116) | polls land | 1 ✅ (shape) · 4 ▶ (`--check`) |
 | Confirmed running earnings (#787): yesterday as a **calendar** day vs the trailing 24h/7d/30d spans, the DST-length day boundary, partial marking when a window outruns the recorded payout history, and one roll-up feeding both the dashboard card and `/earnings` | stored payouts | 1 ✅ (`test_earnings.py`, `test_telegram_commands.py`, `components.test.mjs`) |
 | Expected-vs-actual earnings summary (#808/#817): one shared 30d window, the combined Monero+XvB row (estimate folded on the expected side because win payouts are inseparable on the actual side), per-stream gates and honest degradation, Tari block counts, XvB win windowing, and the card's render branches in both views | metrics + stored payouts | 1 ✅ (`test_views.py` `TestEarningsVsActual`, `test_metrics.py`, `components.test.mjs`) |
@@ -875,6 +875,9 @@ tier 3/4:
 - **Disk-full / ENOSPC verdict.** ✅ Now a tier-4 `--fault-injection` case: a 1MiB tmpfs bind-mounted
   over the dashboard data dir and filled solid forces a real kernel ENOSPC (distinct from
   `fault_db_readonly`'s EACCES), and asserts `db_healthy:false`, then unmounts and asserts recovery.
+  The verdict is only readable if the dashboard keeps answering (#4199): a restart on the full dir
+  must still start and serve the status API, a valid session must still pass the sign-in gate when
+  its session-store write hits ENOSPC, and sign-in must report the full disk rather than die.
 - **Tor-container-down partial start.** ✅ Now a tier-4 `--fault-injection` case (#563, TOP PRIVACY
   PRIORITY): `docker compose stop tor` and assert BOTH no clearnet egress leak appears (reuses
   `bench-verify-egress.sh`'s `/proc/net/tcp` proof, the same one the steady-state battery runs) and
