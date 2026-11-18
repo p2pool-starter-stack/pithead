@@ -66,7 +66,7 @@ boot path drives most of them for you:
 | `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console. Five wrong tries from one network peer start a 60-second cooldown for that peer; retry the same token afterwards. |
 | `./pithead load-images` | Load the baked container-image archives from `/opt/pithead/images` into the engine when their content changed since the last load. The boot path runs this every boot, so a reinstall or update that ships new images converges with no wizard involvement. |
 | `./pithead local-miner` | Converge this machine's RigForge worker to what the machine is: on a coordinator it follows `local_miner.enabled` (RigForge setup in appliance mode when on, the miner stopped when off); on a rig it follows `rig.json`. Run every boot; a no-op outside the appliance. |
-| `./pithead render-quadlet` | Render Podman Quadlet units from a rendered `.env`. Defaults to `--env .env` and `--out ./quadlet`. The `os/quadlet/` fixtures pin its output byte for byte. Appliance boot remains Compose-managed. |
+| `./pithead render-quadlet` | Render Podman Quadlet units from a rendered `.env`. Defaults to `--env .env` and `--out ./quadlet`. Upstream image references come from the `docker-compose.yml` service pins, so a compose bump reaches the units with no renderer or fixture edit. The `os/quadlet/` fixtures pin its output byte for byte. Appliance boot remains Compose-managed. |
 
 For stack-owned Quadlet images, nonempty `PITHEAD_REGISTRY` and `STACK_VERSION`
 values in the input file take precedence independently. Missing or empty values
@@ -78,7 +78,12 @@ an inherited process `STACK_VERSION` does not override that computation.
 The normal environment renderer keeps these build values out of `.env`.
 Direct callers of `render_quadlet_units` must initialize build provenance or
 supply both values in the input file; unresolved values are refused before
-creating output. Upstream image pins are unchanged.
+creating output. Upstream image references — the Tari node and console wallet, Caddy, and the two
+socket proxies — are not repeated in the renderer: they are read from the `docker-compose.yml`
+pins at render time, so a compose bump reaches the units with no renderer or fixture edit. The
+compose file is chosen, in precedence order, by a `QUADLET_COMPOSE_FILE` value in the input file,
+a process `QUADLET_COMPOSE_FILE`, or `docker-compose.yml` in the working directory. A missing file
+or missing service pin is refused before creating output.
 
 ### With a node running elsewhere
 
