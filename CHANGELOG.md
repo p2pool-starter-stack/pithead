@@ -38,6 +38,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- The egress panel no longer calls Caddy firewalled. Caddy runs on the host network, so the
+  container egress fence never covered it; its per-service posture now says so, like the
+  host-networked dashboard's already did (#4197).
 - The dashboard keeps answering when its data disk is full (a 2.0.4 sign-in regression): an existing
   session still passes the sign-in gate when the session store cannot write, a dashboard restarted
   on a full data dir still starts and reports `db_healthy:false`, and signing in reports that the
