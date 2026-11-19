@@ -25,10 +25,8 @@ TRANSACTION_FILES = (
     "config.json",
     "rig-request.json",
 )
-# Written beside a request, never alone: a new submission clears them before staging its own.
-SUBMISSION_SIDECARS = ("auth-mode", "role")
+SUBMISSION_SIDECARS = ("auth-mode", "role", "rig-warning.txt")
 ROLLBACK_FILES = (*TRANSACTION_FILES, *SUBMISSION_SIDECARS, "last-attempt.json")
-# Every name the page publishes through a hidden ".<name>." temporary (see spool_write).
 PAGE_TEMP_FILES = (*ROLLBACK_FILES, "restore-passphrase")
 
 
