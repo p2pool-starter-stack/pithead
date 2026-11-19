@@ -13,12 +13,12 @@ appliance	healthchecks ping URL (opt-in, set healthchecks.ping_url; via the tor 
 appliance	api.coingecko.com price feed (opt-in, via the tor container SOCKS)	allow	allow	tor	none	none
 appliance	www.google.com and www.cloudflare.com tor auto-heal probes (opt-in, via the tor container SOCKS)	allow	allow	tor	none	tests/stack/standalone/test_tor_heal_outage_recovery.sh
 appliance	textexplore.tari.com fork-guard tip reference (via the tor container SOCKS)	allow	allow	tor	none	none
-appliance	webhook and ntfy alert sinks (opt-in; LAN carve-out with notifications.tor false)	allow	allow	tor	none	none
+appliance	webhook and ntfy alert sinks (opt-in user URLs; notifications.tor false dials them direct)	allow	allow	tor	none	none
 appliance	www.debian.org htpdate time sync (firstboot and setup-again units)	allow	allow	host	none	none
 appliance	github.com release bundle and RAUC bundle downloads	build	build	host	none	tests/stack/test-install-verify.sh
 appliance	ghcr.io and Docker Hub container image pulls	build	build	host	none	tests/stack/standalone/test_quadlet_provenance.py
 appliance	published node ports 18081, 18083 and 18142 (LAN-only source fence)	lan	lan	lan	lan-guard	tests/stack/firewall/lan-guard.sh
-appliance	pool stratum endpoint (local miner and LAN rigs dial the box bind)	lan	lan	lan	stratum-auth	tests/stack/test-connection-announce.sh
+appliance	pool stratum endpoint (xmrig-proxy bind 0.0.0.0 by default; password auth opt-in)	allow	allow	host	none	tests/stack/test-connection-announce.sh
 appliance	seeds-mini.p2pool.io and seeds.tari.com DNS seeds (closed by default)	drop	drop	host	app-config	tests/stack/test-monero-tari.sh
-rig	stratum pool endpoint (borrowed pool, failover to a second pool)	lan	lan	lan	stratum-auth	tests/integration/lib/run-failover-view.sh
+rig	stratum pool endpoint (LAN pool URL by default; password auth opt-in; failover to a second pool)	allow	allow	lan	none	tests/integration/lib/run-failover-view.sh
 rig	time sync (unknown; the rig image is built in the RigForge repo)	unknown	unknown	unknown	none	none
