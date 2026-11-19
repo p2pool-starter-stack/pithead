@@ -64,7 +64,7 @@ _restore_mining_clear_evidence() {
     on_bench "rm -f $(quote_arg "$E2E_DIR/results/restore-mining-dashboard-log.txt") $(quote_arg "$E2E_DIR/results/restore-mining-services.txt")" 2>/dev/null
 }
 
-capture_restore_mining_evidence() { # -> exit 3 when the dashboard log could not be read; prints the redacted tail
+capture_restore_mining_evidence() {
     local dir="$E2E_DIR/results" log services saved=0 rc=0
     log="$(on_bench "cd '$RESTORE_DIR' && timeout --kill-after=2 15 docker compose logs --no-color --tail 400 dashboard" 2>/dev/null | redact | tail -c 65536)" || rc=3
     [ -n "$log" ] || log=""
