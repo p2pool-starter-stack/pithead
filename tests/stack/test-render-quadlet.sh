@@ -31,7 +31,7 @@ echo "== unit: render-quadlet parity vs os/quadlet fixtures (#77 phase 1) =="
 # os/quadlet files ran live in the #78 spike, so any drift here needs a bench re-proof, not just
 # an updated fixture.
 QOUT="$SANDBOX/quadlet-out"
-# shellcheck disable=SC2034  # read by render_quadlet_units inside the sourced run_sourced subshell
+# shellcheck disable=SC2034
 QUADLET_COMPOSE_FILE="$ROOT/docker-compose.yml"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QOUT" >/dev/null
 assert_contains "remote Quadlet Tor receives P2Pool onion port (#2936)" \
