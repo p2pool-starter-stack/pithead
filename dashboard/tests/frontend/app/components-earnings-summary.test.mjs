@@ -26,6 +26,7 @@ test('ExpectedVsActualCard marks a partial-ledger percent as a lower bound (#817
     s.earnings_summary.xmr = {
         available: true, expected_30d: 0.0123, includes_xvb: true, enabled: true,
         actual_30d: 0.0101, partial: true, pct: 82,
+        xvb_realization_pct: null, xvb_wins_measured: null,
     };
     const out = renderApp({ state: s });
     const card = cardSlice(out, 'card-expected-vs-actual');
@@ -53,6 +54,11 @@ test('ExpectedVsActualCard shows a plain percent on a complete ledger and states
     assert.doesNotMatch(card, /at least/);
     assert.match(card, /Payouts counted in Actual are wallet-wide/);
     assert.doesNotMatch(card, /No percentage shown/);
+    s.earnings_summary.xmr.available = false;
+    s.earnings_summary.xmr.pct = null;
+    const noEst = cardSlice(renderApp({ state: s }), 'card-expected-vs-actual');
+    assert.doesNotMatch(noEst, /No percentage shown/);
+    assert.match(noEst, /Payouts counted in Actual are wallet-wide/);
 });
 
 test('ExpectedVsActualCard explains a withheld percent in visible text, naming the wallet-wide case (#992, #4228)', () => {
@@ -85,6 +91,8 @@ test('ExpectedVsActualCard points at Configuration, not a config key, when Moner
     assert.doesNotMatch(out, /0\.000000 XMR \(/); // no zero-actual masquerading as a figure
     // The hint cell wraps at spaces only — #1861 found overflow-wrap:anywhere breaking it mid-word.
     assert.match(cardSlice(out, 'card-expected-vs-actual'), /class="text-muted eva-hint"/);
+    assert.doesNotMatch(out, /No percentage shown/);
+    assert.doesNotMatch(out, /Payouts counted in Actual are wallet-wide/);
 });
 
 test('ExpectedVsActualCard points at Configuration for a LOCAL Tari node when confirmation is off (#1861)', () => {

@@ -146,7 +146,7 @@ function ExpectedVsActualCard({ summary, onView }) {
         }
         ${
           withheld
-            ? html`<p class="text-muted text-xs">No percentage shown: this wallet received far more than this stack's expected payout — other stacks or rigs pay to the same address, or this stack was idle or unrecorded for most of the window.</p>`
+            ? html`<p class="text-muted text-xs">No percentage shown: this wallet received far more than this stack's expected payout — typically other stacks or rigs pay to the same address, or this stack was idle or unrecorded for most of the window.</p>`
             : null
         }
         ${
