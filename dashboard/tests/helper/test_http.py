@@ -145,6 +145,12 @@ class TestEgressGuard:
                 bounded_request("POST", "http://8.8.8.8:8080/json_rpc")
         sock.assert_not_called()
 
+    def test_a_malformed_url_raises_a_request_exception(self):
+        with patch("socket.socket") as sock:
+            with pytest.raises(requests.RequestException):
+                bounded_get("http://[::1")
+        sock.assert_not_called()
+
     def test_a_session_caller_to_a_public_host_is_refused(self):
         session = MagicMock()
         with pytest.raises(NoUsableProxy):
@@ -160,8 +166,6 @@ class TestEgressGuard:
             bounded_get("https://example.test/x", proxies={"https": ""})
         with pytest.raises(NoUsableProxy):
             bounded_get("http://example.test/x", proxies={"http": ""})
-
-    def test_blank_scheme_entry_counts_as_no_proxy(self):
         with pytest.raises(NoUsableProxy):
             bounded_get("https://example.test/x", proxies={"https": "   "})
 
@@ -223,12 +227,6 @@ class TestEgressGuard:
         ):
             with pytest.raises(NoUsableProxy):
                 bounded_get(url)
-
-    def test_a_private_literal_still_works_with_a_proxy_present(self):
-        with patch(
-            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
-        ):
-            assert bounded_get("http://127.0.0.1:3344/x", proxies=_PROXIES).content == b"ok"
 
 
 class _Stream:

@@ -8,7 +8,8 @@ import sqlite3
 
 import pytest
 
-os.environ.setdefault("TOR_SOCKS_PROXY", "socks5h://127.0.0.1:9050")
+if not os.environ.get("TOR_SOCKS_PROXY", "").strip():
+    os.environ["TOR_SOCKS_PROXY"] = "socks5h://127.0.0.1:9050"
 
 
 @pytest.fixture(autouse=True)

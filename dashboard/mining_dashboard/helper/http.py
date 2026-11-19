@@ -91,7 +91,10 @@ def _proxy_covers(proxies, scheme):
 
 
 def _refuse_direct_public(url, proxies):
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        raise NoUsableProxy(f"refusing to connect to malformed URL {url!r} (#4146)") from None
     host = parts.hostname
     if host:
         try:
