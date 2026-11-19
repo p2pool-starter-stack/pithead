@@ -82,6 +82,13 @@ class NoUsableProxy(requests.RequestException):
     pass
 
 
+def _url_scheme(url):
+    try:
+        return urlsplit(url).scheme.lower()
+    except ValueError:
+        return ""
+
+
 def _proxy_covers(proxies, scheme):
     if isinstance(proxies, str):
         return bool(proxies.strip())
@@ -95,6 +102,8 @@ def _refuse_direct_public(url, proxies):
         parts = urlsplit(url)
     except ValueError:
         raise NoUsableProxy(f"refusing to connect to malformed URL {url!r} (#4146)") from None
+    if "@" in parts.netloc or "\\" in parts.netloc:
+        raise NoUsableProxy(f"refusing to connect to ambiguous URL {url!r} (#4146)") from None
     host = parts.hostname
     if host:
         try:
@@ -122,6 +131,8 @@ def bounded_request(
     method, url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, session=None, deadline=None, **kwargs
 ):
     _refuse_direct_public(url, kwargs.get("proxies"))
+    if not _proxy_covers(kwargs.get("proxies"), _url_scheme(url)):
+        kwargs["allow_redirects"] = False
     caller = getattr(session if session is not None else requests, method.lower())
     stop_at = time.monotonic() + deadline if deadline is not None else None
     with caller(url, stream=True, timeout=timeout, **kwargs) as resp:

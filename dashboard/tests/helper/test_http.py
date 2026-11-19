@@ -146,10 +146,21 @@ class TestEgressGuard:
         sock.assert_not_called()
 
     def test_a_malformed_url_raises_a_request_exception(self):
-        with patch("socket.socket") as sock:
-            with pytest.raises(requests.RequestException):
+        with patch("mining_dashboard.helper.http.requests.get") as g:
+            with pytest.raises(NoUsableProxy):
                 bounded_get("http://[::1")
-        sock.assert_not_called()
+        g.assert_not_called()
+
+    def test_a_netloc_with_userinfo_or_a_backslash_is_refused(self):
+        with patch("mining_dashboard.helper.http.requests.get") as g:
+            for url in (
+                "http://evil.com\\@10.0.0.1/x",
+                "http://10.0.0.1@evil.com/x",
+                "https://user:pass@127.0.0.1:18082/json_rpc",
+            ):
+                with pytest.raises(NoUsableProxy):
+                    bounded_get(url)
+        g.assert_not_called()
 
     def test_a_session_caller_to_a_public_host_is_refused(self):
         session = MagicMock()
@@ -224,9 +235,27 @@ class TestEgressGuard:
             "https://100.128.0.1/x",
             "https://172.32.0.1/x",
             "https://[2001:4860:4860::8888]/x",
+            "https://16842753/x",
+            "HTTP://EXAMPLE.COM/x",
         ):
             with pytest.raises(NoUsableProxy):
                 bounded_get(url)
+
+    def test_an_unproxied_call_never_follows_redirects(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ) as g:
+            bounded_get("http://10.0.0.1:18081/json_rpc")
+            bounded_get("http://127.0.0.1/x", allow_redirects=True)
+        for call in g.call_args_list:
+            assert call.kwargs["allow_redirects"] is False
+
+    def test_a_proxied_call_keeps_redirects_on_the_proxy(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ) as g:
+            bounded_get("https://example.test/x", proxies=_PROXIES)
+        assert "allow_redirects" not in g.call_args.kwargs
 
 
 class _Stream:
