@@ -246,8 +246,12 @@ run_monero_stranded() {
     else
         it_fail "monero-stranded: the dashboard restarts the stranded monerod within ${MONERO_TOR_REDIAL_MAX} s of an external Tor start" "$(monero_strand_state)"
     fi
-    assert_eq "monero-stranded: the Tor-start re-dial is logged once for the owner" \
-        "$(rx "docker logs dashboard 2>&1 | grep -c 'Tor restarted and monerod has no peers'" 2>/dev/null)" "1"
+    redial_log="$(rx "docker logs dashboard 2>&1 | grep -c 'Tor restarted and monerod has no peers'" 2>/dev/null)"
+    if [ "$redial_log" != "1" ]; then
+        mkdir -p "${OUT_DIR}/monero-stranded"
+        rx "docker logs --tail=20000 dashboard" 2>&1 | redact >"${OUT_DIR}/monero-stranded/dashboard-at-redial-assert.log" || true
+    fi
+    assert_eq "monero-stranded: the Tor-start re-dial is logged once for the owner" "$redial_log" "1"
     monero_strand_remove_all
     if wait_for 900 15 "monerod holding outgoing peers after the Tor-start re-dial" _pred_monero_has_peers_sampled; then
         it_pass "monero-stranded: monerod holds outgoing peers after the Tor-start re-dial"
@@ -307,8 +311,12 @@ run_monero_stranded() {
     else
         it_fail "monero-stranded: the watchdog restarts a peerless monerod within ${MONERO_WATCHDOG_MAX} s" "$(monero_strand_state)"
     fi
-    assert_eq "monero-stranded: the restart is logged once for the owner" \
-        "$(rx "docker logs dashboard 2>&1 | grep -c 'no outgoing peers beyond the health bound'" 2>/dev/null)" "1"
+    restart_log="$(rx "docker logs dashboard 2>&1 | grep -c 'no outgoing peers beyond the health bound'" 2>/dev/null)"
+    if [ "$restart_log" != "1" ]; then
+        mkdir -p "${OUT_DIR}/monero-stranded"
+        rx "docker logs --tail=20000 dashboard" 2>&1 | redact >"${OUT_DIR}/monero-stranded/dashboard-at-watchdog-assert.log" || true
+    fi
+    assert_eq "monero-stranded: the restart is logged once for the owner" "$restart_log" "1"
     monero_strand_remove_all
     t0=$(now_s)
     if wait_for 900 15 "monerod has outgoing peers again after the fix" _pred_monero_has_peers_sampled; then
@@ -347,7 +355,6 @@ run_monero_stranded() {
     assert_eq "monero-stranded: no $MONERO_STRAND_TAG rule left behind" "$(monero_strand_count)" "0"
     if [ "$IT_FAIL" -gt "$fails_before" ]; then
         capture_artifacts "monero-stranded" "$OUT_DIR"
-        rx "docker logs --tail=20000 dashboard" 2>&1 | redact >"${OUT_DIR}/monero-stranded/dashboard.log" || true
     fi
     return 0
 }
