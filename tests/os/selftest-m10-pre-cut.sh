@@ -22,6 +22,8 @@ _ssh() {
     printf 'baseline\n'
 }
 _boot_id() { echo boot >>"$td/actions"; }
+vm_stop_abrupt() { echo power >>"$td/actions"; }
+vm_start() { echo power >>"$td/actions"; }
 virsh() { echo power >>"$td/actions"; }
 for height in '' invalid 0 42; do
     : >"$td/actions"
