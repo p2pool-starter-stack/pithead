@@ -153,6 +153,10 @@ class MiningGuard:
         return bool(self._holding_since) or bool(self.active)
 
     @property
+    def holding_keys(self):
+        return sorted(set(self._holding_since) | set(self.active))
+
+    @property
     def pause(self):
         if not self.active:
             return None
