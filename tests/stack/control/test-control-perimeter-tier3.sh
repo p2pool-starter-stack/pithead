@@ -153,6 +153,56 @@ gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
 assert_eq "a removed per-event alarm key is refused even with typed APPLY and the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "the refused alarm key did not land" "$(jq -r '.telegram.events // "unset"' "$C/config.json")" "unset"
 
+echo "== black-box: the same gates guard DIY and the appliance alike (#3579) =="
+for gate_flag in 0 1; do
+    gate_who=DIY
+    gate_wallet="$WALLET"
+    [ "$gate_flag" == 1 ] && { gate_who=appliance; gate_wallet="$ATTACKER_WALLET"; }
+    jq --arg u "rpc-user$gate_flag" --arg p "rpc-secret$gate_flag" \
+        '.monero.node_username=$u | .monero.node_password=$p' "$C/config.json" >"$C/cand.json"
+    (
+        export PITHEAD_APPLIANCE="$gate_flag"
+        gate_try "$C/cand.json"
+    )
+    assert_eq "node credentials are refused without confirmation on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+    (
+        export PITHEAD_APPLIANCE="$gate_flag"
+        gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
+    )
+    assert_eq "node credentials apply with typed APPLY and the envelope on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+    jq --arg w "$gate_wallet" '.monero.wallet_address=$w' "$C/config.json" >"$C/cand.json"
+    (
+        export PITHEAD_APPLIANCE="$gate_flag"
+        gate_try "$C/cand.json"
+    )
+    assert_eq "payout address is refused without confirmation on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+    (
+        export PITHEAD_APPLIANCE="$gate_flag"
+        gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${gate_wallet: -8}" '{payout_suffixes:{monero:$s}}')"
+    )
+    assert_eq "payout address applies behind the payout-suffix confirmation on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+    assert_eq "the confirmed payout address landed on $gate_who" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$gate_wallet"
+    jq --arg p "second-control-passphrase-$gate_flag" '.dashboard.auth.password=$p' "$C/config.json" >"$C/cand.json"
+    (
+        export PITHEAD_APPLIANCE="$gate_flag"
+        gate_try "$C/cand.json"
+    )
+    assert_eq "the dashboard password is refused without confirmation on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+    (
+        export PITHEAD_APPLIANCE="$gate_flag"
+        gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
+    )
+    assert_eq "the dashboard password applies with typed APPLY and the envelope on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+    jq '.ssh={enabled:false,authorized_key:"x"}' "$C/config.json" >"$C/cand.json"
+    (
+        export PITHEAD_APPLIANCE="$gate_flag"
+        gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
+    )
+    assert_eq "the retired ssh path is refused even with APPLY and the envelope on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+    assert_contains "the ssh refusal names the schema guard on $gate_who" "$(jq -r '.error' "$RESULTS/$UUID5.json")" "not in the schema"
+    assert_eq "the refused ssh path did not land on $gate_who" "$(jq -r '.ssh // "absent"' "$C/config.json")" "absent"
+done
+
 # Switching the control channel off is how an attacker locks the operator out of the remedy. It
 # runs last because an applied disable correctly stops this test's own remaining spool requests.
 jq '.dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"

@@ -396,6 +396,23 @@ assert_eq "monero endpoint named in preview_values" \
 assert_eq "tari endpoint named in preview_values" \
     "$(jq -r '.preview_values[] | select(.key=="tari.remote.host") | .new' "$RESULTS/$UUID3.json" 2>/dev/null)" "reserved-tari.example"
 rm -f "$RESULTS/$UUID3.json" "$STAGED/$UUID3.json"
+
+echo "== black-box: a staged profile change commits end to end on DIY (#3579) =="
+jq '.profile="privacy"' "$C/config.json" >"$C/cand-profile.json"
+jq -n --arg id "$UUID2" --slurpfile cfg "$C/cand-profile.json" \
+    '{id:$id,action:"preview",actor:"admin",config:$cfg[0]}' >"$REQS/$UUID2.json"
+run_pending >/dev/null
+assert_eq "profile switch previews on DIY" "$(jq -r '.status' "$RESULTS/$UUID2.json")" "previewed"
+assert_eq "profile switch is destructive (CONFIRM tier)" "$(jq -r '.destructive' "$RESULTS/$UUID2.json")" "true"
+printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID2" >"$REQS/$UUID2.json"
+run_pending >/dev/null
+assert_eq "profile switch is refused without the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID2.json")" "rejected"
+printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY","approval":{"payout_suffixes":{}}}\n' "$UUID2" >"$REQS/$UUID2.json"
+run_pending >/dev/null
+assert_eq "profile switch commits end to end on DIY with the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID2.json")" "applied"
+assert_eq "the committed profile landed" "$(jq -r '.profile' "$C/config.json")" "privacy"
+rm -f "$C/cand-profile.json"
+
 # shellcheck source=tests/stack/control/config-concurrency.sh
 source "$HERE/control/config-concurrency.sh"
 # shellcheck source=tests/stack/control/commit-lock.sh
