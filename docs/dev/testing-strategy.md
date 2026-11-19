@@ -702,6 +702,10 @@ and at least 6000 stack assertions with all 52 named `ip`-dependent assertions p
 The missing-`iproute2` control must fail C3–C5; its expected failure does not waive normal CI.
 The existing missing Go, missing `envsubst`, three Compose-pull assertions and lock-window
 flake remain excluded from C5, which only judges those 52 assertions. No extra tools are added.
+The image sets neither `TMPDIR` nor `RUNNER_TEMP`, so shell suites and the OS runner self-tests take scratch from
+`${TMPDIR:-${RUNNER_TEMP:-/tmp}}`; the Tor heal and runner-module self-tests and the Caddy bridge-bind rows
+(`br0`, `br-lan` kept, engine bridges dropped) must pass there, and the retained `C5-stack.log` shows them. The XvB gate-payload self-test runs the dashboard modules through `uv`
+when system `python3` cannot import `requests` (the image case) and `uv` exists, and otherwise uses `python3`.
 C1 is an issue-specific scope proof: run `python3 tests/runner/accept-iproute2.py --scope-only`
 on #3115's exact PR head. It permits exactly `tests/runner/Dockerfile`,
 `.github/workflows/test-runner-acceptance.yml`, `tests/runner/accept-iproute2.py` and
