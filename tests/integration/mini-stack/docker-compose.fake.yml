@@ -90,7 +90,6 @@ services:
       PROXY_API_PORT: "3344"
       PROXY_AUTH_TOKEN: "itest"
       UPDATE_INTERVAL: "2"
-      XVB_ENABLED: "false"
       NODE_DOWN_AFTER_SEC: "4"
       TARI_NODE_DOWN_AFTER_SEC: "4"
       NODE_RECOVERY_AFTER_SEC: "3"
