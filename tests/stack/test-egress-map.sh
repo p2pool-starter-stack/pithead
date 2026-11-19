@@ -47,9 +47,9 @@ done)"
 assert_eq "every test cell names a path that exists in the repo" "$em_missing" ""
 
 em_appliance="$(awk -F '\t' 'NR > 1 && $1 == "appliance" { n++ } END { print n + 0 }' "$EGRESS_MAP" 2>/dev/null)"
-if [ "${em_appliance:-0}" -gt 0 ]; then ok "the map carries at least one appliance row ($em_appliance)"; else bad "the map carries at least one appliance row" "found 0"; fi
+if [ "${em_appliance:-0}" -gt 0 ]; then ok "the map carries at least one appliance row"; else bad "the map carries at least one appliance row" "found 0"; fi
 em_rig="$(awk -F '\t' 'NR > 1 && $1 == "rig" { n++ } END { print n + 0 }' "$EGRESS_MAP" 2>/dev/null)"
-if [ "${em_rig:-0}" -gt 0 ]; then ok "the map carries at least one rig row ($em_rig)"; else bad "the map carries at least one rig row" "found 0"; fi
+if [ "${em_rig:-0}" -gt 0 ]; then ok "the map carries at least one rig row"; else bad "the map carries at least one rig row" "found 0"; fi
 
 em_enforcer() {
     awk -F '\t' -v want="$1" 'NR > 1 && $6 == want { found = 1; exit } END { print found ? "yes" : "no" }' "$EGRESS_MAP" 2>/dev/null
