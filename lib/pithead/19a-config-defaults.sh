@@ -19,6 +19,22 @@ default_of() {
     config_defaults | jq -r --arg path "${1#.}" 'getpath($path | split(".")) | if . == null then error("unknown default") else . end'
 }
 
+control_enabled_default() {
+    local config="${1:-$CONFIG_FILE}" client_auth
+    [ -n "$(jq -r '.dashboard.auth.password // ""' "$config" 2>/dev/null)" ] || {
+        printf false
+        return
+    }
+    if [ "$(normalize_bool "$(jq -r '(.dashboard.onion.enabled // false) | tostring' "$config" 2>/dev/null)")" == "true" ]; then
+        client_auth=$(normalize_bool "$(jq -r '(.dashboard.onion.client_auth // true) | tostring' "$config" 2>/dev/null)")
+        [ "$client_auth" == "true" ] || {
+            printf false
+            return
+        }
+    fi
+    printf true
+}
+
 new_install_defaults() {
     local defaults
     defaults=$(config_defaults)
