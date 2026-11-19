@@ -179,6 +179,13 @@ _rigforge_upgrade_real_leg() { # <rig> <latest-tag>
         return 0
     fi
 
+    if [ "$status" = "busy" ]; then
+        it_skip_leg "real rig upgrade (#3985)" \
+            "the rig answered busy: it is lent to a bench job and RigForge accepts no remote upgrade while the reservation lock is held (rigforge#670), so a borrowed rig cannot take this leg" \
+            "by-design"
+        return 0
+    fi
+
     # "accepted" is the host's poll cap (90s) expiring, NOT a failure — pithead says so where it
     # writes it. The rig is still working and the confirmation of record is its next summary, so
     # settle against the rig itself rather than reading the cap as a red. Same promotion shape as

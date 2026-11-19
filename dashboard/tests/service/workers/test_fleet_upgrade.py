@@ -89,12 +89,17 @@ def test_summary_lists_every_rig_that_did_not_cleanly_finish():
                 {"name": "b", "status": "failed", "reason": "build broke"},
                 {"name": "c", "status": "throttled", "reason": None},
                 {"name": "d", "status": "noop"},
+                {"name": "e", "status": "busy", "reason": "lent to a bench job"},
             ],
         }
     )
     first, *rest = text.splitlines()
-    assert "v1.15.0" in first and "4 rig(s)" in first and "1 upgraded" in first
-    assert rest == ["• b: failed", "• c: retry later"]
+    assert "v1.15.0" in first and "5 rig(s)" in first and "1 upgraded" in first
+    assert rest == [
+        "• b: failed",
+        "• c: retry later",
+        "• e: rig is lent to a bench job — retry later",
+    ]
 
 
 def test_summary_never_carries_rig_supplied_reason_text():

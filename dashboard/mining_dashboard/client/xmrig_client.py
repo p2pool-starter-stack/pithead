@@ -207,14 +207,7 @@ def _rig_writable_config(cfg):
     return mask_pool_credentials(out) or None
 
 
-# Terminal control outcomes the rig may mirror: applied/rejected/rolled_back/failed from a
-# control-apply (pithead control_worker_apply / rigforge#236), plus noop/throttled from a
-# control-upgrade (rigforge#320, v1.12.0). "started" (rigforge#320's in-flight upgrade marker) and
-# "accepted"/"running" (this dashboard's own still-polling placeholders) are non-terminal — never
-# reconciled from a read poll, only ever written while a change is still in flight. Mirrors
-# pithead's own control_worker_apply/control_worker_upgrade poll cases (#1001) so the mirror-side
-# and poll-side vocabularies can't drift apart again.
-_CONTROL_TERMINAL = ("applied", "rejected", "rolled_back", "failed", "noop", "throttled")
+_CONTROL_TERMINAL = ("applied", "rejected", "rolled_back", "failed", "noop", "throttled", "busy")
 
 
 def parse_worker_control_status(payload):

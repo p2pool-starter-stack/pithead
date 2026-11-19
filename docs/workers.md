@@ -406,8 +406,10 @@ If the block also carries a `control` object — `{change_id, status, reason}`, 
 own control-API `/status` response read-only — the dashboard reconciles it against the [Worker
 Inspect](dashboard.md#worker-inspect) change history (#579): a still-`accepted` row whose
 `change_id` matches is updated to the reported terminal `status` — `applied` / `rejected` /
-`rolled_back` / `failed` (a control-apply outcome) or `noop` (already on the target) / `throttled`
-(the rig's own anti-beacon window, retry-later not a fault — both control-upgrade outcomes). This
+`rolled_back` / `failed` (a control-apply outcome), `noop` (already on the target) / `throttled`
+(the rig's own anti-beacon window, retry-later not a fault — both control-upgrade outcomes) or
+`busy` (the rig is lent to a bench-ci job and refused the change; retry after it is returned, with
+the rig's `reason` kept in the history row, for an upgrade or an apply). This
 is how a rollback, or any other terminal outcome the rig reports past the host runner's own
 status-poll deadline, still reaches a terminal state without a second authenticated dial to the
 control port.
@@ -481,7 +483,7 @@ the single-rig upgrade for each rig in turn, so every guard above applies per ri
 re-derives the target, resolves each rig's address and bearer from `config.json`, and polls to a
 terminal outcome. One rig's failure never stops the others.
 
-The run's result file lists every rig with its settled outcome (`applied`, `noop`, `throttled`,
+The run's result file lists every rig with its settled outcome (`applied`, `noop`, `throttled`, `busy`,
 `rolled_back`, `rejected`, `failed`, or `accepted` while the rig is still rebuilding) as it lands, and
 `GET` returns the newest run, including a run the host rejected whole (for example inside the cooldown), so progress and refusals survive navigation and reload. An accepted request is not
 reported as done. Each outcome is also recorded in the rig's change history, and one Telegram (and

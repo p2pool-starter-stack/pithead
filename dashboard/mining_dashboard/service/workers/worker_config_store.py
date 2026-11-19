@@ -32,13 +32,7 @@ from typing import Any
 from mining_dashboard.client.xmrig_client import strip_credentials
 from mining_dashboard.config.config import HISTORY_RETENTION_SEC
 
-# The full terminal vocabulary the rig's control mirror can report (#1009) — applied/rejected/
-# rolled_back/failed from a control-apply, plus noop (already on target)/throttled (retry-later)
-# from a control-upgrade (rigforge#320). Mirrors xmrig_client._CONTROL_TERMINAL and pithead's own
-# control_worker_apply/control_worker_upgrade poll cases (#1001) — one vocabulary, three places.
-# It lives with `reconcile_worker_config_status`, its only reader, and is re-exported from
-# `storage_service` so that import surface is unchanged by the split (#1369).
-_RECONCILE_TERMINAL = ("applied", "rejected", "rolled_back", "failed", "noop", "throttled")
+_RECONCILE_TERMINAL = ("applied", "rejected", "rolled_back", "failed", "noop", "throttled", "busy")
 
 # One column list for every read of this table that returns a ROW, so a windowed read and an
 # exact-id read cannot drift into returning differently-shaped rows for the same change

@@ -748,7 +748,7 @@ latest release — the per-worker twin of the stack's one-click upgrade. The rig
 miner (about ten minutes when the XMRig pin changed) and rolls itself back if the miner doesn't
 come back live. The panel shows the outcome (applied / already up to date / rolled back / failed);
 a repeat click inside the rig's own six-hour upgrade window reads as "throttled — retry later",
-not an error. Like a config apply, the outcome appends to the change history — with the version it
+not an error, and a rig lent to a bench-ci job answers "busy — retry later" with its reason. Like a config apply, the outcome appends to the change history — with the version it
 moved to — so it isn't lost once the dialog closes, and both the hashrate chart above and the
 hashrate-by-config table below attribute what the hashrate does next to the upgrade, not to
 whatever config version happened to be active when it ran. See
