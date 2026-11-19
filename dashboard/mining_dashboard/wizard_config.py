@@ -4,7 +4,11 @@ import re
 from copy import deepcopy
 
 from mining_dashboard.config.defaults import default_of
-from mining_dashboard.config.migration import migrate_to_2_1, migration_due
+from mining_dashboard.config.migration import (
+    migrate_telegram_level,
+    migrate_to_2_1,
+    migration_due,
+)
 
 _XVB_ALIASES = ("enabled", "url", "donor_id")
 _XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
@@ -187,6 +191,8 @@ def prepare_config(
     if due and platform:
         prepared, migrated = migrate_to_2_1(prepared, platform)
         changes.extend(migrated)
+    prepared, level_changes = migrate_telegram_level(prepared)
+    changes.extend(level_changes)
     if reference:
         prepared = _known_only(prepared, reference, changes)
     return prepared, list(dict.fromkeys(changes))

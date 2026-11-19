@@ -99,11 +99,11 @@ test("form mode: a section mixing top-level keys only via subgroups keeps short 
   // own labelled subgroup <details> — the flat telegram.* remainder is single-key, so the mixed
   // check runs AFTER nestSection and the flat rows keep their relative labels.
   const cfg = {
-    telegram: { enabled: false, bot_token: "" },
+    telegram: { daily_summary_time: "08:00", bot_token: "" },
     healthchecks: { ping_url: "" },
   };
   const out = renderToString(readyView(cfg, []).render());
-  assert.match(out, /config-field-name">enabled/); // relative, not telegram.enabled
+  assert.match(out, /config-field-name">daily_summary_time/); // relative, not telegram.daily_summary_time
   assert.doesNotMatch(out, /config-field-name">telegram\./);
 });
 
@@ -165,19 +165,6 @@ test("form mode: an empty editable set (host not yet reporting _editable_keys) g
 });
 
 // --- Nested sub-groups within a logical section (#612) ----------------------------------------
-
-test("form mode: telegram.events nests into its own collapsed <details>, inside the Notifications section", () => {
-  const cfg = {
-    ...CFG,
-    telegram: { enabled: true, events: { node_down: true, worker_offline: false } },
-  };
-  const inst = readyView(cfg);
-  const out = renderToString(inst.render());
-  assert.match(out, /Telegram events \(2\)/); // the nested subgroup summary, count included
-  // Nested <details> is ALSO collapsed by default — no `open` anywhere in the whole form.
-  assert.doesNotMatch(out, /<details[^>]*\bopen\b/);
-  assert.match(out, /config-subsection/);
-});
 
 // --- buildProposed(): both modes build the same staged config object -------------------------
 

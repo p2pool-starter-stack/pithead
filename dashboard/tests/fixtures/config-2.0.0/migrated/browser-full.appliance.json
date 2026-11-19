@@ -38,7 +38,7 @@
   "telegram": {
     "bot_token": "123456:TOKEN",
     "chat_id": "-100123",
-    "enabled": true
+    "level": "all"
   },
   "tor": {
     "auto_heal": false

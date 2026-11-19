@@ -65,7 +65,6 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
     webhook_secret = "HOOK-SECRET"
     ntfy_secret = "NTFY-SECRET"
     notifier = TelegramNotifier(
-        enabled=True,
         bot_token=token,
         chat_id="123",
         tor_proxy="",

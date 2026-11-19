@@ -264,16 +264,8 @@ export function regroupCore(sections, coreKeys) {
   return { core, sections: rest };
 }
 
-// Nested sub-groups within a logical section (#612): a noisy cluster of fields — telegram.events'
-// 26 toggles, the notification sinks, healthchecks — collapses into its own one-level-deep
-// <details>, collapsed by default, instead of dominating the section's flat field list. Keyed by
-// the OWNING SECTION's name so only sections listed here get sub-grouping; everything else's
-// fields stay flat, unchanged from before. A field matches a subgroup the same way classifyGroup
-// matches a logical group (exact key or `prefix + "."`); fields claimed by a subgroup are removed
-// from the section's own `fields` so they render exactly once.
 const SUBGROUPS = {
   Notifications: [
-    { label: "Telegram events", prefix: "telegram.events" },
     { label: "ntfy / webhook", prefix: "notifications" },
     { label: "Healthchecks", prefix: "healthchecks" },
   ],

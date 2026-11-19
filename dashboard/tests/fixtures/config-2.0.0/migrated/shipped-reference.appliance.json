@@ -105,36 +105,7 @@
       "enabled": false
     },
     "daily_summary_time": "08:00",
-    "enabled": false,
-    "events": {
-      "block_found": true,
-      "clearnet_exposed": true,
-      "container_unhealthy": true,
-      "daily_summary": true,
-      "db_reset": true,
-      "db_unhealthy": true,
-      "disk_space": true,
-      "hashrate_loss": true,
-      "hashrate_low": true,
-      "high_reject_rate": true,
-      "hugepages": true,
-      "low_ram": true,
-      "new_release": true,
-      "node_down": true,
-      "node_recovered": true,
-      "payout_confirmed": true,
-      "payout_found": true,
-      "raffle_win": true,
-      "stack_online": true,
-      "sync_finished": true,
-      "wallet_changed": true,
-      "worker_joined": true,
-      "worker_left": true,
-      "worker_offline": true,
-      "worker_recovered": true,
-      "xvb_no_share": true,
-      "xvb_registration": true
-    }
+    "level": "off"
   },
   "tor": {
     "auto_heal": false,

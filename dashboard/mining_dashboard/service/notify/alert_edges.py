@@ -6,8 +6,7 @@ from mining_dashboard.config.config import (
     DISK_WARN_PERCENT,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
-    TELEGRAM_ENABLED,
-    TELEGRAM_EVENTS,
+    TELEGRAM_LEVEL,
 )
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 
@@ -22,10 +21,9 @@ REJECT_ALERT_PCT = 5.0
 def build_default_notifier():
     """Construct the Telegram notifier from the process config (Issue #121)."""
     return TelegramNotifier(
-        enabled=TELEGRAM_ENABLED,
         bot_token=TELEGRAM_BOT_TOKEN,
         chat_id=TELEGRAM_CHAT_ID,
-        events=TELEGRAM_EVENTS,
+        level=TELEGRAM_LEVEL,
     )
 
 

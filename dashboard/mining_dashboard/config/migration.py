@@ -2,6 +2,7 @@ import re
 from copy import deepcopy
 
 from mining_dashboard.config.defaults import TABLE, effective_defaults
+from mining_dashboard.service.notify.alert_levels import ALL_EVENTS, LEVEL_EVENTS
 
 PROFILE_ORDER = ("balance", "performance", "privacy")
 TARGET = "2.1.0"
@@ -78,3 +79,26 @@ def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
             _set(migrated, path, old(path))
             changes.append(f"{path} → pinned")
     return migrated, changes
+
+
+def migrate_telegram_level(cfg: dict) -> tuple[dict, list[str]]:
+    telegram = cfg.get("telegram")
+    if not isinstance(telegram, dict) or not ({"enabled", "events"} & telegram.keys()):
+        return cfg, []
+    events = telegram.get("events") if isinstance(telegram.get("events"), dict) else {}
+    sending = (
+        str(telegram.get("bot_token") or "").strip() != ""
+        and str(telegram.get("chat_id") or "").strip() != ""
+        and str(telegram.get("enabled", False)).lower() == "true"
+    )
+    old = {e for e in ALL_EVENTS if events.get(e) is not False} if sending else set()
+    best = min(
+        ("all", "important", "critical", "off"),
+        key=lambda name: len(LEVEL_EVENTS[name] ^ old),
+    )
+    migrated = deepcopy(cfg)
+    migrated["telegram"].pop("enabled", None)
+    migrated["telegram"].pop("events", None)
+    level = telegram.get("level") or best
+    migrated["telegram"]["level"] = level
+    return migrated, [f"telegram.level → {level}"]

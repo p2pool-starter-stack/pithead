@@ -5,11 +5,9 @@ import requests
 import mining_dashboard.service.notify.telegram_notifier as tg_mod
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 
-EVENTS = {"node_down": True, "node_recovered": False}
-
 
 def _enabled(**kw):
-    opts = dict(enabled=True, bot_token="TOKEN", chat_id="123", events=EVENTS)
+    opts = dict(bot_token="TOKEN", chat_id="123", level="critical")
     opts.update(kw)
     return TelegramNotifier(**opts)
 
@@ -19,20 +17,15 @@ class TestEnabledGating:
         assert TelegramNotifier().enabled is False
 
     def test_enabled_requires_token_and_chat(self):
-        assert TelegramNotifier(enabled=True, bot_token="", chat_id="123").enabled is False
-        assert TelegramNotifier(enabled=True, bot_token="t", chat_id="").enabled is False
-        assert TelegramNotifier(enabled=True, bot_token="t", chat_id="123").enabled is True
+        assert TelegramNotifier(bot_token="", chat_id="123").enabled is False
+        assert TelegramNotifier(bot_token="t", chat_id="").enabled is False
+        assert TelegramNotifier(bot_token="t", chat_id="123").enabled is True
 
-    def test_enabled_flag_off_disables_even_with_creds(self):
-        assert TelegramNotifier(enabled=False, bot_token="t", chat_id="123").enabled is False
-
-    def test_event_enabled_respects_toggle_and_enabled(self):
+    def test_event_enabled_respects_level_and_credentials(self):
         n = _enabled()
         assert n.event_enabled("node_down") is True
-        assert n.event_enabled("node_recovered") is False  # toggled off
-        assert n.event_enabled("worker_offline") is False  # absent -> off
-        # A disabled notifier reports every event as off.
-        assert TelegramNotifier(events={"node_down": True}).event_enabled("node_down") is False
+        assert n.event_enabled("worker_offline") is False
+        assert TelegramNotifier(level="all").event_enabled("node_down") is False
 
 
 class TestSend:

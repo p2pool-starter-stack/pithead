@@ -4,6 +4,12 @@ from pathlib import Path
 import pytest
 
 from mining_dashboard.config.defaults import TABLE, effective_defaults
+from mining_dashboard.config.migration import migrate_telegram_level
+from mining_dashboard.service.notify.alert_levels import (
+    ALL_EVENTS,
+    CRITICAL_EVENTS,
+    IMPORTANT_EVENTS,
+)
 from mining_dashboard.wizard_config import prepare_config
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/config-2.0.0"
@@ -74,7 +80,7 @@ def test_mixed_config_migrates_to_balance_and_keeps_its_override():
 
 def test_every_reference_leaf_has_one_tier_and_every_tier_path_exists():
     found = list(leaves(REFERENCE))
-    assert {"profile", "workers.list", "telegram.events.node_down"} <= set(found)
+    assert {"profile", "workers.list", "telegram.level"} <= set(found)
     for leaf in found:
         assert len(tiers_of(leaf)) <= 1, (leaf, tiers_of(leaf))
     for name, paths in TIERS.items():
@@ -105,3 +111,40 @@ async def test_wizard_submit_migrates_only_a_stamped_2_0_0_config(tmp_path, monk
         assert response.status == 200
     written = json.loads(tmp_path.joinpath("config.json").read_text())
     assert written["tari"]["mode"] == ("local" if stamped else "off")
+
+
+def _telegram(**fields):
+    return {"telegram": {"bot_token": "t", "chat_id": "1", **fields}}
+
+
+@pytest.mark.parametrize(
+    ("telegram", "level"),
+    [
+        ({"enabled": True}, "all"),
+        ({"enabled": True, "events": {"worker_joined": False, "block_found": False}}, "all"),
+        (
+            {"enabled": True, "events": dict.fromkeys(ALL_EVENTS - IMPORTANT_EVENTS, False)},
+            "important",
+        ),
+        (
+            {"enabled": True, "events": dict.fromkeys(ALL_EVENTS - CRITICAL_EVENTS, False)},
+            "critical",
+        ),
+        ({"enabled": True, "events": dict.fromkeys(ALL_EVENTS, False)}, "off"),
+        ({"events": {"node_down": False}}, "off"),
+        ({"enabled": False}, "off"),
+        ({"enabled": "true"}, "all"),
+    ],
+)
+def test_telegram_switches_map_to_the_nearest_level(telegram, level):
+    migrated, changes = migrate_telegram_level(_telegram(**telegram))
+    assert migrated["telegram"] == {"bot_token": "t", "chat_id": "1", "level": level}
+    assert changes == [f"telegram.level → {level}"]
+
+
+def test_telegram_without_credentials_maps_to_off_and_current_configs_are_untouched():
+    migrated, _ = migrate_telegram_level({"telegram": {"enabled": True, "bot_token": " "}})
+    assert migrated["telegram"]["level"] == "off"
+    current = _telegram(level="critical")
+    assert migrate_telegram_level(current) == (current, [])
+    assert migrate_telegram_level({}) == ({}, [])

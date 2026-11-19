@@ -2,7 +2,6 @@
 from types import SimpleNamespace
 
 import mining_dashboard.service.notify.alert_service as alert_mod
-from mining_dashboard.config.config import TELEGRAM_EVENTS
 from mining_dashboard.service.notify.alert_service import AlertService
 from mining_dashboard.service.workers.worker_presence import WorkerPresenceMonitor
 

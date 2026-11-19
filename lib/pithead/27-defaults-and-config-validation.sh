@@ -200,6 +200,71 @@ migrate_removed_telegram_control() {
     fi
 }
 
+TELEGRAM_LEVEL_MIGRATION_JQ='
+  def optional: ["node_down","node_recovered","container_unhealthy","db_unhealthy","disk_space","hashrate_loss",
+    "worker_offline","worker_recovered","sync_finished","db_reset","xvb_no_share","xvb_registration","hashrate_low",
+    "high_reject_rate","hugepages","low_ram","payout_found","payout_confirmed","raffle_win",
+    "worker_joined","worker_left","stack_online","daily_summary","block_found","new_release"];
+  def levels: [
+    {name:"off", set:[]},
+    {name:"critical", set:optional[0:6]},
+    {name:"important", set:optional[0:19]},
+    {name:"all", set:optional}];
+  (.telegram // {}) as $t
+  | (($t.events | if type == "object" then . else {} end)) as $ev
+  | ((($t.bot_token // "") | tostring | gsub("^\\s+|\\s+$"; "")) != "" and (($t.chat_id // "") | tostring | gsub("^\\s+|\\s+$"; "")) != "") as $creds
+  | ($creds and (($t.enabled // false) | tostring) == "true") as $sending
+  | (if $sending then [optional[] | select($ev[.] != false)] else [] end) as $old
+  | (reduce levels[] as $l ({best: null};
+      ([($l.set - $old)[], ($old - $l.set)[]] | length) as $d
+      | if .best == null or $d <= .best.d then .best = {d: $d, level: $l} else . end)
+    | .best.level) as $pick
+  | (if ($t.level // "") != "" then ($t.level | tostring) else $pick.name end) as $level
+  | (levels | map(select(.name == $level)) | first // levels[3]).set as $new
+  | (if $creds then ($new - $old) else [] end) as $started
+  | (if $creds then ($old - $new) else [] end) as $stopped
+  | (if $creds then [ ["wallet_changed", ($sending and $ev.wallet_changed != false)],
+      ["clearnet_exposed", ($sending and $ev.clearnet_exposed != false)],
+      ["payout_wallet_down", $sending] | select(.[1] | not) | .[0] ] else [] end) as $always
+  | {level: $level, started: $started, stopped: $stopped, always: $always,
+     tamper_off: ($ev.wallet_changed == false or $ev.clearnet_exposed == false),
+     commands_off: ($creds and ($sending | not) and ($t.commands.enabled == true))}'
+
+migrate_telegram_alert_level() {
+    local owner tmp="${CONFIG_FILE}.tmp" plan level msg
+    [ -f "$CONFIG_FILE" ] || return 0
+    jq -e '(.telegram // {}) | (type == "object") and (has("enabled") or has("events"))' "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    [ "$PITHEAD_DRY_RUN" -eq 1 ] && return 0
+    plan=$(jq -c "$TELEGRAM_LEVEL_MIGRATION_JQ" "$CONFIG_FILE" 2>/dev/null) || plan=""
+    if [ -z "$plan" ]; then
+        warn "Could not map the removed telegram.enabled and telegram.events keys in $CONFIG_FILE to telegram.level — leaving them in place; they are no longer read and the dashboard config editor will refuse commits until they are deleted."
+        return 0
+    fi
+    level=$(jq -r '.level' <<<"$plan")
+    owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
+    if (
+        umask 077
+        jq --arg level "$level" --argjson commands_off "$(jq '.commands_off' <<<"$plan")" '.telegram |= (del(.enabled, .events) | .level = $level | if $commands_off then .commands.enabled = false else . end)' "$CONFIG_FILE" >"$tmp" 2>/dev/null
+    ); then
+        mv "$tmp" "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        if [ -n "$owner" ]; then chown "$owner" "$CONFIG_FILE" 2>/dev/null || true; fi
+    else
+        rm -f "$tmp"
+        warn "Could not write telegram.level to $CONFIG_FILE — the removed telegram.enabled and telegram.events keys are no longer read, and the dashboard config editor will refuse commits until they are deleted."
+        return 0
+    fi
+    if jq -e '(.started | length) + (.stopped | length) + (.always | length) > 0 or .tamper_off or .commands_off' <<<"$plan" >/dev/null; then
+        msg="Telegram alert level set to \"$level\" (telegram.enabled and telegram.events were removed)."
+        jq -e '.started | length > 0' <<<"$plan" >/dev/null && msg="$msg Alerts that start: $(jq -r '.started | join(", ")' <<<"$plan")."
+        jq -e '.stopped | length > 0' <<<"$plan" >/dev/null && msg="$msg Alerts that stop: $(jq -r '.stopped | join(", ")' <<<"$plan")."
+        jq -e '.always | length > 0' <<<"$plan" >/dev/null && msg="$msg Always-on alarms that start: $(jq -r '.always | join(", ")' <<<"$plan")."
+        jq -e '.tamper_off' <<<"$plan" >/dev/null && msg="$msg The wallet-change and clearnet-exposure tamper alarms are now always on."
+        jq -e '.commands_off' <<<"$plan" >/dev/null && msg="$msg telegram.commands.enabled was set to false because Telegram was disabled; set it to true to use the command bot."
+        warn "$msg"
+    fi
+}
+
 # Validate the dashboard.energy block for the energy/profit calculator (#260). Like the worker
 # descriptors, this renders nothing to .env — the dashboard reads it off the read-only config.json
 # bind mount — so validation exists only to fail an apply loudly on a typo. Prices are operator-set

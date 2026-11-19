@@ -131,12 +131,12 @@ assert_eq "Tari private view key lands in config.json" "$(jq -r '.tari.view_key'
 # POSITIVE CONTROL. The tier was narrowed, not emptied: without this row every assertion above
 # would also pass if the envelope path had been broken outright rather than scoped, and a gate
 # that refuses everything is not the property the 2026-09-13 perimeter audit claims.
-jq '.telegram={enabled:true,bot_token:"123456:legit-ABC_def",chat_id:"1111"}' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
+jq '.telegram={commands:{enabled:true},bot_token:"123456:legit-ABC_def",chat_id:"1111"}' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-jq '.telegram.enabled=false' "$C/config.json" >"$C/cand.json"
+jq '.telegram.commands.enabled=false' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
 assert_eq "an APPROVAL-tier key still commits with the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
-assert_eq "the approval-tier change landed" "$(jq -r '.telegram.enabled' "$C/config.json")" "false"
+assert_eq "the approval-tier change landed" "$(jq -r '.telegram.commands.enabled' "$C/config.json")" "false"
 # A hostname changes the appliance's certificate and mDNS identity. It is approval-tier rather
 # than host-only: a bare hostname is validated before render and this route is the appliance's
 # only day-two path. The envelope control below reddens if HOST_IP falls back to default-deny.
@@ -148,12 +148,10 @@ jq '.dashboard.host="bare-box"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY ""
 assert_eq "an approval-gated dashboard hostname is refused without the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "the refused bare hostname did not land" "$(jq -r '.dashboard.host' "$C/config.json")" "next-box"
-# ...and since #2367 the alarm toggles on that same channel confirm rather than refuse: with typed
-# APPLY and the envelope the operator can switch one off (the preview names the cost first).
 jq '.telegram.events={wallet_changed:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
-assert_eq "the wallet-changed alarm switches off with typed APPLY and the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
-assert_eq "the alarm-off landed in config.json" "$(jq -r '.telegram.events.wallet_changed' "$C/config.json")" "false"
+assert_eq "a removed per-event alarm key is refused even with typed APPLY and the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_eq "the refused alarm key did not land" "$(jq -r '.telegram.events // "unset"' "$C/config.json")" "unset"
 
 # Switching the control channel off is how an attacker locks the operator out of the remedy. It
 # runs last because an applied disable correctly stops this test's own remaining spool requests.

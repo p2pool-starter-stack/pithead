@@ -1,13 +1,36 @@
 # Notification change descriptions stay separate from the stack/runtime cases in 39.
+telegram_level_events() {
+    local critical="node_down node_recovered container_unhealthy db_unhealthy disk_space hashrate_loss"
+    local important="$critical worker_offline worker_recovered sync_finished db_reset xvb_no_share xvb_registration hashrate_low high_reject_rate hugepages low_ram payout_found payout_confirmed raffle_win"
+    case "${1:-}" in
+    "" | off) echo "" ;;
+    critical) echo "$critical" ;;
+    important) echo "$important" ;;
+    *) echo "$important worker_joined worker_left stack_online daily_summary block_found new_release" ;;
+    esac
+}
+
+telegram_level_change_message() {
+    local old_events new_events e started="" stopped=""
+    old_events=" $(telegram_level_events "$1") "
+    new_events=" $(telegram_level_events "$2") "
+    for e in $new_events; do
+        case "$old_events" in *" $e "*) ;; *) started="$started ${e}," ;; esac
+    done
+    for e in $old_events; do
+        case "$new_events" in *" $e "*) ;; *) stopped="$stopped ${e}," ;; esac
+    done
+    msg="Telegram alert level: ${1:-off} → ${2:-off}."
+    [ -z "$started" ] || msg="$msg Starts:${started%,}."
+    [ -z "$stopped" ] || msg="$msg Stops:${stopped%,}."
+    msg="$msg The wallet-change, clearnet-exposure and payout-wallet alarms stay on at every level; the dashboard container is recreated."
+}
+
 describe_notification_change() { # <key> <old> <new>; sets caller's flag/msg
     local key="$1" old="$2" new="$3"
     case "$key" in
-    TELEGRAM_ENABLED)
-        if [ "$new" == "true" ]; then
-            msg="Telegram operator bot → on — the dashboard container is recreated."
-        else
-            msg="Telegram operator bot → off — every Telegram alert stops, the wallet-change and clearnet-exposure tamper alarms included; the dashboard container is recreated."
-        fi
+    TELEGRAM_LEVEL)
+        telegram_level_change_message "$old" "$new"
         ;;
     TELEGRAM_BOT_TOKEN)
         # Secret — never echo the token value into the change preview / logs. #2367: name the cost.
@@ -19,21 +42,6 @@ describe_notification_change() { # <key> <old> <new>; sets caller's flag/msg
     TELEGRAM_COMMANDS_ENABLED)
         msg="Telegram command interface → $([ "$new" == "true" ] && echo on || echo off) — the bot $([ "$new" == "true" ] && echo "now answers" || echo "no longer answers") /status, /hashrate, /workers, /sync from the configured chat; the dashboard container is recreated."
         ;;
-    TELEGRAM_EVENT_WALLET_CHANGED | TELEGRAM_EVENT_CLEARNET_EXPOSED)
-        # The tamper alarms (#2367): editable, but silencing one is how the change it watches goes
-        # unnoticed, so the off direction is a DEST row and names what stops alerting.
-        if [ "$new" == "false" ]; then
-            flag=DEST
-            if [ "$key" = TELEGRAM_EVENT_WALLET_CHANGED ]; then
-                msg="Wallet-change alarm OFF — a payout-address change will no longer alert Telegram; a wallet swap could go unnoticed."
-            else
-                msg="Clearnet-exposure alarm OFF — a node exposing this machine's IP over clearnet will no longer alert Telegram."
-            fi
-        else
-            msg="${key#TELEGRAM_EVENT_} Telegram alarm → on."
-        fi
-        ;;
-    TELEGRAM_EVENT_*) msg="Telegram alert toggle ($key): $old → $new." ;;
     TELEGRAM_DAILY_SUMMARY_TIME) msg="Telegram daily summary time: $old → $new (local time)." ;;
     NOTIFY_WEBHOOK_URLS)
         # Webhook URLs often carry tokens in the query string — report the change WITHOUT values.

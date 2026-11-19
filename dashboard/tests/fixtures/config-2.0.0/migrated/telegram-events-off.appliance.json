@@ -22,13 +22,7 @@
   "telegram": {
     "bot_token": "123456:TOKEN",
     "chat_id": "-100123",
-    "enabled": true,
-    "events": {
-      "block_found": false,
-      "daily_summary": false,
-      "node_down": false,
-      "worker_offline": false
-    }
+    "level": "all"
   },
   "tor": {
     "auto_heal": false

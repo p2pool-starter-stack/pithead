@@ -259,26 +259,22 @@ test("regroupCore: workers.list isn't a field to begin with (array, #172) — it
 
 const NOTIFY_CFG = {
   telegram: {
-    enabled: true,
     bot_token: { __secret__: true },
     daily_summary_time: "08:00",
-    events: { node_down: true, wallet_changed: true },
   },
   notifications: { ntfy: { url: "https://ntfy.sh/x" }, tor: true },
   healthchecks: { ping_url: { __secret__: true } },
 };
 
-test("nestSection: telegram.events / notifications.* / healthchecks.* pull out into subgroups, rest stays flat", () => {
+test("nestSection: notifications.* / healthchecks.* pull out into subgroups, rest stays flat", () => {
   const notifications = buildSections(NOTIFY_CFG).find((s) => s.name === "Notifications");
   const { fields, subgroups } = nestSection(notifications);
   // The connection keys stay flat in the section...
   assert.deepEqual(
     fields.map((f) => f.key).sort(),
-    ["telegram.bot_token", "telegram.daily_summary_time", "telegram.enabled"],
+    ["telegram.bot_token", "telegram.daily_summary_time"],
   );
-  // ...the 26-toggle wall and the sinks each get their own nested group.
   const byLabel = Object.fromEntries(subgroups.map((g) => [g.label, g.fields.map((f) => f.key)]));
-  assert.deepEqual(byLabel["Telegram events"].sort(), ["telegram.events.node_down", "telegram.events.wallet_changed"]);
   assert.deepEqual(byLabel["ntfy / webhook"].sort(), ["notifications.ntfy.url", "notifications.tor"]);
   assert.deepEqual(byLabel.Healthchecks, ["healthchecks.ping_url"]);
 });
@@ -291,9 +287,9 @@ test("nestSection: a section with no SUBGROUPS entry (e.g. Monero node) is retur
 });
 
 test("nestSection: an empty subgroup (no matching fields) is omitted, not rendered blank", () => {
-  const notifications = buildSections({ telegram: { enabled: true } }).find((s) => s.name === "Notifications");
+  const notifications = buildSections({ telegram: { bot_token: "t" } }).find((s) => s.name === "Notifications");
   const { subgroups } = nestSection(notifications);
-  assert.deepEqual(subgroups, []); // no events, no notifications.*, no healthchecks in this fixture
+  assert.deepEqual(subgroups, []); // no notifications.*, no healthchecks in this fixture
 });
 
 // --- Editable-set membership / grey-out (#613) --------------------------------------------------

@@ -62,7 +62,7 @@ jq --arg w "$WORK" --arg m "$PAYOUT_MONERO1" --arg t "$PAYOUT_TARI1" --arg k "$P
      .p2pool.data_dir=($w+"/data/p2pool") | .tor.data_dir=($w+"/data/tor") |
      .dashboard.data_dir=($w+"/data/dashboard") | .dashboard.secure=false |
      del(.dashboard.auth) | .dashboard.onion.enabled=false | .dashboard.control.enabled=false | .dashboard.local_miner.enabled=false |
-     .local_miner.enabled=false | .xvb.enabled=false | .telegram.enabled=false |
+     .local_miner.enabled=false | .xvb.enabled=false | del(.telegram.bot_token, .telegram.chat_id) | .telegram.level="off" |
      .notifications={} | .healthchecks={} | .workers.list=[] | .network.tor_egress_firewall=false' \
     config.json >"$WORK/config.json"
 apply_pair() {
