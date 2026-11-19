@@ -192,7 +192,7 @@ modules["requests"].RequestException = RuntimeError
 modules["requests"].HTTPError = RuntimeError
 modules["google.protobuf.empty_pb2"].Empty = lambda: None
 modules["mining_dashboard.client.tari.generated.base_node_pb2_grpc"].BaseNodeStub = Stub
-with patch.dict(sys.modules, modules), patch.dict(os.environ, {"TARI_GRPC_ADDRESS": "node.invalid:18142", "PROXY_HOST": "proxy.invalid", "PROXY_API_PORT": "3344", "PROXY_AUTH_TOKEN": "secret"}, clear=True):
+with patch.dict(sys.modules, modules), patch.dict(os.environ, {"TARI_GRPC_ADDRESS": "node.invalid:18142", "PROXY_HOST": "172.28.0.29", "PROXY_API_PORT": "3344", "PROXY_AUTH_TOKEN": "secret"}, clear=True):
     # Load the repository's real helper against the fake HTTP transport.
     helper_path = Path(sys.argv[1]).resolve().parents[2] / "dashboard/mining_dashboard/helper/http.py"
     spec = importlib.util.spec_from_file_location("mining_dashboard.helper.http", helper_path)
@@ -204,7 +204,7 @@ with patch.dict(sys.modules, modules), patch.dict(os.environ, {"TARI_GRPC_ADDRES
         with contextlib.redirect_stdout(output): exec(code, {})
         return output.getvalue()
     assert run() == "tari_height=123\nproxy_workers=2\nproxy_accepted=50\nproxy_rejected=0\n"
-    assert calls[-1][:3] == ("http://proxy.invalid:3344/1/summary", {"Authorization": "Bearer secret"}, 5)
+    assert calls[-1][:3] == ("http://172.28.0.29:3344/1/summary", {"Authorization": "Bearer secret"}, 5)
     fail = True
     assert run() == "tari_height=?\nproxy_workers=?\nproxy_accepted=?\nproxy_rejected=?\n"
     fail = False
