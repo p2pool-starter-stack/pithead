@@ -152,6 +152,9 @@ wait_dashboard_api() { # wait_dashboard_api [tries]
 
 teardown() {
     log "tearing down"
+    if [ "$FAIL" -gt 0 ]; then
+        compose logs --no-color dashboard 2>&1 | tail -300 || true
+    fi
     compose down -v --remove-orphans >/dev/null 2>&1 || true
     control_roundtrip_cleanup
     rm -f "$LOCK_FILE"
