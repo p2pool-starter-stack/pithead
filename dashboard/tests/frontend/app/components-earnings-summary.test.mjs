@@ -21,44 +21,55 @@ test('ExpectedVsActualCard renders in BOTH views and yields to nothing when empt
     assert.match(renderApp({ state: s }), /Overview/);
 });
 
-test('ExpectedVsActualCard compares combined Monero+XvB with a percent and partial marks (#817)', () => {
+test('ExpectedVsActualCard marks a partial-ledger percent as a lower bound (#817, #4228)', () => {
     const s = clone();
     s.earnings_summary.xmr = {
         available: true, expected_30d: 0.0123, includes_xvb: true, enabled: true,
         actual_30d: 0.0101, partial: true, pct: 82,
     };
     const out = renderApp({ state: s });
-    assert.match(out, /Monero \+ XvB \(30d\)/);    // combined label when the estimate is folded
-    assert.match(out, /0\.012300 XMR/);            // expected, formatXmr precision
-    assert.match(out, /0\.010100 XMR \(82%\) \*/); // actual + pct + the partial asterisk
-    assert.match(out, /covers only the payout history on record/); // the footnote appears
-    // The card never pans (#817): wrapping table, and the scroll wrapper must stay gone —
-    // scoped to this card's own markup, since other cards legitimately keep est-scroll.
+    const card = cardSlice(out, 'card-expected-vs-actual');
+    assert.match(out, /Monero \+ XvB \(30d\)/);
+    assert.match(out, /0\.012300 XMR/);
+    assert.match(card, /0\.010100 XMR \(at least 82%\) \*/);
+    assert.match(card, /covers only the payout history on record/);
+    assert.match(card, /Payouts counted in Actual are wallet-wide/);
     assert.match(out, /eva-table/);
-    assert.doesNotMatch(cardSlice(out, 'card-expected-vs-actual'), /est-scroll/);
-    // #1859: the row-header corner was an empty <th></th> (axe empty-table-header).
+    assert.doesNotMatch(card, /est-scroll/);
     assert.match(out, /eva-table"><thead><tr>\s*<th scope="col"><span class="sr-only">Row<\/span><\/th>/);
-    // Without a fresh published estimate the label honestly drops the "+ XvB".
     s.earnings_summary.xmr.includes_xvb = false;
     assert.match(renderApp({ state: s }), /Monero \(30d\)/);
 });
 
-test('ExpectedVsActualCard drops the percent when the server withholds it, tooltip explains (#992)', () => {
-    // A near-zero expectation makes the server withhold pct (xvb_views.py caps at 999%) — the
-    // actual figure stands alone and the row tooltip owns the missing percent.
+test('ExpectedVsActualCard shows a plain percent on a complete ledger and states the wallet-wide scope (#4228)', () => {
+    const s = clone();
+    s.earnings_summary.xmr = {
+        available: true, expected_30d: 0.0123, includes_xvb: false, enabled: true,
+        actual_30d: 0.0101, partial: false, pct: 82,
+        xvb_realization_pct: null, xvb_wins_measured: null,
+    };
+    const card = cardSlice(renderApp({ state: s }), 'card-expected-vs-actual');
+    assert.match(card, /0\.010100 XMR \(82%\)(?!\*)/);
+    assert.doesNotMatch(card, /at least/);
+    assert.match(card, /Payouts counted in Actual are wallet-wide/);
+    assert.doesNotMatch(card, /No percentage shown/);
+});
+
+test('ExpectedVsActualCard explains a withheld percent in visible text, naming the wallet-wide case (#992, #4228)', () => {
     const s = clone();
     s.earnings_summary.xmr = {
         available: true, expected_30d: 1e-6, includes_xvb: false, enabled: true,
         actual_30d: 0.28, partial: false, pct: null,
         xvb_realization_pct: null, xvb_wins_measured: null,
     };
-    const out = renderApp({ state: s });
-    assert.match(out, /0\.280000 XMR/);
-    assert.doesNotMatch(out, /0\.280000 XMR \(/); // no percent appended
-    assert.match(out, /No percentage shown: the expected figure is near zero/);
-    // A present percent keeps the old rendering and drops the explanation.
+    const card = cardSlice(renderApp({ state: s }), 'card-expected-vs-actual');
+    assert.match(card, /0\.280000 XMR/);
+    assert.doesNotMatch(card, /0\.280000 XMR \(/);
+    assert.match(card, /No percentage shown: this wallet received far more/);
+    assert.match(card, /other stacks or rigs pay to the same address/);
+    assert.match(card, /idle or unrecorded for most of the window/);
     s.earnings_summary.xmr.pct = 82;
-    const withPct = renderApp({ state: s });
+    const withPct = cardSlice(renderApp({ state: s }), 'card-expected-vs-actual');
     assert.match(withPct, /\(82%\)/);
     assert.doesNotMatch(withPct, /No percentage shown/);
 });
