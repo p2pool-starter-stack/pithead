@@ -102,7 +102,7 @@ def _refuse_direct_public(url, proxies):
         parts = urlsplit(url)
     except ValueError:
         raise NoUsableProxy(f"refusing to connect to malformed URL {url!r} (#4146)") from None
-    if "@" in parts.netloc or "\\" in parts.netloc:
+    if "\\" in parts.netloc:
         raise NoUsableProxy(f"refusing to connect to ambiguous URL {url!r} (#4146)") from None
     host = parts.hostname
     if host:

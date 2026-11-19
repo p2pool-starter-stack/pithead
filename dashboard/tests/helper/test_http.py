@@ -151,16 +151,20 @@ class TestEgressGuard:
                 bounded_get("http://[::1")
         g.assert_not_called()
 
-    def test_a_netloc_with_userinfo_or_a_backslash_is_refused(self):
+    def test_a_netloc_with_a_backslash_is_refused(self):
         with patch("mining_dashboard.helper.http.requests.get") as g:
-            for url in (
-                "http://evil.com\\@10.0.0.1/x",
-                "http://10.0.0.1@evil.com/x",
-                "https://user:pass@127.0.0.1:18082/json_rpc",
-            ):
+            for url in ("http://evil.com\\@10.0.0.1/x", "http://10.0.0.1\\@evil.com/x"):
                 with pytest.raises(NoUsableProxy):
-                    bounded_get(url)
+                    bounded_get(url, proxies=_PROXIES)
         g.assert_not_called()
+
+    def test_a_private_host_behind_userinfo_is_still_evaluated(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ):
+            assert bounded_get("https://user:pass@127.0.0.1:8000/api/x").content == b"ok"
+        with pytest.raises(NoUsableProxy):
+            bounded_get("http://10.0.0.1@evil.com/x")
 
     def test_a_session_caller_to_a_public_host_is_refused(self):
         session = MagicMock()
