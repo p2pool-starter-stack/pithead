@@ -50,7 +50,8 @@
 .rig-extra {
   grid-column: 1 / -1;
 }
-.rig-inspector {
+.rig-inspector,
+.fleet-review {
   width: min(48rem, calc(100vw - 2rem));
 }
 .rig-inspector-header {
@@ -77,4 +78,7 @@
   .rig-rate {
     text-align: left;
   }
+}
+.fleet-run ul {
+  padding-left: 1.25rem;
 }
