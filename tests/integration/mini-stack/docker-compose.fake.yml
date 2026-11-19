@@ -94,11 +94,6 @@ services:
       TARI_NODE_DOWN_AFTER_SEC: "4"
       NODE_RECOVERY_AFTER_SEC: "3"
       MINING_GUARD_GRACE_SEC: "8"
-      # Healthchecks.io dead-man's switch (#79), pointed at the fake receiver so the e2e proves the
-      # REAL loop fires a heartbeat over a real HTTP call (not a mock). The ping URL is the on switch;
-      # the first ping fires immediately (throttle starts unarmed). TOR_SOCKS_PROXY is a required
-      # setting (#4146): fake-socks, a SOCKS5 relay standing in for the bridge Tor, carries the
-      # Tor-routed legs to the fake receivers.
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
       TOR_SOCKS_PROXY: "socks5h://172.30.250.14:1080"
       DASHBOARD_CONTROL_ENABLED: "true"
@@ -195,9 +190,6 @@ services:
         ipv4_address: 172.30.250.13
     command: ["sh", "-c", "while true; do sleep 30; done"]
 
-  # SOCKS5 relay standing in for the bridge Tor (#4146): TOR_SOCKS_PROXY is a required setting, and
-  # the dashboard dials its clearnet legs only through a proxy. This fake answers CONNECT and
-  # relays, so the Tor-routed legs still reach the fakes on itestnet.
   fake-socks:
     image: *fake_image
     container_name: itest-fake-socks
