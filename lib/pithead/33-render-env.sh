@@ -1,5 +1,3 @@
-# Owner-only secret file for a payout wallet: temp file, owner fixed to the container uid, atomic rename.
-# An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
 write_secret_sidecar() {
     local file="$1" target="$2" enabled="$3" label="$4" tmp foreign ok=false
     tmp=$(umask 077 && mktemp "$(dirname "$file")/.$(basename "${file%.*}").XXXXXX") || error "Could not create a temp file in $(dirname "$file")."
@@ -14,7 +12,6 @@ write_secret_sidecar() {
 # Single writer for the env file. Derives every value from the parsed config plus the preserved
 # secrets/onions/host, so it is safe to call repeatedly (bootstrap, finalize, or apply).
 # $1 = target file (defaults to $ENV_FILE); apply renders to a temp file first to diff it.
-# $2, $3 = staged Tari and Monero secret files that apply publishes after the env file.
 render_env() {
     local target="${1:-$ENV_FILE}"
     log "Rendering environment configuration ($target)..."
