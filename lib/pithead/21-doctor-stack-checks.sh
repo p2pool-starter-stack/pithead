@@ -395,3 +395,19 @@ check_monerod_synchronized() {
     fi
     return 0
 }
+
+check_host_egress_audit() {
+    local arc=0 cj wd
+    cj=$(host_egress_audit_counters) || arc=$?
+    case "$arc" in
+    0)
+        wd=$(printf '%s' "$cj" | jq -r '.would_drop // "unknown"' 2>/dev/null)
+        dr_ok "Log-only host egress audit (inet $HOST_EGRESS_AUDIT_NFT_TABLE) is loaded — would_drop counter at ${wd:-unknown} flows; the table drops nothing."
+        ;;
+    1)
+        dr_warn_surface "The log-only host egress audit table is not loaded — nothing on this host counts or logs what a host-wide default drop would have blocked. Run './pithead up' to load it; boots restore it from then on." "The log-only host egress audit table is not loaded on this machine."
+        ;;
+    2) dr_info "Host egress audit check skipped — nft is not installed." ;;
+    *) dr_info "Host egress audit check skipped — reading the table needs passwordless sudo. Verify manually: 'sudo nft list table inet $HOST_EGRESS_AUDIT_NFT_TABLE'." ;;
+    esac
+}

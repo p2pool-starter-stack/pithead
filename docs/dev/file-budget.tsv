@@ -91,3 +91,5 @@ tests/stack/test-monero-tari.sh	557
 tests/stack/test-rig-worker.sh	616
 tests/stack/test-tor-network.sh	776
 tests/os/selftest-miner-recovery.sh	412
+lib/pithead/21-doctor-stack-checks.sh	413
+lib/pithead/08-uninstall-firstboot.sh	401

@@ -166,6 +166,20 @@ GETTY_DROPIN
         bad "$verdict"
     fi
 
+    local ea_active ea_before ea_after ea_wd_b ea_wd_a ea_dial
+    ea_active=$(_ssh "systemctl is-active pithead-egress-audit.service" 2>/dev/null | tr -d '\r\n') || ea_active=""
+    ea_before=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_before=""
+    ea_wd_b=$(host_egress_audit_would_drop "$ea_before")
+    ea_dial=0
+    _ssh "timeout 25 htpdate -s -t www.debian.org 2>&1" >/dev/null || ea_dial=$?
+    ea_after=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_after=""
+    ea_wd_a=$(host_egress_audit_would_drop "$ea_after")
+    if verdict=$(host_egress_audit_boot_verdict "$ea_active" "$ea_after" "$ea_wd_b" "$ea_wd_a" "$ea_dial"); then
+        ok "$verdict"
+    else
+        bad "$verdict"
+    fi
+
     [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
         ok "both Debian Tor units ship masked on a fresh coordinator boot" ||
         bad "a Debian Tor unit is not masked on a fresh coordinator boot: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"

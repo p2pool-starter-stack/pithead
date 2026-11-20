@@ -1,0 +1,15 @@
+#!/bin/bash
+set -Eeuo pipefail
+SLICE=/data/pithead/lib/pithead/02f-host-egress-audit.sh
+MAP=/data/pithead/data/egress-map.tsv
+[ -r "$SLICE" ] || SLICE=/usr/local/share/pithead/02f-host-egress-audit.sh
+[ -r "$MAP" ] || MAP=/usr/share/pithead/egress-map.tsv
+[ -r "$SLICE" ] || exit 0
+[ -r "$MAP" ] || exit 0
+export OS_TYPE="$(uname)"
+log() { printf '%s\n' "$1"; }
+warn() { printf '%s\n' "$1" >&2; }
+command -v sudo >/dev/null 2>&1 || sudo() { "$@"; }
+# shellcheck source=/dev/null
+. "$SLICE"
+apply_host_egress_audit "$MAP"

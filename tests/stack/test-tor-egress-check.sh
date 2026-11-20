@@ -56,11 +56,16 @@ ec_status() { # <rc tor_egress_enforced returns>
 }
 EC_FILE="$EC/ctl/results/egress-status.json"
 for pair in 0:enforced 1:absent 2:no-tool 3:unreadable 4:jump-missing 5:shadowed; do
-    out=$(ec_status "${pair%%:*}")
-    assert_eq "each tor_egress_enforced rc prints its verdict" "rc ${pair%%:*}:$out" "rc $pair"
+    out=$(ec_status "${pair%%:*}" | head -n1)
+    assert_eq "each tor_egress_enforced rc prints its verdict on the first line" "rc ${pair%%:*}:$out" "rc $pair"
     assert_eq "each rc is written with its verdict" "$(jq -c '[.rc, .verdict]' "$EC_FILE")" \
         "[${pair%%:*},\"${pair#*:}\"]"
 done
+out=$(ec_status 1)
+assert_contains "a second stdout line reports the host egress audit view (#4195)" "$out" "host-audit:"
+assert_eq "the audit section is typed and never claims counters it cannot read" \
+    "$(jq -c '[(.host_audit.verdict | IN("present","absent","no-tool","unreadable")), (.host_audit.counters | type)]' "$EC_FILE")" \
+    '[true,"array"]'
 now=$(date +%s)
 assert_eq "checked_at is the write time" "$(jq '.checked_at >= '"$((now - 5))"' and .checked_at <= '"$((now + 5))" "$EC_FILE")" "true"
 assert_eq "the dashboard (another uid) can read it" "$(stat -c %a "$EC_FILE" 2>/dev/null || stat -f %Lp "$EC_FILE")" "644"
@@ -181,3 +186,118 @@ assert_contains "uninstall: a failed daemon-reload exits non-zero" "$out" "rc=1"
 out=$(ec_fresh_uninstall)
 assert_contains "uninstall: a clean removal prints Uninstalled." "$out" "Uninstalled."
 assert_contains "uninstall: a clean removal exits zero" "$out" "rc=0"
+EAU="$SANDBOX/host-egress-audit"
+mkdir -p "$EAU/bin"
+printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\n' >"$EAU/map-lan.tsv"
+printf 'appliance\tpool lan\tallow\tallow\tlan\tlan-guard\tnone\nappliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\n' >>"$EAU/map-lan.tsv"
+printf 'rig\tpool lan\tallow\tallow\tlan\tnone\tnone\n' >>"$EAU/map-lan.tsv"
+printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\n' >"$EAU/map-nolan.tsv"
+printf 'appliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\nrig\tpool\tallow\tallow\thost\tnone\tnone\n' >>"$EAU/map-nolan.tsv"
+printf '{"nftables":[{"metainfo":{"json_version":1}},{"table":{"family":"inet","name":"pithead_egress_audit"}},{"rule":{"family":0,"chain":"output","handle":2,"expr":[{"counter":{"packets":7,"bytes":700}},{"accept":null}],"comment":"loopback"},"table":"pithead_egress_audit"},{"rule":{"family":0,"chain":"output","handle":5,"expr":[{"counter":{"packets":42,"bytes":3780}},{"log":{"prefix":"pithead-egress-audit: "}},{"accept":null}],"comment":"would_drop"},"table":"pithead_egress_audit"}]}\n' >"$EAU/json"
+printf '#!/usr/bin/env bash\n[ -n "${SUDO_DENY:-}" ] && exit 1\n[ "${1:-}" = -n ] && shift\nexec "$@"\n' >"$EAU/bin/sudo"
+printf '#!/usr/bin/env bash\necho Linux\n' >"$EAU/bin/uname"
+cat >"$EAU/bin/nft" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+"list tables") exit "\${EAU_NFT_LIST:-0}" ;;
+"-j list table inet pithead_egress_audit") [ "\${EAU_NFT_TABLE_RC:-0}" = 0 ] || exit 1; cat "$EAU/json" ;;
+*) if [ -n "\${EAU_NFT_CAPTURE:-}" ]; then cat >"$EAU/load.nft"; fi; exit "\${EAU_NFT_ANY_RC:-0}" ;;
+esac
+EOF
+chmod +x "$EAU"/bin/*
+eau_run() { PATH="$EAU/bin:$PATH" run_sourced "$EAU" "$@"; }
+
+EAU_OK_TABLE='table inet pithead_egress_audit {
+  chain output {
+    type filter hook output priority -150; policy accept;
+    oifname "lo" counter packets 4 bytes 240 comment "loopback" accept
+    ct state established,related counter packets 9 bytes 900 comment "reply" accept
+    counter packets 42 bytes 3780 comment "would_drop" log prefix "pithead-egress-audit: " accept
+  }
+}'
+
+echo "== render: the log-only inet output table comes from the egress map, not from hand-copied rules (#4195) =="
+EAU_R=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-lan.tsv")
+assert_eq "the map file is replaced atomically (add then delete then recreate)" \
+    "$(printf '%s\n' "$EAU_R" | grep -A1 -m1 'add table inet pithead_egress_audit' | tail -1)" \
+    "delete table inet pithead_egress_audit"
+assert_contains "the chain hooks the host output path" "$EAU_R" "type filter hook output priority -150; policy accept;"
+assert_contains "loopback flows get their own counter" "$EAU_R" 'oifname "lo" counter comment "loopback" accept'
+assert_contains "replies get their own counter" "$EAU_R" 'ct state established,related counter comment "reply" accept'
+assert_contains "the would_drop rule counts and logs, and then accepts" "$EAU_R" \
+    'counter comment "would_drop" log prefix "pithead-egress-audit: " accept'
+assert_contains "a route=lan row of this role renders the lan class" "$EAU_R" 'counter comment "lan" accept'
+EAU_NOLAN=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv")
+assert_not_contains "with no route=lan row the lan class is not rendered" "$EAU_NOLAN" 'comment "lan"'
+EAU_RIG=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-lan.tsv")
+assert_contains "the rig role renders from its own rows" "$EAU_RIG" 'counter comment "lan" accept'
+EAU_RIGN=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-nolan.tsv")
+assert_not_contains "the role filter is what picks the rows: a rig with no lan row has no lan class" "$EAU_RIGN" 'comment "lan"'
+assert_eq "an unknown role renders nothing" "$(run_sourced "$EAU" render_host_egress_audit_nft laptop "$EAU/map-lan.tsv"; printf 'rc=%s' "$?")" "rc=1"
+assert_eq "a missing map fails the render rather than inventing rules" "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/absent.tsv" 2>/dev/null; printf 'rc=%s' "$?")" "rc=1"
+EAU_REPO=$(run_sourced "$ROOT" render_host_egress_audit_nft appliance data/egress-map.tsv)
+assert_contains "the committed egress map drives the appliance table" "$EAU_REPO" \
+    'counter comment "would_drop" log prefix "pithead-egress-audit: " accept'
+assert_eq "the rendered table never carries a terminal drop or reject verdict" \
+    "$(printf '%s\n' "$EAU_R" "$EAU_RIG" "$EAU_REPO" | grep -Ec '(^|[[:space:]])(drop|reject)([[:space:]]|$)')" "0"
+
+echo "== apply: the loader loads the rendered table and names its failure (#4195) =="
+out=$(EAU_NFT_CAPTURE=1 eau_run apply_host_egress_audit "$EAU/map-lan.tsv" 2>&1)
+assert_contains "a successful load is logged as log-only" "$out" "counted and logged, none dropped"
+assert_contains "what reached nft was the rendered table" "$(cat "$EAU/load.nft")" 'comment "would_drop"'
+out=$(EAU_NFT_ANY_RC=1 eau_run apply_host_egress_audit "$EAU/map-lan.tsv" 2>&1)
+assert_contains "an nft failure is named with a stable token" "$out" "egress-audit:load-failed"
+
+echo "== counters: the view reports per-rule counters and the would_drop total (#4195) =="
+EAU_C=$(eau_run host_egress_audit_counters)
+assert_eq "the counters JSON names every counter and the would_drop total" "$EAU_C" \
+    '{"counters":[{"packets":7,"bytes":700},{"packets":42,"bytes":3780}],"would_drop":42}'
+EAU_A=$(EAU_NFT_TABLE_RC=1 eau_run host_egress_audit_counters 2>/dev/null; printf 'rc=%s' "$?")
+assert_eq "an absent table is rc 1" "$EAU_A" "rc=1"
+EAU_D=$(SUDO_DENY=1 eau_run host_egress_audit_counters 2>/dev/null; printf 'rc=%s' "$?")
+assert_eq "a sudo refusal is rc 3, never 'absent'" "$EAU_D" "rc=3"
+
+echo "== egress-status: the verdict file carries the audit counters, and the human line shows would_drop (#4195) =="
+eau_status() {
+    (
+        cd "$EAU" || exit
+        export PATH="$EAU/bin:$PATH"
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        tor_egress_enforced() { return 1; }
+        printf 'CONTROL_DIR=%s\n' "$EAU/ctl" >.env
+        "$@"
+    )
+}
+out=$(eau_status egress_status)
+assert_eq "the verdict stays the first stdout line" "$(printf '%s\n' "$out" | head -n1)" "absent"
+assert_contains "and the audit line follows it" "$out" "host-audit: present (would_drop 42 packets)"
+assert_eq "the dashboard file keeps rc/verdict and gains host_audit counters" \
+    "$(jq -c '[.rc, .verdict, .host_audit.verdict, (.host_audit.counters | length), .host_audit.counters[1].packets]' "$EAU/ctl/results/egress-status.json")" \
+    '[1,"absent","present",2,42]'
+out=$(EAU_NFT_TABLE_RC=1 eau_status egress_status)
+assert_contains "an absent table says so on stdout" "$out" "host-audit: absent"
+out=$(SUDO_DENY=1 eau_status egress_status)
+assert_contains "an unreadable table says so rather than 'absent'" "$out" "host-audit: unreadable"
+out=$(eau_status check_host_egress_audit 2>&1)
+assert_contains "doctor shows the would_drop counter when the table is loaded" "$out" "would_drop counter at 42 flows"
+out=$(EAU_NFT_TABLE_RC=1 eau_status check_host_egress_audit 2>&1)
+assert_contains "doctor warns when the table is not loaded" "$out" "log-only host egress audit table is not loaded"
+
+echo "== boot verdict: the KVM leg's judgement, fixture-tested so the boot phase cannot pass on noise (#4195) =="
+. "$ROOT/tests/os/host-egress-audit-boot-verdict.sh"
+assert_eq "the would_drop counter is read out of the live table text" \
+    "$(host_egress_audit_would_drop "$EAU_OK_TABLE")" "42"
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 0); then ok "loaded at boot, rising counter, nothing dropped: $v"; else bad "the healthy boot state fails the verdict: $v"; fi
+if v=$(host_egress_audit_boot_verdict inactive "$EAU_OK_TABLE" 10 42 0); then bad "a unit that never ran passes: $v"; else ok "rejected: $v"; fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE
+    ip daddr 10.0.0.0/8 drop" 10 42 0); then bad "a dropping table passes: $v"; else ok "rejected: $v"; fi
+if v=$(host_egress_audit_boot_verdict active 'table inet pithead_egress_audit {
+  chain output {
+    type filter hook output priority -150; policy accept;
+  }
+}' 10 10 0); then bad "a table without a logged would_drop rule passes: $v"; else ok "rejected: $v"; fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 42 42 0); then bad "a counter that did not rise passes: $v"; else ok "rejected: $v"; fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" "" "" 0); then bad "an unreadable counter passes: $v"; else ok "rejected: $v"; fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 1); then bad "a failed test flow passes: $v"; else ok "rejected: $v"; fi

@@ -12,9 +12,8 @@
 EGRESS_CHECK_SERVICE="pithead-egress-check.service"
 EGRESS_CHECK_TIMER="pithead-egress.timer"
 
-# Write {rc, verdict, checked_at} atomically; the rc is tor_egress_enforced's, 0 to 5.
 egress_status() {
-    local rc=0 dir tmp verdict
+    local rc=0 dir tmp verdict arc=0 audit_state=absent audit_json audit_cj wd
     tor_egress_enforced || rc=$?
     case "$rc" in
     0) verdict=enforced ;;
@@ -24,14 +23,33 @@ egress_status() {
     5) verdict=shadowed ;;
     *) verdict=unreadable ;;
     esac
+    audit_cj=$(host_egress_audit_counters) || arc=$?
+    case "$arc" in
+    0) audit_state=present ;;
+    2) audit_state=no-tool ;;
+    3) audit_state=unreadable ;;
+    *) audit_state=absent ;;
+    esac
+    if [ "$audit_state" = present ]; then
+        audit_json=$(printf '%s' "$audit_cj" | jq -c '. + {verdict: "present"}')
+    else
+        audit_json="{\"verdict\":\"$audit_state\",\"counters\":[],\"would_drop\":null}"
+    fi
     dir=$(env_get CONTROL_DIR 2>/dev/null) || true
     dir="${dir:-$PWD/data/control}/results"
     mkdir -p "$dir"
     tmp=$(mktemp "$dir/.egress-status.XXXXXX")
-    printf '{"rc":%d,"verdict":"%s","checked_at":%d}\n' "$rc" "$verdict" "$(date +%s)" >"$tmp"
+    printf '{"rc":%d,"verdict":"%s","checked_at":%d,"host_audit":%s}\n' \
+        "$rc" "$verdict" "$(date +%s)" "$audit_json" >"$tmp"
     chmod 0644 "$tmp"
     mv -f "$tmp" "$dir/egress-status.json"
     printf '%s\n' "$verdict"
+    if [ "$audit_state" = present ]; then
+        wd=$(printf '%s' "$audit_cj" | jq -r '.would_drop // "unknown"' 2>/dev/null)
+        printf 'host-audit: present (would_drop %s packets)\n' "${wd:-unknown}"
+    else
+        printf 'host-audit: %s\n' "$audit_state"
+    fi
 }
 
 render_egress_check_service() { # <install dir> <engine>

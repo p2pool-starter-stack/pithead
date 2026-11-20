@@ -28,6 +28,7 @@ TOR_EGRESS_BOOT_UNIT="pithead-egress.service"
 # the `-` prefix lets them fail when the rule is absent, which at boot it always is.
 render_tor_egress_boot_unit() { # <iptables> <subnet> <tor_ip> [sync-ip ...]
     local ipt="$1" subnet="$2" tor_ip="$3" rule i ip chain marker cmd qmarker qipt qtag qip
+    local audit_body audit_line audit_cmd
     shift 3
     local -a rules
     mapfile -t rules < <(tor_egress_rules "$subnet" "$tor_ip")
@@ -75,6 +76,16 @@ EOF
         printf "ExecStart=/bin/bash -c '%s'\n" "$cmd"
         chain=
     done
+    if command -v nft >/dev/null 2>&1 && audit_body=$(render_host_egress_audit_nft appliance); then
+        audit_cmd='printf "%s\n"'
+        while IFS= read -r audit_line; do
+            audit_line="${audit_line//\\/\\\\}"
+            audit_line="${audit_line//\"/\\\"}"
+            audit_cmd+=" \"$audit_line\""
+        done <<<"$audit_body"
+        audit_cmd+=' | nft -f -'
+        printf "ExecStart=-/bin/bash -c '%s'\n" "$audit_cmd"
+    fi
     cat <<EOF
 
 [Install]
