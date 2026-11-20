@@ -267,6 +267,7 @@ bundle_case() {
             printf 'DIR:%s\n' "$(ls -ld "${out%/*}" | cut -c1-10)"
             printf 'TMP:%s\n' "${out%/*}"
             printf 'FILE:%s\n' "$(ls -l "$out" | cut -c1-10)"
+            printf 'TOR:%s\n' "$(jq -r .control "${out%/*}/bundle/tor-diagnostics.json" 2>&1)"
             printf 'VISIBLE:%s\n' "$(find "$work" -maxdepth 1 -name 'support-bundle-*.tar.gz' | wc -l | tr -d ' ')"
             case "$tar_mode" in
             fail) return 1 ;;
@@ -291,6 +292,7 @@ assert_contains "the archive is built in a private directory" "$ok_out" "DIR:drw
 assert_contains "no archive is visible in the output directory while tar writes" "$ok_out" "VISIBLE:0"
 assert_contains "the verb succeeds" "$ok_out" "RC:0"
 assert_contains "the finished archive is published" "$ok_out" "FILES:1"
+assert_contains "the bundle carries the Tor snapshot, unreachable without a Tor container" "$ok_out" "TOR:unreachable"
 bundle_tmp_gone "$ok_out" && ok "the scratch directory is removed after success" || bad "the scratch directory is removed after success" "$ok_out"
 
 pre_out="$(bundle_case ok support-bundle-FIXED.tar.gz)"

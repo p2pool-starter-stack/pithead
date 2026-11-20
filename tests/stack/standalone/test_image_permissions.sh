@@ -36,7 +36,8 @@ if ! docker run --rm --network none --entrypoint sh "$image" -eu -c '
     tor)
         readable /etc/tor/torrc.template
         set -- /usr/local/bin/tor-entrypoint.sh /usr/local/bin/tor-healthcheck.sh \
-            /usr/local/bin/tor-control-signal.sh /usr/local/bin/tor-recovery-diagnose.sh
+            /usr/local/bin/tor-control-signal.sh /usr/local/bin/tor-recovery-diagnose.sh \
+            /usr/local/bin/tor-diagnostics.sh
         ;;
     monero)
         set -- /usr/local/bin/entrypoint.sh /usr/local/bin/monerod-healthcheck.sh \

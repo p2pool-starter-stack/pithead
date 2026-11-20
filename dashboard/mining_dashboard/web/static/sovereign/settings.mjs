@@ -2,6 +2,7 @@ import { Component, createRef, html } from "../app/preact.mjs";
 import { pathGet } from "../config/configsync.mjs";
 import { ConfigView, PreviewModal } from "../config/configview.mjs";
 import { runDiag } from "../system/diagview.mjs";
+import { TorDiagnostics } from "./tor-diagnostics.mjs";
 
 export const LAN_SERVICES = [
   {
@@ -274,6 +275,21 @@ export class SettingsPage extends Component {
               <${LanGuardStatus} ref=${this.guard} />`
             : html`<p class="muted">
               Sign in with an active session on a controllable host to change these switches.
+            </p>`
+        }
+      </section>
+      <section class="panel" aria-labelledby="tor-diagnostics-title">
+        <h2 id="tor-diagnostics-title">Tor diagnostics</h2>
+        <p>
+          A read-only snapshot of Tor: circuits by state and purpose, consensus age, entry guards,
+          bootstrap progress and the Tor version. It shows counts only, never a relay, guard or onion
+          identity.
+        </p>
+        ${
+          writable
+            ? html`<${TorDiagnostics} />`
+            : html`<p class="muted">
+              Sign in with an active session on a controllable host to run the Tor check.
             </p>`
         }
       </section>

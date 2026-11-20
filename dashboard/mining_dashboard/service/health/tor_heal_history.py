@@ -5,12 +5,17 @@ import time
 import uuid
 
 from mining_dashboard.service import control_service, request_spool
+from mining_dashboard.service.health.tor_snapshot import snapshot_line
 
 logger = logging.getLogger("TorHeal")
 
 
 class TorHistoryMixin:
-    """Keep the read-only history request and outage alert lifecycle together."""
+    tor_snapshot = None
+
+    def _snapshot_suffix(self):
+        line = snapshot_line(self.tor_snapshot)
+        return f" {line}" if line else ""
 
     def _request_history(self):
         """Ask the host for the saturated-history reading; one request in flight, never raises."""
@@ -50,6 +55,8 @@ class TorHistoryMixin:
         if result.get("status") != "applied":
             logger.warning("Tor circuit-history reading was refused or unavailable")
             return
+        if isinstance(result.get("tor"), dict):
+            self.tor_snapshot = result["tor"]
         saturated = result.get("saturated") is True
         self.saturated_history = saturated
         if not saturated:
@@ -64,7 +71,7 @@ class TorHistoryMixin:
                 await self._notify(
                     "\U0001f9c5 Tor clearnet egress is down and its circuit-build-time history is "
                     "saturated; NEWNYM cannot clear it. Run './pithead tor-recover check', then "
-                    "'./pithead tor-recover apply'."
+                    "'./pithead tor-recover apply'." + self._snapshot_suffix()
                 )
             )
 
@@ -94,6 +101,7 @@ class TorHistoryMixin:
                 self._recovery_notice = f"Tor state recovery refused or failed: {detail}. No fallback restart was attempted."
         if self._recovery_notice is not None:
             logger.warning("%s", self._recovery_notice)
-            if self._notify is not None and await self._notify(self._recovery_notice):
+            notice = self._recovery_notice + self._snapshot_suffix()
+            if self._notify is not None and await self._notify(notice):
                 self._recovery_notice = None
         return pending
