@@ -136,7 +136,7 @@ for qcase in 'WALLET_RPC_PASSWORD|pass\nwanted-by=nobody|LF' 'WALLET_RPC_PASSWOR
     assert_eq "#4176 arming ($ql): the env file really carries the escaped control character" \
         "$(grep -cxF "$qk=\"$qv\"" "$SANDBOX/ctl.env")" "1"
     QCTLRC=0
-    QCTLOUT=$( (run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/ctl.env" "$QCTL" 2>&1) ) || QCTLRC=$?
+    QCTLOUT=$(run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/ctl.env" "$QCTL" 2>&1) || QCTLRC=$?
     assert_eq "#4176 ($ql): a decoded control character in $qk exits non-zero" "$QCTLRC" "1"
     assert_contains "#4176 ($ql): the refusal names the key" "$QCTLOUT" "$qk"
     assert_eq "#4176 ($ql): the refusal happens before any unit file is created" \
