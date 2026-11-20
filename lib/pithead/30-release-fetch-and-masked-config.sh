@@ -72,7 +72,7 @@ gh_release_fetch() { # <owner/repo>; sets GH_RELEASE_JSON on success, GH_RELEASE
     # says the limit was exceeded. Without -f, curl's own non-zero exit now means only a transport
     # failure, which is exactly the distinction that was missing.
     if ! out=$(curl -sS --max-time 60 --max-filesize "$CURL_CAP_SMALL" -w '\n%{http_code}' \
-        --socks5-hostname "$GH_SOCKS" -H 'Accept: application/vnd.github+json' \
+        --proto =https --socks5-hostname "$GH_SOCKS" -H 'Accept: application/vnd.github+json' \
         "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null); then
         GH_RELEASE_HINT="could not reach the GitHub release API over Tor — nothing was changed. $retry_hint"
         # rc 2, not 1: no HTTP response came back from GitHub, so this is distinct from every

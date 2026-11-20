@@ -46,14 +46,18 @@ render_cadence() {
                 (.cron | split(" ") | {minute: (.[0] | tonumber), period: 3600, kind: "hourly"})
             elif .cron | test("^[0-9]{1,2} [0-9]{1,2} \\* \\* [0-6]$") then
                 (.cron | split(" ") | {minute: (.[0] | tonumber), hour: (.[1] | tonumber), weekday: (.[4] | tonumber), period: 604800, kind: "weekly"})
+            elif .cron | test("^[0-9]{1,2} [0-9]{1,2} \\* \\* \\*$") then
+                (.cron | split(" ") | {minute: (.[0] | tonumber), hour: (.[1] | tonumber), period: 86400, kind: "daily"})
             else null end;
         def slot($now; $p):
             if $p.kind == "hourly" then
                 ((($now - ($p.minute * 60)) / 3600 | floor) * 3600) + ($p.minute * 60)
             else
-                (($now / 86400 | floor) * 86400) + ($p.hour * 3600) + ($p.minute * 60)
-                - (((((($now / 86400 | floor) + 4) % 7) - $p.weekday + 7) % 7) * 86400)
-                | if . > $now then . - 604800 else . end
+                ((($now / 86400 | floor) * 86400) + ($p.hour * 3600) + ($p.minute * 60)
+                 | if $p.kind == "weekly"
+                   then . - (((((($now / 86400 | floor) + 4) % 7) - $p.weekday + 7) % 7) * 86400)
+                   else . end)
+                | if . > $now then . - $p.period else . end
             end;
         def interior_gap($runs; $p): reduce $runs[] as $after
             ({previous: null, gaps: []}; if .previous == null or $after.slot - .previous.slot <= $p.period then . + {previous: $after} else .previous as $before | . + {gaps: (.gaps + [range($before.slot + $p.period; $after.slot; $p.period) | {slot: ., before: $before, after: $after}]), previous: $after} end) | .gaps;
@@ -255,6 +259,18 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_cadence "$gap")" && rc=0 || rc=$?
     st "an actual elapsed hourly gap retains every missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "4"
     st "a missed run is a report finding, not a broken watcher" "$rc" "0"
+    daily="$tmp/daily"
+    cadence_fixture "$daily" "2026-09-14T08:00:00Z" "17 5 * * *" '[{"databaseId":940,"url":"https://x/940","createdAt":"2026-09-14T05:17:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-14T02:00:00Z" | fromdateiso8601)' "$daily/cadence.json" >"$daily/next" && mv "$daily/next" "$daily/cadence.json"
+    out="$(render_cadence "$daily")" && rc=0 || rc=$?
+    st "a daily schedule classifies its slot as ok" "$(printf '%s' "$out" | grep -cF '| ok |')" "1"
+    st "a daily schedule is never reported unchecked" "$(printf '%s' "$out" | grep -cF '**UNCHECKED**')" "0"
+    st "a daily run on its slot exits 0" "$rc" "0"
+    daily_late="$tmp/daily-late"
+    cadence_fixture "$daily_late" "2026-09-14T18:00:00Z" "17 5 * * *" '[{"databaseId":939,"url":"https://x/939","createdAt":"2026-09-13T05:17:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-13T02:00:00Z" | fromdateiso8601)' "$daily_late/cadence.json" >"$daily_late/next" && mv "$daily_late/next" "$daily_late/cadence.json"
+    out="$(render_cadence "$daily_late")"
+    st "a daily run absent twelve hours after its slot is LATE" "$(printf '%s' "$out" | grep -cF '| LATE |')" "1"
     interior="$tmp/interior"
     cadence_fixture "$interior" "2026-09-21T08:00:00Z" "0 5 * * 1" '[{"databaseId":907,"url":"https://x/907","createdAt":"2026-09-07T07:00:00Z"},{"databaseId":921,"url":"https://x/921","createdAt":"2026-09-21T07:00:00Z"}]'
     jq '.workflows[0].declaredAt = ("2026-09-06T00:00:00Z" | fromdateiso8601)' "$interior/cadence.json" >"$interior/next" && mv "$interior/next" "$interior/cadence.json"

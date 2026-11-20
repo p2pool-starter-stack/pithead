@@ -4,7 +4,6 @@ source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
 # The provision leg proper, plus the one assertion that must survive its aborts.
-#
 # #2059: the Tor-only egress ENFORCEMENT backstop used to be the last ~55 lines of the body below,
 # downstream of a dozen `return 1` aborts on unrelated liveness legs. Every battery to date aborted
 # upstream of it, so the repo's only proof that the kernel enforces Tor-only egress never ran —

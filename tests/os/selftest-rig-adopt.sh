@@ -51,14 +51,10 @@ _ssh() {
         [ "$scenario" != enable-fails ] || return 1
         touch "$scratch/enabled"
         ;;
-    *has\(*)
-        [ "$ip" = "$rig_ip" ] || fail 'read raw watchdog_interval_min from the coordinator'
-        case "$(cat "$scratch/interval")" in unset) printf '"absent"\n' ;; *) cat "$scratch/interval" ;; esac
-        ;;
     *watchdog_interval_min*)
-        [ "$ip" = "$rig_ip" ] || fail 'read watchdog_interval_min from the coordinator'
+        [ "$ip" = "$rig_ip" ] || fail 'read the watchdog interval from the coordinator'
         [ "$scenario" != missing-original ] || return 1
-        case "$(cat "$scratch/interval")" in unset | null) printf '5\n' ;; *) cat "$scratch/interval" ;; esac
+        cat "$scratch/interval"
         ;;
     *sha256sum*)
         [ "$ip" = "$rig_ip" ] || fail 'read pools from the coordinator'
@@ -72,9 +68,10 @@ dashboard_curl() {
     [ -f "$scratch/enabled" ] || fail 'config requested before control enabled'
     case "$*" in
     '-fsSk -m 10 https://192.0.2.2/api/worker?name=kvm-rig-share')
+        [ "$scenario" != missing-effective ] || return 1
         local value id="" row=accepted polls=0
         value=$(cat "$scratch/interval")
-        case "$value" in unset | null) value=5 ;; esac
+        [ "$value" != unset ] || value=1
         if [ -f "$scratch/change-id" ]; then
             id=$(cat "$scratch/change-id")
             polls=$(cat "$scratch/history-polls")
@@ -122,19 +119,21 @@ dashboard_control_request() {
         ;;
     worker-apply)
         local value
-        printf '%s' "$2" | jq -e '.worker == "kvm-rig-share" and keys == ["changes","worker"] and
-            (.changes | keys == ["watchdog_interval_min"])' >/dev/null || fail 'worker-apply body is not exactly the probe key'
-        value=$(printf '%s' "$2" | jq -c '.changes.watchdog_interval_min')
+        printf '%s' "$2" | jq -e '[.changes | keys[] | select(. == "DONATION" or . == "donate-level")] | length == 0' >/dev/null ||
+            fail 'leg wrote a donation key to the mining rig (#4184)'
+        printf '%s' "$2" | jq -e '.changes.watchdog_interval_min | type == "number" and . >= 1 and . <= 1440' >/dev/null ||
+            fail 'watchdog_interval_min probe outside RigForge 1-1440'
+        value=$(printf '%s' "$2" | jq -er 'select(.worker == "kvm-rig-share") | .changes.watchdog_interval_min') || fail 'wrong worker change'
         printf '%s\n' "$value" >>"$scratch/writes"
-        if [ "$value" = "$restore_value" ]; then
-            case "$scenario" in *restore-fails) return 1 ;; esac
+        if [ "$value" = "$original_value" ]; then
+            [ "$scenario" != restore-fails ] || return 1
         else
             [ "$scenario" != write-fails ] || return 1
             [ "$scenario" != changed-pools ] || printf 'changed\n' >"$scratch/pools"
         fi
         if [ "$scenario" != false-applied ]; then printf '%s\n' "$value" >"$scratch/interval"; fi
         local id=0000000000000001
-        [ "$value" != "$restore_value" ] || id=0000000000000002
+        [ "$value" != "$original_value" ] || id=0000000000000002
         printf '%s\n' "$id" >"$scratch/change-id"
         printf '0\n' >"$scratch/history-polls"
         if [ "$scenario" = malformed-change-id ]; then id=invalid; fi
@@ -151,18 +150,11 @@ curl() {
     fi
 }
 run_case() {
-    local scenario="$1" expected="$2" original_value="${3:-5}" effective_original restore_value rc=0
+    local scenario="$1" expected="$2" original_value="${3:-5}" rc=0
     local rig_ip=192.0.2.1 coord_ip=192.0.2.2 ip=192.0.2.1 coord_user=fixture coord_pass=login
     local card_token=fixture-card-secret rig_card='{"token":"fixture-card-secret"}'
     local stored_value="$original_value"
-    case "$scenario" in
-    absent-original | absent-restore-fails) stored_value=unset original_value=unset ;;
-    null-original | null-restore-fails) stored_value=null original_value=null ;;
-    esac
-    effective_original="$original_value"
-    case "$original_value" in unset | null) effective_original=5 ;; esac
-    restore_value="$effective_original"
-    [ "$original_value" != null ] || restore_value=null
+    case "$scenario" in absent-original | missing-effective) stored_value=unset original_value=1 ;; esac
     rm -f "$scratch/adopted" "$scratch/enabled" "$scratch/writes" "$scratch/change-id" "$scratch/history-polls"
     printf '0\n' >"$scratch/tick"
     printf '%s\n' "$stored_value" >"$scratch/interval"
@@ -173,35 +165,24 @@ run_case() {
     ! grep -Fq "$card_token" "$scratch/output" || fail "$scenario disclosed the card token"
     [ "$ip" = "$rig_ip" ] || fail "$scenario changed caller guest"
     if [ "$expected" = 0 ]; then
-        [ "$(cat "$scratch/interval")" = "$restore_value" ] || fail 'raw watchdog_interval_min was not restored'
+        [ "$(cat "$scratch/interval")" = "$original_value" ] || fail 'interval was not restored'
         [ "$(cat "$scratch/pools")" = original ] || fail 'pools were changed'
         [ "$(wc -l <"$scratch/writes")" -eq 2 ] || fail 'missing write or restore'
-        [ "$(tail -1 "$scratch/writes")" = "$restore_value" ] || fail 'wrong last write'
-        grep -Eq '^(7|8)$' "$scratch/writes" || fail 'probe value not written'
         [ "$(cat "$scratch/history-polls")" -ge 3 ] || fail 'accepted response bypassed history completion'
         grep -q 'added .* seconds' "$scratch/output" || fail 'missing elapsed time'
     fi
     case "$scenario" in
-    null-restore-fails | absent-restore-fails)
-        [ "$(tail -1 "$scratch/writes")" = "$restore_value" ] || fail "$scenario did not attempt restore"
-        grep -q 'restoration failed' "$scratch/output" || fail "$scenario did not report the failed restore"
-        ;;
     write-fails | false-applied | changed-pools | restore-fails)
-        [ "$(tail -1 "$scratch/writes")" = "$restore_value" ] || fail "$scenario did not attempt restore"
+        [ "$(tail -1 "$scratch/writes")" = "$original_value" ] || fail "$scenario did not attempt restore"
         ;;
     esac
     printf 'PASS: %s\n' "$scenario"
 }
 run_case success 0
-run_case min-original 0 1
-run_case probe-collision-original 0 7
-run_case max-original 0 1440
+run_case ceiling-original 0 1440
 run_case absent-original 0
-run_case null-original 0
-run_case null-restore-fails 1
-run_case absent-restore-fails 1
 for scenario in already-adopted malformed-state missing-worker unavailable-state missing-original undrained provisioning-busy provisioning-failed \
-    enable-fails preview-fails commit-fails stale-adoption api-down write-fails false-applied changed-pools restore-fails exposed-port \
+    enable-fails preview-fails commit-fails stale-adoption api-down missing-effective write-fails false-applied changed-pools restore-fails exposed-port \
     history-stuck history-rejected history-wrong-id history-unavailable history-malformed history-secret-status malformed-change-id; do
     run_case "$scenario" 1
 done
@@ -222,7 +203,7 @@ done
     for shape in accepted pending; do
         printf '0\n' >"$scratch/tick"
         : >"$scratch/spool-polls"
-        result=$(dashboard_control_request worker-apply '{"worker":"kvm-rig-share","changes":{"watchdog_interval_min":1}}' 60) ||
+        result=$(dashboard_control_request worker-apply '{"worker":"kvm-rig-share","changes":{"watchdog_interval_min":6}}' 60) ||
             fail "$shape worker response did not hand off to history polling"
         printf '%s' "$result" | jq -e '.status == "accepted" and .change_id == "0000000000000001"' >/dev/null ||
             fail 'worker acknowledgment lost its change id'
@@ -233,7 +214,7 @@ done
 )
 printf 'PASS: immediate and delayed worker acknowledgment handoff\n'
 (
-    original=5 restore=5 probe=7 pools=original
+    original=5 probe=6 pools=original
     _rig_adopt_apply() {
         if [ "$1" = "$probe" ]; then kill -TERM "$BASHPID"; else touch "$scratch/signal-restored"; fi
     }

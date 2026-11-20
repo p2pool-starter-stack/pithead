@@ -309,6 +309,12 @@ when the trigger began holding, not when it fired. A trigger clears after 60 sec
 dashboard stops only `xmrig-proxy`: the stratum port closes, connected rigs get a disconnect, and
 P2Pool keeps running. The built-in local miner is a rig on the same stratum, so it stops with them.
 
+The dashboard log records each transition once. The stop line, `Mining work is not valid (...)`,
+names every holding trigger, including a Monero or Tari outage past its debounce. While the proxy
+stays stopped, a `xmrig-proxy stays stopped: ...` line names what blocks readmission and repeats
+only when that set changes. The readmission line gives the seconds since the stop, or says the stop
+predates the dashboard process after a restart. The support bundle's dashboard container log carries both for the chosen window.
+
 The lag row reads P2Pool's own `peer ... is ahead on mainchain` log line. It also needs two peers and
 a stalled monerod height, because a hostile peer can make P2Pool log that line, and it is not used for a
 remote node, which has no height-progress verdict. Limits: after a dashboard restart the "no new
@@ -1699,9 +1705,11 @@ A second card lives on the same tab: **Export logs**
 ([#4036](https://github.com/p2pool-starter-stack/pithead/issues/4036),
 [#4129](https://github.com/p2pool-starter-stack/pithead/issues/4129)). It collects one redacted
 `.zip` of the system journal for a bug report: the whole journal, the kernel log, the boot list and
-a per-unit journal for every Pithead and quadlet unit, the dashboard's health history, the Tor
-bootstrap state, versions, the active RAUC slot, and the config's key shape with every value
-dropped.
+a per-unit journal for every Pithead and quadlet unit, the dashboard's health history, `doctor` output,
+monerod, Tari and P2Pool status, Tor control-port and guard state, network, time and container state,
+Caddy access logs for the window, the files saved under `/data/pithead/support/`, versions, the RAUC
+slot state, and the config's key shape with every value dropped. Every step has a time limit, so a
+wedged service shows up in `manifest.json` instead of stalling the export.
 
 **Export without the control channel.** The card and its routes work whatever
 `dashboard.control.enabled` says, and without turning on config editing. With the switch off, the
@@ -1749,6 +1757,8 @@ The finished zip waits in the same results spool, with the same retention a back
 nothing leaves the box until the download. A box whose stack never came up cannot serve the
 dashboard, so it builds the same zip from the console instead: `pithead recovery-bundle` in
 [Operations](operations.md).
+
+**On a Docker host** the same card builds the same zip from every container's log for the window (stopped containers included) and the journal of the DIY egress and LAN-guard units, with the host's `doctor` report, the masked config and the redacted `.env`; `./pithead support-bundle --since 2026-11-15T10:00:00Z --until 2026-11-15T12:00:00Z` writes it from a shell. A journal this user cannot read, or a stopped engine, is listed under `failures` in `manifest.json` instead of failing the export.
 
 **Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that

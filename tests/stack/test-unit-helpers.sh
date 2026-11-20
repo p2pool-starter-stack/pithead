@@ -157,7 +157,7 @@ assert_eq "export_build_provenance empty when no VERSION" "$ver" ""
 echo "== unit: support-bundle archive is never exposed while it is written (#3757) =="
 
 bundle_case() {
-    local tar_mode="$1" preexisting="${2:-}" work
+    local mode="$1" preexisting="${2:-}" work
     mk_tmpdir work
     chmod 755 "$work"
     if [ -n "$preexisting" ]; then
@@ -171,27 +171,24 @@ bundle_case() {
         set +e
         umask 022
         log() { :; }
-        doctor_json() { echo '{}'; }
-        docker() { return 1; }
-        date() { printf 'FIXED'; }
-        tar() {
-            local out="" a
-            for a in "$@"; do case "$a" in *.tar.gz) out="$a" ;; esac done
-            command tar "$@" || return
-            printf 'DIR:%s\n' "$(ls -ld "${out%/*}" | cut -c1-10)"
-            printf 'TMP:%s\n' "${out%/*}"
-            printf 'FILE:%s\n' "$(ls -l "$out" | cut -c1-10)"
-            printf 'VISIBLE:%s\n' "$(find "$work" -maxdepth 1 -name 'support-bundle-*.tar.gz' | wc -l | tr -d ' ')"
-            case "$tar_mode" in
+        bundle_support_collect() {
+            printf 'DIR:%s\n' "$(ls -ld "$1" | cut -c1-10)" >&2
+            printf 'TMP:%s\n' "$1" >&2
+            printf 'WINDOW:%s %s\n' "$2" "$3" >&2
+            printf 'zip' >"$1/support-bundle-FIXED.zip"
+            chmod 600 "$1/support-bundle-FIXED.zip"
+            printf 'VISIBLE:%s\n' "$(find "$work" -maxdepth 1 -name 'support-bundle-*.zip' | wc -l | tr -d ' ')" >&2
+            case "$mode" in
             fail) return 1 ;;
-            term) kill -TERM "$BASHPID" ;;
+            term) kill -TERM "$verb_pid" ;;
             esac
+            printf '%s\n' "$1/support-bundle-FIXED.zip"
         }
-        render_masked_config() { return 1; }
-        stack_support_bundle
+        verb_pid=$BASHPID
+        stack_support_bundle --since 2026-11-15T10:00:00Z --until 2026-11-15T11:00:00Z
         echo "RC:$?"
     ) 2>&1
-    echo "FILES:$(find "$work" -maxdepth 1 -name 'support-bundle-*.tar.gz' | wc -l | tr -d ' ')"
+    echo "FILES:$(find "$work" -maxdepth 1 -name 'support-bundle-*.zip' | wc -l | tr -d ' ')"
     if [ -n "$preexisting" ]; then
         echo "FINAL:$(ls -l "$work/$preexisting" | cut -c1-10)"
     fi
@@ -202,18 +199,19 @@ bundle_tmp_gone() { [ ! -e "$(printf '%s\n' "$1" | sed -n 's/^TMP://p')" ]; }
 
 ok_out="$(bundle_case ok)"
 assert_contains "the archive is built in a private directory" "$ok_out" "DIR:drwx------"
-assert_contains "no archive is visible in the output directory while tar writes" "$ok_out" "VISIBLE:0"
+assert_contains "no archive is visible in the output directory while it is built" "$ok_out" "VISIBLE:0"
+assert_contains "the CLI window reaches the collector" "$ok_out" "WINDOW:2026-11-15T10:00:00Z 2026-11-15T11:00:00Z"
 assert_contains "the verb succeeds" "$ok_out" "RC:0"
 assert_contains "the finished archive is published" "$ok_out" "FILES:1"
 bundle_tmp_gone "$ok_out" && ok "the scratch directory is removed after success" || bad "the scratch directory is removed after success" "$ok_out"
 
-pre_out="$(bundle_case ok support-bundle-FIXED.tar.gz)"
+pre_out="$(bundle_case ok support-bundle-FIXED.zip)"
 assert_contains "a permissive archive already at the output path is replaced owner-only" "$pre_out" "FINAL:-rw-------"
 
 fail_out="$(bundle_case fail)"
-assert_contains "a failed tar fails the verb" "$fail_out" "RC:1"
-assert_contains "a failed tar leaves no archive" "$fail_out" "FILES:0"
-bundle_tmp_gone "$fail_out" && ok "a failed tar removes the scratch directory" || bad "a failed tar removes the scratch directory" "$fail_out"
+assert_contains "a failed collection fails the verb" "$fail_out" "RC:1"
+assert_contains "a failed collection leaves no archive" "$fail_out" "FILES:0"
+bundle_tmp_gone "$fail_out" && ok "a failed collection removes the scratch directory" || bad "a failed collection removes the scratch directory" "$fail_out"
 
 term_out="$(bundle_case term)"
 assert_contains "an interrupted run leaves no archive" "$term_out" "FILES:0"

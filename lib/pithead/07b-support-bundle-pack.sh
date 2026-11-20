@@ -108,8 +108,8 @@ info = json.load(open(info_path))
 failures = []
 if os.path.exists(steps_path):
     for row in open(steps_path).read().splitlines():
-        step, status, reason = (row.split("\t") + ["", ""])[:3]
-        failures.append({"step": step, "status": status, "reason": reason})
+        step, status, reason, elapsed = (row.split("\t") + ["", "", "0"])[:4]
+        failures.append({"step": step, "status": status, "reason": reason, "elapsed_seconds": int(elapsed or 0)})
 
 stuck = set()
 while total_size() > total_cap:

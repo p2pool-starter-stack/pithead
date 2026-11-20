@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from mining_dashboard.service import auth_sessions
@@ -68,3 +70,99 @@ class TestSessionLifetimes:
         token = auth_sessions.issue(store, "admin", "e", False)
         ids = [r["id"] for r in store._conn.execute("SELECT id FROM dashboard_sessions")]
         assert token not in ids
+
+
+class TestFullDataDisk:
+    @pytest.fixture
+    def store(self):
+        sm = StateManager(db_path=":memory:")
+        auth_sessions.create_schema(sm)
+        yield sm
+        sm.close()
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        now = [1_000_000.0]
+        monkeypatch.setattr(auth_sessions.time, "time", lambda: now[0])
+        return now
+
+    def test_a_failing_touch_write_keeps_the_session_valid(self, store, clock, full_disk):
+        token = auth_sessions.issue(store, "admin", "e", False)
+        clock[0] += auth_sessions.TOUCH_SECONDS
+        full_disk(store)
+        assert auth_sessions.validate(store, token, "e")[0] == "admin"
+        assert store.is_db_healthy() is False
+
+    def test_a_failing_refresh_write_still_asks_for_a_cookie_refresh(self, store, clock, full_disk):
+        token = auth_sessions.issue(store, "admin", "e", True)
+        clock[0] += auth_sessions.COOKIE_REFRESH_SECONDS
+        full_disk(store)
+        username, remember, refresh = auth_sessions.validate(store, token, "e")
+        assert (username, remember, refresh) == ("admin", True, True)
+
+    def test_an_expired_session_is_refused_when_the_delete_fails(self, store, clock, full_disk):
+        token = auth_sessions.issue(store, "admin", "e", False)
+        clock[0] += auth_sessions.IDLE_SECONDS + 1
+        full_disk(store, statements=("DELETE",))
+        assert auth_sessions.validate(store, token, "e") is None
+
+    def test_an_unknown_token_is_refused_on_a_full_disk(self, store, full_disk):
+        full_disk(store)
+        assert auth_sessions.validate(store, "x" * 43, "e") is None
+
+    def test_an_unreadable_store_refuses_the_session_instead_of_raising(self, store, full_disk):
+        token = auth_sessions.issue(store, "admin", "e", False)
+        full_disk(store, statements=("SELECT",))
+        assert auth_sessions.validate(store, token, "e") is None
+        assert store.is_db_healthy() is False
+
+    def test_revoke_survives_a_full_disk(self, store, full_disk):
+        token = auth_sessions.issue(store, "admin", "e", False)
+        full_disk(store)
+        auth_sessions.revoke(store, token)
+
+    def test_issue_raises_on_a_full_disk_and_flags_the_store(self, store, full_disk):
+        full_disk(store)
+        with pytest.raises(sqlite3.OperationalError):
+            auth_sessions.issue(store, "admin", "e", False)
+        assert store.is_db_healthy() is False
+
+    def test_create_schema_survives_a_full_disk(self, store, full_disk):
+        full_disk(store, statements=("CREATE",))
+        auth_sessions.create_schema(store)
+        assert store.is_db_healthy() is False
+
+    def test_create_schema_survives_a_closed_store(self, store, monkeypatch):
+        monkeypatch.setattr(store, "_conn", None)
+        auth_sessions.create_schema(store)
+
+    def test_a_corrupt_read_recovers_without_wedging_the_store(self, store, full_disk):
+        token = auth_sessions.issue(store, "admin", "e", False)
+        full_disk(store, statements=("SELECT",), message="database disk image is malformed")
+        assert auth_sessions.validate(store, token, "e") is None
+        assert auth_sessions.validate(store, token, "e") is None
+        assert store._db_lock.acquire(timeout=1)
+        store._db_lock.release()
+
+
+class TestNoConnection:
+    @pytest.fixture
+    def store(self):
+        sm = StateManager(db_path=":memory:")
+        auth_sessions.create_schema(sm)
+        token = auth_sessions.issue(sm, "admin", "e", False)
+        sm._conn = None
+        yield sm, token
+
+    def test_validate_refuses_without_raising(self, store):
+        sm, token = store
+        assert auth_sessions.validate(sm, token, "e") is None
+
+    def test_revoke_is_a_noop(self, store):
+        sm, token = store
+        auth_sessions.revoke(sm, token)
+
+    def test_issue_raises_a_sqlite_error_for_the_503_path(self, store):
+        sm, _ = store
+        with pytest.raises(sqlite3.Error):
+            auth_sessions.issue(sm, "admin", "e", False)

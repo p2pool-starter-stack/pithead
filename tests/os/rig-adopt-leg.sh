@@ -16,20 +16,14 @@ _rig_adopt_state() {
 }
 
 _rig_adopt_snapshot() {
-    local current pools ip="${rig_address:-$ip}"
-    current=$(_ssh "jq -er '(.watchdog_interval_min // 5) | if type == \"number\" and . == floor and . >= 1 and . <= 1440 then . else error(\"bad\") end' /data/rigforge/config.json") || return 1
+    local interval pools ip="${rig_address:-$ip}"
+    interval=$(_ssh "jq -er 'if has(\"watchdog_interval_min\") then .watchdog_interval_min | select(type == \"number\" and . >= 1 and . <= 1440) else \"unset\" end' /data/rigforge/config.json") || return 1
     pools=$(_ssh "set -o pipefail; jq -ceS '.pools | select(type == \"array\" and length > 0)' /data/rigforge/config.json | sha256sum") || return 1
-    printf '%s %s\n' "$current" "${pools%% *}"
-}
-
-_rig_adopt_raw() {
-    local ip="${rig_address:-$ip}"
-    _ssh "jq -c 'if has(\"watchdog_interval_min\") then .watchdog_interval_min else \"absent\" end' /data/rigforge/config.json"
+    printf '%s %s\n' "$interval" "${pools%% *}"
 }
 
 _rig_adopt_apply() {
-    local value="$1" pools="$2" result snapshot deadline change_id status detail effective="$1"
-    [ "$value" != null ] || effective=5
+    local value="$1" pools="$2" result snapshot deadline change_id status detail
     result=$(dashboard_control_request worker-apply "$(jq -nc --argjson value "$value" \
         '{worker:"kvm-rig-share",changes:{watchdog_interval_min:$value}}')" 240) || return 1
     printf '%s' "$result" | jq -e '.status | IN("accepted", "applied")' >/dev/null || return 1
@@ -58,21 +52,21 @@ _rig_adopt_apply() {
     deadline=$(($(date +%s) + 60))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         snapshot=$(_rig_adopt_snapshot) || snapshot=""
-        [ "$snapshot" = "$effective $pools" ] && return 0
+        [ "$snapshot" = "$value $pools" ] && return 0
         sleep 3
     done
     return 1
 }
 
 _rig_adopt_round_trip() (
-    trap '_rig_adopt_apply "$restore" "$pools" && printf "restored\n" || { printf "restore-failed\n"; exit 1; }' EXIT
+    trap '_rig_adopt_apply "$original" "$pools" && printf "restored\n" || { printf "restore-failed\n"; exit 1; }' EXIT
     trap 'exit 1' INT TERM
     _rig_adopt_apply "$probe" "$pools" || exit 1
     printf 'changed\n'
 )
 
 rig_adopt_leg() {
-    local started result proposed rid baseline original restore raw pools probe flags trip_rc=0 changed=0 restored=0
+    local started result proposed rid baseline original pools probe flags trip_rc=0 changed=0 restored=0
     started=$(date +%s)
     local DASH_USER="$coord_user" DASH_PASS="$coord_pass"
     local rig_address="$ip"
@@ -82,16 +76,10 @@ rig_adopt_leg() {
     }
     ok "M12: the coordinator shows the rig as not adopted (#3069)"
     baseline=$(_rig_adopt_snapshot) || {
-        bad "M12: original watchdog_interval_min and pools could not be recorded (#3069)"
+        bad "M12: original watchdog interval and pools could not be recorded (#3069)"
         return 1
     }
     read -r original pools <<<"$baseline"
-    raw=$(_rig_adopt_raw) || {
-        bad "M12: raw watchdog_interval_min could not be recorded (#3069)"
-        return 1
-    }
-    restore=$original
-    [ "$raw" != null ] || restore=null
     {
         local ip="$coord_ip"
         provisioning_settled 900 && ! provisioning_setup_failed && _control_requests_drained && _ssh 'set -eu
@@ -124,15 +112,20 @@ mv "$staging" config.json
     }
     ok "M12: preview and typed APPLY adopt the rig with its API reachable (#3069)"
     local ip="$coord_ip"
-    # A probe key the control path can set and restore exactly, with no effect on hashing, donation or identity.
-    probe=7
-    [ "$original" != 7 ] || probe=8
+    if [ "$original" = unset ]; then
+        result=$(dashboard_curl -fsSk -m 10 "https://$ip/api/worker?name=kvm-rig-share" 2>/dev/null) &&
+            original=$(printf '%s' "$result" | jq -er '.rig_config.watchdog_interval_min | select(type == "number" and . >= 1 and . <= 1440)') || {
+            bad "M12: the rig did not report its effective watchdog_interval_min default (#3069)"
+            return 1
+        }
+    fi
+    probe=$(jq -nr --argjson value "$original" 'if $value >= 1440 then $value - 1 else $value + 1 end') || return 1
     flags=$(_rig_adopt_round_trip) || trip_rc=$?
     case "$flags" in *changed*) changed=1 ;; esac
     case "$flags" in *restored*) restored=1 ;; esac
     ip="$rig_address"
-    [ "$changed" = 1 ] && ok "M12: coordinator watchdog_interval_min write applied on the rig with unchanged pools (#3069)" ||
-        bad "M12: coordinator watchdog_interval_min write or unchanged pools assertion failed (#3069)"
+    [ "$changed" = 1 ] && ok "M12: coordinator watchdog_interval_min write applied on the rig with unchanged pools (#3069/#4184)" ||
+        bad "M12: coordinator watchdog_interval_min write or unchanged pools assertion failed (#3069/#4184)"
     [ "$restored" = 1 ] && ok "M12: original watchdog_interval_min restored with unchanged pools (#3069)" ||
         bad "M12: original watchdog_interval_min restoration failed (#3069)"
     local code
