@@ -82,13 +82,6 @@ class NoUsableProxy(requests.RequestException):
     pass
 
 
-def _url_scheme(url):
-    try:
-        return urlsplit(url).scheme.lower()
-    except ValueError:
-        return ""
-
-
 def _proxy_covers(proxies, scheme):
     if isinstance(proxies, str):
         return bool(proxies.strip())

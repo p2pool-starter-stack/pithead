@@ -69,6 +69,12 @@ class TestGetInfo:
         assert "10.40.0.7" not in caplog.text
         assert "ConnectionError" in caplog.text
 
+    def test_a_hostname_node_is_refused_before_any_socket_opens(self):
+        client = MoneroClient(url="http://mynode.lan:18081", username="u", password="p")
+        with patch.object(monero_mod.requests, "get") as mock_get:
+            assert client.get_info() is None
+        mock_get.assert_not_called()
+
     def test_non_200_returns_none(self):
         client = MoneroClient(username="u", password="p")
         with patch.object(monero_mod.requests, "get", return_value=_resp(status_code=401)):
