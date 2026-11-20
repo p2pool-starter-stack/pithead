@@ -77,8 +77,9 @@ EOF
         chain=
     done
     if command -v nft >/dev/null 2>&1 && audit_body=$(render_host_egress_audit_nft appliance); then
-        audit_cmd='printf "%s\n"'
+        audit_cmd='printf "%%s\n"'
         while IFS= read -r audit_line; do
+            audit_line="${audit_line//%/%%}"
             audit_line="${audit_line//\\/\\\\}"
             audit_line="${audit_line//\"/\\\"}"
             audit_cmd+=" \"$audit_line\""

@@ -210,9 +210,9 @@ eau_run() { PATH="$EAU/bin:$PATH" run_sourced "$EAU" "$@"; }
 EAU_OK_TABLE='table inet pithead_egress_audit {
   chain output {
     type filter hook output priority -150; policy accept;
-    oifname "lo" counter packets 4 bytes 240 comment "loopback" accept
-    ct state established,related counter packets 9 bytes 900 comment "reply" accept
-    counter packets 42 bytes 3780 comment "would_drop" log prefix "pithead-egress-audit: " accept
+    oifname "lo" counter packets 4 bytes 240 comment "loopback"
+    ct state established,related counter packets 9 bytes 900 comment "reply"
+    counter packets 42 bytes 3780 comment "would_drop" limit rate 30/second burst 10 packets log prefix "pithead-egress-audit: "
   }
 }'
 
@@ -222,24 +222,26 @@ assert_eq "the map file is replaced atomically (add then delete then recreate)" 
     "$(printf '%s\n' "$EAU_R" | grep -A1 -m1 'add table inet pithead_egress_audit' | tail -1)" \
     "delete table inet pithead_egress_audit"
 assert_contains "the chain hooks the host output path" "$EAU_R" "type filter hook output priority -150; policy accept;"
-assert_contains "loopback flows get their own counter" "$EAU_R" 'oifname "lo" counter comment "loopback" accept'
-assert_contains "replies get their own counter" "$EAU_R" 'ct state established,related counter comment "reply" accept'
-assert_contains "the would_drop rule counts and logs, and then accepts" "$EAU_R" \
-    'counter comment "would_drop" log prefix "pithead-egress-audit: " accept'
-assert_contains "a route=lan row of this role renders the lan class" "$EAU_R" 'counter comment "lan" accept'
+assert_contains "loopback flows get their own counter" "$EAU_R" 'oifname "lo" counter comment "loopback"'
+assert_contains "replies get their own counter" "$EAU_R" 'ct state established,related counter comment "reply"'
+assert_contains "the would_drop rule counts and logs, and carries no verdict at all" "$EAU_R" \
+    'counter comment "would_drop" limit rate 30/second burst 10 packets log prefix "pithead-egress-audit: "'
+assert_contains "a route=lan row of this role renders the lan class" "$EAU_R" 'counter comment "lan"'
 EAU_NOLAN=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv")
 assert_not_contains "with no route=lan row the lan class is not rendered" "$EAU_NOLAN" 'comment "lan"'
 EAU_RIG=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-lan.tsv")
-assert_contains "the rig role renders from its own rows" "$EAU_RIG" 'counter comment "lan" accept'
+assert_contains "the rig role renders from its own rows" "$EAU_RIG" 'counter comment "lan"'
 EAU_RIGN=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-nolan.tsv")
 assert_not_contains "the role filter is what picks the rows: a rig with no lan row has no lan class" "$EAU_RIGN" 'comment "lan"'
 assert_eq "an unknown role renders nothing" "$(run_sourced "$EAU" render_host_egress_audit_nft laptop "$EAU/map-lan.tsv"; printf 'rc=%s' "$?")" "rc=1"
 assert_eq "a missing map fails the render rather than inventing rules" "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/absent.tsv" 2>/dev/null; printf 'rc=%s' "$?")" "rc=1"
 EAU_REPO=$(run_sourced "$ROOT" render_host_egress_audit_nft appliance data/egress-map.tsv)
 assert_contains "the committed egress map drives the appliance table" "$EAU_REPO" \
-    'counter comment "would_drop" log prefix "pithead-egress-audit: " accept'
-assert_eq "the rendered table never carries a terminal drop or reject verdict" \
-    "$(printf '%s\n' "$EAU_R" "$EAU_RIG" "$EAU_REPO" | grep -Ec '(^|[[:space:]])(drop|reject)([[:space:]]|$)')" "0"
+    'counter comment "would_drop" limit rate 30/second burst 10 packets log prefix "pithead-egress-audit: "'
+assert_eq "the rendered table never carries a terminal verdict: none of accept/drop/reject is rendered anywhere" \
+    "$(printf '%s\n' "$EAU_R" "$EAU_RIG" "$EAU_REPO" | grep -Ec '(^|[[:space:]])(accept|drop|reject)([[:space:]]|$)')" "0"
+assert_eq "the mawk-safe split renders every lan net (Debian 12 awk) comma-separated" \
+    "$(printf '%s\n' "$EAU_R" | grep 'comment "lan"' | grep -c '127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10')" "1"
 
 echo "== apply: the loader loads the rendered table and names its failure (#4195) =="
 out=$(EAU_NFT_CAPTURE=1 eau_run apply_host_egress_audit "$EAU/map-lan.tsv" 2>&1)

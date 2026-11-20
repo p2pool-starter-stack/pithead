@@ -20,17 +20,17 @@ render_host_egress_audit_nft() {
         $1 == role && $5 == "lan" { lan = 1 }
         END {
             set = ""
-            n = split(nets, parts, /[[:space:]]+/)
+            n = split(nets, parts, " ")
             for (i = 1; i <= n; i++) { if (parts[i] == "") continue; set = (set == "" ? parts[i] : set ", " parts[i]) }
             print "add table inet " table
             print "delete table inet " table
             print "table inet " table " {"
             print "  chain output {"
             print "    type filter hook output priority -150; policy accept;"
-            print "    oifname \"lo\" counter comment \"loopback\" accept"
-            print "    ct state established,related counter comment \"reply\" accept"
-            if (lan && set != "") print "    ip daddr { " set " } counter comment \"lan\" accept"
-            print "    counter comment \"would_drop\" log prefix \"" prefix "\" accept"
+            print "    oifname \"lo\" counter comment \"loopback\""
+            print "    ct state established,related counter comment \"reply\""
+            if (lan && set != "") print "    ip daddr { " set " } counter comment \"lan\""
+            print "    counter comment \"would_drop\" limit rate 30/second burst 10 packets log prefix \"" prefix "\""
             print "  }"
             print "}"
         }
