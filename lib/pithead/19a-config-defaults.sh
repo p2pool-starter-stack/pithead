@@ -26,7 +26,7 @@ control_enabled_default() {
         return
     }
     if [ "$(normalize_bool "$(jq -r '(.dashboard.onion.enabled // false) | tostring' "$config" 2>/dev/null)")" == "true" ]; then
-        client_auth=$(jq -r 'if (.dashboard.onion // {}) | has("client_auth") then (.dashboard.onion.client_auth | tostring) else "true" end' "$config" 2>/dev/null)
+        client_auth=$(jq -r '(.dashboard.onion // {}) | if has("client_auth") and .client_auth != null then (.client_auth | tostring) else "true" end' "$config" 2>/dev/null)
         [ "$(normalize_bool "$client_auth")" == "true" ] || {
             printf false
             return

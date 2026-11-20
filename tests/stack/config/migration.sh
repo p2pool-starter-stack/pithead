@@ -89,6 +89,15 @@ cp "$ROOT/VERSION" "$MG_NOTICE_SET/VERSION"
 mg_set_notice="$(PITHEAD_APPLIANCE=0 run_sourced "$MG_NOTICE_SET" migrate_config_to_2_1 2>&1)"
 assert_eq "an explicit control value gets no notice (#3579)" \
     "$(printf '%s\n' "$mg_set_notice" | grep -c 'settings editor is now on')" "0"
+MG_NOTICE_FALSE="$MG/editor-notice-explicit-false"
+mkdir -p "$MG_NOTICE_FALSE"
+jq '.dashboard.control={enabled:false}' "$MG_DATA/inputs/diy-login.json" >"$MG_NOTICE_FALSE/config.json"
+cp "$ROOT/VERSION" "$MG_NOTICE_FALSE/VERSION"
+mg_false_notice="$(PITHEAD_APPLIANCE=0 run_sourced "$MG_NOTICE_FALSE" migrate_config_to_2_1 2>&1)"
+assert_eq "an explicit false gets no editor notice (#3579)" \
+    "$(printf '%s\n' "$mg_false_notice" | grep -c 'settings editor is now on')" "0"
+assert_eq "the explicit false survives migration (#3579)" \
+    "$(jq -r '.dashboard.control.enabled' "$MG_NOTICE_FALSE/config.json")" "false"
 
 MG_DRY="$MG/dry"
 mkdir -p "$MG_DRY"

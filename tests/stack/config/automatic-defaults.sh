@@ -94,6 +94,7 @@ control_default_case "the appliance rule matches the DIY rule" '.dashboard.auth=
 control_default_case "explicit false wins over the login" '.dashboard.auth={username:"admin",password:"a-real-passphrase"} | .dashboard.control={enabled:false}' 0 false
 control_default_case "explicit true wins" '.dashboard.auth={username:"admin",password:"a-real-passphrase"} | .dashboard.control={enabled:true}' 0 true
 control_default_case "a password-only onion keeps it off without an error" '.dashboard.auth={username:"admin",password:"a-long-enough-passphrase-for-onion"} | .dashboard.onion={enabled:true,client_auth:false}' 0 false
+control_default_case "an explicit null client_auth reads as absent" '.dashboard.auth={username:"admin",password:"a-long-enough-passphrase-for-onion"} | .dashboard.onion={enabled:true,client_auth:null}' 0 true
 control_default_case "a client-authorized onion keeps it on" '.dashboard.auth={username:"admin",password:"a-long-enough-passphrase-for-onion"} | .dashboard.onion={enabled:true}' 0 true
 for row in "remote off false 3" "local off false 8" "local local false 14" "local local true 17"; do
     read -r monero tari miner expected <<<"$row"
