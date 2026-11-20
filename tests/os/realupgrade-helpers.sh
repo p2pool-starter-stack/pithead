@@ -5,9 +5,10 @@ REALUPGRADE_REPO="p2pool-starter-stack/pithead"
 REALUPGRADE_BOOT_GATE_S=900
 REALUPGRADE_SOAK_S=600
 REALUPGRADE_LEGS_DEFAULT="upgrade,soak,negctl"
+REALUPGRADE_ROLLBACK_CAUSE="interrupted before the update was verified"
 REALUPGRADE_SEED_UNIT="pithead-realupgrade-seed.service"
 
-realupgrade_old_tag() { # <tree-version> <tag>... ; greatest vX.Y.Z strictly below the tree version
+realupgrade_old_tag() {
     local ver="$1" t best=""
     shift
     for t in "$@"; do
@@ -21,11 +22,11 @@ realupgrade_old_tag() { # <tree-version> <tag>... ; greatest vX.Y.Z strictly bel
     [ -n "$best" ] && printf '%s\n' "$best"
 }
 
-realupgrade_commit_budget_s() { # <boot-gate-timeout-s>; the gate timeout plus 50%
+realupgrade_commit_budget_s() {
     [[ "$1" =~ ^[0-9]+$ ]] && printf '%s\n' $(($1 + $1 / 2))
 }
 
-realupgrade_legs_valid() { # <comma list>; soak needs the upgrade it follows
+realupgrade_legs_valid() {
     local list="$1" leg seen=""
     [ -n "$list" ] || return 1
     local IFS=,
@@ -35,36 +36,32 @@ realupgrade_legs_valid() { # <comma list>; soak needs the upgrade it follows
     case "$seen" in *,soak*) case "$seen" in *,upgrade*) ;; *) return 1 ;; esac ;; esac
 }
 
-realupgrade_leg_enabled() { # <leg> <comma list>
+realupgrade_leg_enabled() {
     case ",$2," in *",$1,"*) return 0 ;; *) return 1 ;; esac
 }
 
-realupgrade_stamp() { # <leg> <event>
+realupgrade_stamp() {
     printf 'realupgrade-leg %s epoch=%s leg=%s event=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date +%s)" "$1" "$2"
 }
 
-realupgrade_within_budget() { # <seconds-taken> <budget-s>
+realupgrade_within_budget() {
     [[ "$1" =~ ^[0-9]+$ ]] && [[ "$2" =~ ^[0-9]+$ ]] && [ "$1" -le "$2" ]
 }
 
-realupgrade_verdict_updated() { # <os_update json>
+realupgrade_verdict_updated() {
     printf '%s' "$1" | jq -e '.verdict.outcome == "updated"' >/dev/null 2>&1
 }
 
-realupgrade_no_offer_while_verifying() { # <os_update json>; a verifying slot is never offered a reboot
+realupgrade_no_offer_while_verifying() {
     printf '%s' "$1" | jq -e '.step != "reboot-pending"' >/dev/null 2>&1
 }
 
-realupgrade_fingerprint_same() { # <before> <after>
+realupgrade_fingerprint_same() {
     [ -n "$1" ] && [ "$1" = "$2" ]
 }
 
-realupgrade_sans_same() { # <before> <after>; order-insensitive
+realupgrade_sans_same() {
     [ -n "$1" ] && [ "$(printf '%s\n' "$1" | tr ',' '\n' | sort)" = "$(printf '%s\n' "$2" | tr ',' '\n' | sort)" ]
-}
-
-realupgrade_shares_grew() { # <before> <after>
-    [[ "$1" =~ ^[0-9]+$ ]] && [[ "$2" =~ ^[0-9]+$ ]] && [ "$2" -gt "$1" ]
 }
 
 realupgrade_seed_script() {
@@ -94,7 +91,7 @@ realupgrade_seed_unit() {
     printf '[Unit]\nDescription=realupgrade harness seed\nAfter=data.mount\nRequiresMountsFor=/data\n\n[Service]\nType=simple\nExecStart=/usr/local/sbin/pithead-realupgrade-seed\n\n[Install]\nWantedBy=multi-user.target\n'
 }
 
-realupgrade_patch_root() { # <root> <test-cert.pem> <base-url> <manifest-out>; adds trust, never replaces it
+realupgrade_patch_root() {
     local root="$1" cert="$2" base="$3" manifest="$4" ring="$1/etc/rauc/keyring.pem" before after
     [ -s "$ring" ] && [ -s "$cert" ] && [ -d "$root/etc/systemd/system" ] || return 1
     before=$(grep -c 'BEGIN CERTIFICATE' "$ring")
@@ -116,7 +113,7 @@ realupgrade_patch_root() { # <root> <test-cert.pem> <base-url> <manifest-out>; a
         keyring_certs_before: $before, keyring_certs_after: $after}' >"$manifest"
 }
 
-realupgrade_attach_and_patch() { # <image> <test-cert.pem> <base-url> <manifest-out>
+realupgrade_attach_and_patch() {
     local img="$1" loop mnt tries=0 rc=0 fstype
     loop=$(losetup -Pf --show "$img") || return 1
     while [ ! -e "${loop}p2" ] && [ "$tries" -lt 50 ]; do

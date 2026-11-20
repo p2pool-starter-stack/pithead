@@ -453,7 +453,7 @@ the configured test registry fail before the image build. Release builds do not 
   trusts only its baked RAUC keyring, so a scratch copy in the job workspace is patched offline
   with `losetup -Pf`: the dev signing certificate is appended to `/etc/rauc/keyring.pem` beside the
   release certificate, and a oneshot unit seeds the update-seam base URL and the chain-data
-  sentinels once `/data` exists. The planted paths and the certificate counts before and after go
+  sentinels once the stack checkout exists on `/data`. The planted paths and the certificate counts before and after go
   into the evidence file; the keyring is the only trust anchor the update path checks (it has no
   separate cosign key). If the copy will not mount or boot, the phase fails and reports; it never
   falls back to a nightly image. The release image has no SSH, so the guest is provisioned through
@@ -464,8 +464,10 @@ the configured test registry fail before the image build. Release builds do not 
   the boot-gate timeout plus 50% with no reboot offered while the new slot verifies. A 10-minute
   soak with one extra reboot then checks doctor, failed units, slot state, config, login, wallets,
   sentinels, TLS fingerprint and SANs, mDNS and the stratum client. The negative control hard-resets
-  the uncommitted slot until RAUC falls back and requires a `rolled_back` verdict with a recorded
-  cause and a still-saveable configuration. Every leg logs a timestamped `realupgrade-leg` line.
+  the uncommitted slot until RAUC falls back and requires a `rolled_back` verdict flagged `interrupted` whose blocking list names
+  "interrupted before the update was verified", and a still-saveable configuration. The typed `REBOOT`
+  confirmation is a dashboard UI gate with no API surface, so the phase posts the reboot action and
+  the Playwright suite owns the typing. Every leg logs a timestamped `realupgrade-leg` line.
   `--phase realupgrade-main` runs the upgrade and soak legs and `--phase realupgrade-negctl` the
   negative control, each on its own fresh guest, so the 240-minute cap can be met by two jobs;
   `PITHEAD_REALUPGRADE_LEGS` (comma list of `upgrade`, `soak`, `negctl`) selects legs for a local run.

@@ -4,7 +4,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/os/realupgrade-helpers.sh
 source "$HERE/realupgrade-helpers.sh"
 FAILS=0
-check() { # <name> <command...>
+check() {
     local name="$1"
     shift
     if "$@" >/dev/null 2>&1; then printf 'ok   %s\n' "$name"; else
@@ -12,7 +12,7 @@ check() { # <name> <command...>
         FAILS=$((FAILS + 1))
     fi
 }
-refuses() { # <name> <command...>
+refuses() {
     local name="$1"
     shift
     if "$@" >/dev/null 2>&1; then
@@ -20,7 +20,7 @@ refuses() { # <name> <command...>
         FAILS=$((FAILS + 1))
     else printf 'ok   %s\n' "$name"; fi
 }
-eq() { # <name> <want> <got>
+eq() {
     if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else
         printf 'FAIL %s: want "%s" got "%s"\n' "$1" "$2" "$3"
         FAILS=$((FAILS + 1))
@@ -71,13 +71,10 @@ refuses "a changed fingerprint fails" realupgrade_fingerprint_same AB:CD EF:01
 refuses "an unread fingerprint fails" realupgrade_fingerprint_same "" ""
 check "SANs compare order-insensitively" realupgrade_sans_same "DNS:a,IP:1.2.3.4,IP:fd00::1" "IP:fd00::1,DNS:a,IP:1.2.3.4"
 refuses "a dropped late ULA SAN fails" realupgrade_sans_same "DNS:a,IP:fd00::1" "DNS:a"
-check "growing share counts pass" realupgrade_shares_grew 3 4
-refuses "flat share counts fail" realupgrade_shares_grew 3 3
-refuses "unreadable share counts fail" realupgrade_shares_grew x 4
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-mkroot() { # <dir> with one release cert in the keyring
+mkroot() {
     mkdir -p "$1/etc/rauc" "$1/etc/systemd/system"
     openssl req -x509 -newkey rsa:2048 -nodes -keyout "$TMP/k.pem" -out "$1/etc/rauc/keyring.pem" -days 2 -subj "/CN=release" 2>/dev/null
 }
@@ -103,6 +100,7 @@ refuses "an empty test cert is refused" realupgrade_patch_root "$TMP/root2" "$TM
 eq "a refused patch leaves the keyring alone" 1 "$(grep -c 'BEGIN CERTIFICATE' "$TMP/root2/etc/rauc/keyring.pem")"
 
 RUN="$HERE/run.sh"
+check "the rollback cause needle is the text pithead-boot records" grep -Fq "$REALUPGRADE_ROLLBACK_CAUSE" "$HERE/../../os/overlay/pithead-boot"
 check "run.sh usage line lists the phase" grep -Fq '|crossupdate|realupgrade|realupgrade-main|realupgrade-negctl|stack|' "$RUN"
 check "run.sh dispatches the phase" grep -Fq 'realupgrade) _run_phase realupgrade phase_realupgrade ;;' "$RUN"
 check "run.sh dispatches the split phases to their own legs" bash -c 'grep -Fq "realupgrade-main) _run_phase realupgrade-main phase_realupgrade_main ;;" "$1" && grep -Fq "realupgrade-negctl) _run_phase realupgrade-negctl phase_realupgrade_negctl ;;" "$2"' _ "$RUN" "$RUN"

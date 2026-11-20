@@ -14,17 +14,22 @@ RU_SRV_PID=""
 RU_STRATUM_PID=""
 RU_TAG=""
 RU_EVIDENCE=""
+RU_WITH_SOAK=0
 
 _ru_state() { dashboard_curl -sSk -m 10 "https://$ip/api/state" 2>/dev/null; }
 _ru_os() { _ru_state | jq -c '.os_update // {}' 2>/dev/null; }
-_ru_cleanup() {
+_ru_stop_helpers() {
     [ -z "$RU_SRV_PID" ] || kill "$RU_SRV_PID" 2>/dev/null || true
     [ -z "$RU_STRATUM_PID" ] || kill "$RU_STRATUM_PID" 2>/dev/null || true
+    RU_SRV_PID="" RU_STRATUM_PID=""
+}
+_ru_cleanup() {
+    _ru_stop_helpers
     [ -z "$RU_WORK" ] || rm -rf "$RU_WORK"
-    RU_SRV_PID="" RU_STRATUM_PID="" RU_WORK=""
+    RU_WORK=""
 }
 
-_ru_fetch_old_image() { # <dir>; sets RU_OLD_IMG, RU_OLD_SHA, RU_TAG
+_ru_fetch_old_image() {
     local dir="$1" base tags asset
     local ver
     ver=$(tr -d ' \t\r\n' <VERSION)
@@ -46,12 +51,18 @@ _ru_fetch_old_image() { # <dir>; sets RU_OLD_IMG, RU_OLD_SHA, RU_TAG
     [ -s "$RU_OLD_IMG" ]
 }
 
-_ru_save_failure() { # <label>
+_ru_save_failure() {
     rollback_evidence "$SERIAL.realupgrade-$1"
+    {
+        printf '== api os_update\n'
+        _ru_os
+        printf '\n== api state\n'
+        _ru_state
+    } >>"$SERIAL.realupgrade-$1" 2>&1 || true
     info "realupgrade failure evidence kept at $SERIAL.realupgrade-$1 (pithead-boot journal, verdict, grubenv, doctor)"
 }
 
-_ru_wait_state() { # <seconds>; authenticated /api/state carrying os_update
+_ru_wait_state() {
     local deadline=$(($(date +%s) + $1))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         _ru_state | jq -e '.os_update.step' >/dev/null 2>&1 && return 0
@@ -60,7 +71,7 @@ _ru_wait_state() { # <seconds>; authenticated /api/state carrying os_update
     return 1
 }
 
-_ru_config_commit() { # <jq filter over the live config>
+_ru_config_commit() {
     local live proposed rid result
     live=$(sensitive_live_config) || return 1
     proposed=$(printf '%s' "$live" | jq -c "$1")
@@ -70,7 +81,7 @@ _ru_config_commit() { # <jq filter over the live config>
     printf '%s' "$result" | jq -c . 2>/dev/null || printf '%s\n' "$result"
 }
 
-_ru_tls_snapshot() { # prints "<sha256 fingerprint>|<comma SANs>"
+_ru_tls_snapshot() {
     local pem fp sans
     pem=$(echo | openssl s_client -connect "$ip:443" 2>/dev/null | openssl x509 2>/dev/null) || return 1
     fp=$(printf '%s' "$pem" | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2)
@@ -78,7 +89,7 @@ _ru_tls_snapshot() { # prints "<sha256 fingerprint>|<comma SANs>"
     printf '%s|%s' "$fp" "$sans"
 }
 
-_ru_start_stratum_client() { # <host> <port> <log>
+_ru_start_stratum_client() {
     (
         while :; do
             if exec 9<>"/dev/tcp/$1/$2" 2>/dev/null; then
@@ -94,8 +105,8 @@ _ru_start_stratum_client() { # <host> <port> <log>
     RU_STRATUM_PID=$!
 }
 
-_ru_boot_aged_guest() { # sets RU_BUNDLE, RU_SRV, leaves the guest provisioned, aged and serving the seam
-    local bundle host_addr size cfg_out rc
+_ru_prepare() {
+    local bundle host_addr size
     RU_WORK=$(mktemp -d "${TMPDIR:-/tmp}/realupgrade.XXXXXX") || return 1
     RU_EVIDENCE="$SERIAL.realupgrade-evidence"
     : >"$RU_EVIDENCE"
@@ -127,10 +138,6 @@ _ru_boot_aged_guest() { # sets RU_BUNDLE, RU_SRV, leaves the guest provisioned, 
     host_addr=$(ip -4 -o addr show virbr0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
     [ -n "$host_addr" ] || host_addr="192.168.122.1"
     RU_BASE="http://$host_addr:$RU_PORT"
-    RU_SRV_PID=$(_serve_update_dir "$RU_SRV" "$RU_PORT") || {
-        bad "the bench release server never answered on :$RU_PORT (harness, not product)"
-        return 1
-    }
 
     realupgrade_stamp setup patch-old-image
     realupgrade_attach_and_patch "$RU_OLD_IMG" os/rauc/certs/cert.pem "$RU_BASE" "$RU_WORK/patch-manifest.json" || {
@@ -139,6 +146,14 @@ _ru_boot_aged_guest() { # sets RU_BUNDLE, RU_SRV, leaves the guest provisioned, 
     }
     cat "$RU_WORK/patch-manifest.json" >>"$RU_EVIDENCE"
     ok "scratch copy patched: test trust added beside the release keyring; planted paths recorded ($(jq -c .planted "$RU_WORK/patch-manifest.json"))"
+}
+
+_ru_boot_aged_guest() {
+    local cfg_out rc
+    RU_SRV_PID=$(_serve_update_dir "$RU_SRV" "$RU_PORT") || {
+        bad "the bench release server never answered on :$RU_PORT (harness, not product)"
+        return 1
+    }
 
     realupgrade_stamp setup boot-old-guest
     _vm_boot_disk "$RU_OLD_IMG" || {
@@ -170,7 +185,7 @@ _ru_boot_aged_guest() { # sets RU_BUNDLE, RU_SRV, leaves the guest provisioned, 
     realupgrade_stamp setup aged-ready
 }
 
-_ru_install_candidate() { # <leg>; check, download, verify, install through the dashboard; leaves reboot-pending
+_ru_install_candidate() {
     local leg="$1" out
     out=$(_os_step '{"action":"check"}' 120)
     [ "$(printf '%s' "$out" | jq -r '.status')" = "checked" ] && [ "$(printf '%s' "$out" | jq -r '.version')" = "$RU_NEW_TAG" ] || {
@@ -199,7 +214,7 @@ _ru_install_candidate() { # <leg>; check, download, verify, install through the 
     ok "$leg: check, download, verify and install completed through the dashboard; reboot-pending"
 }
 
-_ru_order_reboot() { # <leg>; the ordered reboot, then wait for the candidate (SSH-reachable debug build)
+_ru_order_reboot() {
     local t0
     t0=$(date +%s)
     RU_REBOOT_T0="$t0"
@@ -254,7 +269,7 @@ _ru_upgrade_leg() {
     *B_OK=1*B_TRY=0* | *B_TRY=0*B_OK=1*) ok "upgrade: the candidate slot is committed in grubenv" ;;
     *) bad "upgrade: grubenv does not show a committed slot" ;;
     esac
-    [ "$(_boot_id)" = "$RU_BOOT_ID" ] && ok "upgrade: no reboot other than the ordered one before the commit" ||
+    [ -n "$RU_BOOT_ID" ] && [ "$(_boot_id)" = "$RU_BOOT_ID" ] && ok "upgrade: no reboot other than the ordered one before the commit" ||
         bad "upgrade: the guest rebooted again between the ordered reboot and the commit"
     realupgrade_stamp upgrade finished
 }
@@ -296,6 +311,8 @@ _ru_soak_leg() {
     sensitive_preview "$(dashboard_config_body "$(printf '%s' "$cfg" | jq -c .)")" &&
         [ "$(printf '%s' "$APPROVAL_PREVIEW" | jq -r '.status')" = "previewed" ] && ok "soak: the config is still saveable (a no-op preview is accepted)" ||
         bad "soak: the config is no longer saveable ($(printf '%s' "$APPROVAL_PREVIEW" | cut -c1-200))"
+    [ "$(printf '%s' "$cfg" | jq -r '.monero.wallet_address')" = "$HARNESS_WALLET" ] && [ "$(printf '%s' "$cfg" | jq -r '.tari.wallet_address')" = "$HARNESS_TARI" ] &&
+        ok "soak: the public-address-only wallets are unchanged" || bad "soak: a wallet address changed across the update"
     user_ok=$(dashboard_curl -sSk -m 8 -o /dev/null -w '%{http_code}' "https://$ip/api/state")
     [ "$user_ok" = 200 ] && ok "soak: the changed dashboard password still authenticates" || bad "soak: the changed password no longer authenticates (HTTP $user_ok)"
     sentinels=$(_ssh "cat /data/pithead/data/realupgrade-seed.json" 2>/dev/null)
@@ -311,12 +328,7 @@ _ru_soak_leg() {
     else
         bad "soak: the stratum client is not connected (log: $(tail -n3 "$RU_WORK/stratum.log" 2>/dev/null | tr '\n' ';'))"
     fi
-    _ru_save_failure_if_red soak
     realupgrade_stamp soak finished
-}
-
-_ru_save_failure_if_red() { # <label>; uses the FAIL tally recorded at leg start
-    [ "$FAIL" -le "${RU_FAIL_AT_START:-0}" ] || _ru_save_failure "$1"
 }
 
 _ru_negctl_leg() {
@@ -345,12 +357,12 @@ _ru_negctl_leg() {
         fi
         _ru_wait_state 900 || continue
         os_json=$(_ru_os)
-        printf '%s' "$os_json" | jq -e '.verdict.outcome == "rolled_back"' >/dev/null 2>&1 && {
+        printf '%s' "$os_json" | jq -e '.verdict.outcome == "rolled_back" and .verdict.interrupted == true' >/dev/null 2>&1 && {
             verdict_ok=1
             break
         }
     done
-    if [ "$verdict_ok" = 1 ] && out=$(rollback_verdict_check "$os_json" "${REALUPGRADE_ROLLBACK_CAUSE:-}"); then
+    if [ "$verdict_ok" = 1 ] && out=$(rollback_verdict_check "$os_json" "$REALUPGRADE_ROLLBACK_CAUSE"); then
         ok "negctl: a hard reset of the uncommitted slot rolled back with a recorded cause ($(printf '%s' "$os_json" | jq -c '.verdict.blocking' | cut -c1-200))"
     else
         bad "negctl: no rolled_back verdict with a blocking cause after $n hard resets (${out:-no verdict}; last: $(printf '%s' "$os_json" | jq -c '.verdict // .step' 2>/dev/null | cut -c1-200))"
@@ -363,22 +375,38 @@ _ru_negctl_leg() {
     realupgrade_stamp negctl finished
 }
 
-_ru_run() { # <comma list of legs>
+_ru_leg_run() {
+    local before=$FAIL
+    _ru_boot_aged_guest && "$1"
+    [ "$FAIL" -le "$before" ] || _ru_save_failure "$1"
+    _ru_stop_helpers
+}
+
+_ru_run() {
     local legs="$1"
     info "phase: realupgrade, legs $legs (a published appliance image aged, then upgraded through the dashboard to the candidate built from HEAD)"
     realupgrade_legs_valid "$legs" || {
         bad "realupgrade legs '$legs' is not a comma list of upgrade, soak, negctl (soak needs upgrade)"
         return
     }
-    RU_FAIL_AT_START=$FAIL
-    if realupgrade_leg_enabled upgrade "$legs"; then
-        _ru_boot_aged_guest && _ru_upgrade_leg && realupgrade_leg_enabled soak "$legs" && _ru_soak_leg
+    _ru_prepare || {
         _ru_cleanup
+        return
+    }
+    if realupgrade_leg_enabled upgrade "$legs"; then
+        RU_WITH_SOAK=0
+        realupgrade_leg_enabled soak "$legs" && RU_WITH_SOAK=1
+        _ru_leg_run _ru_upgrade_and_soak
     fi
     if realupgrade_leg_enabled negctl "$legs"; then
-        _ru_boot_aged_guest && _ru_negctl_leg
-        _ru_cleanup
+        _ru_leg_run _ru_negctl_leg
     fi
+    _ru_cleanup
+}
+
+_ru_upgrade_and_soak() {
+    _ru_upgrade_leg || return 1
+    [ "$RU_WITH_SOAK" = 1 ] && _ru_soak_leg
 }
 
 phase_realupgrade() { _ru_run "${PITHEAD_REALUPGRADE_LEGS:-$REALUPGRADE_LEGS_DEFAULT}"; }

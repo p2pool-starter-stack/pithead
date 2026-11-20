@@ -450,7 +450,8 @@ cap, and so does the boot group with provision.
   also trusts the test-signed candidate (the release keyring stays; only that scratch copy is
   patched), ages it through the dashboard, upgrades it through the dashboard to the exact-SHA
   candidate, then soaks for 10 minutes with one extra reboot and runs the hard-reset negative
-  control. It is one job in the 240-minute window; if a run shows it needs more, submit
+  control. It is one job aimed at the 240-minute window (the candidate is built once; the guest is
+  provisioned twice, for the upgrade/soak and for the negative control); if a measured run needs more, submit
   `realupgrade-main` (upgrade and soak) and `realupgrade-negctl` (the negative control) as two
   jobs, which makes nine KVM jobs and nine payloads in this recipe.
 
