@@ -148,207 +148,73 @@ bundle_redact_log() {
         -e "$xmr_shape"
 }
 
-stack_support_bundle() {
-    _reject_options support-bundle "$@"
-    local ts out tmp rc=0
-    ts=$(date -u +%Y%m%dT%H%M%SZ)
-    out="$PWD/support-bundle-$ts.tar.gz"
-    tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"; exit 130' INT TERM HUP
-    mkdir -p "$tmp/bundle/logs"
+bundle_support_journal_unreadable() {
+    local out
+    out=$(journalctl --system -n 1 --no-pager 2>&1 </dev/null) || {
+        printf '%s' "$out" | tr '\n' ' ' | cut -c1-200
+        return 0
+    }
+    case "$out" in
+    *"insufficient permissions"* | *"Permission denied"* | *"not seeing messages from other users and the system"*)
+        printf '%s' "$out" | tr '\n' ' ' | cut -c1-200
+        return 0
+        ;;
+    esac
+    return 1
+}
 
-    log "Collecting diagnostics (read-only)..."
-    {
-        echo "pithead ${PITHEAD_VERSION:-unknown}"
-        uname -a
-        echo
-        df -h 2>/dev/null || true
-        echo
-        free -h 2>/dev/null || true
-    } >"$tmp/bundle/host.txt" 2>&1
-    doctor_json >"$tmp/bundle/doctor.json" 2>"$tmp/bundle/doctor.txt" || rc=$?
-    [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle."
-
-    # Masked config: the same jq walk the dashboard prefill uses; every set secret leaf becomes
-    # {"__secret__": true}. Rendered into the scratch dir, never into the live control spool.
+bundle_support_diy_collect() {
+    local tmp="$1" cap="$2" since="$3" until="$4" juntil="$5" engine rc=0 names name runner=()
+    command -v timeout >/dev/null 2>&1 && runner=(timeout "${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}")
+    mkdir -p "$tmp/bundle/containers"
+    doctor_json >"$tmp/doctor.raw.json" 2>"$tmp/doctor.raw.txt" || rc=$?
+    bundle_redact_log <"$tmp/doctor.raw.json" >"$tmp/bundle/doctor.json"
+    bundle_redact_log <"$tmp/doctor.raw.txt" >"$tmp/bundle/doctor.txt"
+    rm -f "$tmp/doctor.raw.json" "$tmp/doctor.raw.txt"
+    [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle." >&2
     if [ -f "$CONFIG_FILE" ]; then
-        render_masked_config "$tmp/scratch" 2>/dev/null || true
+        [ -f "$tmp/scratch/masked/config.json" ] || render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
         [ -f "$tmp/scratch/masked/config.json" ] &&
             bundle_mask_config <"$tmp/scratch/masked/config.json" >"$tmp/bundle/config.masked.json"
     fi
-    # .env with secret-bearing values stripped by the survivor allowlist above; structure (ports,
-    # dirs, modes) stays — that is what support actually needs.
     if [ -f .env ]; then
         bundle_redact_env <.env >"$tmp/bundle/env.redacted" 2>/dev/null || true
     fi
-
-    # Container state + recent logs, when an engine is reachable. bundle_redact_log guards the
-    # launch lines services echo — the credential flags, the wallet addresses and the service
-    # onion — plus any Monero address and any onion in body text (#1750).
-    if docker compose ps >"$tmp/bundle/compose-ps.txt" 2>/dev/null; then
-        local svc
-        for svc in $(docker compose ps --all --format '{{.Service}}' 2>/dev/null); do
-            docker compose logs --no-color --tail 200 "$svc" 2>/dev/null |
-                bundle_redact_log >"$tmp/bundle/logs/$svc.log" || true
-        done
+    engine=$(container_engine)
+    if command -v "$engine" >/dev/null 2>&1 &&
+        names=$("${runner[@]}" "$engine" compose ps --all --format '{{.Name}}' 2>"$tmp/engine.err" </dev/null); then
+        "${runner[@]}" "$engine" compose ps --all </dev/null 2>&1 | bundle_redact_log >"$tmp/bundle/compose-ps.txt" || true
+        while read -r name; do
+            [ -n "$name" ] || continue
+            bundle_support_capture "$tmp" "containers/$name.log" "$cap" 1 0 "$since" "$until" \
+                sh -c 'exec "$1" logs --timestamps --since "$2" --until "$3" "$4" 2>&1' sh "$engine" "$since" "$juntil" "$name" || true
+        done <<<"$names"
     else
         echo "container engine not reachable — no container state collected" >"$tmp/bundle/compose-ps.txt"
+        bundle_support_step_fail "$tmp" containers failed "container engine not reachable: $(head -n1 "$tmp/engine.err" 2>/dev/null || echo "$engine not found")"
     fi
+}
 
-    tar -czf "$tmp/bundle.tar.gz" -C "$tmp" bundle || {
-        rm -rf "$tmp"
+stack_support_bundle() {
+    local usage="Usage: pithead support-bundle [--hours N] [--since TIME] [--until TIME]" out outdir arch
+    bundle_support_cli_window "$usage" "$@"
+    outdir=$(mktemp -d)
+    trap 'rm -rf "$outdir"; exit 130' INT TERM HUP
+    log "Collecting diagnostics (read-only)..."
+    # shellcheck disable=SC2086
+    arch=$(bundle_support_collect "$outdir" $BUNDLE_WINDOW) || {
+        rm -rf "$outdir"
         trap - INT TERM HUP
         return 1
     }
-    chmod 600 "$tmp/bundle.tar.gz"
-    mv -f "$tmp/bundle.tar.gz" "$out" || {
-        rm -rf "$tmp"
+    out="$PWD/$(basename "$arch")"
+    mv -f "$arch" "$out" || {
+        rm -rf "$outdir"
         trap - INT TERM HUP
         return 1
     }
-    rm -rf "$tmp"
+    rm -rf "$outdir"
     trap - INT TERM HUP
     log "Support bundle written: $out"
-    log "Secrets are redacted at collection, but REVIEW the contents before sharing: tar -tzf $(basename "$out")"
-}
-
-readonly PITHEAD_SUPPORT_DEFAULT_HOURS=72
-readonly PITHEAD_SUPPORT_MAX_HOURS=168
-readonly PITHEAD_SUPPORT_UNITS="pithead-boot.service pithead-boot-version.service pithead-address-watch.service pithead-miner-recovery.service dashboard.service caddy.service tor.service monerod.service tari.service p2pool.service xmrig-proxy.service docker-proxy.service docker-control.service xmrig.service rauc.service"
-
-bundle_support_clamp_hours() {
-    local h="$1"
-    case "$h" in
-    '' | *[!0-9]*)
-        printf '%s' "$PITHEAD_SUPPORT_DEFAULT_HOURS"
-        return 0
-        ;;
-    *[!0]*)
-        h=${h#"${h%%[!0]*}"}
-        ;;
-    *) h=0 ;;
-    esac
-    [ "${#h}" -gt "${#PITHEAD_SUPPORT_MAX_HOURS}" ] && h="$PITHEAD_SUPPORT_MAX_HOURS"
-    [ "$h" -lt 1 ] && h="$PITHEAD_SUPPORT_DEFAULT_HOURS"
-    [ "$h" -gt "$PITHEAD_SUPPORT_MAX_HOURS" ] && h="$PITHEAD_SUPPORT_MAX_HOURS"
-    printf '%s' "$h"
-}
-
-bundle_support_collect() {
-    local outdir="$1" hours="$2" ts out tmp unit db total rc=0
-    local unit_cap="${PITHEAD_SUPPORT_MAX_BYTES_PER_UNIT:-2097152}"
-    local total_cap="${PITHEAD_SUPPORT_MAX_TOTAL_BYTES:-67108864}"
-    mkdir -p "$outdir" || return 1
-    chmod 700 "$outdir" 2>/dev/null || true
-    ts=$(date -u +%Y%m%dT%H%M%SZ)
-    out="$outdir/support-bundle-$ts.tar.gz"
-    tmp=$(mktemp -d "$outdir/.support.XXXXXXXX") || return 1
-    trap 'rm -rf "$tmp"; exit 130' INT TERM HUP
-    mkdir -p "$tmp/bundle/logs"
-
-    {
-        echo "window_hours=$hours"
-        echo "window_start=$(date -u -d "$hours hours ago" +%FT%TZ 2>/dev/null || date -u +%FT%TZ)"
-        echo "collected=$(date -u +%FT%TZ)"
-        echo "pithead ${PITHEAD_VERSION:-unknown}"
-        uname -a
-        echo
-        [ -r /etc/os-release ] && cat /etc/os-release
-        echo
-        df -h / /data 2>/dev/null
-        echo
-        free -h 2>/dev/null
-    } >"$tmp/bundle/host.txt" 2>&1
-
-    if command -v journalctl >/dev/null 2>&1; then
-        for unit in $PITHEAD_SUPPORT_UNITS; do
-            journalctl -u "$unit" --since "$hours hours ago" --no-pager 2>/dev/null |
-                bundle_redact_log | tail -c "$unit_cap" >"$tmp/bundle/logs/$unit.log" || true
-        done
-        grep -Ei 'bootstrap|circuit' "$tmp/bundle/logs/tor.service.log" >"$tmp/bundle/tor.txt" 2>/dev/null ||
-            printf 'no tor bootstrap or circuit lines in the window\n' >"$tmp/bundle/tor.txt"
-    else
-        printf 'journalctl not present — no journal entries collected\n' >"$tmp/bundle/journal.txt"
-    fi
-
-    {
-        if command -v rauc >/dev/null 2>&1; then
-            rauc status 2>/dev/null | bundle_redact_log || echo "rauc status failed"
-        else
-            echo "rauc not present"
-        fi
-    } >"$tmp/bundle/rauc.txt" 2>&1
-
-    if [ -n "${CONFIG_FILE:-}" ] && [ -f "$CONFIG_FILE" ]; then
-        render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
-        if [ -f "$tmp/scratch/masked/config.json" ]; then
-            bundle_mask_config <"$tmp/scratch/masked/config.json" |
-                jq 'def j: if type=="object" then with_entries(.value |= j) elif type=="array" then map(j) else null end; j' \
-                    >"$tmp/bundle/config.shape.json" 2>/dev/null || true
-        fi
-    fi
-
-    db="${DASHBOARD_DATA_DIR:-}/mining_data.db"
-    [ -f "$db" ] || db="/data/pithead/dashboard/mining_data.db"
-    [ -f "$db" ] || db="/data/mining_data.db"
-    if command -v python3 >/dev/null 2>&1 && [ -f "$db" ]; then
-        PITHEAD_SUPPORT_DB="$db" PITHEAD_SUPPORT_HOURS="$hours" python3 -I -c '
-import json, os, sqlite3, sys, time
-db = os.environ["PITHEAD_SUPPORT_DB"]
-since = time.time() - float(os.environ["PITHEAD_SUPPORT_HOURS"]) * 3600
-try:
-    conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True)
-    conn.row_factory = sqlite3.Row
-    out = {}
-    for table, tcol, cols in (
-        ("history", "timestamp", "timestamp, v, v_p2pool, v_xvb"),
-        ("events", "ts", "ts, type, detail"),
-    ):
-        try:
-            rows = conn.execute(
-                "SELECT %s FROM (SELECT %s FROM %s WHERE %s >= ? ORDER BY %s DESC LIMIT 5000) ORDER BY %s ASC"
-                % (cols, cols, table, tcol, tcol, tcol),
-                (since,),
-            ).fetchall()
-            out[table] = [dict(r) for r in rows]
-        except sqlite3.Error:
-            out[table] = None
-    print(json.dumps(out))
-except sqlite3.Error:
-    sys.exit(1)
-' 2>/dev/null | bundle_redact_log >"$tmp/bundle/dashboard.history.json" || true
-    fi
-
-    total=$(du -sk "$tmp/bundle" 2>/dev/null | awk '{print $1 * 1024}')
-    [ -n "$total" ] || total=0
-    if [ "$total" -gt "$total_cap" ]; then
-        rm -rf "$tmp"
-        trap - INT TERM HUP
-        return 1
-    fi
-
-    (umask 077 && tar -czf "$tmp/bundle.tar.gz" -C "$tmp" bundle) || rc=$?
-    [ "$rc" -eq 0 ] && chmod 600 "$tmp/bundle.tar.gz" && mv -f "$tmp/bundle.tar.gz" "$out" || rc=1
-    rm -rf "$tmp"
-    trap - INT TERM HUP
-    [ "$rc" -eq 0 ] || return 1
-    printf '%s\n' "$out"
-}
-
-recovery_bundle() {
-    local hours="$PITHEAD_SUPPORT_DEFAULT_HOURS" outdir arch
-    case "${1:-}" in
-    "") ;;
-    --hours)
-        [ "$#" -le 2 ] || error "Usage: pithead recovery-bundle [--hours N]"
-        hours=$(bundle_support_clamp_hours "${2:-}")
-        ;;
-    *) error "Usage: pithead recovery-bundle [--hours N]" ;;
-    esac
-    command -v journalctl >/dev/null 2>&1 ||
-        error "recovery-bundle needs the appliance journal. On a host with a container engine use: $0 support-bundle"
-    outdir="${PITHEAD_RECOVERY_BUNDLE_DIR:-/data/pithead/support-bundles}"
-    arch=$(bundle_support_collect "$outdir" "$hours") ||
-        error "Could not collect a support bundle — nothing was written."
-    log "Support bundle written: $arch"
+    log "Secrets are redacted at collection, but REVIEW the contents before sharing: unzip -l $(basename "$out")"
 }

@@ -16,7 +16,9 @@ for fault in none no-rig rearm no-tmpdir fixture apply health inspect collect re
         export TMPDIR="${TMPDIR:-${HOME}}"
         sandbox=$(mktemp -d "$TMPDIR/bundle-selftest.XXXXXX")
         trap 'rm -rf "$sandbox"' EXIT
-        mkdir "$sandbox/stack" "$sandbox/scratch"
+        mkdir "$sandbox/stack" "$sandbox/scratch" "$sandbox/bin"
+        printf '#!/bin/sh\nexit 0\n' >"$sandbox/bin/docker"
+        chmod +x "$sandbox/bin/docker"
         export TMPDIR="$sandbox/scratch"
         IT_REMOTE_DIR="$sandbox/stack"
         if [ "$fault" = no-tmpdir ]; then
@@ -28,12 +30,11 @@ for fault in none no-rig rearm no-tmpdir fixture apply health inspect collect re
         cat >"$IT_REMOTE_DIR/pithead" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
-python3 - "$fault" <<'PRODUCER'
-import io
+python3 - "$fault" "$3" "$5" <<'PRODUCER'
 import json
 import os
 import sys
-import tarfile
+import zipfile
 from pathlib import Path
 config = json.loads(Path("config.json").read_text())
 for path in (("dashboard", "auth", "password"), ("p2pool", "stratum_password"), ("telegram", "bot_token")):
@@ -48,19 +49,22 @@ files = {
     "config.masked.json": json.dumps(config),
     "env.redacted": "PROXY_STRATUM_PASSWORD=[redacted]\nTELEGRAM_BOT_TOKEN=[redacted]\nDASHBOARD_AUTH_HASH_B64=[redacted]\n",
     "compose-ps.txt": "dashboard running",
-    "logs/dashboard.log": "service started",
+    "containers/stack-dashboard-1.log": "seed --rpc-login [redacted]",
 }
+since, until = sys.argv[2:4]
+files["manifest.json"] = json.dumps({
+    "window": {"requested": {"since": since, "until": until}},
+    "failures": [],
+    "files": [{"path": "containers/stack-dashboard-1.log", "state": "ok", "window": {"since": since, "until": until}}],
+})
 if sys.argv[1] == "inspect":
     files["host.txt"] = ""
-with tarfile.open("support-bundle-fixture.tar.gz", "w:gz") as archive:
+with zipfile.ZipFile("support-bundle-fixture.zip", "w") as archive:
     for name, value in files.items():
-        content = value.encode()
-        member = tarfile.TarInfo("bundle/" + name)
-        member.size = len(content)
-        archive.addfile(member, io.BytesIO(content))
+        archive.writestr("bundle/" + name, value)
 if sys.argv[1] == "collect":
     sys.exit(1)
-os.chmod("support-bundle-fixture.tar.gz", 0o600)
+os.chmod("support-bundle-fixture.zip", 0o600)
 PRODUCER
 STUB
         chmod +x "$IT_REMOTE_DIR/pithead"
@@ -74,7 +78,7 @@ STUB
             elif [[ "$1" == 'rm -f '* ]]; then
                 printf '%s\n' "$1" >"$sandbox/cleanup"
             fi
-            (cd "$IT_REMOTE_DIR" && bash -c "$1")
+            (cd "$IT_REMOTE_DIR" && PATH="$sandbox/bin:$PATH" bash -c "$1")
         }
         upgrade_secret_fingerprints() { grep '^PROXY_STRATUM_PASSWORD=' "$IT_REMOTE_DIR/.env" | openssl dgst -sha256; }
         push_config() {
@@ -115,7 +119,7 @@ STUB
         run_support_bundle || result=$?
         [ "$restored" -eq 1 ] || exit 1
         [ "$applied" -ge 1 ] || exit 1
-        [ ! -e "$IT_REMOTE_DIR/support-bundle-fixture.tar.gz" ] || exit 1
+        [ ! -e "$IT_REMOTE_DIR/support-bundle-fixture.zip" ] || exit 1
         [ -z "$(find "$sandbox/scratch" -mindepth 1 -print)" ] || exit 1
         if [ "$fault" = no-tmpdir ]; then
             snapshot=$(sed -n 's#^rm -f \(/tmp/support-bundle\.[^/]*\)/config\.json .*#\1#p' "$sandbox/cleanup")

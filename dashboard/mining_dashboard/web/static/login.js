@@ -27,7 +27,12 @@ form.addEventListener("submit", async (event) => {
     }
     if (response.status === 401) fail("Wrong username or password.");
     else if (response.status === 429) fail("Too many attempts. Wait a minute and try again.");
-    else fail("Sign-in is unavailable right now. Try again shortly.");
+    else {
+      const body = await response.json().catch(() => null);
+      fail(
+        body && body.error ? body.error : "Sign-in is unavailable right now. Try again shortly.",
+      );
+    }
   } catch {
     fail("Could not reach the dashboard. Check your connection and try again.");
   } finally {

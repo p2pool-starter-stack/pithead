@@ -3,8 +3,6 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|power|all]
-#
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
 #   update  build a v2 bundle; install, boot the spare, auto-rollback uncommitted, commit, and
@@ -146,6 +144,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/setup-failure-recovery-leg.sh"
 # shellcheck source=tests/os/control-runner-recovery-leg.sh
 . "$SCRIPT_DIR/control-runner-recovery-leg.sh"
+# shellcheck source=tests/os/appliance-support-bundle-leg.sh
+. "$SCRIPT_DIR/appliance-support-bundle-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
 # shellcheck source=tests/os/wizard-console-leg.sh
@@ -189,7 +189,8 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
+        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|p2pool-heal|power|all]\n'
+        sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -247,6 +248,7 @@ source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
 source "$SCRIPT_DIR/phases/pool-heal.sh" || exit $?
 # shellcheck source=tests/os/phases/power.sh
 source "$SCRIPT_DIR/phases/power.sh" || exit $?
+require_owner_payouts
 require_host
 require_clean_bench
 if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then

@@ -83,6 +83,19 @@ image builds name the base's openssl and musl packages in their apk upgrade list
 builds name packages such as apt and zlib1g in their install lists, so an installable fix lands on
 the next rebuild without an ignore (#1438, #3923, #3929).
 
+The Tor image pins its apk package by `ARG TOR_VERSION` in `build/tor/Dockerfile`, because Alpine's
+repository would otherwise change the Tor in the image between builds with no commit here (#4125): the
+0.4.9.17 bump changed state-file semantics and turned the `tor-heal` proof red. `apk add` refuses a pin
+the repository no longer carries, and the build then runs `tor --version` and fails unless it reports the
+pinned version. The Dockerfile also names the base's openssl and musl libs in `--upgrade` and installs
+netcat for the bootstrap healthcheck; it deliberately omits `xxd`, which busybox already provides (#1372).
+Alpine moves the pin: `.github/workflows/tor-bump.yml` runs daily, reads the `tor` package for the pinned
+Alpine branch, and when Alpine carries a newer one opens a `dependencies`-labelled PR against `develop`
+that edits only the pin (`scripts/watch/tor-bump.sh`, #4158) — the apk package no Dependabot ecosystem
+can see. Every bump, from the watcher or by hand, re-runs the `tier4-kvm` `tor-heal` phase before it
+merges: it is the live proof of Tor's state-file behaviour. The release notes name the shipped Tor in
+the `tor` pin row.
+
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
 ([#1377](https://github.com/p2pool-starter-stack/pithead/issues/1377)).

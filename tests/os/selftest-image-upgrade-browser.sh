@@ -16,6 +16,18 @@ env -u TMPDIR PATH="$host_test_tmp:/usr/bin:/bin" \
     python3 "$HERE/image-upgrade-browser-host.py" --self-test
 rm -rf "$host_test_tmp"
 trap - EXIT
+browser_image=$(sed -nE \
+    's#^[[:space:]]*"mcr\.microsoft\.com/playwright:(v[0-9]+\.[0-9]+\.[0-9]+-noble)@sha256:[0-9a-f]{64}",?[[:space:]]*$#\1#p' \
+    "$HERE/image-upgrade-browser-host.py")
+browser_image=${browser_image#v}
+browser_image=${browser_image%-noble}
+locked_image=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).packages["node_modules/@playwright/test"].version' \
+    "$HERE/../../dashboard/tests/browser/package-lock.json")
+[ "$browser_image" = "$locked_image" ] || {
+    printf 'selftest-image-upgrade-browser: browser image must be pinned once to v%s-noble@sha256:<digest>, found v%s\n' \
+        "$locked_image" "$browser_image" >&2
+    exit 1
+}
 grep -Eq 'ignoreHTTPSErrors|ignore-certificate-errors|Security\.setIgnoreCertificateErrors' "$HERE/image-upgrade-browser.mjs" && exit 1
 grep -Eq 'image-upgrade-browser\.mjs.*DASH_(USER|PASS)' "$HERE/image-upgrade-certificate-leg.sh" && exit 1
 grep -Fq "python3 \"\$SCRIPT_DIR/image-upgrade-browser-host.py\"" "$HERE/image-upgrade-certificate-leg.sh"
@@ -26,6 +38,11 @@ for required in \
     'const credentials = JSON.parse' \
     'assert.rejects(page.goto(origin), /ERR_CERT_AUTHORITY_INVALID/)' \
     'page.locator("#proceed-link").click()' \
+    'page.goto(`${origin}/login`)' \
+    'page.fill("#login-username", credentials.username)' \
+    'page.fill("#login-password", credentials.password)' \
+    'name: "Sign in"' \
+    'await page.waitForURL((url) => url.pathname !== "/login")' \
     'name: "Check now"' \
     'name: "Download"' \
     'name: "Install"' \

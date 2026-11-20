@@ -323,8 +323,7 @@ upg_sig_order=$(
     render_env() { :; }
     mv() { :; }
     inject_service_configs() { :; }
-    generate_caddyfile() { :; }
-    provision_control_runner() { :; }
+    generate_caddyfile() { :; } && provision_control_runner() { :; }
     migrate_compose_project() { :; }
     is_source_checkout() { return 1; }
     log() { :; }
@@ -377,7 +376,7 @@ apply_order=$(
     env_changed_keys() { :; }
     mv() { :; }
     inject_service_configs() { :; }
-    generate_caddyfile() { :; }
+    generate_caddyfile() { :; } && provision_control_runner() { :; }
     migrate_compose_project() { :; }
     announce_dashboard_url() { :; }
     log() { :; }

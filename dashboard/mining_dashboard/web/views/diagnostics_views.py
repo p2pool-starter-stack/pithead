@@ -160,6 +160,7 @@ async def handle_tor_reset(request):
 async def handle_support_bundle(request):
     _require_control_header(request)
     hours = None
+    window = {}
     if request.can_read_body:
         try:
             body = await request.json()
@@ -171,9 +172,15 @@ async def handle_support_bundle(request):
             hours = body.get("hours")
             if isinstance(hours, bool) or not isinstance(hours, int) or hours < 1:
                 raise web.HTTPBadRequest(text="'hours' must be a positive integer.")
+        for key in ("since", "until"):
+            if key in body:
+                value = body[key]
+                if not isinstance(value, str) or not 0 < len(value) <= 40:
+                    raise web.HTTPBadRequest(text=f"'{key}' must be an RFC 3339 time string.")
+                window[key] = value
     try:
         rid = diagnostics_service.submit_support_bundle(
-            hours, request.headers.get("X-Auth-User", "")
+            hours, request.headers.get("X-Auth-User", ""), **window
         )
     except Exception:
         logger.exception("Error submitting support-bundle request")
@@ -181,9 +188,55 @@ async def handle_support_bundle(request):
     return web.json_response({"id": rid, "status": "pending"}, status=202)
 
 
-def control_routes():
+async def handle_support_range(request):
+    _require_control_header(request)
+    try:
+        rid = diagnostics_service.submit_support_range(request.headers.get("X-Auth-User", ""))
+    except Exception:
+        logger.exception("Error submitting support-bundle-range request")
+        return web.json_response({"error": "Failed to submit the request."}, status=500)
+    return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
+SUPPORT_RESULT_KEYS = (
+    "status",
+    "error",
+    "archive",
+    "since",
+    "until",
+    "hours",
+    "oldest",
+    "effective_since",
+    "effective_until",
+    "journal_short",
+    "ts",
+)
+
+
+async def handle_support_result(request):
+    try:
+        res = control_service.result(request.query.get("id", ""))
+    except ValueError:
+        raise web.HTTPBadRequest(text="'id' must be a UUID.") from None
+    if res is None:
+        return web.json_response({"status": "pending"}, status=202)
+    return web.json_response({k: res[k] for k in SUPPORT_RESULT_KEYS if k in res})
+
+
+def support_routes():
     from mining_dashboard.web.views import download_views
 
+    return [
+        web.post("/api/control/support-bundle", handle_support_bundle),
+        web.post("/api/control/support-bundle-range", handle_support_range),
+        web.get("/api/control/support-bundle-result", handle_support_result),
+        web.get(
+            "/api/control/support-bundle-download", download_views.handle_support_bundle_download
+        ),
+    ]
+
+
+def control_routes():
     return [
         web.post("/api/control/diag-doctor", handle_diag_doctor),
         web.post("/api/control/diag-logs", handle_diag_logs),
@@ -191,8 +244,4 @@ def control_routes():
         web.post("/api/control/onion-client-key", handle_onion_key),
         web.post("/api/control/restart", handle_restart_all),
         web.post("/api/control/tor-reset", handle_tor_reset),
-        web.post("/api/control/support-bundle", handle_support_bundle),
-        web.get(
-            "/api/control/support-bundle-download", download_views.handle_support_bundle_download
-        ),
     ]

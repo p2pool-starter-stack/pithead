@@ -1,10 +1,10 @@
-FROM golang:1.26.10-trixie@sha256:a050dcceee6eb9bf110151662dfac7662f3bec40927c7dee48731e3d92083d42 AS gobuild
+FROM golang:1.26.11-trixie@sha256:cff05dd6b81c901f2e8249eb6f91c69a60451d0f12c26bfef08e476a85b32d4d AS gobuild
 
-ARG COMPOSE_VERSION=v5.5.1
-ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
+ARG COMPOSE_VERSION=v5.7.2
+ARG COMPOSE_COMMIT=ed25575984c8dbd1ad137c93002d782f52478809
 ARG COSIGN_VERSION=v3.1.3
 ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
-ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2"
+ARG COMPOSE_GO_RAISES="golang.org/x/net@v0.62.0"
 ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7 github.com/go-jose/go-jose/v4@v4.1.6"
 ENV CGO_ENABLED=0
 
@@ -31,8 +31,8 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosig
 RUN /out/docker-compose version && /out/cosign version \
     && /out/docker-compose version | grep -qF "${COMPOSE_VERSION}" \
     && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
-    && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.10" \
-    && go version /out/cosign | grep -qxF "/out/cosign: go1.26.10" \
+    && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.11" \
+    && go version /out/cosign | grep -qxF "/out/cosign: go1.26.11" \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
@@ -40,7 +40,7 @@ RUN /out/docker-compose version && /out/cosign version \
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
 # bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
 # box — every Debian package here is frozen until the next bake.
-FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -71,6 +71,7 @@ RUN set -e; \
         fdisk gdisk parted e2fsprogs xfsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
+        tor \
         squashfs-tools \
         openssh-server sudo less nano htpdate \
         git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
@@ -173,7 +174,7 @@ RUN set -e \
 RUN printf 'PITHEAD_ENGINE=podman\n' >> /etc/environment \
     && printf 'vm.nr_hugepages=3072\n' > /etc/sysctl.d/99-pithead-hugepages.conf \
     && mkdir -p /etc/systemd/journald.conf.d \
-    && printf '[Journal]\nStorage=persistent\nSystemMaxUse=200M\n' > /etc/systemd/journald.conf.d/pithead.conf \
+    && printf '[Journal]\nStorage=persistent\nSystemMaxUse=400M\n' > /etc/systemd/journald.conf.d/pithead.conf \
     && mkdir -p /var/log/journal # bind-mount target for pithead-journal-persist.service (#1030)
 
 # Hardware/systemd watchdog: catch a soft-hung kernel or wedged init on an unattended headless
@@ -250,6 +251,7 @@ COPY os/overlay/pithead-cpu-governor.service /etc/systemd/system/pithead-cpu-gov
 # generates (once) and persists both on /data, the single persistence root, fixes the rest.
 COPY os/overlay/pithead-ssh-host-keys.conf /etc/systemd/system/ssh.service.d/pithead-host-keys.conf
 COPY os/overlay/pithead-ssh-host-keys /usr/local/sbin/pithead-ssh-host-keys
+COPY os/overlay/pithead-tor /usr/local/sbin/pithead-tor
 COPY os/overlay/pithead-machine-id.service /etc/systemd/system/pithead-machine-id.service
 COPY os/overlay/pithead-machine-id /usr/local/sbin/pithead-machine-id
 COPY os/overlay/pithead-boot-version.service os/overlay/pithead-journal-persist.service /etc/systemd/system/
@@ -269,8 +271,8 @@ RUN mkdir -p /etc/ssh/sshd_config.d \
 # masked: this image bakes its own locale/timezone, and the console password is pithead's.
 RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
-    && systemctl mask systemd-firstboot.service
-RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-miner-recovery /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
+    && systemctl mask systemd-firstboot.service tor.service tor@default.service
+RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-address-watch /usr/local/sbin/pithead-miner-recovery /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/local/sbin/pithead-tor /usr/lib/systemd/system-generators/pithead-mount-generator
 # The updater is chosen per image. The package install above includes RAUC only when selected;
 # leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even

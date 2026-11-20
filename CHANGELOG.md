@@ -16,6 +16,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - The host control channel has `power-reboot` and `power-shutdown` actions for an appliance. The host
   checks the typed `REBOOT` or `SHUTDOWN` word, refuses during an OS update or its uncommitted-slot
   window, stops the stack, then runs `systemctl reboot` or `poweroff` (#4084, host half of #4052).
+- `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
+  same windowed `.zip` and manifest as the appliance: every container's full log for the window instead of
+  the last 200 lines, the DIY egress and LAN-guard units from the journal, and an engine or journal that
+  cannot be read recorded in the manifest (#4130).
+- The appliance support bundle (the **Support bundle** card and `pithead recovery-bundle`) now carries state snapshots beside the journal: `doctor.json`, monerod, Tari and P2Pool status, Tor control-port and guard state (never a key), network, time, container (exit codes and image digests), RAUC, boot-slot and coredump records, Caddy access logs for the window with credentials removed, the files saved under `/data/pithead/support/`, a `/data/pithead` marker listing, and an uncapped dashboard history export with `ping_failures` and the control audit events. Every step has a time limit and the whole collection a total limit; a step that times out or fails is recorded in `manifest.json` and the bundle is still produced (#4128).
 - The Service diagnostics card has a **Restart all** button (typed `RESTART`, refused during an OS
   update, an uncommitted slot, a held host lock or a restart in the last two minutes, and riding out the dashboard's own restart) and a
   **Reset Tor state** button on the Tor card that runs the existing gated Tor recovery with its own
@@ -25,9 +30,21 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   ends when the browser closes or after 8 hours idle) and a "Sign out" button. Changing the password
   ends every session, wrong passwords are rate-limited, and scripts keep using HTTP basic auth with
   the same credentials (#4089).
+- The dashboard's **Export logs** card (Backup tab) has a time-frame picker (last 1 h, 6 h, 24 h, 72 h or 7 days, or a custom start and end), shows how far back the logs reach and flags a range that goes further, and collects and downloads the `support-bundle-<UTC timestamp>.zip` with one click, showing the window the manifest recorded. It is always available, on the appliance and on DIY, whether or not `dashboard.control.enabled` is on: with the switch off the host runner serves only the export, and config editing, restart and the other control actions stay off. With a dashboard password set, every export route needs the login (#4129).
+- The appliance update channel is read as untrusted data: https-only fetches to the release hosts
+  over Tor with remote DNS, response size caps, release-tag validation before any URL or path, and
+  stale or replayed channel reporting in Check for updates (#4011).
+
+### Changed
+
+- The appliance support bundle (the dashboard's **Support bundle** card and `pithead recovery-bundle`) is now one `.zip` for a chosen start and end time (`--since` and `--until` on the CLI, `since` and `until` on the control request; `hours` still works). It holds the whole system journal, the kernel log, the boot list and a journal per Pithead and quadlet unit read from the installed unit files, redacted, with a `manifest.json` that records the windows, the oldest retained entry, the journald usage and every truncated, empty, missing or failed file. Oversize files keep their oldest and newest lines instead of the bundle being refused, and the journald cap is raised from 200 MiB to 400 MiB to cover 168 hours at the log volume reported for a loaded test box (#4127).
 
 ### Fixed
 
+- The dashboard keeps answering when its data disk is full (a 2.0.4 sign-in regression): an existing
+  session still passes the sign-in gate when the session store cannot write, a dashboard restarted
+  on a full data dir still starts and reports `db_healthy:false`, and signing in reports that the
+  data disk is full instead of failing with a server error (#4199).
 - On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
   on the data partition is saturated — no longer costs the committed slot its fallback. The boot
   health gate commits when the dashboard answers and every failing check is that network fault,
@@ -65,6 +82,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   lock, so its restart no longer overlaps an apply, an `up` or a control operation; a busy lock
   defers the render and the restart to the next tick, and when an apply lands in the same tick gap
   as an address change the apply's restart stands (#3987).
+
+### Security
+
+- The appliance rootfs builds Docker Compose and Cosign with Go 1.26.11, clearing CVE-2026-97054
+  in both binaries' standard library (#4265), and builds Compose v5.7.2, whose containerd v2.4.2
+  clears CVE-2026-95839 (#4291).
 
 ### Notes
 

@@ -53,6 +53,33 @@ for a guest-local alert sink. It restores its original config and state on exit,
 state only after Tor stops. Failures report the current stage, bounded command logs and
 the restoration result separately from the test result; no shared Tor is poisoned.
 
+Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
+and a half hours after provisioning, and the tier's default run window ends the job after the
+second gate has passed but before the host recovery applies. The phase vocabulary of this
+harness is machine-read in two places: `run.sh` prints its `--phase` usage line for `--help`,
+and the bench-ci client derives the phases a tier4-kvm submission may name from that same line
+(`bench_ci/catalogue.py`, `_KVM_PHASE_RE`); a new phase must be added to both that line and
+the argument case or bench-ci rejects it as `not available at this commit`.
+
+Two Tor behaviours decide how the poison is applied and cleared (#4122). Tor 0.4.8+ self-repairs
+a saturated circuit-build history when it loads one and rewrites the state file without the
+signature; it also rewrites the state file on every clean shutdown. So the guest writes the
+poisoned state while Tor is stopped, starts Tor, sets `DisableNetwork` through the control port,
+and then re-poisons every time Tor's own write lands, returning only once the file has held the
+signature through three quiet checks; the observation loops re-assert saturation and re-poison a
+Tor rewrite, but a state backup appearing while auto-heal is off is still a hard failure — that
+is the product's own footprint. Because the recovery's own stop would wipe the poisoned file,
+the script keeps Tor running for the ladder's two applied NEWNYM rounds (each confirmed through
+the host control results) and then stops Tor itself; the recovery's stop is then a no-op and the
+poisoned file survives into the backup. The disabled leg still proves the product leaves a
+saturated state alone: no backup may ever appear in that window.
+
+Both heal phases reuse the initial-provision prelude but consume no reserved-node proof, so they
+declare themselves non-consumers and the prelude selects neither the reserved-node consumer legs
+nor the XvB routing leg (#4123); `selftest-provision-legs.sh` pins that selection. The full
+`provision` phase keeps running both legs and still fails them when the bench provides no
+reserved-node inputs.
+
 It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 
 ```bash
@@ -317,8 +344,10 @@ the configured test registry fail before the image build. Release builds do not 
   RigForge feed must report a nonzero hashrate (`rig_share_hashrate_wait`). The M12 adopt leg
   (#3069, backported here in #3994) then runs (`tests/os/rig-adopt-leg.sh`): it enables the
   coordinator's control channel, previews and commits an adoption with typed `APPLY`, polls
-  until the worker reads adopted with a reachable API, pushes one reversible `DONATION`
-  change to `applied` by its exact `change_id`, checks the pools sha256 unchanged, restores the
+  until the worker reads adopted with a reachable API, pushes one reversible `watchdog_interval_min`
+  change to `applied` by its exact `change_id` — never `DONATION`: the rig mines to the
+  coordinator's stratum during this leg, and the only probe from a fleet-standard `DONATION` 0 is
+  upward, which donates the dev fee to XMRig (#4184) —, checks the pools sha256 unchanged, restores the
   original value, and proves the unpinned bench host still cannot reach the control port;
   `selftest-rig-adopt.sh` covers those paths without a guest.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
@@ -329,7 +358,9 @@ the configured test registry fail before the image build. Release builds do not 
   bootloader path (#1318) and is not this leg's job.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
-  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, read
+  reboots. The wallet the stick changes to is the named throwaway `MEDIA_WALLET_ALT` — the same
+  never-fundable key the v1.20.0 restore fixture derives from its public seed, because the stick
+  needs a second primary address; the starting payouts are the owner's public wallets. Asserts the exact diff appears on the console (the changed wallet address in full, read
   directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
@@ -349,8 +380,11 @@ the configured test registry fail before the image build. Release builds do not 
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
   Fault E (#4038) runs `recovery-bundle` on the fault guest with no container running and a
-  deliberately failed pithead unit; the archive must be mode 600 under `/data/pithead/support-bundles`,
-  hold that unit's journal line, and its path must appear on the serial console.
+  deliberately failed pithead unit and a dummy unit installed at run time; the archive is a zip taken with
+  `--since` and `--until`, mode 600 under `/data/pithead/support-bundles`, and must hold the failed unit's
+  journal line, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
+  the journal facts; its path must appear on the serial console, which also records how many quadlet
+  container units carried journal lines.
 - **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
   with local chains and the non-default nano pool. Each setup-again session separately checks
   the current boot journal for a minted token, the new-boot serial slice and tty1 text from
@@ -515,6 +549,18 @@ box have covered it?**
 This is distinct from the remote-node row below, where a missing input stays a counted
 **failure**: the classes are for rows the configuration excludes, never for inputs the bench
 forgot.
+
+Guests that reach real nodes can mine on mainnet, so every guest configured by the battery pays
+the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (the test host supplies the
+owner's addresses); without them the harness uses its labelled throwaway addresses. The run
+refuses before any guest exists when `PITHEAD_OS_MONERO_NODE_HOST` or `PITHEAD_OS_TARI_NODE_HOST` is
+set and either payout variable is empty, naming the variable and never a value. The media guest
+never reaches a chain node, so its sticks use their own labelled throwaway addresses rather than
+the payouts. The v1.20.0 restore fixture (`tests/os/fixtures/v1.20.0`) deliberately restores a
+throwaway identity and a fixture donor id on a guest whose node hosts are the unreachable fixture
+address, so it never mines; the restore leg asserts that host is unchanged after the restore. XvB keeps its default
+`xvb.donor_id` of `auto`, the first 8 characters of that Monero address, so XvB hash is the
+owner's; `selftest-owner-payouts.sh` fails if any guest config sets the donor id explicitly.
 
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
