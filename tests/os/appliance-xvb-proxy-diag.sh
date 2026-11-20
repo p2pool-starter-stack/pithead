@@ -93,7 +93,7 @@ _xvb_diag_payload_self_test() {
     out="$(PAYLOAD="$(_xvb_proxy_diag_payload | base64 -d)" ROOT="$root" python3 -c '
 import os, socket, subprocess, sys
 def run(port):
-    env = {**os.environ, "PYTHONPATH": os.environ["ROOT"] + "/dashboard", "PROXY_HOST": "127.0.0.1", "PROXY_API_PORT": str(port)}
+    env = {**os.environ, "PYTHONPATH": os.environ["ROOT"] + "/dashboard", "TOR_SOCKS_PROXY": "socks5h://127.0.0.1:9050", "PROXY_HOST": "127.0.0.1", "PROXY_API_PORT": str(port)}
     r = subprocess.run([sys.executable, "-"], input=os.environ["PAYLOAD"], capture_output=True, text=True, env=env)
     return (r.stdout.strip() or "no-output rc=%s %s" % (r.returncode, r.stderr.strip()[-120:])).replace("\n", ";")
 s = socket.socket()
