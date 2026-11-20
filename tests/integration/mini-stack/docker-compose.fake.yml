@@ -86,7 +86,7 @@ services:
       TARI_PAYOUT_CONFIRM_ENABLED: "${TARI_PAYOUT_CONFIRM_ENABLED:-true}"
       TARI_WALLET_ADDRESS: "tari-test-wallet"
       TARI_WALLET_GRPC_ADDRESS: "fake-tari-wallet:18143"
-      PROXY_HOST: "172.30.250.13"
+      PROXY_HOST: "172.30.250.14"
       PROXY_API_PORT: "3344"
       PROXY_AUTH_TOKEN: "itest"
       UPDATE_INTERVAL: "2"

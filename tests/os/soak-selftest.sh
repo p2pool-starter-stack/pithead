@@ -179,7 +179,7 @@ class Response:
             consumed.append(len(chunk))
             yield chunk
     def json(self): return json.loads(self.body())
-def get(url, headers, timeout, stream=False):
+def get(url, headers, timeout, stream=False, **kwargs):
     calls.append((url, headers, timeout, stream))
     return Response()
 modules = {name: types.ModuleType(name) for name in (
