@@ -10,8 +10,8 @@ from mining_dashboard.client.xvb_client import XvbClient
 from mining_dashboard.service.health import tari_health
 from mining_dashboard.service.health.update_checker import GitHubReleaseClient
 from mining_dashboard.service.notify import healthchecks_child
-from mining_dashboard.service.notify.healthchecks import HealthchecksClient
 from mining_dashboard.service.notify import telegram_commands as tc
+from mining_dashboard.service.notify.healthchecks import HealthchecksClient
 from mining_dashboard.service.notify.notify_sinks import NtfySink, WebhookSink
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 from mining_dashboard.service.xvb.price_feed import CoinGeckoClient
