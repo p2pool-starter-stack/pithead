@@ -182,8 +182,9 @@ pair_start() { # <chain> <pair> <volume>
     local c="$1" k="$2" d="$3" vk="PAYOUT_VIEW$2" addr="PAYOUT_${1^^}$2"
     mkdir -p "$d"
     if [ "$c" = monero ]; then
+        printf '%s\n' "${!vk}" >"$PD/monero-key"
         PATH="$PB:$PATH" WALLET_DIR="$d" GEN_JSON="$d/gen.json" PAIR_ACTION="$PD/action" PAIR_PATH="$PD/path" \
-            MONERO_WALLET_ADDRESS="${!addr}" MONERO_VIEW_KEY="${!vk}" PAYOUT_SCAN_HEIGHT=auto \
+            MONERO_WALLET_ADDRESS="${!addr}" MONERO_VIEW_KEY_FILE_IN="$PD/monero-key" PAYOUT_SCAN_HEIGHT=auto \
             bash "$ROOT/build/monero/wallet-entrypoint.sh" >"$PD/start-output" 2>&1
     else
         printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=fixture\n' \

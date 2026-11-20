@@ -89,11 +89,11 @@ stack_uninstall() {
     [ -n "$control_dir" ] || control_dir="$checkout_dir/data/control"
     # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
-    local secret_file="$checkout_dir/data/tari-wallet-secret.env"
+    local secret_file="$checkout_dir/data/tari-wallet-secret.env" monero_secret_file="$checkout_dir/data/monero-view-key.secret"
 
     local kept_list derived_list unit
     kept_list=$(printf '%s\n' "${kept_dirs[@]}" | sort -u | tr '\n' ' ')
-    derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
+    derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" "$monero_secret_file" | sort -u | tr '\n' ' ')
 
     warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
     log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_db volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit and pithead-egress.timer check; the LAN-only source rule, its pithead-lan-guard.service boot unit, pithead-lan-hold.service and pithead-lan.timer check; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
@@ -134,7 +134,7 @@ stack_uninstall() {
     # stderr kept: the drain's timeout warning is the message for a request still in flight.
     CONTROL_DIR="$control_dir" provision_control_runner remove || true
     # The view-key secret goes first: nothing after it may leave a 0600 key behind.
-    rm -f "$secret_file"
+    rm -f "$secret_file" "$monero_secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
     local failed=0
     for d in "${derived_dirs[@]}"; do

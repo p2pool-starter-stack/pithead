@@ -166,7 +166,6 @@ WantedBy=multi-user.target
 EOF
         ;;
     esac
-
     case ",$profiles," in
     *,payout_confirm,*)
         cat >"$outdir/wallet-rpc.container" <<EOF
@@ -180,8 +179,9 @@ Image=$reg/pithead-monero:$ver
 Network=mining.network
 IP=$prefix.30
 Entrypoint=/usr/local/bin/wallet-entrypoint.sh
-Environment=$(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) MONERO_NODE_HOST=$prefix.26 MONERO_RPC_PORT=18081 WALLET_RPC_USERNAME=wallet $(_qenvq WALLET_RPC_PASSWORD) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq MONERO_VIEW_KEY) $(_qenvq PAYOUT_SCAN_HEIGHT)
+Environment=$(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) MONERO_NODE_HOST=$prefix.26 MONERO_RPC_PORT=18081 WALLET_RPC_USERNAME=wallet $(_qenvq WALLET_RPC_PASSWORD) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq PAYOUT_SCAN_HEIGHT)
 Volume=pithead-wallet-data:/home/ubuntu/wallets
+Volume=$(_qenv MONERO_VIEW_KEY_FILE):/run/secrets/monero_view_key:ro
 Tmpfs=/tmp:size=16m,mode=1777
 PublishPort=127.0.0.1:18082:18082
 ReadOnly=true

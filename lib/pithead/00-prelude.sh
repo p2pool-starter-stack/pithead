@@ -55,14 +55,14 @@ PITHEAD_ENV_DRYRUN="${ENV_FILE}.dryrun.$BASHPID"
 PITHEAD_ENV_PREVIOUS=""
 cleanup_env_staging() {
     if [ -n "$PITHEAD_ENV_PREVIOUS" ]; then
-        if [ -f "${PITHEAD_ENV_STAGE}.tari-wallet-secret" ] && [ ! "$PITHEAD_ENV_PREVIOUS" -ef "$ENV_FILE" ]; then
+        if { [ -f "${PITHEAD_ENV_STAGE}.tari-wallet-secret" ] || [ -f "${PITHEAD_ENV_STAGE}.monero-view-key" ]; } && [ ! "$PITHEAD_ENV_PREVIOUS" -ef "$ENV_FILE" ]; then
             mv -fT -- "$PITHEAD_ENV_PREVIOUS" "$ENV_FILE" ||
                 warn "Could not restore the previous environment; it is kept at $PITHEAD_ENV_PREVIOUS. Restore it before retrying apply."
         else
             rm -f -- "$PITHEAD_ENV_PREVIOUS" || warn "Could not remove the previous environment at $PITHEAD_ENV_PREVIOUS."
         fi
     fi
-    rm -f "$PITHEAD_ENV_STAGE" "${PITHEAD_ENV_STAGE}.tari-wallet-secret" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true
+    rm -f "$PITHEAD_ENV_STAGE" "${PITHEAD_ENV_STAGE}.tari-wallet-secret" "${PITHEAD_ENV_STAGE}.monero-view-key" "$PITHEAD_ENV_DRYRUN" 2>/dev/null || true
 }
 # Canonical closed schema: every known config.json leaf path, shipped beside this script (bundle +
 # checkout root). The #33 control gate uses it to refuse a staged config carrying any path the

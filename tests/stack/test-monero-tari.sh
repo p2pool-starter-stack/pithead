@@ -115,8 +115,8 @@ echo "== unit: wallet-entrypoint view-only gen.json omits spendkey (#714) =="
     export PITHEAD_TEST_SOURCE=1
     source "$ROOT/build/monero/wallet-entrypoint.sh"
     export GEN_JSON="$SANDBOX/wallet-gen.json" WALLET_FILE="$SANDBOX/payout-wallet"
-    export MONERO_WALLET_ADDRESS="48exampleAddr" MONERO_VIEW_KEY="deadbeefdeadbeef"
-    write_gen_json 3000000
+    export MONERO_WALLET_ADDRESS="48exampleAddr" MONERO_VIEW_KEY_FILE_IN="$SANDBOX/view-key"
+    echo deadbeefdeadbeef >"$MONERO_VIEW_KEY_FILE_IN" && write_gen_json 3000000
 )
 WGEN="$(cat "$SANDBOX/wallet-gen.json")"
 if printf '%s' "$WGEN" | jq -e . >/dev/null 2>&1; then ok "wallet gen.json is valid JSON (#714)"; else bad "wallet gen.json is valid JSON (#714)" "jq rejected: $WGEN"; fi
@@ -245,6 +245,8 @@ out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "apply with a view key succeeds" "$?" "0"
 assert_eq "payout confirm enabled renders true" "$(run_sourced "$V" env_get_file "$V/.env" PAYOUT_CONFIRM_ENABLED)" "true"
 assert_eq "view key rendered into .env" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_VIEW_KEY)" "$VIEWKEY"
+monero_secret="$(run_sourced "$V" env_get_file "$V/.env" MONERO_VIEW_KEY_FILE)"
+assert_eq "monero view key file is owner-only (600) and carries the key" "$(stat -c '%a' "$monero_secret" 2>/dev/null || stat -f '%Lp' "$monero_secret"):$(cat "$monero_secret")" "600:$VIEWKEY"
 assert_contains "wallet-rpc profile added" "$(run_sourced "$V" env_get_file "$V/.env" COMPOSE_PROFILES)" "payout_confirm"
 assert_eq "payout confirmation keeps Tor's profiles (#2859)" "$(run_sourced "$V" env_get_file "$V/.env" TOR_COMPOSE_PROFILES)" "$tor_profiles_before"
 [ -n "$(run_sourced "$V" env_get_file "$V/.env" WALLET_RPC_PASSWORD)" ] && ok "wallet-rpc password generated" || bad "wallet-rpc password generated" "empty"

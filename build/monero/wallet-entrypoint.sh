@@ -19,6 +19,7 @@ WALLET_FILE="" # selected after the test-source guard
 # It lives in the volume so it persists across container recreates until the scan actually finishes.
 SCAN_MARKER="$WALLET_DIR/.payout-scanning"
 GEN_JSON="${GEN_JSON:-/tmp/gen.json}" # tmpfs; holds the view key for the create-from-keys step only
+view_key() { tr -d '\r\n' <"${MONERO_VIEW_KEY_FILE_IN:-/run/secrets/monero_view_key}" 2>/dev/null || true; }
 DAEMON_ADDRESS="${MONERO_NODE_HOST:-127.0.0.1}:${MONERO_RPC_PORT:-18081}"
 
 # Fresh wallets start 100 blocks behind the local tip (about 200 minutes).
@@ -75,7 +76,7 @@ legacy_address_matches() (
 
 select_wallet() {
     local identity legacy owner suffix
-    identity=$(printf '%s\n%s\n' "${MONERO_WALLET_ADDRESS:-}" "${MONERO_VIEW_KEY:-}" | sha256sum)
+    identity=$(printf '%s\n%s\n' "${MONERO_WALLET_ADDRESS:-}" "$(view_key)" | sha256sum)
     identity="${identity%% *}"
     WALLET_FILE="$WALLET_DIR/payout-wallet-$identity"
     legacy="$WALLET_DIR/payout-wallet"
@@ -109,7 +110,8 @@ select_wallet() {
 # breaks the wallet outright. An absent spendkey IS the view-only form — exactly what a payout-
 # confirmation wallet needs (#714). umask 077 so the file (it holds the view key) is owner-only.
 write_gen_json() {
-    local height="$1"
+    local height="$1" key
+    key=$(view_key)
     (
         umask 077
         cat >"$GEN_JSON" <<EOF
@@ -119,7 +121,7 @@ write_gen_json() {
   "scan_from_height": $height,
   "password": "",
   "address": "${MONERO_WALLET_ADDRESS:-}",
-  "viewkey": "${MONERO_VIEW_KEY:-}"
+  "viewkey": "$key"
 }
 EOF
     )

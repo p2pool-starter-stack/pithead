@@ -7,7 +7,7 @@ COMPOSE="$ROOT/docker-compose.yml"
 PROBE="$ROOT/tests/integration/mini-stack/real-wallet-probe.py"
 SCRATCH_BASE="${TMPDIR:-${RUNNER_TEMP:-/tmp}}"
 SCRATCH="$(mktemp -d "$SCRATCH_BASE/pithead-wallets.XXXXXX")"
-export TARI_WALLET_SECRET_FILE="$SCRATCH/tari-wallet-secret.env"
+export TARI_WALLET_SECRET_FILE="$SCRATCH/tari-wallet-secret.env" MONERO_VIEW_KEY_FILE="$SCRATCH/monero-view-key.secret"
 export WALLET_RPC_PASSWORD=itest PAYOUT_SCAN_HEIGHT=1 TARI_WALLET_BIRTHDAY=0
 # Compose interpolates all services even with --no-deps; these unused paths stay in scratch.
 export TOR_DATA_DIR="$SCRATCH/tor" MONERO_DATA_DIR="$SCRATCH/monero" TARI_DATA_DIR="$SCRATCH/tari"
@@ -20,7 +20,7 @@ VIEW1=0100000000000000000000000000000000000000000000000000000000000000
 VIEW2=0200000000000000000000000000000000000000000000000000000000000000
 SPEND=e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76
 OLD_VOLUME="pithead-wallet-red-$$"
-export MONERO_WALLET_ADDRESS="$MONERO_ADDR" TARI_WALLET_ADDRESS="$TARI_ADDR" MONERO_VIEW_KEY="$VIEW1"
+export MONERO_WALLET_ADDRESS="$MONERO_ADDR" TARI_WALLET_ADDRESS="$TARI_ADDR"
 
 compose() { docker compose -p pithead-wallet-itest -f "$COMPOSE" --profile local_node --profile local_tari --profile payout_confirm --profile tari_payout_confirm "$@"; }
 # The production Compose file names this network globally. Never attach test wallets to a live stack.
@@ -35,6 +35,10 @@ cleanup() {
 }
 trap cleanup EXIT
 probe() { docker run --rm -i --network mining_net --entrypoint python3 -v "$PROBE:/probe.py:ro" pithead-dashboard:itest /probe.py "$1" "$2" "$3"; }
+write_monero_key() {
+    printf '%s\n' "$1" >"$MONERO_VIEW_KEY_FILE"
+    chmod 644 "$MONERO_VIEW_KEY_FILE"
+}
 write_tari_secret() {
     printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=itest\n' "$1" "$SPEND" >"$TARI_WALLET_SECRET_FILE"
     chmod 600 "$TARI_WALLET_SECRET_FILE"
@@ -47,6 +51,7 @@ TARI_IMAGE="$(compose config --format json | jq -r '.services["tari-wallet"].ima
 
 # #2454's red control: the pinned binary cannot create its config under a root-owned old mount.
 write_tari_secret "$VIEW1"
+write_monero_key "$VIEW1"
 docker run --rm --user 0 --mount "type=volume,source=$OLD_VOLUME,target=/home/ubuntu/wallet" \
     --entrypoint chown "$TARI_IMAGE" 0:0 /home/ubuntu/wallet
 if timeout 30s docker run --rm --network none --user 1000:1000 --read-only \
@@ -67,7 +72,7 @@ grep -Eiq 'permission denied|os error 13' "$SCRATCH/old-tari.log" || {
 echo 'PASS: old Tari mount reproduces the #2454 initialization failure'
 
 # A wrong Monero view key must be refused by wallet2 at first creation, on a fresh volume.
-export MONERO_VIEW_KEY="$VIEW2"
+write_monero_key "$VIEW2"
 write_tari_secret "$VIEW2"
 compose up -d --no-deps wallet-rpc tari-wallet
 deadline=$(($(date +%s) + 90))
@@ -88,7 +93,7 @@ probe tari "$TARI_ADDR" mismatch
 echo 'PASS: wrong-wallet view keys fail the address check on both chains'
 
 compose down -v --remove-orphans
-export MONERO_VIEW_KEY="$VIEW1"
+write_monero_key "$VIEW1"
 write_tari_secret "$VIEW1"
 compose up -d --no-deps wallet-rpc tari-wallet
 probe monero "$MONERO_ADDR" match
@@ -102,13 +107,15 @@ monero_inode() { compose exec -T wallet-rpc sh -c 'd=${WALLET_DIR:-/home/ubuntu/
 tari_inode() { compose exec -T tari-wallet sh -c 'find "$WALLET_DIR/payout-$(cat "$WALLET_DIR/.payout-active")" -name console_wallet.db -exec stat -c %i {} \;'; }
 MI="$(monero_inode)" TI="$(tari_inode)"
 [ -n "$MI" ] && [ -n "$TI" ]
-export MONERO_WALLET_ADDRESS="$PAYOUT_MONERO2" TARI_WALLET_ADDRESS="$PAYOUT_TARI2" MONERO_VIEW_KEY="$PAYOUT_VIEW2"
+export MONERO_WALLET_ADDRESS="$PAYOUT_MONERO2" TARI_WALLET_ADDRESS="$PAYOUT_TARI2"
+write_monero_key "$PAYOUT_VIEW2"
 write_tari_secret "$PAYOUT_VIEW2"
 compose up -d --no-deps wallet-rpc tari-wallet
 probe monero "$PAYOUT_MONERO2" match
 probe tari "$PAYOUT_TARI2" match
 [ "$(monero_inode)" != "$MI" ] && [ "$(tari_inode)" != "$TI" ]
-export MONERO_WALLET_ADDRESS="$PAYOUT_MONERO1" TARI_WALLET_ADDRESS="$PAYOUT_TARI1" MONERO_VIEW_KEY="$PAYOUT_VIEW1"
+export MONERO_WALLET_ADDRESS="$PAYOUT_MONERO1" TARI_WALLET_ADDRESS="$PAYOUT_TARI1"
+write_monero_key "$PAYOUT_VIEW1"
 write_tari_secret "$PAYOUT_VIEW1"
 compose up -d --no-deps wallet-rpc tari-wallet
 probe monero "$PAYOUT_MONERO1" match

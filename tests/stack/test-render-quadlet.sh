@@ -148,6 +148,17 @@ for f in mining.network proxy.network tor.container monerod.container tari.conta
     caddy.container docker-proxy.container docker-control.container dashboard.container; do
     assert_eq "quadlet payout parity: $f" "$(diff -u "$ROOT/os/quadlet/payout/$f" "$QPAY/$f" 2>&1 | head -c 300)" ""
 done
+(
+    cat "$ROOT/os/quadlet/payout/fixture.env"
+    echo MONERO_VIEW_KEY=sentinel-view-key
+) >"$SANDBOX/view-key.env"
+QVK="$SANDBOX/quadlet-viewkey-out"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/view-key.env" "$QVK" >/dev/null
+assert_eq "#4198: no quadlet unit carries the Monero view key" "$(grep -rl sentinel-view-key "$QVK" || true)" ""
+assert_contains "#4198: wallet-rpc mounts the view key file read-only" "$(cat "$QVK/wallet-rpc.container")" "Volume=/opt/pithead/data/monero-view-key.secret:/run/secrets/monero_view_key:ro"
+wallet_rpc_block="$(awk '/^  wallet-rpc:/{f=1;next} f&&/^  [a-z]/{f=0} f' "$ROOT/docker-compose.yml")"
+assert_not_contains "#4198: compose wallet-rpc never carries the view key in its environment" "$wallet_rpc_block" "MONERO_VIEW_KEY"
+assert_contains "#4198: compose wallet-rpc mounts the view key as a secret" "$wallet_rpc_block" "- monero_view_key"
 # #2657: the console wallet must not be PID 1: a zombie PID 1 cannot be signalled, so a stop fails.
 assert_eq "#2657: tari-wallet runs under podman's init (RunInit)" "$(grep -c '^RunInit=true$' "$QPAY/tari-wallet.container")" "1"
 assert_eq "#2899: tari-wallet has the same 10 s container stop timeout as Compose" "$(awk '/^\[Container\]$/{in_container=1;next} /^\[/{in_container=0} in_container && /^StopTimeout=10$/{n++} END{print n+0}' "$QPAY/tari-wallet.container")" "1"
