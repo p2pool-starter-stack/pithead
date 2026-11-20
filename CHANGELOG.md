@@ -89,9 +89,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - **RigForge-only appliances: 2.0.4 changes the rig — RigForge 1.19.0.** The rig now routes
   RigForge's own network paths through the appliance's Tor SOCKS proxy by default (`tor_socks5`
   `127.0.0.1:9050`; explicit `null` opts out), and such a rig refuses a `DONATION` above 0 because the
-  donation pool would dial direct. `threads` is honored and capped, so an over-high count no longer
-  destabilizes the miner (rigforge#588 and rigforge#632), and a validated `xmrig` config overlay plus
-  configurable RandomX modes give owners control over miner settings. The baked XMRig is unchanged
+  donation pool would dial direct. `threads` is honored and capped: an over-high count no longer
+  destabilizes the miner, but a rig that mined every core before this now settles at the capped
+  count after the next apply, with a lower hashrate (rigforge#588 and rigforge#632). A validated
+  `xmrig` config overlay plus configurable RandomX modes give owners control over miner settings. The baked XMRig is unchanged
   (6.26.0, zero donation default and minimum), so the built-in miner and upgraded rigs keep mining
   without a rebuild. Updating a rig still needs the USB stick, and re-flashing a rig that runs from
   its stick wipes its setup and token, so it must be adopted again. Updating rigs from the Pithead
