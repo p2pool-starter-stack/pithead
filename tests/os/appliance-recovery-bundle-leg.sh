@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 
 recovery_bundle_guest_script() {
     cat <<'GUEST'
@@ -54,7 +56,7 @@ phase_fault_recovery_bundle() {
         ok "recovery-bundle writes a 600 archive under /data/pithead with the stack down, carrying a failed unit's journal lines (#4038)"
     else
         [ "$rc" -eq 0 ] && rc=1
-        bad "recovery-bundle did not produce the expected archive with the stack down (#4038, exit $rc): $(tail -n 3 "$out" | tr '\n' ' ' | cut -c1-300)"
+        bad "recovery-bundle did not produce the expected archive with the stack down (#4038, exit $rc): $(tail -n 3 "$out" | os_redact_addr | tr '\n' ' ' | cut -c1-300)"
     fi
     if wait_serial 'Support bundle written: /data/pithead/support-bundles/support-bundle-' 30; then
         ok "recovery-bundle prints the archive path where the serial console shows it (#4038)"
