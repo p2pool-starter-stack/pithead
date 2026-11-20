@@ -77,7 +77,8 @@ Appliance startup and source upgrades share `reconcile_compose_images` in
 archive replacement, recreation failures and migration holds through the real startup functions.
 The crossupdate phase compares the running dashboard ID with the candidate slot archive.
 The opt-in `realupgrade` phase (`tests/os/phases/realupgrade.sh`, helpers in
-`tests/os/realupgrade-helpers.sh`, selftest `tests/os/selftest-realupgrade.sh`) upgrades an aged,
+`tests/os/realupgrade-helpers.sh`, the soak and negative-control legs in
+`tests/os/realupgrade-legs.sh`, selftest `tests/os/selftest-realupgrade.sh`) upgrades an aged,
 published appliance image through the dashboard; it is not part of `--phase all`.
 `tests/os/dashboard-markers.json` declares signed test-image variants;
 `tests/os/selftest-marker-images.sh` checks the build-time manifest and shared archive reference.
