@@ -292,3 +292,32 @@ class TestMiningGuardRejection:
             await self._cycle(svc, containers={})
             assert svc.workers_rejected is True
         svc.docker_control.start.assert_not_called()
+
+    async def test_a_recreate_readmits_within_the_bound_after_a_dropped_reading(self):
+        svc = self._svc()
+        down = {"p2pool": {"running": False, "restarting": False, "health": None}}
+        up = {"p2pool": {"running": True, "restarting": False, "health": "healthy"}}
+        isolated = {"p2p": {"uptime": 9, "out_peers": 0, "in_peers": 0}}
+        gone = {"p2p": {"uptime": 0}}
+        now = self._clock(svc)
+        await self._cycle(svc, p2pool=gone, containers=down)
+        now[0] = 91
+        await self._cycle(svc, p2pool=gone, containers=down)
+        assert svc.workers_rejected is True
+        now[0] = 200
+        await self._cycle(svc, p2pool=isolated, containers=up)
+        svc.docker_control.start.assert_not_called()
+        now[0] = 205
+        await self._cycle(svc, p2pool=gone, containers=up)
+        svc.docker_control.start.assert_not_called()
+        now[0] = 260
+        await self._cycle(svc, p2pool=gone, containers=up)
+        assert svc.workers_rejected is False
+        svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
+
+    async def test_a_rejected_proxy_without_triggers_readmits_on_the_first_cycle(self):
+        svc = self._svc()
+        svc.workers_rejected = True
+        await self._cycle(svc)
+        assert svc.workers_rejected is False
+        svc.docker_control.start.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
