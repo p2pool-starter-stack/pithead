@@ -181,7 +181,7 @@ assert_eq "media validation copies leave no migration backup" "$(find "$MC" -nam
 
 echo "== unit: media_config_diff / media_config_identical (masked, wallet shown in full) =="
 cat >"$MC/changed.json" <<EOF
-{"monero":{"wallet_address":"44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"},"dashboard":{"auth":{"password":"a-new-dashboard-password"}}}
+{"monero":{"wallet_address":"486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R","node_username":"admin","node_password":"a-generated-password-1"},"tari":{"wallet_address":"$VALID_TARI"},"p2pool":{"pool":"mini","stratum_password":"auto"},"dashboard":{"auth":{"password":"a-new-dashboard-password"}}}
 EOF
 diffout=$(
     export PITHEAD_MEDIA_BIN="$MC/pithead"
@@ -189,7 +189,7 @@ diffout=$(
     SECRET_PATHS_JSON=$(_secret_paths_json) # the real fetch, against the sandboxed pithead copy
     media_config_diff "$MC/good.json" "$MC/changed.json"
 )
-assert_contains "the payout wallet change shows old -> new in full (that IS the point)" "$diffout" "$VALID_PRIMARY -> 44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
+assert_contains "the payout wallet change shows old -> new in full (that IS the point)" "$diffout" "$VALID_PRIMARY -> 486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
 assert_contains "a changed secret (dashboard password) names the path" "$diffout" "dashboard.auth.password"
 assert_not_contains "a changed secret never shows the new value" "$diffout" "a-new-dashboard-password"
 
