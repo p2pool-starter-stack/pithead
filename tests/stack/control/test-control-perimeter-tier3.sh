@@ -156,10 +156,12 @@ assert_eq "the refused alarm key did not land" "$(jq -r '.telegram.events // "un
 echo "== black-box: the same gates guard DIY and the appliance alike (#3579) =="
 for gate_flag in 0 1; do
     gate_who=DIY
-    gate_wallet="$WALLET"
+    gate_wallet="$PAYOUT_MONERO2"
+    gate_view="$PAYOUT_VIEW2"
     [ "$gate_flag" == 1 ] && {
         gate_who=appliance
-        gate_wallet="$PAYOUT_MONERO2"
+        gate_wallet="$ATTACKER_WALLET"
+        gate_view="$PAYOUT_VIEW1"
     }
     jq --arg u "rpc-user$gate_flag" --arg p "rpc-secret$gate_flag" \
         '.monero.node_username=$u | .monero.node_password=$p' "$C/config.json" >"$C/cand.json"
@@ -173,7 +175,7 @@ for gate_flag in 0 1; do
         gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
     )
     assert_eq "node credentials apply with typed APPLY and the envelope on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
-    jq --arg w "$gate_wallet" '.monero.wallet_address=$w' "$C/config.json" >"$C/cand.json"
+    jq --arg w "$gate_wallet" --arg v "$gate_view" '.monero.wallet_address=$w | .monero.view_key=$v' "$C/config.json" >"$C/cand.json"
     (
         export PITHEAD_APPLIANCE="$gate_flag"
         jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$REQS/$UUID5.json"
