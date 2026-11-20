@@ -47,6 +47,7 @@ case "$cmd" in
 start)
     mkdir -p "$out"
     printf 'NW_PREFIX=172.28.0\nNW_TOR_IP=172.28.0.25\nNW_BOX_IP=\nNW_VANTAGE_IP=%s\nNW_STARTED=x\n' "$5" >"$out/meta.env"
+    printf 'tcp\t192.168.122.99\t140.211.10.1\t443\t4\n' >"$out/flows.tsv"
     ;;
 stop)
     if [ "${NW_STUB_STOP:-0}" = 1 ]; then exit 2; fi
@@ -128,6 +129,11 @@ printf '{}\n' >"$work/ssh-out"
 
 NW_MINING_MINUTES=0 out=$(netwatch_mining_hour "Test role" 2>&1 | plain)
 case "$out" in *"✓ netwatch one hour of mining (Test role): 5 recorded flows"*) ok ;; *) bad "the zero-minute mining-hour row is wrong: $out" ;; esac
+
+printf 'tcp\t10.0.0.5\t8.8.8.8\t443\t2\ntcp\t192.168.122.99\t140.211.10.1\t443\t4\ntcp\t192.168.122.1\t192.168.122.99\t22\t9\nudp\t192.168.122.99\t192.168.122.1\t53\t1\nudp\t192.168.5.9\t1.1.1.1\t53\t7\n' >"$work/flows"
+kept=$(netwatch_scope_flows 192.168.122.99 192.168.122.1 <"$work/flows" | grep -c .)
+[ "$kept" = 3 ] && ok "the vantage scope keeps only the guest and virbr0 flows" ||
+    bad "the vantage scope kept $kept of 5 rows (want the 3 touching the guest subnet)"
 
 _netwatch_meta_set "$work/m" NW_KEY "a b"
 [ "$(grep -c '^NW_KEY=' "$work/m")" = 1 ] && grep -qx 'NW_KEY=a b' "$work/m" && ok "meta rewrite replaces in place" ||

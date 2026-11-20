@@ -45,6 +45,13 @@ _netwatch_meta_set() { # <meta.env> <KEY> <value>
     } >"$tmp" && mv "$tmp" "$1"
 }
 
+netwatch_scope_flows() { # <guest ip> <vantage ip> — flows.tsv on stdin -> the virbr0 world on stdout
+    awk -v box="$1" -v gw="$2" '
+        BEGIN { split(gw, g, "."); pre = g[1] "." g[2] "." g[3] }
+        $2 == box || $3 == box || index($2, pre ".") == 1 || index($3, pre ".") == 1 { print }
+    '
+}
+
 netwatch_verdict_row() { # <window> <0 clean|1 unexpected|2 dead> <detail>
     case "$2" in
     0)
@@ -103,6 +110,14 @@ netwatch_window_stop() { # <window name> — stop, classify at the perimeter van
     gw=$(_netwatch_vantage_ip)
     _netwatch_meta_set "$out/meta.env" NW_BOX_IP "${ip:-}"
     _netwatch_meta_set "$out/meta.env" NW_RESOLVER_IP "$gw"
+    local scoped n_all n_kept
+    scoped="$out/flows.virbr0.tsv"
+    netwatch_scope_flows "${ip:-}" "$gw" <"$out/flows.tsv" >"$scoped"
+    n_all=$( (grep -c . "$out/flows.tsv" 2>/dev/null) || echo 0)
+    n_kept=$( (grep -c . "$scoped" 2>/dev/null) || echo 0)
+    [ "$n_kept" != "$n_all" ] &&
+        info "netwatch: $n_kept of $n_all recorded flows touch the guest or the virbr0 subnet; the rest is bench-side host traffic outside the audited subject"
+    mv "$scoped" "$out/flows.tsv"
     _ssh 'cat /data/pithead/config.json 2>/dev/null' | tr -d '\r' >"$out/config.json" 2>/dev/null
     jq -e . "$out/config.json" >/dev/null 2>&1 || printf '{}\n' >"$out/config.json"
     flows=$(NW_MODE=perimeter NW_RESOLVER_IP="$gw" NETWATCH_ENGINE="$engine" \
