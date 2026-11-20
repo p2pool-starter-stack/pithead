@@ -225,7 +225,7 @@ COPY os/overlay/pithead-boot.service os/overlay/pithead-setup-again.service os/o
 COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery /usr/local/sbin/
 COPY os/overlay/pithead-egress-audit.service /etc/systemd/system/pithead-egress-audit.service
 COPY os/overlay/pithead-egress-audit /usr/local/sbin/pithead-egress-audit
-COPY lib/pithead/02f-host-egress-audit.sh /usr/local/share/pithead/02f-host-egress-audit.sh
+COPY os/rootfs/pithead-egress-audit-slice /usr/local/share/pithead/02f-host-egress-audit.sh
 COPY data/egress-map.tsv /usr/share/pithead/egress-map.tsv
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config

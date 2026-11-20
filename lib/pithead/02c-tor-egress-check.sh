@@ -31,7 +31,8 @@ egress_status() {
     *) audit_state=absent ;;
     esac
     if [ "$audit_state" = present ]; then
-        audit_json=$(printf '%s' "$audit_cj" | jq -c '. + {verdict: "present"}')
+        audit_json=$(printf '%s' "$audit_cj" | jq -c '. + {verdict: "present"}') || true
+        [ -n "$audit_json" ] || audit_json='{"verdict":"unreadable","counters":[],"would_drop":null}'
     else
         audit_json="{\"verdict\":\"$audit_state\",\"counters\":[],\"would_drop\":null}"
     fi
