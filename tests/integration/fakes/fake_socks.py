@@ -52,12 +52,10 @@ class _Handler(socketserver.BaseRequestHandler):
 
 
 class FakeSocks:
-    """A loopback SOCKS5 listener that either relays CONNECT or refuses it."""
-
-    def __init__(self, refuse=False):
+    def __init__(self, refuse=False, host="127.0.0.1", port=0):
         self.refuse = refuse
         self.connected = False
-        self._server = _Server(("127.0.0.1", 0), _Handler)
+        self._server = _Server((host, port), _Handler)
         self._server.owner = self
         self.host, self.port = self._server.server_address
 
@@ -74,3 +72,10 @@ class FakeSocks:
     def __exit__(self, *_exc):
         self._server.shutdown()
         self._server.server_close()
+
+
+if __name__ == "__main__":
+    import sys
+
+    with FakeSocks(host=sys.argv[1], port=int(sys.argv[2])):
+        threading.Event().wait()

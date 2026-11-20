@@ -32,8 +32,8 @@ itself.
 
 The rootfs Dockerfile builds Docker Compose and Cosign from exact upstream
 commits, checks each commit against its release tag, and asserts the binaries'
-reported versions. The Go builder is pinned by digest at [1.26.11](https://go.dev/doc/devel/release#go1.26.0) to clear
-[CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585) and CVE-2026-97054
+reported versions. The Go builder is pinned by digest at [1.26.10](https://go.dev/doc/devel/release#go1.26.0) to clear
+[CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
 in both binaries' standard library.
 
 The rootfs install list names `apt`, `gzip`, `libpcre2-8-0`, `libsqlite3-0`, `perl-base` and
