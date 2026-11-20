@@ -50,6 +50,10 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: scheduled-run-watch
+  cancel-in-progress: false
+
 jobs:
   scheduled-run-watch:
     name: Report declared schedule cadence and the Monday CVE sweep
