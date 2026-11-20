@@ -76,6 +76,9 @@ Appliance startup and source upgrades share `reconcile_compose_images` in
 `lib/pithead/03-release-verify.sh`. `tests/os/selftest-image-convergence.sh` checks same-tag
 archive replacement, recreation failures and migration holds through the real startup functions.
 The crossupdate phase compares the running dashboard ID with the candidate slot archive.
+The opt-in `realupgrade` phase (`tests/os/phases/realupgrade.sh`, helpers in
+`tests/os/realupgrade-helpers.sh`, selftest `tests/os/selftest-realupgrade.sh`) upgrades an aged,
+published appliance image through the dashboard; it is not part of `--phase all`.
 `tests/os/dashboard-markers.json` declares signed test-image variants;
 `tests/os/selftest-marker-images.sh` checks the build-time manifest and shared archive reference.
 

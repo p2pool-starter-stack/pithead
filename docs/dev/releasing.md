@@ -426,7 +426,7 @@ budget can then evict the unprotected baseline. Keep other KVM jobs off that ben
 reports the pin held, and confirm the image cache still lists the commit right before submitting
 provision. The cut cannot seed itself: `old_image` needs a strictly older build.
 
-Submit seven KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
+Submit eight KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
 cap, and so does the boot group with provision.
 
 - Boot group: boot, update, install.
@@ -445,6 +445,14 @@ cap, and so does the boot group with provision.
 - Provision: provision and setup-defaults against the seeded baseline, pinned to the seeded bench.
 - Crossupdate: the update from the previous release, which is the path existing installs take,
   pinned to a bench that keeps that release's image.
+- Realupgrade: the opt-in `realupgrade` phase (#4193). It fetches the newest published appliance
+  image older than the tag (its `.sha256` verified), patches a scratch copy offline so the guest
+  also trusts the test-signed candidate (the release keyring stays; only that scratch copy is
+  patched), ages it through the dashboard, upgrades it through the dashboard to the exact-SHA
+  candidate, then soaks for 10 minutes with one extra reboot and runs the hard-reset negative
+  control. It is one job in the 240-minute window; if a run shows it needs more, submit
+  `realupgrade-main` (upgrade and soak) and `realupgrade-negctl` (the negative control) as two
+  jobs, which makes nine KVM jobs and nine payloads in this recipe.
 
 Set four inputs first: `BASELINE_SHA`, the seeded baseline; `PROVISION_BENCH_URL`, the API base of
 the bench that pins it; `PREVIOUS_RELEASE_SHA`, from `git rev-parse "vX.Y.Z^{commit}"` for the
@@ -495,19 +503,26 @@ printf 'KVM crossupdate idempotency key: %s\n' "$KVM_CROSS_KEY"
 KVM_CROSS_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_CROSS_KEY" --arg prev "$PREVIOUS_RELEASE_SHA" \
   '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["crossupdate"],old_image_commit:$prev},local_only:true,timeout_minutes:240,submitted_by:"release/devops",note:"release KVM crossupdate",idempotency_key:$key}' \
   | curl -fsS -X POST "$CROSSUPDATE_BENCH_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
-printf 'KVM jobs: %s %s %s %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_FAULT_ID" \
-  "$KVM_IMGUP_ID" "$KVM_STACK_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
+KVM_REAL_KEY=$(uuidgen)
+printf 'KVM realupgrade idempotency key: %s\n' "$KVM_REAL_KEY"
+KVM_REAL_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_REAL_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["realupgrade"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM realupgrade",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+printf 'KVM jobs: %s %s %s %s %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_FAULT_ID" \
+  "$KVM_IMGUP_ID" "$KVM_STACK_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$KVM_REAL_ID" "$SHA"
 ```
 
-Read all seven completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
+Read all eight completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
 rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
 battery proof. A failed KVM group prevents the final e2e gate from running.
 
 Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be tagged; a job whose
 `commit` differs from it is not evidence for the release, however recently it passed. Any change
 after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
-rerun the boot group, the four rig-group splits, provision and crossupdate on the new SHA and
-read them again before submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
+rerun the boot group, the four rig-group splits, provision, crossupdate and realupgrade on the new
+SHA and read them again before submitting e2e. Crossupdate, provision and realupgrade rerun after
+any post-battery change, because the update path they prove is the one a digest re-pin or
+version bump alters. `release.sh` refuses to publish unless the tag SHA itself carries a successful
 `bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
 release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
 `scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
@@ -521,8 +536,8 @@ through the dashboard's own update door, so the in-flight flag is armed. After t
 requires the flag's `blocking` list to name the dashboard container and the served banner module to
 carry its `Blocked by:` clause. Both slots of that phase are built from one tree, so they share a
 version and pithead-boot writes no `rolled_back` verdict there; the verdict itself is asserted by
-the real-upgrade scenario ([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)),
-whose slots differ. On any failure the job keeps the failed boot's
+the `realupgrade` phase ([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911),
+[#4193](https://github.com/p2pool-starter-stack/pithead/issues/4193)), whose slots differ. On any failure the job keeps the failed boot's
 `pithead-boot` journal, the verdict JSON, grubenv and the doctor output in
 `pithead-os-serial.log.leg5-evidence` and prints it, bounded, to the job log.
 
@@ -541,7 +556,7 @@ Use `targeted` until the frozen SHA includes the harness fix from
 [#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026); then set `E2E_MODE=matrix`.
 Keep the real rig in the run. Only the owner may authorize `no_rig` after reviewing failures
 confined to rigforge-control harness rows. The final e2e job alone requests the aggregate status,
-with the boot group and the four rig-group splits in `after`. A bench resolves `after` only
+with the boot group, the four rig-group splits and realupgrade in `after`. A bench resolves `after` only
 against its own jobs, and the provision and crossupdate jobs belong to their pinned benches, so
 the block first refuses to submit unless both of those completed with `success`:
 
@@ -554,16 +569,16 @@ E2E_KEY=$(uuidgen)
 printf 'e2e idempotency key: %s\n' "$E2E_KEY"
 jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MODE" \
   --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" --argjson fault "$KVM_FAULT_ID" \
-  --argjson imgup "$KVM_IMGUP_ID" --argjson stack "$KVM_STACK_ID" \
-  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig,$fault,$imgup,$stack],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
+  --argjson imgup "$KVM_IMGUP_ID" --argjson stack "$KVM_STACK_ID" --argjson real "$KVM_REAL_ID" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig,$fault,$imgup,$stack,$real],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
   | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
 ```
 
-Read the completed e2e job's full status, log, artifacts and evidence. All eight jobs must carry
+Read the completed e2e job's full status, log, artifacts and evidence. All nine jobs must carry
 the same SHA and ref. A failed or cancelled leg cannot yield a
 successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
 `success` and its creator is the configured bench-ci App before running `release.sh`; record all
-eight job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
+nine job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
 status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
 bench-ci; retain its printed idempotency key for a retry.
 

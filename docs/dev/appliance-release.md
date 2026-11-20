@@ -565,7 +565,7 @@ channels share the final cut commit, one version and one GitHub Release.
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
-   submit the seven bench-ci `tier4-kvm` jobs on this exact SHA from
+   submit the eight bench-ci `tier4-kvm` jobs on this exact SHA from
    [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not):
    the boot group, the rig group as its four splits, the provision job against the seeded baseline
    and the crossupdate job from the previous release. Record every job ID in the release issue.

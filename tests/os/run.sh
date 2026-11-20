@@ -48,11 +48,17 @@
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
 #           $PITHEAD_OLD_IMAGE, which only a job that asked for it carries.
+#   realupgrade  a published N-2 appliance image (checksum verified, patched offline with the test
+#           trust) aged through the dashboard API, upgraded to the exact-SHA candidate through the
+#           dashboard, then a 10-minute soak with one extra reboot and a hard-reset negative
+#           control (#4193). Not run by --phase all; PITHEAD_REALUPGRADE_LEGS selects legs.
+#   realupgrade-main, realupgrade-negctl  the same phase split in two for the 240-minute cap:
+#           the upgrade and soak legs, and the hard-reset negative control, each on a fresh guest.
 #   stack   the DIY gate (tests/integration/run.sh) against a remote-node guest (#2062, § J):
 #           a non-destructive --check, then --lifecycle --fault-injection --hardening
 #           --auth-fail-closed on remote-main-secure-tari. A bench with no reserved node is a
 #           counted `missing` phase skip; #2443 and #2444 run from neither invocation.
-#   all     every phase above except crossupdate, in that order — media, fault and reset included
+#   all     every phase above except crossupdate and realupgrade, in that order — media, fault and reset included
 #           since #1064; rigmedia added since #2069; image-upgrade added for #2057; stack since #2062
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
@@ -189,8 +195,8 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|p2pool-heal|all]\n'
-        sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
+        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|realupgrade|realupgrade-main|realupgrade-negctl|stack|tor-heal|p2pool-heal|all]\n'
+        sed -n '2,66p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -240,6 +246,8 @@ source "$SCRIPT_DIR/phases/reset.sh" || exit $?
 source "$SCRIPT_DIR/phases/image-upgrade.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
+# shellcheck source=tests/os/phases/realupgrade.sh
+source "$SCRIPT_DIR/phases/realupgrade.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
 source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 # shellcheck source=tests/os/phases/tor-heal.sh
@@ -281,6 +289,9 @@ fault) _run_phase fault phase_fault ;;
 reset) _run_phase reset phase_reset ;;
 image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
+realupgrade) _run_phase realupgrade phase_realupgrade ;;
+realupgrade-main) _run_phase realupgrade-main phase_realupgrade_main ;;
+realupgrade-negctl) _run_phase realupgrade-negctl phase_realupgrade_negctl ;;
 stack) _run_phase stack phase_stack ;;
 tor-heal) _run_phase tor-heal phase_tor_heal ;;
 p2pool-heal) _run_phase p2pool-heal phase_p2pool_heal ;;
