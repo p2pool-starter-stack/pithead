@@ -2,6 +2,10 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # shellcheck source=tests/os/media-password-leg.sh
 source "$SCRIPT_DIR/media-password-leg.sh" || return $?
+# The owner's public wallets; MEDIA_WALLET_ALT stays the never-fundable fixture key because the stick needs a second primary address.
+MEDIA_WALLET="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
+MEDIA_TARI="122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG"
+MEDIA_WALLET_ALT="445dvgb2rcBcPz2n2tiGLMgURfpBxV27DBsSgz4MEqXUHLtmmYeu1wL6iNu7fPJpwdUwtbvWS7MX9KZiyKonEg3NGKQgwhk"
 _make_media_stick() {
     (
         local path="$1" json="$2" loop="" mnt="" backing="" source="" rc mount_rc tries=0 step="image creation"
@@ -119,7 +123,7 @@ phase_media() {
     mnt=$(mktemp -d)
     mount "${loop}p1" "$mnt"
     printf '{"monero":{"wallet_address":"%s"},"tari":{"wallet_address":"%s"},"p2pool":{"pool":"mini","stratum_password":"auto"}}' \
-        "$HARNESS_WALLET" "$HARNESS_TARI" >"$mnt/pithead-config.json"
+        "$MEDIA_WALLET" "$MEDIA_TARI" >"$mnt/pithead-config.json"
     umount "$mnt"
     rmdir "$mnt"
     losetup -d "$loop"
@@ -259,7 +263,7 @@ phase_media() {
 
     local stick2="${DISK%.img}-media-abort.img"
     _make_media_stick "$stick2" \
-        "{\"monero\":{\"wallet_address\":\"$HARNESS_WALLET\"},\"tari\":{\"wallet_address\":\"$HARNESS_TARI\"},\"p2pool\":{\"pool\":\"mini\",\"stratum_password\":\"auto\"}}" || {
+        "{\"monero\":{\"wallet_address\":\"$MEDIA_WALLET\"},\"tari\":{\"wallet_address\":\"$MEDIA_TARI\"},\"p2pool\":{\"pool\":\"mini\",\"stratum_password\":\"auto\"}}" || {
         bad "media abort fixture construction failed before guest attachment"
         return
     }

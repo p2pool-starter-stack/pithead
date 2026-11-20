@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329  # fake functions and dynamic globals are the controls
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Verdicts and pure self-tests for the appliance approval and node-runtime legs.
 #
 # #2076 removed the Telegram approval round-trip, and with it the fake-provider transport this file
@@ -7,10 +9,8 @@
 # prompt and approver verdicts, and the four fixture self-tests that existed only to prove that
 # harness could not silently no-op. A sensitive commit now goes through the ordinary authenticated
 # control route, so the leg needs no privileged loopback identity and no guest-side fake at all.
-#
-# What is left is what the removal did not touch: the consumer proof that a repointed Tari endpoint
-# is the one p2pool actually merge-mines against, and the two pure self-tests that keep this file
-# honest without a guest.
+# What is left is the consumer proof that a repointed Tari endpoint is the one p2pool actually
+# merge-mines against, and the two pure self-tests that keep this file honest without a guest.
 
 # WHICH of the four bindings failed, for the row that reported only that one of them did (#2060).
 # The row's own `if` is a four-way conjunction and prints one red for all four. The three cheap
@@ -24,8 +24,8 @@
 # the verdict it used to call (approval_audit_verdict) went with the Telegram leg.
 approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
     local result="$1" audit="$2" rid="$3" landed="${4:-}" apply audit_v
-    apply=$(printf '%s' "${result:-null}" | jq -r '"\(.status // "none")/\(.error // "no error")"' 2>/dev/null) ||
-        apply="unparseable: ${result:0:120}"
+    apply=$({ printf '%s' "${result:-null}" | jq -r '"\(.status // "none")/\(.error // "no error")"' 2>/dev/null ||
+        printf 'unparseable: %s' "$result"; } | os_redact_addr | head -c 200)
     if [ -z "$result" ]; then
         if [ "$landed" = landed ]; then
             apply="requested hostname change landed, but no result file was written — runner completion is unknown"

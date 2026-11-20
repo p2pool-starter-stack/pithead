@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # The address watch (#2463): an IPv6 address acquired after provisioning must reach the dashboard
 # certificate without an apply or a reboot.
 

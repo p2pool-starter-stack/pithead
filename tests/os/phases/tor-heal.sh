@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 phase_tor_heal() {
     # Provision the normal local-node appliance: recovery verifies local Monero peers.
     # These locals are shared with the existing initial-provision fixture through dynamic scope.

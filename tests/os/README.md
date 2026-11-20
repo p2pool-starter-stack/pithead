@@ -638,6 +638,18 @@ This is distinct from the remote-node row below, where a missing input stays a c
 **failure**: the classes are for rows the configuration excludes, never for inputs the bench
 forgot.
 
+Guests that reach real nodes can mine on mainnet, so every guest configured by the battery pays
+the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (the test host supplies the
+owner's addresses); without them the harness uses its labelled throwaway addresses. The run
+refuses before any guest exists when `PITHEAD_OS_MONERO_NODE_HOST` or `PITHEAD_OS_TARI_NODE_HOST` is
+set and either payout variable is empty, naming the variable and never a value. The media guest
+never reaches a chain node, so its sticks use their own labelled throwaway addresses rather than
+the payouts. The v1.20.0 restore fixture (`tests/os/fixtures/v1.20.0`) deliberately restores a
+throwaway identity and a fixture donor id on a guest whose node hosts are the unreachable fixture
+address, so it never mines; the restore leg asserts that host is unchanged after the restore. XvB keeps its default
+`xvb.donor_id` of `auto`, the first 8 characters of that Monero address, so XvB hash is the
+owner's; `selftest-owner-payouts.sh` fails if any guest config sets the donor id explicitly.
+
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_MONERO_ZMQ_PORT`, `PITHEAD_OS_TARI_NODE_HOST`, and

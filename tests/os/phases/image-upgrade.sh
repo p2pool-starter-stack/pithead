@@ -4,6 +4,8 @@
 IMAGE_UPGRADE_HOST_STAGE=""
 
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/input-failure.sh"
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/redact-addr.sh"
 _image_upgrade_input_failure() { image_upgrade_input_failure "$@"; }
 
 _image_upgrade_input_run() { # <sub-step> <redacted-command> <command...>
@@ -38,6 +40,25 @@ _image_upgrade_node_v4() { # <sub-step> <name-or-literal>
         return 2
     }
     printf '%s\n' "$address"
+}
+
+_image_upgrade_owner_config() { # <monero host> <tari host> <stage>; reference config on stdin
+    local stage="$3"
+    jq \
+        --arg monero_wallet "$HARNESS_WALLET" --arg tari_wallet "$HARNESS_TARI" \
+        --arg monero_host "$1" --argjson monero_rpc "$PITHEAD_OS_MONERO_RPC_PORT" \
+        --argjson monero_zmq "$PITHEAD_OS_MONERO_ZMQ_PORT" --arg tari_host "$2" \
+        --arg monero_user "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" \
+        --rawfile monero_pass "$stage/monero-pass" '
+            .monero.wallet_address = $monero_wallet |
+            .monero.mode = "remote" | .monero.remote.host = $monero_host |
+            .monero.remote.rpc_port = $monero_rpc | .monero.remote.zmq_port = $monero_zmq |
+            (if $monero_user != "" then .monero.node_username = $monero_user else . end) |
+            (if $monero_pass != "" then .monero.node_password = $monero_pass else . end) |
+            .tari.wallet_address = $tari_wallet | .tari.mode = "remote" |
+            .tari.remote.host = $tari_host | .p2pool.pool = "mini" |
+            .local_miner.enabled = true | .xvb.enabled = false
+        '
 }
 
 _image_upgrade_prepare_inputs() {
@@ -228,10 +249,9 @@ phase_image_upgrade() {
         bad "could not stage the private upgrade inputs inside the guest"
         return
     }
-    _ssh "bash /run/pithead-image-upgrade/image-upgrade-guest.sh $head" || {
-        rc=$?
-        guest_failure="$(_image_upgrade_read_guest_failure || true)"
-    }
+    _ssh "bash /run/pithead-image-upgrade/image-upgrade-guest.sh $head" | os_redact_addr_lines
+    rc=${PIPESTATUS[0]}
+    [ "$rc" -eq 0 ] || guest_failure="$(_image_upgrade_read_guest_failure || true)"
     miner_readiness="$(_image_upgrade_read_miner_readiness || true)"
     _image_upgrade_clear_guest_inputs || cleanup_rc=1
     if [ -n "$miner_readiness" ]; then

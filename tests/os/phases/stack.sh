@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # The stack phase (#2062): tests/integration/run.sh (the DIY gate, what release-gate.yml runs)
 # has never once run against the appliance runtime — podman through the docker shim, read-only
@@ -88,7 +90,7 @@ _stack_run_integration() { # <label> <extra args...>
         # of those needs a different fix. This flows into the same kvm-<phase>.log artifact the
         # rest of the battery already writes through, so it costs nothing to keep.
         bad "DIY gate vs. appliance channel: $label (exit $rc)"
-        sed 's/\x1b\[[0-9;]*m//g' "$out"
+        os_redact_addr <"$out" | sed 's/\x1b\[[0-9;]*m//g'
         # The DIY gate's own per-scenario capture (lib.sh:capture_artifacts) writes status/doctor/
         # compose/api-state into results/<scenario>/ on THIS host, and bench-ci collects fixed paths
         # only — so job 497 could not answer "what did `pithead status` actually say" for a leg that
@@ -100,7 +102,7 @@ _stack_run_integration() { # <label> <extra args...>
             "$SCRIPT_DIR/../integration/results"/*/api-state.json; do
             [ -f "$f" ] || continue
             info "  [$label] --- ${f#*results/} ---"
-            sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
+            os_redact_addr <"$f" | sed 's/\x1b\[[0-9;]*m//g' | head -n 60
         done
     fi
     grep -a -e 'of which:' -e '(#1397)' -e '(#3078)' -e 'stratum control' -e 'stratum fixture' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
@@ -171,7 +173,7 @@ _provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user
         # /submit probes the reserved node's reachability synchronously (wizard_node_probe.py)
         # and 400s with the probe's own reason — surface it, not just the status code, since a
         # remote-node submit failure is far more often a bad host/port/firewall than bad JSON.
-        bad "coordinator remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | cut -c1-500))"
+        bad "coordinator remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | os_redact_addr | cut -c1-500))"
         rm -f "$jar" "$sbody"
         return 1
     }
