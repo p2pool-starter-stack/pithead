@@ -1,19 +1,5 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # ip belongs to run.sh; the KVM guest's lease as the harness knows it
-# Passive egress capture windows for the KVM battery (#4196, parent #4145).
-#
-# The recorder and the judge live in tests/netwatch/; this file is only the wiring: it starts a
-# capture before a lifecycle window, stops it after, runs the classifier at the virbr0 vantage,
-# and records the verdict as a NON-REQUIRED row. A netwatch red never gates a phase: this is the
-# audit that later becomes the gate (#4154), and until then an unexpected flow must be visible in
-# the job evidence without ever holding a fix that has nothing to do with egress. AC #4196-2: a
-# dead or empty capture reads as a failure row, never as a pass, because an instrument that
-# recorded nothing and an idle network look identical in every other output.
-#
-# Vantage honesty: the recorder runs on the KVM host, so every guest flow arrives NATed behind
-# the guest address. The classifier says so in its own report line (perimeter-unattributable);
-# nothing here upgrades that to per-container proof.
-
 _netwatch_home() { printf '%s' "${HOST_SCRATCH:-/tmp}/pithead-netwatch"; }
 
 _netwatch_slug() { printf '%s' "$1" | tr -cs 'A-Za-z0-9.-' '-'; }
