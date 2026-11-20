@@ -176,12 +176,22 @@ for gate_flag in 0 1; do
     jq --arg w "$gate_wallet" '.monero.wallet_address=$w' "$C/config.json" >"$C/cand.json"
     (
         export PITHEAD_APPLIANCE="$gate_flag"
-        gate_try "$C/cand.json"
+        jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$REQS/$UUID5.json"
+        run_pending >/dev/null
+    )
+    assert_eq "payout address preview stages on $gate_who" \
+        "$(jq -r '[.status, .error // ""] | join(" :: ") | sub(" :: $"; "")' "$RESULTS/$UUID5.json")" "previewed"
+    (
+        export PITHEAD_APPLIANCE="$gate_flag"
+        jq -n --arg id "$UUID5" '{id:$id,action:"commit",actor:"admin"}' >"$REQS/$UUID5.json"
+        run_pending >/dev/null
     )
     assert_eq "payout address is refused without confirmation on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
     (
         export PITHEAD_APPLIANCE="$gate_flag"
-        gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${gate_wallet: -8}" '{payout_suffixes:{monero:$s}}')"
+        jq -n --arg id "$UUID5" --arg s "${gate_wallet: -8}" \
+            '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:$s}}}' >"$REQS/$UUID5.json"
+        run_pending >/dev/null
     )
     assert_eq "payout address applies behind the payout-suffix confirmation on $gate_who" \
         "$(jq -r '[.status, .error // ""] | join(" :: ") | sub(" :: $"; "")' "$RESULTS/$UUID5.json")" "applied"

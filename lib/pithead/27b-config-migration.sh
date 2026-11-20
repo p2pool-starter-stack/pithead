@@ -48,7 +48,7 @@ migrate_config_to_2_1() {
     ) && chmod 600 "$tmp" && mv -- "$tmp" "$CONFIG_FILE"; then
         if [ -n "$owner" ]; then chown "$owner" "$CONFIG_FILE" 2>/dev/null || true; fi
         log "Migrated $CONFIG_FILE to the 2.1.0 layout: profile $(jq -r .profile "$CONFIG_FILE"), with the settings 2.0.0 left implicit pinned so this machine behaves as before. The old copy is at ${CONFIG_FILE}.bak-2.0."
-        if [ "$(jq -r 'if (.dashboard.control // null) == null or ((.dashboard.control // {}).enabled == null) then "absent" else "present" end' "$CONFIG_FILE")" == "absent" ] &&
+        if [ "$(jq -r '.dashboard.control.enabled | tostring' "$CONFIG_FILE")" == "null" ] &&
             [ "$(control_enabled_default)" == true ]; then
             warn "The dashboard settings editor is now on: 2.1.0 turns it on for every machine with a dashboard login, and this one has one. To keep configuration on the command line, set dashboard.control.enabled to false in $CONFIG_FILE and run '$0 apply'."
         fi
