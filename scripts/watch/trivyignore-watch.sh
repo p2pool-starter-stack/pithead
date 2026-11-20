@@ -92,7 +92,7 @@ build_image() {
 # <tag> -> finding IDs; a clean Trivy target can omit Vulnerabilities (shipped-image-sweep-report.sh).
 scan_image() {
     local tag="$1" json
-    json=$(docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" \
+    json=$(docker run --rm -e TRIVY_DB_REPOSITORY="ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2" -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" \
         image --scanners vuln --severity "$SEVERITY" --ignore-unfixed --format json "$tag" \
         2>/dev/null) || return 1
     printf '%s' "$json" | jq -sr '

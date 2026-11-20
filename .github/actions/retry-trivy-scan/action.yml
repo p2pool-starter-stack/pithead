@@ -12,8 +12,8 @@ description: >
 
   The retry also covers a vulnerability-DB registry refusal (#3296): mirror.gcr.io answered 403 to
   both attempts of one run because they ran within the same second. So the retry waits first, and
-  lists ghcr.io ahead of the mirror (TRIVY_DB_REPOSITORY, tried in order), so a refusing mirror
-  no longer fails an unrelated PR. The first attempt keeps trivy's default order.
+  lists ghcr.io ahead of the ECR mirror (TRIVY_DB_REPOSITORY, tried in order), so a refusing registry
+  no longer fails an unrelated PR. The first attempt gets the same list from install-trivy.
 inputs:
   image-ref:
     required: true
@@ -27,7 +27,7 @@ runs:
       run: sleep 30
     - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       env:
-        TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
+        TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
       with:
         skip-setup-trivy: true
         image-ref: ${{ inputs.image-ref }}

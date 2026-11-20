@@ -201,6 +201,7 @@ lint-pithead-build: ## Test the generated CLI build and its ordering/refusal gua
 lint-trivy-parity: ## Fail if a gate workflow's install-trivy version: (the one line that decides the engine) drifts from the version scripts/watch/trivyignore-watch.sh scans with (#1290), or if the cached-installer shape that makes it the only pin breaks (#2214)
 	bash scripts/watch/trivyignore-watch.sh --self-test
 	bash scripts/watch/trivyignore-watch.sh --check-parity
+	bash scripts/watch/trivyignore-expiry.sh --self-test
 	bash scripts/lint/lint-trivy-installer-cache.sh --self-test
 	bash scripts/lint/lint-trivy-installer-cache.sh
 

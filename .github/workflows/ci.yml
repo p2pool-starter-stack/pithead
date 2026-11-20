@@ -7,24 +7,24 @@ on:
   # Two Monday sweeps hang off this schedule (every other job gates itself off the event):
   # build-images (#833) rebuilds this branch and scans the rebuild, the only sweep that can go red
   # before a release; sweep-shipped (#1313) scans the published ghcr images by resolved digest
-  # and reports into a tracking issue rather than reddening, since a fixable CVE in a shipped
-  # image asks for a patch release, a person's decision.
+  # and reports into a tracking issue rather than reddening: a fixable CVE in a shipped image asks for a patch release.
   # THIS cron block is the one that fires (`schedule:` reads the DEFAULT branch, `develop`). Prove
   # a cadence change fired with `gh run list --json event`: a schedule that never runs looks
   # exactly like one that ran and found nothing (#1162).
   schedule:
     - cron: "0 5 * * 1" # Mondays 05:00 UTC
 
-# Least privilege (#282): every job here only reads the repo — none push commits, comment, or
-# publish packages. Narrowing the default GITHUB_TOKEN limits the blast radius of a compromised step.
+# Least privilege (#282): no job here pushes, comments or publishes; a narrow GITHUB_TOKEN limits a compromised step.
 permissions:
   contents: read
 
-# Cancel superseded runs of the same PR; never cancel push runs on main/develop (they set the
-# diff-cover baseline and are required checks on the protected branch). #415.
+# Cancel superseded PR runs; never push runs on main/develop (diff-cover baseline, required checks). #415.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
 
 jobs:
   dashboard:
@@ -396,7 +396,7 @@ jobs:
           checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd
           enable-cache: false
       - name: Audit workflows (injection, token scope, self-hosted-runner risks)
-        run: uvx zizmor@1.25.2 --offline .github/workflows/
+        run: uvx zizmor@1.25.2 --offline .github/workflows/ .github/actions/
 
   compose:
     name: Compose config + security hardening
