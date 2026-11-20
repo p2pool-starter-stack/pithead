@@ -83,7 +83,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ### Security
 
 - The appliance rootfs builds Docker Compose and Cosign with Go 1.26.11, clearing CVE-2026-97054
-  in both binaries' standard library (#4265).
+  in both binaries' standard library (#4265), and builds Compose v5.7.2, whose containerd v2.4.2
+  clears CVE-2026-95839 (#4291).
 
 ### Notes
 
