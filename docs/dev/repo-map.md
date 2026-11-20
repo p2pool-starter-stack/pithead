@@ -167,6 +167,9 @@ history observations and recovery results in `service/health/tor_heal_history.py
 The P2Pool zero-peer watchdog is `service/health/p2pool_heal.py`. The peerless-monerod watchdog and the re-dial after any Tor start are `service/health/monerod_redial.py`.
 The automatic `tor-recover` control wrapper is `48b-control-tor-recover.sh`; it calls
 the same host-gated recovery as the CLI.
+The appliance `power-reboot` and `power-shutdown` control verbs are in `48b-control-power-verbs.sh`;
+their host tests are `tests/stack/appliance/test-appliance-power-verbs.sh` and the KVM `power` phase
+(`tests/os/phases/power.sh`).
 
 ## Dashboard feature folders
 

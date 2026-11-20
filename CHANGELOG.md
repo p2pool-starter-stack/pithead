@@ -13,6 +13,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- The host control channel has `power-reboot` and `power-shutdown` actions for an appliance. The host
+  checks the typed `REBOOT` or `SHUTDOWN` word, refuses during an OS update or its uncommitted-slot
+  window, stops the stack, then runs `systemctl reboot` or `poweroff` (#4084, host half of #4052).
 - `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
   same windowed `.zip` and manifest as the appliance: every container's full log for the window instead of
   the last 200 lines, the DIY egress and LAN-guard units from the journal, and an engine or journal that

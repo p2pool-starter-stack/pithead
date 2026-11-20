@@ -155,6 +155,7 @@ control_process_request() { # <claimed-file> <control-dir>
     os-verify) control_os_verify "$file" "$id" "$actor" "$cdir" ;;
     os-install) control_os_install "$file" "$id" "$actor" "$cdir" ;;
     os-reboot) control_os_reboot "$file" "$id" "$actor" "$cdir" ;;
+    power-reboot | power-shutdown) control_power "$file" "$id" "$actor" "$cdir" "$action" ;;
     diag-doctor) control_diag_doctor "$id" "$actor" "$cdir" ;;
     diag-logs) control_diag_logs "$file" "$id" "$actor" "$cdir" ;;
     svc-restart) control_svc_restart "$file" "$id" "$actor" "$cdir" ;;
@@ -335,7 +336,11 @@ control_run_pending() {
     CONTROL_WU_BUDGET=1
     # OS-update budget: a bundle download attempt or a slot install holds the runner for minutes
     # too, so exactly one os-* verb runs per drain; the rest reject with a retry hint.
+    # shellcheck disable=SC2034
     CONTROL_OS_BUDGET=1
+    # shellcheck disable=SC2034
+    CONTROL_POWER_BUDGET=1
+    CONTROL_POWER_ORDERED=0
     names=$(cd "$cdir/requests" 2>/dev/null && ls -1tr -- *.json 2>/dev/null) || true
     if [ -z "$names" ]; then
         log "No pending control requests."
@@ -379,6 +384,7 @@ control_run_pending() {
         rm -f "$claim"
         control_prune_results "$cdir"
         n=$((n + 1))
+        [ "$CONTROL_POWER_ORDERED" -eq 0 ] || break
     done <<<"$names"
     log "Processed $n control request(s)."
 }
