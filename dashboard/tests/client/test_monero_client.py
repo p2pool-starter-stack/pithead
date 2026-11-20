@@ -6,7 +6,7 @@ import requests
 
 import mining_dashboard.client.monero.monero_client as monero_mod
 from mining_dashboard.client.monero.monero_client import MoneroClient
-from mining_dashboard.helper.http import MAX_RESPONSE_BYTES
+from mining_dashboard.helper.http import MAX_RESPONSE_BYTES, bounded_get
 
 
 def _resp(status_code=200, json_data=None, raise_json=False, body=None):
@@ -72,6 +72,8 @@ class TestGetInfo:
     def test_a_hostname_node_is_refused_before_any_socket_opens(self):
         client = MoneroClient(url="http://mynode.lan:18081", username="u", password="p")
         with patch.object(monero_mod.requests, "get") as mock_get:
+            with pytest.raises(requests.RequestException):
+                bounded_get("http://mynode.lan:18081/get_info")
             assert client.get_info() is None
         mock_get.assert_not_called()
 
