@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 phase_tor_heal() {
     # shellcheck disable=SC2034
     local img token="" jar="" scode="" marker="" tries=0 code="" pv_user="" pv_pass="" PROVISION_DASHBOARD_HOST=fixture-box OS_RESERVED_NODE_CONSUMER=0
@@ -12,7 +14,7 @@ phase_tor_heal() {
         ok "guest Tor saturated-history self-heal and disabled control (#3118)"
     else
         # _ssh sends guest stderr, which carries the failing stage, to $SSH_ERR; surface it.
-        printf 'Guest stderr: %s\n' "$(tail -c 2048 "$SSH_ERR" 2>/dev/null | tr -d '\r')"
+        printf 'Guest stderr: %s\n' "$(tr -d '\r' <"$SSH_ERR" 2>/dev/null | os_redact_addr | tail -c 2048)"
         bad "guest Tor saturated-history self-heal or disabled control failed (#3118)"
     fi
 }

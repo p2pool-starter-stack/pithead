@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Bounded XvB actuation smoke for the throwaway KVM appliance. The appliance is
 # intentionally unsynchronised, so this injects the controller's existing switch
 # method rather than pretending a PPLNS share or routed hashrate exists.
@@ -66,7 +68,7 @@ _xvb_real_tor_fetch_retry() {
 # and the guest's own traceback — the only thing that says whether the leg or the product is at
 # fault — died with the redirect.
 _xvb_guest_stderr() {
-    tr -d '\r' <"${SSH_ERR:-/dev/null}" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -3 | tr '\n' ';'
+    tr -d '\r' <"${SSH_ERR:-/dev/null}" 2>/dev/null | os_redact_addr | grep -v '^[[:space:]]*$' | tail -3 | tr '\n' ';'
 }
 
 # Tor reports healthy only at bootstrap TAG=done (build/tor/healthcheck.sh) — the product's own
@@ -119,7 +121,7 @@ _xvb_routing_actuation() {
         if [ -z "$pools" ]; then
             bad "controller actuator could not switch the live proxy to XvB within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
         else
-            bad "bounded controller injection did not leave XvB as the live Tor-routed proxy route (route: $pools; guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
+            bad "bounded controller injection did not leave XvB as the live Tor-routed proxy route (route: $(printf '%s' "$pools" | os_redact_addr); guest: $(_xvb_guest_stderr)) $(_xvb_proxy_diag)"
         fi
         return 1
     fi

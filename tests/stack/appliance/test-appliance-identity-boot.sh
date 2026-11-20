@@ -265,7 +265,7 @@ echo "== unit: restore_live_state_verdict — a restore leaves proof it is RUNNI
 # to pass, silently reintroducing #1091.
 # The same fixture wallet tests/os/run.sh's battery uses (HARNESS_WALLET) — any well-formed
 # address works here since the verdict only ever string-compares two values, never parses one.
-RLV_WALLET="44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
+RLV_WALLET="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
 rlv() { # <podman-ps-names> <live-wallet> <want-wallet> -> "<rc> <verdict-text>"
     local out rc
     out=$(
@@ -287,7 +287,7 @@ assert_eq "stack up but live wallet never came back: fails, names it unreadable"
     "1 the stack is up but live state never carried a readable stratum wallet (got 'none')"
 assert_eq "stack up but live wallet is a fresh/different address: fails — config.json alone would have missed this too" \
     "$(rlv "dashboard caddy" "44SomeFreshUnrelatedAddress" "$RLV_WALLET")" \
-    "1 the stack is up but live state's wallet is '44SomeFreshUnrelatedAddress', not the restored '$RLV_WALLET' — the restore landed a file but the running stack does not reflect it (#1091)"
+    "1 the stack is up but live state's wallet differs from the restored one — the restore landed a file but the running stack does not reflect it (#1091)"
 assert_eq "stack up but /api/state answered literal Unknown/null: still fails, not treated as a match" \
     "$(rlv "caddy dashboard" "Unknown" "$RLV_WALLET")" \
     "1 the stack is up but live state never carried a readable stratum wallet (got 'Unknown')"
