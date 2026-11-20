@@ -151,8 +151,3 @@ netwatch_htpdate_row() {
     st=$(_ssh 'systemctl is-enabled htpdate 2>&1' | tr -d '\r\n') || st=""
     ok "htpdate unit on the booted image reads ${st:-unreadable} (#4196: recorded for the egress audit, the result is posted to the parent issue)"
 }
-
-_netwatch_phase_provision() {
-    phase_provision
-    netwatch_mining_hour "Pithead appliance"
-}
