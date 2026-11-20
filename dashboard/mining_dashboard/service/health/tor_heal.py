@@ -33,7 +33,7 @@ MAX_DISRUPTIVE_PER_DAY = 4
 DISRUPTIVE_WINDOW_SEC = 24 * 3600
 EXHAUSTED_PROBE_SEC = 15 * 60
 RE_ALERT_SEC = 60 * 60
-RECOVERY_CONFIRM_PROBES = 2  # ~10 min sustained egress before the budget resets
+RECOVERY_CONFIRM_PROBES = 2
 # Tor's stop: SIGTERM, `t` seconds of grace, then SIGKILL. Docker holds the request open until the
 # container is down, and a wedged Tor took over 60 s (#3032). The HTTP timeout outlasts grace + kill.
 TOR_STOP_GRACE_SEC = 15

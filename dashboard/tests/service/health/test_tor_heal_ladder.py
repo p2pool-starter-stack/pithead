@@ -148,7 +148,12 @@ def test_give_up_waits_for_the_last_action_cooldown():
     assert healer.decide(False, now[0] + COOLDOWN_SEC) == "exhausted"
 
 
-async def test_past_the_cap_probes_realerts_hourly_and_notices_recovery_once():
+@pytest.mark.parametrize(
+    "attempts,disruptive",
+    [(MAX_ATTEMPTS, 0), (NEWNYM_ATTEMPTS, MAX_DISRUPTIVE_PER_DAY)],
+    ids=["attempt-cap", "daily-disruptive-cap"],
+)
+async def test_past_the_cap_probes_realerts_hourly_and_notices_recovery_once(attempts, disruptive):
     now = [100000.0]
     probes = []
     healthy_from = []
@@ -167,7 +172,8 @@ async def test_past_the_cap_probes_realerts_hourly_and_notices_recovery_once():
 
     healer = _healer(now, probe=probe)
     healer._notify = notify
-    healer._attempts = MAX_ATTEMPTS
+    healer._attempts = attempts
+    healer._disruptive = [now[0] - 60] * disruptive
     healer._failing_since = now[0] - BROKEN_AFTER_SEC
     submits = []
     with (
