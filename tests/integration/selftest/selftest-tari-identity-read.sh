@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -uo pipefail
+echo "== Tari pre-upgrade identity read =="
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/integration/lib.sh
+source "$HERE/lib.sh"
+eval "$(sed -n '/^tari_error_summary() {/,/^}/p;/^tari_block_identity_checked() {/,/^}/p' "$HERE/lib/live-tari-identity.sh")"
+td="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/tari-id.XXXXXX")"
+trap 'rm -rf "$td"' EXIT
+TARI_IDENTITY="" TARI_IDENTITY_ERROR=""
+sleep() { :; }
+bump() { echo x >>"$td/c"; }
+count() { wc -l <"$td/c" | tr -d ' '; }
+reset_calls() { : >"$td/c"; }
+good="12 $(printf 'ab%.0s' {1..32})"
+denied=$'Traceback (most recent call last):\ngrpc._channel._InactiveRpcError: <_InactiveRpcError of RPC that terminated with:\n\tstatus = StatusCode.PERMISSION_DENIED\n\tdetails = "ListHeaders method not made available"\n\tdebug_error_string = "UNKNOWN:Error received from peer ipv4:10.1.2.3:18142"\n>'
+
+reset_calls
+tari_identity_remote() {
+    bump
+    if [ "$(count)" -lt 3 ]; then echo "$denied"; else echo "$good"; fi
+}
+tari_block_identity_checked 12
+assert_eq "a transient Tari failure is retried and then read" "$TARI_IDENTITY|$(count)" "$good|3"
+
+reset_calls
+tari_identity_remote() {
+    bump
+    echo "$denied"
+}
+if tari_block_identity_checked 12; then it_fail "a persistent Tari refusal fails the read"; else it_pass "a persistent Tari refusal fails the read"; fi
+assert_eq "the read is bounded to three attempts" "$(count)" "3"
+case "$TARI_IDENTITY_ERROR" in
+*PERMISSION_DENIED*"ListHeaders method not made available"*) it_pass "the captured error names the refusal" ;;
+*) it_fail "the captured error names the refusal" "$TARI_IDENTITY_ERROR" ;;
+esac
+case "$TARI_IDENTITY_ERROR" in
+*10.1.2.3*) it_fail "the captured error masks addresses" "$TARI_IDENTITY_ERROR" ;;
+*) it_pass "the captured error masks addresses" ;;
+esac
+
+tari_identity_remote() { echo "StopIteration"; }
+tari_block_identity_checked 12 || true
+assert_eq "an empty ListHeaders stream is reported distinctly" "$TARI_IDENTITY_ERROR" "attempt 3/3: StopIteration"

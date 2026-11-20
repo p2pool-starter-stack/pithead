@@ -3,6 +3,8 @@
 # live-xvb-support.sh; both are sourced by run.sh through this file.
 # shellcheck source=tests/integration/lib/live-upgrade-support.sh
 source "$HERE/lib/live-upgrade-support.sh"
+# shellcheck source=tests/integration/lib/live-tari-identity.sh
+source "$HERE/lib/live-tari-identity.sh"
 # shellcheck source=tests/integration/lib/live-state-support.sh
 source "$HERE/lib/live-state-support.sh"
 # shellcheck source=tests/integration/lib/live-xvb-support.sh
@@ -71,9 +73,13 @@ run_image_upgrade() {
     fi
     it_pass "upgrade starts from synced chains and active mining"
 
-    before_tari_id="$(tari_block_identity "$before_tari")"
+    tari_block_identity_checked "$before_tari" || true
+    before_tari_id="$TARI_IDENTITY"
     if [ -z "$before_monero_id" ] || [ -z "$before_tari_id" ]; then
-        it_fail "pre-upgrade chain identities are readable" "could not read the Monero or Tari block hash; upgrade not attempted"
+        unreadable=""
+        [ -n "$before_monero_id" ] || unreadable+=" Monero tip hash (get_info returned none)"
+        [ -n "$before_tari_id" ] || unreadable+=" Tari block at height $before_tari (ListHeaders: ${TARI_IDENTITY_ERROR:-no output})"
+        it_fail "pre-upgrade chain identities are readable" "could not read:$unreadable; upgrade not attempted"
         return 0
     fi
     it_pass "pre-upgrade Monero and Tari block identities captured"
