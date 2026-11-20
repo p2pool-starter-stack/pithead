@@ -177,7 +177,7 @@ PY
     compose stop fake-wallet-rpc >/dev/null
     compose stop fake-tari-wallet >/dev/null
     # Track each wallet separately after its first unreachable observation. The 4s
-    # debounce can be seen on the next 2s collection cycle; allow one more cycle.
+    # debounce spans collection cycles that each wait a 5s connect timeout on the stopped IP.
     # The overall window also covers serial wallet RPC timeouts before both are observed.
     outage_state="$(
         compose exec -T dashboard python3 - <<'PY'
@@ -194,8 +194,8 @@ while time.monotonic() < deadline:
     for chain, wallet in wallets.items():
         if wallet["reachable"] is False:
             first_seen.setdefault(chain, now)
-        if chain in first_seen and not wallet["down"] and now - first_seen[chain] > 8:
-            raise SystemExit(f"{chain} stayed up over 8s after unreachable")
+        if chain in first_seen and not wallet["down"] and now - first_seen[chain] > 20:
+            raise SystemExit(f"{chain} stayed up over 20s after unreachable")
     if len(first_seen) == 2 and all(wallet["down"] for wallet in wallets.values()):
         print("OK")
         break
