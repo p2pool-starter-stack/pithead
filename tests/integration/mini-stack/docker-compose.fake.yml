@@ -145,6 +145,16 @@ services:
     command: ["python3", "/fakes/fake_wallet_rpc.py", "--port", "18082"]
     volumes: ["../fakes:/fakes:ro"]
 
+  fake-wallet-down:
+    profiles: [wallet-outage]
+    image: *fake_image
+    container_name: itest-fake-wallet-down
+    networks:
+      itestnet:
+        ipv4_address: 172.30.250.12
+    entrypoint: []
+    command: ["sleep", "3600"]
+
   fake-tari-wallet:
     image: *fake_image
     container_name: itest-fake-tari-wallet
