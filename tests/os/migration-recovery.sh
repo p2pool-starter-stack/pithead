@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # The runner selects a cached old image; only merged, pre-fix source may seed this proof.
 migration_old_commit_valid() {
     local commit="$1" pr_commits ref

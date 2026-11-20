@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 phase_fault() {
     info "phase: fault injection — a brick is disqualifying, not deducted"
@@ -87,7 +89,7 @@ phase_fault() {
     out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1") || corrupt_rc=$?
     if printf '%s' "$out" | grep -qi "panic"; then
         bad "C: the updater PANICKED on a corrupt bundle instead of refusing it"
-        info "  $(printf '%s' "$out" | grep -i panic | head -1 | cut -c1-150)"
+        info "  $(printf '%s' "$out" | grep -i panic | os_redact_addr | head -1 | cut -c1-150)"
     elif [ "$corrupt_rc" -eq 0 ]; then
         # The old check only asserted the absence of "panic" — an install that quietly ACCEPTED
         # the tampered bundle read as a pass. The refusal itself is the assertion.
@@ -120,7 +122,7 @@ phase_fault() {
     before=$(_boot_id) || bad "could not read the boot id before the install — a reconnect and a reboot would look alike"
     [ -n "$before" ] || return
     out=$(_ssh "$(_install_and_boot_cmd /data/update.bundle) 2>&1" || true)
-    [ -n "$out" ] && info "install output: $(printf '%s' "$out" | tail -3 | tr '\n' ' ' | cut -c1-160)"
+    [ -n "$out" ] && info "install output: $(printf '%s' "$out" | os_redact_addr | tail -3 | tr '\n' ' ' | cut -c1-160)"
     _wait_new_boot "$before" 300 || {
         bad "guest never returned after installing v2"
         return
@@ -191,7 +193,7 @@ phase_fault() {
         ok "still updatable after fault injection"
     else
         bad "no longer accepts an update after fault injection"
-        printf '%s\n' "$out" | tail -12 | sed 's/^/       /'
+        printf '%s\n' "$out" | os_redact_addr | tail -12 | sed 's/^/       /'
     fi
 
     # Fault D (#2067c, the #1029 class): cut power WHILE a FRESH guest's first boot is loading its

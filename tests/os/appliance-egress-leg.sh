@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Tor-only egress ENFORCEMENT backstop for the provisioned appliance (#855/#2059). Sourced by
 # tests/os/run.sh; --self-test drives the leg against a stubbed guest.
 #
@@ -58,7 +60,7 @@ _egress_capture_diagnostics() {
     # diagnostics exist to answer, on the exact run they were built for.
     while IFS=$'\t' read -r label cmd; do
         [ -n "$label" ] || continue
-        out=$(_ssh "$cmd" </dev/null 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
+        out=$(_ssh "$cmd" </dev/null 2>/dev/null | os_redact_addr | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
         info "    $label: ${out:-<empty>}"
         ran=$((ran + 1))
     done < <(egress_diag_probes)

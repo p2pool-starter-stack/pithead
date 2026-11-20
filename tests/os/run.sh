@@ -222,6 +222,7 @@ source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 # shellcheck source=tests/os/phases/tor-heal.sh
 source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
+require_owner_payouts
 require_host
 require_clean_bench
 if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then

@@ -1,8 +1,9 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 source "$SCRIPT_DIR/miner-connection-leg.sh" || return $?
 # The provision leg proper, plus the one assertion that must survive its aborts.
-#
 # #2059: the Tor-only egress ENFORCEMENT backstop used to be the last ~55 lines of the body below,
 # downstream of a dozen `return 1` aborts on unrelated liveness legs. Every battery to date aborted
 # upstream of it, so the repo's only proof that the kernel enforces Tor-only egress never ran —
@@ -142,7 +143,7 @@ _phase_provision_initial_body() {
     # The host validates, installs config.json, and runs setup — which pulls the release images
     # (cosign-verified) and starts the stack. Pulls are the slow part; be generous.
     if ! _ssh "for i in \$(seq 120); do [ -f /data/pithead/config.json ] && exit 0; sleep 2; done; exit 1"; then
-        bad "the submitted config never became /data/pithead/config.json (validation output: $(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" | cut -c1-120))"
+        bad "the submitted config never became /data/pithead/config.json (validation output: $(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" | os_redact_addr | cut -c1-120))"
         return 1
     fi
     ok "config validated and installed by the host"
@@ -162,7 +163,7 @@ _phase_provision_initial_body() {
     *)
         bad "stack never came up within 25m — running: '${names:-none}'"
         stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
-        info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
+        info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | os_redact_addr | tr '\n' ' ' | cut -c1-200)"
         return 1
         ;;
     esac
@@ -176,7 +177,7 @@ _phase_provision_initial_body() {
     else
         bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
         stack_never_up_evidence # the unit states alone do not name the dependency `up` waits on
-        info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
+        info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | os_redact_addr | tr '\n' ' ' | cut -c1-200)"
         return 1
     fi
     # Healthy read-only refusal, before unrelated day-two legs can abort this guest (#3262).
@@ -291,7 +292,7 @@ _phase_provision_initial_body() {
         ok "built-in miner is up (xmrig unit active, process running)"
     else
         bad "the built-in miner never came up (unit: $(_ssh 'systemctl is-active xmrig' 2>/dev/null || echo unknown))"
-        info "  local-miner journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
+        info "  local-miner journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | os_redact_addr | tr '\n' ' ' | cut -c1-200)"
     fi
     # #1724: the pool has a SECOND writer — xmrig runs as root and grows nr_hugepages through sysfs
     # before a large-page allocation, so the declared ceiling bounds the sizer alone. verify-image
@@ -329,7 +330,7 @@ _phase_provision_initial_body() {
         ;;
     *)
         bad "p2pool did not survive its own start — crashed rather than held (state: ${pstate:-unreadable})"
-        info "  p2pool log tail: $(_ssh "podman logs --tail 3 p2pool 2>&1" | tr '\n' ' ' | cut -c1-200)"
+        info "  p2pool log tail: $(_ssh "podman logs --tail 3 p2pool 2>&1" | os_redact_addr | tr '\n' ' ' | cut -c1-200)"
         ;;
     esac
     if ! p2pool_log=$(_ssh "podman logs p2pool 2>&1"); then bad "p2pool container logs are unreadable"; elif awk '{ gsub(/\033\[[0-9;]*m/, "") } /P2Pool v[0-9]/ { found=1 } END { exit !found }' <<<"$p2pool_log"; then ok "p2pool daemon output remains observable through bounded container logs (#1989)"; else bad "p2pool daemon startup is absent from container logs"; fi
@@ -338,7 +339,7 @@ _phase_provision_initial_body() {
     if _ssh "jq -e '.pools[0].url == \"127.0.0.1:3333\"' /data/rigforge/config.json >/dev/null"; then
         ok "built-in miner is wired to the machine's own stratum (127.0.0.1:3333)"
     else
-        bad "the built-in miner's config does not dial the machine's own stratum (pools: $(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
+        bad "the built-in miner's config does not dial the machine's own stratum (pools: $(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | os_redact_addr | cut -c1-100))"
     fi
 
     # Same-apply convergence: exercise both toggles while the original boot is still running.

@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # leg 5 — a container whose OWN healthcheck fails must hold the gate (#2383, manual battery M9).
 # Split from phases/update.sh (file-budget ratchet): called from phase_update right after
