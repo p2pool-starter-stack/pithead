@@ -206,6 +206,16 @@ for gate_flag in 0 1; do
     assert_eq "the refused ssh path did not land on $gate_who" "$(jq -r '.ssh // "absent"' "$C/config.json")" "absent"
 done
 
+echo "== black-box: a staged profile change commits end to end (#3579) =="
+jq '.profile="privacy"' "$C/config.json" >"$C/cand-profile.json"
+gate_try "$C/cand-profile.json"
+assert_eq "profile switch is refused without the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+gate_try "$C/cand-profile.json" APPLY "$SELF_ENVELOPE"
+assert_eq "profile switch commits end to end with the typed APPLY" \
+    "$(jq -r '[.status, .error // ""] | join(" :: ") | sub(" :: $"; "")' "$RESULTS/$UUID5.json")" "applied"
+assert_eq "the committed profile landed" "$(jq -r '.profile' "$C/config.json")" "privacy"
+rm -f "$C/cand-profile.json"
+
 # Switching the control channel off is how an attacker locks the operator out of the remedy. It
 # runs last because an applied disable correctly stops this test's own remaining spool requests.
 jq '.dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"
