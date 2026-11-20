@@ -46,7 +46,14 @@ On request only, never on a schedule. A request names no URL: the rig fetches th
 
 ### Status file
 
-The rig keeps its last request time, verdict and reason in a status file on `/data`; its path and fields are fixed by #4013, which adds them to this page before it merges. The journal carries the same lines.
+The rig keeps its last request outcome in `/data/pithead/rig-update.json` (`$PWD/rig-update.json` on the rig checkout), written by `pithead rig-update` before the reboot and settled by the rig branch of `pithead-boot` on the next boot through `pithead rig-update boot-record`. Fields:
+
+- `state` — `pending` (written after the spare slot was written, before the reboot; settled by the next boot), `refused` (a refusal — the running slot was untouched and the rig kept mining), `updated` (the pending slot booted with the miner up and committed), or `rolled_back` (the miner never came up there; the bootloader fell back and the failed slot was marked bad).
+- `from`, `to` — the running version at the time and the target version, bare `X.Y.Z`; `to` is the version a pending install is waiting on, and a pending record blocks a new install until the reboot settles it. A refusal that finds a pending record never overwrites it.
+- `ts` — Unix seconds of the last state change.
+- `reason` — present on refusals and on `rolled_back`: the one-line why, the same text printed to the console. The journal carries the same lines.
+
+A status read is what the feed (#4014) surfaces; the file is plain JSON, world-readable, and lives on `/data`, so it survives the slot swap.
 
 ### Trust model
 

@@ -428,8 +428,8 @@ phase_rig() {
         return
     }
     marker=$(_ssh cat /etc/pithead-test-marker | tr -d '\r\n')
-    [ "$marker" = "v2" ] && ok "COMMIT: the update persists on the rig across reboot" ||
-        bad "expected v2 on the rig after commit, got '$marker'"
+    [ "$marker" = "v2" ] && ok "COMMIT: the update persists on the rig across reboot" || bad "expected v2 on the rig after commit, got '$marker'"
+    rig_update_leg # #4013: the rig-side updater checks, refuses, installs and settles its own verdict
 
     # #2063: no accepted share has ever been proven on the appliance channel — this rig's own pool
     # is its own sshd (#796), by design. A coordinator this battery itself boots in remote-node mode
