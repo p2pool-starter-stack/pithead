@@ -143,6 +143,17 @@ for qcase in 'WALLET_RPC_PASSWORD|pass\nwanted-by=nobody|LF' 'WALLET_RPC_PASSWOR
         "$(find "$QCTL" 2>/dev/null | wc -l | tr -d ' ')" "0"
 done
 
+QCTL="$SANDBOX/quadlet-ctl-out"
+rm -rf "$QCTL"
+grep -v '^PITHEAD_REGISTRY=' "$ROOT/os/quadlet/payout/fixture.env" >"$SANDBOX/ctl-noreg.env"
+QCTLRC=0
+QCTLOUT=$( (PITHEAD_REGISTRY=$'reg.example\nPodmanArgs=--privileged' \
+    run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/ctl-noreg.env" "$QCTL" 2>&1)) || QCTLRC=$?
+assert_eq "#4176: a newline in the PITHEAD_REGISTRY process fallback exits non-zero" "$QCTLRC" "1"
+assert_contains "#4176: the refusal names the variable" "$QCTLOUT" "PITHEAD_REGISTRY"
+assert_eq "#4176: the fallback refusal happens before any unit file is created" \
+    "$(find "$QCTL" 2>/dev/null | wc -l | tr -d ' ')" "0"
+
 # The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null
