@@ -191,6 +191,8 @@ for gate_flag in 0 1; do
     assert_eq "payout address is refused without confirmation on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
     (
         export PITHEAD_APPLIANCE="$gate_flag"
+        jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$REQS/$UUID5.json"
+        run_pending >/dev/null
         jq -n --arg id "$UUID5" --arg s "${gate_wallet: -8}" \
             '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:$s}}}' >"$REQS/$UUID5.json"
         run_pending >/dev/null
