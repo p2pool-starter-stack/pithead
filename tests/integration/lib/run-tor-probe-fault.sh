@@ -32,6 +32,11 @@ fault_tor_probe_egress() {
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
     fi
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node &&
+        ! wait_for 600 15 "Monero outgoing peers before Tor fault" _pred_monero_has_peers; then
+        it_fail "Tor probe fault starts with Tor carrying peer traffic" "monerod has no outgoing peers before the fault; Tor is not building circuits"
+        return
+    fi
     # A saturated history legitimately qualifies for recovery once the heal has recorded a sustained
     # outage (#3052), so name that precondition instead of misreading the accepted check as a defect.
     if rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_state_saturated \"\$dir/state\""' >/dev/null 2>&1; then
@@ -83,7 +88,8 @@ fault_tor_probe_egress() {
         fi
     done
     if [ -n "$mining_failure" ]; then
-        it_fail "proxy mining continued during Tor clearnet fault" "$mining_failure"
+        logs=$(rx "docker logs --since $epoch dashboard 2>&1 | grep -m1 'stopping xmrig-proxy'")
+        it_fail "proxy mining continued during Tor clearnet fault" "$mining_failure${logs:+; dashboard: $logs}"
     else
         it_pass "proxy mining continued during Tor clearnet fault"
     fi
@@ -105,7 +111,8 @@ fault_tor_probe_egress() {
         _tor_probe_recovered "$epoch"; then
         it_pass "Tor egress recovery names the preceding step"
     else
-        it_fail "Tor egress recovery names the preceding step" "no corroborated recovery log"
+        logs=$(rx "docker logs --since $epoch dashboard 2>&1 | grep -E 'NEWNYM|STILL broken|Tor clearnet egress' | tail -n 3")
+        it_fail "Tor egress recovery names the preceding step" "no corroborated recovery log${logs:+; last dashboard Tor lines: $logs}"
     fi
     push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 ||
         it_fail "Tor probe fault restored baseline config" "baseline apply failed"
