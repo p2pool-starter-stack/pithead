@@ -148,6 +148,11 @@ if sys.argv[1:] == ["--self-test"]:
     db.execute("INSERT INTO shares VALUES (?, 'late')", (100 + SETTLE_SEC - 10,))
     if before != snapshot(db, 100 + SETTLE_SEC):
         raise RuntimeError("a backdated share recorded after the snapshot changed the digest")
+    for ts, counted in ((100, True), (100 + 1, False)):
+        db.execute("INSERT INTO shares VALUES (?, 'edge')", (ts,))
+        if counted == (before == snapshot(db, 100 + SETTLE_SEC)):
+            raise RuntimeError(f"settle boundary misplaced at ts={ts}")
+        db.execute("DELETE FROM shares WHERE value='edge'")
     db.execute("INSERT INTO blocks VALUES (101, 'added')")
     db.execute("INSERT INTO history VALUES (101, 'added')")
     db.execute("UPDATE kv_store SET value='101' WHERE key='xvb_last_update'")

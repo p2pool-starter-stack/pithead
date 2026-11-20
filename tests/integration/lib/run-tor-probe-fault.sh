@@ -88,7 +88,7 @@ fault_tor_probe_egress() {
         fi
     done
     if [ -n "$mining_failure" ]; then
-        logs=$(rx "docker logs --since $epoch dashboard 2>&1 | grep -m1 'stopping xmrig-proxy'")
+        logs=$(rx "docker logs --since $epoch dashboard 2>&1 | grep -m1 'xmrig-proxy.*stop'")
         it_fail "proxy mining continued during Tor clearnet fault" "$mining_failure${logs:+; dashboard: $logs}"
     else
         it_pass "proxy mining continued during Tor clearnet fault"
