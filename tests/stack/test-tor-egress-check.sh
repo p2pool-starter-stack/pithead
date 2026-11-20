@@ -303,17 +303,41 @@ echo "== boot verdict: the KVM leg's judgement, fixture-tested so the boot phase
 . "$ROOT/tests/os/host-egress-audit-boot-verdict.sh"
 assert_eq "the would_drop counter is read out of the live table text" \
     "$(host_egress_audit_would_drop "$EAU_OK_TABLE")" "42"
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 0); then ok "loaded at boot, rising counter, nothing dropped: $v"; else bad "the healthy boot state fails the verdict: $v"; fi
-if v=$(host_egress_audit_boot_verdict inactive "$EAU_OK_TABLE" 10 42 0); then bad "a unit that never ran passes: $v"; else ok "rejected: $v"; fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 0); then ok "loaded at boot, rising counter, nothing dropped"; else
+    bad "the healthy boot state fails the verdict"
+    printf '      %s\n' "$v"
+fi
+if v=$(host_egress_audit_boot_verdict inactive "$EAU_OK_TABLE" 10 42 0); then bad "a unit that never ran passes"; else
+    ok "rejected"
+    printf '      %s\n' "$v"
+fi
 if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE
-    ip daddr 10.0.0.0/8 drop" 10 42 0); then bad "a dropping table passes: $v"; else ok "rejected: $v"; fi
+    ip daddr 10.0.0.0/8 drop" 10 42 0); then bad "a dropping table passes"; else
+    ok "rejected"
+    printf '      %s\n' "$v"
+fi
 if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE
-    tcp dport 53 accept" 10 42 0); then bad "a table with a foreign terminal accept passes: $v"; else ok "rejected: $v"; fi
+    tcp dport 53 accept" 10 42 0); then bad "a table with a foreign terminal accept passes"; else
+    ok "rejected"
+    printf '      %s\n' "$v"
+fi
 if v=$(host_egress_audit_boot_verdict active 'table inet pithead_egress_audit {
   chain output {
     type filter hook output priority -150; policy accept;
   }
-}' 10 10 0); then bad "a table without a logged would_drop rule passes: $v"; else ok "rejected: $v"; fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 42 42 0); then bad "a counter that did not rise passes: $v"; else ok "rejected: $v"; fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" "" "" 0); then bad "an unreadable counter passes: $v"; else ok "rejected: $v"; fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 1); then bad "a failed test flow passes: $v"; else ok "rejected: $v"; fi
+}' 10 10 0); then bad "a table without a logged would_drop rule passes"; else
+    ok "rejected"
+    printf '      %s\n' "$v"
+fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 42 42 0); then bad "a counter that did not rise passes"; else
+    ok "rejected"
+    printf '      %s\n' "$v"
+fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" "" "" 0); then bad "an unreadable counter passes"; else
+    ok "rejected"
+    printf '      %s\n' "$v"
+fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 1); then bad "a failed test flow passes"; else
+    ok "rejected"
+    printf '      %s\n' "$v"
+fi

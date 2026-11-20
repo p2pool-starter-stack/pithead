@@ -408,6 +408,6 @@ check_host_egress_audit() {
         dr_warn_surface "The log-only host egress audit table is not loaded — nothing on this host counts or logs what a host-wide default drop would have blocked. Run './pithead up' to load it; boots restore it from then on." "The log-only host egress audit table is not loaded on this machine."
         ;;
     2) dr_info "Host egress audit check skipped — nft is not installed." ;;
-    *) dr_info "Host egress audit check skipped — reading the table needs passwordless sudo. Verify manually: 'sudo nft list table inet $HOST_EGRESS_AUDIT_NFT_TABLE'." ;;
+    *) dr_info "Host egress audit check skipped — the audit table could not be read on this machine; nothing is dropped." ;;
     esac
 }
