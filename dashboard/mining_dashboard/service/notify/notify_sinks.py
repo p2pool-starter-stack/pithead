@@ -42,10 +42,10 @@ class _HttpSink:
 
     label = "sink"
 
-    def __init__(self, url, tor_proxy=TOR_SOCKS_PROXY, timeout=10):
+    def __init__(self, url, tor_proxy=TOR_SOCKS_PROXY, timeout=10, direct=False):
         self.url = (url or "").strip()
         self.timeout = timeout
-        self._proxies = proxy_map(tor_proxy)
+        self._proxies = None if direct else proxy_map(tor_proxy)
         self.enabled = bool(self.url)
         self.last_failure = ""
 
@@ -58,7 +58,8 @@ class _HttpSink:
         if not self.enabled:
             return False
         try:
-            refuse_direct_public(self.url, self._proxies)
+            if self._proxies is not None:
+                refuse_direct_public(self.url, self._proxies)
             with requests.post(
                 self.url,
                 timeout=self.timeout,
@@ -92,8 +93,8 @@ class NtfySink(_HttpSink):
 
     label = "ntfy"
 
-    def __init__(self, url, token="", tor_proxy=TOR_SOCKS_PROXY, timeout=10):
-        super().__init__(url, tor_proxy=tor_proxy, timeout=timeout)
+    def __init__(self, url, token="", tor_proxy=TOR_SOCKS_PROXY, timeout=10, direct=False):
+        super().__init__(url, tor_proxy=tor_proxy, timeout=timeout, direct=direct)
         self._headers = {"Authorization": f"Bearer {token}"} if token else None
 
     def send(self, text, event=""):
@@ -103,8 +104,8 @@ class NtfySink(_HttpSink):
 
 def config_sinks():
     """The webhook/ntfy sinks the process config enables — ``[]`` on a default stack."""
-    proxy = TOR_SOCKS_PROXY if NOTIFY_TOR else ""
-    sinks = [WebhookSink(u, tor_proxy=proxy) for u in NOTIFY_WEBHOOK_URLS]
+    direct = not NOTIFY_TOR
+    sinks = [WebhookSink(u, tor_proxy=TOR_SOCKS_PROXY, direct=direct) for u in NOTIFY_WEBHOOK_URLS]
     if NTFY_URL:
-        sinks.append(NtfySink(NTFY_URL, token=NTFY_TOKEN, tor_proxy=proxy))
+        sinks.append(NtfySink(NTFY_URL, token=NTFY_TOKEN, tor_proxy=TOR_SOCKS_PROXY, direct=direct))
     return sinks

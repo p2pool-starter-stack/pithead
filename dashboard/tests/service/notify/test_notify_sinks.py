@@ -85,10 +85,16 @@ class TestTorRouting:
             }
 
     def test_tor_opt_out_goes_direct(self):
-        sink = WebhookSink("http://192.168.1.5/hook", tor_proxy="")
+        sink = WebhookSink("http://192.168.1.5/hook", direct=True)
         with patch.object(ns_mod.requests, "post", return_value=_ok_resp()) as post:
             sink.send("x")
-        assert post.call_args.kwargs["proxies"] == {"http": "", "https": ""}
+        assert post.call_args.kwargs["proxies"] is None
+
+    def test_empty_proxy_without_the_opt_out_refuses_a_public_host(self):
+        sink = WebhookSink("https://hook.test/x", tor_proxy="")
+        with patch.object(ns_mod.requests, "post") as post:
+            assert sink.send("x") is False
+        post.assert_not_called()
 
 
 class TestFailSilent:
@@ -145,4 +151,4 @@ class TestConfigSinks:
         monkeypatch.setattr(ns_mod, "NTFY_URL", "")
         monkeypatch.setattr(ns_mod, "NOTIFY_TOR", False)
         (hook,) = config_sinks()
-        assert hook._proxies == {"http": "", "https": ""}
+        assert hook._proxies is None
