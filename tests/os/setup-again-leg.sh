@@ -106,6 +106,15 @@ _setup_again_rig_submit() {
 # Legs 1 and 2, on a committed, mining rig. $1 = the token the provisioning card showed,
 # $2 = the provisioning session's one-time token. Leaves the rig mining as kvm-rig.
 rig_setup_again_legs() {
+    netwatch_mining_hour "RigForge rig"
+    netwatch_window_start "set up again (RigForge rig)"
+    _rig_setup_again_legs_body "$@"
+    local rc=$?
+    netwatch_window_stop "set up again (RigForge rig)"
+    return "$rc"
+}
+
+_rig_setup_again_legs_body() {
     local tok0="$1" token="$2" jar="" cmd st n card_tok saved sa_card_address=""
     info "set-up-again leg 1 (#1318) — the menu entry opens the wizard beside the saved rig; Keep it"
     _setup_again_boot 300 || return
@@ -196,6 +205,14 @@ rig_setup_again_legs() {
 # coordinator replaces the role and its data. ($1, the last session's token, is no longer what
 # the session keys on — see _setup_again_boot — but run.sh still hands it over.)
 rig_setup_again_coordinator_leg() {
+    netwatch_window_start "set up again (Pithead appliance role)"
+    _rig_setup_again_coordinator_leg_body "$@"
+    local rc=$?
+    netwatch_window_stop "set up again (Pithead appliance role)"
+    return "$rc"
+}
+
+_rig_setup_again_coordinator_leg_body() {
     local token="$1" jar="" cmd scode tries=0 n=0 role
     info "set-up-again leg 3 — Set up again as a coordinator replaces the role (from slot B)"
     # The COMMIT leg's reboot left GRUB's try-count on B raised (B_TRY=1) until pithead-boot

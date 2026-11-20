@@ -19,10 +19,9 @@ phase_update() {
     # not: a redefinition capturing a local outlives the phase, and the NEXT phase in an
     # --phase all run then calls it with the variable gone — an unbound-variable crash that no
     # standalone phase run can ever reproduce. The top-level helpers already do this job.
-    local ip="" marker bundle menu_mark menu_verdict
+    local ip="" img dm marker bundle menu_mark menu_verdict
 
     info "building v1 test image (test SSH key + marker v1)"
-    local img
     img=$(_build_image v1 rc3) || {
         bad "v1 test image build failed (/tmp/os-fault-build.log)"
         return
@@ -46,7 +45,6 @@ phase_update() {
         }
     # Baseline for the stale-container check below: the v1 image must serve its own marker
     # BEFORE any update, or a later "v2 never served" says nothing about staleness.
-    local dm
     if dm=$(_dash_marker_served v1 300); then
         ok "the served page comes from the v1 dashboard image"
     else
@@ -97,6 +95,7 @@ phase_update() {
         return $rc
     }
 
+    netwatch_window_start "update (Pithead appliance)"
     info "leg 1 — install v2, boot spare, reboot WITHOUT commit -> must fall back to v1"
     _stage_bundle "$bundle" || {
         bad "staging the bundle on the guest failed"
@@ -150,6 +149,7 @@ phase_update() {
     marker=$(_ssh cat /etc/pithead-test-marker)
     [ "$marker" = "v2" ] && ok "COMMIT: a committed update persists across reboot" ||
         bad "expected v2 after commit, got '$marker'"
+    netwatch_window_stop "update (Pithead appliance)"
     menu_verdict=$(boot_label_serial_verdict "$SERIAL" "$menu_mark" "$(tr -d '[:space:]' <VERSION)" B A "Internal disk: " "$(tr -d '[:space:]' <VERSION)+rc3") && ok "$menu_verdict" || bad "$menu_verdict"
     # #894/#895: host identity on /data must survive the system-slot swap.
     local id_v2 hostkey_fp_v2
