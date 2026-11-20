@@ -295,6 +295,8 @@ if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 0); then ok "
 if v=$(host_egress_audit_boot_verdict inactive "$EAU_OK_TABLE" 10 42 0); then bad "a unit that never ran passes: $v"; else ok "rejected: $v"; fi
 if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE
     ip daddr 10.0.0.0/8 drop" 10 42 0); then bad "a dropping table passes: $v"; else ok "rejected: $v"; fi
+if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE
+    tcp dport 53 accept" 10 42 0); then bad "a table with a foreign terminal accept passes: $v"; else ok "rejected: $v"; fi
 if v=$(host_egress_audit_boot_verdict active 'table inet pithead_egress_audit {
   chain output {
     type filter hook output priority -150; policy accept;

@@ -24,8 +24,8 @@ host_egress_audit_boot_verdict() { # <is-active> <table-text> <would-drop-before
         return 1
         ;;
     esac
-    if printf '%s\n' "$table" | grep -Eq '(^|[[:space:]])(drop|reject)([[:space:]]|$)'; then
-        echo "the log-only host inet output table carries a terminal drop or reject verdict — it is enforcing, not auditing"
+    if printf '%s\n' "$table" | grep -Eq '(^|[[:space:]])(accept|drop|reject)([[:space:]]|$)'; then
+        echo "the log-only host inet output table carries a terminal verdict — it is enforcing or shadowed, not auditing"
         return 1
     fi
     local n
