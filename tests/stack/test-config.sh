@@ -521,7 +521,7 @@ rc=$?
 assert_rc "checksum-invalid tari payout rejected" "$rc" "1"
 assert_contains "tari checksum message says to re-copy" "$out" "checksum"
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"f26J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5Cb"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"f22UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4qM"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
 assert_rc "testnet tari payout rejected" "$rc" "1"

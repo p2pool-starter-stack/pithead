@@ -179,7 +179,7 @@ assert_eq "monero_address_type: shape-valid 8…/95 bad checksum => checksum" "$
 assert_eq "monero_address_type: non-base58 char => invalid" "$(run_sourced "$SANDBOX" monero_address_type "${VALID_PRIMARY:0:50}0${VALID_PRIMARY:51}")" "invalid"
 # Network byte comes free with the decode: a checksum-valid body whose tag is integrated (19) but
 # whose payload is primary-length is no mainnet address of any kind.
-assert_eq "monero_address_type: valid checksum, wrong tag/length => invalid" "$(run_sourced "$SANDBOX" monero_address_type "4JMJg6ic6R584YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBJG8KmJ")" "invalid"
+assert_eq "monero_address_type: valid checksum, wrong tag/length => invalid" "$(run_sourced "$SANDBOX" monero_address_type "4HoFHatLJYXMkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8xEKwYR")" "invalid"
 # A host whose python3 can't run the validator: the shape verdict stands alone (the
 # pre-checksum behaviour — degraded, not broken, and never a false reject).
 NOPY="$SANDBOX/nopy-bin"
@@ -199,9 +199,9 @@ assert_eq "tari_address_type: tari's invalid-emoji vector => invalid" "$(run_sou
 assert_eq "tari_address_type: 66-emoji (too short for dual) => invalid" "$(run_sourced "$SANDBOX" tari_address_type "$_TARI_66")" "invalid"
 # A checksum-valid address for the wrong network (esmeralda byte, checksum recomputed over the
 # reference keys) is a REAL address someone pasted from a testnet wallet — its own verdict.
-assert_eq "tari_address_type: esmeralda address => network" "$(run_sourced "$SANDBOX" tari_address_type "f26J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5Cb")" "network"
+assert_eq "tari_address_type: esmeralda address => network" "$(run_sourced "$SANDBOX" tari_address_type "f22UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4qM")" "network"
 # Unknown feature bits (0x09), checksum recomputed — decodes cleanly but is no address.
-assert_eq "tari_address_type: unknown feature bits => invalid" "$(run_sourced "$SANDBOX" tari_address_type "1A6J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5Dr")" "invalid"
+assert_eq "tari_address_type: unknown feature bits => invalid" "$(run_sourced "$SANDBOX" tari_address_type "1A2UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4tY")" "invalid"
 assert_eq "tari_address_type: old placeholder => invalid" "$(run_sourced "$SANDBOX" tari_address_type "T")" "invalid"
 # No usable python3: the address is "unchecked" — accepted, degraded, never a false reject.
 assert_eq "tari_address_type: python3 unusable => unchecked" "$(PATH="$NOPY:$PATH" run_sourced "$SANDBOX" tari_address_type "$VALID_TARI")" "unchecked"

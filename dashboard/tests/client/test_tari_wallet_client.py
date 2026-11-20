@@ -7,8 +7,8 @@ from mining_dashboard.client.tari.tari_wallet_client import TariWalletClient
 
 
 def test_tari_base58_and_emoji_reference_addresses_have_same_keys():
-    base58 = "126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
-    emoji = "🐢📟🍼🌈🍓🚓➕🎸🍆🍷🎣🍗📿😂🥊⏰🍯👾🤔👒🍾👀🍼🌊🎷📟😈🚨👙🍈🌈🛵🤢🍔🔋👙🚽🤑🎽🎓🎓🐀🐜🐴🥄🚿📷💰👶👍🎉🍄🎢🔌🐋🚰🚑💅👢🦂🐬🐋🍗🍸🎹🏀🍄"
+    base58 = "122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG"
+    emoji = "🐢📟🌹👢🍾📡🍆🔥🎃💺🐪🎬🍞🚦💤📎🍔📷🐀🧲🍩💵🍑👕🐚🐶🍆👃🍁📷🐚🎱🐶⚽🚗📌🐝🚧⏰🚒🦂🏦🐣🔪👻🍄⚽🐭🧩🐋📱💅🐺🌽👅🍊📡💦🎸👶🐔💃🔧👘🍄🍎🎼"
     assert address_key(decode_address(base58)) == address_key(decode_address(emoji))
 
 
