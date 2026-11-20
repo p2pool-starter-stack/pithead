@@ -36,13 +36,10 @@ stack_browser_config() {
     # because the DIY bench's own persistent config happens to carry it disabled; that is a gap
     # in the assertion's expected list, filed separately, not a config choice for this phase to
     # suppress by diverging from the wizard's default.
-    # xvb.enabled stays true even though no invocation here drives XvB routing today: it is the
-    # baseline the #2444 row will need the moment that probe is readable enough to run from this
-    # phase, and holding it keeps this guest byte-identical to the one job 633 passed against, so
-    # that job stays a valid comparison for the next run rather than a differently-configured one.
+    # XvB stays off for the battery; phase_stack_xvb_short turns it on for one bounded leg.
     cfg=$(printf '%s' "$1" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
         '.monero.wallet_address = $m | .tari.wallet_address = $t | .p2pool.pool = "mini" |
-         .xvb.enabled = true') || return 1
+         .xvb.enabled = false') || return 1
     if [ -n "$th" ]; then
         remote_node_proposal "$cfg" "$2" "$3" "$4" "$5" "$6" "$th" "$grpc"
     else
@@ -274,6 +271,7 @@ phase_stack() {
     }
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
     _stack_container_restart_leg || return 1
+    phase_stack_xvb_short || true
 
     local miner_rc=0
     miner_backup_trial || miner_rc=$?
