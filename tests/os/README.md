@@ -547,7 +547,7 @@ This is distinct from the remote-node row below, where a missing input stays a c
 forgot.
 
 Guests that reach real nodes can mine on mainnet, so every guest configured by the battery pays
-the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (bench-ci supplies the
+the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (the test host supplies the
 owner's addresses); without them the harness uses its labelled throwaway addresses. The run
 refuses before any guest exists when `PITHEAD_OS_MONERO_NODE_HOST` or `PITHEAD_OS_TARI_NODE_HOST` is
 set and either payout variable is empty, naming the variable and never a value. The media guest
