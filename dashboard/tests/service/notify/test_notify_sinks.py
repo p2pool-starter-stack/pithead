@@ -39,7 +39,7 @@ class TestEnabledGating:
 
 class TestWebhookPayload:
     def test_posts_event_text_ts_json(self):
-        hook = WebhookSink("https://hook.test/x", tor_proxy="")
+        hook = WebhookSink("https://hook.test/x", tor_proxy="socks5h://tor:9050")
         resp = _ok_resp()
         with patch.object(ns_mod.requests, "post", return_value=resp) as post:
             assert hook.send("Monero node is DOWN", "node_down") is True
@@ -55,7 +55,7 @@ class TestWebhookPayload:
 
 class TestNtfyPayload:
     def test_posts_text_as_body(self):
-        sink = NtfySink("https://ntfy.test/topic", tor_proxy="")
+        sink = NtfySink("https://ntfy.test/topic", tor_proxy="socks5h://tor:9050")
         with patch.object(ns_mod.requests, "post", return_value=_ok_resp()) as post:
             assert sink.send("Monero node is DOWN", "node_down") is True
         assert post.call_args.args[0] == "https://ntfy.test/topic"
@@ -63,10 +63,12 @@ class TestNtfyPayload:
 
     def test_bearer_header_only_when_token_set(self):
         with patch.object(ns_mod.requests, "post", return_value=_ok_resp()) as post:
-            NtfySink("https://ntfy.test/t", token="tok123", tor_proxy="").send("x")
+            NtfySink("https://ntfy.test/t", token="tok123", tor_proxy="socks5h://tor:9050").send(
+                "x"
+            )
         assert post.call_args.kwargs["headers"] == {"Authorization": "Bearer tok123"}
         with patch.object(ns_mod.requests, "post", return_value=_ok_resp()) as post:
-            NtfySink("https://ntfy.test/t", tor_proxy="").send("x")
+            NtfySink("https://ntfy.test/t", tor_proxy="socks5h://tor:9050").send("x")
         assert post.call_args.kwargs["headers"] is None
 
 
@@ -86,7 +88,7 @@ class TestTorRouting:
         sink = WebhookSink("http://192.168.1.5/hook", tor_proxy="")
         with patch.object(ns_mod.requests, "post", return_value=_ok_resp()) as post:
             sink.send("x")
-        assert post.call_args.kwargs["proxies"] is None
+        assert post.call_args.kwargs["proxies"] == {"http": "", "https": ""}
 
 
 class TestFailSilent:
@@ -143,4 +145,4 @@ class TestConfigSinks:
         monkeypatch.setattr(ns_mod, "NTFY_URL", "")
         monkeypatch.setattr(ns_mod, "NOTIFY_TOR", False)
         (hook,) = config_sinks()
-        assert hook._proxies is None
+        assert hook._proxies == {"http": "", "https": ""}

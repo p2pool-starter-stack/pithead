@@ -15,7 +15,7 @@ import logging
 
 import requests
 
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import bounded_get, proxy_map
 
 logger = logging.getLogger("UpdateChecker")
 
@@ -54,7 +54,7 @@ class GitHubReleaseClient:
     def latest_release(self) -> dict | None:
         """Return ``{"tag": ..., "url": ...}`` for the latest published release, or ``None`` on any
         failure (network, non-200, malformed JSON). Routed through Tor when a proxy is set."""
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = proxy_map(self.tor_proxy)
         try:
             resp = bounded_get(
                 self.api_url,

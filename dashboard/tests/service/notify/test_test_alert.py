@@ -46,8 +46,8 @@ def test_unconfigured_sinks_and_healthchecks_are_reported(monkeypatch):
 def test_default_path_uses_the_real_sink_factories(monkeypatch):
     notifier_factory = MagicMock(return_value=TelegramNotifier())
     monkeypatch.setattr(test_alert, "build_default_notifier", notifier_factory)
-    monkeypatch.setattr(notify_sinks_mod, "NOTIFY_WEBHOOK_URLS", ["https://hook.invalid/test"])
-    monkeypatch.setattr(notify_sinks_mod, "NTFY_URL", "https://ntfy.invalid/topic")
+    monkeypatch.setattr(notify_sinks_mod, "NOTIFY_WEBHOOK_URLS", ["http://10.0.0.2/test"])
+    monkeypatch.setattr(notify_sinks_mod, "NTFY_URL", "http://10.0.0.3/topic")
     monkeypatch.setattr(notify_sinks_mod, "NTFY_TOKEN", "")
     monkeypatch.setattr(notify_sinks_mod, "NOTIFY_TOR", False)
 
@@ -55,8 +55,8 @@ def test_default_path_uses_the_real_sink_factories(monkeypatch):
         assert test_alert.run_test_alert(output=StringIO()) is True
     notifier_factory.assert_called_once_with()
     assert [call.args[0] for call in post.call_args_list] == [
-        "https://hook.invalid/test",
-        "https://ntfy.invalid/topic",
+        "http://10.0.0.2/test",
+        "http://10.0.0.3/topic",
     ]
 
 
@@ -68,12 +68,12 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
         enabled=True,
         bot_token=token,
         chat_id="123",
-        tor_proxy="",
+        tor_proxy="socks5h://tor:9050",
     )
     sinks = [
-        WebhookSink(f"https://refused.invalid/{webhook_secret}", tor_proxy=""),
-        WebhookSink("https://rejected.invalid/hook", tor_proxy=""),
-        NtfySink("https://ntfy.invalid/topic", token=ntfy_secret, tor_proxy=""),
+        WebhookSink(f"https://refused.invalid/{webhook_secret}", tor_proxy="socks5h://tor:9050"),
+        WebhookSink("https://rejected.invalid/hook", tor_proxy="socks5h://tor:9050"),
+        NtfySink("https://ntfy.invalid/topic", token=ntfy_secret, tor_proxy="socks5h://tor:9050"),
     ]
     attempts = []
     responses = []

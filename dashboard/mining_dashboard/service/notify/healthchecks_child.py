@@ -3,14 +3,14 @@ import sys
 
 import requests
 
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import bounded_get, proxy_map
 from mining_dashboard.service.notify.healthchecks import _failure_class
 
 
 def main():
     request = json.load(sys.stdin)
     proxy = request["proxy"]
-    proxies = {"http": proxy, "https": proxy} if proxy else None
+    proxies = proxy_map(proxy)
     try:
         resp = bounded_get(
             request["url"],
@@ -20,7 +20,7 @@ def main():
         )
         out = {"status": resp.status_code}
     except requests.RequestException as e:
-        out = {"reason": _failure_class(e, proxies is not None), "name": type(e).__name__}
+        out = {"reason": _failure_class(e, bool(proxy)), "name": type(e).__name__}
     except Exception as e:
         out = {"reason": "connect", "name": type(e).__name__}
     sys.stdout.write(json.dumps(out))

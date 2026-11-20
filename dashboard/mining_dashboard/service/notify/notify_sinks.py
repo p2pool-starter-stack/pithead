@@ -10,7 +10,12 @@ from mining_dashboard.config.config import (
     NTFY_URL,
     TOR_SOCKS_PROXY,
 )
-from mining_dashboard.helper.http import raise_for_success, request_failure_class
+from mining_dashboard.helper.http import (
+    proxy_map,
+    raise_for_success,
+    refuse_direct_public,
+    request_failure_class,
+)
 
 logger = logging.getLogger("NotifySinks")
 
@@ -40,7 +45,7 @@ class _HttpSink:
     def __init__(self, url, tor_proxy=TOR_SOCKS_PROXY, timeout=10):
         self.url = (url or "").strip()
         self.timeout = timeout
-        self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
+        self._proxies = proxy_map(tor_proxy)
         self.enabled = bool(self.url)
         self.last_failure = ""
 
@@ -53,6 +58,7 @@ class _HttpSink:
         if not self.enabled:
             return False
         try:
+            refuse_direct_public(self.url, self._proxies)
             with requests.post(
                 self.url,
                 timeout=self.timeout,
