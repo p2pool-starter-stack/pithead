@@ -12,6 +12,11 @@ cat >"$WORK/bin/nc" <<'SH'
 cat >"$TOR_CAPTURE"
 case "${TOR_NC_MODE:-reply}" in
 stall) sleep 30 ;;
+authstall)
+    printf '250 OK\r\n250-version=0.4.9.17\r\n250 OK\r\n'
+    sleep 30
+    ;;
+truncated) head -n 12 "$TOR_REPLY" ;;
 refuse) exit 1 ;;
 *) cat "$TOR_REPLY" ;;
 esac
@@ -51,6 +56,10 @@ cat >"$WORK/reply" <<EOF
 250 OK
 250-consensus/valid-until=2026-11-19 15:00:00
 250 OK
+250-status/circuit-established=1
+250 OK
+250-status/enough-dir-info=0
+250 OK
 250 closing connection
 EOF
 
@@ -70,11 +79,12 @@ done
 
 echo "== snapshot fields from a live control port =="
 grep -q '^AUTHENTICATE 0\{64\}' "$WORK/request"
-for q in version status/bootstrap-phase circuit-status entry-guards consensus/valid-after consensus/valid-until; do
+for q in version status/bootstrap-phase circuit-status entry-guards consensus/valid-after consensus/valid-until \
+    status/circuit-established status/enough-dir-info; do
     grep -q "^GETINFO $q" "$WORK/request"
 done
 [ "$(jq -c '{control, version, bootstrap}' <<<"$json")" = \
-    '{"control":"ok","version":"0.4.9.17","bootstrap":{"progress":100,"tag":"done","changed_at":1795089662}}' ]
+    '{"control":"ok","version":"0.4.9.17","bootstrap":{"progress":100,"tag":"done","changed_at":1795089662,"circuit_established":true,"enough_dir_info":false}}' ]
 [ "$(jq -c .circuits <<<"$json")" = \
     '[{"state":"BUILT","purpose":"GENERAL","count":2},{"state":"EXTENDED","purpose":"HS_CLIENT_REND","count":1},{"state":"LAUNCHED","purpose":"HS_SERVICE_HSDIR","count":1}]' ]
 [ "$(jq -c .guards <<<"$json")" = '{"down":1,"never-connected":1,"up":1}' ]
@@ -92,10 +102,25 @@ json=$(TOR_NC_MODE=stall tor_diagnostics_snapshot)
 [ "$(jq -c '.consensus | {source, valid_after, valid_until}' <<<"$json")" = \
     '{"source":"file","valid_after":1795078800,"valid_until":1795089600}' ]
 
+echo "== a port that authenticates and then stalls is unreachable, never a partial ok =="
+start=$SECONDS
+json=$(TOR_NC_MODE=authstall tor_diagnostics_snapshot)
+[ $((SECONDS - start)) -lt 12 ]
+jq -e '.control == "unreachable" and .version == null and .consensus.source == "file"' <<<"$json" >/dev/null
+
+echo "== a reply cut off inside a block is unreachable, with no partial counts =="
+json=$(TOR_NC_MODE=truncated tor_diagnostics_snapshot)
+jq -e '.control == "unreachable" and .circuits == [] and .guards == {}' <<<"$json" >/dev/null
+
 echo "== a refused control port is unreachable data =="
 json=$(TOR_NC_MODE=refuse tor_diagnostics_snapshot)
 [ "$(jq -r .control <<<"$json")" = unreachable ]
 [ "$(jq -r .consensus.source <<<"$json")" = file ]
+
+echo "== an impossible consensus date is null, never a failed snapshot =="
+printf 'valid-after 2026-99-99 12:00:00\n' >"$WORK/data/cached-microdesc-consensus"
+json=$(TOR_NC_MODE=refuse tor_diagnostics_snapshot)
+jq -e '.control == "unreachable" and .consensus.source == "file" and .consensus.valid_after == null' <<<"$json" >/dev/null
 
 echo "== a consensus file without times falls back to its modification age =="
 printf 'network-status-version 3 microdesc\n' >"$WORK/data/cached-microdesc-consensus"

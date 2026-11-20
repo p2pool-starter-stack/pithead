@@ -13,7 +13,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
-- Service diagnostics shows a read-only Tor snapshot after a health check: circuits counted by state and purpose, consensus valid-after, valid-until and age, entry guards counted by status, bootstrap progress and its last change, and the Tor version. A stalled or refused control port shows as `unreachable`, and the consensus then falls back to the data-directory file. The support bundle carries the same snapshot as `tor/diagnostics.json` in place of the raw `tor/control.txt`, guard fingerprints and nicknames in `tor/state-guards.txt` are redacted, and Tor auto-heal alerts add a one-line summary (#4262).
+- Service diagnostics shows a read-only Tor snapshot after a health check: circuits counted by state and purpose, consensus valid-after, valid-until and age, entry guards counted by status, bootstrap progress and its last change, and the Tor version. A stalled or refused control port shows as `unreachable`, and the consensus then falls back to the data-directory file. The support bundle carries the same snapshot as `tor/diagnostics.json` in place of the raw `tor/control.txt`, `tor/state-guards.txt` keeps only each guard's sampling, listing, confirmation and path-bias fields, so its fingerprint and nickname are gone, and Tor auto-heal alerts add a one-line summary (#4262).
 - `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
   same windowed `.zip` and manifest as the appliance: every container's full log for the window instead of
   the last 200 lines, the DIY egress and LAN-guard units from the journal, and an engine or journal that

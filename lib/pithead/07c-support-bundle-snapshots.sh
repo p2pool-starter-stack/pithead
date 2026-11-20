@@ -300,9 +300,9 @@ bundle_support_snapshots() {
         bundle_support_snap "$tmp" status/tari.json python3 -I "$py" tari "$tari_addr"
     fi
     bundle_support_snap "$tmp" status/p2pool.json python3 -I "$py" p2pool "$p2dir/stats"
-    export -f tor_diagnostics_snapshot
-    bundle_support_snap "$tmp" tor/diagnostics.json bash -c tor_diagnostics_snapshot
-    bundle_support_snap "$tmp" tor/state-guards.txt awk '/^(TorVersion|LastWritten|Guard) / { gsub(/bridge_addr=[^ ]+/, "bridge_addr=[redacted]"); gsub(/rsa_id=[^ ]+/, "rsa_id=[redacted]"); gsub(/nickname=[^ ]+/, "nickname=[redacted]"); print }' "$tordir/state"
+    bundle_support_snap "$tmp" tor/diagnostics.json bash -c "$(declare -f tor_diagnostics_snapshot); tor_diagnostics_snapshot"
+    bundle_support_snap "$tmp" tor/state-guards.txt awk '/^(TorVersion|LastWritten) / { print }
+        /^Guard / { out = "Guard"; for (i = 2; i <= NF; i++) if ($i ~ /^(in|sampled_on|sampled_idx|sampled_by|unlisted_since|listed|confirmed_on|confirmed_idx|pb_[a-z_]+)=/) out = out " " $i; print out }' "$tordir/state"
 
     bundle_support_snap "$tmp" network/networkctl.txt networkctl status --no-pager
     bundle_support_snap "$tmp" network/ip-addr.txt ip addr
