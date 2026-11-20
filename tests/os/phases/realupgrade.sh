@@ -125,13 +125,20 @@ _ru_prepare() {
         bad "candidate bundle build failed (/tmp/os-fault-bundle.log)"
         return 1
     }
+    [ -s "$bundle" ] || {
+        bad "candidate bundle build produced no .raucb"
+        return 1
+    }
     ok "built the exact-SHA candidate bundle: $(basename "$bundle")"
     RU_BUNDLE="$bundle"
 
     RU_SRV="$RU_WORK/srv"
     mkdir -p "$RU_SRV"
     RU_NEW_TAG="v$(tr -d ' \t\r\n' <VERSION)"
-    cp "$bundle" "$RU_SRV/pithead-os-$RU_NEW_TAG.raucb"
+    cp "$bundle" "$RU_SRV/pithead-os-$RU_NEW_TAG.raucb" || {
+        bad "could not stage the candidate bundle for the bench release server"
+        return 1
+    }
     size=$(wc -c <"$RU_SRV/pithead-os-$RU_NEW_TAG.raucb" | tr -d ' ')
     printf '{"tag_name":"%s","html_url":"http://bench.invalid/rel","assets":[{"name":"pithead-os-%s.raucb","size":%s}]}' \
         "$RU_NEW_TAG" "$RU_NEW_TAG" "$size" >"$RU_SRV/releases-latest.json"
@@ -215,10 +222,14 @@ _ru_install_candidate() {
 }
 
 _ru_order_reboot() {
-    local t0
+    local t0 out
     t0=$(date +%s)
     RU_REBOOT_T0="$t0"
-    _os_step '{"action":"reboot"}' 30 >/dev/null 2>&1 || true
+    out=$(_os_step '{"action":"reboot"}' 30 2>/dev/null || true)
+    [ "$(printf '%s' "$out" | jq -r '.status // ""' 2>/dev/null)" != rejected ] || {
+        bad "$1: the dashboard rejected the ordered reboot: $(printf '%s' "$out" | cut -c1-200)"
+        return 1
+    }
     sleep 20
     _wait_ssh 900 || {
         bad "$1: the candidate slot never answered SSH after the ordered reboot"
@@ -248,7 +259,7 @@ _ru_upgrade_leg() {
     os_json=""
     while [ "$(date +%s)" -lt "$deadline" ]; do
         os_json=$(_ru_os)
-        realupgrade_no_offer_while_verifying "$os_json" || bad "upgrade: a reboot was offered while the new slot was verifying"
+        [ -z "$os_json" ] || realupgrade_no_offer_while_verifying "$os_json" || bad "upgrade: a reboot was offered while the new slot was verifying"
         realupgrade_verdict_updated "$os_json" && break
         sleep 15
     done
@@ -275,7 +286,7 @@ _ru_upgrade_leg() {
 }
 
 _ru_soak_leg() {
-    local half=$((REALUPGRADE_SOAK_S / 2)) before_boot sentinels live fails tls_after cfg host port user_ok
+    local half=$((REALUPGRADE_SOAK_S / 2)) before_boot after_boot units sentinels live fails tls_after cfg host port user_ok
     realupgrade_stamp soak start
     sleep "$half"
     before_boot=$(_boot_id) || before_boot=""
@@ -285,7 +296,8 @@ _ru_soak_leg() {
         _ru_save_failure soak
         return 1
     }
-    [ -n "$before_boot" ] && [ "$(_boot_id)" != "$before_boot" ] && ok "soak: the extra reboot happened (new boot id)" || bad "soak: the extra reboot is not visible in the boot id"
+    after_boot=$(_boot_id) || after_boot=""
+    [ -n "$before_boot" ] && [ -n "$after_boot" ] && [ "$after_boot" != "$before_boot" ] && ok "soak: the extra reboot happened (new boot id)" || bad "soak: the extra reboot is not visible in the boot id"
     sleep "$half"
     if provisioning_settled 900 && ! provisioning_setup_failed; then
         ok "soak: provisioning settled after the extra reboot"
@@ -297,8 +309,12 @@ _ru_soak_leg() {
     else
         bad "soak: doctor refuses the settled stack without the boot-gate relaxation: $(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json 2>/dev/null | jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")'" | cut -c1-300)"
     fi
-    fails=$(_ssh "systemctl --failed --no-legend --no-pager --plain" 2>/dev/null | awk '$1 !~ /^[0-9a-f]{64}-[0-9a-f]+\.service$/' | tr -s ' ' | tr '\n' ';')
-    [ -z "${fails//[; ]/}" ] && ok "soak: no unit is failed" || bad "soak: failed unit(s): $fails"
+    if units=$(_ssh "systemctl --failed --no-legend --no-pager --plain" 2>/dev/null); then
+        fails=$(printf '%s\n' "$units" | awk '$1 !~ /^[0-9a-f]{64}-[0-9a-f]+\.service$/' | tr -s ' ' | tr '\n' ';')
+        [ -z "${fails//[; ]/}" ] && ok "soak: no unit is failed" || bad "soak: failed unit(s): $fails"
+    else
+        bad "soak: the failed-unit list could not be read over SSH"
+    fi
     case "$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')" in
     *B_OK=1*B_TRY=0* | *B_TRY=0*B_OK=1*) ok "soak: the slot is still good" ;;
     *) bad "soak: the slot is not good in grubenv" ;;
