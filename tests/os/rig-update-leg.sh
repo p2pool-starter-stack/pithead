@@ -116,8 +116,6 @@ rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its 
     [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
         ok "Tor stopped after the check" || bad "Tor kept running after the check"
 
-    # The legs below this one drive the rig on its updated slot B — rig-update's install moved
-    # the boot default to the slot it wrote, so hand the machine back the way the update leg left it.
     _ssh 'grub-editenv /boot/efi/grub/grubenv set "ORDER=B A"' ||
         bad "rig-update leg: could not put slot B back as the boot default — the legs below will follow the wrong slot"
     _reboot_wait reboot 300 || bad "rig-update leg: the rig never returned after the boot-default was restored to slot B"
