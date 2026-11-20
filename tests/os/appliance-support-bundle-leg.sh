@@ -59,4 +59,5 @@ phase_provision_support_bundle() { # <ip> <dashboard-user> <dashboard-password>
     fi
     for id in $fake; do _ssh "rm -f $SUPPORT_CONTROL_DIR/results/$id.zip $SUPPORT_CONTROL_DIR/results/$id.json"; done
     rm -rf "$ex"
+    phase_provision_support_bundle_proof "$ip" "$DASH_USER" "$DASH_PASS"
 }

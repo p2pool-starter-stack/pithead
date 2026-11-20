@@ -267,7 +267,6 @@ _phase_provision_initial_body() {
     phase_provision_control_regressions "$pv_user" "$pv_pass"
     phase_provision_control_recovery "$ip" "$pv_user" "$pv_pass"
     phase_provision_support_bundle "$ip" "$pv_user" "$pv_pass"
-    phase_provision_support_bundle_proof "$ip" "$pv_user" "$pv_pass"
     phase_provision_dashboard_onion_exposure
     phase_provision_hostname_regressions "$pv_user" "$pv_pass"
     phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad "sensitive appliance regression phase aborted before completing required checks"
