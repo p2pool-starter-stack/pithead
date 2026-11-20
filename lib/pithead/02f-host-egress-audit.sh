@@ -4,7 +4,10 @@ HOST_EGRESS_AUDIT_LAN_SET="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 1
 
 host_egress_audit_role() {
     case "${PITHEAD_EGRESS_ROLE:-}" in
-    rig) printf '%s\n' rig; return 0 ;;
+    rig)
+        printf '%s\n' rig
+        return 0
+        ;;
     esac
     printf '%s\n' appliance
 }

@@ -233,8 +233,14 @@ EAU_RIG=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-lan.tsv"
 assert_contains "the rig role renders from its own rows" "$EAU_RIG" 'counter comment "lan"'
 EAU_RIGN=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-nolan.tsv")
 assert_not_contains "the role filter is what picks the rows: a rig with no lan row has no lan class" "$EAU_RIGN" 'comment "lan"'
-assert_eq "an unknown role renders nothing" "$(run_sourced "$EAU" render_host_egress_audit_nft laptop "$EAU/map-lan.tsv"; printf 'rc=%s' "$?")" "rc=1"
-assert_eq "a missing map fails the render rather than inventing rules" "$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/absent.tsv" 2>/dev/null; printf 'rc=%s' "$?")" "rc=1"
+assert_eq "an unknown role renders nothing" "$(
+    run_sourced "$EAU" render_host_egress_audit_nft laptop "$EAU/map-lan.tsv"
+    printf 'rc=%s' "$?"
+)" "rc=1"
+assert_eq "a missing map fails the render rather than inventing rules" "$(
+    run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/absent.tsv" 2>/dev/null
+    printf 'rc=%s' "$?"
+)" "rc=1"
 EAU_REPO=$(run_sourced "$ROOT" render_host_egress_audit_nft appliance data/egress-map.tsv)
 assert_contains "the committed egress map drives the appliance table" "$EAU_REPO" \
     'counter comment "would_drop" limit rate 30/second burst 10 packets log prefix "pithead-egress-audit: "'
@@ -254,9 +260,15 @@ echo "== counters: the view reports per-rule counters and the would_drop total (
 EAU_C=$(eau_run host_egress_audit_counters)
 assert_eq "the counters JSON names every counter and the would_drop total" "$EAU_C" \
     '{"counters":[{"packets":7,"bytes":700},{"packets":42,"bytes":3780}],"would_drop":42}'
-EAU_A=$(EAU_NFT_TABLE_RC=1 eau_run host_egress_audit_counters 2>/dev/null; printf 'rc=%s' "$?")
+EAU_A=$(
+    EAU_NFT_TABLE_RC=1 eau_run host_egress_audit_counters 2>/dev/null
+    printf 'rc=%s' "$?"
+)
 assert_eq "an absent table is rc 1" "$EAU_A" "rc=1"
-EAU_D=$(SUDO_DENY=1 eau_run host_egress_audit_counters 2>/dev/null; printf 'rc=%s' "$?")
+EAU_D=$(
+    SUDO_DENY=1 eau_run host_egress_audit_counters 2>/dev/null
+    printf 'rc=%s' "$?"
+)
 assert_eq "a sudo refusal is rc 3, never 'absent'" "$EAU_D" "rc=3"
 
 echo "== egress-status: the verdict file carries the audit counters, and the human line shows would_drop (#4195) =="
