@@ -59,8 +59,8 @@ explicit list selects Go for exactly the listed pieces and Bash for everything
 else; `bash` forces Bash for all pieces. An unknown piece name fails loudly and
 runs nothing — including the old whole-binary value `go`, which is not a piece
 name. A selection file that is a symlink, owned by neither root nor the
-invoking user, writable beyond its owner, or malformed fails loudly the same
-way.
+invoking user, writable beyond its owner, unreadable, or malformed fails
+loudly the same way.
 
 Timers, path units, and `sudo` drop the environment, so they resolve through
 the persistent file and the table default. An operator pinning units without
@@ -74,8 +74,12 @@ otherwise `go/bin/pithead` beside the entry point, with the same argv, streams,
 and descriptors, and exports `PITHEAD_GO_REFERENCE` as the fixed entry-point
 path (`PITHEAD_SELF`).
 
-- A missing Go binary is not an error: the launcher continues with the Bash
-  reference implementation, same argv, streams, and exit status.
+- A missing or not-regular-file Go binary is not an error: the launcher
+  continues with the Bash reference implementation, same argv, streams, and
+  exit status.
+- Before execing the Go side the launcher exports `PITHEAD_IMPL_LAUNCHED=1`,
+  and a launcher that already sees it never execs Go again, so a hand-back
+  that forgets `PITHEAD_IMPL=bash` cannot loop.
 - For any argv the Go side does not own, it must `exec bash` with
   `PITHEAD_GO_REFERENCE` (the fixed entry-point path), the original argv, the
   original streams and descriptors, and `PITHEAD_IMPL=bash` in the environment.

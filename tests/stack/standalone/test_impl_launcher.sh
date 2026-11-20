@@ -68,6 +68,9 @@ check_contains "the refusal lists the real pieces" "$out" "payout-keys"
 out=$(PITHEAD_IMPL=help,bogus "$STACK" version 2>&1) && rc=0 || rc=$?
 check "an unknown list entry is refused" "$rc" "1"
 check_contains "the refusal names that entry" "$out" "unknown piece 'bogus'"
+out=$(PITHEAD_IMPL=bash,bogus "$STACK" version 2>&1) && rc=0 || rc=$?
+check "an unknown entry behind bash is refused" "$rc" "1"
+check_contains "the bash-first refusal names that entry" "$out" "unknown piece 'bogus'"
 
 cat >"$WORK/fake-go" <<EOF
 #!/usr/bin/env bash
@@ -87,6 +90,11 @@ chmod +x "$WORK/fake-go" "$WORK/reexec-go"
 out=$(PITHEAD_IMPL=help "$STACK" version 2>&1) && rc=0 || rc=$?
 check "a missing Go side falls back to Bash" "$rc" "0"
 check_contains "the fallback still answers the version verb" "$out" "VERSION"
+
+mkdir -p "$WORK/go-dir"
+out=$(PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/go-dir" "$STACK" version 2>&1) && rc=0 || rc=$?
+check "a Go side that is not a regular file falls back to Bash" "$rc" "0"
+check_contains "the non-file fallback still answers version" "$out" "VERSION"
 
 out=$(PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/fake-go" "$STACK" version 2>"$WORK/go-stderr") && rc=0 || rc=$?
 check "the Go side's exit status passes through" "$rc" "7"
@@ -130,12 +138,33 @@ check_contains "the permission refusal says why" "$out" "writable"
 ln -s "$WORK/impl" "$WORK/impl-link"
 out=$(env -u PITHEAD_IMPL PITHEAD_IMPL_FILE="$WORK/impl-link" "$STACK" version 2>&1) && rc=0 || rc=$?
 check "a symlinked file is refused" "$rc" "1"
+ln -s /nonexistent "$WORK/impl-dangling"
+out=$(env -u PITHEAD_IMPL PITHEAD_IMPL_FILE="$WORK/impl-dangling" "$STACK" version 2>&1) && rc=0 || rc=$?
+check "a dangling symlinked file is refused too" "$rc" "1"
+printf 'PITHEAD_IMPL=help\n' >"$WORK/impl-unreadable"
+chmod 000 "$WORK/impl-unreadable"
+out=$(env -u PITHEAD_IMPL PITHEAD_IMPL_FILE="$WORK/impl-unreadable" "$STACK" version 2>&1) && rc=0 || rc=$?
+check "an unreadable file is refused, not crashed on" "$rc" "1"
+check_contains "the unreadable refusal says why" "$out" "not readable"
+check_missing "the unreadable refusal is not a shell crash" "$out" "unbound variable"
 
 rm -f "$WORK/reexec-count"
 out=$(timeout 60 env PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/reexec-go" "$STACK" version 2>&1) && rc=0 || rc=$?
 check "the documented hand-back to Bash completes" "$rc" "0"
 check "the Go side ran exactly once, without recursion" "$(cat "$WORK/reexec-count")" "x"
 check_contains "the handed-back run answers version" "$out" "VERSION"
+
+cat >"$WORK/loop-go" <<EOF
+#!/usr/bin/env bash
+printf x >>"$WORK/loop-count"
+exec bash "\${PITHEAD_GO_REFERENCE:?}" "\$@"
+EOF
+chmod +x "$WORK/loop-go"
+rm -f "$WORK/loop-count"
+out=$(timeout 60 env PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/loop-go" "$STACK" version 2>&1) && rc=0 || rc=$?
+check "a hand-back that forgets PITHEAD_IMPL=bash still terminates" "$rc" "0"
+check "the launched guard execed the Go side exactly once" "$(cat "$WORK/loop-count")" "x"
+check_contains "the guarded run answers version in Bash" "$out" "VERSION"
 
 DOC="$ROOT/docs/dev/go-port/selection.md"
 check "the selection doc exists" "$([ -f "$DOC" ] && echo yes)" "yes"
@@ -168,10 +197,10 @@ done <<EOF_MAP
 $map_rows
 EOF_MAP
 
-out=$(env PITHEAD_IMPL=go PITHEAD_GO_BINARY=/nonexistent bash -c '
+out=$(env PITHEAD_IMPL=go PITHEAD_IMPL_FILE=/nonexistent PITHEAD_GO_BINARY=/nonexistent PITHEAD_GO_REFERENCE=/nonexistent bash -c '
     source "$1/tests/stack/lib.sh" >/dev/null 2>&1 || exit 9
-    printf "[%s]" "${PITHEAD_IMPL-unset}" "${PITHEAD_IMPL_FILE-unset}" "${PITHEAD_GO_BINARY-unset}"
+    printf "[%s]" "${PITHEAD_IMPL-unset}" "${PITHEAD_IMPL_FILE-unset}" "${PITHEAD_GO_BINARY-unset}" "${PITHEAD_GO_REFERENCE-unset}"
 ' _ "$ROOT" 2>/dev/null || true)
-check "the stack lib scrubs the selector from sourced suites" "$out" "[unset][unset][unset]"
+check "the stack lib scrubs the selector from sourced suites" "$out" "[unset][unset][unset][unset]"
 
 printf '\nPASS: per-piece PITHEAD_IMPL launcher (%s checks)\n' "$CHECKS"
