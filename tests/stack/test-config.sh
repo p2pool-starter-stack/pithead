@@ -263,6 +263,13 @@ assert_contains "duplicate worker names are warned" "$out" "first-declared"
 assert_contains "a 1.x dashboard.workers[] list is migrated on apply (#1832)" "$out" "Migrated the 1.x config keys"
 # The write-capable control token stays host-only, not in the dashboard environment (R15).
 if ! grep -q 'WORKER_API_TOKENS=.*tok_abc123' "$V/.env"; then ok "legacy worker control token stays out of .env"; else bad "legacy worker control token stays out of .env" "write credential leaked"; fi
+xvb_apply_case() { # <saved-url> <expected-env-url> <label> (#4308)
+    seed_env
+    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "xvb":{"url":"%s"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$1" >"$V/config.json"
+    assert_eq "$3" "$( (cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1); grep '^XVB_POOL_URL=' "$V/.env" | cut -d= -f2-)" "$2"
+}
+xvb_apply_case "na.xmrvsbeast.com:5555" "eu.xmrvsbeast.com:5555" "apply moves a saved NA xvb.url to the EU host with the same port (#4308)"
+xvb_apply_case "us.xmrvsbeast.com:5555" "us.xmrvsbeast.com:5555" "apply leaves a non-NA xvb.url unchanged (#4308)"
 
 # workers.list[] is the 2.0.0 key; legacy cases above prove migrate-then-validate order.
 wl_case() { # <workers-json> <label> <expected-msg-fragment>

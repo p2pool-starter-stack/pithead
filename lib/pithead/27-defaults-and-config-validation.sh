@@ -222,7 +222,10 @@ migrate_xvb_na_endpoint() {
     local owner tmp="${CONFIG_FILE}.tmp"
     [ -f "$CONFIG_FILE" ] || return 0
     jq -e "$XVB_NA_URL_JQ" "$CONFIG_FILE" >/dev/null 2>&1 || return 0
-    [ "$PITHEAD_DRY_RUN" -eq 1 ] && return 0
+    if [ "$PITHEAD_DRY_RUN" -eq 1 ]; then
+        log "xvb.url would move from na.xmrvsbeast.com to eu.xmrvsbeast.com on apply."
+        return 0
+    fi
     if ! cp -p "$CONFIG_FILE" "${CONFIG_FILE}.bak-xvb-na" 2>/dev/null; then
         warn "Could not back up $CONFIG_FILE before moving xvb.url off na.xmrvsbeast.com — leaving it; change it to eu.xmrvsbeast.com by hand."
         return 0

@@ -117,6 +117,10 @@ assert_eq "the pre-migration file is kept" "$(jq -r '.xvb.url' "$XN/config.json.
 cp "$XN/config.json" "$XN/before.json"
 run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
 assert_eq "a second run changes nothing" "$(cmp -s "$XN/before.json" "$XN/config.json" && echo same)" "same"
+printf '{"xvb":{"url":"na.xmrvsbeast.com:5555"}}' >"$XN/config.json"
+xn_out="$(run_sourced "$XN" eval 'PITHEAD_DRY_RUN=1; migrate_xvb_na_endpoint' 2>&1)"
+assert_contains "a dry run says the url would move" "$xn_out" "would move"
+assert_eq "a dry run leaves the file alone" "$(jq -r '.xvb.url' "$XN/config.json")" "na.xmrvsbeast.com:5555"
 printf '{"xvb":{"url":"us.xmrvsbeast.com:4247"}}' >"$XN/config.json"
 rm -f "$XN/config.json.bak-xvb-na"
 run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
