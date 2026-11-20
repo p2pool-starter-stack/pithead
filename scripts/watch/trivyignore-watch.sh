@@ -49,7 +49,7 @@ IGNOREFILE="$ROOT/.config/trivyignore"
 
 # The CVE-gate workflows whose install-trivy steps must stay pinned to TRIVY_VERSION (#1290).
 # Overridable so --self-test can point this at fixture files instead.
-GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml"
+GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml $ROOT/.github/workflows/supply-chain.yml"
 
 # The parity contract's pinned scanning engine (#1290); do not use `:latest`.
 TRIVY_VERSION="0.73.0"
