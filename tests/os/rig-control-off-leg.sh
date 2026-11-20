@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2034  # ip/jar/SCRIPT_DIR are run.sh's; `token` is local so _setup_again_session's write stays here
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 #
 # #1867: the rig whose pool host does not resolve to an IPv4 address. Sourced by tests/os/run.sh and
 # run inside phase_rig on the rig the set-up-again legs leave mining, committed on slot A.
@@ -86,7 +88,7 @@ rig_control_off_leg() {
         bad "the rig did not come up after the control-off Set up again (unit: $(_ssh 'systemctl is-active xmrig' 2>/dev/null || echo unknown))"
     _ssh "jq -e '.api == \"enabled\" and (has(\"control\") | not) and (has(\"api_allow_from\") | not)' /data/rigforge/config.json >/dev/null" &&
         ok "the miner's config carries no control path and no pin — RigForge is never asked for what it would refuse" ||
-        bad "the rig rendered a control path with nothing to pin it to: $(_ssh "jq -c 'del(.pools, .ACCESS_TOKEN)' /data/rigforge/config.json" 2>/dev/null | cut -c1-120)"
+        bad "the rig rendered a control path with nothing to pin it to: $(_ssh "jq -c 'del(.pools, .ACCESS_TOKEN)' /data/rigforge/config.json" 2>/dev/null | os_redact_addr | cut -c1-120)"
     [ "$(_ssh 'jq -r .ACCESS_TOKEN /data/rigforge/config.json' 2>/dev/null | tr -d '\r')" = "$tok0" ] &&
         ok "the token is kept with control off (the feed still wants it)" ||
         bad "the token changed when control went off — the card showed one the miner does not enforce"
@@ -106,7 +108,7 @@ rig_control_off_leg() {
         bad "the rig did not come back up on the resolvable pool"
     _ssh "jq -e '.control == \"enabled\" and .api_allow_from == \"127.0.0.1\"' /data/rigforge/config.json >/dev/null" &&
         ok "control is back, pinned to the pool host — the phase's later legs get the rig they expect" ||
-        bad "control did not come back for a resolvable pool host: $(_ssh "jq -c 'del(.pools, .ACCESS_TOKEN)' /data/rigforge/config.json" 2>/dev/null | cut -c1-120)"
+        bad "control did not come back for a resolvable pool host: $(_ssh "jq -c 'del(.pools, .ACCESS_TOKEN)' /data/rigforge/config.json" 2>/dev/null | os_redact_addr | cut -c1-120)"
 }
 
 # The leg's own mutation kill (#1867), driven at tier 1 by tests/stack/test-harness-tooling.sh: the

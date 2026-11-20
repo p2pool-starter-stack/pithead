@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 _phase_install_reinstall() {
     # ---- reinstall leg: the path that must NOT lose data --------------------------------
@@ -88,7 +90,7 @@ _phase_install_reinstall() {
     if [ $? -eq 0 ] && printf '%s' "$out" | grep -q "preserving the synced chains"; then
         ok "wipe=data took the selective path"
     else
-        bad "wipe=data failed: $(printf '%s' "$out" | tail -2 | tr '\n' ' ' | cut -c1-140)"
+        bad "wipe=data failed: $(printf '%s' "$out" | os_redact_addr | tail -2 | tr '\n' ' ' | cut -c1-140)"
         return 1
     fi
     # The mountpoint comes from mktemp: the appliance root is READ-ONLY, so a path like /mnt/t
@@ -115,7 +117,7 @@ _phase_install_reinstall() {
     if [ $? -eq 0 ] && printf '%s' "$out" | grep -q "everything, chains included"; then
         ok "wipe=all took the reformat path"
     else
-        bad "wipe=all failed: $(printf '%s' "$out" | tail -2 | tr '\n' ' ' | cut -c1-140) [mounts: $(_ssh "findmnt -no SOURCE,TARGET | grep vda" | tr '\n' ' ')]"
+        bad "wipe=all failed: $(printf '%s' "$out" | os_redact_addr | tail -2 | tr '\n' ' ' | cut -c1-140) [mounts: $(_ssh "findmnt -no SOURCE,TARGET | grep vda" | tr '\n' ' ')]"
         return 1
     fi
     if _ssh "T=\$(mktemp -d) && mount /dev/vda4 \"\$T\" && [ -z \"\$(ls \"\$T\" | grep -v lost+found)\" ]; rc=\$?; umount \"\$T\"; exit \$rc"; then
