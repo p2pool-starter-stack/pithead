@@ -36,6 +36,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - The appliance support bundle (the dashboard's **Support bundle** card and `pithead recovery-bundle`) is now one `.zip` for a chosen start and end time (`--since` and `--until` on the CLI, `since` and `until` on the control request; `hours` still works). It holds the whole system journal, the kernel log, the boot list and a journal per Pithead and quadlet unit read from the installed unit files, redacted, with a `manifest.json` that records the windows, the oldest retained entry, the journald usage and every truncated, empty, missing or failed file. Oversize files keep their oldest and newest lines instead of the bundle being refused, and the journald cap is raised from 200 MiB to 400 MiB to cover 168 hours at the log volume reported for a loaded test box (#4127).
 
+- The appliance image bakes RigForge 1.19.0. Its prebuilt XMRig is the same 6.26.0 pin with the
+  zero donation default and minimum, so a fresh image and an upgraded rig start mining without an
+  XMRig rebuild; the vendored RigForge contract fixtures move to v1.19.0 with the pin (#4230).
+
 ### Fixed
 
 - The dashboard keeps answering when its data disk is full (a 2.0.4 sign-in regression): an existing
@@ -82,10 +86,16 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Notes
 
-- **RigForge-only appliances: stay on 2.0.3.** This release changes nothing on a rig: RigForge 1.18.1
-  and XMRig 6.26.0 are the same as in 2.0.3. Updating a rig still needs the USB stick, and re-flashing
-  a rig that runs from its stick wipes its setup and token, so it must be adopted again. Updating rigs
-  from the Pithead dashboard is planned for 2.0.5 (#1837).
+- **RigForge-only appliances: 2.0.4 changes the rig — RigForge 1.19.0.** The rig now routes
+  RigForge's own network paths through the appliance's Tor SOCKS proxy by default (`tor_socks5`
+  `127.0.0.1:9050`; explicit `null` opts out), and such a rig refuses a `DONATION` above 0 because the
+  donation pool would dial direct. `threads` is honored and capped, so an over-high count no longer
+  destabilizes the miner (rigforge#588 and rigforge#632), and a validated `xmrig` config overlay plus
+  configurable RandomX modes give owners control over miner settings. The baked XMRig is unchanged
+  (6.26.0, zero donation default and minimum), so the built-in miner and upgraded rigs keep mining
+  without a rebuild. Updating a rig still needs the USB stick, and re-flashing a rig that runs from
+  its stick wipes its setup and token, so it must be adopted again. Updating rigs from the Pithead
+  dashboard is planned for 2.0.5 (#1837).
 
 ## [2.0.3] - 2026-11-10
 
