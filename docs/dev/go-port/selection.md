@@ -76,7 +76,9 @@ path (`PITHEAD_SELF`).
 
 - A missing or not-regular-file Go binary is not an error: the launcher
   continues with the Bash reference implementation, same argv, streams, and
-  exit status.
+  exit status. Neither is a Go binary `exec` cannot start (bad interpreter,
+  wrong architecture): the launcher clears `PITHEAD_GO_REFERENCE` and
+  `PITHEAD_IMPL_LAUNCHED` again and continues in Bash.
 - Before execing the Go side the launcher exports `PITHEAD_IMPL_LAUNCHED=1`,
   and a launcher that already sees it never execs Go again, so a hand-back
   that forgets `PITHEAD_IMPL=bash` cannot loop.

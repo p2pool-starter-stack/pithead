@@ -16,6 +16,7 @@ doctor doctor'
 _PITHEAD_IMPL_SELECTION=""
 _PITHEAD_IMPL_REFUSAL=""
 _PITHEAD_IMPL_MODE=""
+_PITHEAD_IMPL_PIECE=""
 
 _pithead_impl_table() {
     printf '%s\n' "$_PITHEAD_IMPL_TABLE"
@@ -43,16 +44,21 @@ _pithead_impl_piece_list() {
     printf '%s' "$out"
 }
 
-_pithead_impl_piece_for() {
+_pithead_impl_lookup_piece() {
     local v p out=""
     while read -r v p; do
         [ -n "$v" ] || continue
         [ "$v" = "$1" ] && out="$p"
     done <<<"$_PITHEAD_IMPL_VERB_MAP"
-    printf '%s' "$out"
+    _PITHEAD_IMPL_PIECE="$out"
 }
 
-_pithead_impl_selection_mode() { # <piece> <selection>
+_pithead_impl_piece_for() {
+    _pithead_impl_lookup_piece "$1"
+    printf '%s' "$_PITHEAD_IMPL_PIECE"
+}
+
+_pithead_impl_selection_mode() {
     local piece="$1" selection="$2" name default _flip entry rest has_bash=0 mode=""
     _PITHEAD_IMPL_MODE=""
     _PITHEAD_IMPL_REFUSAL=""
@@ -167,7 +173,7 @@ _pithead_impl_read_selection() {
 }
 
 _pithead_impl_launch() {
-    local verb="${1:-}" selection="" piece="" v p go_binary
+    local verb="${1:-}" selection="" piece="" go_binary had_execfail=0
     if [ -n "${PITHEAD_IMPL:-}" ]; then
         selection="$PITHEAD_IMPL"
     else
@@ -176,10 +182,8 @@ _pithead_impl_launch() {
         selection="$_PITHEAD_IMPL_SELECTION"
     fi
     _PITHEAD_IMPL_SELECTION="$selection"
-    while read -r v p; do
-        [ -n "$v" ] || continue
-        [ "$v" = "$verb" ] && piece="$p"
-    done <<<"$_PITHEAD_IMPL_VERB_MAP"
+    _pithead_impl_lookup_piece "$verb"
+    piece="$_PITHEAD_IMPL_PIECE"
     if [ -z "$selection" ] && [ -z "$piece" ]; then
         return 0
     fi
@@ -195,7 +199,13 @@ _pithead_impl_launch() {
     fi
     export PITHEAD_GO_REFERENCE="$PITHEAD_SELF"
     export PITHEAD_IMPL_LAUNCHED=1
-    exec "$go_binary" "$@"
+    if shopt -q execfail; then had_execfail=1; fi
+    shopt -s execfail
+    if ! exec "$go_binary" "$@"; then
+        [ "$had_execfail" = 1 ] || shopt -u execfail
+        unset PITHEAD_GO_REFERENCE PITHEAD_IMPL_LAUNCHED
+        return 0
+    fi
 }
 
 if [ "$_STACK_SOURCED" = "0" ]; then

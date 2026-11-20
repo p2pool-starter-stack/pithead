@@ -98,6 +98,23 @@ out=$(PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/go-dir" "$STACK" version 2>&1) 
 check "a Go side that is not a regular file falls back to Bash" "$rc" "0"
 check_contains "the non-file fallback still answers version" "$out" "VERSION"
 
+printf '#!/nonexistent/interp\necho go-out\n' >"$WORK/bad-go"
+chmod +x "$WORK/bad-go"
+out=$(PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/bad-go" "$STACK" version 2>&1) && rc=0 || rc=$?
+check "a Go side that cannot start falls back to Bash" "$rc" "0"
+check_contains "the unstartable fallback still answers version" "$out" "VERSION"
+
+check "the internal-piece API selects a listed piece" \
+    "$(env PITHEAD_IMPL=help bash -c 'source "$1" >/dev/null 2>&1; _pithead_impl_selected help' _ "$STACK" && echo yes)" "yes"
+check "the internal-piece API declines an unlisted piece" \
+    "$(env PITHEAD_IMPL=help bash -c 'source "$1" >/dev/null 2>&1 && ! _pithead_impl_selected doctor' _ "$STACK" && echo yes)" "yes"
+check "the internal-piece API declines the table default" \
+    "$(env PITHEAD_IMPL= bash -c 'source "$1" >/dev/null 2>&1 && ! _pithead_impl_selected help' _ "$STACK" && echo yes)" "yes"
+printf 'PITHEAD_IMPL=bogus\n' >"$WORK/impl-sel"
+out=$(env -u PITHEAD_IMPL PITHEAD_IMPL_FILE="$WORK/impl-sel" bash -c 'source "$1" >/dev/null 2>&1; _pithead_impl_selected help' _ "$STACK" 2>&1) && rc=0 || rc=$?
+check "the internal-piece API refuses a broken selection file" "$rc" "1"
+check_contains "the API refusal warns and keeps the shell alive" "$out" "Ignoring the implementation selection"
+
 out=$(PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/fake-go" "$STACK" version 2>"$WORK/go-stderr") && rc=0 || rc=$?
 check "the Go side's exit status passes through" "$rc" "7"
 check "the Go side's stdout passes through" "$out" "go-out"
