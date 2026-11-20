@@ -1,5 +1,7 @@
 import asyncio
 import base64
+import hashlib
+import time
 
 import pytest
 from aiohttp import web
@@ -243,6 +245,49 @@ class TestStateAndRefresh:
     async def test_no_refresh_header_leaves_cookies_alone(self, stack):
         resp = await stack.get("/api/state", cookies={auth.COOKIE: "abc"})
         assert "Set-Cookie" not in resp.headers
+
+
+class TestFullDataDisk:
+    async def test_check_accepts_a_session_whose_touch_write_fails(self, stack, full_disk):
+        sm = stack.app["state_manager"]
+        token = "full-disk-" + "a" * 40
+        now = time.time()
+        with sm._conn:
+            sm._conn.execute(
+                "INSERT INTO dashboard_sessions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    hashlib.sha256(token.encode()).hexdigest(),
+                    "admin",
+                    "epoch-one",
+                    0,
+                    now,
+                    now - 120,
+                    now,
+                ),
+            )
+        full_disk(sm)
+        resp = await stack.get("/api/auth/check", headers=EPOCH, cookies={auth.COOKIE: token})
+        assert resp.status == 204
+        assert resp.headers["X-Auth-User"] == "admin"
+
+    async def test_check_refuses_when_the_session_store_is_unreadable(self, stack, full_disk):
+        await login(stack)
+        full_disk(stack.app["state_manager"], statements=("SELECT",))
+        assert (await stack.get("/api/auth/check", headers=EPOCH)).status == 401
+
+    async def test_login_reports_a_full_disk_and_sets_no_cookie(self, stack, full_disk):
+        full_disk(stack.app["state_manager"])
+        resp = await login(stack)
+        assert resp.status == 503
+        assert "disk is full" in (await resp.json())["error"]
+        assert "Set-Cookie" not in resp.headers
+
+    async def test_logout_succeeds_when_the_revoke_write_fails(self, stack, full_disk):
+        await login(stack)
+        full_disk(stack.app["state_manager"])
+        resp = await stack.post("/api/auth/logout")
+        assert resp.status == 200
+        assert "Max-Age=0" in cookie_of(resp)
 
 
 class TestAttempts:
