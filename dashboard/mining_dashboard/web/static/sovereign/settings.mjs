@@ -289,7 +289,7 @@ export class SettingsPage extends Component {
           writable
             ? html`<${TorDiagnostics} />`
             : html`<p class="muted">
-              Sign in with an active session on a controllable host to run the Tor check.
+              The Tor check needs an active session on a host whose control channel is on.
             </p>`
         }
       </section>

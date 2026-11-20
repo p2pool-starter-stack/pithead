@@ -97,4 +97,6 @@ test("LAN access switches explain the disconnected host", async ({ page, ui }) =
   await ui.openPreview("?page=settings");
   await expect(page.getByRole("heading", { name: "LAN access" })).toBeVisible();
   await expect(page.getByText("Sign in with an active session")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tor diagnostics" })).toBeVisible();
+  await expect(page.getByText("The Tor check needs an active session")).toBeVisible();
 });
