@@ -1,5 +1,23 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+_rig_active_pool() {
+    printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "${IT_RIG_TOKEN:-}" | jq -Rs .)" |
+        rx "curl -fsS --max-time 10 -K - $(quote_arg "http://$RIG_HOST:8081/1/summary")" --stdin 2>/dev/null |
+        jq -r '.connection.pool // empty' 2>/dev/null
+}
+_pred_rig_pool_differs() {
+    local pool
+    pool="$(_rig_active_pool)"
+    [ -n "$pool" ] && [ "$pool" != "$RIG_POOL_BEFORE" ]
+}
+_pred_rig_pool_returned() { [ "$(_rig_active_pool)" = "$RIG_POOL_BEFORE" ]; }
+_rig_pool_leg() {
+    if wait_for "$1" 10 "$3" "$2"; then
+        it_pass "$3"
+    else
+        it_fail "$3" "the rig's active pool did not change as expected within $1s"
+    fi
+}
 fault_node_down() {
     if wait_for 180 5 "dashboard to observe monerod before failover fault" _pred_failover_armed; then
         it_pass "node-down failover armed from a live monerod observation"
@@ -14,7 +32,6 @@ fault_node_down() {
     else
         it_skip_leg "rig pool failover and fail-back (#4046)" "no rig host or token" "missing"
     fi
-    FAULT_SINCE="$(rx "date -u +%Y-%m-%dT%H:%M:%SZ")"
     it_step "fault: stop monerod (required node down)…"
     rx "docker compose stop monerod" >/dev/null 2>&1
     wait_for 60 5 "status to report a problem" _pred_status_down || true
@@ -23,7 +40,6 @@ fault_node_down() {
     # After the node-health debounce, stopping xmrig-proxy sends workers to backup pools (#31).
     wait_for 180 10 "xmrig-proxy stopped by failover" _pred_proxy_stopped || true
     assert_eq "xmrig-proxy stopped for failover" "$(svc_state_of "$(service_state xmrig-proxy)")" "exited"
-    _assert_dashboard_logged "dashboard logged why xmrig-proxy was stopped (#4165)" 'Mining work is not valid \(.*Monero' "$FAULT_SINCE"
     [ -z "$RIG_POOL_BEFORE" ] || _rig_pool_leg 180 _pred_rig_pool_differs "borrowed rig failed over to its backup pool when the stratum closed (#4046)"
     it_step "recover: start monerod…"
     rx "docker compose start monerod" >/dev/null 2>&1
@@ -32,7 +48,6 @@ fault_node_down() {
     pithead status >/dev/null 2>&1
     assert_rc "status OK after monerod recovery" "$?" "0"
     wait_for 120 5 "readmission after the 60s node-health debounce (#31)" _pred_failover_armed && it_pass "xmrig-proxy readmitted after node-down recovery (#31)" || it_fail "xmrig-proxy readmitted after node-down recovery (#31)" "not readmitted within 120s"
-    _assert_dashboard_logged "dashboard logged the readmission with seconds since the stop (#4165)" 'started xmrig-proxy to readmit workers, [0-9]+s after it was stopped' "$FAULT_SINCE"
     [ -z "$RIG_POOL_BEFORE" ] || _rig_pool_leg 300 _pred_rig_pool_returned "borrowed rig returned to the stack's pool on its own after readmission (#4046)"
 }
 

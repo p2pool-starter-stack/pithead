@@ -232,17 +232,12 @@ class TestMiningGuardRejection:
             ),
         ],
     )
-    async def test_invalid_work_stops_the_proxy_and_names_the_trigger(self, kwargs, needle, caplog):
-        caplog.set_level("INFO", logger="DataService")
+    async def test_invalid_work_stops_the_proxy_and_names_the_trigger(self, kwargs, needle):
         svc = self._svc()
         await self._hold_past_grace(svc, **kwargs)
         assert svc.workers_rejected is True
         svc.docker_control.stop.assert_awaited_once_with(ds_mod.REJECT_WORKERS_CONTAINER)
         assert needle in svc.mining_guard.pause["reason"]
-        stop_lines = [
-            r.getMessage() for r in caplog.records if "Mining work is not valid" in r.getMessage()
-        ]
-        assert len(stop_lines) == 1 and needle in stop_lines[0]
 
     async def test_isolation_inside_grace_does_not_stop_the_proxy(self):
         svc = self._svc()

@@ -156,6 +156,13 @@ SCENARIOS = {
         "expect_stop": False,
         "steps": [(t, containers()) for t in range(0, 211, 30)] + [(240, containers())],
     },
+    "pending-peer-trigger-then-dropped-reading": {
+        "initial_rejected": True,
+        "ever_up": False,
+        "clear_at": 120,
+        "expect_stop": False,
+        "steps": [(t, containers()) for t in range(0, 301, 30)],
+    },
     "persisted-rejected-no-trigger": {
         "initial_rejected": True,
         "ever_up": False,
@@ -207,6 +214,8 @@ def _world_at(step, name):
             w.update(reachable=False, synchronized=None, p2p=None, health={"level": "unknown"})
         elif t < 150:
             w.update(p2p=None)
+    elif name == "pending-peer-trigger-then-dropped-reading":
+        w.update(p2p=dict(PEERLESS_P2P) if t < 120 else {})
     elif name == "p2pool-stratum-late":
         if t < 240:
             w.update(p2p=dict(PEERLESS_P2P))

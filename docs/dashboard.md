@@ -318,12 +318,6 @@ table above clears, then the recovery window runs and the proxy readmits. The da
 `xmrig-proxy`: the stratum port closes, connected rigs get a disconnect, and
 P2Pool keeps running. The built-in local miner is a rig on the same stratum, so it stops with them.
 
-The dashboard log records each transition once. The stop line, `Mining work is not valid (...)`,
-names every holding trigger, including a Monero or Tari outage past its debounce. While the proxy
-stays stopped, a `xmrig-proxy stays stopped: ...` line names what blocks readmission and repeats
-only when that set changes. The readmission line gives the seconds since the stop, or says the stop
-predates the dashboard process after a restart. The support bundle's dashboard container log carries both for the chosen window.
-
 The lag row reads P2Pool's own `peer ... is ahead on mainchain` log line. It also needs two peers and
 a stalled monerod height, because a hostile peer can make P2Pool log that line, and it is not used for a
 remote node, which has no height-progress verdict. Limits: after a dashboard restart the "no new
