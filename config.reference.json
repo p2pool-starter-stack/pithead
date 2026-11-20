@@ -14,7 +14,7 @@
   "local_miner": { "enabled": false },
   "xvb": {
     "enabled": true,
-    "url": "na.xmrvsbeast.com:4247",
+    "url": "eu.xmrvsbeast.com:4247",
     "donor_id": "auto",
     "donation_level": "auto",
     "tor": true,

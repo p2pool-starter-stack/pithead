@@ -106,6 +106,31 @@ mx_out="$(run_sourced "$MX" migrate_legacy_workers 2>&1)"
 assert_rc "a non-default xmrig_proxy.url that differs from xvb.url is refused" "$?" "1"
 assert_contains "the refusal names the xvb pair" "$mx_out" "(xvb.url and xmrig_proxy.url)"
 
+echo "== unit: migrate_xvb_na_endpoint moves a saved NA host to EU and keeps the port (#4308) =="
+XN="$SANDBOX/xn"
+mkdir -p "$XN"
+printf '{"xvb":{"enabled":false,"url":"na.xmrvsbeast.com:5555","donor_id":"mine"},"p2pool":{"pool":"nano"}}' >"$XN/config.json"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_rc "an NA xvb.url migrates" "$?" "0"
+assert_eq "the host moves to EU, the port and every other key are kept" "$(jq -c . "$XN/config.json")" '{"xvb":{"enabled":false,"url":"eu.xmrvsbeast.com:5555","donor_id":"mine"},"p2pool":{"pool":"nano"}}'
+assert_eq "the pre-migration file is kept" "$(jq -r '.xvb.url' "$XN/config.json.bak-xvb-na")" "na.xmrvsbeast.com:5555"
+cp "$XN/config.json" "$XN/before.json"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_eq "a second run changes nothing" "$(cmp -s "$XN/before.json" "$XN/config.json" && echo same)" "same"
+printf '{"xvb":{"url":"us.xmrvsbeast.com:4247"}}' >"$XN/config.json"
+rm -f "$XN/config.json.bak-xvb-na"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_eq "a custom non-NA url is untouched" "$(jq -r '.xvb.url' "$XN/config.json")" "us.xmrvsbeast.com:4247"
+assert_eq "an untouched config leaves no backup" "$(test -e "$XN/config.json.bak-xvb-na" && echo yes || echo no)" "no"
+printf '{"xvb":{"url":"na.xmrvsbeast.com.example.net:4247"}}' >"$XN/config.json"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_eq "a host that only starts with the NA name is untouched" "$(jq -r '.xvb.url' "$XN/config.json")" "na.xmrvsbeast.com.example.net:4247"
+printf '{"xmrig_proxy":{"enabled":true,"url":"na.xmrvsbeast.com:4247","donor_id":"auto"}}' >"$XN/config.json"
+run_sourced "$XN" migrate_legacy_workers >/dev/null 2>&1
+assert_eq "the 1.x alias is still moved to xvb.* with the NA value" "$(jq -r '.xvb.url' "$XN/config.json")" "na.xmrvsbeast.com:4247"
+run_sourced "$XN" migrate_xvb_na_endpoint >/dev/null 2>&1
+assert_eq "and the moved value then lands on EU" "$(jq -r '.xvb.url' "$XN/config.json")" "eu.xmrvsbeast.com:4247"
+
 # The XvB tier thresholds are hard-coded in config.py (TIER_DEFAULTS) and stated explicitly in
 # docs/architecture.md. Drift guard: each config value must match the doc's human form, so the
 # user-facing table can't silently fall out of sync if TIER_DEFAULTS ever changes.
