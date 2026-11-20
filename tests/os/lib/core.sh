@@ -23,11 +23,11 @@ ip=""
 SSH_ERR="/tmp/pithead-os-ssh.err"
 HOST_SCRATCH="${TMPDIR:-/tmp}/pithead-os-scratch.$$"
 rm -f "$SERIAL.failed"
-# Checksum-valid defaults (p2pool aborts on a bad checksum, #829); bench jobs override both with the owner's payouts.
+# Defaults are the owner's public wallets (the README donation wallet and the owner's Tari wallet); bench jobs override both.
 # shellcheck disable=SC2034  # shared through the assembled runner scope
-HARNESS_WALLET="${PITHEAD_OS_PAYOUT_MONERO:-44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg}"
+HARNESS_WALLET="${PITHEAD_OS_PAYOUT_MONERO:-486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R}"
 # shellcheck disable=SC2034  # shared through the assembled runner scope
-HARNESS_TARI="${PITHEAD_OS_PAYOUT_TARI:-126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ}"
+HARNESS_TARI="${PITHEAD_OS_PAYOUT_TARI:-122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG}"
 
 # Every remote call is bounded. CORRECTION (this comment used to claim Debian socket-activates sshd —
 # disproven): os/rootfs/Dockerfile only ever `systemctl enable`/`disable`s the plain ssh.service; no

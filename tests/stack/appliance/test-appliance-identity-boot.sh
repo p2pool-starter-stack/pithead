@@ -265,7 +265,7 @@ echo "== unit: restore_live_state_verdict — a restore leaves proof it is RUNNI
 # to pass, silently reintroducing #1091.
 # The same fixture wallet tests/os/run.sh's battery uses (HARNESS_WALLET) — any well-formed
 # address works here since the verdict only ever string-compares two values, never parses one.
-RLV_WALLET="44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
+RLV_WALLET="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
 rlv() { # <podman-ps-names> <live-wallet> <want-wallet> -> "<rc> <verdict-text>"
     local out rc
     out=$(

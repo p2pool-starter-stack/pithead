@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
-# Throwaway checksum-valid payouts: the media guest never reaches chain nodes, and the product console prints the address in full.
-MEDIA_WALLET="44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
-MEDIA_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+# The owner's public wallets; MEDIA_WALLET_ALT stays the never-fundable fixture key because the stick needs a second primary address.
+MEDIA_WALLET="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
+MEDIA_TARI="122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG"
 MEDIA_WALLET_ALT="445dvgb2rcBcPz2n2tiGLMgURfpBxV27DBsSgz4MEqXUHLtmmYeu1wL6iNu7fPJpwdUwtbvWS7MX9KZiyKonEg3NGKQgwhk"
 _make_media_stick() {
     (

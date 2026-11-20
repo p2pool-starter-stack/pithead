@@ -355,8 +355,8 @@ the configured test registry fail before the image build. Release builds do not 
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
   reboots. The wallet the stick changes to is the named throwaway `MEDIA_WALLET_ALT` — the same
-  never-fundable key the v1.20.0 restore fixture derives from its public seed — so no payout
-  identity in this phase is a real donation address (#4184). Asserts the exact diff appears on the console (the changed wallet address in full, read
+  never-fundable key the v1.20.0 restore fixture derives from its public seed, because the stick
+  needs a second primary address; the starting payouts are the owner's public wallets. Asserts the exact diff appears on the console (the changed wallet address in full, read
   directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
