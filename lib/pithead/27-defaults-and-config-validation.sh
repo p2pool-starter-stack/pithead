@@ -230,7 +230,7 @@ migrate_xvb_na_endpoint() {
     owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
     if (
         umask 077
-        jq '.xvb.url |= sub("^na\\.xmrvsbeast\\.com"; "eu.xmrvsbeast.com"; "i")' "$CONFIG_FILE" >"$tmp" 2>/dev/null
+        jq 'if (.xvb | type) == "object" then .xvb.url |= sub("^na\\.xmrvsbeast\\.com"; "eu.xmrvsbeast.com"; "i") else . end' "$CONFIG_FILE" >"$tmp" 2>/dev/null
     ); then
         mv "$tmp" "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"
