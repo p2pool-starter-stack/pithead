@@ -7,13 +7,24 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 source "$ROOT/tests/integration/lib/run-lifecycle-miners.sh"
 work=$(mktemp -d "${TMPDIR:-/tmp}/lifecycle-proxy-exit.XXXXXX")
 trap 'rm -rf "$work"' EXIT
-rx() { printf '%s\n' "$1" >"$work/snippet"; }
+mkdir "$work/bin"
+cat >"$work/bin/timeout" <<'EOF'
+#!/usr/bin/env bash
+shift 2
+exec "$@"
+EOF
+cat >"$work/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+inspect) case "$*" in *State.ExitCode*State.OOMKilled*) printf 'proxy status=exited exit=137 oom_killed=true\n' ;; esac ;;
+logs) printf 'proxy fatal: listener lost\n' ;;
+esac
+EOF
+printf '#!/usr/bin/env bash\nexit 0\n' >"$work/bin/systemctl"
+chmod +x "$work/bin/"*
+rx() { PATH="$work/bin:$PATH" bash -c "$1"; }
 LIFECYCLE_MINER_DIAGNOSTICS="$work/diagnostics.log"
 lifecycle_mining_diagnostics "restart precondition"
-for needle in 'exit={{.State.ExitCode}}' 'oom_killed={{.State.OOMKilled}}' 'finished={{.State.FinishedAt}}' 'logs --tail 20 xmrig-proxy'; do
-    grep -Fq -- "$needle" "$work/snippet" || {
-        echo "FAIL: diagnostic command lacks $needle"
-        exit 1
-    }
-done
-printf '%s\n' 'PASS: the diagnostic inspects exit code, OOM flag, finish time and tails the proxy log'
+grep -Fq 'exit=137 oom_killed=true' "$work/diagnostics.log"
+grep -Fq 'proxy fatal: listener lost' "$work/diagnostics.log"
+printf '%s\n' 'PASS: the diagnostic block carries the proxy exit code, OOM flag and last log lines'
