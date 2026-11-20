@@ -7,7 +7,7 @@ case "$cookie" in
 "" | *[!0-9a-fA-F]*) ;;
 *)
     reply=$(printf 'AUTHENTICATE %s\r\nGETINFO version\r\nGETINFO status/bootstrap-phase\r\nGETINFO circuit-status\r\nGETINFO entry-guards\r\nGETINFO consensus/valid-after\r\nGETINFO consensus/valid-until\r\nGETINFO status/circuit-established\r\nGETINFO status/enough-dir-info\r\nQUIT\r\n' "$cookie" |
-        timeout 5 nc -w 3 127.0.0.1 9051 2>/dev/null | head -c 1048576) || reply=
+        timeout 5 nc -w 3 127.0.0.1 "${TOR_CONTROL_PORT:-9051}" 2>/dev/null | head -c 1048576) || reply=
     ;;
 esac
 out=$(printf '%s\n' "$reply" | tr -d '\r' | awk '

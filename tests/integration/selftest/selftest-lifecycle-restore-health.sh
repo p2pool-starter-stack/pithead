@@ -120,6 +120,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         prove_wallet_supersession() { :; }
         prove_wallet_recovery() { :; }
         tor_recovery_healthy_probe() { :; }
+        tor_diagnostics_live_probe() { :; }
         run_connection_announcements() { :; }
         # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
         run_reset_restore() {

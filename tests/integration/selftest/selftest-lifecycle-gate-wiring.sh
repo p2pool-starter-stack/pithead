@@ -94,6 +94,7 @@ assert_pool_switched() {
     trace pool-observed-mini
 }
 tor_recovery_healthy_probe() { :; }
+tor_diagnostics_live_probe() { :; }
 prove_wallet_supersession() {
     [ "$(tail -n 1 "$fixture/lifecycle-gate.log" | awk '{print $2}')" = before-wizard-defaults ]
     wallet_proof_calls=$((wallet_proof_calls + 1))

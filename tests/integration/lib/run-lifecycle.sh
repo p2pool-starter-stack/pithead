@@ -22,6 +22,7 @@ _run_lifecycle() {
     lifecycle_mining_step run_cli_wizard_defaults run_cli_wizard_defaults || lifecycle_stopped run_cli_wizard_defaults || return 1
     lifecycle_mining_step run_support_bundle run_support_bundle || lifecycle_stopped run_support_bundle || return 1
     tor_recovery_healthy_probe
+    tor_diagnostics_live_probe
     prove_wallet_supersession
     prove_wallet_recovery || lifecycle_stopped prove_wallet_recovery || return 1
     lifecycle_gate_sample before-restart
