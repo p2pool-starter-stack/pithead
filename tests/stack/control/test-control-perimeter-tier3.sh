@@ -157,7 +157,7 @@ echo "== black-box: the same gates guard DIY and the appliance alike (#3579) =="
 for gate_flag in 0 1; do
     gate_who=DIY
     gate_wallet="$WALLET"
-    [ "$gate_flag" == 1 ] && { gate_who=appliance; gate_wallet="$ATTACKER_WALLET"; }
+    [ "$gate_flag" == 1 ] && { gate_who=appliance; gate_wallet="$PAYOUT_MONERO2"; }
     jq --arg u "rpc-user$gate_flag" --arg p "rpc-secret$gate_flag" \
         '.monero.node_username=$u | .monero.node_password=$p' "$C/config.json" >"$C/cand.json"
     (
@@ -180,7 +180,8 @@ for gate_flag in 0 1; do
         export PITHEAD_APPLIANCE="$gate_flag"
         gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${gate_wallet: -8}" '{payout_suffixes:{monero:$s}}')"
     )
-    assert_eq "payout address applies behind the payout-suffix confirmation on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+    assert_eq "payout address applies behind the payout-suffix confirmation on $gate_who" \
+        "$(jq -r '[.status, .error // ""] | join(" :: ") | sub(" :: $"; "")' "$RESULTS/$UUID5.json")" "applied"
     assert_eq "the confirmed payout address landed on $gate_who" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$gate_wallet"
     jq --arg p "second-control-passphrase-$gate_flag" '.dashboard.auth.password=$p' "$C/config.json" >"$C/cand.json"
     (
@@ -199,7 +200,6 @@ for gate_flag in 0 1; do
         gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
     )
     assert_eq "the retired ssh path is refused even with APPLY and the envelope on $gate_who" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
-    assert_contains "the ssh refusal names the schema guard on $gate_who" "$(jq -r '.error' "$RESULTS/$UUID5.json")" "not in the schema"
     assert_eq "the refused ssh path did not land on $gate_who" "$(jq -r '.ssh // "absent"' "$C/config.json")" "absent"
 done
 

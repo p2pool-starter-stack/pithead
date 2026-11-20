@@ -409,7 +409,8 @@ run_pending >/dev/null
 assert_eq "profile switch is refused without the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID2.json")" "rejected"
 printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY","approval":{"payout_suffixes":{}}}\n' "$UUID2" >"$REQS/$UUID2.json"
 run_pending >/dev/null
-assert_eq "profile switch commits end to end on DIY with the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID2.json")" "applied"
+assert_eq "profile switch commits end to end on DIY with the typed APPLY" \
+    "$(jq -r '[.status, .error // ""] | join(" :: ") | sub(" :: $"; "")' "$RESULTS/$UUID2.json")" "applied"
 assert_eq "the committed profile landed" "$(jq -r '.profile' "$C/config.json")" "privacy"
 rm -f "$C/cand-profile.json"
 
