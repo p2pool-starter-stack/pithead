@@ -6,6 +6,8 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/pithead-impl-launcher.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 CHECKS=0
 
+echo "== unit: per-piece PITHEAD_IMPL launcher and release-default table (#4214) =="
+
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
     [ -z "${2:-}" ] || printf '  %s\n' "$2" >&2
