@@ -23,10 +23,14 @@ _tor_probe_witness_latch() {
 
 _tor_probe_record_witness() { # <label>
     local state
-    state=$(api_state 2>/dev/null) || state='{}'
+    mkdir -p "$OUT_DIR"
     {
         printf '%s\n' "$1"
-        printf '%s' "$state" | jq -c '{proxy_workers, proxy_summary, stratum}' 2>/dev/null || echo 'api_state unavailable'
+        if state=$(api_state 2>/dev/null); then
+            printf '%s' "$state" | jq -c '{proxy_workers, proxy_summary, stratum, workers_listed: (.workers | length)}' 2>/dev/null || echo 'api_state unparsable'
+        else
+            echo 'api_state unavailable'
+        fi
     } >>"$OUT_DIR/tor-probe-witness.log"
 }
 

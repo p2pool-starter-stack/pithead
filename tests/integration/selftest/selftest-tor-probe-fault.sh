@@ -139,6 +139,7 @@ for fixture in reconnects never; do
             check grep -Fq 'Tor probe fault has a live mining witness' <<<"$IT_FAILED_NAMES"
             check grep -Fq 'after-apply' "$OUT_DIR/tor-probe-witness.log"
             check grep -Fq '"proxy_workers":0' "$OUT_DIR/tor-probe-witness.log"
+            check grep -Fq '"workers_listed":' "$OUT_DIR/tor-probe-witness.log"
         fi
         printf 'witness fixture (%s): %s passed, %s failed\n' "$fixture" "$PASS" "$FAIL"
         test "$FAIL" -eq 0
