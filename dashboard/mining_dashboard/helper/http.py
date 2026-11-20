@@ -111,6 +111,8 @@ def _refuse_direct_public(url, proxies):
         except ValueError:
             pass
         else:
+            if addr.version == 6 and addr.ipv4_mapped is not None:
+                addr = addr.ipv4_mapped
             if (
                 addr.is_private
                 or addr.is_loopback
@@ -131,7 +133,8 @@ def bounded_request(
     method, url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, session=None, deadline=None, **kwargs
 ):
     _refuse_direct_public(url, kwargs.get("proxies"))
-    if not _proxy_covers(kwargs.get("proxies"), _url_scheme(url)):
+    proxies = kwargs.get("proxies")
+    if not (_proxy_covers(proxies, "http") and _proxy_covers(proxies, "https")):
         kwargs["allow_redirects"] = False
     caller = getattr(session if session is not None else requests, method.lower())
     stop_at = time.monotonic() + deadline if deadline is not None else None

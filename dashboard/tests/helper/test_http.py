@@ -261,6 +261,24 @@ class TestEgressGuard:
             bounded_get("https://example.test/x", proxies=_PROXIES)
         assert "allow_redirects" not in g.call_args.kwargs
 
+    def test_a_proxy_for_one_scheme_never_follows_redirects(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ) as g:
+            bounded_get("http://example.test/x", proxies={"http": "socks5h://tor:9050"})
+        assert g.call_args.kwargs["allow_redirects"] is False
+
+    def test_an_ipv4_mapped_public_literal_is_refused(self):
+        for url in ("https://[::ffff:8.8.8.8]/x", "https://[::ffff:0808:0808]/x"):
+            with pytest.raises(NoUsableProxy):
+                bounded_get(url)
+
+    def test_an_ipv4_mapped_private_literal_is_allowed_direct(self):
+        with patch(
+            "mining_dashboard.helper.http.requests.get", return_value=_streaming_resp([b"ok"])
+        ):
+            assert bounded_get("http://[::ffff:10.0.0.1]:18081/x").content == b"ok"
+
 
 class _Stream:
     """An aiohttp ``StreamReader``: ``read(n)`` is a SHORT read, returning what is buffered rather

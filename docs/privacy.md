@@ -213,7 +213,9 @@ resolved on the clearnet either. The host-networked dashboard reaches the bridge
 The shared HTTP helper refuses to connect directly (#4146): unless the URL's host is a private IP
 literal — loopback, RFC 1918, link-local, CGNAT `100.64.0.0/10`, IPv6 `::1`, or ULA `fc00::/7` — the
 request must carry a usable proxy for its scheme, and the refusal raises before any socket opens. A
-hostname is never a private literal; it can't be proven private without a DNS lookup. `TOR_SOCKS_PROXY`
+hostname is never a private literal; it can't be proven private without a DNS lookup. An IPv4-mapped
+IPv6 literal is judged by its embedded IPv4 address. A call without a proxy for both `http` and `https`
+never follows redirects, so a redirect cannot leave the proxy. `TOR_SOCKS_PROXY`
 is a required setting: with it empty or unset the dashboard refuses to start, and every Tor-routed
 fetch above reports a failure instead of silently reaching the endpoint over the host IP.
 
