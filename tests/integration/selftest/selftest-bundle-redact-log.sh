@@ -212,19 +212,15 @@ XMR_NEAR_LONG="$(b58pad 4SyntheticMoneroNinetySixCharsNotAnAddress 96)"
 XMR_NEAR_PREFIX="$(b58pad 5SyntheticMoneroWrongPrefixNotAnAddress 95)"
 SHA256_HEX="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-# Well-known PUBLIC donation addresses, never ours: XMRig's (primary), the Monero project's
-# (subaddress), and that project's integrated fixture. The same three tests/stack/lib.sh carries,
-# repeated rather than sourced because that file belongs to another tier. They are here so ONE row
-# can drive the classifier and the redactor off the SAME value — a synthetic address cannot do
-# that, since none of ours passes a checksum.
+# The same public addresses tests/stack/lib.sh carries, repeated because that file belongs to another tier.
 # shellcheck disable=SC2034  # read by NAME through ${!_name} in the loops below, which shellcheck
 # cannot follow. Naming them is the point: the arming row and the classifier row have to print WHICH
 # fixture moved, and a bare value in a list cannot say that.
-XMR_REAL_PRIMARY="48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD"
+XMR_REAL_PRIMARY="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
 # shellcheck disable=SC2034  # same: read through ${!_name}
 XMR_REAL_SUBADDR="888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H"
 # shellcheck disable=SC2034  # same: read through ${!_name}
-XMR_REAL_INTEGRATED="4JMJg6ic6R584YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijGDpDGTWtLM516v46mB"
+XMR_REAL_INTEGRATED="4HoFHatLJYXMkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVFCi65yWKXZjD14Kx6SW"
 
 # The shipped classifier, run the same way brl() runs the shipped redactor.
 mat() { (

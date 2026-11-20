@@ -59,8 +59,8 @@ def b58_decode(s):
 
 
 # Legacy Keccak-256 (pad byte 0x01), not NIST SHA3-256 (0x06) — hashlib.sha3_256 is WRONG here.
-# Proven in the stack suite against well-known public addresses (XMRig's and the Monero
-# project's donation addresses): a wrong digest fails their checksums.
+# Proven in the stack suite against public donation addresses (Pithead's and the Monero
+# project's): a wrong digest fails their checksums.
 _RC = [
     0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
     0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,

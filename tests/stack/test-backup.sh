@@ -30,7 +30,7 @@
 #   string is enough; calling the heavier build_val_sandbox() would build a $V this file never touches.
 # - $VALID_TARI is a plain lib.sh top-level constant (not
 #   build_val_sandbox()-scoped), so it needs no re-derivation here or anywhere else.
-WALLET="$VALID_PRIMARY" # checksum-valid mainnet primary (the XMRig donation address) — see #1305
+WALLET="$VALID_PRIMARY" # checksum-valid mainnet primary (a public donation address) — see #1305
 
 echo "== unit: stack_backup — one bounded retry on a tar race (#970) =="
 # Even with the stack stopped, tar can lose a race against a teardown's last flush — exit 1
