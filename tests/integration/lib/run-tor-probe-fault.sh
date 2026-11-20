@@ -21,13 +21,13 @@ _tor_probe_witness_latch() {
     TOR_PROBE_LAST=$(_tor_probe_mining_sample)
 }
 
-_tor_probe_record_witness() { # <label>
+_tor_probe_record_witness() {
     local state
     mkdir -p "$OUT_DIR"
     {
         printf '%s\n' "$1"
         if state=$(api_state 2>/dev/null); then
-            printf '%s' "$state" | jq -c '{proxy_workers, proxy_summary, stratum, workers_listed: (.workers | length)}' 2>/dev/null || echo 'api_state unparsable'
+            printf '%s' "$state" | jq -c '{proxy_workers, proxy_summary, stratum, workers: [.workers[]? | {name, status, uptime, accepted}]}' 2>/dev/null || echo 'api_state unparsable'
         else
             echo 'api_state unavailable'
         fi

@@ -104,7 +104,7 @@ for fixture in reconnects never; do
             if [ "$fixture" = reconnects ] && [ "$(wc -l <"$reads")" -ge 4 ]; then
                 echo '{"proxy_workers":1,"proxy_summary":{"accepted":"1,234"}}'
             else
-                echo '{"proxy_workers":0,"proxy_summary":{}}'
+                echo '{"proxy_workers":0,"proxy_summary":{},"workers":[{"name":"rig-a","status":"offline","uptime":0,"accepted":159,"ip":"192.0.2.9"}]}'
             fi
         }
         env_on_box() { echo true; }
@@ -139,7 +139,8 @@ for fixture in reconnects never; do
             check grep -Fq 'Tor probe fault has a live mining witness' <<<"$IT_FAILED_NAMES"
             check grep -Fq 'after-apply' "$OUT_DIR/tor-probe-witness.log"
             check grep -Fq '"proxy_workers":0' "$OUT_DIR/tor-probe-witness.log"
-            check grep -Fq '"workers_listed":' "$OUT_DIR/tor-probe-witness.log"
+            check grep -Fq '"workers":[{"name":"rig-a","status":"offline","uptime":0,"accepted":159}]' "$OUT_DIR/tor-probe-witness.log"
+            check test "$(grep -c 192.0.2.9 "$OUT_DIR/tor-probe-witness.log")" -eq 0
         fi
         printf 'witness fixture (%s): %s passed, %s failed\n' "$fixture" "$PASS" "$FAIL"
         test "$FAIL" -eq 0
