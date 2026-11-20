@@ -7,16 +7,18 @@ tari_error_summary() {
 
 TARI_IDENTITY="" TARI_IDENTITY_ERROR=""
 tari_block_identity_checked() { # <height>
-    local out attempt=0 attempts="${TARI_IDENTITY_ATTEMPTS:-3}"
+    local out identity summary attempt=0 attempts="${TARI_IDENTITY_ATTEMPTS:-3}"
     TARI_IDENTITY="" TARI_IDENTITY_ERROR=""
     while [ "$attempt" -lt "$attempts" ]; do
         attempt=$((attempt + 1))
         out="$(tari_identity_remote "$1" || true)"
-        if [[ "$out" =~ ^[0-9]+\ [0-9a-f]{64}$ ]]; then
-            TARI_IDENTITY="$out"
+        identity="$(printf '%s\n' "$out" | grep -E '^[0-9]+ [0-9a-f]{64}$' | head -n 1 || true)"
+        if [ -n "$identity" ]; then
+            TARI_IDENTITY="$identity"
             return 0
         fi
-        TARI_IDENTITY_ERROR="attempt $attempt/$attempts: $(printf '%s\n' "$out" | tari_error_summary)"
+        summary="$(printf '%s\n' "$out" | tari_error_summary || true)"
+        TARI_IDENTITY_ERROR="attempt $attempt/$attempts: ${summary:-no output}"
         [ "$attempt" -ge "$attempts" ] || sleep 5
     done
     return 1

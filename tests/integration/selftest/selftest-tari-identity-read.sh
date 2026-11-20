@@ -41,4 +41,12 @@ esac
 
 tari_identity_remote() { echo "StopIteration"; }
 tari_block_identity_checked 12 || true
-assert_eq "an empty ListHeaders stream is reported distinctly" "$TARI_IDENTITY_ERROR" "attempt 3/3: StopIteration"
+assert_eq "a StopIteration from an empty stream is captured" "$TARI_IDENTITY_ERROR" "attempt 3/3: StopIteration"
+
+tari_identity_remote() { printf 'Warning: noise\n%s\n' "$good"; }
+tari_block_identity_checked 12
+assert_eq "stderr noise next to a valid identity does not fail the read" "$TARI_IDENTITY" "$good"
+
+tari_identity_remote() { :; }
+tari_block_identity_checked 12 || true
+assert_eq "a silent empty read says there was no output" "$TARI_IDENTITY_ERROR" "attempt 3/3: no output"
