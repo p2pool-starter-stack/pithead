@@ -156,7 +156,7 @@ def compute_egress_posture(
         },
         {
             "name": "caddy",
-            "firewalled": True,
+            "firewalled": False,
             "conns": [{"to": "TLS (internal CA, no ACME)", "route": LOCAL}],
         },
     ]

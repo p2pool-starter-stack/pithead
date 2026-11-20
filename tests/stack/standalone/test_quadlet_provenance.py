@@ -64,6 +64,7 @@ class QuadletProvenanceTests(unittest.TestCase):
         for key in PROVENANCE_KEYS:
             environment.pop(key, None)
         environment.update(process or {})
+        environment["QUADLET_COMPOSE_FILE"] = str(ROOT / "docker-compose.yml")
         args = [install / "pithead", "render-quadlet"]
         if default_env:
             shutil.copy2(env_file, install / ".env")
