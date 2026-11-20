@@ -15,20 +15,14 @@ def merge(base: dict, overrides: dict) -> dict:
     return result
 
 
-def effective_defaults(platform: str = "diy", *, legacy: bool = False) -> dict:
+def effective_defaults(platform: str = "diy") -> dict:
     if platform not in ("diy", "appliance"):
         raise ValueError("unknown configuration platform")
-    result = merge(TABLE["values"], TABLE["appliance"] if platform == "appliance" else {})
-    if legacy:
-        for entry in TABLE["LEGACY_ABSENT"]:
-            if entry.get("platform", platform) == platform:
-                block, key = entry["path"].split(".")
-                result[block][key] = entry["value"]
-    return result
+    return merge(TABLE["values"], TABLE["appliance"] if platform == "appliance" else {})
 
 
-def default_of(path: str, platform: str = "diy", *, legacy: bool = False):
-    value = effective_defaults(platform, legacy=legacy)
+def default_of(path: str, platform: str = "diy"):
+    value = effective_defaults(platform)
     for key in path.split("."):
         value = value[key]
     return value

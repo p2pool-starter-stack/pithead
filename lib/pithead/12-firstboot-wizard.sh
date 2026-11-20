@@ -175,8 +175,11 @@ firstboot_wizard() {
                 rig_token=$(rig_access_token) || rig_token="" # empty here = the render leg refuses below
                 # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE, no login) and
                 # this box's address; an unresolvable pool host (#1867) adds control:"off" and why instead.
+                local rig_warning
+                rig_warning=$(machine_name_warning "$rig_worker" rig)
+                [ -z "$rig_warning" ] || _console "" "Warning: $rig_warning"
                 jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
-                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end)' | write_handoff_card "$card_spool"
+                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" --arg warn "$rig_warning" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end) + (if $warn == "" then {} else {warning: $warn} end)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
@@ -293,6 +296,9 @@ firstboot_wizard() {
                 local DASHBOARD_HOST stratum_addr dash_user dash_pass miner_connection
                 miner_connection=$(wizard_prepare_miner_connection "$candidate" "$installer" "$spool") || error "Could not prepare miner connection credentials safely."
                 DASHBOARD_HOST=$(resolve_default "$(config_get .dashboard.host "$candidate" 2>/dev/null)" "")
+                local name_warning
+                name_warning=$(machine_name_warning "$DASHBOARD_HOST" machine)
+                [ -z "$name_warning" ] || _console "" "Warning: $name_warning"
                 reconcile_appliance_hostname
                 stratum_addr="stratum+$(jq -r 'if .p2pool.stratum_tls == true then "ssl" else "tcp" end' "$candidate")://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$candidate" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$candidate")
@@ -304,8 +310,8 @@ firstboot_wizard() {
                 # credentials must not vanish with it.
                 jq -n --arg u "$dash_user" --arg p "$dash_pass" \
                     --arg d "https://$(hostname).local" --arg s "$stratum_addr" \
-                    --argjson miner "$miner_connection" \
-                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner' | write_handoff_card "$card_spool"
+                    --arg w "$name_warning" --argjson miner "$miner_connection" \
+                    '{username:$u,password:$p,dashboard:$d,stratum:$s} + $miner + (if $w != "" then {warning:$w} else {} end)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2

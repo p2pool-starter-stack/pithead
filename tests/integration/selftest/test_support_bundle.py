@@ -52,7 +52,7 @@ class SupportBundleTest(unittest.TestCase):
         return {
             "dashboard": {"auth": {"password": values[0]}},
             "p2pool": {"stratum_password": values[1]},
-            "telegram": {"enabled": False, "bot_token": values[2]},
+            "telegram": {"chat_id": "", "bot_token": values[2]},
         }
 
     def write_bundle(self, files=None, mode=0o600):
@@ -101,10 +101,10 @@ class SupportBundleTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.check()
 
-    def test_enabled_telegram_fixture_is_rejected(self):
+    def test_deliverable_telegram_fixture_is_rejected(self):
         self.write_bundle()
         config = self.config_data(self.secrets)
-        config["telegram"]["enabled"] = True
+        config["telegram"]["chat_id"] = "1"
         self.config.write_text(json.dumps(config))
         with self.assertRaises(ValueError):
             self.check()

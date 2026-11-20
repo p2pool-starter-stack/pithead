@@ -12,7 +12,7 @@ _rig_mining_up() { # <tries>, 10 s apart — 0 once the xmrig unit is active wit
 
 phase_rig() {
     info "phase: rig (the OTHER machine this image installs — mines instead of coordinating)"
-    it_skip_leg "hostname identity, diagnostics, tari-mode switch and egress backstop legs" \
+    it_skip_leg "coordinator hostname identity, diagnostics, tari-mode switch and egress backstop legs" \
         "a rig has no dashboard, no control API and no compose stack at all to assert any of these against" by-design
     local img token jar body scode marker card card_tok rtok pcode ptries=0 cid cstat meta0 meta1
 
@@ -154,8 +154,8 @@ phase_rig() {
         bad "the rig never started mining (unit: $(_ssh 'systemctl is-active xmrig' 2>/dev/null || echo unknown))"
         info "  firstboot journal tail: $(_ssh "journalctl -u pithead-firstboot -n 8 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
     fi
-    [ "$(_ssh 'cat /data/pithead/machine-role' | tr -d '\r\n')" = "rig" ] &&
-        ok "the role marker says rig" || bad "the role marker is not rig"
+    [ "$(_ssh 'cat /data/pithead/machine-role' | tr -d '\r\n')" = "rig" ] && ok "the role marker says rig" || bad "the role marker is not rig"
+    [ "$(_ssh 'hostnamectl --static; hostname' | tr -d '\r' | uniq)" = "kvm-rig" ] && ok "the rig's worker name is its static and live hostname" || bad "the rig's hostname is not its worker name"
     [ -z "$(_ssh 'ls /data/pithead/config.json 2>/dev/null')" ] &&
         ok "no coordinator config was ever written (a rig has none)" ||
         bad "a config.json appeared on a rig — the coordinator contract leaked into the rig role"

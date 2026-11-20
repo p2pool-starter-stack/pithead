@@ -8,6 +8,25 @@ is_valid_host() {
     [[ "$1" =~ ^[A-Za-z0-9.:_-]{1,253}$ ]]
 }
 
+payout_host_off_tor() {
+    local host="${1,,}"
+    host="${host%.}"
+    case "$host" in
+    localhost | *.localhost | *.local | *.lan | *.internal | *.home.arpa | ::* | 0:* | fc*:* | fd*:* | fe[89ab]*:*) return 0 ;;
+    esac
+    if [[ "$host" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        local a=$((10#${BASH_REMATCH[1]})) b=$((10#${BASH_REMATCH[2]}))
+        [ "$a" -eq 0 ] || [ "$a" -eq 10 ] || [ "$a" -eq 127 ] && return 0
+        [ "$a" -eq 169 ] && [ "$b" -eq 254 ] && return 0
+        [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ] && return 0
+        [ "$a" -eq 192 ] && [ "$b" -eq 168 ] && return 0
+        [ "$a" -eq 100 ] && [ "$b" -ge 64 ] && [ "$b" -le 127 ] && return 0
+        return 1
+    fi
+    case "$host" in *.* | *:*) return 1 ;; esac
+    return 0
+}
+
 # A bare TCP port, 1–65535, no leading zero. Used to validate dashboard.port (#740) before it is
 # rendered into the Caddyfile site address — the digits-only shape also guarantees no space/newline/`{`
 # can slip in and break the Caddyfile or inject a directive, the same threat is_valid_host guards for

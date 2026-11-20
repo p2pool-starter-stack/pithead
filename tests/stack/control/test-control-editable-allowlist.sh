@@ -12,7 +12,7 @@ echo "== black-box: editable-allowlist commit round-trip, every key (#522) =="
 # env diff (pool flips P2POOL_FLAGS + P2POOL_PORT, both allowlisted).
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",mem_limit:"4g",prep_blocks_threads:4,prune:false},
-    tari:{wallet_address:"'"$VALID_TARI"'",mem_limit:"3g"}, p2pool:{pool:"main"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",mem_limit:"3g"}, p2pool:{pool:"main"},
     xvb:{enabled:true,donation_level:"donor"}, telegram:{daily_summary_time:"08:00"},
     dashboard:{secure:true,host:"box.lan",tari_required:true,check_for_updates:true,timezone:"UTC",
                hashrate_drop_threshold:50,hashrate_drop_minutes:10,
@@ -39,17 +39,8 @@ roundtrip_key "HASHRATE_DROP_THRESHOLD_PCT" '.dashboard.hashrate_drop_threshold=
 roundtrip_key "HASHRATE_DROP_MINUTES" '.dashboard.hashrate_drop_minutes=15' '.dashboard.hashrate_drop_minutes' "15"
 roundtrip_key "TELEGRAM_DAILY_SUMMARY_TIME" '.telegram.daily_summary_time="09:30"' '.telegram.daily_summary_time' "09:30"
 roundtrip_key "P2POOL_FLAGS/P2POOL_PORT" '.p2pool.pool="mini"' '.p2pool.pool' "mini"
-# The 25 allowlisted TELEGRAM_EVENT_* toggles (raffle_win added 2026-08: audit found it was the one
-# event toggle missing from its siblings, all otherwise editable). wallet_changed + clearnet_exposed
-# are deliberately NOT on the allowlist (tamper-evidence alarms confirm behind APPLY + envelope,
-# #2367, asserted in control-sensitive-preview.sh), so they are excluded here. Each flips true->false as a single-key diff.
-for ev in node_down node_recovered worker_offline worker_recovered worker_joined worker_left \
-    sync_finished disk_space db_unhealthy db_reset xvb_no_share xvb_registration new_release \
-    stack_online daily_summary hashrate_low hashrate_loss hugepages low_ram high_reject_rate \
-    block_found payout_found payout_confirmed container_unhealthy raffle_win; do
-    roundtrip_key "TELEGRAM_EVENT_$(printf '%s' "$ev" | tr 'a-z' 'A-Z')" \
-        ".telegram.events.${ev}=false" ".telegram.events.${ev}" "false"
-done
+roundtrip_key "TELEGRAM_LEVEL" '.telegram.level="critical"' '.telegram.level' "critical"
+
 echo "== black-box: confirm-allowlist commit round-trip behind the typed APPLY (#1929) =="
 roundtrip_confirm() {
     COVERED="$COVERED $(printf '%s' "$1" | tr '/' ' ')"
@@ -213,7 +204,7 @@ echo "== black-box: node-endpoint keys ignore remote.* on a non-remote chain (#1
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",
             remote:{host:"evil.example.com",rpc_port:9,zmq_port:9}},
-    tari:{wallet_address:"'"$VALID_TARI"'",remote:{host:"evil.example.com",grpc_port:9}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",remote:{host:"evil.example.com",grpc_port:9}},
     p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
@@ -255,7 +246,7 @@ assert_eq "tari.remote.host is inert when tari.mode is off" "$(env_now TARI_GRPC
 jq -n --arg w "$WALLET" '{
     monero:{mode:"remote",wallet_address:$w,node_username:"",node_password:"",
             remote:{host:"evil.example.com",rpc_port:9,zmq_port:9}},
-    tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"evil.example.com",grpc_port:9}},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"evil.example.com",grpc_port:9}},
     p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
@@ -358,7 +349,7 @@ echo "== black-box: a settable key is never invisible to the approval gate (#192
 # parser never looks at it.
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
+    tari:{mode:"local",wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)

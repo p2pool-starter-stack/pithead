@@ -184,9 +184,10 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      install also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero
      mining. Changeable later from the
      dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
-   - Setup does not ask for a dashboard hostname. A fresh install uses `dashboard.host: auto`,
-     which derives the name from the machine hostname. An existing explicit `dashboard.host`
-     override remains in effect. Open the dashboard at the address printed during setup.
+   - On an appliance, setup then asks one optional thing: this machine's name. Enter accepts the
+     default; anything you type is checked against the name rule in
+     [Appliance name](appliance-hostname.md). On a DIY install setup asks no hostname question at
+     all — the dashboard is reached by this machine's hostname.
    - **A few more, Enter for the default:** a faster clearnet initial sync (hours instead of days,
      for every local chain, exposing your IP address to the Monero network and, when Tari runs
      locally, the Tari network until initial sync finishes) instead of
@@ -275,10 +276,10 @@ The dashboard is served over HTTPS by Caddy:
 https://<your-hostname>
 ```
 
-`<your-hostname>` is the address printed by setup. A fresh install derives it from the machine
-hostname through `dashboard.host: auto`; setup does not ask you to name the machine. An existing
-explicit `dashboard.host` override remains in effect. Caddy uses a local certificate authority
-(`tls internal`).
+`<your-hostname>` is the address printed by setup: this machine's hostname, or the name you gave an
+appliance during setup. A DIY install derives it from the machine hostname through
+`dashboard.host: auto`; an existing explicit `dashboard.host` override remains in effect. Caddy uses a
+local certificate authority (`tls internal`).
 [Verify and trust its root CA](configuration.md#exposing-the-dashboard-safely) to avoid repeated
 browser warnings after certificate renewal. Prefer plain HTTP on your LAN? Set
 `dashboard.secure: false` in `config.json` and run `./pithead apply`.

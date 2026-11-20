@@ -17,12 +17,7 @@ def config_paths(tmp_path, monkeypatch):
         **live,
         "monero": {**live["monero"], "prune": True},
         "p2pool": {"pool": "mini", "clearnet": False},
-        # telegram.enabled is the approval-tier leaf (2026-09-13 perimeter audit); without one in this synthetic schema
-        # the classification tests below cannot tell a NARROWED tier from an EMPTY one.
-        "telegram": {
-            "enabled": True,
-            "events": {"wallet_changed": True, "clearnet_exposed": True},
-        },
+        "telegram": {"commands": {"enabled": False}, "level": "off", "bot_token": ""},
         "network": {"tor_egress_firewall": True},
         "dashboard": {"auth": {"password": ""}, "host": "box", "control": {"enabled": True}},
         "ssh": {"enabled": False},
@@ -122,15 +117,15 @@ def test_perimeter_fields_are_confirm_gated(config_paths):
     assert "dashboard.auth.password" not in cfg["_approval_keys"]
     assert "dashboard.auth.password" not in cfg["_editable_keys"]
     assert "dashboard.auth.password" in cfg["_confirm_keys"]
-    for path in ("telegram.events.wallet_changed", "telegram.events.clearnet_exposed"):  # #2367
-        assert path in cfg["_confirm_keys"] and path not in cfg["_editable_keys"], path
+    assert "telegram.level" in cfg["_editable_keys"]
+    assert "telegram.bot_token" in cfg["_confirm_keys"]
     assert not any(path.startswith("ssh.") for path in cfg["_confirm_keys"])
     # The node RPC login confirms (#2367/#2333, #2368): never free-commit, never the approval tier.
     for path in ("monero.node_username", "monero.node_password"):
         assert path in cfg["_confirm_keys"], path
         assert path not in cfg["_editable_keys"], path
         assert path not in cfg["_approval_keys"], path
-    assert "telegram.enabled" in cfg["_approval_keys"]
+    assert "telegram.commands.enabled" in cfg["_approval_keys"]
     assert "dashboard.host" in cfg["_approval_keys"]
 
 
@@ -144,13 +139,12 @@ def test_every_reference_leaf_is_intentionally_classified(config_paths):
     }
     assert classes["p2pool.pool"] == "free"
     assert classes["monero.prune"] == "confirm"
-    assert classes["telegram.enabled"] == "approval"
+    assert classes["telegram.commands.enabled"] == "approval"
+    assert classes["telegram.level"] == "free"
     assert classes["monero.wallet_address"] == "confirm"
     assert classes["network.tor_egress_firewall"] == "confirm"
     assert classes["dashboard.control.enabled"] == "confirm"
     assert classes["p2pool.clearnet"] == "confirm"
     assert classes["dashboard.host"] == "approval"
     assert classes["dashboard.auth.password"] == "confirm"
-    assert classes["telegram.events.wallet_changed"] == "confirm"
-    assert classes["telegram.events.clearnet_exposed"] == "confirm"
     assert not any(p.startswith("ssh.") for p in classes)

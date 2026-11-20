@@ -42,14 +42,22 @@ which:
 - preserves secrets (`PROXY_AUTH_TOKEN`, onion addresses).
 
 For each scenario it renders `config.json` from the saved baseline. Remote Monero overrides
-clear `monero.view_key`; remote Tari overrides clear `tari.view_key` and `tari.spend_public_key`.
+clear `monero.view_key` unless the scenario carries `payout_confirm=env` (`remote-main-payout-confirm`, #2866); remote Tari overrides clear `tari.view_key` and `tari.spend_public_key`.
 These local-only payout inputs stay intact for the other currency. Wallet addresses, scan
 heights and data directories are preserved. It applies the config, then waits on real readiness signals
 (container health, `pithead status`, dashboard sync %, miner-released) with timeouts. Never a
-fixed `sleep`. Pool readiness uses the configured sidechain, defaulting to mini when
+fixed `sleep`. Mining readiness waits for every expected proxy worker and non-zero stratum
+hashes before taking the assertion snapshot. Pool readiness uses the configured sidechain, defaulting to mini when
 `p2pool.pool` is omitted. It then runs the assertion battery below. All reads happen on the box
 (`pithead status`/`doctor` and `curl http://127.0.0.1:8000/api/state`), so SSH and `--local`
 behave identically and never depend on resolving the box's dashboard hostname.
+
+The e2e deploy, preflight and restore sync waits require `done/done` from a live dashboard
+snapshot. They compare `pithead_snapshot_age_seconds` with the current container uptime before
+reading sync state, then recheck container identity and start time. Restored snapshots, missing
+freshness data and a dashboard restart cannot satisfy the wait. Metrics reads are capped at
+64 KiB and state reads at 1 MiB; duplicate readings and unknown sync states are refused.
+The existing timeout still applies.
 
 Before the first scenario it snapshots the box's original `config.json` and a fingerprint of
 its secrets. After the run it restores the original config, including both currencies' payout
@@ -748,7 +756,7 @@ and `--list` prints it).
 | `tari.mode` | `local` / `remote` / `off` | profile gating, onion gating, the sync gate against a remote target — the [#103](https://github.com/p2pool-starter-stack/pithead/issues/103) GO verdict's operating mode; `remote` needs `--remote-tari-host`, while `off` ([#1855](https://github.com/p2pool-starter-stack/pithead/issues/1855)) needs nothing to point at and proves a machine that declined Tari still mines Monero |
 | `p2pool.stratum_tls` | `false` / `true` | a live TLS handshake on the published stratum port, and that the served certificate matches the fingerprint rigs are told to pin ([#261](https://github.com/p2pool-starter-stack/pithead/issues/261)) |
 | `network.tor_egress_firewall` | `true` (default) / `false` | the kernel actually acts on the rules, both directions: on the default a direct clearnet dial from a `mining_net` container is DROPPED while the same container still reaches clearnet through Tor's SOCKS; on the opt-out that dial SUCCEEDS and no rule is installed. Neither is inferable from the rendered or installed ruleset ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)/[#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)) |
-| `monero.view_key` / `tari.view_key` | unset (default) / a real key | payout-confirmation wallet-rpc / tari-wallet wiring ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)) — needs `IT_MONERO_VIEW_KEY` (env; the box's own real Monero view key), `IT_TARI_VIEW_KEY` + `IT_TARI_SPEND_PUBLIC_KEY`, or both; the Tari pair also sets `tari.payout_scan_birthday` to `IT_TARI_BIRTHDAY` (default 1425, the bench wallet's first known payout day) and makes the row wait for the dashboard to report past Tari payouts, with the wallet on the local node only ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)). `e2e.sh` reads all three from its own environment and passes them to the detached harness on stdin, never on the remote command line ([#2675](https://github.com/p2pool-starter-stack/pithead/issues/2675)) |
+| `monero.view_key` / `tari.view_key` | unset (default) / a real key | payout-confirmation wallet-rpc / tari-wallet wiring ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)) — needs `IT_MONERO_VIEW_KEY` (env; the box's own real Monero view key), `IT_TARI_VIEW_KEY` + `IT_TARI_SPEND_PUBLIC_KEY`, or both; the Tari pair also sets `tari.payout_scan_birthday` to `IT_TARI_BIRTHDAY` (default 1425, the bench wallet's first known payout day) and makes the row wait for the dashboard to report past Tari payouts, with the wallet on the local node only ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)). `e2e.sh` reads all three from its own environment and passes them to the detached harness on stdin, never on the remote command line ([#2675](https://github.com/p2pool-starter-stack/pithead/issues/2675)); `remote-main-payout-confirm` runs the Monero key against a remote node (needs `--remote-monero-host`), keeps Tari off, and asserts the wallet scans the configured host with no local `monerod`, reports reachable and matching, and the dashboard marks tracking complete — a fixture payout and its alert are not bench-reachable and stay in the tier-1 and tier-3 fakes ([#2866](https://github.com/p2pool-starter-stack/pithead/issues/2866)) |
 
 The `local-pruned-main-payout-pairs` scenario additionally runs an isolated confirmation fixture
 using synthetic matching address/key pairs, separate wallet volumes and the candidate apply,

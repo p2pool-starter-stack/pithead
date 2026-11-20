@@ -1,0 +1,46 @@
+{
+  "dashboard": {
+    "host": "auto",
+    "tari_required": true,
+    "timezone": "UTC"
+  },
+  "local_miner": {
+    "enabled": false
+  },
+  "monero": {
+    "clearnet_initial_sync": false,
+    "mem_limit": "4g",
+    "node_password": "fixture-rpc-password",
+    "node_username": "fixture",
+    "wallet_address": "48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD"
+  },
+  "network": {
+    "tor_egress_firewall": true
+  },
+  "notifications": {
+    "tor": true
+  },
+  "p2pool": {
+    "clearnet": false,
+    "stratum_password": "fixture-stratum-pass",
+    "stratum_tls": true
+  },
+  "profile": "privacy",
+  "tari": {
+    "clearnet_initial_sync": false,
+    "mem_limit": "8g",
+    "mode": "local",
+    "wallet_address": "126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+  },
+  "tor": {
+    "auto_heal": true
+  },
+  "workers": {
+    "api_auth": "token",
+    "api_token": "fixture-worker-token"
+  },
+  "xvb": {
+    "enabled": true,
+    "tor": true
+  }
+}

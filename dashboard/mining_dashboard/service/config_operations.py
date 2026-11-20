@@ -54,7 +54,6 @@ def leaf_paths(node, prefix=(), include_arrays=False):
 # drift-guarded in tests/service/test_env_key_perimeter.py. The envelope is confirmation metadata
 # the dashboard can write itself, not a second identity.
 APPROVAL_ENV_KEY_PATHS = {
-    "TELEGRAM_ENABLED": ("telegram.enabled",),
     "TELEGRAM_COMMANDS_ENABLED": ("telegram.commands.enabled",),
     "HOST_IP": ("dashboard.host",),
 }

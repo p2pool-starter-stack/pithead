@@ -165,6 +165,14 @@ PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
     eval "$WBC_STUBS; openssl() { return 9; }; firstboot_consume_spool() { printf '{}' >config.json; printf none >data/firstboot/auth-mode; }; firstboot_wizard" >/dev/null 2>&1
 assert_rc "explicit no-login reaches handoff without generating a password" "$?" 7
 assert_eq "explicit no-login publishes a handoff" "$([ -f "$WBK/credentials/handoff-reached" ] && echo yes)" yes
+for wb_collision in 'fixture collision' ''; do
+    rm -f "$WBK/credentials/config.json" "$WBK/credentials/card.json"
+    PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
+        eval "$WBC_STUBS; openssl() { return 9; }; firstboot_consume_spool() { printf '{}' >config.json; printf none >data/firstboot/auth-mode; }; machine_name_warning() { printf '%s' '$wb_collision'; }; write_handoff_card() { cat >card.json; exit 7; }; firstboot_wizard" >/dev/null 2>&1
+    assert_eq "the coordinator card carries the collision warning only when the name is in use (#3810)" \
+        "$(jq -r '.warning // "none"' "$WBK/credentials/card.json")" "${wb_collision:-none}"
+done
+unset wb_collision
 printf '{"dashboard":{"auth":{"password":"existing-password-kept"}}}' >"$WBK/credentials/config.json"
 PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
     eval "$WBC_STUBS; openssl() { return 9; }; firstboot_wizard" >/dev/null 2>&1
@@ -226,6 +234,12 @@ printf '{"pool":"invalid host:3333","worker":"fixture"}' >"$WSS/spool/rig-reques
 run_sourced "$WSS" eval 'timeout() { : >"$WSS/dialed"; return 0; }; firstboot_consume_rig "$WSS/spool"' >/dev/null
 assert_rc "invalid rig host syntax is refused before the dial" "$?" 1
 [ ! -e "$WSS/dialed" ] && ok "invalid host never reaches the network command" || bad "invalid host never reaches the network command" "dialed"
+rm -f "$WSS/dialed"
+printf '{"pool":"example.test:3333","worker":"Bad_Name"}' >"$WSS/spool/rig-request.json"
+run_sourced "$WSS" eval 'timeout() { : >"$WSS/dialed"; return 0; }; firstboot_consume_rig "$WSS/spool"' >/dev/null
+assert_rc "a rig name that breaks the machine-name rule is refused (#3810)" "$?" 1
+[ ! -e "$WSS/dialed" ] && ok "a refused rig name never reaches the network command" || bad "a refused rig name never reaches the network command" "dialed"
+assert_contains "the refusal is the shared machine-name message" "$(cat "$WSS/spool/error.txt")" 'lowercase letters, digits or hyphens'
 printf '{"pool":"example.test:3333","worker":"fixture"}' >"$WSS/spool/rig-request.json"
 run_sourced "$WSS" eval 'timeout() { [ "$#" = 7 ] && [ "$5" = _ ] && [ "$6" = example.test ] && [ "$7" = 3333 ]; }; firstboot_consume_rig "$WSS/spool"' >/dev/null
 assert_rc "rig host and port travel as command arguments" "$?" 0

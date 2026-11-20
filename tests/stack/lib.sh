@@ -373,7 +373,7 @@ EOF
     }
     control_config() { # <pool> [extra dashboard keys...] -> writes $C/config.json
         printf '{ "monero":{"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"},
-              "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"%s"},
+              "tari":{"mode":"local","wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"%s"}, "profile":"balance",
               "dashboard":{"secure":true,"host":"box.lan",
                            "auth":{"username":"admin","password":"a control passphrase"},
                            "control":{"enabled":true}} }\n' "$WALLET" "$1" >"$C/config.json"

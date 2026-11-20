@@ -99,10 +99,7 @@ case "$(run_sourced "$SANDBOX" describe_change HEALTHCHECKS_PING_URL "" https://
 *SECRET* | *OLD* | *NEW*) bad "hc ping_url not printed" "leaked the ping URL into the preview" ;;
 *) ok "hc ping_url not printed" ;;
 esac
-# Telegram (#121): toggles/events are a brief dashboard restart (INFO); the bot token is a secret,
-# so its change line must NOT echo the old/new value.
-assert_contains "telegram enable is INFO" "$(run_sourced "$SANDBOX" describe_change TELEGRAM_ENABLED false true)" "INFO"
-assert_contains "telegram event is INFO" "$(run_sourced "$SANDBOX" describe_change TELEGRAM_EVENT_NODE_DOWN true false)" "INFO"
+assert_contains "telegram level change is INFO" "$(run_sourced "$SANDBOX" describe_change TELEGRAM_LEVEL off all)" "INFO"
 tg_tok_msg="$(run_sourced "$SANDBOX" describe_change TELEGRAM_BOT_TOKEN oldsecret newsecret)"
 assert_contains "telegram token change noted" "$tg_tok_msg" "Telegram bot token updated"
 # Webhook/ntfy sink changes (#380): URLs and the ntfy token are secrets — the preview names the
@@ -631,13 +628,11 @@ if bash "$ROOT/tests/stack/standalone/test_config_defaults.sh"; then
 else
     bad "shared defaults and v2.0.0 compatibility contracts" "See the failed standalone assertions above."
 fi
-echo "== unit: config.core-keys.json — valid JSON, stays inside config.reference.json (#502/#529) =="
+echo "== unit: config.core-keys.json is the Essentials tier of the defaults table (#3576) =="
 CORE_KEYS="$(jq -r '.[]' "$ROOT/config.core-keys.json" 2>/dev/null)"
-if [ -z "$CORE_KEYS" ]; then
-    bad "config.core-keys.json parses to a non-empty array" "got nothing — check the file exists and is valid JSON"
-else
-    ok "config.core-keys.json parses to a non-empty array"
-fi
+assert_eq "config.core-keys.json is the defaults table's essential tier" \
+    "$(jq -c . "$ROOT/config.core-keys.json" 2>/dev/null)" "$(jq -c .tiers.essential "$ROOT/dashboard/mining_dashboard/config/defaults.json")"
+[ "$(printf '%s\n' "$CORE_KEYS" | grep -c .)" -le 15 ] && ok "the Essentials tier holds 15 keys or fewer" || bad "the Essentials tier holds 15 keys or fewer" "too many"
 REF_PATHS_CORE="$(jq -r '[paths | map(select(type=="string")) | join(".")] | unique[]' "$ROOT/config.reference.json")"
 core_checked=0
 core_missing=0
@@ -678,3 +673,4 @@ case "$render_out" in
 esac
 unset RSUT render_out
 source "$HERE/config/version.sh"
+source "$HERE/config/migration.sh"

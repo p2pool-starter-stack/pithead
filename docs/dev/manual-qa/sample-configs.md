@@ -77,7 +77,7 @@ no [stratum](README.md#glossary) password unless the user opts in (#3092).
 ```json
 {
     "monero": { "wallet_address": "PASTE_QA_MONERO_PRIMARY_ADDRESS" },
-    "tari": { "wallet_address": "PASTE_QA_TARI_ADDRESS" },
+    "tari": { "mode": "local", "wallet_address": "PASTE_QA_TARI_ADDRESS" },
     "p2pool": { "stratum_password": "auto" }
 }
 ```
@@ -97,6 +97,7 @@ up for QA).
         "view_key": "PASTE_QA_MONERO_PRIVATE_VIEW_KEY"
     },
     "tari": {
+        "mode": "local",
         "wallet_address": "PASTE_QA_TARI_ADDRESS",
         "view_key": "PASTE_QA_TARI_PRIVATE_VIEW_KEY"
     },
@@ -219,7 +220,7 @@ For every row:
 | `duplicate-pool` | Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | `duplicate key "p2pool" at the top level (path p2pool)` |
 | `duplicate-wallet` | Add a second `"wallet_address"` line inside the `monero` block | `duplicate key "wallet_address" at monero (path monero.wallet_address)` |
 | `placeholder-password` | Set `dashboard.auth.password` to `"PASTE_QA_DASHBOARD_PASSWORD"` | `placeholder value at dashboard.auth.password` |
-| `placeholder-telegram` | Set `telegram.bot_token` to `"your_bot_token"` and `telegram.enabled` to `true` (lower case: the check ignores case) | `placeholder value at telegram.bot_token` |
+| `placeholder-telegram` | Set `telegram.bot_token` to `"your_bot_token"` (lower case: the check ignores case) | `placeholder value at telegram.bot_token` |
 | `onion-missing-password` | Set `dashboard.onion.enabled` to `true` in a config with no `dashboard.auth` block | `dashboard.onion.enabled is true but dashboard.auth.password is empty` |
 
 **Record:** under step 6.5 in the results sheet: PASS when every row matches, FAIL with the row

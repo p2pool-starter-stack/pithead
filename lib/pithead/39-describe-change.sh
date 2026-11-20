@@ -8,7 +8,7 @@ describe_change() {
             ;;
         esac
     fi
-    if describe_profile_change "$key" "$old" "$new" || describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
+    if describe_profile_change "$key" "$old" "$new" || describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new" || describe_payout_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
     fi
@@ -323,21 +323,7 @@ describe_change() {
             msg="Tari clearnet sync DISABLED — the Tari base node returns to Tor-only transport. tari is recreated."
         fi
         ;;
-    MONERO_VIEW_KEY)
-        # Secret (#381): the private view key reveals every incoming payout amount/time — never
-        # echo its value into the change preview / logs.
-        if [ -z "$new" ]; then
-            msg="Payout confirmation view key CLEARED — the view-only wallet-rpc is removed."
-        elif [ -z "$old" ]; then
-            flag=DEST
-            msg="Payout confirmation view key SET — a view-only monero-wallet-rpc starts and scans the local node for confirmed payouts (it can see incoming amounts, never spend)."
-        else
-            flag=DEST
-            msg="Payout confirmation view key CHANGED — a new view-only wallet is opened for this address (the previous one is kept)."
-        fi
-        ;;
     WALLET_RPC_PASSWORD)
-        # Secret (#381): auto-generated wallet-rpc login — never echo the value.
         msg="Payout wallet-rpc credential updated."
         ;;
     PAYOUT_CONFIRM_ENABLED)

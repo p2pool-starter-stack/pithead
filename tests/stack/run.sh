@@ -125,7 +125,6 @@ if in_block 1; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-config-document.sh" && domain_ran test-config-document.sh "$_d0" "$?" || domain_ran test-config-document.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-render-quadlet.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-render-quadlet.sh" && domain_ran test-render-quadlet.sh "$_d0" "$?" || domain_ran test-render-quadlet.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/doctor/test-doctor-appliance.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain_ran test-doctor-appliance.sh "$_d0" "$?" || domain_ran test-doctor-appliance.sh "$_d0" "$?"
     # shellcheck source=tests/stack/appliance/test-appliance-setup.sh disable=SC2015
@@ -160,7 +159,6 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig-worker.sh "$_d0" "$?" || domain_ran test-rig-worker.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-connection-announce.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-connection-announce.sh" && domain_ran test-connection-announce.sh "$_d0" "$?" || domain_ran test-connection-announce.sh "$_d0" "$?"
-
     # shellcheck source=tests/stack/control/test-control-status-vocabulary.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-status-vocabulary.sh" && domain_ran test-control-status-vocabulary.sh "$_d0" "$?" || domain_ran test-control-status-vocabulary.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-monero-tari.sh disable=SC2015
@@ -179,6 +177,8 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari-lmdb.sh "$_d0" "$?" || domain_ran test-tari-lmdb.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-payout-wallet-pairs.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-payout-wallet-pairs.sh" && domain_ran test-payout-wallet-pairs.sh "$_d0" "$?" || domain_ran test-payout-wallet-pairs.sh "$_d0" "$?"
+    # shellcheck source=tests/stack/test-remote-payout.sh disable=SC2015
+    _d0=$((PASS + FAIL)) && source "$HERE/test-remote-payout.sh" && domain_ran test-remote-payout.sh "$_d0" "$?" || domain_ran test-remote-payout.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tari-wallet.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-tari-wallet.sh" && domain_ran test-tari-wallet.sh "$_d0" "$?" || domain_ran test-tari-wallet.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015

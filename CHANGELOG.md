@@ -15,6 +15,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - Appliance reboot and clean power-off in the lean UI preview's Advanced > Maintenance section,
   with typed confirmation and host-side cooldowns (#2384).
+- Opt-in payout confirmation through a remote Monero node: `monero.view_key` with `monero.mode: remote` starts the view-only wallet against the configured node, through Tor under the Privacy profile. Earnings names the reason when tracking is incomplete. Tari stays local-node only (#2866).
 - The appliance update channel is read as untrusted data: https-only fetches to the release hosts
   over Tor with remote DNS, response size caps, release-tag validation before any URL or path, and
   stale or replayed channel reporting in Check for updates (#4011).

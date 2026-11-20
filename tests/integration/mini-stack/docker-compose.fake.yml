@@ -68,6 +68,7 @@ services:
       # deployment's p2pool/xmrig-proxy on the same host.
       SYNC_GATE_CONTAINERS: "itest-p2pool,itest-xmrig-proxy"
       REJECT_WORKERS_CONTAINER: "itest-xmrig-proxy"
+      TARI_MODE: "local"
       # Overridable (scenario 11, #562) since it's baked in at container boot — a live toggle
       # isn't possible, so that scenario recreates the stack with TARI_REQUIRED=false.
       TARI_REQUIRED: "${TARI_REQUIRED:-true}"
@@ -98,8 +99,8 @@ services:
       TOR_SOCKS_PROXY: ""
       DASHBOARD_CONTROL_ENABLED: "true"
       TELEGRAM_COMMANDS_ENABLED: "${TELEGRAM_COMMANDS_ENABLED:-false}"
-      TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-true}"
-      TELEGRAM_BOT_TOKEN: "itest-token"
+      TELEGRAM_LEVEL: "${TELEGRAM_LEVEL:-all}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN-itest-token}"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-itest-chat}"
       TELEGRAM_API_BASE: "${TELEGRAM_API_BASE:-http://fake-sink:9000}"
       NOTIFY_WEBHOOK_URLS: "${NOTIFY_WEBHOOK_URLS-http://fake-sink:9000/webhook}"
