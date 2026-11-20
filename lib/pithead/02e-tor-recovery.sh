@@ -34,7 +34,7 @@ tor_recovery_state_saturated() { # <state file>
 
 # Read-only saturated-history reading for the dashboard's heal (#3052); it never changes state.
 control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
-    local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now
+    local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now tor
     PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-history || return 1
     [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || return 1
     now=$(date +%s)
@@ -55,7 +55,8 @@ control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
         return 0
     fi
     tor_recovery_state_saturated "$dir/state" && saturated=true
-    control_write_result "$cdir/results" "$id" "$(jq -n --argjson s "$saturated" '{status:"applied",action:"tor-history",saturated:$s,ts:(now|floor)}')"
+    tor=$(tor_diagnostics_snapshot) || tor=null
+    control_write_result "$cdir/results" "$id" "$(jq -n --argjson s "$saturated" --argjson t "${tor:-null}" '{status:"applied",action:"tor-history",saturated:$s,tor:$t,ts:(now|floor)}')"
     control_audit "$cdir/audit/control.log" "$id" "$actor" tor-history applied
 )
 

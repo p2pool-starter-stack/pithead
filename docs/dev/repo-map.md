@@ -163,6 +163,9 @@ and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm a
 live-rule check are in `02c-lan-guard-check.sh`.
 Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
+the read-only Tor snapshot (#4262) is collected in the container by `build/tor/diagnostics.sh`,
+shaped host-side by `tor_diagnostics_snapshot` in `48b-control-tor-recover.sh`, rendered by
+`static/system/torsnapshot.mjs` and summarised for alerts by `service/health/tor_snapshot.py`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
 The P2Pool zero-peer watchdog is `service/health/p2pool_heal.py`. The peerless-monerod watchdog and the re-dial after any Tor start are `service/health/monerod_redial.py`.

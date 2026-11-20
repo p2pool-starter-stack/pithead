@@ -177,7 +177,10 @@ did5="b1b1b1b1-0000-4000-8000-000000000005"
 diag_run "$(diag_req "$did5" diag-doctor ',"container":"wallet-rpc"')"
 assert_eq "a container key on diag-doctor is inert — the verb never reads the request file" \
     "$(jq -r .status "$DGC/results/$did5.json")" "applied"
-assert_eq "and no docker command is built for it" "$(cat "$DIAG_DOCKER_LOG")" ""
+assert_eq "and the only docker commands are the fixed Tor snapshot reads" "$(cat "$DIAG_DOCKER_LOG")" \
+    "exec tor /usr/local/bin/tor-diagnostics.sh
+logs --timestamps --tail 20000 tor"
+assert_eq "the result carries the Tor snapshot as data" "$(jq -r .tor.control "$DGC/results/$did5.json")" "unreachable"
 
 # ---------------------------------------------------------------------------
 echo "== control channel: diag-logs refuses anything off the allowlist, by membership (#943) =="

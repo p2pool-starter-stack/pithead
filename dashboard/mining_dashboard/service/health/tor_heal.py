@@ -392,7 +392,7 @@ class TorEgressHealer(TorHistoryMixin):
                         f"\U0001f9c5 Tor clearnet egress recovered following "
                         f"{self._recovery_step or 'probe'}; outage {outage_minutes:.0f} "
                         f"minutes; failed probes {self._failure_evidence}; "
-                        f"recovery probe {evidence}."
+                        f"recovery probe {evidence}.{self._snapshot_suffix()}"
                     )
                 self._failure_evidence = ""
                 self._recovery_step = None

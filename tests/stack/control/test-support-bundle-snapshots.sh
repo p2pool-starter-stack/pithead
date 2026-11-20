@@ -17,46 +17,20 @@ Key SEEDEDSTATEKEY0001 secret
 ed25519 SEEDEDED25519SECRET
 STATE
 
-cat >"$SN/bin/torfake" <<'PYTOR'
-#!/usr/bin/env python3
-import socket, sys, time
-
-mode, portfile, cookie = sys.argv[1], sys.argv[2], sys.argv[3]
-srv = socket.socket()
-srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(("127.0.0.1", 0))
-srv.listen(4)
-open(portfile, "w").write(str(srv.getsockname()[1]))
-while True:
-    conn, _ = srv.accept()
-    if mode == "hang":
-        time.sleep(300)
-        continue
-    fh = conn.makefile("rwb")
-    line = fh.readline().decode().strip()
-    if line != "AUTHENTICATE " + cookie:
-        fh.write(b"515 Authentication failed\r\n")
-        fh.flush()
-        conn.close()
-        continue
-    fh.write(b"250 OK\r\n")
-    fh.flush()
-    while True:
-        line = fh.readline().decode().strip()
-        if not line or line == "QUIT":
-            break
-        if line == "GETINFO status/bootstrap-phase":
-            fh.write(b'250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 TAG=done SUMMARY="Done"\r\n250 OK\r\n')
-        elif line == "GETINFO entry-guards":
-            fh.write(b"250+entry-guards=\r\n$AAAAAAAAAAAAAAAAAAAA~guardone up\r\n.\r\n250 OK\r\n")
-        elif line == "GETINFO circuit-status":
-            fh.write(b"250+circuit-status=\r\n123 BUILT $AAAA~guardone,$BBBB~mid PURPOSE=HS_CLIENT_REND REND_QUERY=seededrendquery SOCKS_USERNAME=seededsocksuser\r\n.\r\n250 OK\r\n")
-        else:
-            fh.write(("250-%s=1\r\n250 OK\r\n" % line.split(" ", 1)[1]).encode())
-        fh.flush()
-    conn.close()
-PYTOR
-chmod +x "$SN/bin/torfake"
+cat >"$SN/bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+case "$1:${SN_SVC:-ok}" in
+exec:hang) printf 'control=unreachable\nconsensus_source=file\nconsensus_file_mtime=%s\n' "$(($(date +%s) - 600))" ;;
+exec:refuse) exit 1 ;;
+exec:*)
+    printf 'control=ok\nversion=0.4.9.17\nbootstrap_progress=100\nbootstrap_tag=done\n'
+    printf 'circuit=BUILT HS_CLIENT_REND\nguard=up\nguard=never-connected\n'
+    ;;
+logs:*) printf '2026-11-15T10:00:00.123Z Nov 15 10:00:00.000 [notice] Bootstrapped 100%% (done): Done\n' ;;
+*) exit 1 ;;
+esac
+DOCKER
+chmod +x "$SN/bin/docker"
 
 cat >"$SN/bin/curl" <<'PYCURL'
 #!/usr/bin/env python3
@@ -182,7 +156,7 @@ printf 'COMPOSE_PROFILES=local_node,local_tari\nNETWORK_PREFIX=\nMONERO_RPC_URL=
 sn_run() {
     local id="$1" svc="$2"
     shift 2
-    rm -f "$SB/staged/.support-bundle-stamp" "$SN/port"
+    rm -f "$SB/staged/.support-bundle-stamp"
     (
         export PITHEAD_APPLIANCE=1 PATH="$SN/bin:$SB/bin:$PATH" PITHEAD_ENV_FILE="$sn_env" PITHEAD_ENGINE=podman PITHEAD_SELF="$SN/bin/pithead-stub" \
             SN_CURL_LOG="$SN/curl.log" SN_SVC="$svc" PITHEAD_SUPPORT_DIR="$SN/support" PITHEAD_STATE_ROOT="$SN/state"
@@ -191,27 +165,16 @@ sn_run() {
         run_sourced_e "$SANDBOX" control_process_request "$(sb_req "$id" support-bundle)" "$SB"
     ) >/dev/null 2>&1
 }
-sn_tor() {
-    python3 -I "$SN/bin/torfake" "$1" "$SN/port" "$SN_COOKIE_HEX" &
-    SN_TOR_PID=$!
-    local i=0
-    while [ ! -s "$SN/port" ] && [ "$i" -lt 100 ]; do
-        sleep 0.1
-        i=$((i + 1))
-    done
-}
 
 echo "== support bundle snapshots: every source is collected and present (#4128) =="
 rm -f "$SN/curl.log"
-sn_tor fine
 snid1="c412c412-0000-4000-8000-000000000001"
-sn_run "$snid1" fine "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:$(cat "$SN/port")"
-kill "$SN_TOR_PID" 2>/dev/null || true
+sn_run "$snid1" fine
 assert_eq "the snapshot bundle applies" "$(jq -r .status "$SB/results/$snid1.json")" "applied"
 sb_unzip "$SB/results/$snid1.zip" "$SN/x1"
 B="$SN/x1/bundle"
 sn_bad=""
-for f in doctor.json status/monerod.json status/tari.json status/p2pool.json tor/control.txt tor/state-guards.txt \
+for f in doctor.json status/monerod.json status/tari.json status/p2pool.json tor/diagnostics.json tor/state-guards.txt \
     network/networkctl.txt network/ip-addr.txt network/ip-route.txt network/resolvectl.txt network/nft-ruleset.txt \
     time/timedatectl.txt time/sync-units.txt containers/ps-a.txt containers/images.txt rauc.txt rauc-detailed.txt \
     boot-slot.txt coredumps.txt caddy/access.log support-dir/console-1.txt support-dir/sub/console-2.txt \
@@ -238,10 +201,12 @@ assert_eq "P2Pool sync flag" "$(jq -r .synced "$B/status/p2pool.json")" "true"
 assert_not_contains "the monerod login never reached a command line" "$(cat "$SN/curl.log")" "SEEDEDRPCPASS"
 
 echo "== support bundle snapshots: Tor control state and the guard section, never a key =="
-assert_contains "Tor bootstrap phase" "$(cat "$B/tor/control.txt")" "PROGRESS=100"
-assert_contains "Tor entry guards" "$(cat "$B/tor/control.txt")" "guardone"
-assert_contains "Tor circuit state" "$(cat "$B/tor/control.txt")" "BUILT"
-assert_contains "the state file's guard line is kept" "$(cat "$B/tor/state-guards.txt")" "nickname=guardone"
+assert_eq "Tor bootstrap phase" "$(jq -r .bootstrap.progress "$B/tor/diagnostics.json")" "100"
+assert_eq "Tor entry guards are counted by status" "$(jq -c .guards "$B/tor/diagnostics.json")" '{"never-connected":1,"up":1}'
+assert_eq "Tor circuits are counted by state and purpose" "$(jq -c .circuits "$B/tor/diagnostics.json")" '[{"state":"BUILT","purpose":"HS_CLIENT_REND","count":1}]'
+assert_contains "the state file's guard line is kept" "$(cat "$B/tor/state-guards.txt")" "Guard in=default"
+assert_not_contains "the guard nickname is redacted" "$(cat "$B/tor/state-guards.txt")" "guardone"
+assert_not_contains "the guard fingerprint is redacted" "$(cat "$B/tor/state-guards.txt")" "AAAAAAAAAAAAAAAAAAAA"
 assert_not_contains "a seeded key in the Tor state file is excluded" "$(cat "$B/tor/state-guards.txt")" "SEEDEDSTATEKEY"
 
 echo "== support bundle snapshots: network, container, boot and marker files =="
@@ -289,7 +254,7 @@ assert_contains "the query is replaced, not dropped silently" "$(cat "$B/caddy/a
 echo "== support bundle snapshots: a missing DB is a manifest entry, not silence =="
 snid2="c412c412-0000-4000-8000-000000000002"
 grep -v '^DASHBOARD_DATA_DIR=' "$sn_env" >"$SN/env2"
-sn_run "$snid2" fine "PITHEAD_ENV_FILE=$SN/env2" "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1" "PITHEAD_SUPPORT_DIR=$SN/nodir"
+sn_run "$snid2" fine "PITHEAD_ENV_FILE=$SN/env2" "PITHEAD_SUPPORT_DIR=$SN/nodir"
 sb_unzip "$SB/results/$snid2.zip" "$SN/x2"
 assert_eq "the absent database is a skipped step in the manifest" \
     "$(sb_man "$SN/x2" '[.failures[] | select(.step == "dashboard-history.jsonl") | .status] | first')" "skipped"
@@ -298,24 +263,24 @@ assert_eq "an absent support directory is a skipped step in the manifest" \
     "$(sb_man "$SN/x2" '[.failures[] | select(.step == "support-dir/README.txt") | .status] | first')" "skipped"
 
 echo "== support bundle snapshots: each wedged service times out, the bundle completes and the manifest says so =="
-sn_tor hang
 rm -f "$SN/p2pool/stats/local/p2p"
 mkfifo "$SN/p2pool/stats/local/p2p"
 snid3="c412c412-0000-4000-8000-000000000003"
 t0=$(date +%s)
-sn_run "$snid3" hang "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:$(cat "$SN/port")" PITHEAD_SUPPORT_SNAP_TIMEOUT=2 PITHEAD_SUPPORT_TOTAL_TIMEOUT=120
+sn_run "$snid3" hang PITHEAD_SUPPORT_SNAP_TIMEOUT=2 PITHEAD_SUPPORT_TOTAL_TIMEOUT=120
 t1=$(date +%s)
-kill "$SN_TOR_PID" 2>/dev/null || true
-assert_eq "a bundle with four wedged services still applies" "$(jq -r .status "$SB/results/$snid3.json")" "applied"
+assert_eq "a bundle with three wedged services and a stalled Tor still applies" "$(jq -r .status "$SB/results/$snid3.json")" "applied"
 assert_eq "the run finished inside the stated total limit" "$([ $((t1 - t0)) -lt 120 ] && echo yes || echo no)" "yes"
 sb_unzip "$SB/results/$snid3.zip" "$SN/x3"
 sn_bad=""
-for step in status/monerod.json status/tari.json status/p2pool.json tor/control.txt; do
+for step in status/monerod.json status/tari.json status/p2pool.json; do
     [ "$(sb_man "$SN/x3" "[.failures[] | select(.step == \"$step\") | .status] | first")" = timeout ] || sn_bad="$sn_bad notimeout:$step"
     [ "$(sb_man "$SN/x3" "[.failures[] | select(.step == \"$step\") | .elapsed_seconds >= 2] | first")" = true ] || sn_bad="$sn_bad noelapsed:$step"
     [ "$(grep -c 'unavailable' "$SN/x3/bundle/$step" || true)" = 1 ] || sn_bad="$sn_bad nofile:$step"
 done
-assert_eq "the wedged monerod, Tari, P2Pool and Tor steps are timed out with elapsed time and an unavailable file" "$sn_bad" ""
+assert_eq "the wedged monerod, Tari and P2Pool steps are timed out with elapsed time and an unavailable file" "$sn_bad" ""
+assert_eq "a stalled Tor control port is reported as unreachable data" "$(jq -r .control "$SN/x3/bundle/tor/diagnostics.json")" "unreachable"
+assert_eq "the stalled snapshot falls back to the consensus file age" "$(jq -r '.consensus | .source == "file" and .age_sec >= 600' "$SN/x3/bundle/tor/diagnostics.json")" "true"
 assert_eq "an unavailable file is marked unavailable in the manifest" \
     "$(sb_man "$SN/x3" '[.files[] | select(.path == "status/tari.json") | .state] | first')" "unavailable"
 assert_contains "the journal still collected beside the wedged services" \
@@ -326,14 +291,15 @@ printf '{"connections":9}' >"$SN/p2pool/stats/local/p2p"
 echo "== support bundle snapshots: each refused service is a recorded failure with its reason =="
 snid4="c412c412-0000-4000-8000-000000000004"
 sed "s#^P2POOL_DATA_DIR=.*#P2POOL_DATA_DIR=$SN/nope#" "$sn_env" >"$SN/env3"
-sn_run "$snid4" refuse "PITHEAD_ENV_FILE=$SN/env3" "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1"
+sn_run "$snid4" refuse "PITHEAD_ENV_FILE=$SN/env3"
 sb_unzip "$SB/results/$snid4.zip" "$SN/x4"
-assert_eq "a bundle with four refusing services still applies" "$(jq -r .status "$SB/results/$snid4.json")" "applied"
+assert_eq "a bundle with three refusing services and an unreachable Tor still applies" "$(jq -r .status "$SB/results/$snid4.json")" "applied"
 sn_bad=""
-for step in status/monerod.json status/tari.json tor/control.txt; do
+for step in status/monerod.json status/tari.json; do
     [ "$(sb_man "$SN/x4" "[.failures[] | select(.step == \"$step\") | .status] | first")" = failed ] || sn_bad="$sn_bad $step"
 done
-assert_eq "the refused monerod, Tari and Tor steps are recorded as failed" "$sn_bad" ""
+assert_eq "the refused monerod and Tari steps are recorded as failed" "$sn_bad" ""
+assert_eq "a refused Tor exec is reported as unreachable data" "$(jq -r .control "$SN/x4/bundle/tor/diagnostics.json")" "unreachable"
 assert_contains "the monerod failure carries the reason" \
     "$(sb_man "$SN/x4" '[.failures[] | select(.step == "status/monerod.json") | .reason] | first')" "did not answer"
 assert_eq "P2Pool with no readable data-api file is recorded as failed" \
@@ -342,7 +308,7 @@ assert_eq "the refused monerod file says it is unreachable" "$(jq -r .reachable 
 
 echo "== support bundle snapshots: a total limit that runs out skips steps and still produces the bundle =="
 snid5="c412c412-0000-4000-8000-000000000005"
-sn_run "$snid5" hang PITHEAD_SUPPORT_TOTAL_TIMEOUT=1 "PITHEAD_SUPPORT_TOR_CONTROL=127.0.0.1:1"
+sn_run "$snid5" hang PITHEAD_SUPPORT_TOTAL_TIMEOUT=1
 assert_eq "a bundle past its total limit still applies" "$(jq -r .status "$SB/results/$snid5.json")" "applied"
 sb_unzip "$SB/results/$snid5.zip" "$SN/x5"
 assert_eq "the manifest records the steps the limit skipped" \

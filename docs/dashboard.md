@@ -1587,6 +1587,28 @@ regenerates a missing hidden service for the Monero node, the Tari node, or the 
 those verdicts ask you to save a change rather than to find a console. P2Pool's is the exception:
 apply refuses to finish while that one is missing, so no dashboard surface can regenerate it.
 
+#### Tor snapshot
+
+The health check also returns a read-only Tor snapshot
+([#4262](https://github.com/p2pool-starter-stack/pithead/issues/4262)), shown under **Tor** below
+the summary. It tells the Tor failure classes apart: a flood of pending circuits, a stale
+consensus, a stalled bootstrap, bad guards or a short network dip.
+
+| Field | What it shows |
+| --- | --- |
+| Control port | `ok`, or `unreachable` when the cookie-authenticated control port refused, stalled past 5 seconds or the Tor container could not be reached. The snapshot is still returned in that case. |
+| Version | The running Tor version. |
+| Bootstrap | Progress percentage and phase tag (`done` when complete), and when Tor last logged a `Bootstrapped` line. The time is read from the newest 20,000 Tor log lines and is blank when none are left. |
+| Consensus | Valid-after and valid-until times, and the age (now minus valid-after). It is read from the control port; when the control port does not answer, it is read from the cached consensus in Tor's data directory, and if that file has no times the age is the file's modification age. The source is shown. |
+| Guards | Entry guards counted by status (`up`, `down`, `never-connected` and so on). |
+| Circuits | Circuits counted by state and purpose, for example `LAUNCHED HS_SERVICE_HSDIR 12`. |
+
+The snapshot holds counts and fixed tokens only. Guard fingerprints and nicknames, relay paths,
+onion addresses and client addresses are never read into it, and the host refuses any value outside
+the fixed shapes. The same snapshot goes into the support bundle as `tor/diagnostics.json`. The
+Tor auto-heal alerts (saturated history, host recovery result and recovered) add a one-line summary
+of the latest snapshot taken during the heal round.
+
 #### Restart a service
 
 Each service card with a restart control has a **Restart** button next to its log: `tor`,

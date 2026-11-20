@@ -1,6 +1,6 @@
 bundle_support_snap_py() {
     cat <<'PY'
-import gzip, ipaddress, json, os, re, socket, sqlite3, stat, subprocess, sys, time
+import gzip, json, os, re, sqlite3, stat, subprocess, sys, time
 
 
 def unavailable(service, reason, **extra):
@@ -130,52 +130,6 @@ def p2pool(stats):
     print(json.dumps(doc, indent=2, sort_keys=True))
 
 
-def tor_reply(fh):
-    lines, data = [], False
-    while True:
-        raw = fh.readline()
-        if not raw:
-            raise OSError("control port closed the connection")
-        line = raw.decode(errors="replace").rstrip("\r\n")
-        lines.append(line)
-        if data:
-            data = line != "."
-        elif re.match(r"^\d{3}\+", line):
-            data = True
-        elif re.match(r"^\d{3} ", line):
-            return lines
-
-
-def tor(datadir, addr):
-    host, _, port = addr.rpartition(":")
-    try:
-        if not (ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback):
-            raise ValueError("control address is not private")
-        with open(os.path.join(datadir, "control_auth_cookie"), "rb") as fh:
-            cookie = fh.read().hex()
-        sock = socket.create_connection((host, int(port)), timeout=5)
-        sock.settimeout(5)
-        fh = sock.makefile("rwb")
-        fh.write(("AUTHENTICATE %s\r\n" % cookie).encode())
-        fh.flush()
-        auth = tor_reply(fh)
-        if not auth[-1].startswith("250"):
-            raise OSError("authentication refused: %s" % auth[-1])
-        out = []
-        for query in ("status/bootstrap-phase", "status/circuit-established", "status/enough-dir-info",
-                      "entry-guards", "circuit-status"):
-            fh.write(("GETINFO %s\r\n" % query).encode())
-            fh.flush()
-            out.extend(tor_reply(fh))
-        fh.write(b"QUIT\r\n")
-        fh.flush()
-    except (OSError, ValueError) as exc:
-        unavailable("tor", "tor control port did not answer: %s" % type(exc).__name__ + (": %s" % exc if "authentication" in str(exc) else ""))
-    text = "\n".join(out)
-    text = re.sub(r"(REND_QUERY|SOCKS_USERNAME|SOCKS_PASSWORD|HS_ADDR)=\S+", r"\1=[redacted]", text)
-    print(text)
-
-
 def caddy(directory, since, until):
     try:
         names = sorted(n for n in os.listdir(directory) if re.match(r"^access.*\.log(\.gz)?$", n))
@@ -280,7 +234,7 @@ if __name__ == "__main__":
     if mode in ("caddy", "history"):
         {"caddy": caddy, "history": history}[mode](args[0], float(args[1]), float(args[2]))
     else:
-        {"tari": tari, "monerod": monerod, "p2pool": p2pool, "tor": tor, "markers": markers}[mode](*args)
+        {"tari": tari, "monerod": monerod, "p2pool": p2pool, "markers": markers}[mode](*args)
 PY
 }
 
@@ -317,15 +271,12 @@ bundle_support_snap_skip() {
 }
 
 bundle_support_snapshots() {
-    local tmp="$1" engine profiles prefix tor_addr rpc_url tari_addr p2dir tordir cdir db sdir f rel n
+    local tmp="$1" engine profiles rpc_url tari_addr p2dir tordir cdir db sdir f rel n
     local nfmt='{{.Names}} state={{.State}} status={{.Status}} exit_code={{.ExitCode}} image={{.Image}} image_id={{.ImageID}}'
     local py="$tmp/snap.py"
     engine=$(container_engine)
     [ "$engine" = podman ] || nfmt='{{.Names}} state={{.State}} status={{.Status}} image={{.Image}}'
     profiles=$(env_get COMPOSE_PROFILES 2>/dev/null || true)
-    prefix=$(env_get NETWORK_PREFIX 2>/dev/null || true)
-    tor_addr="${PITHEAD_SUPPORT_TOR_CONTROL:-${prefix:+$prefix.25}:9051}"
-    [ "${tor_addr%%:*}" = "" ] && tor_addr="127.0.0.1:9051"
     rpc_url=$(env_get MONERO_RPC_URL 2>/dev/null || true)
     tari_addr=$(env_get TARI_GRPC_ADDRESS 2>/dev/null || true)
     p2dir=$(env_get P2POOL_DATA_DIR 2>/dev/null || true)
@@ -349,8 +300,9 @@ bundle_support_snapshots() {
         bundle_support_snap "$tmp" status/tari.json python3 -I "$py" tari "$tari_addr"
     fi
     bundle_support_snap "$tmp" status/p2pool.json python3 -I "$py" p2pool "$p2dir/stats"
-    bundle_support_snap "$tmp" tor/control.txt python3 -I "$py" tor "$tordir" "$tor_addr"
-    bundle_support_snap "$tmp" tor/state-guards.txt awk '/^(TorVersion|LastWritten|Guard) / { gsub(/bridge_addr=[^ ]+/, "bridge_addr=[redacted]"); print }' "$tordir/state"
+    export -f tor_diagnostics_snapshot
+    bundle_support_snap "$tmp" tor/diagnostics.json bash -c tor_diagnostics_snapshot
+    bundle_support_snap "$tmp" tor/state-guards.txt awk '/^(TorVersion|LastWritten|Guard) / { gsub(/bridge_addr=[^ ]+/, "bridge_addr=[redacted]"); gsub(/rsa_id=[^ ]+/, "rsa_id=[redacted]"); gsub(/nickname=[^ ]+/, "nickname=[redacted]"); print }' "$tordir/state"
 
     bundle_support_snap "$tmp" network/networkctl.txt networkctl status --no-pager
     bundle_support_snap "$tmp" network/ip-addr.txt ip addr

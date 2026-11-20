@@ -12,6 +12,7 @@
 import { Component, html } from "../app/preact.mjs";
 import { controlFetch, staleError } from "../config/controlclient.mjs";
 import { RestartAllControl, TOR_RESET_POLL_MAX, TorResetControl } from "./stackactions.mjs";
+import { TorSnapshot } from "./torsnapshot.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const DIAG_POLL_MS = 2000;
@@ -366,6 +367,7 @@ export class DiagnosticsPanel extends Component {
           : null
       }
       ${summary ? html`<p class="text-muted text-xs">${summary}</p>` : null}
+      ${haveReport ? html`<${TorSnapshot} snap=${healthResult.tor} />` : null}
       ${
         haveReport && !reportRows.length
           ? html`<p class="text-muted">The host returned a report with no checks in it.</p>`

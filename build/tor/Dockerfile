@@ -17,6 +17,8 @@ RUN chmod 755 /usr/local/bin/tor-control-signal.sh
 
 COPY recovery-diagnose.sh /usr/local/bin/tor-recovery-diagnose.sh
 RUN chmod 755 /usr/local/bin/tor-recovery-diagnose.sh
+COPY diagnostics.sh /usr/local/bin/tor-diagnostics.sh
+RUN chmod 755 /usr/local/bin/tor-diagnostics.sh
 
 RUN mkdir -p /var/lib/tor && chown -R tor /var/lib/tor
 
