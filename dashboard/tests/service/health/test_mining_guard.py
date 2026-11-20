@@ -99,6 +99,28 @@ class TestGuard:
         guard.update({})
         assert guard.active
 
+    def test_an_unfired_trigger_without_its_reading_drops_out_at_once(self, guard, clock):
+        guard.update(trig(True))
+        assert guard.holding and guard.active == {}
+        clock.now = 5
+        guard.update({})
+        assert guard.active == {} and not guard.holding
+        assert guard.pause is None
+
+    def test_a_rearmed_unfired_trigger_debounces_from_its_new_reading(self, guard, clock):
+        guard.update(trig(True))
+        clock.now = 5
+        guard.update({})
+        clock.now = 10
+        guard.update(trig(True))
+        assert guard.holding and guard.active == {}
+        clock.now = 609
+        guard.update(trig(True))
+        assert guard.active == {}
+        clock.now = 610
+        guard.update(trig(True))
+        assert guard.pause["since"] == 1010
+
     def test_pause_joins_reasons_oldest_first(self, guard, clock):
         guard.update({"a": (True, "first", 0)})
         clock.now = 5
