@@ -51,10 +51,11 @@ lifecycle_mining_diagnostics() {
     [ -n "${LIFECYCLE_MINER_DIAGNOSTICS:-}" ] || return 0
     {
         printf 'lifecycle mining diagnostic: %s\n' "$1"
-        rx "timeout --kill-after=2 10 docker inspect --format 'proxy status={{.State.Status}} networks={{json .NetworkSettings.Networks}}' xmrig-proxy
+        rx "timeout --kill-after=2 10 docker inspect --format 'proxy status={{.State.Status}} exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} restarts={{.RestartCount}} networks={{json .NetworkSettings.Networks}}' xmrig-proxy
+            timeout --kill-after=2 10 docker logs --tail 20 xmrig-proxy 2>&1
             timeout --kill-after=2 10 docker network inspect --format '{{.Name}} driver={{.Driver}}' mining_net
             timeout --kill-after=2 10 docker compose exec -T dashboard python3 -c 'import os; print(\"proxy endpoint=\" + os.environ.get(\"PROXY_HOST\", \"\") + \":\" + os.environ.get(\"PROXY_API_PORT\", \"\"))'
-            timeout --kill-after=2 10 systemctl show xmrig.service -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus" 2>&1 | tail -n 20
+            timeout --kill-after=2 10 systemctl show xmrig.service -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus" 2>&1 | tail -n 40
     } >>"$LIFECYCLE_MINER_DIAGNOSTICS" || true
 }
 lifecycle_mining_row() {
