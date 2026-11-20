@@ -14,7 +14,7 @@ render_quadlet_units() {
     # spike, the local-node units 2026-07-24, and the payout-wallet units the same day (real
     # throwaway monero wallet; tari view-only wallet on a canonical scalar). A new profile or
     # service starts life refused here until it has a bench run behind it.
-    local profiles tor_profiles reg ver prefix subnet
+    local profiles tor_profiles reg ver prefix subnet composef
     profiles=$(_qenv COMPOSE_PROFILES)
     tor_profiles=$(_qenv TOR_COMPOSE_PROFILES)
     reg=$(_qenv PITHEAD_REGISTRY)
@@ -24,6 +24,28 @@ render_quadlet_units() {
     [ -n "$reg" ] && [ -n "$ver" ] || error "render-quadlet: PITHEAD_REGISTRY and STACK_VERSION need build provenance or nonempty env-file values."
     prefix=$(_qenv NETWORK_PREFIX)
     subnet=$(_qenv NETWORK_SUBNET)
+    composef=$(_qenv QUADLET_COMPOSE_FILE)
+    composef="${composef:-${QUADLET_COMPOSE_FILE:-$PWD/docker-compose.yml}}"
+    [ -f "$composef" ] || error "render-quadlet: upstream image pins come from docker-compose.yml; not found: $composef. Run from the stack directory or set QUADLET_COMPOSE_FILE."
+    _qcompose_image() {
+        local img repo
+        img=$(awk -v s="  $1:" '$0==s{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2;exit}' "$composef")
+        [ -n "$img" ] || return 1
+        repo="${img%%/*}"
+        if [ "$repo" = "$img" ]; then
+            printf 'docker.io/library/%s' "$img"
+        elif [ "$repo" = localhost ] || [[ "$repo" == *.* || "$repo" == *:* ]]; then
+            printf '%s' "$img"
+        else printf 'docker.io/%s' "$img"; fi
+    }
+    _qcompose_require() {
+        _qcompose_image "$1" >/dev/null || error "render-quadlet: $composef has no image for service $1. Refusing to render; no output was created."
+    }
+    _qcompose_require caddy
+    _qcompose_require docker-proxy
+    _qcompose_require docker-control
+    case ",$profiles," in *,local_tari,*) _qcompose_require tari ;; esac
+    case ",$profiles," in *,tari_payout_confirm,*) _qcompose_require tari-wallet ;; esac
     mkdir -p "$outdir"
     cat >"$outdir/mining.network" <<EOF
 [Network]
@@ -112,7 +134,7 @@ After=tor.service
 Requires=tor.service
 [Container]
 ContainerName=tari
-Image=ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
+Image=$(_qcompose_image tari)
 Network=mining.network
 IP=$prefix.27
 User=1000:1000
@@ -189,7 +211,7 @@ After=tari.service
 Requires=tari.service
 [Container]
 ContainerName=tari-wallet
-Image=ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
+Image=$(_qcompose_image tari-wallet)
 Network=mining.network
 IP=$prefix.31
 User=0:0
@@ -288,7 +310,7 @@ EOF
 Description=pithead caddy
 [Container]
 ContainerName=caddy
-Image=docker.io/library/caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
+Image=$(_qcompose_image caddy)
 Network=host
 Volume=$(_qenv QUADLET_CADDYFILE):/etc/caddy/Caddyfile:ro
 Volume=pithead-caddy-data:/data
@@ -313,7 +335,7 @@ EOF
 Description=pithead read socket proxy
 [Container]
 ContainerName=docker-proxy
-Image=docker.io/tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+Image=$(_qcompose_image docker-proxy)
 Network=proxy.network
 Environment=CONTAINERS=1 LOGS=1
 Volume=$proxy_sock:/var/run/docker.sock:ro
@@ -334,7 +356,7 @@ EOF
 Description=pithead control socket proxy
 [Container]
 ContainerName=docker-control
-Image=docker.io/tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+Image=$(_qcompose_image docker-control)
 Network=proxy.network
 Environment=CONTAINERS=1 POST=1 ALLOW_START=1 ALLOW_STOP=1
 Volume=$proxy_sock:/var/run/docker.sock:ro
