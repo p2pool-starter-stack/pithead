@@ -10,6 +10,7 @@ from mining_dashboard.client.xvb_client import XvbClient
 from mining_dashboard.service.health import tari_health
 from mining_dashboard.service.health.update_checker import GitHubReleaseClient
 from mining_dashboard.service.notify import healthchecks_child
+from mining_dashboard.service.notify.healthchecks import HealthchecksClient
 from mining_dashboard.service.notify import telegram_commands as tc
 from mining_dashboard.service.notify.notify_sinks import NtfySink, WebhookSink
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
@@ -95,3 +96,15 @@ def test_cleared_proxy_opens_no_socket_and_keeps_the_failure_contract(name, monk
 def test_telegram_get_updates_refuses_before_any_socket(sockets):
     _telegram_updates()
     assert sockets == []
+
+
+def test_healthchecks_ping_with_cleared_proxy_fails_silently_and_records_the_refusal():
+    rows = []
+    client = HealthchecksClient(
+        "https://hc.example/uuid",
+        60,
+        tor_proxy="",
+        record_failure=lambda ts, reason, detail: rows.append((reason, detail)),
+    )
+    assert client.ping() is False
+    assert rows == [("connect", "NoUsableProxy")] * 2
