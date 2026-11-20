@@ -33,7 +33,7 @@ def test_a_reply_status_is_reported_and_the_proxy_is_passed_on(monkeypatch, caps
     assert get.call_args.kwargs["deadline"] == 9
 
 
-def test_no_proxy_means_no_proxies_argument(monkeypatch, capsys):
+def test_no_proxy_passes_an_unusable_proxy_map(monkeypatch, capsys):
     out, get = _run(
         monkeypatch,
         capsys,
@@ -41,7 +41,7 @@ def test_no_proxy_means_no_proxies_argument(monkeypatch, capsys):
         return_value=MagicMock(status_code=204),
     )
     assert out == {"status": 204}
-    assert get.call_args.kwargs["proxies"] is None
+    assert get.call_args.kwargs["proxies"] == {"http": None, "https": None}
 
 
 def test_a_request_failure_reports_its_class_and_name(monkeypatch, capsys):
