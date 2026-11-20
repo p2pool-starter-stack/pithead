@@ -1451,11 +1451,13 @@ there is nothing to configure.
 
 ## Configuration view
 
-Edit `config.json` from the dashboard. Off by default: set `dashboard.control.enabled: true` in
-`config.json`, set a `dashboard.auth.password` (required — this channel can change the payout
-wallet, so it refuses to run without a login), and run `./pithead apply`. A **Configuration**
-button sits next to the Simple/Advanced toggle whether or not the channel is on; with it off, the
-view explains how to turn it on and nothing else.
+Edit `config.json` from the dashboard. On wherever a dashboard login is set: with
+`dashboard.control.enabled` absent the editor turns itself on for any machine whose
+`dashboard.auth.password` is set — the login is required (this channel can change the payout
+wallet, so the view refuses to run without one), and an explicit value always wins. To keep an
+install CLI-only, set `dashboard.control.enabled: false` and run `./pithead apply`. A
+**Configuration** button sits next to the Simple/Advanced toggle whether or not the channel is on;
+with it off, the view explains how to turn it on and nothing else.
 
 The panel does not show the `config_version` stamp. Only a newer stamp shows a card warning
 that saving is blocked while the config contains settings this version does not know:

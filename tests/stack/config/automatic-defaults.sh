@@ -82,6 +82,20 @@ AD_MEM=8388608 run_sourced "$AD" automatic_render >"$AD/render.log" 2>&1
 assert_rc "null worker port renders" "$?" 0
 assert_eq "null worker port means 8080" "$(run_sourced "$AD" env_get_file "$AD/.env" XMRIG_API_PORT)" 8080
 assert_eq "explicit hostname wins" "$(run_sourced "$AD" env_get_file "$AD/.env" HOST_IP)" explicit-machine
+control_default_case() { # <label> <jq-filter> <appliance-flag> <expected>
+    jq "$2" "$AD/base.json" >"$AD/config.json"
+    AD_MEM=8388608 PITHEAD_APPLIANCE="$3" run_sourced "$AD" eval 'caddy_hash_password_b64() { printf fixture-hash | base64; }; automatic_render' >"$AD/render.log" 2>&1
+    assert_rc "control default render ($1)" "$?" 0
+    assert_eq "control default: $1" "$(run_sourced "$AD" env_get_file "$AD/.env" DASHBOARD_CONTROL_ENABLED)" "$4"
+}
+control_default_case "login absent renders the channel off (#1066)" '.' 0 false
+control_default_case "login with the key absent renders it on" '.dashboard.auth={username:"admin",password:"a-real-passphrase"}' 0 true
+control_default_case "the appliance rule matches the DIY rule" '.dashboard.auth={username:"admin",password:"a-real-passphrase"}' 1 true
+control_default_case "explicit false wins over the login" '.dashboard.auth={username:"admin",password:"a-real-passphrase"} | .dashboard.control={enabled:false}' 0 false
+control_default_case "explicit true wins" '.dashboard.auth={username:"admin",password:"a-real-passphrase"} | .dashboard.control={enabled:true}' 0 true
+control_default_case "a password-only onion keeps it off without an error" '.dashboard.auth={username:"admin",password:"a-long-enough-passphrase-for-onion"} | .dashboard.onion={enabled:true,client_auth:false}' 0 false
+control_default_case "an explicit null client_auth reads as absent" '.dashboard.auth={username:"admin",password:"a-long-enough-passphrase-for-onion"} | .dashboard.onion={enabled:true,client_auth:null}' 0 true
+control_default_case "a client-authorized onion keeps it on" '.dashboard.auth={username:"admin",password:"a-long-enough-passphrase-for-onion"} | .dashboard.onion={enabled:true}' 0 true
 for row in "remote off false 3" "local off false 8" "local local false 14" "local local true 17"; do
     read -r monero tari miner expected <<<"$row"
     jq --arg monero "$monero" --arg tari "$tari" --argjson miner "$miner" '.monero.mode=$monero | .tari.mode=$tari | .local_miner.enabled=$miner' "$AD/base.json" >"$AD/config.json"
@@ -108,6 +122,10 @@ assert_not_contains "doctor JSON never prints dashboard password" "$(cat "$V/doc
 assert_rc "support bundle succeeds" "$?" 0
 bundle_tar=$(find "$V" -maxdepth 1 -name 'support-bundle-*.tar.gz' | head -1)
 assert_contains "support bundle exists" "$bundle_tar" "support-bundle-"
+assert_eq "a generated login renders the settings editor on (#3579)" \
+    "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_CONTROL_ENABLED)" true
+assert_eq "the render added no control key to config.json (#3579)" \
+    "$(jq -r 'if (.dashboard.control // null) == null then "absent" else "present" end' "$V/config.json")" absent
 mkdir -p "$V/extracted"
 tar -xzf "$bundle_tar" -C "$V/extracted"
 assert_rc "support bundle extracts" "$?" 0
