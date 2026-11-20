@@ -1,4 +1,4 @@
-ref=8f06cb8df791f3cb16d47bbee85fde92103cbe0b
+ref=03f13e200a750cecfa96c5896cf9d4a78712e9f4
 version=1.18.1
 stratum_upstream=https://github.com/SChernykh/p2pool/blob/v4.18.1/src/stratum_server.cpp
 stratum_release=v4.18.1

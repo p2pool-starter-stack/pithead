@@ -155,10 +155,9 @@ assert_eq "the pool is the address the operator gave" "$(jq -r '.pools[0].url' "
 assert_eq "the worker name labels the rig at the pool" "$(jq -r '.pools[0].user' "$RIGL/rigforge/config.json")" "shed-3"
 assert_eq "no stratum password -> no pass key at all" "$(jq -r '.pools[0] | has("pass")' "$RIGL/rigforge/config.json")" "false"
 assert_eq "no stack here -> no hugepages headroom declared" "$(jq -r 'has("hugepages_reserve_extra_mb")' "$RIGL/rigforge/config.json")" "false"
-# Prebuilt-first: the seeded binary means the first boot renders, it never compiles or clones.
+assert_eq "the render asks the miner for the mode this machine's RAM can hold (#4010)" "$(jq -r '.xmrig.randomx.mode' "$RIGL/rigforge/config.json")" "auto"
+assert_eq "mode auto ships alone — no other randomx knobs (#4010)" "$(jq -c '.xmrig' "$RIGL/rigforge/config.json")" '{"randomx":{"mode":"auto"}}'
 assert_not_contains "a seeded prebuilt narrates no build" "$rigl_out" "building it once"
-# Removable-root tolerance: the journal goes to memory, because the root may be the stick the
-# miner runs from — and journald has to be restarted for the setting to take.
 assert_contains "journald is flipped to volatile" "$(cat "$RIGL/run/zz-rig-volatile.conf")" "Storage=volatile"
 [ -d "$RIGL/journal" ] && bad "the persistent journal directory is reclaimed" "still there" ||
     ok "the persistent journal directory is reclaimed"
@@ -170,12 +169,9 @@ printf '{"pool":"pithead.local:3333","worker":"shed-4","stratum_password":"s3cre
 rigl_out=$(run_rig provision_local_miner 2>&1)
 assert_rc "re-run (the leg fires every boot) -> rc 0" "$?" "0"
 assert_eq "the config is re-derived, not repaired" "$(jq -r '.pools[0].url' "$RIGL/rigforge/config.json")" "pithead.local:3333"
+assert_eq "mode auto survives every boot's rebuild (#4010)" "$(jq -r '.xmrig.randomx.mode' "$RIGL/rigforge/config.json")" "auto"
 assert_eq "the stratum password lands as the pool pass" "$(jq -r '.pools[0].pass' "$RIGL/rigforge/config.json")" "s3cret"
 assert_not_contains "already volatile -> journald is not restarted again" "$(cat "$RF_LOG")" "restart systemd-journald"
-# #1817: a first boot binds the persistent journal home onto this path before the role is
-# known (pithead-journal-persist), so the reclaim meets a MOUNTPOINT. The bind comes off
-# first — after journald has let go of the files under it, which is why the restart moves
-# ahead of the umount — and only then is the directory reclaimed.
 printf '#!/usr/bin/env bash\n[ -f "%s/bound" ] && exit 0\nexit 1\n' "$RIGL" >"$RIGL/bin/mountpoint"
 printf '#!/usr/bin/env bash\necho "umount:$*" >>"${RF_LOG:?}"\nrm -f "%s/bound"\n' "$RIGL" >"$RIGL/bin/umount"
 chmod +x "$RIGL/bin/mountpoint" "$RIGL/bin/umount"

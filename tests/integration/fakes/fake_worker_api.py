@@ -39,20 +39,12 @@ _XMRIG_SUMMARY = {
     "connection": {"pool": "itest-proxy:3333", "uptime": 3600, "accepted": 42, "rejected": 0},
 }
 
-# Every key here is one the real producer emits, and the set is pinned against RigForge's own
-# committed wire fixture by `test_fake_matches_the_vendored_wire_contract` — see contract/v1/. The
-# VALUES are deliberately ours and deliberately not the fixture's: the fixture is a normalized,
-# hardware-independent capture whose numeric fields are mostly null, which would exercise the
-# consumers' default-everything path and nothing else. So the fixture pins the SHAPE and this pins
-# realistic content. Units match the real feed: H/s, W, °C, MT/s.
-#
-# `msr`/`smt` are strings and not booleans because that is what the producer sends ("ok"/"fail"/
-# "none"; the SMT control value or null). Nothing in the dashboard reads either one — they are here
-# so the shape guard has the whole block to compare, not because a consumer depends on them.
 _RIGFORGE_BLOCK = {
+    "appliance": True,
     "version": "1.16.0",
     "xmrig_version": "6.24.0",
     "xmrig_commit": "abcdef0",
+    "stamp": "ref=0000000000000000000000000000000000000000 version=0.0.0-fixture",
     "tune": {
         "applied": True,
         "target": "perf",
