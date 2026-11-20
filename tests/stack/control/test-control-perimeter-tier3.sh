@@ -157,7 +157,10 @@ echo "== black-box: the same gates guard DIY and the appliance alike (#3579) =="
 for gate_flag in 0 1; do
     gate_who=DIY
     gate_wallet="$WALLET"
-    [ "$gate_flag" == 1 ] && { gate_who=appliance; gate_wallet="$PAYOUT_MONERO2"; }
+    [ "$gate_flag" == 1 ] && {
+        gate_who=appliance
+        gate_wallet="$PAYOUT_MONERO2"
+    }
     jq --arg u "rpc-user$gate_flag" --arg p "rpc-secret$gate_flag" \
         '.monero.node_username=$u | .monero.node_password=$p' "$C/config.json" >"$C/cand.json"
     (
