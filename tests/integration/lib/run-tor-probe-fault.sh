@@ -17,6 +17,23 @@ _tor_probe_mining_sample() {
     printf '%s\n' "$accepted"
 }
 
+_tor_probe_witness_latch() {
+    TOR_PROBE_LAST=$(_tor_probe_mining_sample)
+}
+
+_tor_probe_record_witness() {
+    local state
+    mkdir -p "$OUT_DIR"
+    {
+        printf '%s\n' "$1"
+        if state=$(api_state 2>/dev/null); then
+            printf '%s' "$state" | jq -c '{proxy_workers, proxy_summary, stratum, workers: [.workers[]? | {name, status, uptime, accepted}]}' 2>/dev/null || echo 'api_state unparsable'
+        else
+            echo 'api_state unavailable'
+        fi
+    } >>"$OUT_DIR/tor-probe-witness.log"
+}
+
 fault_tor_probe_egress() {
     local prefix epoch tor_before monero_before last now logs i rc=0 rule last_progress=0 mining_failure=
     if [ "${SKIP_MINING_ASSERTS:-0}" = "1" ]; then
@@ -29,6 +46,7 @@ fault_tor_probe_egress() {
     fi
     fault_rules_clear_all
     if ! wait_for 180 10 "proxy workers online for Tor fault" _tor_probe_mining_sample >/dev/null; then
+        _tor_probe_record_witness "before-fault"
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
     fi
@@ -53,10 +71,12 @@ fault_tor_probe_egress() {
     tor_before=$(rx "docker inspect tor --format '{{.State.StartedAt}}'")
     monero_before=$(rx "docker inspect monerod --format '{{.State.StartedAt}}'")
     epoch=$(rx 'date +%s')
-    last=$(_tor_probe_mining_sample) || {
+    if ! wait_for 60 10 "proxy workers online after apply" _tor_probe_witness_latch >/dev/null; then
+        _tor_probe_record_witness "after-apply"
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
-    }
+    fi
+    last=$TOR_PROBE_LAST
     rule="-d ${prefix}.25 -p tcp --dport 9050 -m comment --comment pithead-e2e-fault-tor-probe -j DROP"
     fault_rules_trap_arm
     if ! tor_probe_ns_ipt "-I OUTPUT $rule" >/dev/null ||
