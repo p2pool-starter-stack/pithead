@@ -99,14 +99,15 @@ control channel is on.
 | --- | --- |
 | Control port | `ok` only when Tor answered every query and closed the session. Otherwise `unreachable`: the control port refused, stalled past 5 seconds, cut the reply short, or the Tor container could not be reached within 10 seconds. The snapshot is still returned, without partial counts. |
 | Version | The running Tor version. |
-| Bootstrap | Progress percentage and phase tag (`done` when complete), and when Tor last logged a `Bootstrapped` line. The time is read from the newest 20,000 Tor log lines and is blank when none are left. The snapshot also records `circuit_established` and `enough_dir_info` from the control port. |
-| Consensus | Valid-after and valid-until times, and the age (now minus valid-after). It is read from the control port; when the control port does not answer, it is read from the cached consensus in Tor's data directory, and if that file has no times the age is the file's modification age. The source is shown. |
+| Bootstrap | Progress percentage and phase tag (`done` when complete), and when Tor last logged a `Bootstrapped` line. The time is read from the newest 20,000 Tor log lines and shows `unknown` when none are left. The snapshot also records `circuit_established` and `enough_dir_info` from the control port. |
+| Consensus | Valid-after and valid-until times, and the age (now minus valid-after). It is read from the control port when Tor returns both times; otherwise it is read from the cached consensus in Tor's data directory, and if that file has no times the age is the file's modification age. The source is shown. |
 | Guards | Entry guards counted by status (`up`, `down`, `never-connected` and so on). |
 | Circuits | Circuits counted by state and purpose, for example `LAUNCHED HS_SERVICE_HSDIR 12`. |
 
 The snapshot holds counts and fixed tokens only. Guard fingerprints and nicknames, relay paths,
-onion addresses and client addresses are never read into it, and the host refuses any value outside
-the fixed shapes. The same snapshot is in the `diag-doctor` result, in `./pithead support-bundle` as
+onion addresses and client addresses are never read into it. A value outside the fixed shapes is shown as
+`other` (guard status, bootstrap tag), left out (circuits) or shown as `unknown` (version,
+times). The same snapshot is in the `diag-doctor` result, in `./pithead support-bundle` as
 `tor-diagnostics.json`, and, as a one-line summary of the latest snapshot taken during the heal
 round, in the Tor auto-heal alerts (saturated history, host recovery result and recovered).
 

@@ -252,6 +252,10 @@ bundle_case() {
     fi
     (
         cd "$work" || exit
+        mkdir -p "$work/bin"
+        printf '#!/bin/sh\nexit 1\n' >"$work/bin/docker"
+        chmod +x "$work/bin/docker"
+        PATH="$work/bin:$PATH"
         # shellcheck disable=SC1090
         source "$STACK"
         set +e

@@ -44,13 +44,13 @@ out=$(printf '%s\n' "$reply" | tr -d '\r' | awk '
     }
     /^250-status\/circuit-established=[01]$/ { emit("circuit_established=" substr($0, 32)); next }
     /^250-status\/enough-dir-info=[01]$/ { emit("enough_dir_info=" substr($0, 28)); next }
-    /^250-consensus\/valid-after=/ { v = substr($0, 27); if (stamp(v)) { emit("consensus_valid_after=" v); seen++ } next }
-    /^250-consensus\/valid-until=/ { v = substr($0, 27); if (stamp(v)) { emit("consensus_valid_until=" v); seen++ } next }
+    /^250-consensus\/valid-after=/ { v = substr($0, 27); if (stamp(v)) { cons[++seen] = "consensus_valid_after=" v } next }
+    /^250-consensus\/valid-until=/ { v = substr($0, 27); if (stamp(v)) { cons[++seen] = "consensus_valid_until=" v } next }
     END {
         if (!ok || !closed || mode != "") { print "control=unreachable"; exit }
         print "control=ok"
         for (i = 1; i <= nb; i++) print buf[i]
-        if (seen == 2) print "consensus_source=control"
+        if (seen == 2) print cons[1] "\n" cons[2] "\nconsensus_source=control"
     }
 ')
 printf '%s\n' "$out"

@@ -102,6 +102,12 @@ json=$(TOR_NC_MODE=stall tor_diagnostics_snapshot)
 [ "$(jq -c '.consensus | {source, valid_after, valid_until}' <<<"$json")" = \
     '{"source":"file","valid_after":1795078800,"valid_until":1795089600}' ]
 
+echo "== a control port that returns one consensus time defers to the file for both =="
+awk '/^250-consensus\/valid-until=/ { getline; next } 1' "$WORK/reply" >"$WORK/reply.partial"
+json=$(TOR_REPLY="$WORK/reply.partial" tor_diagnostics_snapshot)
+[ "$(jq -c '{control, consensus: (.consensus | {source, valid_after, valid_until})}' <<<"$json")" = \
+    '{"control":"ok","consensus":{"source":"file","valid_after":1795078800,"valid_until":1795089600}}' ]
+
 echo "== a port that authenticates and then stalls is unreachable, never a partial ok =="
 start=$SECONDS
 json=$(TOR_NC_MODE=authstall tor_diagnostics_snapshot)
