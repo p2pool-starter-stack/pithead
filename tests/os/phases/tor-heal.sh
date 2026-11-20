@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 phase_tor_heal() {
     # Provision the normal local-node appliance: recovery verifies local Monero peers.
     # These locals are shared with the existing initial-provision fixture through dynamic scope.
@@ -14,7 +16,7 @@ phase_tor_heal() {
         ok "guest Tor saturated-history self-heal and disabled control (#3118)"
     else
         # _ssh sends guest stderr, which carries the failing stage, to $SSH_ERR; surface it.
-        printf 'Guest stderr: %s\n' "$(tail -c 2048 "$SSH_ERR" 2>/dev/null | tr -d '\r')"
+        printf 'Guest stderr: %s\n' "$(tr -d '\r' <"$SSH_ERR" 2>/dev/null | os_redact_addr | tail -c 2048)"
         bad "guest Tor saturated-history self-heal or disabled control failed (#3118)"
     fi
 }

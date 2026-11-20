@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 
 # ---- no room for the Tari migration (#2645): the migrating bundle is refused, nothing installed ----
@@ -43,7 +45,7 @@ _phase_provision_migration_space_refusal() {
     if printf '%s' "$out" | grep -qE "GiB free on $mount \(Tari's data.mdb plus a 5 GiB margin\), and it has [01] GiB free"; then
         ok "the refusal names the volume, the size needed and the size free"
     else
-        bad "the refusal does not name the volume, the size needed and the size free: $(printf '%s' "$out" | tail -1)"
+        bad "the refusal does not name the volume, the size needed and the size free: $(printf '%s' "$out" | os_redact_addr | tail -1)"
     fi
     rauc_after=$(_ssh "rauc status --detailed --output-format=shell 2>/dev/null" |
         grep -E '^RAUC_(BOOT_PRIMARY|SLOT_STATUS_(BUNDLE_HASH|INSTALLED_TIMESTAMP|ACTIVATED_TIMESTAMP)_[0-9]+)=')
