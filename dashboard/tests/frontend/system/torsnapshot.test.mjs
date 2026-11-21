@@ -6,6 +6,7 @@ import {
   TorDiagnostics,
   torSnapshotRows,
 } from "../../../mining_dashboard/web/static/sovereign/tor-diagnostics.mjs";
+import { DiagnosticsPanel } from "../../../mining_dashboard/web/static/system/diagview.mjs";
 import { renderToString } from "../helpers/render.mjs";
 
 const SNAP = {
@@ -102,4 +103,20 @@ test("the Settings page offers the Tor check only on a controllable session", ()
   const off = renderToString(new SettingsPage({ state: { control_enabled: false } }).render());
   assert.match(off, /Tor diagnostics/);
   assert.doesNotMatch(off, /Check Tor now/);
+});
+
+test("the Service diagnostics card shows the Tor snapshot beside the health report (#4262)", () => {
+  const card = (result) => {
+    const c = new DiagnosticsPanel({ enabled: true });
+    c.props = { enabled: true };
+    c.state = { ...c.state, healthPhase: "done", healthResult: { doctor: { checks: [] }, ...result } };
+    return renderToString(c.render());
+  };
+  const out = card({ tor: SNAP });
+  assert.match(out, /card-subhead">Tor</);
+  assert.match(out, /LAUNCHED HS_SERVICE_HSDIR 12/);
+  assert.match(out, /valid until 2026-11-19T15:00:00Z/);
+  assert.match(out, /0\.4\.9\.17/);
+  assert.doesNotMatch(card({}), /card-subhead">Tor</);
+  assert.match(card({ tor: { control: "unreachable" } }), /status-bad">unreachable/);
 });
