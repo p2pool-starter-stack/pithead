@@ -188,6 +188,7 @@ parse_and_validate_config() {
 
     migrate_legacy_workers
     migrate_removed_telegram_control
+    migrate_xvb_na_endpoint
     validate_worker_endpoints
     validate_energy_config
 
