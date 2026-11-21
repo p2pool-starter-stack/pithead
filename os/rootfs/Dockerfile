@@ -2,10 +2,10 @@ FROM golang:1.26.10-trixie@sha256:a050dcceee6eb9bf110151662dfac7662f3bec40927c7d
 
 ARG COMPOSE_VERSION=v5.5.1
 ARG COMPOSE_COMMIT=5f94fb0aa42a2cd1248c6e6c7fafb87546b9c8de
-ARG COSIGN_VERSION=v3.1.3
-ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
+ARG COSIGN_VERSION=v3.1.4
+ARG COSIGN_COMMIT=0e48502cf5ef34e2e60bbd3617aa19945712f705
 ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7 github.com/go-jose/go-jose/v4@v4.1.6"
+ARG COSIGN_GO_RAISES="golang.org/x/net@v0.62.0"
 ENV CGO_ENABLED=0
 
 COPY os/rootfs/fetch-go-source.sh /usr/local/bin/fetch-go-source
@@ -29,7 +29,7 @@ RUN /out/docker-compose version && /out/cosign version \
     && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
     && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.10" \
     && go version /out/cosign | grep -qxF "/out/cosign: go1.26.10" \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.20\.1[[:space:]]' \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
 FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
