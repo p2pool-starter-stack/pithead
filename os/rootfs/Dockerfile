@@ -31,8 +31,8 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosig
 RUN /out/docker-compose version && /out/cosign version \
     && /out/docker-compose version | grep -qF "${COMPOSE_VERSION}" \
     && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
-    && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.27.4" \
-    && go version /out/cosign | grep -qxF "/out/cosign: go1.27.4" \
+    && go version /out/docker-compose | grep -qxF "/out/docker-compose: $(go env GOVERSION)" \
+    && go version /out/cosign | grep -qxF "/out/cosign: $(go env GOVERSION)" \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.20\.1[[:space:]]' \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
