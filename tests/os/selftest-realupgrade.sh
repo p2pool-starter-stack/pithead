@@ -33,6 +33,11 @@ eq "old tag orders numerically, not lexically" v2.0.10 "$(realupgrade_old_tag 2.
 eq "old tag skips pre-releases and junk" v2.0.1 "$(realupgrade_old_tag 2.0.3 v2.0.2-rc1 latest v2.0.1)"
 refuses "old tag fails when nothing is older" realupgrade_old_tag 1.0.0 v1.0.0 v2.0.0
 
+check "a build with the fixes gets the strict cause rows" realupgrade_cause_applies v2.0.4
+check "a later build gets the strict cause rows" realupgrade_cause_applies v2.1.0
+refuses "v2.0.2 predates the fixes" realupgrade_cause_applies v2.0.2
+refuses "v2.0.3 predates the fixes" realupgrade_cause_applies v2.0.3
+refuses "a junk tag has no cause rows" realupgrade_cause_applies latest
 eq "commit budget is the gate timeout plus 50%" 1350 "$(realupgrade_commit_budget_s 900)"
 refuses "commit budget refuses a non-number" realupgrade_commit_budget_s abc
 check "time within budget passes" realupgrade_within_budget 1349 1350

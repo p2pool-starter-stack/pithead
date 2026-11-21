@@ -6,6 +6,7 @@ REALUPGRADE_BOOT_GATE_S=900
 REALUPGRADE_SOAK_S=600
 REALUPGRADE_LEGS_DEFAULT="upgrade,soak,negctl"
 REALUPGRADE_ROLLBACK_CAUSE="interrupted before the update was verified"
+REALUPGRADE_CAUSE_FIX_VERSION=2.0.4
 REALUPGRADE_SEED_UNIT="pithead-realupgrade-seed.service"
 
 realupgrade_old_tag() {
@@ -20,6 +21,10 @@ realupgrade_old_tag() {
         fi
     done
     [ -n "$best" ] && printf '%s\n' "$best"
+}
+
+realupgrade_cause_applies() {
+    [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ "$(printf '%s\n%s\n' "${1#v}" "$REALUPGRADE_CAUSE_FIX_VERSION" | sort -V | head -n1)" = "$REALUPGRADE_CAUSE_FIX_VERSION" ]
 }
 
 realupgrade_commit_budget_s() {

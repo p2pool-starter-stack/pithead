@@ -97,17 +97,26 @@ _ru_negctl_leg() {
         fi
         _ru_wait_state 900 || continue
         os_json=$(_ru_os)
-        printf '%s' "$os_json" | jq -e '.verdict.outcome == "rolled_back" and .verdict.interrupted == true' >/dev/null 2>&1 && {
+        printf '%s' "$os_json" | jq -e '.verdict.outcome == "rolled_back"' >/dev/null 2>&1 && {
             verdict_ok=1
             break
         }
     done
-    if [ "$verdict_ok" = 1 ] && out=$(rollback_verdict_check "$os_json" "$REALUPGRADE_ROLLBACK_CAUSE"); then
-        ok "negctl: a hard reset of the uncommitted slot rolled back with a recorded cause ($(printf '%s' "$os_json" | jq -c '.verdict.blocking' | cut -c1-200))"
-    else
-        bad "negctl: no rolled_back verdict with a blocking cause after $n hard resets (${out:-no verdict}; last: $(printf '%s' "$os_json" | jq -c '.verdict // .step' 2>/dev/null | cut -c1-200))"
+    if [ "$verdict_ok" != 1 ]; then
+        bad "negctl: no rolled_back verdict after $n hard resets (last: $(printf '%s' "$os_json" | jq -c '.verdict // .step' 2>/dev/null | cut -c1-200))"
         _ru_save_failure negctl
         return 1
+    fi
+    ok "negctl: a hard reset of the uncommitted slot rolled back and recorded a verdict ($(printf '%s' "$os_json" | jq -c '.verdict' | cut -c1-200))"
+    if realupgrade_cause_applies "$RU_TAG"; then
+        if out=$(rollback_verdict_check "$os_json" "$REALUPGRADE_ROLLBACK_CAUSE") && printf '%s' "$os_json" | jq -e '.verdict.interrupted == true' >/dev/null 2>&1; then
+            ok "negctl: the rollback names its cause ($REALUPGRADE_ROLLBACK_CAUSE)"
+        else
+            bad "negctl: the rollback recorded no explicit cause (${out:-interrupted flag missing}); $RU_TAG should carry the #3909/#3910 fixes"
+            _ru_save_failure negctl
+        fi
+    else
+        info "negctl: $RU_TAG predates the #3909/#3910 fixes (first in $REALUPGRADE_CAUSE_FIX_VERSION); the cause row is not applicable and the verdict above is the red evidence"
     fi
     sensitive_preview "$(dashboard_config_body "$(dashboard_curl -sSk -m 10 "https://$ip/api/config" | jq -c .)")" &&
         [ "$(printf '%s' "$APPROVAL_PREVIEW" | jq -r '.status')" = "previewed" ] && ok "negctl: the old version's configuration is still saveable after the rollback" ||
