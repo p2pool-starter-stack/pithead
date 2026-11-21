@@ -55,8 +55,8 @@ dns=$'status = StatusCode.UNAVAILABLE\ndetails = "DNS resolution failed for tari
 tari_identity_remote() { echo "$dns"; }
 tari_block_identity_checked 12 || true
 case "$TARI_IDENTITY_ERROR" in
-    *lab.example* | *18142*) it_fail "hostnames and ports are masked" "$TARI_IDENTITY_ERROR" ;;
-    *) it_pass "hostnames and ports are masked" ;;
+*lab.example* | *18142*) it_fail "hostnames and ports are masked" "$TARI_IDENTITY_ERROR" ;;
+*) it_pass "hostnames and ports are masked" ;;
 esac
 
 TARI_IDENTITY_ERROR="attempt 3/3: status = StatusCode.PERMISSION_DENIED"
