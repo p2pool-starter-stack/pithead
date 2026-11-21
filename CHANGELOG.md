@@ -11,6 +11,15 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+## [2.0.4] - Unreleased
+
+Pithead 2.0.4 is a patch release after 2.0.3. It bakes RigForge 1.19.0 into the appliance image
+(read the RigForge-only note below before updating such a rig), moves XvB donation mining to the EU
+server, adds a sign-in page, a windowed support-bundle and log export, per-service and Restart all
+buttons in Service diagnostics, and a Tor auto-heal that no longer stalls, stops serving stratum work
+when the node cannot make valid work so rigs fail over to their backup pool, labels where each rig
+mines, and clears the image-scan findings in the Go toolchain and containerd.
+
 ### Added
 
 - `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
@@ -26,24 +35,64 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   password prompt. It has a "Remember me" box (30 days, renewed while in use; otherwise the session
   ends when the browser closes or after 8 hours idle) and a "Sign out" button. Changing the password
   ends every session, wrong passwords are rate-limited, and scripts keep using HTTP basic auth with
-  the same credentials (#4089).
+  the same credentials (#4089). On a full data disk an existing session still passes the gate, a
+  restarted dashboard still starts and reports `db_healthy:false`, and signing in says the data disk is
+  full instead of failing with a server error (#4199).
 - The dashboard's **Export logs** card (Backup tab) has a time-frame picker (last 1 h, 6 h, 24 h, 72 h or 7 days, or a custom start and end), shows how far back the logs reach and flags a range that goes further, and collects and downloads the `support-bundle-<UTC timestamp>.zip` with one click, showing the window the manifest recorded. It is always available, on the appliance and on DIY, whether or not `dashboard.control.enabled` is on: with the switch off the host runner serves only the export, and config editing, restart and the other control actions stay off. With a dashboard password set, every export route needs the login (#4129).
 - The appliance update channel is read as untrusted data: https-only fetches to the release hosts
   over Tor with remote DNS, response size caps, release-tag validation before any URL or path, and
-  stale or replayed channel reporting in Check for updates (#4011).
+  stale or replayed channel reporting in Check for updates (#4011). The appliance rootfs also carries
+  the on-demand Tor client the rig update will use in 2.0.5 (#4139).
+- The Service diagnostics card has a **Restart** button for each of tor, monerod, wallet-rpc, tari,
+  tari-wallet, p2pool and xmrig-proxy. It goes through the host control channel, is refused while the
+  LAN guard is not ready or the host lock is busy, allows one restart per service every 120 seconds
+  and is audited (#4062).
+- The header shows **Mining paused here** and its reason (stratum closed, node out of sync, node syncing or
+  P2Pool isolated) with the number of rigs on a backup pool, and the dashboard shows a **Monero node
+  offline** banner when monerod is red or Tor egress has been down past the 15-minute window. The
+  banner needs no Tor to display (#4073, #4079).
+- The Workers table says where each rig mines: "on backup pool", "not connected to this Pithead" or
+  "mining location unknown". Rigs mining elsewhere no longer count in Workers Alive or Total Hashrate,
+  a `DOWN` row explains itself, the rig's own hashrate has a separate "Rig telemetry 1m" column, and a
+  proxy client with no rig name is listed as an unnamed proxy worker (#4071, #4072).
+- Failed Healthchecks pings are recorded in a ring table and shown on the health page, without the
+  ping URL (#4037).
 
 ### Changed
 
+- When P2Pool or monerod cannot make valid work (a peerless monerod that still reports synchronized, a
+  monerod stalled behind P2Pool's peers, P2Pool without peers or ZMQ, or a monerod, p2pool or tor
+  container down or unhealthy), the dashboard now stops `xmrig-proxy` after a debounce so rigs fail
+  over to their backup pool, and readmits them only when every trigger has been clear for 60 seconds.
+  Before, only an unreachable node stopped the proxy. The log names every trigger that held the proxy
+  and why readmission stayed blocked (#4046, #4165).
+- The Healthchecks.io ping runs in its own task every 60 seconds with a 30-second hard deadline and a
+  fresh-circuit retry, so a stalled collector or a long apply no longer reads as a down server, and the
+  Tor healer's first repair comes after 5 minutes of failure instead of 15 (#4135).
+- Tor's `SocksPort` binds the bridge address instead of the wildcard address and `WarnUnsafeSocks 0`
+  silences the IP-only SOCKS warnings that monerod and Tari gossip dials produced several times a
+  minute (#4047).
+- Caddy is updated from 2.11.7 to 2.11.9.
 - XvB donation mining now defaults to `eu.xmrvsbeast.com:4247`, because XMRvsBeast is retiring its NA servers. A saved `xvb.url` on `na.xmrvsbeast.com` (any port) is moved to the EU host with the same port on the next apply, the prior file is kept as `config.json.bak-xvb-na`, a custom host is left alone, and Tor routing is unchanged (#4308).
 - The appliance support bundle (the dashboard's **Support bundle** card and `pithead recovery-bundle`) is now one `.zip` for a chosen start and end time (`--since` and `--until` on the CLI, `since` and `until` on the control request; `hours` still works). It holds the whole system journal, the kernel log, the boot list and a journal per Pithead and quadlet unit read from the installed unit files, redacted, with a `manifest.json` that records the windows, the oldest retained entry, the journald usage and every truncated, empty, missing or failed file. Oversize files keep their oldest and newest lines instead of the bundle being refused, and the journald cap is raised from 200 MiB to 400 MiB to cover 168 hours at the log volume reported for a loaded test box (#4127).
-- The appliance image bakes RigForge 1.19.0. Its prebuilt XMRig is the same 6.26.0 pin with the zero donation default and minimum, so a fresh image and an upgraded rig start mining without an XMRig rebuild; the vendored RigForge contract fixtures move to v1.19.0 with the pin (#4230).
+- The appliance image bakes RigForge 1.19.0. Its prebuilt XMRig is the same 6.26.0 pin with the zero donation default and minimum, so a fresh image and an upgraded rig start mining without an XMRig rebuild; the vendored RigForge contract fixtures move to v1.19.0 with the pin (#4230, #4300).
 
 ### Fixed
 
-- The dashboard keeps answering when its data disk is full (a 2.0.4 sign-in regression): an existing
-  session still passes the sign-in gate when the session store cannot write, a dashboard restarted
-  on a full data dir still starts and reports `db_healthy:false`, and signing in reports that the
-  data disk is full instead of failing with a server error (#4199).
+- On the appliance, a built-in miner that lost its stratum connection because `xmrig-proxy` was
+  recreated (an apply, a compose restart or a recovery-boot migration) is restarted at once instead
+  of after five minutes of idle readings. The root cause of the stall is still not established
+  (#3375).
+- On the appliance, opening **Set up again** on a committed slot no longer leaves the boot-slot try
+  flag raised, so powering off or rebooting without choosing no longer boots the previous release
+  (#3960).
+- P2Pool with no incoming or outgoing peers for 15 minutes is restarted with a 20, 40 and 80 minute
+  backoff, at most three times a day, with an audit row and a warning when the cap is reached. A
+  monerod with no outgoing peers for 5 minutes after any Tor start is restarted once per Tor start,
+  with or without `tor.auto_heal` (#4077, #4076).
+- On the appliance, when the boot health gate cannot clear the chain-service migration hold it prints
+  a FAULT line naming the recovery and releases the chain services anyway, instead of leaving node,
+  P2Pool and proxy down with nothing in the boot journal (#3983).
 - On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
   on the data partition is saturated — no longer costs the committed slot its fallback. The boot
   health gate commits when the dashboard answers and every failing check is that network fault,
@@ -93,7 +142,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - The appliance rootfs builds Docker Compose and Cosign with Go 1.26.11, clearing CVE-2026-97054
   in both binaries' standard library (#4265), and builds Compose v5.7.2, whose containerd v2.4.2
-  clears CVE-2026-95839 (#4291).
+  clears CVE-2026-95839 (#4291, #4279).
 
 ### Notes
 
