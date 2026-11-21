@@ -169,7 +169,7 @@ if not TOR_SOCKS_PROXY:
     raise RuntimeError("TOR_SOCKS_PROXY is empty or unset; outbound is Tor only (#4146)")
 
 # Route XvB DONATION MINING through Tor by default too (#166), not just the stats fetch (#163): while
-# donating, the proxy connects to na.xmrvsbeast.com, which would otherwise expose the host IP. The
+# donating, the proxy connects to eu.xmrvsbeast.com, which would otherwise expose the host IP. The
 # algo controller sets this host:port as the XvB pool's per-pool `socks5` field (xmrig-proxy resolves
 # that pool's DNS proxy-side). `xvb.tor: false` opts out (direct, for max yield). The host:port is
 # derived from TOR_SOCKS_PROXY (so a custom subnet, #180, carries through) with the scheme stripped —
