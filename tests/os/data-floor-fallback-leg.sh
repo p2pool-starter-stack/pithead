@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 #
 # The /data-floor fallback leg (#1672 — tier 4 for #1393). Sourced by tests/os/run.sh and run at the
 # end of phase_provision, on the guest the migration leg just left committed: floor = this
@@ -166,7 +168,7 @@ _floor_fallback_leg_body() {
     if _floor_fallback_wait vfail 1800; then
         ok "the $vfail slot never committed — the guest is back on the previous slot with its gate passed"
     else
-        bad "the guest did not come back on the previous slot with a passed gate within 30 min (marker/journal: '$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker; journalctl -u pithead-boot -b | tail -3" 2>/dev/null | tr '\n' ' ')')"
+        bad "the guest did not come back on the previous slot with a passed gate within 30 min (marker/journal: '$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker; journalctl -u pithead-boot -b | tail -3" 2>/dev/null | os_redact_addr | tr '\n' ' ')')"
         return
     fi
     # The mechanism, from the failed boot's own journal (-b -1: the boot between the migration
@@ -205,7 +207,7 @@ _floor_fallback_leg_body() {
     if [ "$rc" -eq 0 ]; then
         ok "a bundle at the restored floor ($floor0) installs again through os-update"
     else
-        bad "os-update refused a bundle at the restored floor $floor0 (rc $rc): $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"
+        bad "os-update refused a bundle at the restored floor $floor0 (rc $rc): $(printf '%s' "$out" | os_redact_addr | tail -2 | tr '\n' ' ')"
     fi
 
     # ---- negative control: record deleted before the fallback boot -> the floor stays ----
@@ -262,10 +264,10 @@ _floor_fallback_leg_body() {
     if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "a migrating update to $vfail failed its gate and fell back before its migration ran"; then
         ok "os-update refuses a bundle below the stale floor with the failed-update premise"
     else
-        bad "expected a refusal naming the failed migrating update (rc $rc): $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"
+        bad "expected a refusal naming the failed migrating update (rc $rc): $(printf '%s' "$out" | os_redact_addr | tail -2 | tr '\n' ' ')"
     fi
     if printf '%s' "$out" | grep -qi 'factory.reset\|restore a\|restoring a'; then
-        bad "the refusal names a reset or a restore as the way out: $(printf '%s' "$out" | tail -1)"
+        bad "the refusal names a reset or a restore as the way out: $(printf '%s' "$out" | os_redact_addr | tail -1)"
     else
         ok "the refusal names no reset and no restore"
     fi

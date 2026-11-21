@@ -93,7 +93,7 @@ phase_update() {
         local out
         out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1")
         local rc=$?
-        [ -n "$out" ] && printf '     install output (%s): %s\n' "$1" "$(printf '%s' "$out" | tail -5)"
+        [ -n "$out" ] && printf '     install output (%s): %s\n' "$1" "$(printf '%s' "$out" | os_redact_addr | tail -5)"
         return $rc
     }
 

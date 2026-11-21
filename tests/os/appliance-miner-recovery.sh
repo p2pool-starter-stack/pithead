@@ -1,4 +1,6 @@
 # shellcheck shell=bash disable=SC2154
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 miner_guest() {
     local command='bash -s --' arg
     for arg in "$@"; do command+=" $(printf '%q' "$arg")"; done
@@ -19,7 +21,7 @@ miner_backup_trial() {
         miner_guest cleanup
         return 1
     }
-    info "$output"
+    info "$(printf '%s' "$output" | os_redact_addr)"
     if [ -z "$rig" ] && ! miner_guest fidelity; then
         miner_guest cleanup
         return 1
