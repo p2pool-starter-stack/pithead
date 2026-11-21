@@ -19,14 +19,7 @@
 # the last apply writes the live rules.
 TOR_EGRESS_BOOT_UNIT="pithead-egress.service"
 
-# The unit text for <iptables path> <subnet> <tor_ip>. Pure (args only) so it unit-tests.
-#
-# Inserts run in REVERSE, each at position 1: the DROP goes in first and every ACCEPT lands above
-# it. If an insert fails halfway, systemd stops at that line with the DROP already live, so a
-# partial install over-blocks instead of opening the box. The `-D` lines first make a manual
-# restart idempotent (a start with the rules already present replaces rather than stacks them);
-# the `-` prefix lets them fail when the rule is absent, which at boot it always is.
-render_tor_egress_boot_unit() { # <iptables> <subnet> <tor_ip> [sync-ip ...]
+render_tor_egress_boot_unit() {
     local ipt="$1" subnet="$2" tor_ip="$3" rule i ip chain marker cmd qmarker qipt qtag qip
     local audit_body audit_line audit_cmd
     shift 3

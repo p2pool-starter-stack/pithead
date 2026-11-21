@@ -25,6 +25,8 @@ render_host_egress_audit_nft() {
             set = ""
             n = split(nets, parts, " ")
             for (i = 1; i <= n; i++) { if (parts[i] == "") continue; set = (set == "" ? parts[i] : set ", " parts[i]) }
+            gate = "oifname != \"lo\" ct state != { established, related }"
+            if (lan && set != "") gate = gate " ip daddr != { " set " }"
             print "add table inet " table
             print "delete table inet " table
             print "table inet " table " {"
@@ -33,8 +35,8 @@ render_host_egress_audit_nft() {
             print "    oifname \"lo\" counter comment \"loopback\""
             print "    ct state established,related counter comment \"reply\""
             if (lan && set != "") print "    ip daddr { " set " } counter comment \"lan\""
-            print "    counter comment \"would_drop\""
-            print "    limit rate 30/second log prefix \"" prefix "\""
+            print "    " gate " counter comment \"would_drop\""
+            print "    " gate " limit rate 30/second log prefix \"" prefix "\""
             print "  }"
             print "}"
         }
@@ -44,14 +46,22 @@ render_host_egress_audit_nft() {
 apply_host_egress_audit() {
     [ "$OS_TYPE" = "Linux" ] || return 0
     command -v nft >/dev/null 2>&1 || return 0
-    local map="${1:-data/egress-map.tsv}" role out
+    local map="${1:-data/egress-map.tsv}" role out state
     role=$(host_egress_audit_role)
     out=$(render_host_egress_audit_nft "$role" "$map") || {
         warn "egress-audit:render-failed — could not render the log-only host egress audit table from $map; the audit view is not loaded."
         return 1
     }
     [ -n "$out" ] || return 0
+    state="${PITHEAD_EGRESS_AUDIT_STATE:-/run/pithead/egress-audit.rules}"
+    if sudo -n nft list table inet "$HOST_EGRESS_AUDIT_NFT_TABLE" >/dev/null 2>&1 &&
+        [ -f "$state" ] && printf '%s\n' "$out" | cmp -s - "$state"; then
+        log "Host egress audit table already loaded (inet $HOST_EGRESS_AUDIT_NFT_TABLE) — the ruleset is unchanged, so the counters keep accumulating."
+        return 0
+    fi
     if printf '%s\n' "$out" | sudo nft -f -; then
+        mkdir -p "${state%/*}" 2>/dev/null || true
+        printf '%s\n' "$out" >"$state" 2>/dev/null || true
         log "Log-only host egress audit table loaded (inet $HOST_EGRESS_AUDIT_NFT_TABLE) — outbound flows are counted and logged, none dropped."
     else
         warn "egress-audit:load-failed — could not load the log-only host egress audit table; nothing is dropped, but host flows are not counted or logged."
@@ -62,6 +72,7 @@ apply_host_egress_audit() {
 remove_host_egress_audit() {
     [ "$OS_TYPE" = "Linux" ] || return 0
     command -v nft >/dev/null 2>&1 || return 0
+    rm -f "${PITHEAD_EGRESS_AUDIT_STATE:-/run/pithead/egress-audit.rules}" 2>/dev/null || true
     sudo -n nft delete table inet "$HOST_EGRESS_AUDIT_NFT_TABLE" 2>/dev/null || true
 }
 

@@ -174,7 +174,16 @@ GETTY_DROPIN
     _ssh "timeout 25 htpdate -s -t www.debian.org 2>&1" >/dev/null || ea_dial=$?
     ea_after=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_after=""
     ea_wd_a=$(host_egress_audit_would_drop "$ea_after")
-    if verdict=$(host_egress_audit_boot_verdict "$ea_active" "$ea_after" "$ea_wd_b" "$ea_wd_a" "$ea_dial"); then
+    local ea_l0 ea_l1 ea_l2 ea_noise ea_probe ea_rise
+    ea_l0=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_l0=""
+    _ssh "sleep 2" >/dev/null 2>&1 || true
+    ea_l1=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_l1=""
+    _ssh 'for i in $(seq 1 100); do (echo >/dev/udp/127.0.0.1/9) 2>/dev/null; done' >/dev/null 2>&1 || true
+    ea_l2=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_l2=""
+    ea_noise=$(host_egress_audit_delta "$(host_egress_audit_would_drop "$ea_l1")" "$(host_egress_audit_would_drop "$ea_l0")")
+    ea_probe=$(host_egress_audit_delta "$(host_egress_audit_would_drop "$ea_l2")" "$(host_egress_audit_would_drop "$ea_l1")")
+    ea_rise=$(host_egress_audit_delta "$(host_egress_audit_counter loopback "$ea_l2")" "$(host_egress_audit_counter loopback "$ea_l0")")
+    if verdict=$(host_egress_audit_boot_verdict "$ea_active" "$ea_after" "$ea_wd_b" "$ea_wd_a" "$ea_dial" "$ea_noise" "$ea_probe" "$ea_rise"); then
         ok "$verdict"
     else
         bad "$verdict"

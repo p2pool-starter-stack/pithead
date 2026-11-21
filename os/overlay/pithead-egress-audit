@@ -4,9 +4,16 @@ SLICE=/data/pithead/lib/pithead/02f-host-egress-audit.sh
 MAP=/data/pithead/data/egress-map.tsv
 [ -r "$SLICE" ] || SLICE=/usr/local/share/pithead/02f-host-egress-audit.sh
 [ -r "$MAP" ] || MAP=/usr/share/pithead/egress-map.tsv
-[ -r "$SLICE" ] || exit 0
-[ -r "$MAP" ] || exit 0
-export OS_TYPE="$(uname)"
+if [ ! -r "$SLICE" ]; then
+    printf 'egress-audit:image-broken — the audit slice is missing (looked in /data/pithead/lib/pithead/ and /usr/local/share/pithead/); the audit table cannot load.\n' >&2
+    exit 1
+fi
+if [ ! -r "$MAP" ]; then
+    printf 'egress-audit:image-broken — the egress map is missing (looked in /data/pithead/data/ and /usr/share/pithead/); the audit table cannot load.\n' >&2
+    exit 1
+fi
+OS_TYPE="$(uname)"
+export OS_TYPE
 log() { printf '%s\n' "$1"; }
 warn() { printf '%s\n' "$1" >&2; }
 command -v sudo >/dev/null 2>&1 || sudo() { "$@"; }
