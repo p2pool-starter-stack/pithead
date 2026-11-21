@@ -90,7 +90,7 @@ def _proxy_covers(proxies, scheme):
     return bool(str(proxies.get(scheme) or "").strip())
 
 
-def _refuse_direct_public(url, proxies):
+def refuse_direct_public(url, proxies):
     try:
         parts = urlsplit(url)
     except ValueError:
@@ -125,7 +125,7 @@ def _refuse_direct_public(url, proxies):
 def bounded_request(
     method, url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, session=None, deadline=None, **kwargs
 ):
-    _refuse_direct_public(url, kwargs.get("proxies"))
+    refuse_direct_public(url, kwargs.get("proxies"))
     proxies = kwargs.get("proxies")
     if not (_proxy_covers(proxies, "http") and _proxy_covers(proxies, "https")):
         kwargs["allow_redirects"] = False
@@ -141,6 +141,10 @@ def bounded_request(
                 raise ResponseTooLarge(f"response body exceeded {max_bytes} bytes: {url}")
             chunks.append(chunk)
         return BoundedResponse(resp.status_code, b"".join(chunks), resp.encoding)
+
+
+def proxy_map(proxy):
+    return {"http": proxy, "https": proxy}
 
 
 def bounded_get(url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, **kwargs):

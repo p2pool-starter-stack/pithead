@@ -63,19 +63,21 @@ miner_diagnostics() {
     printf 'pithead-t3375: local connections/accepted: '
     miner_counts || printf '%s\n' unreadable
     timeout 10 systemctl show pithead-t3375-watcher.service -p LoadState -p ActiveState -p Result -p ExecMainStatus || true
-    timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u pithead-t3375-watcher.service || true
-    if [ -e "$T3375/backup-at" ]; then
-        if journal=$(timeout 10 journalctl --no-pager --since "@$(cat "$T3375/backup-at")" \
-            -u pithead-miner-recovery.service); then
-            printf '%s\n' "$journal"
-            miner_journal_receipt "$journal" || true
+    {
+        timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u pithead-t3375-watcher.service || true
+        if [ -e "$T3375/backup-at" ]; then
+            if journal=$(timeout 10 journalctl --no-pager --since "@$(cat "$T3375/backup-at")" \
+                -u pithead-miner-recovery.service); then
+                printf '%s\n' "$journal"
+                miner_journal_receipt "$journal" || true
+            else
+                printf '%s\n' 'pithead-t3375: recovery_journal=unreadable'
+            fi
         else
-            printf '%s\n' 'pithead-t3375: recovery_journal=unreadable'
+            timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u pithead-miner-recovery.service || true
         fi
-    else
-        timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u pithead-miner-recovery.service || true
-    fi
-    timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u xmrig.service || true
+        timeout 10 journalctl --no-pager -n 40 --since '-20 minutes' -u xmrig.service || true
+    } 2>&1 | sed -E 's/[1-9A-HJ-NP-Za-km-z]{20,}/[redacted]/g'
 }
 miner_guest_exit() {
     local rc=$?
