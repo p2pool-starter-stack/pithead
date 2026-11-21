@@ -1,5 +1,5 @@
-# Gated recovery for saturated Tor history: explicit CLI or auto-heal host control request.
 TOR_RECOVERY_COOLDOWN_SEC=21600
+TOR_RECOVERY_PENDING_LIMIT=64
 
 # monerod's get_info with the REAL outgoing count (#2921). The published RPC is restricted and answers 0
 # for the connection counts, so the count is taken from the in-container helper (which reads the admin
@@ -34,7 +34,7 @@ tor_recovery_state_saturated() { # <state file>
 
 # Read-only saturated-history reading for the dashboard's heal (#3052); it never changes state.
 control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
-    local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now
+    local cdir="$1" id="$2" actor="$3" dir saturated=false record="$1/results/tor-heal-outage.json" old='{}' next now status est='' pend='' age=''
     PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-history || return 1
     [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || return 1
     now=$(date +%s)
@@ -55,7 +55,10 @@ control_tor_history() ( # <control-dir> <id> <actor> <outage> <observed-at>
         return 0
     fi
     tor_recovery_state_saturated "$dir/state" && saturated=true
-    control_write_result "$cdir/results" "$id" "$(jq -n --argjson s "$saturated" '{status:"applied",action:"tor-history",saturated:$s,ts:(now|floor)}')"
+    age=$(tor_recovery_consensus_age "$dir") || age=
+    status=$(tor_recovery_circuit_status) || status=
+    [[ "$status" =~ ^circuit-established=([01])\ pending=([0-9]+)$ ]] && est=${BASH_REMATCH[1]} pend=${BASH_REMATCH[2]}
+    control_write_result "$cdir/results" "$id" "$(jq -n --argjson s "$saturated" --arg est "$est" --arg pend "$pend" --arg age "$age" --argjson stale_after "$TOR_RECOVERY_CONSENSUS_STALE_SEC" '{status:"applied",action:"tor-history",saturated:$s,consensus_age_sec:(if $age == "" then null else ($age | tonumber) end),consensus_stale:(if $age == "" then false else ($age | tonumber) > $stale_after end),circuit_established:(if $est == "" then null else $est == "1" end),pending_circuits:(if $pend == "" then null else ($pend | tonumber) end),ts:(now|floor)}')"
     control_audit "$cdir/audit/control.log" "$id" "$actor" tor-history applied
 )
 
@@ -108,16 +111,13 @@ tor_recovery_bootstrap_sample() {
     identity=$(docker inspect tor --format '{{.Id}} {{.State.StartedAt}} {{.State.Running}}' 2>/dev/null) || return 1
     [[ "$identity" = *" true" ]] || return 1
     verdict=$(timeout 10 docker exec tor /usr/local/bin/tor-recovery-diagnose.sh 2>/dev/null) || return 1
-    [ "$verdict" = bootstrap95-no-circuit ] || return 1
-    printf '%s\n' "$identity"
+    [[ "$verdict" =~ ^bootstrap[0-9]{1,2}-no-circuit$ ]] || return 1
+    printf '%s %s\n' "$identity" "$verdict"
 }
 
 tor_recovery_bootstrap_stalled() { # <state> <start of observation window>
-    local first second warnings
-    first=$(tor_recovery_bootstrap_sample) || return 1
-    sleep 180
-    second=$(tor_recovery_bootstrap_sample) || return 1
-    [ "$first" = "$second" ] || return 1
+    local warnings
+    tor_recovery_bootstrap_persistent || return 1
     # A transient RPC outage must not bypass the ordinary chain-evidence refusals.
     # If it answers now, a fresh invocation must take the running-chain path.
     if tor_recovery_info >/dev/null 2>&1; then return 1; fi
@@ -186,6 +186,7 @@ tor_recovery_restore_start() { # <data dir> <original identity hashes>; recover 
         return 1
     fi
     tor_recovery_redial_monerod
+    tor_recovery_redial_tari
 }
 
 tor_recovery_refusal() {
@@ -195,7 +196,7 @@ tor_recovery_refusal() {
 }
 
 tor_recover() { # check | apply; explicit operator action only
-    local mode="$1" outage dir state first second stamp now last backup healthy=0 info identities started_before started_after i
+    local mode="$1" reason outage dir state first second stamp now last backup healthy=0 info identities started_before started_after i
     case "$mode" in check | apply) ;; *) error "Usage: ./pithead tor-recover check|apply" ;; esac
     require_deployed
     # An active host operation is a refusal, not a queued mutation against changing state.
@@ -239,7 +240,9 @@ tor_recover() { # check | apply; explicit operator action only
         tor_recovery_refusal
         return 1
     fi
-    if ! tor_recovery_state_saturated "$state"; then
+    if tor_recovery_state_saturated "$state"; then
+        reason=saturated
+    elif ! reason=$(tor_recovery_unsaturated_reason "$dir"); then
         warn "Tor recovery refused: circuit history is not saturated."
         mutation_lock_release
         tor_recovery_refusal
@@ -247,12 +250,16 @@ tor_recover() { # check | apply; explicit operator action only
     fi
     first=
     outage=0
-    if tor_recovery_heal_outage "$(env_get CONTROL_DIR)" && tor_recovery_egress_down; then
+    if [ "$reason" != saturated ]; then
+        :
+    elif tor_recovery_heal_outage "$(env_get CONTROL_DIR)" && tor_recovery_egress_down; then
         outage=1
     elif [ "$(docker inspect monerod --format '{{.State.Running}}' 2>/dev/null)" = true ]; then
         first=$(tor_recovery_info) || first=
     fi
-    if [ "$outage" -eq 1 ]; then
+    if [ "$reason" != saturated ]; then
+        log "Tor circuit history is not saturated; reset reason: $reason."
+    elif [ "$outage" -eq 1 ]; then
         log "Tor circuit history is saturated; the dashboard heal recorded two failed recovery rounds over a sustained outage and clearnet egress is still down."
     elif [ -n "$first" ]; then
         sleep 180
@@ -276,7 +283,7 @@ tor_recover() { # check | apply; explicit operator action only
             tor_recovery_refusal
             return 1
         fi
-        log "Tor circuit history is saturated; authenticated bootstrap stayed at 95% with no established circuit across three minutes and repeated invalid timing warnings."
+        log "Tor circuit history is saturated; authenticated bootstrap made no progress below 100% with no established circuit across three minutes and repeated invalid timing warnings."
     fi
     identities=$(tor_recovery_identities "$dir") || {
         warn "Tor recovery refused: onion identities cannot be verified."
@@ -290,7 +297,7 @@ tor_recover() { # check | apply; explicit operator action only
         return 0
     fi
     backup="$dir/state.backup.$now"
-    sudo test ! -e "$backup" && sudo test ! -L "$backup" || {
+    sudo test ! -e "$backup" && sudo test ! -L "$backup" && sudo test ! -e "$dir/directory-cache.backup.$now" && sudo test ! -L "$dir/directory-cache.backup.$now" || {
         warn "Tor recovery refused: circuit-state backup target already exists."
         mutation_lock_release
         tor_recovery_refusal
@@ -325,8 +332,9 @@ tor_recover() { # check | apply; explicit operator action only
         return 1
     fi
     if [ "$(tor_recovery_mount)" != "$dir" ] || ! sudo test -f "$state" || sudo test -L "$state" ||
-        ! tor_recovery_state_saturated "$state" ||
-        ! sudo mv -n -- "$state" "$backup" || sudo test -e "$state" || ! sudo test -f "$backup"; then
+        { [ "$reason" = saturated ] && ! tor_recovery_state_saturated "$state"; } ||
+        ! sudo mv -n -- "$state" "$backup" || sudo test -e "$state" || ! sudo test -f "$backup" ||
+        ! tor_recovery_move_cache "$dir" "$dir/directory-cache.backup.$now"; then
         warn "Tor recovery could not back up circuit state; starting Tor again."
         tor_recovery_restore_start "$dir" "$identities" || true
         control_audit "$(env_get CONTROL_DIR)/audit/control.log" "" "operator" "tor-recover" "failed"
@@ -354,6 +362,7 @@ tor_recover() { # check | apply; explicit operator action only
         return 1
     fi
     tor_recovery_redial_monerod
+    tor_recovery_redial_tari
     for ((i = 0; i < 60; i++)); do
         if [ "$(docker inspect tor --format '{{.State.Health.Status}}' 2>/dev/null)" = healthy ]; then
             # Compose left the local node Created when Tor could not become healthy.

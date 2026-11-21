@@ -77,7 +77,7 @@ class AlgoService:
         Configures the upstream pool priority for the XMRig Proxy.
         """
         # The local p2pool pool dials direct (it's on the bridge). The XvB pool routes through Tor by
-        # default (#166) — its per-pool `socks5` makes the proxy reach na.xmrvsbeast.com via Tor
+        # default (#166) — its per-pool `socks5` makes the proxy reach eu.xmrvsbeast.com via Tor
         # (DNS resolved proxy-side), so donation mining doesn't expose the home IP. `xvb.tor: false`
         # opts out. Only the XvB pool gets `socks5`; the local pool never does.
         p2pool_pool = {

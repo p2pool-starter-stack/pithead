@@ -963,18 +963,19 @@ own within minutes; monerod does **not** — it keeps its dead SOCKS connections
 right after tor is healthy again and re-dials in about a minute. Re-run `./pithead doctor` to
 confirm egress recovered. To enable bounded automatic recovery, set `tor.auto_heal: true` in `config.json` and run
 `./pithead apply`. Its circuit refreshes and state recovery go through the host control runner,
-and a refresh must be confirmed before the final restart, so the heal also needs
+so the heal also needs
 `dashboard.control.enabled: true` (the appliance sets it only when a dashboard login exists);
 without it the heal only probes and logs warnings, and sends a recovery note when egress returns.
 Doctor reports this configuration as INFO and names the login and control prerequisite or manual Tor restart. The dashboard probes every five minutes with a new SOCKS circuit per request.
 A failed request is corroborated against a second target before it counts toward the outage
-window: 5 minutes to the first NEWNYM, 15 minutes to any later one. A Healthchecks ping that has failed on two circuits makes the healer probe every minute until its first action, and the window counts from that ping's first failure once a probe fails too; a ping failure alone never acts. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart;
-continued failure after accepted refreshes permits one final action. With saturated circuit history,
-the dashboard submits `tor-recover`; the host runs the existing recovery gates, including the
-persistent six-hour cooldown, and backs up state before resetting guards. A refused or failed
-recovery is logged and alerted without a fallback restart. Otherwise it performs one Tor container
-restart, which also re-dials
-a running local Monero once Tor's start is confirmed. A failed or timed-out stop/start response
+window: 5 minutes to the first NEWNYM, 15 minutes to any later one. A Healthchecks ping that has failed on two circuits makes the healer probe every minute until its first action, and the window counts from that ping's first failure once a probe fails too; a ping failure alone never acts. The host control runner permits NEWNYM at most twice per 24 hours, 30 minutes apart.
+The ladder has four rungs, one per 30-minute cooldown and each only while the probes still fail:
+two NEWNYM refreshes, a host-gated `tor-recover` state reset, then one Tor container restart. The
+reset runs the host's gates (a reset reason, onion identity checks, the mutation lock and the
+persistent six-hour cooldown) and backs up state before resetting guards. A refused or failed reset
+is logged and alerted, and the next round performs the restart, which also re-dials
+a running local Monero once Tor's start is confirmed. The reset and the restart share a cap of four
+per rolling 24 hours. A failed or timed-out stop/start response
 is an uncertain mutation: the restart attempt and cooldown remain spent, including when both
 responses are unconfirmed. The stop request waits up to two minutes (15 seconds of grace, then the
 kill), and the dashboard issues the start even when the stop times out, because an API stop is not
@@ -983,9 +984,10 @@ start, so a start cannot be answered "already running" by a Tor that is still go
 unconfirmed start is retried up to three times, five seconds apart (#3032). A confirmed start after an unconfirmed stop still re-dials a running
 local Monero; a stopped or remote node stays untouched. Logs record each control result and
 retain the distinction between a confirmed restart, a confirmed start with an unconfirmed stop,
-and an unconfirmed restart in the recovery note. A rejected NEWNYM does not advance to that
-restart: the dashboard warns and retries after 30 minutes while the outage persists. Once the host's daily refresh budget is spent, it
-cannot take another automatic action until the host accepts a request. Each step and its probe
+and an unconfirmed restart in the recovery note. A NEWNYM the host rejects
+(budget or cooldown) spends its rung and skips the second one: the next round requests the state
+reset, then the restart, instead of repeating NEWNYM. A NEWNYM that fails or times out is retried
+once per outage before it counts as spent. Each step and its probe
 evidence is logged. Two consecutive successful probes confirm recovery and carry the targets,
 circuits, duration and preceding action into the Telegram note; the action is not credited as the
 cause of recovery. On the first heal round, 5 minutes into sustained failure, the
@@ -993,18 +995,28 @@ monitor asks the host for a read-only reading of Tor's circuit-history state, th
 on later rounds. A saturated
 history (abandoned count and total build times both at 1000, no `CircuitBuildTimeBin`) is logged
 on each such round, sent once per outage to the alert sinks (failed delivery retries on later rounds), and names `./pithead tor-recover`;
-`./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. The doctor check does not require an outage record or auto-heal: saturated history plus live egress failure is enough for a FAIL. The action budget is three per outage; after that the
-monitor warns until egress recovers. A Tor start the monitor did not cause (an operator, `./pithead` or
+`./pithead doctor` reports it as a FAIL, also shown in the Tor section of Service diagnostics after a health check. The doctor check does not require an outage record or auto-heal: saturated history plus live egress failure is enough for a FAIL. Each reading also carries the control-port view of
+Tor (`status/circuit-established` and the number of pending circuits). No established circuit, or
+64 or more pending circuits (the `MaxClientCircuitsPending` Pithead sets), is named in the failed-probe
+evidence and is one of the reasons the host accepts a state reset; an answering probe is never
+overridden by it, because a busy Tor can sit at that ceiling while egress works. The action budget is four per outage, and the reset and
+restart together are capped at four per rolling 24 hours, a count held in the dashboard's memory
+(a dashboard restart clears it; the host's six-hour reset cooldown persists); at either limit the monitor logs once,
+asks the host to write a `tor-heal-exhausted` entry to its audit log, then keeps probing at most
+every 15 minutes and re-alerts at most once an hour — naming that it is past its cap and how long
+the outage has lasted — until a probe passes, which sends one recovery notice and clears the
+exhausted state. A Tor start the monitor did not cause (an operator, `./pithead` or
 Docker restart) opens a fresh outage window and resets the clock, budget and cooldown, so a Tor that
 restarts more often than every 5 minutes never reaches an action or the warning. DIY installs stay opt-in; appliances enable `tor.auto_heal` when the key is absent. A confirmed
-state reset sends one alert per outage explaining the saturated history and guard reset.
+state reset sends one alert per outage explaining the circuit state and guard reset.
 
 **Saturated Tor circuit history while chains stop advancing or egress stays down.** A completed
 bootstrap, a failed clearnet probe, or unavailable chain RPC alone cannot authorize a state reset. If Tor repeatedly
 reports invalid circuit build timing, run `./pithead tor-recover check`. A refused precondition
 prints its warning and exits 1 without the unexpected-abort diagnostic; no recovery is applied.
 This read-only check
-validates the live Tor data mount and the saturated history signature. When local Monero RPC
+validates the live Tor data mount and the saturated history signature, or, without it, one of the
+unsaturated reset reasons below. When local Monero RPC
 answers, it requires peerless, stalled Monero across three minutes (0 outgoing peers at one height,
 whatever `synchronized` says: monerod keeps its last value after losing every peer), with real
 outgoing peer counts read through the authenticated in-container admin helper. When RPC is unavailable,
@@ -1017,18 +1029,38 @@ egress: two failed heal rounds from the same sustained outage, recorded by the h
 The healer requests these readings from the first round after 5 minutes of corroborated failure. Recovery clears the outage evidence; the persistent 24-hour
 NEWNYM budget remains separate. After the automatic action budget is spent, read-only observations continue every 30 minutes.
 The host retains the last two spaced rounds. Evidence older than one hour since the last observation is
-refused. A Tor whose egress answers is refused. It uses sudo for read-only access to Tor-owned state
+refused. A Tor whose egress answers is refused, unless its cached consensus
+is stale (below). Without a saturated history, a reset needs both clearnet targets to fail through
+Tor's SOCKS at that moment and one of: the sustained heal outage above; two control-port readings
+a minute apart that both show no established circuit or 64 or more pending circuits; or the
+bootstrap observations above (the same progress below 100%, no established circuit, the same Tor
+instance, three minutes apart, so a Tor stuck at 45% qualifies as well as one at 95%).
+
+A stale directory cache is its own reason, `stale-consensus`, and needs no egress failure: Tor
+refreshes `cached-microdesc-consensus` about hourly, so one more than 12 hours old means the
+directory is not refreshing even when clearnet probes pass and only onion peers (Tari, monerod)
+suffer. The Tor container applies the same 12-hour test at start (`TOR_STALE_CONSENSUS_SEC`) and
+moves `cached-microdesc-consensus`, `cached-microdescs`, `cached-microdescs.new` and `cached-certs`
+to `stale-directory-cache/` before Tor starts, after a random wait of up to
+`TOR_CACHE_JITTER_SEC` (30 s) so a fleet does not reach the directory authorities together. While
+probes pass, the dashboard heal reads the cache age from the host every 30 minutes; a stale
+consensus requests `tor-recover` after a random delay of up to 30 minutes, counts as one
+disruptive action under the daily cap above, and is retried no sooner than the six-hour
+cooldown. A Tari node with no peers for 10 minutes while probes pass is logged with the cache
+age; it does not request a reset by itself. A peerless local monerod keeps its own
+Tor-proven restart budget. It uses sudo for read-only access to Tor-owned state
 and identity keys.
 
 `./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion
-identity keys, backs up only Tor's `state`, and restarts Tor. It re-dials a running local Monero
-after the actual restart. If Compose left Monero Created behind unhealthy Tor, recovery starts
+identity keys, backs up Tor's `state` and the four directory-cache files above (an explicit
+list, never a glob), and restarts Tor. It re-dials a running local Monero
+and Tari after the actual restart. If Compose left Monero Created behind unhealthy Tor, recovery starts
 that existing node once Tor is healthy. The command verifies Tor health and Monero peers and
 records the attempt in the control audit; this connectivity result does not prove chain sync.
 Restore the remaining baseline services through the caller's normal workflow and independently
 verify baseline health and authenticated Monero and Tari sync before admitting new work.
 
-The backup remains for inspection. A persistent six-hour cooldown includes failed attempts.
+The backups (`state.backup.*`, `directory-cache.backup.*`) remain for inspection until an operator removes them. A persistent six-hour cooldown includes failed attempts.
 The command refuses an ambiguous or symlinked Tor mount, an active mutation, ordinary warnings,
 or an advancing chain. It never removes onion keys, wallets, configuration or chain data.
 If verification fails, the command reports failure and leaves the backup for diagnosis;
