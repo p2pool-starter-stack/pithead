@@ -15,15 +15,9 @@ name: OS rootfs scan
 # scheduled job fires from run history, never from this file; the one-command check is in
 # CONTRIBUTING.md § One integration branch.
 on:
+  # No path filter: the check must report on every PR so it can be required without hanging
+  # pending. The scope step below decides whether the PR touches anything the rootfs is built from.
   pull_request:
-    # Every PR targets `develop`, which carries os/, so the paths filter alone decides which PRs
-    # build and scan: a change under os/ or to `.config/trivyignore` (a new mute must be scanned for real —
-    # #1156 added four that were never applied to the appliance). Until 2026-09-06 PRs into the
-    # os/-less default branch were excluded here; that exclusion would now skip every PR.
-    paths:
-      - "os/**"
-      - ".github/workflows/os-rootfs.yml"
-      - ".config/trivyignore"
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC, after ci.yml's 05:00 image sweep
   workflow_dispatch:
@@ -46,7 +40,21 @@ jobs:
         with:
           # The triggering ref, checkout's default: a PR run scans the PR; the weekly sweep and a
           # manual dispatch run on `develop`, which carries `os/` (#1162).
+          fetch-depth: 2 # the PR merge commit and its base parent, for the scope step
           persist-credentials: false
+      - name: Decide whether this PR touches the rootfs inputs
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "build=true" >>"$GITHUB_OUTPUT"
+          elif git diff --name-only HEAD^1 HEAD | grep -Eq '^(os/|docker-compose\.yml$|VERSION$|pithead$|pithead-completion\.bash$|config\.(reference|core-keys|minimal)\.json$|cosign\.pub$|build/(monero/bitmonero\.conf\.template|tari/|tari-wallet/)|\.github/workflows/os-rootfs\.yml$|\.github/actions/(install-trivy|retry-trivy-scan)/|\.config/trivyignore$)'; then
+            echo "build=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "build=false" >>"$GITHUB_OUTPUT"
+            echo "No rootfs input changed in this PR; the rootfs build and scan were skipped." >>"$GITHUB_STEP_SUMMARY"
+          fi
       - name: Check the appliance tree exists
         # Only a PR may legitimately miss the tree: a branch cut before the appliance tree existed
         # can reach this workflow through the .config/trivyignore path filter. Every other trigger runs on
@@ -54,6 +62,7 @@ jobs:
         # asked — and a quiet skip would report a green weekly sweep of nothing, which is the exact
         # failure #1162 was filed for. Fail instead.
         id: tree
+        if: steps.scope.outputs.build == 'true'
         env:
           EVENT: ${{ github.event_name }}
         run: |
@@ -116,3 +125,7 @@ jobs:
         with:
           image-ref: pithead-os-rootfs:ci
           trivyignores: .config/trivyignore
+      - name: Name the cure for a failed scan
+        if: failure() && steps.tree.outputs.present == 'true'
+        run: |
+          echo "A fixable HIGH/CRITICAL CVE is in the appliance rootfs. Cure: rebake the apt layer by bumping APT_INDEX_STAMP in os/rootfs/Dockerfile, or bump the pinned digest or version that carries it." >>"$GITHUB_STEP_SUMMARY"

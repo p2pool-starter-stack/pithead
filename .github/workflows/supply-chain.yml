@@ -1,0 +1,57 @@
+name: Supply chain
+
+# Diff-only PR gates: they fail on what a PR introduces, never on the existing backlog.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime, unknown
+          license-check: false
+          comment-summary-in-pr: never
+
+  compose-image-scan:
+    name: Compose image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2 # the PR merge commit and its base parent
+          persist-credentials: false
+      - name: Detect a changed compose file
+        id: scope
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- docker-compose.yml; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            echo "docker-compose.yml is unchanged; no image to scan." >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+            git show HEAD^1:docker-compose.yml >"$RUNNER_TEMP/base-compose.yml"
+          fi
+      - uses: ./.github/actions/install-trivy
+        if: steps.scope.outputs.changed == 'true'
+        with:
+          version: v0.73.0 # THE live pin, read by `make lint-trivy-parity` — see ci.yml (#1290)
+      - name: Scan the changed third-party digests (Trivy)
+        if: steps.scope.outputs.changed == 'true'
+        run: bash scripts/ci/compose-image-scan.sh "$RUNNER_TEMP/base-compose.yml" docker-compose.yml .config/trivyignore
