@@ -153,6 +153,7 @@ stack_support_bundle() {
     } >"$tmp/bundle/host.txt" 2>&1
     doctor_json >"$tmp/bundle/doctor.json" 2>"$tmp/bundle/doctor.txt" || rc=$?
     [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle."
+    tor_diagnostics_snapshot >"$tmp/bundle/tor-diagnostics.json" 2>/dev/null || true
 
     # Masked config: the same jq walk the dashboard prefill uses; every set secret leaf becomes
     # {"__secret__": true}. Rendered into the scratch dir, never into the live control spool.

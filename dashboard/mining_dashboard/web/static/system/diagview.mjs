@@ -10,6 +10,7 @@
 // its fixed allowlist. Preact interpolation is the final output-escaping boundary in the browser.
 
 import { Component, html } from "../app/preact.mjs";
+import { TorSnapshotTable } from "./torsnapshot.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const DIAG_POLL_MS = 2000;
@@ -304,6 +305,14 @@ export class DiagnosticsPanel extends Component {
           : null
       }
       ${summary ? html`<p class="text-muted text-xs">${summary}</p>` : null}
+      ${
+        haveReport && healthResult.tor
+          ? html`<section>
+          <h3 class="card-subhead">Tor</h3>
+          <${TorSnapshotTable} snap=${healthResult.tor} />
+        </section>`
+          : null
+      }
       ${
         haveReport && !reportRows.length
           ? html`<p class="text-muted">The host returned a report with no checks in it.</p>`

@@ -210,3 +210,29 @@ tor_recovery_healthy_probe() {
         it_pass "healthy Tor recovery refusal omits unexpected-abort advice (#3262)"
     fi
 }
+
+tor_diagnostics_live_probe() {
+    local snap stalled started elapsed
+    local stall='timeout 12 nc -d -l 127.0.0.1 19051 >/dev/null 2>&1 & sleep 1; TOR_CONTROL_PORT=19051 /usr/local/bin/tor-diagnostics.sh'
+    snap=$(rx 'timeout 30 bash -c "source ./pithead && tor_diagnostics_snapshot"' 2>/dev/null) || snap=
+    printf '%s\n' "$snap" >"$OUT_DIR/tor-diagnostics.json"
+    if jq -e '.control == "ok" and (.version | type == "string") and .bootstrap.progress == 100 and (.consensus.age_sec | type == "number") and (.guards | length > 0) and (.circuits | length > 0)' <<<"$snap" >/dev/null 2>&1; then
+        it_pass "live Tor snapshot reports circuits, consensus age, guards, bootstrap and version (#4262)"
+    else
+        it_fail "live Tor snapshot reports circuits, consensus age, guards, bootstrap and version (#4262)" "${snap:-no snapshot}"
+    fi
+    if [ -n "$snap" ] && ! grep -qE '[A-Fa-f0-9]{40}|\.onion|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+' <<<"$snap"; then
+        it_pass "live Tor snapshot carries no relay identity, onion or address (#4262)"
+    else
+        it_fail "live Tor snapshot carries no relay identity, onion or address (#4262)" "identity-shaped value or no snapshot"
+    fi
+    started=$(tor_recovery_probe_now_s)
+    stalled=$(rx "timeout 30 docker exec tor sh -c $(quote_arg "$stall")" 2>&1) || stalled="${stalled:-rx failed}"
+    elapsed=$(($(tor_recovery_probe_now_s) - started))
+    printf 'elapsed_s=%s\n%s\n' "$elapsed" "$stalled" >"$OUT_DIR/tor-diagnostics-stall.txt"
+    if [ "$elapsed" -lt 15 ] && grep -qx 'control=unreachable' <<<"$stalled" && grep -qx 'consensus_source=file' <<<"$stalled"; then
+        it_pass "a stalled Tor control port is unreachable within the timeout and falls back to the consensus file (#4262)"
+    else
+        it_fail "a stalled Tor control port is unreachable within the timeout and falls back to the consensus file (#4262)" "elapsed ${elapsed}s"
+    fi
+}
