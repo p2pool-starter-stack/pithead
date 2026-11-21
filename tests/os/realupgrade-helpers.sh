@@ -93,13 +93,24 @@ realupgrade_seed_unit() {
 
 realupgrade_patch_root() {
     local root="$1" cert="$2" base="$3" manifest="$4" ring="$1/etc/rauc/keyring.pem" before after
-    [ -s "$ring" ] && [ -s "$cert" ] && [ -d "$root/etc/systemd/system" ] || return 1
+    [ -s "$ring" ] && [ -s "$cert" ] && [ -d "$root/etc/systemd/system" ] || {
+        printf 'realupgrade: patch refused: keyring %s cert %s unit-dir %s (keyring entry: %s)\n' \
+            "$([ -s "$ring" ] && echo ok || echo missing)" "$([ -s "$cert" ] && echo ok || echo missing)" \
+            "$([ -d "$root/etc/systemd/system" ] && echo ok || echo missing)" "$(ls -ld "$ring" 2>&1 | cut -c1-160)" >&2
+        return 1
+    }
     before=$(grep -c 'BEGIN CERTIFICATE' "$ring")
-    [ "$before" -ge 1 ] || return 1
+    [ "$before" -ge 1 ] || {
+        printf 'realupgrade: the release keyring holds no certificate\n' >&2
+        return 1
+    }
     [ -z "$(tail -c1 "$ring")" ] || printf '\n' >>"$ring"
     cat "$cert" >>"$ring"
     after=$(grep -c 'BEGIN CERTIFICATE' "$ring")
-    [ "$after" -gt "$before" ] || return 1
+    [ "$after" -gt "$before" ] || {
+        printf 'realupgrade: the keyring did not grow (%s -> %s)\n' "$before" "$after" >&2
+        return 1
+    }
     mkdir -p "$root/usr/local/sbin" "$root/etc/systemd/system/multi-user.target.wants"
     realupgrade_seed_script >"$root/usr/local/sbin/pithead-realupgrade-seed"
     chmod 0755 "$root/usr/local/sbin/pithead-realupgrade-seed"
@@ -132,8 +143,12 @@ realupgrade_attach_and_patch() {
     }
     if mount "${loop}p2" "$mnt"; then
         realupgrade_patch_root "$mnt" "$2" "$3" "$4" || rc=1
-        umount "$mnt" || rc=1
+        umount "$mnt" || {
+            printf 'realupgrade: umount of the patched root failed\n' >&2
+            rc=1
+        }
     else
+        printf 'realupgrade: mounting %sp2 failed\n' "$loop" >&2
         rc=1
     fi
     rmdir "$mnt"

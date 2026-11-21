@@ -12,9 +12,9 @@
 # ssh transport death. Both look identical in the remote output, which simply stops.
 osupdate_failure_evidence() {
     printf '     os-update rc=%s (124 = harness timeout kill, 255 = ssh transport death)\n' "$1"
-    printf '     ssh client stderr: %s\n' "$(tr -d '\r' <"$SSH_ERR" 2>/dev/null | tail -3 | tr '\n' ';')"
+    printf '     ssh client stderr: %s\n' "$(tr -d '\r' <"$SSH_ERR" 2>/dev/null | os_redact_addr | tail -3 | tr '\n' ';')"
     printf '     os-update output:\n'
-    printf '%s\n' "$2" | sed 's/^/     | /'
+    printf '%s\n' "$2" | os_redact_addr | sed 's/^/     | /'
     # The console NOW, not at phase end: later boots truncate $SERIAL, which is how every
     # prior occurrence left no console evidence. cleanup() will not clobber this copy.
     cp -f "$SERIAL" "$SERIAL.failed" 2>/dev/null || true
@@ -26,7 +26,7 @@ osupdate_failure_evidence() {
           echo '-- rauc unit --'; journalctl -u rauc --no-pager -n 8 2>/dev/null
           echo '-- memory --'; free -m | head -2
           grep -E 'MemAvailable|HugePages_Total|^Dirty|^Writeback:' /proc/meminfo" 2>/dev/null |
-        tr -d '\r' | sed 's/^/     · /'
+        tr -d '\r' | os_redact_addr | sed 's/^/     · /'
 }
 
 # backup_failure_evidence — the restore leg's source backup refused to complete (#1059).
@@ -57,9 +57,9 @@ backup_failure_evidence() {
           systemctl is-active pithead-firstboot.service pithead-boot.service 2>&1
           echo '-- wizard spool (the reason setup failed, if it did) --'
           cat /data/pithead/data/firstboot/error.txt 2>/dev/null; echo
-          cat /data/pithead/data/firstboot/last-attempt.json 2>/dev/null | head -c 400; echo
+          jq -c '{keys: keys, wallet_present: ((.monero.wallet_address // .config.monero.wallet_address // \"\") != \"\")}' /data/pithead/data/firstboot/last-attempt.json 2>/dev/null; echo
           echo '-- firstboot journal --'; journalctl -u pithead-firstboot --no-pager -n 30 2>/dev/null" |
-        tr -d '\r' | sed 's/^/     | /'
+        tr -d '\r' | os_redact_addr | sed 's/^/     | /'
     backup_watch_report
     tor_health_evidence # 2359
 }
@@ -196,7 +196,7 @@ backup_watch_report() {
     case "$seen" in
     *"VANISHED at "*)
         printf '     --- #1059: config.json went away during the backup ---\n'
-        printf '%s\n' "$seen" | sed 's/^/     | /'
+        printf '%s\n' "$seen" | os_redact_addr | sed 's/^/     | /'
         return 0
         ;;
     esac

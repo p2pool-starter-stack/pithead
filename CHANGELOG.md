@@ -38,6 +38,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- The dashboard's **Earnings — Expected vs Actual** card no longer compares this stack's expected
+  income with the whole wallet's payouts in silence. The payout side is now stated on the card as
+  wallet-wide (every stack or rig paying your configured address counts), a percent computed while
+  the payout history on record is shorter than the window reads as "at least N%", and a percent
+  withheld past 999% is explained in visible text — other stacks paying to the same address, or
+  this box idle or unrecorded for most of the window — instead of blaming an idle miner in a
+  tooltip (#4228).
 - The egress panel no longer calls Caddy firewalled. Caddy runs on the host network, so the
   container egress fence never covered it; its per-service posture now says so, like the
   host-networked dashboard's already did (#4197).
@@ -82,6 +89,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   lock, so its restart no longer overlaps an apply, an `up` or a control operation; a busy lock
   defers the render and the restart to the next tick, and when an apply lands in the same tick gap
   as an address change the apply's restart stands (#3987).
+
+### Security
+
+- The appliance rootfs builds Docker Compose and Cosign with Go 1.26.11, clearing CVE-2026-97054
+  in both binaries' standard library (#4265), and builds Compose v5.7.2, whose containerd v2.4.2
+  clears CVE-2026-95839 (#4291).
 
 ### Notes
 
