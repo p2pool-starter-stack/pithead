@@ -68,6 +68,7 @@ release-tor)
     done
     exit 1
     ;;
+has-monerod) systemctl cat monerod.service >/dev/null 2>&1 ;;
 stop-monerod) systemctl stop monerod.service ;;
 start-monerod) systemctl start monerod.service ;;
 *) exit 2 ;;

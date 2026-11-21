@@ -119,9 +119,16 @@ phase_provision_support_bundle_proof() {
         _sb_guest "$tag" wedge-tor || bad "support bundle proof: could not wedge Tor on the guest"
         _sb_round "Tor wedged" tor-wedged "$since" "$until" "$tag" "$canaries" "$dir" || true
         _sb_guest "$tag" release-tor || bad "support bundle proof: Tor did not recover after the wedge"
-        _sb_guest "$tag" stop-monerod || bad "support bundle proof: could not stop monerod on the guest"
-        _sb_round "monerod stopped" monerod-stopped "$since" "$until" "$tag" "$canaries" "$dir" || true
-        _sb_guest "$tag" start-monerod || bad "support bundle proof: monerod did not start again"
+        if _sb_guest "$tag" has-monerod; then
+            if _sb_guest "$tag" stop-monerod; then
+                _sb_round "monerod stopped" monerod-stopped "$since" "$until" "$tag" "$canaries" "$dir" || true
+            else
+                bad "support bundle proof: could not stop monerod on the guest ($(tail -c 300 "$SSH_ERR" 2>/dev/null | tr '\r\n' '  '))"
+            fi
+            _sb_guest "$tag" start-monerod || bad "support bundle proof: monerod did not start again"
+        else
+            info "support bundle proof: no local monerod on this guest; the monerod-stopped round runs in the local-node phases"
+        fi
     fi
     [ "$off" = 0 ] || _sb_guest "$tag" cleanup || bad "support bundle proof: cleanup of the seeded fixtures failed"
     if approval_restore_pending && sensitive_live_config >/dev/null; then
