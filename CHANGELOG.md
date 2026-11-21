@@ -20,6 +20,10 @@ buttons in Service diagnostics, and a Tor auto-heal that no longer stalls, stops
 when the node cannot make valid work so rigs fail over to their backup pool, labels where each rig
 mines, and clears the image-scan findings in the Go toolchain and containerd.
 
+It adds and removes no Pithead configuration keys. It changes these defaults: `monero.out_peers` from
+48 to 24 (#4078), `xvb.url` to the EU server with a saved NA host moved on the next apply (#4308), Tor's
+`SocksPort` binds the bridge address instead of the wildcard address (#4047), and Caddy moves to 2.11.9.
+
 ### Added
 
 - `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
@@ -49,8 +53,8 @@ mines, and clears the image-scan findings in the Go toolchain and containerd.
   and is audited (#4062).
 - The header shows **Mining paused here** and its reason (stratum closed, node out of sync, node syncing or
   P2Pool isolated) with the number of rigs on a backup pool, and the dashboard shows a **Monero node
-  offline** banner when monerod is red or Tor egress has been down past the 15-minute window. The
-  banner needs no Tor to display (#4073, #4079).
+  offline** banner when monerod is red or, with `tor.auto_heal` on, when Tor egress has been down past
+  the 15-minute window. The banner needs no Tor to display (#4073, #4079).
 - The Workers table says where each rig mines: "on backup pool", "not connected to this Pithead" or
   "mining location unknown". Rigs mining elsewhere no longer count in Workers Alive or Total Hashrate,
   a `DOWN` row explains itself, the rig's own hashrate has a separate "Rig telemetry 1m" column, and a
@@ -65,7 +69,9 @@ mines, and clears the image-scan findings in the Go toolchain and containerd.
   container down or unhealthy), the dashboard now stops `xmrig-proxy` after a debounce so rigs fail
   over to their backup pool, and readmits them only when every trigger has been clear for 60 seconds.
   Before, only an unreachable node stopped the proxy. The log names every trigger that held the proxy
-  and why readmission stayed blocked (#4046, #4165).
+  and why readmission stayed blocked (#4046, #4165). After a stack recreate the proxy can stay stopped
+  for minutes even though every service is healthy; the root-cause fix is planned for 2.0.5 (#4138,
+  #4160).
 - The Healthchecks.io ping runs in its own task every 60 seconds with a 30-second hard deadline and a
   fresh-circuit retry, so a stalled collector or a long apply no longer reads as a down server, and the
   Tor healer's first repair comes after 5 minutes of failure instead of 15 (#4135).
@@ -137,6 +143,8 @@ mines, and clears the image-scan findings in the Go toolchain and containerd.
   lock, so its restart no longer overlaps an apply, an `up` or a control operation; a busy lock
   defers the render and the restart to the next tick, and when an apply lands in the same tick gap
   as an address change the apply's restart stands (#3987).
+- The Service diagnostics card's log and health-check controls are styled as buttons instead of plain
+  text (#4109).
 
 ### Security
 
