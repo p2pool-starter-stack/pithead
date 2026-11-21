@@ -4,7 +4,7 @@
 
 DB="$SANDBOX/diybundle"
 mkdir -p "$DB/bin" "$DB/work"
-DB_ADDR="44nep4y8xiQPH96nSQgkChrvUXLrLb73HK5sSGa6hVt3thisdUwb9BtFKdw9iQ89GE7yWW8xvRqG6HZrAro79hPDvYSrqCG"
+DB_ADDR="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
 DB_ONION="abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
 
 cat >"$DB/bin/docker" <<'STUB'
