@@ -32,10 +32,10 @@ itself.
 
 The rootfs Dockerfile builds Docker Compose and Cosign from exact upstream
 commits, checks each commit against its release tag, and asserts the binaries'
-reported versions. The Go builder is pinned by digest at [1.26.11](https://go.dev/doc/devel/release#go1.26.0) to clear
+reported versions. The Go builder is pinned by digest at [1.27.4](https://go.dev/doc/devel/release#go1.27.0) to clear
 [CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
 and [CVE-2026-97054](https://github.com/p2pool-starter-stack/pithead/issues/4265)
-in both binaries' standard library.
+in both binaries' standard library. Cosign v3.1.4 declares `go 1.27`, so the builder is a Go 1.27 image.
 
 The rootfs install list names `apt`, `gzip`, `libpcre2-8-0`, `libsqlite3-0`, `perl-base` and
 `zlib1g` only to pull the distro's security build past the digest-pinned base
@@ -45,11 +45,13 @@ Compose builds at v5.7.2, whose containerd v2.4.2 clears
 [CVE-2026-95839](https://github.com/p2pool-starter-stack/pithead/issues/4291).
 `COMPOSE_GO_RAISES` raises x/net to v0.62.0 for
 [CVE-2026-78661](https://github.com/p2pool-starter-stack/pithead/issues/3931); Compose v5.7.2 already
-selects x/mod v0.41.0 and grpc v1.85.0. `COSIGN_GO_RAISES` raises x/mod to v0.41.0, x/net to
-v0.62.0 and grpc to v1.83.2. Cosign also raises klauspost/compress to v1.18.7
-for [CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585),
-and go-jose/v4 to v4.1.6 for
-[CVE-2026-116587](https://github.com/p2pool-starter-stack/pithead/issues/3761).
+selects x/mod v0.41.0 and grpc v1.85.0. `COSIGN_GO_RAISES` raises only x/net
+to v0.62.0: Cosign v3.1.4 already selects x/mod v0.41.0, grpc v1.84.0,
+klauspost/compress v1.20.1 (past the fix for
+[CVE-2026-63209](https://github.com/p2pool-starter-stack/pithead/issues/3585))
+and go-jose/v4 v4.1.6 (the fix for
+[CVE-2026-116587](https://github.com/p2pool-starter-stack/pithead/issues/3761)),
+and a raise below a selected version would downgrade it.
 Compose already selects compress v1.19.2 from its pinned upstream source.
 The build asserts the compiled Go version of both binaries and Cosign's
 compiled compress and go-jose versions before copying them into the rootfs.
