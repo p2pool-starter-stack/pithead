@@ -11,7 +11,6 @@ import time
 
 SETTLE_SEC = 120
 PERMANENT = ("blocks", "payouts", "disk_growth", "worker_config", "raffle_wins")
-# audit_events is pruned at 30 days on an ISO-text ts (#2393); rows it cannot date are never pruned.
 AUDIT_TS_SHAPE = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z"
 RETAINED = {
     "history": ("timestamp", 30 * 86400),

@@ -55,8 +55,6 @@ fault_tor_probe_egress() {
         it_fail "Tor probe fault starts with Tor carrying peer traffic" "monerod has no outgoing peers before the fault; Tor is not building circuits"
         return
     fi
-    # A saturated history legitimately qualifies for recovery once the heal has recorded a sustained
-    # outage (#3052), so name that precondition instead of misreading the accepted check as a defect.
     if rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_state_saturated \"\$dir/state\""' >/dev/null 2>&1; then
         it_fail "Tor circuit history is ordinary before the fault" "saturated signature already present (CircuitBuildAbandonedCount and TotalBuildTimes at 1000, no CircuitBuildTimeBin); earlier faults in this run left it so"
     else
