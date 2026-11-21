@@ -89,6 +89,26 @@ for flag in 0 unset; do
     )
 done
 
+echo "== A peerless Monero node fails the precondition before any fault is installed =="
+(
+    env_on_box() { echo true; }
+    has_compose_profile() { return 0; }
+    fault_rules_clear_all() { :; }
+    waits=""
+    wait_for() {
+        waits="$waits $1"
+        [ "$1" -eq 180 ] || return 1
+    }
+    rx() { echo "unexpected rx" >>"$SCRATCH/peerless-calls"; }
+    push_config() { echo "unexpected push_config" >>"$SCRATCH/peerless-calls"; }
+    fault_tor_probe_egress
+    check test "$waits" = " 180 600"
+    check test "$IT_FAIL" -eq 1
+    check test ! -e "$SCRATCH/peerless-calls"
+    check grep -Fq 'Tor probe fault starts with Tor carrying peer traffic' <<<"$IT_FAILED_NAMES"
+    printf 'peerless fixture: %s passed, %s failed\n' "$PASS" "$FAIL"
+    test "$FAIL" -eq 0
+)
 echo "== Post-apply witness waits for a reconnecting proxy and records the state when none qualifies =="
 for fixture in reconnects never; do
     (
