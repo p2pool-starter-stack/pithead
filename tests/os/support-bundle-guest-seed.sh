@@ -27,7 +27,7 @@ window)
         echo "seed check failed: journal line" >&2
         exit 11
     }
-    seen=$(journalctl -u tor.service --no-pager -o cat)
+    seen=$(podman logs tor 2>&1 || true)$(journalctl --no-pager -o cat -g "$login" || true)
     [[ "$seen" == *"$login"* ]] || {
         echo "seed check failed: container log line" >&2
         exit 12
