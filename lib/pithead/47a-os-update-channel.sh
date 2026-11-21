@@ -1,4 +1,4 @@
-os_release_tag_valid() { printf '%s' "${1:-}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; }
+os_release_tag_valid() { [[ "${1:-}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
 
 os_release_host_ok() {
     case "$1" in

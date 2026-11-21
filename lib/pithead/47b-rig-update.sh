@@ -14,17 +14,33 @@ rig_update_state_write() {
     if jq -n --arg st "$1" --arg fr "$2" --arg t "$3" --arg r "$4" --argjson ts "$(date +%s)" \
         '{state:$st,from:$fr,to:$t,ts:$ts} + (if $r == "" then {} else {reason:$r} end)' \
         >"$tmp" 2>/dev/null; then
-        mv -f "$tmp" "$f"
-    else
-        rm -f "$tmp"
+        mv -f "$tmp" "$f" && return 0
     fi
+    rm -f "$tmp"
+    return 1
+}
+
+rig_update_keeps_verdict() {
+    local f
+    f=$(rig_update_state_file)
+    [ -f "$f" ] || return 1
+    jq -e '.state == "pending" or .state == "rolled_back"' "$f" >/dev/null 2>&1
 }
 
 rig_update_refuse() {
-    if [ -z "$(rig_update_pending)" ]; then
-        rig_update_state_write refused "$(os_running_version)" "${2:-}" "$1"
+    if ! rig_update_keeps_verdict; then
+        rig_update_state_write refused "$(os_running_version)" "${2:-}" "$1" || true
     fi
     error "$1"
+}
+
+rig_update_wrap_fail() {
+    local ts msg="the Tor helper ended with status $1 — nothing was changed."
+    ts=$(jq -r '.ts // 0' "$(rig_update_state_file)" 2>/dev/null) || ts=0
+    if [ "${ts:-0}" -lt "$2" ] && ! rig_update_keeps_verdict; then
+        rig_update_state_write refused "$(os_running_version)" "" "$msg" || true
+    fi
+    printf 'rig-update: %s\n' "$msg" >&2
 }
 
 rig_update_gate() {
@@ -119,7 +135,7 @@ rig_update_cleanup() { find "$(os_update_staging_dir)" -maxdepth 1 -name 'pithea
 
 rig_update_download() {
     local final="$1" part="$2" size="$3" url="$4" socks="$5"
-    local attempt="${PITHEAD_OS_DL_ATTEMPT:-600}" tries=0 pid rc=0 bytes have http_code fail
+    local attempt="${PITHEAD_OS_DL_ATTEMPT:-600}" tries=0 pid rc=0 bytes have http_code fail dl_url resf
     while :; do
         tries=$((tries + 1))
         if [ "$tries" -gt "${PITHEAD_RIG_UPDATE_ATTEMPTS:-12}" ]; then
@@ -128,13 +144,24 @@ rig_update_download() {
         fi
         have=0
         if [ -f "$part" ]; then have=$(wc -c <"$part" | tr -d ' '); fi
+        dl_url="$url"
+        if [ -n "$socks" ]; then
+            resf=$(mktemp "${TMPDIR:-/tmp}/pithead-rigurl.XXXXXX") || resf=""
+            if [ -z "$resf" ] || ! os_channel_fetch head "$url" /dev/null "$CURL_CAP_OS_BUNDLE" "$socks" >"$resf"; then
+                RIG_REFUSE="the update bundle URL could not be resolved over Tor — ${OS_CHANNEL_HINT:-nothing was changed.}"
+                rm -f "$resf"
+                return 1
+            fi
+            dl_url=$(cat "$resf")
+            rm -f "$resf"
+        fi
         if [ -n "$socks" ]; then
             curl -fS -C - --max-time "$attempt" --max-filesize "$CURL_CAP_OS_BUNDLE" \
                 --proto "=https" --socks5-hostname "$socks" -o "$part" -w '%{http_code}\n' \
-                "$url" >"$part.code" 2>/dev/null &
+                "$dl_url" >"$part.code" 2>/dev/null &
         else
             curl -fS -C - --max-time "$attempt" --max-filesize "$CURL_CAP_OS_BUNDLE" \
-                -o "$part" -w '%{http_code}\n' "$url" >"$part.code" 2>/dev/null &
+                -o "$part" -w '%{http_code}\n' "$dl_url" >"$part.code" 2>/dev/null &
         fi
         pid=$!
         wait "$pid" && rc=0 || rc=$?
@@ -169,15 +196,14 @@ rig_update_download() {
 
 rig_update_check() {
     rig_update_gate
-    local rc=0 running
+    local rc=0 running start
+    start=$(date +%s)
     rig_update_tor_wrap check || rc=$?
     if [ "$rc" -ne 127 ]; then
         if [ "$rc" -eq 126 ]; then
             rig_update_refuse "this image carries no on-demand Tor client (pithead-tor) — rig-update needs it to reach the release channel."
         fi
-        if [ "$rc" -ne 0 ]; then
-            printf 'rig-update: the Tor helper ended with status %s — nothing was changed.\n' "$rc" >&2
-        fi
+        if [ "$rc" -ne 0 ]; then rig_update_wrap_fail "$rc" "$start"; fi
         return "$rc"
     fi
     rig_update_release "" || rig_update_refuse "$RIG_REFUSE"
@@ -195,7 +221,7 @@ rig_update_check() {
 
 rig_update_install() {
     rig_update_gate
-    local tag_wanted="" max_version="" arg rc=0 reason pending
+    local tag_wanted="" max_version="" arg rc=0 reason pending start
     while [ "$#" -gt 0 ]; do
         arg="$1"
         case "$arg" in
@@ -227,14 +253,13 @@ rig_update_install() {
     local -a wrap=(install)
     if [ -n "$tag_wanted" ]; then wrap+=(--tag "$tag_wanted"); fi
     if [ -n "$max_version" ]; then wrap+=(--max-version "$max_version"); fi
+    start=$(date +%s)
     rig_update_tor_wrap "${wrap[@]}" || rc=$?
     if [ "$rc" -ne 127 ]; then
         if [ "$rc" -eq 126 ]; then
             rig_update_refuse "this image carries no on-demand Tor client (pithead-tor) — rig-update needs it to reach the release channel."
         fi
-        if [ "$rc" -ne 0 ]; then
-            printf 'rig-update: the Tor helper ended with status %s — nothing was changed.\n' "$rc" >&2
-        fi
+        if [ "$rc" -ne 0 ]; then rig_update_wrap_fail "$rc" "$start"; fi
         return "$rc"
     fi
     rig_update_release "$tag_wanted" || rig_update_refuse "$RIG_REFUSE"
@@ -249,7 +274,7 @@ rig_update_install() {
     if [ -n "$reason" ]; then
         rig_update_refuse "$reason" "$target"
     fi
-    local osdir final part socks base url final_url have avail_kb need errf last_err=""
+    local osdir final part socks base url have avail_kb need errf last_err=""
     osdir=$(os_update_staging_dir)
     mkdir -p "$osdir"
     final="$osdir/pithead-os-$RIG_TAG.raucb"
@@ -266,17 +291,12 @@ rig_update_install() {
     fi
     if base=$(os_update_test_base); then
         url="$base/pithead-os-$RIG_TAG.raucb"
-        final_url="$url"
         socks=""
     else
         socks="127.0.0.1:${PITHEAD_TOR_SOCKS_PORT:-9253}"
         url="https://github.com/p2pool-starter-stack/pithead/releases/download/$RIG_TAG/pithead-os-$RIG_TAG.raucb"
-        final_url=$(os_channel_fetch head "$url" /dev/null "$CURL_CAP_OS_BUNDLE" "$socks") || final_url=""
-        if [ -z "$final_url" ]; then
-            rig_update_refuse "the update bundle URL could not be resolved over Tor — ${OS_CHANNEL_HINT:-nothing was changed.}" "$target"
-        fi
     fi
-    if ! rig_update_download "$final" "$part" "$RIG_SIZE" "$final_url" "$socks"; then
+    if ! rig_update_download "$final" "$part" "$RIG_SIZE" "$url" "$socks"; then
         rig_update_cleanup
         rig_update_refuse "$RIG_REFUSE" "$target"
     fi
@@ -288,6 +308,10 @@ rig_update_install() {
         rig_update_refuse "${reason:-the bundle could not be verified — nothing was installed.}" "$target"
     fi
     printf 'rig-update: %s verified against this machine release keyring — writing it to the spare slot\n' "$RIG_TAG"
+    if ! rig_update_state_write pending "$(os_running_version)" "$target" ""; then
+        rig_update_cleanup
+        error "the update status file could not be written — nothing was installed and the rig was not rebooted."
+    fi
     errf=$(mktemp "${TMPDIR:-/tmp}/pithead-riginstall.XXXXXX") || errf=""
     rc=0
     if [ -n "$errf" ]; then
@@ -299,9 +323,10 @@ rig_update_install() {
     fi
     if [ "$rc" -ne 0 ]; then
         rig_update_cleanup
-        rig_update_refuse "the verified bundle could not be installed${last_err:+ — rauc said: $last_err} — nothing was changed." "$target"
+        reason="the verified bundle could not be installed${last_err:+ — rauc said: $last_err} — nothing was changed."
+        rig_update_state_write refused "$(os_running_version)" "$target" "$reason" || true
+        error "$reason"
     fi
-    rig_update_state_write pending "$(os_running_version)" "$target" ""
     rig_update_cleanup
     sync
     printf 'rig-update: v%s is written to the spare slot — rebooting now to boot it\n' "$target"

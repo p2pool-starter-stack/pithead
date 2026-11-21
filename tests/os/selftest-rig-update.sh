@@ -52,10 +52,17 @@ echo "[curl] $*" >>"${CURL_LOG:-/dev/null}"
 url="${*: -1}"
 out=""
 prev=""
+head=0
 for a in "$@"; do
     [ "$prev" = "-o" ] && out="$a"
+    [ "$a" = "-I" ] && head=1
     prev="$a"
 done
+if [ "$head" = 1 ]; then
+    [ -n "${CH_HEAD_RC:-}" ] && exit "$CH_HEAD_RC"
+    printf '200'
+    exit 0
+fi
 case "$url" in
 *api.github.com* | *seam.invalid*releases-latest.json)
     if [ "${CH_STUB_RC:-0}" != "0" ]; then exit "$CH_STUB_RC"; fi
@@ -65,6 +72,12 @@ case "$url" in
 *pithead-os-*)
     have=0
     [ -f "$out" ] && have=$(wc -c <"$out" | tr -d ' ')
+    n=$(cat "${CH_RC28_FILE:-/dev/null}" 2>/dev/null || echo 0)
+    if [ "$n" -lt "${CH_RC28_N:-0}" ]; then
+        echo $((n + 1)) >"$CH_RC28_FILE"
+        head -c 100 "${CH_BUNDLE:?}" >>"$out"
+        exit 28
+    fi
     if [ "${CH_TRUNCATE:-0}" = 1 ]; then
         head -c 600 "${CH_BUNDLE:?}" >>"$out"
     else
@@ -118,6 +131,7 @@ EOF
 cat >"$SB/bin/pithead-tor" <<'EOF'
 #!/usr/bin/env bash
 echo "tor $*" >>"${TOR_LOG:-/dev/null}"
+[ -n "${TOR_RC:-}" ] && exit "$TOR_RC"
 exec "$@"
 EOF
 cat >"$SB/reboot-stub" <<'EOF'
@@ -144,7 +158,7 @@ rig() {
     done
     (cd "$SB" && PATH="$SB/bin:$PATH" CURL_LOG="$SB/curl.log" CH_API_RESPONSE="$SB/api.json" \
         CH_BUNDLE="$SB/fixture.raucb" RAUC_LOG="$SB/rauc.log" TOR_LOG="$SB/tor.log" \
-        REBOOT_LOG="$tmp/reboot.log" PITHEAD_APPLIANCE=1 PITHEAD_OS_UPDATE_DIR="$STAGE" \
+        REBOOT_LOG="$tmp/reboot.log" CH_RC28_FILE="$SB/rc28.n" PITHEAD_APPLIANCE=1 PITHEAD_OS_UPDATE_DIR="$STAGE" \
         PITHEAD_RIG_UPDATE_STATE="$SB/rig-update.json" PITHEAD_RIG_UPDATE_ATTEMPTS=3 \
         PITHEAD_VARIANT_FILE="$SB/variant-release" PITHEAD_RAUC_SYSTEM_CONF="$SB/system.conf" \
         PITHEAD_DATA_FLOOR_FILE="$SB/floor" PITHEAD_REBOOT_CMD="$SB/reboot-stub" \
@@ -225,6 +239,59 @@ out=$(rig RAUC_INSTALL_FAIL=1 install)
 check_has "an install failure is refused with a reason" "$out" "could not be installed"
 check "the failed install recorded no pending update" "$(state .state)" "refused"
 check "the failed install kept nothing staged" "$(staged)" "0"
+
+rm -f "$SB/os-update-test-base" "$SB/rig-update.json"
+
+out=$(rig TOR_RC=69 check)
+check_has "a failing Tor helper is reported" "$out" "Tor helper ended with status 69"
+check "a Tor helper failure is recorded as a refusal" "$(state .state)" "refused"
+check_has "the status file names the Tor helper status" "$(state .reason)" "status 69"
+
+out=$(rig CH_API_RESPONSE="$SB/api-evil-tag.json" check)
+check_has "the inner refusal is kept over the wrapper's" "$(state .reason)" "no usable release tag"
+
+jq -n '{state:"pending",from:"1.3.1",to:"9.9.9",ts:1}' >"$SB/rig-update.json"
+out=$(rig TOR_RC=69 check)
+check "a Tor helper failure keeps a pending record" "$(state .state)" "pending"
+jq -n '{state:"rolled_back",from:"2.0.0",to:"9.9.9",ts:1,reason:"x"}' >"$SB/rig-update.json"
+out=$(rig CH_API_RESPONSE="$SB/api-evil-tag.json" check)
+check "a refusal keeps a rolled_back verdict" "$(state .state)" "rolled_back"
+rm -f "$SB/rig-update.json"
+
+: >"$SB/curl.log"
+out=$(rig CH_HEAD_RC=7 install)
+check_has "a failed bundle URL resolve keeps its cause" "$out" "curl exit 7"
+check "the failed resolve staged nothing" "$(staged)" "0"
+
+: >"$SB/curl.log"
+rm -f "$SB/rc28.n"
+out=$(rig CH_RC28_N=1 install)
+dl=$(grep -c 'releases/download' "$SB/curl.log")
+check "an rc 28 download resumes and re-resolves the URL every attempt" "$dl" "4"
+check "every bundle request is https-only through the Tor SOCKS port"     "$(grep 'releases/download' "$SB/curl.log" | grep -c -- '--proto =https --socks5-hostname 127.0.0.1:9253')" "4"
+check "the resumed download asked curl to continue" "$(grep 'releases/download' "$SB/curl.log" | grep -c -- ' -C - ')" "2"
+check "the resumed install writes the pending record" "$(state .state)" "pending"
+check "the resumed install reboots" "$(wc -l <"$tmp/reboot.log" | tr -d ' ')" "1"
+rm -f "$SB/rig-update.json"
+
+printf 'http://seam.invalid/os' >"$SB/os-update-test-base"
+rm -f "$SB/rc28.n"
+out=$(rig CH_RC28_N=99 install)
+check_has "an exhausted resume loop is refused" "$out" "did not finish in 3 attempts"
+check "the exhausted download staged nothing" "$(staged)" "0"
+check "no reboot after the exhausted download" "$(wc -l <"$tmp/reboot.log" | tr -d ' ')" "1"
+
+reboots=$(wc -l <"$tmp/reboot.log" | tr -d ' ')
+rauc_before=$(grep -c 'rauc install' "$SB/rauc.log")
+out=$(rig PITHEAD_RIG_UPDATE_STATE="$SB/nodir/rig-update.json" install)
+check_has "an unwritable status file aborts the install" "$out" "status file could not be written"
+check "no reboot without a pending record" "$(wc -l <"$tmp/reboot.log" | tr -d ' ')" "$reboots"
+check "no slot write without a pending record" "$(grep -c 'rauc install' "$SB/rauc.log")" "$rauc_before"
+
+for tag in $'v9.9.9\n../../x' 'v9.9.9 ' 'v9.9'; do
+    out=$(rig install --tag "$tag")
+    check_has "the tag $(printf '%q' "$tag") is refused" "$out" "vX.Y.Z form"
+done
 
 rauc_n=$(grep -c "rauc install $STAGE/pithead-os-v9.9.9.raucb" "$SB/rauc.log")
 out=$(rig install)

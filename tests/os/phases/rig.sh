@@ -2,7 +2,7 @@
 # shellcheck source=tests/os/lib/redact-addr.sh
 source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
-_rig_mining_up() {
+_rig_mining_up() { # <tries>, 10 s apart — 0 once the xmrig unit is active with its process up
     local n=0
     while [ "$n" -lt "$1" ]; do
         _ssh "systemctl is-active --quiet xmrig && pgrep -x xmrig >/dev/null" && return 0
@@ -428,7 +428,8 @@ phase_rig() {
         return
     }
     marker=$(_ssh cat /etc/pithead-test-marker | tr -d '\r\n')
-    [ "$marker" = "v2" ] && ok "COMMIT: the update persists on the rig across reboot" || bad "expected v2 on the rig after commit, got '$marker'"
+    [ "$marker" = "v2" ] && ok "COMMIT: the update persists on the rig across reboot" ||
+        bad "expected v2 on the rig after commit, got '$marker'"
     rig_update_leg
 
     # #2063: no accepted share has ever been proven on the appliance channel — this rig's own pool
