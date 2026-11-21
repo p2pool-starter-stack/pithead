@@ -384,3 +384,29 @@ test("saturated Tor history is a failing Tor diagnostic with the operator recove
   assert.match(out, /pithead tor-recover check/);
   assert.match(out, /pithead tor-recover apply/);
 });
+
+test("the Service diagnostics card shows the Tor snapshot beside the health report (#4262)", () => {
+  const tor = {
+    control: "ok",
+    version: "0.4.9.17",
+    bootstrap: { progress: 100, tag: "done", changed_at: 1795089662 },
+    circuits: [{ state: "LAUNCHED", purpose: "HS_SERVICE_HSDIR", count: 12 }],
+    guards: { up: 2 },
+    consensus: { source: "control", valid_after: 1795089600, valid_until: 1795100400, age_sec: 3600 },
+  };
+  const out = renderToString(
+    inst({ enabled: true }, { healthPhase: "done", healthResult: { doctor: { checks: [] }, tor } }).render(),
+  );
+  assert.match(out, /card-subhead">Tor</);
+  assert.match(out, /LAUNCHED HS_SERVICE_HSDIR 12/);
+  assert.match(out, /valid until 2026-11-19T15:00:00Z/);
+  assert.match(out, /0\.4\.9\.17/);
+  const none = renderToString(
+    inst({ enabled: true }, { healthPhase: "done", healthResult: { doctor: { checks: [] } } }).render(),
+  );
+  assert.doesNotMatch(none, /card-subhead">Tor</);
+  const down = renderToString(
+    inst({ enabled: true }, { healthPhase: "done", healthResult: { doctor: { checks: [] }, tor: { control: "unreachable" } } }).render(),
+  );
+  assert.match(down, /status-bad">unreachable/);
+});

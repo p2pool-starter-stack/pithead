@@ -93,7 +93,7 @@ Settings also has a **Tor diagnostics** group
 host diagnostics once and shows the read-only Tor snapshot it returns. The snapshot tells the Tor
 failure classes apart: a flood of pending circuits, a stale consensus, a stalled bootstrap, bad
 guards or a short network dip. Like the LAN check, it needs an active session on a host whose
-control channel is on.
+control channel is on. The same table appears under **Tor** in the [Service diagnostics](#service-diagnostics) card after **Run health check**, because that check returns the same snapshot.
 
 | Field | What it shows |
 | --- | --- |
