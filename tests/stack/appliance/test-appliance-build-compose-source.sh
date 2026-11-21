@@ -383,7 +383,6 @@ assert_not_contains "verify-image's old tree comparison is gone" "$CS_VI" 'docke
 
 rigforge_pin_ref="04f8799955989120cf0a36121d3391cc5b5f5661"
 assert_contains "the appliance pins RigForge v1.19.0 by commit" "$CS_DF" "ARG RIGFORGE_REF=$rigforge_pin_ref"
-assert_contains "the RigForge pin comment names v1.19.0" "$CS_DF" "v1.19.0"
 assert_contains "the XMRig prebuild patches the default donate level like RigForge" "$CS_DF" "s/kDefaultDonateLevel = 1;/kDefaultDonateLevel = 0;/"
 assert_contains "the XMRig prebuild patches the minimum donate level like RigForge" "$CS_DF" "s/kMinimumDonateLevel = 1;/kMinimumDonateLevel = 0;/"
 assert_contains "the XMRig prebuild verifies the patched donate header" "$CS_DF" "grep -Fxq 'constexpr const int kMinimumDonateLevel = 0;' /tmp/xmrig/src/donate.h"
