@@ -189,7 +189,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|p2pool-heal|all]\n'
+        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|realupgrade|realupgrade-main|realupgrade-negctl|stack|tor-heal|p2pool-heal|all]\n'
         sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
@@ -240,6 +240,8 @@ source "$SCRIPT_DIR/phases/reset.sh" || exit $?
 source "$SCRIPT_DIR/phases/image-upgrade.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
+# shellcheck source=tests/os/phases/realupgrade.sh
+source "$SCRIPT_DIR/phases/realupgrade.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
 source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 # shellcheck source=tests/os/phases/tor-heal.sh
@@ -282,6 +284,9 @@ fault) _run_phase fault phase_fault ;;
 reset) _run_phase reset phase_reset ;;
 image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
+realupgrade) _run_phase realupgrade phase_realupgrade ;;
+realupgrade-main) _run_phase realupgrade-main phase_realupgrade_main ;;
+realupgrade-negctl) _run_phase realupgrade-negctl phase_realupgrade_negctl ;;
 stack) _run_phase stack phase_stack ;;
 tor-heal) _run_phase tor-heal phase_tor_heal ;;
 p2pool-heal) _run_phase p2pool-heal phase_p2pool_heal ;;
