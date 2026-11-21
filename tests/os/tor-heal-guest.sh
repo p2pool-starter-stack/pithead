@@ -18,6 +18,7 @@ identities() {
 }
 identities >"$work/identities"
 [ -s "$work/identities" ]
+scrub() { sed -E 's/(--wallet[ =]|--merge-mine[ =][^ ]+ )[^ ]+/\1[redacted-address]/g; s/[1-9A-HJ-NP-Za-km-z]{85,}/[redacted-address]/g'; }
 restore() {
     local rc=$? restored=0 logfile
     trap - EXIT ERR
@@ -36,7 +37,7 @@ restore() {
         for logfile in "$work"/*.log; do
             [ -f "$logfile" ] || continue
             printf 'Guest command log: %s\n' "${logfile##*/}"
-            tail -c 4096 "$logfile" || true
+            scrub <"$logfile" | tail -c 4096 || true
         done
     fi
     printf 'Guest restoration exit: %s; original exit: %s\n' "$restored" "$rc"

@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Sourced by appliance-xvb-routing-leg.sh; kept apart to hold that file under its budget.
 
 # #2733 (jobs 1211, 1863, 1920, 2183): the restore died to a ConnectTimeout / "No route to host" on
@@ -27,7 +29,7 @@ _xvb_diag_field() { # <text-when-empty> <lines> <cmd...>
     shift 2
     out="$("$@")"
     rc=$?
-    out="$(printf '%s' "$out" | tr -d '\r' | tail -n "$lines" | tr '\n' ';')"
+    out="$(printf '%s' "$out" | tr -d '\r' | os_redact_addr | tail -n "$lines" | tr '\n' ';')"
     if [ "$rc" -ne 0 ]; then
         printf 'collect-failed rc=%s %s %s' "$rc" "$out" "$(_xvb_guest_stderr)"
     else
