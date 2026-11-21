@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Observe a mainnet node's advertised RPC port through a bounded P2P handshake.
 
-Wire definitions: Monero v0.18.5.1, p2p_protocol_defs.h, CORE_SYNC_DATA,
+Wire definitions: Monero v0.18.5.4, p2p_protocol_defs.h, CORE_SYNC_DATA,
 portable_storage_base.h and levin_base.h. No RPC login or peer list is printed.
 """
 

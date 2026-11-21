@@ -276,7 +276,7 @@ full 3072 pages on a supported machine, 2048 below 15 GiB, zero below 7 GiB wher
 cannot run regardless. Under the 1 GiB cgroup cap of the #78 spike, a dataset falling out of
 hugetlbfs OOM-looped p2pool; the 4 GiB cap from #2562 holds the ~2.5 GiB fallback instead, and
 the machine pays in ordinary RAM rather than a restart loop. Only p2pool builds a dataset.
-monerod v0.18.5.1 allocates one only when `MONERO_RANDOMX_FULL_MEM` is set or it mines, and the
+monerod v0.18.5.4 allocates one only when `MONERO_RANDOMX_FULL_MEM` is set or it mines, and the
 stack does neither (#2681).
 
 The reduced pool's 2048 pages are MEASURED (#2685), not derived: a tier4-e2e run samples each
