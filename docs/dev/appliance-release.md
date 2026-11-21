@@ -571,8 +571,8 @@ channels share the final cut commit, one version and one GitHub Release.
    cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
    submit the eight bench-ci `tier4-kvm` jobs on this exact SHA from
    [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not):
-   the boot group, the rig group as its four splits, the provision job against the seeded baseline
-   and the crossupdate job from the previous release. Record every job ID in the release issue.
+   the boot group, the rig group as its four splits, the provision job against the seeded baseline,
+   the crossupdate job from the previous release and the realupgrade job. Record every job ID in the release issue.
    Follow the same section for wallet preparation and the final status-gated e2e leg. An e2e failure must not cancel any KVM
    job. Stage 1 requires a green `bench-ci/tier4` status on this SHA. `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the

@@ -47,6 +47,7 @@ refuses "an unreadable time fails" realupgrade_within_budget "" 1350
 
 check "default legs are valid" realupgrade_legs_valid "$REALUPGRADE_LEGS_DEFAULT"
 check "negative control alone is selectable" realupgrade_legs_valid negctl
+check "the head-slot negative control is selectable alone" realupgrade_legs_valid negctlhead
 check "upgrade alone is selectable" realupgrade_legs_valid upgrade
 check "upgrade plus soak is selectable" realupgrade_legs_valid upgrade,soak
 refuses "soak without its upgrade is refused" realupgrade_legs_valid soak
@@ -122,7 +123,7 @@ check "run.sh dispatches the phase" grep -Fq 'realupgrade) _run_phase realupgrad
 check "run.sh dispatches the split phases to their own legs" bash -c 'grep -Fq "realupgrade-main) _run_phase realupgrade-main phase_realupgrade_main ;;" "$1" && grep -Fq "realupgrade-negctl) _run_phase realupgrade-negctl phase_realupgrade_negctl ;;" "$2"' _ "$RUN" "$RUN"
 refuses "no realupgrade phase is in the all arm" bash -c 'sed -n "/^all)/,/;;/p" "$1" | grep -q realupgrade' _ "$RUN"
 check "the main split runs upgrade and soak only" grep -Fq 'phase_realupgrade_main() { _ru_run upgrade,soak; }' "$HERE/phases/realupgrade.sh"
-check "the negctl split runs the negative control only" grep -Fq 'phase_realupgrade_negctl() { _ru_run negctl; }' "$HERE/phases/realupgrade.sh"
+check "the negctl split runs the negative control only" grep -Fq 'phase_realupgrade_negctl() { _ru_run negctl,negctlhead; }' "$HERE/phases/realupgrade.sh"
 
 [ "$FAILS" -eq 0 ] || {
     printf '%d realupgrade selftest check(s) failed\n' "$FAILS" >&2

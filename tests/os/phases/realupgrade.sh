@@ -6,6 +6,8 @@ OS_RESERVED_NODE_CONSUMER=0
 source "$(dirname "${BASH_SOURCE[0]}")/../realupgrade-helpers.sh"
 # shellcheck source=tests/os/realupgrade-legs.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../realupgrade-legs.sh"
+# shellcheck source=tests/os/realupgrade-head-leg.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../realupgrade-head-leg.sh"
 
 RU_PORT=8932
 RU_HOST_NAME="realupgrade-box"
@@ -256,7 +258,7 @@ _ru_order_reboot() {
 }
 
 _ru_upgrade_leg() {
-    local os_json t_commit budget deadline
+    local os_json t_commit budget deadline verifying_samples=0
     realupgrade_stamp upgrade start
     _ru_install_candidate upgrade || {
         _ru_save_failure upgrade
@@ -275,10 +277,14 @@ _ru_upgrade_leg() {
     os_json=""
     while [ "$(date +%s)" -lt "$deadline" ]; do
         os_json=$(_ru_os)
-        [ -z "$os_json" ] || realupgrade_no_offer_while_verifying "$os_json" || bad "upgrade: a reboot was offered while the new slot was verifying"
+        if [ -n "$os_json" ]; then
+            realupgrade_no_offer_while_verifying "$os_json" || bad "upgrade: a reboot was offered while the new slot was verifying"
+            [ "$(printf '%s' "$os_json" | jq -r '.step // ""')" != verifying ] || verifying_samples=$((verifying_samples + 1))
+        fi
         realupgrade_verdict_updated "$os_json" && break
-        sleep 15
+        sleep 3
     done
+    info "upgrade: $verifying_samples sample(s) read the verifying step while the new slot was uncommitted"
     t_commit=$(($(date +%s) - RU_REBOOT_T0))
     if realupgrade_verdict_updated "$os_json"; then
         ok "upgrade: outcome=updated and the slot committed (no rolled_back)"
@@ -312,7 +318,7 @@ _ru_run() {
     local legs="$1"
     info "phase: realupgrade, legs $legs (a published appliance image aged, then upgraded through the dashboard to the candidate built from HEAD)"
     realupgrade_legs_valid "$legs" || {
-        bad "realupgrade legs '$legs' is not a comma list of upgrade, soak, negctl (soak needs upgrade)"
+        bad "realupgrade legs '$legs' is not a comma list of upgrade, soak, negctl, negctlhead (soak needs upgrade)"
         return
     }
     _ru_prepare || {
@@ -327,6 +333,9 @@ _ru_run() {
     if realupgrade_leg_enabled negctl "$legs"; then
         _ru_leg_run _ru_negctl_leg
     fi
+    if realupgrade_leg_enabled negctlhead "$legs"; then
+        _ru_leg_run _ru_negctl_head_leg
+    fi
     _ru_cleanup
 }
 
@@ -337,4 +346,4 @@ _ru_upgrade_and_soak() {
 
 phase_realupgrade() { _ru_run "${PITHEAD_REALUPGRADE_LEGS:-$REALUPGRADE_LEGS_DEFAULT}"; }
 phase_realupgrade_main() { _ru_run upgrade,soak; }
-phase_realupgrade_negctl() { _ru_run negctl; }
+phase_realupgrade_negctl() { _ru_run negctl,negctlhead; }

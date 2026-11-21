@@ -4,7 +4,7 @@
 REALUPGRADE_REPO="p2pool-starter-stack/pithead"
 REALUPGRADE_BOOT_GATE_S=900
 REALUPGRADE_SOAK_S=600
-REALUPGRADE_LEGS_DEFAULT="upgrade,soak,negctl"
+REALUPGRADE_LEGS_DEFAULT="upgrade,soak,negctl,negctlhead"
 REALUPGRADE_ROLLBACK_CAUSE="interrupted before the update was verified"
 REALUPGRADE_CAUSE_FIX_VERSION=2.0.4
 REALUPGRADE_SEED_UNIT="pithead-realupgrade-seed.service"
@@ -36,7 +36,7 @@ realupgrade_legs_valid() {
     [ -n "$list" ] || return 1
     local IFS=,
     for leg in $list; do
-        case "$leg" in upgrade | soak | negctl) seen="$seen,$leg" ;; *) return 1 ;; esac
+        case "$leg" in upgrade | soak | negctl | negctlhead) seen="$seen,$leg" ;; *) return 1 ;; esac
     done
     case "$seen" in *,soak*) case "$seen" in *,upgrade*) ;; *) return 1 ;; esac ;; esac
 }
