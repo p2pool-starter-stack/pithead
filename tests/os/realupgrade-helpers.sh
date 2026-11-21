@@ -117,10 +117,11 @@ realupgrade_patch_root() {
     realupgrade_seed_unit >"$root/etc/systemd/system/$REALUPGRADE_SEED_UNIT"
     ln -sf "../$REALUPGRADE_SEED_UNIT" "$root/etc/systemd/system/multi-user.target.wants/$REALUPGRADE_SEED_UNIT"
     printf '%s' "$base" >"$root/etc/pithead-realupgrade-base"
+    printf 'debug\n' >"$root/etc/pithead-variant"
     jq -nc --argjson before "$before" --argjson after "$after" '{
         planted: ["/etc/rauc/keyring.pem", "/usr/local/sbin/pithead-realupgrade-seed",
             "/etc/systemd/system/'"$REALUPGRADE_SEED_UNIT"'",
-            "/etc/systemd/system/multi-user.target.wants/'"$REALUPGRADE_SEED_UNIT"'", "/etc/pithead-realupgrade-base"],
+            "/etc/systemd/system/multi-user.target.wants/'"$REALUPGRADE_SEED_UNIT"'", "/etc/pithead-realupgrade-base", "/etc/pithead-variant"],
         keyring_certs_before: $before, keyring_certs_after: $after}' >"$manifest"
 }
 

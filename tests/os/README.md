@@ -452,7 +452,7 @@ the configured test registry fail before the image build. Release builds do not 
   asset (the release publishes no signature for the image) and records the digest. A release image
   trusts only its baked RAUC keyring, so a scratch copy in the job workspace is patched offline
   with `losetup -Pf`: the dev signing certificate is appended to `/etc/rauc/keyring.pem` beside the
-  release certificate, and a oneshot unit seeds the update-seam base URL and the chain-data
+  release certificate, `/etc/pithead-variant` is set to `debug` (the dev-chain candidate is a debug build, and the dashboard refuses a variant change), and a oneshot unit seeds the update-seam base URL and the chain-data
   sentinels once the stack checkout exists on `/data`. The planted paths and the certificate counts before and after go
   into the evidence file; the keyring is the only trust anchor the update path checks (it has no
   separate cosign key). If the copy will not mount or boot, the phase fails and reports; it never
