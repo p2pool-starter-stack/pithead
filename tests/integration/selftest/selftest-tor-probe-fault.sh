@@ -310,3 +310,46 @@ check grep -q '^kernel-lock: pid=16 mode=WRITE$' <<<"$out"
 check test "$(grep -c '^kernel-lock: pid=17 ' <<<"$out")" -eq 0
 printf 'snapshot fixture: %s passed, %s failed\n' "$PASS" "$FAIL"
 test "$FAIL" -eq 0
+
+echo "== live Tor diagnostics rows read the snapshot and the stalled control port =="
+for fixture in healthy leak slow; do
+    (
+        OUT_DIR="$SCRATCH/diag-$fixture"
+        mkdir -p "$OUT_DIR"
+        IT_FAIL=0 IT_PASS=0
+        echo 100 >"$OUT_DIR/clock"
+        tor_recovery_probe_now_s() { cat "$OUT_DIR/clock"; }
+        rx() {
+            case "$1" in
+            *tor_diagnostics_snapshot*)
+                if [ "$fixture" = leak ]; then
+                    echo '{"control":"ok","version":"0.4.9.17","bootstrap":{"progress":100},"consensus":{"age_sec":60},"guards":{"up":1},"circuits":[{"state":"BUILT","purpose":"GENERAL","count":1,"path":"$ABCDEF0123456789ABCDEF0123456789ABCDEF01"}]}'
+                else
+                    echo '{"control":"ok","version":"0.4.9.17","bootstrap":{"progress":100},"consensus":{"age_sec":60},"guards":{"up":1},"circuits":[{"state":"BUILT","purpose":"GENERAL","count":1}]}'
+                fi
+                ;;
+            *TOR_CONTROL_PORT=19051*)
+                [ "$fixture" != slow ] || echo 130 >"$OUT_DIR/clock"
+                printf 'control=unreachable\nconsensus_source=file\nconsensus_file_mtime=1\n'
+                ;;
+            *) return 1 ;;
+            esac
+        }
+        tor_diagnostics_live_probe >/dev/null
+        case "$fixture" in
+        healthy)
+            check test "$IT_PASS" -eq 3
+            check test "$IT_FAIL" -eq 0
+            ;;
+        leak)
+            check test "$IT_PASS" -eq 2
+            check test "$IT_FAIL" -eq 1
+            ;;
+        slow)
+            check test "$IT_PASS" -eq 2
+            check test "$IT_FAIL" -eq 1
+            ;;
+        esac
+        test "$FAIL" -eq 0
+    )
+done

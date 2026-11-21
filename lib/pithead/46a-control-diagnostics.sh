@@ -59,7 +59,7 @@ readonly PITHEAD_DIAG_MAX_BYTES=65536
 control_diag_doctor() { # <id> <actor> <control-dir>
     local id="$1" actor="$2" cdir="$3"
     local results="$cdir/results" auditf="$cdir/audit/control.log"
-    local self="${PITHEAD_SELF:-$0}" out rc=0 status
+    local self="${PITHEAD_SELF:-$0}" out rc=0 status tor
     control_audit "$auditf" "$id" "$actor" "diag-doctor" "started"
     # The guard is load-bearing. doctor EXITS NONZERO on an unhealthy box — by design, and that
     # report is exactly what this request exists to deliver. Capturing it bare let that exit kill
@@ -78,7 +78,8 @@ control_diag_doctor() { # <id> <actor> <control-dir>
         return 0
     fi
     [ "$rc" -eq 0 ] && status="applied" || status="failed"
-    control_write_result "$results" "$id" "$(jq -n --arg s "$status" --argjson d "$out" '{status:$s,doctor:$d,ts:(now|floor)}')"
+    tor=$(tor_diagnostics_snapshot) || tor=null
+    control_write_result "$results" "$id" "$(jq -n --arg s "$status" --argjson d "$out" --argjson t "${tor:-null}" '{status:$s,doctor:$d,tor:$t,ts:(now|floor)}')"
     control_audit "$auditf" "$id" "$actor" "diag-doctor" "$status"
 }
 
