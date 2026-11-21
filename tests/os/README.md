@@ -465,14 +465,14 @@ the configured test registry fail before the image build. Release builds do not 
   soak with one extra reboot then checks doctor, failed units, slot state, config, login, wallets,
   sentinels, TLS fingerprint and SANs, mDNS and the stratum client. The negative control hard-resets
   the uncommitted slot until RAUC falls back and requires a `rolled_back` verdict and a still-saveable configuration. From v2.0.4 (the first build carrying the #3909/#3910 fixes) the verdict must also be flagged `interrupted` with a blocking list naming
-  "interrupted before the update was verified"; on older N-2 images the verdict the old code writes is logged as the red evidence and the cause row is not applicable. The typed `REBOOT`
+  "interrupted before the update was verified"; on older N-2 images the verdict the old code writes is logged (that run is the red evidence for the cause row, which is not asserted) and the leg passes on `rolled_back` alone. The stratum row asserts only that the port accepted a connection after the extra reboot; accepted shares need a synced chain and are not covered. The typed `REBOOT`
   confirmation is a dashboard UI gate with no API surface, so the phase posts the reboot action and
   the Playwright suite owns the typing. Every leg logs a timestamped `realupgrade-leg` line.
   `--phase realupgrade-main` runs the upgrade and soak legs and `--phase realupgrade-negctl` the
   negative control, each on its own fresh guest, so the 240-minute cap can be met by two jobs;
   `PITHEAD_REALUPGRADE_LEGS` (comma list of `upgrade`, `soak`, `negctl`) selects legs for a local run.
   On failure the job keeps the pithead-boot journal, verdict JSON, grubenv and doctor output in
-  `pithead-os-serial.log.realupgrade-<leg>`. Guest-less logic is covered by
+  `pithead-os-serial.log.realupgrade-<leg function>` (for example `realupgrade-_ru_upgrade_and_soak`). Guest-less logic is covered by
   `tests/os/selftest-realupgrade.sh`.
 - **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
   provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
