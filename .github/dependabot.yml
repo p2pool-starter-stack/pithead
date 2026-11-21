@@ -1,5 +1,6 @@
 # Dependabot (Wave 7 tooling, #282): automated dependency + CVE update PRs across every
-# supply-chain surface. Grouped + weekly to keep PR volume sane.
+# supply-chain surface. Grouped + weekly to keep PR volume sane; each `*-security` group
+# (applies-to: security-updates) sends a security fix as its own PR at once.
 #
 # Dependabot reads this file from the DEFAULT branch (`develop`) only and resolves every `directory:`
 # there; one entry per surface covers everything (CONTRIBUTING.md § One integration branch, #1163, #1425).
@@ -14,6 +15,9 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   # Dashboard Python deps — bumps the hashed uv.lock + pyproject floors (#283).
   - package-ecosystem: "uv"
@@ -22,6 +26,9 @@ updates:
       interval: "weekly"
     groups:
       python:
+        patterns: ["*"]
+      python-security:
+        applies-to: security-updates
         patterns: ["*"]
     ignore:
       # protobuf/grpcio are pinned to what the vendored Tari gRPC stubs assert at import time
@@ -50,6 +57,9 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+      docker-security:
+        applies-to: security-updates
+        patterns: ["*"]
     ignore:
       # Major/minor base bumps (e.g. python 3.11->3.14, ubuntu 24.04->26.04) are deliberate
       # migrations, not security updates — keep Dependabot to digest + patch within the pinned tag.
@@ -66,6 +76,9 @@ updates:
       interval: "weekly"
     groups:
       docker-appliance:
+        patterns: ["*"]
+      docker-appliance-security:
+        applies-to: security-updates
         patterns: ["*"]
     ignore:
       # Same policy as the docker entry above, and it binds the golang builder tag: a 1.26 -> 1.27
@@ -87,6 +100,9 @@ updates:
       interval: "weekly"
     groups:
       compose:
+        patterns: ["*"]
+      compose-security:
+        applies-to: security-updates
         patterns: ["*"]
     ignore:
       # Same policy as the docker entry: digest + patch within the pinned tag. A Tari or Caddy
@@ -112,13 +128,35 @@ updates:
     directories:
       - "/tests/netwatch"
       - "/tests/integration/tor-client"
+      - "/tests/integration/mergemine"
     schedule:
       interval: "weekly"
     groups:
       test-harness:
+        patterns: ["*"]
+      test-harness-security:
+        applies-to: security-updates
         patterns: ["*"]
 
   - package-ecosystem: "npm"
     directory: "/dashboard/tests/browser"
     schedule:
       interval: "weekly"
+    groups:
+      browser-tests:
+        patterns: ["*"]
+      browser-tests-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # Merge-mining fixture crates (#2586): test-only, tracked like the other test harnesses.
+  - package-ecosystem: "cargo"
+    directory: "/tests/integration/mergemine/fixture"
+    schedule:
+      interval: "weekly"
+    groups:
+      mergemine-fixture:
+        patterns: ["*"]
+      mergemine-fixture-security:
+        applies-to: security-updates
+        patterns: ["*"]

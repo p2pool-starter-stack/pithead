@@ -52,6 +52,7 @@ jobs:
           rc=$?
           # An empty report is itself a failure to report — never publish silence.
           [ -s report.md ] || { echo "The mute watch produced no report at all — see the run log." >report.md; rc=1; }
+          bash scripts/watch/trivyignore-expiry.sh >>report.md || rc=1
           echo "rc=$rc" >>"$GITHUB_OUTPUT"
       - name: Publish it to the tracking issue
         env:
