@@ -36,6 +36,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 - XvB donation mining now defaults to `eu.xmrvsbeast.com:4247`, because XMRvsBeast is retiring its NA servers. A saved `xvb.url` on `na.xmrvsbeast.com` (any port) is moved to the EU host with the same port on the next apply, the prior file is kept as `config.json.bak-xvb-na`, a custom host is left alone, and Tor routing is unchanged (#4308).
 - The appliance support bundle (the dashboard's **Support bundle** card and `pithead recovery-bundle`) is now one `.zip` for a chosen start and end time (`--since` and `--until` on the CLI, `since` and `until` on the control request; `hours` still works). It holds the whole system journal, the kernel log, the boot list and a journal per Pithead and quadlet unit read from the installed unit files, redacted, with a `manifest.json` that records the windows, the oldest retained entry, the journald usage and every truncated, empty, missing or failed file. Oversize files keep their oldest and newest lines instead of the bundle being refused, and the journald cap is raised from 200 MiB to 400 MiB to cover 168 hours at the log volume reported for a loaded test box (#4127).
+- The appliance image bakes RigForge 1.19.0. Its prebuilt XMRig is the same 6.26.0 pin with the zero donation default and minimum, so a fresh image and an upgraded rig start mining without an XMRig rebuild; the vendored RigForge contract fixtures move to v1.19.0 with the pin (#4230).
 
 ### Fixed
 
@@ -96,10 +97,22 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Notes
 
-- **RigForge-only appliances: stay on 2.0.3.** This release changes nothing on a rig: RigForge 1.18.1
-  and XMRig 6.26.0 are the same as in 2.0.3. Updating a rig still needs the USB stick, and re-flashing
-  a rig that runs from its stick wipes its setup and token, so it must be adopted again. Updating rigs
-  from the Pithead dashboard is planned for 2.0.5 (#1837).
+- **RigForge-only appliances: 2.0.4 changes the rig — RigForge 1.19.0.** RigForge 1.19.0 seeds
+  `tor_socks5` `127.0.0.1:9050` on an appliance rig and fails closed when nothing listens there, and
+  the appliance rig runs no Tor proxy at that address. A rig therefore refuses `upgrade --check`, the
+  XMRig clone and a remote upgrade, and `doctor` warns on its `tor-socks5` row. The rig rewrites its miner
+  config on every boot without `tor_socks5`, so an override set on the rig does not persist. RigForge also refuses a `DONATION` above 0 while `tor_socks5` is set, because the donation pool
+  would dial direct, and this applies to a saved value too: a 2.0.3 rig with `DONATION` above 0 stops
+  mining after the update, because its miner setup fails on the next boot. Before updating such a rig,
+  set `DONATION` to 0 in the dashboard's Workers view. A rig
+  with `DONATION` 0 keeps mining on the prebuilt miner. `threads` is now honored and capped, so a rig
+  that mined every core before this settles at the capped count after the next apply, with a lower
+  hashrate (rigforge#588 and rigforge#632). A validated
+  `xmrig` config overlay plus configurable RandomX modes give owners control over miner settings. The baked XMRig is unchanged
+  (6.26.0, zero donation default and minimum), so the built-in miner and upgraded rigs keep mining
+  without a rebuild. Updating a rig still needs the USB stick, and re-flashing a rig that runs from
+  its stick wipes its setup and token, so it must be adopted again. Updating rigs from the Pithead
+  dashboard is planned for 2.0.5 (#1837).
 
 ## [2.0.3] - 2026-11-10
 

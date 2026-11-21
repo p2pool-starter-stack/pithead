@@ -61,6 +61,9 @@ bumps on the component pins for the same reason.
 
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
+The built-in miner's RigForge tree is baked at image build because nothing can be installed later: apt cannot
+run on the read-only root, and a read-write-remount install leaves its `/etc` state on the volatile overlay,
+where the first reboot breaks the compiler.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
 cannot change what is baked; the pin watcher resolves the latest release tag to the commit it names and
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
