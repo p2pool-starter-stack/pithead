@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 stage=initialization
+scrub() { sed -E 's/(--wallet[ =]|--merge-mine[ =][^ ]+ )[^ ]+/\1[redacted-address]/g; s/[1-9A-HJ-NP-Za-km-z]{90,}/[redacted-address]/g'; }
 diagnose() {
     local stats
     stats=$(find /data -path '*/stats/local/p2p' -type f 2>/dev/null | head -n 1)
@@ -8,7 +9,7 @@ diagnose() {
     printf 'diagnose: stats file %s\n' "${stats:-absent}" >&2
     [ -z "$stats" ] || jq -c 'del(.peers)' "$stats" 2>&1 | head -c 600 >&2
     printf '\ndiagnose: dashboard P2Pool log lines: %s\n' "$(docker logs --since "$epoch" dashboard 2>&1 | grep -c 'P2Pool')" >&2
-    docker logs --tail 5 p2pool 2>&1 | head -c 800 >&2 || true
+    docker logs --tail 5 p2pool 2>&1 | scrub | head -c 800 >&2 || true
 }
 trap 'printf "P2Pool heal guest failed at %s (line %s, exit %s)\n" "$stage" "$LINENO" "$?" >&2; diagnose' ERR
 cd /data/pithead
