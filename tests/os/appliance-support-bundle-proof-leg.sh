@@ -7,23 +7,33 @@ SB_PROOF_LIMIT=300
 _sb_guest() { SSH_TIMEOUT=240 _ssh "bash -s -- $1 $2" <"$SCRIPT_DIR/support-bundle-guest-seed.sh"; }
 
 _sb_export() {
-    local resp status deadline
+    local resp status deadline body attempt=0 err
     SB_ERR=""
-    resp=$(dashboard_control_post support-bundle "$(jq -nc --arg s "$1" --arg u "$2" '{since:$s,until:$u}')" 45)
-    SB_RID=$(printf '%s' "$resp" | sed '$d' | jq -r '.id // ""' 2>/dev/null)
-    if [ -z "$SB_RID" ] || [ "$(printf '%s' "$resp" | tail -n1)" != 202 ]; then
-        SB_ERR="the request was not accepted ($(printf '%s' "$resp" | tail -n1))"
-        return 1
-    fi
-    deadline=$(($(date +%s) + SB_PROOF_LIMIT))
-    status=pending
-    while [ "$(date +%s)" -lt "$deadline" ]; do
-        status=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/support-bundle-result?id=$SB_RID" 2>/dev/null | jq -r '.status // "pending"' 2>/dev/null)
-        case "$status" in applied | failed | rejected) break ;; esac
-        sleep 3
+    while :; do
+        attempt=$((attempt + 1))
+        resp=$(dashboard_control_post support-bundle "$(jq -nc --arg s "$1" --arg u "$2" '{since:$s,until:$u}')" 45)
+        SB_RID=$(printf '%s' "$resp" | sed '$d' | jq -r '.id // ""' 2>/dev/null)
+        if [ -z "$SB_RID" ] || [ "$(printf '%s' "$resp" | tail -n1)" != 202 ]; then
+            SB_ERR="the request was not accepted ($(printf '%s' "$resp" | tail -n1))"
+            return 1
+        fi
+        deadline=$(($(date +%s) + SB_PROOF_LIMIT))
+        status=pending
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            body=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/support-bundle-result?id=$SB_RID" 2>/dev/null)
+            status=$(printf '%s' "$body" | jq -r '.status // "pending"' 2>/dev/null)
+            case "$status" in applied | failed | rejected) break ;; esac
+            sleep 3
+        done
+        err=$(printf '%s' "$body" | jq -r '.error // ""' 2>/dev/null)
+        if [ "$status" = rejected ] && [ "$attempt" -lt 6 ] && [[ "$err" == *"less than a minute"* ]]; then
+            sleep 20
+            continue
+        fi
+        break
     done
     [ "$status" = applied ] || {
-        SB_ERR="the request ended as '$status' within ${SB_PROOF_LIMIT}s"
+        SB_ERR="the request ended as '$status' within ${SB_PROOF_LIMIT}s ($err)"
         return 1
     }
     dashboard_curl -fsSk -m 120 -o "$3/bundle.zip" "https://$ip/api/control/support-bundle-download?id=$SB_RID" || {
