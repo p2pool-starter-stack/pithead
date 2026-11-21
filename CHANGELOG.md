@@ -90,6 +90,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   defers the render and the restart to the next tick, and when an apply lands in the same tick gap
   as an address change the apply's restart stands (#3987).
 
+### Security
+
+- The appliance rootfs builds Docker Compose and Cosign with Go 1.27.4, which Cosign v3.1.4 requires
+  and which carries the CVE-2026-97054 standard-library fix first shipped in Go 1.26.11 (#4265,
+  #4316), and builds Compose v5.7.2, whose containerd v2.4.2 clears CVE-2026-95839 (#4291).
+
 ### Notes
 
 - **RigForge-only appliances: stay on 2.0.3.** This release changes nothing on a rig: RigForge 1.18.1

@@ -4,7 +4,12 @@ import os
 import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY
-from mining_dashboard.helper.http import raise_for_success, request_failure_class
+from mining_dashboard.helper.http import (
+    proxy_map,
+    raise_for_success,
+    refuse_direct_public,
+    request_failure_class,
+)
 
 logger = logging.getLogger("TelegramNotifier")
 
@@ -55,9 +60,7 @@ class TelegramNotifier:
         self.events = dict(events or {})
         self.timeout = timeout
         self._api_base = api_base.rstrip("/")
-        # Route over the bridge Tor SOCKS proxy so the host IP is never exposed to Telegram.
-        # tor_proxy is a test seam; the default wires the configured proxy.
-        self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
+        self._proxies = proxy_map(tor_proxy)
         self.enabled = bool(enabled and self.bot_token and self.chat_id)
         self.last_failure = ""
 
@@ -81,6 +84,7 @@ class TelegramNotifier:
 
         url = f"{self._api_base}/bot{self.bot_token}/sendMessage"
         try:
+            refuse_direct_public(url, self._proxies)
             with requests.post(
                 url,
                 json={

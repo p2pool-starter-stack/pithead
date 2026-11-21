@@ -19,7 +19,7 @@ import re
 
 import requests
 
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import bounded_get, proxy_map
 
 logger = logging.getLogger("PriceFeed")
 
@@ -62,7 +62,7 @@ class CoinGeckoClient:
         # become an exfil channel through the feed's URL. Anything else: no fetch, static fallback.
         if not re.fullmatch(r"[A-Za-z]{2,5}", self.currency):
             return None
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = proxy_map(self.tor_proxy)
         try:
             resp = bounded_get(
                 COINGECKO_SIMPLE_PRICE,
