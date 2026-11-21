@@ -10,9 +10,9 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-VERSION = "v0.18.5.1"
-COMMIT = "4f92268d7c16741cfb41e5bbe2aa46cc260a9ea5"
-ARCHIVE_SHA256 = "4fdd15401af04e1ce84dcae40c8c114320d1cc9b449db25c0d57efa4b4054881"
+VERSION = "v0.18.5.4"
+COMMIT = "85f036ba7019cd36f08e8a38a27c37ea7b522618"
+ARCHIVE_SHA256 = "f27d011bb0b4c8b8597c650bd9ca61d011a91ebb318d113c18049a85d0610793"
 SOURCE_URL = f"https://codeload.github.com/monero-project/monero/tar.gz/{COMMIT}"
 FILES = ("mdb.c", "midl.c", "midl.h", "lmdb.h", "mdb_copy.c", "mdb_stat.c", "LICENSE", "COPYRIGHT")
 FLAGS = ["-O2", "-pthread"]
