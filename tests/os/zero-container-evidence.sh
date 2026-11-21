@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Evidence for the one defect five battery legs report and none of them captured (#2043):
 # provisioning finishes, the dashboard login is published, and `compose up` creates NO containers.
 # Sourced by tests/os/run.sh; uses its _ssh and its indentation idiom. Kept out of
@@ -42,7 +44,7 @@ stack_never_up_evidence() {
               grep -viE 'password|token|secret|cosign.key'
           echo '-- failed units --'; systemctl --failed --no-legend 2>&1 | head -10
           echo '-- wizard spool --'; head -5 data/firstboot/error.txt 2>/dev/null" |
-        tr -d '\r' | sed 's/^/     | /'
+        tr -d '\r' | os_redact_addr | sed 's/^/     | /'
 }
 
 # --- self-test (#2043): no guest, no network ---------------------------------------------------
