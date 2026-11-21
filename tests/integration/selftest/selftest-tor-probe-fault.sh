@@ -63,10 +63,15 @@ for flag in 0 unset; do
     (
         if [ "$flag" = unset ]; then unset SKIP_MINING_ASSERTS; else SKIP_MINING_ASSERTS=$flag; fi
         waited=0
+        OUT_DIR="$SCRATCH/binding-$flag"
+        mkdir -p "$OUT_DIR"
+        api_state() { echo '{"proxy_workers":0}'; }
         env_on_box() { echo true; }
         cleared=0
         fault_rules_clear_all() { cleared=$((cleared + 1)); }
+        tor_newnym_budget_reset() { budget_reset=$((${budget_reset:-0} + 1)); }
         wait_for() {
+            check test "$budget_reset" -eq 1
             check test "$1" -eq 180
             check test "$cleared" -eq 1
             check test "$2" -eq 10
@@ -80,7 +85,66 @@ for flag in 0 unset; do
         check test "$IT_PASS" -eq 0
         check test "$IT_SKIPPED_LEGS" -eq 0
         check grep -Fq 'Tor probe fault has a live mining witness' <<<"$IT_FAILED_NAMES"
+        check grep -Fq 'before-fault' "$OUT_DIR/tor-probe-witness.log"
         printf 'binding fixture (%s): %s passed, %s failed\n' "$flag" "$PASS" "$FAIL"
+        test "$FAIL" -eq 0
+    )
+done
+
+echo "== Post-apply witness waits for a reconnecting proxy and records the state when none qualifies =="
+for fixture in reconnects never; do
+    (
+        IT_FAIL=0 IT_PASS=0 IT_FAILED_NAMES=
+        OUT_DIR="$SCRATCH/witness-$fixture"
+        mkdir -p "$OUT_DIR"
+        EXPECTED_WORKERS=1
+        SKIP_MINING_ASSERTS=0
+        reads="$OUT_DIR/reads"
+        : >"$reads"
+        api_state() {
+            echo read >>"$reads"
+            if [ "$fixture" = reconnects ] && [ "$(wc -l <"$reads")" -ge 4 ]; then
+                echo '{"proxy_workers":1,"proxy_summary":{"accepted":"1,234"}}'
+            else
+                echo '{"proxy_workers":0,"proxy_summary":{},"workers":[{"name":"rig-a","status":"offline","uptime":0,"accepted":159,"ip":"192.0.2.9"}]}'
+            fi
+        }
+        env_on_box() { echo true; }
+        fault_rules_clear_all() { :; }
+        fault_rules_trap_arm() { :; }
+        fault_rules_trap_disarm() { :; }
+        rx() { return 0; }
+        push_config() { :; }
+        wait_status_ok() { :; }
+        tor_probe_ns_ipt() { return 1; }
+        pithead() { [ "$1" = apply ]; }
+        wait_for() {
+            local tries=$1 desc=$3
+            shift 3
+            [[ "$desc" == *"for Tor fault"* ]] && return 0
+            while [ "$tries" -gt 0 ]; do
+                "$@" && return 0
+                tries=$((tries - 10))
+            done
+            return 1
+        }
+        BASELINE_CONFIG='{}'
+        fault_tor_probe_egress >/dev/null
+        if [ "$fixture" = reconnects ]; then
+            check test "$(wc -l <"$reads")" -eq 4
+            check test "$TOR_PROBE_LAST" = 1234
+            check test "$(grep -c 'live mining witness' <<<"$IT_FAILED_NAMES")" -eq 0
+            check grep -Fq 'installed the dashboard namespace rule' <<<"$IT_FAILED_NAMES"
+            check test ! -e "$OUT_DIR/tor-probe-witness.log"
+        else
+            check test "$(wc -l <"$reads")" -eq 7
+            check grep -Fq 'Tor probe fault has a live mining witness' <<<"$IT_FAILED_NAMES"
+            check grep -Fq 'after-apply' "$OUT_DIR/tor-probe-witness.log"
+            check grep -Fq '"proxy_workers":0' "$OUT_DIR/tor-probe-witness.log"
+            check grep -Fq '"workers":[{"name":"rig-a","status":"offline","uptime":0,"accepted":159}]' "$OUT_DIR/tor-probe-witness.log"
+            check test "$(grep -c 192.0.2.9 "$OUT_DIR/tor-probe-witness.log")" -eq 0
+        fi
+        printf 'witness fixture (%s): %s passed, %s failed\n' "$fixture" "$PASS" "$FAIL"
         test "$FAIL" -eq 0
     )
 done
