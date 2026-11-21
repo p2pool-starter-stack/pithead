@@ -3,11 +3,12 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 
 _ru_soak_leg() {
-    local mdns half=$((REALUPGRADE_SOAK_S / 2)) before_boot after_boot units sentinels live fails tls_after cfg host port user_ok
+    local mdns reboot_at half=$((REALUPGRADE_SOAK_S / 2)) before_boot after_boot units sentinels live fails tls_after cfg host port user_ok
     realupgrade_stamp soak start
     sleep "$half"
     before_boot=$(_boot_id) || before_boot=""
     realupgrade_stamp soak extra-reboot
+    reboot_at=$(date +%s)
     _reboot_wait "reboot" 600 || {
         bad "soak: the guest never returned after the one extra reboot"
         _ru_save_failure soak
@@ -58,10 +59,10 @@ _ru_soak_leg() {
     mdns=$(_ssh "getent ahostsv4 '$RU_HOST_NAME.local' | awk 'NR == 1 {print \$1}'" 2>/dev/null | tr -d '\r')
     [ -n "$mdns" ] && [ "$mdns" = "$ip" ] && ok "soak: $RU_HOST_NAME.local resolves over mDNS to the appliance address" ||
         bad "soak: $RU_HOST_NAME.local resolves to '${mdns:-nothing}', not the appliance address"
-    if [ "$(tail -n1 "$RU_WORK/stratum.log" 2>/dev/null | cut -d' ' -f1)" = connected ]; then
-        ok "soak: the stratum client is connected after the update and the extra reboot"
+    if awk -v t="$reboot_at" '$1 == "connected" && $2 >= t {f = 1} END {exit !f}' "$RU_WORK/stratum.log" 2>/dev/null; then
+        ok "soak: the stratum port accepted a client connection after the update and the extra reboot"
     else
-        bad "soak: the stratum client is not connected (log: $(tail -n3 "$RU_WORK/stratum.log" 2>/dev/null | tr '\n' ';'))"
+        bad "soak: no stratum connection was accepted after the extra reboot (log: $(tail -n3 "$RU_WORK/stratum.log" 2>/dev/null | tr '\n' ';'))"
         printf 'realupgrade: stratum log %s | rx %s | guest listeners %s | p2pool cmd %s\n' "$(tr '\n' ';' <"$RU_WORK/stratum.log" | cut -c1-300)" \
             "$(tail -c 300 "$RU_WORK/stratum.log.rx" 2>/dev/null | tr '\n' ' ')" \
             "$(_ssh "ss -ltn | awk '/:33[0-9][0-9]/ {print \$4}'" 2>/dev/null | tr '\n' ' ')" \
