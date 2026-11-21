@@ -46,7 +46,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 
 | Area | Start here | Change and verify |
 |---|---|---|
-| CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. |
+| CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. Per-piece Go/Bash selection lives in `lib/pithead/00a-impl-launcher.sh` with [its table and rules](go-port/selection.md). |
 | Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |

@@ -186,6 +186,8 @@ jobs:
         run: bash tests/stack/standalone/test_data_reset.sh
       - name: Run directory line-break regression
         run: bash tests/stack/standalone/test_directory_linebreaks.sh
+      - name: Run per-piece implementation launcher suite
+        run: bash tests/stack/standalone/test_impl_launcher.sh
       - name: Run OS-update recovery suite
         # #1050 dead-end states re-arm and report.
         run: bash tests/stack/standalone/test_os_update_recovery.sh
