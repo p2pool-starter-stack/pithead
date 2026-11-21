@@ -5,8 +5,6 @@ WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-reset.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
-# shellcheck source=lib/pithead/02f-tor-recovery-reasons.sh
-source "$ROOT/lib/pithead/02f-tor-recovery-reasons.sh"
 # shellcheck source=lib/pithead/22a-config-document.sh
 source "$ROOT/lib/pithead/22a-config-document.sh"
 # shellcheck source=lib/pithead/49-control-request-loop.sh
@@ -41,6 +39,9 @@ env_get() {
     esac
 }
 tor_recovery_heal_outage() { return 0; }
+tor_recovery_unsaturated_reason() { return 1; }
+tor_recovery_move_cache() { :; }
+tor_recovery_redial_tari() { :; }
 tor_recovery_egress_down() { return 0; }
 tor_recovery_info() { printf '{"status":"OK","synchronized":true,"height":42,"outgoing_connections_count":%s}\n' "$([ -e "$WORK/stopped" ] && echo 0 || echo 3)"; }
 docker() {
