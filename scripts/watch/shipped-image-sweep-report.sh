@@ -13,7 +13,7 @@
 # means "consider cutting a patch release", a decision a person makes — not a build to fail. The
 # run goes red only when the sweep itself could not do its job.
 #
-# WHAT THIS SCRIPT IS. It does no scanning and touches no network. ci.yml's `sweep-shipped` matrix
+# WHAT THIS SCRIPT IS. It does no scanning and touches no network. security-sweep.yml's `sweep-shipped` matrix
 # resolves each published tag to a digest, scans that digest with trivy, and uploads two files per
 # image; this script reads that directory and renders the tracking-issue body. Keeping the render
 # out of the workflow is what makes it testable — `--self-test` drives every failure mode below
@@ -26,7 +26,7 @@
 #
 #   - the artifact directory is missing, or holds no scan output at all
 #   - an expected image produced no report (its matrix leg failed)
-#   - an unexpected image appeared (ci.yml's matrix and SWEPT_IMAGES below have drifted)
+#   - an unexpected image appeared (security-sweep.yml's matrix and SWEPT_IMAGES below have drifted)
 #   - a report cannot be parsed
 #   - a report names an artifact that is NOT a digest reference, so the run cannot honestly claim
 #     it scanned published bytes rather than a moving tag
@@ -48,9 +48,9 @@ set -Eeuo pipefail
 # SECOND issue instead of updating the first, then keeps both — the old one frozen at whatever it
 # last said, which reads as a sweep that found nothing new. Renaming the issue by hand in the web
 # UI breaks it the same way.
-SWEEP_ISSUE_TITLE="Shipped-image CVE sweep (weekly report)"
+SWEEP_ISSUE_TITLE="Shipped-image CVE sweep (daily report)"
 
-# The images this report expects to find, which must match ci.yml's `sweep-shipped` matrix. The
+# The images this report expects to find, which must match security-sweep.yml's `sweep-shipped` matrix. The
 # two lists are checked against each other at run time rather than trusted: a service added to the
 # matrix and not here arrives as an unexpected file, one added here and not to the matrix arrives
 # as a missing leg, and BOTH exit 1. A silently shrinking sweep is the failure this guards.
@@ -108,7 +108,7 @@ render_report() {
         return 1
     fi
 
-    # An unexpected report means ci.yml's matrix grew and SWEPT_IMAGES did not. Catch it before
+    # An unexpected report means security-sweep.yml's matrix grew and SWEPT_IMAGES did not. Catch it before
     # rendering, because the summary table below is keyed on SWEPT_IMAGES and would simply not
     # show the new image — a sweep that silently omits an image is exactly what #1313 is about.
     for file in "$dir"/sweep-*.json; do
@@ -120,7 +120,7 @@ render_report() {
             [ "$s" = "$svc" ] && expected=1 && break
         done
         if [ "$expected" -eq 0 ]; then
-            problems="${problems}- \`$svc\` was swept but is not in this report's image list — ci.yml's \`sweep-shipped\` matrix and \`SWEPT_IMAGES\` in \`scripts/watch/shipped-image-sweep-report.sh\` have drifted apart.
+            problems="${problems}- \`$svc\` was swept but is not in this report's image list — security-sweep.yml's \`sweep-shipped\` matrix and \`SWEPT_IMAGES\` in \`scripts/watch/shipped-image-sweep-report.sh\` have drifted apart.
 "
             rc=1
         fi

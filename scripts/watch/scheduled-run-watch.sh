@@ -111,7 +111,7 @@ render_report() {
     printf 'The Monday run of `ci.yml` is also the CVE sweep — `build-images` scans a rebuild of this\n'
     printf 'branch (#833) and `sweep-shipped` scans the published digests (#1313). A scheduled run\n'
     printf 'has no pull request, so nothing draws anyone to its red tick. This issue is its reader\n'
-    printf '(#1377); it is rewritten in place every week.\n\n'
+    printf '(#1377); it is rewritten in place every day.\n\n'
 
     render_cadence "$dir" || rc=$?
 

@@ -57,6 +57,12 @@ jobs:
           rc=$?
           # An empty report is itself a failure to report — never publish silence.
           [ -s report.md ] || { echo "The pin watcher produced no report at all — see the run log." >report.md; rc=1; }
+          # Digest drift (#1137) is published, not failed: upstream re-points tags like caddy's
+          # between releases, so a red run per re-point would hide real lookup failures.
+          RESOLVE_PINS_MISMATCH_OK=1 bash scripts/release/resolve-pins.sh >digests.txt 2>&1
+          rc_digest=$?
+          { printf '\n## Third-party image digest pins\n\n```text\n'; cat digests.txt; printf '```\n'; } >>report.md
+          [ "$rc_digest" = 0 ] || rc=1
           echo "rc=$rc" >>"$GITHUB_OUTPUT"
       - name: Publish it to this lane's tracking issue
         env:
@@ -97,9 +103,3 @@ jobs:
         run: |
           echo "::error::one or more upstream lookups could not run — those pins are UNCHECKED, not current"
           exit 1
-      # Digest-level check (#1137): does this lane's own docker-compose.yml pins still match what
-      # each tag resolves to right now. Separate from the report above on purpose — a version can
-      # be current while its digest has drifted, and that half-done-bump case is this step's job,
-      # not the report's. A mismatch or failed lookup fails this step, which fails the run.
-      - name: Check third-party image pins against their registries
-        run: bash scripts/release/resolve-pins.sh

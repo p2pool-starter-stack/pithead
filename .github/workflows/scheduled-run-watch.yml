@@ -37,9 +37,9 @@ name: Scheduled-run watch
 # #1146).
 on:
   schedule:
-    # Mondays 08:00 UTC, after the other declared Monday slots. GitHub may start any of them hours
+    # Daily 08:00 UTC, after the daily 05:30 security sweep. GitHub may start any slot hours
     # late, so the cadence report allows 12 hours before LATE and a full period before MISSED.
-    - cron: "0 8 * * 1"
+    - cron: "0 8 * * *"
   workflow_dispatch:
 
 # Least privilege (#282). `actions: read` lets the job read this repo's scheduled-run histories
@@ -49,6 +49,10 @@ permissions:
   actions: read
   contents: read
   issues: write
+
+concurrency:
+  group: scheduled-run-watch
+  cancel-in-progress: false
 
 jobs:
   scheduled-run-watch:
@@ -136,6 +140,13 @@ jobs:
           else
             gh issue create --title "$TITLE" --label infra --body "$body"
           fi
+      - name: Report red scheduled runs in a security issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          bash scripts/watch/security-issue.sh render-red watch/cadence.json >red.md
+          bash scripts/watch/security-issue.sh upsert "$(bash scripts/watch/security-issue.sh title-red)" red.md
       - name: Fail the run if the watch could not do its job
         if: steps.report.outputs.rc != '0'
         run: |
