@@ -119,6 +119,7 @@ jq -e '.error | contains("six-hour cooldown")' "$WORK/result" >/dev/null
 [ -e "$WORK/tor/state" ]
 echo "== a stale consensus is a reset reason while egress works; apply moves the cache, never the keys =="
 rm -f "$WORK/control/tor-recovery-at" "$WORK/stopped"
+rm -rf "$WORK"/tor/directory-cache.backup.* "$WORK"/tor/state.backup.*
 unsaturated
 EGRESS=up
 tor_recovery_circuit_status() { printf 'circuit-established=1 pending=2\n'; }
