@@ -124,7 +124,7 @@ realupgrade_patch_root() {
         keyring_certs_before: $before, keyring_certs_after: $after}' >"$manifest"
 }
 
-realupgrade_bundle_cert() { # <bundle> <pem-out>
+realupgrade_bundle_cert() {
     local size hex sig
     hex=$(tail -c 8 "$1" | od -An -tx1 -v | tr -d ' \n')
     [[ "$hex" =~ ^[0-9a-f]{16}$ ]] || return 1
