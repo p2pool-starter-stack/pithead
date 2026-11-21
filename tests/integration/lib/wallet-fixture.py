@@ -55,6 +55,15 @@ def identity_values(lines):
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 
 
+def container_identity(item):
+    lines = list(item["Config"]["Env"])
+    for mount in item.get("Mounts", []):
+        if mount.get("Destination") == "/run/secrets/monero_view_key":
+            key = Path(mount["Source"]).read_text().strip()
+            lines.append(f"MONERO_VIEW_KEY={shlex.quote(key)}")
+    return identity_values(lines)
+
+
 def identity(baseline):
     return identity_values((baseline / ".env").read_text().splitlines())
 

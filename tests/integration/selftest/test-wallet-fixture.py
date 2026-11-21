@@ -56,7 +56,11 @@ class Docker:
             "Image": IMAGE,
             "State": {"Running": True, "ExitCode": 0, "OOMKilled": False},
             "Config": {
-                "Env": (baseline / ".env").read_text().splitlines(),
+                "Env": [
+                    line
+                    for line in (baseline / ".env").read_text().splitlines()
+                    if not line.startswith("MONERO_VIEW_KEY=")
+                ],
                 "Labels": {
                     "com.docker.compose.project": "pithead",
                     "com.docker.compose.service": "wallet-rpc",
@@ -64,9 +68,15 @@ class Docker:
                 },
             },
             "Mounts": [
-                {"Destination": fixture.WALLET_DIR, "Type": "volume", "Name": fixture.VOLUME}
+                {"Destination": fixture.WALLET_DIR, "Type": "volume", "Name": fixture.VOLUME},
+                {
+                    "Destination": "/run/secrets/monero_view_key",
+                    "Type": "bind",
+                    "Source": str(baseline / "view-key.secret"),
+                },
             ],
         }
+        (baseline / "view-key.secret").write_text("dummy-view-key\n")
 
     def __call__(self, *args, **kwargs):
         self.calls.append(args)
@@ -242,7 +252,9 @@ class FixtureTest(unittest.TestCase):
         self.docker.item["Config"]["Labels"]["com.docker.compose.project.working_dir"] = str(
             self.baseline
         )
-        self.docker.item["Config"]["Env"] = self.env.read_text().splitlines()
+        self.docker.item["Config"]["Env"] = [
+            line for line in self.env.read_text().splitlines() if "VIEW_KEY" not in line
+        ]
         self.docker.volume_labels["com.docker.compose.project"] = "another-project"
         before = len(self.docker.calls)
         with self.assertRaises(ValueError):
