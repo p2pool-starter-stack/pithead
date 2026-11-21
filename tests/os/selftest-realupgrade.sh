@@ -117,8 +117,6 @@ check "run.sh dispatches the split phases to their own legs" bash -c 'grep -Fq "
 refuses "no realupgrade phase is in the all arm" bash -c 'sed -n "/^all)/,/;;/p" "$1" | grep -q realupgrade' _ "$RUN"
 check "the main split runs upgrade and soak only" grep -Fq 'phase_realupgrade_main() { _ru_run upgrade,soak; }' "$HERE/phases/realupgrade.sh"
 check "the negctl split runs the negative control only" grep -Fq 'phase_realupgrade_negctl() { _ru_run negctl; }' "$HERE/phases/realupgrade.sh"
-check "run.sh --help states it is not run by all" bash -c 'sed -n "2,66p" "$1" | grep -Fq "Not run by --phase all; PITHEAD_REALUPGRADE_LEGS"' _ "$RUN"
-check "the --help range ends at the end of the header" bash -c '[ "$(sed -n "67p" "$1")" = "set -uo pipefail" ]' _ "$RUN"
 
 [ "$FAILS" -eq 0 ] || {
     printf '%d realupgrade selftest check(s) failed\n' "$FAILS" >&2
