@@ -268,7 +268,7 @@ rm -f "$SB/rc28.n"
 out=$(rig CH_RC28_N=1 install)
 dl=$(grep -c 'releases/download' "$SB/curl.log")
 check "an rc 28 download resumes and re-resolves the URL every attempt" "$dl" "4"
-check "every bundle request is https-only through the Tor SOCKS port"     "$(grep 'releases/download' "$SB/curl.log" | grep -c -- '--proto =https --socks5-hostname 127.0.0.1:9253')" "4"
+check "every bundle request is https-only through the Tor SOCKS port" "$(grep 'releases/download' "$SB/curl.log" | grep -c -- '--proto =https --socks5-hostname 127.0.0.1:9253')" "4"
 check "the resumed download asked curl to continue" "$(grep 'releases/download' "$SB/curl.log" | grep -c -- ' -C - ')" "2"
 check "the resumed install writes the pending record" "$(state .state)" "pending"
 check "the resumed install reboots" "$(wc -l <"$tmp/reboot.log" | tr -d ' ')" "1"
