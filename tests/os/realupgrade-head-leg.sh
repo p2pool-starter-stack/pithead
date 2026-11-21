@@ -59,12 +59,16 @@ _ru_negctl_head_leg() {
             realupgrade_stamp negctlhead candidate-up-reset-again
             continue
         fi
-        _ru_wait_state 900 || continue
-        os_json=$(_ru_os)
-        printf '%s' "$os_json" | jq -e '.verdict.outcome == "rolled_back"' >/dev/null 2>&1 && {
-            verdict_ok=1
-            break
-        }
+        local vdeadline=$(($(date +%s) + 900))
+        while [ "$(date +%s)" -lt "$vdeadline" ]; do
+            os_json=$(_ru_os)
+            printf '%s' "$os_json" | jq -e '.verdict.outcome == "rolled_back"' >/dev/null 2>&1 && {
+                verdict_ok=1
+                break
+            }
+            sleep 10
+        done
+        break
     done
     if [ "$verdict_ok" != 1 ]; then
         bad "negctlhead: no rolled_back verdict after $n hard resets (last: $(printf '%s' "$os_json" | jq -c '.verdict // .step' 2>/dev/null | cut -c1-200))"
