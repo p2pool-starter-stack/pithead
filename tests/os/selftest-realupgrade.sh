@@ -99,6 +99,16 @@ mkroot "$TMP/root2"
 refuses "an empty test cert is refused" realupgrade_patch_root "$TMP/root2" "$TMP/empty.pem" http://192.0.2.1:8932 "$TMP/m3.json"
 eq "a refused patch leaves the keyring alone" 1 "$(grep -c 'BEGIN CERTIFICATE' "$TMP/root2/etc/rauc/keyring.pem")"
 
+head -c 4096 /dev/urandom >"$TMP/payload"
+openssl cms -sign -binary -outform DER -signer "$TMP/test-cert.pem" -inkey "$TMP/tk.pem" -in "$TMP/payload" -out "$TMP/sig.der" 2>/dev/null
+sigsize=$(wc -c <"$TMP/sig.der" | tr -d ' ')
+{
+    cat "$TMP/payload" "$TMP/sig.der"
+    printf "$(printf '\\x%02x\\x%02x\\x%02x\\x%02x\\x%02x\\x%02x\\x%02x\\x%02x' 0 0 0 0 $((sigsize >> 24 & 255)) $((sigsize >> 16 & 255)) $((sigsize >> 8 & 255)) $((sigsize & 255)))"
+} >"$TMP/bundle.raucb"
+check "the signer certificate is read out of a bundle" realupgrade_bundle_cert "$TMP/bundle.raucb" "$TMP/signer.pem"
+check "the extracted certificate is the signing certificate" bash -c 'diff <(openssl x509 -in "$1" -noout -fingerprint) <(openssl x509 -in "$2" -noout -fingerprint)' _ "$TMP/test-cert.pem" "$TMP/signer.pem"
+refuses "a bundle with a bad size trailer is refused" realupgrade_bundle_cert "$TMP/payload" "$TMP/none.pem"
 RUN="$HERE/run.sh"
 check "the rollback cause needle is the text pithead-boot records" grep -Fq "$REALUPGRADE_ROLLBACK_CAUSE" "$HERE/../../os/overlay/pithead-boot"
 check "run.sh usage line lists the phase" grep -Fq '|crossupdate|realupgrade|realupgrade-main|realupgrade-negctl|stack|' "$RUN"

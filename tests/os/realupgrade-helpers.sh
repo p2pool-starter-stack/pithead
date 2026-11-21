@@ -124,6 +124,19 @@ realupgrade_patch_root() {
         keyring_certs_before: $before, keyring_certs_after: $after}' >"$manifest"
 }
 
+realupgrade_bundle_cert() { # <bundle> <pem-out>
+    local size hex sig
+    hex=$(tail -c 8 "$1" | od -An -tx1 -v | tr -d ' \n')
+    [[ "$hex" =~ ^[0-9a-f]{16}$ ]] || return 1
+    size=$((16#$hex))
+    [ "$size" -gt 0 ] && [ "$size" -lt $(($(wc -c <"$1") - 8)) ] || return 1
+    sig=$(mktemp) || return 1
+    tail -c $((size + 8)) "$1" | head -c "$size" >"$sig"
+    openssl pkcs7 -inform DER -in "$sig" -print_certs 2>/dev/null | awk '/BEGIN CERTIFICATE/ {p=1} p {print} /END CERTIFICATE/ {p=0}' >"$2"
+    rm -f "$sig"
+    grep -q 'BEGIN CERTIFICATE' "$2"
+}
+
 realupgrade_attach_and_patch() {
     local img="$1" loop mnt tries=0 rc=0 fstype
     loop=$(losetup -Pf --show "$img") || return 1

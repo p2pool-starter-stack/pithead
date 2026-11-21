@@ -149,7 +149,11 @@ _ru_prepare() {
     RU_BASE="http://$host_addr:$RU_PORT"
 
     realupgrade_stamp setup patch-old-image
-    realupgrade_attach_and_patch "$RU_OLD_IMG" os/rauc/certs/cert.pem "$RU_BASE" "$RU_WORK/patch-manifest.json" || {
+    realupgrade_bundle_cert "$RU_BUNDLE" "$RU_WORK/signer.pem" || {
+        bad "could not read the signing certificate out of the candidate bundle"
+        return 1
+    }
+    realupgrade_attach_and_patch "$RU_OLD_IMG" "$RU_WORK/signer.pem" "$RU_BASE" "$RU_WORK/patch-manifest.json" || {
         bad "could not patch the scratch copy of the published image (no mount, or the root is integrity-protected) — stop and report, never fall back to a nightly image"
         return 1
     }
