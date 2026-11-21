@@ -3,7 +3,7 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 
 _ru_soak_leg() {
-    local half=$((REALUPGRADE_SOAK_S / 2)) before_boot after_boot units sentinels live fails tls_after cfg host port user_ok
+    local mdns half=$((REALUPGRADE_SOAK_S / 2)) before_boot after_boot units sentinels live fails tls_after cfg host port user_ok
     realupgrade_stamp soak start
     sleep "$half"
     before_boot=$(_boot_id) || before_boot=""
@@ -55,11 +55,17 @@ _ru_soak_leg() {
     tls_after=$(_ru_tls_snapshot) || tls_after=""
     realupgrade_fingerprint_same "${TLS_BEFORE%%|*}" "${tls_after%%|*}" && ok "soak: the TLS fingerprint is unchanged" || bad "soak: the TLS fingerprint changed"
     realupgrade_sans_same "${TLS_BEFORE#*|}" "${tls_after#*|}" && ok "soak: the TLS SANs are unchanged" || bad "soak: the TLS SANs changed"
-    getent hosts "$RU_HOST_NAME.local" >/dev/null 2>&1 && ok "soak: $RU_HOST_NAME.local resolves over mDNS" || bad "soak: $RU_HOST_NAME.local does not resolve over mDNS"
+    mdns=$(_ssh "getent ahostsv4 '$RU_HOST_NAME.local' | awk 'NR == 1 {print \$1}'" 2>/dev/null | tr -d '\r')
+    [ -n "$mdns" ] && [ "$mdns" = "$ip" ] && ok "soak: $RU_HOST_NAME.local resolves over mDNS to the appliance address" ||
+        bad "soak: $RU_HOST_NAME.local resolves to '${mdns:-nothing}', not the appliance address"
     if [ "$(tail -n1 "$RU_WORK/stratum.log" 2>/dev/null | cut -d' ' -f1)" = connected ]; then
         ok "soak: the stratum client is connected after the update and the extra reboot"
     else
         bad "soak: the stratum client is not connected (log: $(tail -n3 "$RU_WORK/stratum.log" 2>/dev/null | tr '\n' ';'))"
+        printf 'realupgrade: stratum log %s | rx %s | guest listeners %s | p2pool cmd %s\n' "$(tr '\n' ';' <"$RU_WORK/stratum.log" | cut -c1-300)" \
+            "$(tail -c 300 "$RU_WORK/stratum.log.rx" 2>/dev/null | tr '\n' ' ')" \
+            "$(_ssh "ss -ltn | awk '/:33[0-9][0-9]/ {print \$4}'" 2>/dev/null | tr '\n' ' ')" \
+            "$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}'" 2>/dev/null | cut -c1-300)" >&2
     fi
     realupgrade_stamp soak finished
 }
