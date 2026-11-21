@@ -167,7 +167,7 @@ GETTY_DROPIN
     fi
 
     local ea_active ea_before ea_after ea_wd_b ea_wd_a ea_dial
-    ea_active=$(_ssh "systemctl is-active pithead-egress-audit.service" 2>/dev/null | tr -d '\r\n') || ea_active=""
+    ea_active=$(_ssh "systemctl is-active pithead-egress-audit.service; true" 2>/dev/null | tr -d '\r\n') || ea_active=""
     ea_before=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_before=""
     ea_wd_b=$(host_egress_audit_would_drop "$ea_before")
     ea_dial=0

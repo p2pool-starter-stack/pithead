@@ -212,7 +212,8 @@ EAU_OK_TABLE='table inet pithead_egress_audit {
     type filter hook output priority -150; policy accept;
     oifname "lo" counter packets 4 bytes 240 comment "loopback"
     ct state established,related counter packets 9 bytes 900 comment "reply"
-    counter packets 42 bytes 3780 comment "would_drop" limit rate 30/second burst 10 packets log prefix "pithead-egress-audit: "
+    counter packets 42 bytes 3780 comment "would_drop"
+    limit rate 30/second log prefix "pithead-egress-audit: "
   }
 }'
 
@@ -224,8 +225,9 @@ assert_eq "the map file is replaced atomically (add then delete then recreate)" 
 assert_contains "the chain hooks the host output path" "$EAU_R" "type filter hook output priority -150; policy accept;"
 assert_contains "loopback flows get their own counter" "$EAU_R" 'oifname "lo" counter comment "loopback"'
 assert_contains "replies get their own counter" "$EAU_R" 'ct state established,related counter comment "reply"'
-assert_contains "the would_drop rule counts and logs, and carries no verdict at all" "$EAU_R" \
-    'counter comment "would_drop" limit rate 30/second burst 10 packets log prefix "pithead-egress-audit: "'
+assert_contains "the would_drop rule counts, exact, no verdict" "$EAU_R" 'counter comment "would_drop"'
+assert_contains "journal noise is gated by its own rate-limited log rule" "$EAU_R" \
+    'limit rate 30/second log prefix "pithead-egress-audit: "'
 assert_contains "a route=lan row of this role renders the lan class" "$EAU_R" 'counter comment "lan"'
 EAU_NOLAN=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv")
 assert_not_contains "with no route=lan row the lan class is not rendered" "$EAU_NOLAN" 'comment "lan"'
@@ -242,8 +244,8 @@ assert_eq "a missing map fails the render rather than inventing rules" "$(
     printf 'rc=%s' "$?"
 )" "rc=1"
 EAU_REPO=$(run_sourced "$ROOT" render_host_egress_audit_nft appliance data/egress-map.tsv)
-assert_contains "the committed egress map drives the appliance table" "$EAU_REPO" \
-    'counter comment "would_drop" limit rate 30/second burst 10 packets log prefix "pithead-egress-audit: "'
+assert_contains "the committed egress map drives the appliance table" "$EAU_REPO" 'counter comment "would_drop"'
+assert_contains "and the rate-limited log rule ships with it" "$EAU_REPO" 'limit rate 30/second log prefix "pithead-egress-audit: "'
 assert_eq "the rendered table never carries a terminal verdict: none of accept/drop/reject is rendered anywhere" \
     "$(printf '%s\n' "$EAU_R" "$EAU_RIG" "$EAU_REPO" | grep -Ec '(^|[[:space:]])(accept|drop|reject)([[:space:]]|$)')" "0"
 assert_eq "the mawk-safe split renders every lan net (Debian 12 awk) comma-separated" \

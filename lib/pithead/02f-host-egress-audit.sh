@@ -33,7 +33,8 @@ render_host_egress_audit_nft() {
             print "    oifname \"lo\" counter comment \"loopback\""
             print "    ct state established,related counter comment \"reply\""
             if (lan && set != "") print "    ip daddr { " set " } counter comment \"lan\""
-            print "    counter comment \"would_drop\" limit rate 30/second burst 10 packets log prefix \"" prefix "\""
+            print "    counter comment \"would_drop\""
+            print "    limit rate 30/second log prefix \"" prefix "\""
             print "  }"
             print "}"
         }
