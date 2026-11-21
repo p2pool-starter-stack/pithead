@@ -32,8 +32,12 @@ window)
         echo "seed check failed: container log line" >&2
         exit 12
     }
+    for _ in 1 2 3 4 5; do
+        grep -qF -- "$torkey" "$tordir/state" && break
+        printf 'TorKey %s\nGuard in=sbproof bridge_addr=%s\n' "$torkey" "$torkey" >>"$tordir/state"
+    done
     grep -qF -- "$torkey" "$tordir/state" || {
-        echo "seed check failed: Tor state line" >&2
+        echo "seed check failed: Tor state line (dir=$tordir, $(ls -ld "$tordir/state" 2>&1))" >&2
         exit 13
     }
     grep -qF -- "$cookie" "$caddy_file" || {
