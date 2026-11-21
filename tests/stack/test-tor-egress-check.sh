@@ -282,6 +282,12 @@ out=$(EAU_NFT_CAPTURE=1 EAU_NFT_ANY_RC=1 PITHEAD_EGRESS_AUDIT_STATE="$EAU/state-
 assert_contains "an nft failure is named with a stable token" "$out" "egress-audit:load-failed"
 assert_eq "a failed load records no state, so the next apply retries" \
     "$([ -f "$EAU/state-fail" ] && echo written || echo clean)" "clean"
+mkdir -p "$EAU/ro" && chmod 500 "$EAU/ro"
+out=$(EAU_NFT_CAPTURE=1 PITHEAD_EGRESS_AUDIT_STATE="$EAU/ro/sub/state" eau_run apply_host_egress_audit "$EAU/map-lan.tsv" 2>&1)
+chmod 700 "$EAU/ro"
+assert_contains "a state path that cannot be recorded still loads the table" "$out" "counted and logged, none dropped"
+assert_not_contains "the unloadable state path never leaks a shell redirection error into the apply output" "$out" \
+    "No such file or directory"
 
 echo "== counters: the view reports per-rule counters and the would_drop total (#4195) =="
 EAU_C=$(eau_run host_egress_audit_counters)

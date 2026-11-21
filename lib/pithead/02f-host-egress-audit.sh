@@ -60,8 +60,8 @@ apply_host_egress_audit() {
         return 0
     fi
     if printf '%s\n' "$out" | sudo nft -f -; then
-        mkdir -p "${state%/*}" 2>/dev/null || true
-        printf '%s\n' "$out" >"$state" 2>/dev/null || true
+        sudo mkdir -p "${state%/*}" 2>/dev/null || true
+        printf '%s\n' "$out" | sudo tee "$state" >/dev/null 2>&1 || true
         log "Log-only host egress audit table loaded (inet $HOST_EGRESS_AUDIT_NFT_TABLE) — outbound flows are counted and logged, none dropped."
     else
         warn "egress-audit:load-failed — could not load the log-only host egress audit table; nothing is dropped, but host flows are not counted or logged."
@@ -72,7 +72,7 @@ apply_host_egress_audit() {
 remove_host_egress_audit() {
     [ "$OS_TYPE" = "Linux" ] || return 0
     command -v nft >/dev/null 2>&1 || return 0
-    rm -f "${PITHEAD_EGRESS_AUDIT_STATE:-/run/pithead/egress-audit.rules}" 2>/dev/null || true
+    sudo rm -f "${PITHEAD_EGRESS_AUDIT_STATE:-/run/pithead/egress-audit.rules}" >/dev/null 2>&1 || true
     sudo -n nft delete table inet "$HOST_EGRESS_AUDIT_NFT_TABLE" 2>/dev/null || true
 }
 
