@@ -89,7 +89,7 @@ _ru_config_commit() {
     }
     rid=$APPROVAL_REQUEST_ID
     printf 'realupgrade: preview %s\n' "$(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status, error, approval_required}' 2>/dev/null | cut -c1-300)" >&2
-    result=$(approval_commit "$rid") || true
+    result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" --arg t "${HARNESS_TARI: -8}" '{id:$id,confirm:"APPLY",approve:true,payout_suffixes:{tari:$t}}')" 420) || true
     printf '%s' "$result" | jq -c . 2>/dev/null || printf '%s\n' "$result"
 }
 
