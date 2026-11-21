@@ -93,6 +93,7 @@ echo "== a bootstrap stall needs the same progress in both samples =="
 (
     source "$ROOT/lib/pithead/02f-tor-recovery-reasons.sh"
     samples="$WORK/progress"
+    persistent=tor_recovery_bootstrap_persistent
     rm -f "$samples"
     tor_recovery_bootstrap_sample() {
         if [ -e "$samples" ]; then echo "tor-id bootstrap${SECOND}-no-circuit"; else
@@ -100,9 +101,9 @@ echo "== a bootstrap stall needs the same progress in both samples =="
             echo "tor-id bootstrap45-no-circuit"
         fi
     }
-    SECOND=60 tor_recovery_bootstrap_persistent && exit 1
+    if SECOND=60 "$persistent"; then exit 1; fi
     rm -f "$samples"
-    SECOND=45 tor_recovery_bootstrap_persistent
+    SECOND=45 "$persistent"
 )
 
 echo "== a persistent bootstrap stall is a reset reason =="
