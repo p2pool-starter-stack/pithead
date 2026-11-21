@@ -242,8 +242,8 @@ _ru_order_reboot() {
     t0=$(date +%s)
     RU_REBOOT_T0="$t0"
     out=$(_os_step '{"action":"reboot"}' 30 2>/dev/null || true)
-    [ -n "$out" ] && [ "$(printf '%s' "$out" | jq -r '.status // ""' 2>/dev/null)" != rejected ] || {
-        bad "$1: the dashboard did not accept the ordered reboot: ${out:-no result}"
+    [ "$(printf '%s' "$out" | jq -r '.status // ""' 2>/dev/null)" != rejected ] || {
+        bad "$1: the dashboard rejected the ordered reboot: $out"
         return 1
     }
     sleep 20
