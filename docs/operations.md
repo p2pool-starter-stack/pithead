@@ -1043,7 +1043,7 @@ suffer. The Tor container applies the same 12-hour test at start (`TOR_STALE_CON
 moves `cached-microdesc-consensus`, `cached-microdescs`, `cached-microdescs.new` and `cached-certs`
 to `stale-directory-cache/` before Tor starts, after a random wait of up to
 `TOR_CACHE_JITTER_SEC` (30 s) so a fleet does not reach the directory authorities together. While
-probes pass, the dashboard heal reads the cache age from the host every 30 minutes; a stale
+probes pass, the dashboard heal reads the cache age from the host every 30 minutes, first 30 minutes after it starts and never while a host operation holds the pithead lock (so it cannot collide with `setup` or `apply`); a stale
 consensus requests `tor-recover` after a random delay of up to 30 minutes, counts as one
 disruptive action under the daily cap above, and is retried no sooner than the six-hour
 cooldown. A Tari node with no peers for 10 minutes while probes pass is logged with the cache

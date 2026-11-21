@@ -1,5 +1,7 @@
+import fcntl
 from unittest.mock import AsyncMock, patch
 
+from mining_dashboard.service.health import tor_heal_history
 from mining_dashboard.service.health.tor_heal import PROBE_INTERVAL_SEC, TorEgressHealer
 from mining_dashboard.service.health.tor_heal_history import (
     MAX_DISRUPTIVE_PER_DAY,
@@ -44,6 +46,8 @@ def make(host, peerless=None):
         peerless_since=peerless,
     )
     healer._jitter = lambda low, high: 0
+    healer._observe_next = 0
+    healer._host_lock_free = lambda: True
     patches = (
         patch("mining_dashboard.service.control_service.submit", host.submit),
         patch("mining_dashboard.service.control_service.result", host.result),
@@ -127,3 +131,40 @@ async def test_healthy_probes_read_the_cache_age_once_per_observe_interval():
         assert len(host.requests) == 1
         await cycle(healer, now, 1)
     assert len(host.requests) == 2
+
+
+async def test_the_first_observation_waits_one_interval_after_start():
+    host = Host(stale=True)
+    healer, now, patches = make(host)
+    healer._observe_next = None
+    with patches[0], patches[1], patches[2]:
+        await cycle(healer, now, 1)
+        assert host.requests == []
+        await cycle(healer, now, OBSERVE_INTERVAL_SEC // PROBE_INTERVAL_SEC)
+    assert len(host.requests) == 1
+
+
+def _hold(path):
+    path.write_bytes(b"")
+    held = path.open("rb")
+    fcntl.flock(held, fcntl.LOCK_EX)
+    return held
+
+
+async def test_a_held_host_lock_defers_the_observation(tmp_path):
+    lock_path = tmp_path / "lock"
+    held = _hold(lock_path)
+    host = Host(stale=False)
+    healer, now, patches = make(host)
+    del healer._host_lock_free
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patch.object(tor_heal_history, "HOST_LOCK_FILE", str(lock_path)),
+    ):
+        await cycle(healer, now, 1)
+        assert host.requests == []
+        held.close()
+        await cycle(healer, now, 1)
+    assert len(host.requests) == 1

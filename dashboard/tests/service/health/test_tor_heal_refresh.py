@@ -189,14 +189,13 @@ async def test_unsaturated_history_stays_silent():
     notify.assert_not_awaited()
 
 
-async def test_healthy_egress_only_observes_the_cache_age():
+async def test_healthy_egress_never_requests_history_at_start():
     submits = []
     healer = TorEgressHealer(AsyncMock(), enabled=True, probe=lambda: (True, "ok"))
     p_submit, p_result = _heal_patches({}, submits)
     with p_submit, p_result:
         await healer.check()
-    assert submits == ["tor-history"]
-    assert healer._history_outage is None
+    assert submits == []
 
 
 async def test_second_outage_alerts_again_and_late_reading_is_dropped_on_recovery():
@@ -278,7 +277,7 @@ async def test_recovery_clear_is_retried_until_host_acknowledges():
         results["tor-history"] = {"status": "applied"}
         now[0] += PROBE_INTERVAL_SEC
         await healer.check()
-    assert submits == ["tor-history", "tor-history", "tor-history"]
+    assert submits == ["tor-history", "tor-history"]
     assert healer._clear_history is False
 
 

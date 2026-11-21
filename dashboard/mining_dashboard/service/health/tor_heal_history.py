@@ -1,5 +1,6 @@
 """Host observations of saturated Tor circuit history for the egress healer."""
 
+import fcntl
 import logging
 import random
 import time
@@ -16,6 +17,7 @@ STALE_JITTER_SEC = 30 * 60
 STALE_RETRY_SEC = 6 * 3600
 PEERLESS_LOG_SEC = 10 * 60
 OBSERVE_INTERVAL_SEC = 30 * 60
+HOST_LOCK_FILE = "/pithead-lock"
 
 
 class TorHistoryMixin:
@@ -125,10 +127,25 @@ class TorHistoryMixin:
                 self._recovery_notice = None
         return pending
 
+    @staticmethod
+    def _host_lock_free() -> bool:
+        try:
+            with open(HOST_LOCK_FILE, "rb") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return False
+                fcntl.flock(lock, fcntl.LOCK_UN)
+        except OSError:
+            return True
+        return True
+
     async def _observe_consensus(self, now, ok) -> bool:
         if not ok or self._attempts or self._history_outage is not None or self._clear_history:
             return False
-        if self._observe_next is None or now >= self._observe_next:
+        if self._observe_next is None:
+            self._observe_next = now + OBSERVE_INTERVAL_SEC
+        elif now >= self._observe_next and self._host_lock_free():
             self._observe_next = now + OBSERVE_INTERVAL_SEC
             self._request_history(observe=True)
         peerless = self._peerless_since() if self._peerless_since else None
