@@ -53,6 +53,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
   bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
   instead of staying at 0 peers when compose did not cycle it (#4063); a bare restart and Restart all then also restart the tari container, when the stack has one, so it starts after Tor (#4064).
+- The Tor egress auto-heal no longer stalls when the host refuses NEWNYM. A rejected refresh now
+  spends its rung and the ladder moves on to a host-gated state reset and then a Tor restart,
+  capped at four per rolling day, instead of repeating NEWNYM forever. `tor-recover` accepts a
+  sustained outage, a wedged control port or a stalled bootstrap as reset reasons when egress is
+  still down, the heal reads Tor's control-port circuit state, and giving up is written to the
+  host audit log. Past the cap the heal keeps probing every 15 minutes and re-alerts at most once
+  an hour, naming the outage length, until one recovery notice on egress returning (#4075).
 - A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
   changed version or the first successful refresh after the disconnected banner, shows "Pithead was
   updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2

@@ -118,6 +118,17 @@ control_process_request() { # <claimed-file> <control-dir>
             control_tor_recover "$cdir" "$id" "$actor"
         fi
         ;;
+    tor-heal-exhausted)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ] ||
+            [ "$actor" != tor-heal ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid exhaustion record or auto-heal disabled",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        else
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",action:"tor-heal-exhausted",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" applied
+        fi
+        ;;
     tor-reset)
         if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ]; then
             control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",action:"tor-reset",error:"Tor auto-heal is off (TOR_AUTO_HEAL), so the Tor state reset is unavailable",ts:(now|floor)}')"
@@ -130,7 +141,6 @@ control_process_request() { # <claimed-file> <control-dir>
         fi
         ;;
     tor-history)
-        # Read-only (#3052): reports only whether Tor's circuit-history state is saturated.
         if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
             [ "$(jq -r 'keys | sort == ["action","actor","id","observed_at","outage"]' "$file")" != true ] ||
             ! jq -e '.actor == "tor-heal" and (.outage | type == "string" and (. == "" or test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"))) and (.observed_at | type == "number" and . == floor and . >= 0)' "$file" >/dev/null; then
