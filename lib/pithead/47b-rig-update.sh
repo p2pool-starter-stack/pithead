@@ -7,7 +7,7 @@ rig_update_pending() {
     jq -r 'select(.state == "pending") | .to // empty' "$f" 2>/dev/null || true
 }
 
-rig_update_state_write() { # <state> <from> <to> <reason>
+rig_update_state_write() {
     local f tmp
     f=$(rig_update_state_file)
     tmp="$f.tmp"
@@ -20,7 +20,7 @@ rig_update_state_write() { # <state> <from> <to> <reason>
     fi
 }
 
-rig_update_refuse() { # <reason> [target]
+rig_update_refuse() {
     if [ -z "$(rig_update_pending)" ]; then
         rig_update_state_write refused "$(os_running_version)" "${2:-}" "$1"
     fi
@@ -36,7 +36,7 @@ rig_update_gate() {
         error "rig-update runs on a rig — this machine is '$role'. A coordinator updates its OS with 'pithead os-update' or the dashboard."
 }
 
-rig_update_tor_wrap() { # <subcommand args...> — 127 when the body runs directly, else the wrapped run's rc
+rig_update_tor_wrap() {
     if os_update_test_base >/dev/null 2>&1; then return 127; fi
     if [ "${PITHEAD_RIG_UPDATE_IN_TOR:-}" = 1 ]; then return 127; fi
     command -v pithead-tor >/dev/null 2>&1 || return 126
@@ -45,7 +45,7 @@ rig_update_tor_wrap() { # <subcommand args...> — 127 when the body runs direct
     return "$rc"
 }
 
-rig_update_channel_url() { # <tag-or-empty>
+rig_update_channel_url() {
     local base
     if base=$(os_update_test_base); then
         printf '%s' "$base/releases-latest.json"
@@ -58,7 +58,7 @@ rig_update_channel_url() { # <tag-or-empty>
     fi
 }
 
-rig_update_release() { # <tag-or-empty> — sets RIG_TAG RIG_SIZE RIG_NOTE; a refusal reason lands in RIG_REFUSE
+rig_update_release() {
     local url tmp rc=0 size note_json
     RIG_TAG="" RIG_SIZE=0 RIG_NOTE="" RIG_REFUSE=""
     url=$(rig_update_channel_url "${1:-}")
@@ -117,7 +117,7 @@ rig_update_slot_guard() {
 
 rig_update_cleanup() { find "$(os_update_staging_dir)" -maxdepth 1 -name 'pithead-os-*.raucb*' -delete 2>/dev/null || true; }
 
-rig_update_download() { # <final> <partial> <size> <url> <socks> — 0 only for a complete file at exactly <size>
+rig_update_download() {
     local final="$1" part="$2" size="$3" url="$4" socks="$5"
     local attempt="${PITHEAD_OS_DL_ATTEMPT:-600}" tries=0 pid rc=0 bytes have http_code fail
     while :; do
@@ -309,7 +309,7 @@ rig_update_install() {
     return 0
 }
 
-rig_update_boot_record() { # rig boot calls this: sweep staged bundles, settle a pending verdict
+rig_update_boot_record() {
     local f to from now tmp
     rm -f "$(os_update_staging_dir)"/pithead-os-*.raucb "$(os_update_staging_dir)"/*.partial
     f=$(rig_update_state_file)
