@@ -305,7 +305,7 @@ control_process_request "$WORK/rejected.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = rejected ]
 [ "$(grep -c '^newnym$' "$WORK/actions")" = 2 ]
 
-guard_reply() { # <progress> <tag> <established> <uptime> <guard line>
+guard_reply() {
     printf '250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=%s TAG=%s SUMMARY="x"\r\n' "$1" "$2"
     printf '250-status/circuit-established=%s\r\n250-uptime=%s\r\n250+entry-guards=\r\n%s\r\n.\r\n250 OK\r\n' "$3" "$4" "$5"
 }
@@ -318,7 +318,7 @@ case "$input" in
 *) printf '250 OK\r\n250 OK\r\n' ;;
 esac
 SH
-guard_signal() { # <state reply file> -> exit code of the GUARDS signal
+guard_signal() {
     rm -f "$WORK/signal"
     TOR_CAPTURE="$WORK/signal" TOR_STATE_REPLY="$1" TOR_COOKIE_FILE="$WORK/cookie" PATH="$WORK/bin:$PATH" \
         sh "$ROOT/build/tor/control-signal.sh" GUARDS >"$WORK/signal-result"
