@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from mining_dashboard.service.health.tor_heal import PROBE_INTERVAL_SEC, TorEgressHealer
 from mining_dashboard.service.health.tor_heal_history import (
     MAX_DISRUPTIVE_PER_DAY,
+    OBSERVE_INTERVAL_SEC,
     STALE_RETRY_SEC,
 )
 
@@ -66,6 +67,7 @@ async def test_stale_consensus_requests_one_recovery_within_the_cooldown(caplog)
         await cycle(healer, now, 6)
     assert host.submits == ["tor-recover"]
     assert host.requests[0]["outage"] == ""
+    assert healer._attempts == 0
     assert any("61200 s old" in r.getMessage() for r in caplog.records)
 
 
@@ -117,3 +119,13 @@ async def test_peerless_tari_with_passing_probes_is_logged_with_cache_age(caplog
     messages = [r.getMessage() for r in caplog.records if "Tari has had no peers" in r.getMessage()]
     assert len(messages) == 1
     assert "600 s" in messages[0]
+
+
+async def test_healthy_probes_read_the_cache_age_once_per_observe_interval():
+    host = Host(stale=False)
+    healer, now, patches = make(host)
+    with patches[0], patches[1], patches[2]:
+        await cycle(healer, now, OBSERVE_INTERVAL_SEC // PROBE_INTERVAL_SEC)
+        assert len(host.requests) == 1
+        await cycle(healer, now, 1)
+    assert len(host.requests) == 2

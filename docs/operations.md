@@ -1039,11 +1039,12 @@ suffer. The Tor container applies the same 12-hour test at start (`TOR_STALE_CON
 moves `cached-microdesc-consensus`, `cached-microdescs`, `cached-microdescs.new` and `cached-certs`
 to `stale-directory-cache/` before Tor starts, after a random wait of up to
 `TOR_CACHE_JITTER_SEC` (30 s) so a fleet does not reach the directory authorities together. While
-probes pass, the dashboard heal reads the cache age from the host every probe interval; a stale
-consensus requests `tor-recover` after a random delay of up to 30 minutes, counts as one attempt
-and one disruptive action under the caps above, and is retried no sooner than the six-hour
+probes pass, the dashboard heal reads the cache age from the host every 30 minutes; a stale
+consensus requests `tor-recover` after a random delay of up to 30 minutes, counts as one
+disruptive action under the daily cap above, and is retried no sooner than the six-hour
 cooldown. A Tari node with no peers for 10 minutes while probes pass is logged with the cache
-age; it does not request a reset by itself. It uses sudo for read-only access to Tor-owned state
+age; it does not request a reset by itself. A peerless local monerod keeps its own
+Tor-proven restart budget. It uses sudo for read-only access to Tor-owned state
 and identity keys.
 
 `./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion
@@ -1055,7 +1056,7 @@ records the attempt in the control audit; this connectivity result does not prov
 Restore the remaining baseline services through the caller's normal workflow and independently
 verify baseline health and authenticated Monero and Tari sync before admitting new work.
 
-The backups (`state.backup.*`, `directory-cache.backup.*`) remain for inspection. A persistent six-hour cooldown includes failed attempts.
+The backups (`state.backup.*`, `directory-cache.backup.*`) remain for inspection until an operator removes them. A persistent six-hour cooldown includes failed attempts.
 The command refuses an ambiguous or symlinked Tor mount, an active mutation, ordinary warnings,
 or an advancing chain. It never removes onion keys, wallets, configuration or chain data.
 If verification fails, the command reports failure and leaves the backup for diagnosis;

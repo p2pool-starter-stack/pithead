@@ -89,6 +89,22 @@ tor_recovery_circuit_status() {
 }
 if tor_recover check; then exit 1; fi
 
+echo "== a bootstrap stall needs the same progress in both samples =="
+(
+    source "$ROOT/lib/pithead/02f-tor-recovery-reasons.sh"
+    samples="$WORK/progress"
+    rm -f "$samples"
+    tor_recovery_bootstrap_sample() {
+        if [ -e "$samples" ]; then echo "tor-id bootstrap${SECOND}-no-circuit"; else
+            : >"$samples"
+            echo "tor-id bootstrap45-no-circuit"
+        fi
+    }
+    SECOND=60 tor_recovery_bootstrap_persistent && exit 1
+    rm -f "$samples"
+    SECOND=45 tor_recovery_bootstrap_persistent
+)
+
 echo "== a persistent bootstrap stall is a reset reason =="
 tor_recovery_circuit_status() { return 1; }
 tor_recovery_bootstrap_persistent() { return 0; }

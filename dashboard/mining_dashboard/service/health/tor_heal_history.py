@@ -15,6 +15,7 @@ DISRUPTIVE_WINDOW_SEC = 24 * 3600
 STALE_JITTER_SEC = 30 * 60
 STALE_RETRY_SEC = 6 * 3600
 PEERLESS_LOG_SEC = 10 * 60
+OBSERVE_INTERVAL_SEC = 30 * 60
 
 
 class TorHistoryMixin:
@@ -27,6 +28,7 @@ class TorHistoryMixin:
     _pending_observe = False
     _peerless_since = None
     _peerless_logged = False
+    _observe_next = None
     _jitter = staticmethod(random.uniform)
 
     def _request_history(self, observe=False):
@@ -130,7 +132,9 @@ class TorHistoryMixin:
         """
         if not ok or self._attempts or self._history_outage is not None or self._clear_history:
             return False
-        self._request_history(observe=True)
+        if self._observe_next is None or now >= self._observe_next:
+            self._observe_next = now + OBSERVE_INTERVAL_SEC
+            self._request_history(observe=True)
         peerless = self._peerless_since() if self._peerless_since else None
         if peerless is None:
             self._peerless_logged = False
@@ -166,10 +170,7 @@ class TorHistoryMixin:
             return False
         self._recovery_requested_at = now
         self._own_restart = True
-        self._attempts = 1
-        self._last_attempt = now
         self._disruptive.append(now)
         self._stale_due = None
         self._stale_retry_at = now + STALE_RETRY_SEC
-        self._failure_evidence = evidence
         return True

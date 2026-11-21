@@ -283,7 +283,7 @@ tor_recover() { # check | apply; explicit operator action only
             tor_recovery_refusal
             return 1
         fi
-        log "Tor circuit history is saturated; authenticated bootstrap stayed at 95% with no established circuit across three minutes and repeated invalid timing warnings."
+        log "Tor circuit history is saturated; authenticated bootstrap made no progress below 100% with no established circuit across three minutes and repeated invalid timing warnings."
     fi
     identities=$(tor_recovery_identities "$dir") || {
         warn "Tor recovery refused: onion identities cannot be verified."
@@ -297,7 +297,7 @@ tor_recover() { # check | apply; explicit operator action only
         return 0
     fi
     backup="$dir/state.backup.$now"
-    sudo test ! -e "$backup" && sudo test ! -L "$backup" && sudo test ! -e "$dir/directory-cache.backup.$now" || {
+    sudo test ! -e "$backup" && sudo test ! -L "$backup" && sudo test ! -e "$dir/directory-cache.backup.$now" && sudo test ! -L "$dir/directory-cache.backup.$now" || {
         warn "Tor recovery refused: circuit-state backup target already exists."
         mutation_lock_release
         tor_recovery_refusal
