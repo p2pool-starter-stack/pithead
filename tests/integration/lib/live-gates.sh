@@ -76,10 +76,7 @@ run_image_upgrade() {
     tari_block_identity_checked "$before_tari" || true
     before_tari_id="$TARI_IDENTITY"
     if [ -z "$before_monero_id" ] || [ -z "$before_tari_id" ]; then
-        unreadable=""
-        [ -n "$before_monero_id" ] || unreadable+=" Monero tip hash (get_info returned none)"
-        [ -n "$before_tari_id" ] || unreadable+=" Tari block at height $before_tari (ListHeaders: ${TARI_IDENTITY_ERROR:-no output})"
-        it_fail "pre-upgrade chain identities are readable" "could not read:$unreadable; upgrade not attempted"
+        it_fail "pre-upgrade chain identities are readable" "$(chain_identity_failure_detail "$before_monero_id" "$before_tari_id" "$before_tari")"
         return 0
     fi
     it_pass "pre-upgrade Monero and Tari block identities captured"

@@ -4,7 +4,7 @@ echo "== Tari pre-upgrade identity read =="
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/lib.sh"
-eval "$(sed -n '/^tari_error_summary() {/,/^}/p;/^tari_block_identity_checked() {/,/^}/p' "$HERE/lib/live-tari-identity.sh")"
+eval "$(sed -n '/^tari_error_summary() {/,/^}/p;/^tari_block_identity_checked() {/,/^}/p;/^chain_identity_failure_detail() {/,/^}/p' "$HERE/lib/live-tari-identity.sh")"
 td="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/tari-id.XXXXXX")"
 trap 'rm -rf "$td"' EXIT
 TARI_IDENTITY="" TARI_IDENTITY_ERROR=""
@@ -50,3 +50,19 @@ assert_eq "stderr noise next to a valid identity does not fail the read" "$TARI_
 tari_identity_remote() { :; }
 tari_block_identity_checked 12 || true
 assert_eq "a silent empty read says there was no output" "$TARI_IDENTITY_ERROR" "attempt 3/3: no output"
+
+dns=$'status = StatusCode.UNAVAILABLE\ndetails = "DNS resolution failed for tari-node.lab.example:18142: C-ares status is not ARES_SUCCESS"\ndebug_error_string = "name=tari-node.lab.example [::1]:18142"'
+tari_identity_remote() { echo "$dns"; }
+tari_block_identity_checked 12 || true
+case "$TARI_IDENTITY_ERROR" in
+    *lab.example* | *18142*) it_fail "hostnames and ports are masked" "$TARI_IDENTITY_ERROR" ;;
+    *) it_pass "hostnames and ports are masked" ;;
+esac
+
+TARI_IDENTITY_ERROR="attempt 3/3: status = StatusCode.PERMISSION_DENIED"
+assert_eq "the failure detail names Tari, the height and the error" \
+    "$(chain_identity_failure_detail "$good" "" 12)" \
+    "could not read: Tari block at height 12 (ListHeaders: attempt 3/3: status = StatusCode.PERMISSION_DENIED); upgrade not attempted"
+assert_eq "the failure detail names Monero when only Monero is missing" \
+    "$(chain_identity_failure_detail "" "$good" 12)" \
+    "could not read: Monero tip hash (get_info returned none); upgrade not attempted"
