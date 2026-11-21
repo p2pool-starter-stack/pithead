@@ -91,7 +91,7 @@ phase_provision_support_bundle_proof() {
         printf '%s\n' "$out" | sed -n 's/^CANARY //p' >"$canaries"
         read -r since until <<<"$(printf '%s\n' "$out" | sed -n 's/^WINDOW //p')"
     else
-        bad "support bundle proof: seeding the window and the secrets on the guest failed"
+        bad "support bundle proof: seeding the window and the secrets on the guest failed ($(tail -c 300 "$SSH_ERR" 2>/dev/null | tr '\r\n' '  '))"
         since=""
     fi
     if [ -n "$since" ] && _sb_round "baseline" baseline "$since" "$until" "$tag" "$canaries" "$dir"; then

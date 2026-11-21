@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "seed script error at line $LINENO" >&2' ERR
 tag="$1" action="$2"
 env_value() { grep -E "^$1=" /data/pithead/.env | tail -n1 | cut -d= -f2- | tr -d "\"'"; }
 tordir=$(env_value TOR_DATA_DIR)
@@ -21,10 +22,24 @@ window)
     printf '{"ts":%s,"request":{"uri":"/api/%s","headers":{"Cookie":["%s"],"User-Agent":["sbproof"]}},"resp_headers":{"Set-Cookie":["%s"]}}\n' \
         "$(date -u +%s)" "$token" "$cookie" "$cookie" >"$caddy_file"
     journalctl --sync
-    journalctl -t sbproof --no-pager -o cat | grep -qF -- "$token" || exit 11
-    journalctl -u tor.service --no-pager -o cat | grep -qF -- "$login" || exit 12
-    grep -qF -- "$torkey" "$tordir/state" || exit 13
-    grep -qF -- "$cookie" "$caddy_file" || exit 14
+    seen=$(journalctl -t sbproof --no-pager -o cat)
+    [[ "$seen" == *"$token"* ]] || {
+        echo "seed check failed: journal line" >&2
+        exit 11
+    }
+    seen=$(journalctl -u tor.service --no-pager -o cat)
+    [[ "$seen" == *"$login"* ]] || {
+        echo "seed check failed: container log line" >&2
+        exit 12
+    }
+    grep -qF -- "$torkey" "$tordir/state" || {
+        echo "seed check failed: Tor state line" >&2
+        exit 13
+    }
+    grep -qF -- "$cookie" "$caddy_file" || {
+        echo "seed check failed: Caddy line" >&2
+        exit 14
+    }
     sleep 1
     until=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     sleep 2
