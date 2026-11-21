@@ -129,7 +129,7 @@ render_env() {
     # config_bool so xvb.tor=false (route XvB over clearnet) is honoured rather than coerced to Tor (#294).
     xvb_tor=$(normalize_bool "$(config_bool '.xvb.tor' true)")
     xvb_url=$(jq -r '.xvb.url // empty' "$CONFIG_FILE")
-    [ -z "$xvb_url" ] && xvb_url="na.xmrvsbeast.com:4247"
+    [ -z "$xvb_url" ] && xvb_url="eu.xmrvsbeast.com:4247"
     xvb_donor=$(jq -r '.xvb.donor_id // empty' "$CONFIG_FILE")
     case "$xvb_donor" in
     "" | auto | DYNAMIC_ID) xvb_donor="${MONERO_WALLET:0:8}" ;;

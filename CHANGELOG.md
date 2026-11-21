@@ -34,6 +34,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Changed
 
+- XvB donation mining now defaults to `eu.xmrvsbeast.com:4247`, because XMRvsBeast is retiring its NA servers. A saved `xvb.url` on `na.xmrvsbeast.com` (any port) is moved to the EU host with the same port on the next apply, the prior file is kept as `config.json.bak-xvb-na`, a custom host is left alone, and Tor routing is unchanged (#4308).
 - The appliance support bundle (the dashboard's **Support bundle** card and `pithead recovery-bundle`) is now one `.zip` for a chosen start and end time (`--since` and `--until` on the CLI, `since` and `until` on the control request; `hours` still works). It holds the whole system journal, the kernel log, the boot list and a journal per Pithead and quadlet unit read from the installed unit files, redacted, with a `manifest.json` that records the windows, the oldest retained entry, the journald usage and every truncated, empty, missing or failed file. Oversize files keep their oldest and newest lines instead of the bundle being refused, and the journald cap is raised from 200 MiB to 400 MiB to cover 168 hours at the log volume reported for a loaded test box (#4127).
 
 ### Fixed
@@ -62,6 +63,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
   bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
   instead of staying at 0 peers when compose did not cycle it (#4063); a bare restart and Restart all then also restart the tari container, when the stack has one, so it starts after Tor (#4064).
+- The Tor egress auto-heal no longer stalls when the host refuses NEWNYM. A rejected refresh now
+  spends its rung and the ladder moves on to a host-gated state reset and then a Tor restart,
+  capped at four per rolling day, instead of repeating NEWNYM forever. `tor-recover` accepts a
+  sustained outage, a wedged control port or a stalled bootstrap as reset reasons when egress is
+  still down, the heal reads Tor's control-port circuit state, and giving up is written to the
+  host audit log. Past the cap the heal keeps probing every 15 minutes and re-alerts at most once
+  an hour, naming the outage length, until one recovery notice on egress returning (#4075).
 - A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
   changed version or the first successful refresh after the disconnected banner, shows "Pithead was
   updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2

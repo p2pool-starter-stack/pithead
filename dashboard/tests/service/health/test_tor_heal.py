@@ -8,6 +8,7 @@ from mining_dashboard.service.health.monerod_redial import MonerodRestartBudget
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
+    EXHAUSTED_PROBE_SEC,
     FIRST_ACTION_AFTER_SEC,
     MAX_ATTEMPTS,
     PROBE_INTERVAL_SEC,
@@ -196,7 +197,7 @@ class TestDecide:
             assert docker.start.await_count == (2 if started else 3)
             h._probe = lambda: (True, "fresh circuit answered")
             for _ in range(RECOVERY_CONFIRM_PROBES):
-                clock.t += PROBE_INTERVAL_SEC
+                clock.t += EXHAUSTED_PROBE_SEC
                 await h.check()
         assert any(f"recovered following {expected}:" in r.message for r in caplog.records)
         assert not any("refunded" in r.message for r in caplog.records)
@@ -248,7 +249,7 @@ class TestCheck:
             caplog.at_level("WARNING", logger="TorHeal"),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [
@@ -328,7 +329,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [("stop", "tor"), ("start", "tor")]
@@ -350,7 +351,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert docker.calls == [("stop", "tor"), ("start", "tor")]
@@ -377,7 +378,7 @@ class TestCheck:
             caplog.at_level("WARNING", logger="TorHeal"),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += COOLDOWN_SEC
                 await h.check()
         assert ("stop", "monerod") in docker.calls
@@ -398,7 +399,7 @@ class TestCheck:
             ),
         ):
             await h.check()
-            for _ in range(MAX_ATTEMPTS):
+            for _ in range(MAX_ATTEMPTS + 1):
                 clock.t += max(BROKEN_AFTER_SEC, COOLDOWN_SEC)
                 await h.check()
             assert len(docker.calls) == 4  # two circuit refreshes and one container restart

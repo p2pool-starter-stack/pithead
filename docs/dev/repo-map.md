@@ -161,7 +161,9 @@ readback helpers are in `02d-tor-egress-verify.sh`.
 The LAN source rule and old-listener stop are in `02b-lan-guard.sh`; the staged Compose passes
 and scoped node restarts are in `02b1-lan-guard-compose.sh`. Transition prearm and the periodic
 live-rule check are in `02c-lan-guard-check.sh`.
-Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`;
+Explicit saturated Tor circuit-history recovery is in `02e-tor-recovery.sh`, and the reset
+reasons that need no saturated history (sustained outage, wedged control port, stalled bootstrap)
+are in `02f-tor-recovery-reasons.sh`;
 its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
@@ -383,7 +385,9 @@ The Tari-mode unreadable-config branch streams `tests/os/caddy-failure-evidence.
 through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
-to prove saturated-history recovery and the disabled control with production timers.
+to prove saturated-history recovery and the disabled control with production timers. The
+opt-in KVM `tor-heal-exhausted` phase streams `tor-heal-exhausted-guest.sh` into its own guest
+to prove a spent NEWNYM budget still reaches the state reset on an unsaturated history.
 The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
 zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
 cuts a live P2Pool's peers.
