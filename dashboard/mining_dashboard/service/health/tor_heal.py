@@ -1,6 +1,7 @@
 """Bounded Tor clearnet recovery when tor.auto_heal is enabled.
 
 Corroborate failed probes on isolated circuits and two targets before bounded NEWNYM requests.
+The host turns a request into a guard rotation when Tor is stuck at the first hop; no restart follows.
 For saturated history, the final step requests host-gated tor-recover, including its persistent
 six-hour cooldown and identity checks. Otherwise a final restart re-dials local Monero.
 """
@@ -101,6 +102,7 @@ class TorEgressHealer(TorHistoryMixin):
         self._failure_evidence = ""
         self._recovery_step = None
         self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._guard_rotated = False
         self._history_since = None
         self._history_outage = None
         self._clear_history = False
@@ -154,6 +156,7 @@ class TorEgressHealer(TorHistoryMixin):
             self._last_attempt = None
             self._ok_streak = 0
             self._warned_exhausted = False
+            self._guard_rotated = False
             return "recovered"
         # ok is False — any failure breaks a would-be recovery streak.
         self._ok_streak = 0
@@ -191,6 +194,7 @@ class TorEgressHealer(TorHistoryMixin):
             self._ok_streak = 0
             self._warned_exhausted = False
             self._newnym_unconfirmed = False
+            self._guard_rotated = False
         self._tor_started = started
         self._own_restart = False
 
@@ -273,7 +277,9 @@ class TorEgressHealer(TorHistoryMixin):
                     self._request_history()
                     return
                 self._newnym_unconfirmed = False
-                self._recovery_step = "NEWNYM"
+                rotated = result.get("action") == "tor-dropguards"
+                self._guard_rotated = self._guard_rotated or rotated
+                self._recovery_step = "guard rotation" if rotated else "NEWNYM"
             probe = await asyncio.to_thread(self._probe)
             ok, evidence = probe
             if not ok:
@@ -303,6 +309,12 @@ class TorEgressHealer(TorHistoryMixin):
                         )
                         return
                     self._pending_since = now
+                    return
+                if self._guard_rotated:
+                    logger.warning(
+                        "Tor egress still failed after guard rotation (%s). Not restarting Tor.",
+                        evidence,
+                    )
                     return
                 if self.saturated_history:
                     try:
