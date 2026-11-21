@@ -137,6 +137,10 @@ apply_publish_tari_secret() {
         mv -fT -- "${PITHEAD_ENV_STAGE}.tari-wallet-secret" "$PWD/data/tari-wallet-secret.env" ||
             error "Could not publish the Tari payout wallet secret."
     fi
+    if [ -f "${PITHEAD_ENV_STAGE}.monero-view-key" ]; then
+        mv -fT -- "${PITHEAD_ENV_STAGE}.monero-view-key" "$PWD/data/monero-view-key.secret" ||
+            error "Could not publish the Monero payout wallet secret."
+    fi
 }
 
 apply_publish_env() {
@@ -182,7 +186,7 @@ apply() {
     DEPLOYMENT_COMPLETED=true
 
     local newenv="$PITHEAD_ENV_STAGE"
-    render_env "$newenv" "${newenv}.tari-wallet-secret"
+    render_env "$newenv" "${newenv}.tari-wallet-secret" "${newenv}.monero-view-key"
 
     local changed=() key
     while IFS= read -r key; do
@@ -238,7 +242,7 @@ apply() {
                 warn "Confirm by typing the last 8 characters of the new address ($wallet_new8)."
                 read -r -p "Confirm: " CONFIRM || true
                 if [ "$CONFIRM" != "$wallet_new8" ]; then
-                    rm -f "$newenv" "${newenv}.tari-wallet-secret"
+                    rm -f "$newenv" "${newenv}.tari-wallet-secret" "${newenv}.monero-view-key"
                     log "Apply cancelled. No changes were made."
                     return 0
                 fi
@@ -247,7 +251,7 @@ apply() {
             warn "Some of the changes above (⚠) are disruptive."
             read -r -p "Proceed with applying these changes? (y/N): " CONFIRM || true
             if [[ ! "$CONFIRM" =~ ^[Yy] ]]; then
-                rm -f "$newenv" "${newenv}.tari-wallet-secret"
+                rm -f "$newenv" "${newenv}.tari-wallet-secret" "${newenv}.monero-view-key"
                 log "Apply cancelled. No changes were made."
                 return 0
             fi

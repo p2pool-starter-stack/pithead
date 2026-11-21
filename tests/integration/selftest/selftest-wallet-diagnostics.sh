@@ -149,9 +149,10 @@ ENTRYPOINT="$HERE/../../../build/monero/wallet-entrypoint.sh"
 for mode in create reopen; do
     d="$TD/start-$mode"
     mkdir -p "$d"
+    echo fixture-view-key >"$TD/view-key"
     identity=$(printf '%s\n%s\n' fixture-address fixture-view-key | sha256sum | cut -d' ' -f1)
     [ "$mode" != reopen ] || printf 'persisted-wallet' >"$d/payout-wallet-$identity"
-    WALLET_DIR="$d" GEN_JSON="$d/gen.json" MONERO_WALLET_ADDRESS=fixture-address MONERO_VIEW_KEY=fixture-view-key bash "$ENTRYPOINT" >/dev/null
+    WALLET_DIR="$d" GEN_JSON="$d/gen.json" MONERO_WALLET_ADDRESS=fixture-address MONERO_VIEW_KEY_FILE_IN="$TD/view-key" bash "$ENTRYPOINT" >/dev/null
     rc=$?
     assert_rc "wallet $mode still invokes the daemon" "$rc" 0
     assert_eq "wallet $mode limits parallel work to one worker" "$(grep -A1 -x -- --max-concurrency "$WALLET_TEST_ARGV" | tail -1)" 1

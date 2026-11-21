@@ -1,3 +1,14 @@
+write_secret_sidecar() {
+    local file="$1" target="$2" enabled="$3" label="$4" tmp foreign ok=false
+    tmp=$(umask 077 && mktemp "$(dirname "$file")/.$(basename "${file%.*}").XXXXXX") || error "Could not create a temp file in $(dirname "$file")."
+    printf '%s\n' "$5" >"$tmp" &&
+        foreign=$(find "$tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
+        { [ -z "$foreign" ] || chown "$APP_UID:$APP_GID" "$tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tmp"; } &&
+        mv -fT -- "$tmp" "$target" && ok=true
+    [ "$ok" = true ] || { rm -f "$tmp" && [ "$target" = "$file" ] && [ "$enabled" != true ]; } ||
+        error "Could not write $file owned by uid $APP_UID for the $label; the previous file is kept."
+}
+
 # Single writer for the env file. Derives every value from the parsed config plus the preserved
 # secrets/onions/host, so it is safe to call repeatedly (bootstrap, finalize, or apply).
 # $1 = target file (defaults to $ENV_FILE); apply renders to a temp file first to diff it.
@@ -312,19 +323,13 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
-    local tari_secret_target="${2:-$tari_secret_file}"
+    local tari_secret_file="$PWD/data/tari-wallet-secret.env" monero_secret_file="$PWD/data/monero-view-key.secret"
     if [ "$target" != "$PITHEAD_ENV_DRYRUN" ]; then
         mkdir -p "$PWD/data"
-        tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
-        printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
-            "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp" &&
-            tari_foreign=$(find "$tari_secret_tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
-            { [ -z "$tari_foreign" ] || chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp"; } &&
-            mv -fT -- "$tari_secret_tmp" "$tari_secret_target" && tari_secret_ok=true
-        # An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
-        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "$tari_secret_target" = "$tari_secret_file" ] && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
-            error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
+        write_secret_sidecar "$tari_secret_file" "${2:-$tari_secret_file}" "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" "Tari payout wallet" \
+            "$(printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s' \
+                "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD")"
+        write_secret_sidecar "$monero_secret_file" "${3:-$monero_secret_file}" "${PAYOUT_CONFIRM_ENABLED:-false}" "Monero payout wallet" "$MONERO_VIEW_KEY"
     fi
 
     # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
@@ -341,6 +346,7 @@ MONERO_NODE_USERNAME=$(dotenv_render_value "$MONERO_USER")
 MONERO_NODE_PASSWORD=$(dotenv_render_value "$MONERO_PASS")
 MONERO_WALLET_ADDRESS=$(dotenv_render_value "$MONERO_WALLET")
 MONERO_VIEW_KEY=$(dotenv_render_value "$MONERO_VIEW_KEY")
+MONERO_VIEW_KEY_FILE=$(dotenv_render_value "$monero_secret_file")
 PAYOUT_SCAN_HEIGHT=$(dotenv_render_value "$PAYOUT_SCAN_HEIGHT")
 PAYOUT_CONFIRM_ENABLED=$(dotenv_render_value "$PAYOUT_CONFIRM_ENABLED")
 WALLET_RPC_USERNAME=wallet

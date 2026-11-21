@@ -58,6 +58,6 @@ result = {
     "services": services,
     "networks": {"mining_net": {"external": True, "name": model["networks"]["mining_net"]["name"]}},
     "volumes": {key: {} for key in ("wallet_data", "tari_wallet_db")},
-    "secrets": {"tari_wallet_secret": model["secrets"]["tari_wallet_secret"]},
+    "secrets": {name: model["secrets"][name] for name in ("monero_view_key", "tari_wallet_secret")},
 }
 json.dump(result, sys.stdout)
