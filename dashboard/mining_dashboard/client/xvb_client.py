@@ -6,7 +6,7 @@ from typing import Any
 import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY, XVB_SUBMIT_URL
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import bounded_get, proxy_map
 from mining_dashboard.helper.utils import parse_hashrate
 
 # The four donor tiers XvB publishes an expected per-player reward for. These are exactly the tier
@@ -198,9 +198,7 @@ class XvbClient:
 
         params = {"address": self.wallet_address}
 
-        # Route through Tor (socks5h) so xmrvsbeast sees a Tor exit, not the operator's home IP —
-        # the request carries the wallet, so a clearnet fetch would correlate IP <-> wallet (#163).
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = proxy_map(self.tor_proxy)
         try:
             response = bounded_get(self.url, params=params, timeout=20, proxies=proxies)
             if response.status_code == 200:
@@ -225,7 +223,7 @@ class XvbClient:
         contract as ``get_stats`` (the caller writes nothing on None, so a stale/failed fetch can be
         detected via a frozen ``last_update`` and never implied fresh, #311).
         """
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = proxy_map(self.tor_proxy)
         try:
             response = bounded_get(self.reward_estimate_url, timeout=20, proxies=proxies)
             if response.status_code != 200:
@@ -263,7 +261,7 @@ class XvbClient:
             self.logger.warning("Configuration Error: MONERO_WALLET_ADDRESS is missing or invalid.")
             return None
 
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = proxy_map(self.tor_proxy)
         try:
             response = bounded_get(self.winners_url, timeout=20, proxies=proxies)
             if response.status_code != 200:
@@ -317,10 +315,7 @@ class XvbClient:
 
         params = {"address": self.wallet_address}
 
-        # Same Tor routing as the stats fetch: socks5h so xmrvsbeast sees a Tor exit (not the
-        # operator's home IP) and the host is resolved over Tor too. The request carries the full
-        # wallet, so a clearnet call would correlate IP <-> wallet (#163).
-        proxies = {"http": self.tor_proxy, "https": self.tor_proxy} if self.tor_proxy else None
+        proxies = proxy_map(self.tor_proxy)
         try:
             response = bounded_get(self.submit_url, params=params, timeout=20, proxies=proxies)
             body = (response.text or "").strip()

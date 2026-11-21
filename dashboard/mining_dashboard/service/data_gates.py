@@ -1,6 +1,7 @@
 import logging
 import os
 import stat
+import time
 
 from mining_dashboard.config.config import DISK_PATH
 from mining_dashboard.service.health.mining_guard import (
@@ -46,6 +47,12 @@ def chain_synced(sync):
 
 
 class DataGateMixin:
+    _rejected_at = None
+    _readmit_wait = None
+    _stop_logged = False
+    _start_failed = False
+    _persisted_logged = False
+
     def _restore_sync_gate(self):
         """Tari-only resets preserve an earned release; full resets revoke it."""
         self.sync_gate_monero_only = bool(self.latest_data.get("sync_gate_monero_only", False))
@@ -83,34 +90,91 @@ class DataGateMixin:
         )
         self.mining_guard.update(triggers)
 
+    def _rejection_reasons(self, monero_down, tari_down):
+        reasons = []
+        if self.mining_guard.pause:
+            reasons.append(self.mining_guard.pause["reason"])
+        pending = [k for k in self.mining_guard.holding_keys if k not in self.mining_guard.active]
+        if pending:
+            reasons.append("also holding inside its grace: " + ", ".join(pending))
+        if monero_down:
+            reasons.append("Monero node unreachable past the debounce")
+        if _runtime().TARI_REQUIRED and tari_down:
+            reasons.append("Tari node unreachable past the debounce")
+        return "; ".join(reasons) or "required node unreachable"
+
+    def _readmit_blockers(self):
+        blockers = []
+        if not self.monero_health.healthy:
+            blockers.append("Monero node not yet confirmed healthy")
+        if _runtime().TARI_REQUIRED and not self.tari_health.healthy:
+            blockers.append("Tari node not yet confirmed healthy")
+        if self.mining_guard.holding:
+            blockers.append(
+                "guard triggers still holding or recovering: "
+                + ", ".join(self.mining_guard.holding_keys)
+            )
+        return "; ".join(blockers)
+
     async def _apply_worker_rejection(self, monero_down, tari_down=False):
+        container = _runtime().REJECT_WORKERS_CONTAINER
         required_down = (
             monero_down
             or (_runtime().TARI_REQUIRED and tari_down)
             or bool(self.mining_guard.active)
         )
         if required_down:
-            if not self.workers_rejected:
+            self._readmit_wait = None
+            if self.workers_rejected and self._rejected_at is None and not self._persisted_logged:
+                self._persisted_logged = True
                 logger.warning(
-                    f"Mining work is not valid ({(self.mining_guard.pause or {}).get('reason', 'required node unreachable')}) — "
-                    f"stopping {_runtime().REJECT_WORKERS_CONTAINER} so workers fail over to their backup pools."
+                    f"{container} was already stopped when this dashboard started (persisted "
+                    f"workers_rejected); still held by: {self._rejection_reasons(monero_down, tari_down)}."
                 )
-                if await self.docker_control.stop(_runtime().REJECT_WORKERS_CONTAINER):
+            if not self.workers_rejected:
+                if not self._stop_logged:
+                    self._stop_logged = True
+                    logger.warning(
+                        f"Mining work is not valid ({self._rejection_reasons(monero_down, tari_down)}) — "
+                        f"stopping {container} so workers fail over to their backup pools."
+                    )
+                if await self.docker_control.stop(container):
                     self.workers_rejected = True
+                    self._stop_logged = False
+                    self._rejected_at = time.monotonic()
             return
 
-        # Not-down is insufficient after a dashboard restart or during recovery.
+        self._stop_logged = False
         recovered = (
             self.monero_health.healthy
             and (not _runtime().TARI_REQUIRED or self.tari_health.healthy)
             and not self.mining_guard.holding
         )
-        if self.workers_rejected and recovered:
-            logger.info(
-                f"Required nodes recovered — starting {_runtime().REJECT_WORKERS_CONTAINER} to readmit workers."
+        if not self.workers_rejected:
+            return
+        if not recovered:
+            blockers = self._readmit_blockers()
+            if blockers != self._readmit_wait:
+                self._readmit_wait = blockers
+                logger.info(f"{container} stays stopped: {blockers}")
+            return
+        if await self.docker_control.start(container):
+            self.workers_rejected = False
+            since = self._rejected_at
+            self._rejected_at = None
+            self._readmit_wait = None
+            self._start_failed = False
+            elapsed = (
+                f"{int(time.monotonic() - since)}s after it was stopped"
+                if since is not None
+                else "after a stop that predates this dashboard process"
             )
-            if await self.docker_control.start(_runtime().REJECT_WORKERS_CONTAINER):
-                self.workers_rejected = False
+            logger.info(
+                f"Required nodes recovered — started {container} to readmit workers, {elapsed}."
+            )
+        elif not self._start_failed:
+            self._start_failed = True
+            logger.warning(f"Readmitting workers failed: {container} did not start; retrying.")
 
     async def _stop_gate_containers(self, quiet):
         """Stop every ``SYNC_GATE_CONTAINERS`` container; shared by the #35 sync gate and the

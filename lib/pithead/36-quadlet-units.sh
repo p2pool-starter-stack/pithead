@@ -1,6 +1,6 @@
 render_quadlet_units() {
     local envf="$1" outdir="$2"
-    [ -f "$envf" ] || error "render-quadlet: env file not found: $envf"
+    quadlet_refuse_control_chars "$envf"
     _qenv() { env_get_file "$envf" "$1"; }
     _qenvq() {
         local v

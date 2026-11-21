@@ -125,6 +125,39 @@ assert_eq "#2040 arming: the fixture really carries a literal % and a %H specifi
 assert_eq "#2040: literal % is doubled so systemd does not expand %H to the hostname" \
     "$qpct_line" '"P2POOL_FLAGS=--x 50%% --host %%H"'
 
+for qcase in 'WALLET_RPC_PASSWORD|pass\nwanted-by=nobody|LF' 'WALLET_RPC_PASSWORD|pass\rwanted-by=nobody|CR' 'P2POOL_URL|p2pool\nPodmanArgs=--privileged|raw-interpolated LF'; do
+    IFS='|' read -r qk qv ql <<<"$qcase"
+    QCTL="$SANDBOX/quadlet-ctl-out"
+    rm -rf "$QCTL"
+    {
+        grep -v "^$qk=" "$ROOT/os/quadlet/payout/fixture.env"
+        printf '%s="%s"\n' "$qk" "$qv"
+    } >"$SANDBOX/ctl.env"
+    assert_eq "#4176 arming ($ql): the env file really carries the escaped control character" \
+        "$(grep -cxF "$qk=\"$qv\"" "$SANDBOX/ctl.env")" "1"
+    QCTLRC=0
+    QCTLOUT=$(run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/ctl.env" "$QCTL" 2>&1) || QCTLRC=$?
+    assert_eq "#4176 ($ql): a decoded control character in $qk exits non-zero" "$QCTLRC" "1"
+    assert_contains "#4176 ($ql): the refusal names the key" "$QCTLOUT" "$qk"
+    assert_eq "#4176 ($ql): the refusal happens before any unit file is created" \
+        "$(find "$QCTL" 2>/dev/null | wc -l | tr -d ' ')" "0"
+done
+
+for qvar in PITHEAD_REGISTRY STACK_VERSION; do
+    QCTL="$SANDBOX/quadlet-ctl-out"
+    rm -rf "$QCTL"
+    grep -v "^$qvar=" "$ROOT/os/quadlet/payout/fixture.env" >"$SANDBOX/ctl-nofallback.env"
+    QCTLRC=0
+    QCTLOUT=$(
+        export "$qvar=reg.example"$'\nPodmanArgs=--privileged'
+        run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/ctl-nofallback.env" "$QCTL" 2>&1
+    ) || QCTLRC=$?
+    assert_eq "#4176: a newline in the $qvar process fallback exits non-zero" "$QCTLRC" "1"
+    assert_contains "#4176: the refusal names $qvar" "$QCTLOUT" "$qvar"
+    assert_eq "#4176: the $qvar fallback refusal happens before any unit file is created" \
+        "$(find "$QCTL" 2>/dev/null | wc -l | tr -d ' ')" "0"
+done
+
 # The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null

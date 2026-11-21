@@ -26,7 +26,7 @@ from mining_dashboard.service.data_helpers import (
 from mining_dashboard.service.health.degradation import DegradationMonitor
 from mining_dashboard.service.health.mining_guard import MiningGuard
 from mining_dashboard.service.health.monero_health import MoneroChainHealth
-from mining_dashboard.service.health.monerod_redial import MonerodRedial
+from mining_dashboard.service.health.monerod_redial import MonerodRedial, MonerodRestartBudget
 from mining_dashboard.service.health.node_alert import tor_heal_status
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.health.p2pool_heal import P2PoolPeerHealer
@@ -215,13 +215,18 @@ class DataSetupMixin:
         # restarts) unless enabled. Reuses the #31 docker-control proxy (start/stop only)
         # to restart tor when clearnet egress is stuck on a failing guard; the recovery
         # note rides the Telegram notifier, which works again exactly when the heal worked.
+        self.monerod_budget = MonerodRestartBudget()
         self.tor_healer = TorEgressHealer(
             self.docker_control,
             notify=self.alert_service.tor_heal_alert,
             ping_failing_since=lambda: self.healthchecks.failing_since,
+            monerod_budget=self.monerod_budget,
         )
         self.monerod_redial = MonerodRedial(
-            self.docker_control, audit=self._audit_monerod_restart, enabled=monero_is_local()
+            self.docker_control,
+            audit=self._audit_monerod_restart,
+            enabled=monero_is_local(),
+            budget=self.monerod_budget,
         )
         # Tari chain health (#2464): a live, reachable node that stopped following the chain (stale
         # tip, no peers, behind the explorer). Detection and alert only; the alert rides the same
