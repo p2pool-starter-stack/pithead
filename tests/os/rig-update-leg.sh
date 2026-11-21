@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-rig_update_leg() { # #4013: the rig fetches, verifies, installs and reports its own OS update
+rig_update_leg() {
     info "rig-update leg — channel check, refusals, install and verdict through pithead rig-update"
     local tag srv host_addr port=8933 size srv_pid bundle out aged before marker n
     tag="v$(tr -d ' \t\r\n' <VERSION)"
