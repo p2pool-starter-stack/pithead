@@ -108,16 +108,14 @@ _ru_negctl_leg() {
         return 1
     fi
     ok "negctl: a hard reset of the uncommitted slot rolled back and recorded a verdict ($(printf '%s' "$os_json" | jq -c '.verdict' | cut -c1-200))"
-    if realupgrade_cause_applies "$RU_TAG"; then
-        if out=$(rollback_verdict_check "$os_json" "$REALUPGRADE_ROLLBACK_CAUSE") && printf '%s' "$os_json" | jq -e '.verdict.interrupted == true' >/dev/null 2>&1; then
-            ok "negctl: the rollback names its cause ($REALUPGRADE_ROLLBACK_CAUSE)"
-        else
-            bad "negctl: the rollback recorded no explicit cause (${out:-interrupted flag missing}); $RU_TAG should carry the #3909/#3910 fixes"
-            _ru_save_failure negctl
-        fi
-    else
-        info "negctl: $RU_TAG predates the #3909/#3910 fixes (first in $REALUPGRADE_CAUSE_FIX_VERSION); the cause row is not applicable and the verdict above is the red evidence"
-    fi
+    case "$(realupgrade_cause_row "$RU_TAG" "$os_json")" in
+    pass) ok "negctl: the rollback names its cause ($REALUPGRADE_ROLLBACK_CAUSE)" ;;
+    skip) it_skip_leg "negctl rollback cause on $RU_TAG (#3909/#3910)" "$REALUPGRADE_CAUSE_SKIP_REASON" missing ;;
+    *)
+        bad "negctl: the rollback recorded no explicit cause; $RU_TAG should carry the #3909/#3910 fixes ($(printf '%s' "$os_json" | jq -c '.verdict' | cut -c1-200))"
+        _ru_save_failure negctl
+        ;;
+    esac
     sensitive_preview "$(dashboard_config_body "$(dashboard_curl -sSk -m 10 "https://$ip/api/config" | jq -c .)")" &&
         [ "$(printf '%s' "$APPROVAL_PREVIEW" | jq -r '.status')" = "previewed" ] && ok "negctl: the old version's configuration is still saveable after the rollback" ||
         bad "negctl: the old version's configuration is not saveable after the rollback ($(printf '%s' "$APPROVAL_PREVIEW" | cut -c1-200))"

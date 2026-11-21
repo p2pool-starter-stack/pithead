@@ -446,13 +446,16 @@ cap, and so does the boot group with provision.
 - Crossupdate: the update from the previous release, which is the path existing installs take,
   pinned to a bench that keeps that release's image.
 - Realupgrade: the opt-in `realupgrade` phase (#4193). It fetches the newest published appliance
-  image older than the tag (its `.sha256` verified), patches a scratch copy offline so the guest
-  also trusts the test-signed candidate (the release keyring stays; only that scratch copy is
-  patched), ages it through the dashboard, upgrades it through the dashboard to the exact-SHA
+  image older than the tag (its `.sha256` verified), always patches a scratch copy offline
+  (the dev signer appended to the RAUC keyring beside the release certificate, and
+  `/etc/pithead-variant` set to `debug`), because the phase can only build a dev-signed debug
+  candidate. A rerun of this phase therefore never boots the published image unmodified: the
+  unmodified signed-release boot is proved by the provision and crossupdate jobs on signed
+  artefacts. It ages the guest through the dashboard, upgrades it through the dashboard to the exact-SHA
   candidate, then soaks for 10 minutes with one extra reboot and runs the hard-reset negative
-  control. It is one job (62 minutes in bench job 787, under the 240-minute cap); it is the single payload the recipe submits (the candidate is built once; the guest is
+  controls. It is one job (62 minutes in bench job 787, under the 240-minute cap); it is the single payload the recipe submits (the candidate is built once; the guest is
   provisioned twice, for the upgrade/soak and for the negative control); if a measured run needs more, submit
-  `realupgrade-main` (upgrade and soak) and `realupgrade-negctl` (the negative control) as two
+  `realupgrade-main` (upgrade and soak) and `realupgrade-negctl` (the negative controls) as two
   jobs, which makes nine KVM jobs and nine payloads in this recipe.
 
 Set four inputs first: `BASELINE_SHA`, the seeded baseline; `PROVISION_BENCH_URL`, the API base of
