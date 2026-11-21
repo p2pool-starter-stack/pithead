@@ -17,13 +17,9 @@ from types import SimpleNamespace
 
 WALLET_DIR = "/home/ubuntu/wallets"
 VOLUME = "pithead_wallet_data"
-IDENTITY_FIELDS = {
-    "MONERO_WALLET_ADDRESS",
-    "MONERO_VIEW_KEY",
-    "PAYOUT_SCAN_HEIGHT",
-    "WALLET_RPC_USERNAME",
-    "WALLET_RPC_PASSWORD",
-}
+IDENTITY_FIELDS = set(
+    "MONERO_WALLET_ADDRESS MONERO_VIEW_KEY PAYOUT_SCAN_HEIGHT WALLET_RPC_USERNAME WALLET_RPC_PASSWORD".split()
+)
 
 
 def docker(*args, **kwargs):
@@ -48,20 +44,9 @@ def identity_values(lines):
             values[key] = parts[0] if parts else ""
     if not values.get("MONERO_VIEW_KEY"):
         return None
-    if not values.get("MONERO_WALLET_ADDRESS"):
-        raise ValueError("configured wallet identity is incomplete")
-    if set(values) != IDENTITY_FIELDS:
+    if not values.get("MONERO_WALLET_ADDRESS") or set(values) != IDENTITY_FIELDS:
         raise ValueError("configured wallet identity is incomplete")
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
-
-
-def container_identity(item):
-    lines = list(item["Config"]["Env"])
-    for mount in item.get("Mounts", []):
-        if mount.get("Destination") == "/run/secrets/monero_view_key":
-            key = Path(mount["Source"]).read_text().strip()
-            lines.append(f"MONERO_VIEW_KEY={shlex.quote(key)}")
-    return identity_values(lines)
 
 
 def identity(baseline):
@@ -155,6 +140,10 @@ def wallet_container(allowed, **kwargs):
     mounts = [m for m in item["Mounts"] if m["Destination"] == WALLET_DIR]
     if len(mounts) != 1 or mounts[0]["Type"] != "volume" or mounts[0]["Name"] != VOLUME:
         raise ValueError("wallet volume definition changed")
+    for mount in (m for m in item["Mounts"] if m["Destination"] == "/run/secrets/monero_view_key"):
+        item["Config"]["Env"].append(
+            "MONERO_VIEW_KEY=" + shlex.quote(Path(mount["Source"]).read_text().strip())
+        )
     return item
 
 

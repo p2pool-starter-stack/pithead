@@ -13,7 +13,7 @@ def capture_fixture(fixture, baseline, diagnostics=True):
     item = fixture.wallet_container({baseline}, timeout=30)
     if item is None:
         raise ValueError("configured wallet container is missing")
-    if fixture.container_identity(item) != fingerprint:
+    if fixture.identity_values(item["Config"]["Env"]) != fingerprint:
         raise ValueError("source container wallet identity differs from the baseline")
     fixture.local_volume(timeout=30)
     directory = Path(

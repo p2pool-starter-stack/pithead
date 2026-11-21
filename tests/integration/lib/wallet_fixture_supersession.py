@@ -222,7 +222,7 @@ def validate_record(fixture, record, binding, state):
 
 def prove_live(fixture, state, directory, baseline, branch=None):
     item = fixture.wallet_container({baseline, branch or baseline}, timeout=30)
-    if item is None or fixture.container_identity(item) != state["identity"]:
+    if item is None or fixture.identity_values(item["Config"]["Env"]) != state["identity"]:
         raise ValueError("live wallet fixture identity differs from the baseline")
     fixture.local_volume(timeout=30)
     was_running = item["State"]["Running"]
