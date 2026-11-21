@@ -6,10 +6,10 @@ It does not install tools or prepare a chain snapshot.
 
 ## Source and build
 
-The source pin is Monero `v0.18.5.1`, commit
-`4f92268d7c16741cfb41e5bbe2aa46cc260a9ea5`. The builder verifies the complete
+The source pin is Monero `v0.18.5.4`, commit
+`85f036ba7019cd36f08e8a38a27c37ea7b522618`. The builder verifies the complete
 source archive against SHA-256
-`4fdd15401af04e1ce84dcae40c8c114320d1cc9b449db25c0d57efa4b4054881`
+`f27d011bb0b4c8b8597c650bd9ca61d011a91ebb318d113c18049a85d0610793`
 before reading its LMDB files. A mismatch with the supported version in
 `build/monero/Dockerfile` fails the build. Update both pins together when changing
 the supported Monero implementation; a matching version string alone is not
