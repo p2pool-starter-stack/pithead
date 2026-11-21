@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from mining_dashboard.service.health.monerod_redial import MonerodRestartBudget
 from mining_dashboard.service.health.tor_heal import (
     BROKEN_AFTER_SEC,
     COOLDOWN_SEC,
@@ -48,7 +49,15 @@ def _monerod_running():
         yield
 
 
-def _healer(clock=None, enabled=True, probe=None, notify=None, docker=None, restart_monerod=None):
+def _healer(
+    clock=None,
+    enabled=True,
+    probe=None,
+    notify=None,
+    docker=None,
+    restart_monerod=None,
+    monerod_budget=None,
+):
     # restart_monerod=None exercises the config default: the test env's MONERO_NODE_HOST equals
     # LOCAL_MONERO_HOST (both defaults), i.e. a LOCAL node — heals also cycle monerod (#972).
     return TorEgressHealer(
@@ -58,6 +67,7 @@ def _healer(clock=None, enabled=True, probe=None, notify=None, docker=None, rest
         notify=notify,
         clock=clock or _Clock(),
         restart_monerod=restart_monerod,
+        monerod_budget=monerod_budget,
     )
 
 
@@ -249,6 +259,55 @@ class TestCheck:
         ]
         assert any("Requesting NEWNYM" in r.message for r in caplog.records)
         assert any("Restarting Tor" in r.message for r in caplog.records)
+
+    async def test_the_heal_cycles_monerod_from_the_shared_budget(self):
+        clock = _Clock()
+        docker = _FakeDocker()
+        budget = MonerodRestartBudget()
+        h = _healer(
+            clock, probe=lambda: (False, "test probe"), docker=docker, monerod_budget=budget
+        )
+        with (
+            patch(
+                "mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"
+            ),
+            patch(
+                "mining_dashboard.service.health.tor_heal.control_service.result",
+                return_value={"status": "applied"},
+            ),
+        ):
+            await h.check()
+            for _ in range(MAX_ATTEMPTS):
+                clock.t += COOLDOWN_SEC
+                await h.check()
+        assert docker.calls[-2:] == [("stop", "monerod"), ("start", "monerod")]
+        assert budget.count() == 1
+        assert not budget.allow(clock.t)
+
+    async def test_a_held_shared_budget_spares_monerod_the_restart(self):
+        clock = _Clock()
+        docker = _FakeDocker()
+        budget = MonerodRestartBudget()
+        budget.spend(clock.t + COOLDOWN_SEC * MAX_ATTEMPTS)
+        h = _healer(
+            clock, probe=lambda: (False, "test probe"), docker=docker, monerod_budget=budget
+        )
+        with (
+            patch(
+                "mining_dashboard.service.health.tor_heal.control_service.submit", return_value="id"
+            ),
+            patch(
+                "mining_dashboard.service.health.tor_heal.control_service.result",
+                return_value={"status": "applied"},
+            ),
+        ):
+            await h.check()
+            for _ in range(MAX_ATTEMPTS):
+                clock.t += COOLDOWN_SEC
+                await h.check()
+        assert ("stop", "tor") in docker.calls
+        assert ("stop", "monerod") not in docker.calls
+        assert ("start", "monerod") not in docker.calls
 
     async def test_a_stopped_monerod_is_not_started(self):
         # #2749: a held monerod (LAN guard failed at boot) must stay down, or its LAN ports open.

@@ -21,6 +21,7 @@ from mining_dashboard.config.config import (
 )
 from mining_dashboard.helper.http import bounded_get
 from mining_dashboard.service import control_service
+from mining_dashboard.service.health.monerod_redial import MonerodRestartBudget
 from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
 
 logger = logging.getLogger("TorHeal")
@@ -70,6 +71,7 @@ class TorEgressHealer(TorHistoryMixin):
         clock=time.monotonic,
         restart_monerod=None,
         ping_failing_since=None,
+        monerod_budget=None,
     ):
         self.enabled = TOR_AUTO_HEAL if enabled is None else enabled
         # Cycle monerod after a successful tor restart (#972) — only when the node is local
@@ -77,6 +79,7 @@ class TorEgressHealer(TorHistoryMixin):
         if restart_monerod is None:
             restart_monerod = MONERO_NODE_HOST == LOCAL_MONERO_HOST
         self._restart_monerod = restart_monerod
+        self._monerod_budget = monerod_budget or MonerodRestartBudget()
         self._docker = docker_control
         self._probe = probe or self._probe_egress
         self._notify = notify  # optional async callable(text) — the Telegram one-off
@@ -344,22 +347,7 @@ class TorEgressHealer(TorHistoryMixin):
                     MAX_ATTEMPTS,
                 )
                 if started and self._restart_monerod and await self._monerod_running():
-                    # Tor killed the SOCKS connections; cycle Monero's dead peer sockets (#972).
-                    # Match its 1m stop grace and let the HTTP timeout outlast it (#234).
-                    logger.warning(
-                        "Restarting monerod alongside tor so it re-dials its peers through "
-                        "the fresh Tor (#972)."
-                    )
-                    m_stopped = await self._docker.stop(
-                        self.MONEROD, stop_timeout=60, request_timeout=90
-                    )
-                    m_started = await self._docker.start(self.MONEROD, request_timeout=60)
-                    if not (m_stopped and m_started):
-                        logger.warning(
-                            "monerod restart alongside tor could not be issued — if the node "
-                            "stays out of sync, restart it manually: './pithead restart "
-                            "monerod' (#972)."
-                        )
+                    await self._monerod_budget.cycle_after_tor_restart(self._docker, now)
             elif action == "exhausted":
                 # Keep diagnostics and undelivered warnings alive without another mutation.
                 if self._history_since is None or now - self._history_since >= COOLDOWN_SEC:

@@ -16,23 +16,18 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 it_warn() { printf '  \033[1;33m!\033[0m %s\n' "$1" >&2; }
 it_err() { printf '  \033[1;31m!\033[0m %s\n' "$1" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/redact-addr.sh"
 KEY="$HOME/.ssh/pithead-os-test"
 ip=""
 SSH_ERR="/tmp/pithead-os-ssh.err"
 HOST_SCRATCH="${TMPDIR:-/tmp}/pithead-os-scratch.$$"
 rm -f "$SERIAL.failed"
-# The wallet every phase submits. It must be checksum-VALID: p2pool refuses a well-formed but
-# checksum-invalid address at startup with a SIGABRT and crash-loops (#829), which killed the
-# provision phase's whole miner chain when the harness used `4` + 94×`A`. Host-side validation
-# only checks the shape, so the crash is the first honest verdict. XMRig's public donation
-# address: obviously not ours, plainly labelled, and any share it ever earned would be a donation.
+# Defaults are the owner's public wallets (the README donation wallet and the owner's Tari wallet); bench jobs override both.
 # shellcheck disable=SC2034  # shared through the assembled runner scope
-HARNESS_WALLET="44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
-# A real base58 Tari address: the wizard now decodes + checksum-validates it host-side, so a
-# made-up placeholder is (correctly) rejected before the flow ever reaches the credentials
-# handoff. Same throwaway address the stack suite uses.
+HARNESS_WALLET="${PITHEAD_OS_PAYOUT_MONERO:-486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R}"
 # shellcheck disable=SC2034  # shared through the assembled runner scope
-HARNESS_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+HARNESS_TARI="${PITHEAD_OS_PAYOUT_TARI:-122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG}"
 
 # Every remote call is bounded. CORRECTION (this comment used to claim Debian socket-activates sshd —
 # disproven): os/rootfs/Dockerfile only ever `systemctl enable`/`disable`s the plain ssh.service; no
@@ -269,6 +264,20 @@ _rollback_cmd() {
     printf 'rauc status mark-bad booted && reboot'
 }
 
+require_owner_payouts() {
+    local v node=0 missing=""
+    for v in PITHEAD_OS_MONERO_NODE_HOST PITHEAD_OS_TARI_NODE_HOST; do
+        [ -z "${!v:-}" ] || node=1
+    done
+    [ "$node" = 1 ] || return 0
+    for v in PITHEAD_OS_PAYOUT_MONERO PITHEAD_OS_PAYOUT_TARI; do
+        [ -n "${!v:-}" ] || missing="$missing $v"
+    done
+    [ -z "$missing" ] || {
+        echo "refusing to run: node inputs are set but the owner payout variable(s) are empty:$missing" >&2
+        exit 2
+    }
+}
 require_host() {
     # timeout bounds every remote call (see _ssh) — without it each one dies 127 and the whole
     # run reads as a bricked guest, so it is a hard dependency, not a nicety.

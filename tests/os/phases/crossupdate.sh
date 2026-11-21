@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 
 # Cross-version update (#2056): the `update` phase's legs build BOTH A/B slots from THIS tree
@@ -88,7 +90,7 @@ phase_crossupdate() {
     local out rc
     out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1")
     rc=$?
-    [ -n "$out" ] && printf '     install output: %s\n' "$(printf '%s' "$out" | tail -5)"
+    [ -n "$out" ] && printf '     install output: %s\n' "$(printf '%s' "$out" | os_redact_addr | tail -5)"
     [ "$rc" -eq 0 ] || {
         bad "installing the candidate onto the old-version guest failed"
         return
@@ -132,7 +134,7 @@ phase_crossupdate() {
         bad "the candidate slot was never committed by pithead-boot's gate${boot_verdict:+ — it reported: $boot_verdict} (grubenv: ${genv:-unreadable})"
         # What the gate's own doctor run held on: it writes each round's verdict to /run, so the
         # last one names the blocking check rather than leaving "never committed" unexplained.
-        info "  gate doctor fails: $(_ssh "jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")' /run/pithead-boot-doctor.json" 2>/dev/null | tr -d '\r' | cut -c1-300)"
+        info "  gate doctor fails: $(_ssh "jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")' /run/pithead-boot-doctor.json" 2>/dev/null | tr -d '\r' | os_redact_addr | cut -c1-300)"
         return
         ;;
     esac
@@ -200,7 +202,7 @@ phase_crossupdate() {
     if _ssh "cd /data/pithead && PITHEAD_BOOT_GATE=1 PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; then
         ok "the converged candidate passes the product's own doctor contract (the complete stack, not just a boot)"
     else
-        bad "doctor refuses the converged candidate stack: $(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json 2>/dev/null | jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")'" 2>/dev/null | tr -d '\r' | cut -c1-300)"
+        bad "doctor refuses the converged candidate stack: $(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json 2>/dev/null | jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")'" 2>/dev/null | tr -d '\r' | os_redact_addr | cut -c1-300)"
     fi
 
     # Transient healthcheck ephemera excluded, same as the reboot leg's check (provision-reboot.sh):
