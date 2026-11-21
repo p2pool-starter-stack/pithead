@@ -73,20 +73,6 @@ _ru_wait_state() {
     return 1
 }
 
-_ru_preview_probe() {
-    local live="$1" name filter out
-    for name in unchanged host stratum password; do
-        case "$name" in
-        unchanged) filter='.' ;;
-        host) filter=".dashboard.host = \"$RU_HOST_NAME\"" ;;
-        stratum) filter=".p2pool.stratum_port = $RU_STRATUM_PORT" ;;
-        password) filter=".dashboard.auth.password = \"$RU_NEW_PASS\"" ;;
-        esac
-        out=$(dashboard_control_post preview "$(dashboard_config_body "$(printf '%s' "$live" | jq -c "$filter")")" 20 2>/dev/null)
-        printf 'realupgrade: preview probe %s: http %s body %s\n' "$name" "${out##*$'\n'}" "$(printf '%s' "${out%$'\n'*}" | tr -d '\n' | cut -c1-160)" >&2
-    done
-}
-
 _ru_config_commit() {
     local live proposed rid result
     live=$(sensitive_live_config) || {
@@ -99,7 +85,6 @@ _ru_config_commit() {
     }
     sensitive_preview "$(dashboard_config_body "$proposed")" || {
         printf 'realupgrade: the preview never settled: %s\n' "$(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status, error, id}' 2>/dev/null | cut -c1-300)" >&2
-        _ru_preview_probe "$live"
         return 1
     }
     rid=$APPROVAL_REQUEST_ID
@@ -210,7 +195,7 @@ _ru_boot_aged_guest() {
     }
     ok "$RU_TAG dashboard serves /api/state with os_update"
 
-    cfg_out=$(_ru_config_commit ".dashboard.host = \"$RU_HOST_NAME\" | .p2pool.stratum_port = $RU_STRATUM_PORT | .dashboard.auth.password = \"$RU_NEW_PASS\"") && rc=0 || rc=$?
+    cfg_out=$(_ru_config_commit ".tari.wallet_address = \"$HARNESS_TARI\" | .dashboard.host = \"$RU_HOST_NAME\" | .p2pool.stratum_port = $RU_STRATUM_PORT | .dashboard.auth.password = \"$RU_NEW_PASS\"") && rc=0 || rc=$?
     DASH_PASS="$RU_NEW_PASS"
     if [ "$rc" -eq 0 ] && _ru_wait_state 600 &&
         [ "$(dashboard_curl -sSk -m 10 "https://$ip/api/config" | jq -r '.dashboard.host')" = "$RU_HOST_NAME" ] &&
