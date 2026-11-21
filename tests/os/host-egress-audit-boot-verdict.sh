@@ -4,7 +4,7 @@ host_egress_audit_would_drop() {
     printf '%s' "$1" | awk '/comment "would_drop"/ && /counter packets/ { for (i = 1; i <= NF; i++) if ($i == "packets") { print $(i + 1); exit } }'
 }
 
-host_egress_audit_boot_verdict() { # <is-active> <table-text> <would-drop-before> <would-drop-after> <dial-rc>
+host_egress_audit_boot_verdict() {
     local active="$1" table="$2" before="$3" after="$4" dial="$5"
     if [ "$active" != "active" ]; then
         echo "log-only host egress audit unit did not run this boot (is-active: ${active:-unreadable})"
