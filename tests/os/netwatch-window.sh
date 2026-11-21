@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2154  # ip belongs to run.sh; the KVM guest's lease as the harness knows it
+# shellcheck disable=SC2154
 _netwatch_home() { printf '%s' "${HOST_SCRATCH:-/tmp}/pithead-netwatch"; }
 
 _netwatch_slug() { printf '%s' "$1" | tr -cs 'A-Za-z0-9.-' '-'; }
