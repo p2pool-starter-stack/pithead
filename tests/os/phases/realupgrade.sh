@@ -75,10 +75,20 @@ _ru_wait_state() {
 
 _ru_config_commit() {
     local live proposed rid result
-    live=$(sensitive_live_config) || return 1
-    proposed=$(printf '%s' "$live" | jq -c "$1")
-    sensitive_preview "$(dashboard_config_body "$proposed")" || return 1
+    live=$(sensitive_live_config) || {
+        printf 'realupgrade: /api/config never answered (HTTP %s)\n' "$(dashboard_curl -sSk -m 8 -o /dev/null -w '%{http_code}' "https://$ip/api/config")" >&2
+        return 1
+    }
+    proposed=$(printf '%s' "$live" | jq -c "$1") || {
+        printf 'realupgrade: the config filter did not apply; top-level keys: %s\n' "$(printf '%s' "$live" | jq -c 'keys' 2>&1 | cut -c1-300)" >&2
+        return 1
+    }
+    sensitive_preview "$(dashboard_config_body "$proposed")" || {
+        printf 'realupgrade: the preview never settled: %s\n' "$(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status, error, id}' 2>/dev/null | cut -c1-300)" >&2
+        return 1
+    }
     rid=$APPROVAL_REQUEST_ID
+    printf 'realupgrade: preview %s\n' "$(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status, error, approval_required}' 2>/dev/null | cut -c1-300)" >&2
     result=$(approval_commit "$rid") || true
     printf '%s' "$result" | jq -c . 2>/dev/null || printf '%s\n' "$result"
 }
