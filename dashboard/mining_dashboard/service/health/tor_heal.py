@@ -1,7 +1,6 @@
 """Bounded Tor clearnet recovery when tor.auto_heal is enabled.
 
 Corroborate failed probes on isolated circuits and two targets before bounded NEWNYM requests.
-The host turns a request into a guard rotation when Tor is stuck at the first hop; no restart follows.
 For saturated history, the final step requests host-gated tor-recover, including its persistent
 six-hour cooldown and identity checks. Otherwise a final restart re-dials local Monero.
 """
