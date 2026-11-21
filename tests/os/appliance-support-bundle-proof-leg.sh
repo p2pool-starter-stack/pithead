@@ -52,6 +52,16 @@ _sb_round() {
     fi
 }
 
+_sb_dashboard_up() {
+    local tries=0
+    while [ "$tries" -lt 40 ]; do
+        dashboard_curl -fsSk -m 8 -o /dev/null "https://$ip/api/state" 2>/dev/null && return 0
+        tries=$((tries + 1))
+        sleep 3
+    done
+    return 1
+}
+
 _sb_control_off() {
     SB_STAGE=drain
     _control_requests_drained || return 1
@@ -60,7 +70,7 @@ _sb_control_off() {
     SB_STAGE=apply
     _ssh 'cd /data/pithead && jq ".dashboard.control.enabled = false" config.json >config.sbproof && install -m 600 config.sbproof config.json && rm -f config.sbproof && ./pithead apply -y >/dev/null' || return 1
     SB_STAGE=dashboard
-    sensitive_live_config >/dev/null || return 1
+    _sb_dashboard_up || return 1
     SB_STAGE=dotenv
     _ssh 'grep -Eq "^DASHBOARD_CONTROL_ENABLED=.?false.?$" /data/pithead/.env'
 }
