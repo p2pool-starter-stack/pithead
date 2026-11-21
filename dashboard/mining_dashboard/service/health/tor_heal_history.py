@@ -126,6 +126,7 @@ class TorHistoryMixin:
         return pending
 
     async def _observe_consensus(self, now, ok) -> bool:
+        return False
         if not ok or self._attempts or self._history_outage is not None or self._clear_history:
             return False
         if self._observe_next is None or now >= self._observe_next:
