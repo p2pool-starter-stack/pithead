@@ -22,7 +22,7 @@ _netwatch_vantage_ip() {
     printf '%s' "$addr"
 }
 
-_netwatch_meta_set() { # <meta.env> <KEY> <value>
+_netwatch_meta_set() {
     local tmp
     tmp=$(mktemp) || return 1
     {
@@ -31,14 +31,14 @@ _netwatch_meta_set() { # <meta.env> <KEY> <value>
     } >"$tmp" && mv "$tmp" "$1"
 }
 
-netwatch_scope_flows() { # <guest ip> <vantage ip> — flows.tsv on stdin -> the virbr0 world on stdout
+netwatch_scope_flows() {
     awk -v box="$1" -v gw="$2" '
         BEGIN { split(gw, g, "."); pre = g[1] "." g[2] "." g[3] }
         $2 == box || $3 == box || index($2, pre ".") == 1 || index($3, pre ".") == 1 { print }
     '
 }
 
-netwatch_verdict_row() { # <window> <0 clean|1 unexpected|2 dead> <detail>
+netwatch_verdict_row() {
     case "$2" in
     0)
         printf '  \033[1;32m✓\033[0m netwatch %s: %s — capture alive (#4196, non-required leg)\n' "$1" "$3"
@@ -52,7 +52,7 @@ netwatch_verdict_row() { # <window> <0 clean|1 unexpected|2 dead> <detail>
     esac
 }
 
-netwatch_window_start() { # <window name>
+netwatch_window_start() {
     local window="$1" engine out rc=0
     NW_WINDOW=""
     engine=$(_netwatch_engine) || {
@@ -80,7 +80,7 @@ netwatch_window_start() { # <window name>
     NW_WINDOW="$window"
 }
 
-netwatch_window_stop() { # <window name> — stop, classify at the perimeter vantage, record the row
+netwatch_window_stop() {
     local window="$1" engine rc=0 out gw seen bad flows=""
     [ "${NW_WINDOW:-}" = "$window" ] || return 0
     NW_WINDOW=""
@@ -118,7 +118,7 @@ netwatch_window_stop() { # <window name> — stop, classify at the perimeter van
     esac
 }
 
-netwatch_mining_hour() { # <role label> — one hour of passive capture while the box does its work
+netwatch_mining_hour() {
     local label="$1" n=0
     local total="${NW_MINING_MINUTES:-60}"
     netwatch_window_start "one hour of mining ($label)"
