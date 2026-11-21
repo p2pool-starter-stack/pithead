@@ -100,9 +100,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - **RigForge-only appliances: 2.0.4 changes the rig — RigForge 1.19.0.** RigForge 1.19.0 seeds
   `tor_socks5` `127.0.0.1:9050` on an appliance rig and fails closed when nothing listens there, and
   the appliance rig runs no Tor proxy at that address. A rig therefore refuses `upgrade --check`, the
-  XMRig clone and a remote upgrade, and `doctor` warns on its `tor-socks5` row; mining is unaffected
-  because the prebuilt miner is used, and an explicit `null` opts out. A rig also refuses a `DONATION`
-  above 0 because the donation pool would dial direct. `threads` is now honored and capped, so a rig
+  XMRig clone and a remote upgrade, and `doctor` warns on its `tor-socks5` row. The rig rewrites its miner
+  config on every boot without `tor_socks5`, so an override set on the rig does not persist. RigForge also refuses a `DONATION` above 0 while `tor_socks5` is set, because the donation pool
+  would dial direct, and this applies to a saved value too: a 2.0.3 rig with `DONATION` above 0 stops
+  mining after the update, because its miner setup fails on the next boot. Before updating such a rig,
+  set `DONATION` to 0 in the dashboard's Workers view. A rig
+  with `DONATION` 0 keeps mining on the prebuilt miner. `threads` is now honored and capped, so a rig
   that mined every core before this settles at the capped count after the next apply, with a lower
   hashrate (rigforge#588 and rigforge#632). A validated
   `xmrig` config overlay plus configurable RandomX modes give owners control over miner settings. The baked XMRig is unchanged
