@@ -123,7 +123,7 @@ class TorHistoryMixin:
                 self._recovery_notice = None
         return pending
 
-    async def _observe_consensus(self, now, ok):
+    async def _observe_consensus(self, now, ok) -> bool:
         """Healthy-probe checks: a stale cached consensus or a peerless Tari triggers recovery.
 
         Returns True when a host tor-recover request was submitted this cycle.

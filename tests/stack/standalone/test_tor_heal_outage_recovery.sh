@@ -128,7 +128,7 @@ control_process_request "$WORK/recover.json" "$WORK/control"
 control_process_request "$WORK/recover.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = failed ]
 jq -e '.error | contains("six-hour cooldown")' "$WORK/result" >/dev/null
-rm -f "$WORK"/tor/state.backup.* "$WORK/control/tor-recovery-at" "$WORK/audit"
+rm -rf "$WORK"/tor/directory-cache.backup.* "$WORK"/tor/state.backup.* "$WORK/control/tor-recovery-at" "$WORK/audit"
 printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 
 echo "== tor-history reports the saturated signature read-only =="

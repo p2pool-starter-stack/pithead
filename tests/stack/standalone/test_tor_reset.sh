@@ -59,7 +59,7 @@ request() { # <action> <actor> [extra json]
 }
 reset_state() {
     rm -f "$WORK/audit" "$WORK/actions" "$WORK/stopped" "$WORK/control/tor-reset-at" "$WORK/control/tor-recovery-at"
-    rm -rf "$WORK"/tor/state.backup.*
+    rm -rf "$WORK"/tor/directory-cache.backup.* "$WORK"/tor/state.backup.*
     printf "$SATURATED" >"$WORK/tor/state"
 }
 status() { jq -r .status "$WORK/result"; }
@@ -135,16 +135,16 @@ request tor-reset alice
 [ -e "$WORK/tor/state" ]
 [ "$(tail -1 "$WORK/audit")" = "alice tor-reset rejected" ]
 printf '%s\n' "$(($(date +%s) + 5000))" >"$WORK/control/tor-reset-at"
-rm -rf "$WORK"/tor/state.backup.*
+rm -rf "$WORK"/tor/directory-cache.backup.* "$WORK"/tor/state.backup.*
 request tor-reset alice
 [ "$(status)" = applied ]
 rm -f "$WORK/control/tor-recovery-at"
-rm -rf "$WORK"/tor/state.backup.*
+rm -rf "$WORK"/tor/directory-cache.backup.* "$WORK"/tor/state.backup.*
 printf "$SATURATED" >"$WORK/tor/state"
 printf '%s\n' "$(($(date +%s) - 2000))" >"$WORK/control/tor-reset-at"
 request tor-reset alice
 [ "$(status)" = applied ]
-rm -rf "$WORK"/tor/state.backup.*
+rm -rf "$WORK"/tor/directory-cache.backup.* "$WORK"/tor/state.backup.*
 
 echo "== tor-heal's tor-recover path is unchanged =="
 reset_state

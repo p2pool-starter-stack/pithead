@@ -225,7 +225,7 @@ chmod 600 "$WORK/tor/p2pool/hs_ed25519_secret_key"
 if tor_recover apply; then exit 1; fi
 [ "$(wc -l <"$WORK/actions" | tr -d ' ')" = 3 ]
 rm "$WORK/control/tor-recovery-at" "$WORK/started" "$WORK/actions"
-rm "$WORK"/tor/state.backup.*
+rm -rf "$WORK"/tor/directory-cache.backup.* "$WORK"/tor/state.backup.*
 printf 'CircuitBuildAbandonedCount 1000\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 sudo() { if [ "$1" = mv ]; then return 1; else "$@"; fi; }
 if tor_recover apply; then exit 1; fi

@@ -39,10 +39,10 @@ tor_recovery_consensus_stale() { # <data dir>
 
 tor_recovery_move_cache() { # <data dir> <backup dir>; explicit list, never a glob
     local name
-    sudo mkdir -- "$2" || return 1
     for name in $TOR_RECOVERY_CACHE_FILES; do
         sudo test -e "$1/$name" || sudo test -L "$1/$name" || continue
         sudo test -f "$1/$name" && sudo test ! -L "$1/$name" || return 1
+        sudo test -d "$2" || sudo mkdir -- "$2" || return 1
         sudo mv -n -- "$1/$name" "$2/$name" || return 1
     done
 }
