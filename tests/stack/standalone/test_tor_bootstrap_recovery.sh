@@ -29,6 +29,9 @@ reply='250 OK
 250 closing connection'
 printf '%s\n' "$reply" >"$TOR_REPLY"
 [ "$(sh "$ROOT/build/tor/recovery-diagnose.sh")" = bootstrap95-no-circuit ]
+printf '%s\n' "${reply/PROGRESS=95 TAG=circuit_create/PROGRESS=45 TAG=requesting_descriptors}" >"$TOR_REPLY"
+[ "$(sh "$ROOT/build/tor/recovery-diagnose.sh")" = bootstrap45-no-circuit ]
+printf '%s\n' "$reply" >"$TOR_REPLY"
 grep -q '^AUTHENTICATE ' "$TOR_CAPTURE"
 grep -q '^GETINFO status/bootstrap-phase status/circuit-established' "$TOR_CAPTURE"
 for bad in \

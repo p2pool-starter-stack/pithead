@@ -141,6 +141,16 @@ printf 'CircuitBuildAbandonedCount 3\nTotalBuildTimes 1000\n' >"$WORK/tor/state"
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -r .saturated "$WORK/result")" = false ]
 [ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[null,null]' ]
+[ "$(jq -c '[.consensus_age_sec,.consensus_stale]' "$WORK/result")" = '[null,false]' ]
+printf 'consensus\n' >"$WORK/tor/cached-microdesc-consensus"
+touch -d "@$(($(date +%s) - 600))" "$WORK/tor/cached-microdesc-consensus"
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .consensus_stale "$WORK/result")" = false ]
+[ "$(jq -r '.consensus_age_sec >= 600 and .consensus_age_sec < 700' "$WORK/result")" = true ]
+touch -d "@$(($(date +%s) - TOR_RECOVERY_CONSENSUS_STALE_SEC - 60))" "$WORK/tor/cached-microdesc-consensus"
+control_process_request "$WORK/request.json" "$WORK/control"
+[ "$(jq -r .consensus_stale "$WORK/result")" = true ]
+rm "$WORK/tor/cached-microdesc-consensus"
 tor_recovery_circuit_status() { printf 'circuit-established=0 pending=65\n'; }
 control_process_request "$WORK/request.json" "$WORK/control"
 [ "$(jq -c '[.circuit_established,.pending_circuits]' "$WORK/result")" = '[false,65]' ]

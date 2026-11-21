@@ -5,6 +5,8 @@ WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-reset.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+# shellcheck source=lib/pithead/02f-tor-recovery-reasons.sh
+source "$ROOT/lib/pithead/02f-tor-recovery-reasons.sh"
 # shellcheck source=lib/pithead/22a-config-document.sh
 source "$ROOT/lib/pithead/22a-config-document.sh"
 # shellcheck source=lib/pithead/49-control-request-loop.sh

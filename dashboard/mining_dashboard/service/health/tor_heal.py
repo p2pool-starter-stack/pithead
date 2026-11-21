@@ -14,7 +14,11 @@ from mining_dashboard.config.config import (
 )
 from mining_dashboard.helper.http import bounded_get
 from mining_dashboard.service import control_service
-from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
+from mining_dashboard.service.health.tor_heal_history import (
+    DISRUPTIVE_WINDOW_SEC,
+    MAX_DISRUPTIVE_PER_DAY,
+    TorHistoryMixin,
+)
 
 logger = logging.getLogger("TorHeal")
 
@@ -22,28 +26,20 @@ PROBE_URL = "https://www.google.com/generate_204"
 SECOND_PROBE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
 PROBE_TIMEOUT_SEC = 15
 
-PROBE_INTERVAL_SEC = 5 * 60  # active probe cadence (only while the heal is enabled)
+PROBE_INTERVAL_SEC = 5 * 60
 FIRST_ACTION_AFTER_SEC = 5 * 60
 BROKEN_AFTER_SEC = 15 * 60
 FAST_PROBE_SEC = 60
 COOLDOWN_SEC = 30 * 60  # minimum gap between actions
 NEWNYM_ATTEMPTS = 2
 MAX_ATTEMPTS = 4
-MAX_DISRUPTIVE_PER_DAY = 4
-DISRUPTIVE_WINDOW_SEC = 24 * 3600
 EXHAUSTED_PROBE_SEC = 15 * 60
 RE_ALERT_SEC = 60 * 60
 RECOVERY_CONFIRM_PROBES = 2
-# Tor's stop: SIGTERM, `t` seconds of grace, then SIGKILL. Docker holds the request open until the
-# container is down, and a wedged Tor took over 60 s (#3032). The HTTP timeout outlasts grace + kill.
 TOR_STOP_GRACE_SEC = 15
 TOR_STOP_REQUEST_TIMEOUT_SEC = 120
-# An API stop is not undone by `restart: unless-stopped`, so the heal must end with Tor running:
-# an unconfirmed start is retried a bounded number of times (start is idempotent: 304 if running).
 TOR_START_ATTEMPTS = 3
 TOR_START_RETRY_DELAY_SEC = 5
-# After an unconfirmed stop Docker may still be stopping Tor, and a start then answers 304 "already
-# running" while Tor goes down behind it. Wait (bounded: grace + kill + slack) for it to read down.
 TOR_SETTLE_SEC = 30
 TOR_SETTLE_POLL_SEC = 5
 
@@ -64,6 +60,7 @@ class TorEgressHealer(TorHistoryMixin):
         clock=time.monotonic,
         restart_monerod=None,
         ping_failing_since=None,
+        peerless_since=None,
     ):
         self.enabled = TOR_AUTO_HEAL if enabled is None else enabled
         if restart_monerod is None:
@@ -74,6 +71,7 @@ class TorEgressHealer(TorHistoryMixin):
         self._notify = notify  # optional async callable(text) — the Telegram one-off
         self._clock = clock
         self._ping_failing_since = ping_failing_since
+        self._peerless_since = peerless_since
         self._last_probe = None  # probe-cadence throttle
         self._was_pinging_badly = False
         self._failing_since = None  # start of the current unbroken failure streak
@@ -274,6 +272,8 @@ class TorEgressHealer(TorHistoryMixin):
                 self._recovery_step = "NEWNYM"
             probe = await asyncio.to_thread(self._probe)
             ok, evidence = probe
+            if await self._observe_consensus(now, ok):
+                return
             if self._attempts:
                 self._request_history()
             if not ok and self.circuits_wedged:

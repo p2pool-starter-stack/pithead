@@ -6,17 +6,16 @@ cookie=$(xxd -p -c 256 "${TOR_COOKIE_FILE:-/var/lib/tor/control_auth_cookie}" | 
 case "$cookie" in *[!0-9a-fA-F]*) exit 1 ;; esac
 reply=$(printf 'AUTHENTICATE %s\r\nGETINFO status/bootstrap-phase status/circuit-established\r\nQUIT\r\n' "$cookie" |
     nc -w 3 127.0.0.1 9051) || exit 1
-# Refuse missing, duplicate, unsuccessful or reordered replies. Never expose the cookie or reply.
-printf '%s\n' "$reply" | tr -d '\r' | awk '
+pct=$(printf '%s\n' "$reply" | tr -d '\r' | awk '
     NR == 1 { if ($0 != "250 OK") exit 1; next }
     /^250-status\/bootstrap-phase=/ {
         if (++bootstrap != 1 || completed) exit 1
         progress = 0; tag = 0
         for (i = 1; i <= NF; i++) {
-            if ($i == "PROGRESS=95") progress++
-            if ($i == "TAG=circuit_create") tag++
+            if ($i ~ /^PROGRESS=[0-9]+$/ && length($i) <= 11) { progress++; pct = substr($i, 10) + 0 }
+            if ($i ~ /^TAG=[a-z_]+$/ && $i != "TAG=done") tag++
         }
-        if (progress != 1 || tag != 1) exit 1
+        if (progress != 1 || tag != 1 || pct >= 100) exit 1
         next
     }
     /^250-status\/circuit-established=0$/ {
@@ -26,6 +25,6 @@ printf '%s\n' "$reply" | tr -d '\r' | awk '
     /^250 OK$/ { if (++completed != 1 || bootstrap != 1 || circuit != 1) exit 1; next }
     /^250 closing connection$/ { if (!completed || ++closed != 1) exit 1; next }
     { exit 1 }
-    END { if (NR < 4 || bootstrap != 1 || circuit != 1 || completed != 1) exit 1 }
-'
-printf 'bootstrap95-no-circuit\n'
+    END { if (NR < 4 || bootstrap != 1 || circuit != 1 || completed != 1) exit 1; print pct }
+')
+printf 'bootstrap%s-no-circuit\n' "$pct"

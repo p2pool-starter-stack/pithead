@@ -69,4 +69,24 @@ HiddenServicePort 443 ${NETWORK_PREFIX}.1:443
 EOF
 fi
 
+TOR_DATA_ROOT=${TOR_DATA_ROOT:-/var/lib/tor}
+: "${TOR_STALE_CONSENSUS_SEC:=43200}"
+: "${TOR_CACHE_JITTER_SEC:=30}"
+consensus="$TOR_DATA_ROOT/cached-microdesc-consensus"
+if [ -f "$consensus" ] && [ ! -L "$consensus" ] &&
+    [ $(($(date +%s) - $(stat -c %Y "$consensus"))) -gt "$TOR_STALE_CONSENSUS_SEC" ]; then
+    aside="$TOR_DATA_ROOT/stale-directory-cache"
+    rm -rf "$aside"
+    mkdir "$aside"
+    for name in cached-microdesc-consensus cached-microdescs cached-microdescs.new cached-certs; do
+        if [ -f "$TOR_DATA_ROOT/$name" ] && [ ! -L "$TOR_DATA_ROOT/$name" ]; then
+            mv "$TOR_DATA_ROOT/$name" "$aside/$name"
+        fi
+    done
+    echo "Tor directory cache older than ${TOR_STALE_CONSENSUS_SEC}s moved aside" >&2
+    if [ "$TOR_CACHE_JITTER_SEC" -gt 0 ]; then
+        sleep $(($(od -An -N2 -tu2 /dev/urandom) % TOR_CACHE_JITTER_SEC))
+    fi
+fi
+
 exec tor -f "$TORRC_OUT"

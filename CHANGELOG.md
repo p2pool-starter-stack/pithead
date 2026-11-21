@@ -13,6 +13,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- Tor recovers from a stale directory cache: the container moves a cached consensus older than 12 hours
+  aside before Tor starts, `./pithead tor-recover` moves the four cache files with `state` and accepts a
+  stale consensus (or a bootstrap stuck below 100%) as a reset reason, and the dashboard heal requests it
+  while clearnet probes still pass, under the existing attempt caps (#4261).
 - `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
   same windowed `.zip` and manifest as the appliance: every container's full log for the window instead of
   the last 200 lines, the DIY egress and LAN-guard units from the journal, and an engine or journal that

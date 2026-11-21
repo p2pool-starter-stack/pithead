@@ -30,6 +30,7 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
 	bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
 	bash tests/stack/standalone/test_tor_unsaturated_reset.sh
+	bash tests/stack/standalone/test_tor_stale_cache.sh
 	bash tests/stack/standalone/test_tor_reset.sh
 	bash tests/stack/standalone/test_data_reset.sh
 	bash tests/stack/standalone/test_directory_linebreaks.sh

@@ -1025,22 +1025,37 @@ egress: two failed heal rounds from the same sustained outage, recorded by the h
 The healer requests these readings from the first round after 5 minutes of corroborated failure. Recovery clears the outage evidence; the persistent 24-hour
 NEWNYM budget remains separate. After the automatic action budget is spent, read-only observations continue every 30 minutes.
 The host retains the last two spaced rounds. Evidence older than one hour since the last observation is
-refused. A Tor whose egress answers is refused. Without a saturated history, a reset
-needs both clearnet targets to fail through Tor's SOCKS at that moment and one of: the sustained
-heal outage above; two control-port readings a minute apart that both show no established circuit
-or 64 or more pending circuits; or the bootstrap observations above (95% at `circuit_create`, no
-established circuit, the same Tor instance, three minutes apart). It uses sudo for read-only access to Tor-owned state
+refused. A Tor whose egress answers is refused, unless its cached consensus
+is stale (below). Without a saturated history, a reset needs both clearnet targets to fail through
+Tor's SOCKS at that moment and one of: the sustained heal outage above; two control-port readings
+a minute apart that both show no established circuit or 64 or more pending circuits; or the
+bootstrap observations above (the same progress below 100%, no established circuit, the same Tor
+instance, three minutes apart, so a Tor stuck at 45% qualifies as well as one at 95%).
+
+A stale directory cache is its own reason, `stale-consensus`, and needs no egress failure: Tor
+refreshes `cached-microdesc-consensus` about hourly, so one more than 12 hours old means the
+directory is not refreshing even when clearnet probes pass and only onion peers (Tari, monerod)
+suffer. The Tor container applies the same 12-hour test at start (`TOR_STALE_CONSENSUS_SEC`) and
+moves `cached-microdesc-consensus`, `cached-microdescs`, `cached-microdescs.new` and `cached-certs`
+to `stale-directory-cache/` before Tor starts, after a random wait of up to
+`TOR_CACHE_JITTER_SEC` (30 s) so a fleet does not reach the directory authorities together. While
+probes pass, the dashboard heal reads the cache age from the host every probe interval; a stale
+consensus requests `tor-recover` after a random delay of up to 30 minutes, counts as one attempt
+and one disruptive action under the caps above, and is retried no sooner than the six-hour
+cooldown. A Tari node with no peers for 10 minutes while probes pass is logged with the cache
+age; it does not request a reset by itself. It uses sudo for read-only access to Tor-owned state
 and identity keys.
 
 `./pithead tor-recover apply` rechecks the evidence under the mutation lock, verifies onion
-identity keys, backs up only Tor's `state`, and restarts Tor. It re-dials a running local Monero
-after the actual restart. If Compose left Monero Created behind unhealthy Tor, recovery starts
+identity keys, backs up Tor's `state` and the four directory-cache files above (an explicit
+list, never a glob), and restarts Tor. It re-dials a running local Monero
+and Tari after the actual restart. If Compose left Monero Created behind unhealthy Tor, recovery starts
 that existing node once Tor is healthy. The command verifies Tor health and Monero peers and
 records the attempt in the control audit; this connectivity result does not prove chain sync.
 Restore the remaining baseline services through the caller's normal workflow and independently
 verify baseline health and authenticated Monero and Tari sync before admitting new work.
 
-The backup remains for inspection. A persistent six-hour cooldown includes failed attempts.
+The backups (`state.backup.*`, `directory-cache.backup.*`) remain for inspection. A persistent six-hour cooldown includes failed attempts.
 The command refuses an ambiguous or symlinked Tor mount, an active mutation, ordinary warnings,
 or an advancing chain. It never removes onion keys, wallets, configuration or chain data.
 If verification fails, the command reports failure and leaves the backup for diagnosis;

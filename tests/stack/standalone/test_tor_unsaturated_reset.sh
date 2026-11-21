@@ -117,4 +117,43 @@ control_process_request "$WORK/recover.json" "$WORK/control"
 [ "$(jq -r .status "$WORK/result")" = failed ]
 jq -e '.error | contains("six-hour cooldown")' "$WORK/result" >/dev/null
 [ -e "$WORK/tor/state" ]
+echo "== a stale consensus is a reset reason while egress works; apply moves the cache, never the keys =="
+rm -f "$WORK/control/tor-recovery-at" "$WORK/stopped"
+unsaturated
+EGRESS=up
+tor_recovery_circuit_status() { printf 'circuit-established=1 pending=2\n'; }
+seed_cache() {
+    local name
+    for name in cached-microdesc-consensus cached-microdescs cached-microdescs.new cached-certs; do
+        printf '%s\n' "$name" >"$WORK/tor/$name"
+    done
+    printf 'extra\n' >"$WORK/tor/cached-extrainfo"
+    touch -d "@$(($(date +%s) - $1))" "$WORK/tor/cached-microdesc-consensus"
+}
+seed_cache 600
+if tor_recover check; then exit 1; fi
+seed_cache $((TOR_RECOVERY_CONSENSUS_STALE_SEC + 3600))
+: >"$WORK/log"
+tor_recover check
+grep -q 'reset reason: stale-consensus' "$WORK/log"
+control_process_request "$WORK/recover.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = applied ]
+[ "$before" = "$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")" ]
+for name in cached-microdesc-consensus cached-microdescs cached-microdescs.new cached-certs; do
+    [ ! -e "$WORK/tor/$name" ]
+    [ "$(cat "$WORK"/tor/directory-cache.backup.*/"$name")" = "$name" ]
+done
+[ -f "$WORK/tor/cached-extrainfo" ]
+[ ! -e "$WORK/tor/state" ]
+
+echo "== a cache move that fails restarts Tor and fails the request =="
+rm -f "$WORK/control/tor-recovery-at" "$WORK/stopped"
+rm -rf "$WORK"/tor/directory-cache.backup.* "$WORK"/tor/state.backup.*
+unsaturated
+seed_cache $((TOR_RECOVERY_CONSENSUS_STALE_SEC + 3600))
+ln -sf "$WORK/tor/state" "$WORK/tor/cached-certs"
+control_process_request "$WORK/recover.json" "$WORK/control"
+[ "$(jq -r .status "$WORK/result")" = failed ]
+[ ! -e "$WORK/stopped" ]
+[ "$before" = "$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key")" ]
 echo 'tor unsaturated reset PASS'
