@@ -364,8 +364,8 @@ the host's `/etc`.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
   reboots. The wallet the stick changes to is the named throwaway `MEDIA_WALLET_ALT` — the same
-  never-fundable key the v1.20.0 restore fixture derives from its public seed — so no payout
-  identity in this phase is a real donation address (#4184). Asserts the exact diff appears on the console (the changed wallet address in full, read
+  never-fundable key the v1.20.0 restore fixture derives from its public seed, because the stick
+  needs a second primary address; the starting payouts are the owner's public wallets. Asserts the exact diff appears on the console (the changed wallet address in full, read
   directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
@@ -554,6 +554,18 @@ box have covered it?**
 This is distinct from the remote-node row below, where a missing input stays a counted
 **failure**: the classes are for rows the configuration excludes, never for inputs the bench
 forgot.
+
+Guests that reach real nodes can mine on mainnet, so every guest configured by the battery pays
+the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (the test host supplies the
+owner's addresses); without them the harness uses its labelled throwaway addresses. The run
+refuses before any guest exists when `PITHEAD_OS_MONERO_NODE_HOST` or `PITHEAD_OS_TARI_NODE_HOST` is
+set and either payout variable is empty, naming the variable and never a value. The media guest
+never reaches a chain node, so its sticks use their own labelled throwaway addresses rather than
+the payouts. The v1.20.0 restore fixture (`tests/os/fixtures/v1.20.0`) deliberately restores a
+throwaway identity and a fixture donor id on a guest whose node hosts are the unreachable fixture
+address, so it never mines; the restore leg asserts that host is unchanged after the restore. XvB keeps its default
+`xvb.donor_id` of `auto`, the first 8 characters of that Monero address, so XvB hash is the
+owner's; `selftest-owner-payouts.sh` fails if any guest config sets the donor id explicitly.
 
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
