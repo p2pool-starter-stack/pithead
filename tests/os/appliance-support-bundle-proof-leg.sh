@@ -18,7 +18,7 @@ _sb_export() {
     deadline=$(($(date +%s) + SB_PROOF_LIMIT))
     status=pending
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        status=$(_support_bundle_status "$SB_RID")
+        status=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/support-bundle-result?id=$SB_RID" 2>/dev/null | jq -r '.status // "pending"' 2>/dev/null)
         case "$status" in applied | failed | rejected) break ;; esac
         sleep 3
     done
