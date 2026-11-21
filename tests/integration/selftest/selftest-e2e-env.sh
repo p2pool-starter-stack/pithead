@@ -232,7 +232,7 @@ harness_of() { # -> the lines run_harness printed around a detached --check run 
     (
         MODE=check BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e
         RESTORE_DIR=/srv/code/pithead REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=() IT_RIG_TOKEN="" POLLS=0
-        LOG=$'  [ITEST] ── current-state check ──\n    ✗ workers online (>= 1)\ne2e-env: workers-offline'
+        LOG="${1:-$'  [ITEST] ── current-state check ──\n    ✗ workers online (>= 1)\ne2e-env: workers-offline'}"
         log() { :; }
         step() { :; }
         sleep() { :; }
@@ -254,10 +254,14 @@ harness_of() { # -> the lines run_harness printed around a detached --check run 
         eval "$HARNESS_SRC"
         run_harness
         echo "rc=$?"
-    ) </dev/null 2>/dev/null | grep -a -e 'e2e-env:' -e '^rc='
+    ) </dev/null 2>/dev/null | grep -a -e 'e2e-env:' -e '^rc=' -e '^\[ITEST\]'
 }
 assert_eq "two heartbeats and the replay carry the line once, indented as the replay indents" \
     "$(harness_of)" $'  e2e-env: workers-offline\nrc=1'
+
+assert_eq "only the completed replay exposes its scenario header at column zero (#2885)" \
+    "$(harness_of $'[ITEST] ── scenario: local-pruned-main-payout-confirm ──\ne2e-env: workers-offline')" \
+    $'[ITEST] ── scenario: local-pruned-main-payout-confirm ──\n  e2e-env: workers-offline\nrc=1'
 
 echo "== census: the only lines that print the key are the documented ones =="
 # A new call site is a new excuse bench-ci will honour, so it must be listed here.
