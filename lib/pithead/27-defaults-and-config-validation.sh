@@ -213,10 +213,6 @@ migrate_removed_telegram_control() {
     fi
 }
 
-# XvB is retiring its NA servers in favour of eu.xmrvsbeast.com (#4308): a saved xvb.url on the NA
-# host moves to the EU host with the same port. Nothing else in the file changes, a custom host is
-# left alone, and the prior file is kept as ${CONFIG_FILE}.bak-xvb-na. Best effort: the NA name
-# still resolves, so a failed write only warns.
 readonly XVB_NA_URL_JQ='(.xvb | objects | .url | strings) | test("^na\\.xmrvsbeast\\.com(:[0-9]+)?$"; "i")'
 migrate_xvb_na_endpoint() {
     local owner tmp="${CONFIG_FILE}.tmp"

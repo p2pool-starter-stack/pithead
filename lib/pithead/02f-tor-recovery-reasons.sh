@@ -23,7 +23,7 @@ tor_recovery_circuits_wedged() {
 TOR_RECOVERY_CACHE_FILES="cached-microdesc-consensus cached-microdescs cached-microdescs.new cached-certs"
 TOR_RECOVERY_CONSENSUS_STALE_SEC=43200
 
-tor_recovery_consensus_age() { # <data dir>; seconds since the cached consensus was written
+tor_recovery_consensus_age() {
     local file="$1/cached-microdesc-consensus" mtime
     sudo test -f "$file" && sudo test ! -L "$file" || return 1
     mtime=$(sudo stat -c %Y -- "$file") || return 1
@@ -31,13 +31,13 @@ tor_recovery_consensus_age() { # <data dir>; seconds since the cached consensus 
     printf '%s\n' "$(($(date +%s) - mtime))"
 }
 
-tor_recovery_consensus_stale() { # <data dir>
+tor_recovery_consensus_stale() {
     local age
     age=$(tor_recovery_consensus_age "$1") || return 1
     [ "$age" -gt "$TOR_RECOVERY_CONSENSUS_STALE_SEC" ]
 }
 
-tor_recovery_move_cache() { # <data dir> <backup dir>; explicit list, never a glob
+tor_recovery_move_cache() {
     local name
     for name in $TOR_RECOVERY_CACHE_FILES; do
         sudo test -e "$1/$name" || sudo test -L "$1/$name" || continue
@@ -53,7 +53,7 @@ tor_recovery_redial_tari() {
     fi
 }
 
-tor_recovery_unsaturated_reason() { # <data dir>
+tor_recovery_unsaturated_reason() {
     local reason
     if tor_recovery_consensus_stale "$1"; then
         printf 'stale-consensus\n'

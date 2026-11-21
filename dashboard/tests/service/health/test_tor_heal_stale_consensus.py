@@ -1,5 +1,3 @@
-"""A stale cached consensus recovers Tor while clearnet probes still pass (#4261)."""
-
 from unittest.mock import AsyncMock, patch
 
 from mining_dashboard.service.health.tor_heal import PROBE_INTERVAL_SEC, TorEgressHealer
