@@ -31,6 +31,8 @@ echo "== unit: render-quadlet parity vs os/quadlet fixtures (#77 phase 1) =="
 # os/quadlet files ran live in the #78 spike, so any drift here needs a bench re-proof, not just
 # an updated fixture.
 QOUT="$SANDBOX/quadlet-out"
+# shellcheck disable=SC2034
+QUADLET_COMPOSE_FILE="$ROOT/docker-compose.yml"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QOUT" >/dev/null
 assert_contains "remote Quadlet Tor receives P2Pool onion port (#2936)" \
     "$(sed -n 's/^Environment=//p' "$QOUT/tor.container")" '"P2POOL_PORT=37888"'
@@ -123,6 +125,39 @@ assert_eq "#2040 arming: the fixture really carries a literal % and a %H specifi
 assert_eq "#2040: literal % is doubled so systemd does not expand %H to the hostname" \
     "$qpct_line" '"P2POOL_FLAGS=--x 50%% --host %%H"'
 
+for qcase in 'WALLET_RPC_PASSWORD|pass\nwanted-by=nobody|LF' 'WALLET_RPC_PASSWORD|pass\rwanted-by=nobody|CR' 'P2POOL_URL|p2pool\nPodmanArgs=--privileged|raw-interpolated LF'; do
+    IFS='|' read -r qk qv ql <<<"$qcase"
+    QCTL="$SANDBOX/quadlet-ctl-out"
+    rm -rf "$QCTL"
+    {
+        grep -v "^$qk=" "$ROOT/os/quadlet/payout/fixture.env"
+        printf '%s="%s"\n' "$qk" "$qv"
+    } >"$SANDBOX/ctl.env"
+    assert_eq "#4176 arming ($ql): the env file really carries the escaped control character" \
+        "$(grep -cxF "$qk=\"$qv\"" "$SANDBOX/ctl.env")" "1"
+    QCTLRC=0
+    QCTLOUT=$(run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/ctl.env" "$QCTL" 2>&1) || QCTLRC=$?
+    assert_eq "#4176 ($ql): a decoded control character in $qk exits non-zero" "$QCTLRC" "1"
+    assert_contains "#4176 ($ql): the refusal names the key" "$QCTLOUT" "$qk"
+    assert_eq "#4176 ($ql): the refusal happens before any unit file is created" \
+        "$(find "$QCTL" 2>/dev/null | wc -l | tr -d ' ')" "0"
+done
+
+for qvar in PITHEAD_REGISTRY STACK_VERSION; do
+    QCTL="$SANDBOX/quadlet-ctl-out"
+    rm -rf "$QCTL"
+    grep -v "^$qvar=" "$ROOT/os/quadlet/payout/fixture.env" >"$SANDBOX/ctl-nofallback.env"
+    QCTLRC=0
+    QCTLOUT=$(
+        export "$qvar=reg.example"$'\nPodmanArgs=--privileged'
+        run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/ctl-nofallback.env" "$QCTL" 2>&1
+    ) || QCTLRC=$?
+    assert_eq "#4176: a newline in the $qvar process fallback exits non-zero" "$QCTLRC" "1"
+    assert_contains "#4176: the refusal names $qvar" "$QCTLOUT" "$qvar"
+    assert_eq "#4176: the $qvar fallback refusal happens before any unit file is created" \
+        "$(find "$QCTL" 2>/dev/null | wc -l | tr -d ' ')" "0"
+done
+
 # The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null
@@ -162,3 +197,30 @@ assert_eq "quadlet Tari node and wallet images match compose (#2624)" \
 assert_eq "tari-wallet quadlet can repair and drop uid (#2454)" "$(grep -Ec '^(User=0:0|AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID)$' "$QPAY/tari-wallet.container")" "2"
 assert_contains "tari-wallet healthcheck probes gRPC (#2498)" "$(cat "$QPAY/tari-wallet.container")" "HealthCmd=/wallet-config/wallet-healthcheck.sh"
 assert_eq "local render emits no wallet units" "$(find "$QLOCAL" -name 'wallet-rpc.container' -o -name 'tari-wallet.container' | wc -l | tr -d ' ')" "0"
+
+QBUMP="$SANDBOX/quadlet-compose-bump-out"
+sed -E 's|^    image: caddy:[^ ]+$|    image: caddy:9.9.9@sha256:0000000000000000000000000000000000000000000000000000000000000000|' \
+    "$ROOT/docker-compose.yml" >"$SANDBOX/compose-bump.yml"
+assert_eq "#4252 arming: the compose copy really carries the bumped caddy ref" \
+    "$(grep -c '^    image: caddy:9.9.9@sha256:0000000000000000000000000000000000000000000000000000000000000000$' "$SANDBOX/compose-bump.yml")" "1"
+(QUADLET_COMPOSE_FILE="$SANDBOX/compose-bump.yml" \
+    run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QBUMP" >/dev/null)
+assert_eq "#4252: a bumped compose caddy ref renders qualified as before, unedited" \
+    "$(sed -n 's/^Image=//p' "$QBUMP/caddy.container")" \
+    "docker.io/library/caddy:9.9.9@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+compose_proxy=$(awk '/^  docker-proxy:/{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2; exit}' "$ROOT/docker-compose.yml")
+assert_eq "#4252 arming: the compose parse sees the socket-proxy pin (control)" \
+    "$(printf '%s\n' "$compose_proxy" | grep -cE '^tecnativa/docker-socket-proxy:v[0-9.]+@sha256:[0-9a-f]{64}$')" "1"
+assert_eq "#4252: an untouched service still renders its own compose ref, not the bumped one" \
+    "$(sed -n 's/^Image=//p' "$QBUMP/docker-proxy.container" "$QBUMP/docker-control.container" | sort -u)" "docker.io/$compose_proxy"
+QNOIMG="$SANDBOX/quadlet-compose-no-img-out"
+sed '/^    image: caddy:/d' "$ROOT/docker-compose.yml" >"$SANDBOX/compose-noimg.yml"
+assert_eq "#4252 arming: the compose copy really lost the caddy image line" \
+    "$(grep -c '^    image: caddy:' "$SANDBOX/compose-noimg.yml")" "0"
+QNOIMGRC=0
+QNOIMGOUT=$( (QUADLET_COMPOSE_FILE="$SANDBOX/compose-noimg.yml" \
+    run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/fixture.env" "$QNOIMG" 2>&1)) || QNOIMGRC=$?
+assert_eq "#4252: a compose file without the service pin exits non-zero" "$QNOIMGRC" "1"
+assert_contains "#4252: the refusal names the service and the compose file" "$QNOIMGOUT" "no image for service caddy"
+assert_eq "#4252: the refusal happens before any unit file is created" \
+    "$(find "$QNOIMG" 2>/dev/null | wc -l | tr -d ' ')" "0"

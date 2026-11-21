@@ -124,10 +124,12 @@ class MiningGuard:
         now = self._clock()
         for key in set(self._holding_since) | set(self.active) | set(triggers):
             if key not in triggers:
-                if key in self._holding_since or key in self.active:
-                    unknown = self._unknown_since.setdefault(key, now)
-                    if now - unknown >= UNKNOWN_AFTER_SEC:
-                        self._forget(key)
+                if key not in self.active:
+                    self._forget(key)
+                    continue
+                unknown = self._unknown_since.setdefault(key, now)
+                if now - unknown >= UNKNOWN_AFTER_SEC:
+                    self._forget(key)
                 continue
             self._unknown_since.pop(key, None)
             holds, label, grace = triggers[key]
@@ -151,6 +153,10 @@ class MiningGuard:
     @property
     def holding(self):
         return bool(self._holding_since) or bool(self.active)
+
+    @property
+    def holding_keys(self):
+        return sorted(set(self._holding_since) | set(self.active))
 
     @property
     def pause(self):

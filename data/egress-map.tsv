@@ -1,0 +1,24 @@
+role	destination	today	target	route	enforcer	test
+appliance	Tor network (tor container bootstrap and relay circuits)	allow	allow	tor	tor-egress-fence	tests/stack/test-tor-network.sh
+appliance	Monero network P2P and tx broadcast (via the tor container SOCKS)	allow	allow	tor	tor-egress-fence	tests/stack/test-tor-network.sh
+appliance	Tari network P2P (via the tor container SOCKS)	allow	allow	tor	tor-egress-fence	tests/stack/test-monero-tari.sh
+appliance	P2Pool sidechain peers (via the tor container SOCKS)	allow	allow	tor	tor-egress-fence	tests/stack/test-monero-tari.sh
+appliance	Monero and Tari clearnet initial sync (opt-in, sync window)	allow	allow	host	tor-egress-fence	tests/stack/test-clearnet-firewall.sh
+appliance	api.github.com CLI release and OS update fetches	allow	allow	host	none	tests/stack/control/test-control-upgrade.sh
+appliance	api.github.com dashboard update check and RigForge badge (via the tor container SOCKS)	allow	allow	tor	none	dashboard/tests/service/network/
+appliance	xmrvsbeast.com XvB stats, raffle and winners (via the tor container SOCKS)	allow	allow	tor	none	none
+appliance	na.xmrvsbeast.com:4247 XvB donation mining (via the tor container SOCKS)	allow	allow	tor	none	none
+appliance	api.telegram.org alerts (opt-in, via the tor container SOCKS)	allow	allow	tor	none	none
+appliance	healthchecks ping URL (opt-in, set healthchecks.ping_url; via the tor container SOCKS)	allow	allow	tor	none	dashboard/tests/test_main.py
+appliance	api.coingecko.com price feed (opt-in, via the tor container SOCKS)	allow	allow	tor	none	none
+appliance	www.google.com and www.cloudflare.com tor auto-heal probes (opt-in, via the tor container SOCKS)	allow	allow	tor	none	tests/stack/standalone/test_tor_heal_outage_recovery.sh
+appliance	textexplore.tari.com fork-guard tip reference (via the tor container SOCKS)	allow	allow	tor	none	none
+appliance	webhook and ntfy alert sinks (opt-in user URLs; notifications.tor false dials them direct)	allow	allow	tor	none	none
+appliance	www.debian.org htpdate time sync (firstboot and setup-again units)	allow	allow	host	none	none
+appliance	github.com release bundle and RAUC bundle downloads	build	build	host	none	tests/stack/test-install-verify.sh
+appliance	ghcr.io and Docker Hub container image pulls	build	build	host	none	tests/stack/standalone/test_quadlet_provenance.py
+appliance	published node ports 18081, 18083 and 18142 (LAN-only source fence)	lan	lan	lan	lan-guard	tests/stack/firewall/lan-guard.sh
+appliance	pool stratum endpoint (xmrig-proxy bind 0.0.0.0 by default; password auth opt-in)	allow	allow	host	none	tests/stack/test-connection-announce.sh
+appliance	seeds-mini.p2pool.io and seeds.tari.com DNS seeds (closed by default)	drop	drop	host	app-config	tests/stack/test-monero-tari.sh
+rig	stratum pool endpoint (LAN pool URL by default; password auth opt-in; failover to a second pool)	allow	allow	lan	none	tests/integration/lib/run-failover-view.sh
+rig	time sync (unknown; the rig image is built in the RigForge repo)	unknown	unknown	unknown	none	none

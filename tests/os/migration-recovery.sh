@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # The runner selects a cached old image; only merged, pre-fix source may seed this proof.
 migration_old_commit_valid() {
     local commit="$1" pr_commits ref
@@ -162,5 +164,5 @@ migration_release_deadline_evidence() {
           systemctl --failed --no-legend 2>/dev/null | head -10
           echo '-- containers --'
           podman ps -a --format '{{.Names}} {{.Status}}' 2>/dev/null | head -15" 2>/dev/null |
-        tr -d '\r\033' | sed 's/^/     · /'
+        tr -d '\r\033' | os_redact_addr | sed 's/^/     · /'
 }

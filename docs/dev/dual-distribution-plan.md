@@ -94,7 +94,10 @@ the DIY channel changes nothing.
      (`Environment="A=1 2" B=3`) and every such value passes the same escaper —
      `systemd.exec` space-splits the line, so a value holding a space silently
      lost its tail before #2040. `\`,
-     `"` and `%` are escaped, `%` doubled (systemd expands specifiers in unit
+     `"` and `%` are escaped, but only for single-line values: the escaper does not
+     handle CR or LF, which `.env` decoding re-creates from `\n` and `\r` inside
+     double quotes, so `render-quadlet` refuses (naming the key, writing no unit)
+     when any `--env` value holds one (#4176). `%` is doubled (systemd expands specifiers in unit
      files); `$` stays literal so `${VAR}` expands in `ExecStart`, never in an
      `Environment=` value.
 - Docker-API consumers (dashboard start/stop/logs via the two socket proxies) point at

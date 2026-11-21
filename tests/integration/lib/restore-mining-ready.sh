@@ -56,14 +56,58 @@ wait_restore_mining_ready() { # <timeout_s> [interval_s]
     done
 }
 
+restore_mining_rejection_reason() {
+    grep -o 'Mining work is not valid ([^)]*)' | tail -n1 | tr -d '\000-\011\013-\037\177'
+}
+
+_restore_mining_clear_evidence() {
+    on_bench "rm -f $(quote_arg "$E2E_DIR/results/restore-mining-dashboard-log.txt") $(quote_arg "$E2E_DIR/results/restore-mining-services.txt")" 2>/dev/null
+}
+
+capture_restore_mining_evidence() {
+    local dir="$E2E_DIR/results" log services saved=0 rc=0
+    log="$(on_bench "cd '$RESTORE_DIR' && timeout --kill-after=2 15 docker compose logs --no-color --tail 400 dashboard" 2>/dev/null | redact | tail -c 65536)" || rc=3
+    [ -n "$log" ] || log=""
+    printf '%s\n' "$log" |
+        on_bench "mkdir -p $(quote_arg "$dir") && cat > $(quote_arg "$dir/restore-mining-dashboard-log.txt")" 2>/dev/null || saved=1
+    services="$(
+        on_bench "cd '$RESTORE_DIR' && bash -s" 2>/dev/null <<'PROBE'
+svc() {
+    cid=$(timeout --kill-after=2 10 docker compose ps -aq "$1" 2>/dev/null | head -n1)
+    if [ -z "$cid" ]; then echo "restore-mining: service=$1 state=missing health=none failing_streak=0"; return; fi
+    info=$(timeout --kill-after=2 10 docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}} {{.State.Health.FailingStreak}}{{else}}none 0{{end}}' "$cid" 2>/dev/null)
+    st=${info%% *}
+    rest=${info#* }
+    he=${rest%% *}
+    fk=${rest##* }
+    case "$st" in running | exited | restarting | paused | created | dead | removing) ;; *) st=unknown ;; esac
+    case "$he" in starting | healthy | unhealthy | none) ;; *) he=unknown ;; esac
+    case "$fk" in '' | *[!0-9]*) fk=0 ;; esac
+    echo "restore-mining: service=$1 state=$st health=$he failing_streak=$fk"
+}
+for s in p2pool xmrig-proxy dashboard; do svc "$s"; done
+PROBE
+    )"
+    services="$(printf '%s\n' "$services" |
+        grep -E '^restore-mining: service=(p2pool|xmrig-proxy|dashboard) state=[a-z]+ health=([a-z]+|none) failing_streak=[0-9]+$')"
+    [ -n "$services" ] || services="restore-mining: services=unavailable"
+    printf '%s\n' "$services" |
+        on_bench "mkdir -p $(quote_arg "$dir") && cat > $(quote_arg "$dir/restore-mining-services.txt")" 2>/dev/null || saved=1
+    [ "$saved" = 0 ] || warn "  could not save the restore-mining evidence under $dir"
+    printf '%s\n' "$log"
+    return "$rc"
+}
+
 recheck_restore_mining() {
-    local timeout=${1:-600} start waited
+    local timeout=${1:-600} start waited reason log rc
+    _restore_mining_clear_evidence
     if _restore_mining_healthy; then
         ok "re-check: P2Pool and xmrig-proxy running and healthy after the restore proof"
         return 0
     fi
     start=$(date +%s)
     warn "re-check: P2Pool or xmrig-proxy not running and healthy; waiting up to ${timeout}s for the dashboard to readmit them (the harness never starts them)"
+    capture_restore_mining_evidence >/dev/null
     while :; do
         sleep "${2:-5}"
         waited=$(($(date +%s) - start))
@@ -72,7 +116,16 @@ recheck_restore_mining() {
             return 0
         fi
         if [ "$waited" -ge "$timeout" ]; then
-            warn "xmrig-proxy (or P2Pool) still not running and healthy after waiting ${waited}s for the dashboard to readmit it — restore not proven"
+            log="$(capture_restore_mining_evidence)"
+            rc=$?
+            reason="$(printf '%s\n' "$log" | restore_mining_rejection_reason)"
+            if [ -n "$reason" ]; then
+                warn "xmrig-proxy (or P2Pool) still not running and healthy after waiting ${waited}s for the dashboard to readmit it — restore not proven; dashboard rejection reason: $reason"
+            elif [ "$rc" = 3 ]; then
+                warn "xmrig-proxy (or P2Pool) still not running and healthy after waiting ${waited}s for the dashboard to readmit it — restore not proven; the baseline dashboard container log could not be read, so no rejection reason could be taken from it"
+            else
+                warn "xmrig-proxy (or P2Pool) still not running and healthy after waiting ${waited}s for the dashboard to readmit it — restore not proven; no dashboard rejection reason was found in the dashboard log tail"
+            fi
             warn "  $(restore_mining_diagnostics)"
             return 1
         fi

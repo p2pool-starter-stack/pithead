@@ -66,7 +66,7 @@ phase_install_prefill_submit_leg() { # <target-disk> <expected-wallet>
     case "$WIZ_STATE" in
     "${expected_wallet:0:8}"*) ok "pre-fill submit leg: the page offers the previous install's answers (pre-fill armed)" ;;
     *)
-        bad "pre-fill submit leg: pre-fill NOT armed, the leg cannot reach the #1846 path (served wallet: ${WIZ_STATE:-none; $WIZ_STATE_WHY})"
+        bad "pre-fill submit leg: pre-fill NOT armed, the leg cannot reach the #1846 path (served wallet: $([ -n "$WIZ_STATE" ] && printf "present, length %s" "${#WIZ_STATE}" || printf "none; %s" "$WIZ_STATE_WHY"))"
         rm -f "$jar"
         return
         ;;

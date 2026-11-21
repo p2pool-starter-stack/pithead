@@ -234,7 +234,7 @@
             "to": "TLS (internal CA, no ACME)"
           }
         ],
-        "firewalled": true,
+        "firewalled": false,
         "name": "caddy"
       }
     ],

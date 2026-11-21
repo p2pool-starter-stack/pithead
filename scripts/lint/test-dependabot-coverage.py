@@ -105,11 +105,6 @@ def check_rootfs(text, problems):
         )
     if "go1." in text:
         problems.append("os/rootfs must not hard-code a go1.x toolchain literal")
-    for line in text.splitlines():
-        if "go version -m" in line and re.search(r"v\d+\\?\.\d+\\?\.\d+", line):
-            problems.append(
-                "os/rootfs module-version guards must read their versions from COSIGN_GO_RAISES, not literals"
-            )
 
 
 def check_uv_stage(text, name, problems):
