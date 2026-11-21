@@ -164,11 +164,9 @@ XVB_DONOR_ID = os.environ.get("XVB_DONOR_ID", "")
 # Feature Flag: Toggles the XvB algorithmic switching logic
 ENABLE_XVB = os.environ.get("XVB_ENABLED", "true").lower() == "true"
 
-# The bridge container's Tor SOCKS proxy, shared by every dashboard call that must reach clearnet
-# without leaking the host IP: the XvB stats fetch + raffle registration (#163), the update check
-# (#224), and the Healthchecks.io ping (#79). socks5h resolves the target host via Tor too (no local
-# DNS leak). The host-networked dashboard reaches it at 172.28.0.25:9050 (tracks the subnet, #180).
-TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "socks5h://172.28.0.25:9050")
+TOR_SOCKS_PROXY = os.environ.get("TOR_SOCKS_PROXY", "").strip()
+if not TOR_SOCKS_PROXY:
+    raise RuntimeError("TOR_SOCKS_PROXY is empty or unset; outbound is Tor only (#4146)")
 
 # Route XvB DONATION MINING through Tor by default too (#166), not just the stats fetch (#163): while
 # donating, the proxy connects to eu.xmrvsbeast.com, which would otherwise expose the host IP. The
