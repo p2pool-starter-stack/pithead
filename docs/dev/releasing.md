@@ -59,6 +59,13 @@ reports and never bumps: a Tari or
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
 
+Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
+sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
+them and the watch reports newer versions, not advisories (#4277). Bumping any of the three checks
+the upstream release notes and security advisories for the new version, and records that check in
+the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
+the bump.
+
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
