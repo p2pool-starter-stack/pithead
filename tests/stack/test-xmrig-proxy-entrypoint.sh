@@ -64,8 +64,8 @@ for svc in p2pool xmrig-proxy; do
     p2pool) retry="NOTICE monerod is not synchronized, trying again in 1 second" ;;
     *) retry='net 10.0.0.1:3333 connect error: "connection refused"' ;;
     esac
-    rl_sh=bash
-    [ "$svc" != xmrig-proxy ] || rl_sh=sh
+    rl_sh='bash'
+    [ "$svc" != xmrig-proxy ] || rl_sh='sh'
     out=$(PATH="$RL_BIN:$PATH" RL_RETRY="$retry" RL_EXIT=7 "$rl_sh" "$ROOT/build/$svc/entrypoint.sh" --flag 2>&1)
     rc=$?
     rl_once="$rl_once $svc:$(printf '%s\n' "$out" | grep -cF -e "$retry")"
