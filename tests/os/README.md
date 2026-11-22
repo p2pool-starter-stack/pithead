@@ -56,6 +56,8 @@ the `tor-heal` ladder alone consumes about three and a half hours of the 240-min
 window, and both legs must run to their own bounded end. `selftest-tor-heal-exhausted.sh`
 exercises its wrapper without a guest.
 
+The provision LAN-guard leg writes the three-switch `./pithead apply -y` output to `lan-guard-apply.log` in the guest's `/data/pithead` and, when the apply fails, prints its last 60 lines (redacted) with the exit code (#4281). `selftest-lan-guard-apply-output.sh` covers that branch without a guest.
+
 Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
 and a half hours after provisioning, and the tier's default run window ends the job after the
 second gate has passed but before the host recovery applies. The phase vocabulary of this
