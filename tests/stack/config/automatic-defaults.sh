@@ -82,7 +82,7 @@ AD_MEM=8388608 run_sourced "$AD" automatic_render >"$AD/render.log" 2>&1
 assert_rc "null worker port renders" "$?" 0
 assert_eq "null worker port means 8080" "$(run_sourced "$AD" env_get_file "$AD/.env" XMRIG_API_PORT)" 8080
 assert_eq "explicit hostname wins" "$(run_sourced "$AD" env_get_file "$AD/.env" HOST_IP)" explicit-machine
-control_default_case() { # <label> <jq-filter> <appliance-flag> <expected>
+control_default_case() {
     jq "$2" "$AD/base.json" >"$AD/config.json"
     AD_MEM=8388608 PITHEAD_APPLIANCE="$3" run_sourced "$AD" eval 'caddy_hash_password_b64() { printf fixture-hash | base64; }; automatic_render' >"$AD/render.log" 2>&1
     assert_rc "control default render ($1)" "$?" 0
