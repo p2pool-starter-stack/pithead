@@ -14,7 +14,7 @@ bad() {
     FAIL=$((FAIL + 1))
     printf 'FAIL: %s\n' "$1" >&2
 }
-info() { :; }
+info() { printf '%s\n' "$*" >>"$work/info"; }
 it_warn() { :; }
 it_err() { printf 'ERR: %s\n' "$1" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -33,7 +33,8 @@ source "$HERE/netwatch-window.sh" || exit 1
 docker() {
     case "${1:-}" in
     info | image) return 0 ;;
-    build | rm) return 0 ;;
+    rm) printf 'rm\n' >>"$work/engine-calls" ;;
+    build) return 0 ;;
     esac
     return 1
 }
@@ -47,7 +48,7 @@ case "$cmd" in
 start)
     mkdir -p "$out"
     printf 'NW_PREFIX=172.28.0\nNW_TOR_IP=172.28.0.25\nNW_BOX_IP=\nNW_VANTAGE_IP=%s\nNW_STARTED=x\n' "$5" >"$out/meta.env"
-    printf 'tcp\t192.168.122.99\t140.211.10.1\t443\t4\n' >"$out/flows.tsv"
+    if [ "${NW_STUB_EMPTY:-0}" = 1 ]; then printf 'tcp\\t10.0.0.5\\t8.8.8.8\\t443\\t2\\n' >"$out/flows.tsv"; else printf 'tcp\t192.168.122.99\t140.211.10.1\t443\t4\n' >"$out/flows.tsv"; fi
     ;;
 stop)
     if [ "${NW_STUB_STOP:-0}" = 1 ]; then exit 2; fi
@@ -65,6 +66,10 @@ verify)
     case "${NW_STUB_VERIFY:-clean}" in
     clean)
         printf 'netwatch: 5 unique flows observed\nnetwatch: every observed flow is permitted by the config.\n'
+        ;;
+    die)
+        printf 'netwatch: verify needs --config config.json\n' >&2
+        exit 2
         ;;
     unexpected)
         printf 'netwatch: 3 unique flows observed\nnetwatch: 1 UNEXPECTED flow(s):\n'
@@ -116,7 +121,32 @@ case "$out" in *"DEAD CAPTURE — no flows at all were recorded"*) ok ;; *) bad 
 export NW_STUB_STOP=1
 out=$(netwatch_window_start "s" 2>&1 && netwatch_window_stop "s" 2>&1 | plain)
 case "$out" in *"DEAD CAPTURE — the recorder was not recording until the window closed"*) ok ;; *) bad "the stopped-recorder row is wrong: $out" ;; esac
-unset NW_STUB_VERIFY NW_STUB_STOP
+unset NW_STUB_STOP
+export NW_STUB_VERIFY=die
+out=$(netwatch_window_start "k" 2>&1 && netwatch_window_stop "k" 2>&1 | plain)
+case "$out" in *"could not judge the capture: netwatch: verify needs --config config.json"*) ok ;; *) bad "a classifier refusal is mislabelled as a dead capture: $out" ;; esac
+case "$out" in *"no flows at all"*) bad "a classifier refusal claimed an empty capture: $out" ;; *) ok ;; esac
+unset NW_STUB_VERIFY
+export NW_STUB_EMPTY=1 NW_STUB_VERIFY=dead
+: >"$work/info"
+netwatch_window_start "e" >/dev/null 2>&1 && netwatch_window_stop "e" >/dev/null 2>&1
+grep -qx 'netwatch: 0 of 1 recorded flows touch the guest or the virbr0 subnet; the rest is bench-side host traffic outside the audited subject' "$work/info" &&
+    ok "a capture with nothing in scope reports a clean 0 of 1" || bad "the scope line is garbled: $(cat "$work/info")"
+unset NW_STUB_EMPTY NW_STUB_VERIFY
+: >"$work/engine-calls"
+out=$(
+    netwatch_window_start "a" >/dev/null 2>&1
+    NW_WINDOW=a
+    netwatch_window_abort 2>&1 | plain
+)
+case "$out" in *"✗ netwatch a (non-required leg, #4196): DEAD CAPTURE — the phase ended before the window closed"*) ok ;; *) bad "an unclosed window printed no aborted row: $out" ;; esac
+netwatch_window_start "a2" >/dev/null 2>&1
+: >"$work/engine-calls"
+netwatch_window_abort >/dev/null 2>&1
+[ -z "${NW_WINDOW:-}" ] && grep -q rm "$work/engine-calls" && ok "an abort tears the recorder container down and closes the window" ||
+    bad "the abort left the recorder or the window behind (NW_WINDOW=${NW_WINDOW:-} calls=$(cat "$work/engine-calls"))"
+out=$(netwatch_window_abort 2>&1)
+[ -z "$out" ] && ok "an abort with no open window records nothing" || bad "abort of no window emitted: $out"
 [ "$FAIL" = 0 ] && ok "red netwatch rows never entered the phase counters (fail=$FAIL)" || bad "netwatch rows leaked into FAIL: $FAIL"
 
 printf 'enabled\n' >"$work/ssh-out"

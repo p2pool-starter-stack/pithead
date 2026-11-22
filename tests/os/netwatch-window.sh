@@ -99,8 +99,10 @@ netwatch_window_stop() {
     local scoped n_all n_kept
     scoped="$out/flows.virbr0.tsv"
     netwatch_scope_flows "${ip:-}" "$gw" <"$out/flows.tsv" >"$scoped"
-    n_all=$( (grep -c . "$out/flows.tsv" 2>/dev/null) || echo 0)
-    n_kept=$( (grep -c . "$scoped" 2>/dev/null) || echo 0)
+    n_all=$(grep -c . "$out/flows.tsv" 2>/dev/null || :)
+    n_kept=$(grep -c . "$scoped" 2>/dev/null || :)
+    n_all=${n_all:-0}
+    n_kept=${n_kept:-0}
     [ "$n_kept" != "$n_all" ] &&
         info "netwatch: $n_kept of $n_all recorded flows touch the guest or the virbr0 subnet; the rest is bench-side host traffic outside the audited subject"
     mv "$scoped" "$out/flows.tsv"
@@ -114,8 +116,23 @@ netwatch_window_stop() {
     case "$rc" in
     0) netwatch_verdict_row "$window" 0 "${seen:-0} recorded flows, every one permitted by the config" ;;
     1) netwatch_verdict_row "$window" 1 "${bad:-at least one} unexpected flow(s) among ${seen:-unknown} recorded" ;;
-    *) netwatch_verdict_row "$window" 2 "no flows at all were recorded during the window" ;;
+    *)
+        case "$flows" in
+        *"NO FLOWS RECORDED"*) netwatch_verdict_row "$window" 2 "no flows at all were recorded during the window" ;;
+        *) netwatch_verdict_row "$window" 2 "the classifier could not judge the capture: $(printf '%s' "$flows" | tail -n 1 | cut -c1-160)" ;;
+        esac
+        ;;
     esac
+}
+
+netwatch_window_abort() {
+    local window="${NW_WINDOW:-}"
+    [ -n "$window" ] || return 0
+    NW_WINDOW=""
+    [ -n "${NW_ENGINE:-}" ] && [ -n "${NW_OUT:-}" ] || return 0
+    NETWATCH_ENGINE="$NW_ENGINE" bash "${NW_CLI:-$SCRIPT_DIR/../netwatch/netwatch.sh}" stop --out "$NW_OUT" >/dev/null 2>&1 || :
+    "$NW_ENGINE" rm -f pithead-netwatch >/dev/null 2>&1 || :
+    netwatch_verdict_row "$window" 2 "the phase ended before the window closed, so the recorder was torn down unjudged"
 }
 
 netwatch_mining_hour() {

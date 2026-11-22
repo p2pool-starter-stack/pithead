@@ -390,7 +390,9 @@ cuts a live P2Pool's peers.
 `tests/os/netwatch-window.sh` wraps the battery's passive netwatch capture windows (#4196) around first boot
 and reboot, the update cycle, one hour of mining per role and both set-up-again legs; the recorder runs on
 the KVM host at the virbr0 vantage and the `tests/netwatch/` classifier's verdict lands as a non-required
-row, so a silent or dead capture reads as a failure without ever gating a phase.
+row, so a silent or dead capture reads as a failure without ever gating a phase. A phase that returns
+before its window closes leaves nothing running: the run's `cleanup` calls `netwatch_window_abort`, which
+tears the recorder container down and prints a red row for the unclosed window.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
