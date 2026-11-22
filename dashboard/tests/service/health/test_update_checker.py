@@ -85,6 +85,9 @@ class TestGitHubReleaseClient:
         assert "isolate@" not in caplog.text
         assert "connection error" in caplog.text
 
+    def test_schemeless_proxy_is_silent_none(self):
+        assert GitHubReleaseClient("u", tor_proxy="tor:9050").latest_release() is None
+
     def test_non_200_is_silent_none(self):
         c = GitHubReleaseClient("u")
         with patch(

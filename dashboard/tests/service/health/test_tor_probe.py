@@ -106,3 +106,9 @@ class TestProbe:
         )
         assert ":isolate@" in get.call_args_list[0].kwargs["proxies"]["https"]
         assert "cloudflare" in evidence
+
+
+def test_schemeless_proxy_is_a_failed_probe_not_an_exception(monkeypatch):
+    monkeypatch.setattr("mining_dashboard.service.health.tor_heal.TOR_SOCKS_PROXY", "tor:9050")
+    ok, evidence = TorEgressHealer._probe_egress()
+    assert ok is False and "ValueError" in evidence

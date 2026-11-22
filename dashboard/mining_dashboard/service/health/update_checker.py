@@ -58,10 +58,10 @@ class GitHubReleaseClient:
         self.tor_proxy = tor_proxy
 
     def latest_release(self) -> dict | None:
-        proxies = proxy_map(
-            purpose_proxy(self.tor_proxy, PROXY_PURPOSE_UPDATES) if self.tor_proxy else None
-        )
         try:
+            proxies = proxy_map(
+                purpose_proxy(self.tor_proxy, PROXY_PURPOSE_UPDATES) if self.tor_proxy else None
+            )
             resp = bounded_get(
                 self.api_url,
                 timeout=20,

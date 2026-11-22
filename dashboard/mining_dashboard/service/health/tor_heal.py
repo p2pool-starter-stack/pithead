@@ -123,12 +123,12 @@ class TorEgressHealer(TorHistoryMixin):
         evidence = []
         for url in (PROBE_URL, SECOND_PROBE_URL):
             circuit = uuid.uuid4().hex
-            proxy = purpose_proxy(TOR_SOCKS_PROXY, circuit)
             try:
+                proxy = purpose_proxy(TOR_SOCKS_PROXY, circuit)
                 bounded_get(url, timeout=PROBE_TIMEOUT_SEC, proxies=proxy_map(proxy))
                 evidence.append(f"{url}: circuit {circuit[:8]} answered")
                 return True, "; ".join(evidence)
-            except requests.RequestException as exc:
+            except (requests.RequestException, ValueError) as exc:
                 evidence.append(f"{url}: circuit {circuit[:8]} {type(exc).__name__}")
         return False, "; ".join(evidence)
 
