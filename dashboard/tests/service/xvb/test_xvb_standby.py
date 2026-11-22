@@ -5,8 +5,11 @@ import pytest
 import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY
+from mining_dashboard.helper.http import PROXY_PURPOSE_DASHBOARD, proxy_map, purpose_proxy
 from mining_dashboard.service.storage_service import StateManager
 from mining_dashboard.service.xvb.xvb_standby import XvbStandbyPuller, parse_standby
+
+_DASH = proxy_map(purpose_proxy(TOR_SOCKS_PROXY, PROXY_PURPOSE_DASHBOARD))
 
 
 class _Resp:
@@ -122,7 +125,8 @@ class TestPuller:
 
     def test_onion_source_routes_over_tor(self):
         puller = XvbStandbyPuller(MagicMock(), source="http://abc.onion/api/xvb-standby")
-        assert puller._proxies() == {"http": TOR_SOCKS_PROXY, "https": TOR_SOCKS_PROXY}
+        assert puller._proxies() == _DASH
+        assert "dashboard:isolate@" in puller._proxies()["https"]
 
     @pytest.mark.parametrize(
         "host",
@@ -137,12 +141,12 @@ class TestPuller:
         # A public IP literal is NOT provably private — it must ride Tor, not leak the backup's IP
         # by dialing direct (#160). This is the clearnet-egress leak the review flagged.
         puller = XvbStandbyPuller(MagicMock(), source="http://8.8.8.8:8000/api/xvb-standby")
-        assert puller._proxies() == {"http": TOR_SOCKS_PROXY, "https": TOR_SOCKS_PROXY}
+        assert puller._proxies() == _DASH
 
     def test_hostname_source_routes_over_tor(self):
         # A hostname can't be proven private without a DNS lookup, so it rides Tor — never direct.
         puller = XvbStandbyPuller(MagicMock(), source="http://primary.example.com/api/xvb-standby")
-        assert puller._proxies() == {"http": TOR_SOCKS_PROXY, "https": TOR_SOCKS_PROXY}
+        assert puller._proxies() == _DASH
 
     def test_startup_log_does_not_leak_source_url(self, caplog):
         # The source URL can embed basic-auth userinfo (a capability secret) — the startup log must
