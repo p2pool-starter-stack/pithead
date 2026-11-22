@@ -138,7 +138,7 @@ assert_eq "#1246 mutant: and that render still carries the auth block" "$(coe_st
 echo "== rendered Caddyfile is caddy-fmt shaped and serves no HTTP/3 (#4159) =="
 CF="$SANDBOX/caddyfile-format"
 mkdir -p "$CF"
-cf_render() { # <secure> <port> <out>
+cf_render() {
     (
         cd "$CF" || exit 1
         # shellcheck disable=SC1090
