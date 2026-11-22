@@ -1,11 +1,11 @@
-FROM golang:1.26.11-trixie@sha256:cff05dd6b81c901f2e8249eb6f91c69a60451d0f12c26bfef08e476a85b32d4d AS gobuild
+FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS gobuild
 
 ARG COMPOSE_VERSION=v5.7.2
 ARG COMPOSE_COMMIT=ed25575984c8dbd1ad137c93002d782f52478809
-ARG COSIGN_VERSION=v3.1.3
-ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
+ARG COSIGN_VERSION=v3.1.4
+ARG COSIGN_COMMIT=0e48502cf5ef34e2e60bbd3617aa19945712f705
 ARG COMPOSE_GO_RAISES="golang.org/x/net@v0.62.0"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.41.0 golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.18.7 github.com/go-jose/go-jose/v4@v4.1.6"
+ARG COSIGN_GO_RAISES="golang.org/x/net@v0.62.0"
 ENV CGO_ENABLED=0
 
 RUN git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \
@@ -31,9 +31,9 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosig
 RUN /out/docker-compose version && /out/cosign version \
     && /out/docker-compose version | grep -qF "${COMPOSE_VERSION}" \
     && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
-    && go version /out/docker-compose | grep -qxF "/out/docker-compose: go1.26.11" \
-    && go version /out/cosign | grep -qxF "/out/cosign: go1.26.11" \
-    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.18\.7[[:space:]]' \
+    && go version /out/docker-compose | grep -qxF "/out/docker-compose: $(go env GOVERSION)" \
+    && go version /out/cosign | grep -qxF "/out/cosign: $(go env GOVERSION)" \
+    && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/klauspost/compress[[:space:]]+v1\.20\.1[[:space:]]' \
     && go version -m /out/cosign | grep -qE '^[[:space:]]+dep[[:space:]]+github.com/go-jose/go-jose/v4[[:space:]]+v4\.1\.6[[:space:]]'
 
 # ---------------------------------------------------------------------------------------------

@@ -19,12 +19,8 @@ os_state_write() { # <control-dir> <json>
         mv "$1/results/.os-update-state.tmp" "$1/results/os-update-state.json"
 }
 
-# ponytail: test seam for the KVM battery — a root-owned `os-update-test-base` file beside the
-# checkout redirects the release lookup and the bundle download to a local URL (and drops the
-# Tor SOCKS, which cannot reach the bench). The ownership check stops a non-root plant from
-# steering root's downloads; verification still runs for real against the slot keyring either
-# way, so the seam can redirect WHERE the bytes come from but never what installs.
 os_update_test_base() {
+    [ -f "${PITHEAD_TEST_MARKER_FILE:-/etc/pithead-test-marker}" ] || return 1
     local f="$PWD/os-update-test-base"
     { [ -f "$f" ] && [ -O "$f" ]; } || return 1
     tr -d ' \t\r\n' <"$f"
