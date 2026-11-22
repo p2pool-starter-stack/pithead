@@ -136,10 +136,10 @@ case "$caddy_default" in
 esac
 assert_contains "the LAN address is still published" "$caddy_default" "192.168.1.10"
 assert_contains "the ULA is still published — private scope, not routable" "$caddy_default" "fd00::1"
-assert_contains "a bind line closes the wildcard listener" "$caddy_default" "    bind "
+assert_contains "a bind line closes the wildcard listener" "$caddy_default" $'\tbind '
 assert_contains "bind keeps loopback for the host-networked dashboard" "$caddy_default" "127.0.0.1 ::1"
 # The bind line is the boundary — it specifically must not carry the global address.
-bindline=$(printf '%s' "$caddy_default" | grep '^    bind ')
+bindline=$(printf '%s' "$caddy_default" | grep '^[[:space:]]bind ')
 case "$bindline" in
 *2001:db8:*) bad "the bind line excludes the global v6" "global address present in: $bindline" ;;
 *) ok "the bind line excludes the global v6" ;;
@@ -157,7 +157,7 @@ esac
 caddy_optin="$(_caddy_appliance true)"
 assert_contains "the opt-in publishes the global v6 again" "$caddy_optin" "2001:db8::1"
 case "$caddy_optin" in
-*"    bind "*) bad "the opt-in leaves the listener open" "a bind line was still emitted" ;;
+*$'\tbind '*) bad "the opt-in leaves the listener open" "a bind line was still emitted" ;;
 *) ok "the opt-in leaves the listener open" ;;
 esac
 # An operator who PINS dashboard.host is the most deliberately-configured box there is, and the
@@ -185,15 +185,15 @@ caddy_pinned="$(
         DASHBOARD_AUTH_HASH_B64="" generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-assert_contains "a pinned dashboard.host still gets a bind" "$caddy_pinned" "    bind "
-case "$(printf '%s' "$caddy_pinned" | grep '^    bind ')" in
+assert_contains "a pinned dashboard.host still gets a bind" "$caddy_pinned" $'\tbind '
+case "$(printf '%s' "$caddy_pinned" | grep '^[[:space:]]bind ')" in
 *2001:db8:*) bad "a pinned host does not reopen the global v6" "global address is bound" ;;
 *) ok "a pinned host does not reopen the global v6" ;;
 esac
 # The bind must come from the BOX's own addresses, never from the (name-only) site list —
 # #1021-class regression. Assert the bind line names the box's actual LAN address; under
 # the site-list-derived mutation it collapses to loopback-only and this goes red.
-assert_contains "a pinned dashboard.host still binds the box's own LAN address" "$(printf '%s' "$caddy_pinned" | grep '^    bind ')" "192.168.1.10"
+assert_contains "a pinned dashboard.host still binds the box's own LAN address" "$(printf '%s' "$caddy_pinned" | grep '^[[:space:]]bind ')" "192.168.1.10"
 
 # Loopback is appended outside the address loop, so a box reporting no usable non-public address
 # still binds something reachable rather than silently falling back to a wildcard.
@@ -210,7 +210,7 @@ caddy_noaddr="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-assert_contains "a box with only a public address still binds loopback" "$caddy_noaddr" "    bind 127.0.0.1 ::1"
+assert_contains "a box with only a public address still binds loopback" "$caddy_noaddr" $'\tbind 127.0.0.1 ::1'
 
 # The onion vhost must bind exactly when the LAN vhost does. A site block with no bind asks for a
 # WILDCARD listener, which reopens every address the bound blocks exclude — including the
@@ -233,10 +233,10 @@ caddy_onion="$(
     cat Caddyfile
 )"
 assert_eq "insecure+onion: both vhosts bind, never one wildcard and one specific" \
-    "$(printf '%s' "$caddy_onion" | grep -c '^    bind ')" "3"
+    "$(printf '%s' "$caddy_onion" | grep -c '^[[:space:]]bind ')" "3"
 
 _site_count() { printf '%s' "$1" | grep -cE '^[^[:space:]{].*\{[[:space:]]*$'; }
-_bind_count() { printf '%s' "$1" | grep -c '^    bind '; }
+_bind_count() { printf '%s' "$1" | grep -c '^[[:space:]]bind '; }
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_onion_https="$(
     # shellcheck disable=SC1090
@@ -265,7 +265,7 @@ assert_eq "secure+onion+provisioned: every site block binds — no unbound wildc
 # blocks (plain HTTP and the HTTPS one on the .onion name) render from _onion_bind_line, so the
 # expected count is 2 — widening either one takes this to 0.
 assert_eq "secure+onion+provisioned: the onion vhosts bind the bridge gateway, not a wildcard" \
-    "$(printf '%s' "$caddy_onion_https" | grep -c '^    bind 172\.28\.0\.1$')" "2"
+    "$(printf '%s' "$caddy_onion_https" | grep -c '^[[:space:]]bind 172\.28\.0\.1$')" "2"
 # The same invariant on the binding-off side: a DIY host renders the same three blocks and binds
 # none of them, so there is still no mixed wildcard/specific pair.
 # shellcheck disable=SC1090  # STACK path is dynamic by design
@@ -327,7 +327,7 @@ caddy_onion_off="$(
     cat Caddyfile
 )"
 assert_eq "DIY insecure+onion: neither vhost binds — only the loopback verifier does" \
-    "$(printf '%s' "$caddy_onion_off" | grep -c '^    bind ')" "1"
+    "$(printf '%s' "$caddy_onion_off" | grep -c '^[[:space:]]bind ')" "1"
 unset -f _caddy_appliance
 unset -f _site_count _bind_count
 unset -f _dupe_sites
@@ -452,7 +452,7 @@ esac
 # An explicit `tls` line here would ask Caddy to manage a SEPARATE certificate for a site address
 # with no hostname to manage one against.
 case "$caddy_https_catchall" in
-*"    tls "*) bad "the :443 catch-all carries no tls directive of its own" "a tls line appeared: $caddy_https_catchall" ;;
+*$'\ttls '*) bad "the :443 catch-all carries no tls directive of its own" "a tls line appeared: $caddy_https_catchall" ;;
 *) ok "the :443 catch-all carries no tls directive of its own" ;;
 esac
 # A custom port means a fronting proxy owns :443 too (#740), the same reasoning as :80 above.
@@ -476,7 +476,7 @@ caddy_port_onion="$(
 assert_contains "onion+custom-port: LAN vhost moves to the custom port" "$caddy_port_onion" "https://box.lan:8443 {"
 assert_contains "onion+custom-port: redirect global still emitted" "$caddy_port_onion" "auto_https disable_redirects"
 assert_contains "onion+custom-port: onion vhost stays on the bridge's bare :80" "$caddy_port_onion" "http://172.28.0.1 {"
-case "$caddy_port_onion" in
+case "$(printf '%s\n' "$caddy_port_onion" | grep -v '^[[:space:]]servers ')" in
 *"172.28.0.1:8443"* | *"172.28.0.1:80 "*) bad "onion vhost keeps its bare bridge port" "custom LAN port leaked onto the onion vhost" ;;
 *) ok "onion vhost keeps its bare bridge port (no custom-port leak)" ;;
 esac

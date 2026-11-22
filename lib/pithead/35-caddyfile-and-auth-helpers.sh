@@ -113,7 +113,7 @@ generate_caddyfile() {
     # host can keep 80/443 (co-hosting, #181). In HTTPS mode a custom port also disables Caddy's
     # automatic :80 -> HTTPS redirect (a global option emitted once at the top of the file) so port
     # 80 is left free for that proxy; the fronting proxy owns any http->https bounce instead.
-    local dport="${HOST_PORT:-}" port_suffix="" redirects_off="" own_plain_port=0 plain_ports=" :80 127.0.0.1:80 ${NETWORK_PREFIX}.1:80 127.0.0.1:8001"
+    local dport="${HOST_PORT:-}" port_suffix="" redirects_off="" own_plain_port=0 plain_ports=" :80 127.0.0.1:80${verify_site:+ 127.0.0.1:8001}"
     if [ "$DASHBOARD_SECURE" == "true" ]; then
         [ "$dport" == "443" ] && dport=""
         if [ -n "$dport" ]; then
@@ -138,15 +138,14 @@ generate_caddyfile() {
         [ "$dport" == "80" ] && dport=""
         [ -n "$dport" ] && port_suffix=":$dport" plain_ports="$plain_ports :$dport 127.0.0.1:$dport"
     fi
+    [ "${DASHBOARD_ONION_ENABLED:-false}" != true ] || plain_ports="$plain_ports $NETWORK_PREFIX.1:80"
     local _p servers_block="    servers {
         protocols h1 h2
     }"
-    for _p in $plain_ports; do
-        servers_block="$servers_block
+    for _p in $plain_ports; do servers_block="$servers_block
     servers $_p {
         protocols h1
-    }"
-    done
+    }"; done
     local global_block="{
 ${redirects_off:+    auto_https disable_redirects
 }$servers_block
