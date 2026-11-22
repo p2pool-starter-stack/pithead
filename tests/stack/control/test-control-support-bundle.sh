@@ -19,7 +19,7 @@ log = os.environ.get("SB_JOURNAL_LOG")
 if log:
     with open(log, "a") as fh:
         fh.write(" ".join(args) + "\n")
-now = int(time.time())
+now = int(os.environ.get("SB_NOW") or time.time())
 H = 3600
 addr = os.environ["SB_ADDR"]
 onion = os.environ["SB_ONION"]
