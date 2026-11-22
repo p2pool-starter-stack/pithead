@@ -6,6 +6,8 @@ WORK=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-/tmp}}/pithead-tor-bootstrap.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 # shellcheck source=lib/pithead/02e-tor-recovery.sh
 source "$ROOT/lib/pithead/02e-tor-recovery.sh"
+# shellcheck source=lib/pithead/02f-tor-recovery-reasons.sh
+source "$ROOT/lib/pithead/02f-tor-recovery-reasons.sh"
 echo "== authenticated bootstrap recovery without chain RPC =="
 mkdir -p "$WORK/bin" "$WORK/tor/p2pool" "$WORK/control/audit"
 printf 'onion-identity\n' >"$WORK/tor/p2pool/hs_ed25519_secret_key"
@@ -27,6 +29,9 @@ reply='250 OK
 250 closing connection'
 printf '%s\n' "$reply" >"$TOR_REPLY"
 [ "$(sh "$ROOT/build/tor/recovery-diagnose.sh")" = bootstrap95-no-circuit ]
+printf '%s\n' "${reply/PROGRESS=95 TAG=circuit_create/PROGRESS=45 TAG=requesting_descriptors}" >"$TOR_REPLY"
+[ "$(sh "$ROOT/build/tor/recovery-diagnose.sh")" = bootstrap45-no-circuit ]
+printf '%s\n' "$reply" >"$TOR_REPLY"
 grep -q '^AUTHENTICATE ' "$TOR_CAPTURE"
 grep -q '^GETINFO status/bootstrap-phase status/circuit-established' "$TOR_CAPTURE"
 for bad in \
@@ -55,7 +60,7 @@ mutation_lock_acquire() { [ "${ACTIVE:-0}" = 0 ] && _PITHEAD_LOCK_OWNED=1; }
 mutation_lock_release() { :; }
 env_get() { printf '%s\n' "$WORK/control"; }
 tor_recovery_mount() { printf '%s\n' "$WORK/tor"; }
-log() { :; }
+log() { printf '%s\n' "$*" >>"$WORK/log"; }
 warn() { :; }
 control_audit() { printf '%s\n' "$5" >>"$WORK/audit"; }
 sleep() { : >"$WORK/observed"; }
@@ -105,6 +110,7 @@ docker() {
         ;;
     esac
 }
+tor_recovery_egress_down() { [ "${EGRESS:-down}" = down ]; }
 refused() {
     rm -f "$WORK/observed"
     if tor_recover apply; then
@@ -125,7 +131,10 @@ RECOVERED=1 refused
 RPC=advancing refused
 RPC_LATER=1 refused
 printf 'CircuitBuildTimeBin 1 2\n' >>"$WORK/tor/state"
-refused
+EGRESS=up refused
+rm -f "$WORK/observed"
+tor_recover check
+grep -q 'reset reason: bootstrap-stalled' "$WORK/log"
 sed -i '/CircuitBuildTimeBin/d' "$WORK/tor/state"
 before=$(sha256sum "$WORK/tor/p2pool/hs_ed25519_secret_key" "$WORK/chain")
 rm -f "$WORK/observed"

@@ -98,6 +98,10 @@ class TariChainHealth:
         self._was_red = False  # a red alert was delivered during the current stretch of red
         self.verdict = {"level": "green", "reasons": [], "advice": ""}
 
+    @property
+    def zero_peers_since(self):
+        return self._zero_since
+
     def observe(self, sync, connections, now):
         """Fold one cycle's readings (``TariClient.get_sync_status()`` and the peer count, or None
         when the node did not say) into ``self.verdict``. An unreachable cycle feeds no height:
