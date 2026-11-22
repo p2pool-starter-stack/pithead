@@ -34,7 +34,7 @@ class TestFreshCircuitRetry:
         with patch.object(hc_mod, "_fetch", side_effect=[err, _resp(200)]) as get:
             assert c.ping() is True
         first, second = (call.kwargs["proxies"]["https"] for call in get.call_args_list)
-        assert first == "socks5h://tor:9050"
+        assert first == "socks5h://notify:isolate@tor:9050"
         auth = second.removeprefix("socks5h://").split("@")[0]
         user, _, password = auth.partition(":")
         assert len(user) == 32 and password == "isolate"

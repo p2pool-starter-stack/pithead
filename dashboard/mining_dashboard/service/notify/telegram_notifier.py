@@ -5,7 +5,8 @@ import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY
 from mining_dashboard.helper.http import (
-    proxy_map,
+    PROXY_PURPOSE_NOTIFY,
+    purpose_proxy_map,
     raise_for_success,
     refuse_direct_public,
     request_failure_class,
@@ -60,7 +61,7 @@ class TelegramNotifier:
         self.events = dict(events or {})
         self.timeout = timeout
         self._api_base = api_base.rstrip("/")
-        self._proxies = proxy_map(tor_proxy)
+        self._proxies = purpose_proxy_map(tor_proxy, PROXY_PURPOSE_NOTIFY)
         self.enabled = bool(enabled and self.bot_token and self.chat_id)
         self.last_failure = ""
 

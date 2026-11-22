@@ -62,3 +62,10 @@ def test_empty_label_raises():
 
 def test_guard_accepts_a_credentialed_proxy():
     refuse_direct_public("https://api.github.com/x", proxy_map(purpose_proxy(BASE, "updates")))
+
+
+def test_purpose_proxy_map_passes_an_empty_base_through():
+    from mining_dashboard.helper.http import purpose_proxy_map
+
+    assert purpose_proxy_map(None, "notify") == {"http": None, "https": None}
+    assert purpose_proxy_map(BASE, "notify")["https"] == purpose_proxy(BASE, "notify")

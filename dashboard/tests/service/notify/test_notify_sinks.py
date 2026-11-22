@@ -37,6 +37,11 @@ class TestEnabledGating:
         post.assert_not_called()
 
 
+def _notify_proxies(base):
+    proxy = base.replace("://", "://notify:isolate@", 1)
+    return {"http": proxy, "https": proxy}
+
+
 class TestWebhookPayload:
     def test_posts_event_text_ts_json(self):
         hook = WebhookSink("https://hook.test/x", tor_proxy="socks5h://tor:9050")
@@ -79,10 +84,7 @@ class TestTorRouting:
         for sink in (WebhookSink("https://hook.test/x"), NtfySink("https://ntfy.test/t")):
             with patch.object(ns_mod.requests, "post", return_value=_ok_resp()) as post:
                 sink.send("x")
-            assert post.call_args.kwargs["proxies"] == {
-                "http": ns_mod.TOR_SOCKS_PROXY,
-                "https": ns_mod.TOR_SOCKS_PROXY,
-            }
+            assert post.call_args.kwargs["proxies"] == _notify_proxies(ns_mod.TOR_SOCKS_PROXY)
 
     def test_tor_opt_out_goes_direct(self):
         sink = WebhookSink("http://192.168.1.5/hook", direct=True)
@@ -141,10 +143,7 @@ class TestConfigSinks:
         sinks = config_sinks()
         assert [type(s).__name__ for s in sinks] == ["WebhookSink", "WebhookSink", "NtfySink"]
         assert all(s.enabled for s in sinks)
-        assert all(
-            s._proxies == {"http": ns_mod.TOR_SOCKS_PROXY, "https": ns_mod.TOR_SOCKS_PROXY}
-            for s in sinks
-        )
+        assert all(s._proxies == _notify_proxies(ns_mod.TOR_SOCKS_PROXY) for s in sinks)
 
     def test_notify_tor_false_drops_the_proxy(self, monkeypatch):
         monkeypatch.setattr(ns_mod, "NOTIFY_WEBHOOK_URLS", ["http://10.0.0.2/hook"])

@@ -161,6 +161,10 @@ def purpose_proxy(base, label):
     return base.replace("://", f"://{label}:isolate@", 1)
 
 
+def purpose_proxy_map(base, label):
+    return proxy_map(purpose_proxy(base, label) if base else base)
+
+
 def bounded_get(url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, **kwargs):
     """``requests.get`` with a hard response-size cap — the #660 entry point, unchanged."""
     return bounded_request("GET", url, max_bytes=max_bytes, timeout=timeout, **kwargs)
