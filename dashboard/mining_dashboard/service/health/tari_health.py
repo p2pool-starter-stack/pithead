@@ -29,7 +29,12 @@ import os
 import time
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_HEALTH,
+    bounded_get,
+    proxy_map,
+    purpose_proxy,
+)
 
 logger = logging.getLogger("TariHealth")
 
@@ -61,11 +66,10 @@ def _explorer_tip(url: str) -> int | None:
             url,
             max_bytes=EXPLORER_MAX_BYTES,
             timeout=EXPLORER_TIMEOUT_SEC,
-            proxies={"http": TOR_SOCKS_PROXY, "https": TOR_SOCKS_PROXY},
+            proxies=proxy_map(purpose_proxy(TOR_SOCKS_PROXY, PROXY_PURPOSE_HEALTH)),
         ).json()
         return int(body["tipInfo"]["metadata"]["best_block_height"])
     except Exception as exc:
-        # The type only: a request error's text carries the URL, which may hold a token.
         logger.info(
             "Tari explorer reference unavailable (%s); verdict uses local signals only.",
             type(exc).__name__,
