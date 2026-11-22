@@ -10,6 +10,7 @@ source "$HERE/lib/run-state.sh"
 TD="$(mktemp -d)"
 trap 'rm -rf "$TD"' EXIT
 
+echo "== The probe's own logic =="
 if python3 "$HERE/lib/purpose-circuit-probe.py" --self-test; then
     it_pass "purpose circuit probe self-test"
 else
@@ -30,6 +31,7 @@ rx() {
     return "$PROBE_RC"
 }
 
+echo "== The row passes only on exit 0 plus the probe's verdict =="
 PROBE_RC=0
 PROBE_VERDICT="purposes exit distinct circuits"
 run_row
