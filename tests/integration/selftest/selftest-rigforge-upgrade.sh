@@ -231,7 +231,6 @@ queue_results rejected
 run_rigforge_upgrade rig1 >/dev/null 2>&1
 want "rejected terminal -> exactly one FAIL" 1 1 0 0 0
 
-# KILLS: a failure line that drops the host's refusal text (#4305).
 snap
 rig_reports "1.15.1"
 answers "$PENDING"
@@ -241,7 +240,6 @@ out="$(cat "$OUT_F")"
 case "$out" in *"expected applied, got [rejected]"*"error [rig busy: upgrade in progress TOKEN=<redacted>]; reason [anti-beacon]"*) check "rejected result: failure line carries masked error and reason (#4305)" 0 ;; *) check "rejected result: failure line carries masked error and reason (#4305)" 1 ;; esac
 want "rejected with error text -> still exactly one FAIL" 1 1 0 0 0
 
-# KILLS: an empty reason when the result has no error text (#4305).
 snap
 rig_reports "1.15.1"
 answers "$PENDING"
@@ -250,7 +248,6 @@ run_rigforge_upgrade rig1 >"$OUT_F" 2>&1
 out="$(cat "$OUT_F")"
 case "$out" in *"got [failed]"*"no error text in the result"*) check "no error field -> explicit no-error-text message (#4305)" 0 ;; *) check "no error field -> explicit no-error-text message (#4305)" 1 ;; esac
 
-# KILLS: an unbounded error text (#4305).
 snap
 rig_reports "1.15.1"
 answers "$PENDING"

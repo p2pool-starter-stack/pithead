@@ -194,9 +194,6 @@ _rigforge_upgrade_real_leg() { # <rig> <latest-tag>
     if [ "$status" != "applied" ]; then
         it_fail "the one-click upgrade reaches a real applied terminal (#1237)" \
             "expected applied, got [${status:-<no terminal inside ${IT_UPGRADE_SETTLE_TIMEOUT}s>}]${status:+ — $(_upgrade_result_detail "$UPGRADE_RESULT_BODY")}"
-        # Deliberately the end of the leg. The readback below would red too — the rig cannot be on
-        # a version the upgrade did not reach — and that second red is the SAME evidence counted
-        # twice. One cause, one failure; the reader needs the count to mean something.
         return 0
     fi
     it_pass "the one-click upgrade reaches a real applied terminal (#1237)"
