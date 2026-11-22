@@ -76,6 +76,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         sync_gate_marker_state() { printf absent; }
         run_connection_announcements() { :; }
         tor_recovery_healthy_probe() { :; }
+        tor_diagnostics_live_probe() { :; }
         run_reset_restore() { :; }
         run_uninstall_round_trip() { :; }
         assert_scenario() { :; }

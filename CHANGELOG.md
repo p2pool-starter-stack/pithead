@@ -13,6 +13,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Added
 
+- Service diagnostics shows the Tor snapshot under **Tor** after a health check, and the lean preview's Settings page has a **Tor diagnostics** group. **Check Tor now** shows a read-only Tor snapshot: circuits counted by state and purpose, consensus valid-after, valid-until and age, entry guards counted by status, bootstrap progress and its last change, and the Tor version. A stalled, refused or cut-off control port shows as `unreachable`, and the consensus then falls back to the data-directory file. `./pithead support-bundle` carries the same snapshot as `tor-diagnostics.json`, and Tor auto-heal alerts add a one-line summary (#4262).
 - Appliance reboot and clean power-off in the lean UI preview's Advanced > Maintenance section,
   with typed confirmation and host-side cooldowns (#2384).
 - Opt-in payout confirmation through a remote Monero node: `monero.view_key` with `monero.mode: remote` starts the view-only wallet against the configured node, through Tor under the Privacy profile. Earnings names the reason when tracking is incomplete. Tari stays local-node only (#2866).
@@ -27,6 +28,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Security
 
+- The appliance rootfs builds Compose and Cosign with Go 1.26.11, clearing CVE-2026-97054
+  in both binaries' standard library (#4265), and builds Compose v5.7.2, whose containerd v2.4.2
+  clears CVE-2026-95839 (#4291).
 - The Alpine images pull the patched musl past their digest-pinned base (CVE-2026-107891, #3929).
 - The Ubuntu and Debian image builds list apt, and the dashboard image and the appliance rootfs
   also zlib1g, in their install lists, pulling the distro's security builds past the digest-pinned
