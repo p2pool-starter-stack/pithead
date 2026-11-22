@@ -1,5 +1,3 @@
-"""Tier 1 — purpose_proxy (#4320): per-purpose credentialed SOCKS URLs for Tor stream isolation."""
-
 import pytest
 
 from mining_dashboard.helper.http import (
