@@ -86,8 +86,7 @@ host_egress_audit_counters() {
     sudo -n nft list tables >/dev/null 2>&1 || return 3
     out=$(sudo -n nft -j list table inet "$HOST_EGRESS_AUDIT_NFT_TABLE" 2>/dev/null) || return 1
     jq -c 'def counters: [.nftables[]? | select(has("rule")) | (.rule.expr[]? | select(has("counter")) | .counter | {packets, bytes})];
-        def wd: [.nftables[]? | select(has("rule")) | .rule
-            | select(any(.expr[]?; has("comment") and .comment == "would_drop") and any(.expr[]?; has("counter")))
-            | .expr[]? | select(has("counter")) | .counter | .packets] | add // 0;
+        def wd: [.nftables[]? | select(has("rule")) | .rule | select(.comment == "would_drop")
+            | .expr[]? | select(has("counter")) | .counter.packets] | add // 0;
         {counters: counters, would_drop: wd}' <<<"$out"
 }
