@@ -58,6 +58,9 @@ lifecycle_mining_diagnostics() {
             timeout --kill-after=2 10 systemctl show xmrig.service -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus" 2>&1 | tail -n 40
     } >>"$LIFECYCLE_MINER_DIAGNOSTICS" || true
 }
+lifecycle_proxy_guard_held() {
+    [ "$(rx "timeout --kill-after=2 10 docker logs --since 10m dashboard 2>&1 | grep -c 'Mining work is not valid'" 2>/dev/null)" -gt 0 ] 2>/dev/null
+}
 lifecycle_mining_row() {
     if [ -n "${LIFECYCLE_MINER_ROWS:-}" ] && [ "$BASH_SUBSHELL" -gt "${LIFECYCLE_MINER_SHELL:-0}" ]; then
         printf '%s\037%s\037%s\037%s\n' "$1" "$2" "${3:-}" "${4:-}" >>"$LIFECYCLE_MINER_ROWS"
@@ -79,7 +82,7 @@ lifecycle_mining_flush() {
     : >"$LIFECYCLE_MINER_ROWS"
 }
 lifecycle_mining_step() {
-    local label=$1 before after names end rc=0
+    local label=$1 before after names end detail rc=0
     shift
     lifecycle_mining_flush
     if [ "${SKIP_MINING_ASSERTS:-0}" = 1 ]; then
@@ -92,10 +95,14 @@ lifecycle_mining_step() {
         before=absent
         names=${LIFECYCLE_MINER_NAMES:-'[]'}
     else
-        end=$((SECONDS + ${BOUND_PRECONDITION:-60}))
+        end=$((SECONDS + ${BOUND_PRECONDITION:-300}))
         until before=$(lifecycle_proxy_started) && names=$(lifecycle_worker_set); do
             [ "$SECONDS" -lt "$end" ] && sleep 5 && continue
-            lifecycle_mining_row fail "$label mining precondition" "proxy inspection or live worker set unreadable"
+            detail="proxy inspection or live worker set unreadable for ${BOUND_PRECONDITION:-300}s"
+            if lifecycle_proxy_guard_held; then
+                detail+="; the dashboard stopped xmrig-proxy on purpose (#4046: P2Pool reported monerod unsynchronized) and had not readmitted it within the bound"
+            fi
+            lifecycle_mining_row fail "$label mining precondition" "$detail"
             lifecycle_mining_diagnostics "$label precondition"
             return 1
         done

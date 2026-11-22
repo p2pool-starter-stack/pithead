@@ -17,7 +17,11 @@ lifecycle_worker_set() {
     echo >>"$work/reads"
     [ "$(wc -l <"$work/reads")" -gt "$FAIL_READS" ] && printf '["local"]'
 }
-lifecycle_mining_row() { rows+="$1:$2;"; }
+lifecycle_mining_row() {
+    rows+="$1:$2;"
+    row_detail=$3
+}
+lifecycle_proxy_guard_held() { [ "${GUARD:-0}" = 1 ]; }
 sleep() { SECONDS=$((SECONDS + $1)); }
 step() { ran=$((ran + 1)); }
 lifecycle_mining_step restart step
@@ -28,3 +32,19 @@ ran=0 FAIL_READS=999 BOUND_PRECONDITION=12
 if lifecycle_mining_step restart step; then exit 1; fi
 [ "$ran" = 0 ] && [ "$rows" = 'fail:restart mining precondition;' ] && [ "$(wc -l <"$work/reads")" -le 4 ]
 printf '%s\n' 'PASS: a precondition read that keeps failing ends in the original fail row after the bound'
+: >"$work/reads"
+ran=0 rows='' FAIL_READS=40 BOUND_PRECONDITION=''
+unset BOUND_PRECONDITION
+lifecycle_mining_step restart step
+[ "$ran" = 1 ] && [ -z "$rows" ]
+printf '%s\n' 'PASS: a proxy held stopped for 200 s by the #4046 guard is waited out under the default bound'
+: >"$work/reads"
+ran=0 FAIL_READS=999 GUARD=1 row_detail=''
+if lifecycle_mining_step restart step; then exit 1; fi
+[ "$ran" = 0 ] && [ "$rows" = 'fail:restart mining precondition;' ] && [[ "$row_detail" == *'#4046'* && "$row_detail" == *'300s'* ]]
+printf '%s\n' 'PASS: a proxy that never returns still fails, naming the guard and the bound'
+: >"$work/reads"
+rows='' ran=0 GUARD=0 row_detail=''
+if lifecycle_mining_step restart step; then exit 1; fi
+[[ "$row_detail" == *'300s'* && "$row_detail" != *'#4046'* ]]
+printf '%s\n' 'PASS: without a guard hold the failure text does not blame the guard'
