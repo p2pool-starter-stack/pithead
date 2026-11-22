@@ -253,6 +253,8 @@ def access_summary(limit=50, now=None):
     failures = 0
     last_failure = None
     for e in raw:
+        if e.get("pithead_probe") == "boot-health-v1":
+            continue
         req = e.get("request") if isinstance(e.get("request"), dict) else {}
         try:
             ts = float(e.get("ts") or 0)
@@ -276,7 +278,7 @@ def access_summary(limit=50, now=None):
                 "user": _clean(e.get("user_id"), 64),
             }
         )
-        if status == 401 and 0 <= now - ts <= 86400 and e.get("pithead_probe") != "boot-health-v1":
+        if status == 401 and 0 <= now - ts <= 86400:
             failures += 1
             last_failure = ts if last_failure is None else max(last_failure, ts)
     return {

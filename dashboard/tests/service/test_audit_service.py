@@ -154,7 +154,8 @@ class TestAccessSummary:
         assert summary["failures_24h"] == ordinary
         assert summary["rotate_hint"] is warning
         assert summary["last_failure_ts"] == 199900
-        assert len(summary["entries"]) == 53 + ordinary
+        assert len(summary["entries"]) == ordinary
+        assert all(entry["uri"] == "/" for entry in summary["entries"])
 
     @pytest.mark.parametrize("marker", [None, "", "boot-health-v1-extra", True, ["boot-health-v1"]])
     def test_only_exact_caddy_log_marker_is_exempt(self, access_log, marker):
@@ -162,7 +163,9 @@ class TestAccessSummary:
         row["pithead_probe"] = marker
         row["request"].update(remote_ip="127.0.0.1", headers={"User-Agent": ["curl"]})
         access_log.write_text(json.dumps(row) + "\n")
-        assert audit_service.access_summary(now=2000)["failures_24h"] == 1
+        summary = audit_service.access_summary(now=2000)
+        assert summary["failures_24h"] == 1
+        assert [entry["uri"] for entry in summary["entries"]] == ["/.pithead-boot-health"]
 
     def test_probe_only_has_no_last_failure(self, access_log):
         row = json.loads(access_line(ts=1000, status=401))
@@ -172,6 +175,7 @@ class TestAccessSummary:
         assert summary["failures_24h"] == 0
         assert summary["last_failure_ts"] is None
         assert summary["rotate_hint"] is False
+        assert summary["entries"] == []
 
     def test_hostile_uri_and_user_neutralized(self, access_log):
         # RED-THEN-GREEN guard: the URI and attempted username are attacker-chosen bytes.

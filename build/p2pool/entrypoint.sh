@@ -173,4 +173,36 @@ _redact_argv() {
 # shellcheck disable=SC2086  # intentional word-splitting of the space-separated flag string
 set -- "$@" ${P2POOL_FLAGS:-}
 echo "[p2pool-entrypoint] launching: p2pool $(_redact_argv "$@")"
-exec p2pool "$@"
+_quiet_repeats() {
+    _qr_last=0 _qr_hidden=0
+    while IFS= read -r _qr_line || [ -n "$_qr_line" ]; do
+        case $_qr_line in
+        *"$1"*) ;;
+        *)
+            printf '%s\n' "$_qr_line"
+            continue
+            ;;
+        esac
+        _qr_now=$(date +%s 2>/dev/null) || _qr_now=$((_qr_last + 60))
+        if [ $((_qr_now - _qr_last)) -ge 60 ]; then
+            [ "$_qr_hidden" -eq 0 ] || printf '[%s] %s similar lines hidden in the last minute\n' "$2" "$_qr_hidden"
+            printf '%s\n' "$_qr_line"
+            _qr_last=$_qr_now _qr_hidden=0
+        else
+            _qr_hidden=$((_qr_hidden + 1))
+        fi
+    done
+    [ "$_qr_hidden" -eq 0 ] || printf '[%s] %s similar lines hidden in the last minute\n' "$2" "$_qr_hidden"
+}
+
+_exec_quiet() {
+    _qr_pat=$1 _qr_name=$2
+    shift 2
+    _qr_fifo="/tmp/$_qr_name-log.fifo"
+    rm -f "$_qr_fifo"
+    mkfifo "$_qr_fifo" 2>/dev/null || exec "$@"
+    _quiet_repeats "$_qr_pat" "$_qr_name" <"$_qr_fifo" &
+    exec "$@" >"$_qr_fifo" 2>&1
+}
+
+_exec_quiet 'monerod is not synchronized, trying again in 1 second' p2pool p2pool "$@"

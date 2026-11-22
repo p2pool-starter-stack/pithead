@@ -19,4 +19,36 @@ if [ "${PROXY_STRATUM_TLS:-false}" = "true" ] && [ -f "$TLS_MOUNT/cert.pem" ] &&
     set -- "$@" "--tls-cert=$TLS_MOUNT/cert.pem" "--tls-cert-key=$TLS_MOUNT/key.pem"
 fi
 
-exec xmrig-proxy "$@"
+_quiet_repeats() {
+    _qr_last=0 _qr_hidden=0
+    while IFS= read -r _qr_line || [ -n "$_qr_line" ]; do
+        case $_qr_line in
+        *"$1"*) ;;
+        *)
+            printf '%s\n' "$_qr_line"
+            continue
+            ;;
+        esac
+        _qr_now=$(date +%s 2>/dev/null) || _qr_now=$((_qr_last + 60))
+        if [ $((_qr_now - _qr_last)) -ge 60 ]; then
+            [ "$_qr_hidden" -eq 0 ] || printf '[%s] %s similar lines hidden in the last minute\n' "$2" "$_qr_hidden"
+            printf '%s\n' "$_qr_line"
+            _qr_last=$_qr_now _qr_hidden=0
+        else
+            _qr_hidden=$((_qr_hidden + 1))
+        fi
+    done
+    [ "$_qr_hidden" -eq 0 ] || printf '[%s] %s similar lines hidden in the last minute\n' "$2" "$_qr_hidden"
+}
+
+_exec_quiet() {
+    _qr_pat=$1 _qr_name=$2
+    shift 2
+    _qr_fifo="/tmp/$_qr_name-log.fifo"
+    rm -f "$_qr_fifo"
+    mkfifo "$_qr_fifo" 2>/dev/null || exec "$@"
+    _quiet_repeats "$_qr_pat" "$_qr_name" <"$_qr_fifo" &
+    exec "$@" >"$_qr_fifo" 2>&1
+}
+
+_exec_quiet 'connect error: "connection refused"' xmrig-proxy xmrig-proxy "$@"
