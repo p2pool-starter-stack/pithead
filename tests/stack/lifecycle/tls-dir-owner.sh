@@ -15,7 +15,10 @@ tls_order=$(
     log() { :; }
     sudo() { return 0; }
     prepare_control_dirs() { :; }
-    ensure_owner() { if [ "$1" = "$PROXY_TLS_DIR" ]; then [ "$2:$3" = "$APP_UID:$APP_GID" ] && echo owner || echo owner-wrong; fi; return 0; }
+    ensure_owner() {
+        if [ "$1" = "$PROXY_TLS_DIR" ]; then [ "$2:$3" = "$APP_UID:$APP_GID" ] && echo owner || echo owner-wrong; fi
+        return 0
+    }
     ensure_stratum_tls_cert() { echo cert; }
     ensure_directories
 )
