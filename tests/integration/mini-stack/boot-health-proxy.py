@@ -103,7 +103,7 @@ if mode == "local":
     for _ in range(53):
         require(request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
     data = summary(0, False)
-    require(any(e["uri"] == PROBE and e["status"] == 401 for e in data["entries"]), data)
+    require(not any(e["uri"] == PROBE for e in data["entries"]), data)
     for _ in range(4):
         require(request("/", BAD_AUTH)[0] == 401)
     summary(4, False)
@@ -111,7 +111,8 @@ if mode == "local":
     summary(5, True)
     # Even local wrong credentials on the exact health path are ordinary failures.
     require(request(PROBE, BAD_AUTH, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
-    summary(6, True)
+    data = summary(6, True)
+    require(sum(e["uri"] == PROBE and e["status"] == 401 for e in data["entries"]) == 1, data)
 elif mode in {"external", "proxy"}:
     forged = {
         "Pithead-Probe": "boot-health-v1",
