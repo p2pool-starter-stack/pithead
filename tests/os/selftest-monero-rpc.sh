@@ -202,3 +202,5 @@ socks=$(sed -n '/^observation() {/,/^}/p' "$SCRIPT_DIR/monero-quadlet-proof.sh" 
     exit 1
 }
 echo 'selftest-monero-rpc: the observation container env imports the dashboard config'
+grep -q -- '-e TOR_SOCKS_PROXY=socks5h://127.0.0.1:9050.*--entrypoint python3' "$SCRIPT_DIR/monero-quadlet-proof.sh"
+echo 'selftest-monero-rpc: observation env flag is wired into the podman run line'
