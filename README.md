@@ -49,7 +49,7 @@ mining, and the **Compose stack** you run on a host you manage.
 - 📊 **Live dashboard, with history.** Hashrate, the P2Pool/XvB split, the PPLNS window, and
   per-worker stats over HTTPS on your LAN — and a time-series store keeps blocks found, XvB credit,
   network difficulty, disk growth, and per-rig hashrate as trends, not just the latest reading.
-- 🎛️ **Configure and tune from the browser.** Opt in with `dashboard.control.enabled` to edit
+- 🎛️ **Configure and tune from the browser.** On by default once a dashboard login is set (opt out with `dashboard.control.enabled: false`); edit
   `config.json` from a guided form — or raw JSON, with file upload — upgrade to a new release, and
   read the access and config-change audit logs. Inspecting rig configuration, retuning, and tracking
   hashrate against config versions require an adopted RigForge rig with its control token and

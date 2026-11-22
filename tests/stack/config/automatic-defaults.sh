@@ -126,6 +126,15 @@ assert_eq "a generated login renders the settings editor on (#3579)" \
     "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_CONTROL_ENABLED)" true
 assert_eq "the render added no control key to config.json (#3579)" \
     "$(jq -r 'if (.dashboard.control // null) == null then "absent" else "present" end' "$V/config.json")" absent
+mkdir -p "$V/ccu/bin" "$V/ccu/units"
+printf '#!/usr/bin/env bash\n[ "$1" = "-s" ] && { echo Linux; exit 0; }\nexec uname "$@"\n' >"$V/ccu/bin/uname"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$V/ccu/bin/systemctl"
+chmod +x "$V/ccu/bin/uname" "$V/ccu/bin/systemctl"
+printf '[Service]\nExecStart=%s/pithead control-run-pending\n' "$(cd "$V" && pwd -P)" >"$V/ccu/units/pithead-control.service"
+printf '[Path]\nPathExistsGlob=%s/requests/*.json\n' "$(run_sourced "$V" env_get_file "$V/.env" CONTROL_DIR)" >"$V/ccu/units/pithead-control.path"
+control_out="$(cd "$V" && PATH="$V/ccu/bin:$PATH" PITHEAD_UNIT_DIR="$V/ccu/units" run_sourced "$V" check_control_units 2>&1)"
+assert_contains "doctor reports the control channel enabled for a generated login (#3579)" "$control_out" "Control runner units target this install."
+assert_not_contains "doctor does not report the channel disabled (#3579)" "$control_out" "Disabled for this install"
 mkdir -p "$V/extracted"
 tar -xzf "$bundle_tar" -C "$V/extracted"
 assert_rc "support bundle extracts" "$?" 0
