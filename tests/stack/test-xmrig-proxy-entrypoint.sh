@@ -45,7 +45,6 @@ assert_eq "xmrig-proxy entrypoint: TLS on but keypair incomplete appends nothing
     "$(xp_tls_argv true "$XPTLS")" "[-b][0.0.0.0:3333]"
 rm -rf "$XPTLS"
 
-
 echo "== p2pool and xmrig-proxy entrypoints rate-limit only their known retry lines (#4159) =="
 RL_BIN="$SANDBOX/retry-filter/bin"
 mkdir -p "$RL_BIN"
@@ -78,7 +77,10 @@ for svc in p2pool xmrig-proxy; do
     printf '#!/bin/sh\necho $$ >"%s/pidfile"\ntrap '"'"'echo term >"%s/termfile"; exit 0'"'"' TERM\nwhile :; do sleep 0.2; done\n' "$RL_BIN" "$RL_BIN" >"$RL_BIN/$svc"
     PATH="$RL_BIN:$PATH" "$rl_sh" "$ROOT/build/$svc/entrypoint.sh" >/dev/null 2>&1 &
     rl_pid=$!
-    for _ in $(seq 1 50); do [ -s "$RL_BIN/pidfile" ] && break; sleep 0.1; done
+    for _ in $(seq 1 50); do
+        [ -s "$RL_BIN/pidfile" ] && break
+        sleep 0.1
+    done
     rl_same=no
     [ "$(cat "$RL_BIN/pidfile" 2>/dev/null)" = "$rl_pid" ] && rl_same=yes
     kill -TERM "$rl_pid" 2>/dev/null

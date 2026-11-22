@@ -134,7 +134,6 @@ coe_rc=$?
 assert_rc "#1246 mutant: still renders fine when the key IS present" "$coe_rc" 0
 assert_eq "#1246 mutant: and that render still carries the auth block" "$(coe_state)" "with-auth"
 
-
 echo "== rendered Caddyfile is caddy-fmt shaped and serves no HTTP/3 (#4159) =="
 CF="$SANDBOX/caddyfile-format"
 mkdir -p "$CF"
