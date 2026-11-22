@@ -99,20 +99,28 @@ _post_worker_upgrade() { # <rig> <version> -> response body
         http://127.0.0.1:8000/api/control/worker-upgrade" 2>/dev/null
 }
 
-# Poll /api/control/result for <id> until it leaves the non-terminal vocabulary, or the deadline.
-# Non-terminal is pending/running/empty; everything else is the host's answer of record
-# (applied/noop/throttled/rolled_back/failed/rejected/accepted — pithead's control_worker_upgrade).
-_poll_upgrade_result() { # <id> <timeout-s> -> terminal status (empty on timeout)
-    local id="$1" deadline=$((SECONDS + $2)) body status
+_poll_upgrade_result() { # <id> <timeout-s> -> sets UPGRADE_RESULT_STATUS (empty on timeout) and UPGRADE_RESULT_BODY
+    local id="$1" deadline=$((SECONDS + $2)) status
+    UPGRADE_RESULT_STATUS=""
+    UPGRADE_RESULT_BODY=""
     while [ "$SECONDS" -lt "$deadline" ]; do
         sleep 5
-        body="$(rx "curl -fsS --max-time 10 $(quote_arg "http://127.0.0.1:8000/api/control/result?id=$id")" 2>/dev/null)"
-        status="$(printf '%s' "$body" | jq -r '.status // empty' 2>/dev/null)"
+        UPGRADE_RESULT_BODY="$(rx "curl -fsS --max-time 10 $(quote_arg "http://127.0.0.1:8000/api/control/result?id=$id")" 2>/dev/null)"
+        status="$(printf '%s' "$UPGRADE_RESULT_BODY" | jq -r '.status // empty' 2>/dev/null)"
         case "$status" in "" | pending | running) continue ;; esac
-        printf '%s' "$status"
+        UPGRADE_RESULT_STATUS="$status"
         return 0
     done
     return 0
+}
+
+_upgrade_result_detail() { # <result-json> -> "error [E]; reason [R]" (bounded, masked)
+    local err reason out
+    err="$(printf '%s' "$1" | jq -r '.error // empty' 2>/dev/null | redact | head -c 400)"
+    reason="$(printf '%s' "$1" | jq -r '.reason // empty' 2>/dev/null | redact | head -c 200)"
+    out="error [${err:-no error text in the result}]"
+    [ -n "$reason" ] && out="$out; reason [$reason]"
+    printf '%s' "$out"
 }
 
 # The noop leg (#1002a), with its precondition ESTABLISHED rather than assumed: only ever called
@@ -158,7 +166,8 @@ _rigforge_upgrade_real_leg() { # <rig> <latest-tag>
     fi
     it_pass "a real upgrade leaves the dashboard for the host runner (#1237)"
 
-    status="$(_poll_upgrade_result "$id" "$IT_UPGRADE_SETTLE_TIMEOUT")"
+    _poll_upgrade_result "$id" "$IT_UPGRADE_SETTLE_TIMEOUT"
+    status="$UPGRADE_RESULT_STATUS"
 
     # The rig's own 6h anti-beacon window (rigforge#320) is rig STATE, not a product fault: a
     # recent upgrade attempt on this rig makes the real path structurally unavailable for this
@@ -184,7 +193,7 @@ _rigforge_upgrade_real_leg() { # <rig> <latest-tag>
 
     if [ "$status" != "applied" ]; then
         it_fail "the one-click upgrade reaches a real applied terminal (#1237)" \
-            "expected applied, got [${status:-<no terminal inside ${IT_UPGRADE_SETTLE_TIMEOUT}s>}]"
+            "expected applied, got [${status:-<no terminal inside ${IT_UPGRADE_SETTLE_TIMEOUT}s>}]${status:+ — $(_upgrade_result_detail "$UPGRADE_RESULT_BODY")}"
         # Deliberately the end of the leg. The readback below would red too — the rig cannot be on
         # a version the upgrade did not reach — and that second red is the SAME evidence counted
         # twice. One cause, one failure; the reader needs the count to mean something.

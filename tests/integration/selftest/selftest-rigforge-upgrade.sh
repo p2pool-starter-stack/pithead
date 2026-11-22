@@ -52,7 +52,8 @@ POSTQ="$(mktemp)"  # answers to successive worker-upgrade POSTs
 RESQ="$(mktemp)"   # successive /api/control/result statuses
 FLIP_F="$(mktemp)" # version the rig starts reporting once an upgrade is POSTed ("" = never)
 POST_LOG="$(mktemp)"
-trap 'rm -f "$VER_F" "$UPD_F" "$POSTQ" "$RESQ" "$FLIP_F" "$POST_LOG"' EXIT
+OUT_F="$(mktemp)"
+trap 'rm -f "$VER_F" "$UPD_F" "$POSTQ" "$RESQ" "$FLIP_F" "$POST_LOG" "$OUT_F"' EXIT
 
 rig_reports() { printf '%s' "$1" >"$VER_F"; }
 offers() { printf '%s' "$1" >"$UPD_F"; }
@@ -88,7 +89,11 @@ rx() {
     *"control/result"*)
         local next
         next="$(_dequeue "$RESQ")"
-        [ -n "$next" ] && printf '{"status":"%s"}' "$next"
+        case "$next" in
+        "{"*) printf '%s' "$next" ;;
+        "") ;;
+        *) printf '{"status":"%s"}' "$next" ;;
+        esac
         ;;
     *) ;;
     esac
@@ -225,6 +230,34 @@ answers "$PENDING"
 queue_results rejected
 run_rigforge_upgrade rig1 >/dev/null 2>&1
 want "rejected terminal -> exactly one FAIL" 1 1 0 0 0
+
+# KILLS: a failure line that drops the host's refusal text (#4305).
+snap
+rig_reports "1.15.1"
+answers "$PENDING"
+queue_results '{"status":"rejected","error":"rig busy: upgrade in progress TOKEN=abc123","reason":"anti-beacon"}'
+run_rigforge_upgrade rig1 >"$OUT_F" 2>&1
+out="$(cat "$OUT_F")"
+case "$out" in *"expected applied, got [rejected]"*"error [rig busy: upgrade in progress TOKEN=<redacted>]; reason [anti-beacon]"*) check "rejected result: failure line carries masked error and reason (#4305)" 0 ;; *) check "rejected result: failure line carries masked error and reason (#4305)" 1 ;; esac
+want "rejected with error text -> still exactly one FAIL" 1 1 0 0 0
+
+# KILLS: an empty reason when the result has no error text (#4305).
+snap
+rig_reports "1.15.1"
+answers "$PENDING"
+queue_results '{"status":"failed"}'
+run_rigforge_upgrade rig1 >"$OUT_F" 2>&1
+out="$(cat "$OUT_F")"
+case "$out" in *"got [failed]"*"no error text in the result"*) check "no error field -> explicit no-error-text message (#4305)" 0 ;; *) check "no error field -> explicit no-error-text message (#4305)" 1 ;; esac
+
+# KILLS: an unbounded error text (#4305).
+snap
+rig_reports "1.15.1"
+answers "$PENDING"
+queue_results "{\"status\":\"rejected\",\"error\":\"$(printf 'xy %.0s' $(seq 1 700))\"}"
+run_rigforge_upgrade rig1 >"$OUT_F" 2>&1
+out="$(cat "$OUT_F")"
+if [ "${#out}" -lt 1200 ] && [[ "$out" == *"error [xy xy"* ]]; then check "long error text is length-bounded (#4305)" 0; else check "long error text is length-bounded (#4305)" 1; fi
 
 # KILLS: asserting the terminal without asserting the rig came back — #1237's own complaint. The
 # host says applied; the rig never reports the new version.
