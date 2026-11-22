@@ -19,7 +19,7 @@ from mining_dashboard.config.config import (
     TOR_AUTO_HEAL,
     TOR_SOCKS_PROXY,
 )
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import bounded_get, proxy_map, purpose_proxy
 from mining_dashboard.service import control_service
 from mining_dashboard.service.health.monerod_redial import MonerodRestartBudget
 from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
@@ -123,14 +123,12 @@ class TorEgressHealer(TorHistoryMixin):
         evidence = []
         for url in (PROBE_URL, SECOND_PROBE_URL):
             circuit = uuid.uuid4().hex
-            # Tor's SOCKS-auth isolation keeps each request off the previous circuit.
-            # PySocks offers SOCKS5 username/password only when BOTH fields are nonempty.
-            proxy = TOR_SOCKS_PROXY.replace("://", f"://{circuit}:isolate@", 1)
             try:
-                bounded_get(url, timeout=PROBE_TIMEOUT_SEC, proxies={"http": proxy, "https": proxy})
+                proxy = purpose_proxy(TOR_SOCKS_PROXY, circuit)
+                bounded_get(url, timeout=PROBE_TIMEOUT_SEC, proxies=proxy_map(proxy))
                 evidence.append(f"{url}: circuit {circuit[:8]} answered")
                 return True, "; ".join(evidence)
-            except requests.RequestException as exc:
+            except (requests.RequestException, ValueError) as exc:
                 evidence.append(f"{url}: circuit {circuit[:8]} {type(exc).__name__}")
         return False, "; ".join(evidence)
 
