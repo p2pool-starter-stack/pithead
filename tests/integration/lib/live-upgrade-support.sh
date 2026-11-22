@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Trust, rollback, continuity, and live-state predicate helpers.
 
-LIVE_COSIGN_IMAGE="$(bash "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/cosign-image.sh")"
+LIVE_COSIGN_IMAGE="$(bash "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/cosign-image.sh")" || return 1
 CANDIDATE_BUNDLE=""
 CANDIDATE_SIGNATURE=""
 TRUSTED_COSIGN_PUB=""
