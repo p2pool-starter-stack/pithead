@@ -211,13 +211,19 @@ build() {
     done <<<"$slices"
     validate_ordering "${ordered_files[@]}" || return 1
 
+    local cosign_ref=""
+    if grep -q '@COSIGN_IMAGE@' "${ordered_files[@]}"; then
+        cosign_ref=$(bash "$(dirname -- "${BASH_SOURCE[0]}")/cosign-image.sh" "$ROOT") || return 1
+    fi
+
     # Line 2 names the generator so every distributed copy carries its provenance.
     local i=0
     while IFS= read -r f; do
         [ "$i" -eq 0 ] || printf '\n'
         cat "$f"
         i=$((i + 1))
-    done <<<"$slices" | awk -v n="$(printf '%s\n' "$slices" | wc -l | tr -d ' ')" 'NR == 1 { print; printf "# GENERATED FILE — do not edit. Built from lib/pithead/*.sh (%s slices, LC_ALL=C name order) by:\n#   scripts/build-pithead.sh\n# Run `make` to rebuild this file.\n", n; next } 1'
+    done <<<"$slices" | awk -v n="$(printf '%s\n' "$slices" | wc -l | tr -d ' ')" 'NR == 1 { print; printf "# GENERATED FILE — do not edit. Built from lib/pithead/*.sh (%s slices, LC_ALL=C name order) by:\n#   scripts/build-pithead.sh\n# Run `make` to rebuild this file.\n", n; next } 1' |
+        sed "s|@COSIGN_IMAGE@|$cosign_ref|g"
 }
 
 write_artifact() {

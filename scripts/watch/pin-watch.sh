@@ -293,12 +293,12 @@ if [ -f "$ROOT/os/rootfs/Dockerfile" ]; then
     lane="the product stack and the appliance rootfs"
 fi
 
-# release.sh's pin() is the one place pins are read from the tree; the three rootfs `ARG`s have no
+# release.sh's pin() is the one place pins are read from the tree; the rootfs pins have no
 # case there because a release does not bundle them.
 tree_pin() {
     case "$1" in
-    compose) sed -n 's/^ARG COMPOSE_VERSION=//p' "$ROOT/os/rootfs/Dockerfile" ;;
-    cosign) sed -n 's/^ARG COSIGN_VERSION=//p' "$ROOT/os/rootfs/Dockerfile" ;;
+    compose) "$ROOT/os/rootfs/tools/module-version.sh" "$ROOT/os/rootfs/tools/compose/go.mod" github.com/docker/compose/v5 ;;
+    cosign) "$ROOT/os/rootfs/tools/module-version.sh" "$ROOT/os/rootfs/tools/cosign/go.mod" github.com/sigstore/cosign/v3 ;;
     rigforge) sed -n 's/^ARG RIGFORGE_REF=//p' "$ROOT/os/rootfs/Dockerfile" ;;
     *) pin "$1" ;;
     esac

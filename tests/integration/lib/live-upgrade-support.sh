@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Trust, rollback, continuity, and live-state predicate helpers.
 
-LIVE_COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign@sha256:4bedb8de1c5c1abd8dea60de704ba449402d238623fa8bb33d2ccaa9beffcbf5"
+LIVE_COSIGN_IMAGE="$(bash "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/cosign-image.sh")"
 CANDIDATE_BUNDLE=""
 CANDIDATE_SIGNATURE=""
 TRUSTED_COSIGN_PUB=""

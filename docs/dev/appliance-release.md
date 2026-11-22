@@ -32,7 +32,13 @@ itself.
 
 The rootfs Dockerfile builds Docker Compose and Cosign from exact upstream
 commits, checks each commit against its release tag, and asserts the binaries'
-reported versions. The Go builder is pinned by digest at [1.27.4](https://go.dev/doc/devel/release#go1.27.0) to clear
+reported versions. Each release tag is read from a Go tools module,
+`os/rootfs/tools/compose/go.mod` and `os/rootfs/tools/cosign/go.mod`, through
+`os/rootfs/tools/module-version.sh`; the modules exist so Dependabot's `gomod`
+ecosystem sees both versions. A Dependabot bump moves the version only. The matching
+`COMPOSE_COMMIT` or `COSIGN_COMMIT` ARG moves by hand, and the build refuses a commit
+that is not the tagged one. Resolve it with
+`gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`. The Go builder is pinned by digest at [1.27.4](https://go.dev/doc/devel/release#go1.27.0) to clear
 [CVE-2026-111943](https://github.com/p2pool-starter-stack/pithead/issues/3585)
 and [CVE-2026-97054](https://github.com/p2pool-starter-stack/pithead/issues/4265)
 in both binaries' standard library. Cosign v3.1.4 declares `go 1.27`, so the builder is a Go 1.27 image.
