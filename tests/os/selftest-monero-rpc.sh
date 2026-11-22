@@ -177,3 +177,20 @@ for startup_line in 'Public RPC port 18085 will be advertised to other peers ove
     done
 done
 echo 'selftest-monero-rpc: startup must select restricted RPC, never admin RPC'
+trap_source=$(grep -m1 "^trap 'echo \"FAIL: native Quadlet proof stopped" "$SCRIPT_DIR/monero-quadlet-proof.sh")
+[ -n "$trap_source" ]
+grep -qx 'set -Eeuo pipefail' "$SCRIPT_DIR/monero-quadlet-proof.sh"
+stopped=$(bash -c "set -Eeuo pipefail
+$trap_source
+inner() { false; }
+before=\$(inner)
+echo not-reached" 2>&1 || true)
+case "$stopped" in
+*'FAIL: native Quadlet proof stopped at line'*'false'*) ;;
+*)
+    echo 'FAIL: a silent set -e exit in the native proof names no line' >&2
+    exit 1
+    ;;
+esac
+case "$stopped" in *not-reached*) exit 1 ;; esac
+echo 'selftest-monero-rpc: a failing proof step names its line and command'

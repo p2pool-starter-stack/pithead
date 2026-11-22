@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A disposable native unit rendered by the shipped CLI. It has separate data, a private bridge
 # network with no default route, a unique name and loopback host ports.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "FAIL: native Quadlet proof stopped at line $LINENO: $BASH_COMMAND" >&2' ERR
 no_default_route() {
     awk 'NR > 1 && $2 == "00000000" && $8 == "00000000" { default_route=1 } END { exit default_route }' "$1"
 }
