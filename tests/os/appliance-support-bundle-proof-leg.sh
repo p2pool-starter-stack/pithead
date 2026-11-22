@@ -127,7 +127,7 @@ phase_provision_support_bundle_proof() {
             fi
             _sb_guest "$tag" start-monerod || bad "support bundle proof: monerod did not start again"
         else
-            info "support bundle proof: no local monerod on this guest; the monerod-stopped round runs in the local-node phases"
+            info "support bundle proof: no local monerod on this guest; the monerod-stopped round is skipped"
         fi
     fi
     [ "$off" = 0 ] || _sb_guest "$tag" cleanup || bad "support bundle proof: cleanup of the seeded fixtures failed"

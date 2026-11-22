@@ -68,8 +68,20 @@ release-tor)
     done
     exit 1
     ;;
-has-monerod) systemctl cat monerod.service >/dev/null 2>&1 ;;
-stop-monerod) systemctl stop monerod.service ;;
-start-monerod) systemctl start monerod.service ;;
+has-monerod) [ -n "$(podman ps -q --filter name=^monerod$)" ] ;;
+stop-monerod)
+    unit=$(podman inspect monerod --format '{{index .Config.Labels "PODMAN_SYSTEMD_UNIT"}}')
+    echo "$unit" >"/run/sbproof-monerod-unit"
+    if [ -n "$unit" ] && [ "$unit" != "<no value>" ]; then systemctl stop "$unit"; else podman stop -t 10 monerod; fi
+    ;;
+start-monerod)
+    unit=$(cat /run/sbproof-monerod-unit 2>/dev/null || true)
+    if [ -n "$unit" ] && [ "$unit" != "<no value>" ]; then systemctl start "$unit"; else podman start monerod >/dev/null; fi
+    for _ in $(seq 1 30); do
+        [ -n "$(podman ps -q --filter name=^monerod$)" ] && exit 0
+        sleep 2
+    done
+    exit 1
+    ;;
 *) exit 2 ;;
 esac
