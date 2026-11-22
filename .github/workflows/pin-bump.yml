@@ -18,6 +18,9 @@ jobs:
     name: Open a PR when ${{ matrix.component }} has a newer release
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: pin-bump-${{ matrix.component }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -53,18 +56,28 @@ jobs:
             echo "PR for ${COMPONENT} ${LATEST} is ${state}; not opening another"
             exit 0
           fi
-          git checkout -B "$BRANCH"
-          bash scripts/watch/pin-bump.sh apply "$COMPONENT" "$LATEST" "$PIN"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$(bash scripts/watch/pin-bump.sh file "$COMPONENT")"
-          if git diff --cached --quiet; then
-            echo "the pin moved during this run; nothing to propose"
-            exit 0
+          file="$(bash scripts/watch/pin-bump.sh file "$COMPONENT")"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch --depth 2 origin "$BRANCH"
+            if [ "$(git diff --name-only FETCH_HEAD~1 FETCH_HEAD)" != "$file" ]; then
+              echo "origin/${BRANCH} exists without a PR and its tip is not a pin-only commit; delete it" >&2
+              exit 1
+            fi
+            git checkout -B "$BRANCH" FETCH_HEAD
+          else
+            git checkout -B "$BRANCH"
+            bash scripts/watch/pin-bump.sh apply "$COMPONENT" "$LATEST" "$PIN"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "$file"
+            if git diff --cached --quiet; then
+              echo "the pin moved during this run; nothing to propose"
+              exit 0
+            fi
+            git commit -m "build: bump the ${COMPONENT} pin to ${LATEST}"
+            gh auth setup-git
+            git push origin "$BRANCH"
           fi
-          git commit -m "build: bump the ${COMPONENT} pin to ${LATEST}"
-          gh auth setup-git
-          git push origin "$BRANCH"
           bash scripts/watch/pin-bump.sh body "$COMPONENT" "$CURRENT" "$LATEST" >pr-body.md
           gh pr create --base develop --head "$BRANCH" --label dependencies \
             --title "build: bump the ${COMPONENT} pin to ${LATEST}" --body-file pr-body.md
@@ -85,7 +98,7 @@ jobs:
           if [ -n "$keep" ]; then
             reason="Superseded by ${keep}, which carries the newest ${COMPONENT} release this run considers eligible (#4250)."
           else
-            reason="The ${COMPONENT} pin has no eligible newer release this run (#4250), so this bump PR is no longer needed."
+            reason="Closed by the daily ${COMPONENT} bump run (#4250): no open bump PR for the newest eligible release keeps this one, because the pin has moved on or that release's PR was declined."
           fi
           while IFS=$'\t' read -r number _head flag; do
             if [ "$flag" = close ]; then

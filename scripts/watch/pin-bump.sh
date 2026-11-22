@@ -86,7 +86,7 @@ release_json() {
         return
     fi
     if [ "$1" = monero ]; then
-        gh api "repos/$(cfg "$1" repo)/releases?per_page=50"
+        gh api "repos/$(cfg "$1" repo)/releases?per_page=100"
     else
         gh api "repos/$(cfg "$1" repo)/releases/latest"
     fi
