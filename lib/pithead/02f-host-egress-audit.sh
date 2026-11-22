@@ -26,6 +26,7 @@ render_host_egress_audit_nft() {
             n = split(nets, parts, " ")
             for (i = 1; i <= n; i++) { if (parts[i] == "") continue; set = (set == "" ? parts[i] : set ", " parts[i]) }
             gate = "oifname != \"lo\" ct state != { established, related }"
+            v6 = "meta nfproto ipv6 oifname != \"lo\" ct state != { established, related }"
             if (lan && set != "") gate = gate " ip daddr != { " set " }"
             print "add table inet " table
             print "delete table inet " table
@@ -36,7 +37,9 @@ render_host_egress_audit_nft() {
             print "    ct state established,related counter comment \"reply\""
             if (lan && set != "") print "    ip daddr { " set " } counter comment \"lan\""
             print "    " gate " counter comment \"would_drop\""
+            if (lan && set != "") print "    " v6 " counter comment \"would_drop\""
             print "    " gate " limit rate 30/second log prefix \"" prefix "\""
+            if (lan && set != "") print "    " v6 " limit rate 30/second log prefix \"" prefix "\""
             print "  }"
             print "}"
         }
@@ -83,5 +86,8 @@ host_egress_audit_counters() {
     sudo -n nft list tables >/dev/null 2>&1 || return 3
     out=$(sudo -n nft -j list table inet "$HOST_EGRESS_AUDIT_NFT_TABLE" 2>/dev/null) || return 1
     jq -c 'def counters: [.nftables[]? | select(has("rule")) | (.rule.expr[]? | select(has("counter")) | .counter | {packets, bytes})];
-        {counters: counters, would_drop: (counters | last | .packets)}' <<<"$out"
+        def wd: [.nftables[]? | select(has("rule")) | .rule
+            | select(any(.expr[]?; has("comment") and .comment == "would_drop") and any(.expr[]?; has("counter")))
+            | .expr[]? | select(has("counter")) | .counter | .packets] | add // 0;
+        {counters: counters, would_drop: wd}' <<<"$out"
 }

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 
 host_egress_audit_counter() {
-    printf '%s' "$2" | awk -v n="$1" '$0 ~ "comment \"" n "\"" && /counter packets/ { for (i = 1; i <= NF; i++) if ($i == "packets") { print $(i + 1); exit } }'
+    printf '%s' "$2" | awk -v n="$1" '$0 ~ "comment \"" n "\"" && /counter packets/ { found = 1; for (i = 1; i <= NF; i++) if ($i == "packets") s += $(i + 1) } END { if (found) print s }'
 }
 
 host_egress_audit_would_drop() {

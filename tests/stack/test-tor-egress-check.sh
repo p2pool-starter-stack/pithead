@@ -193,7 +193,7 @@ printf 'appliance\tpool lan\tallow\tallow\tlan\tlan-guard\tnone\nappliance\tupda
 printf 'rig\tpool lan\tallow\tallow\tlan\tnone\tnone\n' >>"$EAU/map-lan.tsv"
 printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\n' >"$EAU/map-nolan.tsv"
 printf 'appliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\nrig\tpool\tallow\tallow\thost\tnone\tnone\n' >>"$EAU/map-nolan.tsv"
-printf '{"nftables":[{"metainfo":{"json_version":1}},{"table":{"family":"inet","name":"pithead_egress_audit"}},{"rule":{"family":0,"chain":"output","handle":2,"expr":[{"counter":{"packets":7,"bytes":700}},{"accept":null}],"comment":"loopback"},"table":"pithead_egress_audit"},{"rule":{"family":0,"chain":"output","handle":5,"expr":[{"counter":{"packets":42,"bytes":3780}},{"log":{"prefix":"pithead-egress-audit: "}},{"accept":null}],"comment":"would_drop"},"table":"pithead_egress_audit"}]}\n' >"$EAU/json"
+printf '{"nftables":[{"metainfo":{"json_version":1}},{"table":{"family":"inet","name":"pithead_egress_audit"}},{"rule":{"family":0,"chain":"output","handle":2,"expr":[{"counter":{"packets":7,"bytes":700}},{"comment":"loopback"}],"table":"pithead_egress_audit"}},{"rule":{"family":0,"chain":"output","handle":5,"expr":[{"counter":{"packets":42,"bytes":3780}},{"log":{"prefix":"pithead-egress-audit: "}},{"comment":"would_drop"}],"table":"pithead_egress_audit"}},{"rule":{"family":0,"chain":"output","handle":6,"expr":[{"counter":{"packets":13,"bytes":1170}},{"comment":"would_drop"}],"table":"pithead_egress_audit"}}]}\n' >"$EAU/json"
 printf '#!/usr/bin/env bash\n[ -n "${SUDO_DENY:-}" ] && exit 1\n[ "${1:-}" = -n ] && shift\nexec "$@"\n' >"$EAU/bin/sudo"
 printf '#!/usr/bin/env bash\necho Linux\n' >"$EAU/bin/uname"
 cat >"$EAU/bin/nft" <<EOF
@@ -234,11 +234,16 @@ assert_contains "would_drop counts only flows the loopback, reply and lan classe
     'oifname != "lo" ct state != { established, related } ip daddr != { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 } counter comment "would_drop"'
 assert_contains "the log rule carries the same gate, so a logged line names a would-be drop, never loopback" "$EAU_R" \
     'oifname != "lo" ct state != { established, related } ip daddr != { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 } limit rate 30/second log prefix "pithead-egress-audit: "'
+assert_contains "the lan-complemented gate narrows to IPv4, so an IPv6 catch-all counts what the v4 rule cannot match" "$EAU_R" \
+    'meta nfproto ipv6 oifname != "lo" ct state != { established, related } counter comment "would_drop"'
+assert_contains "and logs IPv6 under the same prefix, so v6 would-be drops stay visible" "$EAU_R" \
+    'meta nfproto ipv6 oifname != "lo" ct state != { established, related } limit rate 30/second log prefix "pithead-egress-audit: "'
 EAU_NOLAN=$(run_sourced "$EAU" render_host_egress_audit_nft appliance "$EAU/map-nolan.tsv")
 assert_not_contains "with no route=lan row the lan class is not rendered" "$EAU_NOLAN" 'comment "lan"'
 assert_contains "with no lan class the gate is the loopback and reply complements only" "$EAU_NOLAN" \
     'oifname != "lo" ct state != { established, related } counter comment "would_drop"'
 assert_not_contains "the gate never names a lan class the role did not render" "$EAU_NOLAN" 'ip daddr !='
+assert_not_contains "with no lan class the ungated rule already counts IPv6, so no IPv6 rule is added" "$EAU_NOLAN" "meta nfproto ipv6"
 EAU_RIG=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-lan.tsv")
 assert_contains "the rig role renders from its own rows" "$EAU_RIG" 'counter comment "lan"'
 EAU_RIGN=$(run_sourced "$EAU" render_host_egress_audit_nft rig "$EAU/map-nolan.tsv")
@@ -256,6 +261,8 @@ assert_contains "the committed egress map drives the appliance table" "$EAU_REPO
 assert_contains "and the rate-limited log rule ships with it" "$EAU_REPO" 'limit rate 30/second log prefix "pithead-egress-audit: "'
 assert_contains "the committed map renders the gate too, so would_drop is not total output traffic" "$EAU_REPO" \
     'oifname != "lo" ct state != { established, related } ip daddr != {'
+assert_contains "the committed map's lan class narrows v4, so the IPv6 catch-all ships with it" "$EAU_REPO" \
+    'meta nfproto ipv6 oifname != "lo" ct state != { established, related } counter comment "would_drop"'
 assert_eq "the rendered table never carries a terminal verdict: none of accept/drop/reject is rendered anywhere" \
     "$(printf '%s\n' "$EAU_R" "$EAU_RIG" "$EAU_REPO" | grep -Ec '(^|[[:space:]])(accept|drop|reject)([[:space:]]|$)')" "0"
 assert_eq "the mawk-safe split renders every lan net (Debian 12 awk) comma-separated" \
@@ -291,8 +298,8 @@ assert_not_contains "the unloadable state path never leaks a shell redirection e
 
 echo "== counters: the view reports per-rule counters and the would_drop total (#4195) =="
 EAU_C=$(eau_run host_egress_audit_counters)
-assert_eq "the counters JSON names every counter and the would_drop total" "$EAU_C" \
-    '{"counters":[{"packets":7,"bytes":700},{"packets":42,"bytes":3780}],"would_drop":42}'
+assert_eq "the counters JSON names every counter and would_drop sums the v4 and IPv6 rules" "$EAU_C" \
+    '{"counters":[{"packets":7,"bytes":700},{"packets":42,"bytes":3780},{"packets":13,"bytes":1170}],"would_drop":55}'
 EAU_A=$(
     EAU_NFT_TABLE_RC=1 eau_run host_egress_audit_counters 2>/dev/null
     printf 'rc=%s' "$?"
@@ -319,16 +326,16 @@ eau_status() {
 }
 out=$(eau_status egress_status)
 assert_eq "the verdict stays the first stdout line" "$(printf '%s\n' "$out" | head -n1)" "absent"
-assert_contains "and the audit line follows it" "$out" "host-audit: present (would_drop 42 packets)"
+assert_contains "and the audit line follows it" "$out" "host-audit: present (would_drop 55 packets)"
 assert_eq "the dashboard file keeps rc/verdict and gains host_audit counters" \
     "$(jq -c '[.rc, .verdict, .host_audit.verdict, (.host_audit.counters | length), .host_audit.counters[1].packets]' "$EAU/ctl/results/egress-status.json")" \
-    '[1,"absent","present",2,42]'
+    '[1,"absent","present",3,42]'
 out=$(EAU_NFT_TABLE_RC=1 eau_status egress_status)
 assert_contains "an absent table says so on stdout" "$out" "host-audit: absent"
 out=$(SUDO_DENY=1 eau_status egress_status)
 assert_contains "an unreadable table says so rather than 'absent'" "$out" "host-audit: unreadable"
 out=$(eau_status check_host_egress_audit 2>&1)
-assert_contains "doctor shows the would_drop counter when the table is loaded" "$out" "would_drop counter at 42 flows"
+assert_contains "doctor shows the would_drop counter when the table is loaded" "$out" "would_drop counter at 55 flows"
 out=$(EAU_NFT_TABLE_RC=1 eau_status check_host_egress_audit 2>&1)
 assert_contains "doctor warns when the table is not loaded" "$out" "log-only host egress audit table is not loaded"
 
@@ -337,66 +344,44 @@ echo "== boot verdict: the KVM leg's judgement, fixture-tested so the boot phase
 assert_eq "the would_drop counter is read out of the live table text" \
     "$(host_egress_audit_would_drop "$EAU_OK_TABLE")" "42"
 assert_eq "and the loopback counter from the same text" "$(host_egress_audit_counter loopback "$EAU_OK_TABLE")" "4"
+assert_eq "the would_drop reading sums every would_drop rule, v4 gate and IPv6 catch-all" \
+    "$(host_egress_audit_would_drop "$EAU_OK_TABLE
+meta nfproto ipv6 oifname != \"lo\" ct state != { established, related } counter packets 13 bytes 1170 comment \"would_drop\"")" "55"
 assert_eq "the delta helper subtracts two counter values" "$(host_egress_audit_delta 42 40)" "2"
 assert_eq "the delta helper never invents a number out of an unreadable counter" "$(host_egress_audit_delta x 40)" ""
 if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 0 3 5 210); then ok "loaded at boot, rising counter, loopback excluded, nothing dropped"; else
     bad "the healthy boot state fails the verdict"
     printf '      %s\n' "$v"
 fi
-if v=$(host_egress_audit_boot_verdict inactive "$EAU_OK_TABLE" 10 42 0 3 5 210); then bad "a unit that never ran passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE
-    ip daddr 10.0.0.0/8 drop" 10 42 0 3 5 210); then bad "a dropping table passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE
-    tcp dport 53 accept" 10 42 0 3 5 210); then bad "a table with a foreign terminal accept passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active 'table inet pithead_egress_audit {
+vfixture() {
+    local label="$1"
+    shift
+    if v=$(host_egress_audit_boot_verdict "$@"); then bad "$label passes"; else
+        ok "rejected"
+        printf '      %s\n' "$v"
+    fi
+}
+vfixture "a unit that never ran" inactive "$EAU_OK_TABLE" 10 42 0 3 5 210
+vfixture "a dropping table" active "$EAU_OK_TABLE
+    ip daddr 10.0.0.0/8 drop" 10 42 0 3 5 210
+vfixture "a table with a foreign terminal accept" active "$EAU_OK_TABLE
+    tcp dport 53 accept" 10 42 0 3 5 210
+vfixture "a table without a logged would_drop rule" active 'table inet pithead_egress_audit {
   chain output {
     type filter hook output priority -150; policy accept;
   }
-}' 10 10 0 3 5 210); then bad "a table without a logged would_drop rule passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active 'table inet pithead_egress_audit {
+}' 10 10 0 3 5 210
+vfixture "a table whose log rule counts every packet" active 'table inet pithead_egress_audit {
   chain output {
     type filter hook output priority -150; policy accept;
     oifname "lo" counter packets 4 bytes 240 comment "loopback"
     counter packets 99 bytes 9000 comment "would_drop"
     limit rate 30/second log prefix "pithead-egress-audit: "
   }
-}' 10 42 0 3 5 210); then bad "a table whose log rule counts every packet passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 42 42 0 3 5 210); then bad "a counter that did not rise passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" "" "" 0 3 5 210); then bad "an unreadable counter passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 0 3 210 200); then bad "loopback counted into would_drop passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 0 2 2 4); then bad "a loopback probe that never reached lo passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 0 "" "" ""); then bad "an unreadable loopback leg passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
-if v=$(host_egress_audit_boot_verdict active "$EAU_OK_TABLE" 10 42 1 3 5 210); then bad "a failed test flow passes"; else
-    ok "rejected"
-    printf '      %s\n' "$v"
-fi
+}' 10 42 0 3 5 210
+vfixture "a counter that did not rise" active "$EAU_OK_TABLE" 42 42 0 3 5 210
+vfixture "an unreadable counter" active "$EAU_OK_TABLE" "" "" 0 3 5 210
+vfixture "loopback counted into would_drop" active "$EAU_OK_TABLE" 10 42 0 3 210 200
+vfixture "a loopback probe that never reached lo" active "$EAU_OK_TABLE" 10 42 0 2 2 4
+vfixture "an unreadable loopback leg" active "$EAU_OK_TABLE" 10 42 0 "" "" ""
+vfixture "a failed test flow" active "$EAU_OK_TABLE" 10 42 1 3 5 210
