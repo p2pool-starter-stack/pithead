@@ -49,7 +49,9 @@ rc=0
 [ "$rc" -eq 0 ] || { tail -n 60 lan-guard-apply.log; exit "$rc"; }' 2>&1) || apply_rc=$?
     if [ "$apply_rc" -ne 0 ]; then
         bad "LAN guard: ./pithead apply -y did not accept the three LAN switches (exit $apply_rc)"
-        printf '  LAN guard apply output (last 60 lines):\n%s\n' "$(printf '%s' "$apply_out" | os_redact_addr)" >&2
+        local shown
+        shown=$(printf '%s' "$apply_out" | os_redact_addr) || shown="(redaction failed; output withheld)"
+        printf '  LAN guard apply output (last 60 lines):\n%s\n' "$shown" >&2
         approval_restore_pending || bad "LAN guard: cleanup after a failed apply also failed"
         return 0
     fi
