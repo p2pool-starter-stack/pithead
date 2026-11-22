@@ -3,7 +3,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
-# shellcheck disable=SC2034 # run-state module source guard
+# shellcheck disable=SC2034
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/../lib/run-state.sh"

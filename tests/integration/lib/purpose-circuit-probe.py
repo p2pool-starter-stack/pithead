@@ -1,4 +1,4 @@
-# ruff: noqa: E402, I001, S101 -- imports intentionally follow the dependency-free self-test
+# ruff: noqa: E402, I001, S101
 import sys
 
 LABELS = ("health", "notify")
