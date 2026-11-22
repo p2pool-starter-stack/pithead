@@ -21,3 +21,23 @@ tls_order=$(
 )
 assert_eq "ensure_directories chowns PROXY_TLS_DIR to the app uid before the cert is generated" \
     "$(printf '%s,' $tls_order)" "owner,cert,"
+
+tls_gen=$(
+    cd "$SANDBOX" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    PROXY_TLS_DIR="$SANDBOX/tls-gen"
+    STRATUM_TLS=true
+    mkdir -p "$PROXY_TLS_DIR"
+    log() { :; }
+    ensure_owner() { :; }
+    announce_stratum_tls() { :; }
+    ensure_stratum_tls_cert
+    stat_mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+    first=$(cksum "$PROXY_TLS_DIR/cert.pem")
+    ensure_stratum_tls_cert
+    echo "$(stat_mode "$PROXY_TLS_DIR/key.pem") $(stat_mode "$PROXY_TLS_DIR/cert.pem") $([ "$first" = "$(cksum "$PROXY_TLS_DIR/cert.pem")" ] && echo same)"
+)
+assert_eq "stratum cert generates into an existing empty dir: key 600, cert 644, stable across applies" \
+    "$tls_gen" "600 644 same"
