@@ -14,7 +14,12 @@ from mining_dashboard.config.config import (
     TELEGRAM_ENABLED,
     TOR_SOCKS_PROXY,
 )
-from mining_dashboard.helper.http import bounded_get, proxy_map, refuse_direct_public
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_NOTIFY,
+    bounded_get,
+    purpose_proxy_map,
+    refuse_direct_public,
+)
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
 from mining_dashboard.service.notify.telegram_formatters import (
@@ -185,7 +190,7 @@ class TelegramCommandBot:
         self.host_label = host_label
         self._api_base = api_base.rstrip("/")
         self.long_poll = long_poll
-        self._proxies = proxy_map(tor_proxy)
+        self._proxies = purpose_proxy_map(tor_proxy, PROXY_PURPOSE_NOTIFY)
         if enabled is None:
             enabled = bool(TELEGRAM_ENABLED and TELEGRAM_COMMANDS_ENABLED)
         self.enabled = bool(enabled and self._token and self.chat_id)
