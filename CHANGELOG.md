@@ -11,7 +11,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
-## [2.0.4] - Unreleased
+## [2.0.4] - 2026-11-22
 
 Pithead 2.0.4 is a patch release after 2.0.3. It bakes RigForge 1.19.0 into the appliance image
 (read the RigForge-only note below before updating such a rig), moves XvB donation mining to the EU
@@ -170,6 +170,34 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
   without a rebuild. Updating a rig still needs the USB stick, and re-flashing a rig that runs from
   its stick wipes its setup and token, so it must be adopted again. Updating rigs from the Pithead
   dashboard is planned for 2.0.5 (#1837).
+
+### Known issues in 2.0.4
+
+The [known issues listed for 2.0.3](https://github.com/p2pool-starter-stack/pithead/blob/main/CHANGELOG.md#known-issues-in-203),
+including those it carries over from 2.0.2, 2.0.1 and 2.0.0, still apply, except #3960, #3987
+and #3998, which are fixed above, and the RigForge `threads` issue (rigforge#588), which RigForge
+1.19.0 fixes (see the RigForge-only note above). #3375 is closed: the restarts above mitigate it,
+but its cause is not established, so the stall can recur. These five are new, and each is planned
+for 2.0.5:
+
+- After a stack recreate (an apply, an update, a reboot or Restart all), the dashboard can stop
+  `xmrig-proxy` and leave it stopped for minutes after every service is healthy, so rigs mine on
+  their backup pool or not at all. A test saw it stay stopped for at least 4.6 minutes. The cause is
+  not found. The dashboard log names the reason it stopped the proxy and the time it was readmitted,
+  and the support bundle carries that log. No workaround has been established (#4138, #4160).
+- After a Tor restart, Tor can sit at "Bootstrapped 95%" for about an hour. Monerod, Tari and P2Pool
+  have no Tor until it ends, and a second restart does not help because it keeps the same guards.
+  The healer, an update or a reboot can trigger it. Alerts travel over Tor, so the outage can be
+  silent. The cause is inferred, not confirmed (#4121).
+- Tor's cached directory can go stale on an appliance that has run for days. After a restart Tor can
+  stay at "Requesting descriptors" for many minutes, or clearnet probes can pass while onion peers
+  fail and leave Tari or monerod without peers, and Tor auto-heal sees nothing wrong or its last
+  step does not cure it. Appliance owners have no shell for the manual cure (#4261).
+- A monerod that keeps live outgoing peers but stores no new block is not restarted on its own. Use
+  Service diagnostics' **Restart** button for monerod (#4192).
+- The support-bundle download is proven on appliance hardware for a baseline stack and with Tor
+  wedged, but not yet with monerod stopped. The bundle is meant to record the monerod snapshot as
+  unavailable and still complete, and that is untested on the appliance (#4131).
 
 ## [2.0.3] - 2026-11-10
 
