@@ -4,7 +4,7 @@ echo "== unit: donation config keys (#4309) =="
 DN="$SANDBOX/donation-config"
 mkdir -p "$DN"
 cp "$ROOT/VERSION" "$DN/VERSION"
-donation_case() { # <donation-json> [render]
+donation_case() {
     jq -n --arg w "$VALID_PRIMARY" --argjson d "$1" \
         '{monero:{wallet_address:$w,node_username:"u",node_password:"p"},tari:{mode:"off"},dashboard:{secure:false},donation:$d}' >"$DN/config.json"
     rm -f "$DN/.env"
