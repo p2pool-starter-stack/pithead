@@ -293,8 +293,6 @@ if [ -f "$ROOT/os/rootfs/Dockerfile" ]; then
     lane="the product stack and the appliance rootfs"
 fi
 
-# release.sh's pin() is the one place pins are read from the tree; the rootfs pins have no
-# case there because a release does not bundle them.
 tree_pin() {
     case "$1" in
     compose) "$ROOT/os/rootfs/tools/module-version.sh" "$ROOT/os/rootfs/tools/compose/go.mod" github.com/docker/compose/v5 ;;
