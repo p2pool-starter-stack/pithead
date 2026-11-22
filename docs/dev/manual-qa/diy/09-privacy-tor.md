@@ -27,7 +27,7 @@ This part checks the Tor-only egress firewall, the dashboard as a [Tor](../READM
 - `Tor-only egress firewall is installed`
 - `Tor clearnet egress works`
 
-Dashboard purposes (`health`, `notify`, updates, dashboard calls) each connect to Tor with their own SOCKS username, so they leave on distinct circuits. The tier4-e2e row `dashboard purposes health and notify exit through different Tor circuits` checks this on a live Tor; there is no manual step.
+The tier4-e2e row `dashboard purposes health and notify exit through different Tor circuits` proves on a live Tor that purpose-specific SOCKS usernames get distinct circuits. It runs on the local-mode e2e leg with the egress firewall on; there is no manual step.
 
 **Record:** PASS, FAIL or N/A in the results sheet.
 
