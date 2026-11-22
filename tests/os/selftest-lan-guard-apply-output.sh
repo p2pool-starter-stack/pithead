@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# == LAN guard apply failure output ==
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/os/lib/redact-addr.sh
