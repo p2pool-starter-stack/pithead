@@ -251,7 +251,8 @@ tor_recovery_healthy_probe() {
     done
     printf 'admission: elapsed_s=%s rc=%s\n' "$(($(tor_recovery_probe_now_s) - started))" "$rc" >>"$OUT_DIR/tor-recovery-admission.log"
     if [ "$rc" -ne 1 ] || [[ "$output" != *'Tor recovery refused: circuit history is not saturated.'* ]]; then
-        status=$(rx 'timeout --kill-after=1 10 docker exec tor /usr/local/bin/tor-control-signal.sh STATUS' 2>&1 | head -c 512 | tr -c '[:print:]\n' '?') || status=unavailable
+        status=$(rx 'timeout --kill-after=1 10 docker exec tor /usr/local/bin/tor-control-signal.sh STATUS' 2>&1 | head -c 512 | tr -c '[:print:]\n' '?')
+        [ -n "$status" ] || status=unavailable
         printf 'tor-status: %s\n' "${status//$'\n'/ }" >>"$OUT_DIR/tor-recovery-admission.log"
     fi
     assert_rc "healthy Tor recovery check exits 1 (#3262)" "$rc" "1"

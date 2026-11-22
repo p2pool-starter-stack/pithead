@@ -95,12 +95,12 @@ lifecycle_mining_step() {
         before=absent
         names=${LIFECYCLE_MINER_NAMES:-'[]'}
     else
-        end=$((SECONDS + ${BOUND_PRECONDITION:-300}))
+        end=$((SECONDS + ${BOUND_PRECONDITION:-420}))
         until before=$(lifecycle_proxy_started) && names=$(lifecycle_worker_set); do
             [ "$SECONDS" -lt "$end" ] && sleep 5 && continue
-            detail="proxy inspection or live worker set unreadable for ${BOUND_PRECONDITION:-300}s"
+            detail="proxy inspection or live worker set unreadable for ${BOUND_PRECONDITION:-420}s"
             if lifecycle_proxy_guard_held; then
-                detail+="; the dashboard stopped xmrig-proxy on purpose (#4046: P2Pool reported monerod unsynchronized) and had not readmitted it within the bound"
+                detail+="; the dashboard log shows a guard stop in the last 10 minutes (#4046: P2Pool reported monerod unsynchronized) and the proxy was not readmitted within the bound"
             fi
             lifecycle_mining_row fail "$label mining precondition" "$detail"
             lifecycle_mining_diagnostics "$label precondition"

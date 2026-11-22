@@ -41,10 +41,12 @@ printf '%s\n' 'PASS: a proxy held stopped for 200 s by the #4046 guard is waited
 : >"$work/reads"
 ran=0 FAIL_READS=999 GUARD=1 row_detail=''
 if lifecycle_mining_step restart step; then exit 1; fi
-[ "$ran" = 0 ] && [ "$rows" = 'fail:restart mining precondition;' ] && [[ "$row_detail" == *'#4046'* && "$row_detail" == *'300s'* ]]
+[ "$ran" = 0 ] && [ "$rows" = 'fail:restart mining precondition;' ] && [[ "$row_detail" == *'#4046'* && "$row_detail" == *'420s'* ]]
 printf '%s\n' 'PASS: a proxy that never returns still fails, naming the guard and the bound'
 : >"$work/reads"
 rows='' ran=0 GUARD=0 row_detail=''
 if lifecycle_mining_step restart step; then exit 1; fi
-[[ "$row_detail" == *'300s'* && "$row_detail" != *'#4046'* ]]
+[[ "$row_detail" == *'420s'* && "$row_detail" != *'#4046'* ]]
 printf '%s\n' 'PASS: without a guard hold the failure text does not blame the guard'
+grep -q 'carry_epoch="$(rx '"'"'echo $(($(date +%s) - 120))'"'"')"' "$ROOT/tests/integration/lib/run-lifecycle.sh"
+printf '%s\n' 'PASS: the carry row captures its epoch 120 s back so shares landing during the move stay outside the compared set'
