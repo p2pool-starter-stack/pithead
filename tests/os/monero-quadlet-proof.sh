@@ -143,7 +143,7 @@ snapshot() {
     podman inspect "$proof_name" | jq -c '.[0] | {State:{StartedAt:.State.StartedAt,Health:(.State.Health // .State.Healthcheck)}}'
 }
 observation() {
-    snapshot | podman run --pull=never --rm -i --name "$proof_name-client" --network "$network" --entrypoint python3 "$client_image" -c 'import json,sys
+    snapshot | podman run --pull=never --rm -i --name "$proof_name-client" --network "$network" -e TOR_SOCKS_PROXY=socks5h://127.0.0.1:9050 --entrypoint python3 "$client_image" -c 'import json,sys
 from mining_dashboard.collector.containers import parse_monero_peers,_epoch
 p=json.load(sys.stdin)
 r=parse_monero_peers(p)

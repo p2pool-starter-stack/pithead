@@ -195,3 +195,10 @@ case "$stopped" in
 esac
 case "$stopped" in *not-reached*) exit 1 ;; esac
 echo 'selftest-monero-rpc: a failing proof step names its line and command'
+socks=$(sed -n '/^observation() {/,/^}/p' "$SCRIPT_DIR/monero-quadlet-proof.sh" | grep -oE -m1 'TOR_SOCKS_PROXY=[^ ]+')
+[ -n "$socks" ]
+(cd "$SCRIPT_DIR/../../dashboard" && env -u TOR_SOCKS_PROXY "$socks" python3 -c 'import mining_dashboard.config.config' >/dev/null 2>&1) || {
+    echo 'FAIL: the observation container env cannot import the dashboard config (#4146)' >&2
+    exit 1
+}
+echo 'selftest-monero-rpc: the observation container env imports the dashboard config'
