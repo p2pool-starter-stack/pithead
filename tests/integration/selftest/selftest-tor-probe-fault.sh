@@ -96,6 +96,7 @@ echo "== A peerless Monero node fails the precondition before any fault is insta
     env_on_box() { echo true; }
     has_compose_profile() { return 0; }
     fault_rules_clear_all() { :; }
+    tor_newnym_budget_reset() { :; }
     waits=""
     wait_for() {
         waits="$waits $1"
