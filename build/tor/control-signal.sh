@@ -1,5 +1,4 @@
 #!/bin/sh
-# Fixed, cookie-authenticated circuit refresh for the host control runner.
 set -eu
 GUARD_STALL_MIN_UPTIME_SEC=300
 case "${1:-}" in NEWNYM | GUARDS) ;; *) exit 2 ;; esac

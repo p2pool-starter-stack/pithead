@@ -100,7 +100,7 @@ class TorEgressHealer(TorHistoryMixin):
         self._pending_since = None
         self._failure_evidence = ""
         self._recovery_step = None
-        self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._newnym_unconfirmed = False
         self._guard_rotated = False
         self._history_since = None
         self._history_outage = None
@@ -157,7 +157,6 @@ class TorEgressHealer(TorHistoryMixin):
             self._warned_exhausted = False
             self._guard_rotated = False
             return "recovered"
-        # ok is False — any failure breaks a would-be recovery streak.
         self._ok_streak = 0
         if self._failing_since is None:
             hint = self._ping_failing_since() if self._ping_failing_since else None
