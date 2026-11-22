@@ -184,9 +184,9 @@ stopped=$(bash -c "set -Eeuo pipefail
 $trap_source
 inner() { false; }
 before=\$(inner)
-echo not-reached" 2>&1 || true)
+echo not-reached" 2>/dev/null || true)
 case "$stopped" in
-*'FAIL: native Quadlet proof stopped at line'*'false'*) ;;
+*'FAIL: native Quadlet proof stopped at line 4: before='*) ;;
 *)
     echo 'FAIL: a silent set -e exit in the native proof names no line' >&2
     exit 1
