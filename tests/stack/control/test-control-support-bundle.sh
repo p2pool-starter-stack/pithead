@@ -95,8 +95,8 @@ esac
 exit 0
 SYSCTL
 chmod +x "$SB/bin/systemctl"
-export SB_JOURNAL_LOG="$SB/journal.log" SB_ADDR SB_ONION SB_NOW="$(date +%s)"
-
+export SB_JOURNAL_LOG="$SB/journal.log" SB_ADDR SB_ONION
+SB_NOW=$(date +%s) && export SB_NOW
 sb_iso() { date -u -d "@$((SB_NOW + $1))" +%Y-%m-%dT%H:%M:%SZ; }
 sb_unzip() {
     rm -rf "$2"
