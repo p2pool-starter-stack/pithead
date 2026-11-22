@@ -6,7 +6,6 @@ the second layer, so these tests feed it raw values on purpose."""
 import json
 import os
 import uuid
-from pathlib import Path
 
 import pytest
 
@@ -305,8 +304,11 @@ class TestCoreKeys:
 class TestEditableKeys:
     """Policy metadata lets the Configuration view disable paths the host would refuse (#613)."""
 
-    def test_editable_keys_served_on_read_config(self, spool, monkeypatch):
-        reference = Path(__file__).resolve().parents[3] / "config.reference.json"
+    def test_editable_keys_served_on_read_config(self, spool, tmp_path, monkeypatch):
+        reference = tmp_path / "reference.json"
+        reference.write_text(
+            json.dumps({"donation": {"enabled": False, "percent": 0, "tor": True}})
+        )
         monkeypatch.setattr(control_service.config, "HOST_REFERENCE_PATH", str(reference))
         cfg = control_service.read_config()
         assert "p2pool.pool" in cfg["_editable_keys"]

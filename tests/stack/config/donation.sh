@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?source through tests/stack/run.sh}"
 echo "== unit: donation config keys (#4309) =="
+assert_eq "reference donation block" "$(jq -c .donation "$ROOT/config.reference.json")" '{"enabled":false,"percent":0,"tor":true}'
 DN="$SANDBOX/donation-config"
 mkdir -p "$DN"
 cp "$ROOT/VERSION" "$DN/VERSION"

@@ -1,7 +1,5 @@
 import importlib
-import json
 import os
-from pathlib import Path
 from unittest.mock import patch
 
 
@@ -15,14 +13,10 @@ class TestDonationConfig:
     def teardown_method(self):
         _reload_config()
 
-    def test_donation_defaults_are_dark_and_match_the_reference(self):
+    def test_donation_defaults_are_dark(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("DONATION_")}
         with patch.dict(os.environ, env, clear=True):
             cfg = _reload_config()
-        reference = json.loads(
-            (Path(__file__).resolve().parents[3] / "config.reference.json").read_text()
-        )
-        assert reference["donation"] == {"enabled": False, "percent": 0, "tor": True}
         assert (cfg.DONATION_ENABLED, cfg.DONATION_PERCENT, cfg.DONATION_TOR_ENABLED) == (
             False,
             0.0,
