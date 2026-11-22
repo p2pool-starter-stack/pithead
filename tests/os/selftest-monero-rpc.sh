@@ -180,6 +180,7 @@ echo 'selftest-monero-rpc: startup must select restricted RPC, never admin RPC'
 trap_source=$(grep -m1 "^trap 'echo \"FAIL: native Quadlet proof stopped" "$SCRIPT_DIR/monero-quadlet-proof.sh")
 [ -n "$trap_source" ]
 grep -qx 'set -Eeuo pipefail' "$SCRIPT_DIR/monero-quadlet-proof.sh"
+grep -qx 'exec 2>&1' "$SCRIPT_DIR/monero-quadlet-proof.sh"
 stopped=$(bash -c "set -Eeuo pipefail
 $trap_source
 inner() { false; }
