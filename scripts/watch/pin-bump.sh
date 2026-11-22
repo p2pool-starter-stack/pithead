@@ -85,7 +85,20 @@ release_json() {
         cat "$PIN_BUMP_RELEASE_JSON"
         return
     fi
-    gh api "repos/$(cfg "$1" repo)/releases/latest"
+    if [ "$1" = monero ]; then
+        gh api "repos/$(cfg "$1" repo)/releases?per_page=50"
+    else
+        gh api "repos/$(cfg "$1" repo)/releases/latest"
+    fi
+}
+
+monero_in_minor() {
+    jq -c --arg p "v$(printf '%s' "${1#v}" | cut -d. -f1-2)." '
+        [.[] | select((.draft // false) == false and (.prerelease // false) == false and ((.tag_name // "") | startswith($p)))][0] // empty'
+}
+
+monero_newest() {
+    jq -r '[.[] | select((.draft // false) == false and (.prerelease // false) == false) | .tag_name][0] // empty'
 }
 
 release_tag() {
@@ -115,9 +128,9 @@ monero_listed_hash() {
     if [ -n "${PIN_BUMP_HASHES_FILE:-}" ]; then
         text="$(cat "$PIN_BUMP_HASHES_FILE")"
     else
-        text="$(curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 2000000 --retry 3 https://www.getmonero.org/downloads/hashes.txt)"
+        text="$(curl -fsSL --proto '=https' --proto-redir '=https' --max-filesize 2000000 --retry 3 https://www.getmonero.org/downloads/hashes.txt)" || return 1
     fi
-    printf '%s\n' "$text" | grep -F -- "$1" | grep -oE '[0-9a-f]{64}' | head -1
+    printf '%s\n' "$text" | { grep -F -- "$1" || true; } | { grep -oE '[0-9a-f]{64}' || true; } | head -1
 }
 
 resolve_hash() {
@@ -129,17 +142,21 @@ resolve_hash() {
         return 1
     }
     if [ "$c" = monero ]; then
-        listed="$(monero_listed_hash "$asset")" || listed=""
+        listed="$(monero_listed_hash "$asset")" || return 1
         [ "$listed" = "$got" ] || {
             echo "published hashes.txt ('${listed:-none}') does not match the download ($got) for $asset" >&2
             return 1
         }
     else
         digest="$(printf '%s' "$json" | asset_digest "$asset")"
-        if [ -n "$digest" ] && [ "$digest" != "$got" ]; then
+        [ -n "$digest" ] || {
+            echo "release carries no published digest for $asset; nothing to verify the download against" >&2
+            return 1
+        }
+        [ "$digest" = "$got" ] || {
             echo "release asset digest $digest does not match the download $got for $asset" >&2
             return 1
-        fi
+        }
     fi
     printf '%s' "$got"
 }
@@ -163,26 +180,31 @@ emit() {
 }
 
 detect() {
-    local c="$1" cur latest json pin held=none
+    local c="$1" cur latest json pin newest held=none
     cur="$(current_version "$c")"
     [[ "$cur" =~ $(cfg "$c" tag_re) ]] || {
         echo "no valid $c pin in $(dockerfile "$c"): '$cur'" >&2
         return 1
     }
     json="$(release_json "$c")" || return 1
+    if [ "$c" = monero ]; then
+        newest="$(printf '%s' "$json" | monero_newest)" || return 1
+        same_minor "$newest" "$cur" || held=minor
+        json="$(printf '%s' "$json" | monero_in_minor "$cur")" || return 1
+        [ -n "$json" ] || {
+            emit false "$c" "$cur" "$cur" "" "$held"
+            return
+        }
+    fi
     latest="$(printf '%s' "$json" | release_tag "$c")" || return 1
     if ! newer_than "$latest" "$cur"; then
-        emit false "$c" "$cur" "$latest" "" none
-        return
-    fi
-    if [ "$c" = monero ] && ! same_minor "$latest" "$cur"; then
-        emit false "$c" "$cur" "$latest" "" minor
+        emit false "$c" "$cur" "$latest" "" "$held"
         return
     fi
     if [ "$c" = rigforge ]; then
         pin="$(resolve_commit "$latest")" || return 1
         [ "$pin" != "$(current_value "$c")" ] || {
-            emit false "$c" "$cur" "$latest" "" none
+            emit false "$c" "$cur" "$latest" "" "$held"
             return
         }
     else
@@ -230,10 +252,20 @@ superseded() {
 }
 
 pr_body() {
-    local c="$1" cur="$2" latest="$3" proof
+    local c="$1" cur="$2" latest="$3" proof how
     case "$c" in
-    rigforge) proof="the \`tier4-kvm\` phases that exercise the baked RigForge tree must be green at this head before merge, and \`tests/stack/appliance/test-appliance-build-compose-source.sh\` names the pinned commit, so a human updates it in this PR" ;;
-    *) proof="a \`tier4-e2e\` \`targeted\` run on the \`${c}\` phase must be green at this head before merge: it builds the image from the new version and hash and shows the service healthy" ;;
+    rigforge)
+        how="The workflow resolved the release tag to its commit and wrote the commit and the version comment together."
+        proof="the \`tier4-kvm\` phases that exercise the baked RigForge tree must be green at this head before merge, and \`tests/stack/appliance/test-appliance-build-compose-source.sh\` names the pinned commit, so a human updates it in this PR"
+        ;;
+    monero)
+        how="The workflow downloaded the release tarball and refused to continue unless its sha256 equals the one in Monero's published hashes.txt (the file's signature is not verified), then wrote the version and the hash together."
+        proof="a \`tier4-e2e\` \`targeted\` run on the \`${c}\` phase must be green at this head before merge: it builds the image from the new version and hash and shows the service healthy"
+        ;;
+    *)
+        how="The workflow downloaded the release asset and refused to continue unless its sha256 equals the digest GitHub publishes for that asset, then wrote the version and the hash together."
+        proof="a \`tier4-e2e\` \`targeted\` run on the \`${c}\` phase must be green at this head before merge: it builds the image from the new version and hash and shows the service healthy"
+        ;;
     esac
     cat <<EOF
 ## What's the problem
@@ -242,7 +274,7 @@ Upstream released ${latest}; \`$(cfg "$c" file)\` pins ${cur}. Part of #4133.
 
 ## How I fixed it
 
-Automated bump of the $c pin to ${latest} only, opened by \`.github/workflows/pin-bump.yml\` running \`scripts/watch/pin-bump.sh\`. The workflow downloaded the release asset and cross-checked its sha256 against the upstream's published value before writing the version and the hash together.
+Automated bump of the $c pin to ${latest} only, opened by \`.github/workflows/pin-bump.yml\` running \`scripts/watch/pin-bump.sh\`. ${how}
 
 ## Here is the proof
 
@@ -300,7 +332,8 @@ self_test() {
     rel v4.19.0 p2pool-v4.19.0-linux-x64.tar.gz "sha256:$h_old"
     check "a release digest that disagrees with the download is refused" "$(detect p2pool 2>/dev/null && echo accepted || echo refused)" refused
     rel v4.19.0 p2pool-v4.19.0-linux-x64.tar.gz ""
-    check "a release without a digest falls back to the downloaded hash" "$(detect p2pool | sed -n 's/^pin=//p')" "$h_new"
+    check "a release without a digest is refused" "$(detect p2pool 2>/dev/null && echo accepted || echo refused)" refused
+    check "the command line exits non-zero when detect refuses" "$(bash "${BASH_SOURCE[0]}" detect p2pool >/dev/null 2>&1 && echo exit0 || echo nonzero)" nonzero
     rel v4.18.1 p2pool-v4.18.1-linux-x64.tar.gz "sha256:$h_new"
     check "an equal release is not stale" "$(detect p2pool | sed -n 's/^stale=//p')" false
     printf '{"tag_name":"v9.9.9","draft":false,"prerelease":true,"assets":[]}' >"$t/release.json"
@@ -313,7 +346,8 @@ self_test() {
     check "xmrig-proxy detect names the tag spelling and the branch" "$(printf '%s' "$out" | grep -E '^(stale|current|latest)=' | tr '\n' ' ')" \
         "stale=true current=v6.26.0 latest=v6.27.0 "
 
-    rel v0.18.5.2 monero-linux-x64-v0.18.5.2.tar.bz2 ""
+    mrel() { jq -n --arg t "$1" --arg u "$2" '[{tag_name: $t, draft: false, prerelease: false}, {tag_name: $u, draft: false, prerelease: false}, {tag_name: "v0.18.5.1", draft: false, prerelease: false}]' >"$t/release.json"; }
+    mrel v0.18.5.2 v0.18.5.0
     printf 'monero-linux-x64-v0.18.5.2.tar.bz2, %s\n' "$h_new" >"$t/hashes.txt"
     export PIN_BUMP_HASHES_FILE="$t/hashes.txt"
     out="$(detect monero)"
@@ -322,9 +356,14 @@ self_test() {
     check "monero refuses a download that hashes.txt contradicts" "$(detect monero 2>/dev/null && echo accepted || echo refused)" refused
     printf 'monero-linux-x64-v0.18.5.1.tar.bz2, %s\n' "$h_new" >"$t/hashes.txt"
     check "monero refuses a release hashes.txt does not list" "$(detect monero 2>/dev/null && echo accepted || echo refused)" refused
-    rel v0.19.0.0 monero-linux-x64-v0.19.0.0.tar.bz2 ""
+    printf 'monero-linux-x64-v0.19.0.0.tar.bz2, %s\n' "$h_new" >"$t/hashes.txt"
+    mrel v0.19.0.0 v0.18.5.1
     out="$(detect monero)"
-    check "a monero minor is held, never stale" "$(printf '%s' "$out" | grep -E '^(stale|held)=' | tr '\n' ' ')" "stale=false held=minor "
+    check "a monero minor is held and the pinned minor has nothing newer" "$(printf '%s' "$out" | grep -E '^(stale|held)=' | tr '\n' ' ')" "stale=false held=minor "
+    printf 'monero-linux-x64-v0.18.5.2.tar.bz2, %s\n' "$h_new" >"$t/hashes.txt"
+    mrel v0.19.0.0 v0.18.5.2
+    out="$(detect monero)"
+    check "a monero patch in the pinned minor is still proposed after a new minor ships" "$(printf '%s' "$out" | grep -E '^(stale|latest|held)=' | tr '\n' ' ')" "stale=true latest=v0.18.5.2 held=minor "
 
     rel v1.18.2 "" ""
     export PIN_BUMP_COMMIT_SHA="$sha_new"

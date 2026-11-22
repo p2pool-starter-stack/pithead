@@ -35,7 +35,9 @@ jobs:
           persist-credentials: false
       - name: Resolve the newest release and its hash
         id: detect
-        run: bash scripts/watch/pin-bump.sh detect "$COMPONENT" | tee -a "$GITHUB_OUTPUT"
+        run: |
+          result="$(bash scripts/watch/pin-bump.sh detect "$COMPONENT")"
+          printf '%s\n' "$result" | tee -a "$GITHUB_OUTPUT"
       - name: Push the bump and open its PR
         if: steps.detect.outputs.stale == 'true' && inputs.dry_run != true
         env:
@@ -51,12 +53,7 @@ jobs:
             echo "PR for ${COMPONENT} ${LATEST} is ${state}; not opening another"
             exit 0
           fi
-          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            git fetch origin "$BRANCH"
-            git checkout -B "$BRANCH" FETCH_HEAD
-          else
-            git checkout -B "$BRANCH"
-          fi
+          git checkout -B "$BRANCH"
           bash scripts/watch/pin-bump.sh apply "$COMPONENT" "$LATEST" "$PIN"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -63,10 +63,11 @@ Four pins that no Dependabot ecosystem can read are bumped by `.github/workflows
 daily and on `workflow_dispatch` (a dispatch defaults to a dry run that only reports). For each of the
 `monero`, `p2pool` and `xmrig-proxy` ARG pairs and the appliance's `RIGFORGE_REF`,
 `scripts/watch/pin-bump.sh` reads the latest stable upstream release, downloads the asset and
-cross-checks its sha256 against the release's published digest (Monero: `hashes.txt`), then opens one
-`dependencies`-labelled PR per upstream version that moves the version and hash together, so a stale
-hash never lands. `RIGFORGE_REF` is resolved from the release tag to its commit. A Monero release in a
-new minor is reported and never proposed: that move stays a human decision (#1129). The Actions token
+refuses to go on unless its sha256 equals the digest GitHub publishes for it (Monero: the entry in
+`hashes.txt`, whose signature is not verified), then opens one `dependencies`-labelled PR per upstream
+version that moves the version and hash together, so a stale hash never lands. `RIGFORGE_REF` is
+resolved from the release tag to its commit. Monero only moves within its pinned minor: a release in
+a new minor is reported and never proposed, because that move stays a human decision (#1129). The Actions token
 opens these PRs, so they trigger no checks of their own: a maintainer pushes to the branch to start
 tiers 1 to 3, and the PR body names the `tier4-e2e` or `tier4-kvm` proof it needs before merge. A newer
 release supersedes the open PR for an older one of the same component, and a closed PR is taken as declined.
