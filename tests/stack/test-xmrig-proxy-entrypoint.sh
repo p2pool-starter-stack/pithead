@@ -65,23 +65,29 @@ for svc in p2pool xmrig-proxy; do
     p2pool) retry="NOTICE monerod is not synchronized, trying again in 1 second" ;;
     *) retry='net 10.0.0.1:3333 connect error: "connection refused"' ;;
     esac
-    out=$(PATH="$RL_BIN:$PATH" RL_RETRY="$retry" RL_EXIT=7 bash "$ROOT/build/$svc/entrypoint.sh" --flag 2>&1)
+    rl_sh=bash
+    [ "$svc" != xmrig-proxy ] || rl_sh=sh
+    out=$(PATH="$RL_BIN:$PATH" RL_RETRY="$retry" RL_EXIT=7 "$rl_sh" "$ROOT/build/$svc/entrypoint.sh" --flag 2>&1)
     rc=$?
     rl_once="$rl_once $svc:$(printf '%s\n' "$out" | grep -cF -e "$retry")"
     rl_hidden="$rl_hidden $svc:$(printf '%s\n' "$out" | grep -c 'similar lines hidden')"
     rl_err="$rl_err $svc:$(printf '%s\n' "$out" | grep -c 'ERROR real failure')"
     rl_tail="$rl_tail $svc:$(printf '%s\n' "$out" | grep -c 'partial-no-newline')"
     rl_rc="$rl_rc $svc:$rc"
-    PATH="$RL_BIN:$PATH" RL_RETRY="$retry" bash -c 'printf "#!/bin/sh\nexec sleep 30\n" >"$1/'"$svc"'"; exec bash "$2" >/dev/null 2>&1' _ "$RL_BIN" "$ROOT/build/$svc/entrypoint.sh" &
+    rm -f "$RL_BIN/pidfile" "$RL_BIN/termfile"
+    printf '#!/bin/sh\necho $$ >"%s/pidfile"\ntrap '"'"'echo term >"%s/termfile"; exit 0'"'"' TERM\nwhile :; do sleep 0.2; done\n' "$RL_BIN" "$RL_BIN" >"$RL_BIN/$svc"
+    PATH="$RL_BIN:$PATH" "$rl_sh" "$ROOT/build/$svc/entrypoint.sh" >/dev/null 2>&1 &
     rl_pid=$!
-    sleep 1
+    for _ in $(seq 1 50); do [ -s "$RL_BIN/pidfile" ] && break; sleep 0.1; done
+    rl_same=no
+    [ "$(cat "$RL_BIN/pidfile" 2>/dev/null)" = "$rl_pid" ] && rl_same=yes
     kill -TERM "$rl_pid" 2>/dev/null
     wait "$rl_pid" 2>/dev/null
-    rl_term="$rl_term $svc:$?"
+    rl_term="$rl_term $svc:$rl_same:$(cat "$RL_BIN/termfile" 2>/dev/null)"
 done
 assert_eq "known retry line shows once per minute" "${rl_once# }" "p2pool:1 xmrig-proxy:1"
 assert_eq "hidden repeats are counted" "${rl_hidden# }" "p2pool:1 xmrig-proxy:1"
 assert_eq "a non-retry error line passes through" "${rl_err# }" "p2pool:1 xmrig-proxy:1"
 assert_eq "a final line without a newline passes through" "${rl_tail# }" "p2pool:1 xmrig-proxy:1"
 assert_eq "the child's exit status propagates" "${rl_rc# }" "p2pool:7 xmrig-proxy:7"
-assert_eq "TERM reaches the child" "${rl_term# }" "p2pool:143 xmrig-proxy:143"
+assert_eq "the daemon stays PID 1 of the wrapper and receives TERM" "${rl_term# }" "p2pool:yes:term xmrig-proxy:yes:term"

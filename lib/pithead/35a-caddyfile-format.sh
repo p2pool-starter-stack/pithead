@@ -19,5 +19,7 @@ _caddyfile_format() {
             if (opened) depth++
         }
     ' "$1" >"$tmp" && cat "$tmp" >"$1"
+    local rc=$?
     rm -f "$tmp"
+    return "$rc"
 }

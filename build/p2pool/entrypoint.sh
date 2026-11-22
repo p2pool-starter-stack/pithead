@@ -184,6 +184,7 @@ _quiet_repeats() {
             ;;
         esac
         _qr_now=$(date +%s 2>/dev/null) || _qr_now=$((_qr_last + 60))
+        [ "$_qr_now" -ge "$_qr_last" ] || _qr_last=$((_qr_now - 60))
         if [ $((_qr_now - _qr_last)) -ge 60 ]; then
             [ "$_qr_hidden" -eq 0 ] || printf '[%s] %s similar lines hidden in the last minute\n' "$2" "$_qr_hidden"
             printf '%s\n' "$_qr_line"
@@ -200,7 +201,10 @@ _exec_quiet() {
     shift 2
     _qr_fifo="/tmp/$_qr_name-log.fifo"
     rm -f "$_qr_fifo"
-    mkfifo "$_qr_fifo" 2>/dev/null || exec "$@"
+    mkfifo "$_qr_fifo" 2>/dev/null || {
+        echo "[$_qr_name-entrypoint] cannot create the log fifo: retry lines are not rate-limited" >&2
+        exec "$@"
+    }
     _quiet_repeats "$_qr_pat" "$_qr_name" <"$_qr_fifo" &
     exec "$@" >"$_qr_fifo" 2>&1
 }

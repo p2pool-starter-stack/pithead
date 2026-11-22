@@ -17,6 +17,8 @@ docker image inspect pithead-dashboard:itest >/dev/null
 image=$(awk '$0 == "  caddy:" { s=1; next } s && $1 == "image:" { print $2; exit }' "$ROOT/docker-compose.yml")
 # shellcheck source=lib/pithead/35-caddyfile-and-auth-helpers.sh
 source "$ROOT/lib/pithead/35-caddyfile-and-auth-helpers.sh"
+# shellcheck source=lib/pithead/35a-caddyfile-format.sh
+source "$ROOT/lib/pithead/35a-caddyfile-format.sh"
 is_appliance() { return 1; }
 appliance_site_names() { printf panel.example; }
 log() { :; }
