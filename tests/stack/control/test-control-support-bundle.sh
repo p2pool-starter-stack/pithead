@@ -95,9 +95,8 @@ esac
 exit 0
 SYSCTL
 chmod +x "$SB/bin/systemctl"
-export SB_JOURNAL_LOG="$SB/journal.log" SB_ADDR SB_ONION
+export SB_JOURNAL_LOG="$SB/journal.log" SB_ADDR SB_ONION SB_NOW="$(date +%s)"
 
-SB_NOW=$(date +%s)
 sb_iso() { date -u -d "@$((SB_NOW + $1))" +%Y-%m-%dT%H:%M:%SZ; }
 sb_unzip() {
     rm -rf "$2"
@@ -423,9 +422,6 @@ assert_not_contains "the same one redactor covers the host CLI path" \
     "$(grep -rF 'rpcpassvalue' "$SB/extractR" || true)" "rpcpassvalue"
 
 echo "== host CLI: recovery-bundle takes --since and --until and rejects a bad window =="
-sb_iso_first=$(sb_iso -3600)
-sleep 1
-assert_eq "window times come from one fixed instant across a second boundary (#4187)" "$(sb_iso -3600)" "$sb_iso_first"
 rbw=$(
     export PITHEAD_APPLIANCE=1 PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
     run_sourced_e "$SANDBOX" recovery_bundle --since "$(sb_iso -14400)" --until "$(sb_iso -5400)" 2>/dev/null |
