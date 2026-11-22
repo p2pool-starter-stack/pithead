@@ -59,3 +59,17 @@ run_egress_socks_probe() {
     EGRESS_PROBE_SUMMARY="all $TOR_CONTROL_DIAL_ATTEMPTS attempts failed; $failed"
     return "$probe_rc"
 }
+
+assert_purpose_circuits() {
+    local payload inner out rc
+    payload="$(base64 <"$HERE/lib/purpose-circuit-probe.py" | tr -d '\n')"
+    inner="printf %s $(quote_arg "$payload") | base64 -d | python3 -"
+    out="$(rx "torip=\$(docker inspect tor --format '{{(index .NetworkSettings.Networks \"mining_net\").IPAddress}}') && image=\$(docker inspect dashboard --format '{{.Config.Image}}') && [ -n \"\$torip\" ] && [ -n \"\$image\" ] && docker run --rm --network mining_net -e TOR_SOCKS_PROXY=socks5h://\$torip:9050 --entrypoint sh \"\$image\" -c $(quote_arg "$inner") 2>&1")"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        it_pass "dashboard purposes health and notify exit through different Tor circuits (#4209/#4324)"
+    else
+        it_fail "dashboard purposes health and notify exit through different Tor circuits (#4209/#4324)" \
+            "probe exit $rc: $(printf '%s' "$out" | tail -n 4 | tr '\n' ' ')"
+    fi
+}

@@ -330,6 +330,7 @@ assert_running_state() {
             # which cannot speak SOCKS). Without it, a DROP and a bench with no route out are the
             # same observation and the assertion passes for the wrong reason on a disconnected box.
             assert_egress_dial_pair
+            assert_purpose_circuits
         fi
     fi
 

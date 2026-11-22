@@ -895,6 +895,14 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   be installed, canonical, and in a chain no forwarded packet traverses — which is exactly how the
   appliance shipped fail-open. This suite covers the Docker/`DOCKER-USER` backend; the
   podman/netavark backend's live coverage is `tests/os/appliance-egress-leg.sh` in the KVM battery.
+- Dashboard purposes exit through different Tor circuits
+  ([#4209](https://github.com/p2pool-starter-stack/pithead/issues/4209)/[#4324](https://github.com/p2pool-starter-stack/pithead/issues/4324)).
+  Right after the dial pair, `assert_purpose_circuits` runs `lib/purpose-circuit-probe.py` inside the
+  dashboard image on `mining_net`. For the `health` and `notify` purposes it builds each proxy with
+  `purpose_proxy` and reads the exit address from `https://1.1.1.1/cdn-cgi/trace`. The row passes only when
+  both purposes answer and the addresses differ. Two circuits can share an exit relay by chance, so on a
+  collision the probe retries once with fresh `-2` purpose labels before failing. The probe prints only the
+  label and address family, never an address or a credential.
 - Payout confirmation is live (the view-key row only). `PAYOUT_CONFIRM_ENABLED`/
   `TARI_PAYOUT_CONFIRM_ENABLED` in `.env` match the config, and the dashboard's own
   `earnings.confirmed.enabled`/`earnings.tari_confirmed.enabled` flags read `true`
