@@ -68,4 +68,5 @@ def test_purpose_proxy_map_passes_an_empty_base_through():
     from mining_dashboard.helper.http import purpose_proxy_map
 
     assert purpose_proxy_map(None, "notify") == {"http": None, "https": None}
+    assert purpose_proxy_map("", "notify") == {"http": "", "https": ""}
     assert purpose_proxy_map(BASE, "notify")["https"] == purpose_proxy(BASE, "notify")

@@ -163,11 +163,18 @@ class TestTorRouting:
 
     def test_failure_logging_never_carries_the_credential(self, caplog):
         c = _client(tor_proxy="socks5h://172.28.0.25:9050")
+        sent = []
+
+        def boom(cmd, input=None, **kwargs):
+            sent.append(input)
+            raise hc_mod.subprocess.TimeoutExpired(cmd, 1)
+
         with (
-            patch.object(hc_mod, "_fetch", side_effect=hc_mod.PingFailure("tor_socks", "Timeout")),
-            caplog.at_level(logging.DEBUG, logger="Healthchecks"),
+            patch.object(hc_mod.subprocess, "run", side_effect=boom),
+            caplog.at_level(logging.DEBUG),
         ):
             assert c.ping() is False
+        assert "notify:isolate@" in sent[0]
         assert "isolate@" not in caplog.text
 
     def test_from_config_always_routes_over_tor(self):

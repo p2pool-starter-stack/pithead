@@ -38,7 +38,8 @@ class TestEnabledGating:
 
 
 def _notify_proxies(base):
-    proxy = base.replace("://", "://notify:isolate@", 1)
+    assert base.startswith("socks5h://")
+    proxy = "socks5h://notify:isolate@" + base.removeprefix("socks5h://")
     return {"http": proxy, "https": proxy}
 
 
