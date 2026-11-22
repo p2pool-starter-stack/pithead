@@ -897,7 +897,7 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
   podman/netavark backend's live coverage is `tests/os/appliance-egress-leg.sh` in the KVM battery.
 - Per-purpose SOCKS credentials isolate Tor circuits
   ([#4209](https://github.com/p2pool-starter-stack/pithead/issues/4209)/[#4324](https://github.com/p2pool-starter-stack/pithead/issues/4324)).
-  Right after the dial pair, `assert_purpose_circuits` runs `lib/purpose-circuit-probe.py` inside the
+  Right after the dial pair, `assert_purpose_circuits` runs `tests/integration/lib/purpose-circuit-probe.py` inside the
   dashboard image on `mining_net`. For the `health` and `notify` purposes it builds each proxy with
   `purpose_proxy` and reads the exit address from `https://1.1.1.1/cdn-cgi/trace`. The row passes only when
   both purposes answer, the addresses differ and the probe prints its own verdict line. It proves the
