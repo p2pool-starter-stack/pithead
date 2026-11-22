@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mining-dashboard"
-version = "2.0.3"
+version = "2.0.4"
 description = "Monitoring dashboard and XvB switching engine for Pithead"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -69,7 +69,9 @@ for flag in 0 unset; do
         env_on_box() { echo true; }
         cleared=0
         fault_rules_clear_all() { cleared=$((cleared + 1)); }
+        tor_newnym_budget_reset() { budget_reset=$((${budget_reset:-0} + 1)); }
         wait_for() {
+            check test "$budget_reset" -eq 1
             check test "$1" -eq 180
             check test "$cleared" -eq 1
             check test "$2" -eq 10

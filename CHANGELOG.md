@@ -11,6 +11,19 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-11-22
+
+Pithead 2.0.4 is a patch release after 2.0.3. It bakes RigForge 1.19.0 into the appliance image
+(read the RigForge-only note below before updating such a rig), moves XvB donation mining to the EU
+server, adds a sign-in page, a windowed support-bundle and log export, per-service and Restart all
+buttons in Service diagnostics, and a Tor auto-heal that no longer stalls, stops serving stratum work
+when the node cannot make valid work so rigs fail over to their backup pool, labels where each rig
+mines, and clears the image-scan findings in the Go toolchain and containerd.
+
+It adds and removes no Pithead configuration keys. It changes these defaults: `monero.out_peers` from
+48 to 24 (#4078), `xvb.url` to the EU server with a saved NA host moved on the next apply (#4308), Tor's
+`SocksPort` binds the bridge address instead of the wildcard address (#4047), and Caddy moves to 2.11.9.
+
 ### Added
 
 - `./pithead support-bundle` on a Docker host takes `--since` and `--until` (or `--hours`) and writes the
@@ -26,22 +39,66 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   password prompt. It has a "Remember me" box (30 days, renewed while in use; otherwise the session
   ends when the browser closes or after 8 hours idle) and a "Sign out" button. Changing the password
   ends every session, wrong passwords are rate-limited, and scripts keep using HTTP basic auth with
-  the same credentials (#4089).
+  the same credentials (#4089). On a full data disk an existing session still passes the gate, a
+  restarted dashboard still starts and reports `db_healthy:false`, and signing in says the data disk is
+  full instead of failing with a server error (#4199).
 - The dashboard's **Export logs** card (Backup tab) has a time-frame picker (last 1 h, 6 h, 24 h, 72 h or 7 days, or a custom start and end), shows how far back the logs reach and flags a range that goes further, and collects and downloads the `support-bundle-<UTC timestamp>.zip` with one click, showing the window the manifest recorded. It is always available, on the appliance and on DIY, whether or not `dashboard.control.enabled` is on: with the switch off the host runner serves only the export, and config editing, restart and the other control actions stay off. With a dashboard password set, every export route needs the login (#4129).
 - The appliance update channel is read as untrusted data: https-only fetches to the release hosts
   over Tor with remote DNS, response size caps, release-tag validation before any URL or path, and
-  stale or replayed channel reporting in Check for updates (#4011).
+  stale or replayed channel reporting in Check for updates (#4011). The appliance rootfs also carries
+  the on-demand Tor client the rig update will use in 2.0.5 (#4139).
+- The Service diagnostics card has a **Restart** button for each of tor, monerod, wallet-rpc, tari,
+  tari-wallet, p2pool and xmrig-proxy. It goes through the host control channel, is refused while the
+  LAN guard is not ready or the host lock is busy, allows one restart per service every 120 seconds
+  and is audited (#4062).
+- The header shows **Mining paused here** and its reason (stratum closed, node out of sync, node syncing or
+  P2Pool isolated) with the number of rigs on a backup pool, and the dashboard shows a **Monero node
+  offline** banner when monerod is red or, with `tor.auto_heal` on, when Tor egress has been down past
+  the 15-minute window. The banner needs no Tor to display (#4073, #4079).
+- The Workers table says where each rig mines: "on backup pool", "not connected to this Pithead" or
+  "mining location unknown". Rigs mining elsewhere no longer count in Workers Alive or Total Hashrate,
+  a `DOWN` row explains itself, the rig's own hashrate has a separate "Rig telemetry 1m" column, and a
+  proxy client with no rig name is listed as an unnamed proxy worker (#4071, #4072).
+- Failed Healthchecks pings are recorded in a ring table and shown on the health page, without the
+  ping URL (#4037).
 
 ### Changed
 
+- When P2Pool or monerod cannot make valid work (a peerless monerod that still reports synchronized, a
+  monerod stalled behind P2Pool's peers, P2Pool without peers or ZMQ, or a monerod, p2pool or tor
+  container down or unhealthy), the dashboard now stops `xmrig-proxy` after a debounce so rigs fail
+  over to their backup pool, and readmits them only when every trigger has been clear for 60 seconds.
+  Before, only an unreachable node stopped the proxy. The log names every trigger that held the proxy
+  and why readmission stayed blocked (#4046, #4165). After a stack recreate the proxy can stay stopped
+  for minutes even though every service is healthy; the root-cause fix is planned for 2.0.5 (#4138,
+  #4160).
+- The Healthchecks.io ping runs in its own task every 60 seconds with a 30-second hard deadline and a
+  fresh-circuit retry, so a stalled collector or a long apply no longer reads as a down server, and the
+  Tor healer's first repair comes after 5 minutes of failure instead of 15 (#4135).
+- Tor's `SocksPort` binds the bridge address instead of the wildcard address and `WarnUnsafeSocks 0`
+  silences the IP-only SOCKS warnings that monerod and Tari gossip dials produced several times a
+  minute (#4047).
+- Caddy is updated from 2.11.7 to 2.11.9.
+- XvB donation mining now defaults to `eu.xmrvsbeast.com:4247`, because XMRvsBeast is retiring its NA servers. A saved `xvb.url` on `na.xmrvsbeast.com` (any port) is moved to the EU host with the same port on the next apply, the prior file is kept as `config.json.bak-xvb-na`, a custom host is left alone, and Tor routing is unchanged (#4308).
 - The appliance support bundle (the dashboard's **Support bundle** card and `pithead recovery-bundle`) is now one `.zip` for a chosen start and end time (`--since` and `--until` on the CLI, `since` and `until` on the control request; `hours` still works). It holds the whole system journal, the kernel log, the boot list and a journal per Pithead and quadlet unit read from the installed unit files, redacted, with a `manifest.json` that records the windows, the oldest retained entry, the journald usage and every truncated, empty, missing or failed file. Oversize files keep their oldest and newest lines instead of the bundle being refused, and the journald cap is raised from 200 MiB to 400 MiB to cover 168 hours at the log volume reported for a loaded test box (#4127).
+- The appliance image bakes RigForge 1.19.0. Its prebuilt XMRig is the same 6.26.0 pin with the zero donation default and minimum, so a fresh image and an upgraded rig start mining without an XMRig rebuild; the vendored RigForge contract fixtures move to v1.19.0 with the pin (#4230, #4300).
 
 ### Fixed
 
-- The dashboard keeps answering when its data disk is full (a 2.0.4 sign-in regression): an existing
-  session still passes the sign-in gate when the session store cannot write, a dashboard restarted
-  on a full data dir still starts and reports `db_healthy:false`, and signing in reports that the
-  data disk is full instead of failing with a server error (#4199).
+- On the appliance, a built-in miner that lost its stratum connection because `xmrig-proxy` was
+  recreated (an apply, a compose restart or a recovery-boot migration) is restarted at once instead
+  of after five minutes of idle readings. The root cause of the stall is still not established
+  (#3375).
+- On the appliance, opening **Set up again** on a committed slot no longer leaves the boot-slot try
+  flag raised, so powering off or rebooting without choosing no longer boots the previous release
+  (#3960).
+- P2Pool with no incoming or outgoing peers for 15 minutes is restarted with a 20, 40 and 80 minute
+  backoff, at most three times a day, with an audit row and a warning when the cap is reached. A
+  monerod with no outgoing peers for 5 minutes after any Tor start is restarted once per Tor start,
+  with or without `tor.auto_heal` (#4077, #4076).
+- On the appliance, when the boot health gate cannot clear the chain-service migration hold it prints
+  a FAULT line naming the recovery and releases the chain services anyway, instead of leaving node,
+  P2Pool and proxy down with nothing in the boot journal (#3983).
 - On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
   on the data partition is saturated — no longer costs the committed slot its fallback. The boot
   health gate commits when the dashboard answers and every failing check is that network fault,
@@ -52,6 +109,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - `./pithead restart tor`, a bare `restart` and the dashboard's restart now wait for Tor to report
   bootstrapped and then restart a running monerod themselves, so it re-dials through the new Tor
   instead of staying at 0 peers when compose did not cycle it (#4063); a bare restart and Restart all then also restart the tari container, when the stack has one, so it starts after Tor (#4064).
+- The Tor egress auto-heal no longer stalls when the host refuses NEWNYM. A rejected refresh now
+  spends its rung and the ladder moves on to a host-gated state reset and then a Tor restart,
+  capped at four per rolling day, instead of repeating NEWNYM forever. `tor-recover` accepts a
+  sustained outage, a wedged control port or a stalled bootstrap as reset reasons when egress is
+  still down, the heal reads Tor's control-port circuit state, and giving up is written to the
+  host audit log. Past the cap the heal keeps probing every 15 minutes and re-alerts at most once
+  an hour, naming the outage length, until one recovery notice on egress returning (#4075).
 - A dashboard tab left open across a restart, rollback or update now reloads itself: it notices a
   changed version or the first successful refresh after the disconnected banner, shows "Pithead was
   updated or restarted. Reloading…" and reloads once the dashboard answers, at most once every 2
@@ -79,19 +143,61 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   lock, so its restart no longer overlaps an apply, an `up` or a control operation; a busy lock
   defers the render and the restart to the next tick, and when an apply lands in the same tick gap
   as an address change the apply's restart stands (#3987).
+- The Service diagnostics card's log and health-check controls are styled as buttons instead of plain
+  text (#4109).
 
 ### Security
 
 - The appliance rootfs builds Docker Compose and Cosign with Go 1.26.11, clearing CVE-2026-97054
   in both binaries' standard library (#4265), and builds Compose v5.7.2, whose containerd v2.4.2
-  clears CVE-2026-95839 (#4291).
+  clears CVE-2026-95839 (#4291, #4279).
 
 ### Notes
 
-- **RigForge-only appliances: stay on 2.0.3.** This release changes nothing on a rig: RigForge 1.18.1
-  and XMRig 6.26.0 are the same as in 2.0.3. Updating a rig still needs the USB stick, and re-flashing
-  a rig that runs from its stick wipes its setup and token, so it must be adopted again. Updating rigs
-  from the Pithead dashboard is planned for 2.0.5 (#1837).
+- **RigForge-only appliances: 2.0.4 changes the rig — RigForge 1.19.0.** RigForge 1.19.0 seeds
+  `tor_socks5` `127.0.0.1:9050` on an appliance rig and fails closed when nothing listens there, and
+  the appliance rig runs no Tor proxy at that address. A rig therefore refuses `upgrade --check`, the
+  XMRig clone and a remote upgrade, and `doctor` warns on its `tor-socks5` row. The rig rewrites its miner
+  config on every boot without `tor_socks5`, so an override set on the rig does not persist. RigForge also refuses a `DONATION` above 0 while `tor_socks5` is set, because the donation pool
+  would dial direct, and this applies to a saved value too: a 2.0.3 rig with `DONATION` above 0 stops
+  mining after the update, because its miner setup fails on the next boot. Before updating such a rig,
+  set `DONATION` to 0 in the dashboard's Workers view. A rig
+  with `DONATION` 0 keeps mining on the prebuilt miner. `threads` is now honored and capped, so a rig
+  that mined every core before this settles at the capped count after the next apply, with a lower
+  hashrate (rigforge#588 and rigforge#632). A validated
+  `xmrig` config overlay plus configurable RandomX modes give owners control over miner settings. The baked XMRig is unchanged
+  (6.26.0, zero donation default and minimum), so the built-in miner and upgraded rigs keep mining
+  without a rebuild. Updating a rig still needs the USB stick, and re-flashing a rig that runs from
+  its stick wipes its setup and token, so it must be adopted again. Updating rigs from the Pithead
+  dashboard is planned for 2.0.5 (#1837).
+
+### Known issues in 2.0.4
+
+The [known issues listed for 2.0.3](https://github.com/p2pool-starter-stack/pithead/blob/main/CHANGELOG.md#known-issues-in-203),
+including those it carries over from 2.0.2, 2.0.1 and 2.0.0, still apply, except #3960, #3987
+and #3998, which are fixed above, and the RigForge `threads` issue (rigforge#588), which RigForge
+1.19.0 fixes (see the RigForge-only note above). #3375 is closed: the restarts above mitigate it,
+but its cause is not established, so the stall can recur. These five are new, and each is planned
+for 2.0.5:
+
+- After a stack recreate (an apply, an update, a reboot or Restart all), the dashboard can stop
+  `xmrig-proxy` and leave it stopped for minutes after every service is healthy, so rigs mine on
+  their backup pool or not at all. A test saw it stay stopped for at least 4.6 minutes. The cause is
+  not found. The dashboard log names the reason it stopped the proxy and the time it was readmitted,
+  and the support bundle carries that log. No workaround has been established (#4138, #4160).
+- After a Tor restart, Tor can sit at "Bootstrapped 95%" for about an hour. Monerod, Tari and P2Pool
+  have no Tor until it ends, and a second restart does not help because it keeps the same guards.
+  The healer, an update or a reboot can trigger it. Alerts travel over Tor, so the outage can be
+  silent. The cause is inferred, not confirmed (#4121).
+- Tor's cached directory can go stale on an appliance that has run for days. After a restart Tor can
+  stay at "Requesting descriptors" for many minutes, or clearnet probes can pass while onion peers
+  fail and leave Tari or monerod without peers, and Tor auto-heal sees nothing wrong or its last
+  step does not cure it. Appliance owners have no shell for the manual cure (#4261).
+- A monerod that keeps live outgoing peers but stores no new block is not restarted on its own. Use
+  Service diagnostics' **Restart** button for monerod (#4192).
+- The support-bundle download is proven on appliance hardware for a baseline stack and with Tor
+  wedged, but not yet with monerod stopped. The bundle is meant to record the monerod snapshot as
+  unavailable and still complete, and that is untested on the appliance (#4131).
 
 ## [2.0.3] - 2026-11-10
 
