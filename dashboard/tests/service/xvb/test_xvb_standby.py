@@ -102,6 +102,14 @@ class TestPuller:
             assert puller.fetch_once() is None
         sm.set_xvb_standby.assert_not_called()
 
+    def test_fetch_once_failure_log_carries_no_credential(self, caplog):
+        puller = XvbStandbyPuller(MagicMock(), source="http://primary.example.com/api/xvb-standby")
+        err = requests.ConnectionError("socks5h://dashboard:isolate@t:9050 refused")
+        with patch("mining_dashboard.service.xvb.xvb_standby.bounded_get", side_effect=err):
+            with caplog.at_level("DEBUG"):
+                assert puller.fetch_once() is None
+        assert "isolate@" not in caplog.text
+
     def test_fetch_once_bad_payload_stores_nothing(self):
         # A 200 with an unusable body (parse_standby -> None) keeps the last-held standby.
         sm = MagicMock()
