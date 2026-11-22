@@ -702,4 +702,4 @@ case "$render_out" in
 *) ok "render never touches containers" ;;
 esac
 unset RSUT render_out
-source "$HERE/config/version.sh"
+for _frag in version donation; do source "$HERE/config/$_frag.sh"; done

@@ -83,4 +83,7 @@ exposure_previews "P2Pool-clearnet preview with the firewall off names this host
     "P2Pool sidechain peers over CLEARNET" "visible to the P2Pool network"
 exposure_previews "public-IP preview names the dashboard login reachable from the internet" '.dashboard.expose_public_ip=true' \
     "Dashboard PUBLISHED" "anyone on the internet can reach the dashboard login"
+exposure_previews "donation enabling names project routing" '.donation.enabled=true | .donation.percent=0.1' "Project donation set to true"
+exposure_previews "donation percentage change names the percentage" '.donation.percent=5' "5 percent"
+exposure_previews "donation off Tor names IP exposure" '.donation.tor=false' "project endpoint sees this host's IP"
 unset -f preview_only previewed_with exposure_previews
