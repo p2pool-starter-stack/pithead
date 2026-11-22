@@ -2,7 +2,7 @@ _caddyfile_format() {
     local tmp
     tmp=$(mktemp "$1.XXXXXX") || return 1
     awk '
-        { sub(/[ \t]+$/, "") }
+        { sub(/[[:space:]]+$/, "") }
         $0 == "" { if (out) blank = 1; next }
         {
             body = $0
