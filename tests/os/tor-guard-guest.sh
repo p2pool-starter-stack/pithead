@@ -88,7 +88,9 @@ build_authority() {
             -a $auth_ip:9030
         v3id=\$(awk '/^fingerprint /{print \$2}' keys/authority_certificate)
         printf 'TestingTorNetwork 1\nDataDirectory /var/lib/tor\nNickname tgauth\nAddress $auth_ip\nORPort 9001\nDirPort 9030\nSocksPort 0\nDirAuthority tgauth orport=9001 no-v2 v3ident=%s $auth_ip:9030 0000000000000000000000000000000000000000\n' \"\$v3id\" >probe-torrc
-        tor -f probe-torrc --list-fingerprint >&2
+        chown -R tor:tor /var/lib/tor
+        chmod 700 /var/lib/tor
+        su -s /bin/sh tor -c 'cd /var/lib/tor && tor -f probe-torrc --list-fingerprint' >&2
         printf 'V3 %s\n' \"\$(awk '/^fingerprint /{print \$2}' keys/authority_certificate)\"
         printf 'FP %s\n' \"\$(cut -d' ' -f2- fingerprint | tr -d ' ')\"
         chown -R tor:tor /var/lib/tor
