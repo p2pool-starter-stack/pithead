@@ -242,9 +242,9 @@ phase_rig() {
     [[ "$tor_run" == *LISTENER-UP* ]] &&
         ok "the helper holds the SOCKS listener on loopback while its command runs" ||
         bad "the caller saw no SOCKS listener during the run: $tor_run"
-    [[ "$tor_run" == *200* ]] &&
-        ok "the helper's command fetched over a live Tor circuit (check.torproject.org answered 200)" ||
-        bad "the release API was not fetched over Tor during the run: $tor_run"
+    [[ "$tor_run" == *"HTTP/"*" 200"* && "$tor_run" == *'"IsTor":true'* ]] &&
+        ok "the helper's command fetched over a live Tor circuit (check.torproject.org answered 200 and reported a Tor exit)" ||
+        bad "check.torproject.org was not fetched over Tor during the run: $tor_run"
     [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
         ok "Tor stopped when the helper's command ended" ||
         bad "tor is still running after the helper returned"
