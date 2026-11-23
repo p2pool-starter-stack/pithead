@@ -145,6 +145,9 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
   as an address change the apply's restart stands (#3987).
 - The Service diagnostics card's log and health-check controls are styled as buttons instead of plain
   text (#4109).
+- A release now tags and bundles exactly the commit that was gated: publish refuses if HEAD moved or the
+  tree is dirty, a tag already on origin or an already-promoted registry tag stops the cut, and the
+  tag is created on the gated commit (release tooling only).
 
 ### Security
 

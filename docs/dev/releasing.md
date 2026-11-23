@@ -167,6 +167,13 @@ is no back-merge and no post-release repair step ([#1076]; releases through v1.1
 `develop` after the final cut commit sit ahead of `main`, the normal state between releases.
 `release.sh` warns (it does not abort) when the working tree is on any branch other than `develop`.
 
+The release is pinned to the commit preflight read. Preflight refuses a tag that already exists
+locally or on `origin`, and refuses (outside `--dry-run` and `PITHEAD_REHEARSAL=1`, where it only
+warns) a version whose `:vX.Y.Z` image tag is already in the registry. Before building the bundle,
+publish refuses if `HEAD` is no longer the gated commit or the tree is dirty, and the tag is created
+with `git tag -a "$TAG" "$GIT_COMMIT"`, so a `git pull` during the multi-hour gate cannot make the
+tag, images and bundle disagree.
+
 The fast-forward push cannot ride a PR: GitHub merges a PR by merge commit, squash, or rebase,
 each of which mints a new commit, and the point is that `main` gains no object the tag does not
 already name. The Main Branch ruleset requires PRs from everyone except organization admins, so
