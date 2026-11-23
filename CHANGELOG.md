@@ -145,6 +145,13 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
   as an address change the apply's restart stands (#3987).
 - The Service diagnostics card's log and health-check controls are styled as buttons instead of plain
   text (#4109).
+- Payout confirmation skips a scan when the view-only wallet does not hold the configured payout address,
+  so an address change no longer files the old wallet's payouts under the new address or alerts on them.
+- XvB request failures no longer write the payout address or the submit URL into the dashboard log.
+- The setup wizard keeps a worker's `api_token` instead of dropping it.
+- The setup wizard's failed screen no longer breaks when the host's error text ends in a cut-off character.
+- A failed write when applying a configuration change from the dashboard returns a server error and is
+  logged, instead of reporting "Body must be JSON".
 
 ### Security
 
