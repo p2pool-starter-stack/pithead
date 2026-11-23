@@ -9,6 +9,7 @@ source "$HERE/../lib.sh"
 source "$HERE/../lib/fault-rules.sh"
 # shellcheck source=tests/integration/lib/run-tor-probe-fault.sh
 source "$HERE/../lib/run-tor-probe-fault.sh"
+has_compose_profile() { return 1; }
 
 SCRATCH=$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:-${TMP:-/tmp}}}/tor-probe-selftest.XXXXXX")
 SCRATCH=$(cd "$SCRATCH" && pwd -P)
@@ -116,7 +117,6 @@ echo "== Failed mining and recovery rows carry the dashboard's own log lines =="
 (
     BASELINE_CONFIG='{}'
     env_on_box() { echo true; }
-    has_compose_profile() { return 1; }
     fault_rules_clear_all() { :; }
     fault_rules_trap_arm() { :; }
     fault_rules_trap_disarm() { :; }
@@ -136,9 +136,9 @@ echo "== Failed mining and recovery rows carry the dashboard's own log lines =="
     DASHBOARD_LOG="$SCRATCH/dashboard.log"
     export DASHBOARD_LOG
     printf '%s\n' \
-        'WARNING Mining work is not valid (Monero node unsynchronized) — stopping xmrig-proxy so workers fail over to their backup pools.' \
-        'WARNING Tor clearnet egress failed for 5 minutes: probe timeout. Requesting NEWNYM (1/2).' \
-        'ERROR Tor clearnet egress is STILL broken after 2 recovery attempts' >"$DASHBOARD_LOG"
+        '2026-11-22 10:00:17,201 [WARNING] Mining work is not valid (Monero node unreachable past the debounce) — stopping xmrig-proxy so workers fail over to their backup pools.' \
+        '2026-11-22 10:04:02,917 [WARNING] Tor clearnet egress failed for 5 minutes: check.torproject.org and cloudflare.com timed out. Requesting NEWNYM (1/2).' \
+        "2026-11-22 10:20:40,005 [WARNING] Tor clearnet egress is STILL broken after 2 recovery attempts (0 disruptive in the last day, cap 2): probe timeout. No more automatic action; run './pithead doctor' for current evidence." >"$DASHBOARD_LOG"
     rx() {
         case "$1" in
         "docker logs --since 1 dashboard 2>&1"*) bash -c "cat \"\$DASHBOARD_LOG\"${1#docker logs --since 1 dashboard 2>&1}" ;;
@@ -147,9 +147,9 @@ echo "== Failed mining and recovery rows carry the dashboard's own log lines =="
         esac
     }
     fault_tor_probe_egress >"$SCRATCH/dashboard-detail.out"
-    check grep -Fq 'sample 0 had no live proxy worker or accepted-share counter; dashboard: WARNING Mining work is not valid (Monero node unsynchronized) — stopping xmrig-proxy' "$SCRATCH/dashboard-detail.out"
-    check grep -Fq 'no corroborated recovery log; last dashboard Tor lines: WARNING Tor clearnet egress failed for 5 minutes' "$SCRATCH/dashboard-detail.out"
-    check grep -Fxq 'ERROR Tor clearnet egress is STILL broken after 2 recovery attempts' "$SCRATCH/dashboard-detail.out"
+    check grep -Fq 'sample 0 had no live proxy worker or accepted-share counter; dashboard: 2026-11-22 10:00:17,201 [WARNING] Mining work is not valid (Monero node unreachable past the debounce) — stopping xmrig-proxy' "$SCRATCH/dashboard-detail.out"
+    check grep -Fq 'no corroborated recovery log; last dashboard Tor lines: 2026-11-22 10:04:02,917 [WARNING] Tor clearnet egress failed for 5 minutes' "$SCRATCH/dashboard-detail.out"
+    check grep -q '^2026-11-22 10:20:40,005 \[WARNING\] Tor clearnet egress is STILL broken after 2 recovery attempts' "$SCRATCH/dashboard-detail.out"
     printf 'dashboard detail fixture: %s passed, %s failed\n' "$PASS" "$FAIL"
     test "$FAIL" -eq 0
 )
