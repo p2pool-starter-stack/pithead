@@ -74,6 +74,38 @@ assert_eq "successful upgrade provisions the units only after 'current ->' moves
 assert_eq "an upgrade that aborts at the gate repoints no units and moves no symlink (#1070)" \
     "$(upg_step_order 'echo verify; error "gate refused";')" "verify,"
 
+echo "== black-box: a crash-looping service aborts the upgrade before moving `current ->` (#4393) =="
+upg_step_order_unhealthy() {
+    (
+        cd "$SANDBOX" || exit
+        source "$STACK"
+        set +e
+        require_env() { :; }
+        ensure_onion_password() { :; }
+        parse_and_validate_config() { :; }
+        load_preserved_state() { :; }
+        ensure_directories() { :; }
+        resolve_dashboard_host() { :; }
+        render_env() { [ -n "${1:-}" ] && : >"$1"; }
+        provision_node_onions() { :; }
+        inject_service_configs() { :; }
+        generate_caddyfile() { :; }
+        migrate_compose_project() { :; }
+        apply_tor_egress_firewall() { :; }
+        migrate_dashboard_data() { :; }
+        is_source_checkout() { return 1; }
+        log() { :; }
+        verify_release_images() { :; }
+        compose_up_checked() { echo compose; }
+        wait_services_healthy() { return 1; }
+        update_current_symlink() { echo symlink; }
+        provision_control_runner() { echo provision; }
+        stack_upgrade
+    ) | grep -xE 'verify|compose|symlink|provision' | tr '\n' ','
+}
+assert_eq "unhealthy service aborts upgrade before moving `current ->` (#4393)" \
+    "$(upg_step_order_unhealthy)" "verify,compose,"
+
 echo "== unit: a spent GitHub rate limit is not a dead Tor circuit (#1081) =="
 # The one-click upgrade was rejected on a healthy box with "could not reach the GitHub release API
 # over Tor". Tor was fine and the dial succeeded; GitHub answered 403 because the unauthenticated

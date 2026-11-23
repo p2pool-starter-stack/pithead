@@ -116,6 +116,45 @@ verify_release_images() {
     log "All 5 release images verify against their pinned digest (cosign.pub)."
 }
 
+wait_services_healthy() {
+    local profiles svc health timeout_s elapsed=0
+    profiles=",$(env_get COMPOSE_PROFILES),"
+    local -a check=()
+    check+=(dashboard p2pool tor)
+    [[ "$profiles" == *,local_node,* ]]     && check+=(monerod)
+    [[ "$profiles" == *,local_tari,* ]]     && check+=(tari)
+    [[ "$profiles" == *,payout_confirm,* ]] && check+=(wallet-rpc)
+    [[ "$profiles" == *,tari_payout_confirm,* ]] && check+=(tari-wallet)
+    [ "${#check[@]}" -eq 0 ] && return 0
+    timeout_s=120
+    for svc in "${check[@]}"; do
+        local cid
+        cid=$(docker compose ps -a -q "$svc" 2>/dev/null) || continue
+        [ -n "$cid" ] || continue
+        elapsed=0
+        while true; do
+            health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null) || {
+                break
+            }
+            case "$health" in
+                healthy) break ;;
+                ""|"none")
+                    break ;;
+                unhealthy|starting)
+                    ;;
+            esac
+            sleep 2
+            elapsed=$((elapsed + 2))
+            if [ "$elapsed" -ge "$timeout_s" ]; then
+                error "Upgrade: $svc did not become healthy within ${timeout_s}s (status: ${health:-unknown})."
+                return 1
+            fi
+        done
+    done
+    log "All enabled services healthy."
+    return 0
+}
+
 reconcile_compose_images() {
     local config services svc image cid declared running
     config=$(docker compose config --format json) || return 1
@@ -204,6 +243,10 @@ stack_upgrade() {
             generate_caddyfile
             docker compose restart caddy
         fi
+    fi
+    if ! wait_services_healthy; then
+        error "Upgrade aborted: one or more services failed to become healthy."
+        return 1
     fi
     update_current_symlink # #455: only a SUCCESSFUL upgrade moves the `current ->` pointer
     # #33: converge the control-runner units on the current toggle — LAST, and deliberately after
