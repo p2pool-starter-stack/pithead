@@ -15,7 +15,7 @@ rx() { (cd "$BOX" && bash -c "$1"); }
 it_log() { :; }
 
 stamp() { jq -r .config_version "$BOX/config.json"; }
-run_case() { # <stamp> <version>
+run_case() {
     printf '{"config_version":"%s","keep":1}\n' "$1" >"$BOX/config.json"
     printf '%s\n' "$2" >"$BOX/VERSION"
     _normalize_config_version
