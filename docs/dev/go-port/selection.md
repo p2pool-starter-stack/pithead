@@ -92,12 +92,14 @@ path (`PITHEAD_SELF`).
 
 ## Testing both modes
 
-`tests/stack/lib.sh` scrubs every `PITHEAD_*` variable from the operator
-environment, then exports `PITHEAD_IMPL` from `PITHEAD_TEST_IMPL` when that is
-set, so the existing suites run unchanged under a selection. The Shell
+`tests/stack/lib.sh` scrubs the operator's `PITHEAD_*` variables (see the
+[testing guide](../testing-guide.md#commands) for the two it keeps), then
+exports `PITHEAD_IMPL` from `PITHEAD_TEST_IMPL` when that is set, so the
+existing suites run unchanged under a selection. The Shell
 workflow's `shell-block` matrix runs every `run.sh` block twice: once with no
 selection (the table default) and once with `PITHEAD_TEST_IMPL` listing every
-piece. Until a piece ships a Go binary, the selected leg proves that every
-verb passes through the selection and fallback path with Bash's argv, streams
-and exit status. The leg reaches the Go side only when the job builds
+piece. Until a piece ships a Go binary, every `pithead` call the suites make
+in that leg passes through the selection and fallback path and must keep the
+assertions of the default leg; the fallback contract itself is asserted per
+verb in `tests/stack/standalone/test_impl_launcher.sh`. The leg reaches the Go side only when the job builds
 `go/bin/pithead` beside the entry point.

@@ -28,7 +28,8 @@ what the result is worth.
 
 `tests/stack/lib.sh` unsets every `PITHEAD_*` variable the caller exported before a suite runs
 (#1922): scripts the suite sources read those knobs at source time, so a test asserting a default
-would otherwise assert whatever the operator set. It keeps two: `PITHEAD_UNTRUSTED_MACOS_RUN`, and
+would otherwise assert whatever the operator set (`release.sh` reads its registry knobs when
+sourced). A test that wants a knob sets it in its own subshell. The scrub keeps two: `PITHEAD_UNTRUSTED_MACOS_RUN`, and
 `PITHEAD_TEST_IMPL`, which it re-exports as `PITHEAD_IMPL` so the unchanged suites run under a
 per-piece implementation selection (#4214). The Shell workflow runs every `run.sh` block twice,
 once with no selection and once with every piece selected; see
