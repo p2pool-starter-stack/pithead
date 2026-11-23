@@ -1,26 +1,30 @@
 FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS gobuild
 
-ARG COMPOSE_VERSION=v5.7.2
 ARG COMPOSE_COMMIT=ed25575984c8dbd1ad137c93002d782f52478809
-ARG COSIGN_VERSION=v3.1.4
 ARG COSIGN_COMMIT=0e48502cf5ef34e2e60bbd3617aa19945712f705
 ARG COMPOSE_GO_RAISES="golang.org/x/net@v0.62.0"
 ARG COSIGN_GO_RAISES="golang.org/x/net@v0.62.0"
 ENV CGO_ENABLED=0
 
-RUN git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \
+COPY os/rootfs/tools/ /tools/
+
+RUN COMPOSE_VERSION="$(/tools/module-version.sh /tools/compose/go.mod github.com/docker/compose/v5)" \
+    && [ -n "${COMPOSE_VERSION}" ] \
+    && git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \
     && git -C /src/compose checkout --detach "${COMPOSE_COMMIT}" \
     && { [ "$(git -C /src/compose describe --tags --exact-match "${COMPOSE_COMMIT}")" = "${COMPOSE_VERSION}" ] \
-        || { echo "COMPOSE_COMMIT ${COMPOSE_COMMIT} is not tag ${COMPOSE_VERSION} — a compose bump is TWO ARGs; resolve the pair with: gh api repos/docker/compose/commits/${COMPOSE_VERSION} --jq .sha" >&2; exit 1; }; } \
+        || { echo "COMPOSE_COMMIT ${COMPOSE_COMMIT} is not tag ${COMPOSE_VERSION} — a compose bump is tools/compose/go.mod AND COMPOSE_COMMIT; resolve the commit with: gh api repos/docker/compose/commits/${COMPOSE_VERSION} --jq .sha" >&2; exit 1; }; } \
     && go -C /src/compose get ${COMPOSE_GO_RAISES} \
     && go build -C /src/compose -trimpath -tags e2e \
         -ldflags "-w -X github.com/docker/compose/v5/internal.Version=${COMPOSE_VERSION}" \
         -o /out/docker-compose ./cmd
 
-RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosign /src/cosign \
+RUN COSIGN_VERSION="$(/tools/module-version.sh /tools/cosign/go.mod github.com/sigstore/cosign/v3)" \
+    && [ -n "${COSIGN_VERSION}" ] \
+    && git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosign /src/cosign \
     && git -C /src/cosign checkout --detach "${COSIGN_COMMIT}" \
     && { [ "$(git -C /src/cosign describe --tags --exact-match "${COSIGN_COMMIT}")" = "${COSIGN_VERSION}" ] \
-        || { echo "COSIGN_COMMIT ${COSIGN_COMMIT} is not tag ${COSIGN_VERSION} — a cosign bump is TWO ARGs; resolve the pair with: gh api repos/sigstore/cosign/commits/${COSIGN_VERSION} --jq .sha" >&2; exit 1; }; } \
+        || { echo "COSIGN_COMMIT ${COSIGN_COMMIT} is not tag ${COSIGN_VERSION} — a cosign bump is tools/cosign/go.mod AND COSIGN_COMMIT; resolve the commit with: gh api repos/sigstore/cosign/commits/${COSIGN_VERSION} --jq .sha" >&2; exit 1; }; } \
     && go -C /src/cosign get ${COSIGN_GO_RAISES} \
     && go build -C /src/cosign -trimpath \
         -ldflags "-buildid= -X sigs.k8s.io/release-utils/version.gitVersion=${COSIGN_VERSION} \
@@ -28,7 +32,9 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/sigstore/cosig
             -X sigs.k8s.io/release-utils/version.gitTreeState=dirty" \
         -o /out/cosign ./cmd/cosign
 
-RUN /out/docker-compose version && /out/cosign version \
+RUN COMPOSE_VERSION="$(/tools/module-version.sh /tools/compose/go.mod github.com/docker/compose/v5)" \
+    && COSIGN_VERSION="$(/tools/module-version.sh /tools/cosign/go.mod github.com/sigstore/cosign/v3)" \
+    && /out/docker-compose version && /out/cosign version \
     && /out/docker-compose version | grep -qF "${COMPOSE_VERSION}" \
     && /out/cosign version | grep -qF "${COSIGN_VERSION}" \
     && go version /out/docker-compose | grep -qxF "/out/docker-compose: $(go env GOVERSION)" \

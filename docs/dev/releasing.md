@@ -635,6 +635,18 @@ cosign it claims to be, and a committed `cosign.pub` that is no longer the publi
 `COSIGN_KEY` — each of which would otherwise surface as *signature verification failed* on every
 install, which reads as tampering rather than as our own pin having moved.
 
+The verifier image is declared once, as the `FROM` line of `build/cosign/Dockerfile`, by tag and
+digest, where Dependabot bumps it. `scripts/build-pithead.sh` writes the digest reference, without
+the tag, into `COSIGN_IMAGE` in the generated `pithead`; `scripts/cosign-image.sh` prints the same
+reference for the live-upgrade and fixture scripts. A second literal anywhere else fails the tier-1
+signing test.
+
+The digest is the security control, not housekeeping. Verifying release images by first pulling a
+verifier is itself an unverified pull. Pinned by digest, a hostile registry can serve only those
+exact bytes or fail the pull. On a tag it could serve a `cosign` that exits 0 on everything and turn
+the gate off. Treat a bump as a supply-chain change: review the Dependabot PR, and the preflight
+round trip above must pass on it.
+
 `pithead` verifies before it changes anything:
 
 - `pithead upgrade` on a release install with `cosign.pub` present verifies all five first-party
