@@ -170,7 +170,10 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      a random 32-character alphanumeric dashboard password and shows it once in the final handoff; if setup stops before then, read
      `dashboard.auth.password` from the owner-only `config.json`.
      To disable dashboard login, explicitly set `dashboard.auth.password` to an empty string in
-     **Advanced** or `config.json`; there is no no-login prompt.
+     **Advanced** or `config.json`; there is no no-login prompt. That login also turns on the
+     dashboard's [Configuration view](dashboard.md#configuration-view) — every logged-in machine
+     is configurable from the browser; set `dashboard.control.enabled` to `false` to keep
+     configuration on the command line.
    - **Merge-mine Tari? (beta)** Three answers: no, run the bundled Tari node here, or use a Tari
      node you already run. Tari runs on pre-release upstream software, so Enter means no. Yes
      downloads and syncs a Tari chain over Tor, which takes days. A yes asks for your Tari payout address, and "a node I already run" asks

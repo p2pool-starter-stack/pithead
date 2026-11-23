@@ -365,11 +365,7 @@ parse_and_validate_config() {
         esac
     fi
 
-    # Dashboard control channel (#33). Opt-in, default off. When on, the dashboard's Configuration
-    # view can stage config changes that the host-side runner (control-run-pending) validates and
-    # applies. That is a host-mutation channel that can change the payout wallet, so FAIL CLOSED:
-    # refuse to enable it on a dashboard with no login (mirrors the onion-without-password refusal).
-    DASHBOARD_CONTROL_ENABLED=$(normalize_bool "$(config_bool '.dashboard.control.enabled' false)")
+    DASHBOARD_CONTROL_ENABLED=$(normalize_bool "$(config_bool '.dashboard.control.enabled' "$(control_enabled_default)")")
     if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ -z "$dash_pw" ]; then
         error "dashboard.control.enabled is true but dashboard.auth.password is empty. Config editing from the dashboard can change the payout wallet and run '$0 apply' — it must sit behind a login. Set dashboard.auth.password and re-run."
     fi

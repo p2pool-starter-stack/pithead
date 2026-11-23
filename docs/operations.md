@@ -283,8 +283,8 @@ every two minutes, and alerts when the rules go missing while the stack runs. Se
 
 ## Editing config from the dashboard
 
-With `dashboard.control.enabled: true` (default off; needs a `dashboard.auth.password`), the
-dashboard gains a [Configuration view](dashboard.md#configuration-view) that stages config changes
+With `dashboard.control.enabled` on (the default whenever a `dashboard.auth.password` is set and any
+onion is client-authorized; set it to `false` to opt out), the dashboard gains a [Configuration view](dashboard.md#configuration-view) that stages config changes
 for a host-side runner. `apply` (and `setup`/`upgrade`) install two systemd units when dashboard
 control or `tor.auto_heal` is on, and remove them when both are off. With only auto-heal on,
 the host accepts only the three Tor healing requests; the Configuration view stays disabled:

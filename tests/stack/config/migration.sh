@@ -66,6 +66,39 @@ for mg_input in "$MG_DATA"/inputs/*.json; do
 done
 [ "$mg_checked" -ge 30 ] && ok "migration covered $mg_checked fixture and platform pairs" || bad "migration covered every fixture" "$mg_checked"
 
+MG_NOTICE="$MG/editor-notice"
+mkdir -p "$MG_NOTICE"
+cp "$MG_DATA/inputs/diy-login.json" "$MG_NOTICE/config.json"
+cp "$ROOT/VERSION" "$MG_NOTICE/VERSION"
+mg_notice="$(PITHEAD_APPLIANCE=0 run_sourced "$MG_NOTICE" migrate_config_to_2_1 2>&1)"
+assert_rc "a logged-in DIY config migrates" "$?" 0
+assert_eq "the first apply prints one settings-editor notice (#3579)" \
+    "$(printf '%s\n' "$mg_notice" | grep -c 'settings editor is now on')" "1"
+assert_contains "the notice says how to turn it off (#3579)" "$mg_notice" "dashboard.control.enabled to false"
+assert_eq "the migration writes no control key (#3579)" \
+    "$(jq -r 'if (.dashboard.control // null) == null then "absent" else "present" end' "$MG_NOTICE/config.json")" absent
+assert_eq "the migrated render turns the editor on (#3579)" \
+    "$(PITHEAD_APPLIANCE=0 run_sourced "$MG_NOTICE" control_enabled_default)" "true"
+mg_second="$(PITHEAD_APPLIANCE=0 run_sourced "$MG_NOTICE" migrate_config_to_2_1 2>&1)"
+assert_eq "the notice is printed once, not every apply (#3579)" \
+    "$(printf '%s\n' "$mg_second" | grep -c 'settings editor is now on')" "0"
+MG_NOTICE_SET="$MG/editor-notice-set"
+mkdir -p "$MG_NOTICE_SET"
+cp "$MG_DATA/inputs/appliance-control.json" "$MG_NOTICE_SET/config.json"
+cp "$ROOT/VERSION" "$MG_NOTICE_SET/VERSION"
+mg_set_notice="$(PITHEAD_APPLIANCE=0 run_sourced "$MG_NOTICE_SET" migrate_config_to_2_1 2>&1)"
+assert_eq "an explicit control value gets no notice (#3579)" \
+    "$(printf '%s\n' "$mg_set_notice" | grep -c 'settings editor is now on')" "0"
+MG_NOTICE_FALSE="$MG/editor-notice-explicit-false"
+mkdir -p "$MG_NOTICE_FALSE"
+jq '.dashboard.control={enabled:false}' "$MG_DATA/inputs/diy-login.json" >"$MG_NOTICE_FALSE/config.json"
+cp "$ROOT/VERSION" "$MG_NOTICE_FALSE/VERSION"
+mg_false_notice="$(PITHEAD_APPLIANCE=0 run_sourced "$MG_NOTICE_FALSE" migrate_config_to_2_1 2>&1)"
+assert_eq "an explicit false gets no editor notice (#3579)" \
+    "$(printf '%s\n' "$mg_false_notice" | grep -c 'settings editor is now on')" "0"
+assert_eq "the explicit false survives migration (#3579)" \
+    "$(jq -r '.dashboard.control.enabled' "$MG_NOTICE_FALSE/config.json")" "false"
+
 MG_DRY="$MG/dry"
 mkdir -p "$MG_DRY"
 cp "$MG_DATA/inputs/diy-login.json" "$MG_DRY/config.json"
