@@ -58,6 +58,10 @@ lifecycle_mining_diagnostics() {
             timeout --kill-after=2 10 systemctl show xmrig.service -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus" 2>&1 | tail -n 40
     } >>"$LIFECYCLE_MINER_DIAGNOSTICS" || true
 }
+lifecycle_guard_reason() {
+    rx "timeout --kill-after=2 15 docker compose logs --no-color --since ${1}s dashboard 2>&1" 2>/dev/null |
+        grep -o 'Mining work is not valid ([^)]*)' | tail -n1 | tr -d '\000-\011\013-\037\177'
+}
 lifecycle_mining_row() {
     if [ -n "${LIFECYCLE_MINER_ROWS:-}" ] && [ "$BASH_SUBSHELL" -gt "${LIFECYCLE_MINER_SHELL:-0}" ]; then
         printf '%s\037%s\037%s\037%s\n' "$1" "$2" "${3:-}" "${4:-}" >>"$LIFECYCLE_MINER_ROWS"
@@ -79,7 +83,7 @@ lifecycle_mining_flush() {
     : >"$LIFECYCLE_MINER_ROWS"
 }
 lifecycle_mining_step() {
-    local label=$1 before after names end rc=0
+    local label=$1 before after names end rc=0 bound guard detail
     shift
     lifecycle_mining_flush
     if [ "${SKIP_MINING_ASSERTS:-0}" = 1 ]; then
@@ -92,10 +96,14 @@ lifecycle_mining_step() {
         before=absent
         names=${LIFECYCLE_MINER_NAMES:-'[]'}
     else
-        end=$((SECONDS + ${BOUND_PRECONDITION:-60}))
+        bound=${BOUND_PRECONDITION:-360}
+        end=$((SECONDS + bound))
         until before=$(lifecycle_proxy_started) && names=$(lifecycle_worker_set); do
             [ "$SECONDS" -lt "$end" ] && sleep 5 && continue
-            lifecycle_mining_row fail "$label mining precondition" "proxy inspection or live worker set unreadable"
+            detail="proxy inspection or live worker set unreadable after ${bound}s"
+            guard=$(lifecycle_guard_reason $((bound + 30))) || guard=
+            [ -z "$guard" ] || detail+="; the dashboard mining guard was active (#4046): $guard"
+            lifecycle_mining_row fail "$label mining precondition" "$detail"
             lifecycle_mining_diagnostics "$label precondition"
             return 1
         done

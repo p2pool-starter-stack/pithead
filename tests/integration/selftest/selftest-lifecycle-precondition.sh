@@ -17,7 +17,11 @@ lifecycle_worker_set() {
     echo >>"$work/reads"
     [ "$(wc -l <"$work/reads")" -gt "$FAIL_READS" ] && printf '["local"]'
 }
-lifecycle_mining_row() { rows+="$1:$2;"; }
+lifecycle_mining_row() {
+    rows+="$1:$2;"
+    row_detail=$3
+}
+lifecycle_guard_reason() { printf '%s' "${GUARD_REASON:-}"; }
 sleep() { SECONDS=$((SECONDS + $1)); }
 step() { ran=$((ran + 1)); }
 lifecycle_mining_step restart step
@@ -28,3 +32,18 @@ ran=0 FAIL_READS=999 BOUND_PRECONDITION=12
 if lifecycle_mining_step restart step; then exit 1; fi
 [ "$ran" = 0 ] && [ "$rows" = 'fail:restart mining precondition;' ] && [ "$(wc -l <"$work/reads")" -le 4 ]
 printf '%s\n' 'PASS: a precondition read that keeps failing ends in the original fail row after the bound'
+[[ "$row_detail" == *'unreadable after 12s'* && "$row_detail" != *guard* ]]
+printf '%s\n' 'PASS: the failure row carries the bound and no guard claim when the dashboard logged none'
+rows='' ran=0 FAIL_READS=40
+: >"$work/reads"
+unset BOUND_PRECONDITION
+start=$SECONDS
+lifecycle_mining_step restart step
+[ "$ran" = 1 ] && [ -z "$rows" ] && [ $((SECONDS - start)) -ge 200 ]
+printf '%s\n' 'PASS: a proxy held down for 200 s by the mining guard is waited out by the default bound'
+: >"$work/reads"
+rows='' ran=0 FAIL_READS=999 BOUND_PRECONDITION=12 GUARD_REASON='Mining work is not valid (P2Pool reports monerod is not synchronized)'
+if lifecycle_mining_step restart step; then exit 1; fi
+[ "$ran" = 0 ] && [ "$rows" = 'fail:restart mining precondition;' ]
+[[ "$row_detail" == *'unreadable after 12s'* && "$row_detail" == *'mining guard was active (#4046)'* && "$row_detail" == *'monerod is not synchronized'* ]]
+printf '%s\n' 'PASS: the failure row carries the bound and names the guard when the dashboard logged it'

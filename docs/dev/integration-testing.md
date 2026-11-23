@@ -910,6 +910,12 @@ and `no_rig: true` for its bench-ci proof; the required safety backup runs autom
 
 For one representative config:
 
+- The mining precondition before each mutating `pithead` verb reads the proxy's worker list and
+  retries for `BOUND_PRECONDITION` (default 360 seconds), which covers the #4046 guard holding
+  xmrig-proxy stopped after a restore (90 s grace, 120 s log window, 60 s clear period). When it
+  still fails, the row names the bound and, if the dashboard logged "Mining work is not valid"
+  within that window, the guard's reason. `selftest-lifecycle-precondition.sh` covers a 200-second
+  hold and both failure texts.
 - On an appliance with local mining enabled, reset recovery binds the nonempty online worker set
   before backup, including the host miner identity read from its deployed configuration. After
   encrypted restore and `up`, it requires that set to reconnect within 480 seconds and each worker
