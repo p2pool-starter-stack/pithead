@@ -87,7 +87,7 @@ build_authority() {
             -i keys/authority_identity_key -s keys/authority_signing_key -c keys/authority_certificate \
             -a $auth_ip:9030
         printf 'TestingTorNetwork 1\nDataDirectory /var/lib/tor\nNickname tgauth\nAddress $auth_ip\nORPort 9001\nDirPort 9030\nSocksPort 0\n' >probe-torrc
-        tor -f probe-torrc --list-fingerprints >&2
+        tor -f probe-torrc --list-fingerprint >&2
         printf 'V3 %s\n' \"\$(awk '/^fingerprint /{print \$2}' keys/authority_certificate)\"
         printf 'FP %s\n' \"\$(cut -d' ' -f2- fingerprint | tr -d ' ')\"
         chown -R tor:tor /var/lib/tor
