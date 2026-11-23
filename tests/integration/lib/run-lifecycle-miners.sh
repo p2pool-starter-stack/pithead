@@ -59,8 +59,13 @@ lifecycle_mining_diagnostics() {
     } >>"$LIFECYCLE_MINER_DIAGNOSTICS" || true
 }
 lifecycle_guard_reason() {
-    rx "timeout --kill-after=2 15 docker compose logs --no-color --since ${1}s dashboard 2>&1" 2>/dev/null |
-        grep -o 'Mining work is not valid ([^)]*)' | tail -n1 | tr -d '\000-\011\013-\037\177'
+    local log reason
+    log=$(rx "timeout --kill-after=2 15 docker compose logs --no-color --since ${1}s dashboard 2>&1" 2>/dev/null) || {
+        printf 'the dashboard log was unreadable, so the mining guard state is unknown'
+        return 0
+    }
+    reason=$(printf '%s\n' "$log" | grep -o 'Mining work is not valid ([^)]*)' | tail -n1 | tr -d '\000-\011\013-\037\177' | redact) || reason=
+    [ -z "$reason" ] || printf 'the dashboard mining guard was active (#4046): %s' "$reason"
 }
 lifecycle_mining_row() {
     if [ -n "${LIFECYCLE_MINER_ROWS:-}" ] && [ "$BASH_SUBSHELL" -gt "${LIFECYCLE_MINER_SHELL:-0}" ]; then
@@ -101,8 +106,8 @@ lifecycle_mining_step() {
         until before=$(lifecycle_proxy_started) && names=$(lifecycle_worker_set); do
             [ "$SECONDS" -lt "$end" ] && sleep 5 && continue
             detail="proxy inspection or live worker set unreadable after ${bound}s"
-            guard=$(lifecycle_guard_reason $((bound + 30))) || guard=
-            [ -z "$guard" ] || detail+="; the dashboard mining guard was active (#4046): $guard"
+            guard=$(lifecycle_guard_reason $((bound + 30)))
+            [ -z "$guard" ] || detail+="; $guard"
             lifecycle_mining_row fail "$label mining precondition" "$detail"
             lifecycle_mining_diagnostics "$label precondition"
             return 1
