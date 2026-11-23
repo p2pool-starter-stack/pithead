@@ -148,6 +148,7 @@ apply_tor_egress_firewall() {
         fi
         [ "${1:-}" = refresh ] || provision_tor_egress_boot_unit "$subnet" "$tor_ip" "${sync_ips[@]}"
     fi
+    apply_host_egress_audit || true
     [ "${1:-}" = refresh ] || provision_egress_sync_runner || return 1
     [ "${1:-}" != refresh ] || return "$applied"
     return 0

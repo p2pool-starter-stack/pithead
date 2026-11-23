@@ -59,9 +59,22 @@ reports and never bumps: a Tari or
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
 
+Four pins that no Dependabot ecosystem can read are bumped by `.github/workflows/pin-bump.yml`, which runs
+daily and on `workflow_dispatch` (a dispatch defaults to a dry run that only reports). For each of the
+`monero`, `p2pool` and `xmrig-proxy` ARG pairs and the appliance's `RIGFORGE_REF`,
+`scripts/watch/pin-bump.sh` reads the latest stable upstream release, downloads the asset and
+refuses to go on unless its sha256 equals the digest GitHub publishes for it (Monero: the entry in
+`hashes.txt`, whose signature is not verified), then opens one `dependencies`-labelled PR per upstream
+version that moves the version and hash together, so a stale hash never lands. `RIGFORGE_REF` is
+resolved from the release tag to its commit. Monero only moves within its pinned minor: a release in
+a new minor is reported and never proposed, because that move stays a human decision (#1129). The Actions token
+opens these PRs, so they trigger no checks of their own: a maintainer pushes to the branch to start
+tiers 1 to 3, and the PR body names the `tier4-e2e` or `tier4-kvm` proof it needs before merge. A newer
+release supersedes the open PR for an older one of the same component, and a closed PR is taken as declined.
+
 Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
 sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
-them and the watch reports newer versions, not advisories (#4277). Bumping any of the three checks
+them and the watch reports newer versions, not advisories (#4277). Bumping any of the three, by hand or from a pin-bump PR, checks
 the upstream release notes and security advisories for the new version, and records that check in
 the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
 the bump.

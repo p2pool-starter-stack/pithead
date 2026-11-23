@@ -32,7 +32,13 @@ from mining_dashboard.config.config import (
     XVB_STANDBY_INTERVAL_S,
     XVB_STANDBY_SOURCE,
 )
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_DASHBOARD,
+    bounded_get,
+    proxy_map,
+    purpose_proxy,
+    request_failure_class,
+)
 from mining_dashboard.service.network.egress import LOCAL, _xvb_standby_route
 
 logger = logging.getLogger("XvbStandby")
@@ -85,10 +91,7 @@ class XvbStandbyPuller:
         return (
             None
             if _xvb_standby_route(self.source) == LOCAL
-            else {
-                "http": TOR_SOCKS_PROXY,
-                "https": TOR_SOCKS_PROXY,
-            }
+            else proxy_map(purpose_proxy(TOR_SOCKS_PROXY, PROXY_PURPOSE_DASHBOARD))
         )
 
     def fetch_once(self) -> dict | None:
@@ -108,7 +111,7 @@ class XvbStandbyPuller:
                 return None
             standby = parse_standby(resp.json())
         except (requests.RequestException, ValueError) as e:
-            logger.debug("Standby pull failed (kept silent): %s", e)
+            logger.debug("Standby pull failed (kept silent): %s", request_failure_class(e))
             return None
         if standby is None:
             return None
