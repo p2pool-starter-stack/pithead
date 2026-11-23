@@ -152,6 +152,7 @@ test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|inactive_guidance
 test-control-editable-allowlist.sh|k
 test-control-editable-allowlist.sh|target_profile
+test-control-perimeter-tier3.sh|gate_who
 test-control-perimeter-tier3.sh|label
 test-control-secret-and-dial-guards.sh|EDIT
 test-control-secret-and-dial-guards.sh|HOOKS
