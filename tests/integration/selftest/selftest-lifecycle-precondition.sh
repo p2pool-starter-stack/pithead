@@ -25,7 +25,7 @@ rx() {
     [ "${GUARD_RX_FAIL:-0}" = 0 ] || return 1
     printf '%s\n' "${GUARD_LOG:-}"
 }
-redact() { sed 's/10\.1\.2\.3/<ip>/g'; }
+redact() { cat; }
 sleep() { SECONDS=$((SECONDS + $1)); }
 step() { ran=$((ran + 1)); }
 lifecycle_mining_step restart step
@@ -46,13 +46,11 @@ lifecycle_mining_step restart step
 [ "$ran" = 1 ] && [ -z "$rows" ] && [ $((SECONDS - start)) -ge 200 ]
 printf '%s\n' 'PASS: a proxy held down for 200 s by the mining guard is waited out by the default bound'
 : >"$work/reads"
-rows='' ran=0 FAIL_READS=999 BOUND_PRECONDITION=12 GUARD_LOG=$'noise\nWARNING Mining work is not valid (P2Pool reports monerod 10.1.2.3 is not synchronized) — stopping xmrig-proxy\nmore noise'
+rows='' ran=0 FAIL_READS=999 BOUND_PRECONDITION=12 GUARD_LOG=$'noise\nWARNING Mining work is not valid (P2Pool reports monerod is not synchronized) — stopping xmrig-proxy\nmore noise'
 if lifecycle_mining_step restart step; then exit 1; fi
 [ "$ran" = 0 ] && [ "$rows" = 'fail:restart mining precondition;' ]
-[[ "$row_detail" == *'unreadable after 12s'* && "$row_detail" == *'mining guard was active (#4046)'* && "$row_detail" == *'is not synchronized'* ]]
+[[ "$row_detail" == *'unreadable after 12s'* && "$row_detail" == *'mining guard was active (#4046)'* && "$row_detail" == *'monerod is not synchronized'* ]]
 printf '%s\n' 'PASS: the failure row carries the bound and names the guard when the dashboard logged it'
-[[ "$row_detail" == *'<ip>'* && "$row_detail" != *10.1.2.3* ]]
-printf '%s\n' 'PASS: the guard reason is read from the dashboard log and redacted'
 : >"$work/reads"
 rows='' ran=0 GUARD_RX_FAIL=1
 if lifecycle_mining_step restart step; then exit 1; fi

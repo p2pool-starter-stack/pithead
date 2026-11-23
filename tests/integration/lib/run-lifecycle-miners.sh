@@ -64,8 +64,8 @@ lifecycle_guard_reason() {
         printf 'the dashboard log was unreadable, so the mining guard state is unknown'
         return 0
     }
-    reason=$(printf '%s\n' "$log" | grep -o 'Mining work is not valid ([^)]*)' | tail -n1 | tr -d '\000-\011\013-\037\177' | redact) || reason=
-    [ -z "$reason" ] || printf 'the dashboard mining guard was active (#4046): %s' "$reason"
+    reason=$(printf '%s\n' "$log" | grep -o 'Mining work is not valid ([^)]*)' | tail -n1 | tr -d '\000-\011\013-\037\177') || reason=
+    [ -z "$reason" ] || printf 'the dashboard mining guard was active (#4046): %s' "$(printf '%s' "$reason" | redact)"
 }
 lifecycle_mining_row() {
     if [ -n "${LIFECYCLE_MINER_ROWS:-}" ] && [ "$BASH_SUBSHELL" -gt "${LIFECYCLE_MINER_SHELL:-0}" ]; then
