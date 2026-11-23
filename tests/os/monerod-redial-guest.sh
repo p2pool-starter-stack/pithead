@@ -5,7 +5,6 @@ epoch=$(date +%s)
 table=pithead_t4157
 redial_pattern='Restarting monerod to re-dial its peers through Tor'
 cap_pattern='monerod restarts are held: all 3 automatic restarts'
-tor_start_stranded=1
 peers_out() {
     docker inspect monerod --format '{{json .State.Health.Log}}' 2>/dev/null | jq -r '
         ((.[-1].Output // "") | split("\n") | map(select(startswith("pithead-monero-peers "))) | .[0] // "") as $line |
@@ -80,7 +79,7 @@ has_peers() {
 }
 no_peers() { [ "$(peers_out)" = 0 ]; }
 monerod_restarted() { [ "$(started_at monerod)" != "$1" ]; }
-restarted_or_recovered() { monerod_restarted "$before" || has_peers; }
+tor_healthy() { [ "$(docker inspect tor --format '{{.State.Health.Status}}' 2>/dev/null || true)" = healthy ]; }
 cap_announced() { [ -n "$(cap_lines)" ]; }
 strand() {
     local pid prefix
@@ -123,30 +122,22 @@ monerod_restarted "$before"
 echo 'PASS: the dashboard restarts monerod through the appliance container control path (#4157)'
 stage=recover-after-control-path
 recover
-stage=tor-restart
+stage=tor-restart-strand
 before=$(started_at monerod)
 tor_before=$(started_at tor)
+strand
+wait_for 900 no_peers
+stage=tor-restart
 docker restart tor >/dev/null
 [ "$(started_at tor)" != "$tor_before" ]
-if ! wait_for 240 no_peers; then
-    tor_start_stranded=0
-    echo 'NOTE: monerod kept or regained peers on its own after the Tor restart; nothing stranded' >&2
-fi
-if [ "$tor_start_stranded" = 1 ]; then
-    stage=tor-restart-redial
-    wait_for 1500 restarted_or_recovered
-    if ! monerod_restarted "$before"; then
-        tor_start_stranded=0
-        echo 'NOTE: monerod regained peers before the re-dial settle window ended; nothing stranded' >&2
-    fi
-fi
-if [ "$tor_start_stranded" = 1 ]; then
-    [ "$(spent)" -ge 1 ]
-    audit_rows | grep -q '^applied monerod tor-start'
-    stage=tor-restart-recovery
-    recover
-    echo 'PASS: monerod is re-dialled after a Tor restart outside the healer and returns to outgoing peers (#4157)'
-fi
+wait_for 600 tor_healthy
+stage=tor-restart-redial
+wait_for 900 monerod_restarted "$before"
+[ "$(spent)" -eq 1 ]
+audit_rows | grep -q '^applied monerod tor-start$'
+stage=tor-restart-recovery
+recover
+echo 'PASS: monerod stranded across a Tor restart outside the healer is re-dialled once Tor is healthy and returns to outgoing peers (#4157)'
 while [ "$(spent)" -lt 3 ]; do
     stage=peerless-strand
     wait_for 900 has_peers
@@ -189,4 +180,3 @@ unstrand
 [ "$(stat -c %i "$mdb")" = "$mdb_inode" ]
 [ "$(jq -r '.monero.wallet_address' config.json)" = "$wallet" ]
 echo 'PASS: P2Pool, the chain data and the payout identity are untouched (#4157)'
-[ "$tor_start_stranded" = 1 ] || exit 78

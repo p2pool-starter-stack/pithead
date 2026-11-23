@@ -13,10 +13,6 @@ phase_monerod_redial() {
     case "$rc" in
     0) ok "guest monerod is re-dialled or restarted within bounds after a Tor restart and a peerless strand (#4157)" ;;
     77) it_skip_leg "monerod-redial: monerod running with outgoing peers (#4157)" "the guest monerod never had outgoing peers" missing ;;
-    78)
-        ok "guest peerless monerod restart, cooldown, daily cap and safety hold (#4157)"
-        it_skip_leg "monerod-redial: strand monerod with a Tor restart (#4157)" "monerod regained peers on its own after the Tor restart" missing
-        ;;
     *)
         printf 'Guest stderr: %s\n' "$(tr -d '\r' <"$SSH_ERR" 2>/dev/null | os_redact_addr | tail -c 2048)"
         bad "guest monerod re-dial, peerless restart, cooldown, daily cap or safety failed (#4157)"

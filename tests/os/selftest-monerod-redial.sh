@@ -29,10 +29,6 @@ provision_rc=0 guest_rc=77
 phase_monerod_redial
 grep -q '|missing$' "$work/skip"
 [ "$(wc -l <"$work/pass" | tr -d ' ')" = 1 ]
-guest_rc=78
-phase_monerod_redial
-[ "$(wc -l <"$work/pass" | tr -d ' ')" = 2 ]
-[ "$(wc -l <"$work/skip" | tr -d ' ')" = 2 ]
 guest_rc=17
 SSH_ERR="$work/ssh-err"
 echo 'monerod redial guest failed at cooldown-hold (line 1, exit 17)' >"$SSH_ERR"
