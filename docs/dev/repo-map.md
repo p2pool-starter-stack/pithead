@@ -387,6 +387,8 @@ to prove saturated-history recovery and the disabled control with production tim
 The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
 zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
 cuts a live P2Pool's peers.
+The opt-in KVM `monerod-redial` phase streams `monerod-redial-guest.sh` into a guest to prove the dashboard's
+monerod re-dial after a Tor restart, the peerless restart, its cooldown and daily cap through the appliance control path.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,

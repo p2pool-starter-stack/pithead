@@ -40,6 +40,18 @@ inside the dashboard container against zero-peer stats and the real container co
 P2Pool container to restart and be running. Peer-loss detection itself is proved by the `fault-injection` e2e leg.
 `selftest-pool-heal.sh` exercises the phase wrapper without a guest.
 
+The opt-in `monerod-redial` phase (#4157) provisions a local-node guest and strands only that guest's monerod. It runs the
+dashboard's `MonerodRedial` restart in the dashboard container against the real container control path, restarts the Tor
+container outside the healer, then repeats a peerless strand until the three-restart daily budget is spent. A strand
+rejects monerod's SOCKS connections to Tor from inside monerod's own network namespace, so Tor stays healthy and the block
+disappears with the restarted container. It requires: a re-dial (log line, `monerod-redial` audit row, outgoing peers
+back) after the Tor restart; one restart per strand, audited and recovered; no restart inside the 30-minute cooldown
+while the verdict is peerless; a held fourth restart announced once; and an unchanged P2Pool start, `data.mdb` inode and
+payout address. A scratch guest cannot hold a synced chain, so recovery is judged on outgoing peers, not `synchronized`.
+Exit 77 (monerod never has peers) is a counted `missing` skip; exit 78 (monerod regained peers by itself after the Tor
+restart) skips only that row. The phase takes about two to four hours: submit it with `--timeout-minutes 360`.
+`selftest-monerod-redial.sh` exercises the wrapper and the guest's peer parsing without a guest.
+
 The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
 It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
 with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery
