@@ -26,7 +26,11 @@ if [ "${1:-}" = "--self-test" ]; then
 
 EOFS
     _count="$(grep -cE '^    [a-zA-Z0-9]' "$_tmp" || true)"
-    [ "$_count" -eq 2 ] || { echo "self-test FAIL: expected 2 package lines, got $_count"; rm -f "$_tmp"; exit 1; }
+    [ "$_count" -eq 2 ] || {
+        echo "self-test FAIL: expected 2 package lines, got $_count"
+        rm -f "$_tmp"
+        exit 1
+    }
     rm -f "$_tmp"
     echo "  self-test ok: manifest parser handles stubbed data"
 
@@ -34,7 +38,8 @@ EOFS
     echo 'bad line' >"$_bad"
     if bash "$ROOT/scripts/release/capture-packages.sh" --from-file "$_bad" >/dev/null 2>&1; then
         echo "self-test FAIL: parse_file should reject bad format"
-        rm -f "$_tmp" "$_bad"; exit 1
+        rm -f "$_tmp" "$_bad"
+        exit 1
     fi
     rm -f "$_tmp" "$_bad"
     echo "  self-test ok: parse_file rejects malformed input"
