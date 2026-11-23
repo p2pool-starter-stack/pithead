@@ -18,6 +18,7 @@ class TestPayoutSync:
         sm = StateManager(db_path=":memory:")
         svc = DataService(sm, MagicMock(), MagicMock())
         svc.wallet_client = MagicMock()
+        svc.wallet_client.payout_addresses.return_value = ["fixture-wallet"]
         svc.alert_service.payout_confirmed_alert = AsyncMock(return_value="sent")
         return svc, sm
 

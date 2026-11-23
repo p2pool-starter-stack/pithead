@@ -128,6 +128,13 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
 - Rig upgrade, Adopt rig, Backup, the onion client-key request and the service diagnostics show the
   same stale-page message and reload instead of `HTTP 401`, `HTTP 403` or a browser network error, and
   show the server's text for other failures (#4059).
+- Payout confirmation skips a scan when the view-only wallet does not hold the configured payout address,
+  so an address change no longer files the old wallet's payouts under the new address or alerts on them.
+- XvB request failures no longer write the payout address or the submit URL into the dashboard log.
+- The setup wizard keeps a worker's `api_token` instead of dropping it.
+- The setup wizard's failed screen no longer breaks when the host's error text ends in a cut-off character.
+- A failed write when applying a configuration change from the dashboard returns a server error and is
+  logged, instead of reporting "Body must be JSON".
 - Tor's `MaxClientCircuitsPending` is raised to 64 and `monero.out_peers` now defaults to 24 (was 48),
   so monerod, Tari and P2Pool onion dials no longer sit at Tor's pending-circuit ceiling right after
   boot. A `config.json` without `monero.out_peers` re-renders at 24 on the next apply; an explicit value
