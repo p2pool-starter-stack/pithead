@@ -298,6 +298,7 @@ main() {
     WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
     test_gate
     build_images
+    capture_packages
     stage_push
     smoke_test
     promote
