@@ -8,26 +8,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-miners.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
-lifecycle_config_version_ok() {
-    local stamp code_version a b
-    stamp=$(rx 'jq -r ".config_version // empty" config.json 2>/dev/null') || stamp=""
-    code_version=$(rx 'tr -d " \t\r\n" < VERSION 2>/dev/null') || code_version=""
-    [ -n "$stamp" ] && [ -n "$code_version" ] || return 0
-    printf '%s' "$stamp" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$' || return 0
-    printf '%s' "$code_version" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$' || return 0
-    a=$(printf '%s' "${stamp#v}" | awk -F. '{printf "%d%05d%05d",$1,$2,$3}')
-    b=$(printf '%s' "${code_version#v}" | awk -F. '{printf "%d%05d%05d",$1,$2,$3}')
-    [ "$a" -gt "$b" ] || return 0
-    local tmp
-    tmp=$(rx 'mktemp config.json.XXXXXXXXXX') || return 1
-    if rx "jq --arg v '$code_version' '.config_version = $v' config.json > '$tmp'" &&
-        rx "mv '$tmp' config.json"; then
-        BASELINE_CONFIG="$(rx 'cat config.json')"
-    else
-        rx "rm -f '$tmp'"
-    fi
-}
-
+# shellcheck source=tests/integration/lib/normalize-config-version.sh
+source "$(dirname "${BASH_SOURCE[0]}")/normalize-config-version.sh" || exit $?
 _run_lifecycle() {
     lifecycle_stopped() {
         IT_LC_STEP=$1
@@ -135,7 +117,7 @@ _run_lifecycle() {
     fi
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_selfcheck_run_logged "$rt_dir" || lifecycle_ok=0
-    lifecycle_config_version_ok
+    _normalize_config_version && BASELINE_CONFIG="$(rx 'cat config.json')"
     it_step "backup → restore round-trip…"
     if it_run_logged "$rt_dir" backup pithead backup -y --no-encrypt; then
         local arch
@@ -421,18 +403,17 @@ _pred_tor_healthy() {
     [ "$(svc_state_of "$s")" = "running" ] && { [ "$(svc_health_of "$s")" = "healthy" ] || [ "$(svc_health_of "$s")" = "none" ]; }
 }
 
-READMIT_BOUND_SEC=150
 prove_readmit_after_recreate() {
     if ! wait_for 600 10 "guarded services healthy after the pool recreate (#4166)" _pred_guarded_services_healthy; then
         it_fail "guarded services healthy after the pool recreate (#4166)" \
             "monerod, p2pool or tor did not report healthy within 600s of the pool recreate"
         return 0
     fi
-    if wait_for "$READMIT_BOUND_SEC" 5 "xmrig-proxy running within the readmission bound (#4166)" _pred_proxy_running; then
+    if wait_for 150 5 "xmrig-proxy running within the readmission bound (#4166)" _pred_proxy_running; then
         it_pass "xmrig-proxy running within the readmission bound after the pool recreate (#4166)"
     else
         it_fail "xmrig-proxy running within the readmission bound after the pool recreate (#4166)" \
-            "xmrig-proxy still not running ${READMIT_BOUND_SEC}s after monerod, p2pool and tor reported healthy; dashboard reason lines:"
+            "xmrig-proxy still not running 150s after monerod, p2pool and tor reported healthy; dashboard reason lines:"
         rx "timeout 30 docker compose logs --no-color --since 60m dashboard 2>&1 | grep -a -e 'not valid' -e 'readmit' -e 'holding' | tail -n 5" 2>/dev/null |
             redact | sed 's/^/        /'
     fi

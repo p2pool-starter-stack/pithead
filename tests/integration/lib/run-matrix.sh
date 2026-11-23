@@ -99,25 +99,9 @@ preflight() {
     record_manifest
 
     # Snapshot the baseline so we can restore it and compare secrets later.
-    local _cv_stamp _cv_code
-    _cv_stamp=$(rx 'jq -r ".config_version // empty" config.json 2>/dev/null') || _cv_stamp=""
-    _cv_code=$(rx 'tr -d " \t\r\n" < VERSION 2>/dev/null') || _cv_code=""
-    if [ -n "$_cv_stamp" ] && [ -n "$_cv_code" ]; then
-        local _a _b
-        _a=$(printf '%s' "${_cv_stamp#v}" | awk -F. '{printf "%d%05d%05d",$1,$2,$3}')
-        _b=$(printf '%s' "${_cv_code#v}" | awk -F. '{printf "%d%05d%05d",$1,$2,$3}')
-        if [ "$_a" -gt "$_b" ]; then
-            local _tmp
-            _tmp=$(rx 'mktemp config.json.XXXXXXXXXX') || _tmp=""
-            if [ -n "$_tmp" ] &&
-                rx "jq --arg v '$_cv_code' '.config_version = $v' config.json > '$_tmp'" &&
-                rx "mv '$_tmp' config.json"; then
-                it_log "Normalized config_version stamp $(_cv_stamp) → $(_cv_code)"
-            else
-                rx "rm -f '$_tmp'" 2>/dev/null || true
-            fi
-        fi
-    fi
+    # shellcheck source=tests/integration/lib/normalize-config-version.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/normalize-config-version.sh" || exit $?
+    _normalize_config_version
     BASELINE_CONFIG="$(rx 'cat config.json')"
     BASELINE_PRUNE="$(env_on_box MONERO_PRUNE)" # 1 = pruned, 0 = full
     # shellcheck disable=SC2034  # shared through the assembled runner scope
