@@ -8,8 +8,8 @@ RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && 
 
 # Define Monero version and SHA256 hash for binary verification
 # Refer to https://www.getmonero.org/downloads/hashes.txt for validation
-ARG MONERO_VERSION=v0.18.5.1
-ARG MONERO_HASH=22a7dda7b0cb699fdd6b7674c3b4a4465b337cc98a54983523b759e1e7cc9958
+ARG MONERO_VERSION=v0.18.5.4
+ARG MONERO_HASH=ba2928962c101b609434bf8c1b43ad59ebe96c5525977284ca599d8bf0f02d10
 
 # Download, verify integrity, and install the Monero daemon (monerod) plus monero-wallet-rpc.
 # monero-wallet-rpc ships in the SAME CLI tarball (already verified by the hash above), so the

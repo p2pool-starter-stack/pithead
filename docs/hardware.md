@@ -70,7 +70,7 @@ Both chains keep growing; ~100+ GB/year combined is a planning estimate, not a m
 That's why the table lists a 600 GB minimum and
 recommends more: for a set-and-forget host, put it on a 2–4 TB SSD. In September 2026, a Monero node
 synced from genesis with pruning enabled consumed 285.8 GB. Its first startup logged the branch that
-Monero 0.18.5.1 enters only when the database has no pruning seed; that branch runs the prune
+The Monero 0.18.5.1 then running enters only when the database has no pruning seed; that branch runs the prune
 operation, which writes the seed, before synchronization starts
 ([core](https://github.com/monero-project/monero/blob/v0.18.5.1/src/cryptonote_core/cryptonote_core.cpp#L723-L734),
 [LMDB](https://github.com/monero-project/monero/blob/v0.18.5.1/src/blockchain_db/lmdb/db_lmdb.cpp#L2049-L2101)).
