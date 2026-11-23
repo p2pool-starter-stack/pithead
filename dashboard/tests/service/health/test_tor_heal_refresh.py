@@ -383,4 +383,6 @@ async def test_circuits_completing_means_no_action():
     with p_submit, p_result:
         await _run_rounds(healer, now, 4)
     assert submits == []
+    assert (healer._attempts, healer._failing_since) == (0, None)
+    healer._docker.stop.assert_not_awaited()
     assert healer._guard_rotated is False
