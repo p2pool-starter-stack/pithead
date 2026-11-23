@@ -9,8 +9,8 @@ import sqlite3
 import sys
 import time
 
-SETTLE_SEC = 120
 PERMANENT = ("blocks", "payouts", "disk_growth", "worker_config", "raffle_wins")
+# audit_events is pruned at 30 days on an ISO-text ts (#2393); rows it cannot date are never pruned.
 AUDIT_TS_SHAPE = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z"
 RETAINED = {
     "history": ("timestamp", 30 * 86400),
@@ -68,7 +68,7 @@ def snapshot(conn, epoch, require_current=False):
         f"audit_events {hashlib.sha256(row_bytes(row)).hexdigest()}"
         for row in conn.execute(
             "SELECT * FROM audit_events WHERE ts NOT GLOB ? OR (ts >= ? AND ts <= ?)",
-            (AUDIT_TS_SHAPE, iso(epoch - 30 * 86400 + 7200), iso(epoch - SETTLE_SEC)),
+            (AUDIT_TS_SHAPE, iso(epoch - 30 * 86400 + 7200), iso(epoch)),
         )
     )
     for table, (time_col, retention) in RETAINED.items():
@@ -76,7 +76,7 @@ def snapshot(conn, epoch, require_current=False):
             row_bytes(row)
             for row in conn.execute(
                 f"SELECT * FROM {table} WHERE {time_col} >= ? AND {time_col} <= ?",
-                (epoch - retention + 7200, epoch - SETTLE_SEC),
+                (epoch - retention + 7200, epoch),
             )
         )
         digest = hashlib.sha256(b"\n".join(rows)).hexdigest()
@@ -129,9 +129,9 @@ if sys.argv[1:] == ["--self-test"]:
             raise RuntimeError(f"a lost {lost} audit row was accepted")
         db.execute("ROLLBACK TO audit")
         db.execute("RELEASE audit")
-    before = snapshot(db, 100 + SETTLE_SEC)
+    before = snapshot(db, 100)
     try:
-        snapshot(db, 100 + SETTLE_SEC, require_current=True)
+        snapshot(db, 100, require_current=True)
     except RuntimeError:
         pass
     else:
@@ -140,22 +140,14 @@ if sys.argv[1:] == ["--self-test"]:
         "CREATE TABLE worker_config_revision (worker TEXT, revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT)"
     )
     db.execute("INSERT INTO worker_config_revision VALUES ('rig', 'first', NULL, 100, NULL)")
-    current = snapshot(db, 100 + SETTLE_SEC, require_current=True)
+    current = snapshot(db, 100, require_current=True)
     db.execute("UPDATE worker_config_revision SET revision='later', ts=101")
-    if current != snapshot(db, 100 + SETTLE_SEC, require_current=True):
+    if current != snapshot(db, 100, require_current=True):
         raise RuntimeError("live worker revision observations were treated as durable rows")
-    db.execute("INSERT INTO shares VALUES (?, 'late')", (100 + SETTLE_SEC - 10,))
-    if before != snapshot(db, 100 + SETTLE_SEC):
-        raise RuntimeError("a backdated share recorded after the snapshot changed the digest")
-    for ts, counted in ((100, True), (100 + 1, False)):
-        db.execute("INSERT INTO shares VALUES (?, 'edge')", (ts,))
-        if counted == (before == snapshot(db, 100 + SETTLE_SEC)):
-            raise RuntimeError(f"settle boundary misplaced at ts={ts}")
-        db.execute("DELETE FROM shares WHERE value='edge'")
     db.execute("INSERT INTO blocks VALUES (101, 'added')")
     db.execute("INSERT INTO history VALUES (101, 'added')")
     db.execute("UPDATE kv_store SET value='101' WHERE key='xvb_last_update'")
-    after = snapshot(db, 100 + SETTLE_SEC)
+    after = snapshot(db, 100)
     if not set(before.splitlines()) <= set(after.splitlines()):
         raise RuntimeError("preserved rows disappeared from the snapshot")
     db.execute("INSERT INTO shares VALUES (50, 'old')")
@@ -173,10 +165,10 @@ if sys.argv[1:] == ["--self-test"]:
         raise RuntimeError("a lost old share row was accepted")
     db.execute("DELETE FROM shares")
     db.execute("UPDATE kv_store SET value='corrupt' WHERE key='payout_wallet'")
-    if set(before.splitlines()) <= set(snapshot(db, 100 + SETTLE_SEC).splitlines()):
+    if set(before.splitlines()) <= set(snapshot(db, 100).splitlines()):
         raise RuntimeError("stable kv_store corruption was accepted")
     db.execute("UPDATE kv_store SET value='not-a-number' WHERE key='xvb_last_update'")
-    if set(after.splitlines()) <= set(snapshot(db, 100 + SETTLE_SEC).splitlines()):
+    if set(after.splitlines()) <= set(snapshot(db, 100).splitlines()):
         raise RuntimeError("volatile kv_store schema corruption was accepted")
     raise SystemExit(0)
 
