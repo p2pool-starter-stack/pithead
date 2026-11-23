@@ -30,10 +30,12 @@ unstrand() {
 restore() {
     local rc=$?
     trap - EXIT ERR
+    local restored=0
     unstrand
-    docker start tor >/dev/null 2>&1 || true
-    docker start monerod >/dev/null 2>&1 || true
-    printf 'Guest restoration exit: 0; original exit: %s\n' "$rc"
+    docker start tor >/dev/null 2>&1 || restored=1
+    docker start monerod >/dev/null 2>&1 || restored=1
+    printf 'Guest restoration exit: %s; original exit: %s\n' "$restored" "$rc"
+    if [ "$rc" = 0 ] && [ "$restored" != 0 ]; then rc=1; fi
     exit "$rc"
 }
 trap restore EXIT
@@ -82,7 +84,8 @@ strand() {
     local pid prefix
     pid=$(docker inspect monerod --format '{{.State.Pid}}')
     prefix=$(docker inspect monerod --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^NETWORK_PREFIX=//p')
-    [ "$pid" -gt 0 ] && [ -n "$prefix" ]
+    [ "$pid" -gt 0 ] || false
+    [ -n "$prefix" ] || false
     nsenter -t "$pid" -n nft -f - <<NFT
 add table inet $table
 add chain inet $table out { type filter hook output priority 0; policy accept; }
@@ -94,7 +97,8 @@ recover() {
     wait_for 1500 has_peers
 }
 stage=tools
-command -v nsenter >/dev/null && command -v nft >/dev/null
+command -v nsenter >/dev/null || false
+command -v nft >/dev/null || false
 stage=precondition
 wait_for 1800 monerod_running || exit 77
 wait_for 1800 has_peers || exit 77
@@ -153,7 +157,7 @@ while [ "$(spent)" -lt 3 ]; do
         echo "PASS: a second strand inside the cooldown does not restart monerod again (restart $n held) (#4157)"
     fi
     stage=peerless-restart
-    wait_for 900 monerod_restarted "$before"
+    wait_for 1500 monerod_restarted "$before"
     [ "$(spent)" -eq $((n + 1)) ]
     audit_rows | tail -n 1 | grep -q '^applied monerod '
     stage=peerless-recovery

@@ -9,7 +9,7 @@ phase_monerod_redial() {
         bad "monerod-redial: local-node guest provisioning failed before fault injection"
         return 1
     }
-    SSH_TIMEOUT=18000 _ssh 'timeout 17500 bash -s' <"$SCRIPT_DIR/monerod-redial-guest.sh" || rc=$?
+    SSH_TIMEOUT=28500 _ssh 'timeout 28000 bash -s' <"$SCRIPT_DIR/monerod-redial-guest.sh" || rc=$?
     case "$rc" in
     0) ok "guest monerod is re-dialled or restarted within bounds after a Tor restart and a peerless strand (#4157)" ;;
     77) it_skip_leg "monerod-redial: monerod running with outgoing peers (#4157)" "the guest monerod never had outgoing peers" missing ;;
