@@ -147,7 +147,7 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
   text (#4109).
 - A configuration whose data directories are nested (for example `p2pool.data_dir` containing
   `monero.data_dir`) is refused, naming both keys, instead of letting a reset of one wipe the other.
-- A data directory written with a trailing slash (`/srv/`, `/home/alice/`) is held to the same system,
+- A data directory written with a trailing slash (`/srv/`, `/home/user/`) is held to the same system,
   home and mount-root refusal as the same path without one.
 - `./pithead config-reset` now also removes the Tari wallet database volume, whose password lives only in
   the removed `.env`, so Tari payout confirmation no longer breaks after a reset.

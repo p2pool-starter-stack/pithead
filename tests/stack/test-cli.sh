@@ -19,7 +19,7 @@ run_sourced "$SANDBOX" assert_safe_dir "/srv" >/dev/null 2>&1
 assert_rc "rejects bare /srv" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/mnt" >/dev/null 2>&1
 assert_rc "rejects bare /mnt" "$?" "1"
-for d in /srv/ /home/alice/ /etc/; do
+for d in /srv/ /home/user/ /etc/; do
     run_sourced "$SANDBOX" assert_safe_dir "$d" >/dev/null 2>&1
     assert_rc "rejects a broad root spelled with a trailing slash" "$?" "1"
 done
