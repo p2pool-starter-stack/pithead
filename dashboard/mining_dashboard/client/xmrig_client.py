@@ -64,8 +64,10 @@ def parse_rigforge(payload, now=None):
     rf = payload.get("rigforge") if isinstance(payload, dict) else None
     if not isinstance(rf, dict):
         return None
-    stamp = payload.get("generated_at")
-    age = feed_age(stamp, now)
+    feed_stamp = payload.get("generated_at")
+    age = feed_age(feed_stamp, now)
+    appliance = rf.get("appliance") is True
+    stamp = rf.get("stamp")
     tune = rf.get("tune") or {}
     autotune = tune.get("autotune") or {}
     power = rf.get("power") or {}
@@ -73,9 +75,11 @@ def parse_rigforge(payload, now=None):
     watchdog = rf.get("watchdog") or {}
     wd_on = watchdog.get("mode") == "enabled"
     return {
-        "generated_at": stamp if age is not None else None,
+        "generated_at": feed_stamp if age is not None else None,
         "age_sec": age,
         "stale": age is None or age > STALE_AFTER_S,
+        "appliance": appliance,
+        "stamp": stamp,
         "version": rf.get("version"),
         "miner_down": rf.get("xmrig_api") == "unreachable",
         "power": {"watts": power.get("watts"), "hs_per_watt": power.get("hs_per_watt")},
@@ -90,8 +94,6 @@ def parse_rigforge(payload, now=None):
             "board": (health.get("firmware") or {}).get("board"),
             "hugepages_total": health.get("hugepages_total"),
         },
-        "appliance": bool(rf.get("appliance")),
-        "stamp": rf.get("stamp"),
         "watchdog": {
             "enabled": wd_on,
             "thermal_hold": watchdog.get("thermal_hold") if wd_on else None,

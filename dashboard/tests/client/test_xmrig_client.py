@@ -419,6 +419,28 @@ def test_parse_rigforge_full_block():
         "temp_c": 62,
         "max_temp_c": 85,
     }
+    assert rf["appliance"] is False
+    assert rf["stamp"] is None
+
+
+def test_parse_rigforge_appliance_true():
+    block = {**RIGFORGE_BLOCK, "appliance": True, "stamp": "v2.1.0-abc1234"}
+    rf = parse_rigforge({"rigforge": block})
+    assert rf["appliance"] is True
+    assert rf["stamp"] == "v2.1.0-abc1234"
+
+
+def test_parse_rigforge_appliance_false():
+    block = {**RIGFORGE_BLOCK, "appliance": False}
+    rf = parse_rigforge({"rigforge": block})
+    assert rf["appliance"] is False
+    assert rf["stamp"] is None
+
+
+def test_parse_rigforge_appliance_keys_absent():
+    rf = parse_rigforge({"rigforge": RIGFORGE_BLOCK})
+    assert rf["appliance"] is False
+    assert rf["stamp"] is None
 
 
 # --- Control-apply status mirrored into the enriched feed (#579) ---------------------------------
