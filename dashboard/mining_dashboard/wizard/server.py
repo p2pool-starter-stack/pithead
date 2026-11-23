@@ -97,10 +97,11 @@ def handoff_dir() -> str:
 def _spool_read(name: str, directory: str | None = None) -> str | None:
     """Blocking on purpose: single-operator page, tiny local files."""
     path = os.path.join(directory or spool_dir(), name)
-    if not os.path.exists(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except FileNotFoundError:
         return None
-    with open(path) as f:
-        return f.read().strip()
 
 
 def _spool_json(name: str) -> dict:
