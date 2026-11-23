@@ -54,7 +54,11 @@ out=$(miner_diagnostics)
 grep -Fq 'recovery fallback' <<<"$out"
 ! grep -Fq 'fastpath_restart=' <<<"$out"
 journalctl() {
+    local since="$*"
+    since=${since#*--since @}
+    since=${since%% *}
     printf '%s\n' "$*" >"$work/journal-args"
+    [ "$since" -le 150 ] || return 0
     printf '%s\n' 'pithead-miner-recovery: local miner proxy was recreated while the miner was disconnected; restarting xmrig'
 }
 printf '%s\n' 'proxy was recreated' >"$work/recovery-bin"
@@ -63,7 +67,8 @@ echo 200 >"$T3375/backup-at"
 PITHEAD_MINER_RECOVERY_BIN="$work/recovery-bin" miner_fastpath_receipt | grep -Fq 'fastpath_restart=observed'
 grep -Fq -- '--since @100' "$work/journal-args"
 rm "$T3375/backup-start-at"
-PITHEAD_MINER_RECOVERY_BIN="$work/recovery-bin" miner_fastpath_receipt >/dev/null
+out=$(PITHEAD_MINER_RECOVERY_BIN="$work/recovery-bin" miner_fastpath_receipt)
+if grep -Fq 'fastpath_restart=observed' <<<"$out"; then exit 1; fi
 grep -Fq -- '--since @200' "$work/journal-args"
 sleep() { :; }
 echo 0 >"$work/misses"
