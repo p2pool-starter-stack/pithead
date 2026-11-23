@@ -60,6 +60,19 @@ for a guest-local alert sink. It restores its original config and state on exit,
 state only after Tor stops. Failures report the current stage, bounded command logs and
 the restoration result separately from the test result; no shared Tor is poisoned.
 
+The opt-in `tor-guard` phase (#4342) provisions a local-node guest and grafts a private Tor network onto it: one
+authority, a middle, an exit that reaches a guest-local web server, four ordinary guards and one guard whose torrc enables
+`DoSCircuitCreation*` with defence type 2 and a one-connection threshold. The stack's Tor image is unchanged; its torrc
+comes from the entrypoint's `TORRC_TEMPLATE` seam and the dashboard's two probe URLs from the `TOR_HEAL_PROBE_URL` and
+`TOR_HEAL_SECOND_PROBE_URL` environment values, both set by a guest-only compose override that the leg removes on exit.
+Each of two legs starts the client with only the refusing guard in the consensus, requires Tor stuck at bootstrap 95 with
+`circuit-established=0`, the guard `up`, the TCP channel `ESTABLISHED` and the guard's own heartbeat counting rejected
+circuits, then adds the good guards. With the healer off it records how long the untouched Tor takes to recover (bounded
+at 40 minutes; the defence period is 20). With the healer on it requires a `tor-dropguards` audit record, working egress
+through the probe and an unchanged Tor `StartedAt`, and records the verdict. Rotation picks among five guards at random,
+so a rotation that lands on the refusing guard again waits for the healer's next cooldown. Submit with `--timeout-minutes 240`.
+`tests/os/selftest-run-modules.sh` pins the phase's wiring; the guest script is proved only by the KVM job.
+
 Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
 and a half hours after provisioning, and the tier's default run window ends the job after the
 second gate has passed but before the host recovery applies. The phase vocabulary of this

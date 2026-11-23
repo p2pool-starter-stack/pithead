@@ -385,6 +385,8 @@ through `caddy-failure-evidence.sh` for a bounded, allowlisted guest snapshot;
 `tests/os/selftest-caddy-failure-evidence.sh` exercises collection and the failure branch.
 The opt-in KVM `tor-heal` phase streams `tor-heal-guest.sh` into an isolated guest
 to prove saturated-history recovery and the disabled control with production timers.
+The opt-in KVM `tor-guard` phase streams `tor-guard-guest.sh` into a guest to prove the guard rotation
+against refused circuit creates on an open channel (#4342), on a guest-only private Tor network.
 The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
 zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
 cuts a live P2Pool's peers.

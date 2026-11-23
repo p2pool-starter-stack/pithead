@@ -7,6 +7,7 @@ six-hour cooldown and identity checks. Otherwise a final restart re-dials local 
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 
@@ -27,8 +28,10 @@ from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
 logger = logging.getLogger("TorHeal")
 
 # Independent targets: any response on either fresh circuit proves clearnet egress works.
-PROBE_URL = "https://www.google.com/generate_204"
-SECOND_PROBE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
+PROBE_URL = os.environ.get("TOR_HEAL_PROBE_URL") or "https://www.google.com/generate_204"
+SECOND_PROBE_URL = (
+    os.environ.get("TOR_HEAL_SECOND_PROBE_URL") or "https://www.cloudflare.com/cdn-cgi/trace"
+)
 PROBE_TIMEOUT_SEC = 15
 
 PROBE_INTERVAL_SEC = 5 * 60  # active probe cadence (only while the heal is enabled)

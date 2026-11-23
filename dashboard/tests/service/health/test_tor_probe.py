@@ -1,5 +1,6 @@
 """Tor SOCKS circuit isolation against a fake endpoint and bounded HTTP probes."""
 
+import importlib
 import socket
 import threading
 from unittest.mock import patch
@@ -112,3 +113,27 @@ def test_schemeless_proxy_is_a_failed_probe_not_an_exception(monkeypatch):
     monkeypatch.setattr("mining_dashboard.service.health.tor_heal.TOR_SOCKS_PROXY", "tor:9050")
     ok, evidence = TorEgressHealer._probe_egress()
     assert ok is False and "ValueError" in evidence
+
+
+class TestProbeTargets:
+    def test_defaults_are_the_public_https_targets(self, monkeypatch):
+        monkeypatch.delenv("TOR_HEAL_PROBE_URL", raising=False)
+        monkeypatch.delenv("TOR_HEAL_SECOND_PROBE_URL", raising=False)
+        try:
+            module = importlib.reload(tor_heal)
+            assert module.PROBE_URL == "https://www.google.com/generate_204"
+            assert module.SECOND_PROBE_URL == "https://www.cloudflare.com/cdn-cgi/trace"
+        finally:
+            importlib.reload(tor_heal)
+
+    def test_environment_overrides_both_targets_and_empty_keeps_defaults(self, monkeypatch):
+        monkeypatch.setenv("TOR_HEAL_PROBE_URL", "http://10.0.0.9:8080/a")
+        monkeypatch.setenv("TOR_HEAL_SECOND_PROBE_URL", "")
+        try:
+            module = importlib.reload(tor_heal)
+            assert module.PROBE_URL == "http://10.0.0.9:8080/a"
+            assert module.SECOND_PROBE_URL == "https://www.cloudflare.com/cdn-cgi/trace"
+        finally:
+            monkeypatch.delenv("TOR_HEAL_PROBE_URL")
+            monkeypatch.delenv("TOR_HEAL_SECOND_PROBE_URL")
+            importlib.reload(tor_heal)
