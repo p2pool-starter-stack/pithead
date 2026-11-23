@@ -304,7 +304,7 @@ parse_and_validate_config() {
     for _dk in "${!_dirs[@]}"; do
         for _dj in "${!_dirs[@]}"; do
             [ "$_dk" -lt "$_dj" ] || continue
-            [[ "${_dirs[_dk]}/" == "${_dirs[_dj]}/"* || "${_dirs[_dj]}/" == "${_dirs[_dk]}/"* ]] || continue
+            [[ "${_dirs[_dk]%/}/" == "${_dirs[_dj]%/}/"* || "${_dirs[_dj]%/}/" == "${_dirs[_dk]%/}/"* ]] || continue
             error "${_keys[_dk]} (${_dirs[_dk]}) and ${_keys[_dj]} (${_dirs[_dj]}) overlap — one data directory is inside the other; reset or removal of one would destroy the other."
         done
     done
@@ -325,7 +325,6 @@ parse_and_validate_config() {
     if [ -n "$HOST_PORT" ] && ! is_valid_port "$HOST_PORT"; then
         error "dashboard.port must be a whole number between 1 and 65535, or \"auto\" (got \"$HOST_PORT\")."
     fi
-    # Ensure a strict true/false string is returned, defaulting to true
     DASHBOARD_SECURE=$(normalize_bool "$(config_bool '.dashboard.secure' true)")
     # Deliberate opt-in to serving the dashboard on a globally-routable address. Default false:
     # the appliance auto-publishes every address it holds, and on any network passing IPv6 through

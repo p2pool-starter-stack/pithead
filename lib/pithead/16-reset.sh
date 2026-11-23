@@ -144,8 +144,6 @@ config_reset() {
         warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running; fix the Compose error shown above."
     remove_tor_egress_firewall 2>/dev/null || true
     lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
-    # machine-role rides along with config.json: pithead-boot's condition is the two paths OR'd,
-    # so leaving the role marker behind would keep it armed and the wizard would never re-open.
     remove_tari_wallet_volumes
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role
     log "Configuration cleared — the first-boot wizard owns the next boot."

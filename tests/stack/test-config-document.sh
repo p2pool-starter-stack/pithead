@@ -120,6 +120,12 @@ rc=$?
 assert_rc "nested data dirs rejected" "$rc" "1"
 assert_contains "nested data dirs message names both keys" "$out" "monero.data_dir (/srv/pithead/monero) and p2pool.data_dir (/srv/pithead) overlap"
 seed_env
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","data_dir":"/srv/pithead/monero"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main","data_dir":"/srv/pithead/"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+rc=$?
+assert_rc "nested data dirs with a trailing slash on the parent rejected" "$rc" "1"
+assert_contains "trailing-slash nesting message names both keys" "$out" "monero.data_dir (/srv/pithead/monero) and p2pool.data_dir (/srv/pithead/) overlap"
+seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","data_dir":"/srv/pithead/monero"}, "tari":{"wallet_address":"'"$VALID_TARI"'","data_dir":"/srv/pithead/tari"}, "p2pool":{"pool":"main","data_dir":"/srv/pithead/p2pool"}, "tor":{"data_dir":"/srv/pithead/tor"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_not_contains "sibling data dirs under a shared root are not an overlap" "$out" "overlap"
