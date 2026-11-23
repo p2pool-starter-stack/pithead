@@ -394,6 +394,8 @@ the KVM host at the virbr0 vantage and the `tests/netwatch/` classifier's verdic
 row, so a silent or dead capture reads as a failure without ever gating a phase. A phase that returns
 before its window closes leaves nothing running: the run's `cleanup` calls `netwatch_window_abort`, which
 tears the recorder container down and prints a red row for the unclosed window.
+The opt-in KVM `monerod-redial` phase streams `monerod-redial-guest.sh` into a guest to prove the dashboard's
+monerod re-dial after a Tor restart, the peerless restart, its cooldown and daily cap through the appliance control path.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
