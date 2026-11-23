@@ -72,6 +72,13 @@ opens these PRs, so they trigger no checks of their own: a maintainer pushes to 
 tiers 1 to 3, and the PR body names the `tier4-e2e` or `tier4-kvm` proof it needs before merge. A newer
 release supersedes the open PR for an older one of the same component, and a closed PR is taken as declined.
 
+Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
+sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
+them and the watch reports newer versions, not advisories (#4277). Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
+the upstream release notes and security advisories for the new version, and records that check in
+the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
+the bump.
+
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
