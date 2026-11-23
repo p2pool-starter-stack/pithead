@@ -152,6 +152,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/setup-again-leg.sh"
 # shellcheck source=tests/os/wizard-console-leg.sh
 . "$SCRIPT_DIR/wizard-console-leg.sh"
+# shellcheck source=tests/os/netwatch-window.sh
+. "$SCRIPT_DIR/netwatch-window.sh"
 # shellcheck source=tests/os/rig-config-meta-wait.sh
 . "$SCRIPT_DIR/rig-config-meta-wait.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
@@ -192,7 +194,7 @@ while [ $# -gt 0 ]; do
         ;;
     -h | --help)
         printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|p2pool-heal|all]\n'
-        sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
