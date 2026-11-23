@@ -118,7 +118,7 @@ _run_lifecycle() {
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_selfcheck_run_logged "$rt_dir" || lifecycle_ok=0
     _normalize_config_version
-    BASELINE_CONFIG="$(rx 'cat config.json')"
+    renormalized="$(rx 'cat config.json')" && [ -n "$renormalized" ] && BASELINE_CONFIG=$renormalized
     it_step "backup → restore round-trip…"
     if it_run_logged "$rt_dir" backup pithead backup -y --no-encrypt; then
         local arch
