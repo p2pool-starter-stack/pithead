@@ -13,8 +13,8 @@ bad() { printf '%s\n' "$*" >>"$work/fail"; }
 it_skip_leg() { printf '%s|%s|%s\n' "$1" "$2" "$3" >>"$work/skip"; }
 _phase_provision_initial() { return "${provision_rc:-0}"; }
 _ssh() {
-    [ "$SSH_TIMEOUT" = 28500 ] || return 1
-    [ "$1" = 'timeout 28000 bash -s' ] || return 1
+    [ "$SSH_TIMEOUT" = 12800 ] || return 1
+    [ "$1" = 'timeout 12500 bash -s' ] || return 1
     cat >"$work/guest-script"
     return "${guest_rc:-0}"
 }

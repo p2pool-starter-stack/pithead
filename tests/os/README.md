@@ -49,7 +49,7 @@ back) after the Tor restart; one restart per strand, audited and recovered; no r
 while the verdict is peerless; a held fourth restart announced once; and an unchanged P2Pool start, `data.mdb` inode and
 payout address. A scratch guest cannot hold a synced chain, so recovery is judged on outgoing peers, not `synchronized`.
 Exit 77 (monerod never has peers) is a counted `missing` skip; exit 78 (monerod regained peers by itself after the Tor
-restart) skips only that row. The phase takes about two to eight hours: submit it with `--timeout-minutes 480`.
+restart) skips only that row. The phase takes about about two and a half hours, capped at 208 minutes after provisioning: submit it with `--timeout-minutes 240`.
 `selftest-monerod-redial.sh` exercises the wrapper and the guest's peer parsing without a guest.
 
 The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
