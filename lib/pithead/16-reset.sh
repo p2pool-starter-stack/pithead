@@ -88,7 +88,6 @@ reset_reboot_or_hint() {
 }
 
 remove_tari_wallet_volumes() {
-    # down -v skips an inactive profile's volume, and no longer declares tari_wallet_data (#2731).
     local volumes labels vol
     volumes=$(docker volume ls -q) || error "Could not list Docker volumes; stopped before removing .env. Retry when the engine is available."
     for vol in tari_wallet_db tari_wallet_data; do
