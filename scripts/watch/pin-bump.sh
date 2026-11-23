@@ -252,7 +252,7 @@ superseded() {
 }
 
 pr_body() {
-    local c="$1" cur="$2" latest="$3" proof how
+    local c="$1" cur="$2" latest="$3" proof how advisory=""
     case "$c" in
     rigforge)
         how="The workflow resolved the release tag to its commit and wrote the commit and the version comment together."
@@ -267,6 +267,9 @@ pr_body() {
         proof="a \`tier4-e2e\` \`targeted\` run on the \`${c}\` phase must be green at this head before merge: it builds the image from the new version and hash and shows the service healthy"
         ;;
     esac
+    if [ "$c" != rigforge ]; then
+        advisory=" Also required before merge: read the upstream release notes and security advisories for ${latest} and record that check in a comment on this PR, because this static binary has no package metadata and Trivy reports no CVEs for it (#4277)."
+    fi
     cat <<EOF
 ## What's the problem
 
@@ -278,7 +281,7 @@ Automated bump of the $c pin to ${latest} only, opened by \`.github/workflows/pi
 
 ## Here is the proof
 
-Pending: ${proof}. A PR opened with the Actions token triggers no \`pull_request\` checks of its own, so tiers 1 to 3 run once a maintainer pushes to this branch.
+Pending: ${proof}. A PR opened with the Actions token triggers no \`pull_request\` checks of its own, so tiers 1 to 3 run once a maintainer pushes to this branch.${advisory}
 EOF
 }
 

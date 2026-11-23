@@ -74,7 +74,7 @@ release supersedes the open PR for an older one of the same component, and a clo
 
 Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
 sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
-them and the watch reports newer versions, not advisories (#4277). Bumping any of the three, by hand or from a pin-bump PR, checks
+them and the watch reports newer versions, not advisories (#4277). Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
 the upstream release notes and security advisories for the new version, and records that check in
 the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
 the bump.

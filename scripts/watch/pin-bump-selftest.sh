@@ -121,6 +121,9 @@ self_test() {
     check "superseded with no want closes every own head of the component" "$(superseded p2pool '' <"$t/prs.json" | grep -c close)" 2
     check "superseded leaves another component alone" "$(superseded monero bot/monero-v0.18.5.2 <"$t/prs.json")" $'3\tbot/monero-v0.18.5.2\tkeep'
     check "pr body has the three house sections" "$(pr_body p2pool v4.18.1 v4.19.0 | grep -c '^## ')" 3
+    check "pr body for p2pool requires the advisory check" "$(pr_body p2pool v4.18.1 v4.19.0 | grep -c 'security advisories for v4.19.0')" 1
+    check "pr body for monero requires the advisory check" "$(pr_body monero 0.18.4.5 0.18.4.6 | grep -c 'security advisories for 0.18.4.6')" 1
+    check "pr body for rigforge omits the advisory check" "$(pr_body rigforge aaa v1 | grep -c 'security advisories')" 0
     [ "$fail" = 0 ] && echo "pin-bump self-test OK"
     return "$fail"
 }
