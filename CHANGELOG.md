@@ -99,6 +99,9 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
 - On the appliance, when the boot health gate cannot clear the chain-service migration hold it prints
   a FAULT line naming the recovery and releases the chain services anyway, instead of leaving node,
   P2Pool and proxy down with nothing in the boot journal (#3983).
+- A release now tags and bundles exactly the commit that was gated: publish refuses if HEAD moved or the
+  tree is dirty, a tag already on origin or an already-promoted registry tag stops the cut, and the
+  tag is created on the gated commit (release tooling only).
 - On the appliance, a wedged Tor — one whose boot never finishes because the circuit-build history
   on the data partition is saturated — no longer costs the committed slot its fallback. The boot
   health gate commits when the dashboard answers and every failing check is that network fault,
@@ -145,9 +148,6 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
   as an address change the apply's restart stands (#3987).
 - The Service diagnostics card's log and health-check controls are styled as buttons instead of plain
   text (#4109).
-- A release now tags and bundles exactly the commit that was gated: publish refuses if HEAD moved or the
-  tree is dirty, a tag already on origin or an already-promoted registry tag stops the cut, and the
-  tag is created on the gated commit (release tooling only).
 
 ### Security
 
