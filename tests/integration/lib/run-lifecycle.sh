@@ -117,7 +117,8 @@ _run_lifecycle() {
     fi
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_selfcheck_run_logged "$rt_dir" || lifecycle_ok=0
-    _normalize_config_version; BASELINE_CONFIG="$(rx 'cat config.json')"
+    _normalize_config_version
+    BASELINE_CONFIG="$(rx 'cat config.json')"
     it_step "backup → restore round-trip…"
     if it_run_logged "$rt_dir" backup pithead backup -y --no-encrypt; then
         local arch
@@ -400,7 +401,6 @@ _pred_tor_healthy() {
     s="$(service_state tor)"
     [ "$(svc_state_of "$s")" = "running" ] && { [ "$(svc_health_of "$s")" = "healthy" ] || [ "$(svc_health_of "$s")" = "none" ]; }
 }
-
 prove_readmit_after_recreate() {
     if ! wait_for 600 10 "guarded services healthy after the pool recreate (#4166)" _pred_guarded_services_healthy; then
         it_fail "guarded services healthy after the pool recreate (#4166)" \
