@@ -304,8 +304,10 @@ check_release_tag_free() {
     fi
     if remote_tags="$(git ls-remote --tags origin "refs/tags/$TAG")"; then
         [ -z "$remote_tags" ] || die "Git tag $TAG already exists on origin — bump VERSION before cutting a new release."
+    elif [ "$DRY_RUN" -eq 1 ]; then
+        warn "Could not read the tags on origin. [--dry-run: continuing]"
     else
-        bench_tier4_reject "Could not read the tags on origin."
+        die "Could not read the tags on origin."
     fi
     if docker buildx imagetools inspect "$(image_for dashboard):$TAG" >/dev/null 2>&1; then
         if [ "$DRY_RUN" -eq 1 ] || [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then

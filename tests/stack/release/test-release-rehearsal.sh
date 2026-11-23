@@ -235,7 +235,7 @@ rehearsal_directory_config() {
 rehearsal_out="$(rehearsal_case rehearsal_directory_config 2>&1)"
 assert_rc "a directory is not a readable buildkitd config file" "$?" 1
 unset -f rehearsal_case rehearsal_credentials rehearsal_login rehearsal_ghcr_login rehearsal_ghcr_fallback rehearsal_lookalike rehearsal_production rehearsal_invalid_policy rehearsal_custom_policy rehearsal_main rehearsal_builder rehearsal_existing_builder rehearsal_missing_config rehearsal_directory_config
-echo "== unit: release identity is pinned to the gated commit (#15) =="
+echo "== unit: release identity is pinned to the gated commit =="
 PIN_REPO="$SANDBOX/pin15"
 PIN_ORIGIN="$SANDBOX/pin15-origin.git"
 mkdir -p "$PIN_REPO"
@@ -284,10 +284,10 @@ pin_out="$(pin_case 0 0 require_gated_commit)"
 assert_rc "an unmoved clean HEAD passes the pin" "$?" 0
 git -C "$PIN_REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m b
 pin_out="$(
-    # shellcheck disable=SC2034  # sourced globals
+    # shellcheck disable=SC2034
     cd "$PIN_REPO" || exit
     set --
-    # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by the gate
+    # shellcheck disable=SC1090,SC2034
     source "$REL" 2>/dev/null
     set +eu
     # shellcheck disable=SC2034,SC2218
@@ -296,28 +296,37 @@ pin_out="$(
 )"
 assert_rc "a HEAD that moved after preflight refuses the publish" "$?" 1
 assert_contains "the moved-HEAD refusal names the gated commit" "$pin_out" "HEAD moved since preflight"
-pin_tag_out="$(
-    # shellcheck disable=SC2034  # sourced globals
-    cd "$PIN_REPO" || exit
-    set --
-    # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by publish
-    source "$REL" 2>/dev/null
-    set +eu
-    # shellcheck disable=SC2034,SC2218
-    DRY_RUN=0 ASSUME_YES=1 TAG=v9.9.9 COSIGN_ENABLED=0
-    # shellcheck disable=SC2034,SC2218
-    GIT_COMMIT="$(git rev-parse HEAD~1)"
-    require_gated_commit() { :; }
-    write_manifest() { :; }
-    make_bundle() { :; }
-    append_bundle_sha256() { :; }
-    WORKDIR="$SANDBOX/pin15-work"
-    mkdir -p "$WORKDIR"
-    git() {
-        [ "$1" = tag ] && printf 'TAG %s\n' "$*"
-        return 0
-    }
-    command() { return 1; }
-    publish 2>&1
-)"
+pin_publish() {
+    (
+        local mode="$1"
+        cd "$PIN_REPO" || exit
+        set --
+        # shellcheck disable=SC1090,SC2034
+        source "$REL" 2>/dev/null
+        set +eu
+        # shellcheck disable=SC2034,SC2218
+        DRY_RUN=0 ASSUME_YES=1 ALLOW_DIRTY=0 TAG=v9.9.9 COSIGN_ENABLED=0
+        # shellcheck disable=SC2034,SC2218
+        GIT_COMMIT="$(command git rev-parse HEAD~1)"
+        [ "$mode" = stub ] && require_gated_commit() { :; }
+        write_manifest() { :; }
+        make_bundle() { :; }
+        append_bundle_sha256() { :; }
+        WORKDIR="$SANDBOX/pin-work"
+        mkdir -p "$WORKDIR"
+        git() {
+            case "$1" in
+            tag) printf 'TAG %s\n' "$*" ;;
+            rev-parse | status) command git "$@" ;;
+            esac
+        }
+        gh() { :; }
+        publish
+    ) 2>&1
+}
+pin_tag_out="$(pin_publish real)"
+assert_rc "publish with a moved HEAD stops before tagging" "$?" 1
+assert_contains "publish names the moved HEAD" "$pin_tag_out" "HEAD moved since preflight"
+assert_not_contains "publish creates no tag when HEAD moved" "$pin_tag_out" "TAG "
+pin_tag_out="$(pin_publish stub)"
 assert_contains "git tag names the gated commit explicitly" "$pin_tag_out" "tag -a v9.9.9 $(git -C "$PIN_REPO" rev-parse HEAD~1)"

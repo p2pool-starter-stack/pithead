@@ -174,6 +174,12 @@ publish refuses if `HEAD` is no longer the gated commit or the tree is dirty, an
 with `git tag -a "$TAG" "$GIT_COMMIT"`, so a `git pull` during the multi-hour gate cannot make the
 tag, images and bundle disagree.
 
+That publish check runs after the images are promoted. If it stops a cut, rerunning `release.sh`
+is refused, because the `:vX.Y.Z` image tag now exists. Recover by hand instead. Check out the
+gated commit that the refusal names, review `git status --porcelain` and remove what the gate left
+behind. Then finish stage 7 as `publish()` in `scripts/release/bundle.sh` does: tag that commit,
+push the tag, fast-forward `main`, and attach the signed bundle and manifest to the GitHub Release.
+
 The fast-forward push cannot ride a PR: GitHub merges a PR by merge commit, squash, or rebase,
 each of which mints a new commit, and the point is that `main` gains no object the tag does not
 already name. The Main Branch ruleset requires PRs from everyone except organization admins, so
