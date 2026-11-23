@@ -18,7 +18,7 @@ A clear description of the bug — what you expected, and what actually happened
 
 ## Environment
 
-- **OS:** (Ubuntu Server **24.04 LTS** is the officially supported target — please note
+- **OS:** (Ubuntu Server **24.04 LTS** or **26.04 LTS** are the officially supported targets — please note
   if you're on something else.)
 - **Pithead version / commit:** (output of `git rev-parse --short HEAD`)
 - **Docker / Docker Compose version:**

@@ -36,7 +36,7 @@ For miner connection instructions, see [Connecting Miners](workers.md).
 | **Disk — pruned node** | 600 GB+ SSD | 1 TB+ SSD |
 | **Disk — full node** | 600 GB+ SSD | 2 TB+ SSD |
 | **Network** | Always-on broadband | Unmetered broadband |
-| **OS** | Ubuntu Server **24.04 LTS** | Ubuntu Server 24.04 LTS |
+| **OS** | Ubuntu Server **24.04 LTS** or **26.04 LTS** | Ubuntu Server 24.04 LTS or 26.04 LTS |
 
 > These figures assume the default configuration: both nodes local, Monero pruned, HugePages enabled.
 > Pointing either node at a machine you already run lowers them a lot — Monero is the bigger cut. See
@@ -204,7 +204,7 @@ e.g. to keep the Monero blockchain on a separate SSD. See
 
 ### Operating system & dependencies
 
-- Ubuntu Server 24.04 LTS is the officially supported platform. Other Linux distros may work but
+- Ubuntu Server 24.04 LTS and 26.04 LTS are the officially supported platforms. Other Linux distros may work but
   aren't officially supported. macOS is deprecated as of 2026-09-10: the installer refuses it, the
   test suite refuses to run on it, and the remaining Darwin code paths are untested.
 - The kernel/HugePages tuning is Linux-only. On Linux, making HugePages persistent edits GRUB and

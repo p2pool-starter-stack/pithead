@@ -9,7 +9,7 @@ which checks a virtual machine cannot prove.
 - Earlier steps: none. Build both boxes before session 2 of the
   [Run sheet](../README.md#run-sheet), and start the upgrade box a few days ahead (see
   [Sync time](#sync-time)).
-- Have ready: the Ubuntu Server 24.04 LTS installer, and the previous release for the upgrade
+- Have ready: the Ubuntu Server 24.04 LTS or 26.04 LTS installer, and the previous release for the upgrade
   box. The rest of the equipment is in [What you need](../what-you-need.md).
 - Only the fresh box and the upgrade box can be virtual machines. The appliance, the restore PC
   and the rigs cannot: [sections 13–15](../appliance/README.md) need real hardware.
@@ -24,7 +24,7 @@ spec. Until then, and anywhere else, build one with any KVM tool to the same spe
 
 | Setting | Value | Why |
 |---|---|---|
-| OS | Ubuntu Server 24.04 LTS, nothing of Pithead on it | The fresh-box baseline in [1.1](01-fresh-install.md) |
+| OS | Ubuntu Server 24.04 LTS or 26.04 LTS, nothing of Pithead on it | The fresh-box baseline in [1.1](01-fresh-install.md) |
 | CPU | Host passthrough (libvirt `host-passthrough`), 6 or more vCPUs | The guest must see AVX2 and AES; the RandomX miner and the build need them |
 | Memory | 16 GB for a box that runs both chains | The documented minimum. Less tests an undersized box, not the release |
 | Disk | 700 GB, thin-provisioned | 600 GB for both chains, plus headroom |
@@ -35,7 +35,7 @@ spec. Until then, and anywhere else, build one with any KVM tool to the same spe
 **What you do:**
 
 1. Create a virtual machine with the settings in the table above.
-2. Install Ubuntu Server 24.04 LTS on it, with nothing of Pithead.
+2. Install Ubuntu Server 24.04 LTS or 26.04 LTS on it, with nothing of Pithead.
 3. Right after the OS install, take a snapshot named *clean*.
 4. Upgrade box only: install the previous release and let it sync. To save days, set
    `clearnet_initial_sync` to `true` under both `monero` and `tari` (see [Sync time](#sync-time)).

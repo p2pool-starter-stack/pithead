@@ -1,5 +1,7 @@
 # --- Setup Steps ---
 
+readonly SUPPORTED_OS_VERSIONS="24.04 26.04"
+
 # Read the os-release file into OS_ID / OS_VERSION / OS_PRETTY (subshell-sourced to avoid clobber).
 # OS_RELEASE_FILE is overridable for testing; defaults to the standard location.
 # shellcheck disable=SC1090  # os-release path is dynamic by design
@@ -41,8 +43,14 @@ check_prerequisites() {
 
     log "Checking dependencies..."
     detect_os
-    if [ "$OS_ID" != "ubuntu" ] || [ "$OS_VERSION" != "24.04" ]; then
-        warn "Officially supported on Ubuntu Server 24.04 (detected: ${OS_PRETTY:-$OS_TYPE})."
+    _version_supported=false
+    for _v in $SUPPORTED_OS_VERSIONS; do
+        [ "$OS_VERSION" = "$_v" ] && _version_supported=true && break
+    done
+    if [ "$OS_ID" != "ubuntu" ] || ! $_version_supported; then
+        _supported_versions="$SUPPORTED_OS_VERSIONS"
+        _supported_versions="${_supported_versions// /, }"
+        warn "Officially supported on Ubuntu Server ${_supported_versions} LTS (detected: ${OS_PRETTY:-$OS_TYPE})."
         warn "The stack may still work; install dependencies manually if needed, or re-run with --skip-deps to bypass these checks."
     fi
 

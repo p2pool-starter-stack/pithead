@@ -8,7 +8,7 @@ Sections 1–12 are written for the DIY route. Section 13 runs the [appliance ro
 
 | Machine | What it is | Where it is used |
 |---|---|---|
-| **Fresh box** | Ubuntu Server 24.04, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it | Section 1; 10.1, 10.2 and 10.7, and the second machine in 10.3, 10.3a, 10.4 and 10.6; 11.6 and 11.7, last; 12.1 and 12.2 after 11.7, with the previous release's bundle installed |
+| **Fresh box** | Ubuntu Server 24.04 LTS or 26.04 LTS, AVX2 CPU, 16 GB RAM, 600 GB SSD, nothing of Pithead on it | Section 1; 10.1, 10.2 and 10.7, and the second machine in 10.3, 10.3a, 10.4 and 10.6; 11.6 and 11.7, last; 12.1 and 12.2 after 11.7, with the previous release's bundle installed |
 | **Upgrade box** | A machine already running the previous release, with both chains synced and the dashboard password set | Sections 2–11; it runs the candidate from 2.2 on. Its Monero node is also the test node for 13.15 (M16), opened to the LAN as in Config D of [Sample configs](../sample-configs.md) |
 
 Either box may be a virtual machine: [sandbox-vm.md](sandbox-vm.md) gives the spec, how to start and end one on the project's bench fleet, and what a VM cannot prove. [What you need](../what-you-need.md) lists everything else, such as the miners, the laptop, the QA wallets and the test bot.
