@@ -37,6 +37,7 @@ pithead/
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
 | Egress map | `data/egress-map.tsv` | One row per outbound path, both roles; the single input the egress firewall generation, proof gate and docs are being built against. `tests/stack/test-egress-map.sh` checks shape and anchors. |
+| Host egress audit | `lib/pithead/02f-host-egress-audit.sh` | Log-only `inet` output table rendered role-filtered from the egress map: counts and logs would-be-dropped host flows, drops nothing; loaded by apply, by `pithead-egress-audit.service` on the appliance image and by the boot unit on DIY hosts; counters via `pithead egress-status` and doctor. |
 | Containers | `build/<daemon>/` | Dockerfiles, entrypoints, healthchecks, and Monero's bounded archive downloader; CI builds the images, and `make test-tools` checks download recovery. |
 | Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. The rig share leg (`tests/os/rig-share-leg.sh`) adds the M11 hashrate floor and calls the adopt leg (`tests/os/rig-adopt-leg.sh`, `selftest-rig-adopt.sh`), which pushes a reversible config change through the coordinator control routes; `tests/os/require-complete-verdict.sh` (`selftest-require-complete.sh`) fails a `--require-complete` run on any missing-input skip. `os/rootfs/fetch-archive.sh` bounds the baked RigForge archive fetch; `tests/os/selftest-archive-fetch.sh` runs its local transport regression. |
 | Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--dry-run"` previews the plan. |
@@ -387,6 +388,12 @@ to prove saturated-history recovery and the disabled control with production tim
 The opt-in KVM `p2pool-heal` phase streams `pool-heal-guest.sh` into a guest to prove the dashboard's
 zero-peer P2Pool restart through the appliance control path; `run-pool-peer-loss.sh` is the `fault-injection` leg that
 cuts a live P2Pool's peers.
+`tests/os/netwatch-window.sh` wraps the battery's passive netwatch capture windows (#4196) around first boot
+and reboot, the update cycle, one hour of mining per role and both set-up-again legs; the recorder runs on
+the KVM host at the virbr0 vantage and the `tests/netwatch/` classifier's verdict lands as a non-required
+row, so a silent or dead capture reads as a failure without ever gating a phase. A phase that returns
+before its window closes leaves nothing running: the run's `cleanup` calls `netwatch_window_abort`, which
+tears the recorder container down and prints a red row for the unclosed window.
 The restrictive-checkout image probe is `tests/stack/standalone/test_image_permissions.sh`,
 run by image CI and the lifecycle phase through `run-source-image.sh`.
 The offline image assertion is `tests/stack/standalone/test_tor_saturated_image.sh`,
