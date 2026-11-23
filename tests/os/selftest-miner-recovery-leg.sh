@@ -67,7 +67,7 @@ echo 200 >"$T3375/backup-at"
 PITHEAD_MINER_RECOVERY_BIN="$work/recovery-bin" miner_fastpath_receipt | grep -Fq 'fastpath_restart=observed'
 grep -Fq -- '--since @100' "$work/journal-args"
 rm "$T3375/backup-start-at"
-out=$(PITHEAD_MINER_RECOVERY_BIN="$work/recovery-bin" miner_fastpath_receipt)
+out=$(PITHEAD_MINER_RECOVERY_BIN="$work/recovery-bin" miner_fastpath_receipt || true)
 if grep -Fq 'fastpath_restart=observed' <<<"$out"; then exit 1; fi
 grep -Fq -- '--since @200' "$work/journal-args"
 sleep() { :; }
