@@ -9,9 +9,6 @@ lifecycle_mining_step() {
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
-INTEGRATION_RUN_SUITE=1
-# shellcheck source=tests/integration/lib/normalize-config-version.sh
-source "$HERE/../lib/normalize-config-version.sh" || exit $?
 
 echo "== lifecycle restore health gates fault injection (#2501) =="
 

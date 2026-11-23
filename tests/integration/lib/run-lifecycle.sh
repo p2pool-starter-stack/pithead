@@ -8,8 +8,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/run-tari-background-sync.sh" || exit $?
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-miners.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle-tls.sh
 source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-tls.sh" || exit $?
-# shellcheck source=tests/integration/lib/normalize-config-version.sh
-source "$(dirname "${BASH_SOURCE[0]}")/normalize-config-version.sh" || exit $?
 _run_lifecycle() {
     lifecycle_stopped() {
         IT_LC_STEP=$1
@@ -117,8 +115,6 @@ _run_lifecycle() {
     fi
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_selfcheck_run_logged "$rt_dir" || lifecycle_ok=0
-    _normalize_config_version
-    renormalized="$(rx 'cat config.json')" && [ -n "$renormalized" ] && BASELINE_CONFIG=$renormalized
     it_step "backup → restore round-trip…"
     if it_run_logged "$rt_dir" backup pithead backup -y --no-encrypt; then
         local arch
@@ -244,6 +240,11 @@ kept_data_snapshot_snippet() {
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
     printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"
 }
+
+# The same paths' LMDB files as inode, birth time to the nanosecond and path: a chain that was
+# reused keeps all three, one re-created by a resync gets a new birth time even when the
+# filesystem hands the freed inode number straight back. Only *.mdb: a log rotates into new
+# inodes while the node runs, which says nothing about the chain.
 kept_chain_files_snippet() { # <path>...
     local p paths=""
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
@@ -362,7 +363,10 @@ telemetry_rows_diff() { # <before-lines> <after-lines>
     missing="$(comm -23 <(printf '%s\n' "$1" | carried_rows | sort) <(printf '%s\n' "$2" | carried_rows | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
     printf 'before=%s after=%s missing:%s' "$(printf '%s' "$1" | grep -c .)" "$(printf '%s' "$2" | grep -c .)" "${missing:- none}"
 }
+
 _pred_status_down() { ! pithead status >/dev/null 2>&1; }
+# --- Fault-injection phase (--fault-injection) ------------------------------
+# Break local monerod three ways, assert status/failover, then restore; opt-in because debounces are slow.
 _monerod_is() { # _monerod_is <state> [<health>]
     local s
     s="$(service_state monerod)"
@@ -395,17 +399,19 @@ _pred_tor_healthy() {
     s="$(service_state tor)"
     [ "$(svc_state_of "$s")" = "running" ] && { [ "$(svc_health_of "$s")" = "healthy" ] || [ "$(svc_health_of "$s")" = "none" ]; }
 }
+
+READMIT_BOUND_SEC=150
 prove_readmit_after_recreate() {
     if ! wait_for 600 10 "guarded services healthy after the pool recreate (#4166)" _pred_guarded_services_healthy; then
         it_fail "guarded services healthy after the pool recreate (#4166)" \
             "monerod, p2pool or tor did not report healthy within 600s of the pool recreate"
         return 0
     fi
-    if wait_for 150 5 "xmrig-proxy running within the readmission bound (#4166)" _pred_proxy_running; then
+    if wait_for "$READMIT_BOUND_SEC" 5 "xmrig-proxy running within the readmission bound (#4166)" _pred_proxy_running; then
         it_pass "xmrig-proxy running within the readmission bound after the pool recreate (#4166)"
     else
         it_fail "xmrig-proxy running within the readmission bound after the pool recreate (#4166)" \
-            "xmrig-proxy still not running 150s after monerod, p2pool and tor reported healthy; dashboard reason lines:"
+            "xmrig-proxy still not running ${READMIT_BOUND_SEC}s after monerod, p2pool and tor reported healthy; dashboard reason lines:"
         rx "timeout 30 docker compose logs --no-color --since 60m dashboard 2>&1 | grep -a -e 'not valid' -e 'readmit' -e 'holding' | tail -n 5" 2>/dev/null |
             redact | sed 's/^/        /'
     fi
