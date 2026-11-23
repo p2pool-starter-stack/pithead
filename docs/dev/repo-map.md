@@ -335,6 +335,10 @@ both local-miner toggles converge without rebooting.
 The appliance-only `os/overlay/pithead-miner-recovery` timer recovers a disconnected active
 local miner, restarting at once when the proxy container was recreated since its last reading;
 `tests/os/selftest-miner-recovery.sh` covers its decision window, recreation fast restart and refusals.
+On a rig the same timer reads the rig's own XMRig `/2/summary` and restarts `xmrig.service` after 120 seconds
+without a pool connection or with zero hashrate and no share progress, at most once per 300 seconds;
+`tests/os/selftest-miner-recovery-rig.sh` covers it. The rig share leg's strand injection is also removed
+90 seconds after the strand is witnessed, so a stranded rig cannot hold the coordinator's miner blocked.
 `tests/os/appliance-miner-recovery{,-leg}.sh` proves per-worker accepted-share progress after
 dashboard backup on the stack phase’s synced guest, using a reversible loopback strand.
 Trial receipts distinguish backup completion, strand detection, unchanged proxy identity with
