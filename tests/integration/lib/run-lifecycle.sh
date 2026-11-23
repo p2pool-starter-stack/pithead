@@ -244,10 +244,6 @@ kept_data_snapshot_snippet() {
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
     printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"
 }
-# The same paths' LMDB files as inode, birth time to the nanosecond and path: a chain that was
-# reused keeps all three, one re-created by a resync gets a new birth time even when the
-# filesystem hands the freed inode number straight back. Only *.mdb: a log rotates into new
-# inodes while the node runs, which says nothing about the chain.
 kept_chain_files_snippet() { # <path>...
     local p paths=""
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
@@ -367,8 +363,6 @@ telemetry_rows_diff() { # <before-lines> <after-lines>
     printf 'before=%s after=%s missing:%s' "$(printf '%s' "$1" | grep -c .)" "$(printf '%s' "$2" | grep -c .)" "${missing:- none}"
 }
 _pred_status_down() { ! pithead status >/dev/null 2>&1; }
-# --- Fault-injection phase (--fault-injection) ------------------------------
-# Break local monerod three ways, assert status/failover, then restore; opt-in because debounces are slow.
 _monerod_is() { # _monerod_is <state> [<health>]
     local s
     s="$(service_state monerod)"
