@@ -72,7 +72,7 @@ node_run() {
 }
 relay_torrc() {
     printf '%s\n' "TestingTorNetwork 1" "DataDirectory /var/lib/tor" "Nickname $1" "Address $2" \
-        "ORPort 9001" "DirPort 9030" "SocksPort 0" "ExitPolicy reject *:*" "Log notice stdout" \
+        "ORPort 9001" "DirPort 9030" "SocksPort 0" "Log notice stdout" \
         "HeartbeatPeriod 1 minute" "$dirauth" "${@:3}"
 }
 build_authority() {
@@ -86,7 +86,8 @@ build_authority() {
         printf '\n' | tor-gencert --create-identity-key -m 12 --passphrase-fd 0 \
             -i keys/authority_identity_key -s keys/authority_signing_key -c keys/authority_certificate \
             -a $auth_ip:9030
-        printf 'TestingTorNetwork 1\nDataDirectory /var/lib/tor\nNickname tgauth\nAddress $auth_ip\nORPort 9001\nDirPort 9030\nSocksPort 0\n' >probe-torrc
+        v3id=\$(awk '/^fingerprint /{print \$2}' keys/authority_certificate)
+        printf 'TestingTorNetwork 1\nDataDirectory /var/lib/tor\nNickname tgauth\nAddress $auth_ip\nORPort 9001\nDirPort 9030\nSocksPort 0\nDirAuthority tgauth orport=9001 no-v2 v3ident=%s $auth_ip:9030 0000000000000000000000000000000000000000\n' \"\$v3id\" >probe-torrc
         tor -f probe-torrc --list-fingerprint >&2
         printf 'V3 %s\n' \"\$(awk '/^fingerprint /{print \$2}' keys/authority_certificate)\"
         printf 'FP %s\n' \"\$(cut -d' ' -f2- fingerprint | tr -d ' ')\"
@@ -117,7 +118,7 @@ start_fixture() {
     build_authority
     start_authority
     node_run tg-mid "$mid_ip" "$(relay_torrc tgmid "$mid_ip")"
-    node_run tg-exit "$exit_ip" "$(relay_torrc tgexit "$exit_ip" "ExitPolicyRejectPrivate 0" \
+    node_run tg-exit "$exit_ip" "$(relay_torrc tgexit "$exit_ip" "ExitRelay 1" "ExitPolicyRejectPrivate 0" \
         "ExitPolicy accept $web_ip:8080,accept *:80,accept *:443,reject *:*")"
     docker run -d --name tg-web --network "$net" --ip "$web_ip" --user tor --entrypoint sh "$image" -c \
         'mkdir -p /tmp/www && echo ok >/tmp/www/index.html && exec busybox httpd -f -p 8080 -h /tmp/www' >/dev/null
