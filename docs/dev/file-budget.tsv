@@ -54,7 +54,7 @@ tests/integration/e2e.sh	684
 tests/integration/fakes/test_contract.py	437
 tests/integration/lib.sh	686
 tests/integration/lib/live-upgrade-support.sh	413
-tests/integration/lib/run-lifecycle.sh	418
+tests/integration/lib/run-lifecycle.sh	420
 tests/integration/lib/wallet-fixture.py	442
 tests/integration/selftest/selftest-abort-traps.sh	408
 tests/integration/selftest/selftest-e2e-phases.sh	501
