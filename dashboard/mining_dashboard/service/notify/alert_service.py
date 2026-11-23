@@ -12,7 +12,7 @@ from mining_dashboard.config.config import (
 )
 from mining_dashboard.helper.utils import format_hashrate
 from mining_dashboard.service.health.container_health import EDGE_MESSAGES, ContainerHealthMonitor
-from mining_dashboard.service.network.egress_status import live_firewall_state
+from mining_dashboard.service.network.egress_status import live_firewall_state, live_watchdog_verdict
 from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
 from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
 from mining_dashboard.service.notify.monero_health_edges import MoneroHealthEdgesMixin
@@ -123,6 +123,7 @@ class AlertService(
     # Wallet-down follows the payout feature and alerting, without an event-specific toggle.
     EVT_PAYOUT_WALLET_DOWN = "payout_wallet_down"
     EVT_CONTAINER_UNHEALTHY = "container_unhealthy"
+    EVT_EGRESS_WATCHDOG_LEAK = "egress_watchdog_leak"
     EVT_RAFFLE_WIN = "raffle_win"
 
     # WorkerPresenceMonitor edge -> (event key, message template).
@@ -228,6 +229,7 @@ class AlertService(
         shares_in_window=0,
         clearnet_active=False,
         egress_firewall=None,
+        watchdog=None,
         xvb_registration_state="",
         update_available=False,
         low_hr_warning=False,
@@ -314,6 +316,7 @@ class AlertService(
         alerts += self._xvb_share_edges(xvb_enabled, shares_in_window)
         alerts += self._clearnet_edges(clearnet_active)
         alerts += self._egress_firewall_edges(egress_firewall)
+        alerts += self._egress_watchdog_edges(watchdog)
 
         # --- XvB auto-registration health, and a new Pithead release being available ---
         alerts += self._registration_edges(xvb_enabled, xvb_registration_state)
@@ -384,6 +387,7 @@ class AlertService(
                     logger.debug("Container-health update failed (%s)", type(exc).__name__)
             return []
         signals.setdefault("egress_firewall", live_firewall_state())  # the host's verdict, #2599
+        signals.setdefault("watchdog", live_watchdog_verdict())
         try:
             alerts = self.evaluate(**signals)
         except Exception as exc:  # never let an alerting bug break the data loop

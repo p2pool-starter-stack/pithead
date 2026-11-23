@@ -12,8 +12,11 @@
 EGRESS_CHECK_SERVICE="pithead-egress-check.service"
 EGRESS_CHECK_TIMER="pithead-egress.timer"
 
+EGRESS_AUDIT_STATE_FILE=".egress-audit-prev"
+
 egress_status() {
     local rc=0 dir tmp verdict arc=0 audit_state=absent audit_json audit_cj wd
+    local prev_wd=0 cur_wd=0 delta=0 watchdog=not-observed state_file state_tmp
     tor_egress_enforced || rc=$?
     case "$rc" in
     0) verdict=enforced ;;
@@ -31,10 +34,28 @@ egress_status() {
     *) audit_state=absent ;;
     esac
     if [ "$audit_state" = present ]; then
-        audit_json=$(printf '%s' "$audit_cj" | jq -c '. + {verdict: "present"}') || true
-        [ -n "$audit_json" ] || audit_json='{"verdict":"unreadable","counters":[],"would_drop":null}'
+        audit_json=$(printf '%s' "$audit_cj" | jq -c \
+            '. + {verdict: "present", watchdog: "'"$watchdog"'"}') || true
+        [ -n "$audit_json" ] || audit_json='{"verdict":"unreadable","counters":[],"would_drop":null,"watchdog":"not-observed"}'
+        cur_wd=$(printf '%s' "$audit_cj" | jq -r '.would_drop // 0' 2>/dev/null)
+        cur_wd="${cur_wd:-0}"
+        case "$cur_wd" in '' | *[!0-9]*) cur_wd=0 ;; esac
+        dir=$(env_get CONTROL_DIR 2>/dev/null) || true
+        dir="${dir:-$PWD/data/control}/results"
+        state_file="$dir/$EGRESS_AUDIT_STATE_FILE"
+        if [ -r "$state_file" ]; then
+            prev_wd=$(head -n1 "$state_file" 2>/dev/null) || true
+            prev_wd="${prev_wd:-0}"
+            case "$prev_wd" in '' | *[!0-9]*) prev_wd=0 ;; esac
+        fi
+        delta=$((cur_wd - prev_wd))
+        if [ "$delta" -gt 0 ]; then
+            watchdog=leaking
+        else
+            watchdog=clean
+        fi
     else
-        audit_json="{\"verdict\":\"$audit_state\",\"counters\":[],\"would_drop\":null}"
+        audit_json="{\"verdict\":\"$audit_state\",\"counters\":[],\"would_drop\":null,\"watchdog\":\"not-observed\"}"
     fi
     dir=$(env_get CONTROL_DIR 2>/dev/null) || true
     dir="${dir:-$PWD/data/control}/results"
@@ -46,8 +67,13 @@ egress_status() {
     mv -f "$tmp" "$dir/egress-status.json"
     printf '%s\n' "$verdict"
     if [ "$audit_state" = present ]; then
+        state_tmp=$(mktemp "$dir/.egress-audit-prev.XXXXXX")
+        printf '%d\n' "$cur_wd" >"$state_tmp"
+        chmod 0644 "$state_tmp"
+        mv -f "$state_tmp" "$state_file"
         wd=$(printf '%s' "$audit_cj" | jq -r '.would_drop // "unknown"' 2>/dev/null)
-        printf 'host-audit: present (would_drop %s packets)\n' "${wd:-unknown}"
+        printf 'host-audit: present (would_drop %s packets, delta %d) watchdog=%s\n' \
+            "${wd:-unknown}" "$delta" "$watchdog"
     else
         printf 'host-audit: %s\n' "$audit_state"
     fi

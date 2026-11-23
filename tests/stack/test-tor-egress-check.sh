@@ -194,6 +194,7 @@ printf 'rig\tpool lan\tallow\tallow\tlan\tnone\tnone\n' >>"$EAU/map-lan.tsv"
 printf 'role\tdestination\ttoday\ttarget\troute\tenforcer\ttest\n' >"$EAU/map-nolan.tsv"
 printf 'appliance\tupdate fetch\tallow\tallow\thost\tnone\tnone\nrig\tpool\tallow\tallow\thost\tnone\tnone\n' >>"$EAU/map-nolan.tsv"
 printf '{"nftables":[{"metainfo":{"json_version":1}},{"table":{"family":"inet","name":"pithead_egress_audit"}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":2,"comment":"loopback","expr":[{"counter":{"packets":7,"bytes":700}}]}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":5,"comment":"would_drop","expr":[{"counter":{"packets":42,"bytes":3780}},{"log":{"prefix":"pithead-egress-audit: "}}]}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":6,"comment":"would_drop","expr":[{"counter":{"packets":13,"bytes":1170}}]}}]}\n' >"$EAU/json"
+printf '{"nftables":[{"metainfo":{"json_version":1}},{"table":{"family":"inet","name":"pithead_egress_audit"}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":2,"comment":"loopback","expr":[{"counter":{"packets":7,"bytes":700}}]}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":5,"comment":"would_drop","expr":[{"counter":{"packets":57,"bytes":5130}},{"log":{"prefix":"pithead-egress-audit: "}}]}},{"rule":{"family":"inet","table":"pithead_egress_audit","chain":"output","handle":6,"comment":"would_drop","expr":[{"counter":{"packets":23,"bytes":2070}}]}}]}\n' >"$EAU/counter-rising.json"
 printf '#!/usr/bin/env bash\n[ -n "${SUDO_DENY:-}" ] && exit 1\n[ "${1:-}" = -n ] && shift\nexec "$@"\n' >"$EAU/bin/sudo"
 printf '#!/usr/bin/env bash\necho Linux\n' >"$EAU/bin/uname"
 cat >"$EAU/bin/nft" <<EOF
@@ -338,6 +339,44 @@ out=$(eau_status check_host_egress_audit 2>&1)
 assert_contains "doctor shows the would_drop counter when the table is loaded" "$out" "would_drop counter at 55 flows"
 out=$(EAU_NFT_TABLE_RC=1 eau_status check_host_egress_audit 2>&1)
 assert_contains "doctor warns when the table is not loaded" "$out" "log-only host egress audit table is not loaded"
+
+echo "== egress-status: the watchdog compares would_drop across consecutive checks (#4385) =="
+rm -f "$EAU/ctl/results/egress-status.json" "$EAU/.egress-audit-prev"
+eau_status egress_status > /dev/null
+assert_eq "first check with no prev state is clean" \
+    "$(jq -r '.host_audit.watchdog' "$EAU/ctl/results/egress-status.json")" "clean"
+assert_eq "the host-audit line shows the delta" "$(echo "$out" | tail -n1)" \
+    "$(eau_status egress_status 2>&1 | tail -n1)"
+first_wd=$(cat "$EAU/.egress-audit-prev")
+assert_eq "the prev state file holds the current would_drop" "$first_wd" "55"
+eau_status egress_status > /dev/null
+assert_eq "same counter stays clean" \
+    "$(jq -r '.host_audit.watchdog' "$EAU/ctl/results/egress-status.json")" "clean"
+cat >"$EAU/bin/nft" <<'NFT'
+#!/usr/bin/env bash
+case "$*" in
+"list tables") exit "${EAU_NFT_LIST:-0}" ;;
+"list table inet pithead_egress_audit") exit "${EAU_NFT_EXISTS:-0}" ;;
+"-j list table inet pithead_egress_audit") [ "${EAU_NFT_TABLE_RC:-0}" = 0 ] || exit 1; cat "$EAU_JSON" ;;
+*) if [ -n "${EAU_NFT_CAPTURE:-}" ]; then cat >"$EAU/load.nft"; fi; exit "${EAU_NFT_ANY_RC:-0}" ;;
+esac
+NFT
+chmod +x "$EAU/bin/nft"
+EAU_JSON="$EAU/counter-rising.json" eau_status egress_status > /dev/null
+assert_eq "rising counter is detected as leaking" \
+    "$(jq -r '.host_audit.watchdog' "$EAU/ctl/results/egress-status.json")" "leaking"
+assert_eq "the delta is reported on stdout" "$(tail -n1 "$EAU/ctl/results/.egress-audit-prev.tmp" 2>/dev/null || true)" "" \
+    || true
+assert_contains "the host-audit line shows the rising delta" \
+    "$(eau_status egress_status 2>&1 | tail -n1)" "delta 25"
+eau_status egress_status > /dev/null
+assert_eq "stable at new level stays clean" \
+    "$(jq -r '.host_audit.watchdog' "$EAU/ctl/results/egress-status.json")" "clean"
+cat "$EAU/.egress-audit-prev" | grep -q '^80$'
+assert_eq "state file tracks current counter" "$?" "0"
+EAU_NFT_TABLE_RC=1 eau_status egress_status > /dev/null
+assert_eq "absent audit table sets not-observed" \
+    "$(jq -r '.host_audit.watchdog' "$EAU/ctl/results/egress-status.json")" "not-observed"
 
 echo "== boot verdict: the KVM leg's judgement, fixture-tested so the boot phase cannot pass on noise (#4195) =="
 . "$ROOT/tests/os/host-egress-audit-boot-verdict.sh"
