@@ -25,7 +25,6 @@ capture_from_image() {
         docker run --rm --entrypoint /bin/sh "$img" -c 'apk info --installed 2>/dev/null | while IFS= read -r line; do
             name="$(printf "%s" "$line" | awk -F"-" "{print \$1}")"
             rest="$(printf "%s" "$line" | sed "s#${name}-##")"
-            # Version is everything up to the first hyphen (handles 1.2.5 from 1.2.5-r6)
             version="$(printf "%s" "$rest" | awk -F"-" "{print \$1}")"
             arch="$(printf "%s" "$rest" | grep -oE "[-][a-z0-9]+$" || true)"
             [ -z "$arch" ] && arch="unknown"
