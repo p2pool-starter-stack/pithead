@@ -35,10 +35,11 @@ restore() {
     docker start tor >/dev/null 2>&1 || restored=1
     docker start monerod >/dev/null 2>&1 || restored=1
     printf 'Guest restoration exit: %s; original exit: %s\n' "$restored" "$rc"
-    if [ "$rc" = 0 ] && [ "$restored" != 0 ]; then rc=1; fi
+    if [ "$restored" != 0 ]; then rc=1; fi
     exit "$rc"
 }
 trap restore EXIT
+trap 'exit 143' TERM INT HUP
 cd /data/pithead
 started_at() { docker inspect "$1" --format '{{.State.StartedAt}}'; }
 running() { [ "$(docker inspect "$1" --format '{{.State.Running}}' 2>/dev/null || true)" = true ]; }
