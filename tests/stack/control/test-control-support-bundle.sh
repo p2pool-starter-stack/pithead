@@ -19,7 +19,7 @@ log = os.environ.get("SB_JOURNAL_LOG")
 if log:
     with open(log, "a") as fh:
         fh.write(" ".join(args) + "\n")
-now = int(time.time())
+now = int(os.environ.get("SB_NOW") or time.time())
 H = 3600
 addr = os.environ["SB_ADDR"]
 onion = os.environ["SB_ONION"]
@@ -96,8 +96,8 @@ exit 0
 SYSCTL
 chmod +x "$SB/bin/systemctl"
 export SB_JOURNAL_LOG="$SB/journal.log" SB_ADDR SB_ONION
-
-sb_iso() { date -u -d "@$(($(date +%s) + $1))" +%Y-%m-%dT%H:%M:%SZ; }
+SB_NOW=$(date +%s) && export SB_NOW
+sb_iso() { date -u -d "@$((SB_NOW + $1))" +%Y-%m-%dT%H:%M:%SZ; }
 sb_unzip() {
     rm -rf "$2"
     mkdir -p "$2"
