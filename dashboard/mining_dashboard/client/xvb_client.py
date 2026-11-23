@@ -6,7 +6,7 @@ from typing import Any
 import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY, XVB_SUBMIT_URL
-from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.helper.http import bounded_get, request_failure_class
 from mining_dashboard.helper.utils import parse_hashrate
 
 # The four donor tiers XvB publishes an expected per-player reward for. These are exactly the tier
@@ -211,7 +211,7 @@ class XvbClient:
                 )
                 return None
         except requests.RequestException as e:
-            self.logger.error(f"Network error while fetching XvB stats: {e}")
+            self.logger.error(f"Network error while fetching XvB stats: {request_failure_class(e)}")
             return None
         except Exception as e:
             self.logger.error(f"Unexpected error in XvB client: {e}")
@@ -241,7 +241,9 @@ class XvbClient:
                 return None
             return estimates
         except requests.RequestException as e:
-            self.logger.error(f"Network error while fetching XvB reward estimates: {e}")
+            self.logger.error(
+                f"Network error while fetching XvB reward estimates: {request_failure_class(e)}"
+            )
             return None
         except Exception as e:
             self.logger.error(f"Unexpected error fetching XvB reward estimates: {e}")
@@ -276,7 +278,9 @@ class XvbClient:
                 "round_stats": parse_round_stats(response.text),
             }
         except requests.RequestException as e:
-            self.logger.error(f"Network error while fetching XvB winners: {e}")
+            self.logger.error(
+                f"Network error while fetching XvB winners: {request_failure_class(e)}"
+            )
             return None
         except Exception as e:
             self.logger.error(f"Unexpected error fetching XvB winners: {e}")
@@ -351,7 +355,9 @@ class XvbClient:
             )
             return REG_ERROR
         except requests.RequestException as e:
-            self.logger.error(f"Network error while registering with XvB: {e}")
+            self.logger.error(
+                f"Network error while registering with XvB: {request_failure_class(e)}"
+            )
             return REG_ERROR
         except Exception as e:
             self.logger.error(f"Unexpected error during XvB registration: {e}")
