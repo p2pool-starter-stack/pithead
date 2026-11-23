@@ -99,7 +99,7 @@ _post_worker_upgrade() { # <rig> <version> -> response body
         http://127.0.0.1:8000/api/control/worker-upgrade" 2>/dev/null
 }
 
-_poll_upgrade_result() { # <id> <timeout-s> -> sets UPGRADE_RESULT_STATUS (empty on timeout) and UPGRADE_RESULT_BODY
+_poll_upgrade_result() {
     local id="$1" deadline=$((SECONDS + $2)) status
     UPGRADE_RESULT_STATUS=""
     UPGRADE_RESULT_BODY=""
@@ -114,7 +114,7 @@ _poll_upgrade_result() { # <id> <timeout-s> -> sets UPGRADE_RESULT_STATUS (empty
     return 0
 }
 
-_upgrade_result_detail() { # <result-json> -> "error [E]; reason [R]" (bounded, masked)
+_upgrade_result_detail() {
     local err reason out
     err="$(printf '%s' "$1" | jq -r '.error // empty' 2>/dev/null | redact | head -c 400)"
     reason="$(printf '%s' "$1" | jq -r '.reason // empty' 2>/dev/null | redact | head -c 200)"
