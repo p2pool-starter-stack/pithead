@@ -243,7 +243,7 @@ git -C "$PIN_REPO" init -q
 git -C "$PIN_REPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m a
 git init -q --bare "$PIN_ORIGIN"
 git -C "$PIN_REPO" remote add origin "$PIN_ORIGIN"
-pin_case() { # <dry-run> <rehearsal> <function>
+pin_case() {
     (
         # shellcheck disable=SC2034,SC2218
         local dry="$1" reh="$2" fn="$3"
