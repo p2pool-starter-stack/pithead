@@ -134,6 +134,11 @@ render_env() {
     case "$xvb_donor" in
     "" | auto | DYNAMIC_ID) xvb_donor="${MONERO_WALLET:0:8}" ;;
     esac
+    local donation_enabled donation_percent donation_tor
+    donation_enabled=$(normalize_bool "$(config_bool '.donation.enabled' false)")
+    donation_percent=$(jq -r '.donation.percent // 0' "$CONFIG_FILE")
+    donation_tor=$(normalize_bool "$(config_bool '.donation.tor' true)")
+
     # Donation tier target: auto (default) / donor|vip|whale|mega
     xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
@@ -373,6 +378,9 @@ XVB_DONOR_ID=$(dotenv_render_value "$xvb_donor")
 XVB_ENABLED=$(dotenv_render_value "$xvb_enabled")
 XVB_TOR_ENABLED=$(dotenv_render_value "$xvb_tor")
 XVB_DONATION_LEVEL=$(dotenv_render_value "$xvb_donation_level")
+DONATION_ENABLED=$(dotenv_render_value "$donation_enabled")
+DONATION_PERCENT=$(dotenv_render_value "$donation_percent")
+DONATION_TOR_ENABLED=$(dotenv_render_value "$donation_tor")
 TARI_REQUIRED=$(dotenv_render_value "$tari_required")
 DASHBOARD_FAIL_CLOSED=$(dotenv_render_value "$fail_closed")
 DASHBOARD_CHECK_UPDATES=$(dotenv_render_value "$check_for_updates")

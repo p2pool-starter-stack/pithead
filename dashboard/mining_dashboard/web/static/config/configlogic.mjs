@@ -108,6 +108,7 @@ export const LOGICAL_GROUPS = [
       "p2pool.clearnet",
       "proxy",
       "xvb",
+      "donation",
       "local_miner",
       "dashboard.tari_required",
       "dashboard.fail_closed",
