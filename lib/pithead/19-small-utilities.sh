@@ -158,7 +158,7 @@ require_deployed() {
 # True for a system, home, or bare mount root that must never become a recursive data-operation
 # target. Kept separate so the dashboard's narrower destination allowlist uses the exact same floor.
 _data_dir_is_broad_root() {
-    local d="$1" rest
+    local d="${1%/}" rest
     case "$d" in
     "" | / | // | /. | /root | /home | /etc | /usr | /var | /var/lib | /opt | /srv | /mnt | /media | /tmp | /bin | /sbin | /lib | /lib64 | /boot | /dev | /proc | /sys | /Users | /Applications | "${HOME:-/root}" | "/home/$REAL_USER" | "/Users/$REAL_USER")
         return 0

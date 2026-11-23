@@ -87,6 +87,20 @@ reset_reboot_or_hint() {
     fi
 }
 
+remove_tari_wallet_volumes() {
+    local volumes labels vol
+    volumes=$(docker volume ls -q) || error "Could not list Docker volumes; stopped before removing .env. Retry when the engine is available."
+    for vol in tari_wallet_db tari_wallet_data; do
+        printf '%s\n' "$volumes" | grep -Fx "pithead_$vol" >/dev/null || continue
+        labels=$(docker volume inspect "pithead_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
+            error "Could not inspect pithead_$vol; stopped before removing .env. Retry when the engine is available."
+        if [ "$labels" = "pithead/$vol" ]; then
+            docker volume rm "pithead_$vol" >/dev/null ||
+                error "Could not remove pithead_$vol; stopped before removing .env. Retry when the volume is available."
+        fi
+    done
+}
+
 # config-reset: back to unprovisioned, chains kept. Removing config.json is most of the mechanism
 # — pithead-firstboot's ConditionPathExists is `!config.json` AND `!machine-role`, and pithead-boot's
 # is the same two paths OR'd instead — but machine-role (lib/pithead/08-uninstall-firstboot.sh)
@@ -130,8 +144,7 @@ config_reset() {
         warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running; fix the Compose error shown above."
     remove_tor_egress_firewall 2>/dev/null || true
     lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
-    # machine-role rides along with config.json: pithead-boot's condition is the two paths OR'd,
-    # so leaving the role marker behind would keep it armed and the wizard would never re-open.
+    remove_tari_wallet_volumes
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role
     log "Configuration cleared — the first-boot wizard owns the next boot."
     # The reboot stays INSIDE the window on purpose. Releasing after the wipe but before the reboot

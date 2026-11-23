@@ -153,6 +153,16 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
   as an address change the apply's restart stands (#3987).
 - The Service diagnostics card's log and health-check controls are styled as buttons instead of plain
   text (#4109).
+- A configuration whose data directories are nested (for example `p2pool.data_dir` containing
+  `monero.data_dir`) is refused, naming both keys, instead of letting a reset of one wipe the other.
+- A data directory written with a trailing slash (`/srv/`, `/home/user/`) is held to the same system,
+  home and mount-root refusal as the same path without one.
+- `./pithead config-reset` now also removes the Tari wallet database volume, whose password lives only in
+  the removed `.env`, so Tari payout confirmation no longer breaks after a reset.
+- The `curl | bash` installer reattaches the terminal before `./pithead setup`, and stops with a clear
+  message when none is available.
+- A hand-edited `dashboard.secure` of `"TRUE"`, `1` or `"yes"` now renders the TLS Caddyfile, matching
+  `doctor`, instead of silently serving plain HTTP.
 
 ### Security
 

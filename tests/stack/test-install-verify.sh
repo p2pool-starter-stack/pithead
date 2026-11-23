@@ -87,9 +87,15 @@ irun() { # <dest-subdir> [env overrides via preceding assignments]
     (
         cd "$ISB/work" || exit
         CURL_SRV="$ISB/srv" PITHEAD_VERSION=v9.9.9 PITHEAD_ALLOW_ANY_DISTRO=1 \
-            PITHEAD_DIR="$ISB/work/$1" PATH="$ISB/bin:$PATH" bash "$ROOT/install.sh" 2>&1
+            PITHEAD_DIR="$ISB/work/$1" PITHEAD_TTY="${IRUN_TTY-$ISB/tty}" PATH="$ISB/bin:$PATH" bash "$ROOT/install.sh" 2>&1 </dev/null
     )
 }
+
+: >"$ISB/tty"
+out=$(IRUN_TTY="$ISB/no-such-tty" irun no-tty) && rc=0 || rc=$?
+assert_rc "piped install with no terminal refuses instead of handing setup a pipe" "$rc" "1"
+assert_contains "the no-terminal refusal says how to continue" "$out" "no terminal is available"
+assert_eq "the no-terminal refusal never reached setup" "$(printf '%s' "$out" | grep -c SETUP-REACHED || true)" "0"
 
 # sha256 verified against the manifest: match proceeds to the handoff, mismatch installs NOTHING.
 # The manifest line is written by release.sh's OWN producer, not a hand-copied format: this grep is
