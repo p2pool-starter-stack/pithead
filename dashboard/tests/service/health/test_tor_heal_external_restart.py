@@ -44,6 +44,7 @@ class _Rig:
         self.tor_started = 5000.0
         self.saturated = False
         self.recover_result = {"status": "applied"}
+        self.newnym_result = {"status": "applied"}
         self.healer = TorEgressHealer(
             self.docker,
             enabled=True,
@@ -57,6 +58,8 @@ class _Rig:
             return {"status": "applied", "saturated": self.saturated}
         if request_id == "tor-recover":
             return self.recover_result
+        if request_id == "tor-newnym":
+            return self.newnym_result
         return {"status": "applied"}
 
     async def step(self, ok, seconds=PROBE_INTERVAL_SEC):
@@ -112,6 +115,22 @@ async def test_external_restart_resets_clock_budget_and_cooldown():
     assert h._failing_since is not None
     assert rig.docker.calls == []
     assert h._attempts == 0
+
+
+async def test_external_restart_lifts_the_post_rotation_restart_ban():
+    rig = _Rig()
+    rig.newnym_result = {"status": "applied", "action": "tor-dropguards"}
+    await rig.spend_newnyms()
+    await rig.step(False, COOLDOWN_SEC)
+    assert rig.healer._guard_rotated is True
+    assert rig.docker.calls == []
+    rig.tor_started += 3600
+    await rig.step(True)
+    assert rig.healer._guard_rotated is False
+    rig.newnym_result = {"status": "applied"}
+    await rig.spend_newnyms()
+    await rig.step(False, COOLDOWN_SEC)
+    assert ("stop", "tor") in rig.docker.calls
 
 
 async def test_failed_probe_after_external_restart_waits_for_fresh_threshold():
