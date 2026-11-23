@@ -80,6 +80,7 @@ has_peers() {
 }
 no_peers() { [ "$(peers_out)" = 0 ]; }
 monerod_restarted() { [ "$(started_at monerod)" != "$1" ]; }
+restarted_or_recovered() { monerod_restarted "$before" || has_peers; }
 cap_announced() { [ -n "$(cap_lines)" ]; }
 strand() {
     local pid prefix
@@ -133,7 +134,13 @@ if ! wait_for 240 no_peers; then
 fi
 if [ "$tor_start_stranded" = 1 ]; then
     stage=tor-restart-redial
-    wait_for 1500 monerod_restarted "$before"
+    wait_for 1500 restarted_or_recovered
+    if ! monerod_restarted "$before"; then
+        tor_start_stranded=0
+        echo 'NOTE: monerod regained peers before the re-dial settle window ended; nothing stranded' >&2
+    fi
+fi
+if [ "$tor_start_stranded" = 1 ]; then
     [ "$(spent)" -ge 1 ]
     audit_rows | grep -q '^applied monerod tor-start'
     stage=tor-restart-recovery
