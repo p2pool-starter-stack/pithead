@@ -133,6 +133,7 @@ test-backup-data-paths.sh|i
 test-backup-data-paths.sh|label
 test-cli.sh|first_run_case
 test-config-document.sh|raw
+test-config-document.sh|sec
 test-config-document.sh|verb
 test-config.sh|2
 test-config.sh|bad_port
