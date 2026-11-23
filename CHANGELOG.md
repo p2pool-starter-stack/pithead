@@ -85,6 +85,7 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
 
 ### Fixed
 
+- A rig whose miner stays at zero hashrate or without a pool connection for 120 seconds (for example after the coordinator's stratum port restarts) now has its XMRig restarted by `pithead-miner-recovery`, at most once every 300 seconds (#4387).
 - On the appliance, a built-in miner that lost its stratum connection because `xmrig-proxy` was
   recreated (an apply, a compose restart or a recovery-boot migration) is restarted at once instead
   of after five minutes of idle readings. The root cause of the stall is still not established

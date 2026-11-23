@@ -133,13 +133,14 @@ miner_fastpath_receipt() {
     miner_journal_receipt "$journal"
 }
 miner_watch() {
-    local end=$((SECONDS + 1200))
+    local end=$((SECONDS + 1200)) strand_at=
     touch "$T3375/ready"
     while [ "$SECONDS" -lt "$end" ]; do
         if [ -e "$T3375/armed" ] && [ ! -e "$T3375/strand" ] && miner_stranded; then
             ss -Hntp state established >"$T3375/strand-sockets"
             if [ -n "${2:-}" ]; then
-                if ! { miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null &&
+                strand_at=${strand_at:-$SECONDS}
+                if [ "$((SECONDS - strand_at))" -lt 90 ] && ! { miner_workers | jq -e --arg rig "$2" 'any(.[]; .[0] == $rig and .[2] >= 1)' >/dev/null &&
                     timeout 15 podman exec dashboard python -c 'from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; import os; c=XMRigProxyClient(os.environ["PROXY_HOST"], int(os.environ["PROXY_API_PORT"]), os.environ["PROXY_AUTH_TOKEN"]); assert c.get_summary()["miners"]["now"] >= 1'; }; then
                     sleep 1
                     continue
@@ -148,7 +149,6 @@ miner_watch() {
             miner_delete_table
             printf '%s\n' recorded >"$T3375/strand"
             printf '%s\n' 'pithead-t3375: new miner ESTAB tuple and queued host listener witnessed; injection removed'
-
         fi
         sleep 1
     done
