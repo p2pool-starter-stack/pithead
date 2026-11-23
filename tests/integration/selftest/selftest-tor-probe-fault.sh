@@ -112,6 +112,47 @@ echo "== A peerless Monero node fails the precondition before any fault is insta
     printf 'peerless fixture: %s passed, %s failed\n' "$PASS" "$FAIL"
     test "$FAIL" -eq 0
 )
+echo "== Failed mining and recovery rows carry the dashboard's own log lines =="
+(
+    BASELINE_CONFIG='{}'
+    env_on_box() { echo true; }
+    has_compose_profile() { return 1; }
+    fault_rules_clear_all() { :; }
+    fault_rules_trap_arm() { :; }
+    fault_rules_trap_disarm() { :; }
+    tor_newnym_budget_reset() { :; }
+    push_config() { :; }
+    pithead() { :; }
+    wait_status_ok() { :; }
+    sleep() { :; }
+    wait_for() {
+        case "$4" in
+        _tor_probe_mining_sample) return 0 ;;
+        _tor_probe_witness_latch) TOR_PROBE_LAST=5 ;;
+        *) return 1 ;;
+        esac
+    }
+    _tor_probe_mining_sample() { return 1; }
+    DASHBOARD_LOG="$SCRATCH/dashboard.log"
+    export DASHBOARD_LOG
+    printf '%s\n' \
+        'WARNING Mining work is not valid (Monero node unsynchronized) — stopping xmrig-proxy so workers fail over to their backup pools.' \
+        'WARNING Tor clearnet egress failed for 5 minutes: probe timeout. Requesting NEWNYM (1/2).' \
+        'ERROR Tor clearnet egress is STILL broken after 2 recovery attempts' >"$DASHBOARD_LOG"
+    rx() {
+        case "$1" in
+        "docker logs --since 1 dashboard 2>&1"*) bash -c "cat \"\$DASHBOARD_LOG\"${1#docker logs --since 1 dashboard 2>&1}" ;;
+        *tor_recovery_state_saturated*) return 1 ;;
+        *) echo 1 ;;
+        esac
+    }
+    fault_tor_probe_egress >"$SCRATCH/dashboard-detail.out"
+    check grep -Fq 'sample 0 had no live proxy worker or accepted-share counter; dashboard: WARNING Mining work is not valid (Monero node unsynchronized) — stopping xmrig-proxy' "$SCRATCH/dashboard-detail.out"
+    check grep -Fq 'no corroborated recovery log; last dashboard Tor lines: WARNING Tor clearnet egress failed for 5 minutes' "$SCRATCH/dashboard-detail.out"
+    check grep -Fxq 'ERROR Tor clearnet egress is STILL broken after 2 recovery attempts' "$SCRATCH/dashboard-detail.out"
+    printf 'dashboard detail fixture: %s passed, %s failed\n' "$PASS" "$FAIL"
+    test "$FAIL" -eq 0
+)
 echo "== Post-apply witness waits for a reconnecting proxy and records the state when none qualifies =="
 for fixture in reconnects never; do
     (
