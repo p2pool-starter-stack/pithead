@@ -5,7 +5,7 @@ import { initDashboard } from '../../../mining_dashboard/web/static/dashboard.js
 import {
     GUARD_KEY, RELOAD_GUARD_MS, UPDATED_MESSAGE,
 } from '../../../mining_dashboard/web/static/app/freshness.mjs';
-import { aborted, httpError, makeEnv, ok } from '../helpers/dashboardenv.mjs';
+import { aborted, httpError, makeEnv, ok, unauthorized } from '../helpers/dashboardenv.mjs';
 
 const at = (version, extra = {}) => ok({ version: { text: version }, ...extra });
 
@@ -95,4 +95,14 @@ test('focus and visibility each run one extra poll through the in-flight guard; 
     await first;
     await d.tick();
     assert.equal(t.fetches.length, 3);
+});
+
+test('401 triggers a reload via the freshness hook (session expired)', async () => {
+    const t = makeEnv({ responses: [unauthorized(), unauthorized(), unauthorized(), unauthorized()], sleepFn: async () => {} });
+    const d = initDashboard(t.env);
+    await d.firstLoad;
+    assert.equal(t.reloads.length, 0);
+    await d.tick();
+    assert.equal(t.last().connected, true);
+    assert.equal(t.reloads.length, 1);
 });
