@@ -185,7 +185,6 @@ integration_expected=$(
     find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
         ! -name rig-supply.sh ! -name restore-proof.sh ! -name restore-unit-state.sh ! -name restore-chain-sync.sh ! -name chain-keep.sh ! -name restore-mining-ready.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
-        ! -name normalize-config-version.sh \
         ! -name harness-args.sh ! -name e2e-env.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-lifecycle-miners.sh ! -name run-tari-background-sync.sh ! -name run-lifecycle-tls.sh \
         ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh ! -name tor-control-dial.sh ! -name worker-detail-diagnostics.sh ! -name onion-baseline-diagnostics.sh ! -name lan-guard-snapshot.sh \
         ! -name step-diagnostics.sh \

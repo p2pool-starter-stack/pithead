@@ -98,11 +98,9 @@ preflight() {
     find "$OUT_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
     record_manifest
 
-    # shellcheck source=tests/integration/lib/normalize-config-version.sh
-    source "$(dirname "${BASH_SOURCE[0]}")/normalize-config-version.sh" || exit $?
-    _normalize_config_version
+    # Snapshot the baseline so we can restore it and compare secrets later.
     BASELINE_CONFIG="$(rx 'cat config.json')"
-    BASELINE_PRUNE="$(env_on_box MONERO_PRUNE)"
+    BASELINE_PRUNE="$(env_on_box MONERO_PRUNE)" # 1 = pruned, 0 = full
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     BASELINE_SECRET_FP="$(secret_fingerprint)"
     # The coarse fingerprint proves "unchanged"; it cannot say WHICH category moved. The
