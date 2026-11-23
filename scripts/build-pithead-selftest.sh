@@ -361,7 +361,7 @@ self_test() {
     rc=0
     [ -n "$preflight_call_line" ] && [ -n "$workdir_line" ] && [ "$preflight_call_line" -lt "$workdir_line" ] || rc=1
     _case "every release route runs preflight before doing release work" 0 "$rc"
-    clean_tree_line=$(grep -n '^[[:space:]]*require_clean_release_tree$' "$clone/repo/scripts/release/preflight.sh" | cut -d: -f1 || true)
+    clean_tree_line=$(grep -n '^[[:space:]]*require_clean_release_tree$' "$clone/repo/scripts/release/preflight.sh" | tail -1 | cut -d: -f1 || true)
     rc=0
     [ -n "$clean_tree_line" ] && [ -n "$build_line" ] && [ "$clean_tree_line" -lt "$build_line" ] || rc=1
     _case "release preflight refuses dirty trees before building release bytes" 0 "$rc"
