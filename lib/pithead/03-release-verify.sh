@@ -6,22 +6,7 @@ compose_pinned_digest() {
         grep -oE 'sha256:[0-9a-f]+' | head -1
 }
 
-# The verifier runs as a container, not a host binary (#1072). cosign has no Ubuntu apt package, so
-# requiring it on the host made signing a hidden prerequisite that no doc listed and no dependency
-# check installed: a fresh bundle install dead-ended at first `up`, and every fielded install cut
-# before signing engaged hit the same wall on its first signed upgrade — after the download, the
-# extract, and the control-unit re-provision (#1070). Docker is already a hard prerequisite and the
-# very next step of both callers pulls images with it, so running cosign this way costs the operator
-# nothing to install and nothing to know about.
-#
-# The @sha256 pin is LOAD-BEARING, not cosmetic housekeeping: verifying release images by first
-# pulling a verifier image is itself an unverified pull, and the digest is the only thing that
-# closes it. Pinned, a hostile registry can serve nothing but the exact bytes named here or fail the
-# pull outright; on a tag it could serve a "cosign" that exits 0 on everything and silently turn the
-# whole gate off. Bootstrapping is therefore trust-on-first-use exactly as downloading the binary
-# from GitHub was — no weaker, and pinned to bytes rather than to a mutable tag. Never relax this to
-# a tag, and treat bumping it as a supply-chain change.
-readonly COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign@sha256:4bedb8de1c5c1abd8dea60de704ba449402d238623fa8bb33d2ccaa9beffcbf5" # v2.6.3
+readonly COSIGN_IMAGE="@COSIGN_IMAGE@"
 
 # Verification is possible at all — i.e. we can run the verifier. Kept as its own predicate so the
 # callers' fail-closed refusals read the same as they did when this was `command -v cosign`.
@@ -131,6 +116,45 @@ verify_release_images() {
     log "All 5 release images verify against their pinned digest (cosign.pub)."
 }
 
+wait_services_healthy() {
+    local profiles svc health timeout_s elapsed=0
+    profiles=",$(env_get COMPOSE_PROFILES),"
+    local -a check=()
+    check+=(dashboard p2pool tor)
+    [[ "$profiles" == *,local_node,* ]]     && check+=(monerod)
+    [[ "$profiles" == *,local_tari,* ]]     && check+=(tari)
+    [[ "$profiles" == *,payout_confirm,* ]] && check+=(wallet-rpc)
+    [[ "$profiles" == *,tari_payout_confirm,* ]] && check+=(tari-wallet)
+    [ "${#check[@]}" -eq 0 ] && return 0
+    timeout_s=120
+    for svc in "${check[@]}"; do
+        local cid
+        cid=$(docker compose ps -a -q "$svc" 2>/dev/null) || continue
+        [ -n "$cid" ] || continue
+        elapsed=0
+        while true; do
+            health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null) || {
+                break
+            }
+            case "$health" in
+                healthy) break ;;
+                ""|"none")
+                    break ;;
+                unhealthy|starting)
+                    ;;
+            esac
+            sleep 2
+            elapsed=$((elapsed + 2))
+            if [ "$elapsed" -ge "$timeout_s" ]; then
+                error "Upgrade: $svc did not become healthy within ${timeout_s}s (status: ${health:-unknown})."
+                return 1
+            fi
+        done
+    done
+    log "All enabled services healthy."
+    return 0
+}
+
 reconcile_compose_images() {
     local config services svc image cid declared running
     config=$(docker compose config --format json) || return 1
@@ -219,6 +243,10 @@ stack_upgrade() {
             generate_caddyfile
             docker compose restart caddy
         fi
+    fi
+    if ! wait_services_healthy; then
+        error "Upgrade aborted: one or more services failed to become healthy."
+        return 1
     fi
     update_current_symlink # #455: only a SUCCESSFUL upgrade moves the `current ->` pointer
     # #33: converge the control-runner units on the current toggle — LAST, and deliberately after
