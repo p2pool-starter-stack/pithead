@@ -46,18 +46,21 @@ capture_from_image() {
 
 parse_file() {
     local path="$1" line num=0 errs=0
-    [ -f "$path" ] || { echo "parse_file: $path not found" >&2; return 1; }
+    [ -f "$path" ] || {
+        echo "parse_file: $path not found" >&2
+        return 1
+    }
     while IFS= read -r line || [ -n "$line" ]; do
         num=$((num + 1))
         [ -z "$line" ] && continue
         case "$line" in
-            '#'*) continue ;;
+        '#'*) continue ;;
         esac
         if ! printf '%s' "$line" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9.+-_-]*\|[^|]+\|[a-z0-9_-]+\|(debian|ubuntu|alpine)$'; then
             echo "parse_file: bad format at line $num: $line" >&2
             errs=$((errs + 1))
         fi
-    done < "$path"
+    done <"$path"
     [ "$errs" -eq 0 ] || return 1
 }
 
@@ -88,7 +91,11 @@ if [ "${1:-}" = "--self-test" ]; then
             fi
             ;;
         *run*dpkg*)
-            for arg in "$@"; do case "$arg" in *:*) img="$arg"; break;; esac; done
+            for arg in "$@"; do case "$arg" in *:*)
+                img="$arg"
+                break
+                ;;
+            esac done
             printf 'ii  systemd                         257.9-1~deb13u1      amd64\n'
             printf 'ii  jq                              1.7.1-3+deb13u1      amd64\n'
             ;;
@@ -148,7 +155,10 @@ EOF
 fi
 
 if [ "${1:-}" = "--from-file" ]; then
-    [ "${2:-}" ] || { echo "usage: $0 --from-file <path>" >&2; exit 1; }
+    [ "${2:-}" ] || {
+        echo "usage: $0 --from-file <path>" >&2
+        exit 1
+    }
     parse_file "$2"
     exit $?
 fi
