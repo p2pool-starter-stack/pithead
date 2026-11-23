@@ -60,18 +60,24 @@ DASHBOARD_ROOT="$(run_sourced "$C" env_get_file "$C/.env" DASHBOARD_DATA_DIR)"
 CONTROL_ROOT="$(run_sourced "$C" env_get_file "$C/.env" CONTROL_DIR)"
 CLEARNET_ROOT="$(run_sourced "$C" env_get_file "$C/.env" CLEARNET_STATE_DIR)"
 mkdir -p "$DASHBOARD_ROOT" "$CONTROL_ROOT/requests" "$CLEARNET_ROOT" "$C/data/symlink-target"
+ln -s "$C/data/symlink-target" "$DASHBOARD_ROOT/pivot"
+preview_move "$DASHBOARD_ROOT/pivot/monero"
+assert_eq "a monero dir under the dashboard dir is refused at preview" \
+    "$(jq -r '.status' "$RESULTS/$UUID7.json" 2>/dev/null)" "rejected"
+assert_contains "the dashboard-dir refusal names the overlap" \
+    "$(jq -r '.log' "$RESULTS/$UUID7.json" 2>/dev/null)" "overlap"
+rm -f "$DASHBOARD_ROOT/pivot"
 WRITABLE_CASE=0
-for WRITABLE_ROOT in "$DASHBOARD_ROOT" "$CONTROL_ROOT/requests" "$CLEARNET_ROOT"; do
+for WRITABLE_ROOT in "$CONTROL_ROOT/requests" "$CLEARNET_ROOT"; do
     WRITABLE_CASE=$((WRITABLE_CASE + 1))
     ln -s "$C/data/symlink-target" "$WRITABLE_ROOT/pivot"
     preview_move "$WRITABLE_ROOT/pivot/monero"
-    PREVIEW_REFUSAL="$(jq -r '.log // .error // empty' "$RESULTS/$UUID7.json" 2>/dev/null)"
     printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
     run_pending >/dev/null
     assert_eq "dashboard-writable ancestor is refused despite APPLY" \
         "$(jq -r '.status' "$RESULTS/$UUID7.json" 2>/dev/null)" "rejected"
     assert_contains "writable-ancestor refusal names the boundary" \
-        "$PREVIEW_REFUSAL$(jq -r '.error // empty' "$RESULTS/$UUID7.json" 2>/dev/null)" "overlap"
+        "$(jq -r '.error' "$RESULTS/$UUID7.json" 2>/dev/null)" "overlap"
     rm -f "$WRITABLE_ROOT/pivot"
 done
 # The rest of the control spool is host-only but also cannot become service data.
@@ -91,13 +97,10 @@ assert_eq "a first dashboard.data_dir render promises no carry" \
     "$(run_sourced "$C" describe_change DASHBOARD_DATA_DIR "" "$C/data/dashboard")" \
     "CONFIRM	DASHBOARD_DATA_DIR: unset → $C/data/dashboard — the dashboard keeps its database here."
 preview_dashboard_move "$C/data"
-PREVIEW_REFUSAL="$(jq -r '.log // .error // empty' "$RESULTS/$UUID7.json")"
-printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
-run_pending >/dev/null
 assert_eq "dashboard cannot mount the shared data ancestor" \
     "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
 assert_contains "shared data ancestor refusal names the overlap" \
-    "$PREVIEW_REFUSAL$(jq -r '.error // empty' "$RESULTS/$UUID7.json")" "overlap"
+    "$(jq -r '.log' "$RESULTS/$UUID7.json")" "overlap"
 TOR_ROOT="$(run_sourced "$C" env_get_file "$C/.env" TOR_DATA_DIR)"
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID7" --arg old "$TOR_ROOT" --arg new "$C/data/tor-v2" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0] | .dashboard.data_dir=$old | .tor.data_dir=$new)}' >"$REQS/$UUID7.json"

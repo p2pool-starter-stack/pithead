@@ -15,12 +15,14 @@ run_sourced "$SANDBOX" assert_safe_dir "" >/dev/null 2>&1
 assert_rc "rejects empty" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/srv/p2pool/data" >/dev/null 2>&1
 assert_rc "allows real dir" "$?" "0"
-# Tightened guard (#91): bare mount/parent roots, non-absolute paths and '..' traversal are refused;
-# a dedicated subfolder of a mount root is still fine.
 run_sourced "$SANDBOX" assert_safe_dir "/srv" >/dev/null 2>&1
 assert_rc "rejects bare /srv" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/mnt" >/dev/null 2>&1
 assert_rc "rejects bare /mnt" "$?" "1"
+for d in /srv/ /home/alice/ /etc/; do
+    run_sourced "$SANDBOX" assert_safe_dir "$d" >/dev/null 2>&1
+    assert_rc "rejects a broad root spelled with a trailing slash" "$?" "1"
+done
 run_sourced "$SANDBOX" assert_safe_dir "relative/data" >/dev/null 2>&1
 assert_rc "rejects relative path" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/srv/../etc/data" >/dev/null 2>&1
