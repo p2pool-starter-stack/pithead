@@ -101,7 +101,7 @@ if [ "${1:-}" = "--self-test" ]; then
         esac
     }
 
-    st "alpine image is detected" "$(os_flavor 'ghcr.io/foo/bar:latest@alpine')" "alpine"
+    st "alpine image is detected" "$(os_flavor 'alpine:fake')" "alpine"
     st "ubuntu image is detected" "$(os_flavor 'ubuntu:fake')" "ubuntu"
     st "debian image is detected" "$(os_flavor 'debian:fake')" "debian"
     st "unknown base prints empty" "$(os_flavor 'unknown:fake')" ""
