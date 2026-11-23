@@ -171,14 +171,14 @@ for fixture in reconnects never; do
 done
 
 echo "== Lifecycle recovery proof rejects false success and unexpected-abort advice =="
-for fixture in clears refusal abort success wrong-guard busy error deadline sampler-timeout; do
+for fixture in clears refusal abort success wrong-guard busy error deadline sampler-timeout slow-check; do
     (
         IT_FAIL=0 IT_PASS=0
         OUT_DIR="$SCRATCH/$fixture"
         mkdir -p "$OUT_DIR"
         clock=0
         now_s() { echo 9999999999; }
-        tor_recovery_probe_now_s() { echo "$clock"; }
+        tor_recovery_probe_now_s() { echo $((clock + $(cat "$OUT_DIR/skew" 2>/dev/null || echo 0))); }
         sleep() { clock=$((clock + $1)); }
         rx() {
             if [[ "$1" == *lslocks* ]]; then
@@ -187,10 +187,14 @@ for fixture in clears refusal abort success wrong-guard busy error deadline samp
                 printf '%s\n' 'lock-record: pid=42 verb=apply since=2026-10-31T00:00:00Z' 'kernel-lock: pid=42 mode=WRITE' 'untrusted diagnostic payload'
                 return 0
             fi
+            if [[ "$1" == *tor-control-signal.sh* ]]; then
+                echo 'circuit-established=0 pending=70'
+                return 0
+            fi
             [ "$1" != 'docker exec tor /usr/local/bin/tor-recovery-diagnose.sh' ]
         }
         pithead() {
-            printf '%s|%s\n' "$((60 - clock))" "${IT_PITHEAD:-./pithead}" >>"$OUT_DIR/commands"
+            printf '%s|%s\n' "$((150 - clock))" "${IT_PITHEAD:-./pithead}" >>"$OUT_DIR/commands"
             echo attempt >>"$OUT_DIR/calls"
             case "$fixture" in
             busy | clears | sampler-timeout)
@@ -202,6 +206,14 @@ for fixture in clears refusal abort success wrong-guard busy error deadline samp
                 return 1
                 ;;
             error) return 2 ;;
+            slow-check)
+                remaining=${IT_PITHEAD#timeout --kill-after=2 }
+                remaining=${remaining%% *}
+                [ "$remaining" -ge 100 ] || return 124
+                echo 100 >"$OUT_DIR/skew"
+                echo '[WARNING] Tor recovery refused: circuit history is not saturated.'
+                return 1
+                ;;
             deadline) return 124 ;;
             refusal)
                 echo '[WARNING] Tor recovery refused: circuit history is not saturated.'
@@ -222,7 +234,7 @@ for fixture in clears refusal abort success wrong-guard busy error deadline samp
         set +e
         tor_recovery_healthy_probe
         set -e
-        if [ "$fixture" = refusal ] || [ "$fixture" = clears ] || [ "$fixture" = sampler-timeout ]; then
+        if [ "$fixture" = refusal ] || [ "$fixture" = clears ] || [ "$fixture" = sampler-timeout ] || [ "$fixture" = slow-check ]; then
             check test "$IT_FAIL" -eq 0
             check test "$IT_PASS" -eq 6
         elif [ "$fixture" = busy ] || [ "$fixture" = error ] || [ "$fixture" = deadline ]; then
@@ -246,16 +258,22 @@ for fixture in clears refusal abort success wrong-guard busy error deadline samp
             check test "$(grep -c 'untrusted' "$OUT_DIR/tor-recovery-admission.log")" -eq 0
             ;;
         busy)
-            check test "$clock" -eq 60
-            check test "$(wc -l <"$OUT_DIR/calls")" -eq 30
-            check grep -q 'admission: elapsed_s=60 rc=75' "$OUT_DIR/tor-recovery-admission.log"
+            check test "$clock" -eq 150
+            check test "$(wc -l <"$OUT_DIR/calls")" -eq 75
+            check grep -q 'admission: elapsed_s=150 rc=75' "$OUT_DIR/tor-recovery-admission.log"
             ;;
         sampler-timeout)
             check test "$(wc -l <"$OUT_DIR/calls")" -eq 3
             check grep -q '^kernel-lock: unavailable$' "$OUT_DIR/tor-recovery-admission.log"
             ;;
+        slow-check)
+            check test "$(wc -l <"$OUT_DIR/calls")" -eq 1
+            check grep -q 'elapsed_s=100 rc=1' "$OUT_DIR/tor-recovery-admission.log"
+            check test "$(grep -c '^tor-status:' "$OUT_DIR/tor-recovery-admission.log")" -eq 0
+            ;;
         deadline)
             check test "$(wc -l <"$OUT_DIR/calls")" -eq 1
+            check grep -q '^tor-status: circuit-established=0 pending=70$' "$OUT_DIR/tor-recovery-admission.log"
             check grep -q 'kernel-lock: pid=42 mode=WRITE' "$OUT_DIR/tor-recovery-admission.log"
             ;;
         *) check test "$(wc -l <"$OUT_DIR/calls")" -eq 1 ;;

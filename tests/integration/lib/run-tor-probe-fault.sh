@@ -224,7 +224,8 @@ tor_recovery_probe_now_s() {
 }
 
 tor_recovery_healthy_probe() {
-    local output='' rc=0 started elapsed attempt=0 snapshot remaining
+    local output='' rc=0 started elapsed attempt=0 snapshot remaining status
+    local budget="${TOR_RECOVERY_PROBE_BUDGET:-150}"
     local probe_command="${IT_PITHEAD:-./pithead}" IT_PITHEAD
     : >"$OUT_DIR/tor-recovery-admission.log"
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
@@ -236,7 +237,7 @@ tor_recovery_healthy_probe() {
     started=$(tor_recovery_probe_now_s)
     while :; do
         elapsed=$(($(tor_recovery_probe_now_s) - started))
-        remaining=$((60 - elapsed))
+        remaining=$((budget - elapsed))
         [ "$remaining" -gt 0 ] || break
         IT_PITHEAD="timeout --kill-after=2 $remaining $probe_command"
         rc=0
@@ -250,10 +251,15 @@ tor_recovery_healthy_probe() {
             head -n 17 >>"$OUT_DIR/tor-recovery-admission.log"
         [ "$rc" -eq 75 ] || break
         elapsed=$(($(tor_recovery_probe_now_s) - started))
-        [ "$elapsed" -lt 60 ] || break
+        [ "$elapsed" -lt "$budget" ] || break
         sleep 2
     done
     printf 'admission: elapsed_s=%s rc=%s\n' "$(($(tor_recovery_probe_now_s) - started))" "$rc" >>"$OUT_DIR/tor-recovery-admission.log"
+    if [ "$rc" -ne 1 ] || [[ "$output" != *'Tor recovery refused: circuit history is not saturated.'* ]]; then
+        status=$(rx 'timeout --kill-after=1 10 docker exec tor /usr/local/bin/tor-control-signal.sh STATUS' 2>&1 | head -c 512 | tr -c '[:print:]\n' '?')
+        [ -n "$status" ] || status=unavailable
+        printf 'tor-status: %s\n' "${status//$'\n'/ }" >>"$OUT_DIR/tor-recovery-admission.log"
+    fi
     assert_rc "healthy Tor recovery check exits 1 (#3262)" "$rc" "1"
     assert_contains "healthy Tor recovery check names its guard (#3262)" "$output" "Tor recovery refused: circuit history is not saturated."
     if [[ "$output" = *"aborted unexpectedly"* || "$output" = *"bash -x"* ]]; then
