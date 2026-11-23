@@ -42,9 +42,10 @@ restore() {
     trap - EXIT ERR
     if [ "$rc" != 0 ]; then
         printf 'Guest diagnostics at failure:\n'
-        for n in tg-guard-bad tg-auth; do
+        for n in tg-guard-bad tg-mid tg-exit tg-auth; do
             printf -- '--- %s\n' "$n"
-            docker logs --tail 25 "$n" 2>&1 | scrub | tail -c 3000 || true
+            docker logs "$n" 2>&1 | scrub | grep -iE 'warn|err|reachab|upload|publish|reject|descriptor|not adding|consensus' | grep -v 'directory information' | head -n 12 | cut -c1-240 || true
+            docker logs --tail 6 "$n" 2>&1 | scrub | cut -c1-240 || true
         done
         docker logs --tail 25 tor 2>&1 | scrub | tail -c 3000 || true
     fi
@@ -72,7 +73,7 @@ node_run() {
 }
 relay_torrc() {
     printf '%s\n' "TestingTorNetwork 1" "DataDirectory /var/lib/tor" "Nickname $1" "Address $2" \
-        "ORPort 9001" "DirPort 9030" "SocksPort 0" "Log notice stdout" \
+        "ORPort 9001" "DirPort 9030" "SocksPort 0" "AssumeReachable 1" "PublishServerDescriptor 1" "Log notice stdout" \
         "HeartbeatPeriod 1 minute" "$dirauth" "${@:3}"
 }
 build_authority() {
