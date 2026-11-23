@@ -90,6 +90,14 @@ path (`PITHEAD_SELF`).
 - A Go-side failure of a verb it owns is that verb's failure; the launcher does
   not replay it in Bash.
 
-The Bash suites stay green in both modes: `tests/stack/lib.sh` scrubs every
-`PITHEAD_*` variable from the operator environment, so a sourced suite always
-starts from the table default and only the launcher honors a selection.
+## Testing both modes
+
+`tests/stack/lib.sh` scrubs every `PITHEAD_*` variable from the operator
+environment, then exports `PITHEAD_IMPL` from `PITHEAD_TEST_IMPL` when that is
+set, so the existing suites run unchanged under a selection. The Shell
+workflow's `shell-block` matrix runs every `run.sh` block twice: once with no
+selection (the table default) and once with `PITHEAD_TEST_IMPL` listing every
+piece. Until a piece ships a Go binary, the selected leg proves that every
+verb passes through the selection and fallback path with Bash's argv, streams
+and exit status. The leg reaches the Go side only when the job builds
+`go/bin/pithead` beside the entry point.

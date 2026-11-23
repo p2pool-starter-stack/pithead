@@ -26,13 +26,14 @@ concurrency:
 
 jobs:
   shell-block:
-    name: Shell tests (pithead suite, block ${{ matrix.block }})
+    name: Shell tests (pithead suite, block ${{ matrix.block }}${{ matrix.impl != '' && ', every piece selected' || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         block: [1, 2, 3, 4, 5]
+        impl: ["", "help,status,payout-keys,config-document,caddy-render,env-render,doctor"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -53,6 +54,7 @@ jobs:
         run: bash tests/stack/run.sh "$BLOCK"
         env:
           BLOCK: ${{ matrix.block }}
+          PITHEAD_TEST_IMPL: ${{ matrix.impl }}
 
   shell-fragment:
     name: Shell prerequisite (${{ matrix.fragment }})

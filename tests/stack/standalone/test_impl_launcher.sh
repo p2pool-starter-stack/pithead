@@ -40,8 +40,18 @@ probe() {
     bash -c 'source "$1" >/dev/null 2>&1 || exit 9; shift; "$@"' _ "$STACK" "$@"
 }
 
+piece_mode() {
+    bash -c 'source "$1" >/dev/null 2>&1 || exit 9
+        _pithead_impl_selection_mode "$2" "$3" || exit 2
+        printf %s "$_PITHEAD_IMPL_MODE"' _ "$STACK" "$1" "$2"
+}
+
 mode_for() {
-    probe _pithead_impl_mode_for "$1" "$2"
+    local piece
+    piece=$(bash -c 'source "$1" >/dev/null 2>&1 || exit 9
+        _pithead_impl_lookup_piece "$2"
+        printf %s "$_PITHEAD_IMPL_PIECE"' _ "$STACK" "$1")
+    piece_mode "${piece:-none}" "$2"
 }
 
 for v in help -h --help version -V --version status doctor; do
@@ -59,9 +69,9 @@ check "two listed pieces both select Go" "$(mode_for doctor help,doctor)" "go"
 check "a trailing comma is not an entry" "$(mode_for version help,)" "go"
 check "a verb with no piece ignores a selection" "$(mode_for apply help)" "bash"
 check "an internal piece selects through the table" \
-    "$(probe _pithead_impl_mode_for_piece config-document config-document)" "go"
+    "$(piece_mode config-document config-document)" "go"
 check "an unlisted internal piece stays in Bash" \
-    "$(probe _pithead_impl_mode_for_piece config-document help)" "bash"
+    "$(piece_mode config-document help)" "bash"
 
 out=$(PITHEAD_IMPL=go "$STACK" version 2>&1) && rc=0 || rc=$?
 check "the whole-binary value go is refused" "$rc" "1"
@@ -103,6 +113,15 @@ chmod +x "$WORK/bad-go"
 out=$(PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/bad-go" "$STACK" version 2>&1) && rc=0 || rc=$?
 check "a Go side that cannot start falls back to Bash" "$rc" "0"
 check_contains "the unstartable fallback still answers version" "$out" "VERSION"
+out=$(env PITHEAD_IMPL=help PITHEAD_GO_BINARY="$WORK/bad-go" bash -c '
+    source "$1" >/dev/null 2>&1 || exit 9
+    PITHEAD_SELF="$1"
+    _pithead_impl_launch version 2>/dev/null
+    printf "[%s]" "${PITHEAD_IMPL_LAUNCHED-unset}" "${PITHEAD_GO_REFERENCE-unset}"
+    shopt -q execfail && printf "[execfail]" || printf "[noexecfail]"
+    env | grep -c "^PITHEAD_IMPL_LAUNCHED=\|^PITHEAD_GO_REFERENCE=" || true
+' _ "$STACK" 2>&1) || true
+check "the unstartable fallback clears the launch markers and execfail" "$out" "[unset][unset][noexecfail]0"
 
 check "the internal-piece API selects a listed piece" \
     "$(env PITHEAD_IMPL=help bash -c 'source "$1" >/dev/null 2>&1; _pithead_impl_selected help' _ "$STACK" && echo yes)" "yes"
@@ -221,5 +240,13 @@ out=$(env PITHEAD_IMPL=go PITHEAD_IMPL_FILE=/nonexistent PITHEAD_GO_BINARY=/none
     printf "[%s]" "${PITHEAD_IMPL-unset}" "${PITHEAD_IMPL_FILE-unset}" "${PITHEAD_GO_BINARY-unset}" "${PITHEAD_GO_REFERENCE-unset}"
 ' _ "$ROOT" 2>/dev/null || true)
 check "the stack lib scrubs the selector from sourced suites" "$out" "[unset][unset][unset][unset]"
+out=$(env PITHEAD_IMPL=go PITHEAD_TEST_IMPL=help,doctor PITHEAD_GO_BINARY=/nonexistent bash -c '
+    source "$1/tests/stack/lib.sh" >/dev/null 2>&1 || exit 9
+    printf "[%s]" "${PITHEAD_IMPL-unset}" "${PITHEAD_GO_BINARY-unset}"
+' _ "$ROOT" 2>/dev/null || true)
+check "the stack lib re-exports the test selection after the scrub" "$out" "[help,doctor][unset]"
+wf_impl=$(sed -n 's/^ *impl: \["", "\([^"]*\)"\]$/\1/p' "$ROOT/.github/workflows/shell.yml")
+pieces=$(probe _pithead_impl_piece_list)
+check "the Shell workflow's selected leg lists every piece" "$wf_impl" "${pieces// /,}"
 
 printf '\nPASS: per-piece PITHEAD_IMPL launcher (%s checks)\n' "$CHECKS"

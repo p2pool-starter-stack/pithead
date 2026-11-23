@@ -26,6 +26,14 @@ scored 3708 passed / 148 failed, so a result from there is not evidence either w
 `PITHEAD_UNTRUSTED_MACOS_RUN=1` overrides the refusal for portability debugging, and is named for
 what the result is worth.
 
+`tests/stack/lib.sh` unsets every `PITHEAD_*` variable the caller exported before a suite runs
+(#1922): scripts the suite sources read those knobs at source time, so a test asserting a default
+would otherwise assert whatever the operator set. It keeps two: `PITHEAD_UNTRUSTED_MACOS_RUN`, and
+`PITHEAD_TEST_IMPL`, which it re-exports as `PITHEAD_IMPL` so the unchanged suites run under a
+per-piece implementation selection (#4214). The Shell workflow runs every `run.sh` block twice,
+once with no selection and once with every piece selected; see
+[selection](go-port/selection.md#testing-both-modes).
+
 `make test-container` is the answer to that refusal rather than a way around it: it runs the same
 targets in `tests/runner/Dockerfile`, a pinned Debian image carrying the toolchain at the versions
 the `Makefile` pins, as a non-root user. It needs Docker on the host and nothing else, so the

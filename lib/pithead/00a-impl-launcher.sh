@@ -53,11 +53,6 @@ _pithead_impl_lookup_piece() {
     _PITHEAD_IMPL_PIECE="$out"
 }
 
-_pithead_impl_piece_for() {
-    _pithead_impl_lookup_piece "$1"
-    printf '%s' "$_PITHEAD_IMPL_PIECE"
-}
-
 _pithead_impl_selection_mode() {
     local piece="$1" selection="$2" name default _flip entry rest has_bash=0 mode=""
     _PITHEAD_IMPL_MODE=""
@@ -90,22 +85,6 @@ _pithead_impl_selection_mode() {
     [ -n "$mode" ] || mode=bash
     _PITHEAD_IMPL_MODE="$mode"
     return 0
-}
-
-_pithead_impl_mode_for_piece() {
-    local piece="$1" selection="$2"
-    _pithead_impl_selection_mode "$piece" "$selection" || return 2
-    printf '%s' "$_PITHEAD_IMPL_MODE"
-}
-
-_pithead_impl_mode_for() {
-    local piece
-    piece=$(_pithead_impl_piece_for "$1")
-    [ -n "$piece" ] || {
-        printf bash
-        return 0
-    }
-    _pithead_impl_mode_for_piece "$piece" "$2"
 }
 
 _pithead_impl_selected() {
