@@ -117,7 +117,7 @@ _run_lifecycle() {
     fi
     restore_tls_before=$(dashboard_tls_identity) || restore_tls_before=""
     it_selfcheck_run_logged "$rt_dir" || lifecycle_ok=0
-    _normalize_config_version && BASELINE_CONFIG="$(rx 'cat config.json')"
+    _normalize_config_version; BASELINE_CONFIG="$(rx 'cat config.json')"
     it_step "backup → restore round-trip…"
     if it_run_logged "$rt_dir" backup pithead backup -y --no-encrypt; then
         local arch
@@ -243,7 +243,6 @@ kept_data_snapshot_snippet() {
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
     printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"
 }
-
 # The same paths' LMDB files as inode, birth time to the nanosecond and path: a chain that was
 # reused keeps all three, one re-created by a resync gets a new birth time even when the
 # filesystem hands the freed inode number straight back. Only *.mdb: a log rotates into new
@@ -366,7 +365,6 @@ telemetry_rows_diff() { # <before-lines> <after-lines>
     missing="$(comm -23 <(printf '%s\n' "$1" | carried_rows | sort) <(printf '%s\n' "$2" | carried_rows | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
     printf 'before=%s after=%s missing:%s' "$(printf '%s' "$1" | grep -c .)" "$(printf '%s' "$2" | grep -c .)" "${missing:- none}"
 }
-
 _pred_status_down() { ! pithead status >/dev/null 2>&1; }
 # --- Fault-injection phase (--fault-injection) ------------------------------
 # Break local monerod three ways, assert status/failover, then restore; opt-in because debounces are slow.
