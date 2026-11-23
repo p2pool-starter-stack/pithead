@@ -57,6 +57,7 @@ drive_pool() { # <scenario|lifecycle> <config> [overrides]
         rx() {
             case "$1" in
             'test -f dashboard/Dockerfile') return 1 ;;
+            'cat config.json') printf '%s' "$BASELINE_CONFIG" ;;
             ls*) printf 'backups/test.tar.gz' ;;
             esac
         }
