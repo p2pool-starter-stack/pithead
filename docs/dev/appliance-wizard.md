@@ -211,7 +211,7 @@ What the boot path reads, written by the host at the moment a role is accepted:
 | File (under `/data/pithead`) | Meaning |
 |---|---|
 | `machine-role` | `pithead`, `both` or `rig`. Absent means `pithead` — every machine provisioned before this contract. The coordinator values are derivable from `config.json` (both IS `local_miner.enabled`); the rig value is load-bearing, because a rig has no `config.json` at all. |
-| `rig.json` | rig role only: `pool`, `worker`, `access_token` and `stratum_password` when one was set. |
+| `rig.json` | rig role only: `pool`, `worker`, `access_token` and `stratum_password` when one was set. `paired` (boolean, default `true`) — `false` pins the miner control API to the rig's own LAN subnets instead of the pool host (issue #4066). `api_allow_from_override` — explicit operator override for the miner's `api_allow_from` CIDR. |
 
 A rig install to a disk stages the accepted answers as `pithead-rig.json` on the ESP —
 carried to the target by `pithead-install` beside the config and token pre-seeds — and the

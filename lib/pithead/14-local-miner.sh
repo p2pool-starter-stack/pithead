@@ -313,6 +313,56 @@ rig_coordinator_ip() {
     getent ahostsv4 "$host" 2>/dev/null | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print $1; exit }'
 }
 
+# Derive a non-loopback, non-link-local IPv4 subnet from the machine's live interfaces.
+# Skips lo, 169.254/16 link-local, and container-bridge prefixes (docker0, br-, veth, cni, flannel,
+# lxc, virbr). Prints the first qualifying subnet in CIDR form (one of each /8 block by priority
+# to prefer the broadest match), nothing when no interface qualifies.
+rig_own_subnets() {
+    local seen_blocks=""
+    # ip -4 -o addr output: N: IFACE    inet ADDR/PFX brd ... scope ...
+    # Fields (IFS-split): 1=number 2=iface 3=inet 4=addr/pfx 5=brd 6=addr 7=scope ...
+    while read -r _ iface _ addr _; do
+        # Skip loopback
+        [ "$iface" = "lo" ] && continue
+        # Skip container-bridge interface prefixes
+        case "$iface" in
+            docker0|br-*|veth*|cni*|flannel*|lxc*|virbr*) continue ;;
+        esac
+        # Extract IP and prefix from ADDR/PFX
+        local ip="${addr%%/*}"
+        local pfx="${addr#*/}"
+        [ -n "$ip" ] && [ -n "$pfx" ] && [ "$pfx" != "$addr" ] || continue
+        # Skip link-local (169.254.0.0/16)
+        local o1 o2
+        IFS='.' read -r o1 o2 _ _ <<< "$ip"
+        [ "$o1" != "169" ] && [ "$o2" != "254" ] || continue
+        # Compute subnet (network address) from IP and prefix
+        local a b c d s
+        IFS='.' read -r a b c _ <<< "$ip"
+        if [ "$pfx" -ge 24 ]; then
+            s="$a.$b.$c.0/$(min "$pfx" 24)"
+        elif [ "$pfx" -ge 16 ]; then
+            s="$a.$b.0.0/16"
+        elif [ "$pfx" -ge 8 ]; then
+            s="$a.0.0.0/8"
+        else
+            s="$ip/32"
+        fi
+        # Deduplicate by first octet block (prefer /8, then /16, then /24, then /32)
+        case "$seen_blocks" in
+            *"$a:"*) continue ;;
+        esac
+        seen_blocks="${seen_blocks}${a}:${pfx} "
+        echo "$s"
+        return 0
+    done < <(ip -4 -o addr 2>/dev/null)
+}
+
+# Return the minimum of two integers (avoids arithmetic issues).
+min() {
+    [ "$1" -le "$2" ] && echo "$1" || echo "$2"
+}
+
 # RigForge's config for a rig, derived from rig.json exactly the way the Both role's is derived
 # from config.json — rebuilt every boot, never repaired (bar the keys Worker Inspect writes, #3204).
 # The pool the operator gave, the worker name that labels this rig there (RigForge's pools[].user,
@@ -332,8 +382,23 @@ render_rig_miner_config() {
         warn "Could not mint or keep the rig's control token in rig.json — the miner was not configured."
         return 1
     }
-    allow=$(rig_coordinator_ip)
-    [ -n "$allow" ] || warn "The rig's control API stays off: the pool host does not resolve to an IPv4 address to pin it to. The read-only feed still serves, token required."
+    # #4066: api_allow_from — override wins, then branch on paired (default true).
+    # paired-true: pin to the pool host (coordinator) IPv4, current behavior.
+    # paired-false: mine to an outside pool; pin to the rig's own LAN subnets.
+    allow=$(jq -r '.api_allow_from_override // ""' "$PWD/rig.json" 2>/dev/null)
+    if [ -z "$allow" ]; then
+        local paired
+        # paired // true is wrong: jq's // returns right side for null AND false.
+        # has("paired") distinguishes missing (false) from present (true).
+        paired=$(jq -r 'if has("paired") then .paired | tostring else "true" end' "$PWD/rig.json" 2>/dev/null)
+        if [ "$paired" = "false" ]; then
+            allow=$(rig_own_subnets)
+            [ -n "$allow" ] || warn "The rig's control API stays off: no connected LAN subnets found for a paired-false rig. The read-only feed still serves, token required."
+        else
+            allow=$(rig_coordinator_ip)
+            [ -n "$allow" ] || warn "The rig's control API stays off: the pool host does not resolve to an IPv4 address to pin it to. The read-only feed still serves, token required."
+        fi
+    fi
     keep=$(jq -sc 'if length == 1 and (.[0] | type == "object") then .[0] | with_entries(select(.key | IN("DONATION", "autotune", "watchdog", "watchdog_interval_min", "max_temp_c"))) else {} end' "$dir/config.json" 2>/dev/null) || keep='{}'
     jq --argjson keep "$keep" --arg tok "$tok" --arg allow "$allow" '$keep + {pools: [({url: .pool, user: (.worker // "")}
         + (if (.stratum_password // "") == "" then {} else {pass: .stratum_password} end))],
