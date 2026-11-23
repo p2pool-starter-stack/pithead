@@ -245,11 +245,11 @@ git init -q --bare "$PIN_ORIGIN"
 git -C "$PIN_REPO" remote add origin "$PIN_ORIGIN"
 pin_case() { # <dry-run> <rehearsal> <function>
     (
-        # shellcheck disable=SC2034,SC2218  # sourced globals; git is stubbed
+        # shellcheck disable=SC2034,SC2218
         local dry="$1" reh="$2" fn="$3"
         cd "$PIN_REPO" || exit
         set --
-        # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by the gates
+        # shellcheck disable=SC1090,SC2034
         source "$REL" 2>/dev/null
         set +eu
         # shellcheck disable=SC2034,SC2218
