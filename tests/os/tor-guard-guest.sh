@@ -78,18 +78,24 @@ relay_torrc() {
 build_authority() {
     local out
     docker volume create tg-auth >/dev/null
-    out=$(docker run --rm --user tor -v tg-auth:/var/lib/tor --entrypoint sh "$image" -c "
-        set -e
+    out=$(docker run --rm --user root -v tg-auth:/var/lib/tor --entrypoint sh "$image" -c "
+        set -ex
+        command -v tor-gencert
         cd /var/lib/tor
         mkdir -p keys
         printf '\n' | tor-gencert --create-identity-key -m 12 --passphrase-fd 0 \
             -i keys/authority_identity_key -s keys/authority_signing_key -c keys/authority_certificate \
-            -a $auth_ip:9030 >/dev/null 2>&1
+            -a $auth_ip:9030
         printf 'TestingTorNetwork 1\nDataDirectory /var/lib/tor\nNickname tgauth\nAddress $auth_ip\nORPort 9001\nDirPort 9030\nSocksPort 0\n' >probe-torrc
-        tor --list-fingerprints -f probe-torrc >/dev/null 2>&1
+        tor --list-fingerprints -f probe-torrc >&2
         printf 'V3 %s\n' \"\$(awk '/^fingerprint /{print \$2}' keys/authority_certificate)\"
         printf 'FP %s\n' \"\$(cut -d' ' -f2- fingerprint | tr -d ' ')\"
-    ")
+        chown -R tor:tor /var/lib/tor
+        chmod 700 /var/lib/tor
+    " 2>"$work/auth.err") || {
+        tail -n 30 "$work/auth.err" >&2
+        return 1
+    }
     v3=$(printf '%s\n' "$out" | sed -n 's/^V3 //p')
     fp=$(printf '%s\n' "$out" | sed -n 's/^FP //p')
     [[ "$v3" =~ ^[0-9A-Fa-f]{40}$ && "$fp" =~ ^[0-9A-Fa-f]{40}$ ]]
