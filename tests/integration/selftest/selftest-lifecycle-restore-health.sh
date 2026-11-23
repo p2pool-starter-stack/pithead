@@ -9,6 +9,10 @@ lifecycle_mining_step() {
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
+# _normalize_config_version is used inside the extracted _run_lifecycle body (#2874).
+INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/normalize-config-version.sh
+source "$HERE/../lib/normalize-config-version.sh" || exit $?
 
 echo "== lifecycle restore health gates fault injection (#2501) =="
 
