@@ -74,7 +74,11 @@ release supersedes the open PR for an older one of the same component, and a clo
 
 Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
 sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
-them and the watch reports newer versions, not advisories (#4277). Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
+them and the watch reports newer versions, not advisories (#4277). The installed OS package lists
+are recorded in the ingredients manifest for each release and checked weekly by
+`scripts/watch/os-package-watch.sh` (#4254): it reads the manifest from the latest release,
+parses the OS package tables, and keeps one tracking issue with the current counts — a row whose
+count changes flags the image for review (missing packages, rebuild, or capture gap). Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
 the upstream release notes and security advisories for the new version, and records that check in
 the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
 the bump.
@@ -275,7 +279,8 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    run: a failed run must start again and never recovers them from the mutable staging tag. The first
    `pithead-os-rootfs` push creates a private package because that is GHCR's default: change its
    visibility to public and start the release again; the smoke gate refuses promotion until an
-   anonymous pull resolves to the captured digest.
+   anonymous pull resolves to the captured digest. The installed package lists for each image are
+   also captured at this point and stored alongside the digests.
 5. Staging smoke test (gate): pull each staged image back from GHCR. Verify the stack images report
    the release version in their OCI labels and carry every target platform (the v1.0.0 wrong-arch
    guard); verify the rootfs is amd64, stamped `release`, and carries no root SSH key. This validates
@@ -848,6 +853,10 @@ What exists today:
   pipeline cosign-signs the promoted digests + the bundle, `pithead upgrade` and the dashboard
   upgrade verify against the committed `cosign.pub` and fail closed. See
   [Signed releases](#signed-releases).
+- ✅ OS package lists recorded in the ingredients manifest (#4254): each image's `dpkg -l` or
+  `apk info` output is captured at build time, stored alongside the image digests, and attached
+  to the GitHub Release. A scheduled weekly watch compares package counts against the previous
+  release and keeps one tracking issue up to date.
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image

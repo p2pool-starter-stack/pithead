@@ -1,0 +1,49 @@
+name: OS package watch
+
+on:
+  schedule:
+    - cron: "45 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  os-package-watch:
+    name: Check OS package lists
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build the watch report
+        id: report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          bash scripts/watch/os-package-watch.sh >report.md
+          rc=$?
+          [ -s report.md ] || { echo "The OS package watch produced no report." >report.md; rc=1; }
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
+      - name: Publish to tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          body=$(cat report.md)
+          n=$(gh issue list --state open --limit 200 --json number,title \
+            --jq "map(select(.title == \"OS package list check\")) | .[0].number // empty")
+          if [ -n "$n" ]; then
+            gh issue edit "$n" --body "$body"
+            echo "updated #$n"
+          else
+            gh issue create --title "OS package list check" --label infra --body "$body"
+          fi
+      - name: Fail the run if the watch could not complete
+        if: steps.report.outputs.rc != '0'
+        run:
+          echo "::error::OS package watch could not complete"
+          exit 1

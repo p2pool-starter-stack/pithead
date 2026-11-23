@@ -63,7 +63,7 @@ publish() {
 
 # Ingredients manifest — exactly what's inside this release: the promoted image digests + upstream pins.
 write_manifest() {
-    local out="$1" suffix repo dg
+    local out="$1" suffix repo dg pkg_file pkg_count
     {
         printf '## Ingredients — Pithead %s\n\n' "$TAG"
         printf -- '- **Version:** %s\n- **Commit:** `%s`\n- **Built:** %s\n\n' "$STACK_VERSION" "$GIT_COMMIT" "$BUILD_DATE"
@@ -84,6 +84,19 @@ write_manifest() {
         printf -- '- caddy: `%s`\n' "$(pin caddy)"
         printf -- '- docker-socket-proxy: `%s`\n' "$(pin socket-proxy)"
         printf -- '- rigforge: `%s`\n' "$(pin rigforge)"
+        printf '\n### OS package lists\n\n'
+        for suffix in "${PUBLISHED_IMAGES[@]}"; do
+            pkg_file="$WORKDIR/packages.$suffix"
+            if [ -f "$pkg_file" ] && [ -s "$pkg_file" ]; then
+                pkg_count="$(wc -l < "$pkg_file" | tr -d ' ')"
+                printf '#### `%s` (%s packages)\n' "$(image_for "$suffix"):$TAG" "$pkg_count"
+                printf '```\n'
+                sed 's/^/    /' "$pkg_file"
+                printf '```\n\n'
+            else
+                printf '#### `%s`: package capture not available\n' "$(image_for "$suffix"):$TAG"
+            fi
+        done
     } >"$out"
     log "Wrote ingredients manifest: $out"
 }

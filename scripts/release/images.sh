@@ -130,6 +130,20 @@ build_rootfs_image() {
     fi
 }
 
+capture_packages() {
+    [ "$DRY_RUN" -eq 1 ] && return 0
+    local suffix
+    for suffix in "${PUBLISHED_IMAGES[@]}"; do
+        local repo="$WORKDIR/packages.$suffix"
+        log "Capturing packages from $(image_for "$suffix"):$STAGING_TAG"
+        if ! scripts/release/capture-packages.sh "$(image_for "$suffix"):$STAGING_TAG" >"$repo"; then
+            warn "package capture failed for $suffix — skipping; manifest will note the gap."
+            rm -f "$repo"
+        fi
+    done
+    log "Package lists written to $WORKDIR/packages.*"
+}
+
 # --- Stage 4: stage (push to the RC tag, capture digests) -----------------------------------------
 
 stage_push() {
