@@ -88,7 +88,7 @@ write_manifest() {
         for suffix in "${PUBLISHED_IMAGES[@]}"; do
             pkg_file="$WORKDIR/packages.$suffix"
             if [ -f "$pkg_file" ] && [ -s "$pkg_file" ]; then
-                pkg_count="$(wc -l < "$pkg_file" | tr -d ' ')"
+                pkg_count="$(wc -l <"$pkg_file" | tr -d ' ')"
                 printf '#### `%s` (%s packages)\n' "$(image_for "$suffix"):$TAG" "$pkg_count"
                 printf '```\n'
                 sed 's/^/    /' "$pkg_file"
