@@ -84,6 +84,8 @@ exposure_previews "P2Pool-clearnet preview with the firewall off names this host
 exposure_previews "public-IP preview names the dashboard login reachable from the internet" '.dashboard.expose_public_ip=true' \
     "Dashboard PUBLISHED" "anyone on the internet can reach the dashboard login"
 exposure_previews "donation enabling names project routing" '.donation.enabled=true | .donation.percent=0.1' "Project donation set to true"
+exposure_previews "enabling donation while off Tor names the direct dial" '.donation.enabled=true | .donation.tor=false' \
+    "Project donation set to true" "dials the project endpoint directly"
 exposure_previews "donation percentage change names the percentage" '.donation.percent=5' "5 percent"
 exposure_previews "donation off Tor while disabled names the later exposure" '.donation.enabled=false | .donation.tor=false' \
     "there is no project dial now" "exposes this host's IP to the project endpoint"
