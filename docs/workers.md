@@ -351,9 +351,11 @@ address. Until you adopt the rig — paste both into Worker Inspect's adopt form
 `host` + `token` entry to `workers.list[]` by hand — the dashboard's probe is refused (the feed
 wants the token) and the rig's row is badged `not adopted`, though it mines all the while. A rig
 pointed at a pool with no IPv4 address (an onion address) renders with control off and the feed
-on. A rig whose `rig.json` carries `"paired": false` mines to an outside pool; its control API
-is pinned to the rig's own LAN subnets rather than a pool host address, and the `access_token`
-is the operator's own stratum token for the outside pool. The appliance's built-in miner (the
+on. A rig whose `rig.json` carries `"paired": false` mines to an outside pool: its control API
+is pinned to the rig's own LAN subnet rather than the pool host's address (the subnet of the
+default-route interface; loopback, link-local and container-bridge interfaces never count), and
+control stays off with a warning when no subnet qualifies. The `access_token` is still required.
+`api_allow_from_override` in `rig.json` (one address or CIDR) replaces the pin for any rig. The appliance's built-in miner (the
 **Pithead + RigForge** choice) still ships without
 control: it sits on the same machine as the dashboard.
 
