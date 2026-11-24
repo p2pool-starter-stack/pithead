@@ -114,7 +114,7 @@ user-visible health as the DIY lifecycle: no wizard holding ports 80 and 443, th
 answering rather than the setup page, every container from before the step running again and
 steady, no failed pithead unit and an unchanged `failures_24h`. The provision reboot leg verifies
 after its wrong-password control and allows exactly that one failed login, so a boot probe counted
-as a failure still goes red. An unfinished guest verdict or an unreadable baseline is red.
+as a failure still goes red. The stack phase verifies again after the DIY lifecycle gate with the failed-login row opened up, because that gate's auth-fail-closed scenario fails logins on purpose. An unfinished guest verdict or an unreadable baseline is red.
 `tests/os/selftest-post-reboot-health.sh` injects each fault and pins the call order.
 
 The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
