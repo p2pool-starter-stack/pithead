@@ -9,7 +9,6 @@ from mining_dashboard.config.config import (
 )
 
 LAG_STALL_SEC = 900
-UNKNOWN_AFTER_SEC = 600
 GUARDED_CONTAINERS = (("monerod", "Monero node"), ("p2pool", "P2Pool"), ("tor", "Tor"))
 
 
@@ -107,7 +106,6 @@ class MiningGuard:
         self._holding_since = {}
         self._holding_wall = {}
         self._clear_since = {}
-        self._unknown_since = {}
         self.active = {}
 
     def _forget(self, key):
@@ -115,7 +113,6 @@ class MiningGuard:
             self._holding_since,
             self._holding_wall,
             self._clear_since,
-            self._unknown_since,
             self.active,
         ):
             table.pop(key, None)
@@ -126,12 +123,9 @@ class MiningGuard:
             if key not in triggers:
                 if key not in self.active:
                     self._forget(key)
-                    continue
-                unknown = self._unknown_since.setdefault(key, now)
-                if now - unknown >= UNKNOWN_AFTER_SEC:
-                    self._forget(key)
+                else:
+                    self._clear_since.pop(key, None)
                 continue
-            self._unknown_since.pop(key, None)
             holds, label, grace = triggers[key]
             if holds:
                 self._clear_since.pop(key, None)
