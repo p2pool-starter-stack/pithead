@@ -104,6 +104,25 @@
   fill: var(--accent);
   fill-opacity: 0.06;
 }
+.topo-node.topo-sys:not(.topo-hub):not(.topo-ext) rect {
+  fill: var(--warn);
+  fill-opacity: 0.08;
+  stroke: var(--warn);
+  stroke-dasharray: 5 2;
+}
+.scope-pill {
+  display: inline-block;
+  font-size: 0.8em;
+  font-weight: 600;
+  padding: 0.1rem 0.6rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+}
+.host-audit {
+  font-size: 0.85em;
+  margin-bottom: 0.5rem;
+}
 .topo-ext rect {
   fill: transparent;
   stroke-dasharray: 3 2;

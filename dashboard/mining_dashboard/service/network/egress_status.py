@@ -36,25 +36,59 @@ _LABELS = {
 }
 
 
-def egress_firewall_state(path=None, now=None):
-    """``enforced`` / ``missing`` / ``unverified`` from the host's status file."""
+def _fresh_status(path, now) -> dict | None:
     try:
         with open(path or STATUS_PATH, encoding="utf-8") as f:
             status = json.load(f)
-    except (OSError, ValueError, RecursionError):  # json recurses per nesting level
-        return UNVERIFIED
-    rc = status.get("rc") if isinstance(status, dict) else None
+    except (OSError, ValueError, RecursionError):
+        return None
     checked_at = status.get("checked_at") if isinstance(status, dict) else None
-    if type(rc) is not int or type(checked_at) not in (int, float):
-        return UNVERIFIED
-    if not -_MAX_EPOCH_S <= checked_at <= _MAX_EPOCH_S:  # also False for NaN
-        return UNVERIFIED
+    if type(checked_at) not in (int, float) or not -_MAX_EPOCH_S <= checked_at <= _MAX_EPOCH_S:
+        return None
     now = time.time() if now is None else now
-    if abs(now - checked_at) > 3 * CHECK_INTERVAL_S:
+    return status if abs(now - checked_at) <= 3 * CHECK_INTERVAL_S else None
+
+
+def egress_firewall_state(path=None, now=None):
+    """``enforced`` / ``missing`` / ``unverified`` from the host's status file."""
+    status = _fresh_status(path, now)
+    rc = status.get("rc") if status else None
+    if type(rc) is not int:
         return UNVERIFIED
     if rc == 0:
         return ENFORCED
     return MISSING if rc in _MISSING_RCS else UNVERIFIED
+
+
+_UNMONITORED = {
+    "loaded": False,
+    "would_drop": 0,
+    "counters": [],
+    "host_violations": 0,
+    "unmonitored": True,
+}
+
+
+def host_audit_state(path=None, now=None):
+    """The host audit table's counters from the same status file, or the unmonitored shape."""
+    status = _fresh_status(path, now)
+    audit = status.get("host_audit") if status else None
+    if not isinstance(audit, dict) or audit.get("verdict") != "present":
+        return {**_UNMONITORED, "counters": []}
+    would_drop, counters = audit.get("would_drop"), audit.get("counters")
+    if type(would_drop) is not int or would_drop < 0 or not isinstance(counters, list):
+        return {**_UNMONITORED, "counters": []}
+    return {
+        "loaded": True,
+        "would_drop": would_drop,
+        "counters": [
+            {"packets": c["packets"], "bytes": c["bytes"]}
+            for c in counters
+            if isinstance(c, dict) and type(c.get("packets")) is int and type(c.get("bytes")) is int
+        ],
+        "host_violations": would_drop,
+        "unmonitored": False,
+    }
 
 
 def live_firewall_state():

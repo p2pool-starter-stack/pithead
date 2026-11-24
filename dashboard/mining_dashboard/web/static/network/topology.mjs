@@ -26,6 +26,9 @@ export const POS = {
   monerod: { x: 262, y: 150, w: 92, h: 32 },
   tari: { x: 262, y: 226, w: 92, h: 32 },
   docker: { x: 262, y: 282, w: 92, h: 26 },
+  "host-time-sync": { x: 132, y: 338, w: 104, h: 28 },
+  "host-updates": { x: 262, y: 338, w: 104, h: 28 },
+  "host-containers": { x: 392, y: 338, w: 96, h: 28 },
   tor: { x: 392, y: 96, w: 96, h: 40 },
   internet: { x: 392, y: 220, w: 96, h: 36 },
 };
@@ -63,8 +66,14 @@ export const ROUTE_NAME = {
 export const ROUTES = ["tor", "clearnet", "incoming", "lan", "unknown", "local", "inactive"];
 
 const center = (n) => ({ x: n.x + n.w / 2, y: n.y + n.h / 2 });
-const nodeCls = (zone) =>
-  zone === "tor" ? "topo-node topo-hub" : zone === "host" ? "topo-node" : "topo-node topo-ext";
+const nodeCls = (n) =>
+  n.zone === "tor"
+    ? "topo-node topo-hub"
+    : n.scope === "host"
+      ? "topo-node topo-sys"
+      : n.zone === "host"
+        ? "topo-node"
+        : "topo-node topo-ext";
 
 // SVG path for an edge. Most edges are a straight border-to-border segment; the three that would
 // otherwise cross the daemon column are routed orthogonally through a clear lane (xmrig-proxy and
@@ -124,7 +133,7 @@ export class StackTopology extends Component {
             ${internal ? "Hide internal mesh" : "Show internal mesh"}
           </button>
         </div>
-        <svg viewBox="0 0 500 322" class="topo-svg" role="img"
+        <svg viewBox="0 0 500 376" class="topo-svg" role="img"
              aria-label="Stack network topology: each component and its connections, coloured green for Tor, red for clearnet, purple for incoming, blue for your own LAN, and amber where the route could not be verified.">
           <defs>
             ${ROUTES.map(
@@ -140,6 +149,7 @@ export class StackTopology extends Component {
           <text x="56" y="20" class="topo-zone">${CLIENT_ZONE_NAME}</text>
           <text x="243" y="20" class="topo-zone">host — mining_net bridge</text>
           <text x="440" y="20" class="topo-zone">Tor → internet</text>
+          <text x="250" y="332" text-anchor="middle" class="topo-zone">host OS — outside the stack</text>
           ${edges.map((e) => this._edge(e, byId)).filter(Boolean)}
           ${nodes.map((n) => {
             const p = nodePos(n);
@@ -157,7 +167,7 @@ export class StackTopology extends Component {
             const cx = p.x + p.w / 2;
             return html`
               <${Fragment}>
-                <g class=${nodeCls(n.zone)}>
+                <g class=${nodeCls(n)}>
                   <rect x=${p.x} y=${p.y} width=${p.w} height=${p.h} rx="6" />
                   <text x=${cx} y=${loc ? p.y + 14 : p.y + p.h / 2 + 4} text-anchor="middle">${n.label}</text>
                 </g>

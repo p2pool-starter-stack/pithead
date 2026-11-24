@@ -30,6 +30,7 @@ from mining_dashboard.service.health.node_alert import build_node_alert
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics
 from mining_dashboard.service.network.egress import egress_posture_from_config
+from mining_dashboard.service.network.egress_status import host_audit_state
 from mining_dashboard.service.network.topology import topology_from_config
 from mining_dashboard.service.payout_identity import configured_wallet_id
 from mining_dashboard.version import resolve_version
@@ -387,6 +388,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),
         "egress": egress,
         "topology": topology,
+        "egress_audit": host_audit_state(),
         "ping_failures": state_mgr.get_ping_failures(8),
         "node_alert": build_node_alert(data),
         "chart": build_chart(
