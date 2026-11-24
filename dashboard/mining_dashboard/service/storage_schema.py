@@ -6,27 +6,6 @@ from mining_dashboard.config.config import (
     HISTORY_RETENTION_SEC,
 )
 
-# The append-only telemetry series lives in telemetry_store.py (#1369) — a MIXIN, so StateManager
-# below keeps one DB handle, one lock and one transaction scope. Both retention constants are
-# re-exported here rather than merely moved: `storage_service.XVB_HISTORY_RETENTION_SEC` and
-# `...NETWORK_HISTORY_RETENTION_SEC` were public module attributes before the split and importers
-# (tests included) bind them from this module, so the import surface must not change.
-from mining_dashboard.service.telemetry_store import (  # noqa: F401 — re-export, see above
-    NETWORK_HISTORY_RETENTION_SEC,
-    XVB_HISTORY_RETENTION_SEC,
-    TelemetryStoreMixin,
-)
-
-# The `worker_config` accessors live in worker_config_store.py (#1369) — a MIXIN on the same
-# terms, taken to make room for #1369's exact-id lookup once this file reached its budget ceiling.
-# `_RECONCILE_TERMINAL` moved with `reconcile_worker_config_status`, its only reader, and is
-# re-exported here for the same reason the retention constants above are: it was a module
-# attribute of THIS module before the split and a test binds it from here.
-from mining_dashboard.service.workers.worker_config_store import (  # noqa: F401 — re-export, see above
-    _RECONCILE_TERMINAL,
-    WorkerConfigStoreMixin,
-)
-
 # The 10m window reuses the original v_p2pool/v_xvb pair; every other window in
 # HASHRATE_WINDOW_COLUMNS gets its own additive history column (#168). This flat, insertion-ordered
 # list drives the CREATE, the migration, the INSERT, and the SELECT so they can never drift apart.

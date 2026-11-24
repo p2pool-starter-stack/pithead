@@ -187,8 +187,8 @@ Maintenance:
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a
                             rendered .env — the second render target beside docker-compose.
-                            Defaults: --env .env, --out ./quadlet. Refuses local-node profiles
-                            until their units are bench-proven (phase 2). The os/quadlet/
+                            Defaults: --env .env, --out ./quadlet. Local-node units
+                            are emitted when their profile is active. The os/quadlet/
                             fixtures pin this output byte-for-byte.
 
   rotate-secrets [-y|--yes]
