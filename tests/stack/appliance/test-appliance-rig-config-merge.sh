@@ -74,7 +74,7 @@ rt_out=$(run_onsb render_rig_miner_config 2>&1)
 assert_rc "paired-false render -> rc 0" "$?" "0"
 assert_eq "paired-false pins the default-route subnet, network address masked, bridges and link-local excluded" "$(cfg '.control + " " + .api_allow_from')" "enabled 192.168.1.128/25"
 assert_eq "the token is in the rendered config" "$(cfg '.ACCESS_TOKEN')" "dcfda835679ae98638633f189d9e5979"
-assert_eq "no pool-host lookup for paired-false" "$(run_onsb rig_own_subnets)" "192.168.1.128/25"
+assert_eq "rig_own_subnets alone yields the default-route subnet" "$(run_onsb rig_own_subnets)" "192.168.1.128/25"
 
 assert_eq "with no default route the first qualifying subnet wins, x.254 hosts included" "$(IP_ROUTE="$ONSB/noroute" run_onsb rig_own_subnets)" "192.168.1.128/25"
 grep -v eth0 "$ONSB/addrs" >"$ONSB/addrs.new" && mv -f "$ONSB/addrs.new" "$ONSB/addrs"
