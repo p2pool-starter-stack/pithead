@@ -13,7 +13,6 @@ os_redact_addr() (
     source "${BASH_SOURCE[0]%/*}/../../../lib/pithead/07-support-bundle.sh" &&
         _os_redact_addr_filter
 )
-# Per-line so a live stream is not held in pipe buffers; a final unterminated line is still emitted.
 os_redact_addr_lines() (
     # shellcheck source=lib/pithead/07-support-bundle.sh
     source "${BASH_SOURCE[0]%/*}/../../../lib/pithead/07-support-bundle.sh" || exit 1

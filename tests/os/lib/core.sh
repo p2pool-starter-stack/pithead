@@ -27,7 +27,6 @@ SSH_ERR="/tmp/pithead-os-ssh.err"
 # A fresh run must not inherit the last run's preserved console: the cleanup copy below is
 # no-clobber (the at-assertion copy is the authoritative one), so clear the slate here.
 rm -f "$SERIAL.failed"
-# Defaults are the owner's public wallets (the README donation wallet and the owner's Tari wallet); bench jobs override both.
 # shellcheck disable=SC2034  # shared through the assembled runner scope
 HARNESS_WALLET="${PITHEAD_OS_PAYOUT_MONERO:-486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R}"
 # shellcheck disable=SC2034  # shared through the assembled runner scope
