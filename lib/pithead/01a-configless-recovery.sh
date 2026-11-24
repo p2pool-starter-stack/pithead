@@ -22,17 +22,19 @@ configless_project_ids() { # [ps filters...]
     configless_project_ps --quiet -- "$@"
 }
 
-# Podman rejects status=restarting as an unknown state, so the active census lists every state once
-# and filters in the shell: an engine failure still refuses, and no engine-specific state is requested.
 configless_active_ids() {
-    local rows
+    local rows skip=
     rows=$(configless_project_ps --no-trunc --format '{{.State}} {{.ID}}' --) || return 1
-    awk '$1 == "running" || $1 == "restarting" || $1 == "paused" { print $2 }' <<<"$rows"
+    if [ -n "${1:-}" ]; then
+        skip=$(configless_project_ps --no-trunc --format '{{.ID}}' -- --filter "label=com.docker.compose.service=$1") || return 1
+    fi
+    awk -v skip="${skip//$'\n'/ }" 'BEGIN { n = split(skip, a, " "); for (i = 1; i <= n; i++) left[a[i]] }
+        ($1 == "running" || $1 == "restarting" || $1 == "paused") && !($2 in left) { print $2 }' <<<"$rows"
 }
 
 remove_tor_egress_when_idle() {
     local ids
-    ids=$(configless_active_ids) && [ -z "$ids" ] || return 1
+    ids=$(configless_active_ids "$@") && [ -z "$ids" ] || return 1
     remove_tor_egress_firewall 2>/dev/null || true
 }
 
