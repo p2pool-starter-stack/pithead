@@ -31,8 +31,8 @@ class ContainerHealthMonitor:
 
     The alerter needs a stable "monerod is crash-looping / stuck unhealthy / recovered" signal
     from the per-container inspect snapshots (``collector.containers.get_container_health``).
-    This is the container analogue of :class:`WorkerPresenceMonitor` — debounced, seed-silent,
-    keyed by container name:
+    This is the container analogue of :class:`WorkerPresenceMonitor` — debounced, seed-silent
+    for restarts, keyed by container name:
 
     - **Crash loop** — the restart count rose by ``crash_restarts`` within a rolling
       ``crash_window`` (tracked as deltas against a per-name baseline, so it's safe regardless
@@ -86,13 +86,10 @@ class ContainerHealthMonitor:
         self._containers = {}
 
     def is_confirmed_bad(self, name):
-        """True only if `name`'s bad state was CONFIRMED by the debounce — a crash loop or a
-        continuous-unhealthy streak past ``unhealthy_after`` — i.e. it produced an alert edge
-        (``alerted``). A first-sighting silently-seeded baseline (already unhealthy/restarting at
-        the monitor's first look) is deliberately NOT confirmed: it skipped the debounce a KNOWN
-        container must pass, exactly as it skips the alert. `dashboard.fail_closed`'s miner hold
-        (#490) reads this rather than the raw level, so it holds the fleet only on a confirmed,
-        non-transient failure. Unknown/never-seen container reads as not bad."""
+        """True if the container has a confirmed bad state (crash loop or unhealthy past
+        ``unhealthy_after``, exited while unsupervised) that produced an ``alerted`` edge.
+        A first-sighting restart is NOT confirmed because it skipped the debounce;
+        unknown or never-seen containers read as not bad."""
         c = self._containers.get(name)
         return bool(c and c["state"] == "bad" and c["alerted"])
 
@@ -110,7 +107,6 @@ class ContainerHealthMonitor:
         for name, s in states.items():
             c = self._containers.get(name)
             if c is None:
-                # First sighting — baseline silently, even when already bad.
                 bad = s["restarting"]
                 self._containers[name] = {
                     "state": "bad" if bad else "ok",
