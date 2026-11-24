@@ -58,7 +58,7 @@ unset PITHEAD_OS_PAYOUT_MONERO PITHEAD_OS_PAYOUT_TARI PITHEAD_OS_MONERO_NODE_HOS
     provision_browser_config '{}' | jq -e --arg t "$OWNER_T" '.tari.wallet_address == $t' >/dev/null || exit 14
 ) || fail "guest config builders ignore the owner payout variables (exit $?)"
 
-guard() ( # <env assignments...>; prints the refusal on stderr and returns its status
+guard() (
     local a
     for a in "$@"; do export "${a%%=*}=${a#*=}"; done
     source "$HERE/lib/core.sh" || exit 99
