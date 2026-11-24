@@ -29,6 +29,7 @@ CHECK_INTERVAL_S = 120  # pithead-egress.timer's OnUnitActiveSec
 _MAX_EPOCH_S = 2**53  # past any real clock, and every integer below it is an exact float
 ENFORCED, MISSING, UNVERIFIED = "enforced", "missing", "unverified"
 _MISSING_RCS = {1, 2, 4, 5}
+_MAX_COUNTERS = 64
 _LABELS = {
     MISSING: "Tor-only egress firewall MISSING on the host (clearnet egress is not fail-closed; "
     "run 'pithead up')",
@@ -74,14 +75,16 @@ def host_audit_state(path=None, now=None):
     if not isinstance(audit, dict) or audit.get("verdict") != "present":
         return {**_UNMONITORED, "counters": []}
     would_drop, counters = audit.get("would_drop"), audit.get("counters")
-    if type(would_drop) is not int or would_drop < 0 or not isinstance(counters, list):
+    if type(would_drop) is not int or not 0 <= would_drop <= _MAX_EPOCH_S:
+        return {**_UNMONITORED, "counters": []}
+    if not isinstance(counters, list):
         return {**_UNMONITORED, "counters": []}
     return {
         "loaded": True,
         "would_drop": would_drop,
         "counters": [
             {"packets": c["packets"], "bytes": c["bytes"]}
-            for c in counters
+            for c in counters[:_MAX_COUNTERS]
             if isinstance(c, dict) and type(c.get("packets")) is int and type(c.get("bytes")) is int
         ],
         "host_violations": would_drop,

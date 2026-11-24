@@ -190,7 +190,13 @@ export class StackTopology extends Component {
     // pattern is already spoken for (internal mesh,
     // firewall-blocked) so it can't collide.
     const ants = !dash && key !== "local" && key !== "inactive";
-    const note = e.leak ? " — LEAK" : e.blocked_by_firewall ? " — firewall-blocked" : "";
+    const note = e.leak
+      ? " — LEAK"
+      : e.blocked_by_firewall
+        ? " — firewall-blocked"
+        : e.from.startsWith("host-") && e.chosen_clearnet
+          ? " — allowlisted host traffic"
+          : "";
     const from = byId[e.from]?.label || e.from;
     const to = byId[e.to]?.label || e.to;
     const tip = `${from} → ${to}: ${e.label} · ${ROUTE_NAME[key] || key}${note}`;

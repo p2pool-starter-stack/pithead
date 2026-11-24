@@ -376,13 +376,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
         # proxy_summary so its (cumulative) shape stays unchanged for existing clients.
         "share_stats": build_share_stats(share_stats, range_arg, window),
         "reject_pct_24h": _window_reject_pct(share_stats, 24 * 3600),
-        # #196 Tier-1 telemetry backbone exposure: block-found events, hourly disk-growth
-        # samples, and ~5-min XvB-credited samples. No chart renders these yet — that's the
-        # deliberate next slice — the payload just carries the persisted series.
         "blocks": build_blocks(state_mgr.get_blocks(), range_arg, window),
-        # Confirmed payouts per chain as timeline points ({x: ms, amount: atomic}), same
-        # range/window bounds as blocks. Feeds the mine cart train's Tari marker; empty lists
-        # while payout confirmation is off.
         "payouts": build_payouts(state_mgr, range_arg, window),
         "disk_growth": build_disk_growth(state_mgr.get_disk_growth(), range_arg, window),
         "xvb_history": build_xvb_history(state_mgr.get_xvb_history(), range_arg, window),

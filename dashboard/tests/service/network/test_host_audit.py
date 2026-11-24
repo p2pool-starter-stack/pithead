@@ -159,5 +159,23 @@ def test_host_edges_are_not_observed_never_tor_without_audit():
     assert all("chosen_clearnet" not in e for e in edges)
 
 
+@pytest.mark.parametrize(("loaded", "route"), [(True, CLEARNET), (False, UNKNOWN)])
+def test_topology_from_config_reads_the_live_audit(tmp_path, monkeypatch, loaded, route):
+    from mining_dashboard.service.network.topology import topology_from_config
+
+    audit = _present(1) if loaded else {"verdict": "absent", "counters": [], "would_drop": None}
+    monkeypatch.setattr(
+        egress_status, "STATUS_PATH", _write(tmp_path, audit, checked_at=__import__("time").time())
+    )
+    edges = [e for e in topology_from_config()["edges"] if e["from"] in HOST_IDS]
+    assert {e["route"] for e in edges} == {route}
+
+
+def test_oversized_audit_values_are_not_trusted(tmp_path):
+    assert host_audit_state(_write(tmp_path, _present(10**40)), now=NOW) == UNMONITORED
+    many = [{"packets": 1, "bytes": 1}] * 500
+    assert len(host_audit_state(_write(tmp_path, _present(1, many)), now=NOW)["counters"]) == 64
+
+
 def test_host_edges_do_not_change_the_summary():
     assert _topo(host_audit_loaded=True)["summary"] == _topo()["summary"]
