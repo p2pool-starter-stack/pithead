@@ -230,6 +230,8 @@ _config_version_asset_phase_self_test() (
     sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
     dashboard_curl() { printf '%s' "$asset_module"; }
     hostname_runtime_snapshot() { printf unchanged; }
+    hostname_stable_snapshot() { printf unchanged; }
+    hostname_snapshot_settled_to() { printf unchanged; }
     sensitive_preview() {
         previews=$((previews + 1))
         return 1
@@ -293,7 +295,9 @@ _hostname_landed_fallback_self_test() (
     local output ip=fixture-address
     sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
     dashboard_curl() { printf 'cfg?._config_version_newer ? "Saving is blocked" : null'; }
-    hostname_runtime_snapshot() { printf 'unchanged'; }
+    hostname_runtime_snapshot() { printf unchanged; }
+    hostname_stable_snapshot() { printf unchanged; }
+    hostname_snapshot_settled_to() { printf unchanged; }
     sensitive_preview() {
         APPROVAL_PREVIEW='{"id":"r1","status":"previewed"}'
         APPROVAL_REQUEST_ID=r1
