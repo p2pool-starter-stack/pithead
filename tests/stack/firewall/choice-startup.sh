@@ -46,8 +46,9 @@ assert_eq "ordinary startup keeps its warning-only firewall behavior" "$(cat "$L
 lg_real 'env_get() { case "$1" in DONATION_ENABLED) echo true ;; DONATION_TOR_ENABLED) echo false ;; esac; }; tor_egress_sync_ips() { echo 172.28.0.29; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
 assert_eq "donation alone arms the choice marker" "$([ -d "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes
 assert_eq "donation has its own boot-time choice marker" "$([ -d "$LGD/.pithead.lock.egress-choice-active/donation" ] && echo yes)" yes
+lg_real 'tor_egress_choice_active() { return 0; }; tor_egress_sync_ips() { printf "%s\n" 172.28.0.28 172.28.0.29; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
 lg 'apply_lan_guard() { :; }; tor_egress_choice_active() { [ "${1:-}" != donation ]; }; tor_egress_sync_ips() { echo 172.28.0.28; }; apply_tor_egress_firewall() { return 1; }; compose_up -d' >/dev/null
-assert_eq "failed refresh removes only the disabled donation boot marker" "$([ ! -e "$LGD/.pithead.lock.egress-choice-active/donation" ] && echo yes)" yes
+assert_eq "failed refresh removes only the disabled donation boot marker" "$([ -d "$LGD/.pithead.lock.egress-choice-active/p2pool" ] && [ -d "$LGD/.pithead.lock.egress-choice-active/xvb" ] && [ ! -e "$LGD/.pithead.lock.egress-choice-active/donation" ] && echo yes)" yes
 lg_real 'env_get() { case "$1" in DONATION_ENABLED) echo true ;; DONATION_TOR_ENABLED) echo false ;; esac; }; tor_egress_sync_ips() { echo 172.28.0.29; }; apply_tor_egress_iptables() { :; }; apply_tor_egress_firewall refresh' >/dev/null
 lg 'apply_lan_guard() { :; }; tor_egress_sync_ips() { :; }; apply_tor_egress_firewall() { :; }; compose_up -d' >/dev/null
 assert_eq "successful donation removal clears the marker" "$([ ! -e "$LGD/.pithead.lock.egress-choice-active" ] && echo yes)" yes

@@ -55,6 +55,7 @@ cnfw_apply false false '' false true false true false
 assert_eq "XvB and donation together list the proxy address once" "$(run_sourced "$V" tor_egress_sync_ips)" "172.28.0.29"
 cnfw_apply false false '' false false true true true
 assert_eq "donation on Tor never exempts the proxy" "$(run_sourced "$V" tor_egress_sync_ips)" ""
+assert_eq "donation on Tor is not an active choice" "$(run_sourced "$V" tor_egress_choice_active donation && echo yes)" ""
 cnfw_apply false false '' false false true false false
 assert_eq "disabled donation never exempts the proxy" "$(run_sourced "$V" tor_egress_sync_ips)" ""
 assert_eq "disabled donation is not an active choice" "$(run_sourced "$V" tor_egress_choice_active donation && echo yes)" ""
