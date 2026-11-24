@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Cache reuse is accepted only with build evidence from BOTH checkouts. The fake Compose
-# returns each checkout's resolved context and arguments; the helper reads its real files.
 echo "== cached image reuse proof =="
 proof_tmp="$(mktemp -d)"
 trap 'rm -rf "$proof_tmp"' EXIT
