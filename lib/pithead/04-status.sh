@@ -37,16 +37,16 @@ sys.exit(0 if valid else 1)
 PY
 }
 clearnet_sync_active() { monero_clearnet_exposed || tari_clearnet_exposed; }
+performance_clearnet_active() { tor_egress_choice_active monero || tor_egress_choice_active tari; }
 
 container_state_is_stopped() { # <state> [status]; the only states a deliberate hold can produce
     case "$1" in created | exited | stopped) return 0 ;; "") case "${2:-}" in Created* | Exited* | Stopped*) return 0 ;; esac ;; esac
     return 1
 }
 
-# Loud, persistent CLEARNET-SYNC banner (#183). Names the daemon(s) whose chosen clearnet sync
-# has not yet been attested on Tor. Prints nothing once both have host verification.
 print_clearnet_banner() {
     local who=""
+    performance_clearnet_active && return 0
     monero_clearnet_exposed && who="Monero"
     tari_clearnet_exposed && who="${who:+$who + }Tari"
     [ -n "$who" ] || return 0

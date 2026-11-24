@@ -465,6 +465,17 @@ The active state is surfaced in four places, so it can't be enabled by accident 
 - `./pithead status` names the profile, or Custom when an explicit governed value differs.
 - Apply previews name the profile changes and the exposure they introduce before recreating a daemon.
 
+`./pithead status` and `./pithead doctor` report a temporary clearnet override and Performance
+differently:
+
+- Balance or Privacy with a sync flag set and no valid host attestation of the return to Tor, a
+  stale one, or one the host does not own: `status` prints `CLEARNET INITIAL SYNC OR TOR TRANSITION
+  PENDING` naming Monero, Tari, or `Monero + Tari`, and `doctor` warns. After a valid attestation
+  the banner is gone and `doctor` reports `all node P2P is Tor-only`.
+- Performance with a sync flag set: the node stays on clearnet by choice and never returns to Tor,
+  so `status` prints no banner and `doctor` prints one info line saying local node P2P uses clearnet
+  by the Performance profile. `doctor` never reports `all node P2P is Tor-only` in that state.
+
 ---
 
 ## Local trust boundary & known limitations

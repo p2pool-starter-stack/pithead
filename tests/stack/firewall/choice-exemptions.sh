@@ -48,3 +48,5 @@ else ok "nft readback rejects stale choice exemptions"; fi
 if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_CHOICE_RULES"; then
     bad "readback rejects stale choice exemptions" "accepted stale public-dial rules"
 else ok "readback rejects stale choice exemptions"; fi
+# shellcheck source=tests/stack/firewall/clearnet-text.sh
+source "$ROOT/tests/stack/firewall/clearnet-text.sh"
