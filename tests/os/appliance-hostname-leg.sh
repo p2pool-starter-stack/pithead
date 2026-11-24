@@ -162,12 +162,12 @@ hostname_runtime_snapshot() { # <label> [handoff-json]; one stable, comparable l
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kernel" "$static" "$env_host" "$state_host" "$sans" "$avahi" "$mdns" "$card" "$stamp"
 }
 
-hostname_snapshot_complete() { # <snapshot>
+hostname_snapshot_complete() {
     [ -n "$1" ] || return 1
     case "$1" in $'\t'* | *$'\t' | *$'\t\t'*) return 1 ;; esac
 }
 
-hostname_snapshot_diff() { # <before> <after>; "column: before -> after" for each column that differs
+hostname_snapshot_diff() {
     local IFS=$'\x1f' i out="" cols=(kernel static env state cert avahi mdns card avahi-started)
     local -a bc ac
     read -ra bc <<<"${1//$'\t'/$'\x1f'}"
@@ -179,7 +179,7 @@ hostname_snapshot_diff() { # <before> <after>; "column: before -> after" for eac
     printf '%s' "${out:-none}"
 }
 
-hostname_stable_snapshot() { # <label>; prints the snapshot once two reads 5s apart agree and no column is empty
+hostname_stable_snapshot() {
     local tries=0 prev="" snap
     while [ "$tries" -lt 12 ]; do
         snap=$(hostname_runtime_snapshot "$1")
@@ -195,7 +195,7 @@ hostname_stable_snapshot() { # <label>; prints the snapshot once two reads 5s ap
     return 1
 }
 
-hostname_snapshot_settled_to() { # <label> <expected>; prints the first read equal to it, else the last read
+hostname_snapshot_settled_to() {
     local tries=0 snap
     while :; do
         snap=$(hostname_runtime_snapshot "$1")
