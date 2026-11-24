@@ -86,10 +86,6 @@ class ContainerHealthMonitor:
         self._containers = {}
 
     def is_confirmed_bad(self, name):
-        """True if the container has a confirmed bad state (crash loop or unhealthy past
-        ``unhealthy_after``, exited while unsupervised) that produced an ``alerted`` edge.
-        A first-sighting restart is NOT confirmed because it skipped the debounce;
-        unknown or never-seen containers read as not bad."""
         c = self._containers.get(name)
         return bool(c and c["state"] == "bad" and c["alerted"])
 
