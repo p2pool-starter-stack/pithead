@@ -1,11 +1,9 @@
 # shellcheck shell=bash
-# Real ownership checks shared by reset/restore, auth recovery and setup after uninstall.
 rr_setup_page_ready() {
     local target
     rx "docker inspect --format '{{.State.Running}}' pithead-wizard" 2>/dev/null | grep -qx true || return 1
     target="${IT_SSH_DEST##*@}"
     [ -n "$target" ] || return 1
-    # Probe from the harness host: the guest's loopback is not the operator's setup page.
     curl --noproxy '*' -fsSk --max-time 5 "https://$target/" 2>/dev/null | grep -qi 'Pithead setup'
 }
 
@@ -51,7 +49,6 @@ rr_dashboard_response() {
     fi
     expected=200
     [ -z "$auth" ] || expected=401
-    # The appliance always requires auth, even if an erroneous render omitted the hash.
     detected_channel=$(rx 'source ./pithead || exit; if is_appliance; then printf appliance; else printf diy; fi') || return 1
     case "$detected_channel" in appliance) expected=401 ;; diy) ;; *) return 1 ;; esac
     response=$(rx "curl --noproxy '*' -ksS --max-time 15 --resolve $(quote_arg "$host:$port:127.0.0.1") -w '\n%{http_code}' $(quote_arg "$scheme://$host:$port/")") || return 1
@@ -59,7 +56,7 @@ rr_dashboard_response() {
     [ "$code" = "$expected" ] && ! grep -qi 'Pithead setup' <<<"$response"
 }
 
-rr_web_ports_owned_by_dashboard() { # <label>; collect every row, including on the negative control
+rr_web_ports_owned_by_dashboard() {
     local label="$1" failures_before="$IT_FAIL"
     if wait_for 60 5 "wizard removed" rr_wizard_absent; then
         it_pass "$label: no pithead-wizard container"
