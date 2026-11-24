@@ -25,7 +25,7 @@ import {
   XvBStats,
 } from "./overview.mjs";
 import { Component, Fragment, html } from "./preact.mjs";
-import { HeroBand, ThemeSwitcher } from "./ui.mjs";
+import { DevFooter, HeroBand, ThemeSwitcher } from "./ui.mjs";
 
 // One-time discoverability hint (#425): the earnings + XvB tier calculators are Advanced-view
 // cards, invisible from the default Simple view. Points at Advanced until the operator acts on
@@ -207,6 +207,7 @@ export function App({
                               onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
                               onDismissHint=${onDismissHint} onInspect=${onInspect}
                               suspended=${!!state.syncing} />
+            <${DevFooter} version=${state.version} />
         </main>
         ${inspect}
     <//>`;

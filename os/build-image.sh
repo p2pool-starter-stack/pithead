@@ -22,10 +22,13 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+BUILD_KIND="appliance release"
+
 while [ $# -gt 0 ]; do
     case "$1" in
     --ssh)
         keyfile=""
+        BUILD_KIND="appliance debug"
         # An optional value: `--ssh path/to/key.pub` or bare `--ssh` for the builder's own key.
         if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then
             keyfile="$2"
@@ -41,6 +44,7 @@ while [ $# -gt 0 ]; do
         }
         PITHEAD_TEST_SSH_PUBKEY="$(head -n1 "$keyfile")"
         export PITHEAD_TEST_SSH_PUBKEY
+        export PITHEAD_BUILD_KIND
         echo "==> debug build: sshd enabled, key from $keyfile"
         ;;
     --fresh-index)
@@ -281,6 +285,11 @@ if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
     break_dashboard_healthcheck os/build/stage/docker-compose.yml || exit 1
 fi
 mkdir -p os/rootfs/images
+BUILD_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+BUILD_DIRTY=""
+git diff --quiet 2>/dev/null || BUILD_DIRTY="-dirty"
+BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+echo "==> building from commit ${BUILD_COMMIT}${BUILD_DIRTY}"
 echo "==> staging wizard image $WIZARD_IMAGE"
 if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
     is_immutable_image_ref "$PITHEAD_WIZARD_IMAGE" || {
@@ -293,15 +302,21 @@ if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
 elif [ "${PITHEAD_WIZARD_FROM_REGISTRY:-0}" = "1" ]; then
     docker pull -q "$WIZARD_IMAGE" >/dev/null
 else
-    docker build -q -t "$WIZARD_IMAGE" dashboard >/dev/null
+    docker build -q -t "$WIZARD_IMAGE" dashboard \
+        --build-arg PITHEAD_VERSION="${PITHEAD_VERSION:-}" \
+        --build-arg PITHEAD_GIT_COMMIT="${BUILD_COMMIT}${BUILD_DIRTY}" \
+        --build-arg PITHEAD_GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)" \
+        --build-arg PITHEAD_GIT_COMMIT_FULL="$(git rev-parse HEAD 2>/dev/null || true)" \
+        --build-arg PITHEAD_BUILD_TIME="$BUILD_TIME" \
+        --build-arg PITHEAD_BUILD_KIND="${PITHEAD_BUILD_KIND:-}" \
+        --build-arg PITHEAD_RELEASE="${PITHEAD_RELEASE:-}" >/dev/null
 fi
 docker save "$WIZARD_IMAGE" | gzip -1 >os/rootfs/images/dashboard.tar.gz
 
-BUILD_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-BUILD_DIRTY=""
-git diff --quiet 2>/dev/null || BUILD_DIRTY="-dirty"
 printf '%s%s\n' "$BUILD_COMMIT" "$BUILD_DIRTY" >os/rootfs/BUILD_COMMIT
-echo "==> building from commit ${BUILD_COMMIT}${BUILD_DIRTY}"
+export PITHEAD_BUILD_TIME="$BUILD_TIME"
+export PITHEAD_BUILD_KIND
+echo "==> staging rootfs from commit ${BUILD_COMMIT}${BUILD_DIRTY}"
 
 # Overridable so a parallel release build cannot collide with a harness build on the same host.
 # It is an env var and NOT an edit to this file: the build stamps its own commit, and a sed
@@ -322,6 +337,8 @@ if ! docker build -f os/rootfs/Dockerfile -t "$ROOTFS_TAG" \
     --build-arg PITHEAD_TEST_SSH_PUBKEY="${PITHEAD_TEST_SSH_PUBKEY:-}" \
     --build-arg PITHEAD_TEST_MARKER="${PITHEAD_TEST_MARKER:-}" \
     --build-arg PITHEAD_UPDATER="${PITHEAD_UPDATER:-rauc}" \
+    --build-arg PITHEAD_BUILD_TIME="${PITHEAD_BUILD_TIME:-}" \
+    --build-arg PITHEAD_BUILD_KIND="${PITHEAD_BUILD_KIND:-}" \
     "${rigforge_build_args[@]}" \
     --build-arg APT_INDEX_STAMP="$apt_index_stamp" . 2>&1 | tee "$build_log"; then
     apt_fetch_failure_hint "$(cat "$build_log")"

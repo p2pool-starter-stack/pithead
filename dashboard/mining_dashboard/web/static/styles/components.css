@@ -102,3 +102,15 @@ button.badge {
   word-break: break-all;
   font-family: monospace;
 }
+
+.dev-footer {
+  padding: 8px 0 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.dev-footer code {
+  font-family: monospace;
+  color: var(--accent);
+}

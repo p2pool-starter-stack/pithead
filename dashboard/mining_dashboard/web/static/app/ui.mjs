@@ -25,14 +25,22 @@ const Badges = ({ badges }) => html`
     </div>`;
 
 // Build-version badge (Issue #58). Muted badge-outline so it reads as informative, not loud;
-// shown on every screen (the Header renders on both sync and main). The server resolves a clean
-// release to `vX.Y.Z` and any other build to `dev · branch @ hash`, so a dev build is
-// unmistakable. `dev` adds a marker class purely as a class hook (text already distinguishes it).
+// shown on every screen (the Header renders on both sync and main).
 const VersionBadge = ({ version }) =>
   version && version.text
     ? html`<span class=${"badge badge-outline version-badge ml-2" + (version.dev ? " version-dev" : "")}
                      title=${version.title || ""}>${version.text}</span>`
     : null;
+
+const DevFooter = ({ version }) => {
+  if (!version || !version.dev || !version.footer_commit) return null;
+  const lines = [];
+  lines.push(html`<span class="text-xs text-muted">Full: <code>${version.footer_commit}</code></span>`);
+  if (version.footer_build_time) lines.push(html`<span class="text-xs text-muted">Built: ${version.footer_build_time}</span>`);
+  if (version.footer_kind) lines.push(html`<span class="text-xs text-muted">Kind: ${version.footer_kind}</span>`);
+  if (version.footer_slot) lines.push(html`<span class="text-xs text-muted">Slot: ${version.footer_slot}</span>`);
+  return html`<div class="dev-footer" aria-label="Dev build information">${lines}</div>`;
+};
 
 // New-release callout (#224). Shown only when the server reports a newer GitHub release is available
 // (`dashboard.check_for_updates`). Notify-only — a link to the release notes; the one-click upgrade
@@ -105,6 +113,7 @@ const HeroBand = ({ state }) => html`
 export {
   Badges,
   cVar,
+  DevFooter,
   HeroBand,
   HighUsage,
   netCls,

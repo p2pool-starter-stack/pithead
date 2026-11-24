@@ -63,6 +63,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # appliance (found live on the bench, not by CI, whose stack tests stub rauc).
 ARG APT_INDEX_STAMP=0
 ARG PITHEAD_UPDATER=""
+ARG PITHEAD_BUILD_TIME=""
+ARG PITHEAD_BUILD_KIND=""
 RUN set -e; \
     updater_packages=""; \
     if [ "$PITHEAD_UPDATER" = "rauc" ]; then updater_packages="rauc rauc-service"; fi; \
@@ -92,6 +94,8 @@ RUN set -e; \
 # STACK_VERSION tag's copy when that tag exists, else the tree's (#1215, staged by build-image.sh).
 COPY os/rootfs/BUILD_COMMIT os/build/stage/docker-compose.yml os/build/stage/COMPOSE_SOURCE /opt/pithead/
 COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json cosign.pub /opt/pithead/
+
+RUN printf 'BUILD_TIME=%s\nBUILD_KIND=%s\n' "${PITHEAD_BUILD_TIME}" "${PITHEAD_BUILD_KIND}" > /opt/pithead/BUILD_INFO
 # ONLY the build/ paths services bind-mount at runtime (config templates and wrapper entrypoints).
 # dashboard/Dockerfile isn't among them (moved out of build/, #1106; see
 # KNOWN-ISSUES.md) — is_source_checkout() keys off its presence here, so shipping one by accident

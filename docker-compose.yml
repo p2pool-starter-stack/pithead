@@ -621,6 +621,10 @@ services:
         PITHEAD_VERSION: ${PITHEAD_VERSION:-}
         PITHEAD_GIT_COMMIT: ${PITHEAD_GIT_COMMIT:-}
         PITHEAD_GIT_BRANCH: ${PITHEAD_GIT_BRANCH:-}
+        PITHEAD_GIT_COMMIT_FULL: ${PITHEAD_GIT_COMMIT_FULL:-}
+        PITHEAD_BUILD_TIME: ${PITHEAD_BUILD_TIME:-}
+        PITHEAD_BUILD_KIND: ${PITHEAD_BUILD_KIND:-}
+        PITHEAD_BUILD_SLOT: ${PITHEAD_BUILD_SLOT:-}
         PITHEAD_RELEASE: ${PITHEAD_RELEASE:-}
     container_name: dashboard
     # Room for the drain in main.py (3s) plus background-task cancel and the SQLite close. A stop that

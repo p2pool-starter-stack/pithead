@@ -118,7 +118,8 @@ env_changed_keys() {
 # pipeline additionally sets PITHEAD_RELEASE=1 so the badge shows the clean vX.Y.Z.
 export_build_provenance() {
     local commit=""
-    export PITHEAD_VERSION="" PITHEAD_GIT_COMMIT="" PITHEAD_GIT_BRANCH=""
+    export PITHEAD_VERSION="" PITHEAD_GIT_COMMIT="" PITHEAD_GIT_BRANCH="" \
+        PITHEAD_GIT_COMMIT_FULL="" PITHEAD_BUILD_TIME=""
     [ -f VERSION ] && PITHEAD_VERSION="$(tr -d ' \t\r\n' <VERSION 2>/dev/null || true)"
     if git rev-parse --git-dir >/dev/null 2>&1; then
         commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
@@ -127,7 +128,9 @@ export_build_provenance() {
             commit="${commit}-dirty"
         fi
         PITHEAD_GIT_COMMIT="$commit"
+        PITHEAD_GIT_COMMIT_FULL="$(git rev-parse HEAD 2>/dev/null || true)"
     fi
+    PITHEAD_BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || true)"
 
     # Image coordinates for docker-compose's `image:` refs (#44). A source checkout (build/ present)
     # builds the first-party images locally and tags them `:dev`; a release install (no build/, just
