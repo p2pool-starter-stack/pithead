@@ -34,11 +34,6 @@ render_env() {
     fi
     local tor_profiles="$profiles"
 
-    # Tari gRPC LAN exposure (#760), mirroring monerod's rpc_lan_access above. Default
-    # localhost-only: in-stack consumers reach the node over the internal Docker network
-    # regardless, so the published port only serves other machines — the serving side of the
-    # remote mode (#103). The gRPC is plaintext and unauthenticated: trusted LAN only (#754
-    # trust model). N/A in remote mode (the tari service is profile-gated off; nothing binds).
     local tari_grpc_bind tari_grpc_lan
     tari_grpc_lan=${setting[tari_grpc_lan]}
     if [ "$tari_grpc_lan" == "true" ]; then tari_grpc_bind="0.0.0.0"; else tari_grpc_bind="127.0.0.1"; fi
@@ -60,9 +55,6 @@ render_env() {
     local prune
     prune=$(monero_prune_flag)
 
-    # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
-    # this host's IP (Monero keeps tx-proxy=tor). The host firewall admits only the chosen
-    # chain's container until its sync marker appears (#2678).
     local monero_clearnet tari_clearnet
     monero_clearnet=$(normalize_bool "${setting[monero_clearnet]}")
     tari_clearnet=$(normalize_bool "${setting[tari_clearnet]}")
@@ -79,19 +71,12 @@ render_env() {
         [ "$prep_threads" -gt 8 ] && prep_threads=8
     fi
 
-    # Outbound peer target (#595): over Tor, each outbound peer is roughly one long-lived circuit,
-    # so out-peers is the biggest steady-state knob on Tor's CPU (circuit maintenance + rebuild).
-    # The default STAYS 48 — more peers means more aggregate bandwidth during a Tor initial sync,
-    # and a new operator's first run is exactly that. Once synced, 32 (P2Pool's clearnet
-    # recommendation) cuts monerod's circuit count by a third with no mining impact.
     local out_peers
     out_peers=${setting[out_peers]}
     if ! [[ "$out_peers" =~ ^[0-9]+$ ]] || [ "$out_peers" -lt 8 ] || [ "$out_peers" -gt 1024 ]; then
         error "monero.out_peers must be an integer between 8 and 1024 (got \"$out_peers\")."
     fi
 
-    # monerod RPC LAN exposure. Default localhost-only: p2pool reaches monerod over the internal
-    # Docker network regardless, so the published port is only for external wallets.
     local rpc_bind rpc_lan
     rpc_lan=${setting[rpc_lan]}
     if [ "$rpc_lan" == "true" ]; then rpc_bind="0.0.0.0"; else rpc_bind="127.0.0.1"; fi
@@ -149,24 +134,12 @@ render_env() {
     local fail_closed
     fail_closed=$(normalize_bool "${setting[fail_closed]}")
 
-    # Healthchecks.io dead-man's switch (#79). Optional external liveness monitor: a ping URL is the
-    # on/off switch (blank = off), and the ping always rides Tor. The URL is a capability secret, so
-    # it lives in the owner-only .env (chmod 600 below), never a world-readable file. docs/monitoring.md.
     local hc_ping_url
     hc_ping_url=${setting[hc_ping_url]}
 
-    # XvB warm-standby source (#249). On a backup stack this is the PRIMARY dashboard's read-only
-    # /api/xvb-standby URL; the backup pulls it so a failover resumes the donation split warm.
-    # Blank (default) = off. A capability URL (it can carry the primary's dashboard basic-auth as
-    # userinfo), so like the ping URL above it lives in the owner-only .env, never a world-readable
-    # file. docs/configuration.md.
     local xvb_standby_source
     xvb_standby_source=${setting[xvb_standby_source]}
 
-    # check_for_updates (#224, default TRUE): the dashboard checks GitHub for a newer release and shows
-    # a header badge linking to it (notify-only — no upgrade). On by default because the check is
-    # Tor-routed (socks5h), so it leaks neither the host IP nor a DNS lookup to GitHub; set false to opt
-    # out entirely (see docs/privacy.md). Only an explicit `false` disables it.
     local check_for_updates
     check_for_updates=${setting[check_for_updates]}
 
@@ -186,18 +159,10 @@ render_env() {
     tg_chat=${setting[tg_chat]}
     tg_commands=${setting[tg_commands]}
     local hr_drop_threshold hr_drop_minutes
-    # Degradation detector (#99): drop-below-% and sustained-minutes; defaults 50 / 10.
     hr_drop_threshold=${setting[hr_drop_threshold]}
     hr_drop_minutes=${setting[hr_drop_minutes]}
-    # Local time (HH:MM) for the daily digest; default 08:00.
     tg_summary_time=${setting[tg_summary_time]}
 
-    # Webhook + ntfy alert sinks (#380). Push-only siblings of the Telegram alerter: every alert
-    # also POSTs to each notifications.webhooks URL (as JSON) and to the notifications.ntfy.url
-    # topic (as the message body). All off by default — no URLs, nothing runs. The URLs and the
-    # ntfy token are secrets (webhook query strings often carry tokens): they live only in the
-    # owner-only .env and are never echoed or logged. notifications.tor (default true) keeps the
-    # POSTs on Tor so endpoints see a Tor exit, not this host's IP; false is the LAN carve-out.
     local notify_webhooks ntfy_url ntfy_token notify_tor
     notify_webhooks=${setting[notify_webhooks]}
     ntfy_url=${setting[ntfy_url]}
@@ -210,8 +175,6 @@ render_env() {
     #     own mem_limit CEILINGS in docker-compose.yml (#132) — runaway protection, not reservations,
     #     so actual steady-state still fits this reserve while a leak in any one of them OOM-restarts
     #     just that container instead of letting the host OOM-killer reach monerod.
-    # Net: with HugePages on, ~7.5 GB on a 16 GB host, ~19 GB on 32 GB; with HugePages off
-    # (--skip-optimize) it's ~75% of RAM. Override with tari.mem_limit (any Docker value, e.g. "8g").
     local tari_mem_limit ram_mb huge_mb avail_mb reserve_mb monero_mem_limit
     if [ "$TARI_MODE" != "local" ]; then
         # No local Tari container to cap in remote or off mode (#103/#1855) — the auto-calc below is
@@ -243,9 +206,6 @@ render_env() {
         esac
     fi
 
-    # monerod memory ceiling (#132): a generous default so heavy initial-sync verification never trips
-    # it (monerod's LMDB is reclaimable page cache, so its capped RSS stays low). Tunable for low-RAM
-    # hosts that OOM during IBD, or to give a big host more LMDB-cache headroom.
     monero_mem_limit=${setting[monero_mem_limit]}
     case "$monero_mem_limit" in "" | auto) monero_mem_limit="6g" ;; esac
 
