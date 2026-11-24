@@ -354,7 +354,7 @@ TOPOLOGY_NODE_IDS = {
     "docker",
     "tor",
     "internet",
-}
+} | {"host-time-sync", "host-updates", "host-containers"}
 
 
 def test_topology_nodes_match_the_canonical_set():

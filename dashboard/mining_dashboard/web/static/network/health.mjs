@@ -16,7 +16,22 @@ const PING_REASON_LABELS = {
 // component and the route of each link, derived from live config (service/egress.py), so it can't
 // drift from reality. The glanceable summary rides in the header badges + the line below; the older
 // per-component egress list lives on as an expandable drawer for the full text detail / a11y.
-function ComponentHealth({ topology, egress, ping_failures }) {
+function hostAuditNotice(audit) {
+  if (!audit) return null;
+  if (!audit.loaded) {
+    return html`<div class="host-audit c-warn" id="host-audit-unmonitored">
+        Host traffic is not monitored: the egress audit table is not loaded, so time sync, updates and image pulls are not observed.
+    </div>`;
+  }
+  const n = audit.host_violations;
+  return n > 0
+    ? html`<div class="host-audit c-bad" id="host-audit-violations">
+        ⚠️ host_violations: ${n} — ${n} host packet${n === 1 ? "" : "s"} hit the egress audit gate outside the allowlist. Review your allowlist.
+    </div>`
+    : html`<div class="host-audit c-ok" id="host-audit-clean">Host egress audit loaded: no traffic outside the allowlist.</div>`;
+}
+
+function ComponentHealth({ topology, egress, ping_failures, egress_audit }) {
   if (!topology) return null;
   const { level, leaks } = topology.summary;
   const ok = level === "ok";
@@ -29,6 +44,10 @@ function ComponentHealth({ topology, egress, ping_failures }) {
         <div class=${"egress-summary c-" + summaryClass}>
             ${ok ? "🛡️" : "⚠️"} ${topology.summary.label}
         </div>
+        <div class="scope-pill" id="egress-scope">
+            Scope: stack + host · host traffic ${egress_audit?.loaded ? "audited" : "not observed"}
+        </div>
+        ${hostAuditNotice(egress_audit)}
         <div class=${"ping-summary c-" + (pingsOk ? "ok" : "warn")}>
             <span class="egress-name">Monitoring ping</span>${" "}
             ${
