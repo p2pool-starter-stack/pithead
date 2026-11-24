@@ -43,8 +43,8 @@ wiring — is in [`docs/dev/integration-testing.md`](../../docs/dev/integration-
 
 `fakes/fake_donation_stratum.py` serves JSON lines over TCP using the P2Pool login and submit
 response shapes recorded in `fakes/contract/v1/PROVENANCE`. The job values are synthetic;
-real xmrig-proxy compatibility remains unverified until the stub-only donation routing
-phase runs in tier 4. It does not verify proof of work or mine to a project endpoint.
+real xmrig-proxy compatibility remains unverified until the planned stub-only donation routing
+smoke phase (#3706) runs in tier 4. It does not verify proof of work or mine to a project endpoint.
 
 Use `FakeStratum()` as a context manager. Tests bind to loopback on an OS-assigned port.
 `logins` records only the received `login`, `pass` and `agent` fields; `login` is the
@@ -70,5 +70,5 @@ python tests/integration/fakes/fake_donation_stratum.py --host 0.0.0.0 --port 33
 Without `--host`, standalone mode also binds only to loopback. It prints the bound
 fixture metadata once on startup. Add `--log PATH` to append JSON-line login and submit
 events for inspection. Logs include received login passwords: use synthetic test
-credentials only. No mini-stack service is added here; the donation routing phase owns
+credentials only. No mini-stack service is added here; the donation routing smoke phase (#3706) owns
 its container wiring. Run the socket contracts with `make test-fakes`.
