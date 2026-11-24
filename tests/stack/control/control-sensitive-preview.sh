@@ -98,8 +98,12 @@ preview_only "$C/cand.json"
 assert_eq "donation off Tor with the firewall off still names the exposure" "$(previewed_with "Project donation OFF Tor" "project endpoint sees this host's IP")" "true"
 assert_eq "donation off Tor with the firewall off claims no scoped exception" "$(previewed_with "exception is per container")" "false"
 cp "$C/config.json" "$C/config.keep"
+cp "$C/.env" "$C/env.keep"
+sed -i.bak 's/^DONATION_TOR_ENABLED=.*/DONATION_TOR_ENABLED=false/' "$C/.env"
+rm -f "$C/.env.bak"
 jq '.donation={"enabled":true,"percent":1,"tor":false}' "$C/config.keep" >"$C/config.json"
 exposure_previews "donation back on Tor names the restored posture" '.donation.tor=true' \
     "Project donation back on Tor" "Tor exit"
 mv "$C/config.keep" "$C/config.json"
+mv "$C/env.keep" "$C/.env"
 unset -f preview_only previewed_with exposure_previews
