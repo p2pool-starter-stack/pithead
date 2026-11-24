@@ -257,6 +257,8 @@ phase_stack() {
         return 1
     }
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
+    post_reboot_health_begin || return 1
+    post_reboot_health_verify "stack" || true
 
     # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
     # channel has never run — its first live coverage of each (#2062). The two parity rows this
