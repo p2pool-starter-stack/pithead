@@ -136,7 +136,7 @@ render_env() {
     local donation_enabled donation_percent donation_tor
     donation_enabled=$(config_get .donation.enabled)
     donation_percent=$(config_get .donation.percent)
-    donation_tor=$(normalize_bool "$(config_bool .donation.tor true)")
+    donation_tor=$(normalize_bool "$(config_bool '.donation.tor' true)")
 
     local tari_required
     tari_required=$(config_get .dashboard.tari_required)

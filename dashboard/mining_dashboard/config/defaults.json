@@ -248,6 +248,9 @@
   },
   "migrations": {
     "2.1.0": {
+      "explicit_only": [
+        "donation.tor"
+      ],
       "v2_absent": [
         {
           "path": "tari.mode",
