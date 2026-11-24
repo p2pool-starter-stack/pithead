@@ -140,9 +140,12 @@ config_reset() {
     reset_slot_record_good || error "Could not preserve the boot slot before reset — configuration was not cleared."
     restore_save_reset_paths
     detect_os 2>/dev/null || true
-    docker compose down --remove-orphans ||
-        warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running; fix the Compose error shown above."
-    remove_tor_egress_firewall 2>/dev/null || true
+    if docker compose down --remove-orphans; then
+        remove_deactivated_profile_containers
+        remove_tor_egress_firewall 2>/dev/null || true
+    else
+        warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running, so the Tor-only egress rules stay until '$0 down' stops them; fix the Compose error shown above."
+    fi
     lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
     remove_tari_wallet_volumes
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role

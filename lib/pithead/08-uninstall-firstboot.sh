@@ -108,11 +108,14 @@ stack_uninstall() {
         }
     fi
     mutation_lock_acquire uninstall
-    remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
     for unit in remove_egress_check_units remove_lan_guard_check_units; do "$unit" || units_left=1; done
-    docker compose down --remove-orphans -v 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    if docker compose down --remove-orphans -v 2>/dev/null; then
+        remove_deactivated_profile_containers
+        remove_tor_egress_firewall 2>/dev/null || true
+    else
+        warn "compose down failed (engine not running?) — continuing with cleanup. The Tor-only egress rules stay until the next reboot, in case containers still run. Once the engine runs, run '$0 down' to stop them and remove the rules, then remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    fi
     lan_guard_teardown uninstall && { remove_lan_guard_boot_unit || error "uninstall stopped: $LAN_GUARD_BOOT_UNIT or $LAN_GUARD_HOLD_UNIT could not be removed; retry."; } # (#2749)
     remove_tari_wallet_volumes
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.

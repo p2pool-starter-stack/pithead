@@ -92,6 +92,32 @@ assert_contains "config-reset stops the same way" "$lg_out" "config-reset stoppe
 assert_eq "...before removing the rule or the config" "$(lg_rule_removed) $(test -e "$LGD/.env" && echo env-kept)" "0 env-kept"
 unset LG_IPT_LOG
 
+echo "== reset and uninstall remove the Tor-only egress rules only after a stop that worked =="
+cp "$LGD/.env" "$LGD/.env.egress"
+lg_egress() {
+    cp "$LGD/.env.egress" "$LGD/.env"
+    : >"$LGD/egress-ev"
+    lg "set +e; touch config.json; mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; detect_os() { :; }; provision_control_runner() { :; }; remove_tor_egress_firewall() { echo ev:egress-off >>egress-ev; }; docker() { case \"\$1 \$2\" in 'compose down') echo ev:down >>egress-ev; return $1 ;; 'compose rm') echo ev:rm >>egress-ev ;; 'ps --format') echo caddy ;; esac; }; $2"
+}
+lg_ev() { tr '\n' ' ' <"$LGD/egress-ev"; }
+lg_out="$(lg_egress 1 'config_reset -y')"
+assert_eq "config-reset whose stop fails keeps the egress rules" "$(lg_ev "$lg_out")" "ev:down "
+assert_contains "...warns about them" "$lg_out" "Tor-only egress rules stay"
+assert_contains "...and still clears the config" "$lg_out" "Configuration cleared"
+assert_eq "...(.env gone)" "$(test -e "$LGD/.env" || echo absent)" "absent"
+lg_out="$(lg_egress 0 'config_reset -y')"
+assert_eq "config-reset removes switched-off containers, then the rules, after the stop" "$(lg_ev "$lg_out")" "ev:down ev:rm ev:egress-off "
+lg_out="$(lg_egress 1 'stack_uninstall -y')"
+assert_eq "uninstall whose stop fails keeps the egress rules" "$(lg_ev "$lg_out")" "ev:down "
+assert_contains "...warns about them" "$lg_out" "Tor-only egress rules stay"
+assert_contains "...and still finishes its cleanup" "$lg_out" "Uninstalled."
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+lg_out="$(lg_egress 0 'stack_uninstall -y')"
+assert_eq "uninstall removes switched-off containers, then the rules, after the stop" "$(lg_ev "$lg_out")" "ev:down ev:rm ev:egress-off "
+mv "$LGD/.env.egress" "$LGD/.env"
+touch "$LGD/config.json"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+
 echo "== a teardown that cannot finish puts the marker back only over a live rule (#2749) =="
 # The boot guard failed (no live rule), a marker from earlier in this boot is still there, and the
 # engine cannot be read: the teardown keeps what rule there is, and a direct start stays refused.
