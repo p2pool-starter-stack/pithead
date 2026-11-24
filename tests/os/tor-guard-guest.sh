@@ -6,6 +6,7 @@ OFF_WINDOW=${OFF_WINDOW:-2400}
 ON_WINDOW=${ON_WINDOW:-4500}
 STUCK_WINDOW=${STUCK_WINDOW:-900}
 DEFENSE_SEC=${DEFENSE_SEC:-1200}
+CONSENSUS_WINDOW=${CONSENSUS_WINDOW:-420}
 cd /data/pithead
 control=$(sed -n 's/^CONTROL_DIR=//p' .env)
 data=$(sed -n 's/^TOR_DATA_DIR=//p' .env)
@@ -31,7 +32,7 @@ nodes=(tg-auth tg-guard-bad tg-guard-1 tg-guard-2 tg-guard-3 tg-guard-4 tg-mid t
 scrub() { sed -E 's/[1-9A-HJ-NP-Za-km-z]{85,}/[redacted-address]/g'; }
 down_net() {
     docker rm -f "${nodes[@]}" >/dev/null 2>&1 || true
-    docker volume rm -f tg-auth >/dev/null 2>&1 || true
+    docker volume rm -f "${nodes[@]:0:8}" >/dev/null 2>&1 || true
 }
 restore_data() {
     cached_files | while read -r f; do rm -f "$f"; done
@@ -41,8 +42,9 @@ restore() {
     local rc=$? restored=0
     trap - EXIT ERR
     if [ "$rc" != 0 ]; then
-        printf 'Guest diagnostics at failure:\n'
-        for n in tg-guard-bad tg-mid tg-exit tg-auth; do
+        printf 'Guest diagnostics at failure:\n--- consensus relays (nickname:flags)\n'
+        consensus_relays 2>&1 | head -n 20 || true
+        for n in "${nodes[@]}"; do
             printf -- '--- %s\n' "$n"
             docker logs "$n" 2>&1 | scrub | grep -iE 'warn|err|reachab|upload|publish|reject|descriptor|not adding|consensus' | grep -v 'directory information' | head -n 12 | cut -c1-240 || true
             docker logs --tail 6 "$n" 2>&1 | scrub | cut -c1-240 || true
@@ -68,57 +70,79 @@ configure() {
 }
 node_run() {
     local name=$1 ip=$2 torrc=$3
-    docker run -d --name "$name" --network "$net" --ip "$ip" --user tor -e "TORRC=$torrc" \
+    docker run -d --name "$name" --network "$net" --ip "$ip" --user tor -v "$name:/var/lib/tor" -e "TORRC=$torrc" \
         --entrypoint sh "$image" -c 'printf "%s\n" "$TORRC" >/var/lib/tor/torrc && exec tor -f /var/lib/tor/torrc' >/dev/null
 }
 relay_torrc() {
     printf '%s\n' "TestingTorNetwork 1" "DataDirectory /var/lib/tor" "Nickname $1" "Address $2" \
         "ORPort 9001" "DirPort 9030" "SocksPort 0" "AssumeReachable 1" "PublishServerDescriptor 1" "Log notice stdout" \
-        "HeartbeatPeriod 1 minute" "$dirauth" "${@:3}"
+        "HeartbeatPeriod 1 minute" "ExtendAllowPrivateAddresses 1" "$dirauth" "${@:3}"
 }
-build_authority() {
-    local out
+identity() {
+    local vol=$1 nick=$2 ip=$3 probe out
+    probe=$(printf '%s\n' "TestingTorNetwork 1" "DataDirectory /var/lib/tor" "Nickname $nick" "Address $ip" \
+        "ORPort 9001" "DirPort 9030" "SocksPort 0" "$dirauth")
+    docker volume create "$vol" >/dev/null
+    out=$(docker run --rm --user root -v "$vol:/var/lib/tor" -e "PROBE=$probe" --entrypoint sh "$image" -c '
+        set -ex
+        cd /var/lib/tor
+        printf "%s\n" "$PROBE" >probe-torrc
+        chown -R tor:tor /var/lib/tor
+        chmod 700 /var/lib/tor
+        su -s /bin/sh tor -c "cd /var/lib/tor && tor -f probe-torrc --list-fingerprint" >&2
+        printf "FP %s\n" "$(cut -d" " -f2- fingerprint | tr -d " ")"
+    ' 2>"$work/identity-$vol.err") || {
+        tail -n 30 "$work/identity-$vol.err" >&2
+        return 1
+    }
+    out=$(printf '%s\n' "$out" | sed -n 's/^FP //p')
+    [[ "$out" =~ ^[0-9A-Fa-f]{40}$ ]] || {
+        tail -n 30 "$work/identity-$vol.err" >&2
+        return 1
+    }
+    printf '%s' "$out"
+}
+build_identities() {
+    local out v3 i
     docker volume create tg-auth >/dev/null
     out=$(docker run --rm --user root -v tg-auth:/var/lib/tor --entrypoint sh "$image" -c "
         set -ex
-        command -v tor-gencert
-        cd /var/lib/tor
-        mkdir -p keys
+        mkdir -p /var/lib/tor/keys
+        cd /var/lib/tor/keys
         printf '\n' | tor-gencert --create-identity-key -m 12 --passphrase-fd 0 \
-            -i keys/authority_identity_key -s keys/authority_signing_key -c keys/authority_certificate \
-            -a $auth_ip:9030
-        v3id=\$(awk '/^fingerprint /{print \$2}' keys/authority_certificate)
-        printf 'TestingTorNetwork 1\nDataDirectory /var/lib/tor\nNickname tgauth\nAddress $auth_ip\nORPort 9001\nDirPort 9030\nSocksPort 0\nDirAuthority tgauth orport=9001 no-v2 v3ident=%s $auth_ip:9030 0000000000000000000000000000000000000000\n' \"\$v3id\" >probe-torrc
-        chown -R tor:tor /var/lib/tor
-        chmod 700 /var/lib/tor
-        su -s /bin/sh tor -c 'cd /var/lib/tor && tor -f probe-torrc --list-fingerprint' >&2
-        printf 'V3 %s\n' \"\$(awk '/^fingerprint /{print \$2}' keys/authority_certificate)\"
-        printf 'FP %s\n' \"\$(cut -d' ' -f2- fingerprint | tr -d ' ')\"
-        chown -R tor:tor /var/lib/tor
-        chmod 700 /var/lib/tor
+            -i authority_identity_key -s authority_signing_key -c authority_certificate -a $auth_ip:9030 >&2
+        printf 'V3 %s\n' \"\$(awk '/^fingerprint /{print \$2}' authority_certificate)\"
     " 2>"$work/auth.err") || {
         tail -n 30 "$work/auth.err" >&2
         return 1
     }
     v3=$(printf '%s\n' "$out" | sed -n 's/^V3 //p')
-    fp=$(printf '%s\n' "$out" | sed -n 's/^FP //p')
-    [[ "$v3" =~ ^[0-9A-Fa-f]{40}$ && "$fp" =~ ^[0-9A-Fa-f]{40}$ ]]
-    dirauth="DirAuthority tgauth orport=9001 no-v2 v3ident=$v3 $auth_ip:9030 $fp"
+    [[ "$v3" =~ ^[0-9A-Fa-f]{40}$ ]]
+    dirauth="DirAuthority tgauth orport=9001 no-v2 v3ident=$v3 $auth_ip:9030 0000000000000000000000000000000000000000"
+    fp_auth=$(identity tg-auth tgauth "$auth_ip")
+    dirauth="DirAuthority tgauth orport=9001 no-v2 v3ident=$v3 $auth_ip:9030 $fp_auth"
+    fp_bad=$(identity tg-guard-bad tgbad "$guard_bad_ip")
+    fp_exit=$(identity tg-exit tgexit "$exit_ip")
+    identity tg-mid tgmid "$mid_ip" >/dev/null
+    fp_good=()
+    for i in 1 2 3 4; do
+        fp_good+=("$(identity "tg-guard-$i" "tgg$i" "$prefix.${good_guards[$((i - 1))]}")")
+    done
 }
 start_authority() {
-    local torrc
-    torrc=$(relay_torrc tgauth "$auth_ip" "AuthoritativeDirectory 1" "V3AuthoritativeDirectory 1" \
+    local torrc guards
+    guards=$(printf "\$%s," "$fp_bad" "${fp_good[@]}")
+    torrc=$(relay_torrc tgauth "$auth_ip" "AuthoritativeDirectory 1" "V3AuthoritativeDirectory 1" "DirAllowPrivateAddresses 1" "Log [dirserv]info stdout" \
         "ContactInfo tg@example.invalid" "V3AuthVotingInterval 20 seconds" "V3AuthVoteDelay 4 seconds" \
         "V3AuthDistDelay 4 seconds" "TestingV3AuthInitialVotingInterval 20 seconds" \
         "TestingV3AuthInitialVoteDelay 4 seconds" "TestingV3AuthInitialDistDelay 4 seconds" \
-        "TestingDirAuthVoteGuard tgbad,tgg1,tgg2,tgg3,tgg4" "TestingDirAuthVoteGuardIsStrict 1" \
-        "TestingDirAuthVoteExit tgexit" "TestingDirAuthVoteExitIsStrict 1" "TestingDirAuthVoteHSDir *")
-    docker run -d --name tg-auth --network "$net" --ip "$auth_ip" --user tor -v tg-auth:/var/lib/tor \
-        -e "TORRC=$torrc" --entrypoint sh "$image" -c 'printf "%s\n" "$TORRC" >/var/lib/tor/torrc && exec tor -f /var/lib/tor/torrc' >/dev/null
+        "TestingDirAuthVoteGuard ${guards%,}" "TestingDirAuthVoteGuardIsStrict 1" \
+        "TestingDirAuthVoteExit \$$fp_exit" "TestingDirAuthVoteExitIsStrict 1" "TestingDirAuthVoteHSDir *")
+    node_run tg-auth "$auth_ip" "$torrc"
 }
 start_fixture() {
     local torrc
-    build_authority
+    build_identities
     start_authority
     node_run tg-mid "$mid_ip" "$(relay_torrc tgmid "$mid_ip")"
     node_run tg-exit "$exit_ip" "$(relay_torrc tgexit "$exit_ip" "ExitRelay 1" "ExitPolicyRejectPrivate 0" \
@@ -129,6 +153,7 @@ start_fixture() {
         "DoSCircuitCreationRate 1" "DoSCircuitCreationBurst 3" "DoSCircuitCreationDefenseType 2" \
         "DoSCircuitCreationDefenseTimePeriod $DEFENSE_SEC seconds")
     node_run tg-guard-bad "$guard_bad_ip" "$torrc"
+    wait_consensus 'tgauth:Running' 'tgmid:Running' 'tgexit:Exit' 'tgbad:Guard'
 }
 start_good_guards() {
     local i=1 octet
@@ -136,10 +161,31 @@ start_good_guards() {
         node_run "tg-guard-$i" "$prefix.$octet" "$(relay_torrc "tgg$i" "$prefix.$octet")"
         i=$((i + 1))
     done
+    wait_consensus 'tgg1:Guard' 'tgg2:Guard' 'tgg3:Guard' 'tgg4:Guard'
+}
+consensus_relays() {
+    docker exec tg-auth wget -qO- "http://$auth_ip:9030/tor/status-vote/current/consensus" 2>/dev/null |
+        awk '/^r /{nick=$2} /^s /{$1=""; printf "%s:%s\n", nick, substr($0, 2)}'
+}
+wait_consensus() {
+    local deadline=$((SECONDS + CONSENSUS_WINDOW)) want relays missing
+    while :; do
+        relays=$(consensus_relays || true)
+        missing=""
+        for want in "$@"; do
+            printf '%s\n' "$relays" | grep -E "^${want%%:*}:" | grep -qw "${want#*:}" || missing="$missing $want"
+            printf '%s\n' "$relays" | grep -E "^${want%%:*}:" | grep -qw Running || missing="$missing ${want%%:*}:Running"
+        done
+        [ -z "$missing" ] && return 0
+        [ "$SECONDS" -lt "$deadline" ] || break
+        sleep 15
+    done
+    printf 'RECORD fixture: consensus never listed%s after %ss\n' "$missing" "$CONSENSUS_WINDOW" >&2
+    return 1
 }
 write_override() {
     docker run --rm --entrypoint cat "$image" /etc/tor/torrc.template >"$work/torrc.private"
-    printf '\nTestingTorNetwork 1\n%s\n' "$dirauth" >>"$work/torrc.private"
+    printf '\nTestingTorNetwork 1\nClientRejectInternalAddresses 0\n%s\n' "$dirauth" >>"$work/torrc.private"
     cat >docker-compose.override.yml <<YAML
 services:
   tor:
@@ -197,7 +243,6 @@ bring_up_leg() {
     cached_files | while read -r f; do rm -f "$f"; done
     start_fixture
     write_override
-    sleep 60
     docker compose up -d --no-deps --force-recreate tor dashboard >"$work/leg-up.log" 2>&1
     tor_started=$(docker inspect tor --format '{{.State.StartedAt}}')
     leg_start=$(date +%s)
@@ -241,6 +286,7 @@ note_rejections() {
 stage=off-leg
 bring_up_leg off false
 wait_stuck off
+stage=off-good-guards
 start_good_guards
 note_rejections off
 stage=off-observe
@@ -260,6 +306,7 @@ echo 'PASS: refused circuit creates on an open guard channel stall an untouched 
 stage=on-leg
 bring_up_leg on true
 wait_stuck on
+stage=on-good-guards
 start_good_guards
 note_rejections on
 guards_before=$(guard_nicks)
