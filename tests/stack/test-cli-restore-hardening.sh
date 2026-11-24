@@ -159,6 +159,21 @@ assert_eq "failed put-back still puts the live Caddyfile back" "$(cat "$BK/Caddy
 mv "$BK"/.env.restore-old.* "$BK/.env"
 rm -f "$CR/fail-bin/mv"
 
+printf 'EXISTING-ENV\n' >"$BK/.env"
+printf 'EXISTING-CADDY\n' >"$BK/Caddyfile"
+rm -f "$BK/config.json"
+cr_archive "$CR/archive-no-config.tar.gz"
+mkdir "$CR/fail-bin2"
+printf '#!/usr/bin/env bash\n[ "${!#}" != "$FAIL_COPY_DEST" ] || exit 1\nexec /bin/cp "$@"\n' >"$CR/fail-bin2/cp"
+chmod +x "$CR/fail-bin2/cp"
+out="$(cd "$BK" && FAIL_COPY_DEST="$BK/data/dashboard/" PATH="$CR/fail-bin2:$BK/bin:$PATH" ./pithead restore -y "$CR_ARCHIVE" 2>&1)"
+assert_rc "failed data copy with missing config.json exits 1" "$?" 1
+assert_not_contains "missing config.json is not restored on failure" "$(test -f "$BK/config.json" && echo yes)" yes
+assert_eq "existing .env survives put-back" "$(cat "$BK/.env")" EXISTING-ENV
+assert_eq "existing Caddyfile survives put-back" "$(cat "$BK/Caddyfile")" EXISTING-CADDY
+assert_eq "rollback of added file leaves no .restore-old copy" "$(find "$BK" -maxdepth 1 -name 'config.json.restore-old.*')" ""
+rm -f "$CR/fail-bin2/cp"
+
 # Generated files in a backup are compatibility inputs, never runtime policy. A valid config plus
 # stale .env/Caddyfile must land the normal writers' output, while opaque generated identity and
 # secrets still round-trip.

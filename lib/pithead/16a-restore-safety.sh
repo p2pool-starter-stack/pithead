@@ -74,7 +74,10 @@ restore_fixed_backups_finish() {
         if [ "$1" = keep ]; then
             [ -z "$backup" ] || sudo rm -f -- "$backup" || warn "Could not remove $backup, the copy of $path from before the restore — delete it by hand."
         elif [ -n "$backup" ]; then
-            sudo mv -f -- "$backup" "$path" || rc=1
+            sudo mv -f -- "$backup" "$path" || {
+                rc=1
+                warn "Restore could not put $path back — it is kept as $backup."
+            }
         else
             sudo rm -f -- "$path" || warn "Restore could not remove $path, which it had added — it still holds the archive's version."
         fi
@@ -281,11 +284,6 @@ restore_commit_stage() {
     fi
     for path in "${RESTORE_FIXED_PATHS[@]}"; do
         rel="${path#/}"
-        # config.json and .env carry secrets and stay owner-only (600); the Caddyfile does not, and
-        # the caddy container reads it as a cap_drop:ALL root with no CAP_DAC_OVERRIDE, so it must
-        # come back world-readable (644) like generate_caddyfile's normal apply-path render — a 600
-        # restore leaves caddy permission-denied on its bind-mounted Caddyfile for the rest of the
-        # appliance's life (#2329).
         local mode=600
         [ "$path" != "$PWD/Caddyfile" ] || mode=644
         [ -e "$RESTORE_STAGE_DIR/$rel" ] || continue
@@ -318,8 +316,6 @@ restore_commit_stage() {
         }
     done
     restore_fixed_backups_finish keep
-    # The archive wins ordinary collisions, but Tor's circuit history must never survive a
-    # restore. Its onion keys are separate files and remain untouched.
     sudo rm -f -- "${RESTORE_ALLOWED_DIRS[3]}/state" || {
         restore_discard_stage
         error "Restore committed data but could not discard Tor circuit state; keep the stack stopped and remove the state before starting Tor."

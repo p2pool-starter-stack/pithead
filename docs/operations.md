@@ -827,6 +827,11 @@ preserves the destination's file in `data/monero`, `data/tari`, and `data/p2pool
 install may already have synced chain data, and replacing it would force a resync. It still adds
 files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
 
+The fixed files have specific permissions: `config.json` and `.env` carry secrets and stay owner-only
+(600); the `Caddyfile` is restored as world-readable (644) because the `caddy` container runs as root
+with `cap_drop: ALL` and no `CAP_DAC_OVERRIDE`, so a 600 file would leave it permission-denied on
+its bind mount for the rest of the appliance's life (#2329).
+
 If `./pithead restore` fails while it copies a data directory, it puts `config.json`, `.env` and the
 `Caddyfile` back as they were before the restore. Data directories it had already copied keep the
 archive's files. A previous file it cannot put back stays beside its original name as a
