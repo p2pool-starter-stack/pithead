@@ -142,7 +142,9 @@ class TestPayoutAlertRetry:
         try:
             wid = configured_wallet_id(chain)
             old = time.time() - payout_sync.PAYOUT_ALERT_RETRY_SEC - 10
-            sm.add_payout_alert_retry(chain, wid, "tx-old", 1, old)
+            sm.add_payouts(chain, wid, [{"txid": "tx-old", "height": 1, "amount_atomic": 1}], True)
+            sm._conn.execute("UPDATE payout_alert_retry SET first_ts = ?", (old,))
+            sm._conn.commit()
             empty_client, _ = _scan(chain, [])
             self._run(sync, sm, empty_client, alerts)
             assert sink.sent == []
@@ -156,5 +158,34 @@ class TestPayoutAlertRetry:
             alerts.payout_confirmed_alert = AsyncMock(side_effect=RuntimeError("boom"))
             self._run(sync, sm, client, alerts)
             assert len(sm.get_payout_alert_retries(chain, configured_wallet_id(chain))) == 1
+        finally:
+            sm.close()
+
+    def test_a_restart_before_any_send_still_delivers(self, chain, tmp_path):
+        db = str(tmp_path / "m.db")
+        sm = StateManager(db_path=db)
+        wid = configured_wallet_id(chain)
+        sm.add_payouts(chain, wid, [{"txid": "tx-cccccccc", "height": 3, "amount_atomic": 7}], True)
+        sm.close()
+        sm2 = StateManager(db_path=db)
+        try:
+            sink = _Sink(ok=True)
+            client, sync = _scan(chain, [])
+            self._run(sync, sm2, client, _svc(notifier=sink, sinks=[sink]))
+            assert len(sink.sent) == 1
+            assert sm2.get_payout_alert_retries(chain, wid) == []
+        finally:
+            sm2.close()
+
+    def test_rows_of_a_previous_wallet_are_pruned(self, chain, tmp_path):
+        db, sm, sink, alerts, client, sync = self._setup(chain, tmp_path)
+        try:
+            sm.add_payouts(
+                chain, "old-wallet", [{"txid": "tx-d", "height": 1, "amount_atomic": 1}], True
+            )
+            empty_client, _ = _scan(chain, [])
+            self._run(sync, sm, empty_client, alerts)
+            assert sink.sent == []
+            assert sm.get_payout_alert_retries(chain, "old-wallet") == []
         finally:
             sm.close()

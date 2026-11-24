@@ -32,7 +32,11 @@ class MiningStoreMixin(PayoutAlertRetryMixin):
     _payouts_have_wallet = True
 
     def add_payouts(
-        self, chain: str, wallet_id: str | None, rows: list[dict[str, Any]]
+        self,
+        chain: str,
+        wallet_id: str | None,
+        rows: list[dict[str, Any]],
+        queue_alert: bool = False,
     ) -> list[dict[str, Any]]:
         if not wallet_id or not rows:
             return []
@@ -64,6 +68,13 @@ class MiningStoreMixin(PayoutAlertRetryMixin):
                             )
                         if cur.rowcount == 1:
                             new_rows.append(r)
+                            if queue_alert:
+                                self._conn.execute(
+                                    "INSERT OR IGNORE INTO payout_alert_retry "
+                                    "(chain, wallet_id, txid, amount_atomic, first_ts) "
+                                    "VALUES (?, ?, ?, ?, ?)",
+                                    (chain, wallet_id, r["txid"], tail[2], time.time()),
+                                )
         except (sqlite3.Error, KeyError, ValueError, TypeError) as e:
             self._db_error("Payout Insert Error", e)
             return []
