@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import subprocess
+import sys
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -232,3 +234,31 @@ class TestStopStart:
         with patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)):
             assert await c.start("p2pool") is False
         assert session.post.call_count == 0
+
+    async def test_lock_held_by_another_process_times_out_without_acting(self, tmp_path, caplog):
+        c = _control(tmp_path)
+        session = _session_returning(_FakeResp(204))
+        holder = subprocess.Popen(  # noqa: ASYNC220, S603
+            [
+                sys.executable,
+                "-c",
+                "import fcntl,sys,time;f=open(sys.argv[1],'rb');"
+                "fcntl.flock(f,fcntl.LOCK_EX);print('held',flush=True);time.sleep(60)",
+                str(c.lock_file),
+            ],
+            stdout=subprocess.PIPE,
+        )
+        try:
+            assert holder.stdout.readline().strip() == b"held"
+            with (
+                patch.object(dc_mod, "LOCK_WAIT_SECONDS", 0.3),
+                patch.object(dc_mod.aiohttp, "ClientSession", return_value=_AsyncCM(session)),
+                caplog.at_level(logging.WARNING, logger="DockerControl"),
+            ):
+                assert await asyncio.wait_for(c.stop("p2pool"), 5) is False
+            assert session.post.call_count == 0
+            assert "pithead lock still held" in caplog.text
+        finally:
+            holder.kill()
+            holder.wait()
+            holder.stdout.close()
