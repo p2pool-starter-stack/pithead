@@ -156,6 +156,6 @@ out="$(CONTROL_DRAIN_BUDGET_S=2 run_pending)"
 PATH="$old_path"
 assert_contains "time budget announced" "$out" "per-run time budget"
 left="$(find "$REQS" -name 'slow-*.json' | wc -l | tr -d ' ')"
-[ "$left" -gt 0 ] && [ "$left" -lt 6 ] && ok "budget leaves the rest for the next run ($left left)" || bad "budget leaves the rest for the next run" "$left left"
+[ "$left" -gt 0 ] && [ "$left" -lt 6 ] && ok "budget leaves the rest for the next run" || bad "budget leaves the rest for the next run" "$left left"
 assert_contains "next run drains the remainder" "$(run_pending)" "Processed $left control request(s)"
 unset UUID8 UUID9 left entry
