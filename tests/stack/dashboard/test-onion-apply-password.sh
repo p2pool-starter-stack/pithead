@@ -88,11 +88,12 @@ assert_rc "apply without dashboard.mode succeeds" "$LAW_RC" "0"
 assert_eq "absent dashboard.mode renders dashboard" "$(law_env DASHBOARD_MODE)" "dashboard"
 assert_eq "the host allowlist reaches the dashboard comma-separated" "$(law_env PITHEAD_DIAG_CONTAINERS)" \
     "$(run_sourced "$V" eval 'printf %s "${PITHEAD_DIAG_CONTAINERS// /,}"')"
-for law_mode in api both; do
-    law_apply ",\"mode\":\"$law_mode\""
-    assert_rc "dashboard.mode $law_mode accepted" "$LAW_RC" "0"
-    assert_eq "dashboard.mode $law_mode rendered" "$(law_env DASHBOARD_MODE)" "$law_mode"
-done
+law_apply ',"mode":"api"'
+assert_rc "dashboard.mode api accepted" "$LAW_RC" "0"
+assert_eq "dashboard.mode api rendered" "$(law_env DASHBOARD_MODE)" "api"
+law_apply ',"mode":"both"'
+assert_rc "dashboard.mode both accepted" "$LAW_RC" "0"
+assert_eq "dashboard.mode both rendered" "$(law_env DASHBOARD_MODE)" "both"
 law_apply ',"mode":"headless"'
 assert_rc "invalid dashboard.mode rejected" "$LAW_RC" "1"
 assert_contains "invalid dashboard.mode message" "$LAW_OUT" "dashboard.mode must be"
