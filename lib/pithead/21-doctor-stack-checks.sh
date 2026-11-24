@@ -344,3 +344,16 @@ check_monerod_synchronized() {
     fi
     return 0
 }
+
+check_clearnet_initial_sync() {
+    local _cn=""
+    if [ -f "$ENV_FILE" ] && performance_clearnet_active; then
+        dr_info clearnet-initial-sync "Local node P2P uses clearnet by the Performance profile choice — no Tor transition is pending. See $DOCS_URL/docs/privacy.md#performance."
+    elif [ -f "$ENV_FILE" ] && clearnet_sync_active; then
+        monero_clearnet_exposed && _cn="Monero"
+        tari_clearnet_exposed && _cn="${_cn:+$_cn + }Tari"
+        dr_warn clearnet-initial-sync "CLEARNET initial sync or Tor transition is pending for $_cn — this host's IP may be exposed until the host verifies Tor and the closed firewall exception (Monero tx-broadcast stays on Tor). See $DOCS_URL/docs/privacy.md#exposure-is-loud-and-always-visible. The dashboard retries automatically; this WARN clears after host verification."
+    else
+        dr_ok clearnet-initial-sync "No clearnet initial sync active — all node P2P is Tor-only."
+    fi
+}
