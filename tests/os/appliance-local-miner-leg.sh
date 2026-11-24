@@ -57,7 +57,10 @@ for enabled in false true; do
     [ "$(sha256sum .env)" = "$env_before" ]
     [ "$(cat /proc/sys/kernel/random/boot_id)" = "$boot" ]
     if [ "$enabled" = false ]; then
-        ! systemctl is-active --quiet xmrig.service || false
+        if systemctl is-active --quiet xmrig.service; then
+            printf '%s\n' 'local-miner: xmrig.service still active after the disable apply'
+            false
+        fi
         [ "$(systemctl show xmrig.service -p MainPID --value)" = 0 ]
         [ ! -f /data/rigforge/config.json ]
         printf '%s\n' 'local-miner: disable apply stopped xmrig and removed derived config without reboot'
