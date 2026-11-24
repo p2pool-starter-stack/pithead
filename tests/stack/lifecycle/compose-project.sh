@@ -71,6 +71,23 @@ cd pithead
 : >"$DOCKER_LOG"
 migrate_compose_project
 check 'custom project never migrates containers from the default project' "$(cat "$DOCKER_LOG")" 'compose config --format json'
+mkdir "$sandbox/pithead-v2"
+cd "$sandbox/pithead-v2"
+docker() {
+    printf '%s\n' "$*" >>"$DOCKER_LOG"
+    case "$*" in
+    'compose config --format json') printf '{"name":"pithead","services":{"tor":{"container_name":"tor"},"monerod":{"container_name":"monerod"},"tari":{"container_name":"tari"},"caddy":{"container_name":"caddy"}}}\n' ;;
+    'ps -a --filter label=com.docker.compose.project=pithead-v2 --format {{.Names}}') [ -z "$OLD_NAMES" ] || tr ' ' '\n' <<<"$OLD_NAMES" ;;
+    esac
+}
+OLD_NAMES='tari other tor'
+: >"$DOCKER_LOG"
+migrate_compose_project 2>/dev/null
+check 'migration reads the old project in one engine call (#4458)' "$(cat "$DOCKER_LOG")" $'compose config --format json\nps -a --filter label=com.docker.compose.project=pithead-v2 --format {{.Names}}\nrm -f tor tari'
+OLD_NAMES=''
+: >"$DOCKER_LOG"
+migrate_compose_project
+check 'migration with no old containers stops after one engine call (#4458)' "$(cat "$DOCKER_LOG")" $'compose config --format json\nps -a --filter label=com.docker.compose.project=pithead-v2 --format {{.Names}}'
 cd "$sandbox"
 LAN_GUARD_BINDS='TARI_GRPC_BIND:18142'
 LAN_GUARD_STOPPED_SERVICES=()

@@ -1,5 +1,5 @@
 migrate_compose_project() {
-    local cfg our_project dir_project names name cid proj
+    local cfg our_project dir_project names name old
     cfg=$(docker compose config --format json 2>/dev/null) || return 0
     [ -n "$cfg" ] || return 0
     our_project=$(printf '%s' "$cfg" | jq -r '.name // "pithead"' 2>/dev/null) || our_project="pithead"
@@ -8,14 +8,13 @@ migrate_compose_project() {
     { [ -n "$dir_project" ] && [ "$dir_project" != "$our_project" ]; } || return 0
     names=$(printf '%s' "$cfg" | jq -r '.services[].container_name // empty' 2>/dev/null) || return 0
     [ -n "$names" ] || return 0
+    old=$(docker ps -a --filter "label=com.docker.compose.project=$dir_project" --format '{{.Names}}' 2>/dev/null) || return 0
+    [ -n "$old" ] || return 0
 
     local stale=()
     while IFS= read -r name; do
         [ -n "$name" ] || continue
-        cid=$(docker ps -aq --filter "name=^${name}$" 2>/dev/null | head -n1) || cid=""
-        [ -n "$cid" ] || continue
-        proj=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$cid" 2>/dev/null) || proj=""
-        [ "$proj" = "$dir_project" ] && stale+=("$name")
+        grep -Fqx -- "$name" <<<"$old" && stale+=("$name")
     done <<<"$names"
 
     [ "${#stale[@]}" -gt 0 ] || return 0
