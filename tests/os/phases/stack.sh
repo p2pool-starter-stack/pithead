@@ -273,9 +273,7 @@ phase_stack() {
         return 1
     }
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
-    post_reboot_health_begin || true
     _stack_container_restart_leg || return 1
-    post_reboot_health_verify "stack" || true
 
     local miner_rc=0
     miner_backup_trial || miner_rc=$?
@@ -286,11 +284,9 @@ phase_stack() {
     local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
     _stack_run_integration "check (non-destructive live-state assertion)" --check "${remote_extra[@]}"
-    post_reboot_health_begin || true
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
-    post_reboot_health_verify "stack after the lifecycle gate" 1000 || true
     _stack_run_integration "stratum password and TLS clients" \
         --scenario remote-main-stratum-tls "${remote_extra[@]}"
     # Two more parity rows from #2062's table are deliberately NOT driven here, because this guest

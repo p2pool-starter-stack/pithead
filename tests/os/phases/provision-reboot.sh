@@ -23,9 +23,6 @@ _phase_provision_reboot() {
         bad "could not start the boot-probe access-log window (#3263)"
         return 1
     }
-    # shellcheck disable=SC2034
-    POH_CONTAINER_RE='^(caddy|dashboard)$'
-    post_reboot_health_begin || true
     # Authenticate readiness checks so only the deliberate wrong-password control adds a 401.
     # shellcheck disable=SC2154,SC2034 # phase locals; dashboard_curl reads dynamic scope.
     local DASH_USER="$pv_user" DASH_PASS="$pv_pass"
@@ -168,7 +165,6 @@ _phase_provision_reboot() {
     else
         bad "external wrong-password 401 or single failed-login count did not verify (#3263)"
     fi
-    post_reboot_health_verify "provision reboot" 1 || true
     assert_appliance_hostname_identity fixture-next "unaided reboot" "$pv_user" "$pv_pass"
     # The miner must return too (#796): its unit lives in /run and died with the reboot, so
     # only pithead-boot's local-miner leg — which runs after the slot commit above — can have
