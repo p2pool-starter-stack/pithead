@@ -17,11 +17,11 @@ dash_pw_cases() {
     out=$(dash_pw_apply "$loc" "$(printf 'ä%.0s' $(seq 36))")
     assert_not_contains "36 two-byte characters are accepted" "$out" "dashboard.auth.password must be"
     out=$(dash_pw_apply "$loc" "ääääääx")
-    assert_contains "7 characters are rejected, whatever their byte count" "$out" "dashboard.auth.password must be 8–128 characters with no control characters or double-quotes"
+    assert_contains "7 characters are rejected, whatever their byte count" "$out" "dashboard.auth.password must be 8–128 characters"
     out=$(dash_pw_apply "$loc" "$(printf 'a%.0s' $(seq 129))")
-    assert_contains "129 characters are rejected" "$out" "dashboard.auth.password must be 8–128 characters with no control characters or double-quotes"
+    assert_contains "129 characters are rejected" "$out" "dashboard.auth.password must be 8–128 characters"
     out=$(dash_pw_apply "$loc" 'pässwörd-"12345')
-    assert_contains "a double-quote is rejected" "$out" "dashboard.auth.password must be 8–128 characters with no control characters or double-quotes"
+    assert_contains "a double-quote is rejected" "$out" "dashboard.auth.password must be 8–128 characters"
     out=$(dash_pw_apply "$loc" "$(printf 'ä%.0s' $(seq 16))" onion)
     assert_contains "onion: 16 identical two-byte characters are a repeated character" "$out" "single repeated character"
 }
