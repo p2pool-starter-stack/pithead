@@ -28,7 +28,7 @@ WT_SMALL_KB=104857600 WT_SMALL_H=100G
 # the config it wrote is left at $WT/<name>/config.json. Answer order is wizard_ask_core's:
 # Monero address, local-node y/n, [remote node details], THEN the Tari block, then pool tier,
 # dashboard login, and wizard_ask_shape's four.
-wt_run() { # <name> <answers-as-printf-%b>
+wt_run() {
     local d="$WT/$1"
     mkdir -p "$d"
     rm -f "$d/config.json"
