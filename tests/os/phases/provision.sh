@@ -20,5 +20,6 @@ phase_provision() {
     _phase_provision_initial || return
     _phase_provision_reboot || return
     _phase_provision_power_cut || return
-    _phase_provision_migration
+    _phase_provision_migration || return
+    netwatch_mining_hour "Pithead appliance"
 }

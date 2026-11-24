@@ -86,6 +86,17 @@ to `data/control/results/egress-status.json`. The dashboard reads that file:
   badge warn that the state is unverified, and no alert goes out. A malformed file never reads as
   enforced.
 
+The same file carries the log-only host egress audit counters. The dashboard serves them at
+`GET /api/system/egress-audit` and in `/api/state` as `egress_audit`:
+`{loaded, would_drop, counters, host_violations, unmonitored}`. `loaded` is true only when the audit
+table is present and the check is fresh. `host_violations` equals `would_drop`, the packets that hit the
+audit gate outside the allowlist in `data/egress-map.tsv`. When the table is not loaded (a DIY host
+without it, a missing file, or a check older than six minutes) `unmonitored` is true and the panel says
+host traffic is not observed. The **Stack Topology & Egress** panel draws three host-OS nodes (time
+sync, OS and release fetches, image pulls) outside the stack. Their edges show as allowlisted clearnet
+when the audit is loaded and as Unverified otherwise, never as Tor. A violation count above zero shows a
+warning and does not change the summary line.
+
 Opting out with `network.tor_egress_firewall: false` removes the timer. If a removal step fails
 (stopping the timer, deleting its unit files, or reloading systemd), `apply` names the step and
 does not report the timer removed, and `uninstall` exits non-zero instead of printing

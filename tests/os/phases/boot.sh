@@ -2,6 +2,7 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 phase_boot() {
     info "phase: boot"
+    netwatch_window_start "first boot (Pithead appliance)"
     vm_destroy_or_refuse || return
     cp "$IMAGE" "$DISK"
     # 16 GiB guest: the appliance reserves 6 GiB of hugepages at boot (RandomX), so a smaller VM
@@ -56,6 +57,7 @@ phase_boot() {
         return
     }
     ok "wizard serves the token gate ($ip)"
+    netwatch_window_stop "first boot (Pithead appliance)"
 
     bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" "" usb A && ok "unlabelled image first menu keeps the plain version" || bad "unlabelled first menu changed"
 
@@ -74,6 +76,7 @@ phase_boot() {
         bad "host SSH never came up after the wizard gate — cannot read hugepages/machine-id ($(_ssh_unreachable_reason "$ip"))"
         return
     }
+    netwatch_htpdate_row
 
     if _ssh 'grub-editenv /boot/efi/grub/grubenv list | grep -qx "MEDIA=internal"'; then
         ok "boot corrects image media to internal on the virtio disk"
@@ -166,6 +169,29 @@ GETTY_DROPIN
         bad "$verdict"
     fi
 
+    local ea_active ea_before ea_after ea_wd_b ea_wd_a ea_dial
+    ea_active=$(_ssh "systemctl is-active pithead-egress-audit.service; true" 2>/dev/null | tr -d '\r\n') || ea_active=""
+    ea_before=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_before=""
+    ea_wd_b=$(host_egress_audit_would_drop "$ea_before")
+    ea_dial=0
+    _ssh "timeout 25 htpdate -s -t www.debian.org 2>&1" >/dev/null || ea_dial=$?
+    ea_after=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_after=""
+    ea_wd_a=$(host_egress_audit_would_drop "$ea_after")
+    local ea_l0 ea_l1 ea_l2 ea_noise ea_probe ea_rise
+    ea_l0=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_l0=""
+    _ssh "sleep 2" >/dev/null 2>&1 || true
+    ea_l1=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_l1=""
+    _ssh 'for i in $(seq 1 100); do (echo >/dev/udp/127.0.0.1/9) 2>/dev/null; done' >/dev/null 2>&1 || true
+    ea_l2=$(_ssh "nft list table inet pithead_egress_audit 2>&1" 2>/dev/null) || ea_l2=""
+    ea_noise=$(host_egress_audit_delta "$(host_egress_audit_would_drop "$ea_l1")" "$(host_egress_audit_would_drop "$ea_l0")")
+    ea_probe=$(host_egress_audit_delta "$(host_egress_audit_would_drop "$ea_l2")" "$(host_egress_audit_would_drop "$ea_l1")")
+    ea_rise=$(host_egress_audit_delta "$(host_egress_audit_counter loopback "$ea_l2")" "$(host_egress_audit_counter loopback "$ea_l0")")
+    if verdict=$(host_egress_audit_boot_verdict "$ea_active" "$ea_after" "$ea_wd_b" "$ea_wd_a" "$ea_dial" "$ea_noise" "$ea_probe" "$ea_rise"); then
+        ok "$verdict"
+    else
+        bad "$verdict"
+    fi
+
     [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
         ok "both Debian Tor units ship masked on a fresh coordinator boot" ||
         bad "a Debian Tor unit is not masked on a fresh coordinator boot: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"
@@ -174,6 +200,7 @@ GETTY_DROPIN
         bad "tor runs on a fresh coordinator boot"
 
     local id_before id_after jd_before jd_after jb jt0 jt1 kb0 jt_st jt_mu jt_un jt_kb jt_age
+    netwatch_window_start "reboot (Pithead appliance)"
     id_before=$(_ssh cat /etc/machine-id)
     jd_before=$(_ssh 'ls /var/log/journal | wc -l' | tr -d '\r\n ')
     jt0=$(date +%s)
@@ -204,6 +231,7 @@ GETTY_DROPIN
     else
         bad "could not read machine-id before the reboot check (test SSH unreachable)"
     fi
+    netwatch_window_stop "reboot (Pithead appliance)"
 
     _secure_boot_guest_leg
 }

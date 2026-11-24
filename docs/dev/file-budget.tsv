@@ -19,7 +19,7 @@ dashboard/mining_dashboard/web/static/app/chart.mjs	663
 dashboard/mining_dashboard/web/static/app/logic.mjs	534
 dashboard/mining_dashboard/web/static/config/configview.mjs	555
 dashboard/mining_dashboard/web/static/system/osupdate.mjs	404
-dashboard/mining_dashboard/web/views/views.py	426
+dashboard/mining_dashboard/web/views/views.py	422
 dashboard/mining_dashboard/web/views/xvb_views.py	682
 dashboard/mining_dashboard/wizard/server.py	664
 dashboard/tests/client/test_xmrig_client.py	489
@@ -42,7 +42,9 @@ dashboard/tests/web/test_worker_detail_meta.py	425
 dashboard/tests/web/views/test_infra_views.py	580
 dashboard/tests/web/views/test_views.py	750
 docs/tools/recovery-config-builder.html	424
+lib/pithead/08-uninstall-firstboot.sh	401
 lib/pithead/12-firstboot-wizard.sh	476
+lib/pithead/21-doctor-stack-checks.sh	413
 lib/pithead/14-local-miner.sh	414
 lib/pithead/28-parse-and-validate-config.sh	464
 lib/pithead/33-render-env.sh	481

@@ -771,7 +771,11 @@ says so instead of guessing.
 **XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
 sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
 remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
-Unverified. The difference is
+Unverified. The diagram also draws three
+host-OS nodes below the stack (time sync, OS and release fetches, image pulls) under a scope pill that
+says whether host traffic is audited or not observed; a warning appears when the host audit counted
+flows outside the allowlist, and a notice appears when the audit table is not loaded
+([Privacy](privacy.md)). The difference is
 operational: a node you run is yours to restart and resync, and a node you point at
 (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible
@@ -924,7 +928,7 @@ for your payout address) and the stack runs a **view-only** `monero-wallet-rpc` 
 node, scanning for confirmed incoming payouts. P2Pool pays each miner's share directly in a Monero
 block's coinbase, so the wallet is the only ground truth that a payout arrived. The Monero tab of
 the earnings card then shows a **Confirmed on-chain** block under the estimate — and a
-`payout_confirmed` alert fires once per payout (Telegram and the other sinks). The Tari tab carries
+`payout_confirmed` alert fires once per payout (Telegram and the other sinks). If every channel fails, the dashboard keeps the alert queued, retries it each five-minute payout scan, and stops after one channel accepts it or seven days. The Tari tab carries
 the same **Confirmed on-chain** block in XTM once Tari payout confirmation is on (see the Tari note
 below).
 

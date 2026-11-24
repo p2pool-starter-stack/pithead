@@ -100,7 +100,8 @@ class TorEgressHealer(TorHistoryMixin):
         self._pending_since = None
         self._failure_evidence = ""
         self._recovery_step = None
-        self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._newnym_unconfirmed = False
+        self._guard_rotated = False
         self._history_since = None
         self._history_outage = None
         self._clear_history = False
@@ -152,8 +153,8 @@ class TorEgressHealer(TorHistoryMixin):
             self._last_attempt = None
             self._ok_streak = 0
             self._warned_exhausted = False
+            self._guard_rotated = False
             return "recovered"
-        # ok is False — any failure breaks a would-be recovery streak.
         self._ok_streak = 0
         if self._failing_since is None:
             hint = self._ping_failing_since() if self._ping_failing_since else None
@@ -189,6 +190,7 @@ class TorEgressHealer(TorHistoryMixin):
             self._ok_streak = 0
             self._warned_exhausted = False
             self._newnym_unconfirmed = False
+            self._guard_rotated = False
         self._tor_started = started
         self._own_restart = False
 
@@ -271,7 +273,9 @@ class TorEgressHealer(TorHistoryMixin):
                     self._request_history()
                     return
                 self._newnym_unconfirmed = False
-                self._recovery_step = "NEWNYM"
+                rotated = result.get("action") == "tor-dropguards"
+                self._guard_rotated = self._guard_rotated or rotated
+                self._recovery_step = "guard rotation" if rotated else "NEWNYM"
             probe = await asyncio.to_thread(self._probe)
             ok, evidence = probe
             if not ok:
@@ -301,6 +305,12 @@ class TorEgressHealer(TorHistoryMixin):
                         )
                         return
                     self._pending_since = now
+                    return
+                if self._guard_rotated:
+                    logger.warning(
+                        "Tor egress still failed after guard rotation (%s). Not restarting Tor.",
+                        evidence,
+                    )
                     return
                 if self.saturated_history:
                     try:

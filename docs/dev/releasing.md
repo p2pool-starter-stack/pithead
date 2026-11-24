@@ -59,6 +59,26 @@ reports and never bumps: a Tari or
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
 
+Four pins that no Dependabot ecosystem can read are bumped by `.github/workflows/pin-bump.yml`, which runs
+daily and on `workflow_dispatch` (a dispatch defaults to a dry run that only reports). For each of the
+`monero`, `p2pool` and `xmrig-proxy` ARG pairs and the appliance's `RIGFORGE_REF`,
+`scripts/watch/pin-bump.sh` reads the latest stable upstream release, downloads the asset and
+refuses to go on unless its sha256 equals the digest GitHub publishes for it (Monero: the entry in
+`hashes.txt`, whose signature is not verified), then opens one `dependencies`-labelled PR per upstream
+version that moves the version and hash together, so a stale hash never lands. `RIGFORGE_REF` is
+resolved from the release tag to its commit. Monero only moves within its pinned minor: a release in
+a new minor is reported and never proposed, because that move stays a human decision (#1129). The Actions token
+opens these PRs, so they trigger no checks of their own: a maintainer pushes to the branch to start
+tiers 1 to 3, and the PR body names the `tier4-e2e` or `tier4-kvm` proof it needs before merge. A newer
+release supersedes the open PR for an older one of the same component, and a closed PR is taken as declined.
+
+Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
+sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
+them and the watch reports newer versions, not advisories (#4277). Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
+the upstream release notes and security advisories for the new version, and records that check in
+the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
+the bump.
+
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
@@ -614,6 +634,18 @@ blob to be refused. That round trip catches a digest that no longer pulls, an im
 cosign it claims to be, and a committed `cosign.pub` that is no longer the public half of
 `COSIGN_KEY` — each of which would otherwise surface as *signature verification failed* on every
 install, which reads as tampering rather than as our own pin having moved.
+
+The verifier image is declared once, as the `FROM` line of `build/cosign/Dockerfile`, by tag and
+digest, where Dependabot bumps it. `scripts/build-pithead.sh` writes the digest reference, without
+the tag, into `COSIGN_IMAGE` in the generated `pithead`; `scripts/cosign-image.sh` prints the same
+reference for the live-upgrade and fixture scripts. A second literal anywhere else fails the tier-1
+signing test.
+
+The digest is the security control, not housekeeping. Verifying release images by first pulling a
+verifier is itself an unverified pull. Pinned by digest, a hostile registry can serve only those
+exact bytes or fail the pull. On a tag it could serve a `cosign` that exits 0 on everything and turn
+the gate off. Treat a bump as a supply-chain change: review the Dependabot PR, and the preflight
+round trip above must pass on it.
 
 `pithead` verifies before it changes anything:
 

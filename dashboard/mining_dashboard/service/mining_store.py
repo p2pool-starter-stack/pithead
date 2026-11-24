@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from mining_dashboard.config.config import HISTORY_RETENTION_SEC
+from mining_dashboard.service.payout_alert_store import PayoutAlertRetryMixin
 from mining_dashboard.service.workers.worker_config_store import _bindable
 
 logger = logging.getLogger("StateManager")
@@ -27,11 +28,15 @@ def _raffle_wins_max_rows():
     return storage_service.RAFFLE_WINS_MAX_ROWS
 
 
-class MiningStoreMixin:
+class MiningStoreMixin(PayoutAlertRetryMixin):
     _payouts_have_wallet = True
 
     def add_payouts(
-        self, chain: str, wallet_id: str | None, rows: list[dict[str, Any]]
+        self,
+        chain: str,
+        wallet_id: str | None,
+        rows: list[dict[str, Any]],
+        queue_alert: bool = False,
     ) -> list[dict[str, Any]]:
         if not wallet_id or not rows:
             return []
@@ -63,6 +68,8 @@ class MiningStoreMixin:
                             )
                         if cur.rowcount == 1:
                             new_rows.append(r)
+                            if queue_alert:
+                                self._queue_payout_alert(chain, wallet_id, r["txid"], tail[2])
         except (sqlite3.Error, KeyError, ValueError, TypeError) as e:
             self._db_error("Payout Insert Error", e)
             return []
