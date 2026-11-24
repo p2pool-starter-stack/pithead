@@ -3,9 +3,7 @@ import secrets
 from mining_dashboard.config.defaults import automatic_setup_defaults, default_of, select_profile
 
 
-def build_config(
-    form: dict, *, tari_default: str | None = None, platform: str = "appliance"
-) -> dict:
+def build_config(form: dict, *, platform: str = "appliance") -> dict:
     def s_(name: str) -> str:
         return str(form.get(name, "")).strip()
 
@@ -26,12 +24,7 @@ def build_config(
         if form.get("stratum_password") == "true"
         else default_of("p2pool.stratum_password", platform),
     }
-    tari_mode = (
-        s_("tari_mode")
-        or ("local" if s_("tari_wallet") else None)
-        or tari_default
-        or default_of("tari.mode", platform)
-    )
+    tari_mode = s_("tari_mode") or ("local" if s_("tari_wallet") else "off")
     cfg["tari"]["mode"] = tari_mode
     if tari_mode != "off":
         cfg["tari"]["wallet_address"] = s_("tari_wallet")

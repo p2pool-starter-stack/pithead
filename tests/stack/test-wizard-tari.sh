@@ -24,10 +24,6 @@ chmod +x "$WT/bin/df"
 WT_ROOMY_KB=629145600 WT_ROOMY_H=600G
 WT_SMALL_KB=104857600 WT_SMALL_H=100G
 
-# Drive the whole wizard with a scripted disk and scripted answers. Prints the wizard's own output;
-# the config it wrote is left at $WT/<name>/config.json. Answer order is wizard_ask_core's:
-# Monero address, local-node y/n, [remote node details], THEN the Tari block, then pool tier,
-# dashboard login, and wizard_ask_shape's four.
 wt_run() {
     local d="$WT/$1"
     mkdir -p "$d"

@@ -129,3 +129,8 @@ def test_only_the_data_wipe_option_keeps_the_chains_of_an_existing_install():
     assert tari_disk_default(BUDGET, disks, "target", "all") == "off"
     blank = disk_inventory(f"target\t1T\tm\ts\tempty\t{900 * GIB}")
     assert tari_disk_default(BUDGET, blank, "target", "data") == "off"
+
+
+def test_a_blank_tari_wallet_is_off_even_when_the_disk_holds_a_chain():
+    cfg = wizard.build_config({"monero_wallet": "4FIXTURE", "tari_wallet": ""}, platform="diy")
+    assert cfg["tari"] == {"mode": "off"}
