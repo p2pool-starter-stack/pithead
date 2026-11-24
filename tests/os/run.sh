@@ -267,7 +267,7 @@ fi
 # PASS, FAIL or any skip bucket, the wrapper itself records the phase as a `missing` skip — an
 # absent input is exactly what "an input would have run it" means.
 _run_phase() {
-    local before_fail=$FAIL
+    local before_fail=$FAIL before_pass=$PASS
     local before=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
     "$2"
     local after=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
@@ -275,6 +275,8 @@ _run_phase() {
         it_skip_phase "$1" "produced no passed, failed or skipped row — a required input was likely absent" missing
     if [ "$1" = rig ] && [ "$FAIL" -gt "$before_fail" ]; then
         rig_failure_evidence
+    elif [ "$1" = rig ] && [ "$PASS" -gt "$before_pass" ]; then
+        rig_failure_evidence_probe
     fi
 }
 case "$PHASE" in

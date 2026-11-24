@@ -32,3 +32,17 @@ rig_failure_evidence() {
     printf '     --- rig failure diagnostics ---\n'
     SSH_TIMEOUT=120 _ssh "$(rig_failure_evidence_script)" 2>&1 | tr -d '\r' | os_redact_addr | sed 's/^/     · /' || true
 }
+
+rig_failure_evidence_probe() {
+    local out
+    out=$(SSH_TIMEOUT=120 _ssh "$(rig_failure_evidence_script)" 2>&1 | tr -d '\r') || true
+    if grep -Fq -- '-- coordinator journal from the backup apply --' <<<"$out" &&
+        grep -Fq -- '-- xmrig-proxy container log --' <<<"$out" &&
+        grep -Fq -- '-- p2pool container log --' <<<"$out" &&
+        grep -q '^{"' <<<"$out" &&
+        grep -Fq 'xmrig-proxy Up' <<<"$out"; then
+        ok "the rig failure diagnostics script runs on the guest and returns the journal, both container logs, the proxy summary and the container list (#4388)"
+    else
+        bad "the rig failure diagnostics script did not return all of its sections on the guest (#4388): $(printf '%s' "$out" | os_redact_addr | grep -c .) lines"
+    fi
+}
