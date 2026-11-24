@@ -3,6 +3,10 @@ render_env() {
     profile=$(profile_name)
     project=$(compose_project_name) || return 1
     log "Rendering environment configuration ($target)..."
+    local -A setting
+    local setting_lines setting_key setting_value
+    setting_lines=$(render_env_settings)
+    while IFS=$'\t' read -r setting_key setting_value; do setting[$setting_key]=$setting_value; done <<<"$setting_lines"
 
     local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
@@ -36,7 +40,7 @@ render_env() {
     # remote mode (#103). The gRPC is plaintext and unauthenticated: trusted LAN only (#754
     # trust model). N/A in remote mode (the tari service is profile-gated off; nothing binds).
     local tari_grpc_bind tari_grpc_lan
-    tari_grpc_lan=$(jq -r '.tari.grpc_lan_access // false' "$CONFIG_FILE")
+    tari_grpc_lan=${setting[tari_grpc_lan]}
     if [ "$tari_grpc_lan" == "true" ]; then tari_grpc_bind="0.0.0.0"; else tari_grpc_bind="127.0.0.1"; fi
 
     if [ "${PAYOUT_CONFIRM_ENABLED:-false}" == "true" ]; then
@@ -60,14 +64,14 @@ render_env() {
     # this host's IP (Monero keeps tx-proxy=tor). The host firewall admits only the chosen
     # chain's container until its sync marker appears (#2678).
     local monero_clearnet tari_clearnet
-    monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
-    tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
+    monero_clearnet=$(normalize_bool "${setting[monero_clearnet]}")
+    tari_clearnet=$(normalize_bool "${setting[tari_clearnet]}")
 
     [ "$MONERO_MODE" = local ] || monero_clearnet=false
     [ "$TARI_MODE" = local ] || tari_clearnet=false
 
     local prep_threads cores
-    prep_threads=$(jq -r '.monero.prep_blocks_threads // "auto"' "$CONFIG_FILE")
+    prep_threads=${setting[prep_threads]}
     if ! [[ "$prep_threads" =~ ^[0-9]+$ ]]; then
         cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
         prep_threads=$((cores - 2))
@@ -81,7 +85,7 @@ render_env() {
     # and a new operator's first run is exactly that. Once synced, 32 (P2Pool's clearnet
     # recommendation) cuts monerod's circuit count by a third with no mining impact.
     local out_peers
-    out_peers=$(jq -r '.monero.out_peers // 48' "$CONFIG_FILE")
+    out_peers=${setting[out_peers]}
     if ! [[ "$out_peers" =~ ^[0-9]+$ ]] || [ "$out_peers" -lt 8 ] || [ "$out_peers" -gt 1024 ]; then
         error "monero.out_peers must be an integer between 8 and 1024 (got \"$out_peers\")."
     fi
@@ -89,15 +93,15 @@ render_env() {
     # monerod RPC LAN exposure. Default localhost-only: p2pool reaches monerod over the internal
     # Docker network regardless, so the published port is only for external wallets.
     local rpc_bind rpc_lan
-    rpc_lan=$(jq -r '.monero.rpc_lan_access // false' "$CONFIG_FILE")
+    rpc_lan=${setting[rpc_lan]}
     if [ "$rpc_lan" == "true" ]; then rpc_bind="0.0.0.0"; else rpc_bind="127.0.0.1"; fi
 
     local zmq_bind zmq_lan
-    zmq_lan=$(jq -r '.monero.zmq_lan_access // false' "$CONFIG_FILE")
+    zmq_lan=${setting[zmq_lan]}
     if [ "$zmq_lan" == "true" ]; then zmq_bind="0.0.0.0"; else zmq_bind="127.0.0.1"; fi
 
     local pool_type p2pool_flags p2pool_port
-    pool_type=$(jq -r '.p2pool.pool // "mini"' "$CONFIG_FILE")
+    pool_type=${setting[pool_type]}
     p2pool_flags=""
     p2pool_port="37889"
     if [ "$pool_type" == "mini" ]; then
@@ -113,7 +117,7 @@ render_env() {
     fi
 
     local p2pool_socks
-    p2pool_socks=$(p2pool_outbound_flags "$(config_bool '.p2pool.clearnet' false)" "$NETWORK_PREFIX")
+    p2pool_socks=$(p2pool_outbound_flags "${setting[p2pool_clearnet]}" "$NETWORK_PREFIX")
     [ -n "$p2pool_socks" ] && p2pool_flags="${p2pool_flags:+$p2pool_flags }$p2pool_socks"
 
     p2pool_flags="${p2pool_flags:+$p2pool_flags }--no-upnp"
@@ -122,34 +126,34 @@ render_env() {
     fi
 
     local xvb_enabled xvb_url xvb_donor xvb_donation_level xvb_tor
-    xvb_enabled=$(config_get .xvb.enabled)
-    xvb_tor=$(normalize_bool "$(config_bool '.xvb.tor' true)")
-    xvb_url=$(jq -r '.xvb.url // empty' "$CONFIG_FILE")
+    xvb_enabled=${setting[xvb_enabled]}
+    xvb_tor=$(normalize_bool "${setting[xvb_tor]}")
+    xvb_url=${setting[xvb_url]}
     [ -z "$xvb_url" ] && xvb_url="na.xmrvsbeast.com:4247"
-    xvb_donor=$(jq -r '.xvb.donor_id // empty' "$CONFIG_FILE")
+    xvb_donor=${setting[xvb_donor]}
     case "$xvb_donor" in
     "" | auto | DYNAMIC_ID) xvb_donor="${MONERO_WALLET:0:8}" ;;
     esac
-    xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
+    xvb_donation_level=${setting[xvb_donation_level]}
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
 
     local donation_enabled donation_percent donation_tor
-    donation_enabled=$(config_get .donation.enabled)
-    donation_percent=$(config_get .donation.percent)
-    donation_tor=$(config_get .donation.tor)
+    donation_enabled=${setting[donation_enabled]}
+    donation_percent=${setting[donation_percent]}
+    donation_tor=${setting[donation_tor]}
 
     local tari_required
-    tari_required=$(config_get .dashboard.tari_required)
+    tari_required=${setting[tari_required]}
     [ "$TARI_MODE" != "off" ] || tari_required=false
 
     local fail_closed
-    fail_closed=$(normalize_bool "$(config_bool '.dashboard.fail_closed' false)")
+    fail_closed=$(normalize_bool "${setting[fail_closed]}")
 
     # Healthchecks.io dead-man's switch (#79). Optional external liveness monitor: a ping URL is the
     # on/off switch (blank = off), and the ping always rides Tor. The URL is a capability secret, so
     # it lives in the owner-only .env (chmod 600 below), never a world-readable file. docs/monitoring.md.
     local hc_ping_url
-    hc_ping_url=$(jq -r '.healthchecks.ping_url // empty' "$CONFIG_FILE")
+    hc_ping_url=${setting[hc_ping_url]}
 
     # XvB warm-standby source (#249). On a backup stack this is the PRIMARY dashboard's read-only
     # /api/xvb-standby URL; the backup pulls it so a failover resumes the donation split warm.
@@ -157,19 +161,19 @@ render_env() {
     # userinfo), so like the ping URL above it lives in the owner-only .env, never a world-readable
     # file. docs/configuration.md.
     local xvb_standby_source
-    xvb_standby_source=$(jq -r '.xvb.standby.source // empty' "$CONFIG_FILE")
+    xvb_standby_source=${setting[xvb_standby_source]}
 
     # check_for_updates (#224, default TRUE): the dashboard checks GitHub for a newer release and shows
     # a header badge linking to it (notify-only — no upgrade). On by default because the check is
     # Tor-routed (socks5h), so it leaks neither the host IP nor a DNS lookup to GitHub; set false to opt
     # out entirely (see docs/privacy.md). Only an explicit `false` disables it.
     local check_for_updates
-    check_for_updates=$(jq -r 'if .dashboard.check_for_updates == false then "false" else "true" end' "$CONFIG_FILE")
+    check_for_updates=${setting[check_for_updates]}
 
     local worker_api_port worker_api_auth worker_api_token worker_api_tokens_json
-    worker_api_port=$(jq -r '.workers.api_port // 8080' "$CONFIG_FILE")
-    worker_api_auth=$(config_get .workers.api_auth)
-    worker_api_token=$(config_get .workers.api_token)
+    worker_api_port=${setting[worker_api_port]}
+    worker_api_auth=${setting[worker_api_auth]}
+    worker_api_token=${setting[worker_api_token]}
     if [ "$worker_api_token" = auto ]; then
         worker_api_token=$(env_get XMRIG_API_TOKEN)
         [ -n "$worker_api_token" ] || worker_api_token=$(openssl rand -hex 24)
@@ -177,16 +181,16 @@ render_env() {
     worker_api_tokens_json=$(jq -c '(.workers.api_port // 8080) as $port | reduce ((.workers.list // [])[] | select((.name // "") != "" and (.host // "") != "" and (.api_token // "") != "")) as $worker ({}; .[$worker.name] //= {host: $worker.host, port: ($worker.port // $port), token: $worker.api_token})' "$CONFIG_FILE") # read-only probe tokens only; control tokens stay host-only
 
     local tg_level tg_token tg_chat tg_commands tg_summary_time
-    tg_level=$(jq -r '.telegram.level // "off"' "$CONFIG_FILE")
-    tg_token=$(jq -r '.telegram.bot_token // empty' "$CONFIG_FILE")
-    tg_chat=$(jq -r '.telegram.chat_id // empty' "$CONFIG_FILE")
-    tg_commands=$(jq -r 'if .telegram.commands.enabled != null then .telegram.commands.enabled | tostring else "false" end' "$CONFIG_FILE")
+    tg_level=${setting[tg_level]}
+    tg_token=${setting[tg_token]}
+    tg_chat=${setting[tg_chat]}
+    tg_commands=${setting[tg_commands]}
     local hr_drop_threshold hr_drop_minutes
     # Degradation detector (#99): drop-below-% and sustained-minutes; defaults 50 / 10.
-    hr_drop_threshold=$(jq -r '.dashboard.hashrate_drop_threshold // 50' "$CONFIG_FILE")
-    hr_drop_minutes=$(jq -r '.dashboard.hashrate_drop_minutes // 10' "$CONFIG_FILE")
+    hr_drop_threshold=${setting[hr_drop_threshold]}
+    hr_drop_minutes=${setting[hr_drop_minutes]}
     # Local time (HH:MM) for the daily digest; default 08:00.
-    tg_summary_time=$(jq -r '.telegram.daily_summary_time // "08:00"' "$CONFIG_FILE")
+    tg_summary_time=${setting[tg_summary_time]}
 
     # Webhook + ntfy alert sinks (#380). Push-only siblings of the Telegram alerter: every alert
     # also POSTs to each notifications.webhooks URL (as JSON) and to the notifications.ntfy.url
@@ -195,10 +199,10 @@ render_env() {
     # owner-only .env and are never echoed or logged. notifications.tor (default true) keeps the
     # POSTs on Tor so endpoints see a Tor exit, not this host's IP; false is the LAN carve-out.
     local notify_webhooks ntfy_url ntfy_token notify_tor
-    notify_webhooks=$(jq -r '(.notifications.webhooks // []) | join(" ")' "$CONFIG_FILE")
-    ntfy_url=$(jq -r '.notifications.ntfy.url // empty' "$CONFIG_FILE")
-    ntfy_token=$(jq -r '.notifications.ntfy.token // empty' "$CONFIG_FILE")
-    notify_tor=$(config_bool '.notifications.tor' true)
+    notify_webhooks=${setting[notify_webhooks]}
+    ntfy_url=${setting[ntfy_url]}
+    ntfy_token=${setting[ntfy_token]}
+    notify_tor=${setting[notify_tor]}
 
     #     exceed physical RAM and the host OOMs before Tari's own limit ever fires.
     #   - a ~25% reserve (>=2 GB) of what's left, for monerod/p2pool/Tor/the dashboard/the OS/page
@@ -216,7 +220,7 @@ render_env() {
         # resolves; it is never applied to a running container.
         tari_mem_limit="0m"
     else
-        tari_mem_limit=$(jq -r '.tari.mem_limit // "auto"' "$CONFIG_FILE")
+        tari_mem_limit=${setting[tari_mem_limit]}
         case "$tari_mem_limit" in
         "" | auto) # the Darwin sysctl arm below is DEPRECATED and untested (#2041)
             huge_mb=0
@@ -242,7 +246,7 @@ render_env() {
     # monerod memory ceiling (#132): a generous default so heavy initial-sync verification never trips
     # it (monerod's LMDB is reclaimable page cache, so its capped RSS stays low). Tunable for low-RAM
     # hosts that OOM during IBD, or to give a big host more LMDB-cache headroom.
-    monero_mem_limit=$(jq -r '.monero.mem_limit // "auto"' "$CONFIG_FILE")
+    monero_mem_limit=${setting[monero_mem_limit]}
     case "$monero_mem_limit" in "" | auto) monero_mem_limit="6g" ;; esac
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"

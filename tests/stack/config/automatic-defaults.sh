@@ -82,6 +82,19 @@ AD_MEM=8388608 run_sourced "$AD" automatic_render >"$AD/render.log" 2>&1
 assert_rc "null worker port renders" "$?" 0
 assert_eq "null worker port means 8080" "$(run_sourced "$AD" env_get_file "$AD/.env" XMRIG_API_PORT)" 8080
 assert_eq "explicit hostname wins" "$(run_sourced "$AD" env_get_file "$AD/.env" HOST_IP)" explicit-machine
+mkdir -p "$AD/jq-stub"
+printf '#!/usr/bin/env bash\necho >>"$JQ_CALLS"\nexec %q "$@"\n' "$(command -v jq)" >"$AD/jq-stub/jq"
+chmod +x "$AD/jq-stub/jq"
+counted_render() {
+    automatic_render
+    : >"$AD/jq.calls"
+    PATH="$AD/jq-stub:$PATH" JQ_CALLS="$AD/jq.calls" render_env
+}
+cp "$AD/base.json" "$AD/config.json"
+AD_MEM=8388608 run_sourced "$AD" counted_render >"$AD/render.log" 2>&1
+assert_rc "render_env renders through a counting jq" "$?" 0
+jq_calls=$(wc -l <"$AD/jq.calls")
+if [ "$jq_calls" -gt 0 ] && [ "$jq_calls" -le 40 ]; then ok "render_env makes at most 40 jq calls (#4457)"; else bad "render_env makes at most 40 jq calls (#4457)" "$jq_calls jq calls"; fi
 control_default_case() {
     jq "$2" "$AD/base.json" >"$AD/config.json"
     AD_MEM=8388608 PITHEAD_APPLIANCE="$3" run_sourced "$AD" eval 'caddy_hash_password_b64() { printf fixture-hash | base64; }; automatic_render' >"$AD/render.log" 2>&1
