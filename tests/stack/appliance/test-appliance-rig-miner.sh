@@ -315,7 +315,14 @@ PITHEAD_APPLIANCE=1 PITHEAD_HUGEPAGES_MARKER="$LMR/marker" run_sourced "$LMR" re
 assert_eq "released reservation -> zero headroom (RigForge sizes for the miner alone)" \
     "$(jq -r '.hugepages_reserve_extra_mb' "$LMR/rigforge/config.json")" "0"
 printf 'STRATUM_PORT=13333\nPROXY_STRATUM_PASSWORD=s3cret\n' >"$LMR/.env"
-PITHEAD_APPLIANCE=1 run_sourced "$LMR" render_local_miner_config >/dev/null 2>&1
+chmod 644 "$LMR/rigforge/config.json"
+(umask 022 && PITHEAD_APPLIANCE=1 run_sourced "$LMR" render_local_miner_config >/dev/null 2>&1)
+assert_eq "an existing 644 local miner config ends owner-only" "$(stat -c '%a' "$LMR/rigforge/config.json")" "600"
+mkdir -p "$LMR/jqbin"
+printf '#!/usr/bin/env bash\n[ -e "%s" ] && stat -c %%a "%s" >"%s"\nexec "%s" "$@"\n' "$LMR/rigforge/config.json" "$LMR/rigforge/config.json" "$LMR/jq-mode" "$(command -v jq)" >"$LMR/jqbin/jq"
+chmod +x "$LMR/jqbin/jq"
+(umask 022 && rm -f "$LMR/rigforge/config.json" && PITHEAD_APPLIANCE=1 PATH="$LMR/jqbin:$PATH" run_sourced "$LMR" render_local_miner_config >/dev/null 2>&1)
+assert_eq "a new local miner config is owner-only from creation under umask 022" "$(cat "$LMR/jq-mode")" "600"
 assert_eq "custom stratum port lands in the pool url" \
     "$(jq -r '.pools[0].url' "$LMR/rigforge/config.json")" "127.0.0.1:13333"
 assert_eq "stratum password lands as the pool pass" \

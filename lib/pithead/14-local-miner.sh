@@ -90,7 +90,6 @@ local_miner_hugepages_blocked() {
 # NOT the guest's 4322: that reading is a KVM artifact (4 vCPUs presented as 4 sockets -> L3 64 MiB
 # -> THREADS 32). The same physical X5690 reports one 12 MiB L3 -> THREADS 6. Immaterial to the
 # ceiling, wrong to quote as the requirement.
-#
 # THIS VALUE AND hugepages_reserve_extra_mb MOVE TOGETHER: extra_mb contributes (extra_mb+1)/2 =
 # 3072 of those 4296 required pages, so raising the declared headroom raises required toward the
 # ceiling and would eventually make the cap bite on a healthy box. Re-derive both if
@@ -209,11 +208,12 @@ render_local_miner_config() {
     port=$(stratum_port_effective)
     secret=$(env_get PROXY_STRATUM_PASSWORD 2>/dev/null || true)
     ceiling=$(local_miner_pool_ceiling_mb "$dir")
-    jq -n --arg url "127.0.0.1:$port" --arg pass "$secret" --argjson reserve "$(($(hugepages_decision_pages) * 2))" \
+    (umask 077 && jq -n --arg url "127.0.0.1:$port" --arg pass "$secret" --argjson reserve "$(($(hugepages_decision_pages) * 2))" \
         --argjson ceiling "$ceiling" \
         '{pools: [({url: $url} + (if $pass != "" then {pass: $pass} else {} end))], hugepages_reserve_extra_mb: $reserve}
          + (if $ceiling > 0 then {hugepages_pool_ceiling_mb: $ceiling} else {} end)' \
-        >"$dir/config.json"
+        >"$dir/config.json")
+    chmod 600 "$dir/config.json" 2>/dev/null || true
     log "Local miner config rendered to $dir/config.json (pool 127.0.0.1:$port)."
 }
 
