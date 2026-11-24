@@ -266,7 +266,7 @@ fi
 # without each phase file having to get its own accounting right: if a phase call adds nothing to
 # PASS, FAIL or any skip bucket, the wrapper itself records the phase as a `missing` skip — an
 # absent input is exactly what "an input would have run it" means.
-_run_phase() { # <phase-name> <phase-function>
+_run_phase() {
     local before=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
     "$2"
     local after=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
