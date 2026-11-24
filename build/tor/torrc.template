@@ -1,6 +1,7 @@
 # --- General Configuration ---
 # Primary storage location for Tor state data and cryptographic keys
 DataDirectory /var/lib/tor
+AvoidDiskWrites 1
 
 # --- Network Interfaces ---
 SocksPort __NETWORK_PREFIX__.25:9050
