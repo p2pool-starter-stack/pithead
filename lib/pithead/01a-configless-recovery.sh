@@ -30,6 +30,12 @@ configless_active_ids() {
     awk '$1 == "running" || $1 == "restarting" || $1 == "paused" { print $2 }' <<<"$rows"
 }
 
+remove_tor_egress_when_idle() {
+    local ids
+    ids=$(configless_active_ids) && [ -z "$ids" ] || return 1
+    remove_tor_egress_firewall 2>/dev/null || true
+}
+
 configless_stack_down() {
     local ids paused cid containers=()
     command -v docker >/dev/null 2>&1 || error "Cannot stop the stack because docker is unavailable."

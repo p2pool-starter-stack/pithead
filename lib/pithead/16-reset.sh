@@ -142,10 +142,11 @@ config_reset() {
     detect_os 2>/dev/null || true
     if docker compose down --remove-orphans; then
         remove_deactivated_profile_containers
-        remove_tor_egress_firewall 2>/dev/null || true
     else
-        warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running, so the Tor-only egress rules stay until '$0 down' stops them; fix the Compose error shown above."
+        warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running; fix the Compose error shown above."
     fi
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay; '$0 down' stops the stack and removes them."
     lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
     remove_tari_wallet_volumes
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role
