@@ -50,7 +50,6 @@ tari_wallet_stop_ok() { # <stop-rc> <elapsed-s> <running>
     [ "$1" -eq 0 ] && [ "$2" -lt 25 ] && [ "$3" = false ]
 }
 
-# The built-in miner stays off for the swap window so no non-owner Tari identity can merge-mine.
 tari_wallet_swap_filter() {
     printf '%s' ".tari.mode = \"local\" | .tari.wallet_address = \"$TARI_WALLET_TEST_ADDRESS\" | .tari.view_key = \"$TARI_WALLET_TEST_VIEW_KEY\" | .tari.spend_public_key = \"$TARI_WALLET_TEST_SPEND_KEY\" | .tari.payout_scan_birthday = \"1425\" | .local_miner.enabled = false"
 }
