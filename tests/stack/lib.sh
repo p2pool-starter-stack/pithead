@@ -379,7 +379,7 @@ EOF
 }
 
 run_pending() { (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead control-run-pending 2>&1); }
-# survive a return, so they must run in the same invocation).
+
 run_wizard() {
     wizard_ask_core
     wizard_ask_profile
