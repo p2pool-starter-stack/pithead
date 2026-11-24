@@ -69,12 +69,7 @@ class MiningStoreMixin(PayoutAlertRetryMixin):
                         if cur.rowcount == 1:
                             new_rows.append(r)
                             if queue_alert:
-                                self._conn.execute(
-                                    "INSERT OR IGNORE INTO payout_alert_retry "
-                                    "(chain, wallet_id, txid, amount_atomic, first_ts) "
-                                    "VALUES (?, ?, ?, ?, ?)",
-                                    (chain, wallet_id, r["txid"], tail[2], time.time()),
-                                )
+                                self._queue_payout_alert(chain, wallet_id, r["txid"], tail[2])
         except (sqlite3.Error, KeyError, ValueError, TypeError) as e:
             self._db_error("Payout Insert Error", e)
             return []

@@ -1,8 +1,18 @@
 import sqlite3
+import time
 from typing import Any
 
 
 class PayoutAlertRetryMixin:
+    def _queue_payout_alert(
+        self, chain: str, wallet_id: str, txid: str, amount_atomic: int
+    ) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO payout_alert_retry "
+            "(chain, wallet_id, txid, amount_atomic, first_ts) VALUES (?, ?, ?, ?, ?)",
+            (chain, wallet_id, txid, amount_atomic, time.time()),
+        )
+
     def get_payout_alert_retries(self, chain: str, wallet_id: str | None) -> list[dict[str, Any]]:
         if not wallet_id:
             return []
