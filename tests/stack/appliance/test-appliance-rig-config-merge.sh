@@ -80,7 +80,7 @@ assert_eq "with no default route the first qualifying subnet wins, x.254 hosts i
 grep -v eth0 "$ONSB/addrs" >"$ONSB/addrs.new" && mv -f "$ONSB/addrs.new" "$ONSB/addrs"
 assert_eq "a non-default-route interface qualifies when it is the only one" "$(run_onsb rig_own_subnets)" "10.254.0.0/23"
 
-printf '%s\n' '1: lo    inet 127.0.0.1/8 scope host lo' '2: docker0    inet 172.17.0.1/16 scope global docker0' >"$ONSB/addrs"
+printf '%s\n' '1: lo    inet 127.0.0.1/8 scope host lo' '2: docker0    inet 172.17.0.1/16 scope global docker0' '3: tailscale0    inet 100.64.1.1/10 scope global tailscale0' '4: eth9    inet 10.1.2.3/8 scope global eth9' >"$ONSB/addrs"
 rt_out=$(run_onsb render_rig_miner_config 2>&1)
 assert_rc "paired-false with no usable subnet -> rc 0" "$?" "0"
 assert_eq "no usable subnet -> control falls closed, token still served" "$(cfg '[has("control"), has("api_allow_from"), .api, .ACCESS_TOKEN] | map(tostring) | join(" ")')" "false false enabled dcfda835679ae98638633f189d9e5979"
@@ -93,6 +93,12 @@ rig_json coordinator.lan:3333 ',"api_allow_from_override":"172.16.0.0/16"'
 run_onsb render_rig_miner_config >/dev/null 2>&1
 assert_eq "the override replaces the pool-host pin when paired" "$(cfg '.api_allow_from')" "172.16.0.0/16"
 
+rig_json pool.example.com:3333 ',"paired":false,"api_allow_from_override":["10.0.0.0/8"]'
+run_onsb render_rig_miner_config >/dev/null 2>&1
+assert_eq "a non-string override is ignored, never rendered" "$(cfg 'has("api_allow_from")')" "false"
+rig_json coordinator.lan:3333 ',"paired":"false"'
+run_onsb render_rig_miner_config >/dev/null 2>&1
+assert_eq "a non-boolean paired reads as paired" "$(cfg '.api_allow_from')" "192.168.7.20"
 rig_json coordinator.lan:3333 ',"paired":true'
 run_onsb render_rig_miner_config >/dev/null 2>&1
 assert_eq "paired true is unchanged: the pool host pin" "$(cfg '.control + " " + .api_allow_from')" "enabled 192.168.7.20"
