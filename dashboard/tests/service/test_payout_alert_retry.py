@@ -189,3 +189,29 @@ class TestPayoutAlertRetry:
             assert sm.get_payout_alert_retries(chain, "old-wallet") == []
         finally:
             sm.close()
+
+
+class TestPayoutAlertStoreGuards:
+    def test_no_wallet_reads_nothing(self):
+        sm = StateManager(db_path=":memory:")
+        try:
+            assert sm.get_payout_alert_retries("monero", None) == []
+        finally:
+            sm.close()
+
+    def test_without_a_connection_reads_and_clears_are_noops(self):
+        sm = StateManager(db_path=":memory:")
+        sm.close()
+        sm._conn = None
+        assert sm.get_payout_alert_retries("monero", "w") == []
+        assert sm.clear_payout_alert_retry("monero", "w", "tx") is None
+
+    def test_a_missing_table_is_logged_not_raised(self):
+        sm = StateManager(db_path=":memory:")
+        try:
+            sm._conn.execute("DROP TABLE payout_alert_retry")
+            assert sm.get_payout_alert_retries("monero", "w") == []
+            sm.clear_payout_alert_retry("monero", "w", "tx")
+            assert sm.is_db_healthy() is False
+        finally:
+            sm.close()
