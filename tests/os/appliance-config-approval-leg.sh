@@ -134,7 +134,7 @@ password_commit_via_host() {
 }
 
 phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password>
-    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid before after audit
+    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid before after audit settled
 
     # Attribute an unreadable dashboard to the earlier leg that left this precondition false.
     live=$(sensitive_live_config) || {
@@ -150,8 +150,9 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY"}')")
-    after=$(hostname_snapshot_settled_to fixture-box "$before")
-    if printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("typed payout confirmations"))' >/dev/null && [ "$before" = "$after" ]; then
+    after=$(hostname_snapshot_unchanged fixture-box "$before")
+    settled=$?
+    if printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("typed payout confirmations"))' >/dev/null && [ "$settled" -eq 0 ]; then
         ok "day-two hostname commit is refused without the confirmation envelope and leaves identity unchanged"
     else
         bad "day-two hostname crossed the confirmation gate or changed during refusal (result: $(printf '%s' "$result" | jq -c '{status, error}' 2>/dev/null || printf 'unparseable'); identity diff: $(hostname_snapshot_diff "$before" "$after"))"
@@ -231,7 +232,8 @@ _config_version_asset_phase_self_test() (
     dashboard_curl() { printf '%s' "$asset_module"; }
     hostname_runtime_snapshot() { printf unchanged; }
     hostname_stable_snapshot() { printf unchanged; }
-    hostname_snapshot_settled_to() { printf unchanged; }
+    hostname_snapshot_unchanged() { printf unchanged; }
+    hostname_snapshot_diff() { printf none; }
     sensitive_preview() {
         previews=$((previews + 1))
         return 1
@@ -291,13 +293,39 @@ _password_commit_via_host_self_test() (
     case "$failure" in *status=previewed*) ;; *) exit 1 ;; esac
 )
 
+_hostname_refusal_drift_self_test() (
+    local verdicts="" ip=fixture-address
+    sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
+    dashboard_curl() { printf 'cfg?._config_version_newer ? "Saving is blocked" : null'; }
+    hostname_stable_snapshot() { printf one; }
+    hostname_snapshot_unchanged() {
+        printf two
+        return 1
+    }
+    hostname_snapshot_diff() { printf 'avahi-started: 1 -> 2'; }
+    sensitive_preview() {
+        APPROVAL_PREVIEW='{"id":"r1","status":"previewed"}'
+        APPROVAL_REQUEST_ID=r1
+    }
+    dashboard_control_request() { printf '{"status":"rejected","error":"typed payout confirmations"}'; }
+    ok() { verdicts+="ok:$1;"; }
+    bad() { verdicts+="bad:$1;"; }
+    phase_provision_sensitive_regressions fixture-user fixture-password
+    case "$verdicts" in
+    *'bad:day-two hostname crossed the confirmation gate'*'identity diff: avahi-started: 1 -> 2'*) ;;
+    *) return 1 ;;
+    esac
+    case "$verdicts" in *'ok:day-two hostname commit is refused'*) return 1 ;; esac
+)
+
 _hostname_landed_fallback_self_test() (
     local output ip=fixture-address
     sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
     dashboard_curl() { printf 'cfg?._config_version_newer ? "Saving is blocked" : null'; }
     hostname_runtime_snapshot() { printf unchanged; }
     hostname_stable_snapshot() { printf unchanged; }
-    hostname_snapshot_settled_to() { printf unchanged; }
+    hostname_snapshot_unchanged() { printf unchanged; }
+    hostname_snapshot_diff() { printf none; }
     sensitive_preview() {
         APPROVAL_PREVIEW='{"id":"r1","status":"previewed"}'
         APPROVAL_REQUEST_ID=r1
@@ -356,6 +384,7 @@ _approval_self_test() {
     _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
     _hostname_landed_fallback_self_test || f=$((f + 1))
+    _hostname_refusal_drift_self_test || f=$((f + 1))
     _restore_waits_for_control_drain_self_test || f=$((f + 1))
     grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
     _dashboard_password_repoint_applied_self_test || f=$((f + 1))
