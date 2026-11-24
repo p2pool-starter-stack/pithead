@@ -11,19 +11,45 @@ ROW = "48M2j8Gj...d8KgGBwa\t{when}\t{rate}\t{height}\t\t{block}\t1/1\t1\tdonor\n
 @pytest.mark.parametrize(
     "page",
     [
-        "Fail Count: 0\n24hr avg: 5 kH/s",
-        "Fail Count: 2",
-        "Fail Count: 0\n1hr avg: " + "9" * 400 + " H/s",
-        "Fail Count: " + "9" * 400 + "\n1hr avg: 5 kH/s",
-        "Fail Count: 0\n1hr avg: -5 kH/s",
+        "24hr avg: 5 kH/s",
+        "1hr avg: " + "9" * 400 + " H/s",
+        "1hr avg: -5 kH/s",
         "1hr avg: . H/s",
         "1hr avg: 5.5.5 H/s",
-        "Fail Count: 2 1hr avg: 1.2.3.4 H/s",
         "1hr avg: 1e5 H/s",
+        "1hr avg: 1.e5 H/s",
+        "1hr avg: 1..2 H/s",
+        "1hr avg: 2000 GH/s",
     ],
 )
-def test_a_page_without_a_usable_1h_average_is_no_reading(page):
+def test_a_page_with_no_fail_count_and_no_usable_1h_average_is_no_reading(page):
     assert XvbClient("49abc")._parse_html(page) is None
+
+
+@pytest.mark.parametrize(
+    ("page", "fail_count"),
+    [
+        ("Fail Count: 0\n24hr avg: 5 kH/s", 0),
+        ("Fail Count: 5", 5),
+        ("Fail Count: 5\n1hr avg: 999999GH/s", 5),
+        ("Fail Count: 0\n1hr avg: -5 kH/s", 0),
+        ("Fail Count: 2 1hr avg: 1.2.3.4 H/s", 2),
+        ("Fail Count: " + "9" * 400 + "\n1hr avg: . H/s", 1000),
+        ("Fail Count: 00000000005", 5),
+    ],
+)
+def test_a_fail_count_is_kept_when_the_1h_average_is_unusable(page, fail_count):
+    assert XvbClient("49abc")._parse_html(page) == {"fail_count": fail_count}
+
+
+def test_a_fail_count_above_the_limit_is_clamped_not_rejected():
+    stats = XvbClient("49abc")._parse_html("Fail Count: 5000\n1hr avg: 5 kH/s")
+    assert stats == {"fail_count": 1000, "avg_1h": 5000.0, "avg_24h": 0.0}
+
+
+def test_a_number_that_ends_a_sentence_is_read():
+    stats = XvbClient("49abc")._parse_html("Fail Count: 0. 1hr avg: 123.")
+    assert stats == {"fail_count": 0, "avg_1h": 123.0, "avg_24h": 0.0}
 
 
 def test_a_missing_fail_count_still_reads_as_zero():
@@ -48,6 +74,11 @@ def test_winners_rows_with_an_absurd_height_or_rate_are_bounded():
     assert parse_winners(text, WALLET) == [
         {"ts": 1784407298.0, "hashrate": 0.0, "height": 5, "block_id": "blk2", "tier": "donor"}
     ]
+
+
+def test_a_winner_rate_above_the_plausible_limit_reads_as_zero():
+    text = ROW.format(when="2026-07-18 20:41:38", rate="2000GH/s", height=5, block="blk")
+    assert [win["hashrate"] for win in parse_winners(text, WALLET)] == [0.0]
 
 
 def test_winners_rows_dated_in_the_future_are_dropped():

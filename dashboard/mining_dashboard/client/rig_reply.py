@@ -1,7 +1,8 @@
-from mining_dashboard.helper.utils import finite_number, safe_text
+from mining_dashboard.helper.utils import finite_number, plausible_rate, safe_text
 
 _TEXT_MAX = 1024
-_NUMBER_MAX = 1e15
+_NUMBER_MAX = 2**63 - 1
+_DEPTH_MAX = 16
 
 
 def _flag(value):
@@ -13,14 +14,19 @@ def _text(limit):
 
 
 def _clipped(limit):
-    return lambda value: safe_text(value[:limit], limit) if isinstance(value, str) else None
+    def clip(value):
+        if not isinstance(value, str):
+            return None
+        return "".join(char if char.isprintable() else " " for char in value[:limit])
+
+    return clip
 
 
 _SHAPE = {
     "uptime": finite_number,
     "kind": _text(64),
     "generated_at": _text(64),
-    "hashrate": {"total": [finite_number]},
+    "hashrate": {"total": [plausible_rate]},
     "connection": {"uptime": finite_number, "pool": _text(255)},
     "rigforge": {
         "version": _text(64),
@@ -62,13 +68,15 @@ def _shaped(value, shape):
     return shape(value)
 
 
-def _bounded(value):
+def _bounded(value, depth=0):
+    if depth > _DEPTH_MAX:
+        return None
     if isinstance(value, dict):
-        return {key[:_TEXT_MAX]: _bounded(item) for key, item in value.items()}
+        return {key[:_TEXT_MAX]: _bounded(item, depth + 1) for key, item in value.items()}
     if isinstance(value, list):
-        return [_bounded(item) for item in value]
+        return [_bounded(item, depth + 1) for item in value]
     if isinstance(value, str):
-        return value[:_TEXT_MAX]
+        return safe_text(value[:_TEXT_MAX], _TEXT_MAX)
     if isinstance(value, bool) or value is None:
         return value
     return value if -_NUMBER_MAX <= value <= _NUMBER_MAX else 0

@@ -47,6 +47,7 @@ HOSTILE = [
     '{"rigforge": {"watchdog": {"mode": "enabled", "temp_c": "hot", "max_temp_c": true}}}',
     '{"rigforge": {"config": "x"}}',
     '{"rigforge": {"config": {"DONATION": 1e999, "pools": [{"url": "@"}]}}}'.replace("@", LONG),
+    '{"rigforge": {"config": {"pools": [{"url": "h\\n:1", "user": "a\\u202eb"}], "x": "a\\tb"}}}',
     '{"rigforge": {"config_meta": "x"}}',
     '{"rigforge": {"config_meta": {"revision": @}}}'.replace("@", BIG),
     '{"rigforge": {"control": "x"}}',
@@ -126,6 +127,47 @@ def test_unread_values_are_bounded_and_a_long_reason_is_clipped():
     assert reply["extra"] == {"n": 0, "s": "v" * 1024}
     assert reply["rigforge"]["config"]["DONATION"] == 0
     assert parse_worker_control_status(reply)["reason"] == "r" * 500
+
+
+def test_reported_rates_above_the_plausible_limit_or_below_zero_are_dropped():
+    reply = _reply('{"hashrate": {"total": [1e9, -5, 1234.5]}}')
+    [row] = _merge_direct_stats([_row("rig")], [reply], "3333")
+    assert (row["telemetry_h10"], row["telemetry_h60"], row["telemetry_h15"]) == (0, 0, 1234.5)
+
+
+def test_windows_the_miner_has_not_filled_yet_keep_their_place():
+    reply = _reply('{"hashrate": {"total": [1234.5, null, null]}}')
+    [row] = _merge_direct_stats([_row("rig")], [reply], "3333")
+    assert (row["telemetry_h10"], row["telemetry_h60"], row["telemetry_h15"]) == (1234.5, 0, 0)
+
+
+def test_a_deeply_nested_reply_is_cut_off_without_an_error():
+    nested = "x"
+    for _ in range(900):
+        nested = [nested]
+    depth, value = 0, usable_reply({"extra": nested})["extra"]
+    while isinstance(value, list):
+        depth, value = depth + 1, value[0]
+    assert depth == 16 and value is None
+
+
+def test_unlisted_text_with_control_characters_is_dropped():
+    reply = _reply('{"extra": "a\\u202eb", "rigforge": {"config": {"pools": [{"url": "h\\n:1"}]}}}')
+    assert reply["extra"] is None
+    assert reply["rigforge"]["config"]["pools"] == [{"url": None}]
+
+
+def test_a_control_reason_with_line_breaks_is_kept_on_one_line():
+    reply = _reply(
+        '{"rigforge": {"control": {"change_id": "c", "status": "failed", "reason": "a\\nb"}}}'
+    )
+    assert parse_worker_control_status(reply)["reason"] == "a b"
+
+
+def test_a_large_unlisted_counter_is_kept():
+    assert _reply('{"results": {"hashes_total": 4000000000000000000}}')["results"] == {
+        "hashes_total": 4000000000000000000
+    }
 
 
 class _Response:

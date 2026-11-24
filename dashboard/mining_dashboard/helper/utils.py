@@ -11,6 +11,10 @@ def finite_number(value, limit=1e15):
     return value if ok and -limit <= value <= limit else None
 
 
+def plausible_rate(value, limit=1e8):
+    return value if finite_number(value, limit) is not None and value >= 0 else None
+
+
 def safe_text(value, limit=64):
     return value if isinstance(value, str) and len(value) <= limit and value.isprintable() else None
 

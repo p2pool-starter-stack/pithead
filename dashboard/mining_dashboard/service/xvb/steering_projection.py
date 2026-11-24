@@ -26,7 +26,7 @@ def won_round_live(state_manager, hold_s, now=None, logger=None) -> bool:
         now = now if now is not None else time.time()
         since = now - hold_s
         wins = state_manager.get_raffle_wins(since=since)
-        return isinstance(wins, list) and any(since <= w["ts"] <= now for w in wins)
+        return isinstance(wins, list) and any(since <= w["ts"] <= now + 60 for w in wins)
     except Exception as e:
         if logger is not None:
             logger.debug(f"Raffle-win read failed; steering normally: {e}")

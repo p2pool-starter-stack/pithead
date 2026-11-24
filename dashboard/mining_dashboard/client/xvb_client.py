@@ -8,7 +8,7 @@ import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY, XVB_SUBMIT_URL
 from mining_dashboard.helper.http import bounded_get, request_failure_class
-from mining_dashboard.helper.utils import finite_number, parse_hashrate
+from mining_dashboard.helper.utils import parse_hashrate, plausible_rate
 
 # The four donor tiers XvB publishes an expected per-player reward for. These are exactly the tier
 # keys in TIER_DEFAULTS, so build_xvb_calc maps a tier straight to its estimate by key (#118).
@@ -55,6 +55,7 @@ _WINNERS_MAX_WINS = 200
 _WINNERS_MAX_FUTURE_S = 3600
 _WINNERS_MAX_HEIGHT = 10**12
 _XVB_MAX_FAIL_COUNT = 1000
+_XVB_MAX_HASHRATE = 1e12
 
 # The hashrate token in a winners row, e.g. "4203.5kH/s" — value and unit, no space between them.
 _REGEX_WINNER_HASHRATE = re.compile(r"([\d.]+)\s*([kKmMgG]?H/s)?$")
@@ -95,7 +96,7 @@ def parse_winners(text, wallet_address):
             continue
         hr_match = _REGEX_WINNER_HASHRATE.match(fields[3])
         hashrate = parse_hashrate(hr_match.group(1), hr_match.group(2)) if hr_match else 0.0
-        hashrate = finite_number(hashrate) or 0.0
+        hashrate = plausible_rate(hashrate, _XVB_MAX_HASHRATE) or 0.0
         wins.append(
             {
                 "ts": ts,
@@ -188,7 +189,7 @@ class XvbClient:
 
         # Pre-compile regex patterns
         self.REGEX_FAIL_COUNT = re.compile(r"Fail Count:\s*(\d+)", re.IGNORECASE)
-        number = r"(\d+(?:\.\d+)?)(?![\d.eE])\s*([kKmMgG]?H/s)?"
+        number = r"(\d+(?:\.\d+)?)(?!\d|\.[\d.eE]|[eE])\s*([kKmMgG]?H/s)?"
         self.REGEX_HR_1H = re.compile(r"1hr avg:\s*" + number, re.IGNORECASE)
         self.REGEX_HR_24H = re.compile(r"24hr avg:\s*" + number, re.IGNORECASE)
 
@@ -373,7 +374,7 @@ class XvbClient:
 
     def _average(self, regex, html_text):
         match = regex.search(html_text)
-        return finite_number(parse_hashrate(match.group(1), match.group(2))) if match else None
+        return plausible_rate(parse_hashrate(*match.groups()), _XVB_MAX_HASHRATE) if match else None
 
     def _parse_html(self, html_text) -> dict[str, Any] | None:
         """
@@ -381,15 +382,18 @@ class XvbClient:
         """
         try:
             fail_match = self.REGEX_FAIL_COUNT.search(html_text)
-            fail_count = int(fail_match.group(1)) if fail_match else 0
+            fail_count = int(fail_match.group(1).lstrip("0")[:9] or 0) if fail_match else 0
             avg_1h = self._average(self.REGEX_HR_1H, html_text)
-            if avg_1h is None or fail_count > _XVB_MAX_FAIL_COUNT:
+            if not fail_match and avg_1h is None:
                 self.logger.warning(
                     "Parsing Warning: Critical stats not found in XvB response. HTML structure may have changed."
                 )
                 return None
-            avg_24h = self._average(self.REGEX_HR_24H, html_text)
-            return {"fail_count": fail_count, "avg_1h": avg_1h, "avg_24h": avg_24h or 0.0}
+            stats = {"fail_count": min(fail_count, _XVB_MAX_FAIL_COUNT)}
+            if avg_1h is not None:
+                avg_24h = self._average(self.REGEX_HR_24H, html_text)
+                stats.update(avg_1h=avg_1h, avg_24h=avg_24h or 0.0)
+            return stats
 
         except Exception as e:
             self.logger.error(f"Parsing Error: Failed to process XvB HTML: {e}")
