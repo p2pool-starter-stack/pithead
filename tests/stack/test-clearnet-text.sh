@@ -11,7 +11,7 @@ import os, sys
 from types import SimpleNamespace
 
 real = os.fstat
-os.fstat = lambda fd: SimpleNamespace(st_mode=real(fd).st_mode, st_ino=real(fd).st_ino, st_ctime_ns=real(fd).st_ctime_ns, st_uid=0)
+os.fstat = lambda fd: SimpleNamespace(st_mode=real(fd).st_mode, st_ino=real(fd).st_ino, st_ctime_ns=real(fd).st_ctime_ns, st_uid=int(os.environ["CT_UID"]))
 sys.argv = sys.argv[1:]
 exec(compile(sys.stdin.read(), "attestation", "exec"))
 PY
@@ -43,9 +43,9 @@ ct_run() {
             CONTROL_DIR) printf '%s' "$CT_DIR/control" ;;
             esac
         }
-        if [ "$4" = 1 ]; then
-            python3() { command python3 "$CT_DIR/host-uid.py" "$@"; }
-        fi
+        CT_UID=$(($4 == 1 ? 0 : 1000))
+        export CT_UID
+        python3() { command python3 "$CT_DIR/host-uid.py" "$@"; }
         "$5" 2>&1
     )
 }
@@ -56,32 +56,32 @@ CT_TORONLY="all node P2P is Tor-only"
 CT_PERF="uses clearnet by the Performance profile"
 
 echo "== status banner and doctor row for a temporary clearnet override and Performance (#3083) =="
-for profile in balance privacy; do
+for profile in balance privacy ""; do
     ct_reset
     out=$(ct_banner "$profile" true false 0)
-    assert_contains "$profile: monero override unattested names Monero" "$out" "$CT_PENDING"
-    assert_contains "$profile: banner names only Monero" "$out" "    Monero P2P may expose"
-    assert_contains "$profile: monero override unattested -> doctor WARN" "$(ct_doctor "$profile" true false 0)" "WARN"
+    assert_contains "${profile:-unset}: monero override unattested names Monero" "$out" "$CT_PENDING"
+    assert_contains "${profile:-unset}: banner names only Monero" "$out" "    Monero P2P may expose"
+    assert_contains "${profile:-unset}: monero override unattested -> doctor WARN" "$(ct_doctor "$profile" true false 0)" "WARN"
     out=$(ct_banner "$profile" false true 0)
-    assert_contains "$profile: banner names only Tari" "$out" "    Tari P2P may expose"
-    assert_contains "$profile: tari override unattested -> doctor WARN" "$(ct_doctor "$profile" false true 0)" "WARN"
-    assert_contains "$profile: both flags name Monero + Tari" "$(ct_banner "$profile" true true 0)" "Monero + Tari P2P may expose"
-    assert_not_contains "$profile: pending doctor never claims Tor-only" "$(ct_doctor "$profile" true true 0)" "$CT_TORONLY"
+    assert_contains "${profile:-unset}: banner names only Tari" "$out" "    Tari P2P may expose"
+    assert_contains "${profile:-unset}: tari override unattested -> doctor WARN" "$(ct_doctor "$profile" false true 0)" "WARN"
+    assert_contains "${profile:-unset}: both flags name Monero + Tari" "$(ct_banner "$profile" true true 0)" "Monero + Tari P2P may expose"
+    assert_not_contains "${profile:-unset}: pending doctor never claims Tor-only" "$(ct_doctor "$profile" true true 0)" "$CT_TORONLY"
 
     ct_attest monero 00000000-0000-4000-8000-000000000001
     ct_attest tari 00000000-0000-4000-8000-000000000002
-    assert_eq "$profile: valid attestation clears the banner" "$(ct_banner "$profile" true true 1)" ""
-    assert_contains "$profile: valid attestation -> doctor Tor-only OK" "$(ct_doctor "$profile" true true 1)" "$CT_TORONLY"
-    assert_not_contains "$profile: valid attestation -> no doctor WARN" "$(ct_doctor "$profile" true true 1)" "WARN"
+    assert_eq "${profile:-unset}: valid attestation clears the banner" "$(ct_banner "$profile" true true 1)" ""
+    assert_contains "${profile:-unset}: valid attestation -> doctor Tor-only OK" "$(ct_doctor "$profile" true true 1)" "$CT_TORONLY"
+    assert_not_contains "${profile:-unset}: valid attestation -> no doctor WARN" "$(ct_doctor "$profile" true true 1)" "WARN"
 
-    assert_contains "$profile: attestation the host does not own keeps the banner" "$(ct_banner "$profile" true true 0)" "$CT_PENDING"
-    assert_contains "$profile: attestation the host does not own keeps the WARN" "$(ct_doctor "$profile" true true 0)" "WARN"
+    assert_contains "${profile:-unset}: attestation the host does not own keeps the banner" "$(ct_banner "$profile" true true 0)" "$CT_PENDING"
+    assert_contains "${profile:-unset}: attestation the host does not own keeps the WARN" "$(ct_doctor "$profile" true true 0)" "WARN"
     ct_attest monero 00000000-0000-4000-8000-000000000001 00000000-0000-4000-8000-000000000009
     out=$(ct_banner "$profile" true false 1)
-    assert_contains "$profile: stale attestation keeps the banner" "$out" "$CT_PENDING"
-    assert_contains "$profile: stale attestation keeps the WARN" "$(ct_doctor "$profile" true false 1)" "WARN"
+    assert_contains "${profile:-unset}: stale attestation keeps the banner" "$out" "$CT_PENDING"
+    assert_contains "${profile:-unset}: stale attestation keeps the WARN" "$(ct_doctor "$profile" true false 1)" "WARN"
     ct_reset
-    assert_contains "$profile: missing attestation keeps the banner" "$(ct_banner "$profile" true false 1)" "$CT_PENDING"
+    assert_contains "${profile:-unset}: missing attestation keeps the banner" "$(ct_banner "$profile" true false 1)" "$CT_PENDING"
 done
 
 echo "== Performance keeps clearnet by choice: no pending text, never Tor-only =="
@@ -92,7 +92,8 @@ for flags in "true true" "true false" "false true"; do
     out=$(ct_doctor performance "$ct_m" "$ct_t" 0)
     assert_not_contains "performance $flags: no clearnet WARN" "$out" "WARN"
     assert_not_contains "performance $flags: never claims Tor-only" "$out" "$CT_TORONLY"
-    assert_contains "performance $flags: one info line names the choice" "$out" "$CT_PERF"
+    assert_contains "performance $flags: the info line names the choice" "$out" "$CT_PERF"
+    assert_eq "performance $flags: doctor prints exactly one line" "$(printf '%s\n' "$out" | grep -c .)" "1"
     ct_attest monero 00000000-0000-4000-8000-000000000001
     ct_attest tari 00000000-0000-4000-8000-000000000002
     assert_eq "performance $flags: attestation does not change the banner" "$(ct_banner performance "$ct_m" "$ct_t" 1)" ""
