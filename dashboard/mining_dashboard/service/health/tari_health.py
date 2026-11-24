@@ -15,9 +15,7 @@ Every signal the node offers is its own opinion of itself, so this monitor weigh
 Verdict: no signal is ``green``; one is ``amber`` with the reason; two corroborating signals, or
 explorer lag alone, is ``red``. Explorer lag is not counted while the node is on its initial sync
 (the sync view shows that progress; the node's own sync target exists only then, so it is no signal
-for a synced node). A failed fetch keeps the last good tip for up to two intervals (it is dropped only when the
-last good one is older than two explorer intervals). It can only understate the lag, so a
-failed fetch never produces a false red, but a retained tip still contributes to the verdict.
+for a synced node).
 
 This monitor detects and alerts; it changes nothing. The verdict feeds the Tari panel, /api/state,
 ``pithead doctor`` and ``status``, and an alert on each entry into red whose next step is the
