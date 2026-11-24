@@ -290,7 +290,7 @@ phase_stack() {
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
-    post_reboot_health_verify "stack after the lifecycle gate" || true
+    post_reboot_health_verify "stack after the lifecycle gate" 1000 || true
     _stack_run_integration "stratum password and TLS clients" \
         --scenario remote-main-stratum-tls "${remote_extra[@]}"
     # Two more parity rows from #2062's table are deliberately NOT driven here, because this guest
