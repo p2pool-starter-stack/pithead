@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from mining_dashboard.config.config import HISTORY_RETENTION_SEC
+from mining_dashboard.service.payout_alert_store import PayoutAlertRetryMixin
 from mining_dashboard.service.workers.worker_config_store import _bindable
 
 logger = logging.getLogger("StateManager")
@@ -27,7 +28,7 @@ def _raffle_wins_max_rows():
     return storage_service.RAFFLE_WINS_MAX_ROWS
 
 
-class MiningStoreMixin:
+class MiningStoreMixin(PayoutAlertRetryMixin):
     _payouts_have_wallet = True
 
     def add_payouts(

@@ -166,6 +166,11 @@ class StorageSchemaMixin:
             "(ts REAL, accepted INTEGER, rejected INTEGER, invalid INTEGER, expired INTEGER)"
         )
         self._create_payouts_table()
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS payout_alert_retry "
+            "(chain TEXT, wallet_id TEXT, txid TEXT, amount_atomic INTEGER, first_ts REAL, "
+            "PRIMARY KEY (chain, wallet_id, txid))"
+        )
         # Per-worker config-change history for the Worker Inspect page (#185). RigForge keeps no
         # config history on the rig, so Pithead owns it: one row per change the dashboard applied,
         # with the writable-key `changes` we sent (each row IS a diff from the prior state, by
