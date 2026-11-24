@@ -928,7 +928,7 @@ for your payout address) and the stack runs a **view-only** `monero-wallet-rpc` 
 node, scanning for confirmed incoming payouts. P2Pool pays each miner's share directly in a Monero
 block's coinbase, so the wallet is the only ground truth that a payout arrived. The Monero tab of
 the earnings card then shows a **Confirmed on-chain** block under the estimate — and a
-`payout_confirmed` alert fires once per payout (Telegram and the other sinks). The Tari tab carries
+`payout_confirmed` alert fires once per payout (Telegram and the other sinks). If every channel fails, the dashboard keeps the alert queued, retries it each five-minute payout scan, and stops after one channel accepts it or seven days. The Tari tab carries
 the same **Confirmed on-chain** block in XTM once Tari payout confirmation is on (see the Tari note
 below).
 
