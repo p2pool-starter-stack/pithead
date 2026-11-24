@@ -142,16 +142,19 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         return
     }
     assert_shipped_config_version_asset || return 1
-    before=$(hostname_runtime_snapshot fixture-box)
+    before=$(hostname_stable_snapshot fixture-box) || {
+        bad "day-two hostname commit: identity never settled before the refusal (${before//$'\t'/ | })"
+        return
+    }
     proposed=$(printf '%s' "$live" | jq -c '.dashboard.host = "fixture-next"')
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY"}')")
-    after=$(hostname_runtime_snapshot fixture-box)
+    after=$(hostname_snapshot_settled_to fixture-box "$before")
     if printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("typed payout confirmations"))' >/dev/null && [ "$before" = "$after" ]; then
         ok "day-two hostname commit is refused without the confirmation envelope and leaves identity unchanged"
     else
-        bad "day-two hostname crossed the confirmation gate or changed during refusal"
+        bad "day-two hostname crossed the confirmation gate or changed during refusal (result: $(printf '%s' "$result" | jq -c '{status, error}' 2>/dev/null || printf 'unparseable'); identity diff: $(hostname_snapshot_diff "$before" "$after"))"
         return
     fi
 

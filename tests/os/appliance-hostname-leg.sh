@@ -162,6 +162,51 @@ hostname_runtime_snapshot() { # <label> [handoff-json]; one stable, comparable l
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kernel" "$static" "$env_host" "$state_host" "$sans" "$avahi" "$mdns" "$card" "$stamp"
 }
 
+hostname_snapshot_complete() { # <snapshot>
+    [ -n "$1" ] || return 1
+    case "$1" in $'\t'* | *$'\t' | *$'\t\t'*) return 1 ;; esac
+}
+
+hostname_snapshot_diff() { # <before> <after>; "column: before -> after" for each column that differs
+    local IFS=$'\x1f' i out="" cols=(kernel static env state cert avahi mdns card avahi-started)
+    local -a bc ac
+    read -ra bc <<<"${1//$'\t'/$'\x1f'}"
+    read -ra ac <<<"${2//$'\t'/$'\x1f'}"
+    for i in "${!cols[@]}"; do
+        [ "${bc[i]:-}" = "${ac[i]:-}" ] ||
+            out+="${out:+; }${cols[i]}: $(printf '%s' "${bc[i]:-empty}" | tr -s '[:space:]' ' ') -> $(printf '%s' "${ac[i]:-empty}" | tr -s '[:space:]' ' ')"
+    done
+    printf '%s' "${out:-none}"
+}
+
+hostname_stable_snapshot() { # <label>; prints the snapshot once two reads 5s apart agree and no column is empty
+    local tries=0 prev="" snap
+    while [ "$tries" -lt 12 ]; do
+        snap=$(hostname_runtime_snapshot "$1")
+        if [ "$snap" = "$prev" ] && hostname_snapshot_complete "$snap"; then
+            printf '%s' "$snap"
+            return 0
+        fi
+        prev=$snap
+        tries=$((tries + 1))
+        sleep 5
+    done
+    printf '%s' "$snap"
+    return 1
+}
+
+hostname_snapshot_settled_to() { # <label> <expected>; prints the first read equal to it, else the last read
+    local tries=0 snap
+    while :; do
+        snap=$(hostname_runtime_snapshot "$1")
+        [ "$snap" = "$2" ] && break
+        tries=$((tries + 1))
+        [ "$tries" -lt 6 ] || break
+        sleep 5
+    done
+    printf '%s' "$snap"
+}
+
 # <handoff-json> is the wizard's own credentials card, and only the leg that captured it has one;
 # every later caller leaves it off and the card is composed from the live source instead. The HTTP
 # probe is deliberately NOT part of the snapshot: the snapshot doubles as the before/after
@@ -209,23 +254,23 @@ phase_provision_hostname_regressions() { # <dashboard-user> <dashboard-password>
         bad "the wizard's clean-name card carried a warning: $(printf '%s' "${handoff_body:-}" | jq -r '.warning' 2>/dev/null)"
     fi
 
-    # Preview is pure even though this name change requires the combined configuration approval
-    # path. Compare the privileged side effects as well as config: a dry-run that restarted Avahi
-    # or minted a certificate would be visible here even if config.json stayed unchanged.
-    before=$(hostname_runtime_snapshot fixture-box)
+    before=$(hostname_stable_snapshot fixture-box) || {
+        bad "hostname preview: identity never settled before the preview (${before//$'\t'/ | })"
+        return
+    }
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
         bad "hostname preview: live config could not be read"
         return
     }
     proposed=$(printf '%s' "$live" | jq -c '.dashboard.host = "fixture-next"')
     preview=$(dashboard_control_request preview "$(jq -nc --argjson config "$proposed" '{config:$config}')")
-    after=$(hostname_runtime_snapshot fixture-box)
+    after=$(hostname_snapshot_settled_to fixture-box "$before")
     if printf '%s' "$preview" | jq -e '.status == "previewed" and .approval_required == true' >/dev/null &&
         [ "$before" = "$after" ] && dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
         jq -e '.dashboard.host == "fixture-box"' >/dev/null; then
         ok "day-two hostname preview is approval-gated and has no hostname, mDNS or certificate side effect"
     else
-        bad "day-two hostname preview mutated identity or missed its approval gate"
+        bad "day-two hostname preview mutated identity or missed its approval gate (preview: $(printf '%s' "$preview" | jq -c '{status, approval_required}' 2>/dev/null || printf 'unparseable'); configured host: $(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null | jq -r '.dashboard.host // "unreadable"'); identity diff: $(hostname_snapshot_diff "$before" "$after"))"
     fi
 }
 
@@ -363,6 +408,38 @@ _hostname_self_test() {
     case "$dead" in *'the guest did not answer'*) ;; *) f=$((f + 1)) ;; esac
     case "$alive" in *'the guest did not answer'*) f=$((f + 1)) ;; esac
     case "$alive" in *'address records'*) ;; *) f=$((f + 1)) ;; esac
+    (
+        reads=$(mktemp) || exit 1
+        trap 'rm -f "$reads"' EXIT
+        sleep() { :; }
+        row() { printf 'k\tk\te\ts\tc\tactive\tm\tcard\t%s' "$1"; }
+        script=()
+        hostname_runtime_snapshot() {
+            local n
+            n=$(($(cat "$reads") + 1))
+            printf '%s' "$n" >"$reads"
+            printf '%s' "${script[n - 1]:-${script[${#script[@]} - 1]}}"
+        }
+        run() { printf 0 >"$reads"; script=("$@"); }
+        hostname_snapshot_complete "$(row 1)" || exit 1
+        hostname_snapshot_complete "" && exit 1
+        hostname_snapshot_complete "$(printf 'k\t\te\ts\tc\tactive\tm\tcard\t1')" && exit 1
+        hostname_snapshot_complete "$(printf 'k\tk\te\ts\tc\tactive\tm\tcard\t')" && exit 1
+        run "$(row 1)" "$(row 1)"
+        [ "$(hostname_stable_snapshot l)" = "$(row 1)" ] && [ "$(cat "$reads")" = 2 ] || exit 1
+        run "$(row 1)" "$(row 2)" "$(row 2)"
+        [ "$(hostname_stable_snapshot l)" = "$(row 2)" ] && [ "$(cat "$reads")" = 3 ] || exit 1
+        run "$(printf 'k\t\te\ts\tc\tactive\tm\tcard\t1')"
+        hostname_stable_snapshot l >/dev/null && exit 1
+        [ "$(cat "$reads")" = 12 ] || exit 1
+        run "$(printf 'k\tk\te\t\tc\tactive\tm\tcard\t1')" "$(row 1)"
+        [ "$(hostname_snapshot_settled_to l "$(row 1)")" = "$(row 1)" ] || exit 1
+        run "$(row 2)"
+        [ "$(hostname_snapshot_settled_to l "$(row 1)")" = "$(row 2)" ] && [ "$(cat "$reads")" = 6 ] || exit 1
+        [ "$(hostname_snapshot_diff "$(row 1)" "$(row 1)")" = none ] || exit 1
+        [ "$(hostname_snapshot_diff "$(row 1)" "$(row 2)")" = 'avahi-started: 1 -> 2' ] || exit 1
+        [ "$(hostname_snapshot_diff "$(row 1)" "$(printf 'k\tk\te\t\tc\tactive\tm\tcard\t1')")" = 'state: s -> empty' ] || exit 1
+    ) || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-hostname-leg self-test FAILED: %s checks\n' "$f"
         return 1
