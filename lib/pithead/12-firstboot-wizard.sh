@@ -178,8 +178,8 @@ firstboot_wizard() {
                 local rig_warning
                 rig_warning=$(machine_name_warning "$rig_worker" rig)
                 [ -z "$rig_warning" ] || _console "" "Warning: $rig_warning"
-                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
-                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" --arg warn "$rig_warning" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end) + (if $warn == "" then {} else {warning: $warn} end)' | write_handoff_card "$card_spool"
+                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_api_allow_from)" \
+                    --arg reason "$(rig_allow_missing_reason)" --arg warn "$rig_warning" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end) + (if $warn == "" then {} else {warning: $warn} end)' | write_handoff_card "$card_spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2

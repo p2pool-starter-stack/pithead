@@ -211,7 +211,7 @@ What the boot path reads, written by the host at the moment a role is accepted:
 | File (under `/data/pithead`) | Meaning |
 |---|---|
 | `machine-role` | `pithead`, `both` or `rig`. Absent means `pithead` — every machine provisioned before this contract. The coordinator values are derivable from `config.json` (both IS `local_miner.enabled`); the rig value is load-bearing, because a rig has no `config.json` at all. |
-| `rig.json` | rig role only: `pool`, `worker`, `access_token` and `stratum_password` when one was set. |
+| `rig.json` | rig role only: `pool`, `worker`, `access_token` and `stratum_password` when one was set. `paired` (boolean, absent or non-boolean means `true`; the key is defined by #4065) selects the miner's `api_allow_from`: `true` pins the pool host's IPv4, `false` pins the connected IPv4 subnet (network address and prefix) of the default-route interface, or the first qualifying interface when there is no default route. Excluded: `lo`, 127/8, 169.254/16, `docker0`, `br-*`, `veth*`, `cni*`, `flannel*`, `lxc*`, `virbr*`, `kube*`, `cali*`, `podman*`, `tailscale*`, `wg*`, `tun*`, `tap*`, `ppp*`, `zt*`, and prefixes shorter than /16. `api_allow_from_override` (one address or CIDR string, read from `rig.json` and set by hand; the wizard does not write it) replaces either pin and reaches RigForge's own validation unchanged. With nothing to pin to, control stays off and the read-only feed still serves; the token is minted in every case (#4066). |
 
 A rig install to a disk stages the accepted answers as `pithead-rig.json` on the ESP —
 carried to the target by `pithead-install` beside the config and token pre-seeds — and the
