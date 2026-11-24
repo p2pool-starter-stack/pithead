@@ -53,10 +53,6 @@ class ContainerHealthMonitor:
       and xmrig-proxy on purpose (sync gate #35, node-down failover #31) — and a container that
       disappears from the snapshot (profile off, remote mode, proxy down), which is silently
       forgotten so a later return re-baselines.
-    - **Silent baseline.** A container's first sighting registers its current state with no
-      edge — one already unhealthy at dashboard start seeds as bad without alerting (a restart
-      must not replay a stale transition), and its later recovery is silent too (it was never
-      alerted).
 
     :meth:`update` takes this cycle's snapshot dict and returns a list of ``(name, edge)``,
     ``edge`` in ``{"crash_loop", "unhealthy", "held", "exited", "recovered"}``.
@@ -115,7 +111,7 @@ class ContainerHealthMonitor:
             c = self._containers.get(name)
             if c is None:
                 # First sighting — baseline silently, even when already bad.
-                bad = s["health"] == "unhealthy" or s["restarting"]
+                bad = s["restarting"]
                 self._containers[name] = {
                     "state": "bad" if bad else "ok",
                     "alerted": False,
