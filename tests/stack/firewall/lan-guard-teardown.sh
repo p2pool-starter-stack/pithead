@@ -92,6 +92,32 @@ assert_contains "config-reset stops the same way" "$lg_out" "config-reset stoppe
 assert_eq "...before removing the rule or the config" "$(lg_rule_removed) $(test -e "$LGD/.env" && echo env-kept)" "0 env-kept"
 unset LG_IPT_LOG
 
+echo "== reset and uninstall remove the Tor-only egress rules only after a stop that worked =="
+cp "$LGD/.env" "$LGD/.env.egress"
+lg_egress() {
+    cp "$LGD/.env.egress" "$LGD/.env"
+    : >"$LGD/egress-ev"
+    lg "set +e; touch config.json; mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; detect_os() { :; }; provision_control_runner() { :; }; remove_tor_egress_firewall() { echo ev:egress-off >>egress-ev; }; docker() { case \"\$1 \$2\" in 'compose down') echo ev:down >>egress-ev; echo compose-error-rc$1 >&2; return $1 ;; 'compose rm') echo ev:rm >>egress-ev ;; 'ps --format') echo caddy ;; 'ps --all') [ -z \"\${LG_CENSUS_FAIL:-}\" ] || return 1; [[ \"\$*\" != *\"\${LG_CENSUS_LABEL:-project=pithead}\"* ]] || echo \"\${LG_CENSUS:-}\" ;; esac; }; $2"
+}
+lg_ev() { tr '\n' ' ' <"$LGD/egress-ev"; }
+lg_out="$(lg_egress 1 'config_reset -y')"
+assert_eq "config-reset whose stop fails, with no stack container active, removes the egress rules" "$(lg_ev "$lg_out")" "ev:down ev:egress-off "
+assert_contains "...and still warns that the shutdown failed" "$lg_out" "Stack shutdown failed"
+assert_contains "...and still clears the config" "$lg_out" "Configuration cleared"
+assert_eq "...(.env gone)" "$(test -e "$LGD/.env" || echo absent)" "absent"
+lg_out="$(lg_egress 0 'config_reset -y')"
+assert_eq "config-reset removes switched-off containers, then the rules, after the stop" "$(lg_ev "$lg_out")" "ev:down ev:rm ev:egress-off "
+lg_out="$(lg_egress 1 'stack_uninstall -y')"
+assert_eq "uninstall whose stop fails, with no stack container active, removes the egress rules" "$(lg_ev "$lg_out")" "ev:down ev:egress-off "
+assert_contains "...and still warns that the stop failed" "$lg_out" "compose down failed"
+assert_contains "...and still finishes its cleanup" "$lg_out" "Uninstalled."
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+lg_out="$(lg_egress 0 'stack_uninstall -y')"
+assert_eq "uninstall removes switched-off containers, then the rules, after the stop" "$(lg_ev "$lg_out")" "ev:down ev:rm ev:egress-off "
+mv "$LGD/.env.egress" "$LGD/.env"
+touch "$LGD/config.json"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+
 echo "== a teardown that cannot finish puts the marker back only over a live rule (#2749) =="
 # The boot guard failed (no live rule), a marker from earlier in this boot is still there, and the
 # engine cannot be read: the teardown keeps what rule there is, and a direct start stays refused.
@@ -140,4 +166,45 @@ lg_out="$(lg "$lg_egress"' docker() { case "$1 $2" in "compose down") echo compo
 assert_eq "a down that stopped removes the egress rules afterwards" "$(grep -oE 'compose-stopped|egress-rules-removed' <<<"$lg_out" | tr '\n' ' ')" "compose-stopped egress-rules-removed "
 lg_out="$(lg "$lg_egress"' docker() { case "$1 $2" in "compose config") echo monerod ;; "compose stop") echo compose-stopped ;; esac; }; stack_down_except_caddy' 2>&1)"
 assert_eq "a backup stop that stopped removes them afterwards" "$(grep -oE 'compose-stopped|egress-rules-removed' <<<"$lg_out" | tr '\n' ' ')" "compose-stopped egress-rules-removed "
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+
+echo "== reset and uninstall remove the Tor-only egress rules only when the engine shows no stack container active =="
+cp "$LGD/.env" "$LGD/.env.egress"
+lg_out="$(LG_CENSUS="running c1" lg_egress 0 'config_reset -y')"
+assert_eq "config-reset whose stop worked but a stack container still runs keeps the egress rules" "$(lg_ev "$lg_out")" "ev:down ev:rm "
+assert_contains "...and warns about them" "$lg_out" "Tor-only egress rules stay"
+lg_out="$(LG_CENSUS="exited c1" lg_egress 0 'config_reset -y')"
+assert_eq "config-reset with only stopped containers left removes the egress rules" "$(lg_ev "$lg_out")" "ev:down ev:rm ev:egress-off "
+assert_not_contains "...without the rules warning" "$lg_out" "Tor-only egress rules stay"
+lg_out="$(LG_CENSUS_FAIL=1 lg_egress 0 'config_reset -y')"
+assert_eq "config-reset whose container census fails keeps the egress rules" "$(lg_ev "$lg_out")" "ev:down ev:rm "
+assert_contains "...and warns about them" "$lg_out" "Tor-only egress rules stay"
+lg_out="$(LG_CENSUS="paused c1" lg_egress 0 'config_reset -y')"
+assert_eq "a paused stack container counts as active" "$(lg_ev "$lg_out")" "ev:down ev:rm "
+lg_out="$(LG_CENSUS="restarting c1" lg_egress 0 'config_reset -y')"
+assert_eq "a restarting stack container counts as active" "$(lg_ev "$lg_out")" "ev:down ev:rm "
+lg_out="$(LG_CENSUS="running c1" LG_CENSUS_LABEL="project=lan-guard --filter label=com.docker.compose.project.working_dir=$LGD" lg_egress 0 'config_reset -y')"
+assert_eq "a running container of this folder's legacy project counts as active" "$(lg_ev "$lg_out")" "ev:down ev:rm "
+lg_out="$(LG_CENSUS="running c1" lg_egress 1 'config_reset -y')"
+assert_eq "config-reset whose stop fails with a stack container running keeps the egress rules" "$(lg_ev "$lg_out")" "ev:down "
+assert_contains "...warns that the shutdown failed" "$lg_out" "Stack shutdown failed"
+assert_contains "...and about the rules" "$lg_out" "Tor-only egress rules stay"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+lg_out="$(LG_CENSUS="running c1" lg_egress 0 'stack_uninstall -y')"
+assert_eq "uninstall whose stop worked but a stack container still runs keeps the egress rules" "$(lg_ev "$lg_out")" "ev:down ev:rm "
+assert_contains "...warns that nothing re-applies them after a reboot" "$lg_out" "nothing re-applies them after a reboot"
+assert_contains "...and still finishes its cleanup" "$lg_out" "Uninstalled."
+assert_not_contains "...without Compose's output from a stop that worked" "$lg_out" "compose-error-rc0"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+lg_out="$(LG_CENSUS_FAIL=1 lg_egress 0 'stack_uninstall -y')"
+assert_eq "uninstall whose container census fails keeps the egress rules" "$(lg_ev "$lg_out")" "ev:down ev:rm "
+assert_contains "...and warns about them" "$lg_out" "Tor-only egress rules stay"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+lg_out="$(LG_CENSUS="running c1" lg_egress 1 'stack_uninstall -y')"
+assert_eq "uninstall whose stop fails with a stack container running keeps the egress rules" "$(lg_ev "$lg_out")" "ev:down "
+assert_contains "...shows Compose's own error" "$lg_out" "compose-error-rc1"
+assert_contains "...and warns about the rules" "$lg_out" "Tor-only egress rules stay"
+assert_contains "...and still finishes its cleanup" "$lg_out" "Uninstalled."
+mv "$LGD/.env.egress" "$LGD/.env"
+touch "$LGD/config.json"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
