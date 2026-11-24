@@ -189,8 +189,6 @@ factory_reset() {
     : >"$marker" 2>/dev/null ||
         error "Could not arm the reset marker at $marker (ESP not mounted?) — nothing was wiped."
     log "Reset armed. Rebooting to reformat /data and reopen the wizard..."
-    # Held across the reboot for the same reason as config-reset: the gap between arming the wipe
-    # and the reboot is precisely when another verb must not start.
     reset_reboot_or_hint "$marker"
     mutation_lock_release
 }
