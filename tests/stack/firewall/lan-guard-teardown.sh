@@ -166,6 +166,41 @@ lg_out="$(lg "$lg_egress"' docker() { case "$1 $2" in "compose down") echo compo
 assert_eq "a down that stopped removes the egress rules afterwards" "$(grep -oE 'compose-stopped|egress-rules-removed' <<<"$lg_out" | tr '\n' ' ')" "compose-stopped egress-rules-removed "
 lg_out="$(lg "$lg_egress"' docker() { case "$1 $2" in "compose config") echo monerod ;; "compose stop") echo compose-stopped ;; esac; }; stack_down_except_caddy' 2>&1)"
 assert_eq "a backup stop that stopped removes them afterwards" "$(grep -oE 'compose-stopped|egress-rules-removed' <<<"$lg_out" | tr '\n' ' ')" "compose-stopped egress-rules-removed "
+lg_census() {
+    lg "$lg_egress"' docker() { case "$1 $2" in "compose config") echo monerod; echo caddy ;; "compose down"|"compose stop") echo compose-stopped ;; "ps --all") [ -z "${LG_FAIL:-}" ] || return 1; [[ "$*" == *project=pithead* ]] || return 0; if [[ "$*" == *service=caddy* ]]; then [ -z "${LG_FAIL_CADDY:-}" ] || return 1; printf "%b" "${LG_CADDY:-}"; else printf "%b" "${LG_ROWS:-}"; fi ;; esac; }; '"$1"
+}
+lg_seen() { grep -oE 'compose-stopped|egress-rules-removed|Tor-only egress rules stay|Stack stopped' <<<"$1" | tr '\n' ','; }
+lg_out="$(LG_ROWS='exited c0\nrunning c1' lg_census stack_down)"
+assert_eq "a down whose stop worked but a container still runs keeps the egress rules" "$(lg_seen "$lg_out")" "compose-stopped,Tor-only egress rules stay,Stack stopped,"
+assert_contains "...and tells the operator how to look and what to do" "$lg_out" "'docker ps', stop it, then run"
+lg_out="$(LG_ROWS='restarting c1' lg_census stack_down)"
+assert_eq "a restarting container keeps the rules after down" "$(lg_seen "$lg_out")" "compose-stopped,Tor-only egress rules stay,Stack stopped,"
+lg_out="$(LG_ROWS='paused c1' lg_census stack_down)"
+assert_eq "a paused container keeps the rules after down" "$(lg_seen "$lg_out")" "compose-stopped,Tor-only egress rules stay,Stack stopped,"
+lg_out="$(LG_FAIL=1 lg_census stack_down)"
+assert_eq "a down whose container census fails keeps the rules" "$(lg_seen "$lg_out")" "compose-stopped,Tor-only egress rules stay,Stack stopped,"
+lg_out="$(LG_ROWS='exited c1' lg_census stack_down)"
+assert_eq "a down with only stopped containers left removes the rules without a warning" "$(lg_seen "$lg_out")" "compose-stopped,egress-rules-removed,Stack stopped,"
+mv "$LGD/.env" "$LGD/.env.census"
+lg_out="$(lg_census stack_down)"
+assert_eq "a down without .env and an empty census removes the rules" "$(lg_seen "$lg_out")" "egress-rules-removed,Stack stopped,"
+mv "$LGD/.env.census" "$LGD/.env"
+lg_out="$(LG_ROWS='running c1' LG_CADDY='c1\n' lg_census stack_down_except_caddy)"
+assert_eq "a backup stop with only caddy running removes the rules" "$(lg_seen "$lg_out")" "compose-stopped,egress-rules-removed,Stack stopped,"
+lg_rc=0
+lg_out="$(LG_ROWS='running c1\nrunning c2' LG_CADDY='c1\n' lg_census stack_down_except_caddy)" || lg_rc=$?
+assert_eq "caddy plus another running container keeps the rules and the backup goes on" "$(lg_seen "$lg_out") rc=$lg_rc" "compose-stopped,Tor-only egress rules stay,Stack stopped, rc=0"
+assert_contains "...and the warning says the backup goes on" "$lg_out" "the backup goes on"
+lg_out="$(LG_ROWS='running c1\npaused c2' LG_CADDY='c1\n' lg_census stack_down_except_caddy)"
+assert_contains "caddy plus a paused container keeps the rules" "$lg_out" "Tor-only egress rules stay"
+lg_out="$(LG_ROWS='running c1\nrestarting c2' LG_CADDY='c1\n' lg_census stack_down_except_caddy)"
+assert_contains "caddy plus a restarting container keeps the rules" "$lg_out" "Tor-only egress rules stay"
+lg_out="$(LG_ROWS='running c1\nrunning c2' LG_CADDY='' lg_census stack_down_except_caddy)"
+assert_contains "running containers with no caddy among them keep the rules" "$lg_out" "Tor-only egress rules stay"
+lg_out="$(LG_FAIL=1 lg_census stack_down_except_caddy)"
+assert_eq "a backup stop whose container census fails keeps the rules" "$(lg_seen "$lg_out")" "compose-stopped,Tor-only egress rules stay,Stack stopped,"
+lg_out="$(LG_ROWS='running c1' LG_CADDY='c1\n' LG_FAIL_CADDY=1 lg_census stack_down_except_caddy)"
+assert_eq "a backup stop that cannot list caddy's container keeps the rules" "$(lg_seen "$lg_out")" "compose-stopped,Tor-only egress rules stay,Stack stopped,"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
 
 echo "== reset and uninstall remove the Tor-only egress rules only when the engine shows no stack container active =="
