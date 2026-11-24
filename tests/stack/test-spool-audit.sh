@@ -127,7 +127,7 @@ done
 [ ! -e "$REQS/"$'two\nlines.json' ] && ok "request with a line break in its name removed" || bad "request with a line break in its name removed" "still present"
 assert_eq "file behind a linked folder untouched" "$(cat "$C/outside-dir/kept" 2>/dev/null)" "keep"
 [ ! -e "$C/outside-missing" ] && ok "dangling link target not created" || bad "dangling link target not created" "target exists"
-assert_eq "each non-file request audited" "$(grep -c refused-nonregular "$AUDIT")" "3"
+assert_eq "each removed request audited, the one with a line break included" "$(grep -c refused-nonregular "$AUDIT")" "4"
 assert_contains "non-file sweep drains the spool" "$(run_pending)" "No pending control requests."
 
 echo "== black-box: id and actor are matched as whole strings =="
@@ -158,4 +158,13 @@ assert_contains "time budget announced" "$out" "per-run time budget"
 left="$(find "$REQS" -name 'slow-*.json' | wc -l | tr -d ' ')"
 [ "$left" -gt 0 ] && [ "$left" -lt 6 ] && ok "budget leaves the rest for the next run" || bad "budget leaves the rest for the next run" "$left left"
 assert_contains "next run drains the remainder" "$(run_pending)" "Processed $left control request(s)"
-unset UUID8 UUID9 left entry
+
+echo "== black-box: a spool too large for one command line is still listed =="
+long_name=$(printf 'x%.0s' $(seq 1 240))
+for i in $(seq 1 9000); do : >"$REQS/$i-$long_name.json"; done
+: >"$REQS/"$'late\nname.json'
+assert_contains "a spool of 9000 long names is seen by the runner" "$(CONTROL_DRAIN_BUDGET_S=0 run_pending)" "per-run time budget"
+[ -e "$REQS/"$'late\nname.json' ] && ok "a spent budget also stops the removal of names with a line break" || bad "a spent budget also stops the removal of names with a line break" "removed"
+find "$REQS" -mindepth 1 -delete
+assert_eq "claim failure messages carry no request name" "$(grep -c 'claimed control request [$]name' "$STACK")" "0"
+unset UUID8 UUID9 left entry long_name i

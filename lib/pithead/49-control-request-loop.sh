@@ -346,8 +346,8 @@ control_run_pending() {
     # OS-update budget: a bundle download attempt or a slot install holds the runner for minutes
     # too, so exactly one os-* verb runs per drain; the rest reject with a retry hint.
     CONTROL_OS_BUDGET=1
-    for req in "$cdir/requests/"*$'\n'*.json; do ! mv -T -- "$req" "$cdir/.claim.$$" 2>/dev/null || rm -rf -- "$cdir/.claim.$$"; done
-    names=$(cd "$cdir/requests" 2>/dev/null && ls -1trd -- *.json 2>/dev/null) || true
+    for req in "$cdir/requests/"*$'\n'*.json; do [ $((SECONDS - start)) -lt "$max_s" ] && mv -T -- "$req" "$cdir/.claim.$$" 2>/dev/null && rm -rf -- "$cdir/.claim.$$" && control_audit "$cdir/audit/control.log" "" "" "invalid" "refused-nonregular" || continue; done
+    names=$(ls -1tr -- "$cdir/requests" 2>/dev/null) || true
     if [ -z "$names" ]; then
         log "No pending control requests."
         return 0
@@ -375,17 +375,17 @@ control_run_pending() {
             continue
         fi
         if ! chmod 600 "$claim" 2>/dev/null; then
-            warn "Could not protect claimed control request $name — refusing it."
+            warn "Could not protect a claimed control request — refusing it."
             rm -f "$claim"
             continue
         fi
         snapshot=$(mktemp "$cdir/.request.XXXXXXXX") || {
-            warn "Could not snapshot claimed control request $name — refusing it."
+            warn "Could not snapshot a claimed control request — refusing it."
             rm -f "$claim"
             continue
         }
         if ! head -c 65537 -- "$claim" >"$snapshot"; then
-            warn "Could not read claimed control request $name — refusing it."
+            warn "Could not read a claimed control request — refusing it."
             rm -f "$snapshot" "$claim"
             continue
         fi
