@@ -85,6 +85,10 @@ It adds and removes no Pithead configuration keys. It changes these defaults: `m
 
 ### Fixed
 
+- After an apply or restart that restarts monerod, the dashboard no longer stops `xmrig-proxy` about
+  90 seconds after monerod is synchronized again. The "P2Pool reports monerod is not synchronized"
+  guard now counts only a line from the last 30 seconds, instead of any line from the last 2 minutes
+  (#4138).
 - A rig whose miner stays at zero hashrate or without a pool connection for 120 seconds (for example after the coordinator's stratum port restarts) now has its XMRig restarted by `pithead-miner-recovery`, at most once every 300 seconds (#4387).
 - On the appliance, a built-in miner that lost its stratum connection because `xmrig-proxy` was
   recreated (an apply, a compose restart or a recovery-boot migration) is restarted at once instead
