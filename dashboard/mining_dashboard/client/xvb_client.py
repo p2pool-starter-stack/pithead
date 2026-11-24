@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -7,7 +8,7 @@ import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY, XVB_SUBMIT_URL
 from mining_dashboard.helper.http import bounded_get, request_failure_class
-from mining_dashboard.helper.utils import parse_hashrate
+from mining_dashboard.helper.utils import finite_number, parse_hashrate
 
 # The four donor tiers XvB publishes an expected per-player reward for. These are exactly the tier
 # keys in TIER_DEFAULTS, so build_xvb_calc maps a tier straight to its estimate by key (#118).
@@ -51,6 +52,9 @@ _WINNERS_FIELD_COUNT = 9
 # fabricated rows for our (publicly derivable) masked wallet in a single sync.
 _WINNERS_MAX_LINES = 5000
 _WINNERS_MAX_WINS = 200
+_WINNERS_MAX_FUTURE_S = 3600
+_WINNERS_MAX_HEIGHT = 10**12
+_XVB_MAX_FAIL_COUNT = 1000
 
 # The hashrate token in a winners row, e.g. "4203.5kH/s" — value and unit, no space between them.
 _REGEX_WINNER_HASHRATE = re.compile(r"([\d.]+)\s*([kKmMgG]?H/s)?$")
@@ -87,8 +91,11 @@ def parse_winners(text, wallet_address):
             height = int(fields[4])
         except ValueError:
             continue
+        if ts > time.time() + _WINNERS_MAX_FUTURE_S or not 0 <= height <= _WINNERS_MAX_HEIGHT:
+            continue
         hr_match = _REGEX_WINNER_HASHRATE.match(fields[3])
         hashrate = parse_hashrate(hr_match.group(1), hr_match.group(2)) if hr_match else 0.0
+        hashrate = finite_number(hashrate) or 0.0
         wins.append(
             {
                 "ts": ts,
@@ -181,8 +188,9 @@ class XvbClient:
 
         # Pre-compile regex patterns
         self.REGEX_FAIL_COUNT = re.compile(r"Fail Count:\s*(\d+)", re.IGNORECASE)
-        self.REGEX_HR_1H = re.compile(r"1hr avg:\s*([\d\.]+)\s*([kKmMgG]?H/s)?", re.IGNORECASE)
-        self.REGEX_HR_24H = re.compile(r"24hr avg:\s*([\d\.]+)\s*([kKmMgG]?H/s)?", re.IGNORECASE)
+        number = r"(\d+(?:\.\d+)?)(?![\d.eE])\s*([kKmMgG]?H/s)?"
+        self.REGEX_HR_1H = re.compile(r"1hr avg:\s*" + number, re.IGNORECASE)
+        self.REGEX_HR_24H = re.compile(r"24hr avg:\s*" + number, re.IGNORECASE)
 
     def get_stats(self) -> dict[str, Any] | None:
         """
@@ -363,35 +371,25 @@ class XvbClient:
             self.logger.error(f"Unexpected error during XvB registration: {e}")
             return REG_ERROR
 
+    def _average(self, regex, html_text):
+        match = regex.search(html_text)
+        return finite_number(parse_hashrate(match.group(1), match.group(2))) if match else None
+
     def _parse_html(self, html_text) -> dict[str, Any] | None:
         """
         Parses raw HTML content to extract mining statistics.
         """
         try:
-            stats = {"fail_count": 0, "avg_1h": 0.0, "avg_24h": 0.0}
-
-            # Extract Fail Count
             fail_match = self.REGEX_FAIL_COUNT.search(html_text)
-            if fail_match:
-                stats["fail_count"] = int(fail_match.group(1))
-
-            # Extract Hashrate Averages
-            hr1_match = self.REGEX_HR_1H.search(html_text)
-            hr24_match = self.REGEX_HR_24H.search(html_text)
-
-            if hr1_match:
-                stats["avg_1h"] = parse_hashrate(hr1_match.group(1), hr1_match.group(2))
-
-            if hr24_match:
-                stats["avg_24h"] = parse_hashrate(hr24_match.group(1), hr24_match.group(2))
-
-            if not fail_match and not hr1_match:
+            fail_count = int(fail_match.group(1)) if fail_match else 0
+            avg_1h = self._average(self.REGEX_HR_1H, html_text)
+            if avg_1h is None or fail_count > _XVB_MAX_FAIL_COUNT:
                 self.logger.warning(
                     "Parsing Warning: Critical stats not found in XvB response. HTML structure may have changed."
                 )
                 return None
-
-            return stats
+            avg_24h = self._average(self.REGEX_HR_24H, html_text)
+            return {"fail_count": fail_count, "avg_1h": avg_1h, "avg_24h": avg_24h or 0.0}
 
         except Exception as e:
             self.logger.error(f"Parsing Error: Failed to process XvB HTML: {e}")

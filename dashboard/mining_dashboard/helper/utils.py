@@ -6,6 +6,15 @@ import time
 from mining_dashboard.config.config import TIER_DEFAULTS, XVB_STATS_STALE_AFTER_S
 
 
+def finite_number(value, limit=1e15):
+    ok = isinstance(value, int | float) and not isinstance(value, bool)
+    return value if ok and -limit <= value <= limit else None
+
+
+def safe_text(value, limit=64):
+    return value if isinstance(value, str) and len(value) <= limit and value.isprintable() else None
+
+
 def parse_hashrate(val_str, unit_str=None):
     """
     Converts a numeric string and an optional unit suffix into raw hashes per second (H/s).
