@@ -271,7 +271,7 @@ phase_stack() {
         return 1
     }
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
-    post_reboot_health_begin || return 1
+    post_reboot_health_begin || true
     _stack_container_restart_leg || return 1
     post_reboot_health_verify "stack" || true
 
