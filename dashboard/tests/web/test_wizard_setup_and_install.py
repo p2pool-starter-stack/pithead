@@ -1,4 +1,8 @@
 # ruff: noqa: F403, F405
+from pathlib import Path
+
+import pytest
+
 from tests.web._wizard_support import *  # noqa: F403
 
 
@@ -333,3 +337,64 @@ async def test_fresh_disk_with_default_wipe_keep_is_a_normal_install(client, ins
     assert r.status == 200
     assert (installer / "install-request").read_text() == "nvme0n1\tkeep"
     assert (installer / "config.json").exists()
+
+
+GOLDEN = Path(__file__).resolve().parents[3] / "tests/stack/fixtures/wizard-parity"
+THREE_ANSWERS = {
+    "monero_wallet": json.loads((GOLDEN / "three-answers.golden.json").read_text())["monero"][
+        "wallet_address"
+    ],
+    "tari_wallet": json.loads((GOLDEN / "three-answers.golden.json").read_text())["tari"][
+        "wallet_address"
+    ],
+    "profile": "balance",
+}
+
+
+def _without_generated(cfg):
+    cfg = json.loads(json.dumps(cfg))
+    cfg.get("dashboard", {}).pop("secure", None)
+    cfg.get("dashboard", {}).get("auth", {}).pop("password", None)
+    for key in ("node_username", "node_password"):
+        cfg.get("monero", {}).pop(key, None)
+    return {k: v for k, v in cfg.items() if v != {}}
+
+
+def test_the_three_answers_build_the_cli_golden_config():
+    golden = json.loads((GOLDEN / "three-answers.golden.json").read_text())
+    built = wizard.build_config(THREE_ANSWERS, platform="diy")
+    assert _without_generated(built) == golden
+
+
+async def test_submitting_only_the_three_answers_provisions_the_golden_defaults(client, seeded):
+    await _auth(client)
+    r = await client.post("/submit", data=THREE_ANSWERS)
+    assert r.status == 200
+    written = json.loads((seeded / "config.json").read_text())
+    assert written["profile"] == "balance"
+    assert written["tari"] == {
+        "mode": "local",
+        "wallet_address": THREE_ANSWERS["tari_wallet"],
+    }
+    assert written["monero"]["wallet_address"] == THREE_ANSWERS["monero_wallet"]
+
+
+def test_a_blank_tari_wallet_is_off_and_a_filled_one_is_the_bundled_node():
+    off = wizard.build_config({**THREE_ANSWERS, "tari_wallet": ""}, platform="diy")
+    assert off["tari"] == {"mode": "off"}
+    assert wizard.build_config(THREE_ANSWERS, platform="diy")["tari"]["mode"] == "local"
+
+
+@pytest.mark.parametrize("profile", ["performance", "balance", "privacy"])
+def test_the_profile_answer_is_written_explicitly(profile):
+    assert (
+        wizard.build_config({**THREE_ANSWERS, "profile": profile}, platform="diy")["profile"]
+        == profile
+    )
+
+
+def test_an_older_fuller_submission_without_a_profile_still_records_one():
+    older = {k: v for k, v in THREE_ANSWERS.items() if k != "profile"}
+    cfg = wizard.build_config({**older, "clearnet_sync": "true"}, platform="diy")
+    assert cfg["profile"] == "balance"
+    assert cfg["monero"]["clearnet_initial_sync"] is True

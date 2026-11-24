@@ -109,7 +109,7 @@ for fn in run_lifecycle lifecycle_proxy_started lifecycle_proxy_workers lifecycl
     run_cli_wizard_eof() { return 0; }
     quote_arg() { printf '%q' "$1"; }
     rx() {
-        local initialization="${1%%wizard_tari_disk_default*}"
+        local initialization="${1%%wizard_answers=1*}"
         bash -c "$initialization"'test "$CONFIG_FILE" = "$PWD/.itest-wizard-defaults.json"' || return 2
         return 1
     }

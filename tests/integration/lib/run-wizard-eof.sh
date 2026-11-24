@@ -16,7 +16,7 @@ for chain in Monero Tari; do
             rm -f "$work/config.json"
             [ "$existing" = absent ] || cp "$work/original" "$work/config.json"
             {
-                [ "$chain" = Monero ] || printf '%s\n\n2\n' "$monero"
+                [ "$chain" = Monero ] || printf '%s\n' "$monero"
                 case "$ending" in
                 empty) : ;;
                 partial) printf garbage ;;
@@ -28,7 +28,7 @@ for chain in Monero Tari; do
                 PITHEAD_CONFIG_FILE="$work/config.json"
                 source "$cli"
                 wizard_ask_core
-                wizard_ask_shape
+                wizard_ask_profile
                 wizard_write_config
             ) >"$work/stdout" 2>"$work/stderr"
             rc=$?

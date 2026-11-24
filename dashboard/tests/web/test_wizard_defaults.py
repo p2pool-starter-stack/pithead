@@ -67,7 +67,10 @@ async def test_new_install_submission_pins_disk_answer_raffle_and_private_sync(
         form = (
             {"config": json.dumps(cfg), "auth_mode": "auto"}
             if javascript
-            else {"monero_wallet": "4FIXTURE", "tari_wallet": "tari-fixture"}
+            else {
+                "monero_wallet": "4FIXTURE",
+                "tari_wallet": "tari-fixture" if mode == "local" else "",
+            }
         )
         response = await client.post("/submit", data=form)
         assert response.status == 200

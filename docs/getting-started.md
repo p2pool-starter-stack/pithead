@@ -160,46 +160,43 @@ Setup walks through five stages. It's interactive on the first run and safe to r
    Ubuntu it offers to `apt install` anything missing; on other systems it tells you what to
    install. Skip with `--skip-deps`.
 
-2. **Interactive configuration.** Asks only what only you can answer, in two short stages, then
-   fills in the rest and writes a minimal `config.json`, locked down to owner-only (`chmod 600`).
-   Use a dedicated Monero mining wallet: P2Pool payout addresses are public
+2. **Interactive configuration.** Asks three questions, then fills in the rest and writes a
+   minimal `config.json`, locked down to owner-only (`chmod 600`). Use a dedicated Monero
+   mining wallet: P2Pool payout addresses are public
    ([P2Pool's guidance](https://github.com/SChernykh/p2pool/releases/tag/v4.18.1)).
-   - **Required:** your Monero wallet address and whether you're running a local Monero node (the
-     default — the stack runs its own) or connecting to a remote one. Local-node RPC credentials
-     are generated automatically. Setup inherits the `mini` P2Pool sidechain default. It generates
-     a random 32-character alphanumeric dashboard password and shows it once in the final handoff; if setup stops before then, read
-     `dashboard.auth.password` from the owner-only `config.json`.
-     To disable dashboard login, explicitly set `dashboard.auth.password` to an empty string in
-     **Advanced** or `config.json`; there is no no-login prompt. That login also turns on the
-     dashboard's [Configuration view](dashboard.md#configuration-view) — every logged-in machine
-     is configurable from the browser; set `dashboard.control.enabled` to `false` to keep
-     configuration on the command line.
-   - **Merge-mine Tari? (beta)** Three answers: no, run the bundled Tari node here, or use a Tari
-     node you already run. Tari runs on pre-release upstream software, so Enter means no. Yes
-     downloads and syncs a Tari chain over Tor, which takes days. A yes asks for your Tari payout address, and "a node I already run" asks
-     for its host and gRPC port — see [Remote Tari node](configuration.md#remote-tari-node). A no
-     asks nothing further and stores no Tari address; nothing merge-mines and no Tari node runs.
-     The wizard writes `tari.mode` explicitly whichever way you answer, so the answer survives.
-     The one exception is a reinstall that keeps its data: when `./data/tari` already holds half
-     the Tari budget or more, Enter keeps the bundled node on, so it does not silently drop
-     merge-mining. The wizard prints the free space it measured against the whole-stack budget
-     (the bundled Tari node adds 200 GiB to Monero's) for anyone who says yes. A yes on a new
-     install also writes `dashboard.tari_required: false`, so Tari cannot hold or reject Monero
-     mining. Changeable later from the
-     dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
-   - On an appliance, setup then asks one optional thing: this machine's name. Enter accepts the
-     default; anything you type is checked against the name rule in
-     [Appliance name](appliance-hostname.md). On a DIY install setup asks no hostname question at
-     all — the dashboard is reached by this machine's hostname.
-   - **A few more, Enter for the default:** a faster clearnet initial sync (hours instead of days,
-     for every local chain, exposing your IP address to the Monero network and, when Tari runs
-     locally, the Tari network until initial sync finishes) instead of
-     the private Tor default; reaching the dashboard from outside your LAN over Tor; Telegram alerts; and
-     whether this machine should also mine with its spare CPU (a co-located RigForge worker).
-   - XvB is off and is not asked; enable it later from the Configuration view.
-   - Everything else — ports, energy pricing, per-worker overrides, and more — keeps
-     its documented default; the wizard prints a pointer to `config.json` and
-     [Configuration](configuration.md) at the end for anyone who wants it.
+   1. **Monero wallet address** (required). A subaddress, an integrated address or a bad
+      checksum is refused and asked again.
+   2. **Tari wallet address** (optional). Tari merge-mining is a beta: it runs pre-release
+      upstream software, and the bundled Tari node downloads and syncs a Tari chain over Tor,
+      which takes days. Enter leaves Tari off: `tari.mode` is written as `off`, nothing
+      merge-mines and no Tari node runs. A filled address turns on the bundled node and writes
+      `tari.mode` as `local` and `dashboard.tari_required: false`, so Tari cannot hold or
+      reject Monero mining. A testnet address or a bad checksum is refused and asked again.
+      Change it later by editing `tari.mode` and running `./pithead apply`, or from the
+      dashboard's Configuration view.
+   3. **Profile.** `1` Performance, `2` Balance (Enter) or `3` Privacy. Performance syncs the
+      Monero and Tari chains over clearnet and sends nothing through Tor, so your IP address is
+      visible to those networks until the initial sync finishes. Balance sends everything
+      through Tor. Privacy adds onion-only P2Pool peers and a generated rig password and worker
+      token. See [Profiles](configuration.md#profiles).
+
+   The stack runs its own Monero node and generates its RPC credentials. Setup inherits the
+   `mini` P2Pool sidechain default, and generates a random 32-character alphanumeric dashboard
+   password that it shows once in the final handoff; if setup stops before then, read
+   `dashboard.auth.password` from the owner-only `config.json`.
+   To disable dashboard login, explicitly set `dashboard.auth.password` to an empty string in
+   **Advanced** or `config.json`; there is no no-login prompt. That login also turns on the
+   dashboard's [Configuration view](dashboard.md#configuration-view) — every logged-in machine
+   is configurable from the browser; set `dashboard.control.enabled` to `false` to keep
+   configuration on the command line.
+
+   Setup does not ask about a remote Monero or Tari node, dashboard access over Tor, Telegram
+   alerts, mining on this machine, a stratum password or XvB. They keep their documented
+   defaults; set them in `config.json` or the Configuration view, then run `./pithead apply`.
+   See [Remote Tari node](configuration.md#remote-tari-node) for a Tari node you already run.
+   On an appliance, the browser wizard also asks this machine's name; see
+   [Appliance name](appliance-hostname.md). The wizard prints a pointer to `config.json` and
+   [Configuration](configuration.md) at the end.
 
 3. **Tor provisioning.** Brings up the Tor service and waits for the hidden-service (onion)
    addresses: P2Pool always, plus Monero and Tari for whichever of those nodes runs locally. A node

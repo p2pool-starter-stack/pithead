@@ -8,6 +8,8 @@ trap 'rm -rf "$scratch"' EXIT
 source "$root/lib/pithead/31a-miner-connection.sh"
 # shellcheck source=lib/pithead/19a-config-defaults.sh
 source "$root/lib/pithead/19a-config-defaults.sh"
+# shellcheck source=lib/pithead/19b-config-profile.sh
+source "$root/lib/pithead/19b-config-profile.sh"
 # shellcheck source=lib/pithead/24-config-wizard.sh
 source "$root/lib/pithead/24-config-wizard.sh"
 is_appliance() { return 1; }
@@ -33,24 +35,10 @@ fail() { if "$@"; then
     exit 1
 fi; }
 
-wizard_ask_stratum_password </dev/null
-check test "$WIZ_STRATUM_PASSWORD" = ""
-wizard_ask_stratum_password <<<y
-check test "${#WIZ_STRATUM_PASSWORD}" = 24
 error() { return 1; }
-fail_generation() (
-    # shellcheck disable=SC2329 # invoked by wizard_ask_stratum_password
-    openssl() { return 1; }
-    wizard_ask_stratum_password <<<y
-)
-fail fail_generation
-
 CONFIG_FILE="$scratch/written-config.json"
 MONERO_MODE_WIZ=local IN_MONERO_WALLET=fixture-wallet IN_MONERO_USER=rpc IN_MONERO_PASS=fixture-rpc
-TARI_MODE_WIZ=off IN_DASH_PASS="" CLEARNET_SYNC=false ONION_ENABLED=false TELEGRAM_BOT_TOKEN=""
-wizard_write_config
-check test "$(jq -r .p2pool.stratum_password "$CONFIG_FILE")" = "$WIZ_STRATUM_PASSWORD"
-wizard_ask_stratum_password </dev/null
+TARI_MODE_WIZ=off IN_DASH_PASS=""
 wizard_write_config
 check test "$(jq -r .profile "$CONFIG_FILE")" = balance
 check test "$(jq -r '.p2pool | has("stratum_password")' "$CONFIG_FILE")" = false

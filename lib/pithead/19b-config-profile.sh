@@ -48,9 +48,12 @@ describe_profile_change() {
     [ "$1" = PITHEAD_PROFILE ] || return 1
     flag=CONFIRM
     case "$3" in
-    performance) msg="Performance: outbound Monero, Tari, P2Pool, XvB, alerts, release checks and price feeds leave without Tor; your IP address is visible. The egress firewall is off." ;;
+    performance)
+        msg="Performance: outbound Monero, Tari, P2Pool, XvB, alerts, release checks and price feeds leave without Tor; your IP address is visible. The egress firewall is off."
+        [ "$(config_bool .donation.enabled false)" != true ] || msg+=" The project donation connects directly."
+        ;;
     balance) msg="Balance: outbound traffic uses Tor; rigs need no password by default." ;;
     privacy) msg="Privacy: P2Pool peers only over onion connections; rigs need a password and worker API token, with optional TLS. Update every rig to match." ;;
     esac
-    msg+=" Profile selection clears Advanced overrides for Monero and Tari clearnet sync, P2Pool clearnet peering, egress firewall, XvB Tor, notification Tor, Tor auto-heal, rig password, rig TLS, worker API authentication and worker API token. Other explicit overrides still apply."
+    msg+=" Profile selection clears Advanced overrides for Monero and Tari clearnet sync, P2Pool clearnet peering, egress firewall, XvB Tor, project donation Tor, notification Tor, Tor auto-heal, rig password, rig TLS, worker API authentication and worker API token. Other explicit overrides still apply."
 }

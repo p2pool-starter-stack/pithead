@@ -1,54 +1,61 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?source through tests/stack/run.sh}"
 WALLET="${WALLET:-$VALID_PRIMARY}"
-core_reads=$(awk '/^wizard_ask_core\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
-shape_reads=$(awk '/^wizard_ask_shape\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
-assert_eq "core prompts cover only wallet and node configuration" "$core_reads" "8"
-assert_eq "shape prompts are unchanged" "$shape_reads" "6"
+wizard_prompts() {
+    awk '/^(wizard_ask_core|wizard_ask_tari|wizard_ask_profile)\(\) \{/,/^\}/' "$STACK" |
+        sed -n 's/^[[:space:]]*read -r\( -s\)\? -p "\([^"]*\)".*/\2/p'
+}
+expected_prompts='Enter Monero Wallet Address (primary — starts with 4): 
+Enter Tari Wallet Address (Enter to skip and mine Monero only): 
+Profile [2]: '
+assert_eq "setup asks exactly the Monero wallet, the Tari wallet and the profile, in that order" "$(wizard_prompts)" "$expected_prompts"
+assert_eq "the profile question is the only choice and runs last" "$(awk '/^ensure_config_exists\(\) \{/,/^\}/' "$STACK" | grep -o 'wizard_ask_[a-z]*' | tr '\n' ' ')" "wizard_ask_core wizard_ask_profile "
 W1="$SANDBOX/wizard-defaults"
 mkdir -p "$W1"
-printf '%s\n\n2\n%s\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >"$W1/output" 2>&1
+printf '%s\n%s\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >"$W1/output" 2>&1
 w1_cfg="$(cat "$W1/config.json")"
 assert_eq "wallet answer survives" "$(jq -r '.monero.wallet_address' <<<"$w1_cfg")" "$WALLET"
 assert_eq "Tari answer survives" "$(jq -r '.tari.wallet_address' <<<"$w1_cfg")" "$VALID_TARI"
+assert_eq "a filled Tari wallet derives the bundled node" "$(jq -r '.tari.mode' <<<"$w1_cfg")" local
+assert_eq "the Monero node is local with generated credentials" "$(jq -r '.monero.mode' <<<"$w1_cfg")" local
 assert_eq "pool tier inherits mini" "$(jq -r '.p2pool | has("pool")' <<<"$w1_cfg")" false
 assert_eq "username is admin" "$(jq -r '.dashboard.auth.username' <<<"$w1_cfg")" admin
 assert_eq "new install XvB is off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" false
 assert_eq "DIY miner is off" "$(jq -r '.local_miner.enabled' <<<"$w1_cfg")" false
-assert_eq "new install records the balance profile" "$(jq -r '.profile' <<<"$w1_cfg")" balance
+assert_eq "the three answers give the golden config the browser builder also reads" \
+    "$(jq -S 'del(.dashboard.secure, .dashboard.auth.password, .monero.node_username, .monero.node_password)' <<<"$w1_cfg")" \
+    "$(jq -S . "$ROOT/tests/stack/fixtures/wizard-parity/three-answers.golden.json")"
+assert_eq "Enter on the profile question records Balance" "$(jq -r '.profile' <<<"$w1_cfg")" balance
 assert_eq "private sync inherits Balance" "$(jq -r '.monero | has("clearnet_initial_sync")' <<<"$w1_cfg")" false
 assert_eq "local node RPC creds are auto-generated" \
     "$([ -n "$(jq -r '.monero.node_username' <<<"$w1_cfg")" ] && [ -n "$(jq -r '.monero.node_password' <<<"$w1_cfg")" ] && echo yes)" yes
 assert_eq "no telegram block is written" "$(jq -r 'has("telegram")' <<<"$w1_cfg")" false
 assert_eq "stratum password stays off without opt-in" "$(jq -r '.p2pool.stratum_password // ""' <<<"$w1_cfg")" ""
 assert_eq "config.minimal.json ships no stratum password" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" ""
-assert_eq "written top-level keys are the answered sections" "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","local_miner","monero","p2pool","profile","tari","xvb"]'
+assert_eq "written top-level keys are the answered sections" "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","local_miner","monero","profile","tari","xvb"]'
 w1_pass=$(jq -r '.dashboard.auth.password' <<<"$w1_cfg")
 assert_eq "generated password has 32 characters" "${#w1_pass}" 32
 assert_eq "password is alphanumeric" "$(printf %s "$w1_pass" | tr -d 'A-Za-z0-9')" ""
 assert_eq "password is shown once" "$(grep -Fc "$w1_pass" "$W1/output")" 1
-for removed in "Pool tier [" "Dashboard username [" "Dashboard password (" "Enter Hostname [" "Join the XMRvsBeast raffle?"; do
+for removed in "Pool tier [" "Dashboard username [" "Dashboard password (" "Enter Hostname [" "Join the XMRvsBeast raffle?" "Use LOCAL Monero node" "Merge-mine Tari?" "fast initial sync" "over Tor?" "Set up Telegram alerts" "spare CPU" "Enable stratum password"; do
     assert_not_contains "setup does not ask $removed" "$(cat "$W1/output")" "$removed"
 done
-WLM="$SANDBOX/wizard-local-miner"
-mkdir -p "$WLM"
-printf '%s\n\n2\n%s\n\n\n\ny\n' "$WALLET" "$VALID_TARI" | run_sourced "$WLM" run_wizard >/dev/null 2>&1
-assert_eq "local miner remains opt-in" "$(jq -r '.local_miner.enabled' "$WLM/config.json")" true
-W3="$SANDBOX/wizard-remote"
-mkdir -p "$W3"
-printf '%s\nn\nnode.example.com\n\n\ny\nremoteuser\nremotepass\n2\n%s\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W3" run_wizard >/dev/null 2>&1
-assert_eq "remote node parameters survive" "$(jq -c '[.monero.mode,.monero.remote.host,.monero.remote.rpc_port,.monero.remote.zmq_port,.monero.node_username,.monero.node_password]' "$W3/config.json")" '["remote","node.example.com",18081,18083,"remoteuser","remotepass"]'
-W4="$SANDBOX/wizard-remote-noauth"
-mkdir -p "$W4"
-printf '%s\nn\nremote2.example.com\n\n\nn\n2\n%s\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W4" run_wizard >/dev/null 2>&1
-assert_eq "remote auth can remain empty" "$(jq -c '[.monero.node_username,.monero.node_password]' "$W4/config.json")" '["",""]'
-W2="$SANDBOX/wizard-full"
+W2="$SANDBOX/wizard-performance"
 mkdir -p "$W2"
-printf '%s\n\n2\n%s\ny\ny\ny\nmybottoken123\n987654321\n' "$WALLET" "$VALID_TARI" | run_sourced "$W2" run_wizard >/dev/null 2>&1
+printf '%s\n\n1\n' "$WALLET" | run_sourced "$W2" run_wizard >"$W2/output" 2>&1
 w2_cfg="$(cat "$W2/config.json")"
-assert_eq "fast sync applies to both local chains" "$(jq -c '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$w2_cfg")" '[true,true]'
-assert_eq "remote access enables onion" "$(jq -r '.dashboard.onion.enabled' <<<"$w2_cfg")" true
-assert_eq "Telegram answers survive without removed keys" "$(jq -c '[.telegram.bot_token,.telegram.chat_id,(.telegram|has("enabled"),has("events"))]' <<<"$w2_cfg")" '["mybottoken123","987654321",false,false]'
+assert_eq "a blank Tari wallet writes tari.mode off" "$(jq -r '.tari.mode' <<<"$w2_cfg")" off
+assert_eq "a blank Tari wallet stores no address" "$(jq -r '.tari | has("wallet_address")' <<<"$w2_cfg")" false
+assert_eq "choosing 1 records Performance" "$(jq -r '.profile' <<<"$w2_cfg")" performance
+assert_contains "Performance prints the sync-exposure warning" "$(cat "$W2/output")" "your IP address is visible to those networks"
+W3="$SANDBOX/wizard-privacy"
+mkdir -p "$W3"
+printf '%s\n\nprivacy\n' "$WALLET" | run_sourced "$W3" run_wizard >/dev/null 2>&1
+assert_eq "answering privacy records Privacy" "$(jq -r '.profile' "$W3/config.json")" privacy
+W4="$SANDBOX/wizard-bad-profile"
+mkdir -p "$W4"
+printf '%s\n\nbanana\n' "$WALLET" | run_sourced "$W4" run_wizard >/dev/null 2>&1
+assert_eq "an unrecognised profile answer falls back to Balance" "$(jq -r '.profile' "$W4/config.json")" balance
 
 echo "== unit: wizard_print_pointer — closing pointer names what it deliberately didn't ask (#502) =="
 pointer_out="$(run_sourced "$SANDBOX" wizard_print_pointer 2>&1)"
@@ -64,7 +71,7 @@ cp "$STACK" "$SU/pithead"
 cp "$ROOT/docker-compose.yml" "$SU/docker-compose.yml"
 cp "$ROOT/build/tari/config.toml.template" "$SU/build/tari/"
 make_stubs "$SU/bin"
-printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$SU" run_wizard >/dev/null 2>&1
+printf '%s\n%s\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$SU" run_wizard >/dev/null 2>&1
 if [ -f "$SU/config.json" ]; then ok "setup e2e: wizard stage produces config.json"; else bad "setup e2e: wizard stage produces config.json" "no file at $SU/config.json"; fi
 su_out="$(cd "$SU" && printf '\nn\n' | DOCKER_LOG=/dev/null PATH="$SU/bin:$PATH" ./pithead setup --skip-deps --skip-optimize 2>&1)"
 su_rc=$?
@@ -182,7 +189,7 @@ assert_rc "setup with stratum_tls exits 0" "$?" "0"
 assert_contains "setup announces the fingerprint for rig pinning" "$sut_out" "Stratum TLS is ON"
 unset SUT sut_out
 
-unset w1_cfg w2_cfg pointer_out core_reads shape_reads # NOT run_wizard: lib.sh owns it, and a bare unset drops the FUNCTION for every later domain
+unset w1_cfg w2_cfg pointer_out expected_prompts # NOT run_wizard: lib.sh owns it, and a bare unset drops the FUNCTION for every later domain
 
 echo "== unit: a failed setup keeps the machine's configuration (#1059) =="
 # The wizard's response to a non-zero `(setup)`. It used to be

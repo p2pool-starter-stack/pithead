@@ -6,6 +6,7 @@ from mining_dashboard.service.notify.alert_levels import ALL_EVENTS, LEVEL_EVENT
 
 PROFILE_ORDER = ("balance", "performance", "privacy")
 TARGET = "2.1.0"
+PROFILE_NEW_KEYS = frozenset({"donation.tor"})
 
 
 def _split(path: str) -> list[str]:
@@ -61,6 +62,8 @@ def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
         return v2[path] if path in v2 else _get(defaults, path)
 
     def clash(path, name):
+        if path in PROFILE_NEW_KEYS and _get(cfg, path) is None:
+            return False
         row = rows[name][path]
         return old(path) == "" if row == "auto" else old(path) != row
 
@@ -72,7 +75,7 @@ def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
     migrated["profile"] = chosen
     changes = [f"profile → {chosen}"]
     for path in sorted({*governed, *v2}):
-        if _get(cfg, path) is not None:
+        if _get(cfg, path) is not None or path in PROFILE_NEW_KEYS:
             continue
         new = rows[chosen][path] if path in rows[chosen] else _get(defaults, path)
         if old(path) != new:

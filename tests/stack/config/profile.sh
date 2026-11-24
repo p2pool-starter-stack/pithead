@@ -13,7 +13,7 @@ MONERO_ONION=fixture TARI_ONION=fixture P2POOL_ONION=fixture DASHBOARD_ONION=""
 DASHBOARD_ONION_CLIENT_PUBKEY="" DASHBOARD_ONION_CLIENT_PRIVKEY="" HOST_IP=localhost
 read_render() {
     local key
-    for key in PITHEAD_PROFILE P2POOL_FLAGS P2POOL_CLEARNET TOR_EGRESS_FIREWALL XVB_TOR_ENABLED NOTIFY_TOR TOR_AUTO_HEAL PROXY_STRATUM_TLS XMRIG_API_AUTH PROXY_STRATUM_PASSWORD XMRIG_API_TOKEN MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC; do
+    for key in DONATION_TOR_ENABLED PITHEAD_PROFILE P2POOL_FLAGS P2POOL_CLEARNET TOR_EGRESS_FIREWALL XVB_TOR_ENABLED NOTIFY_TOR TOR_AUTO_HEAL PROXY_STRATUM_TLS XMRIG_API_AUTH PROXY_STRATUM_PASSWORD XMRIG_API_TOKEN MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC; do
         printf -v "$key" '%s' "$(env_get "$key")"
     done
 }
@@ -26,6 +26,7 @@ for profile in performance balance privacy; do
     read_render
     printf "testing %s: %s:%s:%s:%s:%s:%s:%s:%s:%s\n" "$profile" "$MONERO_CLEARNET_SYNC" "$TARI_CLEARNET_SYNC" "$P2POOL_CLEARNET" "$TOR_EGRESS_FIREWALL" "$XVB_TOR_ENABLED" "$NOTIFY_TOR" "$TOR_AUTO_HEAL" "$PROXY_STRATUM_TLS" "$XMRIG_API_AUTH"
     [ "$PITHEAD_PROFILE" = "$profile" ]
+    [ "$DONATION_TOR_ENABLED" = "$([ "$profile" = performance ] && echo false || echo true)" ]
     [[ "$P2POOL_FLAGS" == *--no-upnp* ]]
     if [ "$profile" = performance ]; then
         [ "$MONERO_CLEARNET_SYNC:$TARI_CLEARNET_SYNC:$P2POOL_CLEARNET:$TOR_EGRESS_FIREWALL:$XVB_TOR_ENABLED:$NOTIFY_TOR:$TOR_AUTO_HEAL:$PROXY_STRATUM_TLS:$XMRIG_API_AUTH" = true:true:true:false:false:false:false:false:none ]
@@ -65,7 +66,23 @@ parse_and_validate_config >"$WORK/parse.log"
 render_env >"$WORK/render.log"
 read_render
 [ "$MONERO_CLEARNET_SYNC:$TARI_CLEARNET_SYNC" = false:false ]
-printf 'PASS: explicit overrides, selection, remote node guards\n'
+jq '.profile="performance" | .donation.tor=true' "$CONFIG_FILE" >"$WORK/next"
+cp "$WORK/next" "$CONFIG_FILE"
+render_env >"$WORK/render.log"
+read_render
+[ "$DONATION_TOR_ENABLED" = true ]
+jq '.profile="privacy" | .donation.tor=false' "$CONFIG_FILE" >"$WORK/next"
+cp "$WORK/next" "$CONFIG_FILE"
+render_env >"$WORK/render.log"
+read_render
+[ "$DONATION_TOR_ENABLED" = false ]
+jq '.profile="performance" | .donation.enabled=true' "$CONFIG_FILE" >"$WORK/next"
+cp "$WORK/next" "$CONFIG_FILE"
+[[ "$(describe_change PITHEAD_PROFILE balance performance)" == *"The project donation connects directly."* ]]
+jq '.donation.enabled=false' "$CONFIG_FILE" >"$WORK/next"
+cp "$WORK/next" "$CONFIG_FILE"
+[[ "$(describe_change PITHEAD_PROFILE balance performance)" != *"project donation connects"* ]]
+printf 'PASS: explicit overrides, selection, remote node guards, donation route\n'
 mkdir -p "$WORK/bin"
 cat >"$WORK/bin/p2pool" <<'EOF'
 #!/usr/bin/env bash

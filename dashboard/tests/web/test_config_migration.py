@@ -78,6 +78,41 @@ def test_mixed_config_migrates_to_balance_and_keeps_its_override():
     assert migrated["p2pool"]["clearnet"] is True
 
 
+PERFORMANCE_SHAPED = {
+    "monero": {"clearnet_initial_sync": True},
+    "tari": {"clearnet_initial_sync": True},
+    "p2pool": {"clearnet": True},
+    "network": {"tor_egress_firewall": False},
+    "xvb": {"tor": False},
+    "notifications": {"tor": False},
+    "tor": {"auto_heal": False},
+}
+
+
+def test_absent_donation_route_does_not_block_or_get_pinned():
+    migrated, changes = prepare_config(PERFORMANCE_SHAPED, REFERENCE, platform="diy")
+    assert migrated["profile"] == "performance"
+    assert "donation" not in migrated
+    assert not any("donation" in change for change in changes)
+
+
+def test_explicit_donation_route_counts_toward_the_inferred_profile():
+    cfg = {**PERFORMANCE_SHAPED, "donation": {"tor": True}}
+    migrated, _ = prepare_config(cfg, REFERENCE, platform="diy")
+    assert migrated["profile"] == "balance"
+    assert migrated["donation"]["tor"] is True
+    cfg = {**PERFORMANCE_SHAPED, "donation": {"tor": False}}
+    assert prepare_config(cfg, REFERENCE, platform="diy")[0]["profile"] == "performance"
+
+
+def test_donation_route_is_profile_governed_and_donation_switches_are_advanced():
+    assert "donation.tor" in TABLE["profiles"]["balance"]
+    assert "donation.tor" not in TIERS["essential"]
+    for leaf in ("donation.enabled", "donation.percent"):
+        assert leaf not in TABLE["profiles"]["balance"]
+        assert tiers_of(leaf) == []
+
+
 def test_every_reference_leaf_has_one_tier_and_every_tier_path_exists():
     found = list(leaves(REFERENCE))
     assert {"profile", "workers.list", "telegram.level"} <= set(found)

@@ -26,7 +26,12 @@ def build_config(
         if form.get("stratum_password") == "true"
         else default_of("p2pool.stratum_password", platform),
     }
-    tari_mode = s_("tari_mode") or tari_default or default_of("tari.mode", platform)
+    tari_mode = (
+        s_("tari_mode")
+        or ("local" if s_("tari_wallet") else None)
+        or tari_default
+        or default_of("tari.mode", platform)
+    )
     cfg["tari"]["mode"] = tari_mode
     if tari_mode != "off":
         cfg["tari"]["wallet_address"] = s_("tari_wallet")
@@ -51,9 +56,6 @@ def build_config(
     if form.get("monero_mode") != "remote" and form.get("prune") == "false":
         cfg["monero"]["prune"] = False
 
-    # Optional services: written ONLY when actually filled in. An empty ping_url silently
-    # disables the dead-man's switch the operator thinks they have; a half-configured
-    # Telegram fails validation on a blank they never meant to set.
     hc = s_("healthchecks_url")
     if hc:
         cfg["healthchecks"] = {"ping_url": hc}
@@ -76,4 +78,5 @@ def build_config(
 
     if "profile" in form or not (fast or form.get("stratum_password") == "true"):
         return select_profile(cfg, s_("profile") or "balance")
+    cfg["profile"] = "balance"
     return cfg

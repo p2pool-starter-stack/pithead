@@ -1,0 +1,14 @@
+{
+  "dashboard": {"auth": {"username": "admin"}, "host": "auto", "tari_required": false},
+  "local_miner": {"enabled": false},
+  "monero": {
+    "mode": "local",
+    "wallet_address": "48edfHu7V9Z84YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9URnRoJMk1j8nLwEVsaSWJ4fhdUyZijBGUicoD"
+  },
+  "profile": "balance",
+  "tari": {
+    "mode": "local",
+    "wallet_address": "126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+  },
+  "xvb": {"enabled": false}
+}

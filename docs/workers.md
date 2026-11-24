@@ -150,8 +150,9 @@ the internal wiring is untouched.
 
 ### Authentication
 
-New installs have **no stratum password**. The CLI and appliance setup wizards ask
-**Enable stratum password?**, default off. Choose Yes to generate one. Existing and restored
+New installs have **no stratum password**. The appliance setup wizard asks
+**Enable stratum password?**, default off; choose Yes to generate one. On DIY, set
+`p2pool.stratum_password` to `"auto"` or choose the Privacy profile. Existing and restored
 configurations retain their password setting; `"auto"` continues to reuse its saved secret.
 The proxy rejects a miner whose `pass` does not match a configured password.
 
@@ -540,8 +541,8 @@ setup once with a 30-minute timeout; a slow or failed miner cannot delay the com
 setup also provisions the miner once, after its stack-start prompt. Miner setup failures warn
 without failing stack startup. The rest of this section is the DIY flow.
 
-Opt in during `./pithead setup` (the prompt "Also mine on this machine with its spare CPU?", off by
-default), or set it in `config.json`:
+Opt in by setting `local_miner.enabled` in `config.json` (off by default on DIY; `./pithead setup`
+does not ask):
 
 ```json
 {

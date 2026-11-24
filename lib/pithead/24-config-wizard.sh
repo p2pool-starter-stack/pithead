@@ -6,15 +6,12 @@ ensure_config_exists() {
     fi
 
     log "$CONFIG_FILE not found. Starting interactive setup..."
-    # Fail fast if the core-key shortlist didn't ship with this checkout/bundle — the wizard's
-    # scope is defined by it (#502/#529), so a missing/corrupt file means the wizard itself is
-    # incomplete, not something to silently ignore.
     jq -e . "$CORE_KEYS_CONFIG" >/dev/null 2>&1 ||
         error "$CORE_KEYS_CONFIG is missing or not valid JSON (the wizard's core-key shortlist). Reinstall or redownload the release bundle."
     echo "Please provide the following details to generate a minimal configuration:"
 
     wizard_ask_core
-    wizard_ask_shape
+    wizard_ask_profile
     wizard_write_config
     chmod 600 "$CONFIG_FILE"
     log "$CONFIG_FILE created successfully."
@@ -33,137 +30,24 @@ wizard_ask_core() {
     done
     [ -n "$IN_MONERO_WALLET" ] || error "A Monero wallet address is required. Aborting."
 
-    echo ""
-    echo "--- Node Configuration ---"
-    read -r -p "Use LOCAL Monero node? (Y/n): " USE_LOCAL || true
-
-    IN_MONERO_USER="" IN_MONERO_PASS=""
-    if [[ ! "$USE_LOCAL" =~ ^[Nn] ]]; then
-        MONERO_MODE_WIZ="local"
-        echo "Local node selected."
-        # The local node's RPC credentials are internal to the stack, so we generate them rather
-        # than asking you to invent some. They're stored in config.json / .env if you ever need
-        # them (e.g. to attach a wallet). The same helpers back the auto-fill in
-        # parse_and_validate_config, so every path produces the same kind of creds.
-        IN_MONERO_USER=$(default_node_username)
-        IN_MONERO_PASS=$(generate_node_password)
-        log "Generated internal Monero node RPC credentials (saved in $CONFIG_FILE)."
-    else
-        MONERO_MODE_WIZ="remote"
-        echo "Remote node selected."
-        read -r -p "Enter Remote Node Host (IP or Domain): " REMOTE_HOST || true
-        read -r -p "Enter Remote RPC Port [18081]: " REMOTE_RPC || true
-        read -r -p "Enter Remote ZMQ Port [18083]: " REMOTE_ZMQ || true
-        REMOTE_RPC=$(wizard_port "$REMOTE_RPC" 18081)
-        REMOTE_ZMQ=$(wizard_port "$REMOTE_ZMQ" 18083)
-
-        read -r -p "Does the remote node require authentication? (y/N): " REMOTE_AUTH || true
-        if [[ "$REMOTE_AUTH" =~ ^[Yy] ]]; then
-            read -r -p "Enter Remote Node Username: " IN_MONERO_USER || true
-            read -r -s -p "Enter Remote Node Password: " IN_MONERO_PASS || true
-            echo ""
-        fi
-    fi
+    MONERO_MODE_WIZ="local"
+    IN_MONERO_USER=$(default_node_username)
+    IN_MONERO_PASS=$(generate_node_password)
+    log "Using the bundled Monero node; its internal RPC credentials were generated and saved in $CONFIG_FILE."
 
     wizard_ask_tari
 
     IN_DASH_USER="admin"
     IN_DASH_PASS=$(generate_node_password) || error "Could not generate a dashboard password. Setup aborted."
     [[ "$IN_DASH_PASS" =~ ^[A-Za-z0-9]{32}$ ]] || error "Could not generate a dashboard password. Setup aborted."
-
 }
 
-wizard_port() {
-    is_valid_port "$1" && printf '%s' "$1" || printf '%s' "$2"
-}
-
-# The Enter-through answer to "Merge-mine Tari?" (#1916, #3333). Tari merge-mining is an opt-in
-# beta for new installs: the node and wallet are pre-release upstream builds, the node over Tor is
-# offline for part of each day, and the bundled node adds a 200 GiB budget on top of Monero's. So
-# Enter means "off". The one exception is a data disk that already holds a Tari chain
-# (wizard_tari_chain_held): a reinstall that keeps its data must not silently drop merge-mining.
-# Sets WIZ_TARI_DEFAULT to "local" or "off", and PRINTS the one-line reason for it — the operator
-# reads the measurement, not just the verdict it produced. Printing rather than returning the reason
-# is deliberate: a `$(...)` caller would run this in a subshell, where a second global could be set
-# and silently lost.
-#
-# Budget figures and mount resolution come from disk_component_gib / disk_fs_mount, the same source
-# doctor's Disk check and preflight_resources read. ./data is the location because config.json —
-# the file that could move a data_dir — is what this wizard is being run to write. The free-space
-# line is information for someone who answers Yes; it no longer decides the default.
-# Args: <monero_mode> — "remote" leaves Monero's chain out of the budget; it lives on another host.
-wizard_tari_disk_default() {
-    local monero_mode="$1" mount avail_kb avail_h need_gib fit
-    if wizard_tari_chain_held; then
-        WIZ_TARI_DEFAULT="local"
-        echo "Disk: a Tari chain is already on this machine's data disk, so keeping merge-mining on is the default."
-        return 0
-    fi
-    WIZ_TARI_DEFAULT=$(default_of tari.mode)
-    need_gib=$(wizard_stack_need_gib "$monero_mode")
-    mount=$(disk_fs_mount "$PWD/data" 2>/dev/null) || mount=""
-    avail_kb=""
-    if [ -n "$mount" ]; then
-        avail_kb=$(df -P "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_kb=""
-    fi
-    if [ -z "$avail_kb" ]; then
-        echo "Disk: could not read the free space where $PWD/data will live. The whole stack with the bundled Tari node needs ~${need_gib} GiB there. Tari merge-mining is a beta, so declining is the default."
-        return 0
-    fi
-    avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_h=""
-    if [ "$avail_kb" -ge "$((need_gib * 1048576))" ] 2>/dev/null; then fit="it fits"; else fit="it does not fit"; fi
-    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GiB there — $fit. Tari merge-mining is a beta, so declining is the default."
-}
-
-# Stage 1b (#1855/#1916): does this machine merge-mine Tari at all, and against whose node?
-#
-# The CLI wizard had no answer that meant "I do not merge-mine": it demanded a payout address and
-# aborted without one, and it wrote no tari.mode, so an operator who did not want Tari had to know
-# that tari.mode "off" existed and hand-edit config.json after setup. This asks the same three-way
-# question the browser wizard asks, in the same order and the same place — after the Monero node
-# question, before the pool tier (dashboard/.../wizard/setup.mjs) — so the two setup paths cannot
-# answer it in different dialects. The Monero answer comes first for a second reason: it decides
-# whether Monero's chain counts against the disk the default is derived from.
-#
-# A decline asks nothing further and stores no payout address: a machine that merge-mines nothing
-# has nowhere to be paid, and parse_and_validate_config already drops the address from the required
-# set when the mode is "off" (#1855). Sets TARI_MODE_WIZ, IN_TARI_WALLET, TARI_REMOTE_HOST,
-# TARI_REMOTE_GRPC.
 wizard_ask_tari() {
-    local dflt
-    IN_TARI_WALLET="" TARI_REMOTE_HOST="" TARI_REMOTE_GRPC=""
-
+    IN_TARI_WALLET="" TARI_MODE_WIZ="off"
     echo ""
-    echo "--- Tari merge-mining ---"
-    echo "Merge-mining earns Tari from the same work that mines Monero, so it costs no hashrate —"
-    echo "but it needs its own payout address and a Tari base node. This is a beta: the Tari"
-    echo "software is a pre-release build, and the bundled node downloads and syncs a Tari chain"
-    echo "over Tor, which takes days."
-    echo "  1) No — mine Monero only"
-    echo "  2) Yes (beta) — run the bundled Tari node on this machine"
-    echo "  3) Yes (beta) — use a Tari node I already run"
-    wizard_tari_disk_default "$MONERO_MODE_WIZ" # prints the Disk: line, sets WIZ_TARI_DEFAULT
-    dflt=2
-    [ "$WIZ_TARI_DEFAULT" == "off" ] && dflt=1
-    read -r -p "Merge-mine Tari? [$dflt]: " IN_TARI_MODE || true
-    case "$(printf '%s' "$IN_TARI_MODE" | tr 'A-Z' 'a-z')" in
-    "") TARI_MODE_WIZ="$WIZ_TARI_DEFAULT" ;;
-    1 | n | no | off) TARI_MODE_WIZ="off" ;;
-    2 | y | yes | local) TARI_MODE_WIZ="local" ;;
-    3 | remote) TARI_MODE_WIZ="remote" ;;
-    *)
-        echo "  Not 1/2/3 — taking the default ($dflt)." >&2
-        TARI_MODE_WIZ="$WIZ_TARI_DEFAULT"
-        ;;
-    esac
-
-    if [ "$TARI_MODE_WIZ" == "off" ]; then
-        log "Tari merge-mining is OFF: no Tari node runs, P2Pool drops its merge-mine arguments, and no Tari payout address is needed. Turn it on later by setting tari.mode in $CONFIG_FILE and running '$0 apply', or from the dashboard's Configuration view."
-        return 0
-    fi
-
+    echo "Tari merge-mining is optional and a beta: it earns Tari from the same work that mines Monero, but the bundled node syncs a Tari chain over Tor, which takes days."
     while :; do
-        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || error "End of input while reading the Tari payout address. Aborting."
+        read -r -p "Enter Tari Wallet Address (Enter to skip and mine Monero only): " IN_TARI_WALLET || error "End of input while reading the Tari payout address. Aborting."
         [ -z "$IN_TARI_WALLET" ] && break
         case "$(tari_address_type "$IN_TARI_WALLET")" in
         ok | unchecked) break ;;
@@ -172,71 +56,35 @@ wizard_ask_tari() {
         *) echo "  ✗ Not a valid Tari address (base58 or emoji form). Try again." >&2 ;;
         esac
     done
-    [ -n "$IN_TARI_WALLET" ] ||
-        error "A Tari payout address is required to merge-mine Tari — the rewards would have nowhere to go. Answer 1 (No) to mine Monero only. Aborting."
-
-    if [ "$TARI_MODE_WIZ" == "remote" ]; then
-        read -r -p "Enter Tari Node Host (IP or Domain): " TARI_REMOTE_HOST || true
-        read -r -p "Enter Tari gRPC Port [18142]: " TARI_REMOTE_GRPC || true
-        TARI_REMOTE_GRPC=$(wizard_port "$TARI_REMOTE_GRPC" 18142)
+    if [ -z "$IN_TARI_WALLET" ]; then
+        log "Tari merge-mining is OFF. Turn it on later by setting tari.mode and tari.wallet_address in $CONFIG_FILE and running '$0 apply'."
+        return 0
     fi
-    log "Tari merge-mining is ON, against the $TARI_MODE_WIZ Tari node."
+    TARI_MODE_WIZ="local"
+    log "Tari merge-mining is ON, with the bundled Tari node."
 }
 
-# Stage 2 (#502): a FEW overarching "how should this run" questions, each Enter-through and each
-# driving a whole cluster of keys — never one prompt per key. Sets globals consumed by
-# wizard_write_config: CLEARNET_SYNC, ONION_ENABLED, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
-wizard_ask_shape() {
+wizard_ask_profile() {
     echo ""
-    echo "--- A Few More (Enter for the default) ---"
-
-    read -r -p "Enable fast initial sync over clearnet for local chains? (y/N): " IN_CLEARNET || true
-    CLEARNET_SYNC=false
-    if [[ "$IN_CLEARNET" =~ ^[Yy] ]]; then
-        CLEARNET_SYNC=true
-        local networks=""
-        [ "$MONERO_MODE_WIZ" == "local" ] && networks="the Monero network"
-        if [ "$TARI_MODE_WIZ" == "local" ]; then
-            networks="${networks:+$networks and }the Tari network"
-        fi
-        [ -z "$networks" ] || warn "Fast sync exposes your IP address to $networks until the initial sync finishes."
-    fi
-
-    read -r -p "Reach the dashboard from outside your LAN over Tor? (y/N): " IN_ONION || true
-    ONION_ENABLED=false
-    [[ "$IN_ONION" =~ ^[Yy] ]] && ONION_ENABLED=true
-
-    # Alerts need an external secret (a bot token), so this is offered, not asked outright — a
-    # trusting operator just hits Enter and sees the doc pointer at the end instead.
-    TELEGRAM_BOT_TOKEN="" TELEGRAM_CHAT_ID=""
-    read -r -p "Set up Telegram alerts (node down, block found, low hashrate) now? (y/N): " IN_TELEGRAM || true
-    if [[ "$IN_TELEGRAM" =~ ^[Yy] ]]; then
-        read -r -p "Telegram bot token: " TELEGRAM_BOT_TOKEN || true
-        read -r -p "Telegram chat id: " TELEGRAM_CHAT_ID || true
-    fi
-
-    LOCAL_MINER=$(default_of local_miner.enabled)
-    local miner_prompt="y/N"
-    [ "$LOCAL_MINER" != true ] || miner_prompt="Y/n"
-    read -r -p "Also mine on this machine with its spare CPU (co-locate a RigForge worker)? ($miner_prompt): " IN_LOCAL_MINER || true
-    case "$IN_LOCAL_MINER" in
-    [Yy]*) LOCAL_MINER=true ;;
-    [Nn]*) LOCAL_MINER=false ;;
+    echo "--- Profile ---"
+    echo "  1) Performance — fastest sync and best yield. Nothing leaves through Tor, so fast sync shows your IP address to the Monero and Tari networks."
+    echo "  2) Balance — everything leaves through Tor. This is the default."
+    echo "  3) Privacy — Balance, plus P2Pool peers only over onion connections and a generated rig password and worker token."
+    read -r -p "Profile [2]: " IN_PROFILE || true
+    case "$(printf '%s' "$IN_PROFILE" | tr 'A-Z' 'a-z')" in
+    1 | performance) WIZ_PROFILE=performance ;;
+    "" | 2 | balance) WIZ_PROFILE=balance ;;
+    3 | privacy) WIZ_PROFILE=privacy ;;
+    *)
+        echo "  Not 1/2/3 — taking Balance." >&2
+        WIZ_PROFILE=balance
+        ;;
     esac
-
-    wizard_ask_stratum_password
-}
-
-wizard_ask_stratum_password() {
-    read -r -p "Enable stratum password? (y/N): " IN_STRATUM_AUTH || true
-    WIZ_STRATUM_PASSWORD=""
-    if [[ "$IN_STRATUM_AUTH" =~ ^[Yy] ]]; then
-        WIZ_STRATUM_PASSWORD=$(openssl rand -hex 12) || error "Could not generate the stratum password. Setup stopped."
-        [[ "$WIZ_STRATUM_PASSWORD" =~ ^[0-9a-f]{24}$ ]] || error "Could not generate the stratum password. Setup stopped."
+    if [ "$WIZ_PROFILE" = performance ]; then
+        warn "Performance syncs the Monero and Tari chains over clearnet: your IP address is visible to those networks until the initial sync finishes."
     fi
 }
 
-# Assembles config.json from the globals wizard_ask_core/wizard_ask_shape set, and writes it.
 wizard_write_config() {
     local cfg
     cfg=$(jq -n \
@@ -246,62 +94,22 @@ wizard_write_config() {
         --arg mu "$IN_MONERO_USER" \
         --arg mp "$IN_MONERO_PASS" \
         --arg tmode "$TARI_MODE_WIZ" \
-        --arg stratum_password "${WIZ_STRATUM_PASSWORD:-}" \
         '$defaults * {monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
           tari: {mode: $tmode},
-          p2pool: {stratum_password: $stratum_password},
           dashboard: {secure: true}}')
 
     if [ "$TARI_MODE_WIZ" != "off" ]; then
         cfg=$(jq --arg tw "$IN_TARI_WALLET" '.tari.wallet_address = $tw' <<<"$cfg")
     fi
 
-    if [ "$TARI_MODE_WIZ" == "remote" ]; then
-        cfg=$(jq --arg h "$TARI_REMOTE_HOST" --argjson g "${TARI_REMOTE_GRPC:-18142}" \
-            '.tari.remote = {host: $h, grpc_port: $g}' <<<"$cfg")
-    fi
-
-    if [ "$MONERO_MODE_WIZ" == "remote" ]; then
-        cfg=$(jq --arg h "$REMOTE_HOST" --argjson rpc "${REMOTE_RPC:-18081}" --argjson zmq "${REMOTE_ZMQ:-18083}" \
-            '.monero.remote = {host: $h, rpc_port: $rpc, zmq_port: $zmq}' <<<"$cfg")
-    fi
-
     if [ -n "$IN_DASH_PASS" ]; then
         cfg=$(jq --arg u "$IN_DASH_USER" --arg p "$IN_DASH_PASS" '.dashboard.auth = {username: $u, password: $p}' <<<"$cfg")
     fi
 
-    cfg=$(jq --argjson fast "$CLEARNET_SYNC" \
-        '.monero.clearnet_initial_sync = ($fast and .monero.mode != "remote") |
-         .tari.clearnet_initial_sync = ($fast and .tari.mode == "local")' <<<"$cfg")
-
-    if [ "$ONION_ENABLED" = true ]; then
-        # Password (if still unset) and client-auth are handled downstream by
-        # ensure_onion_password, which setup() runs right after ensure_config_exists.
-        cfg=$(jq '.dashboard.onion = {enabled: true}' <<<"$cfg")
-    fi
-
-    if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
-        cfg=$(jq --arg t "$TELEGRAM_BOT_TOKEN" --arg c "$TELEGRAM_CHAT_ID" '.telegram = {bot_token: $t, chat_id: $c}' <<<"$cfg")
-    fi
-
-    cfg=$(jq --argjson enabled "${LOCAL_MINER:-$(default_of local_miner.enabled)}" \
-        '.local_miner.enabled = $enabled' <<<"$cfg")
-
     (
         umask 077
         printf '%s\n' "$cfg" >"$CONFIG_FILE"
-        if [ -n "${WIZ_PROFILE:-}" ]; then
-            profile_select "$CONFIG_FILE" "$WIZ_PROFILE"
-        else
-            local tmp
-            tmp=$(mktemp) || return 1
-            jq '
-                .profile="balance"
-                | if .p2pool.stratum_password == "" then del(.p2pool.stratum_password) else . end
-                | if .monero.clearnet_initial_sync == false then del(.monero.clearnet_initial_sync) else . end
-                | if .tari.clearnet_initial_sync == false then del(.tari.clearnet_initial_sync) else . end' "$CONFIG_FILE" >"$tmp" && cat "$tmp" >"$CONFIG_FILE"
-            rm -f "$tmp"
-        fi
+        profile_select "$CONFIG_FILE" "${WIZ_PROFILE:-balance}"
     )
 }
 
@@ -313,7 +121,9 @@ wizard_print_pointer() {
         echo "Save it now — it is also stored in your owner-only config.json."
     fi
     echo "That's the core config — everything else (ports, XvB, alerts, energy pricing, per-worker"
-    echo "overrides, ...) keeps its default. Want on-chain payout confirmation, a per-kWh cost, or"
+    echo "overrides, ...) keeps its default. A remote Monero or Tari node, dashboard onion access,"
+    echo "Telegram alerts, a local miner and a stratum password are set later in $CONFIG_FILE or the"
+    echo "dashboard's Settings. Want on-chain payout confirmation, a per-kWh cost, or"
     echo "per-worker overrides? Set monero.view_key / dashboard.energy.cost_per_kwh / workers.list in"
     echo "$CONFIG_FILE and run '$0 apply' — see $DOCS_URL/docs/configuration.md, or use the dashboard's config editor."
 }
