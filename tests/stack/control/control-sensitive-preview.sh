@@ -97,10 +97,9 @@ jq '.donation.enabled=true | .donation.percent=1 | .donation.tor=false | .networ
 preview_only "$C/cand.json"
 assert_eq "donation off Tor with the firewall off still names the exposure" "$(previewed_with "Project donation OFF Tor" "project endpoint sees this host's IP")" "true"
 assert_eq "donation off Tor with the firewall off claims no scoped exception" "$(previewed_with "exception is per container")" "false"
-jq '.donation={"enabled":true,"percent":1,"tor":false}' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
+cp "$C/config.json" "$C/config.keep"
+jq '.donation={"enabled":true,"percent":1,"tor":false}' "$C/config.keep" >"$C/config.json"
 exposure_previews "donation back on Tor names the restored posture" '.donation.tor=true' \
     "Project donation back on Tor" "Tor exit"
-jq 'del(.donation)' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
+mv "$C/config.keep" "$C/config.json"
 unset -f preview_only previewed_with exposure_previews
