@@ -26,13 +26,14 @@ concurrency:
 
 jobs:
   shell-block:
-    name: Shell tests (pithead suite, block ${{ matrix.block }})
+    name: Shell tests (pithead suite, block ${{ matrix.block }}${{ matrix.impl != '' && ', every piece selected' || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         block: [1, 2, 3, 4, 5]
+        impl: ["", "help,status,payout-keys,config-document,caddy-render,env-render,doctor"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -53,6 +54,7 @@ jobs:
         run: bash tests/stack/run.sh "$BLOCK"
         env:
           BLOCK: ${{ matrix.block }}
+          PITHEAD_TEST_IMPL: ${{ matrix.impl }}
 
   shell-fragment:
     name: Shell prerequisite (${{ matrix.fragment }})
@@ -186,6 +188,8 @@ jobs:
         run: bash tests/stack/standalone/test_data_reset.sh
       - name: Run directory line-break regression
         run: bash tests/stack/standalone/test_directory_linebreaks.sh
+      - name: Run per-piece implementation launcher suite
+        run: bash tests/stack/standalone/test_impl_launcher.sh
       - name: Run OS-update recovery suite
         # #1050 dead-end states re-arm and report.
         run: bash tests/stack/standalone/test_os_update_recovery.sh
