@@ -41,7 +41,6 @@ from mining_dashboard.wizard.defaults import (
     explicit_wizard_config,
     fast_sync_warning,
     new_machine_answers,
-    tari_disk_default,
 )
 from mining_dashboard.wizard.form import build_config
 from mining_dashboard.wizard_config import (
@@ -396,16 +395,7 @@ async def _submit_locked(request: web.Request) -> web.Response:
             cfg = documents.loads(raw)
             documents.reject_placeholders(cfg)
         else:
-            cfg = build_config(
-                dict(form),
-                platform=host_platform,
-                tari_default=tari_disk_default(
-                    _spool_json("disk-budget.json") or {},
-                    _disks(),
-                    str(form.get("disk", "")),
-                    str(form.get("wipe", "keep")),
-                ),
-            )
+            cfg = build_config(dict(form), platform=host_platform)
         if not isinstance(cfg, dict):
             raise ValueError("the top level must be a JSON object")
     except documents.ConfigDocumentError as exc:

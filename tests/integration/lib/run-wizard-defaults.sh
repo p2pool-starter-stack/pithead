@@ -48,11 +48,11 @@ cli_wizard_defaults_trial() {
     run_cli_wizard_eof "$monero" "$tari" || return 1
     out=$(rx "PITHEAD_CONFIG_FILE=\"\$PWD/.itest-wizard-defaults.json\"
         source $(quote_arg "$IT_PITHEAD")
-        wizard_tari_disk_default local >/dev/null
+        wizard_answers=1
         {
-            printf 'garbage\\n%s\\n\\n2\\ngarbage\\n%s\\n' $(quote_arg "$monero") $(quote_arg "$tari")
-            printf '\\n\\n\\n\\n'
-        } | { wizard_ask_core; wizard_ask_shape; wizard_write_config; wizard_print_pointer; }
+            printf 'garbage\\n%s\\ngarbage\\n%s\\n' $(quote_arg "$monero") $(quote_arg "$tari")
+            printf '\\n'
+        } | { wizard_ask_core; wizard_ask_profile; wizard_write_config; wizard_print_pointer; }
         jq -e '.profile == \"balance\" and .xvb.enabled == false and
             (.monero | has(\"clearnet_initial_sync\") | not) and
             .tari.mode == \"local\" and .dashboard.tari_required == false and

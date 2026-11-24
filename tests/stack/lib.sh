@@ -380,12 +380,9 @@ EOF
 
 run_pending() { (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead control-run-pending 2>&1); }
 
-# A small helper so tests can drive the whole Q&A -> write in one sourced call, sharing the globals
-# wizard_ask_core/wizard_ask_shape set with wizard_write_config (each function's locals don't
-# survive a return, so they must run in the same invocation).
 run_wizard() {
     wizard_ask_core
-    wizard_ask_shape
+    wizard_ask_profile
     wizard_write_config
     wizard_print_pointer
 }

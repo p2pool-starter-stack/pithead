@@ -46,6 +46,7 @@ def migration_due(cfg: dict) -> bool:
 
 def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
     rows = TABLE["profiles"]
+    explicit_only = set(TABLE["migrations"][TARGET]["explicit_only"])
     governed = list(rows["balance"])
     defaults = effective_defaults(platform)
     v2 = {
@@ -61,6 +62,8 @@ def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
         return v2[path] if path in v2 else _get(defaults, path)
 
     def clash(path, name):
+        if path in explicit_only and _get(cfg, path) is None:
+            return False
         row = rows[name][path]
         return old(path) == "" if row == "auto" else old(path) != row
 
@@ -72,7 +75,7 @@ def migrate_to_2_1(cfg: dict, platform: str = "diy") -> tuple[dict, list[str]]:
     migrated["profile"] = chosen
     changes = [f"profile → {chosen}"]
     for path in sorted({*governed, *v2}):
-        if _get(cfg, path) is not None:
+        if _get(cfg, path) is not None or path in explicit_only:
             continue
         new = rows[chosen][path] if path in rows[chosen] else _get(defaults, path)
         if old(path) != new:

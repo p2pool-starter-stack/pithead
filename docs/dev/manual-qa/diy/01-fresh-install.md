@@ -120,15 +120,9 @@ This part tests the path a new user takes, from an empty machine to a stack that
 4. At the payout prompt, paste the QA **subaddress** first.
 5. When it asks again, paste the QA **primary** address.
 6. Answer the remaining questions like this:
-   - Monero node: local.
-   - Pool: `mini`.
-   - Tari: press Enter for the default (No). Keep this Monero-only run separate from 1.4b and 1.4c.
-   - The [stratum](../README.md#glossary) password question, `Enable stratum password?`: the default (off).
-   - The faster first sync: decline.
-   - [Tor](../README.md#glossary) dashboard access: decline.
-   - Telegram: decline.
-   - Local mining: decline.
-   - setup asks **no** hostname question: DIY setup never prompts for a name and uses this machine's hostname.
+   - Tari wallet address: press Enter to leave Tari off. Keep this Monero-only run separate from 1.4b.
+   - Profile: press Enter for Balance.
+   - setup asks **no** question about the Monero node, pool, stratum password, faster first sync, [Tor](../README.md#glossary) dashboard access, Telegram, local mining or a hostname: DIY setup uses the local node, the `mini` pool and this machine's hostname.
    - `Modify GRUB for persistent HugePages now?`: answer `y`.
 7. If setup does not ask about GRUB (HugePages are already persistent), it asks `Start Pithead now? (Y/n)` instead: answer `y`, and skip the reboot in 1.5.
 8. Write down the dashboard login the wizard shows. It is shown once, and you need it in 1.8.
@@ -142,10 +136,11 @@ This part tests the path a new user takes, from an empty machine to a stack that
 
 - The subaddress is refused with an explanation, and you are asked again.
 - Per #3099, #3092 and #3090:
-  - The Tari question is labelled beta and says a yes syncs a Tari chain over Tor. Enter means No on any disk; the wizard says declining is the default. A Yes asks for the Tari address and writes `dashboard.tari_required: false`.
+  - The wizard asks exactly three questions: the Monero wallet, the Tari wallet and the profile.
+  - The Tari question is labelled beta and says a filled address syncs a Tari chain over Tor. Enter leaves Tari off on any disk. A filled address writes `tari.mode: local` and `dashboard.tari_required: false`.
   - The wizard does not ask about the XvB raffle and leaves it off.
   - It generates a dashboard login and shows it once.
-  - It keeps the first sync on Tor unless you opt in. The fast-sync offer covers each chain the stack runs locally, and warns that it exposes your IP to the Monero network and, if Tari is on, the Tari network.
+  - Enter on the profile question records Balance, which keeps the first sync on Tor. Answering `1` (Performance) warns that the first sync exposes your IP to the Monero and Tari networks.
   - At the end it prints the LAN pool URL and says `none set` for the stratum password.
 - Setup also checks dependencies.
 - It warns, but does not stop, if disk or RAM is below the documented floor.
@@ -190,7 +185,7 @@ Per #3333, #3099 and #3092:
 **What you do:**
 
 1. Use a separate fresh box or VM cloned from the clean snapshot, with no `config.json` or retained chain data. Keep the default run from 1.4–1.4a intact.
-2. Repeat 1.1–1.4, but explicitly choose Yes (beta) for Tari and provide the QA Tari address. Decline faster first sync.
+2. Repeat 1.1–1.4, but enter the QA Tari address at the Tari question and press Enter for Balance.
 3. Run the mode query from 1.4a, then print the mining requirement:
 
    ```bash
@@ -206,21 +201,6 @@ Per #3333, #3099 and #3092:
 - Monero mining starts once Monero is synced, without waiting for Tari.
 
 **Record**: PASS, FAIL or N/A separately from the default run.
-
-### 1.4c Reinstall with a retained Tari chain
-
-**What you do:**
-
-1. On a disposable reinstall fixture, keep an existing `data/tari` chain occupying at least half the Tari disk budget (100 GiB). Keep this separate from the fresh-box runs.
-2. With the old stack stopped and its config backed up outside the install directory, remove `config.json` and repeat 1.4. Press Enter at the Tari question and provide the QA Tari address when asked.
-3. Run the mode query from 1.4a.
-
-**What you should see:**
-
-- The wizard says keeping merge-mining on is the default, and `tari_mode` is `local`.
-- This exception follows retained chain data, not free disk. An existing config or an upgrade keeps its configured mode; it is not a new wizard run.
-
-**Record**: PASS, FAIL or N/A separately from the fresh-box runs. Record N/A if no retained-chain fixture is available.
 
 ### 1.5 HugePages reboot
 

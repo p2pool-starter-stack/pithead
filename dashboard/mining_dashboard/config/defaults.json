@@ -165,6 +165,7 @@
       "p2pool.clearnet": true,
       "network.tor_egress_firewall": false,
       "xvb.tor": false,
+      "donation.tor": false,
       "notifications.tor": false,
       "tor.auto_heal": false,
       "p2pool.stratum_password": "",
@@ -178,6 +179,7 @@
       "p2pool.clearnet": false,
       "network.tor_egress_firewall": true,
       "xvb.tor": true,
+      "donation.tor": true,
       "notifications.tor": true,
       "tor.auto_heal": true,
       "p2pool.stratum_password": "",
@@ -191,6 +193,7 @@
       "p2pool.clearnet": false,
       "network.tor_egress_firewall": true,
       "xvb.tor": true,
+      "donation.tor": true,
       "notifications.tor": true,
       "tor.auto_heal": true,
       "p2pool.stratum_password": "auto",
@@ -245,6 +248,9 @@
   },
   "migrations": {
     "2.1.0": {
+      "explicit_only": [
+        "donation.tor"
+      ],
       "v2_absent": [
         {
           "path": "tari.mode",

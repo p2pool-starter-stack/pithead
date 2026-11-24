@@ -5,6 +5,7 @@ def unset($c; $path): ($c | getpath($path | p)) == null;
 . as $cfg
 | ($table.profiles.balance | keys) as $governed
 | ($table.values * (if $platform == "appliance" then $table.appliance else {} end)) as $defaults
+| ($table.migrations["2.1.0"].explicit_only) as $explicit
 | ($table.migrations["2.1.0"].v2_absent | map(select((.platform // $platform) == $platform))) as $v2
 | def old($path):
     if unset($cfg; $path) then
@@ -12,13 +13,14 @@ def unset($c; $path): ($c | getpath($path | p)) == null;
     else ($cfg | getpath($path | p)) end;
   def clash($path; $name):
     ($table.profiles[$name][$path]) as $row
-    | if $row == "auto" then old($path) == "" else old($path) != $row end;
+    | if ($explicit | index($path)) != null and unset($cfg; $path) then false
+      elif $row == "auto" then old($path) == "" else old($path) != $row end;
   (["balance", "performance", "privacy"]
       | map(select(. as $name | [$governed[] as $k | select(clash($k; $name))] | length == 0))
       | .[0] // "balance") as $chosen
 | ($table.profiles[$chosen]) as $row
 | reduce (($governed + ($v2 | map(.path))) | unique)[] as $path (.profile = $chosen;
-    if unset($cfg; $path) then
+    if unset($cfg; $path) and (($explicit | index($path)) == null) then
         (if ($row | has($path)) then $row[$path] else ($defaults | getpath($path | p)) end) as $new
         | if old($path) != $new then setpath($path | p; old($path)) else . end
     else . end)'

@@ -5,9 +5,9 @@ echo "== unit: payout address rejection messages and retries =="
 WA="$SANDBOX/wizard-addresses"
 mkdir -p "$WA/retry"
 printf '%s\n' "$VALID_SUBADDR" "$VALID_INTEGRATED" "${VALID_PRIMARY:0:50}B${VALID_PRIMARY:51}" \
-    garbage "$VALID_PRIMARY" '' 2 "${VALID_TARI:0:90}B" \
+    garbage "$VALID_PRIMARY" "${VALID_TARI:0:90}B" \
     f26J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5Cb \
-    garbage "$VALID_TARI" '' '' '' '' |
+    garbage "$VALID_TARI" '' |
     run_sourced "$WA/retry" run_wizard >"$WA/retry/stdout" 2>"$WA/retry/stderr"
 assert_rc "wizard saves after all address retries" "$?" 0
 wa_err=$(cat "$WA/retry/stderr")
@@ -37,7 +37,7 @@ for wa_chain in monero tari; do
             printf '{ "preserve": "existing configuration" }\n\n' >"$wa_dir/original"
             [ "$wa_existing" = absent ] || cp "$wa_dir/original" "$wa_dir/config.json"
             {
-                [ "$wa_chain" = monero ] || printf '%s\n\n2\n' "$VALID_PRIMARY"
+                [ "$wa_chain" = monero ] || printf '%s\n' "$VALID_PRIMARY"
                 case "$wa_eof" in
                 empty) : ;;
                 rejected) printf 'garbage\n' ;;

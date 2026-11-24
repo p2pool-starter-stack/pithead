@@ -22,6 +22,13 @@ def test_profile_defaults_and_explicit_overrides(profile):
     assert cfg["p2pool"]["clearnet"] is False
 
 
+@pytest.mark.parametrize("profile", ["performance", "balance", "privacy"])
+def test_donation_route_follows_the_profile_and_an_explicit_value_wins(profile):
+    assert profile_config({"profile": profile})["donation"]["tor"] is (profile != "performance")
+    explicit = profile_config({"profile": profile, "donation": {"tor": profile == "performance"}})
+    assert explicit["donation"]["tor"] is (profile == "performance")
+
+
 def test_selection_clears_governed_values_and_keeps_unrelated_values():
     cfg = {"p2pool": {"clearnet": False, "pool": "nano"}, "workers": {"api_token": "old"}}
     selected = select_profile(cfg, "privacy")

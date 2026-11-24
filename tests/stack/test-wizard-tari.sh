@@ -1,21 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# The CLI wizard's Tari merge-mining question (#1916). Its own domain rather than more of
-# test-wizard-setup.sh, which is at its docs/dev/file-budget.tsv ceiling, and because this is one
-# coherent behaviour: whether './pithead setup' can decline Tari at all, and what it then writes.
-#
-# Before #1916 there was no answer that meant "I do not merge-mine". The wizard demanded a payout
-# address, aborted without one, and wrote no tari.mode — and a missing tari.mode parses as "local"
-# (lib/pithead/28-parse-and-validate-config.sh, the default that keeps a 1.x upgrade merge-mining),
-# so the only way to decline was to hand-edit config.json after setup and re-run apply.
-WALLET="${WALLET:-$VALID_PRIMARY}" # exactly build_val_sandbox's own default; a no-op under run.sh
+WALLET="${WALLET:-$VALID_PRIMARY}"
 
-echo "== unit: the Tari question's prompt count is pinned (#1916) =="
-# Same reasoning as test-wizard-setup.sh's pins for the other two stages: every Enter-through answer
-# looks alike, so a prompt added here would silently eat one more blank line. Four: the mode, the
-# payout address, and the remote node's host and gRPC port.
 tari_reads=$(awk '/^wizard_ask_tari\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
-assert_eq "wizard_ask_tari has exactly 4 read prompts (mode, payout address, remote host, remote gRPC port)" "$tari_reads" "4"
+assert_eq "wizard_ask_tari has exactly 1 read prompt (the payout address)" "$tari_reads" "1"
 
 # A df stub on PATH so the disk-derived default is decided by the fixture, not by whatever the
 # machine running the suite happens to have free. Every query answers for one filesystem mounted at
@@ -36,122 +24,52 @@ chmod +x "$WT/bin/df"
 WT_ROOMY_KB=629145600 WT_ROOMY_H=600G
 WT_SMALL_KB=104857600 WT_SMALL_H=100G
 
-# Drive the whole wizard with a scripted disk and scripted answers. Prints the wizard's own output;
-# the config it wrote is left at $WT/<name>/config.json. Answer order is wizard_ask_core's:
-# Monero address, local-node y/n, [remote node details], THEN the Tari block, then pool tier,
-# dashboard login, and wizard_ask_shape's four.
-wt_run() { # <name> <free-kb> <free-h> <answers-as-printf-%b>
+wt_run() {
     local d="$WT/$1"
     mkdir -p "$d"
     rm -f "$d/config.json"
-    printf '%b' "$4" | PATH="$WT/bin:$PATH" WDF_KB="$2" WDF_H="$3" run_sourced "$d" run_wizard 2>&1
+    printf '%b' "$2" | run_sourced "$d" run_wizard 2>&1
 }
 wt_cfg() { cat "$WT/$1/config.json" 2>/dev/null; }
 
 cat >"$WT/bin/du" <<'DU'
 #!/usr/bin/env bash
-# WDU_KB stands in for the size of a Tari chain; unset, the real du answers.
 if [ -n "${WDU_KB:-}" ]; then printf '%s\t%s\n' "$WDU_KB" "${*: -1}"; else exec /usr/bin/du "$@"; fi
 DU
 chmod +x "$WT/bin/du"
 
-echo "== unit: Enter-through is NO on a new install, and tari.mode is written EXPLICITLY (#1916, #3333) =="
-for size in ROOMY SMALL; do
-    kb="WT_${size}_KB" h="WT_${size}_H"
-    out="$(wt_run "default-$size" "${!kb}" "${!h}" "$WALLET\n\n\n\n\n\n\n\n\n\n")"
-    c="$(wt_cfg "default-$size")"
-    assert_eq "$size disk Enter-through: tari.mode is written, and it is off" "$(jq -r '.tari.mode' <<<"$c")" "off"
-    assert_eq "$size disk Enter-through: NO tari.wallet_address — nothing merge-mines, so nothing is paid" \
-        "$(jq -r '.tari | has("wallet_address")' <<<"$c")" "false"
-    assert_eq "$size disk Enter-through: tari carries the mode and nothing else" \
-        "$(jq -rc '.tari | keys' <<<"$c")" '["mode"]'
-    assert_contains "$size disk: the decline says what it turned off and how to turn it back on" "$out" "Tari merge-mining is OFF"
-    assert_contains "$size disk: and points at the key that does it" "$out" "tari.mode"
-    assert_contains "$size disk: the question calls it a beta" "$out" "Yes (beta)"
-    assert_not_contains "$size disk: the verdict never says running it is the default" "$out" "running it is the default"
-    assert_contains "$size disk: the verdict says declining is the default" "$out" "declining is the default"
-done
+echo "== unit: a blank Tari wallet asks nothing more and writes tari.mode off =="
+out="$(wt_run blank "$WALLET\n\n\n")"
+c="$(wt_cfg blank)"
+assert_eq "blank Tari: tari.mode is written, and it is off" "$(jq -r '.tari.mode' <<<"$c")" "off"
+assert_eq "blank Tari: no payout address is stored" "$(jq -r '.tari | has("wallet_address")' <<<"$c")" "false"
+assert_eq "blank Tari: tari carries the mode and nothing else" "$(jq -rc '.tari | keys' <<<"$c")" '["mode"]'
+assert_eq "blank Tari: dashboard.tari_required is false" "$(jq -r '.dashboard.tari_required' <<<"$c")" "false"
+assert_contains "blank Tari: the decline says what it turned off and how to turn it on" "$out" "Tari merge-mining is OFF"
+assert_contains "blank Tari: and points at the key that does it" "$out" "tari.mode"
+assert_not_contains "blank Tari: no node, address or port follow-up is asked" "$out" "Tari Node Host"
 
 WT_GUIDE="$(cat "$ROOT/docs/dev/manual-qa/diy/01-fresh-install.md")"
 WT_DEFAULT_EXPECTATION="$(awk '/^### 1\.4a / {section=1; next} section && /^### / {exit} section {print}' <<<"$WT_GUIDE")"
-assert_contains "fresh-install step 1.4a agrees with the roomy Enter-through config" \
-    "$WT_DEFAULT_EXPECTATION" "Fresh Enter-through expectation: \`tari_mode=$(jq -r '.tari.mode' <<<"$(wt_cfg default-ROOMY)")\`"
-assert_not_contains "fresh-install guide never derives the Tari default from free disk" "$WT_GUIDE" "fitting disk"
+assert_contains "fresh-install step 1.4a agrees with the blank-Tari config" \
+    "$WT_DEFAULT_EXPECTATION" "Fresh Enter-through expectation: \`tari_mode=$(jq -r '.tari.mode' <<<"$c")\`"
 
-echo "== unit: a data disk that already holds a Tari chain keeps local as the Enter default (#3333) =="
-mkdir -p "$WT/default-held/data/tari"
-out="$(WDU_KB=209715200 wt_run default-held "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n\n$VALID_TARI\n\n\n\n\n\n\n\n")"
-c="$(wt_cfg default-held)"
-assert_eq "held chain Enter-through: tari.mode is local" "$(jq -r '.tari.mode' <<<"$c")" "local"
-assert_eq "held chain Enter-through: the payout address is stored" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
-assert_contains "held chain: the line says why local is the default" "$out" "keeping merge-mining on is the default"
-mkdir -p "$WT/default-small-chain/data/tari"
-WDU_KB=1048576 wt_run default-small-chain "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n\n\n\n\n\n\n\n\n" >/dev/null
-assert_eq "a part-synced chain below half the budget does not flip the default" \
-    "$(jq -r '.tari.mode' <<<"$(wt_cfg default-small-chain)")" "off"
+echo "== unit: a filled Tari wallet writes the bundled node =="
+out="$(wt_run filled "$WALLET\n$VALID_TARI\n\n")"
+c="$(wt_cfg filled)"
+assert_eq "filled Tari: tari.mode is local" "$(jq -r '.tari.mode' <<<"$c")" "local"
+assert_eq "filled Tari: the address is stored" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
+assert_eq "filled Tari: dashboard.tari_required is false on a new install (#3333)" "$(jq -r '.dashboard.tari_required' <<<"$c")" "false"
+assert_contains "filled Tari: the line says the bundled node runs" "$out" "bundled Tari node"
 
-echo "== unit: the disk figure shown is the stack's own budget, and follows monero.mode (#1916) =="
-# Not a bare 'Tari needs 200 GiB': the question is whether Tari fits ALONGSIDE everything else that
-# lands on that filesystem, which is what doctor and preflight_resources measure too. A remote
-# Monero node keeps its chain on another host, so its 320 GiB drops out of the comparison.
-assert_contains "local Monero: the whole stack's budget, 320+200+5+2+1" \
-    "$(wt_run note-local "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\n\n\n\n\n\n\n\n")" "needs ~528 GiB"
-assert_contains "remote Monero: Monero's chain drops out of the budget" \
-    "$(wt_run note-remote "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\nn\nnode.example.com\n\n\nn\n1\n\n\n\n\n\n\n")" "needs ~208 GiB"
+echo "== unit: Tari checksum and wrong-network answers re-prompt =="
+out="$(wt_run retry "$WALLET\n${VALID_TARI%?}X\ngarbage\n$VALID_TARI\n\n")"
+assert_contains "a bad checksum or format is refused" "$out" "✗"
+assert_eq "the valid address after the refusals is stored" "$(jq -r '.tari.wallet_address' <<<"$(wt_cfg retry)")" "$VALID_TARI"
+out="$(wt_run eof "$WALLET\n")"
+assert_contains "end of input at the Tari prompt aborts loudly" "$out" "End of input while reading the Tari payout address"
+[ ! -f "$WT/eof/config.json" ] && ok "an aborted Tari prompt writes no config.json" || bad "an aborted Tari prompt writes no config.json" "file written"
 
-echo "== unit: an explicit answer beats the disk-derived default, both ways (#1916) =="
-c="$(
-    wt_run roomy-declined "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\ny\n\n\n\n" >/dev/null
-    wt_cfg roomy-declined
-)"
-assert_eq "answering 1 on a roomy host still declines" "$(jq -r '.tari.mode' <<<"$c")" "off"
-assert_eq "declining Tari keeps the pool tier automatic" "$(jq -r '.p2pool | has("pool")' <<<"$c")" false
-assert_eq "the next answer selects fast sync without an address prompt" "$(jq -r .monero.clearnet_initial_sync <<<"$c")" true
-c="$(
-    wt_run small-accepted "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n2\n$VALID_TARI\n\n\n\n\n\n\n\n" >/dev/null
-    wt_cfg small-accepted
-)"
-assert_eq "answering 2 on a small host still runs the bundled node" "$(jq -r '.tari.mode' <<<"$c")" "local"
-assert_eq "and stores the address it was given" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
-assert_eq "a Yes on a new install writes dashboard.tari_required false (#3333)" "$(jq -r '.dashboard.tari_required' <<<"$c")" "false"
-assert_eq "a No explicitly writes dashboard.tari_required false" "$(jq -r '.dashboard.tari_required' <<<"$(wt_cfg roomy-declined)")" "false"
-
-echo "== unit: an unrecognised answer falls back to the default rather than guessing (#1916) =="
-out="$(wt_run garbage "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\nbanana\n\n\n\n\n\n\n\n")"
-assert_contains "an unrecognised answer says so" "$out" "Not 1/2/3"
-assert_eq "an unrecognised answer takes the default, which is off" "$(jq -r '.tari.mode' <<<"$(wt_cfg garbage)")" "off"
-
-echo "== unit: answer 3 writes tari.mode remote with the node it was given (#1916) =="
-# The third answer has to collect a host: parse_and_validate_config refuses tari.mode "remote"
-# without tari.remote.host, so a wizard that wrote the mode and asked nothing would produce a
-# config that fails the very next command. The gRPC port is deliberately answered with a
-# non-number — jq --argjson aborts on one, which would have thrown away every answer already given.
-wt_run remote-node "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n3\n$VALID_TARI\ntari.example.com\nbanana\n\n\n\n\n\n\n" >/dev/null
-c="$(wt_cfg remote-node)"
-assert_eq "answer 3: tari.mode remote" "$(jq -r '.tari.mode' <<<"$c")" "remote"
-assert_eq "answer 3: the node host is carried through" "$(jq -r '.tari.remote.host' <<<"$c")" "tari.example.com"
-assert_eq "answer 3: a non-numeric port falls back to 18142 instead of aborting the wizard" \
-    "$(jq -r '.tari.remote.grpc_port' <<<"$c")" "18142"
-assert_eq "answer 3: the payout address is still required and stored" "$(jq -r '.tari.wallet_address' <<<"$c")" "$VALID_TARI"
-
-echo "== unit: saying yes and then giving no address aborts loudly (#1916) =="
-# The required-field check did not disappear with the decline — it moved behind the answer. A yes
-# with nowhere to be paid is still a refusal, and it must not write a half-configured config.json.
-out="$(wt_run yes-no-address "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n2\n\n\n\n\n\n\n\n")"
-assert_contains "a yes with no payout address is refused" "$out" "Tari payout address is required"
-assert_contains "and the refusal names the answer that avoids it" "$out" "Answer 1 (No)"
-[ ! -f "$WT/yes-no-address/config.json" ] &&
-    ok "a refused Tari answer writes no config.json" ||
-    bad "a refused Tari answer writes no config.json" "a file was written at $WT/yes-no-address/config.json"
-
-echo "== unit: wizard fast sync warns for local chains and excludes remote chains =="
-out="$(wt_run fast "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n2\n$VALID_TARI\ny\n\n\n\n")"
-assert_contains "fast sync warns about both networks" "$out" "exposes your IP address to the Monero network and the Tari network until the initial sync finishes"
-out="$(wt_run private "$WT_SMALL_KB" "$WT_SMALL_H" "$WALLET\n\n1\n\n\n\n\n\n")"
-c="$(wt_cfg private)"
-assert_eq "private setup generates its admin login" "$(jq -r '.dashboard.auth | .username == "admin" and (.password | test("^[A-Za-z0-9]{32}$"))' <<<"$c")" true
-assert_eq "new install inherits private sync from Balance" "$(jq -rc '[.monero.clearnet_initial_sync,.tari.clearnet_initial_sync]' <<<"$c")" '[null,null]'
-assert_not_contains "private sync has no exposure warning" "$out" "Fast sync exposes"
 budget=$(PATH="$WT/bin:$PATH" WDF_KB="$WT_SMALL_KB" WDF_H="$WT_SMALL_H" run_sourced "$SANDBOX" wizard_disk_budget)
 assert_eq "host publishes the measured data filesystem bytes" "$(jq -r '.available_bytes' <<<"$budget")" "$((WT_SMALL_KB * 1024))"
 assert_eq "both wizards share the local and remote budgets" "$(jq -rc '[.local_need_bytes,.remote_need_bytes]' <<<"$budget")" '[566935683072,223338299392]'
@@ -180,15 +98,6 @@ out=$(printf '%b' "$WALLET\n\n1\n\n\n\n" | run_sourced "$WT/failed-password" _wf
 assert_contains "default login aborts if generation produces an empty password" "$out" "Could not generate a dashboard password"
 [ ! -f "$WT/failed-password/config.json" ] && ok "failed password generation writes no config" || bad "failed password generation writes no config" "config.json exists"
 unset -f _wf_rng_rejected _wf_empty_password
-
-# Drive only the shape stage so every local/remote/off combination is isolated from address prompts.
-for mono in local remote; do
-    for tari in local remote off; do
-        out=$(printf 'y\n\n\n\n' | run_sourced "$SANDBOX" bash -c 'source "$1"; MONERO_MODE_WIZ="$2"; TARI_MODE_WIZ="$3"; wizard_ask_shape' _ "$STACK" "$mono" "$tari" 2>&1)
-        if [ "$mono" = local ]; then assert_contains "fast warning includes local Monero (${mono}/${tari})" "$out" "the Monero network"; else assert_not_contains "fast warning excludes remote Monero (${mono}/${tari})" "$out" "the Monero network"; fi
-        if [ "$tari" = local ]; then assert_contains "fast warning includes local Tari (${mono}/${tari})" "$out" "the Tari network"; else assert_not_contains "fast warning excludes nonlocal Tari (${mono}/${tari})" "$out" "the Tari network"; fi
-    done
-done
 
 echo "== unit: installer reports conservative fresh capacity and ext4 free space =="
 sed '$d' "$ROOT/os/installer/pithead-install" >"$WT/installer-functions"
@@ -226,7 +135,7 @@ cp "$ROOT/docker-compose.yml" "$STO/docker-compose.yml"
 cp "$ROOT/build/tari/config.toml.template" "$STO/build/tari/"
 make_stubs "$STO/bin"
 cp "$WT/bin/df" "$STO/bin/df"
-printf '%b' "$WALLET\n\n1\n\n\n\n\n\n\n\n" |
+printf '%b' "$WALLET\n\n\n" |
     PATH="$STO/bin:$PATH" WDF_KB="$WT_ROOMY_KB" WDF_H="$WT_ROOMY_H" run_sourced "$STO" run_wizard >/dev/null 2>&1
 assert_eq "setup e2e (declined): the wizard wrote tari.mode off" \
     "$(jq -r '.tari.mode' "$STO/config.json" 2>/dev/null)" "off"

@@ -116,8 +116,9 @@ def test_the_mode_key_is_written_for_every_answer_including_the_default():
     # "local", so the ONE thing this form must never do is leave the key out — an operator who
     # answered No would get a merge-mining machine. Every answer, the unanswered one included.
     for form, expected in (
-        ({}, "off"),
-        ({"tari_mode": ""}, "off"),
+        ({"tari_wallet": ""}, "off"),
+        ({"tari_mode": "", "tari_wallet": ""}, "off"),
+        ({}, "local"),
         ({"tari_mode": "off"}, "off"),
         ({"tari_mode": "local"}, "local"),
         ({"tari_mode": "remote"}, "remote"),

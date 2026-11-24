@@ -96,10 +96,11 @@ onion-only; supporting a clearnet kind does not mean the project has deployed on
 
 - **Onion:** the connection stays inside Tor and uses no exit relay. An onion destination
   requires Tor; setting `donation.tor` to `false` cannot make it directly reachable.
-- **Clearnet, Tor enabled (default):** the connection uses Tor and the endpoint sees a Tor
-  exit address.
-- **Clearnet, direct routing chosen:** `donation.tor` set to `false` exposes your public IP
-  to the endpoint operator. This is an explicit privacy choice.
+- **Clearnet, Tor enabled (`balance` and `privacy` profiles):** the connection uses Tor and
+  the endpoint sees a Tor exit address.
+- **Clearnet, direct routing:** the `performance` profile, or `donation.tor` set to `false`,
+  exposes your public IP to the endpoint operator. An explicit `donation.tor` overrides the
+  profile; the donation follows the profile otherwise.
 
 The project connection sends no donor payout address, worker names or per-donor label.
 The endpoint can observe connection timing, submitted shares and the hashrate those shares

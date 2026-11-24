@@ -147,7 +147,7 @@ form = load("form", root / "wizard/form.py")
 documents = load("documents", root / "config/documents.py")
 fields = {k: v[0] for k, v in parse_qs(Path(sys.argv[2]).read_text()).items()}
 assert fields["tari_mode"] == "local"
-config = form.build_config(fields, tari_default="off")
+config = form.build_config(fields)
 assert config["tari"]["wallet_address"] == "fixture-tari"
 documents.reject_placeholders(config)
 print(json.dumps(config))

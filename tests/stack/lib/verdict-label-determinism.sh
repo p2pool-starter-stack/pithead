@@ -198,9 +198,6 @@ test-wizard-addresses.sh|wa_existing
 test-wizard-addresses.sh|wa_message
 test-wizard-setup.sh|key
 test-wizard-setup.sh|removed
-test-wizard-tari.sh|mono
-test-wizard-tari.sh|size
-test-wizard-tari.sh|tari
 VDEXP
 )"
 mapfile -t stack_fragments < <(find "$ROOT/tests/stack" -type f -name 'test-*.sh' | sort)
