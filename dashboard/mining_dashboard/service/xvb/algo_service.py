@@ -141,8 +141,6 @@ class AlgoService:
         if not ENABLE_XVB:
             return "P2POOL", 0
 
-        # Constraint: Enforce P2Pool mode if no shares have been found recently.
-        # This uses the same logic as the dashboard UI to count shares within the PPLNS window.
         pplns_window, block_time, window_duration = pplns_window_terms(p2pool_stats, p2p_stats)
         shares_in_window_count = shares_in_pplns_window(shares, pplns_window, block_time)
 
@@ -421,12 +419,6 @@ class AlgoService:
         # effective split far past the computed fraction. A *changed* decision
         # still ends the dwell — only the avg-driven override pauses.
         target_hr = self._get_target_donation_hr(stable_hr)
-        # Catch up only toward what the donation cap allows (#898). Against an explicit target
-        # the fleet cannot sustain, the raw target comparison reads avg_1h as permanently
-        # "under tier", ends every p2pool dwell at its first check tick, and the actuated
-        # donation pins near 100% of allowed time — the cap never binds (measured live:
-        # ~94% of the fleet routed under a 0.65 cap). The achievable donation is the ceiling
-        # worth catching up to; beyond it, cutting dwells short only burns the p2pool side.
         _, _, window_duration = pplns_window_terms(p2pool_stats, p2p_stats)
         cap = self._max_donation_fraction(current_hr, window_duration, p2pool_stats)
         achievable_hr = min(target_hr, stable_hr * self.max_donation_fraction)
