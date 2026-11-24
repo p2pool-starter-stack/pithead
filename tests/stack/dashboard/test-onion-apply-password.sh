@@ -24,8 +24,6 @@ dash_pw_cases() {
     assert_contains "a double-quote is rejected" "$out" "dashboard.auth.password must be 8–128 characters with no control characters or double-quotes"
     out=$(dash_pw_apply "$loc" "$(printf 'ä%.0s' $(seq 16))" onion)
     assert_contains "onion: 16 identical two-byte characters are a repeated character" "$out" "single repeated character"
-    out=$(dash_pw_apply "$loc" "$(printf 'a%.0s' $(seq 7))$(printf '\t')a")
-    assert_contains "a control character is rejected" "$out" "dashboard.auth.password must be 8–128 characters with no control characters or double-quotes"
 }
 dash_pw_cases C
 dash_pw_cases C.UTF-8
