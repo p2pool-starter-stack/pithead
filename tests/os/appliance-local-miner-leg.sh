@@ -28,6 +28,21 @@ cleanup() {
     fi
     exit "$rc"
 }
+report_failure() {
+    local rc=$? line=$1 cmd=$2
+    printf 'local-miner: step failed at line %s (rc=%s): %s\n' "$line" "$rc" "$cmd"
+    printf 'local-miner: state xmrig=%s mainpid=%s rigforge_config=%s\n' \
+        "$(systemctl is-active xmrig.service 2>&1 || true)" \
+        "$(systemctl show xmrig.service -p MainPID --value 2>&1 || true)" \
+        "$([ -f /data/rigforge/config.json ] && echo present || echo absent)"
+    printf 'local-miner: rebooted=%s env_changed=%s\n' \
+        "$([ "$(cat /proc/sys/kernel/random/boot_id)" = "${boot:-}" ] && echo no || echo yes)" \
+        "$([ "$(sha256sum .env)" = "${env_before:-}" ] && echo no || echo yes)"
+    if [ -f "$fixture/apply.log" ]; then
+        sed -e 's/\x1b\[[0-9;]*m//g' "$fixture/apply.log" | grep -E '^\[(ERROR|WARNING)\]|No configuration changes' | tail -n 8 | cut -c1-200 | sed 's/^/local-miner: apply: /' || true
+    fi
+}
+trap 'report_failure "$LINENO" "$BASH_COMMAND"' ERR
 trap cleanup EXIT
 [ "$(jq -r '.local_miner.enabled' config.json)" = true ]
 restored_miner_matches
@@ -42,7 +57,7 @@ for enabled in false true; do
     [ "$(sha256sum .env)" = "$env_before" ]
     [ "$(cat /proc/sys/kernel/random/boot_id)" = "$boot" ]
     if [ "$enabled" = false ]; then
-        ! systemctl is-active --quiet xmrig.service
+        ! systemctl is-active --quiet xmrig.service || false
         [ "$(systemctl show xmrig.service -p MainPID --value)" = 0 ]
         [ ! -f /data/rigforge/config.json ]
         printf '%s\n' 'local-miner: disable apply stopped xmrig and removed derived config without reboot'

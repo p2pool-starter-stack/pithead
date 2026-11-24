@@ -44,5 +44,8 @@ if OMIT_CONVERGENCE=1 bash "$fixture/probe.sh" >"$fixture/output" 2>&1; then
     echo 'FAIL: absent miner convergence was accepted' >&2
     exit 1
 fi
+grep -Eq '^local-miner: step failed at line [0-9]+ \(rc=1\):' "$fixture/output"
+grep -Fq 'local-miner: state xmrig=' "$fixture/output"
+grep -Fq 'local-miner: rebooted=no env_changed=no' "$fixture/output"
 cmp "$fixture/original.json" "$fixture/stack/config.json"
-echo 'PASS: absent convergence fails and original config is restored'
+echo 'PASS: absent convergence fails, names its step and state, and original config is restored'

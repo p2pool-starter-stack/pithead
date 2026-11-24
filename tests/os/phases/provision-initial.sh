@@ -349,7 +349,10 @@ _phase_provision_initial_body() {
     local miner_toggle_out miner_toggle_rc
     miner_toggle_out=$(_ssh 'TMPDIR=/data bash -s' <"$SCRIPT_DIR/appliance-local-miner-leg.sh" 2>&1)
     miner_toggle_rc=$?
-    if [ "$miner_toggle_rc" -eq 0 ]; then ok "local-miner apply toggle probe completes (#3090)"; else bad "local-miner apply toggle probe failed (#3090)"; fi
+    if [ "$miner_toggle_rc" -eq 0 ]; then ok "local-miner apply toggle probe completes (#3090)"; else
+        bad "local-miner apply toggle probe failed (#3090)"
+        info "  probe output tail: $(printf '%s' "$miner_toggle_out" | tr -d '\r' | tr -cd '\11\12\40-\176' | tail -n 12 | tr '\n' '|' | cut -c1-900)"
+    fi
     local miner_toggle_marker
     for miner_toggle_marker in \
         'disable apply stopped xmrig and removed derived config without reboot' \
