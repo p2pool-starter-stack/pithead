@@ -271,7 +271,9 @@ phase_stack() {
         return 1
     }
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
+    post_reboot_health_begin || return 1
     _stack_container_restart_leg || return 1
+    post_reboot_health_verify "stack" || true
 
     local miner_rc=0
     miner_backup_trial || miner_rc=$?

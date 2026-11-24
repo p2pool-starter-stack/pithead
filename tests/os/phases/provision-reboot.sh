@@ -23,6 +23,7 @@ _phase_provision_reboot() {
         bad "could not start the boot-probe access-log window (#3263)"
         return 1
     }
+    post_reboot_health_begin || return 1
     # Authenticate readiness checks so only the deliberate wrong-password control adds a 401.
     # shellcheck disable=SC2154,SC2034 # phase locals; dashboard_curl reads dynamic scope.
     local DASH_USER="$pv_user" DASH_PASS="$pv_pass"
@@ -62,6 +63,7 @@ _phase_provision_reboot() {
         bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
         return 1
     fi
+    post_reboot_health_verify "provision reboot" || true
     assert_console_login "provision reboot" || return 1
     tries=0
     local answered=0

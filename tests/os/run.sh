@@ -27,6 +27,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/reinstall-prefill-verdict.sh"
 # shellcheck source=tests/os/provisioning-settled.sh
 . "$SCRIPT_DIR/provisioning-settled.sh"
+# shellcheck source=tests/os/post-reboot-health.sh
+. "$SCRIPT_DIR/post-reboot-health.sh"
 # shellcheck source=tests/os/data-floor-fallback-leg.sh
 . "$SCRIPT_DIR/data-floor-fallback-leg.sh"
 # shellcheck source=tests/os/aged-version.sh
