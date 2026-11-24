@@ -343,7 +343,7 @@ parse_and_validate_config() {
         if ! printf '%s' "$DASHBOARD_AUTH_USER" | grep -qE '^[A-Za-z0-9._@-]{1,64}$'; then
             error "dashboard.auth.username must be 1–64 chars of letters, digits, and . _ @ - (got \"$DASHBOARD_AUTH_USER\")."
         fi
-        if ! printf '%s' "$dash_pw" | grep -qE '^[[:print:]]{8,128}$' || printf '%s' "$dash_pw" | grep -q '"'; then
+        if ! printf '%s' "$dash_pw" | jq -Rse 'length >= 8 and length <= 128 and (contains("\"") | not)' >/dev/null; then
             error "dashboard.auth.password must be 8–128 printable characters with no double-quotes."
         fi
         DASHBOARD_AUTH_PW_FP=$(printf '%s' "$dash_pw" | sha256_hex)
@@ -386,7 +386,7 @@ parse_and_validate_config() {
         fi
         # Reject obviously weak 16+ char choices the length floor alone would pass: a single repeated
         # character, or a well-known weak pattern. Not a full dictionary — the floor handles the rest.
-        if [ "$(printf '%s' "$dash_pw" | fold -w1 | sort -u | wc -l | tr -d ' ')" -eq 1 ]; then
+        if printf '%s' "$dash_pw" | jq -Rse 'explode | unique | length == 1' >/dev/null; then
             error "dashboard.auth.password is a single repeated character — choose a real passphrase."
         fi
         case "$(printf '%s' "$dash_pw" | tr 'A-Z' 'a-z')" in
