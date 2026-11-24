@@ -285,9 +285,11 @@ phase_stack() {
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
     _stack_run_integration "check (non-destructive live-state assertion)" --check "${remote_extra[@]}"
     post_reboot_health_begin || true
+    post_reboot_health_begin || true
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
+    post_reboot_health_verify "stack after the lifecycle gate" || true
     post_reboot_health_verify "stack after the lifecycle gate" || true
     _stack_run_integration "stratum password and TLS clients" \
         --scenario remote-main-stratum-tls "${remote_extra[@]}"
