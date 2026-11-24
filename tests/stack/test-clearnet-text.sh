@@ -16,7 +16,7 @@ sys.argv = sys.argv[1:]
 exec(compile(sys.stdin.read(), "attestation", "exec"))
 PY
 
-ct_attest() { # <chain> <marker> [result-marker]
+ct_attest() {
     printf '%s\n' "$2" >"$CT_DIR/state/$1.synced"
     chmod 644 "$CT_DIR/state/$1.synced"
     python3 - "$CT_DIR/state/$1.synced" "$CT_DIR/control/results/clearnet-$1-tor.json" "${3:-$2}" <<'PY'
@@ -27,7 +27,7 @@ with open(sys.argv[2], "w") as fh:
 PY
 }
 ct_reset() { rm -f "$CT_DIR"/state/* "$CT_DIR"/control/results/*; }
-ct_run() { # <profile> <monero-flag> <tari-flag> <host-owned:0|1> <function>
+ct_run() {
     (
         cd "$CT_DIR" || exit
         # shellcheck disable=SC1090
