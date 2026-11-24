@@ -55,3 +55,44 @@ onion_apply_password_cases() {
     )" 0
 }
 onion_apply_password_cases
+
+echo "== unit: log API Caddy routes and dashboard.mode wiring (issue 3978) =="
+build_val_sandbox
+LAW_HASH="$(printf '%s' '$2y$14$UNITTESTbcrypthashvalue000000000000000000000000000000' | openssl base64 -A)"
+# shellcheck disable=SC1090
+LAW_CADDY="$(
+    cd "$SANDBOX" && source "$STACK" 2>/dev/null
+    set +e
+    DASHBOARD_SECURE=true HOST_IP=box.lan DASHBOARD_AUTH_USER=admin DASHBOARD_AUTH_HASH_B64="$LAW_HASH" \
+        DASHBOARD_ONION_ENABLED=true DASHBOARD_ONION=abcd234onionname.onion NETWORK_PREFIX=172.28.0 generate_caddyfile >/dev/null 2>&1
+    cat Caddyfile
+)"
+LAW_LAN="${LAW_CADDY%%http://172.28.0.1 \{*}"
+LAW_ONION="${LAW_CADDY#"$LAW_LAN"}"
+assert_contains "log routes stream unbuffered on the LAN site" "$LAW_LAN" "@logs path /api/logs/*"
+assert_contains "log routes disable response buffering on the LAN site" "$LAW_LAN" "flush_interval -1"
+assert_not_contains "no buffering override on the onion sites" "$LAW_ONION" "flush_interval"
+assert_eq "both onion sites answer the log routes with 404" "$(printf '%s\n' "$LAW_ONION" | grep -c 'respond @logs 404')" "2"
+assert_not_contains "the LAN site never hides the log routes" "$LAW_LAN" "respond @logs"
+
+law_apply() {
+    seed_env
+    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"%s"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"%s} }\n' "$WALLET" "$VALID_TARI" "$1" >"$V/config.json"
+    LAW_OUT="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+    LAW_RC=$?
+}
+law_env() { run_sourced "$V" env_get_file "$V/.env" "$1"; }
+
+law_apply ""
+assert_rc "apply without dashboard.mode succeeds" "$LAW_RC" "0"
+assert_eq "absent dashboard.mode renders dashboard" "$(law_env DASHBOARD_MODE)" "dashboard"
+assert_eq "the host allowlist reaches the dashboard comma-separated" "$(law_env PITHEAD_DIAG_CONTAINERS)" \
+    "$(run_sourced "$V" eval 'printf %s "${PITHEAD_DIAG_CONTAINERS// /,}"')"
+for law_mode in api both; do
+    law_apply ",\"mode\":\"$law_mode\""
+    assert_rc "dashboard.mode $law_mode accepted" "$LAW_RC" "0"
+    assert_eq "dashboard.mode $law_mode rendered" "$(law_env DASHBOARD_MODE)" "$law_mode"
+done
+law_apply ',"mode":"headless"'
+assert_rc "invalid dashboard.mode rejected" "$LAW_RC" "1"
+assert_contains "invalid dashboard.mode message" "$LAW_OUT" "dashboard.mode must be"
