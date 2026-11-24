@@ -26,6 +26,7 @@ _phase_provision_reboot() {
     # Authenticate readiness checks so only the deliberate wrong-password control adds a 401.
     # shellcheck disable=SC2154,SC2034 # phase locals; dashboard_curl reads dynamic scope.
     local DASH_USER="$pv_user" DASH_PASS="$pv_pass"
+    post_reboot_health_begin || true
     info "reboot leg — the stack must come back on its own (pithead-boot)"
     _ssh "echo '# corrupted by the harness — a regenerated boot must not serve this' > /data/pithead/Caddyfile" 2>/dev/null ||
         bad "could not corrupt the Caddyfile before the reboot"
@@ -74,6 +75,7 @@ _phase_provision_reboot() {
         bad "dashboard never answered after the reboot (last: $code)"
         return 1
     }
+    post_reboot_health_verify "provision reboot" || true
     # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
     # No unit may be quietly broken (#792 sat visible in --failed for two RCs, unasserted).
     local failed_units

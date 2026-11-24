@@ -31,16 +31,22 @@ wait_for() {
     done
 }
 
+poh_settled() { ! grep -q ' starting$' <<<"$(poi_container_snapshot)"; }
+
 poh_main() {
     case "${1:-}" in
     snapshot)
+        api_state | jq -e . >/dev/null 2>&1 || return 1
         post_op_begin
-        printf 'POH_WORKERS=%s\nPOH_FAILURES=%s\n' "$(printf '%s' "$POI_WORKERS" | paste -sd, -)" "$POI_FAILURES"
+        [ -n "$POI_FAILURES" ] || return 1
+        printf 'POH_WORKERS=%s\nPOH_FAILURES=%s\n' "$(printf '%s' "$POI_WORKERS" | base64 | tr -d '\n')" "$POI_FAILURES"
         ;;
     verify)
-        POI_WORKERS=$(printf '%s' "${POH_WORKERS:-}" | tr ',' '\n')
+        POI_WORKERS=$(printf '%s' "${POH_WORKERS:-}" | base64 -d)
         POI_FAILURES="${POH_FAILURES:-}"
+        wait_for "${POH_SETTLE_S:-300}" 10 "containers settled" poh_settled || true
         post_op_invariants "${POH_LABEL:-post-reboot}"
+        printf 'POH DONE\n'
         [ "$IT_FAIL" -eq 0 ]
         ;;
     *) return 2 ;;
