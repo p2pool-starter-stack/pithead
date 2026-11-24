@@ -76,7 +76,7 @@ node_run() {
 relay_torrc() {
     printf '%s\n' "TestingTorNetwork 1" "DataDirectory /var/lib/tor" "Nickname $1" "Address $2" \
         "ORPort 9001" "DirPort 9030" "SocksPort 0" "AssumeReachable 1" "PublishServerDescriptor 1" "Log notice stdout" \
-        "HeartbeatPeriod 1 minute" "ExtendAllowPrivateAddresses 1" "$dirauth" "${@:3}"
+        "HeartbeatPeriod 1 minute" "EnforceDistinctSubnets 0" "ExtendAllowPrivateAddresses 1" "$dirauth" "${@:3}"
 }
 identity() {
     local vol=$1 nick=$2 ip=$3 probe out
@@ -251,6 +251,7 @@ wait_stuck() {
     local deadline=$((SECONDS + STUCK_WINDOW)) hits=0
     stage=$1-stuck
     while [ "$SECONDS" -lt "$deadline" ]; do
+        printf '%s %s | %s\n' "$(date +%T)" "$(consensus_relays | tr '\n' ';')" "$(tor_state | sed -n 's/^250-status.bootstrap-phase=.*PROGRESS=\([0-9]*\) TAG=\([a-z_]*\).*/\1 \2/p;s/^250-status.circuit-established=//p' | tr '\n' ' ')" >>"$work/timeline"
         if is_stuck; then
             hits=$((hits + 1))
             [ "$hits" -ge 3 ] && break
@@ -262,7 +263,13 @@ wait_stuck() {
     if [ "$hits" -lt 3 ]; then
         printf 'RECORD %s: fault not reproduced: guards=%s\n' "$1" "$(guard_nicks)" >&2
         tor_state | head -n 12 >&2 || true
-        ctl 'GETINFO ns/name/tgbad status/enough-dir-info status/good-server-descriptor' >&2 || true
+        printf -- '--- timeline (time consensus-relays | client bootstrap established)\n' >&2
+        awk 'NR % 3 == 1' "$work/timeline" | tail -n 30 | cut -c1-400 >&2 || true
+        ctl 'GETINFO ns/name/tgbad md/name/tgbad status/enough-dir-info' >&2 || true
+        docker ps -a --filter name=tg- --format '{{.Names}} {{.Status}}' >&2 || true
+        docker logs tg-guard-bad 2>&1 | grep -iE 'heartbeat|dos|marked' | tail -n 4 | cut -c1-300 >&2 || true
+        docker logs tg-auth 2>&1 | grep -iE 'tgbad|reject|unreachable|not running' | head -n 10 | cut -c1-300 >&2 || true
+        docker logs tor 2>&1 | grep -iE 'microdesc|Received http|dir' | grep -v 'Failed to find' | head -n 10 | cut -c1-260 >&2 || true
         docker logs tor 2>&1 | scrub | grep -iE 'guard|first hop|hop #1' | grep -v 'Failed to find node' | head -n 25 | cut -c1-260 >&2 || true
         return 1
     fi
