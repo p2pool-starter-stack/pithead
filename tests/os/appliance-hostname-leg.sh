@@ -501,6 +501,20 @@ _hostname_self_test() {
         dashboard_control_request() { printf '{"status":"applied","approval_required":false}'; }
         phase_provision_hostname_regressions user password
         case "$verdicts" in *'bad:day-two hostname preview mutated identity'*'preview: {"status":"applied","approval_required":false}'*) ;; *) exit 1 ;; esac
+        verdicts=""
+        dashboard_control_request() { printf '{"status":"previewed","approval_required":true}'; }
+        dashboard_curl() { printf '{"dashboard":{"host":"fixture-next"}}'; }
+        phase_provision_hostname_regressions user password
+        case "$verdicts" in *'bad:day-two hostname preview mutated identity'*'configured host: fixture-next'*) ;; *) exit 1 ;; esac
+        verdicts=""
+        dashboard_curl() { printf '{"dashboard":{"host":"fixture-box"}}'; }
+        hostname_stable_snapshot() {
+            printf 'unsettled'
+            return 1
+        }
+        phase_provision_hostname_regressions user password
+        case "$verdicts" in *'bad:hostname preview: identity never settled before the preview (unsettled)'*) ;; *) exit 1 ;; esac
+        case "$verdicts" in *'ok:day-two hostname preview is approval-gated'*) exit 1 ;; esac
     ) || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-hostname-leg self-test FAILED: %s checks\n' "$f"
