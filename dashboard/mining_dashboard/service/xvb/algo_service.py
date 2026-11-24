@@ -27,12 +27,11 @@ from mining_dashboard.config.config import (
     XVB_WIN_ROUND_HOLD_S,
 )
 from mining_dashboard.helper.utils import (
-    DEFAULT_PPLNS_WINDOW,
-    pplns_block_time,
     resolve_target_threshold,
     shares_in_pplns_window,
     xvb_stats_are_stale,
 )
+from mining_dashboard.service.xvb.pplns_window import pplns_window_terms
 from mining_dashboard.service.xvb.steering_projection import (
     max_donation_fraction,
     projected_avg_1h,
@@ -144,10 +143,7 @@ class AlgoService:
 
         # Constraint: Enforce P2Pool mode if no shares have been found recently.
         # This uses the same logic as the dashboard UI to count shares within the PPLNS window.
-        pool_type = p2p_stats.get("type", "Main")
-        pplns_window = p2pool_stats.get("pplns_window", DEFAULT_PPLNS_WINDOW)
-        block_time = pplns_block_time(pool_type)
-        window_duration = pplns_window * block_time
+        pplns_window, block_time, window_duration = pplns_window_terms(p2pool_stats, p2p_stats)
         shares_in_window_count = shares_in_pplns_window(shares, pplns_window, block_time)
 
         if shares_in_window_count == 0:
@@ -431,10 +427,12 @@ class AlgoService:
         # donation pins near 100% of allowed time — the cap never binds (measured live:
         # ~94% of the fleet routed under a 0.65 cap). The achievable donation is the ceiling
         # worth catching up to; beyond it, cutting dwells short only burns the p2pool side.
+        _, _, window_duration = pplns_window_terms(p2pool_stats, p2p_stats)
+        cap = self._max_donation_fraction(current_hr, window_duration, p2pool_stats)
         achievable_hr = min(target_hr, stable_hr * self.max_donation_fraction)
         under_tier = (
             not self._stats_are_stale(xvb_stats)
-            and achievable_hr > 0
+            and 0 < achievable_hr <= stable_hr * cap
             and xvb_stats.get("avg_1h", 0) < achievable_hr
         )
         return decision != held_decision or under_tier
