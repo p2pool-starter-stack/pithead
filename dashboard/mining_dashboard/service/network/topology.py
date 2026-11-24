@@ -11,13 +11,14 @@ from mining_dashboard.service.network.egress import (
     _xvb_standby_route,
     compute_egress_posture,
 )
-from mining_dashboard.service.network.egress_status import with_firewall_state
+from mining_dashboard.service.network.egress_status import host_audit_state, with_firewall_state
 from mining_dashboard.service.network.topology_graph import (
     CLEARNET,
     INACTIVE,
     INCOMING,
     LOCAL,
     TOR,
+    UNKNOWN,
     _notify_route,
     _xvb_route,
     edge,
@@ -48,6 +49,7 @@ def compute_topology(
     tor_auto_heal=False,
     local_miner_enabled=False,
     tari_explorer=False,
+    host_audit_loaded=False,
 ):
     """Pure derivation of the stack topology. ``kind`` is ``ingress``, ``egress``, ``p2p``
     (bidirectional — egress *and* onion ingress for the P2P daemons), or ``internal`` (host-only
@@ -153,10 +155,19 @@ def compute_topology(
     if tari_enabled and tari_clearnet_sync and tari_route == LOCAL:
         edges.append(edge("tari", "internet", CLEARNET, "clearnet IBD", "egress"))
 
+    host_route = CLEARNET if host_audit_loaded else UNKNOWN
+    edges += [
+        edge("host-time-sync", "internet", host_route, "htpdate time sync", "egress"),
+        edge("host-updates", "internet", host_route, "release + OS update fetches", "egress"),
+        edge("host-containers", "internet", host_route, "container image pulls", "egress"),
+    ]
+
     for link in edges:
         if link["route"] != CLEARNET:
             continue
-        if (
+        if link["from"].startswith("host-"):
+            link["chosen_clearnet"] = True
+        elif (
             (link["from"] in ("monerod", "tari") and link.get("label") == "clearnet IBD")
             or (link["from"] == "p2pool" and link.get("label") == "sidechain P2P")
             or (link["from"] == "xmrig-proxy" and link.get("label") == "XvB donation")
@@ -194,5 +205,6 @@ def topology_from_config():
         price_feed_enabled=config.DASHBOARD_ENERGY["price_feed"],
         xvb_standby_source=config.XVB_STANDBY_SOURCE,
         local_miner_enabled=config.local_miner_enabled(),
+        host_audit_loaded=host_audit_state()["loaded"],
         **_shared_knobs(),
     )

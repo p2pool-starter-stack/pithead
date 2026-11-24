@@ -771,7 +771,11 @@ says so instead of guessing.
 **XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
 sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
 remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
-Unverified. The difference is
+Unverified. The diagram also draws three
+host-OS nodes below the stack (time sync, OS and release fetches, image pulls) under a scope pill that
+says whether host traffic is audited or not observed; a warning appears when the host audit counted
+flows outside the allowlist, and a notice appears when the audit table is not loaded
+([Privacy](privacy.md)). The difference is
 operational: a node you run is yours to restart and resync, and a node you point at
 (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible

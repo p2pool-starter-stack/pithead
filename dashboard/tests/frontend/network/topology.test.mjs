@@ -21,7 +21,8 @@ import {
 // SVG silently (StackTopology._edge returns null when POS[id] is missing).
 const NODE_IDS = [
     'rigs', 'browser', 'xmrig-proxy', 'local-miner', 'caddy', 'dashboard',
-    'p2pool', 'monerod', 'tari', 'docker', 'tor', 'internet',
+    'p2pool', 'monerod', 'tari', 'docker', 'host-time-sync', 'host-updates', 'host-containers',
+    'tor', 'internet',
 ];
 
 test('POS places every canonical node and nothing extra', () => {
