@@ -30,5 +30,5 @@ GUEST
 
 rig_failure_evidence() {
     printf '     --- rig failure diagnostics ---\n'
-    _ssh "$(rig_failure_evidence_script)" 2>&1 | tr -d '\r' | os_redact_addr | sed 's/^/     · /' || true
+    SSH_TIMEOUT=120 _ssh "$(rig_failure_evidence_script)" 2>&1 | tr -d '\r' | os_redact_addr | sed 's/^/     · /' || true
 }

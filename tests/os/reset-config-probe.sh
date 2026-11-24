@@ -17,6 +17,7 @@ docker() {
     command docker "$@" >"$PITHEAD_RESET_PROBE_DIR/.reset-compose.log" 2>&1
     stop_rc=$?
     if [ "$stop_rc" -ne 0 ] && grep -q 'unmount' "$PITHEAD_RESET_PROBE_DIR/.reset-compose.log"; then
+        sleep 5
         command docker "$@" >>"$PITHEAD_RESET_PROBE_DIR/.reset-compose.log" 2>&1
         stop_rc=$?
     fi

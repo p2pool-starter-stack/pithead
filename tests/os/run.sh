@@ -273,8 +273,8 @@ _run_phase() {
     local after=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
     [ "$after" -ne "$before" ] ||
         it_skip_phase "$1" "produced no passed, failed or skipped row — a required input was likely absent" missing
-    if [ -n "${3:-}" ] && [ "$FAIL" -gt "$before_fail" ]; then
-        "$3"
+    if [ "$1" = rig ] && [ "$FAIL" -gt "$before_fail" ]; then
+        rig_failure_evidence
     fi
 }
 case "$PHASE" in
@@ -283,7 +283,7 @@ update) _run_phase update phase_update ;;
 install) _run_phase install phase_install ;;
 provision) _run_phase provision phase_provision ;;
 setup-defaults) _run_phase setup-defaults phase_setup_defaults ;;
-rig) _run_phase rig phase_rig rig_failure_evidence ;;
+rig) _run_phase rig phase_rig ;;
 rigmedia) _run_phase rigmedia phase_rigmedia ;;
 media) _run_phase media phase_media ;;
 fault) _run_phase fault phase_fault ;;
@@ -303,7 +303,7 @@ all)
     _run_phase install phase_install
     _run_phase provision phase_provision
     _run_phase setup-defaults phase_setup_defaults
-    _run_phase rig phase_rig rig_failure_evidence
+    _run_phase rig phase_rig
     _run_phase rigmedia phase_rigmedia
     _run_phase media phase_media
     _run_phase fault phase_fault
