@@ -72,21 +72,25 @@ async def handle_logs(request):
         await _audit(request, "log-read", 502)
         return _reply(502, "Could not read the service logs.")
     kept, truncated = api.bound_entries(entries, since)
+    truncated = truncated or (since is not None and len(entries) >= lines)
     cursor = api.format_cursor(kept[-1][0]) if kept else request.query.get("since")
     await _audit(request, "log-read", 200)
-    return web.json_response(
+    body = json.dumps(
         {
             "service": service,
             "lines": [{"ts": api.format_cursor(ns), "line": text} for ns, text in kept],
             "since": cursor,
             "truncated": truncated,
         },
-        headers=_HEADERS,
+        ensure_ascii=False,
+    )
+    return web.Response(
+        text=body, content_type="application/json", charset="utf-8", headers=_HEADERS
     )
 
 
 async def _send(stream, text):
-    await stream.write(text.encode())
+    await asyncio.wait_for(stream.write(text.encode()), api.WRITE_TIMEOUT_S)
 
 
 async def handle_follow(request):
@@ -95,6 +99,8 @@ async def handle_follow(request):
         await _audit(request, "log-follow", error.status)
         return error
     service, _, since = parsed
+    if since is None:
+        since = api.parse_cursor(request.headers.get("Last-Event-ID"))
     gate = request.app["log_gate"]
     if not gate.acquire():
         await _audit(request, "log-follow", 429)
@@ -112,6 +118,7 @@ async def handle_follow(request):
         await _audit(request, "log-follow", 200)
         cursor = since if since is not None else time.time_ns()
         started = last_line = last_beat = time.monotonic()
+        failing = False
         while True:
             now = time.monotonic()
             if now - started >= api.LIFETIME_S:
@@ -122,9 +129,18 @@ async def handle_follow(request):
                 break
             try:
                 entries = await api.fetch(service, since_ns=cursor)
+                failing = False
             except api.LogFetchError:
                 entries = []
-            for ns, text in api.bound_entries(entries, cursor)[0]:
+                if not failing:
+                    await _send(stream, 'event: error\ndata: {"reason": "upstream"}\n\n')
+                failing = True
+            kept, dropped = api.bound_entries(entries, cursor)
+            if dropped or len(entries) >= api.MAX_TAIL:
+                await _send(stream, "event: gap\ndata: {}\n\n")
+            for ns, text in kept:
+                if time.monotonic() - started >= api.LIFETIME_S:
+                    break
                 await _send(
                     stream, f"id: {api.format_cursor(ns)}\ndata: {api.entry_json(ns, text)}\n\n"
                 )
@@ -137,7 +153,7 @@ async def handle_follow(request):
             await asyncio.sleep(api.POLL_INTERVAL_S)
         await _send(stream, f"event: end\ndata: {json.dumps({'reason': reason})}\n\n")
         await stream.write_eof()
-    except (ConnectionResetError, ConnectionError):
+    except (ConnectionError, TimeoutError):
         pass
     finally:
         gate.release()

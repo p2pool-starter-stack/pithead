@@ -1,3 +1,4 @@
+import asyncio
 import calendar
 import json
 import re
@@ -19,6 +20,7 @@ MAX_FOLLOWERS = 4
 MAX_LINES_PER_S = 20
 POLL_INTERVAL_S = 1.0
 HEARTBEAT_S = 15.0
+WRITE_TIMEOUT_S = 10.0
 _FETCH_CAP_BYTES = 4 * 1024 * 1024
 
 _TS = re.compile(r"^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d{1,9}))?Z$")
@@ -71,8 +73,12 @@ async def fetch(service, since_ns=None, tail=MAX_TAIL):
         raise
     except Exception as exc:
         raise LogFetchError(type(exc).__name__) from exc
+    return await asyncio.to_thread(_redact_all, _parse_docker_stream(raw))
+
+
+def _redact_all(lines):
     entries = []
-    for line in _parse_docker_stream(raw):
+    for line in lines:
         parsed = _split(line)
         if parsed:
             entries.append((parsed[0], redact_line(parsed[1])))

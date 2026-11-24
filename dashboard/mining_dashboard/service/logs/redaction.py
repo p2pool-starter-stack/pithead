@@ -13,7 +13,7 @@ def load_rules(path=PATTERN_FILE):
         if not match:
             raise ValueError(f"{path.name}:{number}: not an s/PATTERN/REPLACEMENT/g command")
         pattern, replacement = match.groups()
-        rules.append((re.compile(pattern.replace(_POSIX_SPACE, r"\s")), replacement))
+        rules.append((re.compile(pattern.replace(_POSIX_SPACE, r"\s"), re.ASCII), replacement))
     return tuple(rules)
 
 

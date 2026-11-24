@@ -42,7 +42,7 @@ def test_cursor_rejects_anything_that_is_not_a_timestamp(value):
 def test_the_documented_limits():
     assert api.MAX_TAIL == 500
     assert api.MAX_RESPONSE_BYTES == 256 * 1024
-    assert api.IDLE_TIMEOUT_S <= 60
+    assert api.IDLE_TIMEOUT_S == 60
     assert api.MAX_FOLLOWERS == 4
     assert api.MAX_LINES_PER_S == 20
     assert api.LIFETIME_S == 900

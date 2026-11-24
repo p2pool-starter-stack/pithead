@@ -34,7 +34,7 @@ def fetched(monkeypatch):
         calls.append((service, since_ns, tail))
         if state["error"]:
             raise api.LogFetchError("down")
-        return [e for e in state["entries"] if since_ns is None or e[0] > since_ns]
+        return [e for e in state["entries"] if since_ns is None or e[0] > since_ns][-tail:]
 
     monkeypatch.setattr(api, "fetch", fake)
     state["calls"] = calls
@@ -242,3 +242,72 @@ class TestRedactionThroughTheRoutes:
             assert WALLET not in text
             assert "u:p" not in text
             assert "--wallet [redacted-address]" in text
+
+
+class TestReviewFixes:
+    async def test_non_ascii_lines_cannot_push_the_body_past_256_kib(self, client, fetched):
+        fetched["entries"] = entries(500, text="\u00e9" * 500)
+        resp = await client.get("/api/logs/tor?lines=500", headers=AUTH)
+        raw = await resp.read()
+        assert len(raw) <= api.MAX_RESPONSE_BYTES
+        assert resp.headers["Content-Type"].startswith("application/json")
+        assert json.loads(raw)["truncated"] is True
+
+    async def test_a_full_page_after_the_cursor_is_flagged_truncated(self, client, fetched):
+        fetched["entries"] = entries(600)
+        cursor = api.format_cursor(T0 - 1)
+        body = await (
+            await client.get(f"/api/logs/tor?since={cursor}&lines=500", headers=AUTH)
+        ).json()
+        assert len(body["lines"]) == 500
+        assert body["truncated"] is True
+
+    async def test_follow_resumes_from_last_event_id(self, client, fetched, fast, monkeypatch):
+        monkeypatch.setattr(api, "IDLE_TIMEOUT_S", 0.2)
+        fetched["entries"] = entries(3)
+        headers = {**AUTH, "Last-Event-ID": api.format_cursor(T0 + 1)}
+        text = await read_events(await client.get("/api/logs/tor/follow", headers=headers))
+        assert "line 2" in text and "line 1" not in text and "line 0" not in text
+
+    async def test_follow_reports_a_gap_when_a_poll_is_full(
+        self, client, fetched, fast, monkeypatch
+    ):
+        monkeypatch.setattr(api, "IDLE_TIMEOUT_S", 0.2)
+        fetched["entries"] = entries(api.MAX_TAIL + 20)
+        cursor = api.format_cursor(T0 - 1)
+        text = await read_events(
+            await client.get(f"/api/logs/tor/follow?since={cursor}", headers=AUTH)
+        )
+        assert "event: gap" in text
+
+    async def test_follow_reports_an_unreachable_proxy_once(
+        self, client, fetched, fast, monkeypatch
+    ):
+        monkeypatch.setattr(api, "IDLE_TIMEOUT_S", 0.2)
+        fetched["error"] = True
+        text = await read_events(await client.get("/api/logs/tor/follow", headers=AUTH))
+        assert text.count("event: error") == 1
+
+    async def test_lifetime_is_enforced_inside_a_long_batch(self, client, fetched, monkeypatch):
+        monkeypatch.setattr(api, "POLL_INTERVAL_S", 0.01)
+        monkeypatch.setattr(api, "MAX_LINES_PER_S", 20)
+        monkeypatch.setattr(api, "LIFETIME_S", 0.3)
+        monkeypatch.setattr(api, "IDLE_TIMEOUT_S", 60)
+        fetched["entries"] = entries(200)
+        cursor = api.format_cursor(T0 - 1)
+        text = await read_events(
+            await client.get(f"/api/logs/tor/follow?since={cursor}", headers=AUTH)
+        )
+        assert text.count("\nid: ") + text.startswith("id: ") < 20
+        assert '"reason": "lifetime"' in text
+
+    async def test_a_stalled_reader_times_out_instead_of_holding_the_slot(self, monkeypatch):
+        from mining_dashboard.web.views import log_views
+
+        class Stalled:
+            async def write(self, data):
+                await asyncio.sleep(60)
+
+        monkeypatch.setattr(api, "WRITE_TIMEOUT_S", 0.05)
+        with pytest.raises(TimeoutError):
+            await log_views._send(Stalled(), "x")
