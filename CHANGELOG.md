@@ -11,7 +11,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ## [Unreleased]
 
-## [2.0.4] - 2026-11-23
+## [2.0.4] - 2026-11-24
 
 Pithead 2.0.4 is a patch release after 2.0.3. It bakes RigForge 1.19.0 into the appliance image
 (read the RigForge-only note below before updating such a rig), moves XvB donation mining to the EU
