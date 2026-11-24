@@ -318,6 +318,12 @@ $logblk
 $boot_marker
         rewrite @boot_health /
 $auth
+        @logs path /api/logs/*
+        reverse_proxy @logs 127.0.0.1:8000 {
+            flush_interval -1
+            header_up X-Auth-User {http.auth.user.id}
+            header_up -X-Pithead-Boot-Probe
+        }
         reverse_proxy 127.0.0.1:8000 {
             header_up X-Auth-User {http.auth.user.id}
             header_up -X-Pithead-Boot-Probe
@@ -342,6 +348,8 @@ http://${NETWORK_PREFIX}.1 {
 $(_onion_bind_line)
 $auth
 $logblk
+    @logs path /api/logs/*
+    respond @logs 404
     reverse_proxy 127.0.0.1:8000 {
         header_up X-Auth-User {http.auth.user.id}
         header_up -X-Pithead-Boot-Probe
@@ -365,6 +373,8 @@ https://${DASHBOARD_ONION} {
 $(_onion_bind_line)
 $auth
 $logblk
+    @logs path /api/logs/*
+    respond @logs 404
     reverse_proxy 127.0.0.1:8000 {
         header_up X-Auth-User {http.auth.user.id}
         header_up -X-Pithead-Boot-Probe

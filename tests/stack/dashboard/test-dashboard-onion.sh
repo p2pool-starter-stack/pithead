@@ -81,6 +81,13 @@ case "$https_site" in
 *) bad "onion HTTPS vhost uses tls internal" "no 'tls internal' on the https onion site" ;;
 esac
 assert_contains "onion HTTPS vhost carries the same basic_auth (#343)" "$https_site" "basic_auth"
+log_lan_site="${caddy_onion_https%%http://172.28.0.1 \{*}"
+log_onion_sites="${caddy_onion_https#"$log_lan_site"}"
+assert_contains "log routes stream unbuffered on the LAN site" "$log_lan_site" "@logs path /api/logs/*"
+assert_contains "log routes disable response buffering only there" "$log_lan_site" "flush_interval -1"
+assert_not_contains "no log route buffering override on the onion sites" "$log_onion_sites" "flush_interval"
+assert_eq "both onion sites answer the log routes with 404" "$(printf '%s\n' "$log_onion_sites" | grep -c 'respond @logs 404')" "2"
+assert_not_contains "the LAN site never hides the log routes" "$log_lan_site" "respond @logs"
 # Not yet provisioned (placeholder address) -> HTTP onion vhost only, no HTTPS one (a later apply adds it).
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_onion_ph="$(

@@ -413,6 +413,25 @@ out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "invalid tari.mode rejected" "$?" "1"
 assert_contains "invalid tari.mode message" "$out" "tari.mode must be"
 
+seed_env
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_rc "apply without dashboard.mode succeeds" "$?" "0"
+assert_eq "absent dashboard.mode renders dashboard" "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_MODE)" "dashboard"
+assert_eq "the host's diagnostics allowlist reaches the dashboard comma-separated" "$(run_sourced "$V" env_get_file "$V/.env" PITHEAD_DIAG_CONTAINERS)" "$(run_sourced "$V" eval 'printf %s "${PITHEAD_DIAG_CONTAINERS// /,}"')"
+for dm in api both; do
+    seed_env
+    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan","mode":"%s"} }\n' "$WALLET" "$dm" >"$V/config.json"
+    out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+    assert_rc "dashboard.mode $dm accepted" "$?" "0"
+    assert_eq "dashboard.mode $dm rendered" "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_MODE)" "$dm"
+done
+seed_env
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan","mode":"headless"} }\n' "$WALLET" >"$V/config.json"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_rc "invalid dashboard.mode rejected" "$?" "1"
+assert_contains "invalid dashboard.mode message" "$out" "dashboard.mode must be"
+
 echo "== black-box: profile deactivation removes the old container (#795) =="
 # `compose up --remove-orphans` does not remove a profile-deactivated service's container — the
 # service is still in the compose file, so compose does not count it as an orphan — and a tari

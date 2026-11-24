@@ -768,6 +768,8 @@ services:
       # When off, the control routes are not registered at all (they 404); the spool mounts above
       # are inert because no host-side runner is installed.
       - DASHBOARD_CONTROL_ENABLED=${DASHBOARD_CONTROL_ENABLED:-false}
+      - DASHBOARD_MODE=${DASHBOARD_MODE:-dashboard}
+      - PITHEAD_DIAG_CONTAINERS=${PITHEAD_DIAG_CONTAINERS:-}
       # Dashboard onion (#343, config.json: dashboard.onion.*), display-only here: the header
       # shows the .onion URL so an operator can open the dashboard from a phone over Tor without
       # first reaching a shell (#1853). The appliance's podman quadlet passes the same three

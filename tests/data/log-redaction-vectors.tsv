@@ -1,0 +1,14 @@
+rpc-login	p2pool --rpc-login bundleuser:Sup3rS3cretRpcPass --stratum 0.0.0.0:3333	p2pool --rpc-login [redacted] --stratum 0.0.0.0:3333
+http-access-token-equals	start --http-access-token=tok123 --x	start --http-access-token [redacted] --x
+tls-fingerprint	start --tls-fingerprint AB:CD:EF --x	start --tls-fingerprint [redacted] --x
+wallet-address	--wallet 4SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS --stratum 0.0.0.0:3333	--wallet [redacted-address] --stratum 0.0.0.0:3333
+wallet-equals	--wallet=4SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS	--wallet=[redacted-address]
+wallet-followed-by-flag	--wallet --stratum 0.0.0.0:3333	--wallet --stratum 0.0.0.0:3333
+merge-mine	--merge-mine tari://172.28.0.27:18142 TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT --local-api	--merge-mine tari://172.28.0.27:18142 [redacted-address] --local-api
+onion	service published at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion ok	service published at [redacted].onion ok
+monero-address-in-body	Your wallet 4SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS got a payout of 0.1 XMR	Your wallet [redacted-address] got a payout of 0.1 XMR
+monero-integrated-address-in-body	paid to 8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA done	paid to [redacted-address] done
+two-adjacent-addresses	4SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS 8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA	[redacted-address] [redacted-address]
+plain-line	tor: Bootstrapped 100% (done): Done	tor: Bootstrapped 100% (done): Done
+gap-tari-address-in-body	payout to tari-address-in-body-text-is-a-documented-gap-0000000000000000000000000000000000000000000000	payout to tari-address-in-body-text-is-a-documented-gap-0000000000000000000000000000000000000000000000
+gap-ip-address-in-body	peer 203.0.113.9:18080 connected	peer 203.0.113.9:18080 connected

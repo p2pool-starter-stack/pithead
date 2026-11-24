@@ -1867,6 +1867,32 @@ daemon, use the support bundle or the console.
 If you pick a service the host will not read logs for, the host refuses and the panel shows its
 reason as-is rather than guessing at one.
 
+### Log API
+
+`GET /api/logs/<service>` returns the last lines of one service's log, and
+`GET /api/logs/<service>/follow` streams new lines as server-sent events. Both are off by default:
+they exist only when `dashboard.mode` is `api` or `both` (see
+[Configuration](configuration.md#configuration-reference)); in the default `dashboard` mode both
+answer 404. They do not need `dashboard.control.enabled`.
+
+| | |
+|---|---|
+| Services | `tor`, `monerod`, `tari`, `p2pool`, `xmrig-proxy`, `dashboard`, `docker-proxy`, `docker-control`, `caddy`: the host's `PITHEAD_DIAG_CONTAINERS`, passed to the dashboard through its environment. Anything else, including the wallet daemons, answers 404. |
+| Tail | `lines` from 1 to 500 (default 200); `since` takes the `since` value of an earlier response and returns only newer lines. The JSON body is `{service, lines: [{ts, line}], since, truncated}`. `truncated` is true when older lines were dropped to stay under 256 KiB. |
+| Follow | One `data:` event per line, with the line's timestamp as the event id. At most 20 lines a second per stream. The stream ends with an `end` event after 60 s with no new line (`idle`) or 15 minutes in total (`lifetime`). A fifth concurrent follower gets 429. Pass `since` to resume from a cursor; without it the stream starts at the current time. |
+| Size | Every JSON response is at most 256 KiB. |
+| Access | Behind the dashboard login, which must be set: a request with no authenticated user gets 401. Every request, refused ones included, writes an audit row with source `api`. The routes are served on the LAN listener only; the onion sites answer 404. Responses carry `Cache-Control: no-store`. |
+
+Every line goes through the support bundle's redactor (`dashboard/mining_dashboard/service/logs/redact.sed`,
+the one pattern list that `./pithead support-bundle` and the API share): `--rpc-login`,
+`--http-access-token` and `--tls-fingerprint` values, `--wallet` and `--merge-mine` addresses, onion
+addresses, and any Monero address in the text. The redactor works one line at a time. Still readable:
+a Tari address in body text, IP addresses and hostnames, and a password or token that does not follow
+one of those flags. Do not point an untrusted reader at this API.
+
+The API has no role split yet: any user who can log in can read these logs. A viewer role and
+dedicated machine credentials arrive with the login sessions work (#3895).
+
 ## Backup view
 
 **Backup** is its own entry in the toggle above the chart, beside Simple, Advanced and

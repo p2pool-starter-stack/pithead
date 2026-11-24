@@ -3,6 +3,7 @@
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	python3 scripts/build-config-defaults.py --check
+	python3 scripts/build-redact-patterns.py --check
 	bash scripts/build-pithead.sh
 
 test: lint test-dashboard test-frontend test-stack test-netwatch test-compose test-integration-selftest test-tools test-fakes ## Local checks (Docker required; no live test host)
