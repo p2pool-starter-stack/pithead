@@ -53,22 +53,39 @@ post_reboot_health_begin
 check "a failed snapshot is red" "$?/${#bads[@]}" "1/1"
 
 check "run.sh loads the helper" "$(grep -c '^\. "\$SCRIPT_DIR/post-reboot-health.sh"$' "$HERE/run.sh")" 1
-for phase in stack provision-reboot; do
-    check "$phase phase takes a baseline and verifies it" \
-        "$(grep -c '^    post_reboot_health_begin\|^    post_reboot_health_verify ' "$HERE/phases/$phase.sh")" 2
-done
+order() {
+    local f="$HERE/phases/$1" pat last=0 n
+    shift
+    for pat in "$@"; do
+        n=$(grep -nF -- "$pat" "$f" | head -n1 | cut -d: -f1)
+        [ -n "$n" ] && [ "$n" -gt "$last" ] || {
+            echo "out of order: $pat"
+            return
+        }
+        last=$n
+    done
+    echo ordered
+}
+check "stack phase: baseline, restart leg, verify" "$(order stack.sh 'post_reboot_health_begin' '_stack_container_restart_leg ||' 'post_reboot_health_verify "stack"')" ordered
+check "provision reboot: log window, baseline, reboot, wrong-password control, verify allowing it" \
+    "$(order provision-reboot.sh '--start-window' 'post_reboot_health_begin' '_reboot_wait reboot' 'one external wrong-password attempt counts one failed login' 'post_reboot_health_verify "provision reboot" 1')" ordered
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 guest() (
     export POH_DIR="$tmp" fault="$1"
-    export POH_WORKERS POH_FAILURES=0 POI_STABLE_S=0 POI_RECONNECT_S=0
+    export POH_WORKERS POH_CONTAINERS POH_FAILURES=0 POI_STABLE_S=0 POI_RECONNECT_S=0
     POH_WORKERS=$(printf 'rig-a\nrig,b\n' | base64 | tr -d '\n')
+    POH_CONTAINERS=$(printf 'caddy\n' | base64 | tr -d '\n')
+    snaps="$tmp/snaps.$1"
+    : >"$snaps"
     source <(cat "$HERE/post-reboot-health-guest.sh" "$HERE/../integration/lib/reset-restore-web.sh" "$HERE/../integration/lib/post-op-invariants.sh")
     sleep() { :; }
     wait_for() {
+        local i
         shift 3
-        "$@"
+        for i in 1 2 3 4 5; do "$@" && return 0; done
+        return 1
     }
     env_on_box() {
         case "$1" in
@@ -78,8 +95,22 @@ guest() (
     }
     rx() {
         case "$1" in
-        *'/api/access'*) [ "$fault" = failures ] && printf '{"failures_24h": 2}' || printf '{"failures_24h": 0}' ;;
-        *'ps -q'*) [ "$fault" = starting ] && printf 'caddy c1 0 t1 true starting\n' || printf 'caddy c1 0 t1 true healthy\n' ;;
+        *'/api/access'*)
+            case "$fault" in
+            failures) printf '{"failures_24h": 2}' ;;
+            failures-unreadable) : ;;
+            *) printf '{"failures_24h": 0}' ;;
+            esac
+            ;;
+        *'ps -q'*)
+            printf x >>"$snaps"
+            case "$fault" in
+            starting) printf 'caddy c1 0 t1 true starting\n' ;;
+            starting-clears) [ "$(wc -c <"$snaps")" -gt 2 ] && printf 'caddy c1 0 t1 true healthy\n' || printf 'caddy c1 0 t1 true starting\n' ;;
+            gone) : ;;
+            *) printf 'caddy c1 0 t1 true healthy\n' ;;
+            esac
+            ;;
         *'ps -a --format'*)
             printf 'caddy\ndashboard\n'
             [ "$fault" != wizard ] || printf 'pithead-wizard\n'
@@ -90,7 +121,9 @@ guest() (
         esac
     }
     api_state() {
-        if [ "$fault" = worker ]; then
+        if [ "$fault" = state-unreadable ]; then
+            return 7
+        elif [ "$fault" = worker ]; then
             printf '{"workers":[{"name":"rig-a","status":"online"}]}'
         else
             printf '{"workers":[{"name":"rig-a","status":"online"},{"name":"rig,b","status":"online"}]}'
@@ -100,13 +133,21 @@ guest() (
 )
 out=$(guest none verify)
 check "healthy guest passes" "$?" 0
-check "healthy guest reports six PASS rows and finishes" "$(grep -c '^POH PASS' <<<"$out")/$(grep -c '^POH DONE$' <<<"$out")" "6/1"
+check "healthy guest reports seven PASS rows and finishes" "$(grep -c '^POH PASS' <<<"$out")/$(grep -c '^POH DONE$' <<<"$out")" "7/1"
 for case in "wizard:no pithead-wizard container" "setup-page:owns the web response" "failures:failures_24h unchanged" \
     "worker:every worker online before the step" "starting:every running container healthy"; do
     f=${case%%:*}
     out=$(guest "$f" verify)
     check "fault $f is red" "$?" 1
     check "fault $f names only its row" "$(grep -c '^POH FAIL' <<<"$out")/$(grep -c "^POH FAIL .*${case#*:}" <<<"$out")" "1/1"
+done
+out=$(guest starting-clears verify)
+check "a container that finishes starting is waited for, not red" "$?/$(grep -c '^POH FAIL' <<<"$out")" "0/0"
+out=$(guest gone verify)
+check "a container that never came back is red" "$?/$(grep -c '^POH FAIL .*running again :: not running: caddy' <<<"$out")" "1/1"
+for f in state-unreadable failures-unreadable; do
+    guest "$f" snapshot >/dev/null
+    check "an unreadable snapshot ($f) fails" "$?" 1
 done
 out=$(guest worker verify)
 check "worker fault names the missing worker" "$(grep -c '^POH FAIL .*rig,b' <<<"$out")" 1
