@@ -37,6 +37,10 @@ sys.exit(0 if valid else 1)
 PY
 }
 clearnet_sync_active() { monero_clearnet_exposed || tari_clearnet_exposed; }
+performance_clearnet_active() {
+    [ "$(env_get PITHEAD_PROFILE 2>/dev/null)" = performance ] || return 1
+    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = "true" ] || [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = "true" ]
+}
 
 container_state_is_stopped() { # <state> [status]; the only states a deliberate hold can produce
     case "$1" in created | exited | stopped) return 0 ;; "") case "${2:-}" in Created* | Exited* | Stopped*) return 0 ;; esac ;; esac
@@ -47,6 +51,7 @@ container_state_is_stopped() { # <state> [status]; the only states a deliberate 
 # has not yet been attested on Tor. Prints nothing once both have host verification.
 print_clearnet_banner() {
     local who=""
+    performance_clearnet_active && return 0
     monero_clearnet_exposed && who="Monero"
     tari_clearnet_exposed && who="${who:+$who + }Tari"
     [ -n "$who" ] || return 0

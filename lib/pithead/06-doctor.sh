@@ -142,16 +142,7 @@ doctor() {
     check_lan_guard
     check_tor_clearnet_egress
     check_tor_circuit_history
-    # Clearnet initial sync (#183): warn until the host attests both live Tor and the closed
-    # exception; a dashboard-written marker alone does not clear the warning.
-    if [ -f "$ENV_FILE" ] && clearnet_sync_active; then
-        local _cn=""
-        monero_clearnet_exposed && _cn="Monero"
-        tari_clearnet_exposed && _cn="${_cn:+$_cn + }Tari"
-        dr_warn clearnet-initial-sync "CLEARNET initial sync or Tor transition is pending for $_cn — this host's IP may be exposed until the host verifies Tor and the closed firewall exception (Monero tx-broadcast stays on Tor). See $DOCS_URL/docs/privacy.md#optional-clearnet-initial-sync-off-by-default. The dashboard retries automatically; this WARN clears after host verification."
-    else
-        dr_ok clearnet-initial-sync "No clearnet initial sync active — all node P2P is Tor-only."
-    fi
+    check_clearnet_initial_sync
 
     if printf '%s' "$(env_get P2POOL_FLAGS 2>/dev/null)" | grep -q -- '--socks5'; then
         local _p2args

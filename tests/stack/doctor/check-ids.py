@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 CHECKS = (
-    ("clearnet-initial-sync", "doctor"),
+    ("clearnet-initial-sync", "check_clearnet_initial_sync"),
     ("clock-sync", "doctor"),
     ("container-engine", "doctor"),
     ("container-engine-boot", "doctor"),
