@@ -64,6 +64,14 @@ phase_setup_defaults() {
         return 1
         ;;
     esac
+    dashboard_env=$(_ssh "podman inspect dashboard --format '{{range .Config.Env}}{{println .}}{{end}}'" 2>/dev/null)
+    if printf '%s\n' "$dashboard_env" | grep -qx 'DONATION_ENABLED=false' &&
+        printf '%s\n' "$dashboard_env" | grep -qx 'DONATION_PERCENT=0' &&
+        printf '%s\n' "$dashboard_env" | grep -qx 'DONATION_TOR_ENABLED=true'; then
+        ok "fresh defaults run the dashboard unit with the three DONATION_* settings at their off defaults (#3694)"
+    else
+        bad "fresh defaults dashboard unit lacks the DONATION_* settings (#3694)"
+    fi
     if _ssh "jq -e '.tari.mode == \"off\" and .xvb.enabled == false and
         .monero.clearnet_initial_sync == false and .tari.clearnet_initial_sync == false and
         (.dashboard.auth.password | length) == 32' /data/pithead/config.json" >/dev/null; then
