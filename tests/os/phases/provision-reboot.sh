@@ -23,6 +23,7 @@ _phase_provision_reboot() {
         bad "could not start the boot-probe access-log window (#3263)"
         return 1
     }
+    POH_CONTAINER_RE='^(caddy|dashboard)$'
     post_reboot_health_begin || true
     # Authenticate readiness checks so only the deliberate wrong-password control adds a 401.
     # shellcheck disable=SC2154,SC2034 # phase locals; dashboard_curl reads dynamic scope.

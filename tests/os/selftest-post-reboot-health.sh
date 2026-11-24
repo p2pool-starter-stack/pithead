@@ -67,6 +67,7 @@ order() {
     echo ordered
 }
 check "stack phase: baseline, restart leg, verify" "$(order stack.sh 'post_reboot_health_begin' '_stack_container_restart_leg ||' 'post_reboot_health_verify "stack"')" ordered
+check "stack phase: lifecycle gate is bracketed by a baseline and a verify" "$(order stack.sh '_stack_run_integration "lifecycle' 'post_reboot_health_verify "stack after the lifecycle gate"')/$(grep -c '^    post_reboot_health_begin' "$HERE/phases/stack.sh")" "ordered/2"
 check "provision reboot: log window, baseline, reboot, wrong-password control, verify allowing it" \
     "$(order provision-reboot.sh '--start-window' 'post_reboot_health_begin' '_reboot_wait reboot' 'one external wrong-password attempt counts one failed login' 'post_reboot_health_verify "provision reboot" 1')" ordered
 
@@ -77,6 +78,7 @@ guest() (
     export POH_WORKERS POH_CONTAINERS POH_FAILURES=0 POI_STABLE_S=0 POI_RECONNECT_S=0
     POH_WORKERS=$(printf 'rig-a\nrig,b\n' | base64 | tr -d '\n')
     POH_CONTAINERS=$(printf 'caddy\n' | base64 | tr -d '\n')
+    [ "$1" != scope ] || export POH_CONTAINER_RE='^(caddy|dashboard)$'
     snaps="$tmp/snaps.$1"
     : >"$snaps"
     source <(cat "$HERE/post-reboot-health-guest.sh" "$HERE/../integration/lib/reset-restore-web.sh" "$HERE/../integration/lib/post-op-invariants.sh")
@@ -108,6 +110,7 @@ guest() (
             starting) printf 'caddy c1 0 t1 true starting\n' ;;
             starting-clears) [ "$(wc -c <"$snaps")" -gt 2 ] && printf 'caddy c1 0 t1 true healthy\n' || printf 'caddy c1 0 t1 true starting\n' ;;
             gone) : ;;
+            scope) printf 'caddy c1 0 t1 true healthy\np2pool p1 0 t1 true healthy\n' ;;
             *) printf 'caddy c1 0 t1 true healthy\n' ;;
             esac
             ;;
@@ -149,6 +152,8 @@ for f in state-unreadable failures-unreadable; do
     guest "$f" snapshot >/dev/null
     check "an unreadable snapshot ($f) fails" "$?" 1
 done
+out=$(guest scope snapshot)
+check "the container scope filters the baseline" "$(sed -n 's/^POH_CONTAINERS=//p' <<<"$out" | base64 -d)" caddy
 out=$(guest worker verify)
 check "worker fault names the missing worker" "$(grep -c '^POH FAIL .*rig,b' <<<"$out")" 1
 out=$(guest none snapshot)

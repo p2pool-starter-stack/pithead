@@ -33,7 +33,7 @@ wait_for() {
 
 poh_settled() { ! grep -q ' starting$' <<<"$(poi_container_snapshot)"; }
 
-poh_running_names() { poi_container_snapshot | cut -d' ' -f1; }
+poh_running_names() { poi_container_snapshot | cut -d' ' -f1 | grep -E "${POH_CONTAINER_RE:-.}" || true; }
 
 poh_main() {
     local state missing
