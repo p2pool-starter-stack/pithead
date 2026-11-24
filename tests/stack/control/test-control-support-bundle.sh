@@ -225,7 +225,8 @@ assert_contains "the kernel file went through the redactor too" \
 echo "== control channel: an explicit start and end select the window's content =="
 sid2="c403c403-0000-4000-8000-000000000002"
 rm -f "$SB/journal.log"
-sb_run "$(sb_req "$sid2" support-bundle ",\"since\":\"$(sb_iso -14400)\",\"until\":\"$(sb_iso -5400)\"")"
+_now=$(date +%s); _since=$(date -u -d "@$((_now - 14400))" +%Y-%m-%dT%H:%M:%SZ); _until=$(date -u -d "@$((_now - 5400))" +%Y-%m-%dT%H:%M:%SZ)
+sb_run "$(sb_req "$sid2" support-bundle ",\"since\":\"$_since\",\"until\":\"$_until\"")"
 assert_eq "an explicit window applies" "$(jq -r .status "$SB/results/$sid2.json")" "applied"
 assert_contains "the journal was cut with --since" "$(cat "$SB/journal.log")" "--since "
 assert_contains "the journal was cut with --until" "$(cat "$SB/journal.log")" "--until "
@@ -424,7 +425,8 @@ assert_not_contains "the same one redactor covers the host CLI path" \
 echo "== host CLI: recovery-bundle takes --since and --until and rejects a bad window =="
 rbw=$(
     export PITHEAD_APPLIANCE=1 PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
-    run_sourced_e "$SANDBOX" recovery_bundle --since "$(sb_iso -14400)" --until "$(sb_iso -5400)" 2>/dev/null |
+    _now=$(date +%s); _since=$(date -u -d "@$((_now - 14400))" +%Y-%m-%dT%H:%M:%SZ); _until=$(date -u -d "@$((_now - 5400))" +%Y-%m-%dT%H:%M:%SZ)
+    run_sourced_e "$SANDBOX" recovery_bundle --since "$_since" --until "$_until" 2>/dev/null |
         sed -n 's/.*Support bundle written: //p' | tail -1
 )
 sb_unzip "$rbw" "$SB/extractW"
