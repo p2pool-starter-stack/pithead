@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 POH_BEFORE_WORKERS=""
 POH_BEFORE_FAILURES=""
+POH_BEFORE_CONTAINERS=""
 
 _poh_payload() {
     cat "$SCRIPT_DIR/post-reboot-health-guest.sh" \
@@ -17,12 +18,13 @@ post_reboot_health_begin() {
     }
     POH_BEFORE_WORKERS=$(sed -n 's/^POH_WORKERS=//p' <<<"$out" | tr -d '\r')
     POH_BEFORE_FAILURES=$(sed -n 's/^POH_FAILURES=//p' <<<"$out" | tr -d '\r')
+    POH_BEFORE_CONTAINERS=$(sed -n 's/^POH_CONTAINERS=//p' <<<"$out" | tr -d '\r')
 }
 
 post_reboot_health_verify() {
     local label="$1" out rc=0 line done=0
     out=$(SSH_TIMEOUT=900 _ssh "printf %s '$(_poh_payload verify | base64 | tr -d '\n')' | base64 -d |
-        POH_LABEL=$(printf '%q' "$label") POH_WORKERS=$(printf '%q' "$POH_BEFORE_WORKERS") POH_FAILURES=$(printf '%q' "$POH_BEFORE_FAILURES") POI_PROBES_ALLOWED=${2:-0} bash") || rc=$?
+        POH_LABEL=$(printf '%q' "$label") POH_WORKERS=$(printf '%q' "$POH_BEFORE_WORKERS") POH_FAILURES=$(printf '%q' "$POH_BEFORE_FAILURES") POH_CONTAINERS=$(printf '%q' "$POH_BEFORE_CONTAINERS") POI_PROBES_ALLOWED=${2:-0} bash") || rc=$?
     while IFS= read -r line; do
         line=${line%$'\r'}
         case "$line" in

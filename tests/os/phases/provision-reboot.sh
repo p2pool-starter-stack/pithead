@@ -83,7 +83,6 @@ _phase_provision_reboot() {
         bad "dashboard never answered after the reboot (last: $code)"
         return 1
     }
-    post_reboot_health_verify "provision reboot" || true
     # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
     # No unit may be quietly broken (#792 sat visible in --failed for two RCs, unasserted).
     local failed_units
@@ -167,6 +166,7 @@ _phase_provision_reboot() {
     else
         bad "external wrong-password 401 or single failed-login count did not verify (#3263)"
     fi
+    post_reboot_health_verify "provision reboot" 1 || true
     assert_appliance_hostname_identity fixture-next "unaided reboot" "$pv_user" "$pv_pass"
     # The miner must return too (#796): its unit lives in /run and died with the reboot, so
     # only pithead-boot's local-miner leg — which runs after the slot commit above — can have

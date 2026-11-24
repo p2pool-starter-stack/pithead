@@ -33,18 +33,31 @@ wait_for() {
 
 poh_settled() { ! grep -q ' starting$' <<<"$(poi_container_snapshot)"; }
 
+poh_running_names() { poi_container_snapshot | cut -d' ' -f1; }
+
 poh_main() {
+    local state missing
     case "${1:-}" in
     snapshot)
-        api_state | jq -e . >/dev/null 2>&1 || return 1
-        post_op_begin
+        state=$(api_state) && jq -e . >/dev/null 2>&1 <<<"$state" || return 1
+        POI_WORKERS=$(jq -r '.workers[]? | select(.status == "online") | .name' <<<"$state" | sort -u)
+        POI_FAILURES=$(poi_failures_24h)
         [ -n "$POI_FAILURES" ] || return 1
-        printf 'POH_WORKERS=%s\nPOH_FAILURES=%s\n' "$(printf '%s' "$POI_WORKERS" | base64 | tr -d '\n')" "$POI_FAILURES"
+        printf 'POH_WORKERS=%s\nPOH_FAILURES=%s\nPOH_CONTAINERS=%s\n' "$(printf '%s' "$POI_WORKERS" | base64 | tr -d '\n')" \
+            "$POI_FAILURES" "$(poh_running_names | base64 | tr -d '\n')"
         ;;
     verify)
         POI_WORKERS=$(printf '%s' "${POH_WORKERS:-}" | base64 -d)
         POI_FAILURES="${POH_FAILURES:-}"
         wait_for "${POH_SETTLE_S:-300}" 10 "containers settled" poh_settled || true
+        missing=$(comm -23 <(printf '%s' "${POH_CONTAINERS:-}" | base64 -d | sed '/^$/d' | sort -u) <(poh_running_names | sort -u) | tr '\n' ' ')
+        if [ -z "${POH_CONTAINERS:-}" ]; then
+            it_fail "${POH_LABEL:-post-reboot}: every container running before the step is running again" "no baseline"
+        elif [ -n "$missing" ]; then
+            it_fail "${POH_LABEL:-post-reboot}: every container running before the step is running again" "not running: $missing"
+        else
+            it_pass "${POH_LABEL:-post-reboot}: every container running before the step is running again"
+        fi
         post_op_invariants "${POH_LABEL:-post-reboot}"
         printf 'POH DONE\n'
         [ "$IT_FAIL" -eq 0 ]

@@ -111,8 +111,11 @@ It streams `tests/os/post-reboot-health-guest.sh` together with
 `tests/integration/lib/post-op-invariants.sh` and `reset-restore-web.sh` into the guest, so the
 KVM `stack` phase (after the Caddy restart leg) and the provision reboot leg read the same
 user-visible health as the DIY lifecycle: no wizard holding ports 80 and 443, the dashboard
-answering rather than the setup page, steady healthy containers, no failed pithead unit and an
-unchanged `failures_24h`. `tests/os/selftest-post-reboot-health.sh` injects each fault.
+answering rather than the setup page, every container from before the step running again and
+steady, no failed pithead unit and an unchanged `failures_24h`. The provision reboot leg verifies
+after its wrong-password control and allows exactly that one failed login, so a boot probe counted
+as a failure still goes red. An unfinished guest verdict or an unreadable baseline is red.
+`tests/os/selftest-post-reboot-health.sh` injects each fault and pins the call order.
 
 The migration startup regression is `tests/stack/lifecycle/migration-hold.sh`;
 `tests/os/selftest-migration-hold.sh` checks slot ownership and same-version fallback.
