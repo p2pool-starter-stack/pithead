@@ -40,11 +40,12 @@ jobs:
             rc=1
           fi
           [ -s report.md ] || { echo "The OS package watch produced no report." >report.md; rc=1; }
-          fixable=$(sed -n 's/.*os-package-watch: fixable=\([0-9]*\).*/\1/p' report.md)
+          fixable=$(sed -n 's/^<!-- os-package-watch: fixable=\([0-9]*\) unchecked=[0-9]* -->$/\1/p' report.md | tail -1)
           cat report.md >>"$GITHUB_STEP_SUMMARY"
           echo "rc=$rc" >>"$GITHUB_OUTPUT"
           echo "fixable=${fixable:-0}" >>"$GITHUB_OUTPUT"
-      - name: Open or annotate the rebuild issue
+      - name: Open, annotate or close the rebuild issue
+        if: steps.report.outputs.rc == '0'
         env:
           GH_TOKEN: ${{ github.token }}
           FIXABLE: ${{ steps.report.outputs.fixable }}
@@ -55,6 +56,9 @@ jobs:
           if [ -n "$n" ]; then
             gh issue edit "$n" --body-file report.md
             echo "updated #$n"
+            if [ "$FIXABLE" = 0 ]; then
+              gh issue close "$n" --comment "The latest release has no installed package with a fixed advisory."
+            fi
           elif [ "$FIXABLE" != 0 ]; then
             gh issue create --title "$TITLE" --label dependencies --body-file report.md
           fi

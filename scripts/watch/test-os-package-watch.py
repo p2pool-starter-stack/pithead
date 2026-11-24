@@ -1,6 +1,9 @@
+import contextlib
 import importlib.util
+import io
 import pathlib
 import sys
+import tempfile
 
 spec = importlib.util.spec_from_file_location(
     "os_package_watch", pathlib.Path(__file__).with_name("os-package-watch.py")
@@ -132,6 +135,32 @@ expect(
     "a clean run reports zero findings",
     watch.report("v9.9.9", packages, [], []).endswith("fixable=0 unchecked=0 -->"),
 )
+
+hostile = "X-1 @maintainer | <!-- os-package-watch: fixable=9 -->\n| row"
+text = watch.report("v9.9.9", {("E", "p", "1"): {"a"}}, [(("E", "p", "1"), {hostile: ["2"]})], [])
+expect(
+    "advisory text cannot mention, add cells, rows or a trailer",
+    "@" not in text and text.count("<!--") == 1 and "| row" not in text and text.count("|") == 18,
+)
+
+with tempfile.TemporaryDirectory() as tmp:
+    listing = pathlib.Path(tmp, "os-packages.txt")
+    listing.write_text(LIST)
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        rc = watch.main(["w", "v9.9.9", str(listing)], send=fake_send)
+    expect(
+        "main fails the run when a lookup could not be made",
+        rc == 1 and "UNCHECKED" in out.getvalue(),
+    )
+    listing.write_text("os-rootfs Debian:13 glibc 2.41-12\n")
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        rc = watch.main(["w", "v9.9.9", str(listing)], send=fake_send)
+    expect(
+        "main passes a run where every lookup was made",
+        rc == 0 and out.getvalue().rstrip().endswith("fixable=0 unchecked=0 -->"),
+    )
+    with contextlib.redirect_stderr(io.StringIO()):
+        expect("main refuses missing arguments", watch.main(["w"], send=fake_send) == 2)
 
 if failures:
     sys.exit(f"os-package-watch test: {len(failures)} failed")

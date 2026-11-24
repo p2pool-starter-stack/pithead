@@ -116,6 +116,25 @@ os_pkg_rc=$?
 assert_eq "a failed capture stops the release" "$os_pkg_rc" "1"
 assert_contains "a failed capture names the image" "$os_pkg_err" \
     "Could not record the installed OS packages of ghcr.io/test/pithead-os-rootfs@sha256:1"
+os_pkg_run="$(
+    cd "$ROOT" || exit
+    set --
+    # shellcheck source=scripts/release/release.sh
+    source "$REL" 2>/dev/null
+    set +eu
+    WORKDIR="$os_pkg_dir/work" DRY_RUN=0 DRAFT=0 COSIGN_ENABLED=0 TAG=v9.9.9 STACK_VERSION=9.9.9 GIT_COMMIT=abc BUILD_DATE=now
+    make_bundle() { : >"$1"; }
+    append_bundle_sha256() { :; }
+    changelog_notes() { :; }
+    confirm() { return 0; }
+    gh() { :; }
+    run() { printf '%s\n' "$*"; }
+    publish 2>/dev/null
+)"
+assert_contains "publish attaches the package list to the GitHub Release" "$os_pkg_run" \
+    "release create v9.9.9 --title Pithead v9.9.9 --notes-file $os_pkg_dir/work/notes.md $os_pkg_dir/work/pithead.tar.gz $os_pkg_dir/work/ingredients-v9.9.9.md $os_pkg_dir/work/os-packages-v9.9.9.txt"
+assert_eq "the attached list is the recorded list" \
+    "$(cmp -s "$os_pkg_dir/work/os-packages.txt" "$os_pkg_dir/work/os-packages-v9.9.9.txt" && echo same)" "same"
 os_pkg_err="$(
     cd "$ROOT" || exit
     set --
@@ -129,5 +148,5 @@ os_pkg_err="$(
 assert_eq "publish stops when no package list was recorded" "$?" "1"
 assert_contains "publish names the missing package list" "$os_pkg_err" "refusing to publish without it"
 rm -rf "$os_pkg_dir"
-unset os_pkg_dir os_pkg_err os_pkg_rc
+unset os_pkg_dir os_pkg_err os_pkg_rc os_pkg_run
 unset -f os_pkg_capture

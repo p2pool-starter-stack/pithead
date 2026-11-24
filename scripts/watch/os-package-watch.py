@@ -1,12 +1,14 @@
 import concurrent.futures
 import http.client
 import json
+import re
 import sys
 import time
 
 OSV_HOST = "api.osv.dev"
 OSV_QUERY = "/v1/query"
 MAX_IDS = 5
+UNSAFE = re.compile(r"[^A-Za-z0-9._:+~ -]")
 
 
 def parse(text):
@@ -95,13 +97,18 @@ def check(packages, send=post, workers=8):
     return sorted(findings), sorted(unchecked)
 
 
+def safe(text):
+    return UNSAFE.sub("?", str(text))
+
+
 def report(tag, packages, findings, unchecked):
     lines = [
-        f"Installed OS packages of release {tag}, checked weekly against OSV advisories by "
-        "`scripts/watch/os-package-watch.py`. A row is an installed package with advisories "
-        "the distribution has fixed in a newer package, so rebuilding the listed images picks the fixes up. This never bumps anything.",
+        f"Installed OS packages of release {safe(tag)}, checked weekly against OSV advisories by "
+        "`scripts/watch/os-package-watch.py`. A row is an installed package with advisories the "
+        "distribution has fixed in a newer package: move the listed images to a current base and "
+        "package index and rebuild them to ship the fixes. This never bumps anything.",
         "",
-        f"{len(findings)} of {len(packages)} recorded source packages need a rebuild.",
+        f"{len(findings)} of {len(packages)} distinct recorded package versions have fixed advisories.",
     ]
     if findings:
         lines += [
@@ -110,12 +117,14 @@ def report(tag, packages, findings, unchecked):
             "|---|---|---|---|---|",
         ]
         for (ecosystem, name, version), fixes in findings:
-            ids = sorted(fixes)
+            ids = sorted(safe(i) for i in fixes)
             shown = ", ".join(ids[:MAX_IDS]) + (
                 f" and {len(ids) - MAX_IDS} more" if len(ids) > MAX_IDS else ""
             )
-            images = ", ".join(sorted(packages[(ecosystem, name, version)]))
-            lines.append(f"| {images} | {ecosystem} | {name} | {version} | {len(ids)}: {shown} |")
+            images = ", ".join(sorted(safe(i) for i in packages[(ecosystem, name, version)]))
+            lines.append(
+                f"| {images} | {safe(ecosystem)} | {safe(name)} | {safe(version)} | {len(ids)}: {shown} |"
+            )
     if unchecked:
         lines += [
             "",
@@ -123,21 +132,21 @@ def report(tag, packages, findings, unchecked):
             "",
         ]
         lines += [
-            f"- {ecosystem} {name} {version}: {error}"
+            f"- {safe(ecosystem)} {safe(name)} {safe(version)}: {safe(error)}"
             for (ecosystem, name, version), error in unchecked
         ]
     lines += ["", f"<!-- os-package-watch: fixable={len(findings)} unchecked={len(unchecked)} -->"]
     return "\n".join(lines)
 
 
-def main(argv):
+def main(argv, send=post):
     if len(argv) != 3:
         print("usage: os-package-watch.py <release-tag> <os-packages.txt>", file=sys.stderr)
         return 2
     tag, path = argv[1], argv[2]
     with open(path, encoding="utf-8") as handle:
         packages = parse(handle.read())
-    findings, unchecked = check(packages)
+    findings, unchecked = check(packages, send)
     print(report(tag, packages, findings, unchecked))
     return 1 if unchecked else 0
 

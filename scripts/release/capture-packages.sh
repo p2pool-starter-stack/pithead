@@ -78,7 +78,11 @@ list_packages() {
         echo "capture-packages: package database lists no installed packages" >&2
         return 1
     }
-    printf '%s\n' "$lines" | sort -u | sed "s/^/$ecosystem /"
+    [[ "$ecosystem" =~ ^[A-Za-z0-9:._-]+$ ]] || {
+        echo "capture-packages: refusing ecosystem '$ecosystem'" >&2
+        return 1
+    }
+    printf '%s\n' "$lines" | sort -u | awk -v prefix="$ecosystem" '{ print prefix, $0 }'
 }
 
 capture_image() {
@@ -89,12 +93,12 @@ capture_image() {
         return 1
     }
     docker cp -L "$cid:/etc/os-release" "$dir/os-release" >/dev/null || rc=1
-    if [ "$rc" -eq 0 ] && ! docker cp "$cid:/var/lib/dpkg/status" "$dir/dpkg-status" >/dev/null 2>&1; then
-        docker cp "$cid:/lib/apk/db/installed" "$dir/apk-installed" >/dev/null || rc=1
+    if [ "$rc" -eq 0 ] && ! docker cp -L "$cid:/var/lib/dpkg/status" "$dir/dpkg-status" >/dev/null 2>&1; then
+        docker cp -L "$cid:/lib/apk/db/installed" "$dir/apk-installed" >/dev/null || rc=1
     fi
     docker rm "$cid" >/dev/null || true
     if [ "$rc" -eq 0 ]; then
-        list_packages "$dir" | sed "s/^/$label /" || rc=1
+        list_packages "$dir" | awk -v prefix="$label" '{ print prefix, $0 }' || rc=1
     fi
     rm -rf "$dir"
     return "$rc"
@@ -126,6 +130,11 @@ self_test() {
     printf 'ID=alpine\nVERSION_ID=3.24\n' >"$t/alpine-short"
     st "a two-part Alpine VERSION_ID keeps both parts" "$(osv_ecosystem "$t/alpine-short")" "Alpine:v3.24"
     st "a release without VERSION_ID is refused" "$(osv_ecosystem "$t/sid" 2>/dev/null && echo ok || echo refused)" "refused"
+    printf 'ID=debian\nVERSION_ID="1/;e id;s/^/"\n' >"$t/hostile"
+    mkdir -p "$t/hostile-root"
+    cp "$t/hostile" "$t/hostile-root/os-release"
+    printf 'Package: a\nStatus: install ok installed\nVersion: 1\n' >"$t/hostile-root/dpkg-status"
+    st "a VERSION_ID outside the ecosystem alphabet is refused" "$(list_packages "$t/hostile-root" 2>/dev/null && echo ok || echo refused)" "refused"
     st "an unsupported OS is refused" "$(osv_ecosystem "$t/fedora" 2>/dev/null && echo ok || echo refused)" "refused"
 
     mkdir -p "$t/deb"
