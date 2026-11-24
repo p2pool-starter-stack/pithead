@@ -379,7 +379,8 @@ check_monerod_synchronized() {
     url=$(env_get MONERO_RPC_URL 2>/dev/null)
     [ -n "$url" ] || url="http://127.0.0.1:18081"
     if [ -n "$user" ]; then
-        body=$(curl -fsS --max-time 8 --digest -u "$user:$pass" "$url/get_info" 2>/dev/null)
+        body=$(printf 'user = %s\n' "$(printf '%s:%s' "$user" "$pass" | jq -Rs .)" |
+            curl -fsS --max-time 8 --digest --config - "$url/get_info" 2>/dev/null)
     else
         body=$(curl -fsS --max-time 8 "$url/get_info" 2>/dev/null)
     fi

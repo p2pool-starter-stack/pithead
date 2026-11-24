@@ -133,6 +133,9 @@ Appliance reset leg 0 is `tests/os/phases/reset-config.sh`. Its guest-only
 `tests/os/reset-config-probe.sh` records the real Compose shutdown status and output before
 configuration removal, including suppressed RC4 diagnostics. `tests/os/selftest-reset-config-probe.sh`
 checks that failed or unrecorded stops cannot pass from reset's final exit 0.
+The probe retries `compose down` once on a storage-unmount error, and the selftest covers a failure that clears on the retry.
+`tests/os/appliance-recovery-bundle-leg.sh` stops the container units, then waits up to 30 s for `podman ps` to empty; `selftest-recovery-bundle.sh` covers a 6 s stop.
+`tests/os/rig-failure-evidence.sh` is called from the rig share leg against the coordinator guest: it prints the guest journal from the backup apply, the xmrig-proxy and p2pool logs, the proxy summary and the container list when the leg's share or backup-recovery rows fail, and records a row that those sections came back when the backup trial passes (`selftest-rig-failure-evidence.sh`).
 
 Coordinator setup-again runs before those resets in `tests/os/coordinator-setup-again-leg.sh`;
 `tests/os/selftest-coordinator-setup-again.sh` drives safe-prefill and preservation failure controls.

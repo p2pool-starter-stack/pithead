@@ -154,6 +154,20 @@ assert_not_contains "...and restarts nothing" "$lg_out" "ran: docker compose res
 lg_out="$(LG_LIVE=1 lg 'mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { echo "ran: docker $*"; }; stack_restart monerod')"
 assert_contains "with the rule still live after the lock, it restarts" "$lg_out" "ran: docker compose restart monerod"
 
+echo "== the Tor egress rules stay until the stop succeeded =="
+lg_egress='mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; remove_tor_egress_firewall() { echo egress-rules-removed; };'
+lg_out="$(lg "$lg_egress"' docker() { case "$1 $2" in "compose down") return 1 ;; esac; }; stack_down' 2>&1)"
+assert_contains "a failed down exits with its error" "$lg_out" "Stack failed to stop"
+assert_not_contains "...and leaves the egress rules in place" "$lg_out" "egress-rules-removed"
+lg_out="$(lg "$lg_egress"' docker() { case "$1 $2" in "compose config") echo monerod ;; "compose stop") return 1 ;; esac; }; stack_down_except_caddy' 2>&1)"
+assert_contains "a failed backup stop exits with its error" "$lg_out" "Stack failed to stop"
+assert_not_contains "...and leaves the egress rules in place" "$lg_out" "egress-rules-removed"
+lg_out="$(lg "$lg_egress"' docker() { case "$1 $2" in "compose down") echo compose-stopped ;; esac; }; stack_down' 2>&1)"
+assert_eq "a down that stopped removes the egress rules afterwards" "$(grep -oE 'compose-stopped|egress-rules-removed' <<<"$lg_out" | tr '\n' ' ')" "compose-stopped egress-rules-removed "
+lg_out="$(lg "$lg_egress"' docker() { case "$1 $2" in "compose config") echo monerod ;; "compose stop") echo compose-stopped ;; esac; }; stack_down_except_caddy' 2>&1)"
+assert_eq "a backup stop that stopped removes them afterwards" "$(grep -oE 'compose-stopped|egress-rules-removed' <<<"$lg_out" | tr '\n' ' ')" "compose-stopped egress-rules-removed "
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+
 echo "== reset and uninstall remove the Tor-only egress rules only when the engine shows no stack container active =="
 cp "$LGD/.env" "$LGD/.env.egress"
 lg_out="$(LG_CENSUS="running c1" lg_egress 0 'config_reset -y')"

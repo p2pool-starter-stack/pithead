@@ -111,3 +111,60 @@ run_pending >/dev/null
 result_count=$(find "$RESULTS" -maxdepth 1 -type f \( -name "$UUID6.json" -o -name "$UUID7.json" \) | wc -l | tr -d ' ')
 assert_eq "each request in one drain reapplies the result count cap" "$result_count" "1"
 unset CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S UUID6 UUID7 result_count
+
+echo "== black-box: non-file spool entries are removed without leaving requests/ =="
+: >"$AUDIT"
+mkdir -p "$C/outside-dir" "$REQS/dir-entry.json"
+printf 'keep' >"$C/outside-dir/kept"
+printf 'inner' >"$REQS/dir-entry.json/inner"
+ln -s "$C/outside-dir" "$REQS/dir-link.json"
+ln -s "$C/outside-missing" "$REQS/dangling.json"
+printf 'x' >"$REQS/"$'two\nlines.json'
+out="$(run_pending)"
+for entry in dir-entry.json dir-link.json dangling.json; do
+    if [ -e "$REQS/$entry" ] || [ -L "$REQS/$entry" ]; then bad "non-file request $entry removed" "still present"; else ok "non-file request $entry removed"; fi
+done
+[ ! -e "$REQS/"$'two\nlines.json' ] && ok "request with a line break in its name removed" || bad "request with a line break in its name removed" "still present"
+assert_eq "file behind a linked folder untouched" "$(cat "$C/outside-dir/kept" 2>/dev/null)" "keep"
+[ ! -e "$C/outside-missing" ] && ok "dangling link target not created" || bad "dangling link target not created" "target exists"
+assert_eq "each removed request audited, the one with a line break included" "$(grep -c refused-nonregular "$AUDIT")" "4"
+assert_contains "non-file sweep drains the spool" "$(run_pending)" "No pending control requests."
+
+echo "== black-box: id and actor are matched as whole strings =="
+UUID8="a8a8a8a8-a8a8-48a8-8a8a-a8a8a8a8a8a8"
+UUID9="a9a9a9a9-a9a9-49a9-8a9a-a9a9a9a9a9a9"
+jq -n --arg id "$UUID8"$'\n'"tail" '{id:$id,action:"unknown",actor:"x"}' >"$REQS/$UUID8.json"
+jq -n --arg id "$UUID9" --arg a "admin"$'\n'"tail" '{id:$id,action:"unknown",actor:$a}' >"$REQS/$UUID9.json"
+: >"$AUDIT"
+out="$(run_pending)"
+assert_contains "id with a line break refused as malformed" "$out" "malformed id"
+assert_eq "no result file carries the extra id text" "$(find "$RESULTS" -name '*tail*' | wc -l | tr -d ' ')" "0"
+assert_eq "actor with a line break audited as untrusted" "$(jq -r --arg id "$UUID9" 'select(.id == $id) | .actor' "$AUDIT")" "untrusted"
+
+echo "== black-box: one drain stops starting requests after its time budget =="
+mkdir -p "$C/slow-bin"
+cat >"$C/slow-bin/chmod" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}:${2:-}" in 600:*/.claim.*) sleep 1 ;; esac
+exec /bin/chmod "$@"
+EOF
+/bin/chmod +x "$C/slow-bin/chmod"
+for i in $(seq 1 6); do printf 'notjson' >"$REQS/slow-$i.json"; done
+old_path="$PATH"
+PATH="$C/slow-bin:$PATH"
+out="$(CONTROL_DRAIN_BUDGET_S=2 run_pending)"
+PATH="$old_path"
+assert_contains "time budget announced" "$out" "per-run time budget"
+left="$(find "$REQS" -name 'slow-*.json' | wc -l | tr -d ' ')"
+[ "$left" -gt 0 ] && [ "$left" -lt 6 ] && ok "budget leaves the rest for the next run" || bad "budget leaves the rest for the next run" "$left left"
+assert_contains "next run drains the remainder" "$(run_pending)" "Processed $left control request(s)"
+
+echo "== black-box: a spool too large for one command line is still listed =="
+long_name=$(printf 'x%.0s' $(seq 1 240))
+for i in $(seq 1 9000); do : >"$REQS/$i-$long_name.json"; done
+: >"$REQS/"$'late\nname.json'
+assert_contains "a spool of 9000 long names is seen by the runner" "$(CONTROL_DRAIN_BUDGET_S=0 run_pending)" "per-run time budget"
+[ -e "$REQS/"$'late\nname.json' ] && ok "a spent budget also stops the removal of names with a line break" || bad "a spent budget also stops the removal of names with a line break" "removed"
+find "$REQS" -mindepth 1 -delete
+assert_eq "claim failure messages carry no request name" "$(grep -c 'claimed control request [$]name' "$STACK")" "0"
+unset UUID8 UUID9 left entry long_name i
