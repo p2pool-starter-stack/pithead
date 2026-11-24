@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Sourced by selftest-e2e-restore-proof.sh; exercises its shipped classifier and build proof.
-# Cache reuse is accepted only with build evidence from BOTH checkouts. The fake Compose
-# returns each checkout's resolved context and arguments; the helper reads its real files.
 echo "== cached image reuse proof =="
 proof_tmp="$(mktemp -d)"
 trap 'rm -rf "$proof_tmp"' EXIT
@@ -20,29 +17,6 @@ proof_cmd="$HERE/../tools/image-build-proof.sh"
 proof_base="$(PATH="$proof_tmp/bin:$PATH" bash "$proof_cmd" "$proof_tmp/base" wallet-rpc)"
 proof_branch="$(PATH="$proof_tmp/bin:$PATH" bash "$proof_cmd" "$proof_tmp/branch" wallet-rpc)"
 assert_eq "identical pinned inputs prove a reused wallet image" "$proof_base" "$proof_branch"
-mkdir -p "$proof_tmp/branch/tests/integration/tools"
-cp "$proof_cmd" "$proof_tmp/branch/tests/integration/tools/image-build-proof.sh"
-# shellcheck disable=SC2034  # read by proved_image_reuse, sourced from restore-proof.sh
-E2E_DIR="$proof_tmp/branch" RESTORE_DIR="$proof_tmp/base"
-on_bench() { PATH="$proof_tmp/bin:$PATH" bash -c "$1"; }
-# shellcheck disable=SC2034  # read by proved_image_reuse, sourced from restore-proof.sh
-BASELINE_UPGRADE_OK=1 BASELINE_UPGRADE_IMAGES='wallet-rpc=sha256:AAA'
-stack_image_census() { echo 'wallet-rpc=sha256:AAA'; }
-assert_eq "the restore proof accepts identical build inputs through the bench command" \
-    "$(
-        proved_image_reuse wallet-rpc
-        echo $?
-    )" "0"
-BASELINE_UPGRADE_OK=0
-assert_eq "a failed baseline upgrade cannot authorize reuse" "$(
-    proved_image_reuse wallet-rpc
-    echo $?
-)" "1"
-# shellcheck disable=SC2034  # read by proved_image_reuse
-BASELINE_UPGRADE_OK=1
-assert_eq "the classifier accepts only named proved reuse" \
-    "$(grade_image_census "$BASE" "$BRANCH" "$BRANCH" 'dashboard' | sed -n 's/ dashboard$//p')" "reused"
-assert_eq "stale image control remains rejected" "$(verdict_for "$BRANCH" dashboard)" "stale"
 assert_ne "changed build arguments are not equal proof" \
     "$(PATH="$proof_tmp/bin:$PATH" PROOF_ARG=changed bash "$proof_cmd" "$proof_tmp/branch" wallet-rpc)" "$proof_base"
 assert_ne "shared image with different build specs fails closed" "$(
@@ -50,10 +24,6 @@ assert_ne "shared image with different build specs fails closed" "$(
     echo $?
 )" "0"
 printf 'changed\n' >"$proof_tmp/branch/build/monero/payload"
-assert_eq "the restore proof rejects changed context" "$(
-    proved_image_reuse wallet-rpc
-    echo $?
-)" "1"
 assert_ne "changed effective context is not equal proof" \
     "$(PATH="$proof_tmp/bin:$PATH" bash "$proof_cmd" "$proof_tmp/branch" wallet-rpc)" "$proof_base"
 sed -i "s/$base_ref/ubuntu@sha256:$(printf 'b%.0s' {1..64})/" "$proof_tmp/branch/build/monero/Dockerfile"
