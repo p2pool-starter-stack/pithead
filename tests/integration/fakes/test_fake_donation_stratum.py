@@ -10,8 +10,8 @@ import socks
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from fake_socks import FakeSocks  # noqa: E402
 from fake_donation_stratum import FakeStratum  # noqa: E402
+from fake_socks import FakeSocks  # noqa: E402
 
 
 def send(client, method, params, request_id=1):
