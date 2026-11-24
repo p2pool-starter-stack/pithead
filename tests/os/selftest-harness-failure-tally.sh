@@ -11,6 +11,9 @@ ip=fixture-address
 dashboard_curl() { printf 'cfg?._config_version_newer ? "Saving is blocked" : null'; }
 sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
 hostname_runtime_snapshot() { printf unchanged; }
+hostname_stable_snapshot() { printf unchanged; }
+hostname_snapshot_unchanged() { printf unchanged; }
+hostname_snapshot_diff() { printf none; }
 sensitive_preview() {
     APPROVAL_PREVIEW='{"id":"r1","status":"previewed"}'
     APPROVAL_REQUEST_ID=r1

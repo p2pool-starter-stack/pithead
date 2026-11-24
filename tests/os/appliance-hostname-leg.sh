@@ -2,6 +2,9 @@
 # Hostname assertions for the provisioned appliance (#1957/#1966). Sourced by tests/os/run.sh;
 # --self-test exercises the pure identity verdict without a guest.
 
+# shellcheck source=tests/os/appliance-hostname-snapshot.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-hostname-snapshot.sh"
+
 hostname_identity_verdict() { # <label> <ip> <kernel> <static> <env-host> <state-host> <cert-san> <avahi-state> <mdns-ip> <card> <named-code>
     local label="$1" ip="$2" kernel="$3" static="$4" env_host="$5" state_host="$6" sans="$7" avahi="$8" mdns="$9"
     local card="${10}" named_code="${11}"
@@ -189,7 +192,7 @@ assert_appliance_hostname_identity() { # <label> <context> <dashboard-user> <das
 }
 
 phase_provision_hostname_regressions() { # <dashboard-user> <dashboard-password>
-    local DASH_USER="$1" DASH_PASS="$2" before after live proposed preview
+    local DASH_USER="$1" DASH_PASS="$2" before after live proposed preview settled configured
     # The card the operator actually read is the wizard's own handoff, and it exists only here —
     # $handoff_body is the initial leg's local, reached the way pv_user/pv_pass are (#2350). Hand
     # it to the shared verdict so the wizard point judges the real artifact; every later point
@@ -209,23 +212,24 @@ phase_provision_hostname_regressions() { # <dashboard-user> <dashboard-password>
         bad "the wizard's clean-name card carried a warning: $(printf '%s' "${handoff_body:-}" | jq -r '.warning' 2>/dev/null)"
     fi
 
-    # Preview is pure even though this name change requires the combined configuration approval
-    # path. Compare the privileged side effects as well as config: a dry-run that restarted Avahi
-    # or minted a certificate would be visible here even if config.json stayed unchanged.
-    before=$(hostname_runtime_snapshot fixture-box)
+    before=$(hostname_stable_snapshot fixture-box) || {
+        bad "hostname preview: identity never settled before the preview (${before//$'\t'/ | })"
+        return
+    }
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
         bad "hostname preview: live config could not be read"
         return
     }
     proposed=$(printf '%s' "$live" | jq -c '.dashboard.host = "fixture-next"')
     preview=$(dashboard_control_request preview "$(jq -nc --argjson config "$proposed" '{config:$config}')")
-    after=$(hostname_runtime_snapshot fixture-box)
+    after=$(hostname_snapshot_unchanged fixture-box "$before")
+    settled=$?
+    configured=$(hostname_configured_host)
     if printf '%s' "$preview" | jq -e '.status == "previewed" and .approval_required == true' >/dev/null &&
-        [ "$before" = "$after" ] && dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
-        jq -e '.dashboard.host == "fixture-box"' >/dev/null; then
+        [ "$settled" -eq 0 ] && [ "$configured" = fixture-box ]; then
         ok "day-two hostname preview is approval-gated and has no hostname, mDNS or certificate side effect"
     else
-        bad "day-two hostname preview mutated identity or missed its approval gate"
+        bad "day-two hostname preview mutated identity or missed its approval gate (preview: $(printf '%s' "$preview" | jq -c '{status, approval_required}' 2>/dev/null || printf 'unparseable'); configured host: $configured; identity diff: $(hostname_snapshot_diff "$before" "$after"))"
     fi
 }
 
