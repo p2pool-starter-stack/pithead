@@ -24,7 +24,6 @@ _phase_provision_reboot() {
         return 1
     }
     POH_CONTAINER_RE='^(caddy|dashboard)$'
-    POH_CONTAINER_RE='^(caddy|dashboard)$'
     post_reboot_health_begin || true
     # Authenticate readiness checks so only the deliberate wrong-password control adds a 401.
     # shellcheck disable=SC2154,SC2034 # phase locals; dashboard_curl reads dynamic scope.
