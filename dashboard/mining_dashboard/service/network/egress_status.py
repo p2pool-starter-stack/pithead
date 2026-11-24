@@ -50,7 +50,6 @@ def _fresh_status(path, now) -> dict | None:
 
 
 def egress_firewall_state(path=None, now=None):
-    """``enforced`` / ``missing`` / ``unverified`` from the host's status file."""
     status = _fresh_status(path, now)
     rc = status.get("rc") if status else None
     if type(rc) is not int:
@@ -70,7 +69,6 @@ _UNMONITORED = {
 
 
 def host_audit_state(path=None, now=None):
-    """The host audit table's counters from the same status file, or the unmonitored shape."""
     status = _fresh_status(path, now)
     audit = status.get("host_audit") if status else None
     if not isinstance(audit, dict) or audit.get("verdict") != "present":
