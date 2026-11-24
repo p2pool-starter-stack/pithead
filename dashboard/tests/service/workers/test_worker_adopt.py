@@ -12,6 +12,8 @@ specific broken test, not a vague coverage drop:
     kill that.
 """
 
+from pathlib import Path
+
 import pytest
 
 from mining_dashboard.service.workers.worker_adopt import (
@@ -29,6 +31,9 @@ from mining_dashboard.service.workers.worker_adopt import (
 )
 
 VALID_ENTRY = {"name": "rig1", "host": "10.0.0.9", "control_port": 8082, "token": "tok-123"}
+_INTERNAL_HOST_VECTORS = (
+    Path(__file__).parents[2] / "fixtures" / "rule-vectors" / "internal-host.txt"
+)
 
 
 def test_regexes_have_no_intra_repo_drift():
@@ -360,6 +365,12 @@ class TestHostIsInternal:
         # returned address — lives in pithead's `_control_host_is_internal` and runs at commit
         # time on the host; see tests/stack/control/test-control-add-only-ssrf.sh for that coverage.
         assert host_is_internal("a-hostname-that-is-not-a-known-alias", {}) is False
+
+    @pytest.mark.parametrize("row", _INTERNAL_HOST_VECTORS.read_text().splitlines())
+    def test_agrees_with_the_shared_internal_host_vectors(self, row):
+        host, subnet, expected = row.split(" ")
+        live = {} if subnet == "-" else {"network": {"subnet": subnet}}
+        assert host_is_internal(host, live) is (expected == "internal")
 
 
 class TestFleetApiPort:

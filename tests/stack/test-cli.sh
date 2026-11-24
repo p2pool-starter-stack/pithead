@@ -72,14 +72,10 @@ assert_rc "rejects a leading zero (no octal-parse error)" "$?" "1"
 echo "== unit: semver_newer (#59 — the upgrade downgrade guard) =="
 # The comparison gates the upgrade button: a lexical bug would let 1.9.0 look "newer" than 1.10.0
 # and could be leveraged to force an older, vulnerable release.
-run_sourced "$SANDBOX" semver_newer "v1.10.0" "v1.9.0" >/dev/null 2>&1
-assert_rc "1.10.0 is newer than 1.9.0 (no lexical bug)" "$?" "0"
-run_sourced "$SANDBOX" semver_newer "v1.9.0" "v1.10.0" >/dev/null 2>&1
-assert_rc "1.9.0 is NOT newer than 1.10.0" "$?" "1"
-run_sourced "$SANDBOX" semver_newer "v1.3.1" "v1.3.1" >/dev/null 2>&1
-assert_rc "equal versions are not newer" "$?" "1"
-run_sourced "$SANDBOX" semver_newer "v2.0.0" "v1.99.99" >/dev/null 2>&1
-assert_rc "major bump beats a high minor/patch" "$?" "0"
+while read -r _sa _sb _sw; do
+    run_sourced "$SANDBOX" semver_newer "$_sa" "$_sb" </dev/null >/dev/null 2>&1
+    assert_rc "semver_newer $_sa over $_sb: $_sw" "$?" "$([ "$_sw" = yes ] && echo 0 || echo 1)"
+done <"$ROOT/dashboard/tests/fixtures/rule-vectors/semver-newer.txt"
 
 echo "== unit: resolve_dashboard_host (dashboard.host 'auto' revert, 247c5a0) =="
 # A configured dashboard.host is used verbatim.
