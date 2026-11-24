@@ -119,7 +119,7 @@ Compose project. At boot, the LAN guard runs first and Pithead reinstalls the eg
 its LAN-port jumps before starting containers, so the guard's return path still reaches the DROP.
 Until the host attests a selected first sync's Tor transition, a failed live firewall readback
 prevents Compose startup. A selected
-P2Pool or XvB exception also refuses startup on refresh failure; after a choice is disabled, its
+P2Pool, XvB or donation exception also refuses startup on refresh failure; after a choice is disabled, its
 marker keeps that refusal through firewall opt-out until an enabled refresh proves the stale rule
 gone. Ordinary startup retains the firewall warning. Before Docker creates its first network,
 the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
@@ -315,7 +315,11 @@ Opt out for maximum yield (stratum-over-Tor adds latency that can raise rejected
 hashrate): set `xvb.tor: false` and re-run `./pithead apply`; the donation connection then dials
 direct. The firewall exempts only xmrig-proxy while XvB is enabled and this choice is active;
 switching Tor back on or disabling XvB removes the exemption at apply. The XvB pool sees your
-home IP while donating. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
+home IP while donating. The exception is per container address, not per destination, so while it
+is active it also opens whatever else xmrig-proxy dials directly. The same holds for the project
+donation: with `donation.enabled` true and `donation.tor` false, the firewall exempts xmrig-proxy
+(the same address, one rule even when both choices are active) and the project endpoint sees your
+home IP; each choice keeps its own boot marker, so turning one off leaves the other's exemption. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
 stops the (already Tor-routed, #163) stats fetch.
 
 > NOTE: the xmrig-proxy dev-fee `--donate-level` is pinned to `0` by default (`proxy.donate_level`,
@@ -379,7 +383,8 @@ be explicitly opted into.
 
 The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) admits direct IPv4
 egress from the selected node's own container during first sync, from P2Pool when
-`p2pool.clearnet` is true, and from xmrig-proxy when XvB is enabled with `xvb.tor` false.
+`p2pool.clearnet` is true, and from xmrig-proxy when XvB is enabled with `xvb.tor` false or
+the project donation is enabled with `donation.tor` false.
 Every other container stays restricted, and the IPv6 backstop remains in place.
 The host checks that the node's live `ACCEPT` is scoped to its address and precedes the subnet's
 blocking `DROP`; a broad or later exception does not count as active. The chosen node gets

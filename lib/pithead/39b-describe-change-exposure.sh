@@ -14,7 +14,10 @@ egress_direct_for() { # <p2pool|xmrig-proxy>
 egress_firewall_exempts() { # <component>; the candidate config is parsed for this preview
     case "$1" in
     p2pool) return 0 ;;
-    xmrig-proxy) [ "$(config_bool '.xvb.enabled' true)" = true ] ;;
+    xmrig-proxy)
+        { [ "$(config_bool '.xvb.enabled' true)" = true ] && [ "$(config_bool '.xvb.tor' true)" = false ]; } ||
+            { [ "$(config_bool '.donation.enabled' false)" = true ] && [ "$(config_bool '.donation.tor' true)" = false ]; }
+        ;;
     *) return 1 ;;
     esac
 }
@@ -51,10 +54,16 @@ describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
         ;;
     DONATION_TOR_ENABLED)
         flag=CONFIRM
-        if [ "$new" = false ]; then
-            msg="Project donation set off Tor; when donation mining is enabled and available, the project endpoint sees this host's IP."
+        if [ "$new" = false ] && [ "$(config_bool '.donation.enabled' false)" != true ]; then
+            msg="Project donation set off Tor while donation is disabled — there is no project dial now; enabling donation later opens a direct dial and exposes this host's IP to the project endpoint."
+        elif [ "$new" = false ] && egress_direct_for xmrig-proxy; then
+            msg="⚠ Project donation OFF Tor — xmrig-proxy dials the project endpoint directly and that route is open, so the project endpoint sees this host's IP alongside the hashrate it donates."
+            [ "${TOR_EGRESS_FIREWALL:-true}" = false ] ||
+                msg+=" The firewall exception is per container, so it also opens whatever else xmrig-proxy dials directly."
+        elif [ "$new" = false ]; then
+            msg="Project donation set off Tor — the egress firewall has no exception for it, so the project endpoint sees this host's IP only if the firewall is turned off."
         else
-            msg="Project donation set to use Tor when donation mining is enabled and available."
+            msg="Project donation back on Tor — the project endpoint sees a Tor exit, not this host's IP."
         fi
         ;;
     DASHBOARD_EXPOSE_PUBLIC_IP)

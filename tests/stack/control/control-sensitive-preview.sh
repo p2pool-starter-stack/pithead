@@ -85,5 +85,15 @@ exposure_previews "public-IP preview names the dashboard login reachable from th
     "Dashboard PUBLISHED" "anyone on the internet can reach the dashboard login"
 exposure_previews "donation enabling names project routing" '.donation.enabled=true | .donation.percent=0.1' "Project donation set to true"
 exposure_previews "donation percentage change names the percentage" '.donation.percent=5' "5 percent"
-exposure_previews "donation off Tor names IP exposure" '.donation.tor=false' "project endpoint sees this host's IP"
+exposure_previews "donation off Tor while disabled names the later exposure" '.donation.enabled=false | .donation.tor=false' \
+    "there is no project dial now" "exposes this host's IP to the project endpoint"
+exposure_previews "donation off Tor with the firewall on names IP exposure and the per-container scope" '.donation.enabled=true | .donation.tor=false' \
+    "Project donation OFF Tor" "project endpoint sees this host's IP" "exception is per container"
+exposure_previews "donation off Tor with the firewall off names IP exposure without a scoped exception" '.donation.enabled=true | .donation.tor=false | .network.tor_egress_firewall=false' \
+    "Project donation OFF Tor" "project endpoint sees this host's IP"
+jq '.donation.enabled=true | .donation.tor=false | .network.tor_egress_firewall=false' "$C/config.json" >"$C/cand.json"
+preview_only "$C/cand.json"
+assert_eq "donation off Tor with the firewall off claims no scoped exception" "$(previewed_with "exception is per container")" "false"
+exposure_previews "donation back on Tor names the restored posture" '.donation.enabled=true | .donation.tor=true' \
+    "Project donation back on Tor" "Tor exit"
 unset -f preview_only previewed_with exposure_previews
