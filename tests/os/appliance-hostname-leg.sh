@@ -2,6 +2,9 @@
 # Hostname assertions for the provisioned appliance (#1957/#1966). Sourced by tests/os/run.sh;
 # --self-test exercises the pure identity verdict without a guest.
 
+# shellcheck source=tests/os/appliance-hostname-snapshot.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-hostname-snapshot.sh"
+
 hostname_identity_verdict() { # <label> <ip> <kernel> <static> <env-host> <state-host> <cert-san> <avahi-state> <mdns-ip> <card> <named-code>
     local label="$1" ip="$2" kernel="$3" static="$4" env_host="$5" state_host="$6" sans="$7" avahi="$8" mdns="$9"
     local card="${10}" named_code="${11}"
@@ -160,72 +163,6 @@ hostname_runtime_snapshot() { # <label> [handoff-json]; one stable, comparable l
     mdns=$(_ssh "getent ahostsv4 '$label.local' | awk 'NR == 1 {print \$1}'" 2>/dev/null | tr -d '\r')
     stamp=$(_ssh "systemctl show avahi-daemon.service -p ActiveEnterTimestampMonotonic --value" 2>/dev/null | tr -d '\r')
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kernel" "$static" "$env_host" "$state_host" "$sans" "$avahi" "$mdns" "$card" "$stamp"
-}
-
-hostname_snapshot_complete() {
-    [ -n "$1" ] || return 1
-    case "$1" in $'\t'* | *$'\t' | *$'\t\t'*) return 1 ;; esac
-}
-
-hostname_snapshot_diff() {
-    local IFS=$'\x1f' i out="" cols=(kernel static env state cert avahi mdns card avahi-started)
-    local -a bc ac
-    read -ra bc <<<"${1//$'\t'/$'\x1f'}"
-    read -ra ac <<<"${2//$'\t'/$'\x1f'}"
-    for i in "${!cols[@]}"; do
-        [ "${bc[i]:-}" = "${ac[i]:-}" ] ||
-            out+="${out:+; }${cols[i]}: $(printf '%s' "${bc[i]:-empty}" | tr -s '[:space:]' ' ') -> $(printf '%s' "${ac[i]:-empty}" | tr -s '[:space:]' ' ')"
-    done
-    printf '%s' "${out:-none}"
-}
-
-hostname_stable_snapshot() {
-    local tries=0 prev="" snap
-    while [ "$tries" -lt 12 ]; do
-        snap=$(hostname_runtime_snapshot "$1")
-        if [ "$snap" = "$prev" ] && hostname_snapshot_complete "$snap"; then
-            printf '%s' "$snap"
-            return 0
-        fi
-        prev=$snap
-        tries=$((tries + 1))
-        sleep 5
-    done
-    printf '%s' "$snap"
-    return 1
-}
-
-hostname_snapshot_unchanged() {
-    local tries=0 matches=0 snap=""
-    while [ "$tries" -lt 10 ]; do
-        snap=$(hostname_runtime_snapshot "$1")
-        if hostname_snapshot_complete "$snap"; then
-            [ "$snap" = "$2" ] || {
-                printf '%s' "$snap"
-                return 1
-            }
-            matches=$((matches + 1))
-            [ "$matches" -lt 4 ] || {
-                printf '%s' "$snap"
-                return 0
-            }
-        fi
-        tries=$((tries + 1))
-        sleep 5
-    done
-    printf '%s' "$snap"
-    return 1
-}
-
-hostname_configured_host() {
-    local tries=0 host=""
-    while [ "$tries" -lt 3 ]; do
-        host=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null | jq -r '.dashboard.host // empty')
-        [ -z "$host" ] || break
-        tries=$((tries + 1))
-        sleep 5
-    done
-    printf '%s' "${host:-unreadable}"
 }
 
 # <handoff-json> is the wizard's own credentials card, and only the leg that captured it has one;
@@ -430,92 +367,6 @@ _hostname_self_test() {
     case "$dead" in *'the guest did not answer'*) ;; *) f=$((f + 1)) ;; esac
     case "$alive" in *'the guest did not answer'*) f=$((f + 1)) ;; esac
     case "$alive" in *'address records'*) ;; *) f=$((f + 1)) ;; esac
-    (
-        reads=$(mktemp) || exit 1
-        trap 'rm -f "$reads"' EXIT
-        sleep() { :; }
-        row() { printf 'k\tk\te\ts\tc\tactive\tm\tcard\t%s' "$1"; }
-        script=()
-        hostname_runtime_snapshot() {
-            local n
-            n=$(($(cat "$reads") + 1))
-            printf '%s' "$n" >"$reads"
-            printf '%s' "${script[n - 1]:-${script[${#script[@]} - 1]}}"
-        }
-        run() {
-            printf 0 >"$reads"
-            script=("$@")
-        }
-        hostname_snapshot_complete "$(row 1)" || exit 1
-        hostname_snapshot_complete "" && exit 1
-        hostname_snapshot_complete "$(printf 'k\t\te\ts\tc\tactive\tm\tcard\t1')" && exit 1
-        hostname_snapshot_complete "$(printf 'k\tk\te\ts\tc\tactive\tm\tcard\t')" && exit 1
-        run "$(row 1)" "$(row 1)"
-        [ "$(hostname_stable_snapshot l)" = "$(row 1)" ] && [ "$(cat "$reads")" = 2 ] || exit 1
-        run "$(row 1)" "$(row 2)" "$(row 2)"
-        [ "$(hostname_stable_snapshot l)" = "$(row 2)" ] && [ "$(cat "$reads")" = 3 ] || exit 1
-        run "$(printf 'k\t\te\ts\tc\tactive\tm\tcard\t1')"
-        hostname_stable_snapshot l >/dev/null && exit 1
-        [ "$(cat "$reads")" = 12 ] || exit 1
-        inc=$(printf 'k\tk\te\t\tc\tactive\tm\tcard\t1')
-        run "$inc" "$(row 1)" "$(row 1)" "$(row 1)" "$(row 1)"
-        out=$(hostname_snapshot_unchanged l "$(row 1)") || exit 1
-        [ "$out" = "$(row 1)" ] && [ "$(cat "$reads")" = 5 ] || exit 1
-        run "$(row 1)" "$(row 1)" "$(row 2)"
-        out=$(hostname_snapshot_unchanged l "$(row 1)") && exit 1
-        [ "$out" = "$(row 2)" ] && [ "$(cat "$reads")" = 3 ] || exit 1
-        run "$inc"
-        hostname_snapshot_unchanged l "$(row 1)" >/dev/null && exit 1
-        [ "$(cat "$reads")" = 10 ] || exit 1
-        run "$(row 1)"
-        hostname_snapshot_unchanged l "$(row 1)" >/dev/null || exit 1
-        [ "$(cat "$reads")" = 4 ] || exit 1
-        [ "$(hostname_snapshot_diff "$(row 1)" "$(row 1)")" = none ] || exit 1
-        [ "$(hostname_snapshot_diff "$(row 1)" "$(row 2)")" = 'avahi-started: 1 -> 2' ] || exit 1
-        [ "$(hostname_snapshot_diff "$(row 1)" "$(printf 'k\tk\te\t\tc\tactive\tm\tcard\t1')")" = 'state: s -> empty' ] || exit 1
-    ) || f=$((f + 1))
-    (
-        ip=192.0.2.10 handoff_body='{}' verdicts=""
-        sleep() { :; }
-        assert_appliance_hostname_identity() { return 0; }
-        dashboard_curl() { printf '{"dashboard":{"host":"fixture-box"}}'; }
-        dashboard_control_request() { printf '{"status":"previewed","approval_required":true}'; }
-        hostname_stable_snapshot() { printf 'one'; }
-        ok() { verdicts+="ok:$1;"; }
-        bad() { verdicts+="bad:$1;"; }
-        hostname_snapshot_unchanged() { printf 'one'; }
-        phase_provision_hostname_regressions user password
-        case "$verdicts" in *'ok:day-two hostname preview is approval-gated'*) ;; *) exit 1 ;; esac
-        case "$verdicts" in *'bad:'*) exit 1 ;; esac
-        verdicts=""
-        hostname_snapshot_unchanged() {
-            printf 'two'
-            return 1
-        }
-        hostname_snapshot_diff() { printf 'avahi-started: 1 -> 2'; }
-        phase_provision_hostname_regressions user password
-        case "$verdicts" in *'bad:day-two hostname preview mutated identity'*'identity diff: avahi-started: 1 -> 2'*) ;; *) exit 1 ;; esac
-        case "$verdicts" in *'ok:day-two hostname preview is approval-gated'*) exit 1 ;; esac
-        verdicts=""
-        hostname_snapshot_unchanged() { printf 'one'; }
-        dashboard_control_request() { printf '{"status":"applied","approval_required":false}'; }
-        phase_provision_hostname_regressions user password
-        case "$verdicts" in *'bad:day-two hostname preview mutated identity'*'preview: {"status":"applied","approval_required":false}'*) ;; *) exit 1 ;; esac
-        verdicts=""
-        dashboard_control_request() { printf '{"status":"previewed","approval_required":true}'; }
-        dashboard_curl() { printf '{"dashboard":{"host":"fixture-next"}}'; }
-        phase_provision_hostname_regressions user password
-        case "$verdicts" in *'bad:day-two hostname preview mutated identity'*'configured host: fixture-next'*) ;; *) exit 1 ;; esac
-        verdicts=""
-        dashboard_curl() { printf '{"dashboard":{"host":"fixture-box"}}'; }
-        hostname_stable_snapshot() {
-            printf 'unsettled'
-            return 1
-        }
-        phase_provision_hostname_regressions user password
-        case "$verdicts" in *'bad:hostname preview: identity never settled before the preview (unsettled)'*) ;; *) exit 1 ;; esac
-        case "$verdicts" in *'ok:day-two hostname preview is approval-gated'*) exit 1 ;; esac
-    ) || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-hostname-leg self-test FAILED: %s checks\n' "$f"
         return 1
