@@ -8,6 +8,7 @@ _phase_provision_reboot() {
     # (#790): derived files are regenerated on every boot by construction, so a stale or broken one must not
     # survive — this is the defect that shipped new code against a days-old Caddyfile on hardware and killed
     # TLS.
+    POH_CONTAINER_RE='^(caddy|dashboard)$'
     post_reboot_health_begin || true
     info "reboot leg — the stack must come back on its own (pithead-boot)"
     _ssh "echo '# corrupted by the harness — a regenerated boot must not serve this' > /data/pithead/Caddyfile" 2>/dev/null ||

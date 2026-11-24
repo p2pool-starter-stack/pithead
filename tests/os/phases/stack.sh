@@ -280,9 +280,11 @@ phase_stack() {
     # it both ways in one run — the same two ZMQ rows passed in the scenario leg, which carries
     # these flags, and failed in this one, which did not.
     _stack_run_integration "check (non-destructive live-state assertion)" --check "${remote_extra[@]}"
+    post_reboot_health_begin || true
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
+    post_reboot_health_verify "stack after the lifecycle gate" || true
     # Two more parity rows from #2062's table are deliberately NOT driven here, because this guest
     # cannot satisfy their inputs and a row that cannot pass proves nothing where it sits:
     #   * remote-tari-main-secure sets monero.mode=local (tests/integration/scenarios.sh), so it
