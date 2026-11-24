@@ -84,14 +84,14 @@ booted_slot_committed() {
 }
 
 schema_hold_arm() {
-    local dir
+    local dir tmp
     dir=$(gate_env_val DASHBOARD_DATA_DIR)
     [ -n "$dir" ] || return 0
     if booted_slot_committed; then
         rm -f "$dir/$SCHEMA_HOLD_NAME" && sync
         return 0
     fi
-    mkdir -p "$dir" && : >"$dir/$SCHEMA_HOLD_NAME" && sync &&
+    mkdir -p "$dir" && tmp=$(mktemp "$dir/$SCHEMA_HOLD_NAME.XXXXXX") && mv -fT -- "$tmp" "$dir/$SCHEMA_HOLD_NAME" && sync &&
         echo "pithead-boot: dashboard schema hold armed — the booted slot is uncommitted, so the dashboard keeps its previous-release database schema until the gate commits"
 }
 
