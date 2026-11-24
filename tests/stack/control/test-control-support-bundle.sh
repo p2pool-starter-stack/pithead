@@ -1,14 +1,12 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 : "${SANDBOX:?}"
-
 SB="$SANDBOX/ctrl4036"
 mkdir -p "$SB/results" "$SB/audit" "$SB/bin" "$SB/out"
 
 SB_ONION="abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
 SB_ADDR="44nep4y8xiQPH96nSQgkChrvUXLrLb73HK5sSGa6hVt3thisdUwb9BtFKdw9iQ89GE7yWW8xvRqG6HZrAro79hPDvYSrqCG"
 assert_eq "the Monero fixture is the 95-char shape the redactor keys on" "${#SB_ADDR}" "95"
-
 cat >"$SB/bin/journalctl" <<'PYSTUB'
 #!/usr/bin/env python3
 import os, sys, time
@@ -42,15 +40,12 @@ for i in range(int(os.environ.get("SB_BULK", "0"))):
 entries = [e for e in entries if e[0] <= oldest * H]
 entries.sort(key=lambda e: -e[0])
 
-
 def when(v):
     v = v.replace(" UTC", "")
     return int(datetime.strptime(v, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp())
 
-
 def opt(name):
     return args[args.index(name) + 1] if name in args else None
-
 
 if "--disk-usage" in args:
     print("Archived and active journals take up 120.0M in the file system.")
@@ -225,7 +220,11 @@ assert_contains "the kernel file went through the redactor too" \
 echo "== control channel: an explicit start and end select the window's content =="
 sid2="c403c403-0000-4000-8000-000000000002"
 rm -f "$SB/journal.log"
-_now=$(date +%s); sb_run "$(sb_req "$sid2" support-bundle ",\"since\":\"$(date -u -d "@$((_now - 14400))" +%Y-%m-%dT%H:%M:%SZ)\",\"until\":\"$(date -u -d "@$((_now - 5400))" +%Y-%m-%dT%H:%M:%SZ)\")"
+_now=$(date +%s)
+_since=$(date -u -d "@$((_now - 14400))" +%Y-%m-%dT%H:%M:%SZ)
+_until=$(date -u -d "@$((_now - 5400))" +%Y-%m-%dT%H:%M:%SZ)
+sb_req "$sid2" support-bundle ",\"since\":\"$_since\",\"until\":\"$_until\""
+sb_run "$SB/req-$sid2.json"
 assert_eq "an explicit window applies" "$(jq -r .status "$SB/results/$sid2.json")" "applied"
 assert_contains "the journal was cut with --since" "$(cat "$SB/journal.log")" "--since "
 assert_contains "the journal was cut with --until" "$(cat "$SB/journal.log")" "--until "
@@ -424,7 +423,8 @@ assert_not_contains "the same one redactor covers the host CLI path" \
 echo "== host CLI: recovery-bundle takes --since and --until and rejects a bad window =="
 rbw=$(
     export PITHEAD_APPLIANCE=1 PATH="$SB/trip:$SB/bin:$PATH" PITHEAD_RECOVERY_BUNDLE_DIR="$SB/out"
-    _now=$(date +%s); run_sourced_e "$SANDBOX" recovery_bundle --since "$(date -u -d "@$((_now - 14400))" +%Y-%m-%dT%H:%M:%SZ)" --until "$(date -u -d "@$((_now - 5400))" +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null |
+    _now=$(date +%s)
+    run_sourced_e "$SANDBOX" recovery_bundle --since "$(date -u -d "@$((_now - 14400))" +%Y-%m-%dT%H:%M:%SZ)" --until "$(date -u -d "@$((_now - 5400))" +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null |
         sed -n 's/.*Support bundle written: //p' | tail -1
 )
 sb_unzip "$rbw" "$SB/extractW"
