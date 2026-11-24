@@ -174,6 +174,9 @@ assert_eq "existing Caddyfile survives put-back" "$(cat "$BK/Caddyfile")" EXISTI
 assert_eq "rollback of added file leaves no .restore-old copy" "$(find "$BK" -maxdepth 1 -name 'config.json.restore-old.*')" ""
 rm -f "$CR/fail-bin2/cp"
 
+cp "$CR/pre-config" "$BK/config.json"
+chmod 644 "$BK/config.json"
+
 # Generated files in a backup are compatibility inputs, never runtime policy. A valid config plus
 # stale .env/Caddyfile must land the normal writers' output, while opaque generated identity and
 # secrets still round-trip.
