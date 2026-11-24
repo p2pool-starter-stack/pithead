@@ -96,7 +96,12 @@ provision_onion_client_auth() {
         DASHBOARD_ONION_CLIENT_PRIVKEY="${kp##* }"
         log "Generated a Tor onion client-auth key for the dashboard."
     fi
+    local p
+    for p in "$hs_dir" "$hs_dir/authorized_clients"; do
+        ! $run test -L "$p" || error "Refusing to write Tor onion client-auth through the link at $p — remove it and re-run."
+    done
     $run mkdir -p "$hs_dir/authorized_clients"
+    $run rm -f "$hs_dir/authorized_clients/dashboard.auth"
     printf 'descriptor:x25519:%s\n' "$DASHBOARD_ONION_CLIENT_PUBKEY" | $run tee "$hs_dir/authorized_clients/dashboard.auth" >/dev/null
     # Tor refuses a HiddenServiceDir that is group/other-accessible; keep it 0700/0600 and owned by
     # whatever uid already owns the tor data dir, so tor can read authorized_clients.

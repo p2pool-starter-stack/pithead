@@ -127,4 +127,20 @@ DOCKER_LOG="$T/docker4.log" boot_gate_passed || fail "the gate pass must not fai
 gate_restarts=$(grep -c 'compose restart dashboard' "$T/docker4.log" || true)
 [ "$gate_restarts" = 1 ] || fail "the gate pass must restart the dashboard exactly once"
 
+mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null; }
+printf 'keep-me\n' >"$T/target-file"
+chmod 640 "$T/target-file"
+mkdir -p "$T/target-dir"
+RAUC_STATUS_FILE="$T/bad.json"
+for target in "$T/target-file" "$T/target-dir" "$T/missing"; do
+    rm -f "$marker"
+    ln -s "$target" "$marker"
+    schema_hold_arm >/dev/null 2>&1 || fail "arming over a link at the marker must still arm ($target)"
+    [ -f "$marker" ] && [ ! -L "$marker" ] || fail "arming must leave a real marker in place of the link ($target)"
+done
+[ "$(cat "$T/target-file")" = keep-me ] || fail "arming must not write through a link to a file"
+[ "$(mode_of "$T/target-file")" = 640 ] || fail "arming must not change a linked file's mode"
+[ -z "$(ls -A "$T/target-dir")" ] || fail "arming must not write into a linked folder"
+[ ! -e "$T/missing" ] || fail "arming must not create a dangling link's target"
+
 printf 'selftest-schema-hold: ok\n'

@@ -91,7 +91,7 @@ schema_hold_arm() {
         rm -f "$dir/$SCHEMA_HOLD_NAME" && sync
         return 0
     fi
-    mkdir -p "$dir" && : >"$dir/$SCHEMA_HOLD_NAME" && sync &&
+    mkdir -p "$dir" && rm -f "$dir/$SCHEMA_HOLD_NAME" && : >"$dir/$SCHEMA_HOLD_NAME" && sync &&
         echo "pithead-boot: dashboard schema hold armed — the booted slot is uncommitted, so the dashboard keeps its previous-release database schema until the gate commits"
 }
 

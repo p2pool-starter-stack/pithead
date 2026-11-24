@@ -40,7 +40,11 @@ prepare_directories() {
     # chown -R'd tree EACCESes for any operator uid != APP_UID.
     sudo chown -R 100:101 "$TOR_DATA_DIR"
     sudo chown -R "$APP_UID":"$APP_GID" "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$DASHBOARD_DIR"
-    sudo chmod -R 755 "$P2POOL_DIR/stats"
+    if [ -L "$P2POOL_DIR/stats" ]; then
+        warn "Not changing modes through the link at $P2POOL_DIR/stats — replace it with a folder."
+    else
+        sudo chmod -R 755 "$P2POOL_DIR/stats"
+    fi
     # Dashboard can create a transition marker, but cannot remove the root-owned marker after the
     # host claims it. The sticky bit keeps that one-way transition spent across apply/reboot.
     sudo chown root:root "$CLEARNET_STATE_DIR" && sudo chmod 1777 "$CLEARNET_STATE_DIR" ||
