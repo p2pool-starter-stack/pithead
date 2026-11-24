@@ -129,11 +129,11 @@ class MiningStoreMixin(PayoutAlertRetryMixin):
                     "(id, ts, source, actor, action, status, keys) VALUES (?, ?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(id) DO UPDATE SET ts=excluded.ts, source=excluded.source, "
                     "actor=excluded.actor, action=excluded.action, status=excluded.status, keys=excluded.keys "
-                    "WHERE excluded.source='control' AND audit_events.source='control'",
+                    "WHERE excluded.source='control' AND audit_events.source='control' "
+                    "AND (audit_events.status IS NOT excluded.status "
+                    "OR audit_events.keys IS NOT excluded.keys OR audit_events.ts IS NOT excluded.ts)",
                     (id, ts, source, actor, action, status, keys),
                 )
-                # Commit the row BEFORE pruning: the prune is best-effort maintenance and must
-                # never be able to roll back or strand the audit row it arrived with.
                 self._conn.commit()
                 if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
                     # ts is the "%Y-%m-%dT%H:%M:%SZ" shape _iso_now/control_audit both write, which
