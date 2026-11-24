@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+case "$(uname -s)" in
+Linux) ;;
+*)
+    echo "selftest-schema-hold: skipped off Linux (mv -T)"
+    exit 0
+    ;;
+esac
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 
@@ -127,7 +134,7 @@ DOCKER_LOG="$T/docker4.log" boot_gate_passed || fail "the gate pass must not fai
 gate_restarts=$(grep -c 'compose restart dashboard' "$T/docker4.log" || true)
 [ "$gate_restarts" = 1 ] || fail "the gate pass must restart the dashboard exactly once"
 
-mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null; }
+mode_of() { stat -c '%a' "$1"; }
 printf 'keep-me\n' >"$T/target-file"
 chmod 640 "$T/target-file"
 mkdir -p "$T/target-dir"
@@ -142,5 +149,33 @@ done
 [ "$(mode_of "$T/target-file")" = 640 ] || fail "arming must not change a linked file's mode"
 [ -z "$(ls -A "$T/target-dir")" ] || fail "arming must not write into a linked folder"
 [ ! -e "$T/missing" ] || fail "arming must not create a dangling link's target"
+
+mktemp() {
+    local made
+    made=$(command mktemp "$@") || return
+    : >"$T/mktemp-ran"
+    case "$window" in
+    final) ln -s "$T/victim" "$marker" ;;
+    temp) command rm -f "$made" && ln -s "$T/victim" "$made" ;;
+    esac
+    printf '%s\n' "$made"
+}
+rm() {
+    command rm "$@"
+    [ "$window" != rm ] || ln -sf "$T/victim" "$marker"
+}
+for window in final temp rm; do
+    printf 'keep-me\n' >"$T/victim"
+    chmod 640 "$T/victim"
+    command rm -f "$marker" "$T/mktemp-ran"
+    schema_hold_arm >/dev/null 2>&1
+    rc=$?
+    [ -e "$T/mktemp-ran" ] || fail "arming must create the marker through mktemp ($window)"
+    [ "$(cat "$T/victim")" = keep-me ] || fail "a link planted in the arming window must not be written through ($window)"
+    [ "$(mode_of "$T/victim")" = 640 ] || fail "a link planted in the arming window must not change the victim's mode ($window)"
+    [ "$window" = temp ] || { [ "$rc" = 0 ] && [ -f "$marker" ] && [ ! -L "$marker" ]; } ||
+        fail "a link planted at the marker in the window must be replaced by a real marker"
+done
+unset -f mktemp rm
 
 printf 'selftest-schema-hold: ok\n'

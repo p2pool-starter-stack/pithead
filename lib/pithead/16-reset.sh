@@ -46,12 +46,12 @@ reset_dashboard() {
 
     log "Recreating data directories..."
     mkdir -p "$dashboard_dir" "$p2pool_dir"
-    mkdir -p "$p2pool_dir/stats"
+    # shellcheck disable=SC2174
+    mkdir -p -m 755 "$p2pool_dir/stats"
     # Owned by the non-root uid the dashboard + p2pool containers run as (#255). mkdir runs first
     # (above) and chown last (#550) — an unprivileged mkdir into an already chown -R'd tree
     # EACCESes for any operator uid != APP_UID, and here that abort would land AFTER the data wipe.
     sudo chown -R "$APP_UID":"$APP_GID" "$p2pool_dir" "$dashboard_dir"
-    sudo chmod -R 755 "$p2pool_dir/stats"
 
     log "Bringing services back up..."
     # p2pool can dial clearnet, so assert the Tor-only egress firewall BEFORE it starts (#270/#291).

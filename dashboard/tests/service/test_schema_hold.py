@@ -2,6 +2,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,7 @@ _BOOT = Path(__file__).resolve().parents[3] / "os" / "overlay" / "pithead-boot"
 
 
 @pytest.mark.skipif(not _BOOT.is_file(), reason="needs the repo checkout's os/overlay/pithead-boot")
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="schema_hold_arm needs mv -T")
 class TestSchemaHoldAcrossAFailedUpdate:
     _PREVIOUS_RELEASE_INSERT = (
         "INSERT OR IGNORE INTO payouts "
