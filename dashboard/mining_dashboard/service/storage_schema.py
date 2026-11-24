@@ -275,6 +275,9 @@ class StorageSchemaMixin:
         )
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_disk_growth_ts ON disk_growth(ts)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_history_ts ON worker_history(ts)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_worker_history_name_ts ON worker_history(name, ts)"
+        )
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts)")
 
     def _create_payouts_table(self):
