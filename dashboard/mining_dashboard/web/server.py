@@ -17,7 +17,7 @@ from mining_dashboard.service.workers import worker_adopt, worker_refresh
 from mining_dashboard.web import fleet_upgrade_views
 from mining_dashboard.web.config_commit import approval_envelope, config_request
 from mining_dashboard.web.miner_connection import handle_miner_connection
-from mining_dashboard.web.views import diagnostics_views, download_views, sovereign_views
+from mining_dashboard.web.views import diagnostics_views, download_views, log_views, sovereign_views
 from mining_dashboard.web.views.charts import canonical_window, parse_window
 from mining_dashboard.web.views.power_views import handle_control_power
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
@@ -620,6 +620,9 @@ def create_app(state_manager, latest_data_ref, notify=None):
                 web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_key),
             ]
         )
+    if config.DASHBOARD_MODE in ("api", "both"):
+        app["log_gate"] = log_views.api.FollowerGate()
+        app.add_routes(log_views.routes())
     app.router.add_get("/ui-preview", sovereign_views.handle_preview)
     static_path = os.path.join(os.path.dirname(__file__), "static")
     app.router.add_static("/static", static_path)

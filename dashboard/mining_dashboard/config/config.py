@@ -200,6 +200,8 @@ CHECK_FOR_UPDATES = os.environ.get("DASHBOARD_CHECK_UPDATES", "true").strip().lo
 DASHBOARD_CONTROL_ENABLED = (
     os.environ.get("DASHBOARD_CONTROL_ENABLED", "false").strip().lower() == "true"
 )
+DASHBOARD_MODE = os.environ.get("DASHBOARD_MODE", "dashboard").strip().lower()
+LOG_API_SERVICES = tuple(os.environ.get("PITHEAD_DIAG_CONTAINERS", "").replace(",", " ").split())
 CONTROL_REQUESTS_DIR = os.environ.get("CONTROL_REQUESTS_DIR", "/control/requests")
 CONTROL_RESULTS_DIR = os.environ.get("CONTROL_RESULTS_DIR", "/control/results")
 # Host-written security logs, surfaced read-only (#349). control.log is the #33 audit trail

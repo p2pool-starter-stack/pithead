@@ -168,6 +168,7 @@ export const LOGICAL_GROUPS = [
       "dashboard.auth",
       "dashboard.onion",
       "dashboard.control",
+      "dashboard.mode",
     ],
   },
   {

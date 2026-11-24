@@ -9,14 +9,14 @@
 
 PITHEAD_ENV_SURVIVOR_KEYS="CADDY_LOG_DIR CLEARNET_STATE_DIR COMPOSE_PROFILES CONTROL_DIR
 DASHBOARD_CHECK_UPDATES DASHBOARD_CONTROL_ENABLED DASHBOARD_DATA_DIR DASHBOARD_EXPOSE_PUBLIC_IP
-DASHBOARD_FAIL_CLOSED DASHBOARD_ONION_CLIENT_AUTH DASHBOARD_ONION_ENABLED DASHBOARD_SECURE
+DASHBOARD_FAIL_CLOSED DASHBOARD_MODE DASHBOARD_ONION_CLIENT_AUTH DASHBOARD_ONION_ENABLED DASHBOARD_SECURE
 DONATION_ENABLED DONATION_PERCENT DONATION_TOR_ENABLED
 DASHBOARD_TZ DEPLOYMENT_COMPLETED HASHRATE_DROP_MINUTES HASHRATE_DROP_THRESHOLD_PCT HOST_PORT
 MONERO_CLEARNET_SYNC MONERO_DATA_DIR MONERO_MEM_LIMIT MONERO_OUT_PEERS MONERO_PREP_THREADS
 MONERO_PRUNE MONERO_RPC_BIND MONERO_RPC_PORT MONERO_WALLET_RPC_URL MONERO_ZMQ_BIND MONERO_ZMQ_PORT
 NETWORK_PREFIX NETWORK_SUBNET NOTIFY_TOR P2POOL_CLEARNET P2POOL_DATA_DIR P2POOL_FLAGS P2POOL_PORT
 P2POOL_URL PAYOUT_CONFIRM_ENABLED PAYOUT_SCAN_HEIGHT PITHEAD_TLS_DIR PROXY_API_PORT
-PROXY_DONATE_LEVEL PROXY_STRATUM_TLS PROXY_TLS_DIR STRATUM_BIND STRATUM_PORT TARI_CLEARNET_SYNC
+PITHEAD_DIAG_CONTAINERS PROXY_DONATE_LEVEL PROXY_STRATUM_TLS PROXY_TLS_DIR STRATUM_BIND STRATUM_PORT TARI_CLEARNET_SYNC
 TARI_DATA_DIR TARI_GRPC_BIND TARI_MEM_LIMIT TARI_MODE TARI_PAYOUT_CONFIRM_ENABLED TARI_REQUIRED
 TARI_WALLET_BIRTHDAY TARI_WALLET_GRPC_ADDRESS TARI_WALLET_SECRET_FILE TELEGRAM_COMMANDS_ENABLED
 TELEGRAM_DAILY_SUMMARY_TIME TELEGRAM_LEVEL TOR_AUTO_HEAL TOR_COMPOSE_PROFILES TOR_DATA_DIR
@@ -90,47 +90,8 @@ bundle_redact_env() {
     '
 }
 
-# Keyed by POSITION and not by shape, which is #1585's ruling: no length bar reaches all three Tari
-# address forms this repo validates (91, 48 and 67 characters, the last non-alphanumeric), and a bar
-# low enough to try starts eating ordinary log tokens. The onion keeps its own shape rule — it is
-# the one value that also appears away from the launch line. The .env half of this bundle has always
-# treated wallets and onions as secrets, so leaving them here shipped one artifact under two
-# policies. Per-form rows and the full derivation: tests/integration/selftest/selftest-bundle-redact-log.sh;
-# tests/integration/lib.sh's redact() keys on the same property (#1607) and the two stay in step.
-#
-# THE MONERO ADDRESS IS THE ONE VALUE THAT ALSO NEEDS A SHAPE RULE (#1750). Position is enough for
-# an artifact the operator reviews before sharing; #1736 gave this same and only redactor a second
-# consumer — `diag-logs` and `diag-doctor` stream its output to a browser over the network — and
-# p2pool writes the payout wallet in ORDINARY BODY TEXT as well as on its launch line ("Your wallet
-# <ADDR> got a payout of ..."), where there is no argv position to key on.
-#
-# This does NOT reopen #1585. That ruling is about a GENERAL address rule, and it stands: Tari has
-# three forms at 91, 48 and 67 characters, one of them non-alphanumeric, so no bar reaches them all.
-# Monero is the case it leaves open, because the Monero form is EXACT rather than approximate —
-# prefix `4` or `8`, length 95 or 106, over the 58-character base58 alphabet that excludes 0 O I l.
-# That is the same shape gate monero_address_type applies before it decodes (25-address-types.sh),
-# and the two are held in step by the "classifier agrees" rows in the self-test, which drive both
-# off the same real addresses. A TARI address in body text still survives; that gap is stated, not
-# closed.
-#
-# WHY THE RULE IS APPLIED TWICE. POSIX ERE has no lookaround and BSD sed — a supported host, see
-# safe_sed — has no \b, so the boundary characters either side have to be MATCHED, and matching
-# them consumes them. Two addresses one space apart therefore need two passes: the first eats the
-# space that is the second address's left boundary. Two is sufficient for any count, because after
-# one pass every survivor is preceded by the replacement text. The self-test's adjacency row is the
-# control: drop either -e and it reds alone.
 bundle_redact_log() {
-    # The Monero base58 alphabet — 58 characters, i.e. NOT 0, O, I or l.
-    local b58='[1-9A-HJ-NP-Za-km-z]'
-    local xmr_shape
-    xmr_shape="s/(^|[^0-9A-Za-z])([48]${b58}{94}(${b58}{11})?)([^0-9A-Za-z]|\$)/\1[redacted-address]\4/g"
-    sed -E \
-        -e 's/(--rpc-login|--http-access-token|--tls-fingerprint)[= ][^ ]+/\1 [redacted]/g' \
-        -e 's/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1[redacted-address]/g' \
-        -e 's/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1[redacted-address]/g' \
-        -e 's/[a-z2-7]{56}\.onion/[redacted].onion/g' \
-        -e "$xmr_shape" \
-        -e "$xmr_shape"
+    sed -E -e "$BUNDLE_REDACT_SED"
 }
 
 stack_support_bundle() {

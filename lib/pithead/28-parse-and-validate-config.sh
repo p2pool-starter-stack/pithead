@@ -365,6 +365,11 @@ parse_and_validate_config() {
         esac
     fi
 
+    DASHBOARD_MODE=$(jq -r '.dashboard.mode // "dashboard"' "$CONFIG_FILE")
+    case "$DASHBOARD_MODE" in
+    dashboard | api | both) ;;
+    *) error "dashboard.mode must be \"dashboard\", \"api\" or \"both\" (got \"$DASHBOARD_MODE\")." ;;
+    esac
     DASHBOARD_CONTROL_ENABLED=$(normalize_bool "$(config_bool '.dashboard.control.enabled' "$(control_enabled_default)")")
     if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ -z "$dash_pw" ]; then
         error "dashboard.control.enabled is true but dashboard.auth.password is empty. Config editing from the dashboard can change the payout wallet and run '$0 apply' — it must sit behind a login. Set dashboard.auth.password and re-run."

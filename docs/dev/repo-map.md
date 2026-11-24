@@ -236,6 +236,7 @@ its read-only authenticated bootstrap probe is `build/tor/recovery-diagnose.sh`;
 the read-only Tor snapshot (#4262) is collected in the container by `build/tor/diagnostics.sh`,
 shaped host-side by `tor_diagnostics_snapshot` in `48b-control-tor-recover.sh`, rendered by
 `static/system/torsnapshot.mjs` (shared rows and table), `diagview.mjs` and `static/sovereign/tor-diagnostics.mjs` and summarised for alerts by `service/health/tor_snapshot.py`;
+the log API is `web/views/log_views.py` over `service/logs/api.py`, and its redactor pattern list `service/logs/redact.sed` is also the source of `lib/pithead/07a-redact-patterns.sh`, which `scripts/build-redact-patterns.py` regenerates and `make pithead` checks, (its Monero-address rule is listed twice on purpose: the rule consumes the boundary character on each side, so two addresses one space apart need two passes) with vectors in `dashboard/tests/fixtures/log-redaction-vectors.tsv` that `selftest-redact-vectors.sh` and `tests/service/logs/` both run;
 the dashboard's clearnet healer stays in `service/health/tor_heal.py`, with host
 history observations and recovery results in `service/health/tor_heal_history.py`.
 Tor lifecycle receipts are emitted by `32a-tor-lifecycle-receipts.sh` and
