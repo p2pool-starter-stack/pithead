@@ -8,6 +8,10 @@ from mining_dashboard.config import config
 
 ROOT = Path(__file__).resolve().parents[4]
 
+pytestmark = pytest.mark.skipif(
+    not (ROOT / "lib/pithead").is_dir(), reason="repository root not in this image"
+)
+
 
 def host_list():
     text = (ROOT / "lib/pithead/46a-control-diagnostics.sh").read_text()

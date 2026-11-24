@@ -6,7 +6,7 @@ HERE="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$HERE/../lib.sh"
 
 REPO="$(cd -P "$HERE/../../.." && pwd -P)"
-VECTORS="$REPO/tests/data/log-redaction-vectors.tsv"
+VECTORS="$REPO/dashboard/tests/fixtures/log-redaction-vectors.tsv"
 
 echo "== unit: shared log-redaction vectors through the shipped bundle_redact_log =="
 

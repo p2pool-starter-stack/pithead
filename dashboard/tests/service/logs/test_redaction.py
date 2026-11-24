@@ -4,7 +4,7 @@ import pytest
 
 from mining_dashboard.service.logs import redaction
 
-VECTORS = Path(__file__).resolve().parents[4] / "tests/data/log-redaction-vectors.tsv"
+VECTORS = Path(__file__).resolve().parents[2] / "fixtures/log-redaction-vectors.tsv"
 
 
 def _vectors():
@@ -25,8 +25,12 @@ def test_a_pattern_file_with_a_non_substitution_line_is_refused(tmp_path):
         redaction.load_rules(bad)
 
 
+ROOT = Path(__file__).resolve().parents[4]
+
+
+@pytest.mark.skipif(not (ROOT / "lib/pithead").is_dir(), reason="repository root not in this image")
 def test_the_bash_slice_is_generated_from_the_same_pattern_file():
-    root = Path(__file__).resolve().parents[4]
+    root = ROOT
     slice_text = (root / "lib/pithead/07a-redact-patterns.sh").read_text()
     assert redaction.PATTERN_FILE.read_text().rstrip("\n") in slice_text
 
