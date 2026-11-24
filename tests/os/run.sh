@@ -158,6 +158,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-miner-recovery.sh"
 # shellcheck source=tests/os/rig-share-leg.sh
 . "$SCRIPT_DIR/rig-share-leg.sh"
+# shellcheck source=tests/os/rig-failure-evidence.sh
+. "$SCRIPT_DIR/rig-failure-evidence.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
 # shellcheck source=tests/os/fault-boot-verdict.sh
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
@@ -264,12 +266,16 @@ fi
 # without each phase file having to get its own accounting right: if a phase call adds nothing to
 # PASS, FAIL or any skip bucket, the wrapper itself records the phase as a `missing` skip — an
 # absent input is exactly what "an input would have run it" means.
-_run_phase() { # <phase-name> <phase-function>
+_run_phase() {
+    local before_fail=$FAIL
     local before=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
     "$2"
     local after=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
     [ "$after" -ne "$before" ] ||
         it_skip_phase "$1" "produced no passed, failed or skipped row — a required input was likely absent" missing
+    if [ -n "${3:-}" ] && [ "$FAIL" -gt "$before_fail" ]; then
+        "$3"
+    fi
 }
 case "$PHASE" in
 boot) _run_phase boot phase_boot ;;
@@ -277,7 +283,7 @@ update) _run_phase update phase_update ;;
 install) _run_phase install phase_install ;;
 provision) _run_phase provision phase_provision ;;
 setup-defaults) _run_phase setup-defaults phase_setup_defaults ;;
-rig) _run_phase rig phase_rig ;;
+rig) _run_phase rig phase_rig rig_failure_evidence ;;
 rigmedia) _run_phase rigmedia phase_rigmedia ;;
 media) _run_phase media phase_media ;;
 fault) _run_phase fault phase_fault ;;
@@ -297,7 +303,7 @@ all)
     _run_phase install phase_install
     _run_phase provision phase_provision
     _run_phase setup-defaults phase_setup_defaults
-    _run_phase rig phase_rig
+    _run_phase rig phase_rig rig_failure_evidence
     _run_phase rigmedia phase_rigmedia
     _run_phase media phase_media
     _run_phase fault phase_fault
