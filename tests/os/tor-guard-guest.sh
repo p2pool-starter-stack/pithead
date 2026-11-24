@@ -82,7 +82,7 @@ identity() {
     local vol=$1 nick=$2 ip=$3 probe out
     probe=$(printf '%s\n' "TestingTorNetwork 1" "DataDirectory /var/lib/tor" "Nickname $nick" "Address $ip" \
         "ORPort 9001" "DirPort 9030" "SocksPort 0" "$dirauth")
-    docker volume create "$vol" >/dev/null
+    docker volume inspect "$vol" >/dev/null 2>&1 || docker volume create "$vol" >/dev/null
     out=$(docker run --rm --user root -v "$vol:/var/lib/tor" -e "PROBE=$probe" --entrypoint sh "$image" -c '
         set -ex
         cd /var/lib/tor
@@ -185,7 +185,7 @@ wait_consensus() {
 }
 write_override() {
     docker run --rm --entrypoint cat "$image" /etc/tor/torrc.template >"$work/torrc.private"
-    printf '\nTestingTorNetwork 1\nClientRejectInternalAddresses 0\n%s\n' "$dirauth" >>"$work/torrc.private"
+    printf '\nTestingTorNetwork 1\nClientRejectInternalAddresses 0\nEnforceDistinctSubnets 0\nLog [guard,circ]info stdout\n%s\n' "$dirauth" >>"$work/torrc.private"
     cat >docker-compose.override.yml <<YAML
 services:
   tor:
@@ -262,6 +262,8 @@ wait_stuck() {
     if [ "$hits" -lt 3 ]; then
         printf 'RECORD %s: fault not reproduced: guards=%s\n' "$1" "$(guard_nicks)" >&2
         tor_state | head -n 12 >&2 || true
+        ctl 'GETINFO ns/name/tgbad status/enough-dir-info status/good-server-descriptor' >&2 || true
+        docker logs tor 2>&1 | scrub | grep -iE 'guard|first hop|hop #1' | grep -v 'Failed to find node' | head -n 25 | cut -c1-260 >&2 || true
         return 1
     fi
     channel_open || {
