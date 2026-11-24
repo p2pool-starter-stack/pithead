@@ -8,6 +8,7 @@ import time
 OSV_HOST = "api.osv.dev"
 OSV_QUERY = "/v1/query"
 MAX_IDS = 5
+MAX_PAGES = 20
 UNSAFE = re.compile(r"[^A-Za-z0-9._:+~ -]")
 
 
@@ -49,13 +50,14 @@ def post(path, body, attempts=3):
 def query(ecosystem, name, version, send=post):
     body = {"package": {"ecosystem": ecosystem, "name": name}, "version": version}
     vulns = []
-    while True:
+    for _ in range(MAX_PAGES):
         answer = send(OSV_QUERY, body)
         vulns.extend(answer.get("vulns", []))
         token = answer.get("next_page_token")
         if not token:
             return vulns
         body = {**body, "page_token": token}
+    raise RuntimeError(f"OSV returned more than {MAX_PAGES} pages")
 
 
 def fixed_in(vuln, ecosystem, name):

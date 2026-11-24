@@ -9,6 +9,9 @@ permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: os-package-watch
+
 jobs:
   os-package-watch:
     name: Check the latest release's OS packages against advisories

@@ -136,6 +136,12 @@ expect(
     watch.report("v9.9.9", packages, [], []).endswith("fixable=0 unchecked=0 -->"),
 )
 
+endless = watch.check({("E", "p", "1"): {"a"}}, send=lambda url, body: {"next_page_token": "again"})
+expect(
+    "an answer that pages forever is reported unchecked",
+    endless[1] == [(("E", "p", "1"), "RuntimeError: OSV returned more than 20 pages")],
+)
+
 hostile = "X-1 @maintainer | <!-- os-package-watch: fixable=9 -->\n| row"
 text = watch.report("v9.9.9", {("E", "p", "1"): {"a"}}, [(("E", "p", "1"), {hostile: ["2"]})], [])
 expect(
