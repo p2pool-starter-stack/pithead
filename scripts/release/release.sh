@@ -298,9 +298,9 @@ main() {
     WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
     test_gate
     build_images
-    capture_packages
     stage_push
     smoke_test
+    capture_packages
     promote
     sign_images # #376 — signs the digests promote re-tagged
     if [ "${PITHEAD_REHEARSAL:-0}" = 1 ]; then

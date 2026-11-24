@@ -132,16 +132,15 @@ build_rootfs_image() {
 
 capture_packages() {
     [ "$DRY_RUN" -eq 1 ] && return 0
-    local suffix
+    local suffix ref out="$WORKDIR/os-packages.txt"
+    : >"$out"
     for suffix in "${PUBLISHED_IMAGES[@]}"; do
-        local repo="$WORKDIR/packages.$suffix"
-        log "Capturing packages from $(image_for "$suffix"):$STAGING_TAG"
-        if ! scripts/release/capture-packages.sh "$(image_for "$suffix"):$STAGING_TAG" >"$repo"; then
-            warn "package capture failed for $suffix — skipping; manifest will note the gap."
-            rm -f "$repo"
-        fi
+        ref="$(get_digest "$suffix")"
+        log "Recording installed OS packages of $ref"
+        bash "$RELEASE_LIB_DIR/capture-packages.sh" "$suffix" "$ref" >>"$out" ||
+            die "Could not record the installed OS packages of $ref."
     done
-    log "Package lists written to $WORKDIR/packages.*"
+    ok "Recorded $(wc -l <"$out" | tr -d ' ') installed OS packages across ${#PUBLISHED_IMAGES[@]} images."
 }
 
 # --- Stage 4: stage (push to the RC tag, capture digests) -----------------------------------------

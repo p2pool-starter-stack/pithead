@@ -74,11 +74,15 @@ release supersedes the open PR for an older one of the same component, and a clo
 
 Advisories are the one thing the watch cannot see: `monerod`, `p2pool` and `xmrig-proxy` install
 sha256-verified static binaries with no package metadata, so the Trivy sweep reports no CVEs for
-them and the watch reports newer versions, not advisories (#4277). The installed OS package lists
-are recorded in the ingredients manifest for each release and checked weekly by
-`scripts/watch/os-package-watch.sh` (#4254): it reads the manifest from the latest release,
-parses the OS package tables, and keeps one tracking issue with the current counts — a row whose
-count changes flags the image for review (missing packages, rebuild, or capture gap). Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
+them and the watch reports newer versions, not advisories (#4277). The installed OS packages are
+the other half: Dependabot has no apt or apk ecosystem. Each release attaches
+`os-packages-<tag>.txt`, one `<image> <OSV ecosystem> <source package> <version>` line per package
+in every published image (#4254). Every Monday `.github/workflows/os-package-watch.yml` runs
+`scripts/watch/os-package-watch.py` on the latest release's list: it asks [OSV](https://osv.dev)
+which recorded packages have an advisory that the distribution has fixed in a newer package, and
+opens or edits one issue labelled `dependencies` that lists them, since a rebuild of those images
+picks the fixes up. A failed lookup is listed as unchecked and fails the run. A release cut
+before #4254 has no list, and the watch reports that instead. Bumping any of the three, by hand or from a pin-bump PR (whose body asks for it), checks
 the upstream release notes and security advisories for the new version, and records that check in
 the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
 the bump.
@@ -279,8 +283,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    run: a failed run must start again and never recovers them from the mutable staging tag. The first
    `pithead-os-rootfs` push creates a private package because that is GHCR's default: change its
    visibility to public and start the release again; the smoke gate refuses promotion until an
-   anonymous pull resolves to the captured digest. The installed package lists for each image are
-   also captured at this point and stored alongside the digests.
+   anonymous pull resolves to the captured digest.
 5. Staging smoke test (gate): pull each staged image back from GHCR. Verify the stack images report
    the release version in their OCI labels and carry every target platform (the v1.0.0 wrong-arch
    guard); verify the rootfs is amd64, stamped `release`, and carries no root SSH key. This validates
@@ -288,7 +291,9 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    not start a stack, which would collide with the release host's live deployment. A fuller
    functional run is opt-in: set `RELEASE_SMOKE_CMD` to a command to run during this stage, or
    point the [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) harness at the
-   staged tag. Abort on failure.
+   staged tag. Abort on failure. Then `scripts/release/capture-packages.sh` reads `/etc/os-release`
+   and the dpkg or apk database out of each pulled digest and records its installed source
+   packages; a failed capture stops the release, and publish refuses to run without the list.
 6. Promote by digest: re-tag the exact digests just smoke-tested to `:vX.Y.Z` and `:latest`,
    then push. Promotion is by digest (no rebuild), so the released bundle is bit-for-bit what was
    validated. Same version on every image.
@@ -853,10 +858,9 @@ What exists today:
   pipeline cosign-signs the promoted digests + the bundle, `pithead upgrade` and the dashboard
   upgrade verify against the committed `cosign.pub` and fail closed. See
   [Signed releases](#signed-releases).
-- ✅ OS package lists recorded in the ingredients manifest (#4254): each image's `dpkg -l` or
-  `apk info` output is captured at build time, stored alongside the image digests, and attached
-  to the GitHub Release. A scheduled weekly watch compares package counts against the previous
-  release and keeps one tracking issue up to date.
+- ✅ Installed OS packages recorded per release (#4254): the GitHub Release carries
+  `os-packages-<tag>.txt`, the ingredients manifest counts each image's packages, and a weekly watch
+  checks the list against OSV and keeps one `dependencies` issue of the packages a rebuild would fix.
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image

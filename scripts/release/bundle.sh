@@ -14,6 +14,12 @@ publish() {
     stage "7/7  Publish GitHub Release $TAG"
     local manifest="$WORKDIR/ingredients-$TAG.md"
     write_manifest "$manifest"
+    local packages="$WORKDIR/os-packages-$TAG.txt"
+    if [ -s "$WORKDIR/os-packages.txt" ]; then
+        cp "$WORKDIR/os-packages.txt" "$packages"
+    elif [ "$DRY_RUN" -eq 0 ]; then
+        die "No installed OS package list was recorded; refusing to publish without it."
+    fi
     local bundle="$WORKDIR/pithead.tar.gz" # versionless name → stable /releases/latest/download/ URL
     make_bundle "$bundle"
     # Bundle checksum into the manifest (#77 phase 1): install.sh verifies its download against
@@ -54,16 +60,17 @@ publish() {
         gh_args+=("$bundle")
         [ -n "$bundle_sig" ] && gh_args+=("$bundle_sig") # the .sig only exists when signing is on
         gh_args+=("$manifest")
+        [ -s "$packages" ] && gh_args+=("$packages")
         run gh "${gh_args[@]}"
         ok "GitHub Release $TAG $([ "$DRAFT" -eq 1 ] && echo 'created as a DRAFT (publish it from the Releases page when ready)' || echo published)."
     else
-        warn "gh CLI not found — tag pushed, but create the release by hand. Notes: $notes  Assets: $bundle $bundle_sig $manifest"
+        warn "gh CLI not found — tag pushed, but create the release by hand. Notes: $notes  Assets: $bundle $bundle_sig $manifest $packages"
     fi
 }
 
 # Ingredients manifest — exactly what's inside this release: the promoted image digests + upstream pins.
 write_manifest() {
-    local out="$1" suffix repo dg pkg_file pkg_count
+    local out="$1" suffix repo dg
     {
         printf '## Ingredients — Pithead %s\n\n' "$TAG"
         printf -- '- **Version:** %s\n- **Commit:** `%s`\n- **Built:** %s\n\n' "$STACK_VERSION" "$GIT_COMMIT" "$BUILD_DATE"
@@ -84,19 +91,13 @@ write_manifest() {
         printf -- '- caddy: `%s`\n' "$(pin caddy)"
         printf -- '- docker-socket-proxy: `%s`\n' "$(pin socket-proxy)"
         printf -- '- rigforge: `%s`\n' "$(pin rigforge)"
-        printf '\n### OS package lists\n\n'
-        for suffix in "${PUBLISHED_IMAGES[@]}"; do
-            pkg_file="$WORKDIR/packages.$suffix"
-            if [ -f "$pkg_file" ] && [ -s "$pkg_file" ]; then
-                pkg_count="$(wc -l <"$pkg_file" | tr -d ' ')"
-                printf '#### `%s` (%s packages)\n' "$(image_for "$suffix"):$TAG" "$pkg_count"
-                printf '```\n'
-                sed 's/^/    /' "$pkg_file"
-                printf '```\n\n'
-            else
-                printf '#### `%s`: package capture not available\n' "$(image_for "$suffix"):$TAG"
-            fi
-        done
+        printf '\n### Installed OS packages\n\n'
+        if [ -s "$WORKDIR/os-packages.txt" ]; then
+            printf 'Attached as `os-packages-%s.txt`: one `<image> <OSV ecosystem> <source package> <version>` line per package.\n\n' "$TAG"
+            awk '{ n[$1]++; eco[$1] = $2 } END { for (i in n) printf "- %s: %d source packages (%s)\n", i, n[i], eco[i] }' "$WORKDIR/os-packages.txt" | sort
+        else
+            printf 'Not recorded for this build.\n'
+        fi
     } >"$out"
     log "Wrote ingredients manifest: $out"
 }
