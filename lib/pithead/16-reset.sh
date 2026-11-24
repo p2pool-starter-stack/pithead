@@ -80,8 +80,15 @@ reset_dashboard() {
 reset_reboot_or_hint() {
     if is_appliance; then
         _console "Rebooting into first-boot setup..."
-        ${PITHEAD_REBOOT_CMD:-systemctl reboot} ||
-            warn "Reboot command failed — reboot the machine by hand to reach the setup wizard."
+        if ! ${PITHEAD_REBOOT_CMD:-systemctl reboot}; then
+            if [ -z "${1:-}" ]; then
+                warn "Reboot command failed — reboot the machine by hand to reach the setup wizard."
+            elif rm -f "$1"; then
+                warn "Reboot command failed — the factory reset was NOT done and nothing was erased. Run '$0 factory-reset' again to retry."
+            else
+                warn "Reboot command failed and the reset marker could not be removed — the next boot WILL erase /data unless $1 is deleted first."
+            fi
+        fi
     else
         log "Reconfigure with '$0 firstboot-wizard' (or '$0 setup') when you're ready."
     fi
@@ -184,6 +191,6 @@ factory_reset() {
     log "Reset armed. Rebooting to reformat /data and reopen the wizard..."
     # Held across the reboot for the same reason as config-reset: the gap between arming the wipe
     # and the reboot is precisely when another verb must not start.
-    reset_reboot_or_hint
+    reset_reboot_or_hint "$marker"
     mutation_lock_release
 }
