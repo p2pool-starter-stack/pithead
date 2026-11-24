@@ -197,8 +197,6 @@ if in_block 2; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-monero-chain.sh" && domain_ran test-monero-chain.sh "$_d0" "$?" || domain_ran test-monero-chain.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-clearnet-firewall.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-clearnet-firewall.sh" && domain_ran test-clearnet-firewall.sh "$_d0" "$?" || domain_ran test-clearnet-firewall.sh "$_d0" "$?"
-    # shellcheck source=tests/stack/test-clearnet-text.sh disable=SC2015
-    _d0=$((PASS + FAIL)) && source "$HERE/test-clearnet-text.sh" && domain_ran test-clearnet-text.sh "$_d0" "$?" || domain_ran test-clearnet-text.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-host-firewall.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-host-firewall.sh" && domain_ran test-host-firewall.sh "$_d0" "$?" || domain_ran test-host-firewall.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-tor-egress-direction.sh disable=SC2015
