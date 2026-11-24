@@ -42,7 +42,7 @@ _image_upgrade_node_v4() { # <sub-step> <name-or-literal>
     printf '%s\n' "$address"
 }
 
-_image_upgrade_owner_config() { # <monero host> <tari host> <stage>; reference config on stdin
+_image_upgrade_owner_config() {
     local stage="$3"
     jq \
         --arg monero_wallet "$HARNESS_WALLET" --arg tari_wallet "$HARNESS_TARI" \
