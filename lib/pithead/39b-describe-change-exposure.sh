@@ -47,6 +47,9 @@ describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
     DONATION_ENABLED)
         flag=CONFIRM
         msg="Project donation set to $new; enabling routes the configured percentage of mining work to the project when the donation feature is available."
+        if [ "$new" = true ] && [ "$(config_bool '.donation.tor' true)" = false ]; then
+            msg+=" Donation is set off Tor, so xmrig-proxy dials the project endpoint directly and that endpoint sees this host's IP."
+        fi
         ;;
     DONATION_PERCENT)
         flag=CONFIRM
@@ -56,12 +59,10 @@ describe_exposure_change() { # <key> <old> <new>; sets caller's flag/msg
         flag=CONFIRM
         if [ "$new" = false ] && [ "$(config_bool '.donation.enabled' false)" != true ]; then
             msg="Project donation set off Tor while donation is disabled — there is no project dial now; enabling donation later opens a direct dial and exposes this host's IP to the project endpoint."
-        elif [ "$new" = false ] && egress_direct_for xmrig-proxy; then
+        elif [ "$new" = false ]; then
             msg="⚠ Project donation OFF Tor — xmrig-proxy dials the project endpoint directly and that route is open, so the project endpoint sees this host's IP alongside the hashrate it donates."
             [ "${TOR_EGRESS_FIREWALL:-true}" = false ] ||
                 msg+=" The firewall exception is per container, so it also opens whatever else xmrig-proxy dials directly."
-        elif [ "$new" = false ]; then
-            msg="Project donation set off Tor — the egress firewall has no exception for it, so the project endpoint sees this host's IP only if the firewall is turned off."
         else
             msg="Project donation back on Tor — the project endpoint sees a Tor exit, not this host's IP."
         fi
