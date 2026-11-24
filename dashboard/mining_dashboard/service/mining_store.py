@@ -247,7 +247,7 @@ class MiningStoreMixin:
                         "(SELECT block_id FROM raffle_wins ORDER BY ts DESC LIMIT ?)",
                         (_raffle_wins_max_rows(),),
                     )
-        except (sqlite3.Error, KeyError, ValueError, TypeError, OverflowError) as e:
+        except (sqlite3.Error, KeyError, ValueError, TypeError) as e:
             self._db_error("Raffle Win Insert Error", e)
             return []
         return new_rows

@@ -64,7 +64,7 @@ class TelemetryStoreMixin:
                             (ts - XVB_HISTORY_RETENTION_SEC,),
                         )
             self._table_write_ok("xvb_history", ts)
-        except (sqlite3.Error, OverflowError) as e:
+        except sqlite3.Error as e:
             self._table_write_failed("xvb_history", "XvB History Insert Error", e)
 
     def get_xvb_history(self, since: float = 0.0) -> list[dict[str, Any]]:
