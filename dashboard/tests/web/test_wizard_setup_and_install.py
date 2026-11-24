@@ -339,7 +339,7 @@ async def test_fresh_disk_with_default_wipe_keep_is_a_normal_install(client, ins
     assert (installer / "config.json").exists()
 
 
-GOLDEN = Path(__file__).resolve().parents[3] / "tests/stack/fixtures/wizard-parity"
+GOLDEN = Path(__file__).resolve().parents[1] / "fixtures/wizard-parity"
 THREE_ANSWERS = {
     "monero_wallet": json.loads((GOLDEN / "three-answers.golden.json").read_text())["monero"][
         "wallet_address"

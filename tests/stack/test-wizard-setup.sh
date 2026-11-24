@@ -24,7 +24,7 @@ assert_eq "new install XvB is off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" false
 assert_eq "DIY miner is off" "$(jq -r '.local_miner.enabled' <<<"$w1_cfg")" false
 assert_eq "the three answers give the golden config the browser builder also reads" \
     "$(jq -S 'del(.dashboard.secure, .dashboard.auth.password, .monero.node_username, .monero.node_password)' <<<"$w1_cfg")" \
-    "$(jq -S . "$ROOT/tests/stack/fixtures/wizard-parity/three-answers.golden.json")"
+    "$(jq -S . "$ROOT/dashboard/tests/fixtures/wizard-parity/three-answers.golden.json")"
 assert_eq "Enter on the profile question records Balance" "$(jq -r '.profile' <<<"$w1_cfg")" balance
 assert_eq "private sync inherits Balance" "$(jq -r '.monero | has("clearnet_initial_sync")' <<<"$w1_cfg")" false
 assert_eq "local node RPC creds are auto-generated" \
