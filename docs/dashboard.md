@@ -299,9 +299,11 @@ clear before it releases:
 | `monerod`, `p2pool` or `tor` container down | the container is not running, is restarting, or its healthcheck is `starting` or `unhealthy` (Tor's check is bootstrap complete); a container the stack does not run is skipped | `NODE_DOWN_AFTER_SEC` |
 
 The current-reading rows exist so that a dashboard restart during a pause cannot readmit rigs onto
-a node that is still peerless or unsynchronized. A trigger that has fired keeps firing for 10
-minutes even when its input cannot be read (the Docker proxy, P2Pool's stats or its logs), then
-drops out; a failed read alone never ends a pause sooner. A trigger that has not fired drops out
+a node that is still peerless or unsynchronized. An active hold whose key is missing from its input
+(the Docker proxy, P2Pool's stats or its logs) is kept; its recovery timer resets while the key is
+missing and the normal `NODE_RECOVERY_AFTER_SEC` window applies once a healthy reading returns. An
+active hold whose container is permanently removed lasts until the dashboard restarts, because the
+key can never reappear. A trigger that has not fired drops out
 the moment its reading goes away: a recreate rotates P2Pool's stats, and a hold no reading
 supports must not keep the proxy stopped for ten minutes with nothing to show for it — the cost of
 a dropped reading is readmission onto a P2Pool of unknown peer state, chosen over an invisible
