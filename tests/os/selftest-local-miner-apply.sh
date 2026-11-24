@@ -14,7 +14,7 @@ cat >"$fixture/stack/pithead" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 if [ "${OMIT_CONVERGENCE:-0}" != 1 ]; then
-    if [ "$(jq -r '.local_miner.enabled' config.json)" = true ]; then
+    if [ "${STUCK_ACTIVE:-0}" = 1 ] || [ "$(jq -r '.local_miner.enabled' config.json)" = true ]; then
         echo active >"$FIXTURE_ROOT/active"
         printf '{"pools":[{"url":"127.0.0.1:3333"}]}\n' >"$FIXTURE_ROOT/rigforge/config.json"
     else
@@ -49,3 +49,11 @@ grep -Fq 'local-miner: state xmrig=' "$fixture/output"
 grep -Fq 'local-miner: rebooted=no env_changed=no' "$fixture/output"
 cmp "$fixture/original.json" "$fixture/stack/config.json"
 echo 'PASS: absent convergence fails, names its step and state, and original config is restored'
+echo active >"$fixture/active"
+if STUCK_ACTIVE=1 bash "$fixture/probe.sh" >"$fixture/output" 2>&1; then
+    echo 'FAIL: a miner still running after the disable apply was accepted' >&2
+    exit 1
+fi
+grep -Fq 'local-miner: xmrig.service still active after the disable apply' "$fixture/output"
+cmp "$fixture/original.json" "$fixture/stack/config.json"
+echo 'PASS: a miner left running by the disable apply fails and names the active unit'
