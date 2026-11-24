@@ -827,6 +827,11 @@ preserves the destination's file in `data/monero`, `data/tari`, and `data/p2pool
 install may already have synced chain data, and replacing it would force a resync. It still adds
 files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
 
+If `./pithead restore` fails while it copies a data directory, it puts `config.json`, `.env` and the
+`Caddyfile` back as they were before the restore. Data directories it had already copied keep the
+archive's files. A previous file it cannot put back stays beside its original name as a
+`.restore-old` copy, and restore says so.
+
 When the administrative archive contains `mining_data.db`, restore removes the destination's
 WAL, shared-memory and rollback-journal sidecars before copying the archived database and its
 sidecars. A crashed destination writer's committed rows cannot override the archived rows.

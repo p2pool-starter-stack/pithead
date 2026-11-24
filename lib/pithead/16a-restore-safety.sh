@@ -63,6 +63,24 @@ restore_discard_stage() {
     local stage="${RESTORE_STAGE_DIR:-}"
     RESTORE_STAGE_DIR=""
     [ -z "$stage" ] || rm -rf -- "$stage"
+    restore_fixed_backups_finish rollback ||
+        warn "Restore could not put some previous files back — they are kept beside their original names as .restore-old copies."
+}
+
+restore_fixed_backups_finish() {
+    local entry path backup rc=0
+    for entry in "${RESTORE_FIXED_BACKUPS[@]}"; do
+        path="${entry%%$'\t'*}" backup="${entry#*$'\t'}"
+        if [ "$1" = keep ]; then
+            [ -z "$backup" ] || sudo rm -f -- "$backup" || warn "Could not remove $backup, the copy of $path from before the restore — delete it by hand."
+        elif [ -n "$backup" ]; then
+            sudo mv -f -- "$backup" "$path" || rc=1
+        else
+            sudo rm -f -- "$path" || warn "Restore could not remove $path, which it had added — it still holds the archive's version."
+        fi
+    done
+    RESTORE_FIXED_BACKUPS=()
+    return "$rc"
 }
 
 restore_destination_safe() { # <path> <file|dir>
@@ -255,7 +273,8 @@ restore_recheck_destinations() {
 }
 
 restore_commit_stage() {
-    local path rel owner_uid owner_gid
+    local path rel owner_uid owner_gid backup
+    RESTORE_FIXED_BACKUPS=()
     if ! owner_uid=$(id -u "$REAL_USER") || ! owner_gid=$(id -g "$REAL_USER"); then
         restore_discard_stage
         error "Restore could not resolve the invoking operator's ownership — nothing was restored."
@@ -269,7 +288,15 @@ restore_commit_stage() {
         # appliance's life (#2329).
         local mode=600
         [ "$path" != "$PWD/Caddyfile" ] || mode=644
-        [ ! -e "$RESTORE_STAGE_DIR/$rel" ] || sudo install -o "$owner_uid" -g "$owner_gid" -m "$mode" "$RESTORE_STAGE_DIR/$rel" "$path" || {
+        [ -e "$RESTORE_STAGE_DIR/$rel" ] || continue
+        backup=""
+        if [ -e "$path" ] && ! { backup=$(sudo mktemp "$path.restore-old.XXXXXXXXXX") && sudo cp -a -- "$path" "$backup"; }; then
+            [ -z "$backup" ] || sudo rm -f -- "$backup" || :
+            restore_discard_stage
+            error "Restore could not keep a copy of $path — nothing more was restored."
+        fi
+        RESTORE_FIXED_BACKUPS+=("$path"$'\t'"$backup")
+        sudo install -o "$owner_uid" -g "$owner_gid" -m "$mode" "$RESTORE_STAGE_DIR/$rel" "$path" || {
             restore_discard_stage
             error "Restore failed while committing $path; inspect the destination before retrying."
         }
@@ -290,6 +317,7 @@ restore_commit_stage() {
             error "Restore failed while committing $path; inspect the destination before retrying."
         }
     done
+    restore_fixed_backups_finish keep
     # The archive wins ordinary collisions, but Tor's circuit history must never survive a
     # restore. Its onion keys are separate files and remain untouched.
     sudo rm -f -- "${RESTORE_ALLOWED_DIRS[3]}/state" || {
