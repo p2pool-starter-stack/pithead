@@ -80,6 +80,17 @@ config_read_sites() {
         done
     }
 
+    drift_render_settings() {
+        local value
+        while IFS= read -r value; do
+            value="${value#*: }"
+            value="${value%,}"
+            [[ "$value" =~ ^(bool|get)\(\"([A-Za-z0-9_.]+)\" ]] && value=".${BASH_REMATCH[2]}"
+            value="${value#\(}"
+            printf "render_env_settings:jq '%s' \"\$CONFIG_FILE\"\n" "${value%\)}"
+        done < <(sed -n '/^render_env_settings() {/,/^}/p' "$STACK" | grep -E '^ +[a-z_]+: ')
+    }
+
     while IFS= read -r p; do
         drift_add_path "$p"
     done < <(grep -a -oE 'config_get \.[A-Za-z0-9_.]+' "$STACK" | sed 's/^config_get //')
@@ -119,7 +130,10 @@ config_read_sites() {
             done < <(grep -oE '\.[A-Za-z_][A-Za-z0-9_.]*(\[[^]]*\])?[[:space:]]+(!=|==)' <<<"$filter" |
                 sed -E 's/(\[[^]]*\])?[[:space:]]+(!=|==)$//')
         fi
-    done < <(grep -a -n '"\$CONFIG_FILE"' "$STACK")
+    done < <(
+        grep -a -n '"\$CONFIG_FILE"' "$STACK"
+        drift_render_settings
+    )
 
     DRIFT_FOUND="$(sort -u <<<"$DRIFT_FOUND")"
 }
