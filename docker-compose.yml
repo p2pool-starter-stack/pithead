@@ -209,7 +209,6 @@ services:
   # Only starts if "local_tari" profile is active (#103, mirrors monerod's "local_node" above).
   tari:
     profiles: ["local_tari"]
-    # Pinned by digest (#135) to prevent tag re-pointing.
     image: ghcr.io/tari-project/minotari_node:v6.2.0-mainnet@sha256:427a0b9caef47a5ed9a31dba1def13437e2567c66a6c6fa34b6fe6cdcbffaf9c
     container_name: tari
     # Run non-root (#255). Pulled image (not our Dockerfile), so set the uid via compose to match the

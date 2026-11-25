@@ -214,7 +214,6 @@ check_disk_grouped() {
     return 0
 }
 
-# Extracts the major version from a Tari image reference (the leading digit before the dot).
 # Returns 1 for a tag without a leading version (latest-mainnet) or no tag at all.
 tari_image_major() {
     local ref="${1%%@*}" tag
