@@ -6,7 +6,7 @@
 # a sparse file, so a 100 GiB database costs no disk.
 
 echo "== unit: tari_image_major (#2636) =="
-assert_eq "ghcr v6 tag with digest → 6" "$(run_sourced "$SANDBOX" tari_image_major 'ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce')" "6"
+assert_eq "ghcr v6 tag with digest → 6" "$(run_sourced "$SANDBOX" tari_image_major 'ghcr.io/tari-project/minotari_node:v6.2.0-mainnet@sha256:427a0b9caef47a5ed9a31d')" "6"
 assert_eq "quay v5 tag with digest → 5" "$(run_sourced "$SANDBOX" tari_image_major 'quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:824f')" "5"
 assert_eq "registry port is not read as the tag" "$(run_sourced "$SANDBOX" tari_image_major 'reg.lan:5000/minotari_node:v6.0.0-mainnet')" "6"
 run_sourced "$SANDBOX" tari_image_major 'quay.io/tarilabs/minotari_node:latest-mainnet' >/dev/null
@@ -42,7 +42,7 @@ printf '/dev/sdz1 999999999 1 %s 1%% /srv/chain\n' "$TUS_AVAIL_KB"
 EOF
 chmod +x "$TUS/bin/docker" "$TUS/bin/df"
 TUS_V5='quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:824f'
-TUS_V6='ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce'
+TUS_V6='ghcr.io/tari-project/minotari_node:v6.2.0-mainnet@sha256:427a0b9caef47a5ed9a31d'
 tus_run() { # <from-image> <to-image> <avail GiB>
     TUS_FROM_IMG="$1" TUS_TO_IMG="$2" TUS_AVAIL_KB=$(($3 * 1048576)) DOCKER_LOG="$TUS/docker.log" \
         PATH="$TUS/bin:$PATH" run_sourced "$TUS" tari_upgrade_space_precheck 2>&1

@@ -214,7 +214,7 @@ check_disk_grouped() {
     return 0
 }
 
-# The major version in a Tari image reference's tag: ...minotari_node:v6.0.1-pre.0-mainnet@sha256:…
+# The major version in a Tari image reference's tag: ...minotari_node:v6.2.0-mainnet@sha256:…
 # prints 6. Returns 1 for a tag without a leading version (latest-mainnet) or no tag at all.
 tari_image_major() {
     local ref="${1%%@*}" tag

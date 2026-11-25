@@ -137,12 +137,12 @@ mv config.json.tari-wallet-test config.json
     fi
     dispositions=$(_ssh "podman exec tari-wallet sh -c 'for s in /proc/[0-9]*/status; do grep -q \"^Name:.*minotari_consol\" \"\$s\" && { printf \"%s \" \"\$s\"; grep -E \"^(SigIgn|SigCgt|SigBlk):\" \"\$s\"; }; done'" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     if [ -n "$dispositions" ]; then info "Tari wallet: signal dispositions (#2899): $dispositions"; else bad "Tari wallet: could not read the wallet process's signal dispositions (#2899)"; fi
-    expected_image='ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d'
+    expected_image='ghcr.io/tari-project/minotari_console_wallet:v6.2.0-mainnet@sha256:655e804656350559bd4338539b2c625fe2799456b5027f1c2d859d48a9c3c49e'
     read -r image_name image_digest <<<"$(_ssh "podman inspect tari-wallet --format '{{.ImageName}} {{.ImageDigest}}'" 2>/dev/null | tr -d '\r\n')"
     if tari_wallet_image_is_pinned "$image_name" "$image_digest" "$expected_image"; then
-        ok "Tari wallet: running the pinned v6.0.1-pre.0 image"
+        ok "Tari wallet: running the pinned v6.2.0 image"
     else
-        bad "Tari wallet: running image differs from the pinned v6.0.1-pre.0 image"
+        bad "Tari wallet: running image differs from the pinned v6.2.0 image"
     fi
     before=$(_tari_wallet_snapshot)
     snapshot_rc=$?

@@ -52,7 +52,7 @@
     st "ahead pin closes an incorporated stable target" "$(grep -c '^issue close 42 ' "$actions")" 1
     st "ahead prerelease never creates a downgrade issue" "$(grep -c '^issue create ' "$actions" || true)" 0
     : >"$actions"
-    sync_upgrade_issue tari v6.0.1-pre.0 v6.0.0 ahead tari-project/tari
+    sync_upgrade_issue tari v6.2.0 v6.0.0 ahead tari-project/tari
     st "future target is not closed when latest stable is older" "$(wc -c <"$actions" | tr -d ' ')" 0
     ST_ISSUES='[[{"number":43,"title":"Upgrade tari to v6.0.1","user":{"login":"outside"}},{"number":44,"title":"Upgrade tari to v6.0.1","pull_request":{},"user":{"login":"VijitSingh97"}}]]'
     init_upgrade_issues
