@@ -216,6 +216,7 @@ lint-toml: ## taplo TOML format check (config: .config/taplo.toml)
 	@# Tracked files only, never a filesystem walk: taplo's walker panics on any unreadable
 	@# dir (EACCES scandir — e.g. root-owned artifacts under .claude/ agent worktrees).
 	@test -n "$$(git ls-files '*.toml')" || { echo "lint-toml: zero tracked TOML files — refusing a vacuous pass"; exit 1; }
+	cd .config && npm install --prefer-offline
 	git ls-files -z '*.toml' | xargs -0 npx --prefix .config --no-install @taplo/cli fmt --check --config .config/taplo.toml
 
 # Cut a release from the private build/test server — GHCR publish, gated on the test suite +
