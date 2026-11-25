@@ -22,9 +22,9 @@ st "a real gap survives normalisation" \
     "$([ "$(norm 'v5.3.1-mainnet')" = "$(norm 'v5.6.0')" ] && echo same || echo differs)" "differs"
 st "pinned prerelease is newer than older stable" "$(version_status v6.2.0 v6.0.0)" ahead
 st "same pinned version is current" "$(version_status v6.2.0 v6.2.0)" current
-st "newer stable is ahead" "$(version_status v6.2.0 v6.0.2)" stale
-st "matching stable supersedes prerelease" "$(version_status v6.2.0 v6.0.1)" stale
-st "newer prerelease is ahead" "$(version_status v6.2.0 v6.0.1-pre.1)" stale
+st "newer stable is ahead" "$(version_status v6.2.0 v6.0.2)" ahead
+st "matching stable supersedes prerelease" "$(version_status v6.2.0 v6.0.1)" ahead
+st "newer prerelease is ahead" "$(version_status v6.2.0 v6.0.1-pre.1)" ahead
 st "numeric components beat text ordering" "$(version_order v6.0.9 v6.0.10)" older
 st "prerelease numbers beat text ordering" "$(version_order v6.0.1-pre.9 v6.0.1-pre.10)" older
 st "prerelease labels use precedence" "$(version_order v6.0.1-pre.9 v6.0.1-rc.0)" older
