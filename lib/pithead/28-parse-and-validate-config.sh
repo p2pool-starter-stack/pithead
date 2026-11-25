@@ -384,8 +384,6 @@ parse_and_validate_config() {
         if [ "$(printf '%s' "$dash_pw" | wc -c)" -lt 16 ]; then
             error "dashboard.auth.password must be at least 16 characters when dashboard.onion.enabled is true (a published .onion is online-brute-forceable and per-IP throttling is meaningless over Tor). Use a passphrase."
         fi
-        # Reject obviously weak 16+ char choices the length floor alone would pass: a single repeated
-        # character, or a well-known weak pattern. Not a full dictionary — the floor handles the rest.
         if printf '%s' "$dash_pw" | jq -Rse 'explode | unique | length == 1' >/dev/null; then
             error "dashboard.auth.password is a single repeated character — choose a real passphrase."
         fi
