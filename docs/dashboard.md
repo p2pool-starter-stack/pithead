@@ -1891,7 +1891,7 @@ a Tari address in body text, IP addresses and hostnames, and a password or token
 one of those flags. Do not point an untrusted reader at this API.
 
 The API has no role split yet: any user who can log in can read these logs. A viewer role and
-dedicated machine credentials arrive with the login sessions work (#3895).
+dedicated machine credentials arrive with the login sessions work (#3872).
 
 ## Backup view
 
