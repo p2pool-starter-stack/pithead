@@ -325,7 +325,7 @@ jobs:
           persist-credentials: false
       - name: Lint all build/* and dashboard/ Dockerfiles (config in .config/hadolint.yaml)
         run: |
-          docker run --rm -v "$PWD":/repo docker.io/hadolint/hadolint:latest@sha256:32dac94127fd60b7b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d \
+          docker run --rm -v "$PWD":/repo hadolint/hadolint:latest@sha256:32dac94127fd60b7b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d \
             --config /repo/.config/hadolint.yaml /repo/build/*/Dockerfile /repo/dashboard/Dockerfile
 
   python-lint:
