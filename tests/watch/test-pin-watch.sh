@@ -47,10 +47,10 @@ st "newer prereleases stay separate" \
     "$(
         gh() {
             [[ "$*" != *'prerelease == true'* ]] || return 1 # A prerelease-shaped Tari tag can have false metadata.
-            printf '%s\n' v6.0.1-pre.1 v6.2.0 v6.0.0-pre.0 v4.10.0
+            printf '%s\n' v6.3.0-pre.0 v6.2.0 v6.0.1-pre.0 v4.10.0
         }
         newer_tari_prereleases v6.2.0
-    )" v6.0.1-pre.1
+    )" v6.3.0-pre.0"
 st "no newer prerelease is a completed check" \
     "$(
         gh() { printf '%s\n' v6.2.0; }
