@@ -246,6 +246,7 @@ _rag_auth() { RAG_PW="$1" _rag_build - --auth; }
 assert_not_contains "recovery page checkAuth: a non-ASCII password is accepted like the CLI does" "$(_rag_auth 'pässwörd-12345')" "err"
 assert_eq "recovery page checkAuth: 7 characters are refused whatever their byte count" "$(_rag_auth 'ääääääx')" "err"
 assert_eq "recovery page checkAuth: a tab is refused" "$(_rag_auth "$(printf 'password\tlong')")" "err"
+assert_eq "recovery page checkAuth: a C1 control character is refused like the CLI does" "$(_rag_auth "$(printf 'password\xc2\x85long')")" "err"
 assert_eq "recovery page checkAuth: a double-quote is refused" "$(_rag_auth 'pass"word-long')" "err"
 
 # 1. Dashboard login ticked, username typed, password left blank. This is the recovery path

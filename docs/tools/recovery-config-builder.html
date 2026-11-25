@@ -271,7 +271,7 @@ function checkAuth(user, pass, onion) {
     return ["err", "The username must be 1–64 characters of letters, digits, and . _ @ -"];
   if (pass === "") return ["err", "Enter the new password. Without one the file leaves this whole setting out, so the machine keeps the login it has."];
   var chars = Array.from(pass);
-  if (chars.some(function (c) { var n = c.codePointAt(0); return n < 32 || n === 127; }))
+  if (chars.some(function (c) { var n = c.codePointAt(0); return n < 32 || (n >= 127 && n <= 159); }))
     return ["err", "The password cannot contain control characters such as a tab or a newline."];
   if (pass.indexOf('"') >= 0) return ["err", "The password cannot contain a double-quote."];
   if (chars.length < 8 || chars.length > 128) return ["err", "The password must be 8–128 characters (this one is " + chars.length + ")."];
