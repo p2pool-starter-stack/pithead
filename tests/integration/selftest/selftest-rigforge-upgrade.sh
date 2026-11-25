@@ -76,11 +76,25 @@ rx() {
             "$(cat "$VER_F")" "$(cat "$UPD_F")"
         ;;
     *"worker-upgrade-all"*)
-        if [ "$(cat "$FLEET_PLAN_F")" = "behind" ]; then
-            case "$1" in *"-X POST"*) printf '202' ;; *) printf '{"eligible":[{"name":"rig1"}]}' ;; esac
-        else
-            case "$1" in *"-X POST"*) printf '409' ;; *) printf '{"eligible":[]}' ;; esac
-        fi
+        case "$1" in
+        *"http_code"*"-X POST"*)
+            if [ "$(cat "$FLEET_PLAN_F")" = "behind" ]; then printf '202'; else printf '409'; fi
+            ;;
+        *"-X POST"*)
+            printf '%s\n' "$1" | tr -d '\\\n' >>"$POST_LOG"
+            local flip
+            flip="$(cat "$FLIP_F")"
+            [ -n "$flip" ] && printf '%s' "$flip" >"$VER_F"
+            _dequeue "$POSTQ"
+            ;;
+        *)
+            local settled run=null eligible="[]"
+            settled="$(_dequeue "$RESQ")"
+            [ -n "$settled" ] && run="{\"id\":\"abc-123\",\"status\":\"completed\",\"rigs\":[{\"name\":\"rig1\",\"status\":\"$settled\"}]}"
+            [ "$(cat "$FLEET_PLAN_F")" = "behind" ] && eligible='[{"name":"rig1"}]'
+            printf '{"eligible":%s,"run":%s}' "$eligible" "$run"
+            ;;
+        esac
         ;;
     *"worker-upgrade"*)
         # Record the payload so "which version was proposed" is a fact about the wire rather than
@@ -241,6 +255,23 @@ queue_results applied
 # poll before it reaches its terminal and the case would test the wrong failure.
 run_rigforge_upgrade rig1 >/dev/null 2>&1
 want "applied but the rig never reports the new version -> FAIL" 2 1 0 0 0
+
+snap
+rig_reports "1.15.1"
+answers '{"id":"newer-run","status":"pending"}'
+queue_results applied
+run_rigforge_upgrade rig1 >/dev/null 2>&1
+want "a settled run with another id is not this run's outcome -> FAIL" 1 1 0 0 0
+
+snap
+rig_reports "1.15.1"
+offers "$UPD_AVAIL"
+answers "$PENDING" "$SYNC_NOOP"
+queue_results applied
+comes_back_on "1.16.0"
+run_rigforge_upgrade rig1 >/dev/null 2>&1
+printf '%s' "$(posts)" | grep -q -- '--data {"version":"v1[.]16[.]0"} *http://[^ ]*/worker-upgrade-all'
+check "the behind rig is upgraded through update-all, which carries only the version" $?
 
 echo "== the noop leg (#1002a) =="
 
