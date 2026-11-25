@@ -151,7 +151,7 @@ render_env() {
         worker_api_token=$(env_get XMRIG_API_TOKEN)
         [ -n "$worker_api_token" ] || worker_api_token=$(openssl rand -hex 24)
     fi
-    worker_api_tokens_json=$(jq -c '(.workers.api_port // 8080) as $port | reduce ((.workers.list // [])[] | select((.name // "") != "" and (.host // "") != "" and (.api_token // "") != "")) as $worker ({}; .[$worker.name] //= {host: $worker.host, port: ($worker.port // $port), token: $worker.api_token})' "$CONFIG_FILE") # read-only probe tokens only; control tokens stay host-only
+    worker_api_tokens_json=$(jq -c '(.workers.api_port // 8080) as $port | reduce ((.workers.list // [])[] | select((.name // "") != "" and (.host // "") != "" and (.api_token // "") != "")) as $worker ({}; .[$worker.name] //= {host: $worker.host, port: ($worker.port // $port), token: $worker.api_token})' "$CONFIG_FILE")
 
     local tg_level tg_token tg_chat tg_commands tg_summary_time
     tg_level=${setting[tg_level]}
@@ -169,23 +169,13 @@ render_env() {
     ntfy_token=${setting[ntfy_token]}
     notify_tor=${setting[notify_tor]}
 
-    #     exceed physical RAM and the host OOMs before Tari's own limit ever fires.
-    #   - a ~25% reserve (>=2 GB) of what's left, for monerod/p2pool/Tor/the dashboard/the OS/page
-    #     cache. Tari gets the remainder, floored at 2 GB. Those other services now also carry their
-    #     own mem_limit CEILINGS in docker-compose.yml (#132) — runaway protection, not reservations,
-    #     so actual steady-state still fits this reserve while a leak in any one of them OOM-restarts
-    #     just that container instead of letting the host OOM-killer reach monerod.
     local tari_mem_limit ram_mb huge_mb avail_mb reserve_mb monero_mem_limit
     if [ "$TARI_MODE" != "local" ]; then
-        # No local Tari container to cap in remote or off mode (#103/#1855) — the auto-calc below is
-        # about THIS host's memory, irrelevant to a third-party node, so skip it entirely. Render a
-        # fixed placeholder so the (profiled-off) tari service's compose interpolation still
-        # resolves; it is never applied to a running container.
         tari_mem_limit="0m"
     else
         tari_mem_limit=${setting[tari_mem_limit]}
         case "$tari_mem_limit" in
-        "" | auto) # the Darwin sysctl arm below is DEPRECATED and untested (#2041)
+        "" | auto)
             huge_mb=0
             if [ "$OS_TYPE" == "Darwin" ]; then
                 ram_mb=$(($(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1048576))
@@ -193,14 +183,14 @@ render_env() {
                 ram_mb=$(awk '/MemTotal/ {print int($2/1024)}' "${PITHEAD_MEMINFO:-/proc/meminfo}" 2>/dev/null || echo 0)
                 huge_mb=$(hugepages_carveout_mb)
             fi
-            [ "${ram_mb:-0}" -gt 0 ] 2>/dev/null || ram_mb=16384 # unknown host => assume 16 GB
+            [ "${ram_mb:-0}" -gt 0 ] 2>/dev/null || ram_mb=16384
             [ "${huge_mb:-0}" -ge 0 ] 2>/dev/null || huge_mb=0
-            avail_mb=$((ram_mb - huge_mb)) # RAM left after HugePages
+            avail_mb=$((ram_mb - huge_mb))
             [ "$avail_mb" -lt 2048 ] && avail_mb=2048
-            reserve_mb=$((avail_mb / 4)) # rest of the stack + OS + cache
+            reserve_mb=$((avail_mb / 4))
             [ "$reserve_mb" -lt 2048 ] && reserve_mb=2048
             tari_mem_limit=$((avail_mb - reserve_mb))
-            [ "$tari_mem_limit" -lt 2048 ] && tari_mem_limit=2048 # never starve Tari below 2 GB
+            [ "$tari_mem_limit" -lt 2048 ] && tari_mem_limit=2048
             tari_mem_limit="${tari_mem_limit}m"
             ;;
         esac
