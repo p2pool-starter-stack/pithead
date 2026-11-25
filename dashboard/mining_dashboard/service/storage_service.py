@@ -14,33 +14,21 @@ from mining_dashboard.config.config import (
     HISTORY_RETENTION_SEC,
     TIER_DEFAULTS,
 )
+from mining_dashboard.service.event_log_store import EventLogStoreMixin
 from mining_dashboard.service.mining_store import MiningStoreMixin
 from mining_dashboard.service.storage_schema import StorageSchemaMixin
 
-# The append-only telemetry series lives in telemetry_store.py (#1369) — a MIXIN, so StateManager
-# below keeps one DB handle, one lock and one transaction scope. Both retention constants are
-# re-exported here rather than merely moved: `storage_service.XVB_HISTORY_RETENTION_SEC` and
-# `...NETWORK_HISTORY_RETENTION_SEC` were public module attributes before the split and importers
-# (tests included) bind them from this module, so the import surface must not change.
-from mining_dashboard.service.telemetry_store import (  # noqa: F401 — re-export, see above
+from mining_dashboard.service.telemetry_store import (
     NETWORK_HISTORY_RETENTION_SEC,
     XVB_HISTORY_RETENTION_SEC,
     TelemetryStoreMixin,
 )
 
-# The `worker_config` accessors live in worker_config_store.py (#1369) — a MIXIN on the same
-# terms, taken to make room for #1369's exact-id lookup once this file reached its budget ceiling.
-# `_RECONCILE_TERMINAL` moved with `reconcile_worker_config_status`, its only reader, and is
-# re-exported here for the same reason the retention constants above are: it was a module
-# attribute of THIS module before the split and a test binds it from here.
-from mining_dashboard.service.workers.worker_config_store import (  # noqa: F401 — re-export, see above
+from mining_dashboard.service.workers.worker_config_store import (
     _RECONCILE_TERMINAL,
     WorkerConfigStoreMixin,
 )
 
-# The 10m window reuses the original v_p2pool/v_xvb pair; every other window in
-# HASHRATE_WINDOW_COLUMNS gets its own additive history column (#168). This flat, insertion-ordered
-# list drives the CREATE, the migration, the INSERT, and the SELECT so they can never drift apart.
 _BASE_HISTORY_COLS = {"v_p2pool", "v_xvb"}
 _WINDOW_EXTRA_COLUMNS = [
     col
@@ -49,36 +37,19 @@ _WINDOW_EXTRA_COLUMNS = [
     if col not in _BASE_HISTORY_COLS
 ]
 
-# Substrings SQLite uses when the DB file itself is unusable — a corrupted page, a truncated/rewritten
-# file, or a non-DB where the DB should be (#489). Matched case-insensitively against the error text
-# so an operations-eating corruption auto-heals (quarantine + fresh DB) instead of erroring on every
-# write cycle forever. A transient error (locked, disk full, permissions) is NOT here: those are the
-# db_unhealthy path — retryable, not a reason to throw away history.
 _CORRUPTION_MARKERS = ("malformed", "not a database", "image is malformed", "file is encrypted")
-# How many quarantined copies of a corrupt DB to keep for post-mortem before pruning the oldest.
 _CORRUPT_KEEP = 3
 
-# v1.7 telemetry backbone retention (#196 Wave-0 proposal). blocks is permanent (no pruning — a
-# small table, like payouts); worker_history extends the existing 30-day HISTORY_RETENTION_SEC
-# convention. Each table gets its OWN retention (independent of `history`'s), by design. The
-# xvb_history and network_history retentions moved to telemetry_store.py with the only writers
-# that apply them (#1369), and are re-exported from the import block above.
-WORKER_HISTORY_RETENTION_SEC = HISTORY_RETENTION_SEC  # 30 days
+WORKER_HISTORY_RETENTION_SEC = HISTORY_RETENTION_SEC
 
-# raffle_wins is permanent-in-practice like payouts, but its rows are mirrored from an UNTRUSTED
-# public file (see client/xvb_client.parse_winners), so it is bounded by row count instead of
-# unbounded: keep the newest N. Decades of legit wins fit; a hostile feed cannot grow it past this.
 RAFFLE_WINS_MAX_ROWS = 5000
 
-# Table names carrying a per-table write-health signal (see get_table_health / _table_write_ok).
-# It stays HERE and stays a plain name list: __init__ is its only reader, it seeds a dict of
-# health entries from it, and it never dispatches into a method — so the three tables whose
-# writers moved to telemetry_store.py (#1369) need no indirection back out of this module.
 _TELEMETRY_TABLES = ("blocks", "xvb_history", "network_history", "disk_growth", "worker_history")
 
 
 class StateManager(
-    StorageSchemaMixin, MiningStoreMixin, TelemetryStoreMixin, WorkerConfigStoreMixin
+    StorageSchemaMixin, EventLogStoreMixin, MiningStoreMixin,
+    TelemetryStoreMixin, WorkerConfigStoreMixin
 ):
     """
     Manages persistent application state including hashrate history and mining mode statistics.
@@ -528,7 +499,6 @@ class StateManager(
                     except sqlite3.Error:
                         self.state["events"] = []
 
-                    # 5. Load share-stat deltas (#116) — additive table, same pre-migration guard.
                     try:
                         cursor.execute(
                             "SELECT ts, accepted, rejected, invalid, expired FROM share_stats "
@@ -538,6 +508,18 @@ class StateManager(
                         self.state["share_stats"] = [dict(row) for row in cursor.fetchall()]
                     except sqlite3.Error:
                         self.state["share_stats"] = []
+
+                    try:
+                        cursor.execute(
+                            "SELECT ts, kind, subject, label, severity, text "
+                            "FROM event_log WHERE ts > ? ORDER BY ts ASC",
+                            (history_cutoff,),
+                        )
+                        self.state["event_log"] = [
+                            {**dict(row), "_ts": row["ts"]} for row in cursor.fetchall()
+                        ]
+                    except sqlite3.Error:
+                        self.state["event_log"] = []
 
                 self.logger.info(f"State successfully loaded from {self.db_path}")
         except sqlite3.Error as e:
