@@ -50,10 +50,6 @@ export function coerceForType(type, raw) {
   return raw;
 }
 
-/**
- * Classify a pasted Monero address the way the CLI wizard does, so the page can name the
- * actual mistake before a submit round-trip. The HOST re-validates — this only saves a trip.
- */
 export function classifyMoneroAddress(value) {
   const v = (value || "").trim();
   if (!v) {

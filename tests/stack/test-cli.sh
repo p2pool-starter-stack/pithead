@@ -70,8 +70,6 @@ run_sourced "$SANDBOX" is_valid_port "0899" >/dev/null 2>&1
 assert_rc "rejects a leading zero (no octal-parse error)" "$?" "1"
 
 echo "== unit: semver_newer (#59 — the upgrade downgrade guard) =="
-# The comparison gates the upgrade button: a lexical bug would let 1.9.0 look "newer" than 1.10.0
-# and could be leveraged to force an older, vulnerable release.
 while read -r _sa _sb _sw; do
     run_sourced "$SANDBOX" semver_newer "$_sa" "$_sb" </dev/null >/dev/null 2>&1
     assert_rc "semver_newer $_sa over $_sb: $_sw" "$?" "$([ "$_sw" = yes ] && echo 0 || echo 1)"
