@@ -43,17 +43,12 @@ out=$(PATH="$IBIN:$PATH" bash "$ROOT/install.sh" 2>&1) || true
 assert_contains "install.sh refuses non-Linux" "$out" "runs on Linux"
 
 echo "== unit: install.sh download verification fails CLOSED (#868) =="
-# The two security-critical branches of the public curl installer: the bundle sha256 against the
-# release manifest, and the cosign signature against the repo-pinned key. This is the path a new
-# operator runs BEFORE any of the bundle's own defenses exist — a tampered bundle that gets
-# extracted has already won — so a mismatch must install NOTHING. The stubs model each remote
-# artifact as a file served by basename; absent file = curl -f failure, exactly the shape the
-# script distinguishes (absent degrades politely, present-but-wrong is fatal).
 mk_tmpdir ISB
 mkdir -p "$ISB/bin" "$ISB/srv" "$ISB/work"
 printf '#!/bin/bash\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac\n' >"$ISB/bin/uname"
 cat >"$ISB/bin/curl" <<'EOF'
 #!/bin/bash
+printf '%s\n' "$*" >>"${CURL_LOG:-/dev/null}"
 out="" url=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -70,6 +65,7 @@ while [ $# -gt 0 ]; do
 done
 src="$CURL_SRV/$(basename "$url")"
 [ -f "$src" ] || exit 22
+[ -n "$out" ] || cat "$src"
 [ -n "$out" ] && cp "$src" "$out"
 exit 0
 EOF
@@ -86,12 +82,13 @@ tar -czf "$ISB/srv/pithead.tar.gz" -C "$ISB/bundle-src" pithead-x
 irun() { # <dest-subdir> [env overrides via preceding assignments]
     (
         cd "$ISB/work" || exit
-        CURL_SRV="$ISB/srv" PITHEAD_VERSION=v9.9.9 PITHEAD_ALLOW_ANY_DISTRO=1 \
+        CURL_SRV="$ISB/srv" PITHEAD_VERSION="${IRUN_TAG-v9.9.9}" PITHEAD_ALLOW_ANY_DISTRO=1 \
             PITHEAD_DIR="$ISB/work/$1" PITHEAD_TTY="${IRUN_TTY-$ISB/tty}" PATH="$ISB/bin:$PATH" bash "$ROOT/install.sh" 2>&1 </dev/null
     )
 }
 
 : >"$ISB/tty"
+touch "$ISB/srv/pithead.tar.gz.sig" "$ISB/srv/cosign.pub"
 out=$(IRUN_TTY="$ISB/no-such-tty" irun no-tty) && rc=0 || rc=$?
 assert_rc "piped install with no terminal refuses instead of handing setup a pipe" "$rc" "1"
 assert_contains "the no-terminal refusal says how to continue" "$out" "no terminal is available"
@@ -125,8 +122,6 @@ rm -f "$ISB/srv/ingredients-v9.9.9.md"
 out=$(irun no-manifest)
 assert_contains "missing manifest degrades to HTTPS trust" "$out" "No release manifest"
 
-# cosign: a present-but-bad signature is FATAL; an absent one is a note; a signature whose
-# pinned key cannot be fetched is fatal too (the cross-channel check cannot be half-done).
 touch "$ISB/srv/pithead.tar.gz.sig" "$ISB/srv/cosign.pub"
 out=$(irun sig-ok)
 assert_rc "good signature installs" "$?" "0"
@@ -139,12 +134,42 @@ rm -f "$ISB/srv/cosign.pub"
 out=$(irun sig-nokey) && rc=0 || rc=$?
 assert_rc "signature without a fetchable pinned key refuses" "$rc" "1"
 assert_contains "the failure names the pinned key" "$out" "pinned key could not be fetched"
+touch "$ISB/srv/cosign.pub"
+printf '{"tag_name": "v9.9.9"}\n' >"$ISB/srv/latest"
+out=$(IRUN_TAG='' CURL_LOG="$ISB/curl.log" irun latest-tag)
+assert_contains "the latest tag is resolved and installed" "$out" "SETUP-REACHED"
+assert_eq "a full install makes five downloads" "$(grep -c . "$ISB/curl.log")" "5"
+assert_eq "every installer download is limited to https, redirects included" "$(grep -vc -e '--proto =https --proto-redir =https' "$ISB/curl.log")" "0"
 rm -f "$ISB/srv/pithead.tar.gz.sig"
-out=$(irun sig-absent)
+out=$(IRUN_TAG=v1.18.0 irun sig-absent)
 assert_contains "absent signature is noted, not fatal" "$out" "No bundle signature"
+assert_contains "v1.18.0 without a signature installs" "$out" "SETUP-REACHED"
+out=$(IRUN_TAG=v1.3.1 irun sig-absent-v1.3.1)
+assert_contains "v1.3.1 without a signature installs" "$out" "SETUP-REACHED"
+out=$(IRUN_TAG=v1.08.0 irun sig-absent-v1.08.0)
+assert_contains "v1.08.0 without a signature installs" "$out" "SETUP-REACHED"
+out=$(IRUN_TAG=v1.18.1 irun sig-missing-v1.18.1) && rc=0 || rc=$?
+assert_rc "v1.18.1 without a signature refuses" "$rc" "1"
+assert_contains "the refusal says the signature could not be downloaded" "$out" "signature could not be downloaded"
+assert_eq "nothing was installed for v1.18.1 without a signature" "$([ -e "$ISB/work/sig-missing-v1.18.1" ] && echo present || echo absent)" "absent"
+assert_eq "setup was not reached for v1.18.1 without a signature" "$(printf '%s' "$out" | grep -c SETUP-REACHED || true)" "0"
+out=$(IRUN_TAG=v1.19.0 irun sig-missing-v1.19.0) && rc=0 || rc=$?
+assert_rc "v1.19.0 without a signature refuses" "$rc" "1"
+out=$(IRUN_TAG=v2.0.0 irun sig-missing-v2.0.0) && rc=0 || rc=$?
+assert_rc "v2.0.0 without a signature refuses" "$rc" "1"
+out=$(IRUN_TAG=v1.018.1 irun sig-missing-v1.018.1) && rc=0 || rc=$?
+assert_rc "v1.018.1 reads as base 10 and refuses without a signature" "$rc" "1"
+out=$(irun sig-missing-v9.9.9) && rc=0 || rc=$?
+assert_rc "v9.9.9 without a signature refuses" "$rc" "1"
+assert_eq "nothing was installed for v9.9.9 without a signature" "$([ -e "$ISB/work/sig-missing-v9.9.9" ] && echo present || echo absent)" "absent"
+out=$(IRUN_TAG=1.18.0 irun sig-missing-no-v) && rc=0 || rc=$?
+assert_rc "a tag without the leading v is held to the signed rule" "$rc" "1"
+out=$(IRUN_TAG=v1.18.0-rc1 irun sig-missing-rc) && rc=0 || rc=$?
+assert_rc "a tag with a suffix is held to the signed rule" "$rc" "1"
+out=$(IRUN_TAG=v1.18 irun sig-missing-two) && rc=0 || rc=$?
+assert_rc "a tag with two numbers is held to the signed rule" "$rc" "1"
 
-# The remaining guards on the same path: an occupied target refuses before downloading, and a
-# bundle with no pithead executable refuses after extraction.
+touch "$ISB/srv/pithead.tar.gz.sig" "$ISB/srv/cosign.pub"
 mkdir -p "$ISB/work/taken"
 out=$(irun taken) && rc=0 || rc=$?
 assert_rc "an existing target dir refuses" "$rc" "1"
