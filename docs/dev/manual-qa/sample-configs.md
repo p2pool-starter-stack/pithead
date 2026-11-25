@@ -207,7 +207,7 @@ For every row:
 | Set `monero.mode` to `"cloud"` | `monero.mode must be "local" or "remote"` |
 | Set `p2pool.stratum_password` to `"has space"` | `p2pool.stratum_password must be "auto", empty, or 1–128 chars` |
 | Add `"proxy": { "donate_level": 150 }` | `proxy.donate_level must be an integer 0–99` |
-| Set `dashboard.auth.password` to `"short"` | `dashboard.auth.password must be 8–128 printable characters` |
+| Set `dashboard.auth.password` to `"short"` | `dashboard.auth.password must be 8–128 characters` |
 | Set `dashboard.onion.enabled` to `true` and the password to `"fifteen-chars-x"` (15 characters) | `must be at least 16 characters when dashboard.onion.enabled is true` |
 | Set `dashboard.onion.enabled` to `true` and the password to `"changeme-but-longer"` | `contains a well-known weak pattern` |
 | Add a second top-level `"p2pool"` block below the first, for example `"p2pool": { "pool": "nano" }` | A refusal that names the duplicated key and says where it is, for example `duplicate key "p2pool" at the top level` |

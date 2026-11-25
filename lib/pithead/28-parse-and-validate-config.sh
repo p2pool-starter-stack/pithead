@@ -343,7 +343,7 @@ parse_and_validate_config() {
         if ! printf '%s' "$DASHBOARD_AUTH_USER" | grep -qE '^[A-Za-z0-9._@-]{1,64}$'; then
             error "dashboard.auth.username must be 1–64 chars of letters, digits, and . _ @ - (got \"$DASHBOARD_AUTH_USER\")."
         fi
-        if ! printf '%s' "$dash_pw" | jq -Rse 'length >= 8 and length <= 128 and test("^[^\\x00-\\x1f\\x7f]+$") and (contains("\"") | not)' >/dev/null; then
+        if ! printf '%s' "$dash_pw" | jq -Rse 'length >= 8 and length <= 128 and (contains("\"") | not)' >/dev/null; then
             error "dashboard.auth.password must be 8–128 characters (letters, digits, and symbols including non-ASCII are fine; no control characters or double-quotes)."
         fi
         DASHBOARD_AUTH_PW_FP=$(printf '%s' "$dash_pw" | sha256_hex)

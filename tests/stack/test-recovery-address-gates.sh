@@ -208,6 +208,7 @@ new Function("document","navigator","URL","Blob","module", src)(
   document, {}, { createObjectURL: () => "", revokeObjectURL(){} }, class {}, mod);
 const got = Object.keys(mod.exports).filter(k => typeof mod.exports[k] === "function").sort().join(" ");
 if (process.env.RAG_SCENARIO === "--exports") { console.log(got); process.exit(0); }
+if (process.env.RAG_SCENARIO === "--auth") { console.log(mod.exports.checkAuth("admin", process.env.RAG_PW, false)[0]); process.exit(0); }
 if (typeof mod.exports.build !== "function") { console.error("the page does not export build()"); process.exit(2); }
 const scn = JSON.parse(process.env.RAG_SCENARIO);
 for (const id of Object.keys(scn))
@@ -240,6 +241,12 @@ _rag_drive() { # <mutation|-> <scenario json>
 assert_eq "recovery page build(): the page exports every function this suite drives" \
     "$(_rag_build - --exports)" \
     "build checkAuth checkTari checkXmr moneroAddressType tariAddressType"
+
+_rag_auth() { RAG_PW="$1" _rag_build - --auth; }
+assert_not_contains "recovery page checkAuth: a non-ASCII password is accepted like the CLI does" "$(_rag_auth 'pässwörd-12345')" "err"
+assert_eq "recovery page checkAuth: 7 characters are refused whatever their byte count" "$(_rag_auth 'ääääääx')" "err"
+assert_eq "recovery page checkAuth: a tab is refused" "$(_rag_auth "$(printf 'password\tlong')")" "err"
+assert_eq "recovery page checkAuth: a double-quote is refused" "$(_rag_auth 'pass"word-long')" "err"
 
 # 1. Dashboard login ticked, username typed, password left blank. This is the recovery path
 #    docs/appliance.md points a locked-out operator at.
