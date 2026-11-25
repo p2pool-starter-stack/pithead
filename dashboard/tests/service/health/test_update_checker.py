@@ -1,5 +1,6 @@
 """Tests for the notify-only new-release check (#224)."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -53,6 +54,12 @@ class TestComputeUpdate:
         # must hold across the format difference — a current rig never badges its own version.
         assert compute_update("1.11.2", "v1.11.2", "u") is None
         assert compute_update("1.11.1", "v1.11.2", "u")["latest"] == "v1.11.2"
+
+    def test_shared_semver_newer_vectors(self):
+        vectors = Path(__file__).parents[2] / "fixtures" / "rule-vectors" / "semver-newer.txt"
+        for line in vectors.read_text().splitlines():
+            newer, older, want = line.split()
+            assert (compute_update(older, newer, "u") is not None) == (want == "yes"), line
 
 
 class TestGitHubReleaseClient:

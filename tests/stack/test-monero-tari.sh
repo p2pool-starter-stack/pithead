@@ -187,6 +187,9 @@ mkdir -p "$NOPY"
 printf '#!/usr/bin/env bash\nexit 127\n' >"$NOPY/python3"
 chmod +x "$NOPY/python3"
 assert_eq "monero_address_type: python3 unusable => shape-only primary" "$(PATH="$NOPY:$PATH" run_sourced "$SANDBOX" monero_address_type "4$_h94")" "primary"
+while read -r _vp _vn _vbash _vjs; do
+    assert_eq "monero_address_type: shared vector $_vp x$_vn ($_vjs in the browser)" "$(run_sourced "$SANDBOX" monero_address_type "$_vp$(printf 'A%.0s' $(seq $((_vn - 1))))" </dev/null)" "$_vbash"
+done <"$ROOT/dashboard/tests/fixtures/rule-vectors/monero-address-shape.txt"
 
 echo "== unit: tari_address_type — DammSum over both address forms (#845) =="
 assert_eq "tari_address_type: reference dual base58 => ok" "$(run_sourced "$SANDBOX" tari_address_type "$VALID_TARI")" "ok"

@@ -5,6 +5,7 @@
 // Run with Node's built-in test runner (CI runs exactly this):
 //     node --test dashboard/tests/frontend/
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -51,6 +52,16 @@ test("classifyMoneroAddress names the actual mistake", () => {
   assert.equal(classifyMoneroAddress(`9${"A".repeat(94)}`).kind, "not-primary");
   assert.equal(classifyMoneroAddress("4ABC").kind, "partial");
   assert.equal(classifyMoneroAddress(`4${"A".repeat(94)}`).kind, "ok");
+});
+
+test("classifyMoneroAddress agrees with the shared shape vectors", () => {
+  const url = new URL("../../fixtures/rule-vectors/monero-address-shape.txt", import.meta.url);
+  for (const line of readFileSync(url, "utf8").trim().split("\n")) {
+    const [prefix, length, bash, js] = line.split(" ");
+    const addr = prefix + "A".repeat(Number(length) - 1);
+    assert.equal(classifyMoneroAddress(addr).kind, js, line);
+    assert.ok(bash !== "invalid" || classifyMoneroAddress(addr).kind !== "ok", line);
+  }
 });
 
 test("telegramPairReady demands both halves or neither", () => {

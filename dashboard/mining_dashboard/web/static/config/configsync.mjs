@@ -50,12 +50,6 @@ export function coerceForType(type, raw) {
   return raw;
 }
 
-/**
- * Classify a pasted Monero address the way the CLI wizard does, so the page can name the
- * actual mistake before a submit round-trip. The HOST re-validates — this only saves a trip.
- * Returns { kind, message } with kind one of "empty" | "subaddress" | "integrated" |
- * "not-primary" | "partial" | "ok".
- */
 export function classifyMoneroAddress(value) {
   const v = (value || "").trim();
   if (!v) {
@@ -67,7 +61,7 @@ export function classifyMoneroAddress(value) {
       message: "That is a subaddress (8…). p2pool cannot pay it — use your primary address.",
     };
   }
-  if (v.length > 95) {
+  if (v[0] === "4" && v.length === 106) {
     return {
       kind: "integrated",
       message: "That looks like an integrated address. Use your plain primary address.",
@@ -77,7 +71,10 @@ export function classifyMoneroAddress(value) {
     return { kind: "not-primary", message: "A primary Monero address starts with 4." };
   }
   if (v.length !== 95) {
-    return { kind: "partial", message: `${v.length} of 95 characters.` };
+    return {
+      kind: v.length > 95 ? "too-long" : "partial",
+      message: `${v.length} of 95 characters.`,
+    };
   }
   return { kind: "ok", message: "Looks like a valid primary address." };
 }

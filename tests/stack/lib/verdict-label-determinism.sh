@@ -132,6 +132,9 @@ test-backup-data-paths.sh|BDP_ENV_KEYS
 test-backup-data-paths.sh|BDP_I
 test-backup-data-paths.sh|i
 test-backup-data-paths.sh|label
+test-cli.sh|_sa
+test-cli.sh|_sb
+test-cli.sh|_sw
 test-cli.sh|first_run_case
 test-config-document.sh|raw
 test-config-document.sh|verb
@@ -163,6 +166,9 @@ test-doctor.sh|ip
 test-grub-hugepages.sh|mode
 test-grub-hugepages.sh|param
 test-manual-qa-oracle.sh|id
+test-monero-tari.sh|_vjs
+test-monero-tari.sh|_vn
+test-monero-tari.sh|_vp
 test-payout-wallet-pairs.sh|chain
 test-payout-wallet-pairs.sh|field
 test-payout-wallet-pairs.sh|k

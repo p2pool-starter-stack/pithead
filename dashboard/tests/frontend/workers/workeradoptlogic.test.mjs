@@ -9,6 +9,7 @@
 // error) if its guard were removed or its regex/range check inverted — the paired "accepted" tests
 // on well-formed input catch the opposite direction (a guard so tight it refuses everything).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -160,6 +161,15 @@ test("hostIsInternal: a hostname that would resolve elsewhere is not caught here
   // claiming a guarantee this file cannot keep. The real enforcement resolves at commit time on
   // the host (pithead's _control_host_is_internal) — see tests/stack/test-control-add-only-ssrf.sh.
   assert.equal(hostIsInternal("a-hostname-that-is-not-a-known-alias"), false);
+});
+
+test("hostIsInternal agrees with the shared internal-host vectors", () => {
+  const url = new URL("../../fixtures/rule-vectors/internal-host.txt", import.meta.url);
+  for (const line of readFileSync(url, "utf8").trim().split("\n")) {
+    const [host, subnet, expected] = line.split(" ");
+    const got = hostIsInternal(host, subnet === "-" ? undefined : subnet);
+    assert.equal(got, expected === "internal", line);
+  }
 });
 
 // --- buildAdoptedConfig ----------------------------------------------------------------------
