@@ -58,6 +58,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
 FROM build AS test
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --extra test
 COPY tests/ ./tests/
+COPY healthcheck.sh ./
 RUN python -m pytest --cov=mining_dashboard --cov-report=term-missing --cov-fail-under=80
 
 # ==========================================================================

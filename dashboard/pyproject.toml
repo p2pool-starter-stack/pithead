@@ -27,7 +27,6 @@ dependencies = [
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=0.24",
-  "pytest-mock>=3.14",
   "pytest-cov>=5",
   "pytest-aiohttp>=1.0",
   # diff-cover (#286): patch-coverage gate — new/changed lines must be >=90% covered.
