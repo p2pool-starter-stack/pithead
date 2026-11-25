@@ -41,7 +41,7 @@ A failed or empty state read stops the leg without judging another boot.
 without a guest. Acceptance still requires a successful current-head `tier4-kvm`
 `fault` job covering A1/A2/A3, C, B, rollback, the subsequent update and D.
 Shared SSH diagnostics, DHCP polling and the
-stray-guest guard use those helpers. `selftest-vm-lifecycle.sh` checks their outputs,
+stray-guest guard use those helpers. `selftest-provision-power-cut.sh` checks that the provision M10 leg cuts and restores power only through `vm_stop_abrupt` and `vm_start`: argument and error propagation, the three cycles, recovery ordering and immediate failure on a failed cut, start or new boot. `selftest-vm-lifecycle.sh` checks their outputs,
 failure handling, teardown order and caller routing using a temporary `virsh` executable
 without a guest; the tier-1
 `make test-integration-selftest` target discovers it. The ordinary boot, Secure Boot and
@@ -356,7 +356,8 @@ the configured test registry fail before the image build. Release builds do not 
   (`fault`) or was a clean reboot; this is the first that hits a provisioned one. Before each cut,
   poll the monerod height up to 18 times, 10 seconds apart. An empty result fails the row and
   returns before flushing or cutting power. A non-empty result that is not a non-negative
-  integer also fails before flushing or cutting power. After EVERY cut, the leg
+  integer also fails before flushing or cutting power. The leg calls `vm_stop_abrupt`,
+  waits three seconds, then calls `vm_start` for the same guest. After EVERY cut, the leg
   asserts every container returns and provisioning settles within 900 seconds without failed setup
   before recovery checks or the next cut, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
@@ -365,7 +366,9 @@ the configured test registry fail before the image build. Release builds do not 
   is not owed back; #2557), and the miner and the boot-gated slot commit both survive. A KVM
   guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack
   rather than the full remote-node repoint M10 describes on real hardware — #2067 allows that for
-  a first version.
+  a first version. Changes to this control path require a successful current-head
+  `tier4-kvm` provision job that executes all three M10 cuts and recovery checks;
+  pure selftests do not establish appliance recovery.
 - **rig** — answer `RigForge` on the same page and prove the other machine this image installs:
   it mines from the baked binary with no compile and no clearnet, starts no containers at all,
   and takes an A/B update — install, boot, self-commit on the miner running, persistence —
