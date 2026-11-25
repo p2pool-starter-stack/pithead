@@ -78,7 +78,7 @@ is_exempt() {
     # Data/config, not source to split: the compose file, dependency lockfiles, JSON
     # fixtures/config (including config.reference.json and test fixtures).
     docker-compose.yml) return 0 ;;
-    *.lock) return 0 ;;
+    *.lock | */go.sum) return 0 ;;
     *.json) return 0 ;;
     # Markdown files, including the growing CHANGELOG.md, are reviewed as prose.
     # lint-docs-voice checks authored guides but excludes historical

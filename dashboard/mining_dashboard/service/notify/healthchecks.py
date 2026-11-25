@@ -14,7 +14,12 @@ from mining_dashboard.config.config import (
     HEALTHCHECKS_PING_URL,
     TOR_SOCKS_PROXY,
 )
-from mining_dashboard.helper.http import proxy_map
+from mining_dashboard.helper.http import (
+    PROXY_PURPOSE_NOTIFY,
+    proxy_map,
+    purpose_proxy,
+    purpose_proxy_map,
+)
 
 logger = logging.getLogger("Healthchecks")
 
@@ -92,7 +97,7 @@ class HealthchecksClient:
         self.enabled = bool(self.url)
         self.interval = max(0, int(interval_seconds or 0))
         self._tor_proxy = tor_proxy
-        self._proxies = proxy_map(tor_proxy)
+        self._proxies = purpose_proxy_map(tor_proxy, PROXY_PURPOSE_NOTIFY)
         self._clock = clock
         self._record_failure = record_failure
         self._last_ping_ok = None
@@ -116,8 +121,7 @@ class HealthchecksClient:
     def _isolated_proxies(self):
         if not self._tor_proxy:
             return self._proxies
-        proxy = self._tor_proxy.replace("://", f"://{uuid.uuid4().hex}:isolate@", 1)
-        return {"http": proxy, "https": proxy}
+        return proxy_map(purpose_proxy(self._tor_proxy, uuid.uuid4().hex))
 
     def ping(self) -> bool:
         if not self.url:

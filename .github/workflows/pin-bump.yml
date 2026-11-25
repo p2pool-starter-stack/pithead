@@ -1,0 +1,107 @@
+name: Shipped pin bump
+
+on:
+  schedule:
+    - cron: "43 5 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Detect and report only; push nothing and open no PR
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: Open a PR when ${{ matrix.component }} has a newer release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: pin-bump-${{ matrix.component }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [monero, p2pool, xmrig-proxy, rigforge]
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMPONENT: ${{ matrix.component }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: develop
+          persist-credentials: false
+      - name: Resolve the newest release and its hash
+        id: detect
+        run: |
+          result="$(bash scripts/watch/pin-bump.sh detect "$COMPONENT")"
+          printf '%s\n' "$result" | tee -a "$GITHUB_OUTPUT"
+      - name: Push the bump and open its PR
+        if: steps.detect.outputs.stale == 'true' && inputs.dry_run != true
+        env:
+          CURRENT: ${{ steps.detect.outputs.current }}
+          LATEST: ${{ steps.detect.outputs.latest }}
+          PIN: ${{ steps.detect.outputs.pin }}
+          BRANCH: ${{ steps.detect.outputs.branch }}
+        run: |
+          set -Eeuo pipefail
+          state="$(gh pr list --state all --head "$BRANCH" --json state \
+            --jq 'map(.state) | if index("OPEN") then "OPEN" elif length > 0 then .[0] else "none" end')"
+          if [ "$state" != none ]; then
+            echo "PR for ${COMPONENT} ${LATEST} is ${state}; not opening another"
+            exit 0
+          fi
+          file="$(bash scripts/watch/pin-bump.sh file "$COMPONENT")"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch --depth 2 origin "$BRANCH"
+            if [ "$(git diff --name-only FETCH_HEAD~1 FETCH_HEAD)" != "$file" ]; then
+              echo "origin/${BRANCH} exists without a PR and its tip is not a pin-only commit; delete it" >&2
+              exit 1
+            fi
+            git checkout -B "$BRANCH" FETCH_HEAD
+          else
+            git checkout -B "$BRANCH"
+            bash scripts/watch/pin-bump.sh apply "$COMPONENT" "$LATEST" "$PIN"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "$file"
+            if git diff --cached --quiet; then
+              echo "the pin moved during this run; nothing to propose"
+              exit 0
+            fi
+            git commit -m "build: bump the ${COMPONENT} pin to ${LATEST}"
+            gh auth setup-git
+            git push origin "$BRANCH"
+          fi
+          bash scripts/watch/pin-bump.sh body "$COMPONENT" "$CURRENT" "$LATEST" >pr-body.md
+          gh pr create --base develop --head "$BRANCH" --label dependencies \
+            --title "build: bump the ${COMPONENT} pin to ${LATEST}" --body-file pr-body.md
+      - name: Close bump PRs this run supersedes
+        if: inputs.dry_run != true
+        env:
+          STALE: ${{ steps.detect.outputs.stale }}
+          BRANCH: ${{ steps.detect.outputs.branch }}
+        run: |
+          set -Eeuo pipefail
+          want=""
+          if [ "$STALE" = true ]; then
+            want="$BRANCH"
+          fi
+          rows="$(gh pr list --state open --limit 200 --json number,headRefName,author |
+            bash scripts/watch/pin-bump.sh superseded "$COMPONENT" "$want")"
+          keep="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == "keep" { print $2; exit }')"
+          if [ -n "$keep" ]; then
+            reason="Superseded by ${keep}, which carries the newest ${COMPONENT} release this run considers eligible (#4250)."
+          else
+            reason="Closed by the daily ${COMPONENT} bump run (#4250): no open bump PR for the newest eligible release keeps this one, because the pin has moved on or that release's PR was declined."
+          fi
+          while IFS=$'\t' read -r number _head flag; do
+            if [ "$flag" = close ]; then
+              gh pr close "$number" --comment "$reason"
+            fi
+          done <<< "$rows"

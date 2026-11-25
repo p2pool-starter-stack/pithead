@@ -50,6 +50,8 @@ def manifest_ok(ecosystem, directory):
             return f"pre-commit entry {directory} has no .pre-commit-config.yaml"
         if ecosystem == "uv" and not (path / "pyproject.toml").is_file():
             return f"uv entry {directory} has no pyproject.toml"
+        if ecosystem == "gomod" and not (path / "go.mod").is_file():
+            return f"gomod entry {directory} has no go.mod"
         if ecosystem == "npm" and not (path / "package.json").is_file():
             return f"npm entry {directory} has no package.json"
     return None
@@ -79,6 +81,12 @@ def check_entries(text, problems):
             problems.append(
                 "/tests/runner must not sit in the ignore-blocked shipped-image docker entry"
             )
+    if not any("/build/cosign" in directories(body) for body in dockers):
+        problems.append("/build/cosign must sit in a docker entry: it is the verifier image's pin")
+    gomods = [d for body in by_eco.get("gomod", []) for d in directories(body)]
+    for name in ("/os/rootfs/tools/compose", "/os/rootfs/tools/cosign"):
+        if name not in gomods:
+            problems.append(f"{name} must sit in a gomod entry")
     compose = by_eco.get("docker-compose", [])
     mini = [body for body in compose if "/tests/integration/mini-stack" in directories(body)]
     if not mini:
