@@ -215,6 +215,13 @@ want "rig throttled -> by-design skip after the hand-off pass" 1 0 1 0 1
 
 snap
 rig_reports "1.15.1"
+answers "$PENDING"
+queue_results busy
+run_rigforge_upgrade rig1 >/dev/null 2>&1
+want "rig busy (lent to a bench job) -> by-design skip, not a red (#3985)" 1 0 1 0 1
+
+snap
+rig_reports "1.15.1"
 answers "$PENDING" "$SYNC_NOOP"
 queue_results accepted
 comes_back_on "1.16.0"
