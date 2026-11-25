@@ -43,6 +43,12 @@ jobs:
         # run.sh sources the generated root `pithead` (git-ignored). Until #2048 split `lint-sh`
         # off, the build came in free as that target's prerequisite.
         run: make pithead
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go/go.mod
+          cache: false
+      - name: Build the Go payout-keys helper so the selected leg really runs it
+        run: make go-build
       - name: Hold the default stratum port
         run: |
           nohup python3 -c 'import socket,time; s=socket.socket(); s.bind(("0.0.0.0",3333)); s.listen(1); time.sleep(3600)' >"$RUNNER_TEMP/hold-3333.log" 2>&1 &
@@ -125,6 +131,14 @@ jobs:
           persist-credentials: false
       - name: Build the generated CLI
         run: make pithead
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go/go.mod
+          cache: false
+      - name: Run Go helper unit tests
+        run: make test-go
+      - name: Run payout-keys Go/Bash byte-parity suite
+        run: make test-go-payout-keys-parity
       - name: Run Tor recovery contracts
         env:
           TMPDIR: ${{ runner.temp }}
