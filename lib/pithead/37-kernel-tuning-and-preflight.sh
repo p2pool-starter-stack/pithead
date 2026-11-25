@@ -214,7 +214,6 @@ check_disk_grouped() {
     return 0
 }
 
-# Returns 1 for a tag without a leading version (latest-mainnet) or no tag at all.
 tari_image_major() {
     local ref="${1%%@*}" tag
     tag=${ref##*/}
