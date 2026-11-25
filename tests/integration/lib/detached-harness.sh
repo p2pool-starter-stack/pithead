@@ -74,8 +74,12 @@ pregate_on_bench() {
 }
 
 harness_pregate() {
-    local phase lock_pair out_arg said errf stf st rc_on rc_err said_rc health_rc
-    lock_pair="$(printf '%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}")"
+    local phase pregate_records out_arg said errf stf st rc_on rc_err said_rc health_rc
+    [[ "${IT_DASHBOARD_PASSWORD:-}" != *$'\n'* ]] || {
+        warn "The dashboard credential contains a newline."
+        return 1
+    }
+    printf -v pregate_records '%s\n%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "${IT_DASHBOARD_PASSWORD:-}"
     said="" errf="" stf=""
     said="$(mktemp)" && errf="$(mktemp)" && stf="$(mktemp)" || {
         rm -f "$said" "$errf" "$stf"
@@ -88,7 +92,7 @@ harness_pregate() {
     for phase in readiness check; do
         out_arg="--out $(quote_arg "$E2E_DIR/results/pregate-$phase")"
         (
-            pregate_on_bench "$phase" "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$lock_pair" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
+            pregate_on_bench "$phase" "IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r dp || exit 1; cd '$E2E_DIR' && IT_DASHBOARD_PASSWORD=\"\$dp\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $out_arg $2" <<<"$pregate_records" 2>&1 1>&3 3>&- | tee "$errf" >&2 3>&-
             printf '%s %s\n' "${PIPESTATUS[0]}" "${PIPESTATUS[1]}" >"$stf"
         ) 3>&1 | tee "$said"
         st=("${PIPESTATUS[@]}")
@@ -119,22 +123,16 @@ harness_pregate() {
     rm -f "$said" "$errf" "$stf"
 }
 
-# The detached launch's stdin, one record per line, in the order run_harness reads them: the rig
-# token, the parent lock pair, the two base64 JSON inputs, the payout-confirm row's wallet keys
-# (#2675), then the onion fixture attestation. Secrets ride stdin, never the remote command line
-# where ps on the bench shows them. The JSON may span lines, hence base64; a newline in any other
-# record would shift the ones after it.
 harness_launch_records() {
     local rollback_b64 pools_b64 record
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
     HARNESS_RECORDS=""
     for record in "${IT_RIG_TOKEN:-}" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" \
-        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}" "${ROTATE_FIXTURE_ATTESTATION:-}"; do
+        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}" "${ROTATE_FIXTURE_ATTESTATION:-}" "${IT_DASHBOARD_PASSWORD:-}"; do
         [[ "$record" != *$'\n'* ]] || die "A harness launch record contains a newline."
         HARNESS_RECORDS+="$record"$'\n'
     done
-    # Names only, never a value: a payout-confirm SKIP then says whether the wrapper had the keys.
     local name supplied=""
     for name in IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY; do
         supplied+=" $name=$([ -n "${!name:-}" ] && echo set || echo unset)"
