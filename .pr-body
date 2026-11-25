@@ -1,0 +1,30 @@
+## What's the problem
+
+The hadolint pin in `.github/workflows/ci.yml` and `.config/hadolint/Dockerfile` uses the `docker.io/` registry prefix (`docker.io/hadolint/hadolint:latest@sha256:...`). Dependabot cannot parse `docker.io/` or `ghcr.io/` prefixed container image references — it only handles the bare image name format (`hadolint/hadolint:latest@sha256:...`).
+
+The prior slice (#4253) changed from `ghcr.io` → `docker.io`, which was incorrect.
+
+## What it impacts
+
+- Dependabot now tracks the hadolint Docker image for security updates via the `docker` ecosystem entry already in `dependabot.yml`
+- CI hadolint step and the Dockerfile build remain functionally unchanged
+
+## How I found it
+
+Dependabot PRs for the hadolint `docker://` pins are never opened. The pinned reference includes a registry domain (`docker.io/`) which Dependabot's docker parser rejects. The fix is the bare image reference.
+
+## How important is it
+
+High — without this fix Dependabot never creates update PRs for the hadolint image, leaving the CI Dockerfile lint tool unpatched for CVEs.
+
+## Acceptance criteria
+
+- [x] `.github/workflows/ci.yml` uses `hadolint/hadolint:latest@sha256:...` (no registry prefix)
+- [x] `.config/hadolint/Dockerfile` uses `hadolint/hadolint:latest@sha256:...` (no registry prefix)
+- [x] Dependabot's `docker` ecosystem entry in `.github/dependabot.yml` will now match and create update PRs
+
+## Possible solutions
+
+One change per file: strip the `docker.io/` prefix from the image reference. This is the only format Dependabot's docker parser accepts.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

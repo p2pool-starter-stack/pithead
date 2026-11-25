@@ -52,6 +52,9 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# PR scratch files
+.pr-body
 os/certs-test/
 os/build/
 os/rauc/build/
