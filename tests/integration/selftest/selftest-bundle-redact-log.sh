@@ -338,5 +338,28 @@ body_kept "a 95-character token with a non-address prefix survives" \
 body_kept "a sha256 digest survives" \
     "image sha256:$SHA256_HEX pulled" "$SHA256_HEX"
 
+echo "== unit: the generated dashboard login and the one-time setup token are masked =="
+GEN_LOGIN="Synth3ticGeneratedLogin00000000A"
+JPFX="Nov 24 10:00:00 fixture pithead-firstboot[812]:"
+assert_eq "the generated login line in the journal keeps its prefix and masks the value" \
+    "$(printf '%s [pithead]     password: %s\n' "$JPFX" "$GEN_LOGIN" | brl)" \
+    "$JPFX [pithead]     password: [redacted]"
+assert_eq "the generated login line without a journal prefix masks the value" \
+    "$(printf '[pithead]     password: %s\n' "$GEN_LOGIN" | brl)" \
+    "[pithead]     password: [redacted]"
+assert_eq "the one-time token line in the journal keeps its prefix and masks the value" \
+    "$(printf '%s [pithead] One-time token: pit-ABC123\n' "$JPFX" | brl)" \
+    "$JPFX [pithead] One-time token: [redacted]"
+assert_eq "a stratum password status line is unchanged" \
+    "$(printf 'Stratum password: none set\n' | brl)" "Stratum password: none set"
+assert_eq "a stratum password status line after the log prefix is unchanged" \
+    "$(printf '[pithead] Stratum password: none set\n' | brl)" "[pithead] Stratum password: none set"
+assert_eq "a line that only names a password is unchanged" \
+    "$(printf '[pithead] password: see dashboard.auth.password in config.json\n' | brl)" \
+    "[pithead] password: see dashboard.auth.password in config.json"
+assert_eq "the rpc-login credential keeps its existing masking" \
+    "$(printf -- '--rpc-login %s:%s --zmq-port 18083\n' "$RPC_USER" "$RPC_PASS" | brl)" \
+    "--rpc-login [redacted] --zmq-port 18083"
+
 echo "selftest-bundle-redact-log: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

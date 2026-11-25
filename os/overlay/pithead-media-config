@@ -161,8 +161,8 @@ media_config_diff() { # <old-json> <new-json> — requires SECRET_PATHS_JSON (se
     jq -n -r --slurpfile o "$old" --slurpfile n "$new" --argjson secret "$SECRET_PATHS_JSON" '
         def is_secret($p):
             ($secret | any(. == $p))
-            or ($p[0:2] == ["workers","list"] and $p[-1] == "token")
-            or ($p[0:2] == ["dashboard","workers"] and $p[-1] == "token")
+            or ($p[0:2] == ["workers","list"] and ($p[-1] == "token" or $p[-1] == "api_token"))
+            or ($p[0:2] == ["dashboard","workers"] and ($p[-1] == "token" or $p[-1] == "api_token"))
             or ($p[0:2] == ["notifications","webhooks"]);
         def show($v): if $v == null then "(unset)" else ($v | tostring) end;
         ($o[0]) as $O | ($n[0]) as $N |
