@@ -7,6 +7,7 @@ under the directories below.
 ```text
 pithead/
 ├── lib/pithead/           ordered source slices for the generated CLI
+├── go/                   the Go side of the per-piece implementation selection
 ├── dashboard/
 │   ├── mining_dashboard/ Python application and browser assets
 │   └── tests/            Python and frontend tests, grouped like the source
@@ -46,7 +47,7 @@ Host-resource availability and the existing disk-history capacity estimate are c
 
 | Area | Start here | Change and verify |
 |---|---|---|
-| CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. Per-piece Go/Bash selection lives in `lib/pithead/00a-impl-launcher.sh` with [its table and rules](go-port/selection.md). |
+| CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. Per-piece Go/Bash selection lives in `lib/pithead/00a-impl-launcher.sh` with [its table and rules](go-port/selection.md); its Go side is the `go/` module — `make go-build` builds it, `make test-go` and `make test-go-payout-keys-parity` test it. |
 | Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
 | Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
 | Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |

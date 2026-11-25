@@ -90,6 +90,34 @@ path (`PITHEAD_SELF`).
 - A Go-side failure of a verb it owns is that verb's failure; the launcher does
   not replay it in Bash.
 
+## The payout-keys piece (#4220)
+
+`monero_address_type`, `tari_address_type`, and `payout_public_view_key`
+consult `_pithead_impl_selected payout-keys` at their own layer. When the
+piece is selected the Bash slice runs the same `go/bin/pithead` binary as a
+helper, found through `PITHEAD_GO_BINARY`, then `SCRIPT_DIR`, then the stack
+file's own directory so that sourced suites select too. `PITHEAD_GO_HELPER`
+names the helper: `payout-keys-address` classifies one address,
+`payout-keys-derive` derives a public view key. A request and its answer are
+NUL-terminated fields on stdin and stdout; a private view key travels only
+over stdin, never in argv or the environment. The helper exits 0 only when
+the full request succeeded.
+
+Any anomaly — missing or unstartable binary, a failing python3, a nonzero
+helper exit, extra or unterminated fields, an answer outside the expected
+shape — falls back to the Bash reference implementation for that call, which
+is also what answers when the piece is not selected. The Go side may therefore
+never disagree with Bash byte for byte, and the degraded answers (shape-only
+classification, `unchecked`, no python3) must come from the same fallback
+whichever implementation was reached.
+
+For its own argv the binary follows the Go-side contract above, so executing
+it directly hands every verb back to the reference.
+`tests/stack/standalone/test_go_payout_keys_parity.sh` compares the two
+implementations byte for byte on a fixture table, on the helper protocol, and
+on every fallback path; `make test-go-payout-keys-parity` runs it, and
+`make test-go` runs the Go unit tests beside it.
+
 ## Testing both modes
 
 `tests/stack/lib.sh` scrubs the operator's `PITHEAD_*` variables (see the
@@ -101,5 +129,6 @@ selection (the table default) and once with `PITHEAD_TEST_IMPL` listing every
 piece. Until a piece ships a Go binary, every `pithead` call the suites make
 in that leg passes through the selection and fallback path and must keep the
 assertions of the default leg; the fallback contract itself is asserted per
-verb in `tests/stack/standalone/test_impl_launcher.sh`. The leg reaches the Go side only when the job builds
-`go/bin/pithead` beside the entry point.
+verb in `tests/stack/standalone/test_impl_launcher.sh`. Both Shell jobs build
+`go/bin/pithead` (`make go-build`), so a selected leg runs the Go
+implementation rather than only its fallback path.

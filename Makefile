@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage go-build test-go test-go-payout-keys-parity test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh dashboard/mining_dashboard/service/logs/redact.sed $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	python3 scripts/build-config-defaults.py --check
@@ -24,6 +24,15 @@ test-browser: ## Cross-browser GUI regressions (install locked dependencies firs
 
 test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% on changed lines (run after test-dashboard)
 	bash scripts/lint/patch-coverage.sh
+
+go-build: ## Build the Go helper binary the payout-keys piece selects (go/bin/pithead)
+	cd go && go build -o bin/pithead ./cmd/pithead
+
+test-go: go-build ## Go unit tests for the harvested packages and the helper protocol
+	cd go && go test ./...
+
+test-go-payout-keys-parity: pithead go-build ## payout-keys Go helpers vs the Bash reference, byte for byte
+	bash tests/stack/standalone/test_go_payout_keys_parity.sh
 
 test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_onion_runtime.sh

@@ -2,7 +2,37 @@
 # Python is required when confirmation is enabled: an unavailable validator fails closed.
 # The secret travels in the child environment, never argv or output. This is validation,
 # not signing; the arithmetic is variable-time and must not be used to spend funds.
+_payout_keys_go_derive() {
+    local chain="$1" secret="$2" binary derived helper_rc extra
+    case "$chain" in
+    monero | tari) ;;
+    *) return 125 ;;
+    esac
+    binary=$(_payout_keys_go_bin) || return 125
+    {
+        IFS= read -r -d '' derived && IFS= read -r -d '' helper_rc && [ "$helper_rc" = 0 ] &&
+            { ! IFS= read -r -d '' extra && [ -z "$extra" ]; }
+    } < <(
+        {
+            rc=0
+            {
+                printf '%s\0%s\0' "$chain" "$secret"
+            } | PITHEAD_GO_HELPER=payout-keys-derive "$binary" 2>/dev/null || rc=$?
+            printf '%d\0' "$rc"
+        } 2>/dev/null
+    ) || return 125
+    [ "${#derived}" -eq 64 ] || return 125
+    case "$derived" in *[!0-9a-f]*) return 125 ;; esac
+    printf '%s\n' "$derived"
+}
+
 payout_public_view_key() { # <monero|tari> <private-view-key>
+    local derived
+    if _pithead_impl_selected payout-keys &&
+        derived=$(_payout_keys_go_derive "$1" "$2"); then
+        printf '%s\n' "$derived"
+        return
+    fi
     PITHEAD_VIEW_SCALAR="$2" python3 - "$1" <<'PYEOF' 2>/dev/null
 import os
 import sys

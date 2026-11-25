@@ -8,6 +8,7 @@
 config.json
 config.json.bak-control
 /pithead
+/go/bin/
 /.pithead.bundle.*
 /data/
 /build/monero/bitmonero.conf
