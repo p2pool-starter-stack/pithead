@@ -346,14 +346,9 @@ publish_rig_defaults() { # <spool-dir>
         '{worker: $worker} + (if $pool == "" then {} else {pool: $pool} end)' | wizard_spool_publish "$1" rig-defaults.json cat
 }
 
-# Consume one rig-role submission: shape-check the pool address, dial it BEFORE anything
-# irreversible — the same validate-before-erase discipline the coordinator flow gets — and
-# land the accepted answers as $PWD/rig.json, host-side and outside the spool (the same trust
-# move firstboot_consume_spool makes: what got validated is what gets used, whatever the
-# container writes afterwards). rc: 0 accepted, 1 rejected, 2 none.
-firstboot_consume_rig() ( # <spool-dir>
+firstboot_consume_rig() (
     local spool="$1" req="$1/rig-request.json" pool worker host port
-    local snap rc=0
+    local snap rc=0 tls fp paired reachable
     wizard_submission_ready "$spool" || return 2
     snap=$(wizard_spool_request "$spool" rig-request.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
@@ -369,11 +364,31 @@ firstboot_consume_rig() ( # <spool-dir>
     if [ "$host" = "$pool" ] || ! is_valid_host "$host" || ! is_valid_port "$port"; then
         rig_refuse "$spool" 'the pool address must look like host:port — a Pithead answers on port 3333' || return 1
     fi
-    if ! timeout 5 bash -c '</dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null; then
-        rig_refuse "$spool" "cannot reach a pool at $host:$port — check the address, and that the Pithead is up" || return 1
+    tls=$(jq -r 'if has("tls") then (.tls | if type == "boolean" then . else "bad" end) else "unset" end' "$req" 2>/dev/null)
+    paired=$(jq -r 'if has("paired") then (.paired | if type == "boolean" then . else "bad" end) else "unset" end' "$req" 2>/dev/null)
+    fp=$(jq -r 'if has("tls_fingerprint") then (.tls_fingerprint | if type == "string" then . else "bad" end) else "" end' "$req" 2>/dev/null)
+    if [ "$tls" = bad ]; then
+        rig_refuse "$spool" 'tls must be true or false' || return 1
     fi
-    # The control token (#1836) survives a "Set up again" that keeps the role AND the worker name
-    # (#1318): the coordinator adopted THIS worker with THIS token. Any other change mints a new one.
+    if [ "$paired" = bad ]; then
+        rig_refuse "$spool" 'paired must be true or false' || return 1
+    fi
+    if [ "$fp" = bad ] || { [ -n "$fp" ] && ! [[ "$fp" =~ ^[0-9A-Fa-f]{64}$ ]]; }; then
+        rig_refuse "$spool" 'tls_fingerprint must be the certificate SHA-256 as 64 hex characters' || return 1
+    fi
+    reachable=0
+    if [ "$tls" = true ]; then
+        if [ "${host#-}" = "$host" ]; then
+            timeout 5 openssl s_client -host "$host" -port "$port" -showcerts </dev/null 2>/dev/null |
+                grep -q -- "BEGIN CERTIFICATE" && reachable=1
+        fi
+    else
+        timeout 5 bash -c '</dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null && reachable=1
+    fi
+    if [ "$reachable" = 0 ]; then
+        printf 'cannot reach a pool at %s:%s — check the address, and that the Pithead is up' "$host" "$port" |
+            wizard_spool_publish "$spool" rig-warning.txt cat
+    fi
     local keep_tok=""
     [ "$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)" = "${worker:-$(hostname)}" ] &&
         keep_tok=$(jq -r '.access_token // ""' "$PWD/rig.json" 2>/dev/null)
@@ -381,7 +396,10 @@ firstboot_consume_rig() ( # <spool-dir>
         umask 077
         jq --arg w "${worker:-$(hostname)}" --arg t "$keep_tok" '{pool: .pool, worker: $w}
         + (if (.stratum_password // "") == "" then {} else {stratum_password: .stratum_password} end)
-        + (if $t == "" then {} else {access_token: $t} end)' \
+        + (if $t == "" then {} else {access_token: $t} end)
+        + (if has("tls") then {tls: .tls} else {} end)
+        + (if has("tls_fingerprint") then {"tls_fingerprint": .tls_fingerprint} else {} end)
+        + (if has("paired") then {paired: .paired} else {} end)' \
             "$req" >"${snap%/*}/rig.json" 2>/dev/null && mv -fT "${snap%/*}/rig.json" "$PWD/rig.json"
     ); then
         rm -f "$spool/rig-request.json" "$PWD/rig.json"

@@ -48,6 +48,7 @@ from mining_dashboard.wizard_config import (
     deep_merge,
     prefill_machine_name,
     prepare_config,
+    rig_request,
     validate_machine_label,
     validate_machine_name,
 )
@@ -323,12 +324,10 @@ def _submit_rig(form: dict) -> web.Response:
             install = validate_install_request(form, _disks())
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
-    rig = {"pool": pool}
-    if worker:
-        rig["worker"] = worker
-    password = str(form.get("rig_password", "")).strip()
-    if password:
-        rig["stratum_password"] = password
+    try:
+        rig = rig_request(pool, worker, form)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     _spool_clear_host_verdict()
     clear_submission_sidecars()
     _spool_write_text("submission-staging", "1")
