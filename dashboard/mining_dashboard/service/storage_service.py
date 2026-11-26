@@ -14,6 +14,7 @@ from mining_dashboard.config.config import (
     HISTORY_RETENTION_SEC,
     TIER_DEFAULTS,
 )
+from mining_dashboard.service.event_log_store import EventLogStoreMixin
 from mining_dashboard.service.mining_store import MiningStoreMixin
 from mining_dashboard.service.storage_schema import StorageSchemaMixin
 
@@ -49,22 +50,6 @@ _WINDOW_EXTRA_COLUMNS = [
     if col not in _BASE_HISTORY_COLS
 ]
 
-# Substrings SQLite uses when the DB file itself is unusable — a corrupted page, a truncated/rewritten
-# file, or a non-DB where the DB should be (#489). Matched case-insensitively against the error text
-# so an operations-eating corruption auto-heals (quarantine + fresh DB) instead of erroring on every
-# write cycle forever. A transient error (locked, disk full, permissions) is NOT here: those are the
-# db_unhealthy path — retryable, not a reason to throw away history.
-_CORRUPTION_MARKERS = ("malformed", "not a database", "image is malformed", "file is encrypted")
-# How many quarantined copies of a corrupt DB to keep for post-mortem before pruning the oldest.
-_CORRUPT_KEEP = 3
-
-# v1.7 telemetry backbone retention (#196 Wave-0 proposal). blocks is permanent (no pruning — a
-# small table, like payouts); worker_history extends the existing 30-day HISTORY_RETENTION_SEC
-# convention. Each table gets its OWN retention (independent of `history`'s), by design. The
-# xvb_history and network_history retentions moved to telemetry_store.py with the only writers
-# that apply them (#1369), and are re-exported from the import block above.
-WORKER_HISTORY_RETENTION_SEC = HISTORY_RETENTION_SEC  # 30 days
-
 # raffle_wins is permanent-in-practice like payouts, but its rows are mirrored from an UNTRUSTED
 # public file (see client/xvb_client.parse_winners), so it is bounded by row count instead of
 # unbounded: keep the newest N. Decades of legit wins fit; a hostile feed cannot grow it past this.
@@ -78,7 +63,11 @@ _TELEMETRY_TABLES = ("blocks", "xvb_history", "network_history", "disk_growth", 
 
 
 class StateManager(
-    StorageSchemaMixin, MiningStoreMixin, TelemetryStoreMixin, WorkerConfigStoreMixin
+    StorageSchemaMixin,
+    MiningStoreMixin,
+    TelemetryStoreMixin,
+    WorkerConfigStoreMixin,
+    EventLogStoreMixin,
 ):
     """
     Manages persistent application state including hashrate history and mining mode statistics.

@@ -31,6 +31,7 @@ import pytest
 _SERVICE = Path(__file__).resolve().parents[2] / "mining_dashboard" / "service"
 _SUBJECT = _SERVICE / "storage_service.py"
 _MIXIN_FILES = (
+    "event_log_store.py",
     "mining_store.py",
     "storage_schema.py",
     "telemetry_store.py",
