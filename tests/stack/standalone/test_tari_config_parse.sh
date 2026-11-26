@@ -125,6 +125,15 @@ done
 if [ -z "$(libtor_dir "$WORK_DIR/calibration-node")" ]; then
     docker logs "$CALIBRATION" >&2 || true
     echo "FAIL: calibration: a Tor transport with use_libtor at its default created no <base_path>/<network>/libtor" >&2
+    docker inspect -f 'calibration container: {{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$CALIBRATION" >&2 || true
+    docker exec "$CALIBRATION" sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " <"$p" 2>/dev/null; echo; done; grep -n "use_libtor\|type = " /tmp/tari-runtime-config.toml' >&2 2>/dev/null || true
+    echo "-- rendered calibration config --" >&2
+    grep -n "use_libtor\|type = \|^port" "$WORK_DIR/calibration-config/config.toml" >&2 || true
+    echo "-- calibration-node tree --" >&2
+    find "$WORK_DIR/calibration-node" -mindepth 1 -maxdepth 5 -print 2>/dev/null |
+        sed "s|^$WORK_DIR/calibration-node|.|" >&2 || true
+    echo "-- node log tails --" >&2
+    find "$WORK_DIR/calibration-node" -type f -name '*.log' -exec tail -n 40 {} + >&2 2>/dev/null || true
     exit 1
 fi
 echo "  ✓ calibration: the same image on a Tor transport with use_libtor at its default starts libtor"
