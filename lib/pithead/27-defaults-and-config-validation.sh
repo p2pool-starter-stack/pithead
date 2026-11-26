@@ -75,7 +75,7 @@ validate_worker_endpoints() {
                 then "workers.list[\(.name)].api_token needs an operator-set host and 1-128 printable non-space characters."
               elif has("watts") and ((.watts | type) != "number" or .watts <= 0 or .watts >= 1000000)
                 then "workers.list[\(.name)].watts must be a positive number of watts (a manual power-draw estimate for the energy calculator, #260)."
-              elif has("rig_id") and ((.rig_id | type) != "string" or (.rig_id | test("^[0-9a-f]{32}$") | not))
+              elif has("rig_id") and ((.rig_id | type) != "string" or (.rig_id | length) != 32 or (.rig_id | test("^[0-9a-f]{32}$") | not))
                 then "workers.list[\(.name)].rig_id must be a 32-character lowercase hex identity id (RigForge rig_id)."
               else empty end
           ] | first // empty end' "$CONFIG_FILE" 2>/dev/null)

@@ -171,7 +171,7 @@ async def test_a_successful_feed_claiming_the_recorded_id_is_business_as_usual(m
     result, _ = await _probe(monkeypatch, entries, _rf(rig_id=RIG_ID))
     assert result["api_ok"] is True
     assert result["adopted"] is True
-    assert "identity_change" not in result
+    assert result["identity_change"] is False
 
 
 async def test_a_same_name_feed_with_a_different_id_surfaces_an_identity_change(monkeypatch):
@@ -201,7 +201,7 @@ async def test_a_claimed_id_that_matches_another_recorded_rig_follows_the_id(mon
     result, _ = await _probe(monkeypatch, entries, _rf(rig_id=OTHER_ID), name="rig1")
     assert result["api_ok"] is True
     assert result["adopted"] is True
-    assert "identity_change" not in result
+    assert result["identity_change"] is False
 
 
 async def test_an_unknown_claim_on_a_record_without_an_id_changes_nothing(monkeypatch):
@@ -216,7 +216,7 @@ async def test_an_unknown_claim_on_a_record_without_an_id_changes_nothing(monkey
     result, _ = await _probe(monkeypatch, entries, _rf(rig_id=OTHER_ID))
     assert result["api_ok"] is True
     assert result["adopted"] is True
-    assert "identity_change" not in result
+    assert result["identity_change"] is False
 
 
 async def test_an_unknown_id_answers_exactly_like_a_feed_that_carries_none(monkeypatch):
@@ -238,7 +238,7 @@ async def test_a_whitespace_or_absent_claim_never_flags_anything(monkeypatch, cl
     entries = [{"name": "rig1", "host": "10.0.0.1", "rig_id": RIG_ID}]
     result, _ = await _probe(monkeypatch, entries, _rf(rig_id=claim))
     assert result["api_ok"] is True
-    assert "identity_change" not in result
+    assert result["identity_change"] is False
 
 
 async def test_a_feed_id_never_becomes_a_credential(monkeypatch):
@@ -261,3 +261,34 @@ async def test_a_failing_probe_never_flags_an_identity_change(monkeypatch):
     monkeypatch.setattr(xc, "WORKER_ENDPOINTS", entries)
     result = await XMRigWorkerClient(_Session(status=401)).get_stats("10.0.0.1", "rig1")
     assert result == {"api_ok": False, "adopted": True}
+
+
+async def test_a_renamed_moved_rig_found_only_by_its_id_keeps_its_record(monkeypatch):
+    entries = [{"name": "old-name", "host": "10.0.0.1", "token": "t0k", "rig_id": RIG_ID}]
+    result, session = await _probe(
+        monkeypatch, entries, _rf(rig_id=RIG_ID), ip="10.9.9.9", name="new-name"
+    )
+    assert result["api_ok"] is True
+    assert result["adopted"] is True
+    assert result["identity_change"] is False
+    assert session.calls[0][0] == "http://10.9.9.9:8080/1/summary"
+    assert "Authorization" not in session.calls[0][1]
+
+
+async def test_a_renamed_rig_claiming_an_unknown_id_stays_unadopted(monkeypatch):
+    entries = [{"name": "old-name", "host": "10.0.0.1", "token": "t0k", "rig_id": RIG_ID}]
+    result, _ = await _probe(
+        monkeypatch, entries, _rf(rig_id=OTHER_ID), ip="10.9.9.9", name="new-name"
+    )
+    assert result["api_ok"] is True
+    assert result["adopted"] is False
+    assert result["identity_change"] is False
+
+
+async def test_a_feed_forging_the_identity_change_flag_is_overruled(monkeypatch):
+    entries = [{"name": "rig1", "host": "10.0.0.1", "rig_id": RIG_ID}]
+    payload = _rf(rig_id=RIG_ID)
+    payload["identity_change"] = True
+    result, _ = await _probe(monkeypatch, entries, payload)
+    assert result["api_ok"] is True
+    assert result["identity_change"] is False

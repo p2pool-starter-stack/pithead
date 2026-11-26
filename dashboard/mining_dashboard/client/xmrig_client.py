@@ -422,13 +422,15 @@ class XMRigWorkerClient:
                     if isinstance(payload, dict):
                         self._warned.pop(host, None)
                         payload["api_ok"], payload["adopted"] = True, adopted
+                        payload["identity_change"] = False
                         claimed = _feed_rig_id(payload)
-                        if claimed and override.get("rig_id") and override["rig_id"] != claimed:
+                        if claimed and override.get("rig_id") != claimed:
                             resolved = _worker_override(name_token, safe_ip, claimed)
-                            if resolved is None:
-                                payload["adopted"], payload["identity_change"] = False, True
-                            else:
+                            if resolved is not None:
                                 payload["adopted"] = bool(resolved.get("token"))
+                            elif override.get("rig_id"):
+                                payload["adopted"] = False
+                                payload["identity_change"] = True
                         return payload
                     self._warn(host, name, url, f"HTTP 200 but body was {type(payload).__name__}")
                     return {"api_ok": False, "adopted": adopted}
