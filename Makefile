@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-bench-refs lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
@@ -124,7 +124,7 @@ print-shellcheck-version: ## Print the pinned shellcheck version (ci.yml's insta
 print-shfmt-version: ## Print the pinned shfmt version (ci.yml's installer reads this)
 	@echo $(SHFMT_VERSION)
 
-lint: lint-sh lint-py lint-js lint-yaml lint-md lint-docs-voice lint-path-references lint-operator-strings lint-topology lint-file-budget lint-pithead-build lint-trivy-parity lint-proto lint-toml ## Lint/format-check every surface
+lint: lint-sh lint-py lint-js lint-yaml lint-md lint-docs-voice lint-path-references lint-operator-strings lint-topology lint-bench-refs lint-file-budget lint-pithead-build lint-trivy-parity lint-proto lint-toml ## Lint/format-check every surface
 
 # Shellcheck runs once per file, four at a time (#2632): a single invocation over every
 # script accumulated memory across files (6.1 GB RSS) and used one core for ~351 s. `-x`
@@ -191,6 +191,10 @@ lint-operator-strings: pithead ## Fail if a #NNN issue/PR number or a bare docs/
 lint-topology: ## Fail if a real-looking IPv6/IPv4/hostname/path/user@host literal leaks into the repo (generic classes only)
 	bash scripts/lint/lint-topology-classes.sh --self-test
 	bash scripts/lint/lint-topology-classes.sh
+
+lint-bench-refs: ## Fail if a shipped file names the private CI/runner tooling; look-alike allow-list documented in CONTRIBUTING.md (#4245)
+	bash scripts/lint/lint-bench-refs.sh --self-test
+	bash scripts/lint/lint-bench-refs.sh
 
 lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, or an existing offender grows past its docs/dev/file-budget.tsv ceiling (#1105 Phase 0)
 	bash scripts/lint/lint-file-budget.sh --self-test

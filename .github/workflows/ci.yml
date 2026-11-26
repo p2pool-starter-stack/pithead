@@ -434,6 +434,6 @@ jobs:
           version: "0.12.13"
           checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd
           enable-cache: false
-      - name: Lint docs voice, operator strings, topology classes, file budget, pithead build/trivy parity, then JS/CSS (Biome), YAML, Markdown, proto (buf), TOML (taplo)
+      - name: Lint docs voice, operator strings, topology classes, bench refs, file budget, pithead build/trivy parity, then JS/CSS (Biome), YAML, Markdown, proto (buf), TOML (taplo)
         # Single source of truth: the Makefile targets. REPO-LOCAL GATES FIRST (#1746): local checks run before network-backed surface linters.
-        run: make lint-docs-voice lint-path-references lint-operator-strings lint-topology lint-file-budget lint-pithead-build lint-trivy-parity lint-js lint-yaml lint-md lint-proto lint-toml
+        run: make lint-docs-voice lint-path-references lint-operator-strings lint-topology lint-bench-refs lint-file-budget lint-pithead-build lint-trivy-parity lint-js lint-yaml lint-md lint-proto lint-toml

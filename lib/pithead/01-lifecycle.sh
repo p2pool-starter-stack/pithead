@@ -126,13 +126,6 @@ remove_deactivated_profile_containers() {
         warn "Could not remove the deactivated container(s): ${gone[*]} — remove them manually with 'docker rm -f ${gone[*]}'."
 }
 
-# #2595: compose recreates a container by creating its replacement as "<old id[:12]>_<name>",
-# removing the old one, then renaming the replacement. A pass that aborts in between (another
-# service's start failing cancels the rest) leaves the replacement beside the old container, and a
-# later pass removes the old one as surplus but never renames: compose finds the service by label.
-# Bench job 840 ran monerod as "4556c4f42f1d_monerod" from then on, so everything that addresses it
-# by name (exec, stop, the dashboard's control calls) missed it. Rename such a leftover once its
-# name is free; while the old container still holds it, the next pass decides which one survives.
 restore_recreate_names() {
     local names name
     names=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) || return 0
