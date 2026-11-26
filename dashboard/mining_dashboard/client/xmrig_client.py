@@ -4,6 +4,7 @@ import logging
 import time
 
 from mining_dashboard.client.rig_config_meta import parse_config_meta
+from mining_dashboard.client.rig_reply import usable_reply
 from mining_dashboard.client.rigforge_freshness import STALE_AFTER_S, feed_age
 from mining_dashboard.config.config import (
     API_TIMEOUT,
@@ -408,13 +409,10 @@ class XMRigWorkerClient:
             headers = self._auth_header(name_token, "")
 
         try:
-            async with self.session.get(url, headers=headers, timeout=API_TIMEOUT) as response:
+            async with self.session.get(
+                url, headers=headers, timeout=API_TIMEOUT, allow_redirects=False
+            ) as response:
                 if response.status == 200:
-                    # The bounded async read was worked out here (#1347) and lifted into
-                    # ``bounded_read`` by #1360 — one contract, one implementation; the
-                    # ``bytearray``/short-read rationale lives in ``helper/http.py``. Overflow is a
-                    # refusal for THIS rig only, never an exception that takes the poll down for
-                    # every other worker, so it is caught here, not by the blanket handler below.
                     try:
                         body = await bounded_read(
                             response.content,
@@ -426,6 +424,7 @@ class XMRigWorkerClient:
                         return {"api_ok": False, "adopted": adopted}
                     payload = json.loads(body)
                     if isinstance(payload, dict):
+                        payload = usable_reply(payload)
                         self._warned.pop(host, None)
                         payload["api_ok"], payload["adopted"] = True, adopted
                         payload["identity_change"] = False

@@ -46,12 +46,12 @@ reset_dashboard() {
 
     log "Recreating data directories..."
     mkdir -p "$dashboard_dir" "$p2pool_dir"
-    mkdir -p "$p2pool_dir/stats"
+    # shellcheck disable=SC2174
+    mkdir -p -m 755 "$p2pool_dir/stats"
     # Owned by the non-root uid the dashboard + p2pool containers run as (#255). mkdir runs first
     # (above) and chown last (#550) — an unprivileged mkdir into an already chown -R'd tree
     # EACCESes for any operator uid != APP_UID, and here that abort would land AFTER the data wipe.
     sudo chown -R "$APP_UID":"$APP_GID" "$p2pool_dir" "$dashboard_dir"
-    sudo chmod -R 755 "$p2pool_dir/stats"
 
     log "Bringing services back up..."
     # p2pool can dial clearnet, so assert the Tor-only egress firewall BEFORE it starts (#270/#291).
@@ -140,9 +140,13 @@ config_reset() {
     reset_slot_record_good || error "Could not preserve the boot slot before reset — configuration was not cleared."
     restore_save_reset_paths
     detect_os 2>/dev/null || true
-    docker compose down --remove-orphans ||
+    if docker compose down --remove-orphans; then
+        remove_deactivated_profile_containers
+    else
         warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running; fix the Compose error shown above."
-    remove_tor_egress_firewall 2>/dev/null || true
+    fi
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay; '$0 down' stops the stack and removes them."
     lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
     remove_tari_wallet_volumes
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role

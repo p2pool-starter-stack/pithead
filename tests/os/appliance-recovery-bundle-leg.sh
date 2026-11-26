@@ -2,6 +2,20 @@
 # shellcheck source=tests/os/lib/redact-addr.sh
 source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 
+recovery_bundle_stop_script() {
+    cat <<'STOP'
+for c in $(podman ps --format '{{.Names}}' 2>/dev/null); do
+    systemctl stop "$c.service" 2>/dev/null || true
+done
+podman stop -a -t 5 >/dev/null 2>&1
+stop_deadline=$(($(date +%s) + 30))
+while [ -n "$(podman ps -q 2>/dev/null)" ] && [ "$(date +%s)" -lt "$stop_deadline" ]; do
+    sleep 2
+done
+[ -z "$(podman ps -q 2>/dev/null)" ] || { echo "recovery bundle leg: containers are still running, the stack is not down"; exit 1; }
+STOP
+}
+
 recovery_bundle_guest_script() {
     cat <<'GUEST'
 set -uo pipefail
@@ -14,8 +28,9 @@ for u in p2pool.service xmrig.service docker-control.service xmrig-proxy.service
     fi
 done
 [ -n "$unit" ] || { echo "recovery bundle leg: no unloaded pithead unit name to fault"; exit 1; }
-podman stop -a -t 5 >/dev/null 2>&1
-[ -z "$(podman ps -q 2>/dev/null)" ] || { echo "recovery bundle leg: containers are still running, the stack is not down"; exit 1; }
+GUEST
+    recovery_bundle_stop_script
+    cat <<'GUEST'
 dummy=pithead-zzdummy
 printf '[Unit]\nDescription=support bundle leg dummy\n[Service]\nType=oneshot\nExecStart=/bin/sh -c "echo recovery-leg-dummy-marker"\n' >/etc/systemd/system/$dummy.service
 systemctl daemon-reload
