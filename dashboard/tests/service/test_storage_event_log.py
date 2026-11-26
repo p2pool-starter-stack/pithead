@@ -103,7 +103,7 @@ class TestForbiddenValuesNeverInStoredText:
         assert stored_rows(state_manager) == []
 
     def test_amount_slot_rejects_non_numbers(self, state_manager, fake_clock):
-        for bad in ["1.5", True, None, -1.5, float("inf"), float("nan"), "0"]:
+        for bad in ["1.5", True, None, -1.5, float("inf"), float("nan"), "0", 10**400]:
             with pytest.raises(ValueError):
                 state_manager.record_event(
                     "payout",

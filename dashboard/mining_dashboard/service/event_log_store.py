@@ -25,7 +25,10 @@ _CHAIN_ALLOWLIST = frozenset({"XMR", "XTM"})
 def _slot_amount(value: object) -> str:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("event log amount slot takes a number, not free text")
-    amount = float(value)
+    try:
+        amount = float(value)
+    except OverflowError:
+        raise ValueError("event log amount slot takes a finite non-negative number") from None
     if not math.isfinite(amount) or amount < 0:
         raise ValueError("event log amount slot takes a finite non-negative number")
     return f"{amount:g}"
