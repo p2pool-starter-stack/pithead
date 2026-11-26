@@ -243,6 +243,13 @@ class StorageSchemaMixin:
             "CREATE TABLE IF NOT EXISTS worker_config_revision (worker TEXT PRIMARY KEY, "
             "revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT, rigforge_version TEXT)"
         )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS event_log "
+            "(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, end_ts REAL NOT NULL, "
+            "count INTEGER NOT NULL DEFAULT 1, kind TEXT NOT NULL, subject TEXT NOT NULL, "
+            "label TEXT NOT NULL, severity TEXT NOT NULL "
+            "CHECK (severity IN ('info', 'warning', 'error')), text TEXT NOT NULL)"
+        )
 
     def _create_indexes(self):
         """Creates indexes. Called after migrations so the indexed columns are guaranteed to
@@ -261,6 +268,10 @@ class StorageSchemaMixin:
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_disk_growth_ts ON disk_growth(ts)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_history_ts ON worker_history(ts)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts)")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_log ON event_log(kind, subject, ts)"
+        )
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_ts ON event_log(ts)")
 
     def _create_payouts_table(self):
         self._conn.execute(
