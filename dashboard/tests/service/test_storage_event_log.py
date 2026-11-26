@@ -135,6 +135,14 @@ class TestForbiddenValuesNeverInStoredText:
             )
         assert stored_rows(state_manager) == []
 
+    @pytest.mark.parametrize("bad_template", [None, 7, ["payout_received"]])
+    def test_non_string_template_rejected(self, state_manager, fake_clock, bad_template):
+        with pytest.raises(ValueError):
+            state_manager.record_event(
+                "payout", "monero", "Payouts", "info", bad_template, dict(PAYOUT_SLOTS)
+            )
+        assert stored_rows(state_manager) == []
+
     @pytest.mark.parametrize(
         ("kind", "subject", "label"),
         [

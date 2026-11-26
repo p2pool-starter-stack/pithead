@@ -41,6 +41,8 @@ _SLOT_TYPES = {"amount": _slot_amount, "chain": _slot_chain}
 
 
 def _render_event_text(text_template: str, slots: dict[str, object]) -> str:
+    if not isinstance(text_template, str):
+        raise ValueError("event log text_template must name a fixed sentence template")
     template = EVENT_TEXT_TEMPLATES.get(text_template)
     if template is None:
         raise ValueError("event log text_template must name a fixed sentence template")

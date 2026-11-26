@@ -491,8 +491,8 @@ The `events` table the chart markers come from stays a marker store. The Event l
 ([#4431](https://github.com/p2pool-starter-stack/pithead/issues/4431)) writes to its own
 `event_log` table ([#4508](https://github.com/p2pool-starter-stack/pithead/issues/4508)), one
 row per kind and subject: a label, a severity (`info`, `warning` or `error`), and text rendered
-only from fixed sentence templates, so an entry can carry a chain ticker (`XMR`/`XTM`) and an
-amount but never an address, key, transaction id, host name, config key or raw exception.
+only from fixed sentence templates, so a sentence can name a chain ticker (`XMR`/`XTM`) and an
+amount but never carry an address, key, transaction id, host name, config key or raw exception.
 A second occurrence of the same kind and subject within 60 seconds counts onto the open row
 (`count` ticks up, `end_ts` moves) instead of adding a row. Retention is the sooner of 30 days
 and the newest 5,000 rows, oldest first.
