@@ -29,8 +29,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Tari
 
-- Bump Tari node and wallet to v6.2.0-mainnet; gRPC proto compatibility verified (no breaking changes
-  from v6.0.1-pre.0). Image digests pinned: node `sha256:427a0b9c...`, wallet `sha256:655e8046...` (#4318).
+- Bump Tari node and wallet to v6.2.0-mainnet, digest-pinned (node `sha256:427a0b9c...`, wallet
+  `sha256:655e8046...`), and move the vendored gRPC schema with them to the v6.2.0 tag: upstream
+  deleted the template-registration, eviction-proof and encoded-merkle-proof RPC surface, which no
+  dashboard caller uses (#4318).
 
 ### Security
 

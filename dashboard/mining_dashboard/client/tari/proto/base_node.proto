@@ -97,8 +97,6 @@ service BaseNode {
   rpc GetActiveValidatorNodes(GetActiveValidatorNodesRequest) returns (stream GetActiveValidatorNodesResponse);
   rpc GetValidatorNodeChanges(GetValidatorNodeChangesRequest) returns (GetValidatorNodeChangesResponse);
   rpc GetShardKey(GetShardKeyRequest) returns (GetShardKeyResponse);
-  // Get templates
-  rpc GetTemplateRegistrations(GetTemplateRegistrationsRequest) returns (stream GetTemplateRegistrationResponse);
   rpc GetSideChainUtxos(GetSideChainUtxosRequest) returns (stream GetSideChainUtxosResponse);
   rpc GetNetworkState(GetNetworkStateRequest) returns (GetNetworkStateResponse);
   // PayRef (Payment Reference) lookup for block explorers and external services
@@ -214,6 +212,19 @@ message MigrationProgress {
   double progress_percentage = 3;
   uint64 current_db_version = 4;
   uint64 target_db_version = 5;
+  // Which sub-step of the migration is currently running. Lets clients show a more specific
+  // label (e.g. "Rebuilding JMT" vs. "Compacting LMDB") in addition to the numeric progress.
+  MigrationPhase phase = 6;
+}
+
+enum MigrationPhase {
+  MIGRATION_PHASE_UNSPECIFIED = 0;
+  // Walking the UTXO set and (re)building the v2 JMT tables. `current_block`/`total_blocks`
+  // count UTXOs processed during this phase.
+  MIGRATION_PHASE_JMT_REBUILD = 1;
+  // Running `mdb_env_copy2(MDB_CP_COMPACT)` to reclaim disk space freed by the migration.
+  // No fine-grained progress; the call is monolithic from LMDB's side.
+  MIGRATION_PHASE_LMDB_COMPACT = 2;
 }
 
 /// return type of GetNewBlockTemplate
@@ -254,6 +265,7 @@ message NewBlockCoinbase{
 
 // Network difficulty response
 message NetworkDifficultyResponse {
+  // The block's unadjusted target difficulty. This is the value that accumulates into the chain's total difficulty.
   uint64 difficulty = 1;
   uint64 estimated_hash_rate = 2;
   uint64 height = 3;
@@ -265,6 +277,12 @@ message NetworkDifficultyResponse {
   UDecimalValue cuckaroo_estimated_hash_rate = 11;
   uint64 num_coinbases = 8;
   repeated bytes coinbase_extras = 9;
+  // The historical target difficulty this block's proof of work had to clear: `difficulty` with the TIP-RFC-MT-0004
+  // same-algorithm backoff applied (up to 32x for a run of consecutive blocks of the same PoW algorithm). It is
+  // recomputed under this node's consensus rules and equals `difficulty` where no backoff applies. It is not the
+  // requirement for the next block; use `GetNewBlockTemplate`'s `miner_data.target_difficulty` for that. Absent on
+  // nodes that predate this field.
+  optional uint64 adjusted_difficulty = 12;
 }
 
 // A generic single value response for a specific height
@@ -461,6 +479,8 @@ message GetNewBlockBlobResult{
 // This is mining data for the miner asking for a new block
 message MinerData{
   PowAlgo algo = 1;
+  // The target difficulty the new block must clear. This already includes the TIP-RFC-MT-0004 same-algorithm
+  // backoff, i.e. it is the adjusted target, not the unadjusted one reported as `NetworkDifficultyResponse.difficulty`.
   uint64 target_difficulty = 2;
   uint64 reward = 3;
   //    bytes merge_mining_hash =4;
@@ -588,16 +608,6 @@ message GetShardKeyResponse {
   bytes shard_key = 1;
 }
 
-message GetTemplateRegistrationsRequest {
-  bytes start_hash = 1;
-  uint64 count = 2;
-}
-
-message GetTemplateRegistrationResponse {
-  bytes utxo_hash = 1;
-  TemplateRegistration registration = 2;
-}
-
 message BlockInfo {
   uint64 height = 1;
   bytes hash = 2;
@@ -624,6 +634,8 @@ message GetNetworkStateResponse {
   bool initial_sync_achieved = 2;
   //current state of the base node
   BaseNodeState base_node_state = 3;
+  // true when node is in Listening state and network silence has been detected
+  bool network_silence = 13;
   // do we have failed checkpoints
   bool failed_checkpoints = 4;
   // The block reward of the next tip

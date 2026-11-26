@@ -6,7 +6,7 @@ The Tari gRPC client and its generated protobuf stubs.
 
 The eight files in `proto/` are byte-identical to
 `applications/minotari_app_grpc/proto/` at Tari commit
-`f42e14ddac360db0bda56eff43e6c7e00167fb10`. Replace all eight files together from one upstream
+`1fe8cff5b749a6c5c93c5e9d1775fbfc067fe6fd`. Replace all eight files together from one upstream
 ref, then run:
 
 ```bash

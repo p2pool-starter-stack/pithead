@@ -213,11 +213,6 @@ class WalletStub(object):
                 request_serializer=wallet__pb2.ClaimHtlcRefundRequest.SerializeToString,
                 response_deserializer=wallet__pb2.ClaimHtlcRefundResponse.FromString,
                 _registered_method=True)
-        self.CreateTemplateRegistration = channel.unary_unary(
-                '/tari.rpc.Wallet/CreateTemplateRegistration',
-                request_serializer=wallet__pb2.CreateTemplateRegistrationRequest.SerializeToString,
-                response_deserializer=wallet__pb2.CreateTemplateRegistrationResponse.FromString,
-                _registered_method=True)
         self.SignMessage = channel.unary_unary(
                 '/tari.rpc.Wallet/SignMessage',
                 request_serializer=wallet__pb2.SignMessageRequest.SerializeToString,
@@ -273,11 +268,6 @@ class WalletStub(object):
                 request_serializer=wallet__pb2.RegisterValidatorNodeRequest.SerializeToString,
                 response_deserializer=wallet__pb2.RegisterValidatorNodeResponse.FromString,
                 _registered_method=True)
-        self.SubmitValidatorEvictionProof = channel.unary_unary(
-                '/tari.rpc.Wallet/SubmitValidatorEvictionProof',
-                request_serializer=wallet__pb2.SubmitValidatorEvictionProofRequest.SerializeToString,
-                response_deserializer=wallet__pb2.SubmitValidatorEvictionProofResponse.FromString,
-                _registered_method=True)
         self.SubmitValidatorNodeExit = channel.unary_unary(
                 '/tari.rpc.Wallet/SubmitValidatorNodeExit',
                 request_serializer=wallet__pb2.SubmitValidatorNodeExitRequest.SerializeToString,
@@ -297,6 +287,21 @@ class WalletStub(object):
                 '/tari.rpc.Wallet/ScanAndImportUtxos',
                 request_serializer=wallet__pb2.ScanAndImportUtxosRequest.SerializeToString,
                 response_deserializer=wallet__pb2.ScanAndImportUtxosResponse.FromString,
+                _registered_method=True)
+        self.DebugTransaction = channel.unary_unary(
+                '/tari.rpc.Wallet/DebugTransaction',
+                request_serializer=wallet__pb2.DebugTransactionRequest.SerializeToString,
+                response_deserializer=wallet__pb2.DebugTransactionResponse.FromString,
+                _registered_method=True)
+        self.ValidateTransaction = channel.unary_unary(
+                '/tari.rpc.Wallet/ValidateTransaction',
+                request_serializer=wallet__pb2.ValidateTransactionRequest.SerializeToString,
+                response_deserializer=wallet__pb2.ValidateTransactionResponse.FromString,
+                _registered_method=True)
+        self.ValidateOutputs = channel.unary_unary(
+                '/tari.rpc.Wallet/ValidateOutputs',
+                request_serializer=wallet__pb2.ValidateOutputsRequest.SerializeToString,
+                response_deserializer=wallet__pb2.ValidateOutputsResponse.FromString,
                 _registered_method=True)
 
 
@@ -1853,13 +1858,6 @@ class WalletServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateTemplateRegistration(self, request, context):
-        """Creates a transaction with a template registration output
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def SignMessage(self, request, context):
         """Signs a message using the wallet's node identity private key.
 
@@ -2359,12 +2357,6 @@ class WalletServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SubmitValidatorEvictionProof(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def SubmitValidatorNodeExit(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -2384,6 +2376,24 @@ class WalletServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def ScanAndImportUtxos(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DebugTransaction(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ValidateTransaction(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ValidateOutputs(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -2552,11 +2562,6 @@ def add_WalletServicer_to_server(servicer, server):
                     request_deserializer=wallet__pb2.ClaimHtlcRefundRequest.FromString,
                     response_serializer=wallet__pb2.ClaimHtlcRefundResponse.SerializeToString,
             ),
-            'CreateTemplateRegistration': grpc.unary_unary_rpc_method_handler(
-                    servicer.CreateTemplateRegistration,
-                    request_deserializer=wallet__pb2.CreateTemplateRegistrationRequest.FromString,
-                    response_serializer=wallet__pb2.CreateTemplateRegistrationResponse.SerializeToString,
-            ),
             'SignMessage': grpc.unary_unary_rpc_method_handler(
                     servicer.SignMessage,
                     request_deserializer=wallet__pb2.SignMessageRequest.FromString,
@@ -2612,11 +2617,6 @@ def add_WalletServicer_to_server(servicer, server):
                     request_deserializer=wallet__pb2.RegisterValidatorNodeRequest.FromString,
                     response_serializer=wallet__pb2.RegisterValidatorNodeResponse.SerializeToString,
             ),
-            'SubmitValidatorEvictionProof': grpc.unary_unary_rpc_method_handler(
-                    servicer.SubmitValidatorEvictionProof,
-                    request_deserializer=wallet__pb2.SubmitValidatorEvictionProofRequest.FromString,
-                    response_serializer=wallet__pb2.SubmitValidatorEvictionProofResponse.SerializeToString,
-            ),
             'SubmitValidatorNodeExit': grpc.unary_unary_rpc_method_handler(
                     servicer.SubmitValidatorNodeExit,
                     request_deserializer=wallet__pb2.SubmitValidatorNodeExitRequest.FromString,
@@ -2636,6 +2636,21 @@ def add_WalletServicer_to_server(servicer, server):
                     servicer.ScanAndImportUtxos,
                     request_deserializer=wallet__pb2.ScanAndImportUtxosRequest.FromString,
                     response_serializer=wallet__pb2.ScanAndImportUtxosResponse.SerializeToString,
+            ),
+            'DebugTransaction': grpc.unary_unary_rpc_method_handler(
+                    servicer.DebugTransaction,
+                    request_deserializer=wallet__pb2.DebugTransactionRequest.FromString,
+                    response_serializer=wallet__pb2.DebugTransactionResponse.SerializeToString,
+            ),
+            'ValidateTransaction': grpc.unary_unary_rpc_method_handler(
+                    servicer.ValidateTransaction,
+                    request_deserializer=wallet__pb2.ValidateTransactionRequest.FromString,
+                    response_serializer=wallet__pb2.ValidateTransactionResponse.SerializeToString,
+            ),
+            'ValidateOutputs': grpc.unary_unary_rpc_method_handler(
+                    servicer.ValidateOutputs,
+                    request_deserializer=wallet__pb2.ValidateOutputsRequest.FromString,
+                    response_serializer=wallet__pb2.ValidateOutputsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -3530,33 +3545,6 @@ class Wallet(object):
             _registered_method=True)
 
     @staticmethod
-    def CreateTemplateRegistration(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/tari.rpc.Wallet/CreateTemplateRegistration',
-            wallet__pb2.CreateTemplateRegistrationRequest.SerializeToString,
-            wallet__pb2.CreateTemplateRegistrationResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
     def SignMessage(request,
             target,
             options=(),
@@ -3854,33 +3842,6 @@ class Wallet(object):
             _registered_method=True)
 
     @staticmethod
-    def SubmitValidatorEvictionProof(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/tari.rpc.Wallet/SubmitValidatorEvictionProof',
-            wallet__pb2.SubmitValidatorEvictionProofRequest.SerializeToString,
-            wallet__pb2.SubmitValidatorEvictionProofResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
     def SubmitValidatorNodeExit(request,
             target,
             options=(),
@@ -3978,6 +3939,87 @@ class Wallet(object):
             '/tari.rpc.Wallet/ScanAndImportUtxos',
             wallet__pb2.ScanAndImportUtxosRequest.SerializeToString,
             wallet__pb2.ScanAndImportUtxosResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DebugTransaction(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/tari.rpc.Wallet/DebugTransaction',
+            wallet__pb2.DebugTransactionRequest.SerializeToString,
+            wallet__pb2.DebugTransactionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ValidateTransaction(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/tari.rpc.Wallet/ValidateTransaction',
+            wallet__pb2.ValidateTransactionRequest.SerializeToString,
+            wallet__pb2.ValidateTransactionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ValidateOutputs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/tari.rpc.Wallet/ValidateOutputs',
+            wallet__pb2.ValidateOutputsRequest.SerializeToString,
+            wallet__pb2.ValidateOutputsResponse.FromString,
             options,
             channel_credentials,
             insecure,

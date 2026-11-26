@@ -23,7 +23,6 @@ syntax = "proto3";
 
 package tari.rpc;
 
-import "google/protobuf/timestamp.proto";
 import "types.proto";
 import "transaction.proto";
 import "sidechain_types.proto";
@@ -1454,9 +1453,6 @@ service Wallet {
   // }
   rpc ClaimHtlcRefundTransaction(ClaimHtlcRefundRequest) returns (ClaimHtlcRefundResponse);
 
-  // Creates a transaction with a template registration output
-  rpc CreateTemplateRegistration(CreateTemplateRegistrationRequest) returns (CreateTemplateRegistrationResponse);
-
   // Signs a message using the wallet's node identity private key.
   //
   // The `SignMessage` call creates a Schnorr signature over a message using the wallet's node identity private key.
@@ -1914,11 +1910,13 @@ service Wallet {
   rpc UserPayForFee(UserPayForFeeRequest) returns (UserPayForFeeResponse);
 
   rpc RegisterValidatorNode(RegisterValidatorNodeRequest) returns (RegisterValidatorNodeResponse);
-  rpc SubmitValidatorEvictionProof(SubmitValidatorEvictionProofRequest) returns (SubmitValidatorEvictionProofResponse);
   rpc SubmitValidatorNodeExit(SubmitValidatorNodeExitRequest) returns (SubmitValidatorNodeExitResponse);
   rpc GetBurnClaimProof(GetBurnClaimProofRequest) returns (GetBurnClaimProofResponse);
   rpc RescanWallet(RescanWalletRequest) returns (RescanWalletResponse);
   rpc ScanAndImportUtxos(ScanAndImportUtxosRequest) returns (ScanAndImportUtxosResponse);
+  rpc DebugTransaction(DebugTransactionRequest) returns (DebugTransactionResponse);
+  rpc ValidateTransaction(ValidateTransactionRequest) returns (ValidateTransactionResponse);
+  rpc ValidateOutputs(ValidateOutputsRequest) returns (ValidateOutputsResponse);
 }
 
 
@@ -2006,6 +2004,8 @@ message BroadcastSignedOneSidedTransactionResponse {
 message TransferRequest {
   repeated PaymentRecipient recipients = 1;
   bool single_tx = 2;
+  // Canonical compressed commitments to exclude from transaction input selection.
+  repeated bytes excluded_commitments = 3;
 }
 
 // A request to perform a range-limited coin-join to self operation.
@@ -2134,6 +2134,8 @@ message GetTransactionInfoResponse {
 
 message TransactionInfo {
   uint64 tx_id = 1;
+  // For inbound transactions recovered from the chain this is the sender address written in the output's memo by the
+  // sender; see source_address_claimed.
   bytes source_address = 2;
   bytes dest_address = 3;
   TransactionStatus status = 4;
@@ -2151,6 +2153,15 @@ message TransactionInfo {
   repeated bytes payment_references_sent = 17;
   repeated bytes payment_references_received = 18;
   repeated bytes payment_references_change = 19;
+  // The reason a transaction was rejected/cancelled, if applicable.
+  // Empty string if the transaction is not rejected.
+  string rejected_reason = 20;
+  // The highest lock height among all outputs (max of maturity and script_lock_height).
+  // Outputs cannot be spent until this height is reached.
+  uint64 lock_height = 21;
+  // True when source_address came from a memo written by the sender (an output recovered via Diffie-Hellman, or an
+  // external import). It is not authenticated: any sender can put any address there. Do not attribute funds by it.
+  bool source_address_claimed = 22;
 }
 
 enum TransactionDirection {
@@ -2190,6 +2201,12 @@ enum TransactionStatus {
   TRANSACTION_STATUS_COINBASE_CONFIRMED = 13;
   // This is Coinbase transaction that is not currently detected as mined
   TRANSACTION_STATUS_COINBASE_NOT_IN_BLOCK_CHAIN = 14;
+  // This transaction is mined and confirmed but outputs are still locked (maturity not reached)
+  TRANSACTION_STATUS_MINED_CONFIRMED_LOCKED = 15;
+  // One-sided transaction confirmed but outputs are still locked
+  TRANSACTION_STATUS_ONE_SIDED_CONFIRMED_LOCKED = 16;
+  // Coinbase transaction confirmed but outputs are still locked
+  TRANSACTION_STATUS_COINBASE_CONFIRMED_LOCKED = 17;
 }
 
 message GetCompletedTransactionsRequest {
@@ -2314,22 +2331,6 @@ message ImportUtxosResponse {
   repeated uint64 tx_ids = 1;
 }
 
-message CreateTemplateRegistrationRequest {
-  uint64 fee_per_gram = 1;
-  string template_name = 2;
-  uint32 template_version = 3;
-  TemplateType template_type = 4;
-  BuildInfo build_info = 5;
-  bytes binary_sha = 6;
-  string binary_url = 7;
-  bytes sidechain_deployment_key = 8;
-}
-
-message CreateTemplateRegistrationResponse {
-  uint64 tx_id = 1;
-  bytes template_address = 2;
-}
-
 // Request message for the CancelTransaction RPC.
 message CancelTransactionRequest {
   // The transaction ID to be cancelled.
@@ -2426,17 +2427,6 @@ message RegisterValidatorNodeResponse {
   string failure_message = 3;
 }
 
-message SubmitValidatorEvictionProofRequest {
-  EvictionProof proof = 1;
-  uint64 fee_per_gram = 2;
-  string message = 3;
-  bytes sidechain_deployment_key = 4;
-}
-
-message SubmitValidatorEvictionProofResponse {
-  uint64 tx_id = 1;
-}
-
 message SubmitValidatorNodeExitRequest {
   bytes validator_node_public_key = 1;
   Signature validator_node_signature = 2;
@@ -2444,6 +2434,8 @@ message SubmitValidatorNodeExitRequest {
   uint64 fee_per_gram = 4;
   bytes message = 5;
   bytes sidechain_deployment_key = 6;
+  // The activation epoch of the validator node registration being exited. It is part of the signed exit message.
+  uint64 activation_epoch = 7;
 }
 
 message SubmitValidatorNodeExitResponse {
@@ -2497,6 +2489,16 @@ message GetTransactionPayRefsResponse {
   repeated bytes payment_references = 1 [deprecated = true];
   // List of input commitment info for the transaction - hash, commitment, payment reference, output category.
   repeated CommitmentInfo output_commitments_info = 2;
+  // Historical PayRefs that were superseded by reorgs (output_hash + previous payref pairs).
+  repeated HistoricalPayRef historical_payment_references = 3;
+}
+
+// A historical PayRef that was superseded due to a blockchain reorg.
+message HistoricalPayRef {
+  // The output hash this PayRef was generated for.
+  bytes output_hash = 1;
+  // The previous PayRef value (before the reorg changed the block hash).
+  bytes payment_reference = 2;
 }
 
 message CommitmentInfo {
@@ -2530,9 +2532,11 @@ message GetPaymentByReferenceRequest {
 
 // Response message containing transaction information for a payment reference
 message GetPaymentByReferenceResponse {
-  // The transaction information if PayRef is found (optional).
+  // The transaction information if PayRef is found via current PayRef (optional).
   // Returns full transaction details
   TransactionInfo transaction = 1;
+  // Transactions found via historical (superseded) PayRefs from reorgs.
+  repeated TransactionInfo historical_transactions = 2;
 }
 
 
@@ -2646,12 +2650,17 @@ message GetBurnClaimProofRequest {
 }
 
 message GetBurnClaimProofResponse {
+  // Formerly the bincode-encoded merkle_proof and the kernel_merkle_proof, replaced by burn_output_proof
+  reserved 2, 7;
+  reserved "merkle_proof", "kernel_merkle_proof";
   BurnClaimProof claim_proof = 1;
-  // Optional, not available until the burn transaction is confirmed
-  EncodedMerkleProof merkle_proof = 2;
   bytes encrypted_data = 3;
   TransactionKernel kernel = 4;
   uint64 value = 5;
+  // The L1 epoch the burn was mined in (block_height / vn_epoch_length). Absent until the burn is confirmed on-chain.
+  optional uint64 mined_in_epoch = 6;
+  // Optional, not available until the burn transaction is confirmed
+  BurnOutputProof burn_output_proof = 8;
 }
 
 message BurnClaimProof {
@@ -2664,10 +2673,47 @@ message BurnClaimProof {
   bytes sender_offset_public_key = 7;
 }
 
-message EncodedMerkleProof {
+// Proves that a burn output was mined, against the block_output_mr of the header of the block it was mined in.
+// The block output MMR has the coinbase output hashes as leaves, followed by the root of the MMR of all other output
+// hashes in the block (normal_output_mr) as its last leaf.
+message BurnOutputProof {
   bytes block_hash = 1;
-  bytes encoded_proof = 2;
-  uint64 leaf_index = 3;
+  uint64 block_height = 2;
+  OutputHashPreimage output = 3;
+  // The inclusion proof of the output hash in the normal output MMR
+  MmrInclusionProof normal_output_proof = 4;
+  bytes normal_output_mr = 5;
+  // The inclusion proof of normal_output_mr in the block output MMR (as its last leaf, for an honest proof).
+  // Proofs are not unique: key anything that must be unique per burn on the output commitment or hash.
+  MmrInclusionProof block_output_proof = 6;
+}
+
+// An inclusion proof of a leaf in a Merkle mountain range
+message MmrInclusionProof {
+  uint64 leaf_index = 1;
+  uint64 mmr_size = 2;
+  // The sibling path from the leaf up to its local peak
+  repeated bytes path = 3;
+  // The MMR peaks, excluding the local peak of the leaf
+  repeated bytes peaks = 4;
+}
+
+// The fields of an output that its hash commits to, in hash order. The range proof is carried as its hash.
+message OutputHashPreimage {
+  uint32 version = 1;
+  // Consensus (borsh) encoded OutputFeatures
+  bytes features = 2;
+  bytes commitment = 3;
+  bytes rangeproof_hash = 4;
+  // Consensus (borsh) encoded TariScript
+  bytes script = 5;
+  bytes sender_offset_public_key = 6;
+  ComAndPubSignature metadata_signature = 7;
+  // Consensus (borsh) encoded Covenant
+  bytes covenant = 8;
+  // Consensus (borsh) encoded EncryptedData
+  bytes encrypted_data = 9;
+  uint64 minimum_value_promise = 10;
 }
 
 message RescanWalletRequest {
@@ -2689,4 +2735,58 @@ message ScanFeedback{
   bool is_found = 2;
   uint64 tx_id = 3;
   repeated string debug_info = 4;
+}
+
+message DebugTransactionRequest {
+  uint64 tx_id = 1;
+}
+
+message DebugTransactionResponse {
+  TransactionInfo transaction_info = 1;
+  repeated DbWalletOutputInfo inputs = 2;
+  repeated DbWalletOutputInfo outputs = 3;
+}
+
+message DbWalletOutputInfo {
+  bytes commitment = 1;
+  bytes hash = 2;
+  uint64 value = 3;
+  string status = 4;
+  uint64 mined_height = 5;
+  bytes mined_in_block = 6;
+  uint64 mined_timestamp = 7;
+  uint64 marked_deleted_at_height = 8;
+  bytes marked_deleted_in_block = 9;
+  string spending_priority = 10;
+  string source = 11;
+  uint64 received_in_tx_id = 12;
+  uint64 spent_in_tx_id = 13;
+  bytes payment_id = 14;
+  string script = 15;
+  uint64 maturity = 16;
+  string features_output_type = 17;
+  bytes sender_offset_public_key = 18;
+  uint64 script_lock_height = 19;
+}
+
+message ValidateTransactionRequest {
+  uint64 tx_id = 1;
+}
+
+message ValidateTransactionResponse {
+  repeated string debug_info = 1;
+}
+
+message ValidateOutputsRequest {
+  repeated string commitments = 1;
+}
+
+message ValidateOutputsResponse {
+  repeated OutputValidationFeedback feedback = 1;
+}
+
+message OutputValidationFeedback {
+  string commitment = 1;
+  string status = 2;
+  repeated string debug_info = 3;
 }
