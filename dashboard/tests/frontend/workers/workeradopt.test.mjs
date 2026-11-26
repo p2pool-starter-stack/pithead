@@ -381,3 +381,42 @@ for (const [leg, index] of ADOPT_LEGS) {
     });
   }
 }
+
+test("AdoptRigForm: a rigId prop prefills the rig_id field; its absence hides the field", () => {
+  const inst = adoptForm({ rigId: "0a1b2c3d4e5f60718293a4b5c6d7e8f9" });
+  assert.equal(inst.state.rigId, "0a1b2c3d4e5f60718293a4b5c6d7e8f9");
+  assert.match(renderToString(inst.render()), /value="0a1b2c3d4e5f60718293a4b5c6d7e8f9"/);
+  const bare = adoptForm();
+  assert.equal(bare.state.rigId, "");
+  assert.doesNotMatch(renderToString(bare.render()), /rig_id/);
+});
+
+test("AdoptRigForm: a prefilled rig_id rides the previewed config", async () => {
+  const inst = adoptForm({ rigId: "0a1b2c3d4e5f60718293a4b5c6d7e8f9" });
+  inst.state.apiPort = "18081";
+  inst.state.token = TOKEN;
+  await withFetchSequence([{ body: { workers: { list: [] } } }, { body: ADOPT_PREVIEW }], async (calls) => {
+    await inst.adopt();
+    assert.deepEqual(calls[1].body.config.workers.list, [
+      {
+        name: "rig1",
+        host: "10.0.0.9",
+        port: 18081,
+        control_port: 8082,
+        token: TOKEN,
+        rig_id: "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      },
+    ]);
+  });
+});
+
+test("AdoptRigForm: a malformed rig_id is refused before any request", async () => {
+  const inst = adoptForm({ rigId: "not-hex" });
+  inst.state.token = TOKEN;
+  await withFetchSequence([], async (calls) => {
+    await inst.adopt();
+    assert.equal(calls.length, 0);
+  });
+  assert.equal(inst.state.result.status, "error");
+  assert.match(inst.state.result.error, /rig_id/);
+});

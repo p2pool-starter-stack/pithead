@@ -198,6 +198,7 @@ def _merge_direct_stats(workers, results, active_pool_port):
         api_ok = extra_stats.get("api_ok") if extra_stats else None
         if api_ok is not None:
             w["api_ok"], w["adopted"] = api_ok, bool(extra_stats.get("adopted"))
+            w["identity_change"] = bool(extra_stats.get("identity_change"))
 
         rf = parse_rigforge(extra_stats) if extra_stats else None
         if rf is not None:
