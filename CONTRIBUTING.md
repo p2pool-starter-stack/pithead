@@ -96,8 +96,9 @@ on Linux or macOS with Bash 3.2 or newer, Python 3 and jq; it does not require G
      `/systemd/system/` is a unit name, not an address; `tests/` and `docs/` are an
      accepted exemption boundary for illustrative/fixture content, and each class also carries a
      small, explicit allowlist — see the script's own header — never a per-file exemption comment),
-     `lint-bench-refs` (the shipped surface — `lib/`, `build/`, `os/`, `dashboard/`, the compose
-     file, the CLI completion, the config templates and `README.md` — never names the project's
+     `lint-bench-refs` (the shipped surface — `lib/`, `build/`, `os/`, `dashboard/`, `install.sh`,
+     the compose file, the CLI completion, the config templates and `README.md` — never names the
+     project's
      private CI/runner tooling: `bench-ci`/`BENCH_CI`, `pithead-developer`, the `adversarial-review`
      status, the `rig-e2e` lock, the `tier4-e2e`/`tier4-kvm` tiers, `CI_JOB_DIR`, or a "bench
      job"/"bench runner" — issue #4245; the appliance image and the generated CLI carry every word
