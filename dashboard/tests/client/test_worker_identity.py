@@ -292,3 +292,28 @@ async def test_a_feed_forging_the_identity_change_flag_is_overruled(monkeypatch)
     result, _ = await _probe(monkeypatch, entries, payload)
     assert result["api_ok"] is True
     assert result["identity_change"] is False
+
+
+def test_an_oversized_feed_string_is_unknown_not_persistent_state():
+    rf = parse_rigforge(
+        _rf(rig_id="0" * 300, os_version="v" * 4096, identity={"cpu_model": "x" * 4096})
+    )
+    assert rf["rig_id"] is None
+    assert rf["os_version"] is None
+    assert rf["identity"] is None
+
+
+async def test_an_oversized_claimed_id_never_flags_anything(monkeypatch):
+    entries = [
+        {
+            "name": "rig1",
+            "host": "10.0.0.1",
+            "token": {"__secret__": True},
+            "read_token": "readonly",
+            "rig_id": RIG_ID,
+        }
+    ]
+    result, _ = await _probe(monkeypatch, entries, _rf(rig_id="0" * 300))
+    assert result["api_ok"] is True
+    assert result["adopted"] is True
+    assert result["identity_change"] is False

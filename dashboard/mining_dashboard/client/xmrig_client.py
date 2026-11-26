@@ -35,10 +35,16 @@ except ValueError:
     _INTERNAL_NET = ipaddress.ip_network("172.28.0.0/16")
 
 
+_MAX_FEED_TEXT = 256
+
+
 def _feed_text(value):
     if not isinstance(value, str):
         return None
-    return value.strip() or None
+    text = value.strip()
+    if not text or len(text) > _MAX_FEED_TEXT:
+        return None
+    return text
 
 
 def _feed_identity(block):
