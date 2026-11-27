@@ -150,6 +150,33 @@ done
 [ -z "$(ls -A "$T/target-dir")" ] || fail "arming must not write into a linked folder"
 [ ! -e "$T/missing" ] || fail "arming must not create a dangling link's target"
 
+printf 'keep-me\n' >"$T/target-dir/inside"
+plant() {
+    rm -f "$marker"
+    case "$1" in
+    empty) mkdir "$marker" ;;
+    full) mkdir -p "$marker/deep/er" && printf 'x\n' >"$marker/deep/er/file" && ln -s "$T/target-dir" "$marker/deep/out" ;;
+    dirlink) ln -s "$T/target-dir" "$marker" ;;
+    filelink) ln -s "$T/target-file" "$marker" ;;
+    dangling) ln -s "$T/missing" "$marker" ;;
+    esac
+}
+for planted in empty full dirlink filelink dangling; do
+    RAUC_STATUS_FILE="$T/good.json"
+    plant "$planted"
+    schema_hold_arm >/dev/null 2>&1
+    [ ! -e "$marker" ] && [ ! -L "$marker" ] || fail "a committed boot must remove what sits at the marker ($planted)"
+    plant "$planted"
+    schema_hold_release >/dev/null 2>&1 || fail "release must not fail the boot ($planted)"
+    [ ! -e "$marker" ] && [ ! -L "$marker" ] || fail "release must remove what sits at the marker ($planted)"
+    RAUC_STATUS_FILE="$T/bad.json"
+    plant "$planted"
+    schema_hold_arm >/dev/null 2>&1 || fail "arming over a folder or link at the marker must still arm ($planted)"
+    [ -f "$marker" ] && [ ! -L "$marker" ] || fail "arming must leave a real marker in its place ($planted)"
+done
+[ "$(cat "$T/target-dir/inside")" = keep-me ] || fail "removing the marker must keep the files of a linked folder"
+[ "$(cat "$T/target-file")" = keep-me ] && [ "$(mode_of "$T/target-file")" = 640 ] || fail "removing the marker must keep a linked file"
+
 mktemp() {
     local made
     made=$(command mktemp "$@") || return
