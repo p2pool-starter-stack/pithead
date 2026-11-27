@@ -122,6 +122,19 @@ for HOST_CASE in lan-guard.marker:lan-guard lan-guard.marker:lan-guard/dashboard
     assert_contains "root-written host folder refusal names the folder" \
         "$(jq -r '.error' "$RESULTS/$UUID7.json")" "${HOST_CASE%%:*}"
 done
+run_sourced "$C" control_validate_data_dir_overlaps "$C/config.json" >/dev/null
+assert_rc "the data-folder check accepts the live folders" "$?" "0"
+for UNRESOLVED_MODE in -m -ms; do
+    UNRESOLVED_OUT=$(
+        realpath() {
+            [ "$1 $3" != "$UNRESOLVED_MODE $C/data/lan-guard" ] || return 1
+            command realpath "$@"
+        }
+        run_sourced "$C" control_validate_data_dir_overlaps "$C/config.json"
+    )
+    assert_rc "a protected host folder that cannot be resolved refuses the data-folder check" "$?" "1"
+    assert_contains "the unresolved-folder refusal names the folder" "$UNRESOLVED_OUT" "lan-guard.marker cannot be resolved"
+done
 printf 'x\n' >"$C/data/plain-file"
 preview_dashboard_move "$C/data/plain-file"
 printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
