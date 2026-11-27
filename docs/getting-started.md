@@ -28,7 +28,7 @@ dashboard, no Linux to set up.
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
 | Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
-| Software | Docker Engine, Docker Compose V2, `jq`, `openssl`, and `python3`. |
+| Software | Docker Engine 28 or newer (`doctor` warns on an older one), Docker Compose V2, `jq`, `openssl`, and `python3`. |
 
 > 📐 Sizing guidance for the stack host — minimum vs. recommended specs, plus ways to run leaner —
 > is in **[Hardware Requirements](hardware.md)**. Miner specs live in

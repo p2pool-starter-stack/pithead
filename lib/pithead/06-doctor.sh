@@ -46,6 +46,12 @@ doctor() {
         dr_info "Skipped — docker is not installed."
     elif docker info >/dev/null 2>&1; then
         dr_ok "Docker daemon is reachable."
+        local engine_version engine_major
+        engine_version=$(docker version --format '{{.Server.Version}}' 2>/dev/null)
+        engine_major=${engine_version%%[!0-9]*}
+        if [ -n "$engine_major" ] && [ "$engine_major" -lt 28 ]; then
+            dr_warn "Docker Engine $engine_version is older than 28, the oldest release Pithead supports — upgrade Docker."
+        fi
     else
         dr_fail_surface "Docker daemon is not reachable — start it (e.g. 'sudo systemctl start docker') and ensure your user is in the 'docker' group." "The container engine is not reachable, so the mining stack cannot run. This machine starts it at boot, so this system copy is faulty."
     fi

@@ -448,3 +448,16 @@ assert_contains "doctor runs to the summary" "$out" "Diagnostics summary"
 assert_contains "doctor flags the unreachable daemon" "$out" "Docker daemon is not reachable"
 assert_rc "doctor exits 1 on a critical FAIL" "$rc" "1"
 assert_contains "doctor header carries the version (#386)" "$out" "Version: pithead v9.9.9"
+cat >"$DOC/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  "version --format {{.Server.Version}}") echo "$FAKE_ENGINE_VERSION" ;;
+  *) exit 0 ;;
+esac
+EOF
+out="$(cd "$DOC" && FAKE_ENGINE_VERSION=27.5.1 PATH="$DOC/bin:$PATH" ./pithead doctor 2>&1)"
+assert_contains "doctor warns on a Docker Engine older than 28" "$out" "Docker Engine 27.5.1 is older than 28"
+out="$(cd "$DOC" && FAKE_ENGINE_VERSION=28.0.4 PATH="$DOC/bin:$PATH" ./pithead doctor 2>&1)"
+assert_not_contains "doctor accepts Docker Engine 28" "$out" "is older than 28"
+out="$(cd "$DOC" && FAKE_ENGINE_VERSION='' PATH="$DOC/bin:$PATH" ./pithead doctor 2>&1)"
+assert_not_contains "an unreadable engine version is not called old" "$out" "is older than 28"
