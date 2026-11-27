@@ -80,6 +80,41 @@ control_os_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget co
     return 0
 }
 
+os_clock_epoch() {
+    printf '%s' "${PITHEAD_CLOCK_EPOCH:-$(date +%s)}"
+}
+
+os_epoch_text() {
+    date -u -d "@$1" '+%Y-%m-%d %H:%M UTC' 2>/dev/null || date -u -r "$1" '+%Y-%m-%d %H:%M UTC'
+}
+
+os_keyring_not_before() {
+    local start
+    start=$(openssl x509 -in "${PITHEAD_RAUC_KEYRING_FILE:-/etc/rauc/keyring.pem}" -noout -startdate 2>/dev/null |
+        sed -n 's/^notBefore=//p') || return 0
+    [ -n "$start" ] || return 0
+    date -u -d "$start" +%s 2>/dev/null || true
+}
+
+os_clock_floor_reason() {
+    local now floor
+    now=$(os_clock_epoch)
+    floor=$(os_keyring_not_before)
+    case "$floor" in '' | *[!0-9]*) return 0 ;; esac
+    [ "$now" -ge "$floor" ] && return 0
+    printf '%s' "this machine's clock reads $(os_epoch_text "$now"), earlier than its release keyring was issued ($(os_epoch_text "$floor")), so the clock is wrong and a signature check against it cannot be trusted. Connect the machine to the network so it sets its time, or set it with 'timedatectl set-time', then retry. Nothing was changed."
+}
+
+os_rauc_clock_reason() {
+    local verdict
+    case "$1" in
+    *"certificate has expired"*) verdict="expired" ;;
+    *"not yet valid"*) verdict="not yet valid" ;;
+    *) return 0 ;;
+    esac
+    printf '%s' "RAUC found the bundle's signing certificate $verdict at this machine's clock ($(os_epoch_text "$(os_clock_epoch)")). If that date is wrong, fix the clock and retry. If it is right, the release certificate chain on this machine no longer covers the bundle: see 'Signing key lifetime and rotation' in docs/dev/release-server.md. Nothing was changed."
+}
+
 # The local-bundle refusals shared by os-verify and os-install (install re-runs them so a result
 # can never go stale between the two clicks). Echoes the refusal reason; empty = pass. Returns 0
 # for a real verdict — the caller deletes a refused bundle, only bundles that verify may sit
@@ -94,16 +129,27 @@ os_verify_bundle_reason() { # <bundle> <target-tag>
     # metadata is trusted. A nonzero exit is only a signature verdict when rauc actually ran
     # and judged the file — an exec failure or a crash (rc 126/127, or death by signal) gets
     # one retry and then its own honest reason instead of masquerading as a bad signature.
-    rauc info "$bundle" >/dev/null 2>&1 || rc=$?
+    local clock_reason info_err
+    clock_reason=$(os_clock_floor_reason)
+    if [ -n "$clock_reason" ]; then
+        printf '%s' "$clock_reason"
+        return 3
+    fi
+    info_err=$(rauc info "$bundle" 2>&1 >/dev/null) || rc=$?
     if [ "$rc" -ge 126 ]; then
         rc=0
-        rauc info "$bundle" >/dev/null 2>&1 || rc=$?
+        info_err=$(rauc info "$bundle" 2>&1 >/dev/null) || rc=$?
         if [ "$rc" -ge 126 ]; then
             printf '%s' "rauc could not run to judge the downloaded bundle — the file was kept; retry, and check the host journal if this repeats."
             return 3
         fi
     fi
     if [ "$rc" -ne 0 ]; then
+        clock_reason=$(os_rauc_clock_reason "$info_err")
+        if [ -n "$clock_reason" ]; then
+            printf '%s' "$clock_reason"
+            return 3
+        fi
         printf '%s' "the downloaded file failed signature verification against this machine's release keys — it was deleted; check for updates and download again."
         return 0
     fi

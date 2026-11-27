@@ -270,9 +270,13 @@ os_update() {
     # the bundle: the dashboard's os-verify/os-install doors already run this same check
     # (os_verify_bundle_reason) before this CLI path ever runs, but the CLI's own os-update had
     # nothing playing that role, so its ERR trap fired with no diagnosis to show for it.
-    local rauc_info_err rauc_rc=0
+    local rauc_info_err rauc_rc=0 clock_reason
+    clock_reason=$(os_clock_floor_reason)
+    [ -z "$clock_reason" ] || error "$clock_reason"
     rauc_info_err=$(rauc info "$bundle" 2>&1 >/dev/null) || rauc_rc=$?
     if [ "$rauc_rc" -ne 0 ]; then
+        clock_reason=$(os_rauc_clock_reason "$rauc_info_err")
+        [ -z "$clock_reason" ] || error "$clock_reason"
         error "rauc could not verify this bundle.${rauc_info_err:+ rauc said: $(printf '%s' "$rauc_info_err" | tail -1 | tr -d '[:cntrl:]' | head -c 300)}"
     fi
 

@@ -50,7 +50,7 @@ The rig keeps its last request time, verdict and reason in a status file on `/da
 
 ### Trust model
 
-The bundle's RAUC signature is the only trust in delivery. The channel listing is untrusted and hardened (#4011); the download is anonymous over Tor; the allowlist, size cap and tag validation bound what the rig fetches, and authenticate nothing. A rig that trusts only the baked keyring depends on its validity across time — release signing key rotation, certificate expiry and clock handling are #4012.
+The bundle's RAUC signature is the only trust in delivery. The channel listing is untrusted and hardened (#4011); the download is anonymous over Tor; the allowlist, size cap and tag validation bound what the rig fetches, and authenticate nothing. A rig that trusts only the baked keyring depends on its validity across time — the lifetimes, rotation steps and wrong-clock rule are in [Signing key lifetime and rotation](release-server.md#signing-key-lifetime-and-rotation).
 
 ### Limits
 
