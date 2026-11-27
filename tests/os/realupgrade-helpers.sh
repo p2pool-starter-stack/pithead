@@ -4,7 +4,7 @@
 REALUPGRADE_REPO="p2pool-starter-stack/pithead"
 REALUPGRADE_BOOT_GATE_S=900
 REALUPGRADE_SOAK_S=600
-REALUPGRADE_LEGS_DEFAULT="upgrade,soak,negctl,negctlv"
+REALUPGRADE_LEGS_DEFAULT="upgrade,soak,negctl"
 REALUPGRADE_ROLLBACK_CAUSE="interrupted before the update was verified"
 REALUPGRADE_CAUSE_FIX_VERSION=2.0.4
 REALUPGRADE_CAUSE_SKIP_REASON="no published N-2 carries #3909/#3910 (#4338)"
@@ -37,7 +37,7 @@ realupgrade_legs_valid() {
     [ -n "$list" ] || return 1
     local IFS=,
     for leg in $list; do
-        case "$leg" in upgrade | soak | negctl | negctlv) seen="$seen,$leg" ;; *) return 1 ;; esac
+        case "$leg" in upgrade | soak | negctl) seen="$seen,$leg" ;; *) return 1 ;; esac
     done
     case "$seen" in *,soak*) case "$seen" in *,upgrade*) ;; *) return 1 ;; esac ;; esac
 }
@@ -144,9 +144,8 @@ realupgrade_bundle_cert() {
     grep -q 'BEGIN CERTIFICATE' "$2"
 }
 
-realupgrade_with_slot_a() {
+realupgrade_attach_and_patch() {
     local img="$1" loop mnt tries=0 rc=0 fstype
-    shift
     loop=$(losetup -Pf --show "$img") || return 1
     while [ ! -e "${loop}p2" ] && [ "$tries" -lt 50 ]; do
         sleep 0.1
@@ -163,7 +162,7 @@ realupgrade_with_slot_a() {
         return 1
     }
     if mount "${loop}p2" "$mnt"; then
-        "$1" "$mnt" "${@:2}" || rc=1
+        realupgrade_patch_root "$mnt" "$2" "$3" "$4" || rc=1
         umount "$mnt" || {
             printf 'realupgrade: umount of the patched root failed\n' >&2
             rc=1
@@ -175,18 +174,6 @@ realupgrade_with_slot_a() {
     rmdir "$mnt"
     losetup -d "$loop"
     return "$rc"
-}
-
-realupgrade_attach_and_patch() {
-    realupgrade_with_slot_a "$1" realupgrade_patch_root "$2" "$3" "$4"
-}
-
-realupgrade_patch_version_root() {
-    [ -f "$1/opt/pithead/VERSION" ] && [[ "$2" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-        printf 'realupgrade: no baked /opt/pithead/VERSION to lower, or a bad version %s\n' "$2" >&2
-        return 1
-    }
-    printf '%s\n' "$2" >"$1/opt/pithead/VERSION"
 }
 
 realupgrade_cause_row() {

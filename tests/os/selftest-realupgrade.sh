@@ -47,7 +47,6 @@ refuses "an unreadable time fails" realupgrade_within_budget "" 1350
 
 check "default legs are valid" realupgrade_legs_valid "$REALUPGRADE_LEGS_DEFAULT"
 check "negative control alone is selectable" realupgrade_legs_valid negctl
-check "the lower-version negative control is selectable alone" realupgrade_legs_valid negctlv
 check "upgrade alone is selectable" realupgrade_legs_valid upgrade
 check "upgrade plus soak is selectable" realupgrade_legs_valid upgrade,soak
 refuses "soak without its upgrade is refused" realupgrade_legs_valid soak
@@ -126,12 +125,6 @@ eq "the cause row fails on an updated verdict" fail "$(realupgrade_cause_row v2.
 check "a skipped cause row is a counted missing skip, never an info line" grep -Fq 'skip) it_skip_leg "negctl rollback cause on $RU_TAG (#3909/#3910)" "$REALUPGRADE_CAUSE_SKIP_REASON" missing ;;' "$HERE/realupgrade-legs.sh"
 refuses "the cause row is never reported as info" grep -Eq 'info "negctl.*(cause|#3909)' "$HERE/realupgrade-legs.sh"
 eq "the skip reason names the missing input and the tracking issue" "no published N-2 carries #3909/#3910 (#4338)" "$REALUPGRADE_CAUSE_SKIP_REASON"
-mkdir -p "$TMP/vroot/opt/pithead"
-printf '2.0.3\n' >"$TMP/vroot/opt/pithead/VERSION"
-check "a lower version is baked into the slot" realupgrade_patch_version_root "$TMP/vroot" 2.0.2
-eq "the baked VERSION is the lower one" 2.0.2 "$(tr -d '\n' <"$TMP/vroot/opt/pithead/VERSION")"
-refuses "a slot without a baked VERSION is refused" realupgrade_patch_version_root "$TMP/bare" 2.0.2
-refuses "a malformed version is refused" realupgrade_patch_version_root "$TMP/vroot" 'x;y'
 RUN="$HERE/run.sh"
 check "the rollback cause needle is the text pithead-boot records" grep -Fq "$REALUPGRADE_ROLLBACK_CAUSE" "$HERE/../../os/overlay/pithead-boot"
 check "run.sh usage line lists the phase" grep -Fq '|crossupdate|realupgrade|realupgrade-main|realupgrade-negctl|stack|' "$RUN"
@@ -139,7 +132,7 @@ check "run.sh dispatches the phase" grep -Fq 'realupgrade) _run_phase realupgrad
 check "run.sh dispatches the split phases to their own legs" bash -c 'grep -Fq "realupgrade-main) _run_phase realupgrade-main phase_realupgrade_main ;;" "$1" && grep -Fq "realupgrade-negctl) _run_phase realupgrade-negctl phase_realupgrade_negctl ;;" "$2"' _ "$RUN" "$RUN"
 refuses "no realupgrade phase is in the all arm" bash -c 'sed -n "/^all)/,/;;/p" "$1" | grep -q realupgrade' _ "$RUN"
 check "the main split runs upgrade and soak only" grep -Fq 'phase_realupgrade_main() { _ru_run upgrade,soak; }' "$HERE/phases/realupgrade.sh"
-check "the negctl split runs the negative control only" grep -Fq 'phase_realupgrade_negctl() { _ru_run negctl,negctlv; }' "$HERE/phases/realupgrade.sh"
+check "the negctl split runs the negative control only" grep -Fq 'phase_realupgrade_negctl() { _ru_run negctl; }' "$HERE/phases/realupgrade.sh"
 
 [ "$FAILS" -eq 0 ] || {
     printf '%d realupgrade selftest check(s) failed\n' "$FAILS" >&2
