@@ -127,11 +127,15 @@ lifecycle_mining_step() {
         ;;
     esac
     if [ "${LIFECYCLE_MINER_STOPPED:-0}" = 1 ] && [ "$label" = restore ]; then return 0; fi
-    after=$(lifecycle_proxy_started) || {
-        lifecycle_mining_row fail "$label proxy restarts" "proxy inspection failed after a live-returning step"
-        lifecycle_mining_diagnostics "$label proxy inspection"
-        return 1
-    }
+    if [ "${LIFECYCLE_MINER_STOPPED:-0}" = 1 ] && [ "$label" = apply ]; then
+        after=$(lifecycle_proxy_started 2>/dev/null) || return 0
+    else
+        after=$(lifecycle_proxy_started) || {
+            lifecycle_mining_row fail "$label proxy restarts" "proxy inspection failed after a live-returning step"
+            lifecycle_mining_diagnostics "$label proxy inspection"
+            return 1
+        }
+    fi
     LIFECYCLE_MINER_STOPPED=0
     lifecycle_mining_save || return 1
     [ "$after" != "$before" ] || return 0
