@@ -503,12 +503,19 @@ whole sequence from the browser — see
 [Dashboard › Upgrading from the dashboard](dashboard.md#upgrading-from-the-dashboard). The steps
 below are what that button performs, and the only path for source checkouts.
 
-**Release bundle (the default):** from the install directory, re-download the latest bundle over it,
-then upgrade. `upgrade` **pulls** the new published images:
+**Release bundle (the default):** from the install directory, download the latest bundle and its
+signature, check them against the `cosign.pub` already in the install directory, unpack over it,
+then upgrade. A bundle that does not verify is never unpacked. `upgrade` **pulls** the new
+published images:
 
 ```bash
-curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz --strip-components=1
-./pithead upgrade
+d=$(mktemp -d)
+base=https://github.com/p2pool-starter-stack/pithead/releases/latest/download
+curl -fsSL --proto =https --proto-redir =https -o "$d/pithead.tar.gz" "$base/pithead.tar.gz"
+curl -fsSL --proto =https --proto-redir =https -o "$d/pithead.tar.gz.sig" "$base/pithead.tar.gz.sig"
+cosign verify-blob --key cosign.pub --signature "$d/pithead.tar.gz.sig" --insecure-ignore-tlog=true "$d/pithead.tar.gz" &&
+    tar xzf "$d/pithead.tar.gz" --strip-components=1 &&
+    ./pithead upgrade
 ```
 
 **Source checkout:** pull the latest code, then upgrade. `upgrade` **rebuilds** the first-party
@@ -562,12 +569,18 @@ Run `./pithead version` to see what is currently installed before and after an u
 
 A cloned repo builds `:dev` images locally and shows a `dev · branch @ commit` version badge. To run
 the published images instead (clean version badge, working update-checker, no local build), convert the
-install in place. `config.json`, `.env`, the Tor onion keys, and data directories are preserved:
+install in place. `config.json`, `.env`, the Tor onion keys, and data directories are preserved. The
+bundle is checked against the checkout's own `cosign.pub` (needs cosign v2.6.3): stop if
+`cosign verify-blob` reports a failure, before anything is unpacked:
 
 ```bash
 ./pithead backup -y          # safety snapshot: config.json, .env, onion keys, dashboard db (chains excluded)
-# overlay the published release files — leaves config.json, .env, .git, and your data dirs untouched:
-curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz --strip-components=1
+d=$(mktemp -d)
+base=https://github.com/p2pool-starter-stack/pithead/releases/latest/download
+curl -fsSL --proto =https --proto-redir =https -o "$d/pithead.tar.gz" "$base/pithead.tar.gz"
+curl -fsSL --proto =https --proto-redir =https -o "$d/pithead.tar.gz.sig" "$base/pithead.tar.gz.sig"
+cosign verify-blob --key cosign.pub --signature "$d/pithead.tar.gz.sig" --insecure-ignore-tlog=true "$d/pithead.tar.gz"
+tar xzf "$d/pithead.tar.gz" --strip-components=1   # overlay the release files; config.json, .env, .git and data dirs stay
 rm -f build/*/Dockerfile dashboard/Dockerfile   # remove the image Dockerfiles → pithead switches from build to pull
 ./pithead upgrade            # re-render config, pull :vX.Y.Z, recreate
 ```

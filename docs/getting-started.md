@@ -10,9 +10,7 @@ dashboard, no Linux to set up.
 > **TL;DR**
 >
 > ```bash
-> curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
-> cd pithead
-> ./pithead setup
+> curl -fsSL https://raw.githubusercontent.com/p2pool-starter-stack/pithead/main/install.sh | bash
 > ```
 >
 > Have a Monero payout address ready; Tari merge-mining is an optional beta, off unless you say yes, and has its own payout address.
@@ -54,19 +52,31 @@ On an unsupported OS, or if dependency detection misfires on an unusual setup, r
 
 ## 2. Get the code
 
-Download the latest release. This pulls the published, tested images (no local build), so the
-dashboard shows the real version and the update-checker works:
+Install the latest release with the installer. It checks the bundle against the release's sha256
+and signature (with a pinned cosign it downloads when none is installed), unpacks it into
+`./pithead-<version>`, and starts the setup wizard there. Releases pull the published, tested
+images (no local build), so the dashboard shows the real version and the update-checker works:
 
 ```bash
-curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
-cd pithead
+curl -fsSL https://raw.githubusercontent.com/p2pool-starter-stack/pithead/main/install.sh | bash
 ```
 
-Leave `config.json` absent to use the setup wizard. Have a Monero payout address ready, and a
-Tari payout address if you enable merge-mining (Tari wallets are sometimes labeled Minotari).
-For a manual configuration, copy `config.minimal.json` or `config.reference.json` to `config.json`
-and edit it before setup; these files inherit the reference defaults rather than the wizard's
-new-install choices.
+Have a Monero payout address ready, and a Tari payout address if you enable merge-mining (Tari
+wallets are sometimes labeled Minotari).
+
+For a manual configuration, check the bundle and unpack it yourself, then copy
+`config.minimal.json` or `config.reference.json` to `config.json` and edit it before setup; these
+files inherit the reference defaults rather than the wizard's new-install choices. This needs
+cosign v2.6.3 on the host, and nothing is unpacked unless the signature checks out:
+
+```bash
+base=https://github.com/p2pool-starter-stack/pithead/releases/latest/download
+curl -fsSLO --proto =https --proto-redir =https "$base/pithead.tar.gz"
+curl -fsSLO --proto =https --proto-redir =https "$base/pithead.tar.gz.sig"
+curl -fsSL --proto =https --proto-redir =https -o cosign.pub https://raw.githubusercontent.com/p2pool-starter-stack/pithead/main/cosign.pub
+cosign verify-blob --key cosign.pub --signature pithead.tar.gz.sig --insecure-ignore-tlog=true pithead.tar.gz &&
+    tar xzf pithead.tar.gz && cd pithead
+```
 
 ### Alternative: build from source
 
@@ -92,6 +102,8 @@ numbered sources, so `make` builds the executable before the first `./pithead` c
 ```bash
 ./pithead setup
 ```
+
+The installer starts this for you. Run it yourself after a manual download, or to re-run setup later.
 
 Setup walks through five stages. It's interactive on the first run and safe to re-run later.
 
