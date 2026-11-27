@@ -17,6 +17,11 @@ fi
 TLS_MOUNT="${PROXY_TLS_MOUNT:-/tls}"
 if [ "${PROXY_STRATUM_TLS:-false}" = "true" ] && [ -f "$TLS_MOUNT/cert.pem" ] && [ -f "$TLS_MOUNT/key.pem" ]; then
     set -- "$@" "--tls-cert=$TLS_MOUNT/cert.pem" "--tls-cert-key=$TLS_MOUNT/key.pem"
+elif [ "${PROXY_STRATUM_TLS:-false}" = "true" ]; then
+    missing=""
+    [ -f "$TLS_MOUNT/cert.pem" ] || missing="$TLS_MOUNT/cert.pem"
+    [ -f "$TLS_MOUNT/key.pem" ] || missing="${missing:+$missing and }$TLS_MOUNT/key.pem"
+    echo "xmrig-proxy: stratum TLS is on but the key pair is incomplete (missing: $missing); starting without TLS (cleartext only). Run './pithead apply' to create the key pair again, then pin the new fingerprint on each rig." >&2 || true
 fi
 
 exec xmrig-proxy "$@"
