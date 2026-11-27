@@ -79,6 +79,17 @@ the upstream release notes and security advisories for the new version, and reco
 the bump PR. The weekly report states the gap, so the duty travels with the stale row that triggers
 the bump.
 
+Dependabot has no apt or apk ecosystem either, so the installed OS packages have their own watch. Each release attaches
+`os-packages-<tag>.txt`, one `<image> <OSV ecosystem> <source package> <version>` line per package
+in every published image (#4254). Every Monday `.github/workflows/os-package-watch.yml` runs
+`scripts/watch/os-package-watch.py` on the latest release's list: it asks [OSV](https://osv.dev)
+which recorded packages have an advisory that the distribution has fixed in a newer package, and
+opens or edits one issue labelled `dependencies` that lists them. Base images are pinned by digest,
+so shipping a fix means moving the listed image to a current base digest and package index and
+rebuilding it; the issue closes on the first weekly run whose release has no such package. A failed
+lookup is listed as unchecked, leaves the issue as it was and fails the run. A release cut
+before #4254 has no list, and the watch reports that instead.
+
 The release ingredients manifest records the appliance's baked RigForge commit from
 `RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
@@ -283,7 +294,9 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    not start a stack, which would collide with the release host's live deployment. A fuller
    functional run is opt-in: set `RELEASE_SMOKE_CMD` to a command to run during this stage, or
    point the [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) harness at the
-   staged tag. Abort on failure.
+   staged tag. Abort on failure. Then `scripts/release/capture-packages.sh` reads `/etc/os-release`
+   and the dpkg or apk database out of each captured digest and records its installed source
+   packages; a failed capture stops the release, and publish refuses to run without the list.
 6. Promote by digest: re-tag the exact digests just smoke-tested to `:vX.Y.Z` and `:latest`,
    then push. Promotion is by digest (no rebuild), so the released bundle is bit-for-bit what was
    validated. Same version on every image.
@@ -848,6 +861,9 @@ What exists today:
   pipeline cosign-signs the promoted digests + the bundle, `pithead upgrade` and the dashboard
   upgrade verify against the committed `cosign.pub` and fail closed. See
   [Signed releases](#signed-releases).
+- ✅ Installed OS packages recorded per release (#4254): the GitHub Release carries
+  `os-packages-<tag>.txt`, the ingredients manifest counts each image's packages, and a weekly watch
+  checks the list against OSV and keeps one `dependencies` issue of the packages with fixed advisories.
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image

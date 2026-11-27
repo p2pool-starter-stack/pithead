@@ -2,7 +2,6 @@
 # Dependency-free test suite for pithead (no bats required).
 # Mixes unit tests (sourcing pithead and calling its functions) with black-box CLI tests
 # (running a sandboxed copy of pithead with docker/sudo stubbed out).
-#
 # Usage: tests/stack/run.sh [BLOCK]
 #   (none)  every block in turn, each in its own bash process, then the summed verdict
 #   BLOCK   one block, 1..STACK_BLOCKS: what each leg of the Shell workflow's matrix runs
@@ -292,6 +291,7 @@ if in_block 5; then
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
     # shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-tari.sh" && domain_ran test-wizard-tari.sh "$_d0" "$?" || domain_ran test-wizard-tari.sh "$_d0" "$?"
+    _d0=$((PASS + FAIL)) && source "$HERE/test-dashboard-host-prompt.sh" && domain_ran test-dashboard-host-prompt.sh "$_d0" "$?" || domain_ran test-dashboard-host-prompt.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-provisioning.sh disable=SC2015
     _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-provisioning.sh" && domain_ran test-control-provisioning.sh "$_d0" "$?" || domain_ran test-control-provisioning.sh "$_d0" "$?"
     # shellcheck source=tests/stack/control/test-control-runner-drain.sh disable=SC2015

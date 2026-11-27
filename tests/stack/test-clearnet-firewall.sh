@@ -211,7 +211,6 @@ CN_SYMLINK_PROBE=$(
     printf 'root-readable-secret\n' >"$td/secret"
     ln -s "$td/secret" "$td/monero.synced"
     clearnet_state_dir() { printf '%s' "$td"; }
-    egress_sync_started_after_marker() { echo restarted; }
     egress_sync_runtime_on_tor() { return 0; }
     egress_sync_record_tor monero >/dev/null 2>&1 && echo accepted || echo rejected
     rm -rf "$td"
