@@ -86,6 +86,9 @@ run_check() { # <compose-file>
         printf 'NO PINS FOUND: %s yielded no tag@sha256 image references. The extraction no longer matches the file, so nothing was checked — this is a broken gate, not a clean one.\n' "$compose_file"
         return 1
     fi
+    if [ "${RESOLVE_PINS_MISMATCH_OK:-0}" = 1 ]; then
+        mismatched=0
+    fi
     if [ "$((failed + mismatched))" -gt 0 ]; then
         printf '\n%s\n' "$failed lookup(s) unchecked, $mismatched pin(s) mismatched. Fix before cutting."
         return 1
@@ -133,10 +136,16 @@ EOF
     st "a moved tag with the old digest left behind is caught" "$rc" "1"
     st "the mismatch is named, not swallowed" "$(printf '%s' "$out" | grep -c MISMATCH)" "1"
 
+    if out="$(RESOLVE_PINS_MISMATCH_OK=1 run_check "$fx2" 2>&1)"; then rc=0; else rc=$?; fi
+    st "report mode prints a mismatch and still exits 0" "$rc" "0"
+    st "report mode still names the mismatch" "$(printf '%s' "$out" | grep -c MISMATCH)" "1"
+
     docker() { return 1; }
     if out="$(run_check "$fx2" 2>&1)"; then rc=0; else rc=$?; fi
     st "a resolver that cannot run fails, never current" "$rc" "1"
     st "a failed lookup is never printed as current" "$(printf '%s' "$out" | grep -c '^current:')" "0"
+    if out="$(RESOLVE_PINS_MISMATCH_OK=1 run_check "$fx2" 2>&1)"; then rc=0; else rc=$?; fi
+    st "report mode never forgives a failed lookup" "$rc" "1"
 
     docker() { printf 'not-a-digest\n'; }
     if out="$(run_check "$fx2" 2>&1)"; then rc=0; else rc=$?; fi

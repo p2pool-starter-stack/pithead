@@ -49,7 +49,7 @@ IGNOREFILE="$ROOT/.config/trivyignore"
 
 # The CVE-gate workflows whose install-trivy steps must stay pinned to TRIVY_VERSION (#1290).
 # Overridable so --self-test can point this at fixture files instead.
-GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml $ROOT/.github/workflows/supply-chain.yml"
+GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml $ROOT/.github/workflows/supply-chain.yml $ROOT/.github/workflows/security-sweep.yml"
 
 # The parity contract's pinned scanning engine (#1290); do not use `:latest`.
 TRIVY_VERSION="0.73.0"
@@ -307,7 +307,7 @@ if [ "${1:-}" = "--self-test" ]; then
         fi
     }
 
-    st "shipped sweep keeps released-main root fallback" "$(grep -Fc 'git show origin/main:.config/trivyignore >main.trivyignore 2>/dev/null || git show origin/main:.trivyignore >main.trivyignore' "$ROOT/.github/workflows/ci.yml")" "1"
+    st "shipped sweep keeps released-main root fallback" "$(grep -Fc 'git show origin/main:.config/trivyignore >main.trivyignore 2>/dev/null || git show origin/main:.trivyignore >main.trivyignore' "$ROOT/.github/workflows/security-sweep.yml")" "1"
     st "weekly workflow keeps tracker #1382 exact title" "$(grep -Fc 'TITLE: "Obsolete .trivyignore mutes (weekly report)"' "$ROOT/.github/workflows/trivyignore-watch.yml")" "1"
     st "rootfs tag is fetched and inputs staged before docker build" \
         "$(awk '/^[[:space:]]*git -C "\$ROOT" fetch -q --depth=1 origin/{fetch=NR} /^[[:space:]]*bash "\$ROOT\/os\/build-image.sh" --stage-only/{stage=NR} /^[[:space:]]*docker build -f "\$ROOT\/os\/rootfs\/Dockerfile"/{build=NR} END {print (fetch > 0 && stage > fetch && build > stage)}' "$ROOT/scripts/watch/trivyignore-watch.sh")" "1"

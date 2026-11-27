@@ -21,7 +21,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml"
+GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml $ROOT/.github/workflows/security-sweep.yml"
 INSTALL_ACTION="$ROOT/.github/actions/install-trivy/action.yml"
 RETRY_ACTION="$ROOT/.github/actions/retry-trivy-scan/action.yml"
 

@@ -78,8 +78,8 @@ that has stopped looks different from one with nothing to say.
 CI runs a weekly CVE sweep on Mondays at 05:00 UTC from `develop`. It answers two questions with
 two jobs: `build-images` rebuilds the stack images from the branch and scans them, while
 `os-rootfs.yml` does the same for the appliance rootfs, so a fixable CVE is caught before a cut;
-`sweep-shipped` scans all six images already published, each tag resolved to a digest, so a CVE in
-the bytes users are running is caught after one.
+`sweep-shipped` in `security-sweep.yml` scans all six images already published, each tag resolved to a
+digest, every day, so a CVE in the bytes users are running is caught after one.
 
 A digest-pinned base can lag a published security fix until upstream rebuilds the image. The Alpine
 image builds name the base's openssl and musl packages in their apk upgrade list, and the Debian
@@ -103,13 +103,26 @@ A scheduled run has no pull request, so nothing draws a person to its result. On
 rebuild scan went red and nobody was told for seven days
 ([#1377](https://github.com/p2pool-starter-stack/pithead/issues/1377)).
 [`scheduled-run-watch.yml`](../../.github/workflows/scheduled-run-watch.yml) is that run's reader.
-It runs every Monday at 08:00 UTC, enumerates every workflow with a declared `schedule:`, and reads
+It runs every day at 08:00 UTC, enumerates every workflow with a declared `schedule:`, and reads
 each workflow's server-filtered scheduled-run history. The report marks a run LATE after 12 hours
 and MISSED after one full declared period. LATE is informational and MISSED is a reported finding;
 neither makes the watcher fail. A schedule with no history gets one full period from the commit that
 declared its cron before it can be MISSED. Every MISSED row names its nominal slot and links the runs
 that bound the gap; when the gap starts at the declaration boundary, it names that boundary and the
-first observed run. The issue also keeps the sweep result and its six most recent runs.
+first observed run. The issue also keeps the sweep result and its six most recent runs. A second issue, "Security: a
+scheduled scan or watch run is red", carries the `security` label and lists every other workflow whose
+newest completed scheduled run is not green, so a broken scan cannot hide CVEs; it closes itself when
+every run is green again.
+
+## The daily security sweep
+
+[`security-sweep.yml`](../../.github/workflows/security-sweep.yml) runs every day at 05:30 UTC and
+never fails a pull request. For `develop`, `main` and every `develop-v*` branch it checks the ref out
+and runs osv-scanner over its lockfiles (fixable HIGH and CRITICAL advisories only) and online zizmor
+over its workflows, then keeps one `security`-labelled issue per ref up to date: edited in place, one
+comment when the finding set changes, closed when the ref is clean. A run goes red only when a scan
+could not run. Vulnerabilities in the monerod, p2pool and xmrig-proxy binaries are not detected by any
+scanner here; `pin-watch.yml` only reports newer upstream releases.
 Six rows rather than one because a single red says little and a streak says the gate has stopped
 being an instrument — the weekly link check was red for nine consecutive Mondays before anyone noticed
 ([#1419](https://github.com/p2pool-starter-stack/pithead/issues/1419)).
