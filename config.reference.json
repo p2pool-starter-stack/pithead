@@ -14,11 +14,16 @@
   "local_miner": { "enabled": false },
   "xvb": {
     "enabled": true,
-    "url": "na.xmrvsbeast.com:4247",
+    "url": "eu.xmrvsbeast.com:4247",
     "donor_id": "auto",
     "donation_level": "auto",
     "tor": true,
     "standby": { "source": "" }
+  },
+  "donation": {
+    "enabled": false,
+    "percent": 0,
+    "tor": true
   },
   "monero": {
     "wallet_address": "your_monero_wallet_address",

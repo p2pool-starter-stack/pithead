@@ -150,6 +150,20 @@ if sys.argv[1:] == ["--self-test"]:
     after = snapshot(db, 100)
     if not set(before.splitlines()) <= set(after.splitlines()):
         raise RuntimeError("preserved rows disappeared from the snapshot")
+    db.execute("INSERT INTO shares VALUES (50, 'old')")
+    before_old = snapshot(db, 100)
+    before_margin = snapshot(db, 80)
+    db.execute("INSERT INTO shares VALUES (95, 'late')")
+    if set(before_old.splitlines()) <= set(snapshot(db, 100).splitlines()):
+        raise RuntimeError(
+            "a share landing late inside the capture epoch was not seen as a digest change"
+        )
+    if not set(before_margin.splitlines()) <= set(snapshot(db, 80).splitlines()):
+        raise RuntimeError("a share newer than the capture margin was reported as a lost row")
+    db.execute("DELETE FROM shares WHERE value='old'")
+    if set(before_margin.splitlines()) <= set(snapshot(db, 80).splitlines()):
+        raise RuntimeError("a lost old share row was accepted")
+    db.execute("DELETE FROM shares")
     db.execute("UPDATE kv_store SET value='corrupt' WHERE key='payout_wallet'")
     if set(before.splitlines()) <= set(snapshot(db, 100).splitlines()):
         raise RuntimeError("stable kv_store corruption was accepted")

@@ -315,7 +315,13 @@ PITHEAD_APPLIANCE=1 PITHEAD_HUGEPAGES_MARKER="$LMR/marker" run_sourced "$LMR" re
 assert_eq "released reservation -> zero headroom (RigForge sizes for the miner alone)" \
     "$(jq -r '.hugepages_reserve_extra_mb' "$LMR/rigforge/config.json")" "0"
 printf 'STRATUM_PORT=13333\nPROXY_STRATUM_PASSWORD=s3cret\n' >"$LMR/.env"
-PITHEAD_APPLIANCE=1 run_sourced "$LMR" render_local_miner_config >/dev/null 2>&1
+chmod 644 "$LMR/rigforge/config.json"
+LMR_OLD=$(cat "$LMR/rigforge/config.json")
+exec {LMR_FD}<"$LMR/rigforge/config.json"
+(umask 022 && PITHEAD_APPLIANCE=1 run_sourced "$LMR" render_local_miner_config >/dev/null 2>&1)
+assert_eq "a local miner config that was mode 644 ends owner-only" "$(stat -c '%a' "$LMR/rigforge/config.json")" "600"
+assert_eq "the mode-644 file itself never receives the new config" "$(cat <&"$LMR_FD")" "$LMR_OLD"
+exec {LMR_FD}<&-
 assert_eq "custom stratum port lands in the pool url" \
     "$(jq -r '.pools[0].url' "$LMR/rigforge/config.json")" "127.0.0.1:13333"
 assert_eq "stratum password lands as the pool pass" \

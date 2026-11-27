@@ -15,8 +15,7 @@ tor_egress_sync_ips() {
     [ "${EGRESS_SYNC_CLOSE_CHAIN:-}" != tari ] && [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] &&
         [ ! -e "$marker" ] && [ ! -L "$marker" ] && printf '%s\n' "$prefix.27"
     [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] && printf '%s\n' "$prefix.28"
-    [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
-        [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ] && printf '%s\n' "$prefix.29"
+    if tor_egress_choice_active xvb || tor_egress_choice_active donation; then printf '%s\n' "$prefix.29"; fi
     return 0
 }
 
@@ -26,7 +25,9 @@ tor_egress_choice_active() {
     p2pool) [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] ;;
     xvb) [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
         [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ] ;;
-    *) tor_egress_choice_active p2pool || tor_egress_choice_active xvb ;;
+    donation) [ "$(env_get DONATION_ENABLED 2>/dev/null)" = true ] &&
+        [ "$(env_get DONATION_TOR_ENABLED 2>/dev/null)" = false ] ;;
+    *) tor_egress_choice_active p2pool || tor_egress_choice_active xvb || tor_egress_choice_active donation ;;
     esac
 }
 
@@ -36,7 +37,7 @@ prune_tor_egress_choice_markers() {
     local marker choice
     marker=$(tor_egress_choice_marker)
     [ ! -L "$marker" ] || return 1
-    for choice in p2pool xvb; do
+    for choice in p2pool xvb donation; do
         tor_egress_choice_active "$choice" && continue
         if [ -e "$marker/$choice" ] || [ -L "$marker/$choice" ]; then
             rmdir "$marker/$choice" || return 1
@@ -49,7 +50,7 @@ arm_tor_egress_choice_marker() {
     local marker choice
     marker=$(tor_egress_choice_marker)
     [ ! -L "$marker" ] && { mkdir "$marker" 2>/dev/null || [ -d "$marker" ]; } || return 1
-    for choice in p2pool xvb; do
+    for choice in p2pool xvb donation; do
         tor_egress_choice_active "$choice" || continue
         [ ! -L "$marker/$choice" ] &&
             { mkdir "$marker/$choice" 2>/dev/null || [ -d "$marker/$choice" ]; } || return 1

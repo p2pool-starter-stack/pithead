@@ -17,6 +17,23 @@ _tor_probe_mining_sample() {
     printf '%s\n' "$accepted"
 }
 
+_tor_probe_witness_latch() {
+    TOR_PROBE_LAST=$(_tor_probe_mining_sample)
+}
+
+_tor_probe_record_witness() {
+    local state
+    mkdir -p "$OUT_DIR"
+    {
+        printf '%s\n' "$1"
+        if state=$(api_state 2>/dev/null); then
+            printf '%s' "$state" | jq -c '{proxy_workers, proxy_summary, stratum, workers: [.workers[]? | {name, status, uptime, accepted}]}' 2>/dev/null || echo 'api_state unparsable'
+        else
+            echo 'api_state unavailable'
+        fi
+    } >>"$OUT_DIR/tor-probe-witness.log"
+}
+
 fault_tor_probe_egress() {
     local prefix epoch tor_before monero_before last now logs i rc=0 rule last_progress=0 mining_failure=
     if [ "${SKIP_MINING_ASSERTS:-0}" = "1" ]; then
@@ -28,12 +45,17 @@ fault_tor_probe_egress() {
         return
     fi
     fault_rules_clear_all
+    tor_newnym_budget_reset
     if ! wait_for 180 10 "proxy workers online for Tor fault" _tor_probe_mining_sample >/dev/null; then
+        _tor_probe_record_witness "before-fault"
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
     fi
-    # A saturated history legitimately qualifies for recovery once the heal has recorded a sustained
-    # outage (#3052), so name that precondition instead of misreading the accepted check as a defect.
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node &&
+        ! wait_for 600 15 "Monero outgoing peers before Tor fault" _pred_monero_has_peers; then
+        it_fail "Tor probe fault starts with Tor carrying peer traffic" "monerod has no outgoing peers before the fault; Tor is not building circuits"
+        return
+    fi
     if rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_state_saturated \"\$dir/state\""' >/dev/null 2>&1; then
         it_fail "Tor circuit history is ordinary before the fault" "saturated signature already present (CircuitBuildAbandonedCount and TotalBuildTimes at 1000, no CircuitBuildTimeBin); earlier faults in this run left it so"
     else
@@ -53,10 +75,12 @@ fault_tor_probe_egress() {
     tor_before=$(rx "docker inspect tor --format '{{.State.StartedAt}}'")
     monero_before=$(rx "docker inspect monerod --format '{{.State.StartedAt}}'")
     epoch=$(rx 'date +%s')
-    last=$(_tor_probe_mining_sample) || {
+    if ! wait_for 60 10 "proxy workers online after apply" _tor_probe_witness_latch >/dev/null; then
+        _tor_probe_record_witness "after-apply"
         it_fail "Tor probe fault has a live mining witness" "proxy shares or workers unavailable"
         return
-    }
+    fi
+    last=$TOR_PROBE_LAST
     rule="-d ${prefix}.25 -p tcp --dport 9050 -m comment --comment pithead-e2e-fault-tor-probe -j DROP"
     fault_rules_trap_arm
     if ! tor_probe_ns_ipt "-I OUTPUT $rule" >/dev/null ||
@@ -83,7 +107,8 @@ fault_tor_probe_egress() {
         fi
     done
     if [ -n "$mining_failure" ]; then
-        it_fail "proxy mining continued during Tor clearnet fault" "$mining_failure"
+        logs=$(rx "docker logs --since $epoch dashboard 2>&1 | grep -m1 -E 'Mining work is not valid|xmrig-proxy was already stopped'")
+        it_fail "proxy mining continued during Tor clearnet fault" "$mining_failure${logs:+; dashboard: $logs}"
     else
         it_pass "proxy mining continued during Tor clearnet fault"
     fi
@@ -105,7 +130,8 @@ fault_tor_probe_egress() {
         _tor_probe_recovered "$epoch"; then
         it_pass "Tor egress recovery names the preceding step"
     else
-        it_fail "Tor egress recovery names the preceding step" "no corroborated recovery log"
+        logs=$(rx "docker logs --since $epoch dashboard 2>&1 | grep -E 'NEWNYM|STILL broken|Tor clearnet egress' | tail -n 3")
+        it_fail "Tor egress recovery names the preceding step" "no corroborated recovery log${logs:+; last dashboard Tor lines: $logs}"
     fi
     push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 ||
         it_fail "Tor probe fault restored baseline config" "baseline apply failed"
@@ -113,6 +139,57 @@ fault_tor_probe_egress() {
 
 _tor_probe_recovered() { # <epoch>
     rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following NEWNYM:'
+}
+
+tor_newnym_budget_reset() {
+    rx "sudo -n rm -f $(quote_arg "$(env_on_box CONTROL_DIR)")/tor-newnym-budget" >/dev/null 2>&1 || true
+}
+
+fault_tor_newnym_exhausted() {
+    local epoch control reply identities after snippet recovered=0
+    fault_rules_clear_all
+    if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq '.tor.auto_heal=true')" ||
+        ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
+        it_fail "Tor NEWNYM-exhausted fault enabled opt-in recovery" "apply or health failed"
+        return
+    fi
+    control=$(env_on_box CONTROL_DIR)
+    identities=$(rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_identities \"\$dir\""' 2>/dev/null)
+    if [ -n "$identities" ]; then
+        it_pass "Tor onion identities are readable before the NEWNYM-exhausted fault"
+    else
+        it_fail "Tor onion identities are readable before the NEWNYM-exhausted fault" "no identity hashes"
+        return
+    fi
+    snippet="printf '%s 2\\n' \"\$(date +%s)\" >$(quote_arg "$control")/tor-newnym-budget"
+    rx "sudo -n sh -c $(quote_arg "$snippet")" >/dev/null 2>&1
+    assert_rc "host NEWNYM budget is spent before the fault" "$?" "0"
+    epoch=$(rx 'date +%s')
+    snippet='cookie=$(xxd -p -c 256 /var/lib/tor/control_auth_cookie)
+printf "AUTHENTICATE %s\r\nSETCONF DisableNetwork=1\r\nQUIT\r\n" "$cookie" | nc -w 3 127.0.0.1 9051'
+    reply=$(rx "docker exec tor sh -c $(quote_arg "$snippet")" 2>/dev/null | tr -d '\r') || reply=
+    assert_eq "Tor network is black-holed through the control port" "$(printf '%s\n' "$reply" | grep -c '^250 OK$')" "2"
+    it_step "fault: Tor network disabled with the host NEWNYM budget spent; waiting for the unattended ladder…"
+    if wait_for 6000 60 "Tor egress recovered through the host state reset" _tor_newnym_exhausted_recovered "$epoch"; then
+        recovered=1
+        it_pass "Tor egress recovered unattended after a rejected NEWNYM"
+    else
+        it_fail "Tor egress recovered unattended after a rejected NEWNYM" "no recovery log within the bounded window"
+        rx "docker compose restart tor" >/dev/null 2>&1 || true
+    fi
+    if [ "$recovered" = 1 ]; then
+        assert_contains "rejected NEWNYM advanced the ladder" "$(rx "docker logs --since $epoch dashboard 2>&1")" "was not confirmed by the host control runner (rejected"
+        assert_contains "state reset ran without a saturated history" "$(rx "docker logs --since $epoch dashboard 2>&1")" "reset circuit state and guards through tor-recover"
+        after=$(rx 'bash -c "source ./pithead; dir=\$(tor_recovery_mount) && tor_recovery_identities \"\$dir\""' 2>/dev/null)
+        assert_eq "Tor onion identities survived the reset" "$after" "$identities"
+    fi
+    tor_newnym_budget_reset
+    push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 ||
+        it_fail "Tor NEWNYM-exhausted fault restored baseline config" "baseline apply failed"
+}
+
+_tor_newnym_exhausted_recovered() {
+    rx "docker logs --since $1 dashboard 2>&1" | grep -q 'Tor clearnet egress recovered following'
 }
 
 tor_recovery_lock_snapshot_snippet() {
@@ -147,7 +224,8 @@ tor_recovery_probe_now_s() {
 }
 
 tor_recovery_healthy_probe() {
-    local output='' rc=0 started elapsed attempt=0 snapshot remaining
+    local output='' rc=0 started elapsed attempt=0 snapshot remaining status
+    local budget="${TOR_RECOVERY_PROBE_BUDGET:-150}"
     local probe_command="${IT_PITHEAD:-./pithead}" IT_PITHEAD
     : >"$OUT_DIR/tor-recovery-admission.log"
     rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1
@@ -159,7 +237,7 @@ tor_recovery_healthy_probe() {
     started=$(tor_recovery_probe_now_s)
     while :; do
         elapsed=$(($(tor_recovery_probe_now_s) - started))
-        remaining=$((60 - elapsed))
+        remaining=$((budget - elapsed))
         [ "$remaining" -gt 0 ] || break
         IT_PITHEAD="timeout --kill-after=2 $remaining $probe_command"
         rc=0
@@ -173,10 +251,15 @@ tor_recovery_healthy_probe() {
             head -n 17 >>"$OUT_DIR/tor-recovery-admission.log"
         [ "$rc" -eq 75 ] || break
         elapsed=$(($(tor_recovery_probe_now_s) - started))
-        [ "$elapsed" -lt 60 ] || break
+        [ "$elapsed" -lt "$budget" ] || break
         sleep 2
     done
     printf 'admission: elapsed_s=%s rc=%s\n' "$(($(tor_recovery_probe_now_s) - started))" "$rc" >>"$OUT_DIR/tor-recovery-admission.log"
+    if [ "$rc" -ne 1 ] || [[ "$output" != *'Tor recovery refused: circuit history is not saturated.'* ]]; then
+        status=$(rx 'timeout --kill-after=1 10 docker exec tor /usr/local/bin/tor-control-signal.sh STATUS' 2>&1 | head -c 512 | tr -c '[:print:]\n' '?')
+        [ -n "$status" ] || status=unavailable
+        printf 'tor-status: %s\n' "${status//$'\n'/ }" >>"$OUT_DIR/tor-recovery-admission.log"
+    fi
     assert_rc "healthy Tor recovery check exits 1 (#3262)" "$rc" "1"
     assert_contains "healthy Tor recovery check names its guard (#3262)" "$output" "Tor recovery refused: circuit history is not saturated."
     if [[ "$output" = *"aborted unexpectedly"* || "$output" = *"bash -x"* ]]; then

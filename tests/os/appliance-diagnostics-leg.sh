@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Runtime diagnostics assertions for the appliance control runner (#1961/#1966).
 
 diagnostics_doctor_verdict() { # <result-json> <readable|healthy|nonzero>
@@ -21,16 +23,18 @@ diagnostics_doctor_verdict() { # <result-json> <readable|healthy|nonzero>
 # is a string, and indexing a string is a jq error: a payload that let that fall through to its
 # parse-failure arm would report the defect it exists to name as "unparseable".
 diagnostics_doctor_payload() { # <result-json>
-    printf '%s' "${1:-null}" | jq -r '
-        def clip: tostring | .[0:160];
-        if type != "object" then "result is \(type), not an object: \(clip)"
-        elif (.doctor | type) != "object" then "doctor=\(.doctor | type) \(.doctor | clip)"
-        else "exit=\(.doctor.exit // "missing")(\(.doctor.exit | type)) checks=" +
-            (if (.doctor.checks | type) == "array"
-            then "\(.doctor.checks | length) rows first-row=\((.doctor.checks[0] // "none") | clip)"
-            else "\(.doctor.checks | type) \(.doctor.checks | clip) first-row=none" end)
-        end' 2>/dev/null ||
-        printf 'doctor document unparseable: %.200s' "$1"
+    {
+        printf '%s' "${1:-null}" | jq -r '
+            def clip: tostring;
+            if type != "object" then "result is \(type), not an object: \(clip)"
+            elif (.doctor | type) != "object" then "doctor=\(.doctor | type) \(.doctor | clip)"
+            else "exit=\(.doctor.exit // "missing")(\(.doctor.exit | type)) checks=" +
+                (if (.doctor.checks | type) == "array"
+                then "\(.doctor.checks | length) rows first-row=\((.doctor.checks[0] // "none") | clip)"
+                else "\(.doctor.checks | type) \(.doctor.checks | clip) first-row=none" end)
+            end' 2>/dev/null ||
+            printf 'doctor document unparseable: %s' "$1"
+    } | os_redact_addr | head -c 600
 }
 
 diagnostics_log_verdict() { # <result-json> <raw-wallet>

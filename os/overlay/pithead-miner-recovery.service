@@ -1,7 +1,8 @@
 [Unit]
 Description=Recover a disconnected appliance local miner
 ConditionPathIsMountPoint=/data
-ConditionPathExists=/data/pithead/config.json
+ConditionPathExists=|/data/pithead/config.json
+ConditionPathExists=|/data/pithead/rig.json
 After=podman.socket
 
 [Service]

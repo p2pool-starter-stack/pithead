@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # ip/VM/DISK/SERIAL/token/jar/card_tok are run.sh's / phase_rig's
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # shellcheck source=tests/os/rig-adopt-leg.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/rig-adopt-leg.sh"
 #
@@ -132,7 +134,7 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     if _ssh "jq -e '.pools[0].url == \"$coord_ip:3333\"' /data/rigforge/config.json >/dev/null"; then
         ok "share leg: the rig's miner config points at the coordinator, not its own sshd"
     else
-        bad "share leg: the rig's miner config does not name the coordinator ($(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
+        bad "share leg: the rig's miner config does not name the coordinator ($(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | os_redact_addr | cut -c1-100))"
     fi
     if rig_share_hashrate_wait; then
         ok "share leg: the rig's sister feed reports a live hashrate (M11 floor, #3996)"
@@ -164,10 +166,19 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
         bad "share leg: the coordinator's own built-in miner never showed an accepted share within ${RIG_SHARE_WINDOW_SEC}s"
     fi
 
+    if ! _gt0 "$rig_accepted" || ! _gt0 "$other_accepted"; then
+        ip="$coord_ip" rig_failure_evidence
+    fi
+
     local miner_rc=0
     local dash_user="$coord_user" dash_pass="$coord_pass"
     ip="$coord_ip"
     miner_backup_trial kvm-rig-share || miner_rc=$?
+    case "$miner_rc" in
+    0) rig_failure_evidence_probe ;;
+    77) ;;
+    *) rig_failure_evidence ;;
+    esac
     ip="$rig_ip"
     if [ "$miner_rc" != 0 ] && [ "$miner_rc" != 77 ]; then
         bad "connected rig cannot mask local miner backup recovery (#3375)"
