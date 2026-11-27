@@ -294,3 +294,11 @@ check_appliance_cert() {
         dr_fail_surface "The dashboard certificate has EXPIRED ($enddate) — browsers will refuse it. Run './pithead apply' to re-mint." "The dashboard certificate has EXPIRED ($enddate) — browsers will refuse it. This machine only re-mints it when the set of names it answers to changes, so it will not renew on its own; replacing it needs console access."
     fi
 }
+
+check_reset_requested() {
+    is_appliance || return 0
+    [ -e "$PRESEED_DIR/pithead-reset" ] || return 0
+    echo ""
+    echo "Factory reset:"
+    dr_warn "A factory reset is still requested: the next boot erases /data. If the machine already rebooted for it, the reset did not complete; the pithead-data-reset service journal may say why."
+}
