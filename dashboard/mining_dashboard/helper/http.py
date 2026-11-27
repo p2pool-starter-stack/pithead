@@ -143,8 +143,26 @@ def bounded_request(
         return BoundedResponse(resp.status_code, b"".join(chunks), resp.encoding)
 
 
+PROXY_PURPOSE_UPDATES = "updates"
+PROXY_PURPOSE_HEALTH = "health"
+PROXY_PURPOSE_DASHBOARD = "dashboard"
+PROXY_PURPOSE_NOTIFY = "notify"
+
+
 def proxy_map(proxy):
     return {"http": proxy, "https": proxy}
+
+
+def purpose_proxy(base, label):
+    if "://" not in base:
+        raise ValueError(f"proxy URL has no scheme: {base!r}")
+    if not label:
+        raise ValueError("proxy purpose label must not be empty")
+    return base.replace("://", f"://{label}:isolate@", 1)
+
+
+def purpose_proxy_map(base, label):
+    return proxy_map(purpose_proxy(base, label) if base else base)
 
 
 def bounded_get(url, max_bytes=MAX_RESPONSE_BYTES, timeout=20, **kwargs):

@@ -11,7 +11,8 @@ from mining_dashboard.config.config import (
     TOR_SOCKS_PROXY,
 )
 from mining_dashboard.helper.http import (
-    proxy_map,
+    PROXY_PURPOSE_NOTIFY,
+    purpose_proxy_map,
     raise_for_success,
     refuse_direct_public,
     request_failure_class,
@@ -45,7 +46,7 @@ class _HttpSink:
     def __init__(self, url, tor_proxy=TOR_SOCKS_PROXY, timeout=10, direct=False):
         self.url = (url or "").strip()
         self.timeout = timeout
-        self._proxies = None if direct else proxy_map(tor_proxy)
+        self._proxies = None if direct else purpose_proxy_map(tor_proxy, PROXY_PURPOSE_NOTIFY)
         self.enabled = bool(self.url)
         self.last_failure = ""
 

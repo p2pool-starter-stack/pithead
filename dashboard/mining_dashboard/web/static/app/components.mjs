@@ -136,7 +136,7 @@ class DashboardView extends Component {
         <div class="grid grid-columns">
             <${GlobalStats} state=${state} />
             <${NetworkCard} state=${state} />
-            <${ComponentHealth} topology=${state.topology} egress=${state.egress} ping_failures=${state.ping_failures} />
+            <${ComponentHealth} topology=${state.topology} egress=${state.egress} ping_failures=${state.ping_failures} egress_audit=${state.egress_audit} />
         </div>`
         }
     </div>`;

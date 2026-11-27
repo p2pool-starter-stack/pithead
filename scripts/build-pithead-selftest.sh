@@ -367,6 +367,27 @@ self_test() {
     _case "release preflight refuses dirty trees before building release bytes" 0 "$rc"
     rm -rf "$clone"
 
+    local cs
+    cs=$(mktemp -d)
+    mkdir -p "$cs/lib/pithead" "$cs/build/cosign"
+    printf '#!/usr/bin/env bash\nreadonly COSIGN_IMAGE="@COSIGN_IMAGE@"\n' >"$cs/lib/pithead/00-prelude.sh"
+    rc=0
+    PITHEAD_BUILD_ROOT="$cs" bash "$BUILD" >/dev/null 2>&1 || rc=$?
+    _case "a build REFUSES a cosign placeholder with no build/cosign/Dockerfile" 1 "$rc"
+    printf 'FROM ghcr.io/sigstore/cosign/cosign:v9.9.9@sha256:%064d\n' 7 >"$cs/build/cosign/Dockerfile"
+    PITHEAD_BUILD_ROOT="$cs" bash "$BUILD" >/dev/null 2>&1 || true
+    if grep -qxF "readonly COSIGN_IMAGE=\"ghcr.io/sigstore/cosign/cosign@sha256:$(printf '%064d' 7)\"" "$cs/pithead"; then
+        echo "  ok   — the cosign reference is substituted from build/cosign/Dockerfile, tag dropped"
+    else
+        echo "  FAIL — the cosign reference was not substituted from build/cosign/Dockerfile"
+        fail=1
+    fi
+    printf 'FROM ghcr.io/sigstore/cosign/cosign:v9.9.9\n' >"$cs/build/cosign/Dockerfile"
+    rc=0
+    PITHEAD_BUILD_ROOT="$cs" bash "$BUILD" >/dev/null 2>&1 || rc=$?
+    _case "a build REFUSES a cosign Dockerfile without a digest" 1 "$rc"
+    rm -rf "$cs"
+
     if [ "$fail" -ne 0 ]; then
         echo "build-pithead --self-test: FAILED"
         return 1

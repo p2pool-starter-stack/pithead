@@ -55,7 +55,7 @@ main() {
 
     # Make the stack version + build provenance available to any `docker compose [up] build` this
     # invocation runs, so the dashboard image bakes in its version badge (Issue #58).
-    export_build_provenance
+    export_build_provenance "$cmd"
 
     case "$cmd" in
     "")
