@@ -119,14 +119,14 @@ assert_rc "validated administrative restore succeeds" "$?" 0
 assert_eq "restore refreshes the dashboard copy from the archive without apply" "$(jq -r '.dashboard.energy.cost_per_kwh' "$BK/data/control/masked/config.json")" 0.123
 assert_eq "restore masks secrets in the dashboard copy" "$(jq -c '.monero.node_password' "$BK/data/control/masked/config.json")" '{"__secret__":true}'
 assert_eq "restored dashboard copy is world-readable" "$(file_mode "$BK/data/control/masked/config.json")" 644
-assert_contains "fixed-file install retains the invoking uid" "$(cat "$CR/sudo.log")" "install -o $(id -u) -g $(id -g) -m 600"
+assert_contains "fixed-file install retains the invoking uid" "$(cat "$CR/sudo.log")" "chown -- $(id -u):$(id -g) "
 assert_eq "restored config is owner-only" "$(file_mode "$BK/config.json")" 600
 assert_eq "restored env is owner-only" "$(file_mode "$BK/.env")" 600
 # #2329: the Caddyfile must come back world-readable like the normal apply path renders it — a
 # cap_drop:ALL caddy container has no CAP_DAC_OVERRIDE and cannot read a 600 file it doesn't own,
 # so a 600 restore leaves caddy permission-denied on its bind-mounted Caddyfile for the rest of
 # the appliance's life.
-assert_contains "Caddyfile install does not carry the secret-file mode" "$(cat "$CR/sudo.log")" "install -o $(id -u) -g $(id -g) -m 644"
+assert_contains "Caddyfile install does not carry the secret-file mode" "$(cat "$CR/sudo.log")" "chmod 644 $BK/Caddyfile.pithead."
 assert_eq "restored Caddyfile is world-readable" "$(file_mode "$BK/Caddyfile")" 644
 assert_eq "restored config belongs to the invoking operator" "$(file_uid "$BK/config.json")" "$(id -u)"
 assert_eq "restored onion key is owner-only" "$(file_mode "$BK/data/tor/hs_ed25519_secret_key")" 600

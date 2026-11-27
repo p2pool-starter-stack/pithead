@@ -79,8 +79,8 @@ write_handoff_card() {
 }
 wizard_install_begin() { :; }
 mount() { :; }
-install() {
-    [ "$*" = "-m 600 $PWD/rig.json /boot/efi/pithead-rig.json" ] || return 1
+install_file() {
+    [ "$*" = "$PWD/rig.json /boot/efi/pithead-rig.json" ] || return 1
     command install -m 600 "$PWD/rig.json" "$PRESEED_DIR/staged.json"
 }
 rm() {

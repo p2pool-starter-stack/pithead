@@ -349,7 +349,7 @@ wkf_out=$(
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    install() { return 1; }
+    install_file() { return 1; }
     wizard_keep_failed_config 2>&1
 )
 wkf_rc=$?

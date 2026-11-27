@@ -3,6 +3,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+source "$here/../../lib/pithead/19-small-utilities.sh"
 # shellcheck source=lib/pithead/12-firstboot-wizard.sh
 source "$here/../../lib/pithead/12-firstboot-wizard.sh"
 # shellcheck source=lib/pithead/12a-setup-again.sh

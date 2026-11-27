@@ -94,7 +94,7 @@ assert_eq "a failed commit on a fresh machine leaves no staged or set-aside copy
 
 # A failure while staging, before any swap, touches nothing live.
 rc_plant_live
-rc_apply 'install() { [[ "${*: -1}" = "$PWD"/Caddyfile.restore.* ]] && return 1; command install "$@"; }'
+rc_apply 'cp() { [[ "${*: -1}" = "$PWD"/Caddyfile.restore.* ]] && return 1; command cp "$@"; }'
 assert_rc "a commit that fails while staging the Caddyfile reports failure" "$?" 1
 assert_contains "the failed staging says nothing was changed" "$(cat "$RC/error")" 'nothing on this machine was changed'
 assert_eq "a failed staging leaves every live item as it was" "$(rc_live_state)" "$rc_before"
