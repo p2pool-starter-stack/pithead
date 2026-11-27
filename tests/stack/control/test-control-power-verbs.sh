@@ -72,12 +72,11 @@ rm -f "$PWRES/$PW1.json"
 
 sed -i.bak 's/^DASHBOARD_CONTROL_ENABLED=true$/DASHBOARD_CONTROL_ENABLED=false/' "$PWC/.env"
 pw_intent "$PW1" sys-reboot
-pwrun >/dev/null 2>&1 && pw_off_rc=0 || pw_off_rc=$?
-assert_rc "a drain with the control channel off fails" "$pw_off_rc" "1"
-assert_eq "the power verb was never reached with the channel off" "$([ -f "$PWRES/$PW1.json" ] && echo answered || echo untouched)" "untouched"
+pwrun >/dev/null 2>&1
+assert_eq "sys-reboot with the control channel off is rejected" "$(jq -r '.status' "$PWRES/$PW1.json" 2>/dev/null)" "rejected"
 assert_eq "nothing was ordered with the control channel off" "$(wc -l <"$PWC/sysctl.log" | tr -d ' ')" "0"
 mv "$PWC/.env.bak" "$PWC/.env"
-rm -f "$PWREQS/$PW1.json"
+rm -f "$PWREQS/$PW1.json" "$PWRES/$PW1.json"
 
 pw_intent "$PW1" sys-reboot
 pwrun PITHEAD_FAIL_POWER_STAMP=1 >/dev/null

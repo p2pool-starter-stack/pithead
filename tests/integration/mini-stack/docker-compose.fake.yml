@@ -179,8 +179,6 @@ services:
     networks: [itestnet]
     volumes: ["dashboard_stats:/stats"]
     command: ["sh", "-c", "while true; do sleep 30; done"]
-    volumes:
-      - dashboard_stats:/stats
 
   xmrig-proxy:
     image: busybox:1.36

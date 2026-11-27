@@ -120,8 +120,8 @@ assert_eq "doctor JSON contains checks" "$(jq -r 'has("checks")' "$V/doctor.json
 assert_not_contains "doctor JSON never prints dashboard password" "$(cat "$V/doctor.json" "$V/doctor.err")" "$dashboard_pass"
 (cd "$V" && PATH="$V/bin:$PATH" ./pithead support-bundle >"$V/bundle.log" 2>&1)
 assert_rc "support bundle succeeds" "$?" 0
-bundle_tar=$(find "$V" -maxdepth 1 -name 'support-bundle-*.tar.gz' | head -1)
-assert_contains "support bundle exists" "$bundle_tar" "support-bundle-"
+bundle_zip=$(find "$V" -maxdepth 1 -name 'support-bundle-*.zip' | head -1)
+assert_contains "support bundle exists" "$bundle_zip" "support-bundle-"
 assert_eq "a generated login renders the settings editor on (#3579)" \
     "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_CONTROL_ENABLED)" true
 assert_eq "the render added no control key to config.json (#3579)" \
@@ -136,7 +136,7 @@ control_out="$(cd "$V" && PATH="$V/ccu/bin:$PATH" PITHEAD_UNIT_DIR="$V/ccu/units
 assert_contains "doctor reports the control channel enabled for a generated login (#3579)" "$control_out" "Control runner units target this install."
 assert_not_contains "doctor does not report the channel disabled (#3579)" "$control_out" "Disabled for this install"
 mkdir -p "$V/extracted"
-tar -xzf "$bundle_tar" -C "$V/extracted"
+python3 -I -m zipfile -e "$bundle_zip" "$V/extracted" >/dev/null
 assert_rc "support bundle extracts" "$?" 0
 if grep -r -F -q -- "$dashboard_pass" "$V/extracted"; then
     bad "support bundle never contains dashboard password" "generated password found"

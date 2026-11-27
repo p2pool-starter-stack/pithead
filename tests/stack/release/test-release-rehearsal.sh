@@ -306,15 +306,21 @@ pin_publish() {
         source "$REL" 2>/dev/null
         set +eu
         # shellcheck disable=SC2034,SC2218
-        DRY_RUN=0 ASSUME_YES=1 ALLOW_DIRTY=0 TAG=v9.9.9 COSIGN_ENABLED=0
+        DRY_RUN=0 ASSUME_YES=1 ALLOW_DIRTY=0 TAG=v9.9.9 COSIGN_ENABLED=1 DRAFT=1
         # shellcheck disable=SC2034,SC2218
         GIT_COMMIT="$(command git rev-parse HEAD~1)"
         [ "$mode" = stub ] && require_gated_commit() { :; }
         write_manifest() { :; }
         make_bundle() { :; }
         append_bundle_sha256() { :; }
+        appliance_assets() { :; }
+        sign_bundle() { printf 'sig' >"$2"; }
+        cosign() { :; }
+        changelog_notes() { :; }
+        create_complete_draft() { :; }
         WORKDIR="$SANDBOX/pin-work"
         mkdir -p "$WORKDIR"
+        printf 'rigforge\n' >"$WORKDIR/appliance-rigforge.md"
         git() {
             case "$1" in
             tag) printf 'TAG %s\n' "$*" ;;

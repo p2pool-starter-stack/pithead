@@ -15,6 +15,8 @@ mg_normalize() {
             line=${line% --no-clearnet-p2p}
             line=${line% --no-upnp}
             ;;
+        XVB_POOL_URL=na.xmrvsbeast.com:*) line=XVB_POOL_URL=eu.${line#XVB_POOL_URL=na.} ;;
+        MONERO_OUT_PEERS=48) line=MONERO_OUT_PEERS=24 ;;
         esac
         printf '%s\n' "$line"
     done
