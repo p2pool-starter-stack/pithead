@@ -92,11 +92,38 @@ miner_watch_restore() {
     return "$failed"
 }
 miner_fastpath_receipt() {
-    [ -e /usr/local/sbin/pithead-miner-recovery ] || return 0
-    grep -Fq 'proxy was recreated' /usr/local/sbin/pithead-miner-recovery || return 0
-    timeout 10 journalctl --no-pager --since "@$(cat "$T3375/backup-at")" \
-        -u pithead-miner-recovery.service | grep -Fq 'proxy was recreated' || return 1
-    printf '%s\n' 'pithead-t3375: fastpath_restart=observed'
+    local recovery_bin cursor='' matches='' window='' found=0
+    recovery_bin=${MINER_RECOVERY_BIN:-/usr/local/sbin/pithead-miner-recovery}
+    [ -e "$recovery_bin" ] || return 0
+    grep -Fq 'proxy was recreated' "$recovery_bin" || return 0
+    if [ -s "$T3375/fastpath-cursor" ]; then
+        window=journal-cursor
+        cursor=$(cat "$T3375/fastpath-cursor")
+        if timeout 10 journalctl --no-pager --after-cursor="$cursor" -u pithead-miner-recovery.service |
+            grep -Fq 'proxy was recreated'; then
+            found=1
+        fi
+    else
+        window=backup-at-marker
+        if timeout 10 journalctl --no-pager --since "@$(cat "$T3375/backup-at")" -u pithead-miner-recovery.service |
+            grep -Fq 'proxy was recreated'; then
+            found=1
+        fi
+    fi
+    if [ "$found" = 1 ]; then
+        printf '%s\n' 'pithead-t3375: fastpath_restart=observed'
+        return 0
+    fi
+    printf 'pithead-t3375: fastpath_restart=missing window=%s backup_at=%s\n' \
+        "$window" "$(cat "$T3375/backup-at" 2>/dev/null || printf 'unknown')"
+    matches=$(timeout 10 journalctl --no-pager --since '-30 minutes' -u pithead-miner-recovery.service |
+        grep -E 'restarting xmrig' | tail -n 5) || matches=''
+    if [ -n "$matches" ]; then
+        printf 'pithead-t3375: recovery unit restart lines in the last 30 minutes:\n%s\n' "$matches"
+    else
+        printf '%s\n' 'pithead-t3375: no recovery restart line in the last 30 minutes'
+    fi
+    return 1
 }
 miner_watch() {
     local end=$((SECONDS + 1200))
@@ -340,6 +367,7 @@ miner_guest_dispatch() {
     identity) podman inspect --format '{{.Id}} {{.State.StartedAt}}' xmrig-proxy ;;
     backup-ready)
         podman inspect --format '{{.Id}}' xmrig-proxy >"$T3375/proxy-id"
+        timeout 10 journalctl --no-pager -n 0 --show-cursor | sed -n 's/^-- cursor: //p' >"$T3375/fastpath-cursor" || true
         ;;
     backup-applied)
         touch "$T3375/backup-applied"
