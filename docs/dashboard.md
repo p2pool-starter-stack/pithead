@@ -141,7 +141,8 @@ shares-and-version column; no list control appears outside it.
 
 Clicking or activating a rig is the only way into its inspector. Outside Advanced the inspector
 shows health only: status, the last time the rig recorded hashrate in the past 24 hours, its
-RigForge version against the latest release, the 24-hour average hashrate, and accepted and
+RigForge version against the latest release, the 24-hour average hashrate labelled either
+rig-reported or proxy, approximate depending on what the underlying samples were, and accepted and
 rejected shares. Each snapshot poll refreshes the inspector, except while an edit or apply is in
 progress; a failed refresh says the details may be out of date. The host addresses rigs by name,
 so when several rigs report one name the inspector says so, shows status and shares for the row
@@ -709,8 +710,14 @@ closes unconditionally (#1877).
 
 A **hashrate** chart sits above the editor: the rig's own `worker_history` samples (~5-minute
 cadence) as a line, with **24 Hr / 1 Wk / All** range buttons — no "1 Mo" button, since at the
-30-day retention it would show the same thing "All" already does. There's no averaging-window
-toggle here (unlike the [main chart](#hashrate-chart)) — the per-rig table stores only one window.
+30-day retention it would show the same thing "All" already does. Each sample records the value
+the dashboard could actually stand behind at capture time — the rig's own reported hashrate while
+its feed is fresh, the proxy's 10-minute window otherwise — and remembers which it was; a
+connection too young to fill that window plots its own ~1-minute reading instead of a bogus
+zero, and an interval with no sample at all (two capture cycles or more, a rig that
+was offline or a dashboard that was down) leaves a gap in the line rather than a false 0. There's
+no averaging-window toggle here (unlike the [main chart](#hashrate-chart)) — each sample stores
+one recorded value. Samples stored before this existed keep plotting their recorded `h15`.
 Every config apply and rig upgrade in the change history below also marks the chart, so a step in
 the line has a visible cause; hover a marker for what changed. A rejected or rolled-back attempt
 still gets a marker, muted rather than dropped, since it tried but nothing on the rig actually
@@ -956,8 +963,9 @@ change made directly on the rig (via `rigforge.sh`) shows here on the next poll 
 for the next dashboard apply.
 
 Below the change history sits a **Hashrate by config version** table: each *applied* change — a
-config apply or a rig upgrade — with the rig's measured hashrate (the same per-rig `worker_history`
-samples, taken roughly every 5 minutes) averaged over the window that change was active — from the
+config apply or a rig upgrade — with the rig's measured hashrate (the recorded values of the same
+per-rig `worker_history` samples, taken roughly every 5 minutes) averaged over the window that
+change was active — from the
 moment it was applied to the moment the next one was, or now for the current one. A rig upgrade
 starts its own window the same way a config change does, so a version comparison here reflects a
 build change, not whatever config value happened to be active when the build changed. A row with no

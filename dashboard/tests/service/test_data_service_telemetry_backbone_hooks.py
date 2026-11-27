@@ -20,10 +20,17 @@ class TestTelemetryBackboneHooks:
         return svc, sm, proxy
 
     async def _run_one(
-        self, svc, *, p2pool_stats=None, network_stats=None, disk_usage=None, monero_sync=None
+        self,
+        svc,
+        *,
+        p2pool_stats=None,
+        network_stats=None,
+        disk_usage=None,
+        monero_sync=None,
+        worker_stats=None,
     ):
         worker_client = MagicMock()
-        worker_client.get_stats = AsyncMock(return_value={})
+        worker_client.get_stats = AsyncMock(return_value=worker_stats or {})
         tari_client = MagicMock()
         tari_client.get_sync_status = AsyncMock(
             return_value={"is_syncing": False, "reachable": True}
@@ -142,6 +149,66 @@ class TestTelemetryBackboneHooks:
         assert len(rows) == 1
         assert rows[0]["name"] == "rig1"
         assert rows[0]["h15"] == 2000.0
+        assert rows[0]["rate"] == 2000.0
+        assert rows[0]["source"] == "proxy"
+
+    async def test_worker_history_hook_names_a_fresh_rig_report(self):
+        svc, sm, proxy = self._svc()
+        worker_row = ["rig1", "10.0.0.1", 1, 0, 0, 0, 0, 0, 1.0, 2.0, 0, 0, 0]
+        proxy.get_workers.return_value = {"workers": [worker_row]}
+        proxy.get_summary.return_value = {"results": {}}
+        await self._run_one(
+            svc,
+            worker_stats={
+                "api_ok": True,
+                "kind": "mine",
+                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "hashrate": {"total": [3100.0, 2900.0, 3000.0]},
+                "rigforge": {"version": "1.0.0"},
+            },
+        )
+        rows = sm.get_worker_history()
+        assert len(rows) == 1
+        assert rows[0]["h15"] == 3000.0
+        assert rows[0]["rate"] == 3000.0
+        assert rows[0]["source"] == "rig"
+
+    async def test_worker_history_hook_marks_a_stale_feed_proxy(self):
+        svc, sm, proxy = self._svc()
+        worker_row = ["rig1", "10.0.0.1", 1, 0, 0, 0, 0, 0, 1.0, 2.0, 0, 0, 0]
+        proxy.get_workers.return_value = {"workers": [worker_row]}
+        proxy.get_summary.return_value = {"results": {}}
+        await self._run_one(
+            svc,
+            worker_stats={
+                "api_ok": True,
+                "kind": "mine",
+                "hashrate": {"total": [3100.0, 2900.0, 3000.0]},
+                "rigforge": {"version": "1.0.0"},
+            },
+        )
+        rows = sm.get_worker_history()
+        assert rows[0]["source"] == "proxy"
+
+    async def test_worker_history_hook_reads_h60_while_h15_is_still_zero(self):
+        svc, sm, proxy = self._svc()
+        worker_row = ["rig1", "10.0.0.1", 1, 0, 0, 0, 0, 0, 0.0, 0.0, 0, 0, 0]
+        proxy.get_workers.return_value = {"workers": [worker_row]}
+        proxy.get_summary.return_value = {"results": {}}
+        await self._run_one(
+            svc,
+            worker_stats={
+                "api_ok": True,
+                "kind": "mine",
+                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "hashrate": {"total": [500.0, 400.0, 0.0]},
+                "rigforge": {"version": "1.0.0"},
+            },
+        )
+        rows = sm.get_worker_history()
+        assert rows[0]["h15"] == 0.0
+        assert rows[0]["rate"] == 400.0
+        assert rows[0]["source"] == "rig"
 
     async def test_worker_history_hook_skips_offline_workers(self):
         svc, sm, proxy = self._svc()
@@ -170,6 +237,58 @@ class TestTelemetryBackboneHooks:
             svc, p2pool_stats={"pool": {"last_share_time": 0, "difficulty": 0, "blocks_found": 6}}
         )
         assert sm.get_table_health()["blocks"]["healthy"] is False
+
+
+class TestWorkerHistoryRow:
+    def _row(self, worker, now_ts=1000.0):
+        from mining_dashboard.service.data_service import _worker_history_row
+
+        return _worker_history_row(worker, now_ts)
+
+    def test_fresh_rig_report_is_sourced_to_the_rig(self):
+        row = self._row(
+            {
+                "name": "rig1",
+                "api_ok": True,
+                "rigforge": {"stale": False},
+                "h15": 1000.0,
+                "h60": 900.0,
+            }
+        )
+        assert row["rate"] == 1000.0
+        assert row["source"] == "rig"
+
+    def test_stale_rigforge_feed_is_sourced_to_the_proxy(self):
+        row = self._row(
+            {"name": "rig1", "api_ok": True, "rigforge": {"stale": True}, "h15": 1000.0}
+        )
+        assert row["source"] == "proxy"
+
+    def test_no_direct_probe_is_sourced_to_the_proxy(self):
+        assert self._row({"name": "rig1", "h15": 1000.0})["source"] == "proxy"
+        assert self._row({"name": "rig1", "api_ok": False, "h15": 1000.0})["source"] == "proxy"
+
+    def test_young_connection_records_h60_instead_of_zero(self):
+        row = self._row(
+            {"name": "rig1", "api_ok": True, "rigforge": {"stale": False}, "h15": 0, "h60": 480.0}
+        )
+        assert row["h15"] == 0
+        assert row["rate"] == 480.0
+
+    def test_zero_everywhere_records_zero(self):
+        row = self._row({"name": "rig1", "h15": 0, "h60": 0})
+        assert row["rate"] == 0
+        assert row["source"] == "proxy"
+
+    def test_row_still_carries_the_legacy_keys(self):
+        row = self._row(
+            {"name": "rig1", "h15": 10.0, "h60": 0, "accepted": 7, "rejected": 2}, now_ts=55.0
+        )
+        assert row["ts"] == 55.0
+        assert row["name"] == "rig1"
+        assert row["h15"] == 10.0
+        assert row["accepted"] == 7
+        assert row["rejected"] == 2
 
 
 async def test_host_resource_metadata_is_persisted_by_existing_poll():

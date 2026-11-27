@@ -87,6 +87,7 @@ export function rigHealth(detail) {
     lastSeen: points.some((point) => point.y > 0)
       ? Math.max(...points.filter((point) => point.y > 0).map((point) => point.x))
       : null,
+    approximate: points.length > 0 && points.some((point) => point.source !== "rig"),
   };
 }
 

@@ -142,13 +142,24 @@ const inspect = (extra = {}, worker = { name: "rig", status: "online", h60: 100,
   renderToString(html`<${Ready} name="rig" writable=${extra.writable ?? true} shared=${extra.shared ?? 1} worker=${worker} detail=${detail(extra)} />`);
 
 test("the inspector shows health outside Advanced and no chart ranges or change history", () => {
-  assert.deepEqual(rigHealth(detail()), { average: "133.33 H/s", lastSeen: 2000 });
-  assert.deepEqual(rigHealth({}), { average: null, lastSeen: null });
+  assert.deepEqual(rigHealth(detail()), { average: "133.33 H/s", lastSeen: 2000, approximate: true });
+  assert.deepEqual(rigHealth({}), { average: null, lastSeen: null, approximate: false });
+  const rigReported = {
+    hashrate: [
+      { x: 1000, y: 100, source: "rig" },
+      { x: 2000, y: 300, source: "rig" },
+      { x: 2500, y: null, source: null },
+    ],
+    markers: [],
+  };
+  assert.deepEqual(rigHealth({ hashrate_history: rigReported }), { average: "200.00 H/s", lastSeen: 2000, approximate: false });
+  assert.deepEqual(rigHealth({ hashrate_history: { hashrate: [{ x: 1000, y: 100, source: "proxy" }, { x: 2000, y: 300, source: "rig" }] } }).approximate, true);
   const out = inspect();
   const [health, advanced] = out.split('<details class="rig-advanced">');
   for (const label of ["Status", "Last seen mining", "Software", "24 h hashrate", "Accepted shares", "Rejected shares"]) assert.match(health, new RegExp(label));
   assert.match(health, /RigForge 0.9.0 · 1.0.0 available/);
-  assert.match(health, /133.33 H\/s average/);
+  assert.match(health, /133.33 H\/s average · proxy, approximate/);
+  assert.match(inspect({ hashrate_history: rigReported }), /200.00 H\/s average · rig-reported/);
   assert.doesNotMatch(health, /<button(?![^>]*>Close)/);
   assert.doesNotMatch(out, />24h<|>1w<|>All<|History|Hashrate by config/);
   assert.match(advanced, /Update this rig.*Upgrade rig….*Table.*JSON.*Apply to rig/s);

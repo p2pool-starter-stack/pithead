@@ -41,6 +41,7 @@ from mining_dashboard.client.xmrig_client import strip_credentials
 from mining_dashboard.config import config
 from mining_dashboard.helper.utils import format_hashrate, format_time_abs
 from mining_dashboard.service.control_service import WORKER_WRITABLE_KEYS
+from mining_dashboard.service.data_service import _WORKER_HISTORY_CAPTURE_SEC
 from mining_dashboard.web.views.charts import _filter_events
 from mining_dashboard.web.views.infra_views import _rigforge_display, rigforge_update_for
 from mining_dashboard.web.views.series_views import _gauge_series
@@ -155,18 +156,25 @@ def _has_unsettled_apply(history):
     return False
 
 
+_HISTORY_GAP_SEC = _WORKER_HISTORY_CAPTURE_SEC * 2
+
+
 def build_worker_hashrate_history(state_mgr, worker, range_arg, window=None):
-    """Per-worker hashrate-over-time chart (#1013): ``worker_history.h15`` for one rig, same
-    range/window/downsampling idiom as the telemetry backbone's other gauge series (``_gauge_series``
-    — reused as-is, not reimplemented). Markers (#1015) are the SAME range/window slice of this rig's
-    change history — config applies and rig upgrades (#1014) — so a step in the line has a visible
-    cause; kept as raw tokens (status/type/changes/reason), not display strings, so the client builds
-    the tooltip label the same way it already builds the history table's Outcome column."""
-    hashrate = [
-        {"x": p["x"], "y": p["h15"]}
-        for p in _gauge_series(
-            state_mgr.get_worker_history(name=worker), range_arg, window, ("h15",)
-        )
+    rows = _filter_events(state_mgr.get_worker_history(name=worker), range_arg, window)
+    sources = {}
+    values = []
+    for row in rows:
+        rate = row.get("rate")
+        values.append({"ts": row["ts"], "value": rate if rate is not None else row.get("h15") or 0})
+        sources[int(row["ts"] * 1000)] = row.get("source")
+    points = [
+        {"x": p["x"], "y": p["value"], "source": sources.get(p["x"])}
+        for p in _gauge_series(values, range_arg, window, ("value",))
+    ]
+    gap_points = [
+        {"x": int((prev["ts"] + cur["ts"]) / 2 * 1000), "y": None, "source": None}
+        for prev, cur in zip(values, values[1:], strict=False)
+        if cur["ts"] - prev["ts"] >= _HISTORY_GAP_SEC
     ]
     markers = [
         {
@@ -180,7 +188,10 @@ def build_worker_hashrate_history(state_mgr, worker, range_arg, window=None):
             state_mgr.get_worker_config_history(worker, limit=200) or [], range_arg, window
         )
     ]
-    return {"hashrate": hashrate, "markers": markers}
+    return {
+        "hashrate": sorted(points + gap_points, key=lambda point: point["x"]),
+        "markers": markers,
+    }
 
 
 def build_worker_detail(name, data, state_mgr, range_arg="all", window=None):
