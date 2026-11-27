@@ -51,9 +51,9 @@ wizard_prepare_miner_connection() ( # <candidate> <installer> [spool] -> connect
     fi
     fingerprint=$(stratum_tls_fingerprint) || return 1
     [ "$STRATUM_TLS" != true ] || [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]] || return 1
-    jq -n --arg password "$STRATUM_PASSWORD" --argjson tls "$STRATUM_TLS" \
+    JQ_SP="$STRATUM_PASSWORD" jq -n --argjson tls "$STRATUM_TLS" \
         --arg fingerprint "$fingerprint" --arg tls_dir "$final_dir" --arg target "$target" --arg wipe "$wipe" \
-        '{stratum_password:$password,stratum_tls:$tls,stratum_fingerprint:$fingerprint,tls_dir:$tls_dir,target:$target,wipe:$wipe}' >"$carry/state.json" || return 1
+        '{stratum_password:env.JQ_SP,stratum_tls:$tls,stratum_fingerprint:$fingerprint,tls_dir:$tls_dir,target:$target,wipe:$wipe}' >"$carry/state.json" || return 1
     if [ "$installer" = 0 ] && [ "$mode" = auto ]; then
         tmp=$(mktemp "${ENV_FILE}.XXXXXX") || return 1
         if [ -f "$ENV_FILE" ]; then

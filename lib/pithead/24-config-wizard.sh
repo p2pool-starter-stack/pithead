@@ -293,20 +293,17 @@ wizard_ask_stratum_password() {
     fi
 }
 
-# Assembles config.json from the globals wizard_ask_core/wizard_ask_shape set, and writes it.
 wizard_write_config() {
     local cfg
-    cfg=$(jq -n \
+    cfg=$(JQ_MP="$IN_MONERO_PASS" JQ_SP="${WIZ_STRATUM_PASSWORD:-}" jq -n \
         --arg mode "$MONERO_MODE_WIZ" \
         --arg mwallet "$IN_MONERO_WALLET" \
         --arg mu "$IN_MONERO_USER" \
-        --arg mp "$IN_MONERO_PASS" \
         --arg tmode "$TARI_MODE_WIZ" \
         --arg pool "$POOL_TIER" \
-        --arg stratum_password "${WIZ_STRATUM_PASSWORD:-}" \
-        '{monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
+        '{monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: env.JQ_MP},
           tari: {mode: $tmode},
-          p2pool: {pool: $pool, stratum_password: $stratum_password},
+          p2pool: {pool: $pool, stratum_password: env.JQ_SP},
           xvb: {enabled: false},
           dashboard: {secure: true}}')
 
@@ -334,7 +331,7 @@ wizard_write_config() {
     fi
 
     if [ -n "$IN_DASH_PASS" ]; then
-        cfg=$(jq --arg u "$IN_DASH_USER" --arg p "$IN_DASH_PASS" '.dashboard.auth = {username: $u, password: $p}' <<<"$cfg")
+        cfg=$(JQ_DP="$IN_DASH_PASS" jq --arg u "$IN_DASH_USER" '.dashboard.auth = {username: $u, password: env.JQ_DP}' <<<"$cfg")
     fi
 
     cfg=$(jq --argjson fast "$CLEARNET_SYNC" \
@@ -348,7 +345,7 @@ wizard_write_config() {
     fi
 
     if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
-        cfg=$(jq --arg t "$TELEGRAM_BOT_TOKEN" --arg c "$TELEGRAM_CHAT_ID" '.telegram = {enabled: true, bot_token: $t, chat_id: $c}' <<<"$cfg")
+        cfg=$(JQ_TT="$TELEGRAM_BOT_TOKEN" jq --arg c "$TELEGRAM_CHAT_ID" '.telegram = {enabled: true, bot_token: env.JQ_TT, chat_id: $c}' <<<"$cfg")
     fi
 
     if [ "${LOCAL_MINER:-false}" = true ]; then
