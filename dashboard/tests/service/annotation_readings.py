@@ -72,7 +72,7 @@ a plain module rather than a helper inside the test file.
 # local_miner_enabled() else 0)` — so there is no third branch for an out-of-band answer to reach,
 # and False-on-failure and False-because-no-miner move the RAM floor by exactly the same amount.
 # `-> bool | None` would invent a return the function never makes.
-# Slice 5a adds three outbound senders and `_probe_egress`. With the slice-2 Docker sender, the
+# Slice 5a added three outbound senders. With the slice-2 Docker sender, the
 # four senders share one argument: each returns True only when the send demonstrably landed, and
 # False for every other outcome — disabled, throttled, a non-2xx, or an exception. Every caller
 # acts on "the message did not go out", so there is no out-of-band case to declare. The grouping
@@ -85,7 +85,8 @@ a plain module rather than a helper inside the test file.
 #   `docker/docker_control.py:_post` (slice 2) is the same class and is folded in here: True only
 #     on HTTP 204/304, False on every other status and any exception, and its callers act on "the
 #     container action did not happen", which is what both False paths mean.
-# `_probe_egress` is not a sender: True iff a clearnet exit answered, False on `RequestException`.
+# `_probe_egress` now returns a typed (success, evidence) pair identifying both isolated circuits
+# and targets. Its former bare-bool exception no longer applies.
 #
 # Slice 5b adds two MORE, listed separately rather than folded into the group above, because they
 # fail in OPPOSITE directions — which is why `service/` was split rather than taken whole:
@@ -122,24 +123,16 @@ a plain module rather than a helper inside the test file.
 # them as a pair is the bulk-fill this list refuses: only one of the two Falses is ever an error
 # report at all, and the reason each is honest is a different reason.
 #
-#   `service/network/clearnet_sync.py:_marker_exists` — its `False` is `os.path.exists`'s own `False`, and
-#     the handler cannot give it a second meaning because the handler cannot be reached.
-#     `genericpath.exists` catches `(OSError, ValueError)` around its `os.stat` and answers False
-#     itself; the only other call in the `try` is `os.path.join`, which raises `TypeError` on bad
-#     input and never `OSError`. Measured rather than reasoned from the name: raw `os.stat` on a
-#     5000-character path raises `OSError` 36 (the positive control, so the probe can see the
-#     exception it claims is swallowed), while `os.path.exists` answers False for that path, for a
-#     path holding a NUL byte, and for a real file under a directory with mode 0.
+#   `service/network/clearnet_sync.py:_marker_exists` — its `False` is `os.path.isfile`'s own False
+#     for an absent or nonregular marker. `isfile` catches stat errors; the surrounding OSError
+#     handler remains defensive. A directory or FIFO is treated as missing, so it cannot authorize
+#     a restart. Once sync finishes, the supervisor still requests host firewall closure.
 #
 #     So there is one negative answer here, not two, and `-> bool | None` would invent a return the
-#     function never makes. The caller agrees and was read rather than assumed: `__init__` builds
-#     `self._preexisting` with `{n for n in ("monero", "tari") if self._marker_exists(n)}`, a set
-#     comprehension with exactly two outcomes — in the set or not — so no third branch exists for an
-#     out-of-band value to reach.
+#     function never makes. Its caller `maybe_transition` uses that boolean to decide whether it
+#     needs to write a marker, then waits for host proof before restarting the daemon.
 #
-#     The dead handler is DISCLOSED rather than removed: this slice is annotation-only and proven
-#     bytecode-identical, and deleting it would change what the gate sees in this module (it is the
-#     `except` door row, and losing it would take the module to a single row).
+#     The defensive handler remains visible to the annotation gate as a failure return.
 #
 #   `service/network/clearnet_sync.py:_write_marker` — the opposite case, which is why it could not share
 #     the reading above. Its `False` is EXCLUSIVELY an error report; there is no "wrote nothing,
@@ -147,12 +140,10 @@ a plain module rather than a helper inside the test file.
 #     path and the exception before returning — which is what separates it from the collapses #1487
 #     documents, where the failure's only symptom is the value itself.
 #
-#     Its sole production caller is `maybe_transition`, and the False branch is the safety-critical
-#     one: `if not self._write_marker(name): return True` — report the node as still exposed, do NOT
-#     restart, retry next cycle. That ordering is the class's stated fail-safe, because a restart
-#     with no marker on disk brings the daemon back up on clearnet. False therefore carries exactly
-#     one instruction, "hold", and True the other, "restart". A third answer would have to be one of
-#     those two under another name.
+#     Its sole production caller is `maybe_transition`. A failed write is logged and the caller
+#     still asks the host to close that chain's firewall exemption. It does not restart without a
+#     valid marker and host proof: a restart with no marker would bring the daemon back up on
+#     clearnet. False means the write failed; True means the marker was written.
 #
 # What NEITHER entry claims is that the module is now fully annotated. `maybe_transition` returns
 # `False` at two sites through neither of the gate's doors, so this module joins `PINNED` still
@@ -162,7 +153,8 @@ a plain module rather than a helper inside the test file.
 # `telegram_commands.py:pause_for_host_approval` left this set in #2076, and its floor in
 # test_annotation_coverage went 13 -> 12 in the same diff. It was not re-judged: the Telegram
 # config-approval round-trip was DELETED, so the reading has no subject. No surviving entry was
-# narrowed, and no unannotated function was admitted in its place.
+# narrowed, and no unannotated function was admitted in its place. The Tor probe's typed evidence
+# pair removes one more exception in #2458; the floor moves 12 -> 11 in the same diff.
 _UNJUDGED_AND_READ = frozenset(
     {
         "client/docker/docker_control.py:_post",
@@ -173,7 +165,6 @@ _UNJUDGED_AND_READ = frozenset(
         "helper/utils.py:is_ip_address",
         "service/network/egress.py:_sinks_all_private",
         "service/xvb/steering_projection.py:won_round_live",
-        "service/health/tor_heal.py:_probe_egress",
         "service/workers/worker_config_store.py:worker_config_change_known",
         "service/network/clearnet_sync.py:_marker_exists",
         "service/network/clearnet_sync.py:_write_marker",

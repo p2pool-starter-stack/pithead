@@ -8,8 +8,10 @@ is reached. ``wizard.py`` re-imports the name, so ``wizard.build_config`` still 
 the tests and for the one call site in ``submit``.
 """
 
+import secrets
 
-def build_config(form: dict) -> dict:
+
+def build_config(form: dict, *, tari_default: str = "off") -> dict:
     """Form fields as a pithead config — the fallback for a client that never populated the
     JSON pane (no JavaScript: the harness's curl, a text browser). Mirrors the CLI wizard's
     question set; the host's parse_and_validate_config is the validator.
@@ -26,23 +28,26 @@ def build_config(form: dict) -> dict:
 
     cfg: dict = {
         "dashboard": {"host": s_("machine_name") or "pithead"},
-        "monero": {"wallet_address": s_("monero_wallet")},
-        "p2pool": {"pool": s_("pool") or "mini", "stratum_password": "auto"},
+        "monero": {"wallet_address": s_("monero_wallet"), "mode": s_("monero_mode") or "local"},
+        "xvb": {"enabled": False},
+        "p2pool": {
+            "pool": s_("pool") or "mini",
+            "stratum_password": secrets.token_hex(12)
+            if form.get("stratum_password") == "true"
+            else "",
+        },
     }
 
-    # Merge-mining Tari is opt-in, and "off" is what a new machine gets (#1855). The mode is
-    # written EXPLICITLY on every submit, which is the one place this function departs from the
-    # omit-and-inherit rule above, and it departs on purpose: a config with no tari.mode still
-    # parses as "local", so omitting the key would quietly merge-mine on a machine whose
-    # operator answered No. The default is only right for configs written before the question
-    # existed; it is wrong for every answer this form collects.
-    tari_mode = s_("tari_mode") or "off"
+    # Explicit wizard answer, independent of the reference used by older configs.
+    tari_mode = s_("tari_mode") or tari_default
     cfg["tari"] = {"mode": tari_mode}
     if tari_mode != "off":
         # A machine that does not merge-mine has nowhere to be paid, so the key is omitted
         # rather than sent empty. When it DOES merge-mine, an empty value still flows through
         # so the HOST produces the rejection, as it does for the Monero address.
         cfg["tari"]["wallet_address"] = s_("tari_wallet")
+        # An opted-in beta Tari must not hold or reject Monero mining (#3333).
+        cfg["dashboard"]["tari_required"] = False
 
     if form.get("monero_mode") == "remote":
         cfg["monero"]["mode"] = "remote"
@@ -79,15 +84,9 @@ def build_config(form: dict) -> dict:
     if form.get("local_miner"):
         cfg["local_miner"] = {"enabled": True}
 
-    # The raffle is opt-out: xvb.enabled is true in config.reference.json, so only the OFF
-    # answer is worth writing. Writing True would pin a default the operator never chose to
-    # pin, and pinning it is what makes a later change to the reference not reach this machine.
-    if s_("xvb") == "false":
-        cfg["xvb"] = {"enabled": False}
-
-    if form.get("clearnet_sync") == "true":
-        cfg["monero"]["clearnet_initial_sync"] = True
-        cfg["tari"]["clearnet_initial_sync"] = True
+    fast = form.get("clearnet_sync") == "true"
+    cfg["monero"]["clearnet_initial_sync"] = fast and cfg["monero"]["mode"] == "local"
+    cfg["tari"]["clearnet_initial_sync"] = fast and tari_mode == "local"
 
     tz = s_("timezone")
     if tz and tz != "auto":  # auto IS the documented default — writing it would only pin it

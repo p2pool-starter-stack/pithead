@@ -30,13 +30,14 @@ pings and nothing is logged.
    months of history) is plenty for one stack. (Prefer to self-host? See
    [Self-hosting](#self-hosting-your-own-instance) below.)
 2. Create a new check. Name it something like `pithead`.
-3. Set its schedule. The recommended values, which match Pithead's fixed 60-second ping interval:
-   - **Period — 1 minute.** How often Healthchecks.io *expects* a ping. The stack pings once a
-     minute, so a 1-minute period tracks it closely.
-   - **Grace — 5 minutes.** How long after a missed period before you're alerted. This slack
-     absorbs a brief blip — e.g. a quick dashboard-container restart — without a false alarm,
-     so you're only alerted after roughly **6 minutes** of true silence. Shorten it for faster
-     alerts (more false positives on blips), lengthen it to tolerate longer restarts.
+3. Set its schedule. The recommended values pair with Pithead's fixed 60-second ping and with
+   the Tor egress healer's first repair, which comes 5 minutes after egress fails:
+   - **Period — 5 minutes.** How often Healthchecks.io *expects* a ping.
+   - **Grace — 5 minutes.** How long after a missed period before you're alerted. Period plus
+     grace is about **10 minutes** of true silence, longer than the healer's time to first
+     action, so a Tor fault the stack can repair is repaired before the alert fires. Keep period
+     plus grace above 5 minutes. Shorten it for faster alerts (more false positives on Tor
+     faults and dashboard restarts), lengthen it to tolerate longer ones.
 4. Copy the check's **ping URL** — it looks like `https://hc-ping.com/<uuid>`.
 
 ### 2. Choose where alerts go
@@ -79,10 +80,17 @@ the whole host) and, once the period + grace elapses, Healthchecks.io alerts you
 
 ## How it works
 
-- The dashboard's existing data-collection loop sends the ping each cycle, so it reuses the
-  process that's already running — no extra container or daemon. If the host dies, the
-  dashboard dies with it, the pings stop, and the alert fires. If only the dashboard container
-  restarts briefly, the **grace period** absorbs the gap.
+- A task of its own in the dashboard process sends the ping every 60 seconds, started at dashboard
+  startup and independent of the data-collection loop, so a stalled collector or a long `apply`
+  lock does not delay it. Each attempt runs in a child process that is killed
+  after 30 seconds, whatever the endpoint sends, so a stalled or trickling endpoint cannot hold the
+  ping. A failed attempt is retried once, in the same cycle, on a fresh isolated Tor circuit, and
+  both attempts are recorded. If the host
+  dies, the dashboard dies with it, the pings stop, and the alert fires. If only the dashboard
+  container restarts briefly, the **grace period** absorbs the gap.
+- **What the check means: host up and Tor egress working.** The ping travels over Tor, so the
+  check goes red when the host is down, when the dashboard is not running, or when Tor egress
+  stays broken. It does not mean the host alone is down.
 - **Liveness only — is the *stack* up.** This is a pure dead-man's switch: it reports that the
   dashboard loop (and therefore the host) is alive, nothing more. It deliberately does **not** try
   to say whether a node is synced or a miner is connected. In-stack health — monerod or Tari down
@@ -93,10 +101,24 @@ the whole host) and, once the period + grace elapses, Healthchecks.io alerts you
   endpoint only ever sees a Tor exit, not your host IP — it's never a clearnet beacon. This means
   your ping URL must be reachable over Tor (hosted `hc-ping.com` is; a self-hosted instance must be
   public or an onion service — a LAN-only address won't work). See the [Privacy note](#privacy-note).
+  Because the ping needs Tor, a Tor outage stops it and trips the check: the alert is evaluated on
+  Healthchecks.io's servers, so it reaches you even though the stack's own Telegram alerts, which
+  also travel over Tor, cannot leave the box. Healthchecks.io going quiet is the backstop for that
+  outage. For the detail the silence cannot give, open the dashboard over the LAN: it shows
+  **Monero node offline** with the auto-heal state, and needs no Tor.
 - **Fails quietly, rejects loudly.** A ping that can't get out — you're offline, or Tor is
   momentarily down — is logged at debug level only; Healthchecks.io alerts on the missed ping
   regardless, which is the point. A ping the endpoint *answers* with a non-2xx status is different:
   a revoked or mistyped URL logs `Healthchecks ping rejected: HTTP <code>` once, on the transition.
+- **A failed ping leaves a record.** Every failed attempt is appended to a ring of the last 50 rows
+  in the dashboard's own store: a timestamp, a reason class — Tor proxy, name resolution,
+  connection, or the HTTP status the endpoint answered — and nothing else. The ping URL is
+  **never** stored: it is the check's credential, so what gets recorded is the exception's class
+  and the status code, never a message. The **Stack Topology & Egress** card shows the recent
+  failures under **Monitoring ping** — "No failed pings recorded." while things are calm, a
+  timestamped list afterwards — so a broken Tor path and a dead stack stop looking identical from
+  the outside. Recording can never disturb the loop that keeps the box alive: a failing write costs
+  a row, nothing more.
 
 ---
 
@@ -142,12 +164,14 @@ so the endpoint sees a **Tor exit**, not your host's IP, and the DNS lookup goes
 Two things to know:
 
 - **Tor is part of the ping path.** If the Tor container is down while the host is up, the ping
-  can't get out and the check will eventually alert — a *false* "host down". The 5-minute grace
-  absorbs brief Tor blips, and pings retry every cycle, so only a sustained Tor outage trips it.
-  That's usually what you want (Tor down *is* a problem worth knowing about). One such outage is
+  can't get out and the check will eventually alert, reading as "host down" while the host is up.
+  With `tor.auto_heal` on and `dashboard.control.enabled: true`, the first repair (a circuit
+  refresh) comes 5 minutes after egress fails, inside the recommended period plus grace, and pings retry every minute, so only a
+  sustained Tor outage trips it. That's usually what you want (Tor down *is* a problem worth knowing about, and
+  it silences the [Telegram alerts](telegram.md#privacy-and-secrets) too). One such outage is
   Tor stuck on a **failing guard** — bootstrapped, mining fine, but clearnet exits dead (#424):
-  `./pithead doctor` diagnoses it, `./pithead restart tor` fixes it, and `tor.auto_heal: true`
-  automates the fix. See
+  `./pithead doctor` diagnoses it. `tor.auto_heal: true` tries bounded circuit
+  refresh, then a host-gated state reset, before one possible Tor restart; `./pithead restart tor` is the manual restart. See
   [Operations › Troubleshooting](operations.md#troubleshooting).
 - **Your ping URL must be Tor-reachable.** Hosted `hc-ping.com` is. A self-hosted instance must be
   public or, better, an **onion service** — paste its `.onion` URL and the ping stays on Tor end to

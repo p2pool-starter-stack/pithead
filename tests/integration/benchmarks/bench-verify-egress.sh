@@ -5,7 +5,7 @@
 # (root there, so no host sudo) and reports every ESTABLISHED connection to a **public** IP — i.e. one
 # that bypasses the Tor SOCKS at <bridge>.25:9050 (a private 172.x address). Run ON the mining host.
 #
-#   tests/integration/benchmarks/bench-verify-egress.sh <tor|clearnet> \
+#   tests/integration/benchmarks/bench-verify-egress.sh <tor|clearnet|node-sync|p2pool-choice> \
 #       [--dir STACK_DIR] [--prefix 172.28.0] [--polls N] [--interval S] [--min-hits K]
 #
 # It POLLS `--polls` times (default 4) `--interval` seconds apart (default 10) and only flags a
@@ -23,6 +23,8 @@
 #   - `clearnet` → the mining-path containers (p2pool, xmrig-proxy while donating) SHOULD show direct
 #                  public connections; monerod/tari staying at 0 confirms node-sync is still Tor
 #                  (the benchmark holds those constant — see docs/benchmarks/tor-vs-clearnet.md).
+#   - `node-sync` → monerod and Tari MUST hold outbound public peers while every other app has none.
+#   - `p2pool-choice` → p2pool MUST hold outbound public peers while every other app has none.
 #
 # Ground-truth backstop (needs root, so run by hand): a WAN-interface capture should show NO mining
 # traffic to non-Tor IPs in the tor arm —
@@ -31,8 +33,8 @@
 set -uo pipefail
 
 ARM="${1:-}"
-case "$ARM" in tor | clearnet) shift ;; *)
-    echo "usage: bench-verify-egress.sh <tor|clearnet> [--dir DIR] [--prefix P] [--polls N] [--interval S] [--min-hits K]" >&2
+case "$ARM" in tor | clearnet | node-sync | p2pool-choice) shift ;; *)
+    echo "usage: bench-verify-egress.sh <tor|clearnet|node-sync|p2pool-choice> [--dir DIR] [--prefix P] [--polls N] [--interval S] [--min-hits K]" >&2
     exit 2
     ;;
 esac
@@ -183,6 +185,22 @@ for c in $APPS; do
             printf '%s\n' "$rows" | sed 's/^/        /'
             fail=1
         fi
+    elif [ "$ARM" = node-sync ] || [ "$ARM" = p2pool-choice ]; then
+        if { [ "$ARM" = node-sync ] && { [ "$c" = monerod ] || [ "$c" = tari ]; }; } ||
+            { [ "$ARM" = p2pool-choice ] && [ "$c" = p2pool ]; }; then
+            if [ "$n" -gt 0 ] && [[ "$rows" == *outbound* ]]; then
+                echo "  ✓ $c: $n persistent outbound public peer(s) by operator choice"
+            else
+                echo "  ✗ $c: no persistent outbound public peer for selected clearnet route"
+                fail=1
+            fi
+        elif [ "$n" -eq 0 ]; then
+            echo "  ✓ $c: no persistent public connections during node sync"
+        else
+            echo "  ✗ $c: $n persistent public connection(s) during node sync:"
+            printf '%s\n' "$rows" | sed 's/^/        /'
+            fail=1
+        fi
     else
         if [ "$n" -gt 0 ]; then
             echo "  ✓ $c: $n persistent public connection(s) — clearnet, as expected for this arm"
@@ -206,8 +224,8 @@ if [ "$observed_apps" -eq 0 ] || { [ "$tn" -eq 0 ] && [ "$ALLOW_TOR_DOWN" != 1 ]
     echo "[verify-egress] INCONCLUSIVE — no app was observed, Tor has no relay connection, or a required sample was unreadable." >&2
     exit 2
 fi
-if [ "$ARM" = "tor" ] && [ "$fail" -ne 0 ]; then
-    echo "[verify-egress] FAIL — persistent clearnet leak(s) above; the 'all-Tor' arm is not clean." >&2
+if [ "$ARM" != clearnet ] && [ "$fail" -ne 0 ]; then
+    echo "[verify-egress] FAIL — live egress does not match the $ARM arm." >&2
     exit 1
 fi
 echo "[verify-egress] OK"

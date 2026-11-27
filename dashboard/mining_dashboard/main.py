@@ -21,6 +21,8 @@ from mining_dashboard.web.server import create_app
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("Main")
 
+SHUTDOWN_TIMEOUT = 3.0
+
 
 def build_app() -> web.Application:
     """Wire up state, clients, services and the web application.
@@ -48,6 +50,7 @@ def build_app() -> web.Application:
         app["algo_task"] = asyncio.create_task(algo_service.run())
         app["telegram_task"] = asyncio.create_task(telegram_bot.run())
         app["xvb_standby_task"] = asyncio.create_task(xvb_standby.run())
+        app["healthchecks_task"] = asyncio.create_task(data_service.healthchecks.run())
 
     async def cleanup_background_tasks(app):
         """Stops background tasks and closes resources on shutdown."""
@@ -55,11 +58,13 @@ def build_app() -> web.Application:
         app["algo_task"].cancel()
         app["telegram_task"].cancel()
         app["xvb_standby_task"].cancel()
+        app["healthchecks_task"].cancel()
         await asyncio.gather(
             app["data_task"],
             app["algo_task"],
             app["telegram_task"],
             app["xvb_standby_task"],
+            app["healthchecks_task"],
             return_exceptions=True,
         )
         if "state_manager" in app:
@@ -77,7 +82,10 @@ def main() -> None:
     logger.info("Initializing Dashboard Web Server securely on 127.0.0.1:8000")
     # Bound to localhost (127.0.0.1) so it is inaccessible from the local network directly;
     # traffic is securely routed through the Caddy proxy.
-    web.run_app(app, host="127.0.0.1", port=8000, print=None)
+    # aiohttp waits shutdown_timeout (60s by default) for open connections to drain; the engine
+    # stops the container after its grace period and SIGKILLs it, which an apply recreating the
+    # dashboard then reports as a failed stop (#3300). Drain well inside that grace period.
+    web.run_app(app, host="127.0.0.1", port=8000, print=None, shutdown_timeout=SHUTDOWN_TIMEOUT)
 
 
 if __name__ == "__main__":

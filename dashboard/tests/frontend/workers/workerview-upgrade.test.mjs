@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RigUpgrade } from "../../../mining_dashboard/web/static/workers/workerupgrade.mjs";
+import { pollWorkerResult, RigUpgrade } from "../../../mining_dashboard/web/static/workers/workerupgrade.mjs";
 import { StatsTable } from "../../../mining_dashboard/web/static/workers/workerview.mjs";
 import { contrastRatio, DARK_BLOCK, DASHBOARD_CSS, LIGHT_BLOCK, themeToken } from "../helpers/contrast.mjs";
 import { renderToString } from "../helpers/render.mjs";
+import { installStaleProbe, reply, STALE, withFetch } from "../helpers/stalepage.mjs";
 import { DETAIL, SENTINEL, readyInstance, stubSetState } from "./workerview-helpers.mjs";
 
 // --- One-click rig upgrade (#597) -------------------------------------------------------------
@@ -64,7 +65,7 @@ test("upgrade() POSTs {worker, version} and renders the terminal result (#597)",
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts) => {
     posted = { url, body: JSON.parse(opts.body) };
-    return { status: 200, json: async () => ({ status: "noop", note: "already on v1.11.2" }) };
+    return { status: 200, ok: true, json: async () => ({ status: "noop", note: "already on v1.11.2" }) };
   };
   try {
     await inst.upgrade();
@@ -84,6 +85,119 @@ test("terminal statuses render their calm/red variants (#597)", () => {
   assert.match(renderToString(inst.render()), /Throttled by the rig — retry later/);
   inst.state.upgResult = { status: "rolled_back", reason: "miner did not return live" };
   assert.match(renderToString(inst.render()), /Rolled back/);
+});
+
+function afterUpgradeFixture(reports) {
+  const inst = readyInstance(UPG_DETAIL);
+  let i = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const rigforge = reports[Math.min(i++, reports.length - 1)];
+    return { ok: true, json: async () => ({ ...UPG_DETAIL, rigforge }) };
+  };
+  return { inst, restore: () => (globalThis.fetch = realFetch), calls: () => i };
+}
+
+test("afterUpgrade keeps re-reading the worker until the rig reports the target (#3947)", async () => {
+  const old = { version: "1.11.1", stats: [] };
+  const stale = { version: "yes", stale: true, stats: [] };
+  const fresh = { version: "1.11.2", stats: [] };
+  const fx = afterUpgradeFixture([old, stale, fresh]);
+  try {
+    await fx.inst.afterUpgrade({ status: "applied" }, 0, 5);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.inst.state.detail.rigforge.version, "1.11.2");
+  assert.equal(fx.inst.state.waitVersion, null);
+  assert.equal(fx.inst.state.phase, "ready");
+  assert.equal(fx.calls(), 3);
+});
+
+test("afterUpgrade keeps unsaved edits and says it is still waiting when the rig never reports (#3947)", async () => {
+  const fx = afterUpgradeFixture([{ version: "1.11.1", stats: [] }]);
+  fx.inst.state.editText = '{"DONATION": 9}';
+  try {
+    await fx.inst.afterUpgrade({ status: "accepted" }, 0, 3);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.inst.state.editText, '{"DONATION": 9}');
+  assert.equal(fx.inst.state.waitVersion, "v1.11.2");
+  assert.equal(fx.inst.state.waitTimedOut, true);
+  assert.match(renderToString(fx.inst.render()), /has not reported v1\.11\.2 yet/);
+  assert.equal(fx.calls(), 4);
+});
+
+test("afterUpgrade on a rejected result refreshes once and never waits (#3947)", async () => {
+  const fx = afterUpgradeFixture([{ version: "1.11.1", stats: [] }]);
+  try {
+    await fx.inst.afterUpgrade({ status: "rejected", error: "Tor exit spent the budget" }, 0, 3);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.calls(), 1);
+  assert.equal(fx.inst.state.waitVersion, null);
+  assert.equal(fx.inst.state.phase, "ready");
+});
+
+test("afterUpgrade stops re-reading once the dialog unmounts mid-wait (#3947)", async () => {
+  const fx = afterUpgradeFixture([{ version: "1.11.1", stats: [] }]);
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    const out = await inner(...args);
+    if (fx.calls() === 2) fx.inst.componentWillUnmount();
+    return out;
+  };
+  try {
+    await fx.inst.afterUpgrade({ status: "applied" }, 0, 10);
+  } finally {
+    fx.restore();
+  }
+  assert.equal(fx.calls(), 2);
+  assert.equal(fx.inst.state.waitTimedOut, false);
+});
+
+function findElement(node, type) {
+  if (!node || typeof node !== "object") return null;
+  if (node.type === type) return node;
+  const kids = [].concat(node.props?.children ?? []);
+  for (const k of kids) {
+    const hit = findElement(k, type);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+test("WorkerInspect wires RigUpgrade's onDone to afterUpgrade with the outcome (#3947)", () => {
+  const inst = readyInstance(UPG_DETAIL);
+  const seen = [];
+  inst.afterUpgrade = (out) => seen.push(out);
+  const el = findElement(inst.render(), RigUpgrade);
+  assert.ok(el, "RigUpgrade not found in the rendered tree");
+  el.props.onDone({ status: "rejected" });
+  assert.deepEqual(seen, [{ status: "rejected" }]);
+});
+
+test("RigUpgrade keeps a rejected result line after onDone (#3947)", async () => {
+  const inst = upgradeInstance();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    status: 200,
+    ok: true,
+    json: async () => ({ status: "rejected", error: "run ./pithead restart tor" }),
+  });
+  let seen = null;
+  inst.props.onDone = (out) => {
+    seen = out;
+  };
+  try {
+    await inst.upgrade();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(seen.status, "rejected");
+  assert.match(renderToString(inst.render()), /run \.\/pithead restart tor/);
 });
 
 // --- RigForge new-release callout (#596) ----------------------------------------------------
@@ -163,3 +277,44 @@ test("table mode prefills from the rig's own config and labels every other case 
   assert.doesNotMatch(out, /the rig's live feed doesn't expose these values/); // stale claim, #1235
   assert.match(out, /Prefilled with what the rig is running now/);
 });
+
+const shown = async (fn) => {
+  try {
+    await fn();
+  } catch (e) {
+    return String((e && e.message) || e);
+  }
+  assert.fail("expected a rejection");
+};
+
+const FAILURES = [
+  ["401 with body text", async () => reply(401, "login required"), STALE, 1],
+  ["403", async () => reply(403), STALE, 1],
+  ["a network rejection", async () => Promise.reject(new TypeError("Failed to fetch")), STALE, 1],
+  ["a plain-text 500", async () => reply(500, "control spool is full"), "control spool is full", 0],
+];
+
+for (const [name, stub, text, reloads] of FAILURES) {
+  test(`upgrade(): ${name} shows ${JSON.stringify(text)}`, async () => {
+    const probe = installStaleProbe();
+    const inst = upgradeInstance();
+    await withFetch(stub, () => inst.upgrade());
+    await probe.settle();
+    assert.equal(inst.state.upgResult.status, "error");
+    assert.equal(inst.state.upgResult.error, text);
+    assert.equal(probe.reloads.length, reloads);
+  });
+}
+
+for (const [name, stub, text, reloads] of [
+  ["401", async () => reply(401, "login required"), STALE, 1],
+  ["a plain-text 500", async () => reply(500, "control spool is full"), "control spool is full", 0],
+]) {
+  test(`pollWorkerResult: ${name} on the result read shows ${JSON.stringify(text)}`, async () => {
+    const probe = installStaleProbe();
+    const out = await withFetch(stub, () => pollWorkerResult("r-1"));
+    await probe.settle();
+    assert.equal(out.error, text);
+    assert.equal(probe.reloads.length, reloads);
+  });
+}

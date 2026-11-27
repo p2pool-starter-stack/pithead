@@ -16,7 +16,8 @@ class NodeHealthMonitor:
     - **Ever-up guard.** A node is only ever declared DOWN after it has been reachable at
       least once. A node that was *never* reachable (remote monerod whose RPC we can't
       reach, wrong credentials, a misconfig) stays "not down" forever — we never reject
-      workers over something that never worked in the first place.
+      workers over something that never worked in the first place. Configured Tari and
+      payout-wallet monitors opt into outage detection immediately with ``ever_up=True``.
 
     Exposes two signals so the orchestrator can be asymmetric (stop eagerly on DOWN,
     readmit only on confirmed healthy):
@@ -34,11 +35,12 @@ class NodeHealthMonitor:
         down_after=NODE_DOWN_AFTER_SEC,
         recovery_after=NODE_RECOVERY_AFTER_SEC,
         clock=time.monotonic,
+        ever_up=False,
     ):
         self.down_after = down_after
         self.recovery_after = recovery_after
         self._clock = clock
-        self.ever_up = False
+        self.ever_up = ever_up
         self.down = False
         self.healthy = False
         self._unreachable_since = None

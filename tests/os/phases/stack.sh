@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # The stack phase (#2062): tests/integration/run.sh (the DIY gate, what release-gate.yml runs)
 # has never once run against the appliance runtime — podman through the docker shim, read-only
@@ -88,7 +90,7 @@ _stack_run_integration() { # <label> <extra args...>
         # of those needs a different fix. This flows into the same kvm-<phase>.log artifact the
         # rest of the battery already writes through, so it costs nothing to keep.
         bad "DIY gate vs. appliance channel: $label (exit $rc)"
-        sed 's/\x1b\[[0-9;]*m//g' "$out"
+        os_redact_addr <"$out" | sed 's/\x1b\[[0-9;]*m//g'
         # The DIY gate's own per-scenario capture (lib.sh:capture_artifacts) writes status/doctor/
         # compose/api-state into results/<scenario>/ on THIS host, and bench-ci collects fixed paths
         # only — so job 497 could not answer "what did `pithead status` actually say" for a leg that
@@ -100,12 +102,12 @@ _stack_run_integration() { # <label> <extra args...>
             "$SCRIPT_DIR/../integration/results"/*/api-state.json; do
             [ -f "$f" ] || continue
             info "  [$label] --- ${f#*results/} ---"
-            sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
+            os_redact_addr <"$f" | sed 's/\x1b\[[0-9;]*m//g' | head -n 60
         done
     fi
     # The merge-mining round-trip's row rides along on a pass too: it is the one row whose verdict
     # (a chain_id read from the Tari node, #1397/#2326) is this channel's evidence on its own.
-    grep -a -e 'of which:' -e '(#1397)' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
+    grep -a -e 'of which:' -e '(#1397)' "$out" | os_redact_addr | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"
     done
     rm -f "$out"
@@ -173,7 +175,7 @@ _provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user
         # /submit probes the reserved node's reachability synchronously (wizard_node_probe.py)
         # and 400s with the probe's own reason — surface it, not just the status code, since a
         # remote-node submit failure is far more often a bad host/port/firewall than bad JSON.
-        bad "coordinator remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | cut -c1-500))"
+        bad "coordinator remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | os_redact_addr | cut -c1-500))"
         rm -f "$jar" "$sbody"
         return 1
     }
@@ -241,6 +243,22 @@ _provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user
     fi
 }
 
+_stack_container_restart_leg() {
+    local payload out rc=0
+    payload=$(base64 <"$SCRIPT_DIR/container-restart-leg.sh" | tr -d '\n')
+    out=$(mktemp)
+    SSH_TIMEOUT=480 _ssh "printf %s '$payload' | base64 -d | bash" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ] && grep -Fq 'restart detection leg: PASS' "$out"; then
+        ok "status and doctor detect an observed Caddy crash loop and recover after restoration (#3391)"
+    else
+        [ "$rc" -ne 0 ] || rc=1
+        bad "status and doctor did not prove Caddy crash-loop detection and recovery (#3391, exit $rc)"
+        sed 's/\x1b\[[0-9;]*m//g' "$out" | tail -n 20
+    fi
+    rm -f "$out"
+    return "$rc"
+}
+
 phase_stack() {
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
@@ -257,24 +275,16 @@ phase_stack() {
         return 1
     }
     _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
+    _stack_container_restart_leg || return 1
 
-    # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
-    # channel has never run — its first live coverage of each (#2062). The two parity rows this
-    # guest cannot satisfy are named, with their own issues, after the invocations below.
-    #
-    # Every invocation below names --scenario (or, for --check, returns before the matrix is
-    # even reached). Without one, tests/integration/run.sh's own default is to iterate its FULL
-    # 15-scenario matrix first — almost all of it monero.mode=local, which this remote-node-only
-    # guest can only run by starting a local monerod from scratch each time. That cost over two
-    # hours and starved xvb-routing-smoke of its own budget the first time this ran for real
-    # (#2062); the local matrix is the DIY gate's own job on its own bench, not this phase's.
+    local miner_rc=0
+    miner_backup_trial || miner_rc=$?
+    if [ "$miner_rc" != 0 ] && [ "$miner_rc" != 77 ]; then
+        bad "local miner fails dashboard backup strand recovery (#3375)"
+    fi
+
     local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
-    # --check needs the remote endpoints too, not just the scenario runs: run-state.sh reads
-    # $REMOTE_MONERO_HOST with no fallback for the ZMQ probe, so without them it dials an empty
-    # host and reports connect-refused against a node that is in fact publishing. Job 397 proved
-    # it both ways in one run — the same two ZMQ rows passed in the scenario leg, which carries
-    # these flags, and failed in this one, which did not.
     _stack_run_integration "check (non-destructive live-state assertion)" --check "${remote_extra[@]}"
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \

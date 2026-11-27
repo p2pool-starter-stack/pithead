@@ -33,6 +33,7 @@ from mining_dashboard.helper.utils import (
     shares_in_pplns_window,
     xvb_stats_are_stale,
 )
+from mining_dashboard.service.mining_verdict import mines_elsewhere
 
 
 @dataclass(frozen=True)
@@ -209,7 +210,9 @@ def build_metrics(latest_data, state_mgr, history=None):
         luck_pct = 0.0
 
     workers = data.get("workers", [])
-    workers_online = sum(1 for w in workers if w.get("status") == "online")
+    workers_online = sum(
+        1 for w in workers if w.get("status") == "online" and not mines_elsewhere(w)
+    )
 
     return Metrics(
         total_h15=total_h15,

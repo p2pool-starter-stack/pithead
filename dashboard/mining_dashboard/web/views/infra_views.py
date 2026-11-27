@@ -123,6 +123,8 @@ def rigforge_update_for(worker, release):
     if not worker or not release:
         return None
     rigforge = worker.get("rigforge") or {}
+    if rigforge.get("appliance"):
+        return None
     if feed_stale(rigforge):
         return None
     version = rigforge.get("version")
@@ -135,7 +137,7 @@ def build_workers(workers, rigforge_release=None):
     """Worker rows as data: raw numeric fields (for client-side sorting) alongside their
     formatted display strings, plus a pool token for the badge. Online first, then by name."""
     rows = []
-    sorted_workers = sorted(workers, key=lambda x: (x["status"] != "online", x["name"]))
+    sorted_workers = sorted(workers, key=lambda x: (x["status"] != "online", x["name"] or ""))
 
     for worker in sorted_workers:
         try:
@@ -150,24 +152,22 @@ def build_workers(workers, rigforge_release=None):
             uptime = worker.get("uptime", 0)
             h60 = worker.get("h60", 0)
             h15 = worker.get("h15", 0)
-            # Per-worker share health (Issue #82). Raw counts for client-side sorting; a display
-            # string that appends invalid only when it's non-zero (keeps the common case clean);
-            # and an optional warning flag the client renders when the reject rate is high.
             accepted = worker.get("accepted", 0)
             rejected = worker.get("rejected", 0)
             invalid = worker.get("invalid", 0)
             rejected_str = f"{rejected:,} (+{invalid:,} inv)" if invalid else f"{rejected:,}"
+            unnamed = str(worker["name"] or "").strip() in ("", "-")
+            telemetry_h60 = worker.get("telemetry_h60")
             rows.append(
                 {
-                    "name": worker["name"],
+                    "name": f"unnamed proxy worker ({worker['ip']})" if unnamed else worker["name"],
+                    "unnamed": unnamed,
                     "ip": worker["ip"],
                     "ip_sort": _ip_to_sort_int(worker.get("ip", "0.0.0.0")),
                     "pool": pool,
                     "status": "online" if worker["status"] == "online" else "offline",
                     "uptime": uptime,
                     "uptime_str": format_duration(uptime),
-                    # No h10 here: the table shows the 1m (h60) and 10m (h15) windows — via the
-                    # proxy the legacy h10 field is just a second copy of the 1m rate (#387).
                     "h60": h60,
                     "h60_str": format_hashrate(h60),
                     "h15": h15,
@@ -178,16 +178,18 @@ def build_workers(workers, rigforge_release=None):
                     "rejected_str": rejected_str,
                     "invalid": invalid,
                     "reject_flag": _reject_flag(accepted, rejected),
-                    # Probe verdict + adoption (#1857): the client flags only api_ok False, and
-                    # adopted decides whether that reads "api ⚠" (config to fix) or "not adopted".
+                    "mining": worker.get("mining") or {"state": "unknown", "pool": None},
+                    "telemetry_h10": worker.get("telemetry_h10"),
+                    "telemetry_h60": telemetry_h60,
+                    "telemetry_str": "—"
+                    if telemetry_h60 is None
+                    else format_hashrate(telemetry_h60),
+                    "telemetry_h15": worker.get("telemetry_h15"),
                     "api_ok": worker.get("api_ok"),
                     "adopted": worker.get("adopted"),
-                    # RigForge enriched feed (#235): version badge + health/power/tune/watchdog
-                    # chips, or None for a plain-xmrig worker (renders nothing extra).
                     "rigforge": _rigforge_display(
                         worker.get("rigforge"), worker.get("status") == "online"
                     ),
-                    # {available, latest, url} | None — this rig runs an older RigForge (#596).
                     "rigforge_update": rigforge_update_for(worker, rigforge_release),
                 }
             )
@@ -198,26 +200,26 @@ def build_workers(workers, rigforge_release=None):
 
 
 # --------------------------------------------------------------------------------------
-# Energy & profit calculator (Issue #260, Tari revenue #520): fleet power draw + efficiency, and —
-# once the operator sets an electricity price (and an XMR price) — the net profit after power.
-# Setting a Tari price too folds the estimated Tari merge-mining revenue into gross so a Tari
-# merge-miner's net profit isn't silently undercounted (P2Pool-only was the #520 bug). The server
-# totals the measured draw and publishes the prices; the client does the per-day/month/year
-# arithmetic and the net = gross − cost, scaling gross with the same what-if hashrate the earnings
-# card already uses (one source of truth, #61). Deliberately NO price feed for either coin: fetching
-# one is a clearnet egress this privacy-first stack avoids (#160) — an opt-in Tor-routed feed is
-# deferred, see #520 — so all prices are operator-supplied.
+# Energy & profit calculator: the server totals measured/estimated draw and publishes prices;
+# the client projects kWh, cost and gross − cost over day/month/year. P2Pool and priced Tari
+# earnings use the card's shared what-if hashrate. Usable current-tier XvB rewards are tempered
+# by measured delivery before they reach the client. Prices are optional: configured by default,
+# or from the opt-in CoinGecko-over-Tor feed, with configured prices as its fallback.
 # --------------------------------------------------------------------------------------
 
 _ENERGY_DISCLAIMER = (
     "Power draw is measured (RAPL, 15s sample) or your per-worker estimate; a worker reporting "
     "neither is excluded and the fleet total is marked incomplete. kWh and cost extrapolate the "
-    "current draw at a constant rate — a naive projection, not a metered bill. Net profit is "
+    "current draw at a constant rate — a naive projection, not a metered bill. Gross revenue is "
     "P2Pool XMR earnings valued at the XMR price in use (your configured price, or the live "
     "CoinGecko-over-Tor feed when dashboard.energy.price_feed is on), plus Tari merge-mining "
-    "earnings valued at the Tari price when one is set (0/unset counts P2Pool XMR only) — minus "
-    "power cost. XvB stays excluded: it's raffle status, not a clean per-day income estimate. "
-    "Estimates, not guarantees."
+    "earnings when merge-mining and a Tari price are available, plus a fresh current donor-tier "
+    "XvB estimate valued at the same XMR price when usable. XvB is tempered by your wallet's "
+    "measured delivery when enough wins exist, else the measured delivery band's midpoint; "
+    "missing or stale estimates are excluded. Net subtracts power cost and needs both an XMR "
+    "price and an electricity price. Missing prices leave those figures unavailable. Partial "
+    "power coverage understates cost and can overstate net. Mining payouts vary and the XvB "
+    "raffle draw is random among qualifiers. Estimates, not guarantees."
 )
 
 
@@ -352,16 +354,25 @@ def build_tari(data):
     tari_stats = data.get("tari", {})
     tari_active = tari_stats.get("active", False)
     t_addr = tari_stats.get("address", "Unknown")
+    health = (data.get("tari_sync") or {}).get("health")
+    status = tari_stats.get("status", "Waiting...") if tari_active else "Waiting..."
+    if health and health.get("level") != "green":
+        # A READY channel is not a node on the chain (#2464): the verdict's reasons and next step
+        # replace the channel state, and the client prints this text as it stands.
+        status = f"Not following the chain: {'; '.join(health.get('reasons') or [])}. {health.get('advice', '')}"
 
     return {
         "active": tari_active,
         "connected": bool(tari_stats.get("connected", False)) and tari_active,
-        "status": tari_stats.get("status", "Waiting...") if tari_active else "Waiting...",
+        "status": status,
         "reward": f"{tari_stats.get('reward', 0):.2f} TARI",
         "height": str(tari_stats.get("height", 0)),
         "diff": f"{int(tari_stats.get('difficulty', 0)):,}",
         "wallet": t_addr,
         "wallet_short": _shorten(t_addr),
+        # The node's chain verdict (#2464) — {level, reasons, advice, height, explorer_tip} | None.
+        # `connected` only says P2Pool's gRPC channel answers; this says whether the node follows it.
+        "health": health,
     }
 
 

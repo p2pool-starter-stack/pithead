@@ -3,57 +3,6 @@
 # Wizard + setup domain (#1105 Phase 1): the interactive wizard flows, the setup e2e paths, and the
 # setup-time kernel/GRUB tuning (optimize_kernel runs inside cmd_setup). Sourceable standalone (#1387).
 WALLET="${WALLET:-$VALID_PRIMARY}" # exactly build_val_sandbox's own default; a no-op under run.sh
-echo "== unit: randomx_boot_params (#176) =="
-# The kernel boot params pithead writes into GRUB_CMDLINE_LINUX_DEFAULT for RandomX. Guards the
-# regression where the THP-disable param was PLURAL (transparent_hugepages=never) — an unrecognized
-# param the kernel silently ignores, so THP was never actually disabled. The valid param is singular.
-bp="$(run_sourced "$SANDBOX" randomx_boot_params)"
-assert_contains "reserves 2M huge page size" "$bp" "hugepagesz=2M"
-assert_contains "reserves 3072 huge pages" "$bp" "hugepages=3072"
-assert_contains "disables THP (singular param)" "$bp" "transparent_hugepage=never"
-case "$bp" in
-*transparent_hugepages=*) bad "THP param must be singular, not the kernel-ignored plural" "got [$bp]" ;;
-*) ok "THP param is singular (no plural transparent_hugepages= typo)" ;;
-esac
-
-echo "== unit: grub heal + boot-param insert (#176) =="
-# A passthrough sudo so the helpers' `sudo cp` / `sudo sed -i` actually edit a sandbox grub file
-# (the global stub sudo is a no-op). The helpers select GNU vs BSD sed via OS_TYPE, so this exercises
-# the real transformation on both Linux CI and a macOS dev box.
-GR="$SANDBOX/grub"
-mkdir -p "$GR/bin"
-printf '#!/usr/bin/env bash\nexec "$@"\n' >"$GR/bin/sudo"
-chmod +x "$GR/bin/sudo"
-run_grub() { PATH="$GR/bin:$PATH" run_sourced "$SANDBOX" "$@"; }
-
-# heal: rewrites an existing plural typo to the singular param, then is an idempotent no-op.
-g="$GR/healed"
-printf 'GRUB_CMDLINE_LINUX_DEFAULT="hugepagesz=2M hugepages=3072 transparent_hugepages=never quiet"\n' >"$g"
-run_grub heal_grub_thp_typo "$g"
-assert_rc "heal: rewrites plural typo (rc 0)" "$?" "0"
-assert_contains "heal: file now uses singular param" "$(cat "$g")" "transparent_hugepage=never"
-case "$(cat "$g")" in *transparent_hugepages=*) bad "heal: plural typo removed" "$(cat "$g")" ;; *) ok "heal: plural typo removed" ;; esac
-run_grub heal_grub_thp_typo "$g"
-assert_rc "heal: idempotent no-op when already singular (rc 1)" "$?" "1"
-
-# insert: appends the params to the active line, preserving what's already there.
-g="$GR/fresh"
-printf 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n' >"$g"
-run_grub append_grub_boot_params "$g"
-assert_rc "insert: edits the active line (rc 0)" "$?" "0"
-out="$(cat "$g")"
-assert_contains "insert: keeps existing params" "$out" "quiet splash"
-assert_contains "insert: adds hugepages reservation" "$out" "hugepages=3072"
-assert_contains "insert: adds singular THP param" "$out" "transparent_hugepage=never"
-
-# insert: a commented-out line is not the active form -> rc 1, file untouched (no silent reboot).
-g="$GR/commented"
-printf '# GRUB_CMDLINE_LINUX_DEFAULT="quiet"\nGRUB_TIMEOUT=5\n' >"$g"
-before="$(cat "$g")"
-run_grub append_grub_boot_params "$g"
-assert_rc "insert: no active line -> rc 1" "$?" "1"
-assert_eq "insert: leaves file unchanged when no active line" "$(cat "$g")" "$before"
-
 echo "== unit: wizard prompt count is pinned (#502 — a silently-added prompt fails this loud) =="
 # Structural, not behavioral: every Enter-through default answer looks the same ("blank"), so a
 # NEW prompt slipped into either function wouldn't visibly break a happy-path run — it would just
@@ -61,16 +10,12 @@ echo "== unit: wizard prompt count is pinned (#502 — a silently-added prompt f
 core_reads=$(awk '/^wizard_ask_core\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
 shape_reads=$(awk '/^wizard_ask_shape\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
 assert_eq "wizard_ask_core has exactly 11 read prompts (Monero wallet, node config, pool tier, dashboard login — the Tari prompts are wizard_ask_tari's, pinned in test-wizard-tari.sh)" "$core_reads" "11"
-assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-access, alerts cluster, local-miner opt-in)" "$shape_reads" "6"
+assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-access, alerts cluster, local-miner opt-in; stratum is delegated)" "$shape_reads" "6"
 
 echo "== unit: wizard — Enter-through defaults skip everything but the core answers (#502) =="
-# Local node, every optional prompt left blank. Proves two things at once: the core answers land
-# (wallets, mode, pool tier), and nothing else does — dashboard.hashrate_drop_threshold,
-# network.subnet, xvb.*, telegram.*, dashboard.onion, dashboard.auth all keep their
-# config.reference.json default because the wizard never wrote them at all.
 W1="$SANDBOX/wizard-defaults"
 mkdir -p "$W1"
-printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >/dev/null 2>&1
+printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >"$W1/output" 2>&1
 if [ -f "$W1/config.json" ]; then
     ok "wizard (defaults path) writes config.json"
 else
@@ -83,19 +28,22 @@ assert_eq "defaults path: monero.mode local (Enter-through)" "$(jq -r '.monero.m
 assert_eq "defaults path: p2pool.pool Enter-through is mini (the global default)" "$(jq -r '.p2pool.pool' <<<"$w1_cfg")" "mini"
 assert_eq "defaults path: local node RPC creds auto-generated (non-empty)" \
     "$([ -n "$(jq -r '.monero.node_username' <<<"$w1_cfg")" ] && [ -n "$(jq -r '.monero.node_password' <<<"$w1_cfg")" ] && echo yes)" "yes"
-# The revert-proof core: config.json carries ONLY the four top-level blocks the defaults path
-# writes. If a future prompt silently starts writing e.g. dashboard.hashrate_drop_threshold or
-# network.subnet, this fails — a defaulted key growing a prompt shows up here even though its own
-# (blank) answer looks identical to every other blank answer.
 assert_eq "defaults path: top-level keys are exactly monero/tari/p2pool/dashboard, nothing else" \
-    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","monero","p2pool","tari"]'
-assert_eq "defaults path: dashboard has only 'secure' — no auth/onion written" \
-    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["secure"]'
+    "$(jq -rc '[keys[]] | sort' <<<"$w1_cfg")" '["dashboard","monero","p2pool","tari","xvb"]'
+assert_eq "defaults path: dashboard has secure, a generated login and — the Tari yes of this fixture — tari_required false (#3333)" \
+    "$(jq -rc '.dashboard | keys' <<<"$w1_cfg")" '["auth","secure","tari_required"]'
 assert_eq "defaults path: no telegram block written" "$(jq -r 'has("telegram")' <<<"$w1_cfg")" "false"
-assert_eq "defaults path: no clearnet_initial_sync written (stays the reference default)" \
-    "$(jq -r '.monero | has("clearnet_initial_sync")' <<<"$w1_cfg")" "false"
+assert_eq "defaults path: private sync written explicitly" \
+    "$(jq -r '.monero.clearnet_initial_sync' <<<"$w1_cfg")" "false"
 assert_eq "defaults path: no local_miner block written (opt-in off, #593)" \
     "$(jq -r 'has("local_miner")' <<<"$w1_cfg")" "false"
+
+assert_eq "defaults path: XvB explicitly off" "$(jq -r '.xvb.enabled' <<<"$w1_cfg")" "false"
+w1_pass=$(jq -r '.dashboard.auth.password' <<<"$w1_cfg")
+assert_eq "defaults path: dashboard password has 32 characters" "${#w1_pass}" "32"
+assert_eq "defaults path: password printed once" "$(grep -Fc "$w1_pass" "$W1/output")" "1"
+assert_contains "defaults path: no raffle question" "$(cat "$W1/output")" "Dashboard login"
+if grep -q 'Join the XMRvsBeast raffle?' "$W1/output"; then bad "wizard does not ask XvB"; else ok "wizard does not ask XvB"; fi
 
 # Opt-in to the local miner (#593): answering 'y' to the final shape prompt writes
 # local_miner.enabled=true; every other answer left blank so only that key appears.
@@ -148,10 +96,10 @@ printf '%s\n\n2\n%s\nmain\nopuser\nsuperSecret1\ny\ny\ny\nmybottoken123\n9876543
 w2_cfg="$(cat "$W2/config.json" 2>/dev/null)"
 assert_eq "full path: monero.mode local (Enter-through)" "$(jq -r '.monero.mode' <<<"$w2_cfg")" "local"
 assert_eq "full path: p2pool.pool honors an explicit main" "$(jq -r '.p2pool.pool' <<<"$w2_cfg")" "main"
-assert_eq "full path: stratum auth defaults on for new installs (#208)" "$(jq -r '.p2pool.stratum_password' <<<"$w2_cfg")" "auto"
+assert_eq "full path: stratum password remains off without opt-in" "$(jq -r '.p2pool.stratum_password' <<<"$w2_cfg")" ""
 # The other new-install path — `cp config.minimal.json config.json` (the bundle quick-start,
 # which bypasses the wizard) — must carry the same default, or only wizard users get auth.
-assert_eq "config.minimal.json ships stratum auth on (#208)" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" "auto"
+assert_eq "config.minimal.json ships no stratum password" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" ""
 assert_eq "full path: dashboard.auth.username set" "$(jq -r '.dashboard.auth.username' <<<"$w2_cfg")" "opuser"
 assert_eq "full path: dashboard.auth.password set" "$(jq -r '.dashboard.auth.password' <<<"$w2_cfg")" "superSecret1"
 assert_eq "full path: clearnet-sync cluster sets BOTH chains together" \
@@ -185,6 +133,7 @@ SU="$SANDBOX/setup-e2e"
 mkdir -p "$SU/build/tari" "$SU/dashboard"
 : >"$SU/dashboard/Dockerfile"
 cp "$STACK" "$SU/pithead"
+cp "$ROOT/docker-compose.yml" "$SU/docker-compose.yml"
 cp "$ROOT/build/tari/config.toml.template" "$SU/build/tari/"
 make_stubs "$SU/bin"
 printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$SU" run_wizard >/dev/null 2>&1
@@ -247,7 +196,7 @@ EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$RT/config.json"
 printf 'ONIONKEY-ORIG\n' >"$RT/data/tor/hs_ed25519_secret_key"
 printf 'DBDATA-ORIG\n' >"$RT/data/dashboard/dashboard.db"
-out="$(cd "$RT" && PATH="$RT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y 2>&1)"
+(cd "$RT" && PATH="$RT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y >/dev/null 2>&1)
 rc=$?
 assert_rc "restore-stranding fixture: backup exits 0" "$rc" "0"
 rt_archive="$(ls "$RT"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"

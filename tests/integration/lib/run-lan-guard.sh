@@ -1,12 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# LAN-only sources on the node ports the *_lan_access switches publish (#2616), proved on the wire:
-# each published port is dialled from a throwaway network namespace wired to the host by a veth,
-# once from a non-private source (198.51.100.0/30, TEST-NET-2) that must be dropped, and once from a
-# private one (10.254.254.0/30) that must connect. The private dial is the control: without it a
-# broken probe or a dead daemon would read as "refused". The target is the host end of the veth, a
-# local address, so the packet takes the same DNAT -> FORWARD path as a dial from another machine.
-
+# shellcheck source=tests/integration/lib/lan-crash-evidence.sh
+source "${BASH_SOURCE[0]%/*}/lan-crash-evidence.sh" || return $?
 # Prints open or closed for a dial from <a.b.c>.2 to <a.b.c>.1:<port>; prints nothing if the
 # namespace could not be built.
 _lan_probe() { # <a.b.c> <port>
@@ -20,7 +15,56 @@ _lan_probe() { # <a.b.c> <port>
         sudo ip netns del pht-lanprobe 2>/dev/null; true"
 }
 
-assert_lan_guard_live() { # <config>
+# Empty the rule the way a reboot does: our jumps, the chain, and the nodes' marker (a new boot id
+# invalidates it). Raw iptables, not remove_lan_guard, which refuses while the nodes run (#2749).
+_lan_flush_rules() {
+    rx 'sudo iptables -S DOCKER-USER 2>/dev/null | grep -F pithead-lan-guard | tr -d "\"" | sed "s/^-A /-D /" |
+            while read -r r; do sudo iptables $r; done
+        sudo iptables -F PITHEAD-LAN 2>/dev/null; sudo iptables -X PITHEAD-LAN 2>/dev/null' >/dev/null 2>&1 || true
+}
+_lan_strip() {
+    _lan_flush_rules
+    rx 'rm -f data/lan-guard/enforced' >/dev/null 2>&1 || true
+}
+
+_lan_capture() {
+    local port="$1" sample="$2" evidence rc=0
+    if mkdir -p "$OUT_DIR/lan-guard" && evidence=$(mktemp "$OUT_DIR/lan-guard/probe-$port-$sample.XXXXXX"); then
+        {
+            printf 'sample=%s\n' "$sample"
+            rx "timeout --kill-after=2 25 bash -s -- $port" --stdin <"${BASH_SOURCE[0]%/*}/lan-guard-snapshot.sh" 2>/dev/null
+        } | redact | head -c 8192 >"$evidence" || rc=$?
+        printf 'lan-guard diagnostic: port=%s sample=%s capture-exit=%s\n' "$port" "$sample" "$rc"
+        sed 's/^/lan-guard diagnostic: /' "$evidence"
+        [ "$rc" -eq 0 ] || it_fail "LAN failure evidence captured" "snapshot or artifact write failed"
+    else
+        it_fail "LAN failure evidence captured" "could not create artifact"
+    fi
+}
+
+_lan_probe_open() { [ "$(_lan_probe "$1" "$2")" = open ]; }
+
+_lan_assert_open() {
+    local label="$1" source="$2" port="$3" timeout="${4:-240}" observed started
+    observed=$(_lan_probe "$source" "$port")
+    if [ "$observed" != open ]; then
+        _lan_capture "$port" initial
+        if [ "$timeout" -eq 0 ]; then
+            assert_eq "$label" "$observed" open
+            return
+        fi
+        started=$(now_s)
+        if wait_for "$timeout" 5 "$label" _lan_probe_open "$source" "$port"; then
+            observed=open
+        else
+            _lan_capture "$port" timeout
+        fi
+        printf 'lan-guard readiness: port=%s elapsed_s=%s result=%s\n' "$port" "$(($(now_s) - started))" "${observed:-unavailable}"
+    fi
+    assert_eq "$label" "$observed" open
+}
+
+assert_lan_guard_live() {
     local config="$1" ports="" p mode tmode
     mode="$(jq_get "$config" '.monero.mode')"
     tmode="$(jq_get "$config" '.tari.mode')"
@@ -32,6 +76,302 @@ assert_lan_guard_live() { # <config>
     [ -n "$ports" ] || return 0
     for p in $ports; do
         assert_eq "LAN port $p: a non-private source cannot connect (#2616)" "$(_lan_probe 198.51.100 "$p")" closed
-        assert_eq "LAN port $p: a private source can (#2616)" "$(_lan_probe 10.254.254 "$p")" open
+        _lan_assert_open "LAN port $p: a private source can (#2616)" 10.254.254 "$p"
     done
+    # shellcheck disable=SC2086
+    assert_lan_guard_timer_flush $ports
+    # shellcheck disable=SC2086
+    assert_lan_guard_crash_restart $ports
+    # shellcheck disable=SC2086 # one argument per port
+    assert_lan_guard_boot_restore $ports
+    # shellcheck disable=SC2086
+    assert_lan_guard_boot_failure $ports
+}
+
+# Flush only the kernel rule while the boot marker still says this boot. The timer must remove the
+# marker and stop the running LAN nodes before its next two-minute interval ends (#2846). The timer
+# is stopped (and a running check awaited) around the flush so the precondition reads cannot race
+# the check legitimately removing the marker (#3034); it restarts unconditionally before the
+# deadline, which is measured from that start. Assertions record and continue, so no path skips it.
+assert_lan_guard_timer_flush() { # <port>...
+    local p since deadline closed=0 rc=0
+    [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
+    assert_eq "LAN check timer is active (#2846)" "$(rx 'systemctl is-active pithead-lan.timer 2>/dev/null')" active
+    assert_eq "LAN timer targets the check service (#2846)" \
+        "$(rx 'systemctl show -p Triggers --value pithead-lan.timer')" pithead-lan-check.service
+    assert_eq "marker exists before an external flush (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
+    rx 'sudo systemctl stop pithead-lan.timer' >/dev/null 2>&1 || true
+    # A oneshot check without RemainAfterExit reports activating while it runs: only inactive or
+    # failed proves it finished. Never flush into a check that is still running or unreadable.
+    idle=0
+    for _ in $(seq 30); do
+        case "$(rx 'systemctl is-active pithead-lan-check.service 2>/dev/null')" in
+        inactive | failed)
+            idle=1
+            break
+            ;;
+        esac
+        sleep 1
+    done
+    if [ "$idle" != 1 ]; then
+        rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+        it_fail "LAN check service finished before the flush (#3034)" "still running or unreadable after 30s; flush skipped"
+        return 0
+    fi
+    assert_eq "LAN check timer is stopped for the flush (#3034)" "$(rx 'systemctl is-active pithead-lan.timer 2>/dev/null')" inactive
+    assert_eq "marker survives the check finishing (#3034)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
+    _lan_flush_rules
+    assert_eq "flush left the boot marker intact (#2846)" "$(rx 'test -s data/lan-guard/enforced && echo present')" present
+    _lan_assert_open "control: a non-private source reaches the unguarded port (#2846)" 198.51.100 "$1" 0
+    rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+    since=$(date +%s)
+    deadline=$((since + 150))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ]; then
+            closed=1
+            for p in "$@"; do
+                [ "$(_lan_probe 198.51.100 "$p")" = closed ] || {
+                    closed=0
+                    break
+                }
+            done
+            [ "$closed" = 0 ] || break
+        fi
+        sleep 5
+    done
+    assert_eq "timer invalidated the marker and closed every port within its interval (#2846)" "$closed" 1
+    for p in "$@"; do
+        assert_eq "LAN port $p is closed after the timer check (#2846)" "$(_lan_probe 198.51.100 "$p")" closed
+    done
+    rx './pithead up' >/dev/null 2>&1 || rc=$?
+    assert_rc "up restores the rule and nodes after the flush (#2846)" "$rc" 0
+    for p in "$@"; do
+        _lan_assert_open "LAN port $p admits a private source after recovery (#2846)" 10.254.254 "$p"
+    done
+}
+
+# Stop the LAN check timer and wait for a running check to finish; 1 if it never goes idle (timer
+# restarted, so the caller can report and move on).
+_lan_timer_pause() {
+    local _
+    rx 'sudo systemctl stop pithead-lan.timer' >/dev/null 2>&1 || true
+    for _ in $(seq 30); do
+        case "$(rx 'systemctl is-active pithead-lan-check.service 2>/dev/null')" in
+        inactive | failed) return 0 ;;
+        esac
+        sleep 1
+    done
+    rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+    return 1
+}
+
+# Prints the exit code once <container> has stopped (waits up to 30s), or running.
+_lan_exit_code() { # <container>
+    local _ out
+    for _ in $(seq 15); do
+        out=$(rx "docker inspect -f '{{.State.Running}} {{.State.ExitCode}}' $1" 2>/dev/null)
+        case "$out" in "false "*)
+            echo "${out#false }"
+            return 0
+            ;;
+        esac
+        sleep 2
+    done
+    echo running
+}
+
+assert_lan_guard_crash_restart() {
+    local p c containers="" code since deadline up rc=0 LAN_CRASH_EVIDENCE negative_node="" negative_evidence=""
+    [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
+    for p in "$@"; do
+        c=$(rx "bash -c 'source ./pithead && lan_guard_container $p'")
+        [[ " $containers " == *" $c "* ]] || containers="$containers $c"
+    done
+    for c in $containers; do
+        case "$c" in
+        monerod | tari) ;;
+        *)
+            it_fail "LAN crash target is a known node" "container lookup unavailable"
+            return 0
+            ;;
+        esac
+        if LAN_CRASH_EVIDENCE=$(mktemp -d "$OUT_DIR/lan-crash-$c.XXXXXX" 2>/dev/null); then
+            LAN_CRASH_EVIDENCE="$LAN_CRASH_EVIDENCE/observations.log"
+        else
+            it_fail "LAN crash diagnostic storage available" "allocation unavailable; controls continue"
+            LAN_CRASH_EVIDENCE=/dev/null
+        fi
+        if [ -z "$negative_node" ]; then
+            negative_node=$c
+            negative_evidence=$LAN_CRASH_EVIDENCE
+        fi
+        _lan_crash_capture "$c" before-crash unknown "$(($(date +%s) + 4))"
+        rx "docker kill --signal SEGV $c" >/dev/null 2>&1 || true
+        code=$(_lan_exit_code "$c")
+        if [ "$code" = running ]; then
+            rx "docker kill --signal KILL $c" >/dev/null 2>&1 || true
+            code=$(_lan_exit_code "$c")
+        fi
+        assert_ne "$c crashed with a non-zero exit code (#3290)" "$code" "running"
+        assert_ne "...and it was not a clean exit (#3290)" "$code" "0"
+        since=$(date +%s)
+        deadline=$((since + 180))
+        _lan_crash_capture "$c" after-exit "$code" "$deadline"
+        up=false
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            up=$(rx "docker inspect -f '{{.State.Running}}' $c" 2>/dev/null)
+            case "$up" in true | false) ;; *) up=unavailable ;; esac
+            _lan_crash_capture "$c" recovery "$up" "$deadline"
+            [ "$up" = true ] && break
+            sleep 5
+        done
+        assert_eq "$c is running again within the timer interval, rule live (#3290)" "$up" true
+    done
+    c=$negative_node
+    LAN_CRASH_EVIDENCE=$negative_evidence
+    _lan_crash_capture "$c" before-negative unknown "$(($(date +%s) + 4))"
+    assert_eq "the rule is still live after the restart (#3290)" \
+        "$(rx "bash -c 'source ./pithead && lan_guard_enforced $*' && echo live")" live
+    if ! _lan_timer_pause; then
+        it_fail "LAN check service finished before the no-rule crash (#3290)" "still running after 30s; negative case skipped"
+        return 0
+    fi
+    rx "docker kill --signal KILL $c" >/dev/null 2>&1 || true
+    assert_ne "$c is down before the rule is flushed (#3290)" "$(_lan_exit_code "$c")" running
+    _lan_flush_rules
+    rx 'sudo systemctl start pithead-lan.timer' >/dev/null 2>&1 || true
+    since=$(date +%s)
+    deadline=$((since + 150))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        [ "$(rx 'test -e data/lan-guard/enforced && echo present')" != present ] && break
+        sleep 5
+    done
+    assert_eq "the timer ran with the rule missing and removed the marker (#3290)" \
+        "$(rx 'test -e data/lan-guard/enforced && echo present')" ""
+    sleep 10
+    assert_eq "$c stays down while the rule is missing (#3290)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" false
+    rx './pithead up' >/dev/null 2>&1 || rc=$?
+    assert_rc "up restores the rule and the node after the no-rule crash (#3290)" "$rc" 0
+    assert_eq "$c runs again after up (#3290)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" true
+}
+
+# DIY reboot restore (#2749), without rebooting the bench: a reboot empties PITHEAD-LAN and its
+# DOCKER-USER jumps while dockerd restarts the nodes still published on 0.0.0.0, and
+# pithead-lan-guard.service is what puts the rule back first. Check docker.service pulls the unit in
+# and waits for it, strip the rule as a reboot does (the open dial is the control that the strip
+# took), run the installed unit on the real kernel, and dial again. Docker hosts only: podman has no
+# unit, its boot path is `up`.
+assert_lan_guard_boot_restore() { # <port>...
+    local p rc=0
+    [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
+    assert_eq "up installed and enabled the LAN-guard boot unit (#2749)" \
+        "$(rx 'systemctl is-enabled pithead-lan-guard.service 2>/dev/null')" "enabled"
+    assert_contains "docker.service pulls it in (#2749)" "$(rx 'systemctl show -p Wants --value docker.service')" "pithead-lan-guard.service"
+    assert_contains "docker.service starts only after it (#2749)" "$(rx 'systemctl show -p After --value docker.service')" "pithead-lan-guard.service"
+    _lan_assert_open "LAN port $1 is ready before boot-rule removal (#3490)" 10.254.254 "$1"
+    _lan_strip
+    assert_eq "the rule is gone, as after a reboot" "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-lan-guard')" "0"
+    _lan_assert_open "control: with the rule gone, a non-private source reaches port $1" 198.51.100 "$1" 0
+    rx 'sudo systemctl restart pithead-lan-guard.service' >/dev/null 2>&1 || rc=$?
+    assert_rc "the boot unit starts cleanly on the real kernel (#2749)" "$rc" "0"
+    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" != false ]; then
+        assert_contains "boot orders LAN guard before Tor egress (#2901)" \
+            "$(rx 'systemctl show -p Before --value pithead-lan-guard.service')" "pithead-egress.service"
+        assert_contains "Docker waits for Tor egress too (#2901)" \
+            "$(rx 'systemctl show -p After --value docker.service')" "pithead-egress.service"
+        rc=0
+        rx 'sudo systemctl restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
+        assert_rc "the Tor-egress boot unit starts after the LAN guard (#2901)" "$rc" "0"
+        rc=0
+        rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
+        assert_rc "post-boot live Tor-egress verdict is enforced above the LAN jump (#2901)" "$rc" "0"
+    fi
+    for p in "$@"; do
+        assert_eq "after the boot unit, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
+        _lan_assert_open "after the boot unit, port $p: a private source can (#2749)" 10.254.254 "$p"
+    done
+    rc=0
+    rx "bash -c 'source ./pithead && lan_guard_enforced $*'" >/dev/null 2>&1 || rc=$?
+    assert_rc "the rule it restored reads as enforced, as apply's does (#2749)" "$rc" "0"
+}
+
+# Fail closed when the guard itself fails at boot (#2749). Stop the nodes and strip the rule as a
+# reboot does, then make the guard's firewall step fail (a runtime drop-in whose iptables call
+# appends to a chain that does not exist). Rebooting the shared bench is not an option, so dockerd's
+# boot-time restore is applied by hand: it starts every container whose restart policy is not "no"
+# (after a power loss even an unless-stopped one it did not see stopped). Before #2749 that started
+# the node on 0.0.0.0 with no rule; now the node is held, doctor names it, and `./pithead up`, the
+# documented recovery, brings it back behind the rule.
+assert_lan_guard_boot_failure() { # <port>...
+    local p c containers="" rc=0
+    [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
+    for p in "$@"; do
+        c=$(rx "bash -c 'source ./pithead && lan_guard_container $p'")
+        [[ " $containers " == *" $c "* ]] || containers="$containers $c"
+    done
+    assert_eq "the hold unit is enabled for the next boot (#2749)" \
+        "$(rx 'systemctl is-enabled pithead-lan-hold.service 2>/dev/null')" "enabled"
+    assert_contains "it requires the guard (#2749)" "$(rx 'systemctl show -p Requires --value pithead-lan-hold.service')" "pithead-lan-guard.service"
+    assert_eq "docker.service requires neither unit, so other containers start regardless (#2749)" \
+        "$(rx 'systemctl show -p Requires --value docker.service | grep -c pithead-lan')" "0"
+    for c in $containers; do
+        assert_eq "$c runs with restart policy no, so dockerd never starts it at boot (#2749)" \
+            "$(rx "docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' $c")" "no"
+    done
+    # shellcheck disable=SC2086 # one argument per container
+    rx "docker stop -t 30 $containers" >/dev/null 2>&1 || true
+    _lan_strip
+    rx 'sudo mkdir -p /run/systemd/system/pithead-lan-guard.service.d &&
+        printf "[Service]\nExecStart=\nExecStart=/usr/sbin/iptables -A PITHEAD-LAN-FAULT-2749 -j DROP\n" |
+            sudo tee /run/systemd/system/pithead-lan-guard.service.d/fault-2749.conf >/dev/null &&
+        sudo systemctl daemon-reload' >/dev/null 2>&1 || true
+    rx 'sudo systemctl restart pithead-lan-guard.service' >/dev/null 2>&1 || rc=$?
+    assert_ne "the guard's firewall step fails (#2749)" "$rc" "0"
+    rc=0
+    rx 'sudo systemctl restart pithead-lan-hold.service' >/dev/null 2>&1 || rc=$?
+    assert_ne "systemd refuses the hold while the guard is failed (#2749)" "$rc" "0"
+    # dockerd's boot restore, by the container's real policy.
+    for c in $containers; do
+        rx "case \$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' $c) in no) ;; *) docker start $c ;; esac" >/dev/null 2>&1 || true
+    done
+    for p in "$@"; do
+        assert_eq "guard failed at boot, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
+    done
+    for c in $containers; do
+        assert_eq "$c stays stopped while the guard is failed (#2749)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" "false"
+    done
+    assert_contains "doctor names the held node and the recovery (#2749)" \
+        "$(rx "bash -c 'source ./pithead && check_lan_guard_hold $*'" 2>&1)" "held since boot"
+    # Starts from outside pithead while the guard is failed, the installed LAN binds still in .env:
+    # restart policy "no" does not stop these, the entrypoint's gate does.
+    # shellcheck disable=SC2086 # one argument per container
+    rx "docker compose start $containers; docker compose up -d --no-deps $containers; docker start $containers; sleep 5" >/dev/null 2>&1 || true
+    for p in "$@"; do
+        assert_eq "compose start/up and docker start with the guard failed, port $p: a non-private source cannot connect (#2749)" \
+            "$(_lan_probe 198.51.100 "$p")" closed
+    done
+    for c in $containers; do
+        assert_eq "$c refused those starts, exit 78, before its daemon listened (#2749)" \
+            "$(rx "docker inspect -f '{{.State.Running}} {{.State.ExitCode}}' $c")" "false 78"
+    done
+    rx 'sudo rm -rf /run/systemd/system/pithead-lan-guard.service.d && sudo systemctl daemon-reload && sudo systemctl reset-failed pithead-lan-guard.service pithead-lan-hold.service' >/dev/null 2>&1 || true
+    rc=0
+    pithead up >/dev/null 2>&1 || rc=$?
+    assert_rc "recovery: ./pithead up (#2749)" "$rc" "0"
+    for c in $containers; do
+        assert_eq "recovery: $c runs again (#2749)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" "true"
+    done
+    for p in "$@"; do
+        assert_eq "recovery, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
+        _lan_assert_open "recovery, port $p: a private source can (#2749)" 10.254.254 "$p"
+    done
+    # Teardown asks the live engine, not the stop or the .env (#2749): with the nodes running,
+    # remove_lan_guard refuses and leaves the rule. (A marker it cannot delete: tier 1.)
+    rc=0
+    rx 'bash -c "source ./pithead && remove_lan_guard"' >/dev/null 2>&1 || rc=$?
+    assert_eq "remove_lan_guard refuses while the engine shows a node running (#2749)" "$rc" "2"
+    rc=0
+    rx "bash -c 'source ./pithead && lan_guard_enforced $*'" >/dev/null 2>&1 || rc=$?
+    assert_rc "...and the rule stays live (#2749)" "$rc" "0"
+    assert_eq "...port $1: a non-private source still cannot connect (#2749)" "$(_lan_probe 198.51.100 "$1")" closed
 }

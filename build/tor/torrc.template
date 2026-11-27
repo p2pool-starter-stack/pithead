@@ -3,9 +3,8 @@
 DataDirectory /var/lib/tor
 
 # --- Network Interfaces ---
-# SOCKS5 proxy interface for routing container traffic through Tor
-# Binds to 0.0.0.0 to accept connections from other services in the Docker network
-SocksPort 0.0.0.0:9050
+SocksPort __NETWORK_PREFIX__.25:9050
+WarnUnsafeSocks 0
 
 # Control interface. No other container uses it: Tari reaches Tor through the SOCKS port only, and
 # its onion is the Tari hidden service the entrypoint appends (#2653). Bind explicitly to this
@@ -26,7 +25,7 @@ ControlPort 127.0.0.1:9051
 
 # P2Pool Hidden Service
 HiddenServiceDir /var/lib/tor/p2pool/
-HiddenServicePort 37888 __NETWORK_PREFIX__.28:37888
+HiddenServicePort __P2POOL_PORT__ __NETWORK_PREFIX__.28:__P2POOL_PORT__
 
 # --- Authentication & Permissions ---
 # Enable cookie-based authentication for the Control Port
@@ -36,6 +35,8 @@ CookieAuthFile /var/lib/tor/control_auth_cookie
 # This facilitates shared access if volumes are mounted with group permissions
 CookieAuthFileGroupReadable 1
 DataDirectoryGroupReadable 1
+
+MaxClientCircuitsPending 64
 
 # --- Logging ---
 # Output logs to stdout for integration with Docker logging drivers

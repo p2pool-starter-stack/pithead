@@ -44,11 +44,21 @@ case " $* " in
 *) : >"$CURL_CONFIG" ;;
 esac
 case " $* " in *' --data-binary @- '*) cat >"$CURL_BODY" ;; *) : >"$CURL_BODY" ;; esac
+output='' previous=''
+for arg; do
+    [ "$previous" != -o ] || output="$arg"
+    previous="$arg"
+done
+if [ -n "$output" ]; then
+    printf '{"change_id":"0123456789abcdef","status":"applied"}\n' >"$output"
+    printf 200
+    exit 0
+fi
 case "${!#}" in
 */get_info) printf '{"status":"OK","synchronized":true}\n' ;;
 */metrics) printf 'pithead_up 1\n' ;;
 */worker-apply) printf '{"status":"applied"}\n' ;;
-*/apply | */status) printf '{"change_id":"fixture-change","status":"applied"}\n' ;;
+*/apply | */status) printf '{"change_id":"0123456789abcdef","status":"applied"}\n' ;;
 *) exit 97 ;;
 esac
 SH
@@ -110,10 +120,10 @@ for IT_MODE in local ssh; do
     assert_metrics_via_caddy
     check_transport user "fixture-user:$IT_DASHBOARD_PASSWORD"
     direct_changes='{"pools":[{"url":"pool.invalid:3333","pass":"fixturesecret42-direct"}]}'
-    test "$(_rig_control_apply "$direct_changes")" = fixture-change
+    test "$(_rig_control_apply "$direct_changes")" = 0123456789abcdef
     check_transport header "Authorization: Bearer $IT_RIG_TOKEN"
     check_transport data-binary "$direct_changes"
-    _rig_control_await fixture-change applied 1
+    _rig_control_await 0123456789abcdef applied 1
     check_transport header "Authorization: Bearer $IT_RIG_TOKEN"
     : >"$ARGV_LOG"
     test "$(_worker_apply worker1 '{"pools":[{"url":"pool.invalid:3333","pass":"fixturesecret42-pool"}]}')" = '{"status":"applied"}'

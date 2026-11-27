@@ -1,14 +1,12 @@
 """First-boot setup wizard (#77 phase 3) — the server half.
 
-A deliberately tiny aiohttp app the host runs pre-provisioning via
-``pithead firstboot-wizard``: token gate -> the wizard SPA -> an atomically written candidate
-config in the spool. The HOST does everything privileged (validation, ``pithead setup``,
-disk installs) — this server only asks, the same trust shape as the #33 control channel.
+The host runs this aiohttp app via ``pithead firstboot-wizard`` before provisioning:
+token gate -> wizard SPA -> atomically written candidate config in the spool. The host owns
+privileged validation, ``pithead setup`` and disk installs, as in the #33 control channel.
 
-The frontend is the dashboard's stack (``web/templates/wizard.html`` +
-``web/static/wizard/wizard.mjs`` — preact/htm, shared CSS, shared pure logic), so the first page
-anyone sees matches the dashboard they live in afterwards. This module serves the shell, the
-static assets, and a small state API; it renders no HTML of its own.
+The dashboard frontend (``web/templates/wizard.html`` + ``web/static/wizard/wizard.mjs``)
+shares preact/htm, CSS and pure logic. This server serves the shell, assets and state API;
+it renders no HTML.
 
 Env contract (set by ``pithead firstboot-wizard``):
   WIZARD_TOKEN     one-time token printed on the console (case/prefix-insensitive to enter)
@@ -22,27 +20,33 @@ Env contract (set by ``pithead firstboot-wizard``):
   WIZARD_BIND      plain bind host:port (default 0.0.0.0:8000)
   WIZARD_BIND_TLS  TLS bind (default 0.0.0.0:8443), used when WIZARD_TLS_CERT/KEY exist; restore
                    uploads and the Secure session cookie are enabled only on that TLS site
-
-After ``MAX_FAILURES`` bad tokens the process exits 3; the host re-mints a fresh token and
-restarts the container — the re-mint loop lives host-side on purpose.
 """
 
 import asyncio
+import contextlib
 import hmac
 import json
+import math
 import mimetypes
 import os
 import ssl
 import sys
+from time import monotonic
 
 from aiohttp import web
 
+from mining_dashboard.config import documents
+from mining_dashboard.wizard.defaults import (
+    disk_inventory,
+    explicit_wizard_config,
+    fast_sync_warning,
+    new_machine_answers,
+    tari_disk_default,
+)
 from mining_dashboard.wizard.form import build_config
 from mining_dashboard.wizard_config import (
-    NEW_MACHINE_ANSWERS,
     deep_merge,
     prepare_config,
-    strip_defaults,
     validate_machine_name,
 )
 from mining_dashboard.wizard_install import validate_install_request
@@ -61,11 +65,8 @@ from mining_dashboard.wizard_transaction import (
 )
 
 MAX_FAILURES = 5
-EXIT_TOKEN_LOCKOUT = 3
-# Restore-at-setup upload cap (#909): a Pithead backup holds only config, keys and the
-# dashboard database, never the blockchains — 64 MiB is generous headroom over that. Mirrored
-# in the pithead script's own RESTORE_MAX_BYTES (client + server, per the spool contract); the
-# two can't share a literal across languages, so keep the VALUE in step by hand.
+AUTH_COOLDOWN_SECONDS = 60
+MAX_AUTH_CLIENTS = 1024
 RESTORE_MAX_BYTES = 64 * 1024 * 1024
 
 COOKIE = "wizard_session"
@@ -86,9 +87,6 @@ def _spool_clear_host_verdict() -> None:
 
 
 def _canon_token(t: str) -> str:
-    """The operator is transcribing from a console, often on a phone that autocapitalizes.
-    Case and the pit- prefix carry no entropy — the six-character suffix does — so neither
-    should be able to fail a correct transcription."""
     t = t.strip().upper()
     return t.removeprefix("PIT-")
 
@@ -100,10 +98,9 @@ def handoff_dir() -> str:
 def _spool_read(name: str, directory: str | None = None) -> str | None:
     """Blocking on purpose: single-operator page, tiny local files."""
     path = os.path.join(directory or spool_dir(), name)
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
+    with contextlib.suppress(FileNotFoundError), open(path, errors="replace") as f:
         return f.read().strip()
+    return None
 
 
 def _spool_json(name: str) -> dict:
@@ -118,7 +115,11 @@ def _spool_json(name: str) -> dict:
 
 def _reference() -> dict:
     """Every key with its documented default, published into the spool by the host."""
-    return {k: v for k, v in _spool_json("config.reference.json").items() if not k.startswith("_")}
+    return {
+        k: v
+        for k, v in _spool_json("config.reference.json").items()
+        if not k.startswith("_") and k != "config_version"
+    }
 
 
 def _last_attempt() -> dict:
@@ -189,16 +190,7 @@ def installer_mode() -> bool:
 
 
 def _disks() -> list[dict]:
-    """The host's inventory, as data. Parsing stays server-side so the client renders objects,
-    never splits strings — and a model containing markup is just a JSON string to it."""
-    out = []
-    for line in (_spool_read("disks.tsv") or "").splitlines():
-        parts = line.split("\t")
-        if len(parts) < 5:
-            continue
-        name, size, model, serial, state = parts[:5]
-        out.append({"name": name, "size": size, "model": model, "serial": serial, "state": state})
-    return out
+    return disk_inventory(_spool_read("disks.tsv") or "")
 
 
 def _authed(request: web.Request) -> bool:
@@ -212,11 +204,29 @@ async def index(request: web.Request) -> web.Response:
     return web.Response(text=_shell_html(), content_type="text/html")
 
 
+def _auth_throttled(remaining: float) -> web.Response:
+    return web.json_response(
+        {"error": "Too many attempts — wait, then try again with the same token."},
+        status=429,
+        headers={"Retry-After": str(max(1, math.ceil(remaining)))},
+    )
+
+
 async def auth(request: web.Request) -> web.Response:
     form = await request.post()
+    now = monotonic()
+    failures = request.app["failures"]
+    for peer, (_, until) in list(failures.items()):
+        if until <= now:
+            del failures[peer]
+    peer = request.remote
+    count, until = failures.get(peer, (0, now + AUTH_COOLDOWN_SECONDS))
+    if count >= MAX_FAILURES:
+        return _auth_throttled(until - now)
     tok = os.environ.get("WIZARD_TOKEN", "")
     supplied = str(form.get("token", "")).strip()
     if tok and hmac.compare_digest(_canon_token(supplied), _canon_token(tok)):
+        failures.pop(peer, None)
         resp = web.HTTPFound("/")
         resp.set_cookie(
             COOKIE,
@@ -226,24 +236,11 @@ async def auth(request: web.Request) -> web.Response:
             samesite="Strict",
         )
         raise resp
-    request.app["failures"] += 1
-    if request.app["failures"] >= MAX_FAILURES:
-        resp = web.json_response(
-            {
-                "error": "Too many attempts — this machine printed a fresh token on its "
-                "console; enter that one."
-            },
-            status=429,
-        )
-        # Flush the refusal to the browser BEFORE the host restarts the container for a
-        # re-mint. prepare/write_eof are idempotent, so aiohttp's own finish step (which
-        # runs them again once this handler returns) is a no-op — this just moves the bytes
-        # onto the wire ahead of the exit, instead of the process tearing down mid-request.
-        await resp.prepare(request)
-        await resp.write_eof()
-        print("wizard: token failure limit reached — exiting for a re-mint", flush=True)
-        request.app["exit"](EXIT_TOKEN_LOCKOUT)
-        return resp
+    if peer not in failures and len(failures) >= MAX_AUTH_CLIENTS:
+        del failures[next(iter(failures))]
+    failures[peer] = (count + 1, now + AUTH_COOLDOWN_SECONDS)
+    if count + 1 >= MAX_FAILURES:
+        return _auth_throttled(AUTH_COOLDOWN_SECONDS)
     return web.json_response({"error": "wrong token"}, status=403)
 
 
@@ -260,14 +257,17 @@ async def wizard_state(request: web.Request) -> web.Response:
     remembered, install_attempt, auth_mode = recovery_state(_spool_json, _spool_read, _disks())
     if changes:
         remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
+    budget = _spool_json("disk-budget.json") or {}
     raw_handoff = _spool_read("handoff.json", handoff_dir()) if stage == "handoff" else None
     return web.json_response(
         {
             "stage": stage,
             # Kept for the field's original meaning; `stage` is what the client renders from.
             "mode": "installer" if installer_mode() else "setup",
-            "config": deep_merge(ref, attempt or NEW_MACHINE_ANSWERS),
+            "config": deep_merge(ref, attempt or new_machine_answers(budget, _disks())),
             "reference": ref,
+            "new_machine": not bool(attempt),
+            "disk_budget": budget,
             "error": _spool_read("error.txt"),
             "disks": _disks(),
             "rig_defaults": _rig_defaults(),
@@ -281,7 +281,8 @@ async def wizard_state(request: web.Request) -> web.Response:
             "install_attempt": install_attempt,
             "auth_mode": auth_mode,
             "restore_enabled": request.app["restore_enabled"],
-        }
+        },
+        headers={"Cache-Control": "no-store"},  # the hand-off card carries the stratum password
     )
 
 
@@ -397,23 +398,35 @@ async def _submit_locked(request: web.Request) -> web.Response:
     # submission against a preserved install must not smuggle a role change past the survivor.
     if str(form.get("role", "")).strip() == "rig":
         return _submit_rig(dict(form))
-    # The JSON pane IS the configuration — what the operator can see is exactly what gets
-    # applied. build_config remains the fallback for a client with no JavaScript.
+    # Check the raw JSON pane before normalization; build_config is the no-JS fallback.
     try:
-        cfg = json.loads(raw) if raw else build_config(dict(form))
+        if raw:
+            cfg = documents.loads(raw)
+            documents.reject_placeholders(cfg)
+        else:
+            cfg = build_config(
+                dict(form),
+                tari_default=tari_disk_default(
+                    _spool_json("disk-budget.json") or {},
+                    _disks(),
+                    str(form.get("disk", "")),
+                    str(form.get("wipe", "keep")),
+                ),
+            )
         if not isinstance(cfg, dict):
             raise ValueError("the top level must be a JSON object")
-    except (ValueError, TypeError) as exc:
-        return web.json_response({"error": f"Not valid JSON: {exc}"}, status=400)
+    except documents.ConfigDocumentError as exc:
+        return web.json_response({"error": exc.diagnostic()}, status=400)
+    except (ValueError, TypeError):
+        return web.json_response({"error": "Not valid JSON: enter a JSON object."}, status=400)
     try:
         cfg, changes = prepare_config(cfg, ref, reject_legacy_conflicts=True)
         validate_machine_name(cfg, _last_attempt())
     except ValueError as exc:
         return web.json_response({"error": f"Invalid configuration: {exc}"}, status=400)
     clear_submission_sidecars()
-    # The dashboard-login choice travels BESIDE the config: "no login" is an empty password,
-    # which is also what "not chosen yet" looks like, so the config alone cannot express intent.
-    # The host reads this to decide whether to generate one.
+    # The host needs a separate login choice: an empty password means either no login
+    # or no choice yet, so config alone cannot tell it whether to generate one.
     mode = str(form.get("auth_mode", "")).strip()
     if mode in ("auto", "set", "none"):
         _spool_write_text("auth-mode", mode)
@@ -437,11 +450,13 @@ async def _submit_locked(request: web.Request) -> web.Response:
     _spool_write_text("submission-staging", "1")
     remember_changes(spool_dir(), changes, _spool_json, _spool_write_text)
     _spool_write_text("last-attempt.json", json.dumps(cfg))
-    _spool_write_config(strip_defaults(cfg, ref) if ref else cfg)
+    _spool_write_config(explicit_wizard_config(cfg, ref))
     if install:
         _publish_install_request(install)
     _spool_write_text("submission-active", "1")
-    return web.json_response({"status": "accepted", "config_changes": changes})
+    return web.json_response(
+        {"status": "accepted", "config_changes": changes, "warning": fast_sync_warning(cfg)}
+    )
 
 
 async def submit_restore(request: web.Request) -> web.Response:
@@ -517,15 +532,14 @@ async def _submit_restore_locked(request: web.Request) -> web.Response:
 
 async def handoff(request: web.Request) -> web.Response:
     """The credentials card, once the host publishes it: dashboard login, dashboard URL, and the
-    stratum address. Authed, over the same TLS the operator typed secrets into — a 32-character
-    random password transcribed from a console was never realistic. Read from handoff_dir(),
-    which the installer keeps volatile."""
+    stratum address. Authed, over the same TLS the operator typed secrets into. Read from
+    handoff_dir(), which the installer keeps volatile."""
     if not _authed(request):
         return web.json_response({"error": "unauthenticated"}, status=401)
     raw = _spool_read("handoff.json", handoff_dir())
     if not raw:
         return web.json_response({"error": "not ready"}, status=404)
-    return web.json_response(json.loads(raw))
+    return web.json_response(json.loads(raw), headers={"Cache-Control": "no-store"})
 
 
 async def handoff_ack(request: web.Request) -> web.Response:
@@ -552,44 +566,39 @@ async def keep_role(request: web.Request) -> web.Response:
 
 
 async def status(request: web.Request) -> web.Response:
+    authed = _authed(request)
     if installer_mode() and _spool_read("stick") != "1":
         if _spool_read("installed") is not None:
-            return web.Response(
-                text="Installed — the machine is switching itself off. "
+            text = (
+                "Installed — the machine is switching itself off. "
                 "Wait for it to go dark, then remove the USB stick and power it back on."
             )
-        err = _spool_read("error.txt")
-        if err is not None:
-            return web.Response(text=f"Install failed: {err}")
-        return web.Response(text="Copying the system to the disk…")
-    if _spool_read("applied") is not None:
+        elif (err := _spool_read("error.txt")) is not None:
+            text = f"Install failed: {err}" if authed else "Install failed."
+        else:
+            text = "Copying the system to the disk…"
+    elif _spool_read("applied") is not None:
         if _spool_read("role") == "rig":
-            # A rig serves no dashboard, so this page is the last thing it will ever show:
-            # say where the machine went rather than promising a link that does not exist.
-            return web.Response(
-                text="Rig settings saved. The miner is starting on this machine now — "
+            text = (
+                "Rig settings saved. The miner is starting on this machine now — "
                 "it appears in your Pithead's Workers view once it connects."
             )
-        return web.Response(text="Provisioned — the dashboard is coming up now.")
-    err = _spool_read("error.txt")
-    if err is not None:
-        return web.Response(text=f"Rejected: {err} — go back and correct the form.")
-    return web.Response(text="Waiting for this machine to validate and apply…")
+        else:
+            text = "Provisioned — the dashboard is coming up now."
+    elif (err := _spool_read("error.txt")) is not None:
+        text = f"Rejected: {err} — go back and correct the form." if authed else "Rejected."
+    else:
+        text = "Waiting for this machine to validate and apply…"
+    return web.Response(text=text, headers={"Cache-Control": "no-store"})
 
 
-def make_app(exit_fn=sys.exit, restore_enabled=False, secure_cookie=False) -> web.Application:
+def make_app(restore_enabled=False, secure_cookie=False) -> web.Application:
     if not clear_page_temps():
         raise RuntimeError("temporary wizard files could not be cleared safely")
-    # Some minimal hosts lack /etc/mime.types, so ES modules would be served as
-    # application/octet-stream, which browsers refuse to execute. Same fix as the dashboard's
-    # server.py — the wizard serves the same static tree.
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("text/javascript", ".js")
-    # aiohttp's default (1 MiB) refuses a restore upload before submit_restore's own, clearer
-    # cap gets a chance to run; a little slack over RESTORE_MAX_BYTES covers multipart overhead.
     app = web.Application(client_max_size=RESTORE_MAX_BYTES + 1_048_576)
-    app["failures"] = 0
-    app["exit"] = exit_fn
+    app["failures"] = {}
     app["restore_enabled"] = restore_enabled
     app["secure_cookie"] = secure_cookie
     app["submission_lock"] = asyncio.Lock()

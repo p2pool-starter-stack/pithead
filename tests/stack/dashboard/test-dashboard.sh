@@ -1,14 +1,8 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Dashboard domain (#1105 Phase 1, appliance lane): the dashboard's own login (Caddy basic_auth
-# enable/disable/change previews plus the actual basic_auth block in the rendered Caddyfile, #8),
-# generate_caddyfile's scheme/port/Host-header render (secure vs. plain HTTP; a custom HOST_PORT
-# moving the vhost off 80/443; the :80 redirect's and :443's own catch-alls so an unmatched Host
-# never falls through to Caddy's silent empty-200 default, #1123/#1132/#740), the v2 global-address
-# guard that keeps a globally-routable address off both the site list AND the `bind` line — Caddy
-# runs a single wildcard listener that matches on Host content alone, so filtering the site list is
-# not sufficient — and dashboard_sync_progress's one-curl re-render of /api/state behind `pithead
-# status` (#384).
+# The global-address guard fences both site names AND bind addresses: Caddy's wildcard
+# listener matches Host content, so filtering only the site list is insufficient.
+# dashboard_sync_progress re-renders /api/state with one curl (#384).
 #
 # The dashboard-onion cluster (vhost render, client-auth crypto, rotate/upgrade/apply capture
 # flows, status) is its own domain in test-dashboard-onion.sh, conventionally sourced after this
@@ -129,7 +123,7 @@ _caddy_appliance() { # $1 = value for DASHBOARD_EXPOSE_PUBLIC_IP
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '192.168.1.10 10.89.0.1 172.28.0.1 2001:db8::1 fd00::1\n'; }
+    stub_host_addrs '192.168.1.10 10.89.0.1 172.28.0.1 2001:db8::1 fd00::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local DASHBOARD_AUTH_HASH_B64="" \
         DASHBOARD_EXPOSE_PUBLIC_IP="$1" generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
@@ -180,7 +174,7 @@ caddy_pinned="$(
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '192.168.1.10 2001:db8::1 fd00::1\n'; }
+    stub_host_addrs '192.168.1.10 2001:db8::1 fd00::1'
     # Pinned to a NAME (the documented appliance case, #1089), not an IP literal: an
     # IP-literal pin puts the box's own address INTO the site list too, so a bind built
     # from the site list and a bind built from the box's addresses render identically —
@@ -211,7 +205,7 @@ caddy_noaddr="$(
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '2001:db8::1\n'; } # ONLY a public address
+    stub_host_addrs '2001:db8::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local DASHBOARD_AUTH_HASH_B64="" \
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
@@ -231,7 +225,7 @@ caddy_onion="$(
     set +e
     is_appliance() { return 0; }
     appliance_mint_cert() { return 1; } # site blocks/binds are under test, not cert minting
-    hostname() { printf '192.168.1.10 2001:db8::1\n'; }
+    stub_host_addrs '192.168.1.10 2001:db8::1'
     DASHBOARD_SECURE=false HOST_IP=pithead.local NETWORK_PREFIX=172.28.0 \
         DASHBOARD_ONION_ENABLED=true DASHBOARD_AUTH_USER=admin \
         DASHBOARD_AUTH_HASH_B64="$(printf 'x' | openssl base64 -A)" \
@@ -239,14 +233,8 @@ caddy_onion="$(
     cat Caddyfile
 )"
 assert_eq "insecure+onion: both vhosts bind, never one wildcard and one specific" \
-    "$(printf '%s' "$caddy_onion" | grep -c '^    bind ')" "2"
+    "$(printf '%s' "$caddy_onion" | grep -c '^    bind ')" "3"
 
-# The invariant, checked by counting rather than by naming the blocks: EVERY site block in the
-# rendered file carries a bind, or none does. A hardcoded count only proves the blocks that
-# happened to render, and that is exactly how the HTTPS onion vhost shipped unbound — it renders
-# only once DASHBOARD_ONION holds a provisioned address, so every test that left it empty saw a
-# correct file. `_site_count` counts site openers (a line starting at column 0 and ending in `{`);
-# the global options block opens with a bare `{`, which the leading-character class excludes.
 _site_count() { printf '%s' "$1" | grep -cE '^[^[:space:]{].*\{[[:space:]]*$'; }
 _bind_count() { printf '%s' "$1" | grep -c '^    bind '; }
 # shellcheck disable=SC1090  # STACK path is dynamic by design
@@ -257,7 +245,7 @@ caddy_onion_https="$(
     is_appliance() { return 0; }
     appliance_tls_dir() { printf '%s' "$SANDBOX/notls"; }
     appliance_mint_cert() { return 1; }
-    hostname() { printf '192.168.1.10 2001:db8::1\n'; }
+    stub_host_addrs '192.168.1.10 2001:db8::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local NETWORK_PREFIX=172.28.0 \
         DASHBOARD_ONION_ENABLED=true DASHBOARD_ONION=abcdefghij234567.onion \
         DASHBOARD_AUTH_USER=admin \
@@ -265,12 +253,8 @@ caddy_onion_https="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-# Six blocks since #1123 took :80 over and #1132 took :443's own empty-200 default: the two LAN
-# vhosts (the known-host :80 redirect and the HTTPS one), the :80 catch-all, the :443 catch-all,
-# and the two onion vhosts. The number is worth pinning rather than deriving — it is what caught
-# the redirect blocks arriving without anyone re-counting.
-assert_eq "secure+onion+provisioned: the HTTPS onion vhost renders (6 site blocks)" \
-    "$(_site_count "$caddy_onion_https")" "6"
+assert_eq "secure+onion+provisioned: the HTTPS onion vhost renders (7 site blocks)" \
+    "$(_site_count "$caddy_onion_https")" "7"
 assert_eq "secure+onion+provisioned: every site block binds — no unbound wildcard on :443" \
     "$(_bind_count "$caddy_onion_https")" "$(_site_count "$caddy_onion_https")"
 
@@ -298,17 +282,9 @@ caddy_onion_https_diy="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-assert_eq "DIY secure+onion+provisioned: no site block binds" \
-    "$(_bind_count "$caddy_onion_https_diy")" "0"
+assert_eq "DIY secure+onion+provisioned: only the loopback verifier binds" \
+    "$(_bind_count "$caddy_onion_https_diy")" "1"
 
-# No two site blocks may name the same scheme://address. Caddy rejects the WHOLE file with
-# "ambiguous site definition" and, under Restart=always, crash-loops — dashboard and onion down
-# together. This is reachable because `hostname -I` reports the container-bridge gateway (it is a
-# real host address), so it landed in the auto-expanded LAN list AND in the onion block, which
-# serves on exactly that address. With dashboard.secure:false the two schemes match and the file
-# is unadaptable. Counting binds cannot see this, which is why it is a separate structural check:
-# these two assertions together are the cheap tier-1 stand-in for the real `caddy adapt` gate
-# tracked in #1037.
 _dupe_sites() {
     printf '%s' "$1" | grep -E '^[^[:space:]{].*\{[[:space:]]*$' |
         sed 's/[[:space:]]*{[[:space:]]*$//' | tr ',' '\n' | tr -d ' ' | grep -v '^$' |
@@ -322,7 +298,7 @@ caddy_insecure_onion_gw="$(
     is_appliance() { return 0; }
     appliance_mint_cert() { return 1; } # site blocks/dupes are under test, not cert minting
     # The physical appliance set: LAN address plus BOTH podman bridge gateways, as documented above.
-    hostname() { printf '192.168.1.10 10.89.0.1 172.28.0.1\n'; }
+    stub_host_addrs '192.168.1.10 10.89.0.1 172.28.0.1'
     DASHBOARD_SECURE=false HOST_IP=pithead.local NETWORK_PREFIX=172.28.0 \
         DASHBOARD_ONION_ENABLED=true DASHBOARD_AUTH_USER=admin \
         DASHBOARD_AUTH_HASH_B64="$(printf 'x' | openssl base64 -A)" \
@@ -350,8 +326,8 @@ caddy_onion_off="$(
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
 )"
-assert_eq "DIY insecure+onion: neither vhost binds — no wildcard/specific clash" \
-    "$(printf '%s' "$caddy_onion_off" | grep -c '^    bind ')" "0"
+assert_eq "DIY insecure+onion: neither vhost binds — only the loopback verifier does" \
+    "$(printf '%s' "$caddy_onion_off" | grep -c '^    bind ')" "1"
 unset -f _caddy_appliance
 unset -f _site_count _bind_count
 unset -f _dupe_sites
@@ -417,7 +393,7 @@ caddy_redir="$(
     set +e
     is_appliance() { return 0; }
     appliance_mint_cert() { return 1; } # the :80 redirect shape is under test, not cert minting
-    hostname() { printf '192.168.1.10 172.28.0.1 fd00::1\n'; }
+    stub_host_addrs '192.168.1.10 172.28.0.1 fd00::1'
     DASHBOARD_SECURE=true HOST_IP=pithead.local NETWORK_PREFIX=172.28.0 DASHBOARD_AUTH_HASH_B64="" \
         generate_caddyfile >/dev/null 2>&1
     cat Caddyfile
@@ -518,7 +494,7 @@ exit "${CURL_RC:-0}"
 EOF
 chmod +x "$SP/bin/curl"
 # Monero mid-sync + Tari still discovering its target height: both surface, monero with numbers.
-sp_body='{"sync":{"monero":{"state":"syncing","percent":87,"current":2451000,"target":2810000,"remaining":359000},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
+sp_body='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":87,"current":2451000,"target":2810000,"remaining":359000},"tari":{"state":"loading","percent":0,"current":0,"target":0,"remaining":0}}}'
 out="$(CURL_BODY="$sp_body" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: monero syncing shows percent + blocks-to-go" "$out" "87% (2451000 / 2810000 blocks, 359000 to go)"
 assert_contains "sync progress: no-target chain reads as discovering" "$out" "discovering the target height"
@@ -528,7 +504,7 @@ sp_done='{"sync":{"monero":{"state":"done","percent":100,"current":10,"target":1
 assert_eq "sync progress: both synced -> silent" \
     "$(CURL_BODY="$sp_done" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)" ""
 # Only monero still syncing: the synced tari is omitted (not listed as done).
-sp_partial='{"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
+sp_partial='{"syncing":true,"sync":{"monero":{"state":"syncing","percent":42,"current":100,"target":238,"remaining":138},"tari":{"state":"done","percent":100,"current":5,"target":5,"remaining":0}}}'
 out="$(CURL_BODY="$sp_partial" PATH="$SP/bin:$PATH" run_sourced "$SANDBOX" dashboard_sync_progress 2>&1)"
 assert_contains "sync progress: partial -> monero listed" "$out" "monero"
 assert_not_contains "sync progress: partial -> synced tari omitted" "$out" "tari"
@@ -538,8 +514,7 @@ assert_eq "sync progress: dashboard down -> silent" \
 rm -rf "$SP"
 
 echo "== black-box: dashboard auth lifecycle (#8) =="
-# The hashing reads the pinned Caddy image out of docker-compose.yml and shells out to the stubbed
-# `caddy hash-password`, so the whole enable → reuse → change → disable path runs offline.
+# Hashing uses the pinned Caddy image and stubbed `caddy hash-password` for the offline lifecycle.
 cp "$ROOT/docker-compose.yml" "$V/docker-compose.yml"
 AUTH_LOG="$V/auth-docker.log"
 
@@ -555,7 +530,9 @@ hash1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_HASH_B64)"
 fp1="$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)"
 [ -n "$hash1" ] && ok "auth hash persisted (base64)" || bad "auth hash persisted (base64)" "empty"
 [ -n "$fp1" ] && ok "auth fingerprint persisted" || bad "auth fingerprint persisted" "empty"
+assert_contains "auth hashing disables container logs" "$(cat "$AUTH_LOG")" "run --rm -i --log-driver none "
 assert_contains "auth hashed via the pinned caddy image" "$(cat "$AUTH_LOG")" "hash-password"
+assert_not_contains "auth password stays out of docker argv" "$(cat "$AUTH_LOG")" "hunter2hunter2"
 assert_contains "Caddyfile gains basic_auth" "$(cat "$V/Caddyfile")" "basic_auth"
 case "$(cat "$V/.env" "$V/Caddyfile")" in
 *hunter2hunter2*) bad "auth plaintext never persisted" "password leaked into .env/Caddyfile" ;;
@@ -577,6 +554,7 @@ esac
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "proxy":{"donate_level":1}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"freshpass99"}} }\n' "$WALLET" >"$V/config.json"
 : >"$AUTH_LOG"
 out="$(cd "$V" && DOCKER_LOG="$AUTH_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_contains "password rotation disables container logs" "$(cat "$AUTH_LOG")" "run --rm -i --log-driver none "
 assert_contains "changed password re-hashes" "$(cat "$AUTH_LOG")" "hash-password"
 assert_eq "changed password updates fingerprint" "$([ "$(run_sourced "$V" env_get_file "$V/.env" DASHBOARD_AUTH_PW_FP)" != "$fp1" ] && echo changed)" "changed"
 assert_contains "auth change recreates caddy" "$(cat "$AUTH_LOG")" "restart caddy"
@@ -589,3 +567,7 @@ case "$(cat "$V/Caddyfile")" in
 *basic_auth*) bad "auth disable drops basic_auth" "basic_auth still present in the Caddyfile" ;;
 *) ok "auth disable drops basic_auth" ;;
 esac
+
+# Required Tari failover distinguishes long RPC outages from live progress.
+assert_contains "Tari-required preview names the outage window" "$(run_sourced "$SANDBOX" describe_change TARI_REQUIRED false true)" "15-minute Tari RPC outage"
+assert_contains "Tari-required preview exempts progress states" "$(run_sourced "$SANDBOX" describe_change TARI_REQUIRED false true)" "startup, migration and syncing only alert"

@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 
 # Cross-version update (#2056): the `update` phase's legs build BOTH A/B slots from THIS tree
@@ -55,6 +57,13 @@ phase_crossupdate() {
         return
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
 
     local id_old hostkey_fp_old
     id_old=$(_ssh cat /etc/machine-id)
@@ -81,7 +90,7 @@ phase_crossupdate() {
     local out rc
     out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1")
     rc=$?
-    [ -n "$out" ] && printf '     install output: %s\n' "$(printf '%s' "$out" | tail -5)"
+    [ -n "$out" ] && printf '     install output: %s\n' "$(printf '%s' "$out" | os_redact_addr | tail -5)"
     [ "$rc" -eq 0 ] || {
         bad "installing the candidate onto the old-version guest failed"
         return
@@ -125,7 +134,7 @@ phase_crossupdate() {
         bad "the candidate slot was never committed by pithead-boot's gate${boot_verdict:+ — it reported: $boot_verdict} (grubenv: ${genv:-unreadable})"
         # What the gate's own doctor run held on: it writes each round's verdict to /run, so the
         # last one names the blocking check rather than leaving "never committed" unexplained.
-        info "  gate doctor fails: $(_ssh "jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")' /run/pithead-boot-doctor.json" 2>/dev/null | tr -d '\r' | cut -c1-300)"
+        info "  gate doctor fails: $(_ssh "jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")' /run/pithead-boot-doctor.json" 2>/dev/null | tr -d '\r' | os_redact_addr | cut -c1-300)"
         return
         ;;
     esac
@@ -169,6 +178,13 @@ phase_crossupdate() {
         case "$names" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
         sleep 15
     done
+    # The swapped slot's `up` may still hold the mutation lock behind tor's healthcheck (#2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished after the slot swap ($(provisioning_state))"
+    else
+        bad "provisioning never finished after the slot swap, or its setup failed; the runtime config cannot be read ($(provisioning_state))"
+        return
+    fi
     local live_wallet="" wdeadline verdict
     wdeadline=$(($(date +%s) + 180))
     while [ "$(date +%s)" -lt "$wdeadline" ]; do
@@ -183,21 +199,16 @@ phase_crossupdate() {
         stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
     fi
 
-    # The COMPLETE stack, judged by the product's own contract instead of a hand-written container
-    # list: `pithead doctor --json` is the exact command the boot gate runs, and it REFUSES a slot
-    # whose revenue containers are down while caddy keeps serving (#852). Sync-held miners (#35) are
-    # not failures to it, so this stays honest on a freshly converged guest rather than demanding a
-    # synced chain the leg cannot reach.
-    if _ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; then
+    if _ssh "cd /data/pithead && PITHEAD_BOOT_GATE=1 PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; then
         ok "the converged candidate passes the product's own doctor contract (the complete stack, not just a boot)"
     else
-        bad "doctor refuses the converged candidate stack: $(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json 2>/dev/null | jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")'" 2>/dev/null | tr -d '\r' | cut -c1-300)"
+        bad "doctor refuses the converged candidate stack: $(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json 2>/dev/null | jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")'" 2>/dev/null | tr -d '\r' | os_redact_addr | cut -c1-300)"
     fi
 
     # Transient healthcheck ephemera excluded, same as the reboot leg's check (provision-reboot.sh):
     # podman drives container healthchecks through hash-named systemd-run units, and one dies
     # harmlessly whenever compose recreates its container mid-check.
-    local failed_units
+    local failed_units donate_min
     failed_units=$(_ssh "systemctl --failed --no-legend --no-pager --plain" 2>/dev/null |
         awk '$1 !~ /^[0-9a-f]{64}-[0-9a-f]+\.service$/' | tr -s ' ' | tr '\n' ';')
     if [ -z "${failed_units//[; ]/}" ]; then
@@ -205,6 +216,25 @@ phase_crossupdate() {
     else
         bad "unit(s) failed after the cross-version update: $failed_units"
     fi
+
+    local baked_commit have_commit miner_sum recorded_sum
+    baked_commit=$(_ssh "cat /opt/rigforge/prebuilt/xmrig/.rigforge-commit 2>/dev/null" | tr -d '\r\n')
+    have_commit=$(_ssh "cat /data/rigforge/data/worker/xmrig/.rigforge-commit 2>/dev/null" | tr -d '\r\n')
+    if [ -n "$baked_commit" ] && [ "$have_commit" = "$baked_commit" ]; then
+        ok "the workspace miner carries the candidate slot's pinned XMRig commit marker"
+    else
+        bad "the workspace miner's commit marker is '${have_commit:-none}', the candidate bakes '${baked_commit:-none}' — the update did not reseed it"
+    fi
+    miner_sum=$(_ssh "sha256sum /data/rigforge/data/worker/xmrig/build/xmrig 2>/dev/null" | awk '{print $1}')
+    recorded_sum=$(_ssh "cat /data/rigforge/data/worker/xmrig/.rigforge-sha256 2>/dev/null" | tr -d '\r\n')
+    if [ -n "$miner_sum" ] && [ "$miner_sum" = "$recorded_sum" ]; then
+        ok "the workspace miner matches its integrity record, so RigForge starts it without a rebuild"
+    else
+        bad "the workspace miner does not match its .rigforge-sha256 record ('${miner_sum:-unreadable}' vs '${recorded_sum:-none}') — first boot would rebuild or fail"
+    fi
+    donate_min=$(_ssh "cat /data/rigforge/data/worker/xmrig/.rigforge-donate-min" 2>/dev/null | tr -d '\r\n')
+    [ "$donate_min" = "0" ] && ok "the workspace miner carries the zero donate minimum (.rigforge-donate-min 0)" ||
+        bad "the workspace miner's .rigforge-donate-min is '${donate_min:-none}', expected 0"
 
     # Deterministic, not a 360s HTTP poll (#2056 review, round 3): job 360 spent its whole marker
     # budget getting "nothing" back from /static/os-test-marker.txt while the dashboard was

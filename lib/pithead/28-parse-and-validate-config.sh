@@ -1,21 +1,8 @@
 parse_and_validate_config() {
     log "Parsing configuration..."
-    if ! jq -e . "$CONFIG_FILE" >/dev/null 2>&1; then
-        error "$CONFIG_FILE is not valid JSON."
-    fi
+    validate_config_document
 
-    # Central .env line-injection guard (#33 hardening). No config string value may carry a
-    # control character (newline, CR, tab, …). A raw newline in a value that renders into .env
-    # unquoted — e.g. monero.node_password, telegram.bot_token, workers.api_token — would inject
-    # a SECOND KEY=value line such as PITHEAD_REGISTRY=evil.tld/attacker; every compose image: is
-    # ${PITHEAD_REGISTRY:-…}, so the root `apply -y` would then pull attacker images for the whole
-    # stack (RCE). Now that the dashboard control channel lets a full config cross the trust
-    # boundary, these fields are attacker-influenceable. Check EVERY string leaf here — the shared
-    # chokepoint both `apply --dry-run` (preview) and `apply -y` (commit) run — so no current or
-    # future field is missed. No legitimate config value contains a control character.
-    if jq -e 'any(.. | strings; test("[[:cntrl:]]"))' "$CONFIG_FILE" >/dev/null 2>&1; then
-        error "$CONFIG_FILE has a config value containing a control character or newline. That is not allowed — it could inject an extra line into the stack's .env. Remove the newline/control character (check secrets like node_password, bot_token, api_token)."
-    fi
+    validate_config_control_characters
 
     if is_appliance && [ "$(appliance_variant)" = release ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
         [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || [ "${PITHEAD_CONFIG_CARRIED_SSH:-0}" = 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
@@ -48,9 +35,6 @@ parse_and_validate_config() {
     case "$TARI_WALLET" in
     *[[:space:]]*) error "tari.wallet_address contains whitespace — a Tari address (base58 or emoji) has none. Check for a stray space or line break in $CONFIG_FILE." ;;
     esac
-    if [ "$MONERO_WALLET" == "your_monero_wallet_address" ] || [ "$TARI_WALLET" == "your_tari_wallet_address" ]; then
-        error "Wallet addresses in $CONFIG_FILE are still the template placeholders. Set your real addresses."
-    fi
     # p2pool pays out via coinbase, which CANNOT go to a subaddress or integrated address — it requires a
     # PRIMARY/standard address (XvB credits by the same address too). A wrong type mines but is NEVER
     # paid, silently — so hard-fail here rather than let someone lose rewards (#250).
@@ -94,11 +78,12 @@ parse_and_validate_config() {
         fi
         # A view key is 64 lowercase hex chars. Reject a malformed value before it reaches the wallet.
         if ! printf '%s' "$MONERO_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "monero.view_key must be the 64-character hex PRIVATE VIEW KEY for monero.wallet_address (get it from your wallet: 'View Key' / 'wallet_secret_view_key'). Got ${#MONERO_VIEW_KEY} chars."
+            error "monero.view_key must be the 64-character hex SECRET VIEW KEY for monero.wallet_address (Monero GUI: Settings › Wallet › Show seed & keys › 'Secret view key'; monero-wallet-cli: viewkey). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#MONERO_VIEW_KEY} chars."
         fi
         case "$PAYOUT_SCAN_HEIGHT" in
-        '' | auto | [0-9]*) ;;
-        *) error "monero.payout_scan_height must be \"auto\" or a block height (integer). Got \"$PAYOUT_SCAN_HEIGHT\"." ;;
+        '' | auto) ;;
+        *[!0-9]*) error "monero.payout_scan_height must be \"auto\" or a block height (integer)." ;;
+        *) ;;
         esac
         PAYOUT_CONFIRM_ENABLED=true
     fi
@@ -107,13 +92,12 @@ parse_and_validate_config() {
     # operator supplies the PRIVATE VIEW KEY plus the PUBLIC SPEND KEY for the Tari payout address;
     # the stack runs a view-only minotari_console_wallet against the LOCAL Tari node to confirm a
     # merge-mine coinbase actually landed. The view key is a SECRET (reveals all incoming amounts and
-    # timing) — handled like node_password: never logged or echoed, delivered to the container via a
-    # tmpfs-mounted compose secret, never the command line or `docker inspect`. Empty (the default) =
+    # timing) — handled like node_password: never logged or echoed, delivered to the container in a
+    # read-only bind-mounted owner-only file, never the command line or `docker inspect`. Empty =
     # feature off. Phase 1 is LOCAL NODE ONLY: a view key with a remote Tari node (#103) is refused,
     # mirroring monero.mode — scanning through a third-party node changes the trust story.
-    # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE THE UNIX EPOCH (a u16, not a
-    # block height), so a fresh wallet doesn't rescan from genesis. TARI_MODE was already parsed and
-    # validated above.
+    # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE 2022-01-01 (#2731), so a fresh
+    # wallet doesn't rescan from genesis. TARI_MODE was already parsed and validated above.
     TARI_VIEW_KEY=$(jq -r '.tari.view_key // empty' "$CONFIG_FILE")
     TARI_SPEND_PUBLIC_KEY=$(jq -r '.tari.spend_public_key // empty' "$CONFIG_FILE")
     TARI_WALLET_BIRTHDAY=$(jq -r '.tari.payout_scan_birthday // "auto"' "$CONFIG_FILE")
@@ -124,21 +108,19 @@ parse_and_validate_config() {
         fi
         # Tari view / public-spend keys are 64 lowercase hex chars (32-byte Ristretto scalar / point).
         if ! printf '%s' "$TARI_VIEW_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (from your Tari wallet: 'export-view-key-and-spend-key'). Got ${#TARI_VIEW_KEY} chars."
+            error "tari.view_key must be the 64-character hex PRIVATE VIEW KEY for the Tari payout address (Tari Universe: 'view_private_key_hex' in config_wallet.json; minotari_console_wallet: export-view-key-and-spend-key). See $DOCS_URL/docs/dashboard.md#getting-your-view-keys. Got ${#TARI_VIEW_KEY} chars."
         fi
-        # A view-only Tari wallet needs the PUBLIC spend key too — require both together.
-        if ! printf '%s' "$TARI_SPEND_PUBLIC_KEY" | grep -qE '^[0-9a-f]{64}$'; then
-            error "tari.spend_public_key must be the 64-character hex PUBLIC SPEND KEY for the Tari payout address (exported alongside the view key). Set it whenever tari.view_key is set."
-        fi
-        # Birthday is "auto" (resolved to today's days-since-epoch at wallet creation) or an explicit
-        # u16 days-since-epoch (0–65535). Reject anything else before it reaches the wallet.
+        # "auto" or a day no later than today: a future day scans from the tip, missing past payouts.
+        local tari_today=$((($(date +%s) - 1640995200) / 86400))
         case "$TARI_WALLET_BIRTHDAY" in
         '' | auto) ;;
-        *[!0-9]*) error "tari.payout_scan_birthday must be \"auto\" or DAYS SINCE THE UNIX EPOCH (an integer 0–65535, NOT a block height). Got \"$TARI_WALLET_BIRTHDAY\"." ;;
-        *) [ "$TARI_WALLET_BIRTHDAY" -le 65535 ] || error "tari.payout_scan_birthday must be ≤ 65535 (days since the Unix epoch, a u16). Got \"$TARI_WALLET_BIRTHDAY\"." ;;
+        *[!0-9]*) error "tari.payout_scan_birthday must be \"auto\" or DAYS SINCE 2022-01-01 (Tari's wallet birthday; Tari Universe's wallet_birthday works as-is), NOT a block height. Got \"$TARI_WALLET_BIRTHDAY\"." ;;
+        *) { [ "${#TARI_WALLET_BIRTHDAY}" -le 5 ] && [ "$((10#$TARI_WALLET_BIRTHDAY))" -le "$tari_today" ]; } || error "tari.payout_scan_birthday must be days since 2022-01-01 (Tari's wallet birthday), no later than today ($tari_today). Got \"$TARI_WALLET_BIRTHDAY\"; a days-since-1970 value is too large." ;;
         esac
         TARI_PAYOUT_CONFIRM_ENABLED=true
     fi
+
+    validate_payout_keys
 
     # Bridge network subnet (#180): configurable so the stack can avoid colliding with a 172.28.0.0/24
     # already in use on the host (Docker else errors "Pool overlaps with other one on this address
@@ -155,26 +137,11 @@ parse_and_validate_config() {
     # Fail-closed Tor-only egress firewall (#270); default on. Renders to .env so `up` can read it.
     # config_bool (not a plain `// true`) so an explicit false actually disables it — see #294.
     TOR_EGRESS_FIREWALL=$(normalize_bool "$(config_bool '.network.tor_egress_firewall' true)")
-    # Clearnet initial sync vs. the egress firewall (#941): a clearnet_initial_sync flag asks a
-    # daemon's first sync to dial out over clearnet (fast); the egress firewall (default on) DROPs
-    # every non-Tor dial. render_env therefore ignores the flag while the firewall is on and keeps
-    # both daemons on Tor (#2649), so the sync runs at ordinary Tor speed. Nothing leaks, so this
-    # is WARN not FAIL — refusing would block a config that is merely slower than the operator
-    # intended, not one that's unsafe. Checked here (not just in render_env, which only runs for
-    # `up`/`apply`) so the contradiction surfaces on every command that validates config,
-    # including `doctor` and `edit`.
-    if [ "$TOR_EGRESS_FIREWALL" = "true" ]; then
-        local _cn_sync=""
-        [ "$(config_bool '.monero.clearnet_initial_sync' false)" = "true" ] && _cn_sync="Monero"
-        [ "$(config_bool '.tari.clearnet_initial_sync' false)" = "true" ] && _cn_sync="${_cn_sync:+$_cn_sync + }Tari"
-        if [ -n "$_cn_sync" ]; then
-            warn "$_cn_sync clearnet_initial_sync is ignored while network.tor_egress_firewall is on — the firewall would drop the clearnet dials, so the node syncs over Tor at normal speed. Turn off tor_egress_firewall for a real clearnet sync, or turn off clearnet_initial_sync to silence this warning."
-        fi
-    fi
     # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits, so the
     # stack never restarts its privacy boundary unbidden. Renders to .env for the dashboard,
     # which owns the probe/restart loop (dashboard .../service/tor_heal.py).
     TOR_AUTO_HEAL=$(normalize_bool "$(config_bool '.tor.auto_heal' false)")
+    TARI_EXPLORER_URL=$(jq -r '.tari.explorer_url // "https://textexplore.tari.com/?json"' "$CONFIG_FILE")
     # Surfaced for the dashboard's egress-posture panel (#170); mirrors what p2pool_outbound_flags reads.
     P2POOL_CLEARNET=$(normalize_bool "$(config_bool '.p2pool.clearnet' false)")
     # Remote-node host/port validation (#103). The central control-char guard above already stops a
@@ -217,26 +184,11 @@ parse_and_validate_config() {
     *) error "p2pool.pool must be \"main\", \"mini\", or \"nano\" (got \"$POOL_TYPE\")." ;;
     esac
 
-    # Host interface the stratum port (:3333) publishes on. Default 0.0.0.0 so LAN rigs can
-    # reach it out of the box; narrow it (e.g. a specific LAN IP, or 127.0.0.1 to disable LAN
-    # access) on a public-IP host. Validate it's an IPv4 literal so a typo can't produce an
-    # unparseable compose port binding. Rendered to STRATUM_BIND in .env.
-    STRATUM_BIND=$(jq -r '.p2pool.stratum_bind // "0.0.0.0"' "$CONFIG_FILE")
-    if ! is_ipv4 "$STRATUM_BIND"; then
-        error "p2pool.stratum_bind must be an IPv4 address like \"0.0.0.0\", \"127.0.0.1\", or your LAN IP (got \"$STRATUM_BIND\")."
-    fi
-
-    # Operator-facing stratum port (#172), default 3333 — the host port xmrig-proxy binds and
-    # publishes, i.e. what every rig dials. Rendered to STRATUM_PORT in .env; RigForge rigs must
-    # point at the same port (rigforge pool.port). p2pool's container-INTERNAL stratum stays fixed
-    # at :3333 (only xmrig-proxy dials it on the bridge), so P2POOL_URL is untouched by this knob.
-    STRATUM_PORT=$(jq -r '.p2pool.stratum_port // 3333' "$CONFIG_FILE")
-    if ! printf '%s' "$STRATUM_PORT" | grep -qE '^[0-9]{1,5}$' || [ "$STRATUM_PORT" -lt 1 ] || [ "$STRATUM_PORT" -gt 65535 ]; then
-        error "p2pool.stratum_port must be an integer between 1 and 65535 (got \"$STRATUM_PORT\")."
-    fi
+    parse_stratum_endpoint
 
     migrate_legacy_workers
     migrate_removed_telegram_control
+    migrate_xvb_na_endpoint
     validate_worker_endpoints
     validate_energy_config
 
@@ -281,6 +233,8 @@ parse_and_validate_config() {
     if ! printf '%s' "$DONATE_LEVEL" | grep -qE '^[0-9]+$' || [ "$DONATE_LEVEL" -gt 99 ]; then
         error "proxy.donate_level must be an integer 0–99 (percent); default 0 (got \"$DONATE_LEVEL\")."
     fi
+
+    validate_donation_config
 
     MONERO_USER=$(jq -r '.monero.node_username // empty' "$CONFIG_FILE")
     MONERO_PASS=$(jq -r '.monero.node_password // empty' "$CONFIG_FILE")
@@ -348,6 +302,14 @@ parse_and_validate_config() {
     for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$CLEARNET_STATE_DIR" "$CONTROL_DIR" "$CADDY_LOG_DIR" "$PROXY_TLS_DIR"; do
         assert_safe_dir "$d"
     done
+    local _dk _dj _dirs=("$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR") _keys=(monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir)
+    for _dk in "${!_dirs[@]}"; do
+        for _dj in "${!_dirs[@]}"; do
+            [ "$_dk" -lt "$_dj" ] || continue
+            [[ "${_dirs[_dk]%/}/" == "${_dirs[_dj]%/}/"* || "${_dirs[_dj]%/}/" == "${_dirs[_dk]%/}/"* ]] || continue
+            error "${_keys[_dk]} (${_dirs[_dk]}) and ${_keys[_dj]} (${_dirs[_dj]}) overlap — one data directory is inside the other; reset or removal of one would destroy the other."
+        done
+    done
 
     # "auto"/empty/DYNAMIC_HOST here means "decide later" (preserved value, prompt, or hostname)
     DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$CONFIG_FILE")" "")
@@ -365,8 +327,7 @@ parse_and_validate_config() {
     if [ -n "$HOST_PORT" ] && ! is_valid_port "$HOST_PORT"; then
         error "dashboard.port must be a whole number between 1 and 65535, or \"auto\" (got \"$HOST_PORT\")."
     fi
-    # Ensure a strict true/false string is returned, defaulting to true
-    DASHBOARD_SECURE=$(jq -r 'if .dashboard.secure != null then .dashboard.secure | tostring else "true" end' "$CONFIG_FILE")
+    DASHBOARD_SECURE=$(normalize_bool "$(config_bool '.dashboard.secure' true)")
     # Deliberate opt-in to serving the dashboard on a globally-routable address. Default false:
     # the appliance auto-publishes every address it holds, and on any network passing IPv6 through
     # that silently included a public one. The supported off-LAN route is the onion service.
@@ -462,4 +423,6 @@ parse_and_validate_config() {
     if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_CLIENT_AUTH" != "true" ]; then
         error "dashboard.control.enabled is true on a published onion (dashboard.onion.enabled) but dashboard.onion.client_auth is false. A root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable .onion. Set dashboard.onion.client_auth: true (the default) and re-run."
     fi
+    stamp_config_version
+
 }

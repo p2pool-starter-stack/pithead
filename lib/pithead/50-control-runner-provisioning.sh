@@ -22,11 +22,12 @@ control_unit_dir() {
 # path; comparing the literal string would call our own unit foreign. A stranded unit usually names
 # a directory that no longer exists, so resolve the deepest existing ancestor and keep the rest
 # verbatim: the caller still gets a comparable, printable path instead of an empty answer.
-control_units_owner_dir() {
+# The egress check pair (#2599) passes its own service and verb.
+control_units_owner_dir() { # [service] [verb]
     local unit_dir owner_dir dir tail
     unit_dir=$(control_unit_dir)
-    owner_dir=$(sed -n 's|^ExecStart=\(/.*\)/pithead control-run-pending$|\1|p' \
-        "$unit_dir/pithead-control.service" 2>/dev/null | head -n 1)
+    owner_dir=$(sed -n "s|^ExecStart=\\(/.*\\)/pithead ${2:-control-run-pending}\$|\\1|p" \
+        "$unit_dir/${1:-pithead-control.service}" 2>/dev/null | head -n 1)
     [ -n "$owner_dir" ] || return 0
     dir="$owner_dir" tail=""
     while [ -n "$dir" ] && [ "$dir" != "/" ] && [ ! -d "$dir" ]; do
@@ -83,7 +84,7 @@ provision_control_runner() {
     # read-only root, systemd cannot write the /etc symlink a persistent enable needs.
     local -a enable_args=(enable --now)
     case "$unit_dir" in /run/*) enable_args=(enable --runtime --now) ;; esac
-    if [ "${DASHBOARD_CONTROL_ENABLED:-false}" != "true" ]; then
+    if [ "${1:-}" = remove ]; then
         if [ -e "$unit_dir/pithead-control.path" ] || [ -e "$unit_dir/pithead-control.service" ]; then
             # The unit names are box-global but a box can hold several checkouts (release bench:
             # live stack + e2e harness + bundle-smoke tmp dirs). Only remove units whose ExecStart
@@ -122,6 +123,10 @@ provision_control_runner() {
     # "$PWD/data/control" as of parse_and_validate_config's own literal $PWD, so the SAME checkout
     # produces two different PathExistsGlob strings across a boot-driven call and an interactive
     # symlink `cd`. Disabled-control callers need not parse a control directory at all.
+    if [ "${DASHBOARD_CONTROL_ENABLED:-false}" != "true" ] && [ "$(id -u)" != 0 ] && ! sudo -n true 2>/dev/null; then
+        warn "Not installing the host runner the dashboard's log export needs: it needs root and passwordless sudo is not available. Re-run './pithead apply' with sudo access to enable the export."
+        return 0
+    fi
     control_dir_p=$(cd "$CONTROL_DIR" 2>/dev/null && pwd -P) || control_dir_p="$CONTROL_DIR"
     # Already installed for this checkout — keep the routine apply sudo-free. (-F: both paths
     # are literals — versioned dirs carry dots (pithead-v1.9.3), and the glob star must not

@@ -16,27 +16,18 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 it_warn() { printf '  \033[1;33m!\033[0m %s\n' "$1" >&2; }
 it_err() { printf '  \033[1;31m!\033[0m %s\n' "$1" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/redact-addr.sh"
 KEY="$HOME/.ssh/pithead-os-test"
 ip=""
-# Overwritten by every _ssh call with that call's stderr (empty on success). Not a log — just the
-# LAST attempt's error text, so a caller that just gave up can classify why without another round
-# trip. See _ssh_unreachable_reason.
 SSH_ERR="/tmp/pithead-os-ssh.err"
-# A fresh run must not inherit the last run's preserved console: the cleanup copy below is
-# no-clobber (the at-assertion copy is the authoritative one), so clear the slate here.
+HOST_SCRATCH="${TMPDIR:-/tmp}/pithead-os-scratch.$$"
 rm -f "$SERIAL.failed"
-# The wallet every phase submits. It must be checksum-VALID: p2pool refuses a well-formed but
-# checksum-invalid address at startup with a SIGABRT and crash-loops (#829), which killed the
-# provision phase's whole miner chain when the harness used `4` + 94×`A`. Host-side validation
-# only checks the shape, so the crash is the first honest verdict. XMRig's public donation
-# address: obviously not ours, plainly labelled, and any share it ever earned would be a donation.
+# Defaults are the owner's public wallets (the README donation wallet and the owner's Tari wallet); bench jobs override both.
 # shellcheck disable=SC2034  # shared through the assembled runner scope
-HARNESS_WALLET="44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
-# A real base58 Tari address: the wizard now decodes + checksum-validates it host-side, so a
-# made-up placeholder is (correctly) rejected before the flow ever reaches the credentials
-# handoff. Same throwaway address the stack suite uses.
+HARNESS_WALLET="${PITHEAD_OS_PAYOUT_MONERO:-486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R}"
 # shellcheck disable=SC2034  # shared through the assembled runner scope
-HARNESS_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivzt3m2XRQHTaYUk9SwmyeCvy5BJ"
+HARNESS_TARI="${PITHEAD_OS_PAYOUT_TARI:-122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG}"
 
 # Every remote call is bounded. CORRECTION (this comment used to claim Debian socket-activates sshd —
 # disproven): os/rootfs/Dockerfile only ever `systemctl enable`/`disable`s the plain ssh.service; no
@@ -210,6 +201,7 @@ _build_image() {
         tail -12 /tmp/os-fault-build.log >&2
         return 1
     }
+    [ -z "${2:-}" ] || bash tests/os/build-label-fixture.sh "$2" os/build/pithead-root.tar || return 1
     os/rauc/mkimage.sh --dev >>/tmp/os-fault-build.log 2>&1 || return 1
     # Every image a phase boots gets the static verification first, in --test mode. The check
     # that matters most is the archive-vs-tree comparison: stale wizard images reached three
@@ -233,9 +225,18 @@ _build_bundle() {
 
 # Bundles are signed with the dev chain and RAUC verifies them against the keyring baked into the
 # slot, so nothing but the bundle itself needs staging.
+#
+# Bounded, and loud on failure (#3049): an unbounded quiet scp that closed mid-transfer left rc=255
+# and nothing else. STAGE_TIMEOUT caps the copy (default 3600 s, deliberately far above any bundle
+# copy, as _ssh's ceiling is) and the keepalive makes a dead peer fail rather than hang. scp's
+# stderr stays on the console so the job log keeps "Connection closed"; a caller that wants it for
+# its own evidence sets STAGE_ERR (the floor leg does, locally). Returns scp's rc; 124 is the
+# timeout kill.
 _stage_bundle() { # $1 bundle path
-    scp -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q \
-        "$1" "root@$ip:/data/update.bundle"
+    local errto="${STAGE_ERR:-/dev/stderr}"
+    timeout "${STAGE_TIMEOUT:-3600}" scp -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=8 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+        "$1" "root@$ip:/data/update.bundle" 2>>"$errto"
 }
 
 # Per-updater command vocabulary — the ONLY updater-specific part of the battery.
@@ -263,6 +264,20 @@ _rollback_cmd() {
     printf 'rauc status mark-bad booted && reboot'
 }
 
+require_owner_payouts() {
+    local v node=0 missing=""
+    for v in PITHEAD_OS_MONERO_NODE_HOST PITHEAD_OS_TARI_NODE_HOST; do
+        [ -z "${!v:-}" ] || node=1
+    done
+    [ "$node" = 1 ] || return 0
+    for v in PITHEAD_OS_PAYOUT_MONERO PITHEAD_OS_PAYOUT_TARI; do
+        [ -n "${!v:-}" ] || missing="$missing $v"
+    done
+    [ -z "$missing" ] || {
+        echo "refusing to run: node inputs are set but the owner payout variable(s) are empty:$missing" >&2
+        exit 2
+    }
+}
 require_host() {
     # timeout bounds every remote call (see _ssh) — without it each one dies 127 and the whole
     # run reads as a bricked guest, so it is a hard dependency, not a nicety.
@@ -342,12 +357,13 @@ require_clean_bench() {
 }
 cleanup() {
     local approval_cleanup_rc=0
+    package_appliance_cleanup || approval_cleanup_rc=$?
     declare -F approval_fixture_cleanup >/dev/null && approval_fixture_cleanup || approval_cleanup_rc=$?
-    # Preserve the console on failure; an at-assertion no-clobber copy remains authoritative.
-    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then
+    if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then # Preserve the console on failure.
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi
+    rm -rf -- "$HOST_SCRATCH" || approval_cleanup_rc=1
     case "${IMAGE_UPGRADE_HOST_STAGE:-}" in
     /tmp/pithead-os-image-upgrade.*) rm -rf -- "$IMAGE_UPGRADE_HOST_STAGE" || approval_cleanup_rc=1 ;;
     esac
@@ -360,6 +376,8 @@ cleanup() {
     [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"
 }
 trap cleanup EXIT
+# Read the serial file directly: grep -q on a pipe can SIGPIPE its writer under pipefail.
+serial_has() { grep -aEq "$1" "$SERIAL"; }
 # Wait until the serial log matches a pattern, or time out. $1 pattern, $2 seconds.
 wait_serial() {
     local pat="$1" deadline=$(($(date +%s) + ${2:-180}))

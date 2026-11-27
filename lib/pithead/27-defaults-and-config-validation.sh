@@ -42,10 +42,9 @@ apply_appliance_defaults() { # [config, default $CONFIG_FILE]
 # A set-but-not-an-array workers.list still reaches validation under its own name.
 readonly WORKER_LIST_JQ='def worker_list: ((.workers // {}) | .list // []);'
 
-# Validate the per-worker endpoint descriptors (#506): a list of {name, host?, port?, token?}
-# objects the dashboard uses to override the fleet worker-API defaults per rig. Nothing here
-# renders to .env — the dashboard reads the list straight off its read-only config.json bind
-# mount (tokens stay in the one owner-only file that already holds secrets) — so this validation
+# Validate the per-worker endpoint descriptors (#506): a list of {name, host?, port?, token?, api_token?}
+# objects the dashboard uses to override the fleet worker-API defaults per rig. The read-only
+# api_token renders to .env bound to host+port; the writable token remains host-only. Validation
 # exists to fail an apply LOUDLY on a typo instead of the dashboard silently dropping the entry
 # at runtime. The `host` charset matters for #122: it must never be able to smuggle a port, path,
 # or userinfo into the dashboard's probe URL.
@@ -56,7 +55,10 @@ validate_worker_endpoints() {
     local dw_err dw_dups
     dw_err=$(jq -r "$WORKER_LIST_JQ"'
         worker_list as $w
-        | if ($w | type) != "array" then "workers.list must be an array of {name, host?, port?, token?} objects."
+        | if (.workers // {}) | type == "object" and has("api_port") and (.api_port != null)
+              and ((.api_port | type) != "number" or (.api_port | tostring | test("^[0-9]+$") | not) or .api_port < 1 or .api_port > 65535)
+          then "workers.api_port must be an integer between 1 and 65535 (the fleet default worker API port)."
+          elif ($w | type) != "array" then "workers.list must be an array of {name, host?, port?, token?, api_token?} objects."
           else [ $w[] |
               if type != "object" then "workers.list entries must be objects (got a \(type))."
               elif (.name | type) != "string" or (.name | test("^[!-~]{1,128}$") | not)
@@ -69,6 +71,8 @@ validate_worker_endpoints() {
                 then "workers.list[\(.name)].control_port must be an integer between 1 and 65535 (the rig writable control API port, #185)."
               elif has("token") and ((.token | type) != "string" or (.token | test("^[!-~]{1,128}$") | not))
                 then "workers.list[\(.name)].token must be 1-128 printable non-space characters."
+              elif has("api_token") and ((.api_token | type) != "string" or (.api_token | test("^[!-~]{1,128}$") | not) or (has("host") | not))
+                then "workers.list[\(.name)].api_token needs an operator-set host and 1-128 printable non-space characters."
               elif has("watts") and ((.watts | type) != "number" or .watts <= 0 or .watts >= 1000000)
                 then "workers.list[\(.name)].watts must be a positive number of watts (a manual power-draw estimate for the energy calculator, #260)."
               else empty end
@@ -206,6 +210,38 @@ migrate_removed_telegram_control() {
     else
         rm -f "$tmp"
         warn "Could not drop the removed telegram.control key from $CONFIG_FILE — it is no longer read, but the dashboard config editor will refuse commits until it is deleted by hand."
+    fi
+}
+
+# XvB is retiring its NA servers in favour of eu.xmrvsbeast.com (#4308): a saved xvb.url on the NA
+# host moves to the EU host with the same port. Nothing else in the file changes, a custom host is
+# left alone, and the prior file is kept as ${CONFIG_FILE}.bak-xvb-na. Best effort: the NA name
+# still resolves, so a failed write only warns.
+readonly XVB_NA_URL_JQ='(.xvb | objects | .url | strings) | test("^na\\.xmrvsbeast\\.com(:[0-9]+)?$"; "i")'
+migrate_xvb_na_endpoint() {
+    local owner tmp="${CONFIG_FILE}.tmp"
+    [ -f "$CONFIG_FILE" ] || return 0
+    jq -e "$XVB_NA_URL_JQ" "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    if [ "$PITHEAD_DRY_RUN" -eq 1 ]; then
+        log "xvb.url would move from na.xmrvsbeast.com to eu.xmrvsbeast.com on apply."
+        return 0
+    fi
+    if ! cp -p "$CONFIG_FILE" "${CONFIG_FILE}.bak-xvb-na" 2>/dev/null; then
+        warn "Could not back up $CONFIG_FILE before moving xvb.url off na.xmrvsbeast.com — leaving it; change it to eu.xmrvsbeast.com by hand."
+        return 0
+    fi
+    owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
+    if (
+        umask 077
+        jq 'if (.xvb | type) == "object" then .xvb.url |= sub("^na\\.xmrvsbeast\\.com"; "eu.xmrvsbeast.com"; "i") else . end' "$CONFIG_FILE" >"$tmp" 2>/dev/null
+    ); then
+        mv "$tmp" "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        if [ -n "$owner" ]; then chown "$owner" "$CONFIG_FILE" 2>/dev/null || true; fi
+        log "XvB retired its NA servers: xvb.url moved to eu.xmrvsbeast.com (same port) — the old copy is at ${CONFIG_FILE}.bak-xvb-na."
+    else
+        rm -f "$tmp"
+        warn "Could not move xvb.url off na.xmrvsbeast.com in $CONFIG_FILE — change it to eu.xmrvsbeast.com by hand."
     fi
 }
 

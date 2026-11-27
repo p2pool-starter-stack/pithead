@@ -35,9 +35,10 @@ def restore_spool(spool):
 
 
 @pytest.fixture
-async def client(spool):
+async def client(spool, monkeypatch):
     exits = []
-    app = wizard.make_app(exit_fn=lambda code: exits.append(code), restore_enabled=True)
+    monkeypatch.setattr(wizard.sys, "exit", exits.append)
+    app = wizard.make_app(restore_enabled=True)
     app["exits"] = exits
     c = TestClient(TestServer(app))
     await c.start_server()

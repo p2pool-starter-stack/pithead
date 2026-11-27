@@ -1,33 +1,11 @@
 #!/usr/bin/env bash
-# Tor-only egress ENFORCEMENT backstop for the provisioned appliance (#855/#2059). Sourced by
-# tests/os/run.sh; --self-test drives the leg against a stubbed guest.
-#
-# Why this lives in its own file rather than inline at the tail of the provision phase (#2059):
-# it is the only tier-4 assertion in the repo that proves the KERNEL enforces Tor-only egress, and
-# it used to sit ~55 lines from the end of `_phase_provision_initial`, downstream of a dozen
-# `return 1` aborts on unrelated liveness legs (the image build, SSH, the wizard token, the
-# credentials handoff, caddy answering on :443). Any red in any of those retired the product's
-# stated security property SILENTLY while the battery still reported on everything it did reach —
-# which is how a fail-open appliance shipped green through every battery to date. The caller now
-# runs this on every path and it says out loud when it could not be exercised.
-#
-# Tier 1 (tests/stack/test-tor-network.sh) proves the RENDERED ruleset; tier 4 is the only tier
-# that can show the kernel acting on it. There are two backends behind one allow-set
-# (lib/pithead/02-tor-egress.sh): iptables/DOCKER-USER on the DIY Docker channel and an
-# independent `inet pithead_egress` nftables table on the appliance's podman/netavark channel.
-# The e2e channel runs Docker, so this leg is the netavark backend's only live coverage anywhere.
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 
-# Diagnostic probes run when an enforcement assertion FAILS. Pure (no I/O) so it self-tests, and
-# single-sourced so the capture set cannot drift from what #2059 asked for.
-#
-# The leading question on a red is whether the nft table is ABSENT (the apply silently failed, or
-# resolved no bridge) or PRESENT but INEFFECTIVE (wrong interface, or netavark's priority-0 accept
-# winning anyway). Those need opposite fixes and the dial alone cannot tell them apart, so every
-# future red would otherwise cost another KVM cycle to diagnose — the same gap #2054 closed for the
-# restore leg. `engine` is the first row on purpose: apply_tor_egress_firewall branches on
-# container_engine, and a `docker` verdict on the appliance sends the rules into the orphaned
-# DOCKER-USER chain, which is failure mode #1 for this defect.
-egress_diag_probes() { # -> "<label>\t<remote command>" per line
+# shellcheck source=tests/integration/lib/tor-control-dial.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../integration/lib" && pwd)/tor-control-dial.sh"
+
+egress_diag_probes() {
     printf '%s\t%s\n' \
         'engine' 'grep -h "^PITHEAD_ENGINE=" /etc/environment 2>/dev/null; cd /data/pithead 2>/dev/null && bash -c "source ./pithead && container_engine" 2>/dev/null' \
         'nft-table' 'nft list table inet pithead_egress 2>&1' \
@@ -43,22 +21,12 @@ egress_has_global_v6() { # <if_inet6 contents>
     awk '$4 == "00" { found = 1 } END { exit !found }' <<<"$1"
 }
 
-# Run every probe and print a bounded one-line excerpt each. Bounded on purpose: the harness
-# contract (CLAUDE.md) is that raw dumps never reach model context — this is a signpost telling the
-# next run which half of the fork it is on, not the evidence itself. The full guest is still there
-# under `--keep` for anyone who needs the untruncated ruleset.
 _egress_capture_diagnostics() {
     local label cmd out ran=0
     info "  egress diagnostics (#2059) — is the table ABSENT, or PRESENT but ineffective?"
-    # `</dev/null` on the _ssh call is load-bearing, not tidiness. `_ssh` runs ssh without -n, and
-    # ssh reads stdin — inside a `while read` loop that stdin is the PROBE LIST, so the first probe
-    # swallowed every remaining row and the loop ended after one line. MEASURED on the 2026-09-11
-    # battery: the row printed `engine:` and nothing else, so the nft-table dump that distinguishes
-    # "table absent" from "table present but ineffective" never ran — the exact question the
-    # diagnostics exist to answer, on the exact run they were built for.
     while IFS=$'\t' read -r label cmd; do
         [ -n "$label" ] || continue
-        out=$(_ssh "$cmd" </dev/null 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
+        out=$(_ssh "$cmd" </dev/null 2>/dev/null | os_redact_addr | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
         info "    $label: ${out:-<empty>}"
         ran=$((ran + 1))
     done < <(egress_diag_probes)
@@ -70,15 +38,7 @@ _egress_capture_diagnostics() {
         info "    (INCOMPLETE: $ran of $want probes ran — treat the above as partial evidence)"
 }
 
-# The enforcement leg. Never returns non-zero in a way the caller acts on — it reports through
-# ok/bad like every other assertion.
-#
-# <phase-rc> is the provision body's result so far. It decides only how an UNEXERCISED backstop is
-# reported: on an already-red phase a "could not run" line is an `info` (the battery verdict is
-# already FAIL, nothing is being hidden), but on a GREEN phase it is a `bad` — a passing battery
-# must never quietly omit the product's stated security property. That asymmetry is the whole point
-# of #2059.
-phase_provision_egress_backstop() { # <phase-rc>
+phase_provision_egress_backstop() {
     local phase_rc="${1:-0}"
     local unexercised=bad
     [ "$phase_rc" -eq 0 ] || unexercised=info
@@ -133,22 +93,20 @@ phase_provision_egress_backstop() { # <phase-rc>
     28) ok "direct clearnet dial from a mining container is dropped — Tor-only egress is enforced" ;;
     *) bad "the direct clearnet dial from monerod failed without timing out (rc=$rc) — the Tor-only egress drop is unverified" ;;
     esac
-    # POSITIVE — the SAME container still reaches clearnet THROUGH Tor's SOCKS, proving the drop
-    # spares Tor and intra-subnet traffic (real mining keeps working) AND that the negative above
-    # failed because of the firewall rather than because the guest has no route to the internet at
-    # all. Tor's default SOCKS is 172.28.0.25:9050 on the appliance's mining_net.
-    if _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 30 --socks5-hostname 172.28.0.25:9050 http://1.1.1.1/" 2>/dev/null; then
-        ok "egress through Tor's SOCKS still works — the drop did not break real mining"
+    local attempt=1 tried=""
+    while [ "$attempt" -le "$TOR_CONTROL_DIAL_ATTEMPTS" ]; do
+        rc=0
+        _ssh "$(tor_control_dial_cmd podman /usr/bin/curl 172.28.0.25:9050 "$attempt")" 2>/dev/null || rc=$?
+        [ "$rc" -ne 0 ] || break
+        tried="${tried:+$tried; }attempt $attempt exit=$rc"
+        attempt=$((attempt + 1))
+    done
+    if [ "$rc" -eq 0 ]; then
+        ok "egress through Tor's SOCKS still works — the drop did not break real mining${tried:+ (passed on attempt $attempt of $TOR_CONTROL_DIAL_ATTEMPTS; $tried)}"
     else
-        bad "the mining container can no longer reach clearnet even through Tor — the firewall is too tight, or the guest has no route out (which would also void the drop above)"
+        bad "the mining container can no longer reach clearnet even through Tor (all $TOR_CONTROL_DIAL_ATTEMPTS attempts failed; $tried) — the firewall is too tight, or the guest has no route out (which would also void the drop above)"
         _egress_capture_diagnostics
     fi
-    # IPv6 backstop (#858): mining_net is IPv4-only by design, so monerod has no global v6 and this
-    # leg self-skips on the stock appliance. If mining_net ever gains a v6 subnet, the container CAN
-    # originate v6 clearnet — assert that dial is DROPPED too (the fail-open the v4-only rules left
-    # behind). Guarded on the container actually holding a global v6 address. The guard reads the
-    # kernel's own table with the image's cat: the image ships no `ip`, and a guard that cannot run
-    # must fail rather than report the IPv4-only pass below (bench-ci#532).
     local inet6
     rc=0
     inet6=$(_ssh "podman exec monerod /usr/bin/cat /proc/net/if_inet6" 2>/dev/null) || rc=$?
@@ -168,19 +126,28 @@ phase_provision_egress_backstop() { # <phase-rc>
     else
         ok "mining_net is IPv4-only (no global v6 in the container) — v6 clearnet dial not possible, backstop not exercised"
     fi
+    # The dashboard's view of the same backstop (#2599): pithead-egress.timer (rendered into /run each
+    # boot, OnBootSec=2min) must be active, and its read-only check must have written rc 0.
+    if [ "$(_ssh 'systemctl is-active pithead-egress.timer' 2>/dev/null)" = active ]; then
+        ok "pithead-egress.timer is active on the appliance — the dashboard gets the live firewall verdict (#2599)"
+    else
+        bad "pithead-egress.timer is not active on the appliance — the dashboard shows the egress firewall as unverified (#2599)"
+    fi
+    local status deadline=$(($(date +%s) + ${EGRESS_STATUS_TIMEOUT:-240}))
+    until status=$(_ssh "jq -c '[.rc, .verdict]' /data/pithead/data/control/results/egress-status.json" 2>/dev/null) &&
+        [ "$status" = '[0,"enforced"]' ] || [ "$(date +%s)" -ge "$deadline" ]; do sleep 10; done
+    if [ "$status" = '[0,"enforced"]' ]; then
+        ok "the host check wrote rc 0 (enforced) for the dashboard (#2599)"
+    else
+        bad "the host check did not write an enforced verdict for the dashboard (got: ${status:-no file}) (#2599)"
+        _egress_capture_diagnostics
+    fi
     return 0
 }
 
-# Drive the leg against a stubbed guest in a subshell, so the stubs and counters never leak into the
-# caller. Prints one line per guest command (`call ...`) and per reported row (`ok ...`/`bad ...`).
-# <guest>: unreachable | no-curl (curl exits 127) | no-cat (cat exits 127) | v4-only | global-v6 |
-# dial-lost (both direct dials die in podman, 125) | dial-refused (both are refused, curl 7) |
-# fail-open (both connect) | tor-down (the SOCKS dial fails, curl 7). All but v4-only hold a global
-# v6 address. Otherwise the guest is well behaved: the direct dials time out (28) and the Tor SOCKS
-# dial succeeds.
-_egress_drive() { # <phase-rc> <guest>
+_egress_drive() {
     (
-        guest=$2
+        guest=$2 EGRESS_STATUS_TIMEOUT=0 socks_calls=0
         ok() { printf 'ok %s\n' "$1"; }
         bad() { printf 'bad %s\n' "$1"; }
         info() { :; }
@@ -191,7 +158,15 @@ _egress_drive() { # <phase-rc> <guest>
             case "$1" in
             true) return 0 ;;
             *"podman ps"*) printf 'monerod\n' ;;
-            *--socks5-hostname*) if [ "$guest" = tor-down ]; then return 7; else return 0; fi ;;
+            *"is-active pithead-egress.timer"*) [ "$guest" = no-status ] || printf 'active\n' ;;
+            *egress-status.json*) [ "$guest" = no-status ] || printf '[0,"enforced"]\n' ;;
+            *--socks5-hostname*)
+                socks_calls=$((socks_calls + 1))
+                case "$guest" in
+                tor-down) return 7 ;;
+                tor-flaky) [ "$socks_calls" -ge 3 ] || return 52 ;;
+                esac
+                ;;
             *"/usr/bin/curl --version"*) [ "$guest" != no-curl ] || return 127 ;;
             *"/usr/bin/cat /proc/net/if_inet6"*)
                 [ "$guest" != no-cat ] || return 127
@@ -273,6 +248,12 @@ _egress_self_test() {
         printf 'a container with only lo and link-local v6 was not read as IPv4-only: %s\n' "$out" >&2
         f=$((f + 1))
     }
+    out=$(_egress_drive 0 no-status) # #2599: red when no timer or status file exists
+    grep -q '^bad pithead-egress.timer is not active' <<<"$out" &&
+        grep -q '^bad the host check did not write an enforced verdict' <<<"$out" || {
+        printf 'a guest with no egress-status timer or file was not reported: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
     out=$(_egress_drive 0 global-v6)
     grep -q "^call podman exec monerod /usr/bin/curl .*2606:4700" <<<"$out" &&
         grep -q '^ok direct IPv6 clearnet dial from a mining container is dropped' <<<"$out" || {
@@ -311,8 +292,26 @@ _egress_self_test() {
         printf 'a monerod probe is not pinned to an absolute /usr/bin path: %s\n' "$out" >&2
         f=$((f + 1))
     fi
-    [ "$(grep -c '^call podman exec monerod /usr/bin/curl -s' <<<"$out")" = 3 ] || {
-        printf 'expected three pinned curl dials (v4 direct, Tor SOCKS, v6 direct): %s\n' "$out" >&2
+    [ "$(grep -c '^call podman exec monerod /usr/bin/curl -s' <<<"$out")" = 5 ] || {
+        printf 'expected five pinned curl dials (v4 direct, three Tor SOCKS attempts, v6 direct): %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    grep -q 'all 3 attempts failed; attempt 1 exit=7; attempt 2 exit=7; attempt 3 exit=7' <<<"$out" || {
+        printf 'a dead Tor path did not name all three attempts: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    out=$(_egress_drive 0 tor-flaky)
+    grep -q "^ok egress through Tor's SOCKS still works.*passed on attempt 3 of 3; attempt 1 exit=52; attempt 2 exit=52" <<<"$out" &&
+        ! grep -q '^bad ' <<<"$out" &&
+        grep -q '^call podman exec monerod /usr/bin/curl -s -o /dev/null -m 30 --socks5-hostname 172.28.0.25:9050 http://1.1.1.1/$' <<<"$out" &&
+        [ "$(grep -c -- '--proxy-user' <<<"$out")" = 2 ] &&
+        [ "$(grep -- '--proxy-user' <<<"$out" | grep -o 'pithead-control-[^ ]*' | sort -u | wc -l | tr -d ' ')" = 2 ] || {
+        printf 'two failed Tor attempts then a success was not a pass on fresh SOCKS users: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    out=$(_egress_drive 0 v4-only)
+    [ "$(grep -c -- '--socks5-hostname' <<<"$out")" = 1 ] || {
+        printf 'a first-attempt success still retried: %s\n' "$out" >&2
         f=$((f + 1))
     }
 
@@ -335,12 +334,12 @@ _egress_self_test() {
 
     # The property #2059 is actually about: the backstop runs even when the provision body ABORTS,
     # and the body's rc still propagates (so an abort keeps stopping the reboot/migration legs).
-    # Driven through the real caller with both halves stubbed — a source grep would still pass on a
-    # wrapper that called the leg and then swallowed the rc, or that was never called at all.
+    # Drive the real caller with stubbed halves; a source grep cannot prove execution or rc propagation.
     local caller
     caller="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh"
     (
-        OS_RUN_SUITE=1 ran=0
+        # shellcheck disable=SC2034 # sourced phase reads the suite marker and runner path.
+        OS_RUN_SUITE=1 SCRIPT_DIR="${caller%/phases/*}" ran=0
         # shellcheck source=tests/os/phases/provision-initial.sh
         . "$caller" # an unreachable caller fails here, which is the same verdict
         _phase_provision_initial_body() { return 7; }

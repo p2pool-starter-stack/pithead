@@ -1,5 +1,46 @@
+control_tor_newnym() ( # <control-dir> <id> <actor>; isolate the lock's exit-on-contention path
+    # Enabling auto-heal delegates a bounded NEWNYM capability to the dashboard. The host cannot
+    # attest the dashboard's HTTPS probe; it enforces its own persistent limit and serialization.
+    local cdir="$1" id="$2" actor="$3" stamp="$1/tor-newnym-budget" first=0 count=0 now
+    command -v flock >/dev/null || return 1
+    PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire tor-newnym || return 1
+    [ "${_PITHEAD_LOCK_OWNED:-0}" = 1 ] || return 1
+    now=$(date +%s)
+    if [ -L "$stamp" ]; then
+        first=invalid
+    elif [ -f "$stamp" ]; then
+        read -r first count <"$stamp" || first=invalid
+    fi
+    if ! [[ "$first" =~ ^[0-9]+$ && "$count" =~ ^[0-9]+$ ]]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid NEWNYM budget",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym rejected
+    else
+        if [ $((now - first)) -ge 86400 ]; then
+            first=0
+            count=0
+        fi
+        if [ "$count" -ge 2 ] || { [ "$count" -gt 0 ] && [ $((now - first)) -lt 1800 ]; }; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"NEWNYM budget or cooldown",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym rejected
+        else
+            [ "$first" -ne 0 ] || first=$now
+            if ! printf '%s %s\n' "$first" "$((count + 1))" >"$stamp"; then
+                control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"NEWNYM budget unavailable",ts:(now|floor)}')"
+                control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym failed
+            elif docker exec tor /usr/local/bin/tor-control-signal.sh NEWNYM >/dev/null 2>&1; then
+                control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",action:"tor-newnym",ts:(now|floor)}')"
+                control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym applied
+            else
+                control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"Tor control signal failed",ts:(now|floor)}')"
+                control_audit "$cdir/audit/control.log" "$id" "$actor" tor-newnym failed
+            fi
+        fi
+    fi
+    mutation_lock_release
+)
+
 control_process_request() { # <claimed-file> <control-dir>
-    local file="$1" cdir="$2" id action actor size
+    local file="$1" cdir="$2" id action actor size chain
     # Refuse a symlinked / non-regular claimed file (graft #437): a symlink dropped in requests/
     # could point the root runner at any host file. Skip + audit, never follow it.
     if [ -L "$file" ] || [ ! -f "$file" ]; then
@@ -22,15 +63,21 @@ control_process_request() { # <claimed-file> <control-dir>
     id=$(jq -r '.id // ""' "$file")
     # Strict canonical uuid4 (version nibble 4, variant nibble 8/9/a/b) — the id becomes a result/
     # staged FILENAME, so pin it hard (defense-in-depth, from #438). submit() mints str(uuid4()).
-    if ! printf '%s' "$id" | grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+    if ! [[ "$id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
         warn "Control request has a malformed id — discarded (no result can be addressed)."
+        return 0
+    fi
+    local document_error
+    if ! document_error=$(config_document_error "$file" request); then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$document_error" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
     fi
     # `container` and `lines` ride the read-only diagnostics verbs (#943). They widen this closed
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '[keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines")] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '(.action == "tor-history") as $history | [keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain" and . != "appliance" and . != "hours" and . != "since" and . != "until" and (($history == false) or (. != "outage" and . != "observed_at")))] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -38,9 +85,72 @@ control_process_request() { # <claimed-file> <control-dir>
     actor=$(jq -r '.actor // ""' "$file")
     # The actor rides into the audit log; it originates from Caddy's X-Auth-User but the container
     # writes the file, so re-validate it against the basic_auth username charset.
-    printf '%s' "$actor" | grep -qE '^[A-Za-z0-9._@-]{0,64}$' || actor="untrusted"
+    [[ -n "$actor" && "$actor" =~ ^[A-Za-z0-9._@-]{0,64}$ ]] || actor="untrusted"
     action=$(jq -r '.action // ""' "$file")
+    if [ "${CONTROL_EXPORT_ONLY:-0}" = 1 ] && [ "$action" != support-bundle ] && [ "$action" != support-bundle-range ]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"the dashboard control channel is off (dashboard.control.enabled); only the support bundle export is available",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "${action:-none}" "rejected"
+        return 0
+    fi
     case "$action" in
+    egress-sync)
+        chain=$(jq -r 'if ((keys | sort) == ["action","actor","chain","id"])
+            then .chain // "" else "" end' "$file")
+        control_egress_sync "$id" "$chain" "$cdir"
+        ;;
+    tor-newnym)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        elif ! control_tor_newnym "$cdir" "$id" "$actor"; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"host mutation lock unavailable",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        fi
+        ;;
+    tor-recover)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ] ||
+            [ "$actor" != tor-heal ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid recovery request or auto-heal disabled",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        else
+            control_tor_recover "$cdir" "$id" "$actor"
+        fi
+        ;;
+    tor-heal-exhausted)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ] ||
+            [ "$actor" != tor-heal ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid exhaustion record or auto-heal disabled",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        else
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",action:"tor-heal-exhausted",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" applied
+        fi
+        ;;
+    tor-reset)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",action:"tor-reset",error:"Tor auto-heal is off (TOR_AUTO_HEAL), so the Tor state reset is unavailable",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        elif [ "$(jq -r 'keys | sort == ["action","actor","id"]' "$file")" != true ] || [ "$actor" = tor-heal ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",action:"tor-reset",error:"invalid reset request",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" rejected
+        else
+            control_tor_reset "$cdir" "$id" "$actor"
+        fi
+        ;;
+    tor-history)
+        if [ "$(env_get TOR_AUTO_HEAL 2>/dev/null)" != true ] ||
+            [ "$(jq -r 'keys | sort == ["action","actor","id","observed_at","outage"]' "$file")" != true ] ||
+            ! jq -e '.actor == "tor-heal" and (.outage | type == "string" and (. == "" or test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"))) and (.observed_at | type == "number" and . == floor and . >= 0)' "$file" >/dev/null; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"invalid history request",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "rejected"
+        elif ! control_tor_history "$cdir" "$id" "$actor" "$(jq -r .outage "$file")" "$(jq -r .observed_at "$file")"; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"failed",error:"history observation unavailable",ts:(now|floor)}')"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "$action" "failed"
+        fi
+        ;;
     preview) control_preview "$file" "$id" "$actor" "$cdir" ;;
     commit) control_commit "$id" "$actor" "$cdir" "$(jq -r '.confirm // ""' "$file")" "$(jq -c '.approval // null' "$file")" ;;
     upgrade) control_upgrade "$file" "$id" "$actor" "$cdir" ;;
@@ -55,13 +165,11 @@ control_process_request() { # <claimed-file> <control-dir>
     os-verify) control_os_verify "$file" "$id" "$actor" "$cdir" ;;
     os-install) control_os_install "$file" "$id" "$actor" "$cdir" ;;
     os-reboot) control_os_reboot "$file" "$id" "$actor" "$cdir" ;;
-    # Read-only diagnostics for a shell-less appliance operator: report, never mutate. Both are
-    # bounded host-side and the log tail is redacted by bundle_redact_log before it is written.
     diag-doctor) control_diag_doctor "$id" "$actor" "$cdir" ;;
     diag-logs) control_diag_logs "$file" "$id" "$actor" "$cdir" ;;
-    # Also read-only, and the one that hands back a SECRET rather than a report (#1882): the Tor
-    # client-auth line without which a client-auth'd dashboard onion cannot be opened at all. It is
-    # a one-time kit with the backup kit's TTL and redaction, and every reveal lands in audit/.
+    svc-restart) control_svc_restart "$file" "$id" "$actor" "$cdir" ;;
+    support-bundle) control_support_bundle "$file" "$id" "$actor" "$cdir" ;;
+    support-bundle-range) control_support_range "$file" "$id" "$actor" "$cdir" ;;
     onion-client-key) control_onion_client_key "$id" "$actor" "$cdir" ;;
     *)
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unknown action",ts:(now|floor)}')"
@@ -82,7 +190,7 @@ control_process_request() { # <claimed-file> <control-dir>
 #     more than CONTROL_BACKUP_MAX_COUNT (3) exist;
 #   - whatever age/count leave behind is still capped at CONTROL_RESULTS_MAX_BYTES (512 MiB) total,
 #     oldest-first, unless the protected files alone exceed it.
-# os-update-state.json (the appliance's persistent update ledger) is never a candidate, by name.
+# OS-update state and host-attested clearnet transitions are persistent state, not request results.
 # The result named by a live claim also never falls to age/count/bytes. A verb that blocks on a
 # background operation keeps rewriting its own result; the claimed request identifies that result
 # without making the newest completed result immortal.
@@ -111,10 +219,8 @@ control_prune_results() { # <control-dir>
     # backup kit's plaintext passphrase; remove it only after the download window, never while a
     # normal atomic rename can still be in flight.
     find "$dir" -maxdepth 1 -type f -name '.*.tmp' -mmin +"$window_min" -delete 2>/dev/null || true
-
-    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null); do
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null || true); do
         [ -f "$dir/$archive" ] || continue
-        # Still inside its download window: untouchable, and does not count against the cap below.
         [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
         kept=$((kept + 1))
         if [ "$kept" -gt "$max_archives" ]; then
@@ -123,28 +229,38 @@ control_prune_results() { # <control-dir>
         fi
     done
 
+    local kept_b=0
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz *.zip 2>/dev/null || true); do
+        [ -f "$dir/$archive" ] || continue
+        [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+        kept_b=$((kept_b + 1))
+        if [ "$kept_b" -gt "$max_archives" ]; then
+            id=$(basename "${archive%.zip}" .tar.gz)
+            rm -f "$dir/$archive" "$dir/$id.json"
+        fi
+    done
+
     local result n=0
-    # Age and count share one pass (and one skip list) so a backup's own result JSON is never
-    # evicted here while its archive is still protected above — a separate age-only find/-delete
-    # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
     [ -n "$active_result" ] && [ -f "$dir/$active_result" ] && n=1
-    for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
-        [ "$result" == "os-update-state.json" ] && continue
+    for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null || true); do
+        case "$result" in os-update-state.json | tor-heal-outage.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
         [ "$result" == "$active_result" ] && continue
-        [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
+        [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue
+        [ -f "$dir/$(basename "$result" .json).tar.gz" ] && continue
+        [ -f "$dir/$(basename "$result" .json).zip" ] && continue
         n=$((n + 1))
         if [ "$n" -gt "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
             rm -f "$dir/$result"
         fi
     done
 
-    local total f
+    local total f pair
     total=$(du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}')
     [ -n "$total" ] || total=0
     if [ "$total" -gt "$max_bytes" ]; then
-        for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null); do
+        for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null || true); do
             [ "$total" -le "$max_bytes" ] && break
-            [ "$f" == "os-update-state.json" ] && continue
+            case "$f" in os-update-state.json | tor-heal-outage.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
             [ "$f" == "$active_result" ] && continue
             case "$f" in
             *.tar.gz.enc)
@@ -152,12 +268,20 @@ control_prune_results() { # <control-dir>
                 id="${f%.tar.gz.enc}"
                 rm -f "$dir/$f" "$dir/$id.json"
                 ;;
-            # A backup's own result JSON: keep a fresh pair; evict an expired pair together.
+            *.tar.gz | *.zip)
+                [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                id="${f%.tar.gz}"
+                id="${id%.zip}"
+                rm -f "$dir/$f" "$dir/$id.json"
+                ;;
             *.json)
                 id="${f%.json}"
-                if [ -f "$dir/$id.tar.gz.enc" ]; then
-                    [ -n "$(find "$dir/$id.tar.gz.enc" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
-                    rm -f "$dir/$f" "$dir/$id.tar.gz.enc"
+                pair="$dir/$id.tar.gz.enc"
+                [ -f "$pair" ] || pair="$dir/$id.tar.gz"
+                [ -f "$pair" ] || pair="$dir/$id.zip"
+                if [ -f "$pair" ]; then
+                    [ -n "$(find "$pair" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                    rm -f "$dir/$f" "$pair"
                 else
                     rm -f "$dir/$f"
                 fi
@@ -174,21 +298,22 @@ control_prune_results() { # <control-dir>
 }
 
 # `control-run-pending`: drain the request spool, oldest first. Each request is CLAIMED (moved out
-# of requests/) before a byte of it is parsed, so the container can never mutate or replay a
-# request the runner is working on. Fired by the pithead-control systemd path unit.
+# of requests/) before a byte of it is parsed. The runner then reads a bounded private snapshot:
+# an open write handle survives the move and chmod, but cannot change that snapshot.
+# Fired by the pithead-control systemd path unit.
 control_run_pending() {
     # Claims below are `.claim.$$`. A child `apply -y` a handler runs inherits this, so its runner
     # drain (control_runner_wait_idle) does not wait on its own parent's claim (#2363).
     export PITHEAD_CONTROL_RUNNER_PID=$$
-    [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
-        error "The dashboard control channel is not enabled (dashboard.control.enabled)."
+    CONTROL_EXPORT_ONLY=0
+    [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] || CONTROL_EXPORT_ONLY=1
     local cdir
     cdir=$(env_get CONTROL_DIR)
     [ -n "$cdir" ] || cdir="$PWD/data/control"
     mkdir -p "$cdir/staged" "$cdir/results" "$cdir/audit"
     # Freshen the pre-masked prefill copy (#440) before draining: hand-edits to config.json since
     # the last apply show up in the editor form. A commit re-renders it again via its `apply -y`.
-    render_masked_config "$cdir"
+    [ "$CONTROL_EXPORT_ONLY" = 1 ] || render_masked_config "$cdir"
     # Time-bounded DoS sweep (#33 hardening): drop staged/ copies and stray requests/ files older
     # than an hour that no commit ever claimed, so a burst that is never committed cannot pile up
     # (staged intents already expire per-commit at 10 min; this bounds accumulation regardless).
@@ -197,6 +322,8 @@ control_run_pending() {
     # "$claim"` below (an errexit gap, e.g.) leaves a `.claim.<pid>` file sitting directly in
     # $cdir forever. Same age cutoff — a claim in flight never lives past a single drain.
     find "$cdir" -maxdepth 1 -type f -name '.claim.*' -mmin +60 -delete 2>/dev/null || true
+    # A killed runner may also leave its private request snapshot behind.
+    find "$cdir" -maxdepth 1 -type f -name '.request.*' -mmin +60 -delete 2>/dev/null || true
     # Stale backup-kit passphrases: control_backup's one-time kit self-redacts after a blocking
     # TTL, but a runner killed mid-sleep (a reboot racing the window) would leave a wallet-grade
     # passphrase in results/ in plaintext on /data indefinitely. This backstop — a fresh runner
@@ -204,11 +331,11 @@ control_run_pending() {
     # carries one. Belt to the TTL's braces; the passphrase is only ever meant for the live window.
     control_redact_stale_kits "$cdir/results"
     control_prune_results "$cdir"
-    local names name req claim n=0
+    local names name req claim snapshot n=0
     # Per-run cap (#33 hardening): a single trigger drains at most this many intents, so a flood in
     # the spool can't hold the root runner for an unbounded stretch — the leftovers wait for the
     # next path-unit fire.
-    local max=50
+    local max=50 max_s="${CONTROL_DRAIN_BUDGET_S:-300}" start=$SECONDS
     # Per-drain worker-apply DIAL budget (#185 hardening): worker-apply is the only action that blocks
     # the runner on a network round-trip, so cap how many dial per drain (the rest reject with a retry
     # hint). control_worker_apply reads + decrements this in the same shell.
@@ -219,7 +346,8 @@ control_run_pending() {
     # OS-update budget: a bundle download attempt or a slot install holds the runner for minutes
     # too, so exactly one os-* verb runs per drain; the rest reject with a retry hint.
     CONTROL_OS_BUDGET=1
-    names=$(cd "$cdir/requests" 2>/dev/null && ls -1tr -- *.json 2>/dev/null) || true
+    for req in "$cdir/requests/"*$'\n'*.json; do [ $((SECONDS - start)) -lt "$max_s" ] && mv -T -- "$req" "$cdir/.claim.$$" 2>/dev/null && rm -rf -- "$cdir/.claim.$$" && control_audit "$cdir/audit/control.log" "" "" "invalid" "refused-nonregular" || continue; done
+    names=$(ls -1tr -- "$cdir/requests" 2>/dev/null) || true
     if [ -z "$names" ]; then
         log "No pending control requests."
         return 0
@@ -229,18 +357,40 @@ control_run_pending() {
             warn "Reached the $max-request per-run cap — remaining intents wait for the next run."
             break
         fi
+        if [ $((SECONDS - start)) -ge "$max_s" ]; then
+            warn "Reached the ${max_s}s per-run time budget — remaining intents wait for the next run."
+            break
+        fi
+        case "$name" in */*) continue ;; *.json) ;; *) continue ;; esac
         req="$cdir/requests/$name"
-        [ -f "$req" ] || continue
         claim="$cdir/.claim.$$"
-        mv "$req" "$claim" 2>/dev/null || continue
+        mv -T -- "$req" "$claim" 2>/dev/null || continue
         # The dashboard cannot reach the owner-only control parent after this atomic claim. Narrow
-        # hand-written/legacy regular files there, tied to the inode we parse; never follow a link.
-        if [ ! -L "$claim" ] && ! chmod 600 "$claim" 2>/dev/null; then
-            warn "Could not protect claimed control request $name — refusing it."
+        # hand-written/legacy regular files there; never follow a link. An already-open descriptor
+        # can still write the claimed inode, so validate and handle a fresh private copy instead.
+        if [ -L "$claim" ] || [ ! -f "$claim" ]; then
+            warn "Control request is a symlink or not a regular file — refused."
+            control_audit "$cdir/audit/control.log" "" "" "invalid" "refused-nonregular"
+            rm -rf -- "$claim"
+            continue
+        fi
+        if ! chmod 600 "$claim" 2>/dev/null; then
+            warn "Could not protect a claimed control request — refusing it."
             rm -f "$claim"
             continue
         fi
-        control_process_request "$claim" "$cdir"
+        snapshot=$(mktemp "$cdir/.request.XXXXXXXX") || {
+            warn "Could not snapshot a claimed control request — refusing it."
+            rm -f "$claim"
+            continue
+        }
+        if ! head -c 65537 -- "$claim" >"$snapshot"; then
+            warn "Could not read a claimed control request — refusing it."
+            rm -f "$snapshot" "$claim"
+            continue
+        fi
+        control_process_request "$snapshot" "$cdir"
+        rm -f "$snapshot"
         rm -f "$claim"
         control_prune_results "$cdir"
         n=$((n + 1))

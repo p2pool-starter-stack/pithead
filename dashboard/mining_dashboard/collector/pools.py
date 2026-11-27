@@ -1,6 +1,9 @@
 import json
 import os
+import re
+import time
 
+from mining_dashboard.collector.logs import fetch_docker_logs
 from mining_dashboard.config.config import (
     NETWORK_STATS_PATH,
     P2P_STATS_PATH,
@@ -8,6 +11,12 @@ from mining_dashboard.config.config import (
     SECOND_PER_BLOCK_MAIN,
     STRATUM_STATS_PATH,
     TARI_STATS_PATH,
+)
+
+_UNSYNCED = "monerod is not synchronized"
+UNSYNCED_LOOKBACK_SEC = 30
+_AHEAD_RE = re.compile(
+    r"peer (\S+) is ahead on mainchain \(height (\d{1,20}), your height (\d{1,20})\)"
 )
 
 # Last-good parse per stats-file path, mirroring how `_merge_proxy_summary` keeps the last-good
@@ -60,6 +69,25 @@ def detect_pool_type(peers):
     return winner if counts[winner] > 0 else "Unknown"
 
 
+def _sidechain_syncing(pool_stats):
+    """Recognize the initial unsynced view; v4.18.1 exposes no API sync flag.
+
+    Its default Main/Mini/Nano minimum difficulty is 100000. A chain below
+    its reported PPLNS window at that difficulty is still a bootstrap view,
+    not usable pool-wide statistics. Missing evidence is not a sync verdict.
+    """
+    height = pool_stats.get("sidechainHeight")
+    difficulty = pool_stats.get("sidechainDifficulty")
+    window = pool_stats.get("pplnsWindowSize")
+    return (
+        type(height) is int
+        and type(difficulty) is int
+        and type(window) is int
+        and 0 <= height < window
+        and difficulty == 100000
+    )
+
+
 def get_p2pool_stats():
     """Aggregates P2Pool local statistics and P2P network health data."""
     raw_p2p = _read_json(P2P_STATS_PATH)
@@ -82,6 +110,7 @@ def get_p2pool_stats():
             "zmq_active": raw_p2p.get("zmq_last_active", 0),
         },
         "pool": {
+            "syncing": _sidechain_syncing(pool_stats),
             "hashrate": pool_stats.get("hashRate", 0),
             "miners": pool_stats.get("miners", 0),
             "blocks_found": pool_stats.get("totalBlocksFound", 0),
@@ -149,3 +178,21 @@ def get_tari_stats():
             "difficulty": t.get("difficulty", 0),
         }
     return {"active": False}
+
+
+async def get_p2pool_log_signals(window_sec=120):
+    now = time.time()
+    lines = await fetch_docker_logs("p2pool", tail=500, since=now - window_sec)
+    # p2pool repeats it every second while waiting, so only a recent line means still unsynced.
+    recent = await fetch_docker_logs("p2pool", tail=500, since=now - UNSYNCED_LOOKBACK_SEC)
+    if any(batch and batch[0].startswith("Error") for batch in (lines, recent)):
+        return None
+    lags = {}
+    for match in map(_AHEAD_RE.search, lines):
+        if match:
+            lag = int(match[2]) - int(match[3])
+            lags[match[1]] = max(lag, lags.get(match[1], 0))
+    return {
+        "lag": sorted(lags.values())[-2] if len(lags) >= 2 else 0,
+        "monerod_unsynced": any(_UNSYNCED in line for line in recent),
+    }

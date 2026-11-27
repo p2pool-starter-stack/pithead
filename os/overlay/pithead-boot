@@ -35,23 +35,18 @@ BOOT_FAIL_COUNT=.boot-gate-failures
 # Where doctor's verdicts land while this gate is looping: /run leaves the last failing check without
 # wearing /data. A plain variable: the suite points it somewhere writable.
 BOOT_DOCTOR_JSON=/run/pithead-boot-doctor.json
-boot_gate_passed() { rm -f "$BOOT_FAIL_COUNT"; }
 fail_boot() { # <what went wrong>
     echo "pithead-boot: $1 — slot left uncommitted so A/B fallback stays armed" >&2
     local status_problems
     boot_status || true # named on this boot, even if the dashboard probe did not reach status
     status_problems=$(boot_status_blocking)
     [ -n "$status_problems" ] && printf '%s\n' "$status_problems" | sed 's/^/pithead-boot: held by /' >&2
-    # The rollback verdict names what held the gate (#1265): the last doctor run is still on /run,
-    # and the in-flight flag carries its failing checks to the fallback boot's os_update_rollback_verdict.
     if [ -n "${OS_INFLIGHT:-}" ] && [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
         local doctor_msgs='[]'
         [ -s "$BOOT_DOCTOR_JSON" ] && doctor_msgs=$(jq -c '[.checks[]? | select(.status == "fail") | .message]' "$BOOT_DOCTOR_JSON" 2>/dev/null || echo '[]')
-        if [ "$doctor_msgs" != '[]' ] || [ -n "$status_problems" ]; then
-            jq --argjson d "$doctor_msgs" --arg s "$status_problems" \
-                '.blocking = ($d + (if $s == "" then [] else ($s | split("\n")) end))' \
-                "$OS_INFLIGHT" >"$OS_INFLIGHT.tmp" 2>/dev/null && mv -f "$OS_INFLIGHT.tmp" "$OS_INFLIGHT" || rm -f "$OS_INFLIGHT.tmp"
-        fi
+        jq --argjson d "$doctor_msgs" --arg s "$status_problems" \
+            '.gate = "failed" | .blocking = ($d + (if $s == "" then [] else ($s | split("\n")) end))' \
+            "$OS_INFLIGHT" >"$OS_INFLIGHT.tmp" 2>/dev/null && mv -f "$OS_INFLIGHT.tmp" "$OS_INFLIGHT" || rm -f "$OS_INFLIGHT.tmp"
     fi
     local n=0
     [ -f "$BOOT_FAIL_COUNT" ] && n=$(tr -cd '0-9' <"$BOOT_FAIL_COUNT" 2>/dev/null)
@@ -61,7 +56,7 @@ fail_boot() { # <what went wrong>
         exit 1
     fi
     if [ "$n" -ge 2 ]; then
-        echo "pithead-boot: this is failure $n — the bootloader already fell back and the other slot failed the same way, so the fault is not the slot. The machine stays up for diagnosis; the dashboard is down, see the journal (journalctl -u pithead-boot)." >&2
+        echo "pithead-boot: this is failure $n — the bootloader already fell back and the other slot failed the same way, so the fault is not the slot. The machine stays up for diagnosis; the dashboard is down, see the journal (journalctl -u pithead-boot), or run /opt/pithead/pithead recovery-bundle to write a redacted support bundle under /data/pithead/support-bundles." >&2
         exit 1
     fi
     echo "pithead-boot: rebooting now so the bootloader falls back to the previous slot" >&2
@@ -96,6 +91,7 @@ fail_boot_contended() { # <what could not be started>
 # repeated at both call sites below, so the hold-chain and the ordinary boot cannot drift apart.
 boot_up_failed() { # <exit status of ./pithead up>
     [ "$1" = "$PITHEAD_EX_LOCK_TIMEOUT" ] && fail_boot_contended "the stack could not be brought up"
+    [ "$(gate_tor_transport_verdict)" = wedged ] && return 0
     fail_boot "the stack could not be brought up"
 }
 
@@ -175,67 +171,80 @@ gate_cert_advisory() { # -> 0 and doctor's coverage message in gate_advisory whe
     [ -n "$gate_advisory" ]
 }
 
-# OS-update verdict, rollback half (#1051): a dashboard-driven install leaves an in-flight flag
-# naming the version the machine was headed to. Booting a DIFFERENT version with that flag
-# present means the bootloader already fell back — the update failed its health gate and the
-# fallback is terminal, so the verdict is written now, into the state file the dashboard renders
-# through the control spool. The success half lives at the commit gate below: "updated" is only
-# honest once this slot marks good. Every step best-effort — a verdict must never break a boot.
-#
-# A function, not inline, so it is driven directly at tier 1 with doctored fixtures — the same
-# pattern as gate_ready/gate_url above. It is pure file logic (an in-flight flag, a VERSION
-# file, a jq call): nothing here needs real firmware or a real A/B updater to prove, so a KVM
-# boot would only re-run the same comparison the function already makes deterministically.
-# Reads OS_INFLIGHT/OS_STATE_DIR (globals, set by the caller) and ./VERSION.
-os_update_rollback_verdict() {
+os_update_verifying_state() {
     [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1 || return 0
-    local to blocking held
+    local to
     to=$(jq -r '.to // ""' "$OS_INFLIGHT" 2>/dev/null)
-    [ -n "$to" ] && [ "$to" != "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ] || return 0
-    # What held the other slot's gate, as fail_boot recorded it there (#1265): the verdict names
-    # the check, so "rolled back" no longer implies a bad release when the cause was a check.
-    blocking=$(jq -c '.blocking // []' "$OS_INFLIGHT" 2>/dev/null)
-    [ -n "$blocking" ] || blocking='[]'
-    held=$(jq -r '.blocking[0] // ""' "$OS_INFLIGHT" 2>/dev/null)
+    [ -n "$to" ] && [ "$to" = "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ] || return 0
+    jq '.gate = "started"' "$OS_INFLIGHT" >"$OS_INFLIGHT.tmp" 2>/dev/null &&
+        mv -f "$OS_INFLIGHT.tmp" "$OS_INFLIGHT" || rm -f "$OS_INFLIGHT.tmp"
     mkdir -p "$OS_STATE_DIR" 2>/dev/null || true
-    jq -n --arg f "$(jq -r '.from // ""' "$OS_INFLIGHT" 2>/dev/null)" --arg t "$to" --argjson b "$blocking" \
-        '{step:"idle",verdict:{outcome:"rolled_back",from:$f,to:$t,ts:(now|floor),blocking:$b}}' \
+    jq -n --arg t "$to" --arg f "$(jq -r '.from // ""' "$OS_INFLIGHT" 2>/dev/null)" \
+        '{step:"verifying",version:$t,from:$f,ts:(now|floor)}' \
         >"$OS_STATE_DIR/os-update-state.json" 2>/dev/null || true
-    rm -f "$OS_INFLIGHT"
-    echo "pithead-boot: the $to update never committed — the bootloader fell back and this boot runs the previous version${held:+ (its gate was held by: $held)}"
+    echo "pithead-boot: running the $to update — the slot stays uncommitted until the health gate decides"
 }
 
-# #1393: os-update raises the /data floor at INSTALL and records the floor it replaced (or `none`)
-# in .os-data-floor.prev; a fallback boot (marker naming another version) puts the floor back from
-# that record. NO record: the floor stays — never lowered without one. The stale marker goes either way.
+os_update_rollback_verdict() {
+    [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1 || return 0
+    local to blocking held gate interrupted
+    to=$(jq -r '.to // ""' "$OS_INFLIGHT" 2>/dev/null)
+    [ -n "$to" ] && [ "$to" != "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ] || return 0
+    blocking=$(jq -c '.blocking // []' "$OS_INFLIGHT" 2>/dev/null)
+    [ -n "$blocking" ] || blocking='[]'
+    gate=$(jq -r '.gate // ""' "$OS_INFLIGHT" 2>/dev/null)
+    interrupted=false
+    if [ "$gate" != failed ]; then
+        interrupted=true
+        [ "$blocking" = '[]' ] && blocking='["interrupted before the update was verified"]'
+    fi
+    held=$(jq -r '.blocking[0] // ""' "$OS_INFLIGHT" 2>/dev/null)
+    mkdir -p "$OS_STATE_DIR" 2>/dev/null || true
+    jq -n --arg f "$(jq -r '.from // ""' "$OS_INFLIGHT" 2>/dev/null)" --arg t "$to" \
+        --argjson b "$blocking" --argjson i "$interrupted" \
+        '{step:"idle",verdict:{outcome:"rolled_back",from:$f,to:$t,ts:(now|floor),blocking:$b,interrupted:$i}}' \
+        >"$OS_STATE_DIR/os-update-state.json" 2>/dev/null || true
+    rm -f "$OS_INFLIGHT"
+    if [ "$interrupted" = true ]; then
+        echo "pithead-boot: the $to update never finished being verified — this boot runs the previous version; its health checks never reached a verdict"
+    else
+        echo "pithead-boot: the $to update never committed — the bootloader fell back and this boot runs the previous version${held:+ (its gate was held by: $held)}"
+    fi
+}
+
+mutation_migration_cleanup() {
+    PITHEAD_DATA_FLOOR_FILE="$PWD/.os-data-floor" PITHEAD_MIGRATION_MARKER_FILE="$PWD/.os-migration-pending" \
+        bash -c '
+            . ./pithead
+            mutation_lock_acquire boot-migration >&2
+            trap mutation_lock_release EXIT
+            current=$(os_migration_fingerprint) || exit 1
+            [ -n "$current" ] || exit 3
+            if [ "$#" -gt 1 ] && [ "$current" != "$2" ]; then exit 3; fi
+            case "$1" in
+            restore) os_disarm_prepared_migration || exit 1 ;;
+            clear) rm -f "$(os_migration_marker_file)" "$(os_data_floor_file).prev" && sync || exit 1 ;;
+            esac
+        ' _ "$@"
+}
+
 restore_data_floor_after_fallback() { # cwd /data/pithead; prints one line when it restored
     [ -f .os-migration-pending ] || return 0
-    rm -f .os-migration-pending
-    local prev && prev=$(tr -d '[:space:]' 2>/dev/null <.os-data-floor.prev)
+    local prev rc=0
+    prev=$(tr -d '[:space:]' 2>/dev/null <.os-data-floor.prev) || prev=""
+    mutation_migration_cleanup restore "$@" || rc=$?
+    [ "$rc" != 3 ] || return 0
+    [ "$rc" = 0 ] || return 1
     [ -n "$prev" ] || return 0
-    if [ "$prev" = none ]; then rm -f .os-data-floor; else printf '%s\n' "$prev" >.os-data-floor; fi
-    rm -f .os-data-floor.prev
     echo "pithead-boot: the data migration never ran — the update fell back before it committed, so the /data floor is back to ${prev/#none/none (no earlier migration)}"
 }
 
-# Post-commit release of the held chain services (#851): the slot is committed, so a fallback can
-# no longer strand migrated data, and the forward migration runs NOW. Marker removal comes first:
-# if the chain start fails, the slot stays committed and the next boot takes the normal path —
-# re-holding would gate on a commit that has already happened.
-# The `up` is RETRIED (#1684). Compose aborts the WHOLE start when one container is mid-transition
-# at that instant — on the bench it was p2pool, started by the held `up` and stopping seconds
-# later — and a single swallowed `up` left every held service down until a reboot a committed
-# appliance has no reason to take, under a dashboard reporting `updated`. A passenger's transition
-# may delay the chain start by seconds; it must never veto it. After the last try the fault is
-# ALERTED, once, by name: a chain service that cannot start is never grounds to fail this boot.
-# A function above the boundary so tier 1 drives the retry, the order and the alert with a
-# stubbed `pithead`; the tier-4 migration leg's "monerod never came back" row is what found it.
+clear_migration_hold() { mutation_migration_cleanup clear "$@"; }
+
 RELEASE_UP_TRIES=${PITHEAD_RELEASE_UP_TRIES:-5}
 RELEASE_UP_PAUSE=${PITHEAD_RELEASE_UP_PAUSE:-10}
 release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 after the last try
-    rm -f .os-migration-pending .os-data-floor.prev
-    # Logged BEFORE the up: the release line marks the commit boundary for the journal (and the
-    # tier-4 battery), and the up that starts the chain can take minutes.
+    clear_migration_hold "$@" || echo "pithead-boot: FAULT — migration protection could not be cleared after commitment; the chain services are released anyway. Reboot, or run './pithead up' from /data/pithead and read 'journalctl -u pithead-boot' if they did not start." >&2
     echo "pithead-boot: slot committed — chain services released, the data migration runs now"
     local try
     for try in $(seq "$RELEASE_UP_TRIES"); do
@@ -248,23 +257,30 @@ release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 a
     return 1
 }
 
-# Sourceable for the test suite: everything above is definitions, so a `source` stops here and the
-# suite can drive fail_boot in a sandbox. Executed directly — every real boot — this is a no-op.
+commit_config_stamp() { rm -f config.json.stamp-deferred && bash -c '. ./pithead; stamp_config_version' || echo "pithead-boot: config_version was not stamped" >&2; }
+
 [ "${BASH_SOURCE[0]}" = "${0}" ] || return 0
 
+export PITHEAD_DEFER_LOCAL_MINER=1
 cd /data/pithead || exit 1
 
-# Role fork (#797): a rig is not a small coordinator, it is a different machine. No compose
-# stack, no nodes, no dashboard — and no container images worth loading, which is why this comes
-# before the loader. Its whole boot is the miner, and its slot commits once that miner runs,
-# matching the coordinator's commit after its stack serves.
-# The gate is deliberately pool-INDEPENDENT: a rig whose pool is unreachable still starts, still
-# retries, and must still commit. Rolling a slot back cannot fix a switch nobody plugged in, and
-# a gate that punished it would flap the A/B pair every boot the LAN was late.
-# Existence first: `<machine-role` on a machine that has none is a REDIRECTION failure, and
-# the shell prints it itself — `2>/dev/null` on the inner command cannot suppress it.
-# Harmless, but it would put a "No such file or directory" in every coordinator boot journal,
-# which is the most common boot there is. An error nobody should read is an error nobody will.
+hold_chain=0
+migration_rc=0
+migration_fingerprint=$(bash -c '
+    . ./pithead
+    mutation_lock_acquire boot-migration >&2
+    trap mutation_lock_release EXIT
+    rc=0
+    os_prepare_migration_hold >&2 || rc=$?
+    os_migration_fingerprint || exit 2
+    exit "$rc"
+') || migration_rc=$?
+case "$migration_rc" in
+0) hold_chain=1 ;;
+1) ;;
+*) fail_boot "the migration marker could not be assigned to the booted slot" ;;
+esac
+
 if [ -f machine-role ] && [ "$(tr -d '[:space:]' <machine-role)" = "rig" ]; then
     # Same bounded clock as the coordinator's miner leg, for the same reason: the boot unit runs
     # with TimeoutStartSec=infinity, so a stalled native rebuild would leave it activating
@@ -272,8 +288,10 @@ if [ -f machine-role ] && [ "$(tr -d '[:space:]' <machine-role)" = "rig" ]; then
     timeout 1800 ./pithead local-miner || fail_boot "the rig's miner setup failed"
     for _ in $(seq 12); do
         if systemctl is-active --quiet xmrig.service; then
-            command -v rauc >/dev/null 2>&1 && rauc status mark-good
+            rauc status mark-good && sync || fail_boot "the booted slot could not be committed"
             boot_gate_passed
+            if [ "$hold_chain" = 1 ]; then clear_migration_hold "$migration_fingerprint"; else restore_data_floor_after_fallback "$migration_fingerprint"; fi ||
+                echo "pithead-boot: FAULT — migration protection could not be reconciled after commitment" >&2
             echo "pithead-boot: the rig's miner is running — booted slot committed"
             exit 0
         fi
@@ -282,12 +300,12 @@ if [ -f machine-role ] && [ "$(tr -d '[:space:]' <machine-role)" = "rig" ]; then
     fail_boot "the rig's miner never came up"
 fi
 
-# OS-update verdict, rollback half — see os_update_rollback_verdict above for the full story.
-# The success half lives at the commit gate below: "updated" is only honest once this slot marks
-# good.
+: >config.json.stamp-deferred
+
 OS_INFLIGHT=data/os-update/in-flight.json
 OS_STATE_DIR=data/control/results
 os_update_rollback_verdict
+os_update_verifying_state
 
 # Containers are DERIVED too (#798): the baked archives ship in the slot, but podman's store
 # lives on /data and the image tag is constant across releases — a keep-reinstall or A/B
@@ -310,22 +328,7 @@ fi
 /usr/local/sbin/pithead-media-config
 
 ./pithead render || fail_boot "the derived config could not be rendered"
-
-# The migration hold (#851): os-update leaves a marker when the installed bundle declares a
-# forward-only /data migration, stamped with that bundle's version. A marker matching THIS slot's
-# version means this is the migrating bundle's pre-commit boot — the chain services (the holders of
-# irreversible lmdb migrations) must not start until the commit decision is made, so automatic A/B
-# fallback always lands on data the old OS can still read. A marker that does not match is a fallback
-# boot: the migration never ran, the floor it raised is put back, and this boot proceeds normally.
-# doctor reads the same marker and judges the held chain containers by the sync-hold rule.
-hold_chain=0
-if [ -f .os-migration-pending ] &&
-    [ "$(tr -d '[:space:]' <.os-migration-pending)" = "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ]; then
-    hold_chain=1
-else
-    restore_data_floor_after_fallback
-fi
-
+schema_hold_arm || fail_boot "the dashboard schema hold marker could not be written"
 if [ "$hold_chain" = 1 ]; then
     PITHEAD_HOLD_CHAIN=1 ./pithead up || boot_up_failed $?
 else
@@ -337,14 +340,15 @@ gate_target=$(gate_target_url "$gate_scheme" "$gate_host" "$gate_port")
 gate_resolve_args=()
 gate_rs=$(gate_resolve_spec "$gate_host" "$gate_port")
 [ -n "$gate_rs" ] && gate_resolve_args=(--resolve "$gate_rs")
-for _ in $(seq 90); do
+gate_wait_started=$SECONDS
+for gate_attempt in $(seq 90); do
     gate_doctor_ran=0 gate_pass=0
-    # SNI and the Host header carry the site's real name, so Caddy vhost-matches it; for a name the
-    # --resolve above sends the connection to loopback, which the appliance binds unconditionally.
+    # SNI and the Host header carry the site's real name, so Caddy vhost-matches it;
+    # --connect-to keeps names and IP literals on loopback, which the appliance always binds.
     # `read` clears both when curl prints nothing, so a silent curl cannot leave the previous
     # round's success standing.
-    read -r code size <<<"$(curl -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
-        "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null)"
+    read -r code size <<<"$(gate_probe_header | curl --header @- -kso /dev/null -w '%{http_code} %{size_download}' --max-time 5 \
+        --noproxy '*' --connect-to '::127.0.0.1:' "${gate_resolve_args[@]}" "$gate_target" 2>/dev/null)"
     # Cheapest first, inside gate_ready: the probe is fast and gates entry to the slow doctor run, so
     # an unhealthy or still-booting stack just loops here without paying for a full diagnostic.
     # doctor only has to pass ONCE — a chain node that is still 'starting' fails a pass and the loop
@@ -356,25 +360,15 @@ for _ in $(seq 90); do
         gate_cert_advisory_ready && gate_pass=1
     fi
     if [ "$gate_pass" = 1 ]; then
-        command -v rauc >/dev/null 2>&1 && rauc status mark-good
+        rauc status mark-good && sync || fail_boot "the booted slot could not be committed"
         boot_gate_passed
+        commit_config_stamp
+        [ "$hold_chain" != 0 ] || restore_data_floor_after_fallback "$migration_fingerprint" || echo "pithead-boot: FAULT — the previous migration candidate remains protected" >&2
         echo "pithead-boot: stack is serving (HTTP $code) and doctor reports ${gate_advisory:-healthy}${gate_advisory:+ as its only failing check} — booted slot committed${gate_advisory:+ with that recorded as advisory; run './pithead apply' on the machine to re-mint}"
-        # OS-update verdict, success half: this slot just committed while an in-flight flag names
-        # exactly this version — the dashboard-driven update landed and can no longer fall back.
-        if [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
-            to=$(jq -r '.to // ""' "$OS_INFLIGHT" 2>/dev/null)
-            if [ -n "$to" ] && [ "$to" = "$(tr -d '[:space:]' <VERSION 2>/dev/null)" ]; then
-                mkdir -p "$OS_STATE_DIR" 2>/dev/null || true
-                jq -n --arg f "$(jq -r '.from // ""' "$OS_INFLIGHT" 2>/dev/null)" --arg t "$to" --arg a "$gate_advisory" \
-                    '{step:"idle",verdict:{outcome:"updated",from:$f,to:$t,ts:(now|floor),advisory:(if $a == "" then [] else [$a] end)}}' \
-                    >"$OS_STATE_DIR/os-update-state.json" 2>/dev/null || true
-                echo "pithead-boot: OS update to $to committed — verdict published to the dashboard"
-            fi
-            rm -f "$OS_INFLIGHT"
-        fi
+        boot_publish_os_update_verdict "$gate_advisory"
         # Post-commit, the held chain services start and the forward migration runs NOW. Never
         # grounds to fail a boot the commit already accepted: the function alerts and returns.
-        [ "$hold_chain" = 1 ] && { release_held_chain_services || true; }
+        [ "$hold_chain" = 1 ] && { release_held_chain_services "$migration_fingerprint" || true; }
         # The on-box miner comes LAST, after the slot commit: it needs the stack's stratum
         # listening, and a miner that cannot start must never delay or block the commit — the
         # stack serving is the product's health, the miner is a passenger. Idempotent every boot
@@ -385,6 +379,14 @@ for _ in $(seq 90); do
         timeout 1800 ./pithead local-miner || true
         exit 0
     fi
+    if ((gate_attempt % 6 == 0)); then
+        gate_progress="pithead-boot: Pithead is still starting ($(((SECONDS - gate_wait_started + 59) / 60)) of about 16 minutes). Leave it powered on: if an update never becomes healthy, the machine goes back to the previous version by itself."
+        echo "$gate_progress"
+        for gate_console in /dev/tty1 /dev/ttyS0; do
+            [ -w "$gate_console" ] && { printf '%s\n' "$gate_progress" >"$gate_console"; } 2>/dev/null || true
+        done
+    fi
     sleep 10
 done
+if [ "$(gate_tor_transport_verdict)" = wedged ] && gate_network_advisory_commit; then exit 0; fi
 fail_boot "the stack never became healthy (serving + doctor + status)"

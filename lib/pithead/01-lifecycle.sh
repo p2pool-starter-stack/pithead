@@ -77,13 +77,31 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    # Every container (re)start passes here, so the LAN-published node ports get their source rule
-    # (or are held on loopback) before anything listens on them (#2616).
-    apply_lan_guard
-    # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
-    # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
+    lan_guard_prepare_up || return 1
+    # Reapply egress above the LAN jump; retain choice markers until live removal is proved.
+    local egress_rc=0 choice_marker selected_ips firewall_enabled choice_active=0
+    choice_marker=$(tor_egress_choice_marker)
+    selected_ips=$(tor_egress_sync_ips)
+    tor_egress_choice_active && choice_active=1
+    firewall_enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
+    [ -n "$firewall_enabled" ] || firewall_enabled=true
+    prune_tor_egress_choice_markers || return 1
+    if [ "$choice_active" = 1 ] && [ "$(normalize_bool "$firewall_enabled")" = true ]; then
+        arm_tor_egress_choice_marker || return 1
+    fi
+    apply_tor_egress_firewall refresh >/dev/null || egress_rc=$?
+    if [ "$egress_rc" = 0 ]; then
+        if [ "$(normalize_bool "$firewall_enabled")" = true ]; then
+            if [ "$choice_active" = 0 ] && { [ -e "$choice_marker" ] || [ -L "$choice_marker" ]; }; then
+                rmdir "$choice_marker" || return 1
+            fi
+        fi
+    elif clearnet_sync_active || [ -n "$selected_ips" ] || [ -e "$choice_marker" ] || [ -L "$choice_marker" ]; then
+        # Required egress protection failed; leave any stopped LAN nodes down.
+        return 1
+    fi
     local rc=0
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@" || rc=$?
+    lan_guard_compose_up "${build_args[@]}" "$@" || rc=$?
     restore_recreate_names
     return "$rc"
 }
@@ -152,17 +170,8 @@ scope_keep_running() { # <compose up flags and services...>
         return 1
     }
     for svc in $PITHEAD_KEEP_RUNNING; do
-        if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
-            case " ${services[*]} " in
-            *" $svc "*) ;;
-            *)
-                warn "PITHEAD_KEEP_RUNNING names '$svc', which is inactive in the rendered stack."
-                return 1
-                ;;
-            esac
-        fi
-        container_is_running "$svc" || {
-            warn "PITHEAD_KEEP_RUNNING names '$svc', which is not running — refusing to leave it down."
+        container_is_running "$svc" && { [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || [[ " ${services[*]} " == *" $svc "* ]]; } || {
+            warn "PITHEAD_KEEP_RUNNING names '$svc', which is not running (or is inactive in the rendered stack) — refusing to leave it down."
             return 1
         }
     done
@@ -211,9 +220,11 @@ compose_up_checked() {
         rm -f "$tmp"
         [ "$rc" -eq 0 ] && return 0
         case "$out" in
-        *"must be in Created or Stopped state to be started"*)
+        # #3300: a stop that outlives its grace period is SIGKILLed and Podman answers 500 on the exit
+        # file; the container is stopped by the second pass.
+        *"must be in Created or Stopped state to be started"* | *"timed out waiting for file /run/libpod/exits/"*)
             [ "$_attempt" -eq 1 ] && {
-                warn "Compose hit a container still starting from a prior recreate — retrying once in 3s."
+                warn "Compose hit a container still changing state after a prior recreate — retrying once in 3s."
                 sleep 3
                 continue
             }
@@ -227,29 +238,18 @@ compose_up_checked() {
 
 stack_up() {
     mutation_lock_acquire up
+    validate_config_document
     log "Starting stack..."
     warn_missing_data_dirs
     migrate_compose_project
-    # Install the Tor-only egress firewall BEFORE the containers start (#270). DOCKER-USER is a static
-    # chain whose rules reference the fixed subnet/Tor IP, so they can go in before the network exists;
-    # Docker preserves DOCKER-USER and (re)adds the FORWARD jump when it creates the network. Doing this
-    # first closes the startup window in which a clearnet app (e.g. Tari) could dial out unfenced; the
-    # firewall resets such a flow once it is in (#2672), but the packets sent before that have leaked.
     apply_tor_egress_firewall
-    # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
-    # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
-    # the one unverified pull. Same guard: source checkouts skip, a missing cosign.pub warns and
-    # proceeds (#461 — an install predating the first signed release has no key to verify against),
-    # a present key that fails aborts before anything starts.
+    provision_egress_check_units
+    provision_lan_guard_check_units
     verify_release_images
-    # Docker Compose automatically picks up COMPOSE_PROFILES from .env
-    #
-    # PITHEAD_HOLD_CHAIN=1 is the migration hold (#851), set only by the appliance boot path on
-    # the first boot of a data_migration bundle: bring up everything EXCEPT the chain services
-    # (monerod/tari and their wallets — the holders of forward-only lmdb migrations, and the
-    # only containers anything depends on together), so the A/B commit decision is made before
-    # any migration touches /data. The chain services start with a plain `up` after the commit.
     if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
+        local dashboard_dir
+        dashboard_dir=$(env_get DASHBOARD_DATA_DIR)
+        [ -n "$dashboard_dir" ] && rearm_sync_gate_marker "$dashboard_dir" 1 || error "Could not reset the mining sync gate for the data migration."
         local services c
         local filter=()
         for c in $REVENUE_CHAIN_CONTAINERS; do filter+=(-e "$c"); done
@@ -264,35 +264,43 @@ stack_up() {
     elif ! compose_up_checked -d; then
         error "Stack failed to start — see the error above."
     fi
+    if is_appliance; then
+        reconcile_compose_images || error "Stack failed to converge containers to their declared images."
+    fi
+    if [ "${PITHEAD_HOLD_CHAIN:-0}" != 1 ] && [ "${PITHEAD_DEFER_LOCAL_MINER:-0}" != 1 ]; then
+        provision_local_miner || true
+    fi
     log "Stack started successfully!"
-    # Remind the operator at start-time if a node is coming up on clearnet (#183).
     print_clearnet_banner
     announce_dashboard_url
     print_first_run_epilogue
     mutation_lock_release
 }
 
-# One-time onboarding after the stack first comes up (#384): explain that mining doesn't start until
-# both chains finish their initial sync, and where to watch progress. Keyed on a marker file beside
-# .env so it shows once (fresh setup/up) and not on every restart of an already-running box. The
-# dashboard itself drives the sync-then-mine handoff (#35) — this is just the "what happens next".
 print_first_run_epilogue() {
     [ -f "$FIRST_RUN_MARKER" ] && return 0
     : >"$FIRST_RUN_MARKER" 2>/dev/null || true
+    local chains="Monero"
+    if [ "$(env_get TARI_REQUIRED 2>/dev/null || true)" != false ]; then
+        chains="Monero and Tari"
+    fi
     log "What happens next:"
-    log "  The miner is held until Monero and Tari finish their first sync, then starts automatically."
+    log "  The miner is held until the initial sync finishes for $chains, then starts automatically."
     log "  Watch progress with '$0 status' or live on the dashboard."
-    log "  First-time sync of both chains can take several hours to a few days, depending on disk and network."
+    log "  Initial chain sync can take several hours to a few days, depending on disk and network."
 }
 
 stack_down() {
     mutation_lock_acquire down
     log "Stopping stack..."
-    remove_tor_egress_firewall
-    remove_lan_guard
-    if ! docker compose down; then
-        error "Stack failed to stop — see the error above."
+    if [ -f "$ENV_FILE" ]; then
+        docker compose down || error "Stack failed to stop — see the error above."
+    else
+        configless_stack_down
     fi
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay. See what runs with 'docker ps', stop it, then run '$0 down' again to remove them."
+    lan_guard_teardown down
     log "Stack stopped."
     mutation_lock_release
 }
@@ -309,8 +317,6 @@ stack_down() {
 stack_down_except_caddy() {
     mutation_lock_acquire down
     log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
-    remove_tor_egress_firewall
-    remove_lan_guard
     local services
     # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
     # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
@@ -324,8 +330,25 @@ stack_down_except_caddy() {
     if ! docker compose stop $services; then
         error "Stack failed to stop — see the error above."
     fi
+    remove_tor_egress_when_idle caddy ||
+        warn "A stack container other than caddy is still active or could not be checked, so the Tor-only egress rules stay and the backup goes on. See what runs with 'docker ps'; '$0 down' removes the rules once nothing is active."
+    remove_lan_guard || warn "lan-guard:rule-kept — monerod or tari may still run, or $LAN_GUARD_MARKER could not be deleted; the LAN-only source rule stays."
     log "Stack stopped (caddy left running)."
     mutation_lock_release
+}
+
+stack_redial_monerod() {
+    local i polls="${PITHEAD_TOR_REDIAL_POLLS:-60}" tor_health
+    for ((i = 0; i <= polls; i++)); do
+        tor_health=$(docker inspect tor --format '{{.State.Health.Status}}' 2>/dev/null) || tor_health=
+        [ "$tor_health" = healthy ] && break
+        [ "$i" -lt "$polls" ] && sleep "${PITHEAD_TOR_REDIAL_POLL_S:-5}"
+    done
+    [ "$tor_health" = healthy ] || error "Tor did not report bootstrapped within the wait (or its health could not be read), so monerod was not restarted and may hold dead peer connections. Once Tor is healthy, run './pithead restart monerod'."
+    if [ "$(docker inspect monerod --format '{{.State.Running}}' 2>/dev/null)" = true ]; then
+        log "Tor is bootstrapped; restarting monerod so it re-dials its peers through Tor..."
+        docker compose restart monerod
+    fi
 }
 
 stack_restart() { # [tor|monerod]
@@ -334,25 +357,24 @@ stack_restart() { # [tor|monerod]
     # typo all along. Nothing here mutates, so there is nothing to serialise yet.
     case "${1:-}" in
     "" | tor | monerod) ;;
-    *) error "restart takes no argument, 'tor' (fresh Tor guards when clearnet egress is stuck), or 'monerod' (re-dial peers after a Tor restart left the node out of sync). Got: '$1'." ;;
+    *) error "restart takes no argument, 'tor' (fresh Tor circuits when clearnet egress is stuck), or 'monerod' (re-dial peers after a Tor restart left the node out of sync). Got: '$1'." ;;
     esac
     mutation_lock_acquire restart
+    # `compose restart` also starts a stopped node, on its existing 0.0.0.0 publish, without
+    # compose_up's rule install: refuse while a published LAN port has no live rule (#2749). Checked
+    # under the lock, so a `down` or backup that held it cannot remove the rule after the check.
+    lan_guard_ready || error "The LAN-only source rule for the published *_lan_access port(s) is not in place, so a restart would open them to every source. Run './pithead up', which installs it first."
     case "${1:-}" in
     "")
         log "Restarting stack..."
         docker compose restart
+        stack_redial_after_restart
         log "Stack restarted."
         ;;
     tor)
-        # Manual leg of the #424 guard self-heal: restart ONLY tor so it picks fresh guards
-        # when clearnet exits are stuck (the doctor Tor clearnet-egress check WARNs on this).
-        # Tor takes no args from .env, so a plain restart is safe (other containers go
-        # through apply/upgrade, whose recreate applies current args, #273). Compose then
-        # restarts monerod right after tor is healthy again (depends_on restart: true, #972):
-        # monerod does NOT re-peer on its own after a tor restart kills its SOCKS
-        # connections — it can sit at 0 in / 0 out peers for hours; p2pool re-peers fine.
-        log "Restarting the tor container to pick fresh guards — ALL Tor circuits drop and rebuild (mining onions included; p2pool re-peers on its own, and a local monerod is restarted alongside so it re-dials)..."
+        log "Restarting the tor container to rebuild circuits — ALL Tor circuits drop and rebuild (mining onions included; p2pool re-peers on its own, and a local monerod is restarted once Tor is bootstrapped so it re-dials)..."
         docker compose restart tor
+        stack_redial_monerod
         log "tor restarted. Verify egress recovered: './pithead doctor' (Tor clearnet-egress check)."
         ;;
     monerod)

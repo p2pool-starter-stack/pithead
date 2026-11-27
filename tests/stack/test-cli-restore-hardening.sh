@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 echo "== black-box: administrative restore stages and constrains archives =="
+build_backup_sandbox
 CR="$SANDBOX/cli-restore"
 ROOTS="$CR/roots"
 mkdir -p "$ROOTS/${BK#/}/data/tor" "$ROOTS/${BK#/}/data/dashboard" "$CR/tmp"
@@ -101,8 +102,23 @@ cp "$BK/config.json" "$ROOTS/${BK#/}/config.json"
 chmod 644 "$ROOTS/${BK#/}/config.json"
 cr_archive "$CR_ARCHIVE"
 rm -f "$CR/sudo.log"
+jq '.dashboard.energy.cost_per_kwh = 0.123' "$ROOTS/${BK#/}/config.json" >"$CR/archived-config"
+cp "$CR/archived-config" "$ROOTS/${BK#/}/config.json"
+cp "$CR/archived-config" "$BK/config.json"
+cp "$ROOTS/${BK#/}/data/tor/hs_ed25519_secret_key" "$BK/data/tor/hs_ed25519_secret_key"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead backup -y --no-encrypt 2>&1)"
+assert_rc "dashboard restore regression creates a real CLI backup" "$?" 0
+CR_DASH_ARCHIVE=$(printf '%s\n' "$out" | sed -n 's/^\[pithead\] Backup written to: //p')
+cp "$CR_DASH_ARCHIVE" "$CR_ARCHIVE"
+jq '.dashboard.energy.cost_per_kwh = 0.789' "$BK/config.json" >"$CR/current-config"
+cp "$CR/current-config" "$BK/config.json"
+run_sourced "$BK" render_masked_config "$BK/data/control" >/dev/null 2>&1
+assert_eq "restore fixture starts with a divergent dashboard copy" "$(jq -r '.dashboard.energy.cost_per_kwh' "$BK/data/control/masked/config.json")" 0.789
 out="$(cd "$BK" && SUDO_LOG="$CR/sudo.log" PATH="$BK/bin:$PATH" ./pithead restore -y "$CR_ARCHIVE" 2>&1)"
 assert_rc "validated administrative restore succeeds" "$?" 0
+assert_eq "restore refreshes the dashboard copy from the archive without apply" "$(jq -r '.dashboard.energy.cost_per_kwh' "$BK/data/control/masked/config.json")" 0.123
+assert_eq "restore masks secrets in the dashboard copy" "$(jq -c '.monero.node_password' "$BK/data/control/masked/config.json")" '{"__secret__":true}'
+assert_eq "restored dashboard copy is world-readable" "$(file_mode "$BK/data/control/masked/config.json")" 644
 assert_contains "fixed-file install retains the invoking uid" "$(cat "$CR/sudo.log")" "install -o $(id -u) -g $(id -g) -m 600"
 assert_eq "restored config is owner-only" "$(file_mode "$BK/config.json")" 600
 assert_eq "restored env is owner-only" "$(file_mode "$BK/.env")" 600

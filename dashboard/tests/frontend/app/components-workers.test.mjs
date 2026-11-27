@@ -46,14 +46,13 @@ test('WorkersTable sort headers are real buttons, so keyboard can sort (#671)', 
 });
 
 test('WorkersTable with no workers shows the connect hint instead of a bare table (#385)', () => {
-    // The fixture's host_ip is "Unknown Host" but host_addr carries a real IP — the hint must
-    // fall back to it rather than the docs placeholder (#1873).
+    // A known host must never fall back to the docs placeholder (#1873).
     const s = clone();
     s.workers = [];
     const html = renderApp({ state: s });
     assert.match(html, /Workers Alive/);
     assert.match(html, /No workers connected yet/);
-    assert.match(html, new RegExp(`${s.host_addr}:3333`));
+    assert.match(html, new RegExp(`${s.stratum_host}:3333`));
     assert.doesNotMatch(html, /YOUR_STACK_IP/);
     assert.match(html, /docs\/workers\.md/); // links the workers guide
     assert.doesNotMatch(html, /workers-table/); // no empty table skeleton
@@ -63,16 +62,27 @@ test('WorkersTable with no workers shows the connect hint instead of a bare tabl
 test('WorkersTable connect hint falls back to the docs placeholder only when host_addr is also unset (#1873)', () => {
     const s = clone();
     s.workers = [];
-    s.host_ip = 'Unknown Host';
-    s.host_addr = null;
+    s.stratum_host = 'Unknown Host';
     const html = renderApp({ state: s });
     assert.match(html, /YOUR_STACK_IP:3333/);
+});
+
+test('WorkersTable connect hint follows a loopback stratum bind and says local only (#3384)', () => {
+    const s = clone();
+    s.workers = [];
+    s.host_ip = '192.168.1.10';
+    s.stratum_host = '127.0.0.1';
+    s.stratum_local_only = true;
+    const html = renderApp({ state: s });
+    assert.match(html, /<code>127\.0\.0\.1:3333<\/code>/);
+    assert.doesNotMatch(html, /<code>192\.168\.1\.10/);
+    assert.match(html, /Local connections only/);
 });
 
 test('WorkersTable connect hint uses the real host IP when known (#385)', () => {
     const s = clone();
     s.workers = [];
-    s.host_ip = '192.168.1.10';
+    s.stratum_host = '192.168.1.10';
     const html = renderApp({ state: s });
     assert.match(html, /192\.168\.1\.10:3333/);
     assert.doesNotMatch(html, /Unknown Host:3333/);
@@ -80,7 +90,7 @@ test('WorkersTable connect hint uses the real host IP when known (#385)', () => 
     // rigs must point.
     const custom = clone();
     custom.workers = [];
-    custom.host_ip = '192.168.1.10';
+    custom.stratum_host = '192.168.1.10';
     custom.stratum_port = 4444;
     assert.match(renderApp({ state: custom }), /192\.168\.1\.10:4444/);
     // A populated fleet — even all-offline — keeps the table, never the hint.
@@ -124,7 +134,7 @@ test('WorkersTable surfaces the per-rig api-unreadable and reject badges, and th
     assert.match(html, /badge-bad">Unknown/);
 });
 
-test('WorkersTable renders the RigForge version badge + chips when present, nothing when absent (#235)', () => {
+test('WorkersTable renders the RigForge chips (no version badge) when present, nothing when absent (#235)', () => {
     // A plain-xmrig worker has no `rigforge` (the server sends null) -> no chips, no error.
     const plain = clone();
     plain.workers.forEach((w) => (w.rigforge = null));
@@ -145,7 +155,7 @@ test('WorkersTable renders the RigForge version badge + chips when present, noth
     };
     rf.workers[1].rigforge = null; // the other rig is plain xmrig
     const html = renderApp({ state: rf });
-    assert.match(html, /rf 1\.7\.0/); // version badge
+    assert.doesNotMatch(html, /rf 1\.7\.0/); // version is Worker Inspect's InfoCard, not the row (#3031)
     assert.match(html, /badge-bad" title="hot">throttling/); // a bad chip
     assert.match(html, /gov: performance/);
     assert.match(html, /142 W · 86.9 H\/s·W/);
@@ -163,4 +173,62 @@ test('WorkersTable badges a rig running an older RigForge — and only that rig 
     const none = clone();
     none.workers.forEach((w) => (w.rigforge_update = null));
     assert.doesNotMatch(renderApp({ state: none }), /RigForge release is available/);
+});
+
+const rowOf = (html, name) => html.match(new RegExp(`<tr class="[^"]*">(?:(?!</tr>)[\\s\\S])*${name}[\\s\\S]*?</tr>`))[0];
+
+test('WorkersTable labels where each rig mines and never shows an elsewhere rig alive (#4072)', () => {
+    const s = clone();
+    const [a, b] = s.workers;
+    Object.assign(a, { name: 'rig-away', mining: { state: 'on_backup', pool: 'backup.example:3333' } });
+    Object.assign(b, { name: 'rig-dark', mining: { state: 'not_connected', pool: null } });
+    s.workers.push({ ...a, name: 'rig-unk', mining: { state: 'unknown', pool: null } });
+    s.workers.push({ ...a, name: 'rig-here', mining: { state: 'mining_here', pool: 'h:3333' } });
+    const html = renderApp({ state: s });
+    const away = rowOf(html, 'rig-away');
+    assert.match(away, /on backup pool: backup\.example:3333/);
+    assert.match(away, /DOWN/);
+    assert.match(away, /^<tr class="status-bad"/);
+    assert.match(rowOf(html, 'rig-dark'), /not connected to this Pithead/);
+    assert.match(rowOf(html, 'rig-unk'), /mining location unknown/);
+    const here = rowOf(html, 'rig-here');
+    assert.doesNotMatch(here, /mining-note/);
+    assert.match(here, /^<tr class="status-ok"/);
+});
+
+test('WorkersTable explains DOWN beside telemetry and keeps telemetry in its own cell (#4072)', () => {
+    const s = clone();
+    Object.assign(s.workers[0], {
+        name: 'rig-tele',
+        status: 'offline',
+        mining: { state: 'mining_here', pool: null },
+        telemetry_h60: 31000,
+        telemetry_str: '31.00 kH/s',
+    });
+    const row = rowOf(renderApp({ state: s }), 'rig-tele');
+    assert.match(row, /DOWN/);
+    assert.match(row, /telemetry only — not this Pithead/);
+    assert.match(row, /<td class="text-muted"[^>]*>31\.00 kH\/s<\/td>/);
+    assert.match(renderApp({ state: s }), />Rig telemetry 1m</);
+});
+
+test('WorkersTable lists an unnamed proxy client with no inspect path, badges included (#4072)', () => {
+    const s = clone();
+    s.control_enabled = true;
+    Object.assign(s.workers[0], {
+        name: 'unnamed proxy worker (10.0.0.9)',
+        unnamed: true,
+        ip: '10.0.0.9',
+        api_ok: false,
+        adopted: false,
+        rigforge_update: { available: true, latest: 'v1.11.2', url: 'https://h/v1.11.2' },
+    });
+    Object.assign(s.workers[1], { api_ok: false, adopted: false });
+    const html = renderApp({ state: s });
+    const row = rowOf(html, 'unnamed proxy worker');
+    assert.match(row, /10\.0\.0\.9/);
+    assert.match(row, /not adopted/);
+    assert.doesNotMatch(row, /<button/);
+    assert.match(rowOf(html, 'rig-bravo'), /worker-name-link/);
+    assert.match(rowOf(html, 'rig-bravo'), /<button[^>]*>not adopted/);
 });

@@ -4,7 +4,7 @@
 # uv's own CVEs into image scans, #282). uv lives only in the build/test stages.
 # ==========================================================================
 # Pinned by digest (#135) so the python:3.11-slim tag can't be silently re-pointed.
-FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9 AS base
+FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS base
 
 # Run from a project venv on PATH (so entrypoint.sh's `python3` resolves to it); use the
 # digest-pinned base interpreter (never let uv download a different Python); compile bytecode and
@@ -25,6 +25,7 @@ ENV UV_PYTHON_DOWNLOADS=never \
 # digest pinned above, so there is nothing newer to bump to. apt-get upgrade is the blanket
 # alternative and hadolint bans it (DL3005).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    apt \
     bash \
     gzip \
     iproute2 \
@@ -34,18 +35,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     openssl-provider-legacy \
     perl-base \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Lock + metadata first (better layer caching), then the source.
 COPY pyproject.toml uv.lock ./
 COPY mining_dashboard/ ./mining_dashboard/
+RUN chmod -R a+rX mining_dashboard
 
-# ==========================================================================
-# Build stage: uv resolves the locked runtime deps into /app/.venv. uv is COPYed in
-# here (and in test) but never into production.
-# ==========================================================================
 FROM base AS build
 COPY --from=ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /bin/
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
@@ -65,16 +63,9 @@ RUN python -m pytest --cov=mining_dashboard --cov-report=term-missing --cov-fail
 # ==========================================================================
 FROM base AS production
 COPY --from=build /app/.venv /app/.venv
-# entrypoint runs the app; healthcheck.sh (#904) HEADs /api/state with the venv's own python3
-# (the slim image ships no curl/wget).
 COPY entrypoint.sh healthcheck.sh ./
-RUN chmod +x entrypoint.sh healthcheck.sh
+RUN chmod 755 entrypoint.sh healthcheck.sh
 
-# Stack version, baked at build so the running container is self-describing (Issue #58).
-# PITHEAD_VERSION comes from the top-level VERSION file (the source of truth); the git args
-# mark a dev/working-tree build. pithead's render_env feeds these via docker-compose build args.
-# The dashboard reads them at runtime (mining_dashboard/version.py) for the header badge; the OCI
-# labels make the same info readable with `docker inspect`.
 ARG PITHEAD_VERSION=""
 ARG PITHEAD_GIT_COMMIT=""
 ARG PITHEAD_GIT_BRANCH=""

@@ -34,6 +34,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from mining_dashboard.service.metrics import Metrics, SyncMetric
+from mining_dashboard.service.network import egress_status
 from mining_dashboard.web.views.series_views import _mode_palette, build_hashrate
 
 _SYNC_DONE = SyncMetric(
@@ -135,6 +136,7 @@ def _state_mgr():
         sm.get_blocks.return_value = blocks or []
         sm.get_disk_growth.return_value = disk_growth or []
         sm.get_xvb_history.return_value = xvb_history or []
+        sm.get_ping_failures.return_value = []
         return sm
 
     return _state_mgr
@@ -157,3 +159,12 @@ def _data():
         return data
 
     return _data
+
+
+@pytest.fixture(autouse=True)
+def _egress_firewall_verified(monkeypatch):
+    """No test here has the host's egress-status file (#2599), which reads as unverified. The view
+    tests model the verified resting state; a test that wants another state patches it again."""
+    monkeypatch.setattr(
+        egress_status, "egress_firewall_state", lambda *a, **k: egress_status.ENFORCED
+    )

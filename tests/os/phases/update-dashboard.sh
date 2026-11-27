@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 # Set to 1 only once this leg has actually WATCHED pithead-boot's health gate commit the slot and
 # write its verdict. phase_update reads it to class its #2055 G1 skip: legs 1-3 never start
@@ -31,20 +33,52 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         return
         ;;
     esac
-    local tries=0 code=000
-    while [ "$tries" -lt 60 ]; do
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        code=$(curl -ksS -o /dev/null -w '%{http_code}' -m 8 "https://$ip/" 2>/dev/null || true)
-        case "$code" in 2?? | 3?? | 401 | 403) break ;; esac
-        sleep 5
-        tries=$((tries + 1))
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
+    # Caddy answering does not mean the dashboard upstream is ready. Wait for the
+    # authenticated state endpoint, then judge os_update on that same response.
+    local state_body code=000 state_ready=0 remaining request_limit pause
+    state_body=$(mktemp) || {
+        bad "leg 4: could not create the /api/state response file"
+        return
+    }
+    deadline=$(($(date +%s) + 120))
+    while :; do
+        remaining=$((deadline - $(date +%s)))
+        [ "$remaining" -gt 0 ] || break
+        request_limit=8
+        [ "$remaining" -ge "$request_limit" ] || request_limit=$remaining
+        : >"$state_body"
+        # shellcheck disable=SC2154 # guest address shared by the suite runner
+        if code=$(curl -sSk -u "$DASH_USER:$DASH_PASS" -o "$state_body" -w '%{http_code}' \
+            -m "$request_limit" "https://$ip/api/state" 2>/dev/null) &&
+            [ "$code" = 200 ] && jq -e 'true' "$state_body" >/dev/null 2>&1; then
+            state_ready=1
+            break
+        fi
+        remaining=$((deadline - $(date +%s)))
+        [ "$remaining" -gt 0 ] || break
+        pause=5
+        [ "$remaining" -ge "$pause" ] || pause=$remaining
+        sleep "$pause"
     done
+    if [ "$state_ready" -ne 1 ]; then
+        bad "leg 4: /api/state readiness timed out after 120 s — HTTP ${code:-000}; body: $(head -c 200 "$state_body" | LC_ALL=C tr -cd '\11\12\15\40-\176' | tr '\r\n' ' ')"
+        rm -f "$state_body"
+        return
+    fi
     # The UI-presence contract: an appliance state carries os_update, so the header renders the
     # OS control instead of the tarball Upgrade button.
-    if curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/state" 2>/dev/null |
-        jq -e '.os_update.step' >/dev/null 2>&1; then
+    if jq -e '.os_update.step' "$state_body" >/dev/null 2>&1; then
+        rm -f "$state_body"
         ok "leg 4: /api/state carries the appliance os_update state (the header control renders)"
     else
+        rm -f "$state_body"
         bad "leg 4: /api/state has no os_update — the dashboard would never show the OS control"
         return
     fi
@@ -83,7 +117,6 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     # this the guest is already running the version the bundle carries and leg 4 could never get
     # past its first download — it reported #976's path as broken while never offering it anything
     # to install. Age the RUNNING side, never the bundle's stamp (see tests/os/aged-version.sh).
-    #
     # Safe here specifically: nothing renders .env or runs compose between this write and the
     # reboot — `pithead os-update` is a rauc install — and pithead-sync restores the slot's real
     # VERSION on the next boot, before pithead-boot reads it to judge the update. So the guest
@@ -109,7 +142,53 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         [ "$(printf '%s' "$out" | jq -r '.version')" = "$tag" ]; then
         ok "leg 4: check derived the published release ($tag, $(printf '%s' "$out" | jq -r '.size') bytes)"
     else
-        bad "leg 4: check did not derive the release (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: check did not derive the release (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
+        _leg4_srv_stop
+        return
+    fi
+
+    local chreset="rm -f /data/pithead/data/os-update/target.json /data/pithead/data/os-update/.check-stamp /data/pithead/data/os-update/.check-stamp-short"
+    printf '{"tag_name":"v1.0.0/../x","assets":[]}' >"$srv/releases-latest.json"
+    _ssh "$chreset" >/dev/null 2>&1
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.status')" = "rejected" ] &&
+        printf '%s' "$out" | grep -q "no usable release tag"; then
+        ok "leg 4: a tainted release tag is refused by name"
+    else
+        bad "leg 4: a tainted release tag was not refused (got: $(printf '%s' "$out" | cut -c1-200))"
+    fi
+    printf '{"tag_name":"%s","html_url":"http://bench.invalid/rel","assets":[{"name":"pithead-os-%s.raucb","size":%s}]}' \
+        "$tag" "$tag" "$size" >"$srv/releases-latest.json"
+    _ssh "$chreset" >/dev/null 2>&1
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.channel.moved')" = "false" ] &&
+        printf '%s' "$out" | grep -q "stale or frozen"; then
+        ok "leg 4: a channel that has not advanced is reported stale"
+    else
+        bad "leg 4: a frozen channel was not flagged (got: $(printf '%s' "$out" | cut -c1-200))"
+    fi
+    {
+        printf '{"tag_name":"%s","assets":[{"name":"pithead-os-%s.raucb","size":%s}],"pad":"' "$tag" "$tag" "$size"
+        head -c 1500000 /dev/zero | tr '\0' 'a'
+        printf '"}'
+    } >"$srv/releases-latest.json"
+    _ssh "$chreset" >/dev/null 2>&1
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.status')" = "rejected" ] &&
+        printf '%s' "$out" | grep -q "size cap"; then
+        ok "leg 4: a listing over the size cap is refused"
+    else
+        bad "leg 4: an oversized listing was not refused (got: $(printf '%s' "$out" | cut -c1-120))"
+    fi
+    printf '{"tag_name":"%s","html_url":"http://bench.invalid/rel","assets":[{"name":"pithead-os-%s.raucb","size":%s}]}' \
+        "$tag" "$tag" "$size" >"$srv/releases-latest.json"
+    _ssh "$chreset" >/dev/null 2>&1
+    out=$(_os_step '{"action":"check"}' 120)
+    if [ "$(printf '%s' "$out" | jq -r '.status')" = "checked" ] &&
+        [ "$(printf '%s' "$out" | jq -r '.version')" = "$tag" ]; then
+        ok "leg 4: the channel recovers after the hostile listings"
+    else
+        bad "leg 4: the check did not recover (got: $(printf '%s' "$out" | cut -c1-200))"
         _leg4_srv_stop
         return
     fi
@@ -122,14 +201,14 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     if [ "$(printf '%s' "$out" | jq -r '.status')" = "downloaded" ]; then
         ok "leg 4: bundle downloaded to /data for the floor leg"
     else
-        bad "leg 4: download for the floor leg did not complete (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: download for the floor leg did not complete (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
     fi
     out=$(_os_step '{"action":"verify"}' 120)
     st=$(printf '%s' "$out" | jq -r '.status')
     if [ "$st" = "rejected" ] && printf '%s' "$out" | jq -r '.error' | grep -q "failed its gate.*the floor version or newer installs"; then
         ok "leg 4: FLOOR ABOVE THE RUNNING VERSION REFUSED — verify refuses with the failed-migration premise and the open route"
     else
-        bad "leg 4: verify under a floor above the running version did not refuse with the true premise (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: verify under a floor above the running version did not refuse with the true premise (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
     fi
     if ! _ssh "test -f /data/pithead/data/os-update/pithead-os-$tag.raucb"; then
         ok "leg 4: the floor-refused bundle was deleted"
@@ -143,13 +222,13 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     cp "$srv/bad.raucb" "$srv/pithead-os-$tag.raucb"
     out=$(_os_step "{\"action\":\"download\",\"version\":\"$tag\"}" 900)
     [ "$(printf '%s' "$out" | jq -r '.status')" = "downloaded" ] ||
-        bad "leg 4: download of the corrupted bundle did not complete (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: download of the corrupted bundle did not complete (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
     out=$(_os_step '{"action":"verify"}' 120)
     st=$(printf '%s' "$out" | jq -r '.status')
     if [ "$st" = "rejected" ] && printf '%s' "$out" | jq -r '.error' | grep -q "signature"; then
         ok "leg 4: BAD SIGNATURE REFUSED — verify rejects the corrupted bundle with the honest error"
     else
-        bad "leg 4: verify of the corrupted bundle did not refuse on signature (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: verify of the corrupted bundle did not refuse on signature (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
     fi
     if ! _ssh "test -f /data/pithead/data/os-update/pithead-os-$tag.raucb"; then
         ok "leg 4: the mis-signed bundle was deleted"
@@ -159,7 +238,6 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
 
     # Resume: restore the good bundle, pre-stage a genuine prefix as the interrupted transfer,
     # and require the download to CONTINUE from it rather than start over.
-    #
     # `resumed_from` alone is tautological (#1051): it is the size of the .partial file THIS
     # test staged, echoed back before curl ever runs, so it holds whether or not curl actually
     # resumed — a client that silently restarted from zero would still report it. The independent
@@ -179,7 +257,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         grep -q "^pithead-os-$tag.raucb bytes=4194304-\$" "$srv/.requests.log" 2>/dev/null; then
         ok "leg 4: RESUME PROVEN — the download continued from the interrupted 4 MiB, not from zero (server witnessed the Range request)"
     else
-        bad "leg 4: the download did not resume from the staged prefix (got: $(printf '%s' "$out" | cut -c1-200); server saw: $(cat "$srv/.requests.log" 2>/dev/null | tr '\n' ';'))"
+        bad "leg 4: the download did not resume from the staged prefix (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200); server saw: $(cat "$srv/.requests.log" 2>/dev/null | tr '\n' ';'))"
     fi
 
     # Verify + install: the good bundle passes for real, the install writes the spare slot while
@@ -188,7 +266,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     if [ "$(printf '%s' "$out" | jq -r '.status')" = "verified" ]; then
         ok "leg 4: the good bundle verifies (signature + compatible + version)"
     else
-        bad "leg 4: the good bundle failed verify (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: the good bundle failed verify (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
         _leg4_srv_stop
         return
     fi
@@ -196,7 +274,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     if [ "$(printf '%s' "$out" | jq -r '.status')" = "installed" ]; then
         ok "leg 4: install wrote the spare slot through the dashboard action"
     else
-        bad "leg 4: install did not complete (got: $(printf '%s' "$out" | cut -c1-200))"
+        bad "leg 4: install did not complete (got: $(printf '%s' "$out" | os_redact_addr | cut -c1-200))"
         # The runner deletes .install.log on a failed install and the result carries only a whitelisted last line
         # (#1651: one gate red said "[ERROR] rauc install failed", guest gone) — keep the guest's own account.
         SSH_TIMEOUT=120 _ssh "{ echo '== pithead-control.service (the root runner)'; journalctl -b -u pithead-control.service -o short-iso --no-pager -n 200; echo '== journal rauc/os-install lines'; journalctl -b -o short-iso --no-pager | grep -aiE 'rauc|os.install|os-update' | tail -300; echo '== rauc status'; rauc status; echo '== df'; df -h /data /tmp; echo '== free'; free -m; echo '== oom'; dmesg | grep -aiE 'oom|killed process'; } 2>&1" >"$SERIAL.leg4-install" || true
@@ -237,6 +315,53 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     marker=$(_ssh cat /etc/pithead-test-marker)
     [ "$marker" = "v2" ] && ok "leg 4: the dashboard-driven update booted v2" ||
         bad "leg 4: expected v2 after the dashboard reboot, got '$marker'"
+    local wstate="" saw_verifying=0 wdeadline=$(($(date +%s) + 300))
+    while [ "$(date +%s)" -lt "$wdeadline" ]; do
+        wstate=$(_ssh "jq -r '.step // \"\"' /data/pithead/data/control/results/os-update-state.json" 2>/dev/null)
+        [ "$wstate" = "verifying" ] && {
+            saw_verifying=1
+            break
+        }
+        sleep 3
+    done
+    if [ "$saw_verifying" = 1 ]; then
+        ok "leg 4: the new slot moved the persisted step to verifying before committing — the dashboard never re-offers the reboot"
+        local probe_id="3909abcd-abcd-4bcd-8bcd-abcdabcdabcd" probe_st="" probe_err="" probe_rdeadline=$(($(date +%s) + 240))
+        local midboot
+        midboot=$(_boot_id)
+        if _ssh "printf '%s\n' '{\"id\":\"$probe_id\",\"action\":\"os-reboot\",\"actor\":\"admin\"}' > /data/pithead/data/control/requests/$probe_id.json"; then
+            while [ "$(date +%s)" -lt "$probe_rdeadline" ]; do
+                probe_st=$(_ssh "jq -r '.status // \"\"' /data/pithead/data/control/results/$probe_id.json" 2>/dev/null)
+                [ -n "$probe_st" ] && break
+                sleep 5
+            done
+            probe_err=$(_ssh "jq -r '.error // \"\"' /data/pithead/data/control/results/$probe_id.json" 2>/dev/null | os_redact_addr)
+            if [ "$probe_st" = "rejected" ] && printf '%s' "$probe_err" | grep -q "already running v${tag#v}"; then
+                ok "leg 4: os-reboot REFUSED during the verify window — '$probe_err'"
+            else
+                bad "leg 4: the planted os-reboot during the verify window did not refuse as expected (got status '${probe_st:-none}', error '$probe_err')"
+            fi
+            local afterboot
+            afterboot=$(_boot_id)
+            if [ -n "$midboot" ] && [ "$afterboot" = "$midboot" ]; then
+                ok "leg 4: the refused reboot ordered nothing — same boot id before and after the probe"
+            else
+                bad "leg 4: the boot id changed across the os-reboot probe ('$midboot' -> '${afterboot:-none}') — the refusal did not hold the machine"
+            fi
+            local audit_hits
+            audit_hits=$(_ssh "grep -c '\"action\":\"os-reboot\",\"status\":\"rejected\"' /data/pithead/data/control/audit/control.log" 2>/dev/null)
+            [ -n "$audit_hits" ] || audit_hits=0
+            if [ "$audit_hits" -ge 1 ]; then
+                ok "leg 4: the refusal is in the control audit log"
+            else
+                bad "leg 4: the refusal is not in the control audit log"
+            fi
+        else
+            bad "leg 4: could not plant the os-reboot probe request in the control spool"
+        fi
+    else
+        bad "leg 4: the persisted step never read as verifying while the new slot was uncommitted (last read: '${wstate:-none}') — the dashboard could offer a second reboot"
+    fi
     # The verdict is written only when pithead-boot's health gate commits the slot — waiting for
     # it proves install + reboot + commit landed, and that the banner's data exists.
     local vdeadline=$(($(date +%s) + 900)) verdict=""
@@ -253,6 +378,17 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
         LEG4_PITHEAD_BOOT_PROVED=1
     else
         bad "leg 4: no 'updated' verdict after the reboot (got '${verdict:-none}') — commit or verdict is broken"
+    fi
+    local shdeadline=$(($(date +%s) + 300))
+    while [ "$(date +%s)" -lt "$shdeadline" ]; do
+        _ssh "journalctl -u pithead-boot 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null" && break
+        sleep 10
+    done
+    if _ssh "journalctl -u pithead-boot 2>/dev/null | grep -F 'dashboard schema hold armed' >/dev/null" &&
+        _ssh "journalctl -u pithead-boot 2>/dev/null | grep -F 'dashboard schema hold released' >/dev/null"; then
+        ok "leg 4: pithead-boot's journal armed the dashboard schema hold on the uncommitted boot and released it at the commit"
+    else
+        bad "leg 4: pithead-boot's journal lacks the schema hold arm and release lines — the hold never ran on the real boot"
     fi
     if curl -sSk -u "$DASH_USER:$DASH_PASS" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.verdict.outcome == "updated"' >/dev/null 2>&1; then

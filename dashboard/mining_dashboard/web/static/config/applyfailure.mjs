@@ -96,6 +96,13 @@ export function upgradeFailure(result, appliance) {
 // Preact and the tests' render probe handle without that question arising at all. A null entry
 // (no log, or the host branch's absent caption) is dropped by both, as it is anywhere else.
 export function applyFailure(result, appliance) {
+  // A rejected commit wrote nothing, so the saved and kept lines would be false (#3376).
+  if (result.status === "rejected") {
+    return [
+      html`<p class="status-bad">Your change was not applied or saved.</p>`,
+      result.error ? html`<p class="status-bad">${result.error}</p>` : null,
+    ];
+  }
   return [
     backupLine(result, appliance),
     logCaption(appliance),

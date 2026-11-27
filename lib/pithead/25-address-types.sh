@@ -29,6 +29,7 @@ monero_address_type() {
         return
     fi
     python3 - "$1" <<'PYEOF' 2>/dev/null || echo "$shape"
+import os
 import sys
 
 # Monero base58: 8-byte blocks encoded independently to 11 chars (a shorter last block maps by
@@ -128,7 +129,7 @@ kind = {18: ("primary", 65), 19: ("integrated", 73), 42: ("subaddress", 65)}.get
 if kind is None or len(body) != kind[1]:
     print("invalid")
     sys.exit(0)
-print(kind[0])
+print(body[33:65].hex() if os.environ.get("MONERO_ADDRESS_KEY_ONLY") == "1" else kind[0])
 PYEOF
 }
 
@@ -227,6 +228,9 @@ elif raw[0] != 0x00:
 elif raw[1] & ~0b111:  # unknown feature bits (known: one-sided 1, interactive 2, payment-id 4)
     print("invalid")
 else:
-    print("ok")
+    if os.environ.get("TARI_ADDRESS_KEY_ONLY") == "1":
+        print((raw[:1] + (raw[2:34] if len(raw) == 35 else raw[2:66])).hex())
+    else:
+        print("ok")
 PYEOF
 }

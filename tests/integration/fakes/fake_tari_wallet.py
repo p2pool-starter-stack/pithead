@@ -24,12 +24,17 @@ import grpc
 from mining_dashboard.client.tari.generated import wallet_pb2, wallet_pb2_grpc
 
 # state["transactions"] is a list of dicts, each a TransactionInfo's fields.
-DEFAULT_STATE = {"transactions": [], "calls": 0}
+DEFAULT_STATE = {"transactions": [], "calls": 0, "address": "tari-test-wallet"}
 
 
 class FakeWallet(wallet_pb2_grpc.WalletServicer):
     def __init__(self, state):
         self.state = state
+
+    async def GetCompleteAddress(self, request, context):
+        return wallet_pb2.GetCompleteAddressResponse(
+            one_sided_address_base58=self.state.get("address", "tari-test-wallet")
+        )
 
     async def GetCompletedTransactions(self, request, context):
         self.state["calls"] = self.state.get("calls", 0) + 1
@@ -77,6 +82,8 @@ class _ControlHandler(BaseHTTPRequestHandler):
             return
         if "transactions" in data:
             self.server.state["transactions"] = data["transactions"]
+        if "address" in data:
+            self.server.state["address"] = data["address"]
         if data.get("reset_calls"):
             self.server.state["calls"] = 0
         body = json.dumps(self.server.state).encode()

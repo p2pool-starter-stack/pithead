@@ -93,7 +93,8 @@ rm -f "$WSS/restart-stage/.restore.escape"
 
 mk_tmpdir WBK
 mkdir -p "$WBK/preseed"
-WBK_STUBS='machine_role() { echo pithead; }; setup_again_mode() { return 1; }
+WBK_STUBS='wizard_issue_file() { printf "%s/console.issue" "$PWD"; }; agetty() { [ "$1" = --reload ]; }
+machine_role() { echo pithead; }; setup_again_mode() { return 1; }
 installer_mode_available() { return 1; }; consume_preseed_restore() { return 1; }; consume_preseed_config() { return 2; }
 boot_is_removable() { return 1; }; _console() { :; }; container_engine() { echo true; }
 export_build_provenance() { PITHEAD_REGISTRY=fixture; STACK_VERSION=dev; }; load_baked_images() { :; }
@@ -105,6 +106,7 @@ wizard_spool_publish() { :; }; warn() { :; }; log() { :; }; bash() { cp config.j
 sleep() { exit 7; }'
 PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBK_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "post-validation refusal reaches candidate cleanup" "$?" 7
+assert_eq "a refused setup round clears its console banner" "$([ -e "$WBK/console.issue" ] || echo gone)" gone
 assert_eq "post-validation refusal leaves no migration backup" "$([ -e "$WBK/config.json.bak-1x" ] || echo gone)" gone
 mkdir -p "$WBK/installed/preseed" "$WBK/installed/data/firstboot"
 printf live-config-sentinel >"$WBK/installed/config.json"
@@ -127,6 +129,50 @@ consume_preseed_restore() { return 3; }
 error() { exit 12; }"
 PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBP_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "legacy applied-stage cleanup failure stops first boot" "$?" 12
+# Exercise the real firstboot caller and credential helper: host/setup effects alone are
+# stubbed. A helper-only test missed both callers swallowing its failure (#3099).
+WBC_STUBS=${WBK_STUBS/'ensure_appliance_dashboard_password() { :; }; '/}
+WBC_STUBS="$WBC_STUBS
+record_machine_role() { :; }; control_consume_provisioning_marker() { :; }
+setup() { touch setup-reached; }; bash() { return 0; }
+wizard_spool_publish() { [ \"\$2\" != handoff.json ] || { touch handoff-reached; exit 7; }; }
+firstboot_consume_spool() { printf '{}' >config.json; return 0; }"
+for credential_path in preseed browser; do
+    for credential_fault in openssl write; do
+        mkdir -p "$WBK/credentials/preseed"
+        rm -f "$WBK/credentials/config.json" "$WBK/credentials/setup-reached" "$WBK/credentials/handoff-reached"
+        [ "$credential_path" != preseed ] || printf '{}' >"$WBK/credentials/config.json"
+        if [ "$credential_fault" = openssl ]; then
+            credential_stub='openssl() { return 9; }'
+        else
+            credential_stub='jq() { case "$*" in *".dashboard.auth.password = "*) return 9 ;; *) command jq "$@" ;; esac; }'
+        fi
+        echo "== firstboot credential failure: $credential_path / $credential_fault =="
+        out=$(PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
+            eval "$WBC_STUBS; $credential_stub; firstboot_wizard" 2>&1)
+        assert_rc "firstboot credential failure stops provisioning" "$?" 1
+        assert_contains "firstboot credential failure reports the login refusal" "$out" 'Could not prepare the dashboard login'
+        assert_eq "firstboot credential failure reaches neither setup nor handoff" \
+            "$(find "$WBK/credentials" -name '*-reached')" ""
+        assert_eq "firstboot credential failure preserves the passwordless candidate" "$(cat "$WBK/credentials/config.json")" '{}'
+    done
+done
+# Explicit opt-out is still accepted even when the generator cannot run.
+mkdir -p "$WBK/credentials/data/firstboot"
+printf none >"$WBK/credentials/data/firstboot/auth-mode"
+rm -f "$WBK/credentials/config.json"
+PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
+    eval "$WBC_STUBS; openssl() { return 9; }; firstboot_consume_spool() { printf '{}' >config.json; printf none >data/firstboot/auth-mode; }; firstboot_wizard" >/dev/null 2>&1
+assert_rc "explicit no-login reaches handoff without generating a password" "$?" 7
+assert_eq "explicit no-login publishes a handoff" "$([ -f "$WBK/credentials/handoff-reached" ] && echo yes)" yes
+printf '{"dashboard":{"auth":{"password":"existing-password-kept"}}}' >"$WBK/credentials/config.json"
+PITHEAD_PRESEED_DIR="$WBK/credentials/preseed" run_sourced "$WBK/credentials" \
+    eval "$WBC_STUBS; openssl() { return 9; }; firstboot_wizard" >/dev/null 2>&1
+assert_rc "an existing pre-seeded login does not require password generation" "$?" 0
+assert_eq "an existing pre-seeded login reaches setup" "$([ -f "$WBK/credentials/setup-reached" ] && echo yes)" yes
+assert_eq "firstboot preserves an existing pre-seeded login" \
+    "$(jq -r '.dashboard.auth.password' "$WBK/credentials/config.json")" existing-password-kept
+unset WBC_STUBS credential_path credential_fault credential_stub
 rm -rf "$WBK"
 unset WBK WBK_STUBS WBR_STUBS WBF_STUBS WBP_STUBS
 mk_tmpdir WRS
@@ -163,7 +209,7 @@ run_sourced "$WSS" eval 'install() { return 99; }; rm() { return 99; }; wizard_r
 assert_rc "restore cleanup leaves installer pre-seeds untouched" "$?" 0
 run_sourced "$WSS" eval 'wizard_restore_installer_preseeds() { :; }; clear_setup_candidate() { :; }; clear_legacy_restore_carry() { return 1; }; wizard_clear_restore_state() { :; }; wizard_cleanup_installer_credentials a b c 0 d e f'
 assert_rc "legacy credential cleanup failure stops installer cleanup" "$?" 1
-fb_restore_paths=$(sed -n '/^firstboot_wizard() {/,/^}$/p' "$STACK")
+fb_restore_paths=$(sed -n '/^firstboot_wizard() {/,/^}$/p; /^wizard_start_page() {/,/^}$/p' "$STACK")
 assert_eq "every retry snapshot uses the secret-stripping publisher" "$(grep -c wizard_publish_retry_config <<<"$fb_restore_paths")" 3
 assert_eq "every accepted-restore exit clears its marker and carry" "$(grep -c 'wizard_clear_restore_state "$rec"' <<<"$fb_restore_paths")" 5
 assert_eq "both installer exits check the shared credential cleanup" "$(grep -c wizard_cleanup_installer_credentials <<<"$fb_restore_paths")" 2

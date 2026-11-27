@@ -22,7 +22,12 @@ import logging
 
 from aiohttp import ClientSession
 
-from mining_dashboard.client.xmrig_client import XMRigWorkerClient, parse_rigforge
+from mining_dashboard.client.rigforge_freshness import feed_age
+from mining_dashboard.client.xmrig_client import (
+    XMRigWorkerClient,
+    parse_rigforge,
+    parse_worker_control_status,
+)
 from mining_dashboard.service.health.update_checker import parse_semver
 
 logger = logging.getLogger("WorkerRefresh")
@@ -34,12 +39,9 @@ REFRESH_ATTEMPTS = 6
 REFRESH_DELAY_S = 10.0
 
 
-async def _poll_until_matched(worker_client, ip, name, target, entry, attempts, delay_s, sleep):
-    """Probe ``ip``/``name`` up to ``attempts`` times, merging each reachable read's ``rigforge``
-    block into ``entry`` in place (same field the main poll loop merges, ``_merge_direct_stats``).
-    Stops as soon as the reported version matches ``target`` (parsed SemVer) or the attempts run
-    out; a target that doesn't parse (caller passed something odd) stops after the first reachable
-    read instead of spinning for nothing."""
+async def _poll_until_matched(
+    worker_client, latest_data, ip, name, target, attempts, delay_s, sleep
+):
     for _ in range(attempts):
         await sleep(delay_s)
         try:
@@ -50,7 +52,13 @@ async def _poll_until_matched(worker_client, ip, name, target, entry, attempts, 
         rf = parse_rigforge(payload) if payload else None
         if rf is None:
             continue
-        entry["rigforge"] = rf
+        current = next((w for w in latest_data.get("workers") or [] if w.get("name") == name), None)
+        if current is None or current.get("ip") != ip:
+            return False
+        held = (current.get("rigforge") or {}).get("generated_at") or ""
+        if held > (rf.get("generated_at") or ""):
+            continue
+        current["rigforge"] = rf
         if rf.get("stale"):
             continue
         reported = parse_semver(rf.get("version"))
@@ -84,11 +92,18 @@ async def refresh_worker_after_upgrade(
     target = parse_semver(target_version)
     if worker_client is not None:
         return await _poll_until_matched(
-            worker_client, entry["ip"], name, target, entry, attempts, delay_s, sleep
+            worker_client, latest_data, entry["ip"], name, target, attempts, delay_s, sleep
         )
     async with ClientSession() as session:
         return await _poll_until_matched(
-            XMRigWorkerClient(session), entry["ip"], name, target, entry, attempts, delay_s, sleep
+            XMRigWorkerClient(session),
+            latest_data,
+            entry["ip"],
+            name,
+            target,
+            attempts,
+            delay_s,
+            sleep,
         )
 
 
@@ -102,3 +117,87 @@ async def maybe_refresh_after_upgrade(latest_data, worker, version, res):
     result: kicks the out-of-cycle refresh above only when ``res`` means the rig actually rebuilt."""
     if res.get("status") in UPGRADE_REFRESH_STATUSES:
         await refresh_worker_after_upgrade(latest_data, worker, res.get("version") or version)
+
+
+async def refresh_donation_after_apply(
+    latest_data,
+    state_mgr,
+    name,
+    change_id,
+    target,
+    worker_client=None,
+    attempts=18,
+    delay_s=5.0,
+    sleep=asyncio.sleep,
+):
+    """Confirm this DONATION apply and reconcile history, retaining any superseding report."""
+    entry = next((w for w in latest_data.get("workers", []) if w.get("name") == name), None)
+    if not entry or not entry.get("ip") or not change_id:
+        return False
+
+    async def poll(client):
+        for _ in range(attempts):
+            await sleep(delay_s)
+            try:
+                payload = await client.get_stats(entry["ip"], name)
+            except Exception:
+                logger.debug("Post-apply refresh probe failed for worker %r", name, exc_info=True)
+                continue
+            rf = parse_rigforge(payload) if payload else None
+            ctrl = parse_worker_control_status(payload) if payload else None
+            if not rf or rf["stale"] or not ctrl or ctrl["change_id"] != change_id:
+                continue
+            if ctrl["status"] != "applied":
+                await asyncio.to_thread(
+                    state_mgr.reconcile_worker_config_status,
+                    change_id,
+                    ctrl["status"],
+                    ctrl["reason"],
+                )
+                return False
+            if (rf.get("config") or {}).get("DONATION") != target:
+                continue
+            current = next(
+                (w for w in latest_data.get("workers", []) if w.get("name") == name), None
+            )
+            if current is None or current.get("ip") != entry["ip"]:
+                return False
+            refreshed = {**current, "rigforge": rf}
+            preserve_newer_reports([current], [refreshed])
+            current["rigforge"] = refreshed["rigforge"]
+            await asyncio.to_thread(
+                state_mgr.reconcile_worker_config_status, change_id, "applied", ctrl["reason"]
+            )
+            return True
+        return False
+
+    if worker_client is not None:
+        return await poll(worker_client)
+    async with ClientSession() as session:
+        return await poll(XMRigWorkerClient(session))
+
+
+def maybe_refresh_after_apply(app, state_mgr, worker, changes, res):
+    """Run a bounded out-of-cycle read after an accepted DONATION write."""
+    if "DONATION" not in changes or res.get("status") not in ("applied", "accepted"):
+        return
+    bg_tasks = app["_bg_tasks"]
+    task = asyncio.create_task(
+        refresh_donation_after_apply(
+            app["latest_data"], state_mgr, worker, res.get("change_id"), changes["DONATION"]
+        )
+    )
+    bg_tasks.add(task)
+    task.add_done_callback(bg_tasks.discard)
+
+
+def preserve_newer_reports(current_workers, next_workers):
+    """Keep a targeted refresh when an older main-loop read publishes afterwards."""
+    current = {(w.get("name"), w.get("ip")): w.get("rigforge") for w in current_workers}
+    for worker in next_workers:
+        old = current.get((worker.get("name"), worker.get("ip")))
+        if not isinstance(old, dict) or feed_age(old.get("generated_at")) is None:
+            continue
+        new = worker.get("rigforge") or {}
+        if feed_age(new.get("generated_at")) is None or old["generated_at"] >= new["generated_at"]:
+            worker["rigforge"] = old

@@ -189,24 +189,17 @@ assert_eq "journald lets go first, then the bind comes off, then the miner is se
     "systemctl:restart systemd-journald umount:$RIGL/journal rigforge:setup "
 [ -d "$RIGL/journal" ] && bad "the directory under the bind is reclaimed" "still there" ||
     ok "the directory under the bind is reclaimed"
-# A reclaim that cannot complete must not take the boot verb down: pithead-boot calls
-# `pithead local-miner` BARE under the CLI's errexit, while the wizard calls the same leg under
-# `|| true` — a failure inside the minimization passed first boot and killed every boot after
-# (the #1651 gate, BUILD_COMMIT 4fb4943a: the rig booted mining and never committed its slot).
-# Driven under errexit for real. The armed-runner control is an ABSENCE row, paired with the
-# positive rows after it (rc 0 + console text); rm is stubbed to refuse the path as a mountpoint does.
-run_rig_errexit() { (
-    cd "$RIGL" || exit 99
-    export PITHEAD_APPLIANCE=1 PATH="$RIGL/bin:$PATH"
-    # shellcheck disable=SC1090
-    source "$STACK"
-    "$@"
-); }
+run_rig_errexit() {
+    PITHEAD_APPLIANCE=1 PATH="$RIGL/bin:$PATH" run_sourced_e "$RIGL" "$@"
+}
 _errexit_probe() {
     false
     echo survived
 }
-assert_not_contains "control: the errexit runner is armed" "$(run_rig_errexit _errexit_probe 2>/dev/null)" "survived"
+export -f _errexit_probe
+rigl_out=$(run_rig_errexit _errexit_probe 2>&1)
+assert_rc "control: the errexit probe stops at failure" "$?" "1"
+assert_not_contains "control: the errexit runner is armed" "$rigl_out" "survived"
 cat >"$RIGL/bin/rm" <<EOF
 #!/usr/bin/env bash
 for a in "\$@"; do
@@ -322,7 +315,13 @@ PITHEAD_APPLIANCE=1 PITHEAD_HUGEPAGES_MARKER="$LMR/marker" run_sourced "$LMR" re
 assert_eq "released reservation -> zero headroom (RigForge sizes for the miner alone)" \
     "$(jq -r '.hugepages_reserve_extra_mb' "$LMR/rigforge/config.json")" "0"
 printf 'STRATUM_PORT=13333\nPROXY_STRATUM_PASSWORD=s3cret\n' >"$LMR/.env"
-PITHEAD_APPLIANCE=1 run_sourced "$LMR" render_local_miner_config >/dev/null 2>&1
+chmod 644 "$LMR/rigforge/config.json"
+LMR_OLD=$(cat "$LMR/rigforge/config.json")
+exec {LMR_FD}<"$LMR/rigforge/config.json"
+(umask 022 && PITHEAD_APPLIANCE=1 run_sourced "$LMR" render_local_miner_config >/dev/null 2>&1)
+assert_eq "a local miner config that was mode 644 ends owner-only" "$(stat -c '%a' "$LMR/rigforge/config.json")" "600"
+assert_eq "the mode-644 file itself never receives the new config" "$(cat <&"$LMR_FD")" "$LMR_OLD"
+exec {LMR_FD}<&-
 assert_eq "custom stratum port lands in the pool url" \
     "$(jq -r '.pools[0].url' "$LMR/rigforge/config.json")" "127.0.0.1:13333"
 assert_eq "stratum password lands as the pool pass" \

@@ -115,28 +115,27 @@ assert_contains "the fourth call is refused (BOOT_REMINT_MAX=3)" "$rm_out" "call
 assert_contains "  …before render runs: three renders for four calls" "$rm_out" "renders=3"
 
 echo "== unit: the gate loop is wired — the re-mint sits between this round's ready check and the sleep (#1265) =="
-# The loop is below the sourcing boundary, so its wiring is asserted by ORDER in the script:
-# the per-round reset of gate_doctor_ran, the ready check, the re-mint branch keyed on THIS
-# round's doctor run, then the sleep and the fail. Mutation run: delete the elif -> red; move the
-# reset above the loop -> the reset row goes red (a stale verdict file could then re-mint).
+# Below the sourcing boundary, assert reset, ready, this round's re-mint, progress, sleep, fail.
+# Mutations deleting elif or moving the reset above the loop must fail (stale doctor verdicts).
 BOOTSCRIPT="$ROOT/os/overlay/pithead-boot"
 bl_line() { grep -n -F -- "$1" "$BOOTSCRIPT" | head -1 | cut -d: -f1; }
-l_loop=$(bl_line 'for _ in $(seq 90); do')
+l_loop=$(bl_line 'for gate_attempt in $(seq 90); do')
 l_reset=$(bl_line '    gate_doctor_ran=0')
 l_ready=$(bl_line '    if gate_ready "')
 l_elif=$(bl_line '    elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then')
 l_remint=$(bl_line '        gate_remint_cert || true')
+l_progress=$(bl_line '    if ((gate_attempt % 6 == 0)); then')
 l_sleep=$(bl_line '    sleep 10')
 l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor + status)"')
 assert_eq "every anchor is present exactly where a reader would look" \
-    "$([ -n "$l_loop" ] && [ -n "$l_reset" ] && [ -n "$l_ready" ] && [ -n "$l_elif" ] && [ -n "$l_remint" ] && [ -n "$l_sleep" ] && [ -n "$l_fail" ] && echo all)" "all"
+    "$([ -n "$l_loop" ] && [ -n "$l_reset" ] && [ -n "$l_ready" ] && [ -n "$l_elif" ] && [ -n "$l_remint" ] && [ -n "$l_progress" ] && [ -n "$l_sleep" ] && [ -n "$l_fail" ] && echo all)" "all"
 assert_eq "gate_doctor_ran is reset INSIDE the loop, before the ready check" \
     "$([ "${l_loop:-0}" -lt "${l_reset:-0}" ] && [ "${l_reset:-0}" -lt "${l_ready:-0}" ] && echo ordered)" "ordered"
-assert_eq "the re-mint branch follows the ready check and precedes the sleep and the fail" \
-    "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
+assert_eq "the re-mint branch follows the ready check and precedes progress, sleep and fail" \
+    "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_progress:-0}" ] && [ "${l_progress:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
 l_gr=$(grep -n -F 'gate_ready() {' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 l_set=$(grep -n -F '    gate_doctor_ran=1' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
-l_doc=$(grep -n -F '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
+l_doc=$(grep -n -F './pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 assert_eq "gate_ready marks the round BEFORE it runs doctor, so a quiet round can never act on last round's file" \
     "$([ "${l_gr:-0}" -lt "${l_set:-0}" ] && [ "${l_set:-0}" -lt "${l_doc:-0}" ] && echo ordered)" "ordered"
 
@@ -184,7 +183,7 @@ fv_two=$(fv_run "$(dj fail "$COVER" fail 'monerod is not running')")
 assert_contains "two failing checks: both on the flag, in doctor's order" "$fv_two" "flag=[\"$COVER\",\"monerod is not running\"]"
 assert_contains "…the console names the first" "$fv_two" "held by: The dashboard certificate"
 fv_none=$(fv_run "")
-assert_contains "no doctor file: nothing added to the flag" "$fv_none" "flag=absent"
+assert_contains "no doctor file: the flag records the failed gate with no causes" "$fv_none" "flag=[]"
 assert_contains "…the verdict carries an empty list and is still rolled_back" "$fv_none" "verdict=[] outcome=rolled_back"
 assert_not_contains "…and the console line is the plain one" "$fv_none" "held by"
 echo "== unit: the A/B commit gate also consumes 'pithead status', a third signal (#2383) =="
@@ -306,7 +305,7 @@ assert_eq "doctor clean, status names the unhealthy dashboard -> the flag carrie
 assert_eq "both fail: doctor's message first, then status's container row" \
     "$(fs_run "$(dj fail "$COVER")" '  ✗ caddy         restarting (possible crash loop — check logs)')" \
     "flag=[\"$COVER\",\"container caddy: restarting (possible crash loop — check logs)\"]"
-assert_eq "neither fails -> nothing added" "$(fs_run '' '')" "flag=absent"
+assert_eq "neither fails -> no causes added to the failed flag" "$(fs_run '' '')" "flag=[]"
 unset -f fs_run
 unset FS
 

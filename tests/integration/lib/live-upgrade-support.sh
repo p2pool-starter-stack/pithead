@@ -127,7 +127,7 @@ all_running_refs() {
     rx 'docker compose ps --services --status running 2>/dev/null | sort | while read -r s; do c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ] || exit 1; docker inspect --format "$s {{.Config.Image}}" "$c"; done'
 }
 stateful_mounts() { # tmpfs excluded (job 1181): no host Source to snapshot, unlike a bind at the same destination
-    rx 'set -euo pipefail; docker compose ps --services --status running | while read -r s; do [ -n "$s" ] || continue; c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ]; docker inspect "$c" | jq -r --arg s "$s" '\''.[0].Mounts[] | select(.RW == true and .Type != "tmpfs" and (.Destination | IN("/var/lib/tor","/home/ubuntu/.bitmonero","/home/ubuntu/wallets","/var/tari/node","/home/ubuntu/wallet","/home/ubuntu","/data","/clearnet-state","/control/requests","/var/log/caddy"))) | [$s,.Destination,.Source,.Type] | @tsv'\''; done | sort'
+    rx 'set -euo pipefail; docker compose ps --services --status running | while read -r s; do [ -n "$s" ] || continue; c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ]; docker inspect "$c" | jq -r --arg s "$s" '\''.[0].Mounts[] | select(.RW == true and .Type != "tmpfs" and (.Destination | IN("/var/lib/tor","/home/ubuntu/.bitmonero","/home/ubuntu/wallets","/var/tari/node","/var/tari/wallet","/home/ubuntu","/data","/clearnet-state","/control/requests","/var/log/caddy"))) | [$s,.Destination,.Source,.Type] | @tsv'\''; done | sort'
 }
 normalized_stateful_mounts() { # <version-dir> <mount TSV>
     awk -F '\t' -v OFS='\t' -v root="$1" '$2 == "/clearnet-state" || $2 == "/control/requests" || $2 == "/var/log/caddy" { prefix=root "/data/"; if (index($3,prefix) != 1) exit 1; $3="@release/data/" substr($3,length(prefix)+1) } { print }' <<<"$2"
@@ -302,6 +302,8 @@ restore_upgrade_baseline() {
     _UPGRADE_RESTORE_ARMED=0
     it_warn "restoring the exact pre-upgrade release, state, and image set"
     local failed="" files_ok=1 state restored_workers restored_telemetry monero_tip monero_height
+    local miner_observation
+    miner_observation="$(upgrade_miner_observation_start)"
     local PITHEAD_REGISTRY="$UPGRADE_BASELINE_REGISTRY"
     export PITHEAD_REGISTRY
     pithead down >/dev/null 2>&1 || {
@@ -345,8 +347,9 @@ restore_upgrade_baseline() {
     [ "$(monero_block_identity "$((UPGRADE_BEFORE_MONERO - 1))")" = "$UPGRADE_BEFORE_MONERO_ID" ] || failed+=" monero-identity"
     [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed+=" tari-identity"
     [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed+=" mounts"
-    restored_workers="$(worker_names)"
-    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed+=" workers"
+    wait_for "${BOUND_RECONNECT:-480}" 5 "restored baseline workers" _pred_upgrade_workers_capture || true
+    upgrade_miner_observation_finish "$miner_observation"
+    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || { failed+=" workers" && it_log "rollback worker set: $(upgrade_worker_set_diff "$UPGRADE_BEFORE_WORKERS" "$restored_workers" "$(jq_get "$state" '.proxy_workers')")"; }
     [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null || failed+=" proxy-workers"
     [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null || failed+=" hashes"
     restored_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH" --baseline-schema)"
@@ -403,7 +406,3 @@ monero_chain_tip() {
 }
 
 chain_tip_valid() { [[ "${1:-}" =~ ^[1-9][0-9]*\ [0-9a-f]{64}$ ]]; }
-
-tari_block_identity() { # <height>
-    rx "docker exec dashboard python3 -c 'import grpc,sys;from mining_dashboard.config.config import TARI_GRPC_ADDRESS;from mining_dashboard.client.tari.generated import base_node_pb2,base_node_pb2_grpc;s=base_node_pb2_grpc.BaseNodeStub(grpc.insecure_channel(TARI_GRPC_ADDRESS));h=next(s.ListHeaders(base_node_pb2.ListHeadersRequest(from_height=int(sys.argv[1]),num_headers=1,sorting=base_node_pb2.SORTING_ASC),timeout=8)).header;print(h.height,h.hash.hex())' $(quote_arg "$1")" 2>/dev/null
-}

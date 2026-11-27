@@ -37,7 +37,8 @@ caddy_onion="$(
 )"
 assert_contains "onion vhost bound to the bridge gateway" "$caddy_onion" "http://172.28.0.1 {"
 assert_contains "onion vhost carries basic_auth" "$caddy_onion" "basic_auth"
-# The onion site (everything after the gateway address) must not get a TLS directive.
+assert_contains "onion vhost carries the session gate" "${caddy_onion#*172.28.0.1}" "forward_auth @pithead_session 127.0.0.1:8000"
+assert_contains "onion vhost serves the sign-in endpoints" "${caddy_onion#*172.28.0.1}" "@pithead_public path /login"
 onion_site="${caddy_onion#*172.28.0.1}"
 case "$onion_site" in
 *"tls internal"*) bad "onion vhost is plain HTTP" "'tls internal' present on the onion site" ;;
@@ -105,7 +106,7 @@ caddy_https="$(
 # native rolling (4 MiB per file, current + 2 rolled); mode 0644 lets the non-root dashboard
 # read what root-run Caddy writes (Caddy's own default is 0600, unreadable across the mount).
 assert_contains "access log block rendered" "$caddy_https" "output file /var/log/caddy/access.log"
-assert_contains "access log is JSON" "$caddy_https" "format json"
+assert_contains "access log is JSON" "$caddy_https" "wrap json"
 assert_contains "access log growth is bounded (roll_size)" "$caddy_https" "roll_size 4MiB"
 assert_contains "rolled files are capped (roll_keep)" "$caddy_https" "roll_keep 2"
 assert_contains "access log stays dashboard-readable (mode 0644)" "$caddy_https" "mode 0644"
@@ -299,13 +300,9 @@ case "$upg_regen_off" in
 esac
 
 echo "== black-box: apply captures + renders the HTTPS onion vhost in the SAME run (#546) =="
-# Before the fix, apply's post-up capture block (provision_dashboard_onion && render_env) never
-# re-ran generate_caddyfile, so the https://<onion> vhost (#360) only appeared on some LATER,
-# unrelated apply — a re-apply that changed nothing hit the "No configuration changes detected"
-# early return before ever reaching generate_caddyfile. Drive the real apply() with the heavy
-# machinery stubbed away but generate_caddyfile left REAL, so the Caddyfile is the actual proof.
 AOC="$SANDBOX/apply-onion-capture"
 mkdir -p "$AOC"
+printf '{}\n' >"$AOC/config.json"
 printf 'DEPLOYMENT_COMPLETED=true\n' >"$AOC/.env"
 caddy_apply_capture=$(
     cd "$AOC" || exit

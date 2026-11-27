@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/../lib/redact-addr.sh"
 : "${OS_RUN_SUITE:?source via the suite runner}"
 _rig_mining_up() { # <tries>, 10 s apart — 0 once the xmrig unit is active with its process up
     local n=0
@@ -12,18 +14,9 @@ _rig_mining_up() { # <tries>, 10 s apart — 0 once the xmrig unit is active wit
 
 phase_rig() {
     info "phase: rig (the OTHER machine this image installs — mines instead of coordinating)"
-    # Recorded at phase ENTRY, before the first build or boot: the dashboard-scoped legs (hostname
-    # identity, diagnostics, tari-mode switch, egress backstop — all phase_provision_* in
-    # appliance-*-leg.sh) cannot apply to a rig whatever this run goes on to do, and a fact known
-    # before anything runs must not be reported only by the runs that get far enough to reach it.
-    # A guest that dies at the image build and one that finishes the phase enumerate the same row.
     it_skip_leg "hostname identity, diagnostics, tari-mode switch and egress backstop legs" \
         "a rig has no dashboard, no control API and no compose stack at all to assert any of these against" by-design
-    # One image, two machines. Every other phase proves the coordinator; this one proves that
-    # answering "RigForge" produces a box with no stack at all, mining the baked binary without
-    # compiling or reaching the network, that takes an A/B update exactly like a coordinator. A
-    # rig has no dashboard to complain through, so one that never starts is invisible otherwise.
-    local img token jar body scode marker card card_tok rtok pcode ptries=0
+    local img token jar body scode marker card card_tok rtok pcode ptries=0 cid cstat meta0 meta1
 
     img=$(_build_image v1) || {
         bad "image build failed (/tmp/os-fault-build.log)"
@@ -79,7 +72,7 @@ phase_rig() {
         # from the guard's own else-branch (lib/pithead/12-firstboot-wizard.sh).
         land_warn=$(_ssh "journalctl -b --no-pager -o cat | grep -m1 unusable" 2>/dev/null | tr -d '\r')
         [ -n "$land_warn" ] &&
-            ok "#1843: the guard ran — boot journal: $(printf '%s' "$land_warn" | cut -c1-140)" ||
+            ok "#1843: the guard ran — boot journal: $(printf '%s' "$land_warn" | os_redact_addr | cut -c1-140)" ||
             bad "#1843: no 'unusable' line in the boot journal — the guard never ran on this boot"
         # Refused is still readable: the file may carry a stratum password and a VFAT ESP keeps
         # no mode 600, so the refusal scrubs it exactly as the consumed path does.
@@ -96,7 +89,6 @@ phase_rig() {
         return
     }
     ok "image boots ($ip)"
-
     local tries=0
     token=""
     while [ -z "$token" ] && [ "$tries" -lt 40 ]; do
@@ -161,7 +153,7 @@ phase_rig() {
         ok "the rig mines (xmrig unit active, process running) with no reboot in between"
     else
         bad "the rig never started mining (unit: $(_ssh 'systemctl is-active xmrig' 2>/dev/null || echo unknown))"
-        info "  firstboot journal tail: $(_ssh "journalctl -u pithead-firstboot -n 8 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+        info "  firstboot journal tail: $(_ssh "journalctl -u pithead-firstboot -n 8 --no-pager -o cat" 2>/dev/null | os_redact_addr | tr '\n' ' ' | cut -c1-300)"
     fi
     [ "$(_ssh 'cat /data/pithead/machine-role' | tr -d '\r\n')" = "rig" ] &&
         ok "the role marker says rig" || bad "the role marker is not rig"
@@ -171,7 +163,7 @@ phase_rig() {
     if _ssh "jq -e '.pools[0].url == \"127.0.0.1:22\" and .pools[0].user == \"kvm-rig\"' /data/rigforge/config.json >/dev/null"; then
         ok "the miner's config is derived from rig.json (pool + worker name)"
     else
-        bad "the rig's miner config does not match its answers ($(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
+        bad "the rig's miner config does not match its answers ($(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | os_redact_addr | cut -c1-100))"
     fi
     # #1836: the rig's token guards every API, the sister feed the coordinator probes exists, and the
     # writable control path is pinned to the pool host — 127.0.0.1 here, so the guest probes itself over
@@ -181,7 +173,7 @@ phase_rig() {
     [ -n "$card_tok" ] && [ "$card_tok" = "$rtok" ] && ok "the rig card showed the SAME token the miner enforces" || bad "the card's token ('${card_tok:0:8}') is not the miner's ('${rtok:0:8}')"
     _ssh "jq -e '.api == \"enabled\" and .control == \"enabled\" and .api_allow_from == \"127.0.0.1\" and (has(\"control_upgrade\") | not)' /data/rigforge/config.json >/dev/null" &&
         ok "sister API + control enabled, pinned to the pool host; control_upgrade untouched" ||
-        bad "the rig's API keys are not what #1836 renders: $(_ssh "jq -c 'del(.pools, .ACCESS_TOKEN)' /data/rigforge/config.json" | cut -c1-120)"
+        bad "the rig's API keys are not what #1836 renders: $(_ssh "jq -c 'del(.pools, .ACCESS_TOKEN)' /data/rigforge/config.json" | os_redact_addr | cut -c1-120)"
     _rig_http() { _ssh "curl -s -m 5 -o /dev/null -w '%{http_code}' $*" 2>/dev/null | tr -d '\r'; }
     while [ "$ptries" -lt 12 ] && [ "$(_rig_http -H "'Authorization: Bearer $rtok'" http://127.0.0.1:8081/1/summary)" != "200" ]; do
         sleep 5
@@ -192,7 +184,13 @@ phase_rig() {
     [ "$pcode" = "401" ] && ok "the sister feed refuses without the token (401)" || bad "the sister feed answered '${pcode}' without a token"
     pcode=$(_rig_http http://127.0.0.1:8080/1/summary)
     case "$pcode" in 401 | 403) ok "XMRig's own API is closed without the token ($pcode)" ;; *) bad "XMRig's API on 8080 answered '${pcode}' with no token — still open on the LAN" ;; esac
-    pcode=$(_rig_http http://127.0.0.1:8082/)
+    ptries=0
+    while [ "$ptries" -lt 12 ]; do
+        pcode=$(_rig_http http://127.0.0.1:8082/)
+        [ -n "$pcode" ] && [ "$pcode" != "000" ] && break
+        sleep 5
+        ptries=$((ptries + 1))
+    done
     [ -n "$pcode" ] && [ "$pcode" != "000" ] && ok "the control port listens (loopback answers $pcode)" || bad "the control port does not answer even on loopback ('${pcode}')"
     pcode=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8082/" 2>/dev/null)
     [ "${pcode:-000}" = "000" ] && ok "the control port is unreachable from an unpinned source (this host)" || bad "the control port answered '$pcode' from an unpinned source"
@@ -215,8 +213,76 @@ phase_rig() {
         ok "journald is volatile on a rig (a rig's root may be the stick it mines from)" ||
         bad "journald is still persistent on a rig — a USB root would take rotating writes"
 
+    local odd_conn laddr raddr rhost tor_run fail_run
+    [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
+        ok "both Debian Tor units ship masked on the rig" ||
+        bad "a Debian Tor unit is not masked on the rig: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"
+    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
+        ok "no Tor process on a freshly booted rig" ||
+        bad "tor is already running on a freshly booted rig"
+    ! _ssh "ss -ltn 2>/dev/null | grep -q ':9253'" &&
+        ok "no Tor SOCKS listener on a freshly booted rig" ||
+        bad "a SOCKS listener answers on 9253 on a freshly booted rig"
+    odd_conn=""
+    while read -r _ _ laddr raddr; do
+        [ -n "${laddr:-}" ] || continue
+        rhost="${raddr%:*}"
+        case "$rhost" in
+        127.* | \[::1\] | ::1) continue ;;
+        esac
+        case "${laddr##*:}" in 22 | 8080 | 8081 | 8082) continue ;; esac
+        case "${raddr##*:}" in 22 | 53 | 123) continue ;; esac
+        odd_conn="${odd_conn}${laddr##*:}->${raddr##*:} "
+    done <<<"$(_ssh 'ss -Htn state established 2>/dev/null' 2>/dev/null | tr -d '\r')"
+    [ -z "$odd_conn" ] &&
+        ok "a rig that never ran the helper holds no off-host connection beyond pool, ssh, time sync and DNS" ||
+        bad "unexpected off-host connections on a rig that never ran the helper: $odd_conn"
+
+    tor_run=$(_ssh "PITHEAD_TOR_TIMEOUT=300 pithead-tor sh -c 'ss -ltn 2>/dev/null | grep -q 127.0.0.1:9253 && echo LISTENER-UP; curl -sS -m 90 -o /dev/null -w %{http_code} https://api.github.com/repos/p2pool-starter-stack/pithead/releases/latest' 2>&1; echo rc=\$?" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+    [[ "$tor_run" == *LISTENER-UP* ]] &&
+        ok "the helper holds the SOCKS listener on loopback while its command runs" ||
+        bad "the caller saw no SOCKS listener during the run: $tor_run"
+    [[ "$tor_run" =~ ([1-5][0-9][0-9])rc=0 ]] &&
+        ok "the helper's command fetched over a live Tor circuit (the release API answered HTTP ${BASH_REMATCH[1]})" ||
+        bad "the release API was not fetched over Tor during the run: $tor_run"
+    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
+        ok "Tor stopped when the helper's command ended" ||
+        bad "tor is still running after the helper returned"
+    ! _ssh "ss -ltn 2>/dev/null | grep -q ':9253'" &&
+        ok "the SOCKS listener is gone once the helper stopped" ||
+        bad "the SOCKS listener outlived the helper"
+    ! _ssh 'ls -d /run/pithead-tor.* >/dev/null 2>&1' &&
+        ok "the helper left no state on /run" ||
+        bad "state from a helper run still sits on /run"
+    fail_run=$(_ssh "PITHEAD_TOR_TIMEOUT=1 pithead-tor true 2>&1; echo rc=\$?" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+    [[ "$fail_run" == *"did not complete"* ]] &&
+        ok "a run whose circuit never comes up fails with a clear reason" ||
+        bad "the bounded timeout produced no clear error: $fail_run"
+    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null' | tr -d '\r')" ] &&
+        ok "the failed run still left no Tor process" ||
+        bad "the failed run left tor running"
+    ! _ssh "ss -ltn 2>/dev/null | grep -q ':9253'" &&
+        ok "the failed run left no listener either" ||
+        bad "the failed run left its listener up"
+
     # ---- reboot: pithead-boot owns a rig now, and commits its slot -------------------------
     info "reboot leg — the rig must come back mining, and commit its own slot"
+    # #3204: apply on loopback, reboot, then require unchanged config_meta (no drift).
+    cid=$(_ssh "curl -s -m 10 -X POST -H 'Authorization: Bearer $rtok' -H 'Content-Type: application/json' -d '{\"max_temp_c\":77}' http://127.0.0.1:8082/apply | jq -r '.change_id // empty'" 2>/dev/null | tr -d '\r\n')
+    [[ "$cid" =~ ^[0-9a-f]{16}$ ]] || {
+        bad "the control path did not accept a max_temp_c change"
+        return
+    }
+    ok "the control path accepted a max_temp_c change ($cid)"
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        cstat=$(_ssh "curl -s -m 5 -H 'Authorization: Bearer $rtok' 'http://127.0.0.1:8082/status?change_id=$cid' | jq -r '.status // empty'" 2>/dev/null | tr -d '\r\n')
+        case "$cstat" in applied | rejected | rolled_back | failed) break ;; esac
+        sleep 5
+    done
+    [ "$cstat" = "applied" ] && ok "the control change was applied" || bad "the control change ended '${cstat:-unknown}', not applied"
+    meta0=$(rig_config_meta_wait "$rtok" "$cid")
+    [ "$(jq -r '.last_change_id // ""' <<<"$meta0" 2>/dev/null)" = "$cid" ] &&
+        ok "the rig's feed attributes the new revision to that change" || bad "config_meta does not carry the change id before the reboot: ${meta0:-unreadable}"
     _reboot_wait reboot 300 || {
         bad "the rig never returned from the reboot"
         return
@@ -224,6 +290,13 @@ phase_rig() {
     _rig_mining_up 24 &&
         ok "the rig returned mining with no hands on it (its unit lives in /run and died with the reboot)" ||
         bad "the rig did not return after the reboot — its runtime unit was never re-rendered"
+    [ "$(_ssh "jq -r .max_temp_c /data/rigforge/config.json" | tr -d '\r\n')" = "77" ] &&
+        ok "a control-path edit (max_temp_c) survived the reboot's config rebuild (#3204)" ||
+        bad "the reboot's config rebuild reverted a control-path edit (max_temp_c)"
+    meta1=$(rig_config_meta_wait "$rtok")
+    [ -n "$meta0" ] && [ "$meta1" = "$meta0" ] &&
+        ok "no drift across the reboot: config_meta revision and last_change_id are unchanged" ||
+        bad "config_meta changed across the reboot (Pithead would flag drift): $meta0 -> ${meta1:-unreadable}"
     # XMRig starts before pithead-boot finishes its final mark-good and exit, so its active state
     # alone is not proof that this RemainAfterExit unit has settled. The shared wait also proves
     # that the boot unit, rather than the condition-skipped wizard, ran this boot.

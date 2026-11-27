@@ -46,12 +46,12 @@ reset_dashboard() {
 
     log "Recreating data directories..."
     mkdir -p "$dashboard_dir" "$p2pool_dir"
-    mkdir -p "$p2pool_dir/stats"
+    # shellcheck disable=SC2174
+    mkdir -p -m 755 "$p2pool_dir/stats"
     # Owned by the non-root uid the dashboard + p2pool containers run as (#255). mkdir runs first
     # (above) and chown last (#550) — an unprivileged mkdir into an already chown -R'd tree
     # EACCESes for any operator uid != APP_UID, and here that abort would land AFTER the data wipe.
     sudo chown -R "$APP_UID":"$APP_GID" "$p2pool_dir" "$dashboard_dir"
-    sudo chmod -R 755 "$p2pool_dir/stats"
 
     log "Bringing services back up..."
     # p2pool can dial clearnet, so assert the Tor-only egress firewall BEFORE it starts (#270/#291).
@@ -85,6 +85,20 @@ reset_reboot_or_hint() {
     else
         log "Reconfigure with '$0 firstboot-wizard' (or '$0 setup') when you're ready."
     fi
+}
+
+remove_tari_wallet_volumes() {
+    local volumes labels vol
+    volumes=$(docker volume ls -q) || error "Could not list Docker volumes; stopped before removing .env. Retry when the engine is available."
+    for vol in tari_wallet_db tari_wallet_data; do
+        printf '%s\n' "$volumes" | grep -Fx "pithead_$vol" >/dev/null || continue
+        labels=$(docker volume inspect "pithead_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
+            error "Could not inspect pithead_$vol; stopped before removing .env. Retry when the engine is available."
+        if [ "$labels" = "pithead/$vol" ]; then
+            docker volume rm "pithead_$vol" >/dev/null ||
+                error "Could not remove pithead_$vol; stopped before removing .env. Retry when the volume is available."
+        fi
+    done
 }
 
 # config-reset: back to unprovisioned, chains kept. Removing config.json is most of the mechanism
@@ -123,13 +137,18 @@ config_reset() {
     # timeout abandon a box whose configuration was already half gone.
     mutation_lock_acquire config-reset
 
+    reset_slot_record_good || error "Could not preserve the boot slot before reset — configuration was not cleared."
+    restore_save_reset_paths
     detect_os 2>/dev/null || true
-    docker compose down --remove-orphans 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with the config wipe."
-    remove_tor_egress_firewall 2>/dev/null || true
-    remove_lan_guard
-    # machine-role rides along with config.json: pithead-boot's condition is the two paths OR'd,
-    # so leaving the role marker behind would keep it armed and the wizard would never re-open.
+    if docker compose down --remove-orphans; then
+        remove_deactivated_profile_containers
+    else
+        warn "Stack shutdown failed — continuing with the config wipe. Containers may still be running; fix the Compose error shown above."
+    fi
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay; '$0 down' stops the stack and removes them."
+    lan_guard_teardown config-reset # only once the engine shows both nodes stopped (#2749)
+    remove_tari_wallet_volumes
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role
     log "Configuration cleared — the first-boot wizard owns the next boot."
     # The reboot stays INSIDE the window on purpose. Releasing after the wipe but before the reboot

@@ -57,6 +57,8 @@ phase_boot() {
     }
     ok "wizard serves the token gate ($ip)"
 
+    bash "$SCRIPT_DIR/build-label-boot-leg.sh" "$SERIAL" 0 "$(tr -d '[:space:]' <VERSION)" "" usb A && ok "unlabelled image first menu keeps the plain version" || bad "unlabelled first menu changed"
+
     # SSH is a host service that starts after the wizard's HTTP gate answers, so the first _ssh here
     # must wait it out — a single-shot probe raced ssh.service and misread a healthy boot as dead.
     # 900, not the update phase's 240: this is the run's very FIRST cold boot — 6 GiB of
@@ -72,6 +74,78 @@ phase_boot() {
         bad "host SSH never came up after the wizard gate — cannot read hugepages/machine-id ($(_ssh_unreachable_reason "$ip"))"
         return
     }
+
+    if _ssh 'grub-editenv /boot/efi/grub/grubenv list | grep -qx "MEDIA=internal"'; then
+        ok "boot corrects image media to internal on the virtio disk"
+    else
+        bad "boot did not correct image media to internal on the virtio disk"
+    fi
+
+    phase_wizard_redirect
+
+    # Exercise the installed unit under systemd. The guest has a real emulated UART; a temporary
+    # runtime drop-in gives the SAME ExecCondition a type-0 fixture, then is removed before reboot.
+    # Keep the dead-port state for five minutes, long enough to expose the original 10 s loop.
+    local getty_type getty_state getty_restarts getty_result getty_errors
+    getty_type=$(_ssh 'cat /sys/class/tty/ttyS0/type' 2>/dev/null | tr -d '\r\n')
+    getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+    getty_restarts=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+    if [[ "$getty_type" =~ ^[1-9][0-9]*$ ]] && [ "$getty_state" = active ] && [ "$getty_restarts" = 0 ]; then
+        ok "serial getty runs on the guest's real UART without a restart"
+    else
+        bad "serial getty did not start cleanly on the guest UART (type ${getty_type:-unreadable}, state ${getty_state:-unreadable}, NRestarts ${getty_restarts:-unreadable})"
+    fi
+    if _ssh 'mkdir -p /run/systemd/system/serial-getty@ttyS0.service.d && printf "0\n" >/run/pithead-test-serial-type && cat >/run/systemd/system/serial-getty@ttyS0.service.d/pithead-test.conf && systemctl daemon-reload && systemctl restart serial-getty@ttyS0.service' <<'GETTY_DROPIN'; then
+[Service]
+ExecCondition=
+ExecCondition=/usr/local/sbin/pithead-serial-port-present /run/pithead-test-serial-type
+GETTY_DROPIN
+        sleep 300
+        getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        getty_result=$(_ssh 'systemctl show -P Result serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        getty_restarts=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        getty_errors=$(_ssh "journalctl -b -u serial-getty@ttyS0.service -g 'failed to get terminal attributes' -q --no-pager | wc -l" 2>/dev/null | tr -d '\r\n ')
+        if [ "$getty_state" = inactive ] && [ "$getty_result" = exec-condition ] && [ "$getty_restarts" = 0 ] && [ "$getty_errors" = 0 ]; then
+            ok "serial getty skips a type-0 port without restarts or terminal errors for five minutes"
+        else
+            bad "serial getty did not stay skipped on a type-0 port (state ${getty_state:-unreadable}, result ${getty_result:-unreadable}, NRestarts ${getty_restarts:-unreadable}, terminal errors ${getty_errors:-unreadable})"
+        fi
+    else
+        bad "could not stage a type-0 port for the serial getty's systemd condition"
+    fi
+    if _ssh 'rm -f /run/systemd/system/serial-getty@ttyS0.service.d/pithead-test.conf /run/pithead-test-serial-type && systemctl daemon-reload && systemctl start serial-getty@ttyS0.service'; then
+        getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        [ "$getty_state" = active ] && ok "serial getty resumes on the real UART after the type-0 check" ||
+            bad "serial getty did not resume after removing the type-0 fixture (state ${getty_state:-unreadable})"
+    else
+        bad "could not restore the guest's serial getty after the type-0 check"
+    fi
+    # systemctl kill can refuse a unit with no main process during the start transition. Read a
+    # concrete PID first so this row names that state and signals the process actually under test.
+    local getty_deadline getty_pid="" getty_restarts_before=""
+    getty_deadline=$(($(date +%s) + 20))
+    while [ "$(date +%s)" -lt "$getty_deadline" ]; do
+        getty_pid=$(_ssh 'systemctl show -P MainPID serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+        [[ "$getty_pid" =~ ^[1-9][0-9]*$ ]] && break
+        sleep 1
+    done
+    getty_restarts_before=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+    if [[ "$getty_pid" =~ ^[1-9][0-9]*$ && "$getty_restarts_before" =~ ^[0-9]+$ ]] && _ssh "kill -HUP $getty_pid"; then
+        getty_deadline=$(($(date +%s) + 20))
+        while [ "$(date +%s)" -lt "$getty_deadline" ]; do
+            getty_state=$(_ssh 'systemctl show -P ActiveState serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+            getty_restarts=$(_ssh 'systemctl show -P NRestarts serial-getty@ttyS0.service' 2>/dev/null | tr -d '\r\n')
+            [ "$getty_state" = active ] && [[ "$getty_restarts" =~ ^[0-9]+$ ]] &&
+                [ "$getty_restarts" -eq "$((getty_restarts_before + 1))" ] && break
+            sleep 1
+        done
+        [ "$getty_state" = active ] && [[ "$getty_restarts" =~ ^[0-9]+$ ]] &&
+            [ "$getty_restarts" -eq "$((getty_restarts_before + 1))" ] &&
+            ok "a clean hangup respawns the serial login prompt" ||
+            bad "the serial login did not respawn after a clean hangup (state ${getty_state:-unreadable}, NRestarts ${getty_restarts:-unreadable}, before ${getty_restarts_before:-unreadable})"
+    else
+        bad "could not send a clean hangup to the serial getty (MainPID ${getty_pid:-unreadable}, state ${getty_state:-unreadable})"
+    fi
 
     # Hugepages are load-bearing (the RandomX dataset must land in hugetlbfs, not the cgroup —
     # the Dockerfile's own words): the baked sysctl reserves 3072 2M pages, and a boot that
@@ -92,12 +166,18 @@ phase_boot() {
         bad "$verdict"
     fi
 
-    # #895: machine-id must be assigned once and then STAY. #1659 and #1791 ride the same reboot:
-    # journald keeping the transient id (a new journal dir per boot), and the /var overlay racing the
-    # #1030 bind for /var/log/journal (a split boot list). Both verdicts are fixture-tested (tier 1).
-    local id_before id_after jd_before jd_after jb
+    [ "$(_ssh "systemctl is-enabled tor.service tor@default.service 2>&1" | tr -d '\r' | grep -cx masked)" = "2" ] &&
+        ok "both Debian Tor units ship masked on a fresh coordinator boot" ||
+        bad "a Debian Tor unit is not masked on a fresh coordinator boot: $(_ssh 'systemctl is-enabled tor.service tor@default.service 2>&1' | tr -d '\r\n')"
+    [ -z "$(_ssh 'pgrep -x tor 2>/dev/null')" ] &&
+        ok "no Tor process on a fresh coordinator boot" ||
+        bad "tor runs on a fresh coordinator boot"
+
+    local id_before id_after jd_before jd_after jb jt0 jt1 kb0 jt_st jt_mu jt_un jt_kb jt_age
     id_before=$(_ssh cat /etc/machine-id)
     jd_before=$(_ssh 'ls /var/log/journal | wc -l' | tr -d '\r\n ')
+    jt0=$(date +%s)
+    kb0=$(_ssh "$JOURNAL_BYTES_PROBE" 2>/dev/null | tr -d '\r\n ')
     if [ -n "$id_before" ]; then
         if _reboot_wait reboot 240; then
             id_after=$(_ssh cat /etc/machine-id)
@@ -108,6 +188,16 @@ phase_boot() {
             printf '     · journal dirs %s -> %s; journalctl -b: %s kernel lines, %s from pithead-machine-id\n' "$jd_before" "$jd_after" "$(_ssh 'journalctl -b -k -q --no-pager 2>/dev/null | wc -l' | tr -d '\r\n ')" "$jb"
             verdict=$(journal_boot_verdict "$jd_before" "$jd_after" "$jb") && ok "$verdict" || bad "$verdict"
             verdict=$(journal_home_verdict "$(_ssh "$JOURNAL_HOME_PROBE" 2>/dev/null | tr -d '\r')") && ok "$verdict" || bad "$verdict"
+            jt1=$(date +%s)
+            {
+                read -r jt_st
+                read -r jt_mu
+                read -r jt_un
+                read -r jt_kb
+                read -r jt_age
+            } < <(_ssh "$JOURNAL_STATE_PROBE" 2>/dev/null | tr -d '\r')
+            verdict=$(journal_config_verdict "$jt_st" "$jt_mu" "$jt_un") && ok "$verdict" || bad "$verdict"
+            verdict=$(journal_window_verdict "$kb0" "$jt_kb" "$((jt1 - jt0))" "$(journal_cap_kib "$jt_mu" 2>/dev/null || echo 0)" "$jt_age" "boot reboot burst") && ok "$verdict" || bad "$verdict"
         else
             bad "guest never returned after the machine-id reboot check"
         fi
@@ -152,12 +242,12 @@ _vm_boot_disk() {
     cp "$1" "$DISK"
     qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
     : >"$SERIAL"
-    kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
+    kvm_preflight || exit 1
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import --disk "path=$DISK,format=raw,bus=virtio" \
-        --network network=default,model=virtio --graphics none \
+        --network network=default,model=virtio --graphics none --video vga \
         --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || return 1
     _wait_dhcp_ip 120
 }

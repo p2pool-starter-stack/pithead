@@ -44,6 +44,16 @@ _WINDOW_EXTRA_COLUMNS = [
 # write cycle forever. A transient error (locked, disk full, permissions) is NOT here: those are the
 # db_unhealthy path — retryable, not a reason to throw away history.
 _CORRUPTION_MARKERS = ("malformed", "not a database", "image is malformed", "file is encrypted")
+
+_SCHEMA_HOLD_MARKER = ".os-schema-held"
+
+
+def _schema_hold_active(db_path: str) -> bool:
+    if db_path == ":memory:":
+        return False
+    return os.path.exists(os.path.join(os.path.dirname(db_path) or ".", _SCHEMA_HOLD_MARKER))
+
+
 # How many quarantined copies of a corrupt DB to keep for post-mortem before pruning the oldest.
 _CORRUPT_KEEP = 3
 
@@ -67,22 +77,19 @@ _TELEMETRY_TABLES = ("blocks", "xvb_history", "network_history", "disk_growth", 
 
 
 class StorageSchemaMixin:
-    def _apply_schema(self):
-        """Set pragmas + create/migrate the schema on the open connection. Caller holds ``_db_lock``.
+    _db_schema_held = False
 
-        Split out of ``_init_db`` so the recovery path (#489) can rebuild the schema on a freshly
-        reconnected DB without re-entering the (non-reentrant) lock via ``_init_db``."""
-        # Enable WAL mode for better concurrency
+    def _apply_schema(self):
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._db_schema_held = _schema_hold_active(self.db_path)
         with self._conn:
             self._create_tables()
             self._migrate_db()
-            # Indexes come AFTER migration: idx_ts is on history(timestamp), a column
-            # _migrate_db adds when upgrading a pre-timestamp DB. Creating it in
-            # _create_tables would throw "no such column: timestamp" on that old schema
-            # and abort the whole migration, leaving the DB half-upgraded.
             self._create_indexes()
+        cursor = self._conn.cursor()
+        cursor.execute("PRAGMA table_info(payouts)")
+        self._payouts_have_wallet = "wallet_id" in {info[1] for info in cursor.fetchall()}
 
     def _init_db(self):
         """Initializes the SQLite database schema and handles migrations.
@@ -158,16 +165,7 @@ class StorageSchemaMixin:
             "CREATE TABLE IF NOT EXISTS share_stats "
             "(ts REAL, accepted INTEGER, rejected INTEGER, invalid INTEGER, expired INTEGER)"
         )
-        # Confirmed on-chain payouts from the view-only wallet (#381). Keyed (chain, txid) — NOT
-        # txid alone — so the Tari sibling (#462) reuses this exact table with chain="tari"; the
-        # payout_confirmed alert carries the chain too. Additive, forward-only: mirrors events /
-        # share_stats, so no _migrate_db change is needed. amount_atomic keeps the wallet's native
-        # atomic units; the view layer converts to XMR at the edge.
-        self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS payouts "
-            "(chain TEXT, txid TEXT, height INTEGER, ts REAL, amount_atomic INTEGER, "
-            "PRIMARY KEY (chain, txid))"
-        )
+        self._create_payouts_table()
         # Per-worker config-change history for the Worker Inspect page (#185). RigForge keeps no
         # config history on the rig, so Pithead owns it: one row per change the dashboard applied,
         # with the writable-key `changes` we sent (each row IS a diff from the prior state, by
@@ -248,14 +246,12 @@ class StorageSchemaMixin:
             "(id TEXT PRIMARY KEY, ts TEXT, source TEXT, actor TEXT, action TEXT, status TEXT, "
             "keys TEXT)"
         )
-        # The config revision each rig was last OBSERVED serving (#1551), one row per worker, plus
-        # the revision it drifted FROM while that drift is still current (#1564, migrated below).
-        # The PRIMARY KEY is the only index it wants. Holding the rig's opaque `revision` NEXT TO
-        # the `last_change_id` beside it is the point: a later poll tells a recorded change (both
-        # moved) from an edit underneath RigForge (only the revision moved) — #1542's open door.
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS worker_config_revision (worker TEXT PRIMARY KEY, "
-            "revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT)"
+            "revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT, rigforge_version TEXT)"
+        )
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS ping_failures (ts REAL, reason TEXT, detail TEXT)"
         )
 
     def _create_indexes(self):
@@ -276,9 +272,45 @@ class StorageSchemaMixin:
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_history_ts ON worker_history(ts)")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts)")
 
+    def _create_payouts_table(self):
+        if self._db_schema_held:
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS payouts "
+                "(chain TEXT, txid TEXT, height INTEGER, ts REAL, amount_atomic INTEGER, "
+                "PRIMARY KEY (chain, txid))"
+            )
+            return
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS payouts "
+            "(chain TEXT, wallet_id TEXT NOT NULL, txid TEXT, height INTEGER, ts REAL, "
+            "amount_atomic INTEGER, PRIMARY KEY (chain, wallet_id, txid))"
+        )
+
+    def _migrate_payout_identity(self, cursor):
+        if self._db_schema_held:
+            return
+        cursor.execute("PRAGMA table_info(payouts)")
+        if "wallet_id" in {info[1] for info in cursor.fetchall()}:
+            return
+        self._conn.execute("SAVEPOINT payout_identity")
+        try:
+            self._conn.execute("ALTER TABLE payouts RENAME TO payouts_legacy")
+            self._create_payouts_table()
+            self._conn.execute(
+                "INSERT INTO payouts (chain, wallet_id, txid, height, ts, amount_atomic) "
+                "SELECT chain, 'unknown', txid, height, ts, amount_atomic FROM payouts_legacy"
+            )
+            self._conn.execute("DROP TABLE payouts_legacy")
+        except sqlite3.Error:
+            self._conn.execute("ROLLBACK TO payout_identity")
+            raise
+        finally:
+            self._conn.execute("RELEASE payout_identity")
+
     def _migrate_db(self):
         """Handles schema migrations for existing databases."""
         cursor = self._conn.cursor()
+        self._migrate_payout_identity(cursor)
 
         # History Table Migrations
         cursor.execute("PRAGMA table_info(history)")
@@ -320,3 +352,36 @@ class StorageSchemaMixin:
             self.logger.info("Migrating DB: Adding type column to worker_config")
             self._conn.execute("ALTER TABLE worker_config ADD COLUMN type TEXT DEFAULT 'apply'")
         self._migrate_worker_config_revision(cursor)
+
+    PING_FAILURES_KEPT = 50
+
+    def record_ping_failure(self, ts: float, reason: str, detail: str = "") -> None:
+        try:
+            with self._db_lock:
+                if not self._conn:
+                    return
+                with self._conn:
+                    self._conn.execute(
+                        "INSERT INTO ping_failures (ts, reason, detail) VALUES (?, ?, ?)",
+                        (float(ts), str(reason), str(detail)[:200]),
+                    )
+                    self._conn.execute(
+                        "DELETE FROM ping_failures WHERE rowid NOT IN "
+                        "(SELECT rowid FROM ping_failures ORDER BY ts DESC, rowid DESC LIMIT ?)",
+                        (self.PING_FAILURES_KEPT,),
+                    )
+        except sqlite3.Error:
+            pass
+
+    def get_ping_failures(self, limit: int = 10) -> list[dict]:
+        try:
+            with self._db_lock:
+                if not self._conn:
+                    return []
+                cur = self._conn.execute(
+                    "SELECT ts, reason, detail FROM ping_failures ORDER BY ts DESC LIMIT ?",
+                    (int(limit),),
+                )
+                return [{"ts": r[0], "reason": r[1], "detail": r[2]} for r in cur.fetchall()]
+        except sqlite3.Error:
+            return []

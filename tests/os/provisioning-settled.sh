@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Sourced by tests/os/run.sh. A live stack is not a finished provisioning: the wizard's `(setup)`
 # (and pithead-boot's `./pithead up`) holds the mutation lock through `compose up`'s tor-health
 # wait, minutes after `podman ps` shows dashboard and caddy, and a `pithead backup` started then
@@ -71,7 +73,7 @@ provisioning_setup_failed() { # 0 when either provisioning unit ended `failed` t
 
 provisioning_state() { # one line for a verdict: unit states + whether one ran, plus the wizard's error if it failed
     local r st
-    r=$(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" 2>/dev/null | tr -d '[:cntrl:]' | head -c 160)
+    r=$(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" 2>/dev/null | os_redact_addr | tr -d '[:cntrl:]' | head -c 160)
     st=$(provisioning_units)
     # shellcheck disable=SC2086  # intentional split: four fields on a guest that answered
     set -- $st
@@ -95,4 +97,16 @@ provisioning_state() { # one line for a verdict: unit states + whether one ran, 
 # prove the unit stayed closed (#2055 G3).
 unit_ran_this_boot() {
     [ "$(_ssh "systemctl show -p ConditionResult --value $1" 2>/dev/null | tr -d '\r\n')" = yes ]
+}
+
+# SSH returning after a reboot does not mean systemd has evaluated this unit's conditions yet.
+# ConditionResult=no before evaluation looks exactly like a skipped unit (#2836).
+wait_unit_condition_evaluated() { # $1 = unit name; return 1 at the bounded deadline
+    local n stamp
+    for ((n = 0; n < ${UNIT_CONDITION_ATTEMPTS:-30}; n++)); do
+        stamp=$(SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-3}" _ssh "systemctl show -p ConditionTimestampMonotonic --value $1" 2>/dev/null | tr -d '\r\n')
+        [[ "$stamp" =~ ^[1-9][0-9]*$ ]] && return 0
+        sleep "${UNIT_CONDITION_POLL_S:-1}"
+    done
+    return 1
 }

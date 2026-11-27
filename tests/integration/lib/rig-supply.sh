@@ -42,9 +42,9 @@
 # (/proc/PID/environ is owner-only). Probes feed curl configuration through stdin too, so neither
 # the shell/SSH command nor curl argv carries the token. It never touches the bench's disk or logs.
 
-# BORROWED FROM THE SOURCER, declared rather than left to be discovered: `ok`, `warn`, `on_miner` and
-# `on_bench` are defined in e2e.sh (:73/:74/:171/:172), which sources this file at :38 — BEFORE any of
-# them exists. That is correct only because rig_supply is called from run_harness, long after. Sourcing
+# BORROWED FROM THE SOURCER: `ok`, `warn` and `on_miner` are defined in e2e.sh;
+# `on_bench` comes from tests/integration/lib/detached-harness.sh. e2e.sh sources this file before defining
+# the first three. That is correct because rig_supply is called from run_harness, long after. Sourcing
 # this file alone and calling rig_supply gets `warn: command not found` and rc 0 — it reports nothing,
 # because the warnings ARE the report. `quote_arg` is the one helper that comes from lib.sh.
 RIGFORGE_CONFIG="${RIGFORGE_CONFIG:-/opt/rigforge/config.json}"

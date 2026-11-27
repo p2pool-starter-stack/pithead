@@ -11,6 +11,7 @@
 // (#903, tests/frontend/dashboard.test.mjs).
 
 import { App } from "./app/components.mjs";
+import { installFreshness } from "./app/freshness.mjs";
 import {
   normalizeAvgWindow,
   normalizeSeries,
@@ -57,6 +58,14 @@ export function initDashboard({
   replaceUrl = (url) => history.replaceState(null, "", url),
   schedule = (fn, ms) => setInterval(fn, ms),
   renderApp = null,
+  now = () => Date.now(),
+  reload,
+  store,
+  onWindowEvent = (fn) => {
+    if (typeof window === "undefined") return;
+    window.addEventListener("focus", fn);
+    window.addEventListener("visibilitychange", fn);
+  },
 } = {}) {
   const root = doc.getElementById("app");
   const pageUrl = new URL(href);
@@ -86,23 +95,21 @@ export function initDashboard({
     inspectWorker: null,
   };
 
-  // Reflect the current theme onto <html data-theme>; the CSS palette (and the chart, which reads
-  // the resolved CSS variables) follow from there.
   function applyTheme(theme) {
     doc.documentElement.setAttribute("data-theme", theme);
   }
 
   let state = null; // latest /api/state payload, or null before the first response
   let connected = true; // false after a failed fetch (we keep showing the last snapshot)
+  let disconnectedSince = null;
   let inflight = false; // guard against overlapping fetches if one is slow
+  const freshness = installFreshness({ reload, store, fetchFn, now, onChange: () => rerender() });
 
-  // Tests inject renderApp to observe exactly what the App would receive; the browser default
-  // renders the real <App> with the same props.
   const paint =
     renderApp ??
     ((p) =>
       render(
-        html`<${App} state=${p.state} connected=${p.connected} ui=${p.ui}
+        html`<${App} state=${p.state} connected=${p.connected} recoveryNeeded=${p.recoveryNeeded} reloading=${p.reloading} ui=${p.ui}
                      onRange=${p.onRange} onSort=${p.onSort} onView=${p.onView} onTheme=${p.onTheme}
                      onZoom=${p.onZoom} onResetZoom=${p.onResetZoom} onToggleSeries=${p.onToggleSeries}
                      onAvgWindow=${p.onAvgWindow} onDismissHint=${p.onDismissHint}
@@ -114,6 +121,8 @@ export function initDashboard({
     paint({
       state,
       connected,
+      recoveryNeeded: disconnectedSince !== null && now() - disconnectedSince >= 60000,
+      reloading: freshness.message(),
       ui,
       onRange: setRange,
       onSort,
@@ -142,9 +151,8 @@ export function initDashboard({
   async function tick() {
     if (inflight) return;
     inflight = true;
+    let fresh = null;
     try {
-      // A custom zoom window overrides the preset range; the server adapts resolution to it. The
-      // averaging window (#168) applies to both — the server selects which window's columns to plot.
       const base = ui.window
         ? "from=" + ui.window.from + "&to=" + ui.window.to
         : "range=" + encodeURIComponent(ui.range);
@@ -154,16 +162,21 @@ export function initDashboard({
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
+      const recovered = !connected;
       state = await res.json();
       connected = true;
+      disconnectedSince = null;
       if (state.page_title) doc.title = state.page_title;
+      fresh = { version: state.version?.text, recovered };
     } catch (e) {
       connected = false;
+      if (disconnectedSince === null) disconnectedSince = now();
       console.warn("dashboard refresh failed", e);
     } finally {
       inflight = false;
       rerender();
     }
+    if (fresh) freshness.goodPoll(fresh.version, fresh.recovered);
   }
 
   function setRange(r) {
@@ -194,8 +207,11 @@ export function initDashboard({
     rerender(); // client-side sort only, no fetch
   }
 
-  function setView(mode) {
+  // `section` names a Configuration section to open and focus (the earnings hint points at
+  // Payouts); a fresh object per call so repeating the same shortcut re-fires it.
+  function setView(mode, section) {
     ui.view = mode;
+    if (section) ui.configFocus = { section };
     storage.setItem("dashboardView", mode);
     // Visiting Advanced retires the calculators hint (#425) — its discoverability job is done.
     if (mode === "advanced" && !ui.hintDismissed) {
@@ -237,6 +253,9 @@ export function initDashboard({
   rerender(); // paint the loading shell immediately
   const firstLoad = tick(); // first data load
   schedule(tick, REFRESH_MS); // then live updates
+  onWindowEvent(() => {
+    if (doc.visibilityState !== "hidden") tick();
+  });
   return { tick, firstLoad };
 }
 

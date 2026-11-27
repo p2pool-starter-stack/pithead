@@ -60,20 +60,20 @@ assert_eq "doctor --json summary has an info count" "$(jq -r '.summary | has("in
 assert_eq "doctor --json counters sum to the check total" \
     "$(jq -r '(.summary.ok + .summary.warn + .summary.fail + .summary.info) == (.checks | length)' "$dj_out" 2>/dev/null)" "true"
 assert_contains "doctor --json human report on stderr" "$(cat "$dj_err")" "Diagnostics summary"
+assert_eq "all dashboard payout remedies point at Configuration + confirmation (#1959)" \
+    "$(grep -c 'payout address.*Open Configuration.*complete the confirmation step' "$STACK")" "5"
 printf release >"$DJ/variant"
 jq '. + {ssh: {enabled: true}}' "$DJ/config.json" >"$DJ/config.json.next" && mv "$DJ/config.json.next" "$DJ/config.json"
 out=$(cd "$DJ" && PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$DJ/variant" PATH="$DJ/bin:$PATH" ./pithead doctor 2>&1 || true)
 assert_contains "release doctor warns that carried SSH is inert" "$out" "ssh.enabled is ignored on this release image"
 out=$(cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --bogus 2>&1 || true)
 assert_contains "doctor rejects unknown options" "$out" "Unknown option"
-# support-bundle: chmod-600 tarball; doctor.json inside; .env secrets redacted by key pattern —
-# this sandbox's own PROXY_AUTH_TOKEN must never appear in the bundle.
 (cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead support-bundle >/dev/null 2>&1) || true
-sb_tar=$(find "$DJ" -maxdepth 1 -name 'support-bundle-*.tar.gz' | head -1)
+sb_tar=$(find "$DJ" -maxdepth 1 -name 'support-bundle-*.zip' | head -1)
 assert_contains "support bundle written" "$sb_tar" "support-bundle-"
 assert_eq "support bundle is chmod 600" "$(stat -c '%a' "$sb_tar" 2>/dev/null || stat -f '%Lp' "$sb_tar" 2>/dev/null)" "600"
 mkdir -p "$DJ/sb-extract"
-tar -xzf "$sb_tar" -C "$DJ/sb-extract"
+python3 -I -m zipfile -e "$sb_tar" "$DJ/sb-extract" >/dev/null
 assert_eq "bundle carries doctor.json" "$(jq -r 'has("summary")' "$DJ/sb-extract/bundle/doctor.json" 2>/dev/null)" "true"
 assert_contains "bundle .env redacts token keys" "$(cat "$DJ/sb-extract/bundle/env.redacted")" "PROXY_AUTH_TOKEN=[redacted]"
 assert_eq "no raw secret value anywhere in the bundle" "$(grep -rc "ORIGINALTOKEN" "$DJ/sb-extract" | grep -vc ":0")" "0"
@@ -281,7 +281,7 @@ dac_run() { # <appliance rc: 0|1> -> the doctor certificate section's output
             *) printf '' ;;
             esac
         }
-        hostname() { if [ "${1:-}" = "-I" ]; then printf '192.168.1.20'; else printf 'rig1'; fi; }
+        stub_host_addrs '192.168.1.20' rig1
         check_appliance_cert 2>&1
     )
 }
@@ -312,6 +312,7 @@ dac_mint 3650 "DNS:rig1.local" "DNS:localhost" # 192.168.1.20 dropped — the mu
 out="$(dac_run 0)"
 assert_contains "an uncovered name -> FAIL" "$out" "FAIL"
 assert_contains "an uncovered name -> names it" "$out" "192.168.1.20"
+assert_contains "an uncovered name -> tells the operator the address watch re-mints it within minutes (#2463)" "$out" "address watch re-mints the certificate within five minutes"
 
 dac_mint 5 "DNS:rig1.local" "IP:192.168.1.20" "DNS:localhost"
 out="$(dac_run 0)"
@@ -344,9 +345,9 @@ echo "== unit: doctor looks for the control units where apply writes them (#1151
 #
 # The defect was TWO rules, not a wrong constant, so this asserts the rule has exactly one home.
 assert_eq "appliance -> /run/systemd/system (read-only root, #791)" \
-    "$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" control_unit_dir)" "/run/systemd/system"
+    "$(PITHEAD_UNIT_DIR='' PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" control_unit_dir)" "/run/systemd/system"
 assert_eq "DIY host -> /etc/systemd/system" \
-    "$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" control_unit_dir)" "/etc/systemd/system"
+    "$(PITHEAD_UNIT_DIR='' PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" control_unit_dir)" "/etc/systemd/system"
 assert_eq "an explicit PITHEAD_UNIT_DIR wins on the appliance" \
     "$(PITHEAD_APPLIANCE=1 PITHEAD_UNIT_DIR=/tmp/u run_sourced "$SANDBOX" control_unit_dir)" "/tmp/u"
 assert_eq "an explicit PITHEAD_UNIT_DIR wins on a DIY host" \

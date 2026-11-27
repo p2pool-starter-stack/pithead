@@ -4,6 +4,7 @@ import logging
 import time
 
 from mining_dashboard.client.rig_config_meta import parse_config_meta
+from mining_dashboard.client.rig_reply import usable_reply
 from mining_dashboard.client.rigforge_freshness import STALE_AFTER_S, feed_age
 from mining_dashboard.config.config import (
     API_TIMEOUT,
@@ -70,7 +71,6 @@ def parse_rigforge(payload, now=None):
     autotune = tune.get("autotune") or {}
     power = rf.get("power") or {}
     health = rf.get("health") or {}
-    firmware = health.get("firmware") or {}
     watchdog = rf.get("watchdog") or {}
     wd_on = watchdog.get("mode") == "enabled"
     return {
@@ -88,10 +88,11 @@ def parse_rigforge(payload, now=None):
         "health": {
             "governor": health.get("governor"),
             "throttling": health.get("throttling"),
-            "board": firmware.get("board"),
+            "board": (health.get("firmware") or {}).get("board"),
             "hugepages_total": health.get("hugepages_total"),
         },
-        # thermal_hold/temps are only meaningful while the watchdog is enabled.
+        "appliance": bool(rf.get("appliance")),
+        "stamp": rf.get("stamp"),
         "watchdog": {
             "enabled": wd_on,
             "thermal_hold": watchdog.get("thermal_hold") if wd_on else None,
@@ -317,8 +318,7 @@ class XMRigWorkerClient:
     def _auth_header(self, name_token, override_token=""):
         """Build the single Authorization header for the configured auth mode (or no header).
 
-        A per-worker token (#172) implies token-auth for that worker only, whatever the
-        fleet-wide mode says.
+        Endpoint-bound read credentials override fleet auth; host-only control tokens never do.
         """
         # Only a real string overrides fleet auth. Masked sentinels are handled by get_stats before
         # this helper; they may never fall through to a fleet credential (#1983).
@@ -378,19 +378,18 @@ class XMRigWorkerClient:
 
         Per-worker overrides (#506, ``workers.list[]``) merge on top: per-worker field >
         fleet default > inherit. An operator-set ``host`` replaces the connecting IP as the probe
-        target; a per-worker ``token`` becomes the Bearer for that worker only.
+        target; a per-worker read credential becomes the Bearer for that worker only.
 
         Only two things are ever used as the request host (SSRF guard, #122): the worker's
         validated IP, or a host the OPERATOR wrote into config.json. A miner-controlled worker
         *name* is never a host — in ``name`` auth it is only offered back as the Bearer token —
-        and a per-worker token is never sent anywhere a miner-advertised value could point it.
+        and a per-worker read credential is never sent anywhere a miner-advertised value could
+        point it. The write-capable control token is never used for this probe.
         """
         name_token = name.split("+")[0].strip()[:_MAX_NAME_TOKEN] if name else ""
         safe_ip = _safe_probe_host(ip)
         override = _worker_override(name_token, safe_ip) or {}
-        # Adoption (#1836/#1857): decided HERE so it reuses the probe's own name-then-host
-        # descriptor match — a name-only lookup downstream would miss a `+suffix` stratum name.
-        # It rides BOTH verdicts, so the field cannot contradict itself between two polls.
+        # Adoption reuses the probe's name-then-host match, including `+suffix` names (#1857).
         adopted = bool(override.get("token"))
         if "host" in override:
             # Operator-set in config.json — never miner-advertised (#122). Pinning the host also
@@ -405,24 +404,23 @@ class XMRigWorkerClient:
 
         port = override.get("port", XMRIG_API_PORT)
         url = f"http://{host}:{port}/1/summary"
-        if isinstance(override.get("token"), dict):
-            read_token = override.get("read_token")
-            if not read_token:  # #2313: usually under RigForge's 32-char read-derivation floor
-                hint = "the control token is likely under RigForge's 32-char read-derivation floor"
-                self._warn(host, name_token, url, "adopted rig's read credential unavailable", hint)
-                return {"api_ok": False, "adopted": adopted}
-            headers = self._auth_header(name_token, read_token)
+        if override.get("read_token"):
+            headers = self._auth_header(name_token, override["read_token"])
+        elif override.get("api_token"):
+            self._warn(host, name_token, url, "probe token missing", "check host/port")
+            return {"api_ok": False, "adopted": adopted}
+        elif override.get("token"):
+            hint = "the control token is likely under RigForge's 32-char read-derivation floor"
+            self._warn(host, name_token, url, "adopted rig's read credential unavailable", hint)
+            return {"api_ok": False, "adopted": adopted}
         else:
-            headers = self._auth_header(name_token, override.get("token", ""))
+            headers = self._auth_header(name_token, "")
 
         try:
-            async with self.session.get(url, headers=headers, timeout=API_TIMEOUT) as response:
+            async with self.session.get(
+                url, headers=headers, timeout=API_TIMEOUT, allow_redirects=False
+            ) as response:
                 if response.status == 200:
-                    # The bounded async read was worked out here (#1347) and lifted into
-                    # ``bounded_read`` by #1360 — one contract, one implementation; the
-                    # ``bytearray``/short-read rationale lives in ``helper/http.py``. Overflow is a
-                    # refusal for THIS rig only, never an exception that takes the poll down for
-                    # every other worker, so it is caught here, not by the blanket handler below.
                     try:
                         body = await bounded_read(
                             response.content,
@@ -434,6 +432,7 @@ class XMRigWorkerClient:
                         return {"api_ok": False, "adopted": adopted}
                     payload = json.loads(body)
                     if isinstance(payload, dict):
+                        payload = usable_reply(payload)
                         self._warned.pop(host, None)  # recovered — allow the next failure to log
                         payload["api_ok"], payload["adopted"] = True, adopted
                         return payload

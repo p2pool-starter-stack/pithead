@@ -166,7 +166,7 @@ class TestBlocksDiskGrowthXvbHistorySeries:
 
     def _payout_mgr(self, rows_by_chain):
         mgr = MagicMock()
-        mgr.get_payouts.side_effect = lambda chain: rows_by_chain.get(chain, [])
+        mgr.get_payouts.side_effect = lambda chain, wallet_id: rows_by_chain.get(chain, [])
         return mgr
 
     def test_build_payouts_shape_ms_epoch_and_atomic_amount(self, monkeypatch):
@@ -212,7 +212,7 @@ class TestBlocksDiskGrowthXvbHistorySeries:
         out = series_views.build_payouts(mgr, "all")
         assert out["monero"] == []
         assert len(out["tari"]) == 1
-        mgr.get_payouts.assert_called_once_with("tari")  # disabled chain never queried
+        mgr.get_payouts.assert_called_once_with("tari", series_views.configured_wallet_id("tari"))
         assert series_views.build_payouts(None, "all") == {"monero": [], "tari": []}
 
     def test_payouts_ride_build_state_end_to_end(self, _data, _state_mgr, monkeypatch):

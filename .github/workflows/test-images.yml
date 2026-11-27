@@ -70,6 +70,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/docker-registry-mirror
       - name: docker build ./${{ matrix.context }}
         run: docker build ${{ matrix.build_args }} -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
       # NOT scanned, and the reason is structural rather than convenient. This repo PINS its lint

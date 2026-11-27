@@ -3,12 +3,8 @@
 // without a browser or a JS toolchain. Presentation (components, the canvas) stays elsewhere and
 // is covered by the browser smoke test.
 
-// Worker table columns, each carrying the state key it sorts on. Hashrate/uptime/IP and the
-// accepted/rejected share counts sort numerically (raw values the server includes alongside the
-// formatted strings); name sorts as text. The order matches the rendered <th>s.
-// The hashrate windows are named for what the proxy data is — 1m and 10m (#387) — matching the
-// chart's averaging toggle and Telegram's "(10m avg)". The legacy h10 field isn't shown: via the
-// proxy it's just a second copy of the 1m rate.
+import { aliveHere } from "./miningnote.mjs";
+
 export const WORKER_COLUMNS = [
   { label: "Worker", key: "name" },
   { label: "IP", key: "ip_sort" },
@@ -17,17 +13,15 @@ export const WORKER_COLUMNS = [
   { label: "10m", key: "h15" },
   { label: "Accepted", key: "accepted" },
   { label: "Rejected", key: "rejected" },
+  { label: "Rig telemetry 1m", key: "telemetry_h60" },
 ];
 
-// Return a new array of workers sorted by the given column index. ``idx == null`` keeps the
-// server's order (online first, then name). Numeric columns compare numerically (so 1000 sorts
-// after 9, not before it); everything else compares as a locale string. Never mutates input.
 export function sortWorkers(workers, idx, asc) {
   if (idx === null || idx === undefined) return workers;
   const key = WORKER_COLUMNS[idx].key;
   const sorted = [...workers].sort((a, b) => {
-    const va = a[key],
-      vb = b[key];
+    const va = a[key] ?? -1,
+      vb = b[key] ?? -1;
     if (typeof va === "number" && typeof vb === "number") return va - vb;
     return String(va).localeCompare(String(vb));
   });
@@ -202,26 +196,26 @@ export function normalizeAvgWindow(w) {
   return AVG_WINDOWS.includes(w) ? w : DEFAULT_AVG_WINDOW;
 }
 
-// Expected-earnings what-if (Issue #12). The server publishes the per-H/s daily XMR *rate*
-// (earnings.coeff_day — authoritative, computed once in service/earnings.py) and the P2Pool
-// share difficulty. Earnings are linear in hashrate, so the client only scales that one rate to
-// the entered hashrate (and to month/year), and inverts the share difficulty for expected
-// time-to-share — no formula is re-derived here. Kept pure so it's unit-tested (no DOM); the
-// EarningsCard input wiring lives in components.mjs.
+// Expected-earnings what-if: scale server earnings.coeff_day from service/earnings.py by H/s,
+// month/year; invert P2Pool share difficulty for time-to-share. Pure; UI wiring is in earnings.mjs.
 export const DAYS_PER_MONTH = 30; // estimate convention (not 30.44); a year is 365 days
 export const DAYS_PER_YEAR = 365;
 
 // Parse a what-if hashrate string into H/s, accepting an optional k/M/G suffix so users can type
 // "10.5k", "1.2 MH/s", or a bare "50000". Returns null for empty/unparseable input (the card then
-// shows "—"). Mirrors helper/utils.parse_hashrate on the server side.
+// shows "—"). Require complete decimal/unit syntax; commas group thousands, exponents are not supported.
 export function parseHashrate(str) {
   if (typeof str !== "string") return null;
-  const m = str.trim().match(/^([0-9]*\.?[0-9]+)\s*([kKmMgG])?/);
+  const m = str
+    .trim()
+    .match(
+      /^([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?|[0-9]+(?:\.[0-9]+)?|\.[0-9]+)\s*(?:([kmg])\s*)?(?:h\/s)?$/i,
+    );
   if (!m) return null;
-  const val = parseFloat(m[1]);
-  if (!Number.isFinite(val) || val < 0) return null;
+  const val = Number(m[1].replaceAll(",", ""));
   const unit = (m[2] || "").toLowerCase();
-  return val * (unit === "g" ? 1e9 : unit === "m" ? 1e6 : unit === "k" ? 1e3 : 1);
+  const hs = val * (unit === "g" ? 1e9 : unit === "m" ? 1e6 : unit === "k" ? 1e3 : 1);
+  return Number.isFinite(hs) ? hs : null;
 }
 
 // Format raw H/s for display. Mirrors helper/utils.format_hashrate on the server side (same
@@ -525,10 +519,6 @@ export function bandBorderWidth(series, ctx, fullWidth) {
   return y0 === 0 && y1 === 0 ? 0 : fullWidth;
 }
 
-// What to show in a worker's "Uptime" cell. For an online worker it's the real uptime; for an
-// offline one it's "DOWN" — never the raw duration, which for a disconnected worker kept climbing
-// and read like uptime when it was really downtime (#169). The raw numeric `uptime` is left on the
-// row for client-side column sorting; only the displayed string changes.
 export function uptimeCell(worker) {
-  return worker.status === "online" ? worker.uptime_str : "DOWN";
+  return aliveHere(worker) ? worker.uptime_str : "DOWN";
 }

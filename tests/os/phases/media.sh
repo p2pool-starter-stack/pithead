@@ -1,27 +1,70 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# The owner's public wallets; MEDIA_WALLET_ALT stays the never-fundable fixture key because the stick needs a second primary address.
+MEDIA_WALLET="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
+MEDIA_TARI="122UBBqoZF1HPFbd1NMNfvCesDzhso9a8wDxVqQCkdUn9RCN8A1huPbyabT9W4o5bXzkxzYR2AC2kmgoLrbQKxQL4rG"
+MEDIA_WALLET_ALT="445dvgb2rcBcPz2n2tiGLMgURfpBxV27DBsSgz4MEqXUHLtmmYeu1wL6iNu7fPJpwdUwtbvWS7MX9KZiyKonEg3NGKQgwhk"
 _make_media_stick() {
-    local path="$1" json="$2" loop mnt tries=0
-    rm -f "$path"
-    truncate -s 64M "$path"
-    sgdisk -n1:0:0 -t1:0700 "$path" >/dev/null
-    loop=$(losetup -Pf --show "$path")
-    while [ ! -e "${loop}p1" ] && [ "$tries" -lt 50 ]; do
-        sleep 0.1
-        tries=$((tries + 1))
-    done
-    mkfs.vfat -n PITHEAD "${loop}p1" >/dev/null
-    mnt=$(mktemp -d)
-    mount "${loop}p1" "$mnt"
-    printf '%s' "$json" >"$mnt/pithead-config.json"
-    umount "$mnt"
-    rmdir "$mnt"
-    losetup -d "$loop"
+    (
+        local path="$1" json="$2" loop="" mnt="" backing="" source="" rc mount_rc tries=0 step="image creation"
+        trap '
+            rc=$?
+            trap - EXIT
+            if [ -n "$loop" ] && { ! backing=$(timeout -k 5 10 losetup --list --noheadings --output BACK-FILE "$loop") || [ "$backing" != "$path" ]; }; then
+                printf "media fixture failed: cleanup ownership unverified; resources retained\n" >&2
+                exit 2
+            fi
+            if [ -n "$mnt" ]; then
+                mount_rc=0
+                source=$(timeout -k 5 10 findmnt --mountpoint "$mnt" --noheadings --output SOURCE) || mount_rc=$?
+                case "$mount_rc:$source" in
+                "0:${loop}p1")
+                    timeout -k 5 10 umount "$mnt" || {
+                        printf "media fixture failed: unmount; resources retained\n" >&2
+                        exit 2
+                    }
+                    ;;
+                1:) ;;
+                *)
+                    printf "media fixture failed: mount ownership unverified; resources retained\n" >&2
+                    exit 2
+                    ;;
+                esac
+                rmdir "$mnt" || rc=2
+            fi
+            if [ -n "$loop" ]; then
+                timeout -k 5 10 losetup -d "$loop" || rc=2
+            fi
+            [ "$rc" -eq 0 ] || printf "media fixture failed: %s\n" "$step" >&2
+            exit "$rc"
+        ' EXIT
+        trap 'exit 2' HUP INT TERM
+        rm -f "$path" || exit 2
+        truncate -s 64M "$path" || exit 2
+        path=$(readlink -f "$path") || exit 2
+        step="partition table"
+        timeout -k 5 10 sgdisk -n1:0:0 -t1:0700 "$path" >/dev/null || exit 2
+        step="loop attachment"
+        loop=$(timeout -k 5 10 losetup -Pf --show "$path") || exit 2
+        [ -n "$loop" ] || exit 2
+        step="partition readiness after 5 seconds"
+        while [ ! -e "${loop}p1" ] && [ "$tries" -lt 50 ]; do
+            sleep 0.1
+            tries=$((tries + 1))
+        done
+        [ -e "${loop}p1" ] || exit 2
+        step="formatting"
+        timeout -k 5 10 mkfs.vfat -n PITHEAD "${loop}p1" >/dev/null || exit 2
+        step="mount directory"
+        mnt=$(mktemp -d) || exit 2
+        step="mount"
+        timeout -k 5 10 mount "${loop}p1" "$mnt" || exit 2
+        step="configuration write"
+        printf '%s' "$json" >"$mnt/pithead-config.json" || exit 2
+        step="cleanup"
+    )
 }
 
-# Hot-attach $1 to the running guest as a REMOVABLE usb stick. attach-disk cannot express
-# removable='on', and the media channel's discovery filter keys on lsblk RM=1 — exactly what a
-# physical stick reports and what the install phase's virt-install disks already declare.
 _attach_media_stick() {
     cat >"$DISK.stick.xml" <<EOF
 <disk type='file' device='disk'>
@@ -73,7 +116,7 @@ phase_media() {
     mnt=$(mktemp -d)
     mount "${loop}p1" "$mnt"
     printf '{"monero":{"wallet_address":"%s"},"tari":{"wallet_address":"%s"},"p2pool":{"pool":"mini","stratum_password":"auto"}}' \
-        "$HARNESS_WALLET" "$HARNESS_TARI" >"$mnt/pithead-config.json"
+        "$MEDIA_WALLET" "$MEDIA_TARI" >"$mnt/pithead-config.json"
     umount "$mnt"
     rmdir "$mnt"
     losetup -d "$loop"
@@ -100,6 +143,13 @@ phase_media() {
         return
         ;;
     esac
+    # A listed stack is not a finished provisioning: `up` may still wait on tor's healthcheck and hold the mutation lock (#1945, #2648, #2661).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
+        return
+    fi
 
     # ---- apply leg: a real change, shown, counted down, applied, consumed --------------------
     # A MINIMAL stick on purpose — wallet + pool, nothing else. Settings it does not name must
@@ -115,20 +165,23 @@ phase_media() {
         bad "no generated dashboard password before the media apply — nothing to preserve"
 
     local stick1="${DISK%.img}-media-apply.img"
-    # A DIFFERENT valid primary address than HARNESS_WALLET (an earlier copy-paste made them
-    # identical, so the "changed wallet" leg changed nothing and the wallet assert could never
-    # match). The Monero project's donation address: public, checksum-valid, safe as a fixture.
-    local new_wallet="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
     _make_media_stick "$stick1" \
-        "{\"monero\":{\"wallet_address\":\"$new_wallet\"},\"p2pool\":{\"pool\":\"nano\"}}"
-    _attach_media_stick "$stick1"
+        "{\"monero\":{\"wallet_address\":\"$MEDIA_WALLET_ALT\"},\"p2pool\":{\"pool\":\"nano\"}}" || {
+        bad "media apply fixture construction failed before guest attachment"
+        return
+    }
+    ok "media apply fixture constructed and released before guest attachment"
+    _attach_media_stick "$stick1" || {
+        bad "media apply fixture attachment failed"
+        return
+    }
     : >"$SERIAL"
     _ssh reboot >/dev/null 2>&1 || true
 
     wait_serial "staged configuration differs from the running one" 180 &&
         ok "the exact diff is shown on the console before anything applies" ||
         bad "no diff banner appeared on the console"
-    if tr -d '\r' <"$SERIAL" | grep -qE "$new_wallet"; then
+    if serial_has "$MEDIA_WALLET_ALT"; then
         ok "the changed wallet address is shown in full — verifying it is the point"
     else
         bad "the changed wallet address never appeared on the console"
@@ -198,23 +251,24 @@ phase_media() {
     fi
     rm -f "$stick1"
 
-    # ---- abort leg: pulling the media mid-countdown cancels the change -----------------------
     local stick2="${DISK%.img}-media-abort.img"
     _make_media_stick "$stick2" \
-        "{\"monero\":{\"wallet_address\":\"$HARNESS_WALLET\"},\"tari\":{\"wallet_address\":\"$HARNESS_TARI\"},\"p2pool\":{\"pool\":\"mini\",\"stratum_password\":\"auto\"}}"
-    _attach_media_stick "$stick2"
+        "{\"monero\":{\"wallet_address\":\"$MEDIA_WALLET\"},\"tari\":{\"wallet_address\":\"$MEDIA_TARI\"},\"p2pool\":{\"pool\":\"mini\",\"stratum_password\":\"auto\"}}" || {
+        bad "media abort fixture construction failed before guest attachment"
+        return
+    }
+    ok "media abort fixture constructed and released before guest attachment"
+    _attach_media_stick "$stick2" || {
+        bad "media abort fixture attachment failed"
+        return
+    }
     : >"$SERIAL"
     _ssh reboot >/dev/null 2>&1 || true
     wait_serial "staged configuration differs from the running one" 180 || bad "no diff banner on the abort leg"
-    # Pull the medium mid-countdown — the deliberate physical act that cancels a pending change.
     _detach_media_stick || info "detach-device returned rc $? — the guest may still see the stick"
-    # Full expected text (#1061): a bare "cancelled" would also match boot noise. On a miss, keep this
-    # boot's console (no-clobber, as cleanup does) and quote the channel's last line, so the red carries it.
     wait_serial "Media configuration channel: cancelled" 90 &&
         ok "removing the media mid-countdown cancels the change, and says so on the console" || {
         [ -f "$SERIAL.failed" ] || [ ! -s "$SERIAL" ] || cp "$SERIAL" "$SERIAL.failed" 2>/dev/null
-        # #1793: the guard above keeps nothing when the console is empty, so ask the KEPT FILE —
-        # repeating the guard would still lie about a cp that failed.
         local kept="console kept at $SERIAL.failed"
         [ -s "$SERIAL.failed" ] || kept="the guest produced no console output, so none was kept"
         bad "no cancellation confirmation on the console within 90 s of the pull — the channel's last line: '$(tr -d '\r' 2>/dev/null <"$SERIAL" | grep -o 'Media configuration channel: .*' | tail -1)'; $kept"

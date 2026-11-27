@@ -1,0 +1,9 @@
+Name:      registry.invalid/rehearsal/pithead-tor:v9.9.9
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:0000000000000000000000000000000000000000000000000000000000000001
+
+Manifests:
+  Name:      registry.invalid/rehearsal/pithead-tor:v9.9.9@sha256:0000000000000000000000000000000000000000000000000000000000000002
+  MediaType: application/vnd.oci.image.manifest.v1+json
+  Digest:    sha256:0000000000000000000000000000000000000000000000000000000000000002
+  Platform:  linux/amd64

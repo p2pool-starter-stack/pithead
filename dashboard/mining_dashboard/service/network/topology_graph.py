@@ -3,11 +3,10 @@ vocabulary every hop is coloured by, and the per-request marking of which nodes 
 machine's own (#1040).
 
 Split out of ``egress.py`` because that module sits at its file-budget ceiling and this is the
-part of it that is data rather than logic. ``egress`` imports back from here; the dependency runs
-one way, and re-exporting ``TOPOLOGY_NODES`` keeps every existing importer working unchanged.
-The route constants live here because ``node_route`` needs them and ``egress`` has no room — and
-``egress`` re-exports them, so every existing importer of
-``egress.LOCAL`` and friends keeps working unchanged.
+part of it that is data rather than logic. ``egress`` and ``topology`` import from here; the
+dependency runs one way. The route constants live here because ``node_route`` needs them, and
+``egress`` re-exports them, so every existing importer of ``egress.LOCAL`` and friends keeps
+working unchanged.
 """
 
 import ipaddress
@@ -64,6 +63,20 @@ def ext_node(route):
     # Where a component's external link lands in the diagram: a Tor-routed link terminates at the
     # `tor` hub; a clearnet link goes STRAIGHT to the internet node, so a leak visibly bypasses Tor.
     return "internet" if route == CLEARNET else "tor"
+
+
+def _xvb_route(xvb_enabled, xvb_tor):
+    if not xvb_enabled:
+        return INACTIVE
+    return TOR if xvb_tor else CLEARNET
+
+
+def _notify_route(enabled, tor, private):
+    if not enabled:
+        return INACTIVE
+    if tor:
+        return TOR
+    return LOCAL if private else CLEARNET
 
 
 def node_route(address, *, is_local):

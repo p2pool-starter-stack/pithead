@@ -6,8 +6,8 @@
 # here lets tests/integration/selftest/selftest.sh exercise it without a real server.
 #
 # Target model: every command runs *on the box* — either over SSH or, with --local, directly.
-# Reads (dashboard JSON, pithead status) therefore behave identically in both modes, and we
-# never depend on the runner being able to resolve the box's dashboard hostname.
+source "${BASH_SOURCE[0]%/*}/lib/reset-restore-web.sh"
+source "${BASH_SOURCE[0]%/*}/lib/readiness-churn.sh"
 # shellcheck source=tests/integration/lib/parent-lock.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
 source "${BASH_SOURCE[0]%/*}/lib/remote-endpoints.sh"
@@ -38,20 +38,19 @@ it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
 # #1611, they had drifted); --flag by NAME; >=90 chars by SHAPE; --wallet/--merge-mine's next token by
 # POSITION (#1596); an IP by SCOPE (#1609), its \x01 sentinel an INVARIANT, not an input guess (#1613).
 redact() {
-    redact_it_password | sed -E \
-        -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
-        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[a-z2-7]{56}\.onion/<redacted>.onion/g; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
+    redact_it_password | redact_onions | sed -E \
+        -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|EXPLORER_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID|SOURCE))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
+        -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|explorer_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id|source)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
 }
-
 # --- Assertions -------------------------------------------------------------
 # Counters are global so the runner can total them across scenarios. The skip buckets and the
 # three helpers that move them live next door; sourced here so anything that has lib.sh has them.
 # Fail CLOSED: resolve the helper from this file's directory; a harness that merely warns would
 # miscount every skip in silence.
 # shellcheck source=tests/integration/lib/skip-accounting.sh
-source "${BASH_SOURCE[0]%/*}/lib/skip-accounting.sh" ||
+source "${BASH_SOURCE[0]%/*}/lib/skip-accounting.sh" && source "${BASH_SOURCE[0]%/*}/lib/e2e-env.sh" ||
     {
-        echo "lib.sh: lib/skip-accounting.sh is required (source lib.sh by a path, not a bare name)" >&2
+        echo "lib.sh: lib/skip-accounting.sh and lib/e2e-env.sh are required (source lib.sh by a path, not a bare name)" >&2
         exit 1
     }
 IT_PASS=0
@@ -64,7 +63,7 @@ it_pass() {
 it_fail() {
     IT_FAIL=$((IT_FAIL + 1))
     IT_FAILED_NAMES="${IT_FAILED_NAMES}\n    - ${IT_CURRENT_SCENARIO:-?}: $1"
-    printf '    %b✗%b %s\n        %s\n' "$IT_RED" "$IT_RESET" "$1" "$(redact_it_password <<<"${2:-}")"
+    printf '    %b✗%b %s\n        %s\n' "$IT_RED" "$IT_RESET" "$1" "$(redact_it_password <<<"${2:-}" | redact_onions)"
 }
 
 assert_eq() { if [ "$2" = "$3" ]; then it_pass "$1"; else it_fail "$1" "expected [$3], got [$2]"; fi; }
@@ -90,7 +89,6 @@ egress_verdict() {
     *) printf 'inconclusive' ;;
     esac
 }
-
 # --- Config rendering (pure) ------------------------------------------------
 # Map a space-separated list of `dotted.path=value` overrides into a jq program that applies
 # them to a config.json. Values are typed: true/false -> boolean, integers -> number,
@@ -191,27 +189,26 @@ resolve_overrides() {
     # Payout confirmation (#381/#462, #942): monero.view_key / tari.view_key are real wallet-scanning
     # secrets for the box's OWN wallet — never hardcoded in the matrix. The scenario instead carries
     # the marker "payout_confirm=env" (not a real config path, always stripped below); an
-    # operator-supplied IT_MONERO_VIEW_KEY gates the whole row, the same shape as remote mode needing
-    # an endpoint. Tari's pair (IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY) is an optional extra
-    # folded in only when BOTH are set; it never gates the row on its own.
+    # operator-supplied key gates the row, the same shape as remote mode needing an endpoint: either
+    # IT_MONERO_VIEW_KEY, or Tari's pair (IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY, BOTH set), which
+    # also carries the bench wallet's first payout day as the birthday (#2731). Each folds in if set.
     if printf '%s' "$overrides" | tr ' ' '\n' | grep -qx 'payout_confirm=env'; then
         out="$(printf '%s' "$out" | tr ' ' '\n' | grep -vx 'payout_confirm=env' | tr '\n' ' ')"
         out="${out% }" # strip the trailing space left by removing the marker token
         out="${out# }" # ...and a leading one, when the marker was the only/first token
-        [ -n "${IT_MONERO_VIEW_KEY:-}" ] || {
-            SKIP_REASON="needs IT_MONERO_VIEW_KEY (env; a real Monero view key for the box's monero.wallet_address)"
+        local tari_pair=""
+        [ -n "${IT_TARI_VIEW_KEY:-}" ] && [ -n "${IT_TARI_SPEND_PUBLIC_KEY:-}" ] && tari_pair=1
+        [ -n "${IT_MONERO_VIEW_KEY:-}$tari_pair" ] || {
+            SKIP_REASON="needs IT_MONERO_VIEW_KEY, or IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY (env; the box's own wallet keys)"
             return 1
         }
-        out="${out:+$out }monero.view_key=$IT_MONERO_VIEW_KEY"
-        if [ -n "${IT_TARI_VIEW_KEY:-}" ] && [ -n "${IT_TARI_SPEND_PUBLIC_KEY:-}" ]; then
-            out="$out tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY"
-        fi
+        [ -z "${IT_MONERO_VIEW_KEY:-}" ] || out="${out:+$out }monero.view_key=$IT_MONERO_VIEW_KEY"
+        [ -z "$tari_pair" ] || out="${out:+$out }tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
     fi
 
     RESOLVED="$out"
     return 0
 }
-
 # --- Expectation derivation (pure) ------------------------------------------
 # Given a rendered config.json, list services we expect running: bundled monerod/tari only in
 # local mode (independent axes, #103); wallet-rpc/tari-wallet only when their view_key is set (#381/#462); everything below always expected (mirrors stack_status()'s profile gating).
@@ -228,9 +225,9 @@ expected_services() {
     [ -n "$(printf '%s' "$config_json" | jq -r '.tari.view_key // empty')" ] && out="tari-wallet $out"
     printf '%s\n' "$out" | tr ' ' '\n' | sort
 }
-
-expected_topology_nodes() { # topology panel's node set (#2303): local-miner only when local_miner.enabled=true
+expected_topology_nodes() { # topology nodes: local-miner when enabled; Tari unless mode=off
     local out="browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+    [ "$(printf '%s' "$1" | jq -r '.tari.mode // "local"')" = "off" ] && out="${out/tari,/}"
     [ "$(printf '%s' "$1" | jq -r '.local_miner.enabled // false')" = "true" ] && printf '%s' "${out/internet,/internet,local-miner,}" || printf '%s' "$out"
 }
 # Services that must NOT exist here: no bundled node for a chain that is NOT LOCAL (tari.mode has a third value, #1855 — see selftest-tari-mode-off.sh).
@@ -258,20 +255,16 @@ pool_label() {
     esac
 }
 
-# --- Target I/O (SSH or local) ----------------------------------------------
-# Globals set by the runner: IT_MODE (ssh|local), IT_SSH_DEST, IT_SSH_OPTS (array),
-# IT_REMOTE_DIR, IT_PITHEAD (the pithead invocation, e.g. "./pithead" or "sudo ./pithead").
-
-# Run a shell snippet on the target, in the stack directory. The snippet is our own trusted
-# code; we never interpolate untrusted data into it. Returns the remote command's exit code.
 rx() {
     local snippet="$1"
     if [ "$IT_MODE" = "local" ]; then
         (cd "$IT_REMOTE_DIR" && bash -c "$snippet")
     else
-        local remote stdin_flag=(-n)
-        remote="cd $(quote_arg "$IT_REMOTE_DIR") && { $snippet; }"
-        # Default -n protects scenario loops; --stdin opts in for a dedicated input pipe.
+        local remote prefix="" stdin_flag=(-n)
+        if [ -n "${IT_SCRATCH_DIR:-}" ]; then
+            prefix="export IT_SCRATCH_DIR=$(quote_arg "$IT_SCRATCH_DIR"); export TMPDIR=\"\$IT_SCRATCH_DIR\"; "
+        fi
+        remote="${prefix}cd $(quote_arg "$IT_REMOTE_DIR") && { $snippet; }"
         [ "${2:-}" != --stdin ] || stdin_flag=()
         ssh "${stdin_flag[@]}" "${IT_SSH_OPTS[@]}" "$IT_SSH_DEST" "$remote"
     fi
@@ -445,9 +438,9 @@ rig_lock() { # rig_lock <project> <suite> [shared]
 
 # Take the rig lock ON a remote box and hold it for the lifetime of THIS process. The remote
 # bash receives the verbatim helper over ssh stdin, acquires, answers RIG_LOCK_OK, then blocks
-# reading the still-open pipe; local FD 8 keeps that pipe open, so the remote shell — and with
-# it the kernel lock — dies the moment this process does, kill -9 included: the same crash
-# semantics as holding FD 9 locally, one hop out. Busy propagates as the helper's exit 75; an
+# reading the still-open pipe. FD 8 keeps it open; descendants can inherit that writer too.
+# e2e_exit explicitly ends and reaps this child after restore instead of relying on EOF.
+# Busy propagates as the helper's exit 75; an
 # ssh failure propagates as ssh's own exit code. Uses fixed local FD 8 (bash 3.2 has no
 # dynamic fds), so: one remote lock per process — enough for run.sh (the target box) and
 # e2e.sh (the borrowed loaner rig; its bench lock is taken by the run.sh it launches there).
@@ -471,11 +464,11 @@ rig_lock_remote() { # rig_lock_remote <project> <suite> <shared|""> <dest> [ssh 
     IFS= read -r ack <"$d/out" || true
     rm -rf "$d" # the open FDs outlive the fifo names
     if [ "$ack" != "RIG_LOCK_OK" ]; then
-        # No ack: the remote helper exited 75 (its busy message already reached our stderr
-        # via ssh) or ssh itself failed — either way the run must not touch the box.
+        # No ack: the remote helper refused or SSH failed; no target mutation is permitted.
         local rc
         wait "$RIG_LOCK_SSH_PID" 2>/dev/null
         rc=$?
+        RIG_LOCK_SSH_PID=""
         [ "$rc" -eq 0 ] && rc=1 # EOF without the ack is never success
         it_err "could not take the rig lock on $dest (exit $rc)"
         exit "$rc"
@@ -503,8 +496,8 @@ wait_for() { # wait_for <timeout_s> <interval_s> <desc> <predicate-cmd...>
     done
 }
 
-# Predicate: pithead status exits 0 (all expected services healthy / intentional-stops aside).
-_pred_status_ok() { pithead status >/dev/null 2>&1; }
+# Predicate: two status OK reads with unchanged container start times and restart counts.
+_pred_status_ok() { status_ok_without_churn; }
 
 # Predicate: monerod itself reports caught up (authoritative; see monero_caught_up).
 _pred_monero_synced() { monero_caught_up; }
@@ -606,11 +599,14 @@ _pred_stratum_hashes() {
     [ "${h:-0}" -gt 0 ] 2>/dev/null && [ "${w:-0}" -ge "${EXPECTED_WORKERS:-1}" ] 2>/dev/null
 }
 
-wait_status_ok() { wait_for "${1:-180}" 5 "pithead status OK" _pred_status_ok; }
+wait_status_ok() {
+    status_churn_reset
+    wait_for "${1:-180}" 5 "pithead status OK" _pred_status_ok
+}
 wait_stratum_hashes() { wait_for "${1:-180}" 10 "workers online + stratum hashes accumulating" _pred_stratum_hashes; }
 wait_monero_synced() { wait_for "${1:-300}" 10 "Monero sync complete" _pred_monero_synced; }
 wait_miner_running() { wait_for "${1:-180}" 5 "miner released" _pred_miner_running; }
-wait_tari_synced() { wait_for "${1:-300}" 10 "Tari sync complete" _pred_tari_synced; }
+wait_tari_synced() { TARI_WAIT_TIMED_OUT=1 && wait_for "${1:-300}" 10 "Tari sync complete" _pred_tari_synced && TARI_WAIT_TIMED_OUT=0; }
 wait_pool_ready() { wait_for "${1:-180}" 5 "pool type determinate (${2})" _pred_pool_ready "$2"; }
 
 # Ground truth for the sidechain axis (#746): the rendered P2POOL_FLAGS in the box's .env carry
@@ -652,12 +648,7 @@ assert_pool_switched() { # <label> <expected-pool-label>
     assert_pool_type "$1" "$(jq_get "$(api_state)" '.pool.type')" "$2"
 }
 
-# Tari sync verdict for tari_required scenarios (#746). Every per-scenario restart sends Tari back
-# through "discovering the target height" ('loading' = no target yet), and over Tor that
-# re-discovery can outlast wait_tari_synced's window — an in-progress state, not a sync failure.
-# But lag tolerance must not mask a Tari that NEVER syncs, so it is earned: "done" passes and
-# records the proof (TARI_SEEN_DONE); loading/syncing AFTER that proof warns; anything else — or an
-# in-progress state on the first look — fails the gate.
+# Restart lag over Tor is tolerated only once Tari proved "done" this run (#746, docs/dev/integration-testing.md).
 assert_tari_synced_required() { # <state>
     if [ "$1" = "done" ]; then
         TARI_SEEN_DONE=1
@@ -666,18 +657,20 @@ assert_tari_synced_required() { # <state>
         it_warn "tari sync reads [$1] after the restart — Tari proved synced earlier this run; post-restart target re-discovery lag over Tor (#746), not a sync failure"
     else
         it_fail "tari synced (required)" "expected [done], got [$1]"
+        case "${TARI_WAIT_TIMED_OUT:-0}/${IT_CURRENT_SCENARIO:-}/$1" in 1/local-pruned-main-secure-tari/loading | 1/local-pruned-main-secure-tari/syncing) e2e_env tari-sync-timeout ;; esac
     fi
 }
 wait_hashes_flowing() { wait_for "${1:-300}" 5 "stratum hashes flowing" _pred_hashes_flowing; }
-
-# --- Artifact capture -------------------------------------------------------
-# On a scenario failure, collect everything needed to debug it — redacted. Writes into
-# <outdir>/<scenario>/. Best-effort: never let capture failures mask the test result.
+# --- Artifact capture (best-effort; never masks the test result) --------------
+source "${BASH_SOURCE[0]%/*}/lib/wallet-diagnostics.sh" || return $?
 capture_artifacts() {
     local scenario="$1" outdir="$2"
     local dir="${outdir}/${scenario}"
     mkdir -p "$dir"
     it_step "capturing artifacts to ${dir}"
+    capture_wallet_diagnostics "$dir"
+    rx "docker inspect --format '{{json .State.Health}}' tor" 2>&1 | redact >"${dir}/tor-health.json" || true
+    rx "docker logs --tail=200 tor" 2>&1 | redact >"${dir}/tor.log" || true
     rx 'docker compose ps; docker inspect --format "{{.Name}} exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} restarts={{.RestartCount}}" $(docker compose ps -aq)' 2>&1 | redact >"${dir}/compose-ps.txt" || true
     rx "$IT_PITHEAD status" 2>&1 | redact >"${dir}/status.txt" || true
     rx "$IT_PITHEAD doctor" 2>&1 | redact >"${dir}/doctor.txt" || true
@@ -687,3 +680,4 @@ capture_artifacts() {
     api_state | redact >"${dir}/api-state.json" || true
     rx "docker compose logs --tail=200 --no-color" 2>&1 | redact >"${dir}/logs.txt" || true
 }
+source "${BASH_SOURCE[0]%/*}/lib/step-diagnostics.sh" || return $?

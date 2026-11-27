@@ -1,4 +1,25 @@
 # shellcheck shell=bash
+rig_lock_remote_release() {
+    [ -n "${RIG_LOCK_SSH_PID:-}" ] || return 0
+    local rc=0
+    # EOF alone can be held open by descendants inheriting FD 8. End our own remote
+    # shell explicitly; never remove a holder or signal a process on the loaner.
+    (printf 'exit\n' >&8) 2>/dev/null || rc=1
+    exec 8>&-
+    wait "$RIG_LOCK_SSH_PID" || rc=1
+    RIG_LOCK_SSH_PID=""
+    return "$rc"
+}
+
+e2e_exit() {
+    local rc=$? restore_rc=0
+    # A restore refusal calls exit. Isolate it so every outcome still reaps our child.
+    (restore_all "$rc") || restore_rc=$?
+    rig_lock_remote_release || restore_rc=1
+    [ "$restore_rc" -eq 0 ] || rc=$restore_rc
+    exit "$rc"
+}
+
 rig_lock_parent_claim_verify() {
     local actor="${RIG_LOCK_PARENT_ACTOR:-}" nonce="${RIG_LOCK_PARENT_NONCE:-}"
     local lf="${RIG_LOCK_FILE:-/var/lock/rig-e2e.lock}" hf="${RIG_LOCK_HOLDER:-/run/rig-e2e.holder}" got_actor got_nonce _ rc

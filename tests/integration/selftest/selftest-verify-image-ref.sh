@@ -53,7 +53,8 @@ mkdockerfile() { # <path> <pinned-ref>
 
 mkroot() { # <dir> <recorded-ref>  — omit the ref to leave the record file out entirely
     mkdir -p "$1/opt/rigforge"
-    [ "$#" -ge 2 ] && printf 'ref=%s version=v1.16.0\n' "$2" >"$1/opt/rigforge/RIGFORGE_REF"
+    printf '1.18.0\n' >"$1/opt/rigforge/VERSION"
+    [ "$#" -ge 2 ] && printf 'ref=%s version=1.18.0\n' "$2" >"$1/opt/rigforge/RIGFORGE_REF"
 }
 
 check() { # <name> <root> <dockerfile> <want-rc>
@@ -69,7 +70,16 @@ mkroot "$TMP/stale" "$OLD"
 mkroot "$TMP/mutable" main
 mkroot "$TMP/empty" ""
 mkroot "$TMP/norecord"
+mkroot "$TMP/wrongversion" "$PIN"
+sed -i 's/version=1.18.0/version=1.17.3/' "$TMP/wrongversion/opt/rigforge/RIGFORGE_REF"
+mkroot "$TMP/noversion" "$PIN"
+rm "$TMP/noversion/opt/rigforge/VERSION"
+mkroot "$TMP/emptyversion" "$PIN"
+: >"$TMP/emptyversion/opt/rigforge/VERSION"
 
+check "a stale recorded version -> FAIL" "$TMP/wrongversion" "$TMP/Dockerfile" 1
+check "no baked VERSION -> FAIL" "$TMP/noversion" "$TMP/Dockerfile" 1
+check "an empty baked VERSION -> FAIL" "$TMP/emptyversion" "$TMP/Dockerfile" 1
 check "the recorded ref IS the pin -> pass" "$TMP/match" "$TMP/Dockerfile" 0
 PITHEAD_RIGFORGE_REF="$OLD" check "an explicit immutable test ref replaces the release pin" "$TMP/stale" "$TMP/Dockerfile" 0
 PITHEAD_RIGFORGE_REF="$OLD" check "the test ref still rejects a different baked tree" "$TMP/match" "$TMP/Dockerfile" 1

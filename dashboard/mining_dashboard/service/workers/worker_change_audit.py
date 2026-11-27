@@ -21,6 +21,8 @@ from mining_dashboard.service import audit_service
 
 logger = logging.getLogger("WorkerChangeAudit")
 
+_MAX_VERSION_LEN = 64
+
 # Ceiling on how many worker names hold a live #724 window at once (#1695). That cap buckets on the
 # name the device presents on this same unauthenticated feed, so without a bound here a device that
 # varies its name draws a fresh budget per name over an unbounded name space -- bounding a NAME
@@ -214,7 +216,9 @@ async def note_revision_drift(svc, worker_row, extra_stats, cap, window_sec):
     one of the ceiling's ``_WORKERS_MAX`` slots, the same slot a later real detection starts from.
     """
     worker = (worker_row or {}).get("name") or ""
-    meta = parse_config_meta(((extra_stats or {}).get("rigforge") or {}).get("config_meta"))
+    rf = (extra_stats or {}).get("rigforge")
+    rf = rf if isinstance(rf, dict) else {}
+    meta = parse_config_meta(rf.get("config_meta"))
     if not worker or not meta:
         return
     now = time.time()
@@ -225,7 +229,10 @@ async def note_revision_drift(svc, worker_row, extra_stats, cap, window_sec):
         if first_over:
             await record_cap_marker(svc, worker, cap, "revision-drift")
         return
-    drift = await asyncio.to_thread(svc.state_manager.note_worker_revision, worker, meta)
+    version = rf.get("version")
+    valid = isinstance(version, str) and version.isascii() and version.isprintable()
+    version = version if valid and 0 < len(version) <= _MAX_VERSION_LEN else None
+    drift = await asyncio.to_thread(svc.state_manager.note_worker_revision, worker, meta, version)
     if not drift:
         return
     allowed, first_over = svc._rig_edit_within_cap(worker, now)

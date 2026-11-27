@@ -265,7 +265,7 @@ echo "== unit: restore_live_state_verdict — a restore leaves proof it is RUNNI
 # to pass, silently reintroducing #1091.
 # The same fixture wallet tests/os/run.sh's battery uses (HARNESS_WALLET) — any well-formed
 # address works here since the verdict only ever string-compares two values, never parses one.
-RLV_WALLET="44MnN1f3Eto8DZYUWuE5XZNUtE3vcRzt2j6PzqWpPau34e6Cf4fAxt6X2MBmrm6F9YMEiMNjN6W4Shn4pLcfNAja621jwyg"
+RLV_WALLET="486aGn4qhH1MkaASjnEWMDN7stD1SVtPF5fvihmjffeBE5ACL1u1jU95KxiqmoiaPZMexi4R4W11MLXut66XWVVF8wjAE5R"
 rlv() { # <podman-ps-names> <live-wallet> <want-wallet> -> "<rc> <verdict-text>"
     local out rc
     out=$(
@@ -278,7 +278,7 @@ rlv() { # <podman-ps-names> <live-wallet> <want-wallet> -> "<rc> <verdict-text>"
 }
 assert_eq "stack up + live wallet matches: passes" \
     "$(rlv "dashboard caddy monerod" "$RLV_WALLET" "$RLV_WALLET")" \
-    "0 the restored machine's LIVE state (p2pool's own running config) carries the restored wallet — not just the unpacked archive file"
+    "0 the restored container's configured wallet matches the archive; daemon startup is checked separately"
 assert_eq "stack never came up: fails — the #1091 case a file-only check missed" \
     "$(rlv "" "" "$RLV_WALLET")" \
     "1 the stack never came up on the restored machine (podman ps: 'none') — config.json on disk is not proof the machine is RUNNING what was restored (#1091)"
@@ -287,7 +287,7 @@ assert_eq "stack up but live wallet never came back: fails, names it unreadable"
     "1 the stack is up but live state never carried a readable stratum wallet (got 'none')"
 assert_eq "stack up but live wallet is a fresh/different address: fails — config.json alone would have missed this too" \
     "$(rlv "dashboard caddy" "44SomeFreshUnrelatedAddress" "$RLV_WALLET")" \
-    "1 the stack is up but live state's wallet is '44SomeFreshUnrelatedAddress', not the restored '$RLV_WALLET' — the restore landed a file but the running stack does not reflect it (#1091)"
+    "1 the stack is up but live state's wallet differs from the restored one — the restore landed a file but the running stack does not reflect it (#1091)"
 assert_eq "stack up but /api/state answered literal Unknown/null: still fails, not treated as a match" \
     "$(rlv "caddy dashboard" "Unknown" "$RLV_WALLET")" \
     "1 the stack is up but live state never carried a readable stratum wallet (got 'Unknown')"
@@ -366,7 +366,7 @@ run_hint() {
         apt_fetch_failure_hint "$log" 2>&1
     )
 }
-assert_contains "404 signature triggers the --fresh-index remedy" "$(run_hint 'E: Failed to fetch ... 404  Not Found')" "--fresh-index"
+assert_contains "404 signature names the apt fetch failure" "$(run_hint 'E: Failed to fetch ... 404  Not Found')" "apt could not fetch a package"
 assert_contains "'Unable to fetch' signature triggers the remedy" "$(run_hint 'E: Unable to fetch some archives, maybe run apt-get update')" "--fresh-index"
 assert_eq "an unrelated failure prints no hint" "$(run_hint 'E: some other build error')" ""
 

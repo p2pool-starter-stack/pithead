@@ -162,6 +162,7 @@ class TestConfirmedPayoutsSummary:
         s = confirmed_payouts_summary([], now=self.NOW)
         assert s == {
             "enabled": True,
+            "reachable": None,
             "count": 0,
             "xmr_24h": 0.0,
             "xmr_yesterday": 0.0,

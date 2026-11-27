@@ -88,17 +88,24 @@ Check the box is fit at any time, non-destructively:
 tests/integration/run.sh --host you@server --dir pithead --readiness
 ```
 
-It asserts: chains synced (reusable), `pithead status` healthy within 240 s (a failure lists each
-service's last verdict), the prune axis is exercisable (the live chain FS is snapshot-capable
+It asserts: Monero caught up and Tari dashboard sync `done`, each polled every 5 s
+for up to 240 s (chains reusable). Monero expiry distinguishes a node that answered
+“not caught up” from one that could not be asked. It also checks that
+`pithead status` becomes healthy within 240 s (a failure lists each service's last verdict), the prune
+axis is exercisable (the live chain FS is snapshot-capable
 **or** a pre-built variant chain is supplied), disk headroom, `.env` is owner-only, the dashboard
-is bound to localhost, and the backup/rollback net is usable.
+is bound to localhost, and the backup/rollback net is usable. A Tari-only timeout is reported to
+bench-ci as a retryable environment wait after baseline restore.
 
 ### The lint/release toolchain
 
 `make release`'s blocking test gate runs `make lint`, which shells out to `shellcheck`, `shfmt`,
-`node`/`npx`, and `uv`/`uvx`. A reimaged box loses these, so the release preflight
+`node`/`npx`, and `uv`/`uvx`; its `test-stack` leg also runs the Go module raise watch self-test, which
+needs Go 1.21 or newer on PATH (offline, against a fixture module graph; the preflight checks the version; Ubuntu 24.04's `golang-go` is 1.22, Debian 12's is 1.19 and fails the check).
+A reimaged box loses these, so the release preflight
 ([#426](https://github.com/p2pool-starter-stack/pithead/issues/426)) stops early and names the
-missing tool rather than dying mid-gate. Restore them with the same pinned versions CI uses
+missing tools and their effective PATH rather than dying mid-gate. The check runs in a dry run
+and a real cut whenever the test gate is enabled; each resolved tool path is printed. Restore them with the same pinned versions CI uses
 ([`.github/workflows/shell.yml`](../../.github/workflows/shell.yml)) — apt's `shellcheck`/`shfmt` are older
 and reformat differently, so a version skew would fail `make lint` on the box for diffs the merge
 gate never saw. Both pins live in the `Makefile` — `SHELLCHECK_VERSION` and `SHFMT_VERSION` — and
@@ -110,9 +117,9 @@ upstream release builds while some distro builds print a bare number, so the gat
 comparing.
 
 ```bash
-# node 20 (brings npx) + the basics the harness also needs
+# node 20 (brings npx) + the basics the harness also needs (golang-go: the go-raise-watch self-test)
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs jq curl git tar make
+sudo apt-get install -y nodejs jq curl git tar make golang-go
 
 # shellcheck + shfmt, read from the Makefile pins instead of copied. This block reads the repo, so
 # it needs a checkout and runs from its root. If it does not, the two guards name that as the cause.
@@ -127,9 +134,29 @@ sudo install -m 0755 "/tmp/shellcheck-v$SC/shellcheck" /usr/local/bin/shellcheck
 sudo curl -fsSL -o /usr/local/bin/shfmt "https://github.com/mvdan/sh/releases/download/v$SF/shfmt_v${SF}_linux_amd64"
 sudo chmod 0755 /usr/local/bin/shfmt
 
-# uv 0.12.13 (pinned installer; brings uvx, and adds ~/.local/bin to PATH)
+# uv 0.12.13 (pinned installer; brings uvx; updates login-shell PATH)
 curl -LsSf https://astral.sh/uv/0.12.13/install.sh | sh
 ```
+
+The uv installer's bin directory is on a login shell's PATH only. Install the tools to a directory
+and set `RELEASE_TOOL_PATH` in the environment or the release env file so non-interactive runs see
+them too. It is a colon-separated list of absolute, existing directories, prepended to the exported
+PATH inherited by `make test` and every child process. Empty, relative, missing, or group/world-writable
+directories stop preflight. A dry run now fails on the same missing tool as the real cut; it still
+prints `make test` and the integration matrix rather than running them.
+
+Preflight reads `${PITHEAD_RELEASE_ENV:-$RELEASE_KEY_DIR/env}`; `RELEASE_KEY_DIR` defaults to the
+signing-key directory described below. A missing default file is ignored; a missing explicit
+`PITHEAD_RELEASE_ENV` target stops the run. Keep the file owned by the invoking user and not
+writable by group or world (0600 is recommended; 0644 is accepted). Symlinks are refused.
+
+The file accepts only `BENCH_CI_APP_ID`, `BENCH_CI_APP_SLUG`, `RELEASE_INTEGRATION_ARGS`, and
+`RELEASE_TOOL_PATH`, one `NAME=value` per line. Blank lines, comments beginning with `#`, an optional
+`export` prefix followed by a space, and matching single or double quotes are accepted. Values are literal: `$`,
+backticks, and `~` are not expanded, so write absolute paths. Existing environment settings win,
+including empty values. Preflight logs names and counts, never values. Any other name or malformed
+assignment stops the run with the file's basename and line number. Keep secrets in the signing-key
+and passphrase files; registry credentials and smoke commands cannot be put in this env file.
 
 ### The release signing key
 
@@ -261,8 +288,9 @@ export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem      # leaf t
 export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
 ```
 
-`mkimage.sh` bakes the keyring cert into slot A; `mkbundle.sh` signs the bundle with the leaf. Both
-refuse to run for a release with these unset — there is no silent fallback to a dev cert.
+`mkimage.sh` bakes the keyring cert into slot A; `mkbundle.sh` signs the bundle with the leaf. A
+release build refuses an unset leaf cert or key, but an unset `PITHEAD_RAUC_KEYRING` defaults to
+the leaf cert. Export the root keyring explicitly for every release cut.
 
 **Rotation.** The constraint that shapes the whole runbook: **RAUC trusts the keyring baked at
 image build time, so a device only ever trusts what shipped in its running slot.** A new trust
@@ -486,7 +514,7 @@ compose hardening, config rendering, dashboard tests.
 | Caddy-fronted `/metrics` with dashboard authentication | Medium. Supply the live credential input and record the missing leg tracked by [#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058). |
 | Multi-worker scale: the harness assumes ~2 workers | Medium. Add a load-gen worker + assert proxy routing/hashrate for perf confidence; [#1999](https://github.com/p2pool-starter-stack/pithead/issues/1999) tracks it. |
 | Real Tari merge-mined block acceptance | Low. Probabilistic; rely on template/connectivity checks. |
-| Fault injection over SSH: no recorded live evidence | Low-Medium. The faults already use the shared SSH/local target wrapper; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) tracks the focused remote quoting, cleanup, and restoration proof. |
+| Fault injection between two machines | Low-Medium. `--harness-arg --fault-injection-ssh` exercises the `rx()` SSH branch and its extra shell quoting by dialing the reserved bench's own alias; it does not prove a second machine's network. See [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) for the managed phase's exact-head stop, SIGSTOP, remove, cleanup and restoration evidence. |
 
 Recommended before release: record the new combined upgrade/XvB run. The remaining rows are
 explicit residual gaps.

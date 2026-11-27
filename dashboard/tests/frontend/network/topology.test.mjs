@@ -15,7 +15,7 @@ import {
     CLIENT_ZONE_NAME, POS, REMOTE_POS, ROUTE_COLOR, ROUTE_NAME, ROUTES, edgePath, nodePos,
 } from '../../../mining_dashboard/web/static/network/topology.mjs';
 
-// Canonical node ids — MUST equal service/egress.py TOPOLOGY_NODES ids. The backend half of this
+// Canonical node ids — MUST equal service/network/topology_graph.py TOPOLOGY_NODES ids. The backend half of this
 // contract is tests/service/test_egress.py::test_topology_nodes_match_the_canonical_set. If the
 // two drift, the server can emit an edge whose endpoint POS can't place and it vanishes from the
 // SVG silently (StackTopology._edge returns null when POS[id] is missing).

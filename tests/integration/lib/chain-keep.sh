@@ -26,12 +26,6 @@
 # Two more conditions guard the comparison itself. The running node must be what RESTORE_DIR renders
 # (chain_baseline_current), and tor must keep its container through the deploy: an up that
 # recreated tor without a node in it would leave that node on dead Tor connections (#972).
-#
-# Node-preserving runs use --mode chain-safe, which deploys and reads current state without those
-# phases. Other harness phases drive pithead from the e2e checkout themselves (--lifecycle's
-# restart, pool-flip apply and backup round trip; --subnet; a scenario's apply) recreate or restart
-# the nodes on purpose. The restore proof records that as such, and a job that runs them still
-# needs bench-ci's node guard; `targeted` runs --lifecycle.
 
 CHAIN_SERVICES="monerod tari"
 CHAIN_KEPT=""   # what the deploy left running from the baseline
@@ -133,8 +127,6 @@ chain_keep_verdict() { # <baseline-fp> <branch-fp> <baseline-image> <branch-imag
     if [ -z "$why" ]; then echo keep; else echo "recreate $why"; fi
 }
 
-# Recheck before each read-guarded operation that could converge containers. A late
-# difference fails the run; it must never fall through to an unguarded recreate.
 chain_read_unchanged() {
     local now svc verdict tor
     now="$(chain_snapshot)" || return 1
@@ -177,6 +169,8 @@ deploy_keeping_chain() {
         warn "chain: cannot read the pre-deploy snapshot; refusing upgrade"
         return 1
     }
+    # Mint isolated identities after the baseline snapshot, before any consumer starts.
+    if [ "${ROTATE_FIXTURE_REQUIRED:-0}" = 1 ]; then bootstrap_rotate_onion_fixture || return 1; fi
     for svc in $CHAIN_SERVICES; do [ -z "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 2)" ] || held="$held $svc"; done
     held="${held# }"
     if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
@@ -186,7 +180,6 @@ deploy_keeping_chain() {
             [ "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 4)" = "$(chain_image_of "$RESTORE_DIR" "$svc")" ] || return 1
         done
         chain_read_unchanged || return 1
-        # Holding Tor is essential: its recreate restarts monerod through depends_on.
         on_bench "cd '$E2E_DIR' && CI_CHAIN_SAFE_READ=1 PITHEAD_KEEP_RUNNING='$held tor' ./pithead upgrade" || return 1
         chain_read_unchanged || {
             warn "chain: late difference under the read guard; refusing recreate"
@@ -239,6 +232,10 @@ deploy_keeping_chain() {
 #     subnet, and Compose cannot move an attached bridge (scenarios.sh), so the baseline's up would
 #     ask for its static addresses on the wrong one. Only then is the baseline's own `down` run.
 chain_restore_prepare() {
+    [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || {
+        chain_read_restore_prepare || exit 1
+        return 0
+    }
     local out line
     CHAIN_MID="$(chain_snapshot)" || CHAIN_MID=unreadable
     out="$(

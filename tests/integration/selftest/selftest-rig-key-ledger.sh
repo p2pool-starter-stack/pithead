@@ -142,6 +142,29 @@ assert_eq "a pools original is restored intact, credential and all (#1002b/#1379
 assert_eq "the pools credential is not printed in the abort log" \
     "$(grep -c 'pass.*secret' "$SCEN_OUT")" "0"
 
+echo "== the restored value never reaches a command line (#2663) =="
+# A jq argv is readable by every local user from the process table while jq runs, and the pools
+# original carries the stratum `pass`. The shim records every argv the unwind hands jq and then runs
+# the real one, so the restore itself is the control: a shim that saw nothing would pass for the
+# wrong reason, which the non-zero call count rules out.
+: >"$WORK/jq-argv.log"
+scenario 'jq() { printf "%s\n" "$*" >>"$WORK/jq-argv.log"; command jq "$@"; }' \
+    'rig_key_mark dash rig1 pools '"'"'[{"url":"real:1","pass":"argvsecret"}]'"'"'' 'exit 1' >/dev/null
+assert_eq "the pools original is still restored intact through the shim (#2663)" \
+    "$(restores)" 'dash|{"pools":[{"url":"real:1","pass":"argvsecret"}]}'
+# Two calls: the mark compacts its value through jq (#2668) and the unwind builds its payload through jq.
+assert_eq "the shim really saw the mark and the unwind call jq (the control for the next assertion)" \
+    "$(grep -c . "$WORK/jq-argv.log")" "2"
+assert_eq "and the credential was on no jq argv (#2663)" \
+    "$(grep -c argvsecret "$WORK/jq-argv.log")" "0"
+
+echo "== an original that is not exactly one JSON value restores nothing =="
+# `--argjson` refused these, and the stdin form must refuse them too: POSTing half of `5 6`, or a
+# bare word as a string, would write a value the rig never had.
+scenario 'rig_key_mark dash rig1 DONATION "5 6"' 'rig_key_mark dash rig1 max_temp_c not-json' \
+    'rig_key_mark dash rig1 autotune ""' 'rig_key_mark dash rig1 watchdog true' 'exit 1' >/dev/null
+assert_eq "only the well-formed original is POSTed (#2663)" "$(restores)" 'dash|{"watchdog":true}'
+
 echo "== COMPOSITION: our trap replaces rig_lock's, so it must do rig_lock's job too =="
 # Drives lib.sh's REAL rig_lock against sandboxed paths. This is the assertion that catches the
 # hazard the whole design is shaped around: `trap … EXIT` replaces rather than stacks, so arming
@@ -305,14 +328,14 @@ echo "== dying DURING the apply is covered — which is what mark-before-write b
 # job 2s did and gives the file back ~1.8s. Checked at both values against the mutation above.
 scenario 'source "$INT_DIR/lib/rigforge-apply-settle.sh"' \
     'source "$INT_DIR/lib/rigforge-writable-keys.sh"' \
-    '_worker_detail() { printf "%s" "{\"rig_config\":{\"DONATION\":7}}"; }' \
+    '_worker_detail() { printf "%s" "{\"rig_config\":{\"watchdog_interval_min\":7}}"; }' \
     '_worker_apply() { printf "dash|%s\n" "$2" >>"$APPLY_LOG"; kill -INT $$; sleep 0.2; }' \
     'run_rigforge_writable_keys rig1 >/dev/null 2>&1' \
     'sleep 5' >/dev/null
 assert_eq "a death inside the apply still restores the original (#1379)" \
-    "$(restores | tail -1)" 'dash|{"DONATION":7}'
+    "$(restores | tail -1)" 'dash|{"watchdog_interval_min":7}'
 assert_eq "the probe went out and the original came back — two POSTs, in that order" \
-    "$(restores | head -1)" 'dash|{"DONATION":0}'
+    "$(restores | head -1)" 'dash|{"watchdog_interval_min":8}'
 
 echo "== the operator is TOLD, on stderr, that the rig was left mid-change =="
 # A silent restore is nearly as bad as none: the run's summary counters cannot see it (#1365), so
@@ -331,23 +354,23 @@ echo "== integration with the #1236 legs: a confirmed round trip leaves nothing 
 # rather than only where it is defined.
 scenario 'source "$INT_DIR/lib/rigforge-apply-settle.sh"' \
     'source "$INT_DIR/lib/rigforge-writable-keys.sh"' \
-    '_worker_detail() { printf "%s" "{\"rig_config\":{\"DONATION\":7},\"history\":[{\"change_id\":\"c1\",\"status\":\"applied\"}]}"; }' \
-    '_worker_apply() { printf "dash|%s\n" "$2" >>"$APPLY_LOG"; printf "{\"status\":\"applied\",\"change_id\":\"c1\",\"changed_keys\":[\"DONATION\"]}"; }' \
-    'wait_for() { return 0; }' \
+    '_worker_detail() { printf "%s" "{\"rig_config\":{\"watchdog_interval_min\":7},\"history\":[{\"change_id\":\"c1\",\"status\":\"applied\"}]}"; }' \
+    '_worker_apply() { printf "dash|%s\n" "$2" >>"$APPLY_LOG"; printf "{\"status\":\"applied\",\"change_id\":\"c1\",\"changed_keys\":[\"watchdog_interval_min\"]}"; }' \
+    'wait_for() { shift 3; [ "$1" != _pred_history_row_terminal ] || "$@"; }' \
     'run_rigforge_writable_keys rig1 >/dev/null 2>&1' \
     'echo "OUTSTANDING=$(rig_key_outstanding)"' \
     'exit 0' >/dev/null
-assert_eq "a healthy DONATION round trip retires its own ledger entry (#1236/#1379)" \
+assert_eq "a healthy watchdog_interval_min round trip retires its own ledger entry (#1236/#1379/#4184)" \
     "$(grep -c 'OUTSTANDING=0' "$SCEN_OUT")" "1"
 assert_eq "so the EXIT trap POSTs no restore of its own" \
-    "$(restores | grep -c '{"DONATION":7}')" "1"
+    "$(restores | grep -c '{"watchdog_interval_min":7}')" "1"
 
 echo "== and a round trip whose REVERT never lands stays on the books for the trap =="
 # The case an assertion cannot rescue: the leg's own "reverted" assert has already red, so trusting
 # it to have restored the rig would be trusting the thing that just said it did not.
 scenario 'source "$INT_DIR/lib/rigforge-apply-settle.sh"' \
     'source "$INT_DIR/lib/rigforge-writable-keys.sh"' \
-    '_worker_detail() { printf "%s" "{\"rig_config\":{\"DONATION\":7},\"history\":[{\"change_id\":\"c1\",\"status\":\"applied\"}]}"; }' \
+    '_worker_detail() { printf "%s" "{\"rig_config\":{\"watchdog_interval_min\":7},\"history\":[{\"change_id\":\"c1\",\"status\":\"applied\"}]}"; }' \
     '_worker_apply() { printf "dash|%s\n" "$2" >>"$APPLY_LOG"; printf "{\"status\":\"failed\",\"change_id\":\"c1\"}"; }' \
     'wait_for() { return 1; }' \
     'run_rigforge_writable_keys rig1 >/dev/null 2>&1' \
@@ -356,7 +379,7 @@ scenario 'source "$INT_DIR/lib/rigforge-apply-settle.sh"' \
 assert_eq "a revert that never confirmed leaves the key outstanding (#1379)" \
     "$(grep -c 'OUTSTANDING=1' "$SCEN_OUT")" "1"
 assert_eq "and the trap retries it at exit" \
-    "$(restores | tail -1)" 'dash|{"DONATION":7}'
+    "$(restores | tail -1)" 'dash|{"watchdog_interval_min":7}'
 
 echo ""
 echo "selftest-rig-key-ledger: $IT_PASS passed, $IT_FAIL failed"

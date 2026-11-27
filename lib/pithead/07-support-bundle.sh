@@ -34,9 +34,10 @@ TELEGRAM_EVENT_NODE_DOWN TELEGRAM_EVENT_NODE_RECOVERED TELEGRAM_EVENT_PAYOUT_CON
 TELEGRAM_EVENT_PAYOUT_FOUND TELEGRAM_EVENT_RAFFLE_WIN TELEGRAM_EVENT_STACK_ONLINE
 TELEGRAM_EVENT_SYNC_FINISHED TELEGRAM_EVENT_WALLET_CHANGED TELEGRAM_EVENT_WORKER_JOINED
 TELEGRAM_EVENT_WORKER_LEFT TELEGRAM_EVENT_WORKER_OFFLINE TELEGRAM_EVENT_WORKER_RECOVERED
-TELEGRAM_EVENT_XVB_NO_SHARE TELEGRAM_EVENT_XVB_REGISTRATION TOR_AUTO_HEAL TOR_DATA_DIR
+TELEGRAM_EVENT_XVB_NO_SHARE TELEGRAM_EVENT_XVB_REGISTRATION TOR_AUTO_HEAL TOR_COMPOSE_PROFILES TOR_DATA_DIR
 TOR_EGRESS_FIREWALL WALLET_RPC_USERNAME XMRIG_API_AUTH XMRIG_API_PORT XVB_DONATION_LEVEL
-XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
+XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED
+DONATION_ENABLED DONATION_PERCENT DONATION_TOR_ENABLED"
 
 # Everything not in PITHEAD_ENV_SURVIVOR_KEYS is redacted — credentials, wallet and view keys,
 # onion identity, capability URLs and the handful of addressing fields the ruling classified as
@@ -51,6 +52,11 @@ XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 # assignment keeps its prose, but every `KEY=` inside it that is not a survivor with an `=`-free
 # value loses the rest of the line. Any other line is redacted whole, since it cannot
 # be classified. Plain `[ \t]` rather than `[[:space:]]`: older mawk has no POSIX classes.
+# The Tari explorer URL (#2464) may carry a token, so the bundle's config masks it on top of the
+# control channel's masked copy. Only here: in CONTROL_SECRET_PATHS the commit gate would read the
+# mask as an edit to TARI_EXPLORER_URL and refuse unrelated dashboard changes (KVM job 1397).
+bundle_mask_config() { jq 'if (.tari.explorer_url // "") != "" then .tari.explorer_url = {"__secret__": true} else . end'; }
+
 bundle_redact_env() {
     awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" '
         # The value up to its first unquoted `#`, honouring dotenv_render_value backslash escapes
@@ -143,55 +149,73 @@ bundle_redact_log() {
         -e "$xmr_shape"
 }
 
-stack_support_bundle() {
-    _reject_options support-bundle "$@"
-    local ts out tmp rc=0
-    ts=$(date -u +%Y%m%dT%H%M%SZ)
-    out="$PWD/support-bundle-$ts.tar.gz"
-    tmp=$(mktemp -d)
-    mkdir -p "$tmp/bundle/logs"
+bundle_support_journal_unreadable() {
+    local out
+    out=$(journalctl --system -n 1 --no-pager 2>&1 </dev/null) || {
+        printf '%s' "$out" | tr '\n' ' ' | cut -c1-200
+        return 0
+    }
+    case "$out" in
+    *"insufficient permissions"* | *"Permission denied"* | *"not seeing messages from other users and the system"*)
+        printf '%s' "$out" | tr '\n' ' ' | cut -c1-200
+        return 0
+        ;;
+    esac
+    return 1
+}
 
-    log "Collecting diagnostics (read-only)..."
-    {
-        echo "pithead ${PITHEAD_VERSION:-unknown}"
-        uname -a
-        echo
-        df -h 2>/dev/null || true
-        echo
-        free -h 2>/dev/null || true
-    } >"$tmp/bundle/host.txt" 2>&1
-    doctor_json >"$tmp/bundle/doctor.json" 2>"$tmp/bundle/doctor.txt" || rc=$?
-    [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle."
-
-    # Masked config: the same jq walk the dashboard prefill uses; every set secret leaf becomes
-    # {"__secret__": true}. Rendered into the scratch dir, never into the live control spool.
+bundle_support_diy_collect() {
+    local tmp="$1" cap="$2" since="$3" until="$4" juntil="$5" engine rc=0 names name runner=()
+    command -v timeout >/dev/null 2>&1 && runner=(timeout "${PITHEAD_SUPPORT_STEP_TIMEOUT:-300}")
+    mkdir -p "$tmp/bundle/containers"
+    doctor_json >"$tmp/doctor.raw.json" 2>"$tmp/doctor.raw.txt" || rc=$?
+    bundle_redact_log <"$tmp/doctor.raw.json" >"$tmp/bundle/doctor.json"
+    bundle_redact_log <"$tmp/doctor.raw.txt" >"$tmp/bundle/doctor.txt"
+    rm -f "$tmp/doctor.raw.json" "$tmp/doctor.raw.txt"
+    [ "$rc" -gt 0 ] && log "doctor reported failures — included in the bundle." >&2
     if [ -f "$CONFIG_FILE" ]; then
-        render_masked_config "$tmp/scratch" 2>/dev/null || true
+        [ -f "$tmp/scratch/masked/config.json" ] || render_masked_config "$tmp/scratch" >/dev/null 2>&1 || true
         [ -f "$tmp/scratch/masked/config.json" ] &&
-            cp "$tmp/scratch/masked/config.json" "$tmp/bundle/config.masked.json"
+            bundle_mask_config <"$tmp/scratch/masked/config.json" >"$tmp/bundle/config.masked.json"
     fi
-    # .env with secret-bearing values stripped by the survivor allowlist above; structure (ports,
-    # dirs, modes) stays — that is what support actually needs.
     if [ -f .env ]; then
         bundle_redact_env <.env >"$tmp/bundle/env.redacted" 2>/dev/null || true
     fi
-
-    # Container state + recent logs, when an engine is reachable. bundle_redact_log guards the
-    # launch lines services echo — the credential flags, the wallet addresses and the service
-    # onion — plus any Monero address and any onion in body text (#1750).
-    if docker compose ps >"$tmp/bundle/compose-ps.txt" 2>/dev/null; then
-        local svc
-        for svc in $(docker compose ps --all --format '{{.Service}}' 2>/dev/null); do
-            docker compose logs --no-color --tail 200 "$svc" 2>/dev/null |
-                bundle_redact_log >"$tmp/bundle/logs/$svc.log" || true
-        done
+    engine=$(container_engine)
+    if command -v "$engine" >/dev/null 2>&1 &&
+        names=$("${runner[@]}" "$engine" compose ps --all --format '{{.Name}}' 2>"$tmp/engine.err" </dev/null); then
+        "${runner[@]}" "$engine" compose ps --all </dev/null 2>&1 | bundle_redact_log >"$tmp/bundle/compose-ps.txt" || true
+        while read -r name; do
+            [ -n "$name" ] || continue
+            bundle_support_capture "$tmp" "containers/$name.log" "$cap" 1 0 "$since" "$until" \
+                sh -c 'exec "$1" logs --timestamps --since "$2" --until "$3" "$4" 2>&1' sh "$engine" "$since" "$juntil" "$name" || true
+        done <<<"$names"
     else
         echo "container engine not reachable — no container state collected" >"$tmp/bundle/compose-ps.txt"
+        bundle_support_step_fail "$tmp" containers failed "container engine not reachable: $(head -n1 "$tmp/engine.err" 2>/dev/null || echo "$engine not found")"
     fi
+}
 
-    tar -czf "$out" -C "$tmp" bundle
-    chmod 600 "$out"
-    rm -rf "$tmp"
+stack_support_bundle() {
+    local usage="Usage: pithead support-bundle [--hours N] [--since TIME] [--until TIME]" out outdir arch
+    bundle_support_cli_window "$usage" "$@"
+    outdir=$(mktemp -d)
+    trap 'rm -rf "$outdir"; exit 130' INT TERM HUP
+    log "Collecting diagnostics (read-only)..."
+    # shellcheck disable=SC2086
+    arch=$(bundle_support_collect "$outdir" $BUNDLE_WINDOW) || {
+        rm -rf "$outdir"
+        trap - INT TERM HUP
+        return 1
+    }
+    out="$PWD/$(basename "$arch")"
+    mv -f "$arch" "$out" || {
+        rm -rf "$outdir"
+        trap - INT TERM HUP
+        return 1
+    }
+    rm -rf "$outdir"
+    trap - INT TERM HUP
     log "Support bundle written: $out"
-    log "Secrets are redacted at collection, but REVIEW the contents before sharing: tar -tzf $(basename "$out")"
+    log "Secrets are redacted at collection, but REVIEW the contents before sharing: unzip -l $(basename "$out")"
 }

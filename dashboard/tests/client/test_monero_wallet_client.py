@@ -9,6 +9,17 @@ from mining_dashboard.client.monero.monero_wallet_client import MoneroWalletClie
 from mining_dashboard.helper.http import MAX_RESPONSE_BYTES
 
 
+def test_scan_distinguishes_empty_answer_from_unreachable_and_reads_address():
+    client = MoneroWalletClient(url="http://127.0.0.1:18082", username="")
+    with patch.object(client, "_rpc", return_value={"in": []}):
+        assert client.scan() == ([], True)
+    with patch.object(client, "_rpc", return_value=None):
+        assert client.scan() == ([], False)
+        assert client.payout_addresses() is None
+    with patch.object(client, "_rpc", return_value={"address": "wallet-a"}):
+        assert client.payout_addresses() == ["wallet-a"]
+
+
 def _resp(status_code=200, json_data=None, raise_json=False, body=None):
     """A streaming ``requests`` response — what ``bounded_request`` consumes since #1360.
 

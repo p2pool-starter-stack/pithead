@@ -41,15 +41,18 @@ os_update_test_base() {
 # caller must run it as a plain command — a command substitution is a subshell and would discard
 # both. rc 2 = never reached the server at all, same convention as gh_release_fetch (#1050).
 os_release_fetch() {
-    local base
+    local base tmp
+    GH_RELEASE_HINT=""
+    GH_RELEASE_JSON=""
     if base=$(os_update_test_base); then
-        GH_RELEASE_HINT=""
-        GH_RELEASE_JSON=""
-        if ! GH_RELEASE_JSON=$(curl -fsS --max-time 60 --max-filesize "$CURL_CAP_SMALL" \
-            "$base/releases-latest.json" 2>/dev/null); then
-            GH_RELEASE_HINT="could not reach the release API — nothing was changed."
+        tmp=$(mktemp "${TMPDIR:-/tmp}/pithead-seam.XXXXXX") || return 2
+        if ! os_channel_fetch get "$base/releases-latest.json" "$tmp" "$CURL_CAP_SMALL"; then
+            GH_RELEASE_HINT="${OS_CHANNEL_HINT:-could not reach the release API — nothing was changed.}"
+            rm -f "$tmp"
             return 2
         fi
+        GH_RELEASE_JSON=$(cat "$tmp")
+        rm -f "$tmp"
         return 0
     fi
     gh_release_fetch p2pool-starter-stack/pithead
@@ -151,4 +154,32 @@ os_verify_bundle_reason() { # <bundle> <target-tag>
         return 3
     fi
     return 0
+}
+
+CONTROL_RESTART_COOLDOWN_S=120
+
+control_restart_refusal() { # <control-dir>; echoes the reason, empty = proceed
+    local step to last=0 now
+    now=$(date +%s)
+    [ ! -f "$1/restart-at" ] || [ -L "$1/restart-at" ] || read -r last <"$1/restart-at" || last=0
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0
+    if [ "$last" -le "$now" ] && [ $((now - last)) -lt "$CONTROL_RESTART_COOLDOWN_S" ]; then
+        printf 'a restart was already requested %s seconds ago — nothing was restarted; try again in %s seconds.' "$((now - last))" "$((CONTROL_RESTART_COOLDOWN_S - (now - last)))"
+        return 0
+    fi
+    step=$(jq -r '.step // ""' "$1/results/os-update-state.json" 2>/dev/null) || step=""
+    to=$(jq -r '.to // ""' "$(os_update_inflight_file)" 2>/dev/null) || to=""
+    case "$step" in
+    downloading | installing | verifying | reboot-pending)
+        printf 'an OS update is in progress (%s) — restarting the stack now could interrupt it. Nothing was restarted; try again once the update has finished.' "$step"
+        return 0
+        ;;
+    esac
+    if [ -n "$to" ] && [ "$(os_running_version)" = "$to" ]; then
+        printf 'the installed OS update v%s is still being committed — restarting now could roll the machine back. Nothing was restarted; try again once it is committed.' "$to"
+        return 0
+    fi
+    if ! (PITHEAD_LOCK_TIMEOUT=0 mutation_lock_acquire restart) >/dev/null 2>&1; then
+        printf 'another host operation (a config apply, backup, restore or upgrade) is running — nothing was restarted; try again once it has finished.'
+    fi
 }

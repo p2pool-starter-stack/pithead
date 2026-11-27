@@ -1,29 +1,13 @@
 # shellcheck shell=bash
-#
-# The browser-shaped wizard submit for phase_provision (#1846). Sourced by tests/os/run.sh;
-# tests/stack/test-harness-tooling.sh drives `--self-test` (tier 1, no guest).
-# What a person's browser sends is not the no-JS field form: wizard.mjs takes the page's own
-# served config (/api/wizard-state .config — the reference merged with the last attempt), sets the
-# operator's answers on the same paths the page uses, and POSTs it whole as `config=<JSON>`
-# beside `auth_mode=auto` (the recommended "generate a strong password for me"). The old leg
-# posted `monero_wallet=…&pool=…`, which build_config() turns into a config server-side, so the
-# path the operator actually took — and the one that refused on Both — never ran through the
-# gate. A sibling, not rows in run.sh, which sits at its 3423-line ceiling.
-#
-# $1 ip, $2 authenticated cookie jar, then any extra form fields (`disk=vda`, `wipe=data` — the
-# installer's disk half rides beside the config) -> prints the HTTP status of /submit (or a short
-# reason when the page never served a config), the same contract the inline curl had.
-# Reads /api/wizard-state the way a person waits for a page: up to six reads 5 s apart, until the jq
-# filter in $3 yields a value. One cold read at -m 5 is not a verdict (#1932), and a fixture
-# control built on one reddens with one word (#1936). On a hit WIZ_STATE holds the value (a raw
-# string, or compact JSON) and the return is 0; otherwise WIZ_STATE is empty, the return is 1, and
-# WIZ_STATE_WHY names what the last read saw — status, curl's rc, the read count, the head of the
-# body — so the log discriminates a refusal from a timeout from a non-JSON page.
-wizard_state_poll() { # <ip> <jar> <jq-filter>
+# shellcheck source=tests/os/lib/redact-addr.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/redact-addr.sh"
+# shellcheck source=tests/os/control-request-evidence.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/control-request-evidence.sh"
+wizard_state_poll() {
     local raw="" http="" crc=0 tries=0
     WIZ_STATE="" WIZ_STATE_WHY=""
     while [ "$tries" -lt 6 ]; do
-        raw=$(curl -sSk -b "$2" -m 5 -w '\n%{http_code}' "https://$1/api/wizard-state" 2>/dev/null)
+        raw=$(curl -sSk -b "$2" -m 5 --max-filesize 1048576 -w '\n%{http_code}' "https://$1/api/wizard-state" 2>/dev/null)
         crc=$?
         http=${raw##*$'\n'}
         raw=${raw%$'\n'*}
@@ -64,7 +48,7 @@ provision_browser_submit() { # <ip> <jar> [field=value]...
 # The page's own error line, for a red that names the refusal instead of a timeout. Empty when
 # the page shows none (or cannot be reached).
 provision_page_error() { # <ip> <jar>
-    curl -sSk -b "$2" -m 5 "https://$1/api/wizard-state" 2>/dev/null | jq -r '.error // ""' 2>/dev/null
+    curl -sSk -b "$2" -m 5 "https://$1/api/wizard-state" 2>/dev/null | jq -r '.error // ""' 2>/dev/null | os_redact_addr
 }
 node_preflight_refused() { # <response-json> <state-json> <wallet> <host> <reason> <error-substring>
     printf '%s' "$1" | jq -e --arg reason "$5" --arg err "$6" '
@@ -97,7 +81,6 @@ provision_node_preflight() { # <ip> <jar> <host> <reason> <error-substring> <lab
         return 1
     fi
 }
-# POST a control request and follow its result through dashboard restarts.
 dashboard_curl() {
     local auth="${DASH_USER}:${DASH_PASS}"
     case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
@@ -105,50 +88,51 @@ dashboard_curl() {
     auth=${auth//\"/\\\"}
     curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
-# /api/control/result never echoes the request id back (only the POST handlers for preview/commit
-# merge it in) — the real frontend (backupview.mjs's runBackup) knows this and keeps the id it
-# already resolved from the POST, re-attaching it client-side (`{ id, ...result }`) rather than
-# trusting the polled body. Match that here, once, in the shared poller: every verb whose POST
-# never resolves synchronously (backup, unlike preview/commit, ALWAYS 202s) reaches its terminal
-# status purely through polling and would otherwise hand callers a result with no `.id` at all (#2300).
-control_result_stamp_id() { # <result-json> <id>
+control_result_stamp_id() {
     printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
 }
-dashboard_control_request() { # <route> <json-body> [deadline-seconds]
-    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code
-    if out=$(dashboard_control_post "$route" "$body"); then
+dashboard_control_request() {
+    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code crc=0
+    out=$(control_request_post "$route" "$body" "$deadline") || crc=$?
+    if [ "$crc" -eq 7 ]; then
+        control_request_guest_evidence
+        return 1
+    fi
+    if [ "$crc" -eq 0 ]; then
         response_code=${out##*$'\n'}
         if [[ $response_code =~ ^[0-9]{3}$ ]]; then
             out=${out%$'\n'*}
-            # curl's 000 and a proxy's 5xx can follow an accepted request while the dashboard
-            # restarts. A received 4xx is a definite refusal; the caller id is otherwise pollable.
-            case "$response_code" in 000 | 2* | 5*) ;; *) return 1 ;; esac
+            case "$response_code" in 000 | 2* | 5*) ;; *)
+                control_request_guest_evidence
+                return 1
+                ;;
+            esac
         fi
         if [[ $response_code =~ ^5 ]]; then
-            # A failing proxy can name another request; the fresh preview id in the caller wins.
             out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
         else
             rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
         fi
-        # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
-        # or malformed successful response. Only an explicit JSON error is a real refusal; the
-        # caller's id still names a request the host may complete, so poll it.
         if [ -z "$rid" ] && ! printf '%s' "$out" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1; then
             out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
         fi
     else
-        # A dashboard restart can lose the POST response in flight. The caller-supplied id is still
-        # pollable whether curl reports that loss or returns an empty successful response.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
-    # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
-    [ -n "$rid" ] || return 1
+    [ -n "$rid" ] || {
+        control_request_guest_evidence
+        return 1
+    }
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        # The control API can acknowledge a queued request before the root runner starts it.
-        # `accepted` still carries the request id, so it is a polling state, not a verdict.
-        pending | accepted | running | downloading | installing | "") ;;
+        accepted)
+            [ "$route" = worker-apply ] && {
+                control_result_stamp_id "$out" "$rid"
+                return 0
+            }
+            ;;
+        pending | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
             control_result_stamp_id "$out" "$rid"
             return 0
@@ -159,8 +143,15 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
             ;;
         esac
         sleep 3
-        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null) || out=""
+        crc=0
+        out=$(dashboard_curl -sSk -m 8 -w '\n%{http_code}' "https://$ip/api/control/result?id=$rid" 2>/dev/null) || crc=$?
+        control_request_evidence "$route" poll "$crc" "$out" "$rid"
+        response_code=${out##*$'\n'}
+        [[ $response_code =~ ^[0-9]{3}$ ]] && out=${out%$'\n'*}
+        [ "$crc" -eq 0 ] || out=""
     done
+    control_request_evidence "$route" deadline "$crc" "$out" "$rid"
+    control_request_guest_evidence
     return 1
 }
 # The control runner's own answer, bounded, for a row whose evidence IS that answer (#2060).
@@ -177,8 +168,10 @@ control_result_payload() { # <result-json> [landed]
         fi
         return 0
     }
-    printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
-        printf 'unparseable result: %.200s' "$1"
+    {
+        printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
+            printf 'unparseable result: %s' "$1"
+    } | os_redact_addr | head -c 400
 }
 
 phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
@@ -211,7 +204,7 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     # No re-read and no emptiness guard: reaching this line means the row above parsed $live as
     # JSON carrying 0.17, so it cannot be empty here. The `case` below is the real guard on the
     # value, and it reports rather than returning silently.
-    old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 48')
+    old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 24')
     case "$old" in *[!0-9]* | "" | ?????*)
         bad "post-provision approved setting returned an unsafe current value"
         return
@@ -402,6 +395,6 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
     . "$(cd "$(dirname "$0")" && pwd)/node-preflight-loopback-leg.sh"
     # shellcheck source=tests/integration/lib/mergemine-probe.sh
     . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
-    _wsp_self_test && _recovery_self_test && _setup_failure_self_test && _approval_self_test && _remote_node_self_test
+    _control_request_evidence_self_test && _wsp_self_test && _recovery_self_test && _setup_failure_self_test && _approval_self_test && _remote_node_self_test
     exit $?
 fi

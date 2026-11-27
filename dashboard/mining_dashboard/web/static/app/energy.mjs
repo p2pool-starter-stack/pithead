@@ -19,8 +19,8 @@ function EnergyPanel({ energy, est }) {
   const haveNet = haveCost && energy.xmr_price > 0;
   // Honest label (#520, #712, #902): say exactly what gross counts so the net figure is never
   // silently partial. XvB is tagged "(est.)" — the current tier's expected reward, tempered by
-  // measured delivery server-side, and the raffle draw is probabilistic. When XvB isn't folded
-  // in, the strings are byte-identical to the pre-#712 label/tooltip.
+  // measured delivery server-side, and the raffle draw is probabilistic. Missing contributions
+  // are named by their input gates, whether prices are configured or supplied by the live feed.
   const netLabel = en.includesXvb
     ? en.includesTari
       ? "P2Pool + Tari + XvB (est.), after power"
@@ -28,13 +28,17 @@ function EnergyPanel({ energy, est }) {
     : en.includesTari
       ? "P2Pool + Tari, after power"
       : "P2Pool XMR only, after power";
-  const netTitle = en.includesXvb
-    ? en.includesTari
-      ? "P2Pool XMR + Tari (merge-mined) earnings at your set prices, plus the current XvB tier's expected reward valued at your XMR price, minus power cost. XvB is an estimate, tempered by measured delivery (your wallet's measured win payouts when enough wins exist, else the measured delivery band's midpoint) — never XvB's face value — and the raffle draw is random among qualifiers."
-      : "P2Pool XMR earnings at your XMR price plus the current XvB tier's expected reward valued at your XMR price, minus power cost. Excludes Tari (set dashboard.energy.tari_price to include it). XvB is an estimate, tempered by measured delivery (your wallet's measured win payouts when enough wins exist, else the measured delivery band's midpoint) — never XvB's face value — and the raffle draw is random among qualifiers."
-    : en.includesTari
-      ? "P2Pool XMR + Tari (merge-mined) earnings at your set prices, minus power cost. Excludes XvB (raffle status, not a per-day income estimate)."
-      : "P2Pool XMR earnings at your XMR price, minus power cost. Excludes Tari (set dashboard.energy.tari_price to include it) and XvB (raffle status, not a per-day income estimate).";
+  const netTitle =
+    (en.includesXvb
+      ? en.includesTari
+        ? "P2Pool XMR + Tari (merge-mined) earnings at the prices in use, plus the current XvB tier's expected reward valued at the same XMR price, minus power cost. XvB is an estimate, tempered by measured delivery (your wallet's measured win payouts when enough wins exist, else the measured delivery band's midpoint) — never XvB's face value — and the raffle draw is random among qualifiers."
+        : "P2Pool XMR earnings at the XMR price in use plus the current XvB tier's expected reward valued at the same XMR price, minus power cost. Excludes Tari (no priced merge-mining estimate). XvB is an estimate, tempered by measured delivery (your wallet's measured win payouts when enough wins exist, else the measured delivery band's midpoint) — never XvB's face value — and the raffle draw is random among qualifiers."
+      : en.includesTari
+        ? "P2Pool XMR + Tari (merge-mined) earnings at the prices in use, minus power cost. Excludes XvB (no usable fresh donor-tier estimate). Mining payouts vary; estimates, not guarantees."
+        : "P2Pool XMR earnings at the XMR price in use, minus power cost. Excludes Tari (no priced merge-mining estimate) and XvB (no usable fresh donor-tier estimate). Mining payouts vary; estimates, not guarantees.") +
+    (energy.incomplete
+      ? " Power coverage is incomplete; cost is understated and net may be overstated."
+      : "");
   // One standardized Day/Month/Year table for the whole money side: kWh always, then Revenue /
   // Cost / Net columns as their inputs exist (same appearance gates as before — never a
   // fabricated figure). Revenue is the gross the net starts from, so the estimate is no longer

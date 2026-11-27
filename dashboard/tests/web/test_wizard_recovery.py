@@ -30,7 +30,7 @@ def spool(tmp_path, monkeypatch):
 
 @pytest.fixture
 async def client(spool):
-    value = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    value = TestClient(TestServer(wizard.make_app()))
     await value.start_server()
     yield value
     await value.close()
@@ -69,16 +69,20 @@ def test_populated_legacy_workers_replace_an_empty_canonical_default_and_drop_un
     prepared, changes = prepare_config(
         {
             "dashboard": {
-                "workers": [{"name": "shed", "host": "rig.local", "api_token": "drop-me"}]
+                "workers": [
+                    {"name": "shed", "host": "rig.local", "api_token": "keep-me", "bogus": 1}
+                ]
             },
             "workers": {"list": []},
         },
         REFERENCE,
     )
-    assert prepared["workers"]["list"] == [{"name": "shed", "host": "rig.local"}]
+    assert prepared["workers"]["list"] == [
+        {"name": "shed", "host": "rig.local", "api_token": "keep-me"}
+    ]
     assert changes == [
         "dashboard.workers → workers.list",
-        "workers.list[].api_token removed",
+        "workers.list[].bogus removed",
     ]
 
 
@@ -303,7 +307,7 @@ async def test_prefill_migration_notice_survives_submit_and_host_failure(client,
 
 
 async def test_retry_is_authenticated_and_only_opens_a_real_failure(client, spool):
-    unauth = TestClient(TestServer(wizard.make_app(exit_fn=lambda code: None)))
+    unauth = TestClient(TestServer(wizard.make_app()))
     await unauth.start_server()
     try:
         assert (await unauth.post("/retry", allow_redirects=False)).status == 302
@@ -318,3 +322,9 @@ async def test_valid_install_marker_still_reports_installing(client, spool):
     spool.joinpath("installing").write_text("1")
     await _auth(client)
     assert (await _state(client))["stage"] == "installing"
+
+
+def test_spool_read_tolerates_a_truncated_multibyte_character(tmp_path):
+    (tmp_path / "error.txt").write_bytes(b"\x94 failed after the dash")
+    assert wizard._spool_read("error.txt", str(tmp_path)).endswith("failed after the dash")
+    assert wizard._spool_read("absent.txt", str(tmp_path)) is None

@@ -68,7 +68,7 @@ wizard_restore_installer_preseeds() { # <saved-config> <restore-consume-rc>
 wizard_cleanup_installer_credentials() { # <saved-config> <candidate> <card> <rec> <spool> <restore-spool> <carry>
     local rc=0
     wizard_restore_installer_preseeds "$1" "$4" || rc=1
-    clear_setup_candidate "$2" "$3" || rc=1
+    clear_setup_candidate "$2" "$2.stratum-password" "$3" || rc=1
     clear_legacy_restore_carry /boot/efi || rc=1
     wizard_clear_restore_state "$4" "$5" "$6" "$7" || rc=1
     return "$rc"

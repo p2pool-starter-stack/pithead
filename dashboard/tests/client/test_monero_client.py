@@ -146,6 +146,7 @@ class TestGetSyncStatus:
             "percent": 50,
             "db_size": 85_000_000_000,
             "synchronized": False,
+            "height": 50,
         }
 
     def test_synced_via_flag(self):
@@ -163,6 +164,7 @@ class TestGetSyncStatus:
             "is_syncing": False,
             "db_size": 200_000_000_000,
             "synchronized": True,
+            "height": 90,
         }
 
     def test_synced_via_zero_target(self):
@@ -172,6 +174,7 @@ class TestGetSyncStatus:
             "is_syncing": False,
             "db_size": 0,
             "synchronized": False,
+            "height": 100,
         }
 
     def test_synced_when_height_reaches_target(self):
@@ -180,6 +183,7 @@ class TestGetSyncStatus:
             "is_syncing": False,
             "db_size": 0,
             "synchronized": False,
+            "height": 100,
         }
 
     def test_stranded_node_reads_synced_but_carries_the_false_flag(self):
@@ -193,6 +197,48 @@ class TestGetSyncStatus:
         assert status["is_syncing"] is False
         assert status["synchronized"] is False
 
+    def test_restricted_zero_counts_are_never_carried(self):
+        # #2921: a restricted get_info answers 0 for the counts. The client must not turn those
+        # redacted zeros into peers; the counts come from the healthcheck observation instead.
+        info = {
+            "status": "OK",
+            "synchronized": True,
+            "height": 100,
+            "target_height": 0,
+            "restricted": True,
+            "outgoing_connections_count": 0,
+            "incoming_connections_count": 0,
+        }
+        status = self._client_with_info(info).get_sync_status()
+        assert status["height"] == 100
+        assert "peers_out" not in status
+        assert "peers_in" not in status
+
     def test_unreachable_returns_none(self):
         client = self._client_with_info(None)
         assert client.get_sync_status() is None
+
+
+@pytest.mark.parametrize("field", ["height", "target_height", "database_size"])
+@pytest.mark.parametrize(
+    "value", [[], {}, "secret-response-value", None, True, -1, 1.5, float("inf"), 2**64]
+)
+def test_malformed_sync_fields_are_unreachable_without_logging_values(field, value, caplog):
+    client = MoneroClient()
+    client.get_info = MagicMock(return_value={"height": 50, "target_height": 100, field: value})
+    assert client.get_sync_status() is None
+    assert f"invalid {field}" in caplog.text
+    assert "secret-response-value" not in caplog.text
+
+
+@pytest.mark.parametrize("value", ["false", 0, 1, None, []])
+def test_malformed_synchronized_flag_is_unreachable(value):
+    client = MoneroClient()
+    client.get_info = MagicMock(return_value={"synchronized": value})
+    assert client.get_sync_status() is None
+
+
+def test_deeply_nested_remote_json_is_unreachable():
+    body = b'{"status":"OK","height":' + b"[" * 2000 + b"0" + b"]" * 2000 + b"}"
+    with patch.object(requests, "get", return_value=_resp(body=body)):
+        assert MoneroClient().get_sync_status() is None

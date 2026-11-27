@@ -219,7 +219,7 @@ _phase_install_restore() {
             rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
             return 1
         }
-        _ssh "mount -o remount,rw /boot/efi 2>/dev/null || true; printf '%s' '{\"fixture\":\"fleet-config-secret\"}' >/boot/efi/pithead-config.json; printf '%s' 'pit-FLEET1' >/boot/efi/pithead-token.txt; printf '%s' '{\"access_token\":\"0123456789abcdef0123456789abcdef\",\"stratum_password\":\"fleet-rig-secret\"}' >/boot/efi/pithead-rig.json; chmod 600 /boot/efi/pithead-config.json /boot/efi/pithead-token.txt /boot/efi/pithead-rig.json" || {
+        _ssh "mount -o remount,rw /boot/efi 2>/dev/null || true; printf '%s' '{\"fixture\":\"fleet-config-secret\"}' >/boot/efi/pithead-config.json; printf '%s' 'pit-SYNTHETIC-FLEET1' >/boot/efi/pithead-token.txt; printf '%s' '{\"access_token\":\"0123456789abcdef0123456789abcdef\",\"stratum_password\":\"fleet-rig-secret\"}' >/boot/efi/pithead-rig.json; chmod 600 /boot/efi/pithead-config.json /boot/efi/pithead-token.txt /boot/efi/pithead-rig.json" || {
             bad "restore leg: could not seed unrelated installer credentials"
             rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
             return 1
@@ -331,14 +331,8 @@ _phase_install_restore() {
             # here would spend half an hour re-measuring a symptom the row above just named.
             rswait=0
         fi
-        # THE assertion this leg exists for (#1091): config.json landing on disk proves the archive
-        # was UNPACKED — it is a grep of a file the restore itself just wrote, so it is true even if
-        # the stack never came back up on the restored config. So wait for the stack to actually come
-        # up, then require a value sourced from the restored config to appear in LIVE state: the
-        # --wallet argument the stack's own start path rendered into the p2pool container, read off
-        # the container as created (#1662: p2pool's stratum stats, the earlier source, exist only once
-        # a SYNCED monerod hands it a block template, which a restored guest never has in this window).
-        # The verdict (restore_live_state_verdict) is fixture-tested at tier 1 (tests/stack/run.sh).
+        # Match the created container's wallet to the archive, then prove daemon startup separately.
+        # Stratum stats require a synced chain; these restored fixtures boot unsynced (#1662).
         local rsnames="" live_wallet="" verdict
         local rsdeadline
         # Read at least ONCE whatever the budget is: with rswait 0 a head-tested loop would never run
@@ -361,7 +355,12 @@ _phase_install_restore() {
             done
             ;;
         esac
-        restore_sync_gate_verdict "$restore_case" # #2626, every case in this loop
+        if restore_sync_gate_verdict "$restore_case" && restore_p2pool_startup; then
+            ok "restore leg ($restore_case): P2Pool runs for 30 seconds with zero restarts"
+        else
+            bad "restore leg ($restore_case): P2Pool startup or controller restoration failed"
+        fi
+        restore_sync_gate_verdict "$restore_case"
         if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$expected_wallet"); then
             ok "restore leg: $verdict"
         else
@@ -386,6 +385,7 @@ _phase_install_restore() {
         [ "$restored_config" = "$expected_config" ] &&
             ok "restore leg: restored non-default configuration matches the v1.20.0 fixture" ||
             bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
+        [ "$restore_case" != n1 ] || { [ "$(_ssh "jq -r '[.monero.remote.host, .tari.remote.host] | join(\" \")' /data/pithead/config.json" | tr -d '\r')" = "10.0.0.1 10.0.0.1" ] && ok "restore leg: the v1.20.0 fixture restored with its unreachable node hosts, so it never mines" || bad "restore leg: the v1.20.0 fixture's node hosts are no longer the unreachable fixture address"; }
         restore_fixture_secret_verdict "$restore_case" "$expected_secrets"
         [ "$restore_case" != n1 ] || restore_fixture_migration_verdict
         restore_fixture_chain_verdict "$target_chain_sentinel"

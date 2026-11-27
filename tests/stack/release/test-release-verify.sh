@@ -252,3 +252,67 @@ assert_eq "the image verifier requires valid pins on all five first-party images
 sed -E '/pithead-tor:/s/STACK_VERSION:-dev/STACK_VERSION:-other/' "$SIG/compose.yml" >"$SIG/opt/pithead/docker-compose.yml"
 compose_matches_source "$SIG" "$SIG/reference.yml"
 assert_rc "the image verifier refuses a changed source tag despite a digest" "$?" 1
+
+# Exercise the production invocation, not a copy of its override expression. The test seam
+# loads the real resolver; this extracted block runs exactly where the full build pins Compose.
+echo "== unit: rootfs pin-tag invocation (#3043) =="
+awk '/^if \[ "\$\{PITHEAD_OS_SYNTHETIC_COMPOSE:-\}" != 1 \]; then$/ { copying=1 }
+    copying { print }
+    copying && /^fi$/ { exit }' "$ROOT/os/build-image.sh" >"$SIG/pin-call.sh"
+assert_contains "the production pin invocation is present" "$(cat "$SIG/pin-call.sh")" 'pin_first_party_images '
+for pin_case in staging unset empty synthetic; do
+    pin_dir="$SIG/$pin_case"
+    mkdir -p "$pin_dir/os/build/stage"
+    cp "$SIG/reference.yml" "$pin_dir/os/build/stage/docker-compose.yml"
+    : >"$pin_dir/lookups"
+    : >"$pin_dir/expected.yml"
+    : >"$pin_dir/expected-lookups"
+    pin_tag=v9.9.9
+    [ "$pin_case" != staging ] || pin_tag=v9.9.9-rc.1
+    pin_number=0
+    for pin_service in tor monero p2pool xmrig-proxy dashboard; do
+        pin_number=$((pin_number + 1))
+        printf 'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-%s:${STACK_VERSION:-dev}@sha256:%064d\n' \
+            "$pin_service" "$pin_number" >>"$pin_dir/expected.yml"
+        printf 'example.invalid/pithead-%s:%s\n' "$pin_service" "$pin_tag" >>"$pin_dir/expected-lookups"
+    done
+    printf 'image: caddy:2.11.4@sha256:%064d\n' 3 >>"$pin_dir/expected.yml"
+    if [ "$pin_case" = synthetic ]; then
+        cp "$SIG/reference.yml" "$pin_dir/expected.yml"
+        : >"$pin_dir/expected-lookups"
+    fi
+    (
+        set --
+        PITHEAD_BUILD_IMAGE_TEST=1 source "$ROOT/os/build-image.sh"
+        cd "$pin_dir" || exit 1
+        STACK_VERSION=v9.9.9
+        PITHEAD_REGISTRY=example.invalid
+        unset PITHEAD_PIN_TAG PITHEAD_OS_SYNTHETIC_COMPOSE
+        case "$pin_case" in
+        staging) PITHEAD_PIN_TAG=v9.9.9-rc.1 ;;
+        empty) PITHEAD_PIN_TAG="" ;;
+        synthetic) PITHEAD_OS_SYNTHETIC_COMPOSE=1 ;;
+        esac
+        docker() {
+            [ "$1 $2 $3" = "buildx imagetools inspect" ] || return 1
+            printf '%s\n' "$4" >>lookups
+            # Only the expected tag exists: final tags are absent in the staging case.
+            [ "${4##*:}" = "$pin_tag" ] || return 1
+            local service_number=0 service
+            for service in tor monero p2pool xmrig-proxy dashboard; do
+                service_number=$((service_number + 1))
+                if [ "$4" = "example.invalid/pithead-$service:$pin_tag" ]; then
+                    printf 'Digest: sha256:%064d\n' "$service_number"
+                    return 0
+                fi
+            done
+            return 1
+        }
+        source "$SIG/pin-call.sh"
+    ) >"$pin_dir/output" 2>&1
+    assert_rc "$pin_case pin invocation succeeds" "$?" 0
+    assert_eq "$pin_case resolves exactly the five expected registry tags" \
+        "$(cat "$pin_dir/lookups")" "$(cat "$pin_dir/expected-lookups")"
+    assert_eq "$pin_case preserves version references and third-party pins" \
+        "$(cat "$pin_dir/os/build/stage/docker-compose.yml")" "$(cat "$pin_dir/expected.yml")"
+done

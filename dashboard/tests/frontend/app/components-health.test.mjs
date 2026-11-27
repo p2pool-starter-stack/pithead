@@ -18,6 +18,27 @@ test('Tari status gates the ✔ on a live gRPC channel, never on active-but-dead
     assert.doesNotMatch(dHtml, /check-inline/); // active-but-dead -> NO ✔ (the invariant)
 });
 
+test('A READY channel on a node off the chain reads amber/red with the reason, never ✔ (#2464)', () => {
+    for (const [level, cls] of [['amber', 'status-warn'], ['red', 'status-bad']]) {
+        const s = clone();
+        // build_tari derives the text (#2464); the panel must print it as it stands, coloured by level.
+        Object.assign(s.tari, {
+            connected: true, active: true,
+            status: 'Not following the chain: tip 342574 unchanged for 31 min. restart the Tari node',
+            health: { level, reasons: ['tip 342574 unchanged for 31 min'], advice: 'restart the Tari node' },
+        });
+        const out = renderApp({ state: s });
+        assert.match(out, new RegExp(`${cls}">Not following the chain: tip 342574 unchanged for 31 min\\. restart the Tari node<`));
+        assert.doesNotMatch(out, /check-inline/);
+    }
+    const green = clone();
+    Object.assign(green.tari, {
+        connected: true, active: true, status: 'Merge mining',
+        health: { level: 'green', reasons: [], advice: '' },
+    });
+    assert.match(renderApp({ state: green }), /status-ok">Merge mining/);
+});
+
 test('Sync gauge shows a ✔ for a done chain and a live percent while syncing', () => {
     const s = clone();
     s.syncing = true;
@@ -60,6 +81,16 @@ test('ComponentHealth flips to a warning summary when the posture leaks', () => 
     assert.match(renderApp({ state: s }), /⚠️/);
     assert.match(renderApp({ state: s }), /exposing your IP/);
     assert.match(renderApp({ state: s }), /egress-summary c-bad/);
+});
+
+test('ComponentHealth names a chosen clearnet dial without marking it firewall-blocked', () => {
+    const s = clone();
+    const peer = s.egress.components.find(c => c.name === 'p2pool').conns[0];
+    peer.route = 'clearnet';
+    peer.chosen_clearnet = true;
+    const html = renderApp({ state: s });
+    assert.match(html, /sidechain P2P peers <span class="egress-note">\(your choice: your IP is visible to this destination\)<\/span>/);
+    assert.doesNotMatch(html, /sidechain P2P peers <span class="egress-note">\(firewall-blocked\)<\/span>/);
 });
 
 test('ComponentHealth renders an unverified-only posture as a warning, not a leak', () => {

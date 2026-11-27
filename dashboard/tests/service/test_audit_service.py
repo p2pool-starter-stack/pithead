@@ -143,6 +143,36 @@ class TestAccessSummary:
         access_log.write_text("\n".join(lines) + "\n")
         assert audit_service.access_summary(now=now)["rotate_hint"] is True
 
+    @pytest.mark.parametrize("ordinary,warning", [(4, False), (5, True)])
+    def test_boot_probes_do_not_count_toward_warning(self, access_log, ordinary, warning):
+        probe = json.loads(access_line(ts=199999, status=401, uri="/.pithead-boot-health", user=""))
+        probe["pithead_probe"] = "boot-health-v1"
+        lines = [json.dumps(probe)] * 53
+        lines += [access_line(ts=199900, status=401, uri="/", user="")] * ordinary
+        access_log.write_text("\n".join(lines) + "\n")
+        summary = audit_service.access_summary(limit=100, now=200000)
+        assert summary["failures_24h"] == ordinary
+        assert summary["rotate_hint"] is warning
+        assert summary["last_failure_ts"] == 199900
+        assert len(summary["entries"]) == 53 + ordinary
+
+    @pytest.mark.parametrize("marker", [None, "", "boot-health-v1-extra", True, ["boot-health-v1"]])
+    def test_only_exact_caddy_log_marker_is_exempt(self, access_log, marker):
+        row = json.loads(access_line(ts=1000, status=401, uri="/.pithead-boot-health", user=""))
+        row["pithead_probe"] = marker
+        row["request"].update(remote_ip="127.0.0.1", headers={"User-Agent": ["curl"]})
+        access_log.write_text(json.dumps(row) + "\n")
+        assert audit_service.access_summary(now=2000)["failures_24h"] == 1
+
+    def test_probe_only_has_no_last_failure(self, access_log):
+        row = json.loads(access_line(ts=1000, status=401))
+        row["pithead_probe"] = "boot-health-v1"
+        access_log.write_text(json.dumps(row) + "\n")
+        summary = audit_service.access_summary(now=2000)
+        assert summary["failures_24h"] == 0
+        assert summary["last_failure_ts"] is None
+        assert summary["rotate_hint"] is False
+
     def test_hostile_uri_and_user_neutralized(self, access_log):
         # RED-THEN-GREEN guard: the URI and attempted username are attacker-chosen bytes.
         access_log.write_text(access_line(uri="/%3Cscript%3E" + XSS, user=XSS) + "\n")

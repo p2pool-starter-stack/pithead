@@ -3,8 +3,6 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all]
-#
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
 #   update  build a v2 bundle; install, boot the spare, auto-rollback uncommitted, commit, and
@@ -42,6 +40,7 @@
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #           Closes with a cut mid first-boot image load on a fresh guest (the #1029 class, #2067).
 #   reset   config-reset clears config but preserves the chain and onion through reconfiguration;
+#           a real A/B update then proves wizard, CLI restore and open-setup reboot recovery;
 #           factory-reset's ESP marker then wipes /data and returns a FRESH machine to the wizard;
 #           a corrupt /data superblock drives wedged-/data recovery.
 #   image-upgrade  signed v1.20.0 -> candidate -> exact rollback on guest-local reflink XFS
@@ -67,12 +66,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/secure-boot-boot-verdict.sh"
 # shellcheck source=tests/os/failure-evidence.sh
 . "$SCRIPT_DIR/failure-evidence.sh"
+# shellcheck source=tests/os/staging-failure-evidence.sh
+. "$SCRIPT_DIR/staging-failure-evidence.sh"
 # shellcheck source=tests/os/tor-health-evidence.sh
 . "$SCRIPT_DIR/tor-health-evidence.sh"
 # shellcheck source=tests/os/zero-container-evidence.sh
 . "$SCRIPT_DIR/zero-container-evidence.sh"
 # shellcheck source=tests/os/bundle-build-evidence.sh
 . "$SCRIPT_DIR/bundle-build-evidence.sh"
+. "$SCRIPT_DIR/package-appliance-verdict.sh"
 # shellcheck source=tests/os/kvm-preflight.sh
 . "$SCRIPT_DIR/kvm-preflight.sh"
 # shellcheck source=tests/os/journal-boot-verdict.sh
@@ -87,24 +89,41 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/data-floor-fallback-leg.sh"
 # shellcheck source=tests/os/aged-version.sh
 . "$SCRIPT_DIR/aged-version.sh"
+# shellcheck source=tests/os/rollback-verdict.sh
+. "$SCRIPT_DIR/rollback-verdict.sh"
+# shellcheck source=tests/os/require-complete-verdict.sh
+. "$SCRIPT_DIR/require-complete-verdict.sh"
 # shellcheck source=tests/os/provision-browser-submit.sh
 . "$SCRIPT_DIR/provision-browser-submit.sh"
+. "$SCRIPT_DIR/image-upgrade-certificate-leg.sh"
 # shellcheck source=tests/os/appliance-hostname-leg.sh
 . "$SCRIPT_DIR/appliance-hostname-leg.sh"
 # shellcheck source=tests/os/appliance-diagnostics-leg.sh
 . "$SCRIPT_DIR/appliance-diagnostics-leg.sh"
+# shellcheck source=tests/os/appliance-recovery-bundle-leg.sh
+. "$SCRIPT_DIR/appliance-recovery-bundle-leg.sh"
 # shellcheck source=tests/os/appliance-config-approval-leg.sh
 . "$SCRIPT_DIR/appliance-config-approval-leg.sh"
+# shellcheck source=tests/os/appliance-earnings-leg.sh
+. "$SCRIPT_DIR/appliance-earnings-leg.sh"
 # shellcheck source=tests/os/appliance-tari-mode-leg.sh
 . "$SCRIPT_DIR/appliance-tari-mode-leg.sh"
+# shellcheck source=tests/os/caddy-failure-evidence.sh
+. "$SCRIPT_DIR/caddy-failure-evidence.sh"
 # shellcheck source=tests/os/appliance-egress-leg.sh
 . "$SCRIPT_DIR/appliance-egress-leg.sh"
 # shellcheck source=tests/os/appliance-xvb-routing-leg.sh
 . "$SCRIPT_DIR/appliance-xvb-routing-leg.sh"
+# shellcheck source=tests/os/appliance-address-watch-leg.sh
+. "$SCRIPT_DIR/appliance-address-watch-leg.sh"
 # shellcheck source=tests/os/appliance-dashboard-exposure-leg.sh
 . "$SCRIPT_DIR/appliance-dashboard-exposure-leg.sh"
 # shellcheck source=tests/os/appliance-lan-guard-leg.sh
 . "$SCRIPT_DIR/appliance-lan-guard-leg.sh"
+# shellcheck source=tests/os/appliance-monero-rpc-leg.sh
+. "$SCRIPT_DIR/appliance-monero-rpc-leg.sh"
+# shellcheck source=tests/os/appliance-tari-wallet-leg.sh
+. "$SCRIPT_DIR/appliance-tari-wallet-leg.sh"
 # shellcheck source=tests/os/appliance-chain-fault-leg.sh
 . "$SCRIPT_DIR/appliance-chain-fault-leg.sh"
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
@@ -119,16 +138,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/../integration/lib/skip-accounting.sh"
 # shellcheck source=tests/os/reinstall-prefill-submit-leg.sh
 . "$SCRIPT_DIR/reinstall-prefill-submit-leg.sh"
+# shellcheck source=tests/os/reserved-node-by-name-leg.sh
+. "$SCRIPT_DIR/reserved-node-by-name-leg.sh"
 # shellcheck source=tests/os/setup-failure-recovery-leg.sh
 . "$SCRIPT_DIR/setup-failure-recovery-leg.sh"
 # shellcheck source=tests/os/control-runner-recovery-leg.sh
 . "$SCRIPT_DIR/control-runner-recovery-leg.sh"
+# shellcheck source=tests/os/appliance-support-bundle-leg.sh
+. "$SCRIPT_DIR/appliance-support-bundle-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
+# shellcheck source=tests/os/wizard-console-leg.sh
+. "$SCRIPT_DIR/wizard-console-leg.sh"
+# shellcheck source=tests/os/rig-config-meta-wait.sh
+. "$SCRIPT_DIR/rig-config-meta-wait.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
 . "$SCRIPT_DIR/rig-control-off-leg.sh"
+# shellcheck source=tests/os/appliance-miner-recovery.sh
+. "$SCRIPT_DIR/appliance-miner-recovery.sh"
 # shellcheck source=tests/os/rig-share-leg.sh
 . "$SCRIPT_DIR/rig-share-leg.sh"
+# shellcheck source=tests/os/rig-failure-evidence.sh
+. "$SCRIPT_DIR/rig-failure-evidence.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
 # shellcheck source=tests/os/fault-boot-verdict.sh
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
@@ -136,6 +167,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/m10-height-verdict.sh"
 IMAGE=""
 KEEP=0
+REQUIRE_COMPLETE=0
 PHASE="all"
 VM="pithead-os-test"
 DISK="/srv/code/bench-vm/pithead-os-test.img"
@@ -150,12 +182,17 @@ while [ $# -gt 0 ]; do
         KEEP=1
         shift
         ;;
+    --require-complete)
+        REQUIRE_COMPLETE=1
+        shift
+        ;;
     --phase)
         PHASE="$2"
         shift 2
         ;;
     -h | --help)
-        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
+        printf 'tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|setup-defaults|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|tor-heal|tor-heal-exhausted|p2pool-heal|all]\n'
+        sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -171,18 +208,26 @@ FAIL=0
 OS_RUN_SUITE=1
 # shellcheck source=tests/os/lib/core.sh
 source "$SCRIPT_DIR/lib/core.sh" || exit $?
+# shellcheck source=tests/os/wizard-redirect-leg.sh
+source "$SCRIPT_DIR/wizard-redirect-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/boot.sh
 source "$SCRIPT_DIR/phases/boot.sh" || exit $?
+# shellcheck source=tests/os/phases/update-spare-slot.sh
+source "$SCRIPT_DIR/phases/update-spare-slot.sh" || exit $?
 # shellcheck source=tests/os/phases/update.sh
 source "$SCRIPT_DIR/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
 source "$SCRIPT_DIR/phases/update-dashboard.sh" || exit $?
 # shellcheck source=tests/os/phases/update-healthgate-leg.sh
 source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
+# shellcheck source=tests/os/phases/update-wedged-tor-legs.sh
+source "$SCRIPT_DIR/phases/update-wedged-tor-legs.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
 source "$SCRIPT_DIR/phases/provision.sh" || exit $?
+# shellcheck source=tests/os/phases/setup-defaults.sh
+source "$SCRIPT_DIR/phases/setup-defaults.sh" || exit $?
 # shellcheck source=tests/os/phases/media.sh
 source "$SCRIPT_DIR/phases/media.sh" || exit $?
 # shellcheck source=tests/os/phases/rig.sh
@@ -199,6 +244,13 @@ source "$SCRIPT_DIR/phases/image-upgrade.sh" || exit $?
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
 source "$SCRIPT_DIR/phases/stack.sh" || exit $?
+# shellcheck source=tests/os/phases/tor-heal.sh
+source "$SCRIPT_DIR/phases/tor-heal.sh" || exit $?
+# shellcheck source=tests/os/phases/tor-heal-exhausted.sh
+source "$SCRIPT_DIR/phases/tor-heal-exhausted.sh" || exit $?
+# shellcheck source=tests/os/phases/pool-heal.sh
+source "$SCRIPT_DIR/phases/pool-heal.sh" || exit $?
+require_owner_payouts
 require_host
 require_clean_bench
 if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
@@ -214,7 +266,7 @@ fi
 # without each phase file having to get its own accounting right: if a phase call adds nothing to
 # PASS, FAIL or any skip bucket, the wrapper itself records the phase as a `missing` skip — an
 # absent input is exactly what "an input would have run it" means.
-_run_phase() { # <phase-name> <phase-function>
+_run_phase() {
     local before=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
     "$2"
     local after=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
@@ -226,6 +278,7 @@ boot) _run_phase boot phase_boot ;;
 update) _run_phase update phase_update ;;
 install) _run_phase install phase_install ;;
 provision) _run_phase provision phase_provision ;;
+setup-defaults) _run_phase setup-defaults phase_setup_defaults ;;
 rig) _run_phase rig phase_rig ;;
 rigmedia) _run_phase rigmedia phase_rigmedia ;;
 media) _run_phase media phase_media ;;
@@ -234,6 +287,9 @@ reset) _run_phase reset phase_reset ;;
 image-upgrade) _run_phase image-upgrade phase_image_upgrade ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
 stack) _run_phase stack phase_stack ;;
+tor-heal) _run_phase tor-heal phase_tor_heal ;;
+tor-heal-exhausted) _run_phase tor-heal-exhausted phase_tor_heal_exhausted ;;
+p2pool-heal) _run_phase p2pool-heal phase_p2pool_heal ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
@@ -242,6 +298,7 @@ all)
     _run_phase update phase_update
     _run_phase install phase_install
     _run_phase provision phase_provision
+    _run_phase setup-defaults phase_setup_defaults
     _run_phase rig phase_rig
     _run_phase rigmedia phase_rigmedia
     _run_phase media phase_media
@@ -256,6 +313,8 @@ all)
     ;;
 esac
 
+require_complete_row=$(require_complete_verdict "$REQUIRE_COMPLETE" "$IT_SKIPPED_MISSING") || true
+[ -z "$require_complete_row" ] || bad "$require_complete_row"
 printf '\nos harness: \033[1;32m%d passed\033[0m, \033[1;31m%d failed\033[0m\n' "$PASS" "$FAIL"
 # The three buckets stay SEPARATE, and the breakdown under them is worded exactly as
 # tests/integration/lib/run-safety.sh's summary() words it (#1083/#1365), so the two tier-4

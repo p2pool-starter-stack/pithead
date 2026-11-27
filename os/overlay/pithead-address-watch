@@ -1,0 +1,104 @@
+#!/bin/bash
+set -u
+cd "${PITHEAD_DIR:-/data/pithead}" 2>/dev/null || exit 0
+STATE="${PITHEAD_ADDRESS_WATCH_STATE:-/run/pithead-address-watch}"
+TLS_DIR="${PITHEAD_TLS_DIR:-data/tls}"
+BOOT_UNIT="${PITHEAD_BOOT_UNIT:-pithead-boot.service}"
+LOCK="${PITHEAD_LOCK_FILE:-.pithead.lock}"
+
+[ -x ./pithead ] && [ -s .env ] && [ -s config.json ] || exit 0
+[ "$(systemctl is-active "$BOOT_UNIT" 2>/dev/null)" != activating ] || exit 0
+
+addrs=$(hostname -I 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' ')
+[ -n "$addrs" ] || exit 0
+
+sig() { sha256sum "$TLS_DIR/wizard.crt" Caddyfile 2>/dev/null | cut -d' ' -f1 | tr '\n' ' '; }
+
+adopt_rendered_files() {
+    printf '%s' "$now" >"$STATE.served"
+    rm -f "$STATE.pending"
+    echo "pithead-address-watch: the dashboard certificate or the Caddyfile changed while the addresses held — the operation that re-rendered them owns the Caddy restart; recorded, not restarted here"
+}
+
+if [ -f "$STATE" ] && [ "$addrs" = "$(cat "$STATE")" ]; then
+    now=$(sig)
+    if [ ! -f "$STATE.served" ]; then
+        printf '%s' "$now" >"$STATE.served"
+        exit 0
+    fi
+    if [ "$now" = "$(cat "$STATE.served")" ]; then
+        rm -f "$STATE.pending"
+        exit 0
+    fi
+    if [ ! -f "$STATE.pending" ] || [ "$now" != "$(cat "$STATE.pending")" ]; then
+        adopt_rendered_files
+        exit 0
+    fi
+    exec 9>>"$LOCK" || {
+        echo "pithead-address-watch: cannot open the mutation lock file; retrying on the next tick"
+        exit 0
+    }
+    if ! flock -n 9; then
+        echo "pithead-address-watch: another pithead operation holds the lock; retrying on the next tick"
+        exit 0
+    fi
+    now=$(sig)
+    if [ "$now" != "$(cat "$STATE.pending")" ]; then
+        adopt_rendered_files
+        exit 0
+    fi
+    echo "pithead-address-watch: the Caddy restart the watch owed for these files is due — restarting Caddy"
+    if ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1; then
+        printf '%s' "$now" >"$STATE.served"
+        rm -f "$STATE.pending"
+    else
+        echo "pithead-address-watch: Caddy did not restart; retrying on the next tick"
+    fi
+    exit 0
+fi
+
+exec 9>>"$LOCK" || {
+    echo "pithead-address-watch: cannot open the mutation lock file; retrying on the next tick"
+    exit 0
+}
+if ! flock -n 9; then
+    echo "pithead-address-watch: another pithead operation holds the lock; retrying on the next tick"
+    exit 0
+fi
+
+pre=$(sig)
+render_ok=0
+if PITHEAD_LOCK_HELD=$$ ./pithead render >/dev/null 2>&1; then
+    render_ok=1
+else
+    echo "pithead-address-watch: render failed; retrying on the next tick"
+fi
+now=$(sig)
+served=$(cat "$STATE.served" 2>/dev/null)
+[ -n "$served" ] || {
+    served="$pre"
+    printf '%s' "$served" >"$STATE.served"
+}
+pending=$(cat "$STATE.pending" 2>/dev/null)
+restarted=0
+if [ "$now" != "$pre" ] || { [ -n "$pending" ] && [ "$now" = "$pending" ]; }; then
+    echo "pithead-address-watch: the machine's addresses changed — re-rendered the dashboard certificate and Caddyfile, restarting Caddy"
+    if ${PITHEAD_CADDY_RESTART_CMD:-docker compose restart caddy} >/dev/null 2>&1; then
+        printf '%s' "$now" >"$STATE.served"
+        rm -f "$STATE.pending"
+        restarted=1
+    else
+        printf '%s' "$now" >"$STATE.pending"
+        echo "pithead-address-watch: Caddy did not restart; retrying on the next tick"
+    fi
+else
+    rm -f "$STATE.pending"
+    if [ "$now" != "$served" ]; then
+        printf '%s' "$now" >"$STATE.served"
+        echo "pithead-address-watch: the machine's addresses changed and the rendered dashboard files were already current — no Caddy restart"
+    fi
+fi
+if [ "$render_ok" = 1 ] && { [ "$now" = "$pre" ] || [ "$restarted" = 1 ]; }; then
+    printf '%s' "$addrs" >"$STATE"
+fi
+exit 0

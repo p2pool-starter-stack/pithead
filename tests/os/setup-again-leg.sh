@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # ip, token, jar and SERIAL are run.sh's — the guest address, the session, the console log
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 #
 # The boot menu's "Set up again" entry, tier 4 (#1318). Sourced by tests/os/run.sh and run inside
 # phase_rig on the guest the reboot leg just left: a provisioned rig, mining, slot A committed.
@@ -43,12 +45,9 @@ _setup_again_boot() {
         bad "pithead-setup-again is '${st:-unreadable}' 120 s into the boot — the flag was not honoured"
 }
 
-# The wizard session on a set-up-again boot: the token THIS boot minted (read past the offset
-# _setup_again_boot took before the reboot, never the last session's), the page served, a session
-# cookie in $jar. Sets token and jar in the caller; rc 1 = reported.
 _setup_again_session() {
     local tries=0 from="${SA_SERIAL_OFFSET:-0}"
-    # A harness-driven guest boot truncates the console log; then everything in it is this boot's.
+    _setup_again_journal_token || return 1
     [ "$(stat -c %s "$SERIAL" 2>/dev/null || echo 0)" -ge "$from" ] || from=0
     token=""
     while [ "$tries" -lt 40 ]; do
@@ -61,6 +60,11 @@ _setup_again_session() {
         bad "no one-time token appeared on the console after the reboot into the setup entry"
         return 1
     }
+    [ "$token" = "$SA_JOURNAL_TOKEN" ] || {
+        bad "the console token does not match the current boot journal"
+        return 1
+    }
+    _setup_again_console_proof || return 1
     _wait_setup_page 120 || {
         bad "the setup page never served on the set-up-again boot"
         return 1
@@ -71,12 +75,9 @@ _setup_again_session() {
         rm -f "$jar"
         return 1
     }
-    ok "the setup page is up on the set-up-again boot, with a fresh token ($token)"
+    ok "the setup page is up on the set-up-again boot, with a fresh token"
 }
 
-# Submit the rig form and wait for its card. $1 = worker, $2 = pool (default the guest's own sshd
-# over IPv4), $3 = a jq filter for what to print (default the token and address on one line, which
-# is what legs 1 and 2 read). Prints that; rc 1 = reported.
 _setup_again_rig_submit() {
     local scode card tries=0 pool="${2:-127.0.0.1:22}"
     scode=$(curl -sSk -b "$jar" --data "role=rig&rig_pool=$pool&rig_worker=$1" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
@@ -157,7 +158,7 @@ rig_setup_again_legs() {
     # miner is up, `journalctl -b -u pithead-setup-again` is empty. journald's own console
     # forward of the entry (`pithead[<pid>]: [pithead] ...`, distinct from _console's bare tty
     # write) is the durable witness that the line reached the journal.
-    tr -d '\r' <"$SERIAL" | grep -qE 'pithead\[[0-9]+\]: \[pithead\] Setup closed: the saved settings are kept' &&
+    serial_has 'pithead\[[0-9]+\]: \[pithead\] Setup closed: the saved settings are kept' &&
         ok "the host logged the keep, by name (the journal entry, via its console forward)" ||
         bad "no 'saved settings are kept' journal entry reached the console"
     _ssh "test ! -e $SA_SPOOL/keep-role" 2>/dev/null && ok "keep-role was consumed" ||
@@ -219,6 +220,16 @@ rig_setup_again_coordinator_leg() {
     *pithead.setup=1*rauc.slot=B* | *rauc.slot=B*pithead.setup=1*) ok "after the update the setup entry followed the default to slot B" ;;
     *) bad "the setup entry did not follow the default to slot B — cmdline: $(printf '%s' "$cmd" | cut -c1-160)" ;;
     esac
+    n=0
+    while [ "$n" -lt 12 ]; do
+        case "$(_ssh 'grub-editenv /boot/efi/grub/grubenv list' 2>/dev/null | tr -d '\r' | tr '\n' ' ')" in
+        *"B_OK=1 "*"B_TRY=0"* | *"B_TRY=0"*"B_OK=1"*) break ;;
+        esac
+        sleep 5
+        n=$((n + 1))
+    done
+    [ "$n" -lt 12 ] && ok "with the page open the updated slot stays committed (B_OK=1 B_TRY=0): abandoning it boots B again (#3960)" ||
+        bad "slot B is not committed 60 s into the set-up-again page — a reboot would fall back to A (#3960)"
     _setup_again_session || return
     scode=$(curl -sSk -b "$jar" --data "monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
@@ -232,7 +243,7 @@ rig_setup_again_coordinator_leg() {
         tries=$((tries + 1))
     done
     [ "$tries" -lt 24 ] && ok "a coordinator's credentials card appeared on the set-up-again page" ||
-        bad "no coordinator card appeared — the config was not accepted (error: $(_ssh "cat $SA_SPOOL/error.txt" 2>/dev/null | cut -c1-160))"
+        bad "no coordinator card appeared — the config was not accepted (error: $(_ssh "cat $SA_SPOOL/error.txt" 2>/dev/null | os_redact_addr | cut -c1-160))"
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null || true
     rm -f "$jar"
     while [ "$n" -lt 18 ]; do

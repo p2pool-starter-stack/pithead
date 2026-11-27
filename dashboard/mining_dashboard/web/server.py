@@ -4,17 +4,20 @@ import math
 import mimetypes
 import os
 import re
+import uuid
 
 from aiohttp import web
 
 from mining_dashboard.client.rigforge_freshness import feed_stale
 from mining_dashboard.client.xmrig_client import strip_sentinel_credentials
-from mining_dashboard.config import config
+from mining_dashboard.config import config, documents
 from mining_dashboard.service import audit_service, control_service
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
-from mining_dashboard.web.config_commit import approval_envelope
+from mining_dashboard.web import auth
+from mining_dashboard.web.config_commit import approval_envelope, config_request
+from mining_dashboard.web.miner_connection import handle_miner_connection
 from mining_dashboard.web.views import diagnostics_views, download_views
 from mining_dashboard.web.views.charts import canonical_window, parse_window
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
@@ -39,21 +42,18 @@ async def handle_index(request):
 
 
 async def handle_state(request):
-    """The dashboard's data API. Pull shared state, delegate to the view layer, and return
-    the assembled state object as JSON (or a sanitized 500 on failure)."""
     app = request.app
     data = app["latest_data"]
     state_mgr = app["state_manager"]
     range_arg = request.query.get("range", "all")
-    # Optional manual-zoom window (Issue #47); malformed from/to falls back to the preset range.
     window = parse_window(request.query.get("from"), request.query.get("to"))
-    # Hashrate-averaging window for the chart (#168); unknown/missing falls back to the default.
     avg_window = canonical_window(request.query.get("avg"))
 
     try:
-        return web.json_response(build_state(data, state_mgr, range_arg, window, avg_window))
+        return web.json_response(
+            auth.annotate(request, build_state(data, state_mgr, range_arg, window, avg_window))
+        )
     except Exception:
-        # Log the full error server-side; never leak exception details to the browser.
         logger.exception("Error building dashboard state")
         return web.json_response({"error": "Failed to build dashboard state."}, status=500)
 
@@ -119,12 +119,6 @@ async def handle_metrics(request):
         return web.Response(text="Failed to render metrics.", status=500, content_type="text/plain")
 
 
-# --- Dashboard control channel (#33) ---------------------------------------------------------
-# Registered only when DASHBOARD_CONTROL_ENABLED (absent routes 404 when the feature is off).
-# Every mutating POST must carry this custom header: a cross-site header forces a CORS preflight,
-# which the self-only CSP origin never grants (a cheap CSRF guard, same spirit as the CSP below).
-# The actor is Caddy's authenticated X-Auth-User (header_up overwrites any client value).
-
 CONTROL_HEADER = "X-Pithead-Control"
 
 
@@ -137,6 +131,8 @@ async def handle_config(request):
     """The live config for form prefill, every set secret masked to the sentinel."""
     try:
         return web.json_response(control_service.read_config())
+    except documents.HostConfigError as exc:
+        return web.json_response({"error": f"Invalid configuration: {exc}"}, status=500)
     except Exception:
         logger.exception("Error reading host config")
         return web.json_response({"error": "Failed to read the stack config."}, status=500)
@@ -146,22 +142,20 @@ async def handle_control_preview(request):
     """Stage a proposed config for a host-side dry-run preview. Returns the runner's result,
     or 202 + the request id if the runner hasn't answered within the wait window."""
     _require_control_header(request)
-    try:
-        body = await request.json()
-    except Exception:
-        raise web.HTTPBadRequest(text="Body must be JSON.") from None
+    body = await config_request(request)
     proposed = body.get("config")
     if not isinstance(proposed, dict):
         raise web.HTTPBadRequest(text="'config' must be a JSON object.")
-    # Click-to-adopt (#893): pre-validate any newly-appended workers.list[] entry before spooling.
-    adopt_err = worker_adopt.validate_new_worker_entries(control_service.read_config(), proposed)
-    if adopt_err:
-        raise web.HTTPBadRequest(text=adopt_err)
+    # Pre-validate the fleet workers.api_port (#3358) and any newly-appended workers.list[] entry (#893).
+    err = worker_adopt.validate_fleet_api_port(proposed)
+    err = err or worker_adopt.validate_new_worker_entries(control_service.read_config(), proposed)
+    if err:
+        raise web.HTTPBadRequest(text=err)
     actor = request.headers.get("X-Auth-User", "")
     try:
         # The proposal ships as-is: an untouched secret rides as the {"__secret__": true}
         # sentinel, and the HOST swaps it for the live value when it stages the intent (#440) —
-        # this container never holds a secret the operator didn't just type.
+        # this editor route never receives the existing value from the masked config mount.
         rid = control_service.submit("preview", proposed, actor)
         res = await control_service.wait_result(rid)
     except Exception:
@@ -176,13 +170,17 @@ async def handle_control_commit(request):
     """Ask the runner to apply a previously previewed intent, by id only — the config it applies
     is the host-side staged copy, so a tampered commit can't swap it."""
     _require_control_header(request)
+    body = await config_request(request)
     try:
-        body = await request.json()
-        actor = request.headers.get("X-Auth-User", "")
         approval = approval_envelope(body)
+        if body.get("id"):
+            uuid.UUID(body["id"])
+    except Exception:
+        raise web.HTTPBadRequest(text="Body must be JSON with a valid intent 'id'.") from None
+    try:
         rid = control_service.submit(
             "commit",
-            actor=actor,
+            actor=request.headers.get("X-Auth-User", ""),
             intent_id=body.get("id"),
             # #719: the operator's typed confirmation for an in-scope disruptive change. It is
             # friction, not a secret — the host gate requires it before a CONFIRM row proceeds.
@@ -190,7 +188,8 @@ async def handle_control_commit(request):
             approval=approval,
         )
     except Exception:
-        raise web.HTTPBadRequest(text="Body must be JSON with a valid intent 'id'.") from None
+        logger.exception("Error submitting control commit")
+        return web.json_response({"error": "Failed to submit the commit request."}, status=500)
     # The preview result (same id) is still on disk; wait for the runner to overwrite it.
     res = await control_service.wait_result(rid, done=lambda r: r.get("status") != "previewed")
     if res is None:
@@ -332,8 +331,7 @@ async def handle_worker_apply(request):
     This container never holds the rig's token: it spools ``{worker, changes}`` and the host resolves
     the rig's address + bearer from config.json (workers.list[]), POSTs, and polls the rig's
     ``/status``. Fail-closed — the route only exists when the control channel is on, which itself
-    requires a dashboard password. The change surface is the writable allowlist only. Records the
-    terminal outcome in the per-worker config history."""
+    requires a dashboard password. Only writable keys are accepted; the result is recorded in history."""
     _require_control_header(request)
     try:
         body = await request.json()
@@ -363,6 +361,7 @@ async def handle_worker_apply(request):
     if res is None:
         return web.json_response({"id": rid, "status": "pending"}, status=202)
     _record_worker_result(state_mgr, worker, changes, res)
+    worker_refresh.maybe_refresh_after_apply(request.app, state_mgr, worker, changes, res)
     return web.json_response({"id": rid, **res})
 
 
@@ -410,15 +409,15 @@ async def handle_worker_upgrade(request):
     data = request.app["latest_data"] or {}
     live = next((w for w in data.get("workers", []) if w.get("name") == worker), None)
     rigforge = (live or {}).get("rigforge") or {}
+    appliance = bool(rigforge.get("appliance"))
     running = None if feed_stale(rigforge) else rigforge.get("version")
-    # The rig reports bare "1.11.2", the badge proposes tag "v1.11.2" — compare parsed (#596).
     if running and parse_semver(running) and parse_semver(running) == parse_semver(version):
         return web.json_response(
             {"status": "noop", "worker": worker, "note": f"already on {version}"}
         )
     try:
         rid = control_service.submit_worker_upgrade(
-            worker, version, request.headers.get("X-Auth-User", "")
+            worker, version, request.headers.get("X-Auth-User", ""), appliance=appliance
         )
     except Exception:
         logger.exception("Error submitting worker-upgrade")
@@ -508,7 +507,7 @@ async def handle_audit_log(request):
 
 
 # How deep the access log is read when the operator is NAVIGATING it (#823) vs the default
-# glance. The tail read is byte-bounded either way (audit_service._TAIL_BYTES) — this only stops
+# glance. Retained reads are byte-bounded (service/access_log.py) — this only stops
 # a filtered view from being quietly truncated to the glance depth before the filter even runs.
 _ACCESS_NAV_LIMIT = 1000
 
@@ -516,7 +515,7 @@ _ACCESS_NAV_LIMIT = 1000
 async def handle_access_log(request):
     """Recent dashboard accesses + failed-login count, from Caddy's JSON access log. Always
     registered (Caddy always writes the log); behind the same Caddy basic_auth as every route.
-    Accepts the #823 navigation params; the failure counters always describe the whole tail,
+    Accepts the #823 navigation params; the failure counters always describe the bounded retained records,
     never the filtered slice."""
     try:
         frm, to, q = _log_filters(request)
@@ -548,7 +547,7 @@ def _apply_security_headers(response):
     # static CSS/JS is baked into the image, so a `pithead upgrade` changes served bytes, and a
     # browser (notably iOS Safari) can otherwise keep serving pre-upgrade dashboard.css a while
     # (Issue #83). 'no-cache' still allows a conditional request, so an unchanged asset costs only a 304.
-    response.headers["Cache-Control"] = "no-cache"
+    response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
 
@@ -573,24 +572,22 @@ async def _cancel_bg_tasks(app):
 
 
 def create_app(state_manager, latest_data_ref):
-    """Factory to create the web app instance."""
-    app = web.Application(middlewares=[security_headers_middleware])
+    app = web.Application(middlewares=[security_headers_middleware, auth.refresh_middleware])
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
-    # Fire-and-forget recorder tasks (worker-upgrade, #1014) — tracked so they can't be
-    # garbage-collected mid-flight and so shutdown can cancel any still in progress.
     app["_bg_tasks"] = set()
     app.on_cleanup.append(_cancel_bg_tasks)
+    auth.setup(app)
 
     app.add_routes(
         [
             web.get("/", handle_index),
             web.get("/api/state", handle_state),
-            # Warm-standby state a backup stack pulls on failover (#249). Read-only, same auth as
-            # /api/state; harmless (and unread) on a stack with no backup.
+            web.get("/api/miner-connection", handle_miner_connection),
             web.get("/api/xvb-standby", handle_xvb_standby),
             web.get("/metrics", handle_metrics),
             web.get("/api/access", handle_access_log),
+            *diagnostics_views.support_routes(),
         ]
     )
     # Control channel (#33): routes exist only when the feature is on — off means 404, not 403.
@@ -617,10 +614,7 @@ def create_app(state_manager, latest_data_ref):
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
                 # Appliance OS update: one route, a closed action set, every judgment host-side.
                 web.post("/api/control/os-update", handle_control_os_update),
-                # Service Diagnostics (#913/#943): read-only, polls /api/control/result above.
-                web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
-                web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),
-                web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_key),
+                *diagnostics_views.control_routes(),
             ]
         )
 

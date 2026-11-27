@@ -2,8 +2,7 @@
 """
 Controllable fake Tari base node for the integration mini-stack (issue #54, tier 3).
 
-Implements just the two BaseNode gRPC methods the dashboard's TariClient calls — GetTipInfo
-and GetSyncProgress — against the project's own vendored protobuf stubs, so the real client
+Implements GetTipInfo, GetSyncProgress and GetNetworkState against the project's own vendored protobuf stubs, so the real client
 talks to it unchanged (the client uses an insecure channel, so there's no auth to fake). A
 small HTTP `/control` side-channel drives its state.
 
@@ -28,7 +27,7 @@ import grpc
 from mining_dashboard.client.tari.generated import base_node_pb2 as bn
 from mining_dashboard.client.tari.generated import base_node_pb2_grpc as bn_grpc
 
-# mode ∈ {"synced", "syncing", "down"}.
+# Modes: synced, syncing, down, starting, migrating.
 DEFAULT_STATE = {"mode": "synced", "height": 2_000_000, "target_height": 2_000_000}
 
 
@@ -38,18 +37,31 @@ class FakeBaseNode(bn_grpc.BaseNodeServicer):
 
     async def GetTipInfo(self, request, context):
         st = self.state
-        if st["mode"] == "down":
-            await context.abort(grpc.StatusCode.UNAVAILABLE, "fake node down")
+        if st["mode"] in ("down", "starting", "migrating"):
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "fake node unavailable")
         resp = bn.TipInfoResponse()
         resp.metadata.best_block_height = st["height"]
         # initial_sync_achieved is the authoritative "fully synced" flag the client trusts.
         resp.initial_sync_achieved = st["mode"] == "synced"
         return resp
 
+    async def GetNetworkState(self, request, context):
+        if self.state["mode"] == "down":
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "fake node down")
+        resp = bn.GetNetworkStateResponse()
+        if self.state["mode"] == "migrating":
+            resp.readiness_status.migration.current_block = 1
+            resp.readiness_status.migration.total_blocks = 100
+        elif self.state["mode"] == "starting":
+            resp.readiness_status.state = bn.ReadinessStatus.STARTING_UP
+        else:
+            resp.readiness_status.state = bn.ReadinessStatus.READY
+        return resp
+
     async def GetSyncProgress(self, request, context):
         st = self.state
-        if st["mode"] == "down":
-            await context.abort(grpc.StatusCode.UNAVAILABLE, "fake node down")
+        if st["mode"] in ("down", "starting", "migrating"):
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "fake node unavailable")
         resp = bn.SyncProgressResponse()
         resp.local_height = st["height"]
         resp.tip_height = st["target_height"]
@@ -121,7 +133,7 @@ def main():
     ap.add_argument(
         "--mode",
         default="synced",
-        choices=["synced", "syncing", "down"],
+        choices=["synced", "syncing", "down", "starting", "migrating"],
         help="initial state (the mini-stack boots 'syncing' to exercise the hold)",
     )
     args = ap.parse_args()

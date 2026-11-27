@@ -7,6 +7,22 @@ class TestSecurityLogRoutes:
     reads over host-written, read-only-mounted files; every served field is sanitized because log
     content is attacker-influenceable (the access log echoes attacker-chosen URIs/usernames)."""
 
+    async def test_access_count_covers_retained_generations_independent_of_filter(
+        self, client, tmp_path, monkeypatch
+    ):
+        from tests.service.test_access_log import NOW, generation, row
+
+        log = tmp_path / "access.log"
+        log.write_bytes(row(status=200))
+        generation(tmp_path, data=row() + row(NOW - 86401))
+        monkeypatch.setattr(audit_service.config, "ACCESS_LOG_PATH", str(log))
+        monkeypatch.setattr(audit_service.time, "time", lambda: NOW)
+        body = await (await client.get("/api/access?q=200")).json()
+        assert body["available"] is True
+        assert body["failures_24h"] == 1
+        assert body["last_failure_ts"] == NOW - 1
+        assert [e["status"] for e in body["entries"]] == [200]
+
     async def test_access_route_reports_unavailable_without_log(self, client, monkeypatch):
         monkeypatch.setattr(audit_service.config, "ACCESS_LOG_PATH", "/nonexistent/access.log")
         resp = await client.get("/api/access")

@@ -3,10 +3,87 @@
 Tier-4 tests for the `pithead-os` appliance image (#77 phase 2): the properties only real
 firmware and a real A/B updater can prove. The compose/CLI stack is covered by the other
 tiers ([`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md)); this harness
-covers what the flashed image adds — EFI boot, the first-boot wizard window, install-to-disk,
-the rig role, and the update → commit → rollback cycle that is the phase-2 exit criterion.
+also runs a native Quadlet Monero RPC fixture during `provision`. The rendered unit uses the
+guest’s current Monero image, with separate data, a separate container name and loopback host
+ports on a private IPv4-only managed bridge without a default route or external DNS.
+Routing and disabled IPv6 are verified before the daemon starts. Outgoing peers are disabled,
+and the fixture advertises no existing onion identity; its real zero exercises cold-start
+visibility, not synchronization. It checks authenticated local admin access, the restricted
+network listener, restricted public-RPC selection, P2P advertisement, fresh and expired health
+observations, and a fresh run after restart. A failed P2P probe reports a bounded stage and
+error code, with numeric header metadata; it prints no address, credential or raw response.
+An unavailable or malformed probe remains failed proof.
+The bounded P2P decoder validates up to four txpool notifications that Monero can send
+before the handshake response; none can substitute for that response. Required node identity
+and core sync fields must decode before an omitted or zero RPC port can mean suppression.
+The Compose leg accepts that suppression only with an active P2P proxy and separately proves
+restricted public-RPC selection; this unproxied native fixture requires port 18081.
+Cleanup removes only the fixture unit, container, its client container, private network and
+scratch files. The healthy-baseline
+fault and recovery proof remains the Compose
+`monero-stranded` job. The appliance harness covers EFI boot, the first-boot wizard window,
+install-to-disk, the rig role, and the update → commit → rollback cycle that is the phase-2
+exit criterion.
 The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
 `phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
+
+After initial provisioning has settled, `provision` runs `tor-recover check` in the guest
+with a verified unsaturated Tor state. It requires exit 1, the guard warning on stderr and
+no unexpected-abort message or debug advice. `selftest-tor-recovery-refusal.sh` exercises
+this guest script against the generated CLI and a pre-fix dispatch negative control,
+without a container or guest. The live result requires a KVM job on the PR head.
+
+The opt-in `p2pool-heal` phase (#4077) provisions a guest. When the guest P2Pool reports readable peerless stats, it
+observes the dashboard restart it (within 50 minutes), keep at least 20 minutes between restarts, stay within three
+and leave P2Pool running. A stock guest P2Pool reports no stats, so the phase instead runs the dashboard's healer
+inside the dashboard container against zero-peer stats and the real container control path, and requires the
+P2Pool container to restart and be running. Peer-loss detection itself is proved by the `fault-injection` e2e leg.
+`selftest-pool-heal.sh` exercises the phase wrapper without a guest.
+
+The opt-in `tor-heal` phase provisions a local-node guest and faults only that guest's Tor.
+It retains the production timers: 90 minutes with auto-heal disabled, then up to 95 minutes
+with it enabled. It requires the first-round diagnosis within 25 minutes, a host recovery
+result, a saturated state backup, cleared new state, unchanged onion keys and healthy Tor.
+The guest discovers its dashboard network's IPv4 gateway through Podman network inspection
+for a guest-local alert sink. It restores its original config and state on exit, copying
+state only after Tor stops. Failures report the current stage, bounded command logs and
+the restoration result separately from the test result; no shared Tor is poisoned.
+
+The opt-in `tor-heal-exhausted` phase provisions its own local-node guest and proves the
+ladder's rejected-NEWNYM rung: with no saturated history, a host-rejected NEWNYM must advance
+to the host state reset and Tor must recover unattended (#4075). It is a separate phase because
+the `tor-heal` ladder alone consumes about three and a half hours of the 240-minute bench
+window, and both legs must run to their own bounded end. `selftest-tor-heal-exhausted.sh`
+exercises its wrapper without a guest.
+
+The provision LAN-guard leg writes the three-switch `./pithead apply -y` output to `lan-guard-apply.log` in the guest's `/data/pithead` and, when the apply fails, prints its last 60 lines (redacted) with the exit code (#4281). `selftest-lan-guard-apply-output.sh` covers that branch without a guest.
+
+Submitting `tor-heal` to bench-ci needs `--timeout-minutes 240`: the ladder runs about three
+and a half hours after provisioning, and the tier's default run window ends the job after the
+second gate has passed but before the host recovery applies. The phase vocabulary of this
+harness is machine-read in two places: `run.sh` prints its `--phase` usage line for `--help`,
+and the bench-ci client derives the phases a tier4-kvm submission may name from that same line
+(`bench_ci/catalogue.py`, `_KVM_PHASE_RE`); a new phase must be added to both that line and
+the argument case or bench-ci rejects it as `not available at this commit`.
+
+Two Tor behaviours decide how the poison is applied and cleared (#4122). Tor 0.4.8+ self-repairs
+a saturated circuit-build history when it loads one and rewrites the state file without the
+signature; it also rewrites the state file on every clean shutdown. So the guest writes the
+poisoned state while Tor is stopped, starts Tor, sets `DisableNetwork` through the control port,
+and then re-poisons every time Tor's own write lands, returning only once the file has held the
+signature through three quiet checks; the observation loops re-assert saturation and re-poison a
+Tor rewrite, but a state backup appearing while auto-heal is off is still a hard failure — that
+is the product's own footprint. Because the recovery's own stop would wipe the poisoned file,
+the script keeps Tor running for the ladder's two applied NEWNYM rounds (each confirmed through
+the host control results) and then stops Tor itself; the recovery's stop is then a no-op and the
+poisoned file survives into the backup. The disabled leg still proves the product leaves a
+saturated state alone: no backup may ever appear in that window.
+
+Both heal phases reuse the initial-provision prelude but consume no reserved-node proof, so they
+declare themselves non-consumers and the prelude selects neither the reserved-node consumer legs
+nor the XvB routing leg (#4123); `selftest-provision-legs.sh` pins that selection. The full
+`provision` phase keeps running both legs and still fails them when the bench provides no
+reserved-node inputs.
 
 It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 
@@ -73,11 +150,24 @@ The harness builds its own update bundles from the same tarball (`os/rauc/mkbund
 signed with a throwaway development key. A release build names its key instead — see the custody
 runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 
+Harness builds declare dashboard markers as a JSON array in `tests/os/dashboard-markers.json`. The runner publishes
+and signs each final marker image before invoking the appliance builder, then forwards
+`PITHEAD_TEST_MARKER_IMAGES` as version-1 JSON text bound to the candidate commit, never a file path.
+`PITHEAD_TEST_IMAGE_COMMIT` carries that source identity into exported fixture trees without Git metadata.
+The builder uses the selected immutable reference for both Compose pinning and the baked archive;
+it adds no image layer after signing. Missing markers, another commit or a reference outside
+the configured test registry fail before the image build. Release builds do not use this mapping.
+`selftest-marker-images.sh` checks selection, rejection and the pinned/archive source contract.
+
 ## Phases
 
 - **boot** — flash the image to a scratch disk, boot it under OVMF, assert the kernel/systemd
   banner reaches the serial console, the first-boot wizard announces its URL + one-time token,
-  and the token gate answers. Also asserts machine-id is stable across a plain reboot (#895) —
+  and the token gate answers. Assert serial getty is active on the guest's UART; give its installed
+  condition a type-0 port for five minutes and require an inactive unit with no restarts or terminal
+  errors, then restore the UART, require the unit active again and check a clean hangup respawns
+  the login prompt. Also assert
+  machine-id is stable across a plain reboot (#895) —
   the empty-baked image with no restore mechanism would regenerate a new one every boot — and,
   across that same reboot, that journald follows the restored id (#1659) and writes the one
   persistent journal home, the `/data/pithead/journal` bind, with the boot list intact (#1791:
@@ -89,39 +179,72 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Also asserts `/data` grew to fill the disk, and that host identity (SSH host-key fingerprint,
   machine-id) survives the A/B swap (#894/#895) — both live on `/data`, untouched by the slot
   swap.
-- **install** — boot the image as removable media beside a blank disk, run the disk installer,
+- **install** — first submit RigForge with a blank internal disk, acknowledge its card and boot
+  from that disk alone. Poll for the same token in the installed rig and miner configurations,
+  an active XMRig process, no coordinator configuration or containers, and a scrubbed seed on the target’s mounted FAT ESP.
+  The host must consume a pending rig submission before considering a bare keep reinstall;
+  `selftest-install-rig-dispatch.sh` checks card-before-erase, acknowledgement and bare-keep controls.
+  Keep the console capture mode 0600 and send the setup token to authentication through stdin.
+  This checks miner startup against the guest’s SSH listener, not an accepted share. Then
+  boot the image as removable media beside a blank disk, run the disk installer,
   then boot the target and prove the copied system is COMPLETE — the `/var` overlay made an
   incomplete copy easy to produce and invisible to every other phase. Then the reinstall leg:
   `/data` must survive a second install over the same disk, and the three-way wipe choice
-  (`keep`/`data`/`all`) is asserted on the raw partition. A previous 1.x `xmrig_proxy` setting
+  (`keep`/`data`/`all`) is asserted on the raw partition. After Fresh Start returns to the
+  installer, wait up to 180 seconds for the setup page before the remaining wipe and plant
+  writes; SSH readiness alone precedes firstboot's read-only target probes. A previous 1.x `xmrig_proxy` setting
   must appear under `xvb` in the reinstall pre-fill, never survive under its removed name. The
   restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk and
   requires its running stack to carry the prior-release wallet, Tor identity and secrets while
   both the fixture's and the target's chain-data sentinels survive. The fixture's removed 1.x
   `xmrig_proxy` settings must move to `xvb` unchanged without leaving a `config.json.bak-1x`,
-  and `telegram.control` must be dropped.
+  and `telegram.control` must be dropped. The `N-1 backup fixture` workflow runs
+  `fixtures/v1.20.0/selftest-wallets.py` before generating the encrypted backup, including
+  on changes to `lib/pithead/25-address-types.sh`. The
+  generator extracts checksum helpers from each named CLI validator, then derives
+  deterministic public keys from a public throwaway seed. The Docker-free selftest
+  requires Python 3 and libsodium; it checks repeated output, both checksums, all four
+  curve points and the complete CLI address verdicts. Never fund these addresses.
+- **setup-defaults** — a fresh 40 GiB guest accepts the wizard defaults without a Tari override; proves Tor sync, XvB off, persisted choices, a generated working dashboard login, and firstboot/system journals free of bcrypt credentials.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
-  served, built-in miner up. The Tor-only egress enforcement backstop — a real clearnet dial from a
+  served, generated login authenticating, firstboot and system journals free of bcrypt credentials,
+  built-in miner up. Journal reads must succeed and contain entries; the check never prints matched hashes. The Tor-only egress enforcement backstop — a real clearnet dial from a
   mining container, which must be DROPPED while the same container still reaches clearnet through
-  Tor's SOCKS — runs on EVERY path through this phase, including the aborting ones, and reports RED
+  Tor's SOCKS (up to three attempts, with retries isolated by SOCKS username, [#2619](https://github.com/p2pool-starter-stack/pithead/issues/2619)) — runs on EVERY path through this phase, including the aborting ones, and reports RED
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
   The nightly KVM battery also makes a wallet-bearing XvB stats request through that Tor SOCKS
   path, up to three attempts 15 seconds apart because one Tor circuit can read-time-out against the
-  remote host; every attempt refuses any socket but the Tor SOCKS. It then starts the otherwise sync-held proxy only long enough to invoke the controller's
+  remote host; every attempt refuses any socket but the Tor SOCKS. The leg runs inside the
+  reserved-node leg, after the approval whose synced nodes release the sync gate and before the
+  restore that re-holds it: on the guest's own unsynced chains the gate re-stops the proxy every
+  30 to 45 seconds, and a leg that restarted it lost the P2Pool restore to that cycle
+  ([#2733](https://github.com/p2pool-starter-stack/pithead/issues/2733)). Before the actuation and
+  again before either normal or fallback P2Pool restore confirmation, it waits up to 300 seconds
+  for the gate to read released with the proxy running in two consecutive samples. Each guest read
+  is capped by the remaining deadline, and a late result cannot confirm readiness. It then invokes the controller's
   existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
-  the same process before the unsynced controller can return it to P2Pool. This bounded injection
+  the same process. This bounded injection
   proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
   until their chains sync. Each of its verdicts is a counted row in the phase's own summary and none of
   them aborts it: a controller that cannot move the live route is one RED row, and the rows after it still
-  run ([#2321](https://github.com/p2pool-starter-stack/pithead/issues/2321)). The leg restores P2Pool and
-  stops the proxy again on every path, including the ones that bail mid-transition.
+  run ([#2321](https://github.com/p2pool-starter-stack/pithead/issues/2321)). A failed transition
+  attempts a fallback P2Pool restore only after the gate prerequisite passes; a held gate or an
+  unconfirmed route is a counted failure. The leg never starts or stops the proxy: the gate owns it.
+  The state, TCP and log diagnostics are read-only too. Without an applied reserved-node approval
+  the leg does not run, and says so in one red row.
   Before the successful attempt, an
-  unreachable remote node must be refused by preflight with its safe form values retained; a
-  separate injected post-validation setup fault must open a recoverable failed page and retry
-  with those values. The successful wizard submission names the appliance `fixture-box`; the
+  unreachable remote node must be refused by preflight with its safe form values retained, and
+  a name resolving only to the bench's reserved node's private address must be accepted and
+  pinned to that resolved address, not the name (#2351; skipped, missing, without a reserved
+  node configured). Because a configuration preview lists only changed values, the later
+  reserved-node preview checks (`endpoint_shown` in `tests/os/preview-endpoint.sh`) count an
+  endpoint as shown when the preview lists it, or when the live config already uses that host and
+  the chain is or becomes remote; this covers the host the by-name leg leaves in place. A separate injected post-validation setup fault must open a recoverable
+  failed page and retry with those values. The successful wizard submission names the appliance
+  `fixture-box`; the
   running kernel, rendered dashboard address, served certificate and active mDNS service must all
   agree on that identity. The guest carries an unrouted documentation-range global IPv6 address
   and a ULA before submit; after provisioning, the pinned site, LAN v4 and ULA binds/listeners,
@@ -131,11 +254,36 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   doctor output, a capped/redacted p2pool log tail and the wallet-log refusal, then an encrypted
   backup; the stack and dashboard must answer again after the backup. Doctor must still return
   every structured row as an applied diagnostic when its own exit is nonzero with monerod
-  deliberately stopped. A day-two `fixture-next` hostname preview must require typed `APPLY` and
+  deliberately stopped. After the first live config read, the authenticated dashboard must
+  serve a non-empty `/static/config/configversion.mjs` containing the newer-config warning
+  and its flag, without the removed config-version label (#3239). An unreadable asset fails
+  as unexercised; old and new module fixtures cover the verdict in the config-approval
+  leg’s self-test. A day-two `fixture-next` hostname preview must require typed `APPLY` and
   leave the kernel name, mDNS activation, certificate and live config byte-for-byte unchanged
   when it is omitted. A confirmed change must apply and audit without a second approver; the
   changed kernel, dashboard, certificate and mDNS identity must survive both the unaided reboot
-  and closing A/B migration update. A dashboard-password edit remains physical-presence-only.
+  and closing A/B migration update. A dashboard-password edit commits through the panel behind
+  typed `APPLY` and the approval envelope, after its preview names the lockout and console-login
+  costs; the new login must read the dashboard, and the fixture password is restored the same way.
+  The shared dashboard control poller records POST and poll metadata on stderr: timestamp, route,
+  curl exit code, HTTP status, response size, JSON/error presence, UUID and allowlisted result
+  status. A refused or untrackable POST and an exhausted deadline also capture the guest control
+  unit's state, restart/exit counters and queued/claimed request counts, with the existing
+  20-second SSH probe deadline (`SSH_PROBE_TIMEOUT` overrides it). Correlate these with the
+  runner's per-boot guest journals and control timeline before attributing a missing preview to
+  the guest or the harness. Request bodies, free-text errors, preview values and credentials are
+  excluded; diagnostic output never substitutes for the preview or typed approval assertions.
+  The day-two Tari-mode prerequisite records a read-only Caddy baseline snapshot, and another
+  if its existing config-read retries fail, before later reboots replace the evidence (#3001).
+  The snapshot includes container running/restarting/OOM/exit state, the last 40 daemon log
+  lines classified by allowlisted error phrases and Caddyfile line numbers, and the first 200
+  configuration lines represented only by directive names and token counts. Config reads stop
+  at 64 KiB, as does each Podman capture; truncation and unavailable probes are explicit. Both
+  Podman probes have a four-second
+  deadline inside the normal 20-second SSH probe deadline. Auth entries, config operands,
+  arbitrary error text and local topology are excluded. An unclassified log line retains only
+  its level and byte count; this snapshot does not establish an original cause or repair.
+  The unreadable-config verdict and switching assertions remain binding.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
   no queued or claimed request and reds the row if it never drains, keeping the harness's phase
   boundary deterministic. Apply does not stop an in-flight runner (#2363). Then the
@@ -146,11 +294,25 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   until the slot commits, then start, with the pending marker consumed. Tari is then stopped on the
   committed slot (`appliance-chain-fault-leg.sh`, #2588): `pithead status`, `pithead doctor` and
   the dashboard's `Tari DOWN` badge must report it, and `./pithead up` must bring all three back.
+  The badge must stay absent before the running dashboard's `TARI_NODE_DOWN_AFTER_SEC`
+  debounce (900 seconds when unset) and appear within that debounce plus 180 seconds.
+  Clock readings require successful numeric output; a failed initial clock refuses injection,
+  and a failed or backward clock during polling fails timing and proceeds to recovery.
+  The negative control requires a readable pre-debounce sample. Up to three consecutive
+  unreadable samples are tolerated; a readable sample resets that count. An early `Tari DOWN`
+  badge fails immediately and proceeds to recovery. A fourth consecutive unreadable sample
+  or no readable pre-debounce observation fails separately. Failure messages record elapsed
+  seconds and the badge verdict or read error, without dumping the full dashboard state. Unreadable, invalid or out-of-range debounce
+  settings (the test accepts 1–3600 seconds) fail before fault injection; the guest policy
+  is never shortened.
   After it, the floor-fallback leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating
   bundle stamped with a version no release carries. Its copied build tree opts into the
   harness-only synthetic compose path, names its compose file explicitly, uses the resolved
   signing material, and records the file hash in `COMPOSE_SOURCE`, so the build does not need a
-  git origin or a local dev-key directory. The
+  git origin or a local dev-key directory. Its stamped bundle, its build log and the stamped
+  `pithead-os-rootfs-<marker>` image tag its build creates live inside the leg's own temp
+  directory, and the leg removes them all when it ends — success or failure — because nothing
+  the leg writes on the host may outlive the job (#3299). The
   resulting slot cannot bring the stack up and falls back uncommitted: the
   previous slot's boot must put the `/data` floor back from the record the raise left, and the same
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
@@ -171,8 +333,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   exactly like a coordinator. (Uncommitted fallback is the update phase's to prove: a
   provisioned rig commits the moment its miner is up, so the uncommitted window closes by
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
-  everything except this. The reboot leg proves a CLEAN return; a power-cut leg (M13's rig half,
-  #2067) then destroys the guest mid-mining and asserts the same "mining unaided" fact off a real
+  everything except this. The reboot leg applies `max_temp_c` through the control path, waits
+  for that change's provenance on the timer-refreshed feed, then checks the value and unchanged
+  revision/change ID after reboot. Feed reads retry up to 12 times, five seconds apart; missing
+  provenance fails the leg. A power-cut leg (M13's rig half, #2067) then destroys the guest
+  mid-mining and asserts the same "mining unaided" fact off a real
   `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063) closes
   with the one thing every other row here cannot show: an ACCEPTED share. It boots a second,
   concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
@@ -180,6 +345,16 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
   the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
   counts it a `missing` leg skip, the same env vars the `stack` phase needs.
+  Before the shares are polled the leg asserts the M11 hashrate floor (#3996): the rig's own
+  RigForge feed must report a nonzero hashrate (`rig_share_hashrate_wait`). The M12 adopt leg
+  (#3069, backported here in #3994) then runs (`tests/os/rig-adopt-leg.sh`): it enables the
+  coordinator's control channel, previews and commits an adoption with typed `APPLY`, polls
+  until the worker reads adopted with a reachable API, pushes one reversible `watchdog_interval_min`
+  change to `applied` by its exact `change_id` — never `DONATION`: the rig mines to the
+  coordinator's stratum during this leg, and the only probe from a fleet-standard `DONATION` 0 is
+  upward, which donates the dev fee to XMRig (#4184) —, checks the pools sha256 unchanged, restores the
+  original value, and proves the unpinned bench host still cannot reach the control port;
+  `selftest-rig-adopt.sh` covers those paths without a guest.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -188,24 +363,75 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   bootloader path (#1318) and is not this leg's job.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
-  reboots. Asserts the exact diff appears on the console (the changed wallet address in full, a
+  reboots. The wallet the stick changes to is the named throwaway `MEDIA_WALLET_ALT` — the same
+  never-fundable key the v1.20.0 restore fixture derives from its public seed, because the stick
+  needs a second primary address; the starting payouts are the owner's public wallets. Asserts the exact diff appears on the console (the changed wallet address in full, read
+  directly from the serial file so an early match cannot be lost to a broken pipe, a
   changed secret only named, never shown), the countdown applies the change, the changed setting
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
-  the stick mid-countdown cancels the change instead.
+  the stick mid-countdown cancels the change instead. Each removable-stick fixture must finish
+  partitioning, formatting, mounting, configuration writing and cleanup before guest attachment.
+  Partition readiness is limited to 50 polls at 0.1 seconds; partitioning, loop attachment,
+  formatting, mounting and cleanup probes use a 10-second timeout with a 5-second kill grace.
+  Construction or attachment failure ends the phase before reboot or product assertions for that
+  leg. Cleanup verifies the loop backing path and mount source, uses ordinary unmount and removes
+  only the empty temporary directory; unknown ownership or failed unmount retains resources.
+  `selftest-media-fixture.sh` exercises delayed and missing partitions, construction failures,
+  cleanup refusal and both callers without a guest or root privileges.
 - **fault** — power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is
   disqualifying. A closing leg (the #1029 class, #2067) boots a FRESH guest and destroys it while
   its very first boot is loading the baked container images from the archive — the interrupted
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
-- **reset** — the shell-less box's last resort, never before run against a real disk. Leg 0 runs
-  the cheap tier first, on the same provisioned guest: `pithead config-reset -y` must clear
+  Fault E (#4038) runs `recovery-bundle` on the fault guest with no container running and a
+  deliberately failed pithead unit and a dummy unit installed at run time; the archive is a zip taken with
+  `--since` and `--until`, mode 600 under `/data/pithead/support-bundles`, and must hold the failed unit's
+  journal line with its seeded `--rpc-login` redacted and no copy of the value anywhere in the archive, the dummy unit's file, the whole-journal, kernel and boot-list files and a manifest with
+  the journal facts; its path must appear on the serial console, which also records how many quadlet
+  container units carried journal lines.
+- **reset** — first, boot the real **Set up again** menu entry on a provisioned coordinator
+  with local chains and the non-default nano pool. Each setup-again session separately checks
+  the current boot journal for a minted token, the new-boot serial slice and tty1 text from
+  `/dev/vcs1`. `wizard-console-leg.sh` restarts both gettys during a paused direct announcement
+  and requires the current URL and token before releasing it; disabling issue publication is
+  its negative control. Bounded console captures and getty properties are retained between `BEGIN setup-console`
+  and `END setup-console` markers in the collected rig log.
+  `selftest-wizard-console.sh` checks publication, replacement, cleanup and failed verdicts.
+  The authenticated wizard must name the saved `pithead` role and prefill its answers with
+  secrets blank. POST **Keep it** through the wizard;
+  require the original dashboard login, unchanged configuration and host identity, both chain
+  sentinels, resumed Monero height and the same onion address. Boot the entry again and submit
+  the served config; require the credentials card's login and the same chains and identity.
+  Both returns poll for successful setup completion, HTTP 200 with the dashboard's
+  `sync.monero` state object, and resumed height. A timeout reports the stage, height verdict,
+  HTTP status, curl exit and setup verdict without response bodies or credentials.
+  `coordinator-setup-again-leg.sh` implements this leg; `selftest-coordinator-setup-again.sh`
+  uses the generated dashboard response fixture and drives failure controls without a guest.
+  `selftest-confirmed-setup.sh` drives the real installed wizard and setup functions with host
+  effects stubbed: accepted forms re-provision, Keep it and rejected forms do not, provisioning
+  errors reach the retry path, restored browser submissions skip the new-node preflight,
+  and direct headless setup still refuses a deployed machine.
+  Saved-answer comparisons exclude the read-only `config_version` host stamp, which the wizard
+  omits. The selftest runs the sanitizing query against a stamped config with populated secrets;
+  a prefill failure reports only fixed shape verdicts and a changed-answer count.
+  Leg 0 then runs the cheap reset tier on the same provisioned guest: `pithead config-reset -y` must clear
   `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
   while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every
   data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
   and requiring the monero chain directory to survive, monerod's height to resume at or past its
   pre-reset value (no resync), and the Tor onion address, read from the hidden-service hostname
-  file rather than `.env`, to come back byte-for-byte unchanged. Leg 1 is the deep tier: the real
+  file rather than `.env`, to come back byte-for-byte unchanged. The following reset-slot leg
+  reboots through the real health gate on A, installs a v2 bundle with `pithead os-update`,
+  and requires committed primary B with A still good. It takes an encrypted backup and tests
+  three config-reset rounds: wizard setup, CLI `restore -y` plus `up`, and a reboot with setup
+  still open before finishing setup. Before each normal reboot, provisioning must settle
+  successfully, the rendered environment must exist, and status and doctor must pass;
+  old containers answering during wizard handoff do not establish readiness. Every reset boot
+  and final normal reboot must remain B|v2 with A good and ORDER="B A". Fallback stays red and is re-armed before the next round.
+  The leg adds about 60 minutes to RC gate job 3b (reset,stack); a missing precondition is a
+  counted missing leg, never proof. Update leg 1 separately requires the fresh spare B to
+  remain uncommitted while its setup page serves. Leg 1 is the deep tier: the real
   `pithead factory-reset -y`, which arms the `pithead-reset` marker on the ESP and reboots; assert
   it comes back to the wizard with the provisioned config and old container images gone, the
   seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep
@@ -296,6 +522,16 @@ by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig 
 `--phase rig` prints that row alone, and `--phase provision` prints only the reserved-node row,
 and only on a credentialed bench.
 
+`--require-complete` (#3996) turns `missing` into failure material: the release rig/rigmedia/media
+split is submitted with it (`options.require_complete`, `docs/dev/releasing.md`; bench-ci appends
+the flag to each phase of that split), and the run then prints a failed row and exits non-zero when
+any row skipped for a missing input, so the accepted-share row can never pass as a skip on the job
+that gates a release. Until bench-ci#2480 puts `node` on the tier4-kvm harness host, the rig
+phase's #1867 card-render row is itself one of those missing skips, so that split fails closed on
+it by design. `by-design` and `covered` skips stay accepted — the flag asks one question: did the
+job get every input it said it would run with? The verdict is the pure `require_complete_verdict`
+in `tests/os/require-complete-verdict.sh`, covered by `selftest-require-complete.sh`.
+
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer
 is not a matter of taste: **could a different invocation of this same harness against this same
@@ -318,6 +554,18 @@ box have covered it?**
 This is distinct from the remote-node row below, where a missing input stays a counted
 **failure**: the classes are for rows the configuration excludes, never for inputs the bench
 forgot.
+
+Guests that reach real nodes can mine on mainnet, so every guest configured by the battery pays
+the wallets in `PITHEAD_OS_PAYOUT_MONERO` and `PITHEAD_OS_PAYOUT_TARI` (the test host supplies the
+owner's addresses); without them the harness uses its labelled throwaway addresses. The run
+refuses before any guest exists when `PITHEAD_OS_MONERO_NODE_HOST` or `PITHEAD_OS_TARI_NODE_HOST` is
+set and either payout variable is empty, naming the variable and never a value. The media guest
+never reaches a chain node, so its sticks use their own labelled throwaway addresses rather than
+the payouts. The v1.20.0 restore fixture (`tests/os/fixtures/v1.20.0`) deliberately restores a
+throwaway identity and a fixture donor id on a guest whose node hosts are the unreachable fixture
+address, so it never mines; the restore leg asserts that host is unchanged after the restore. XvB keeps its default
+`xvb.donor_id` of `auto`, the first 8 characters of that Monero address, so XvB hash is the
+owner's; `selftest-owner-payouts.sh` fails if any guest config sets the donor id explicitly.
 
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
@@ -346,6 +594,15 @@ runtime predicate as a bounded reason, and allowlisted Monero/Tari RPC and sync 
 guest's existing authenticated dashboard clients. Those readiness fields are diagnostic only: the
 current-process `uses chain_id` handshake remains the pass assertion.
 
+The `stack` phase's lifecycle reset-restore leg also restores while firstboot is starting.
+After the ordinary open-page restore, it resets again and restarts the guest's firstboot
+service with a temporary test wrapper. The wrapper pauses console announcement after the
+entry check and before round opening; the real encrypted CLI restore lands configuration
+before startup resumes. The leg requires successful firstboot exit, removal of the wizard,
+free HTTP/HTTPS ports before `up`, a stable Caddy and a dashboard response. It removes the
+runtime service override afterwards. `selftest-wizard-startup.sh` covers startup, round
+preparation, retained retry configuration and installer behavior without a guest.
+
 ## Static verification
 
 `tests/os/verify-image.sh` is the cheapest gate and runs without KVM — it mounts a built image
@@ -360,19 +617,84 @@ sudo tests/os/verify-image.sh os/rauc/build/system.img --test   # harness build:
 
 ## Soak probe
 
-`tests/os/soak-probe.sh HOST LOGDIR [--start]` is the 7-day unattended soak's daily reader
-(#1652): one non-interactive, read-only SSH session whose remote command is fixed in the script,
-one line per day appended to `LOGDIR/soak.log`, scored against the pass condition ruled on the
-issue (one boot, restart counts and start times flat, every container running and — except
-`xmrig-proxy`, #1098 — healthy, exactly the probe's own login since the previous read). Each
-read records the journal cursor it reached in `LOGDIR/ssh.cursor`, and the next read counts logins
-from there, so nothing falls between two days and nothing is counted twice; a count of 0 fails
-naming the instrument, since the probe's own login must be there. `--start` writes the day-0
-baseline — its own line reads `window=25h` and carries a rule-4 FAIL from the setup logins, so day
-0 is the baseline, not a soak day. Only `--start` writes `day0.env`; a cron read never does, so a
-restart in the window's first hours can never be absorbed into the baseline it is scored against.
-Every line carries `read=N`, its `soak.log` line number, because the first cron read lands under
-24 h after `--start` and shares `day=0` with the baseline line; each run's raw readings are kept as
-`LOGDIR/readN.env`. `--self-test` proves the verdict over canned readings, then drives the script
-three times through a stubbed `ssh` to prove the baseline survives a cron read, without a box. Run
-it from a cron line on the build host, never from a resident session.
+`tests/os/soak-probe.sh HOST LOGDIR [--start|--read]` is the 7-day unattended soak's daily
+reader (#1652). It streams `tests/os/soak-read.sh` in one non-interactive, read-only SSH
+session. Keep `soak-probe.sh`, `soak-read.sh`, `soak-record.sh` and `soak-selftest.sh` together
+with `soak-local.py` when copying the probe into the test kit. Run the local probe on
+Linux or macOS with Bash 3.2 or newer, Python 3 and jq. GNU coreutils are not required
+on the workstation: Python handles UTC timestamps, SHA-256, base64 decoding and the
+180-second SSH timeout. The streamed collector still runs on the Linux appliance.
+The self-test also reads
+`dashboard/mining_dashboard/helper/http.py`; preserve all six repository-relative paths
+in copied kits (the four shell scripts and Python helper under `tests/os/`) to exercise the real bounded HTTP helper. Nothing is installed in the guest.
+
+Run `--self-test`, then `HOST LOGDIR --read` before opening the window. `--read` saves
+`read.env` and `read.firewall.json` locally without creating a baseline or counting a soak day.
+The KVM `provision` phase exercises this mode on its disposable provisioned appliance. Its
+assertion requires measured memory and an egress table, plus every optional reading present
+as a number or `?`; it does not prove seven days of mining. Run the scheduled daily probe
+from the build host, never from a resident session.
+
+Open day 0 with `--start` only after both chains are synced and no migration is pending,
+as required by the kit's pre-soak step. `--start` refuses an absent or unreadable egress
+table, or a live Monero/Tari first-sync clearnet exemption. An unreadable exemption check
+also refuses the start. It preserves the attempted reading in `refused-start.env` and
+writes no new baseline or start marker. The steady Tor-first rules must be present first.
+A new `--start` opens a new window and resets the sampled memory maximum.
+
+Each daily read appends one line to `LOGDIR/soak.log`, scored against these rules:
+
+1. One boot: boot time and journal-directory count agree with day 0.
+2. Container restart counts and start times remain flat.
+3. Every day-0 container runs and is healthy, except `xmrig-proxy` health (#1098).
+4. Exactly the probe's own SSH login occurred since the previous read; no interactive
+   sessions occurred. Each read saves its journal cursor in `ssh.cursor`. The next read
+   counts from that cursor, so no login falls between two reads or gets counted twice.
+   A count of 0 fails because the probe's own login is the instrument's positive control.
+5. Chain state, resources and useful mining are recorded, without gating the soak.
+6. The `inet pithead_egress` table is present and its stateless ruleset hash equals day 0.
+   An absent table, an unreadable listing or hash, or a changed hash fails.
+
+The owner approved rule 6 and the sampled-memory definition on 2026-10-06. The firewall
+collector checks `nft list tables`, then reads `nft -s -j list table inet pithead_egress`.
+It hashes sorted-key JSON with SHA-256, excluding nft metadata, object handles and dynamic
+set elements. Counters are omitted by `-s`. Static set elements and dynamic set definitions
+remain in the hash. This proves sampled policy stability, not continuous enforcement or
+packet delivery between reads. A missing daily line or a failed SSH read fails the soak.
+The probe compares recorded UTC sample dates, including failed SSH attempts, to detect
+skipped dates. It records their count as `missing_days` and fails that read with
+`schedule:missing-days(N)`. A retry on the same UTC date preserves the gap; the next daily
+sample can resume normal scoring. Unreadable or backwards timestamps record `?` and fail
+the schedule check. Keep every day's line when assessing the whole soak window.
+
+`--start` writes `day0.env`, `day0.firewall.json` and the start marker. Its own login count
+uses the preceding 25 hours, so setup logins can make its rule-4 verdict fail: day 0 is the
+baseline, not a soak day. Only `--start` writes the baseline; a cron read never does.
+Every line carries `read=N`, its `soak.log` line number, because a read under 24 hours after
+`--start` can share `day=0`. Read numbers identify records; recorded time determines daily
+continuity. Each successful reading and its derived values are kept in `readN.env`, with
+`sample_epoch` captured before SSH so the log timestamp and rate interval use the same clock.
+On a rule-6 failure, `readN.firewall-baseline.json` and `readN.firewall-current.json` retain
+both stateless listings beside that reading. An unavailable current listing is `?`.
+These files contain local topology: keep them private. They and the logs use owner-only
+permissions; neither firewall listings nor credentials appear in the daily summary.
+
+The recorded readings are:
+
+| Reading | Instrument and interpretation |
+|---|---|
+| Memory and swap | `/proc/meminfo` MemTotal, MemAvailable, SwapTotal and SwapFree, in KiB. Used memory is MemTotal minus MemAvailable. `mem_sampled_max_kib` is the maximum across sampled reads since day 0, retained across missing samples; it cannot measure peaks between reads. |
+| Container resources | `podman stats --no-stream --format`, container name, memory usage/limit and CPU percent. |
+| Chain size and growth | `du -sx -B1M` on the configured Monero/Tari directories resolved under `/data`, allocated MiB on that filesystem. Growth is the difference from the previous successful read when its recorded UTC date is the same or the preceding date and there is no recorded gap; MiB/day uses elapsed sample seconds. Day 0 has no rate. Missing readings, a failed SSH predecessor, or a skipped UTC date give `?` for both chains' growth and rate. With samples on days 0/1/3/4, day 3 records one missing day and unavailable growth/rate; day 4 resumes from day 3. Same-day retries cannot clear the gap. Negative growth remains visible. |
+| Tari height | The local node's `GetTipInfo` through the dashboard's installed gRPC client. Remote/off Tari and unreadable readiness give `?`. |
+| Useful mining | P2Pool local data-api 15-minute hashrate, cumulative shares found/failed and pool sidechain height; xmrig-proxy summary connected miners and accepted/rejected work counters. No worker identities are recorded. Proxy HTTP reads use the dashboard's bounded helper (1 MiB response cap, five-second timeout); oversized replies leave proxy readings `?`. |
+| Privacy route | Egress presence/hash and Tor's cookie-authenticated bootstrap healthcheck. A successful check records 100%; incomplete progress is recorded when reported; unavailable progress is `?`. |
+
+Every missing recorded value appears as `?` in the reading and summary. Missing daily
+samples and failed SSH reads fail independently of rules 1–6; missing optional readings
+do not gate the soak. `--self-test`
+uses canned readings, pure instrument parsers and stubbed SSH to prove these contracts,
+including clock-advanced missing-day recovery, failed SSH recovery, refusal to start with
+a sync exemption and retention of mismatch evidence. Linux CI runs it through the
+shell suite; the Shell workflow also runs it on `macos-latest` with system Bash 3.2
+and Homebrew Bash, keeping GNU utilities off PATH.

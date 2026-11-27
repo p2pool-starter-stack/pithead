@@ -1,7 +1,8 @@
 // Stack topology (#170, trust-boundary view). A data-driven SVG of the whole stack: every component
 // is a node, every connection an edge coloured by the route the server derived from live config
-// (service/egress.py · compute_topology). Tor = green; clearnet = red and lands on the `internet`
-// node so a leak visibly BYPASSES the Tor hub; incoming = purple; LAN = blue; unverified = amber;
+// (service/network/topology.py · compute_topology). Tor = green; clearnet = red and lands on the
+// `internet` node so a leak visibly BYPASSES the Tor hub; incoming = purple; LAN = blue;
+// unverified = amber;
 // local = grey. LAN and unverified exist because a node reached at a private address is not a leak
 // and a node named by hostname cannot be judged without a DNS lookup we refuse to make (#1350). The P2P daemons get a double arrow
 // (egress + onion ingress). The internal host-only mesh is hidden until expanded, so the default

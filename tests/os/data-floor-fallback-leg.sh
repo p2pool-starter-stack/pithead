@@ -1,4 +1,6 @@
 # shellcheck shell=bash
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 #
 # The /data-floor fallback leg (#1672 — tier 4 for #1393). Sourced by tests/os/run.sh and run at the
 # end of phase_provision, on the guest the migration leg just left committed: floor = this
@@ -34,6 +36,7 @@
 . "$SCRIPT_DIR/../../os/rauc/populate-slot.sh"
 
 FLOOR_FALLBACK_VERSION=99.0.0
+FLOOR_LEG_TMP=""
 
 # $1 marker, $2 stamped version, $3 minimum_os_version -> prints the bundle path (outside
 # os/rauc/build, so _build_bundle's `find | head -1` in a later phase can never pick it up).
@@ -43,8 +46,9 @@ _build_bundle_stamped() {
     cert="$(cd "$(dirname "$RAUC_CERT")" && pwd -P)/$(basename "$RAUC_CERT")" || return 1
     key="$(cd "$(dirname "$RAUC_KEY")" && pwd -P)/$(basename "$RAUC_KEY")" || return 1
     keyring="$(cd "$(dirname "$RAUC_KEYRING")" && pwd -P)/$(basename "$RAUC_KEYRING")" || return 1
-    wt=$(mktemp -d /tmp/pithead-floor-fallback.XXXXXX) || return 1
-    out=/tmp/os-floor-fallback-$marker.raucb
+    mkdir -p "$HOST_SCRATCH" || return 1
+    wt=$(mktemp -d "$HOST_SCRATCH/floor-fallback.XXXXXX") || return 1
+    out="${FLOOR_LEG_TMP:-$HOST_SCRATCH}/os-floor-fallback-$marker.raucb"
     {
         git archive HEAD | tar -x -C "$wt" &&
             printf '%s\n' "$version" >"$wt/VERSION" &&
@@ -58,9 +62,10 @@ _build_bundle_stamped() {
                         os/rauc/mkbundle.sh --dev
             ) &&
             cp "$wt/os/rauc/build/update.raucb" "$out"
-    } >>/tmp/os-fault-bundle.log 2>&1
+    } >>"${FLOOR_LEG_TMP:-$HOST_SCRATCH}/build.log" 2>&1
     local rc=$?
     rm -rf "$wt"
+    docker rmi "pithead-os-rootfs-$marker" >/dev/null 2>&1 || true
     [ "$rc" = 0 ] || return 1
     printf '%s' "$out"
 }
@@ -70,33 +75,57 @@ _floor_state() {
     _ssh "cd /data/pithead && printf '%s|%s|%s' \"\$(cat .os-data-floor 2>/dev/null)\" \"\$(cat .os-data-floor.prev 2>/dev/null)\" \"\$(cat .os-migration-pending 2>/dev/null)\"" 2>/dev/null | tr -d ' \r\n'
 }
 
-# Reboot into the just-installed slot and wait until the guest is back on the slot carrying marker
-# $1 with its boot gate PASSED (the commit line in this boot's journal). The reboot is OBSERVED
-# before anything is polled (#1651): the boot that issued it still carries marker $1 and a
-# committed line in its own journal, so a probe it answered while shutting down satisfied the
-# predicate off the OLD boot — and `-b -1` in the caller then named the wrong boot. SSH answers
-# on the failing slot too, while it loads images and tries to bring the stack up, so the marker
-# is what tells the two apart. $2 = seconds: a failed `up` reboots within minutes, a gate that
-# loops 90 rounds takes ~15 min, and the fallback boot then re-loads images — allow for all three.
+# Reboot into the just-installed slot and wait for a nonempty marker OTHER than $1 (the
+# failing bundle's literal marker), with its boot gate PASSED (the commit line in this boot's
+# journal). The previous slot can carry v1 or vmig, depending on earlier legs' slot history.
+# Observe a new boot before polling (#1651): the old boot already has a different marker and
+# a commit line, so a probe answered while shutting down must not satisfy the predicate.
+# SSH answers on the failing slot too, so neither a different marker nor a commit alone is
+# sufficient. $2 = seconds: allow for the failing boot's gate and the fallback's image reload.
 _floor_fallback_wait() {
-    local deadline=$(($(date +%s) + $2)) got
+    local deadline=$(($(date +%s) + $2)) got marker committed
     _reboot_wait reboot "$2" || return 1
     while [ "$(date +%s)" -lt "$deadline" ]; do
         got=$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker 2>/dev/null; journalctl -u pithead-boot -b 2>/dev/null | grep -c 'booted slot committed'" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
-        case "$got" in "$1 "[1-9]*) return 0 ;; esac
+        read -r marker committed <<<"$got"
+        if [ -n "$marker" ] && [ "$marker" != "$1" ]; then
+            case "$committed" in [1-9]*) return 0 ;; esac
+        fi
         sleep 15
     done
     return 1
 }
 
-# Install $1 through the real os-update path; prints its output, returns its rc.
+# Stage $1 on the guest. A failure here is an environment/transport fault and os-update is never
+# invoked (#3049): the old shape mapped it to a synthetic rc 99 and reported "os-update failed".
+# Prints the evidence and returns 1; the caller turns that into its own row.
+_floor_stage() {
+    local rc STAGE_ERR="$SERIAL.stage-error"
+    : >"$STAGE_ERR"
+    _stage_bundle "$1"
+    rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    staging_failure_evidence "$rc" "$1"
+    return 1
+}
+
+# Install the staged bundle through the real os-update path; prints its output, returns its rc.
 _floor_os_update() {
-    _stage_bundle "$1" || return 99
     _ssh "cd /data/pithead && ./pithead os-update /data/update.bundle --yes 2>&1"
 }
 
-phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration bundle at VERSION
-    local good_bundle="$1" vfail="$FLOOR_FALLBACK_VERSION" floor0 bundle out rc state
+_floor_target_slot() {
+    local booted
+    booted=$(_ssh "cat /proc/cmdline" | tr ' ' '\n' | sed -n 's/^rauc\.slot=\([AB]\)$/\1/p' | tr -d '\r') || return 1
+    case "$booted" in
+    A) printf B ;;
+    B) printf A ;;
+    *) return 1 ;;
+    esac
+}
+
+_floor_fallback_leg_body() {
+    local good_bundle="$1" vfail="$FLOOR_FALLBACK_VERSION" floor0 bundle out rc state target_slot stamp want_stamp
     info "floor-fallback leg — a data_migration update that fails its gate must give the /data floor back (#1393)"
     floor0=$(_ssh "cat /data/pithead/.os-data-floor 2>/dev/null" | tr -d ' \r\n')
     if [ -z "$floor0" ]; then
@@ -105,14 +134,22 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     fi
     ok "floor before the failing update: $floor0"
     bundle=$(_build_bundle_stamped vfail "$vfail" "$vfail") || {
-        bundle_build_evidence
-        bad "the $vfail migration bundle build failed — read the build output above (/tmp/os-fault-bundle.log)"
+        bundle_build_evidence "$FLOOR_LEG_TMP/build.log"
+        bad "the $vfail migration bundle build failed — read the build output above"
         return
     }
     ok "built a data_migration bundle stamped $vfail (floor $vfail): $(basename "$bundle")"
 
     # ---- positive case: record present -> the fallback boot restores the floor ----
-    out=$(_floor_os_update "$bundle")
+    _floor_stage "$bundle" || {
+        bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
+        return
+    }
+    target_slot=$(_floor_target_slot) || {
+        bad "could not determine the spare slot before the failing update"
+        return
+    }
+    out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -ne 0 ]; then
         osupdate_failure_evidence "$rc" "$out"
@@ -122,16 +159,16 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     # Issue step 2, taken BEFORE any boot: the raise armed the floor at the failed bundle's
     # minimum and left the record beside it; the marker names the bundle.
     state=$(_floor_state)
-    if [ "$state" = "$vfail|$floor0|$vfail" ]; then
-        ok "install raised the floor to $vfail and recorded $floor0 beside it (marker $vfail)"
+    if [ "$state" = "$vfail|$floor0|$vfail|$target_slot" ]; then
+        ok "install raised the floor to $vfail and recorded $floor0 beside it (marker $vfail|$target_slot)"
     else
-        bad "after the install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail'"
+        bad "after the install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail|$target_slot'"
         return
     fi
-    if _floor_fallback_wait vmig 1800; then
+    if _floor_fallback_wait vfail 1800; then
         ok "the $vfail slot never committed — the guest is back on the previous slot with its gate passed"
     else
-        bad "the guest did not come back on the previous slot with a passed gate within 30 min (marker/journal: '$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker; journalctl -u pithead-boot -b | tail -3" 2>/dev/null | tr '\n' ' ')')"
+        bad "the guest did not come back on the previous slot with a passed gate within 30 min (marker/journal: '$(SSH_TIMEOUT=20 _ssh "cat /etc/pithead-test-marker; journalctl -u pithead-boot -b | tail -3" 2>/dev/null | os_redact_addr | tr '\n' ' ')')"
         return
     fi
     # The mechanism, from the failed boot's own journal (-b -1: the boot between the migration
@@ -152,19 +189,38 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     else
         bad "no 'floor is back to $floor0' line in the fallback boot's journal"
     fi
+    stamp=$(_ssh "jq -r .config_version /data/pithead/config.json" 2>/dev/null | tr -d ' \r\n')
+    want_stamp=$(sed 's/[-+].*//' VERSION | tr -d '[:space:]')
+    if [ "$stamp" = "$want_stamp" ]; then
+        ok "the failed $vfail slot left config_version at $want_stamp (#3910)"
+    else
+        bad "after the fallback config_version = '$stamp', want '$want_stamp' (#3910)"
+    fi
     # Issue step 3's last clause: a bundle at the restored floor installs again. Before the restore
     # this same install was below a $vfail floor — the negative case below proves that refusal.
-    out=$(_floor_os_update "$good_bundle")
+    _floor_stage "$good_bundle" || {
+        bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
+        return
+    }
+    out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "a bundle at the restored floor ($floor0) installs again through os-update"
     else
-        bad "os-update refused a bundle at the restored floor $floor0 (rc $rc): $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"
+        bad "os-update refused a bundle at the restored floor $floor0 (rc $rc): $(printf '%s' "$out" | os_redact_addr | tail -2 | tr '\n' ' ')"
     fi
 
     # ---- negative control: record deleted before the fallback boot -> the floor stays ----
     info "negative control — the same failed update with the record deleted must leave the floor alone"
-    out=$(_floor_os_update "$bundle")
+    _floor_stage "$bundle" || {
+        bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
+        return
+    }
+    target_slot=$(_floor_target_slot) || {
+        bad "could not determine the spare slot before the failing update"
+        return
+    }
+    out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -ne 0 ]; then
         osupdate_failure_evidence "$rc" "$out"
@@ -172,14 +228,14 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
         return
     fi
     state=$(_floor_state)
-    if [ "$state" = "$vfail|$floor0|$vfail" ]; then
-        ok "second install armed the same state (floor $vfail, record $floor0, marker $vfail)"
+    if [ "$state" = "$vfail|$floor0|$vfail|$target_slot" ]; then
+        ok "second install armed the same state (floor $vfail, record $floor0, marker $vfail|$target_slot)"
     else
-        bad "after the second install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail'"
+        bad "after the second install, floor|prev|marker = '$state', want '$vfail|$floor0|$vfail|$target_slot'"
         return
     fi
     _ssh "rm -f /data/pithead/.os-data-floor.prev"
-    if _floor_fallback_wait vmig 1800; then
+    if _floor_fallback_wait vfail 1800; then
         ok "the $vfail slot never committed again — back on the previous slot"
     else
         bad "the guest did not come back on the previous slot within 30 min (second fallback)"
@@ -199,16 +255,36 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     fi
     # The guard's honest refusal (#1393 part 3): floor above the running version, bundle below the
     # floor — names the failed-update premise and the open route, never a reset or a restore.
-    out=$(_floor_os_update "$good_bundle")
+    _floor_stage "$good_bundle" || {
+        bad "bundle staging failed (environment/transport fault, os-update not run) — read the evidence above"
+        return
+    }
+    out=$(_floor_os_update)
     rc=$?
     if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "a migrating update to $vfail failed its gate and fell back before its migration ran"; then
         ok "os-update refuses a bundle below the stale floor with the failed-update premise"
     else
-        bad "expected a refusal naming the failed migrating update (rc $rc): $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"
+        bad "expected a refusal naming the failed migrating update (rc $rc): $(printf '%s' "$out" | os_redact_addr | tail -2 | tr '\n' ' ')"
     fi
     if printf '%s' "$out" | grep -qi 'factory.reset\|restore a\|restoring a'; then
-        bad "the refusal names a reset or a restore as the way out: $(printf '%s' "$out" | tail -1)"
+        bad "the refusal names a reset or a restore as the way out: $(printf '%s' "$out" | os_redact_addr | tail -1)"
     else
         ok "the refusal names no reset and no restore"
     fi
+}
+
+phase_provision_floor_fallback_leg() {
+    local rc=0 scratch="${HOST_SCRATCH:-${TMPDIR:-/tmp}}"
+    mkdir -p "$scratch" || {
+        bad "could not create the floor-fallback leg's scratch directory"
+        return 1
+    }
+    FLOOR_LEG_TMP=$(mktemp -d "$scratch/pithead-floor-fallback-leg.XXXXXX") || {
+        bad "could not create a temporary directory for the floor-fallback leg"
+        return 1
+    }
+    _floor_fallback_leg_body "$@" || rc=$?
+    rm -rf "$FLOOR_LEG_TMP"
+    FLOOR_LEG_TMP=""
+    return "$rc"
 }

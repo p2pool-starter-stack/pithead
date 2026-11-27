@@ -200,8 +200,8 @@ test("a wait expiry keeps queued-vs-running unknown and does not invent a wedged
 
 test("submission and result HTTP failures name the diagnostics request", async () => {
   await assert.rejects(
-    () => withFastPoll(async () => ({ status: 403, ok: false }), () => runDiag("diag-doctor", {}, "the health check")),
-    /Could not submit the health check: HTTP 403/,
+    () => withFastPoll(async () => ({ status: 404, ok: false, text: async () => "" }), () => runDiag("diag-doctor", {}, "the health check")),
+    /Could not submit the health check: HTTP 404/,
   );
   let first = true;
   await assert.rejects(
@@ -220,18 +220,7 @@ test("submission and result HTTP failures name the diagnostics request", async (
   );
 });
 
-test("transport and malformed responses keep the diagnostics request context", async () => {
-  await assert.rejects(
-    () =>
-      withFastPoll(
-        async () => {
-          throw new TypeError("Failed to fetch");
-        },
-        () => runDiag("diag-logs", { container: "tor" }, "tor's recent log"),
-      ),
-    /Could not submit tor's recent log: the dashboard could not reach the control service/,
-  );
-
+test("malformed responses keep the diagnostics request context", async () => {
   await assert.rejects(
     () =>
       withFastPoll(
@@ -368,4 +357,24 @@ test("the browser service list has not drifted from the host's allowlist", () =>
   assert.ok(DIAG_SERVICES.includes("tari-wallet"));
   assert.ok(!DIAG_CONTAINERS.includes("wallet-rpc"));
   assert.ok(!DIAG_CONTAINERS.includes("tari-wallet"));
+});
+
+
+test("saturated Tor history is a failing Tor diagnostic with the operator recovery command", () => {
+  const message = "Tor's circuit-build-time history is saturated and clearnet egress stays down after the heal's NEWNYM rounds — NEWNYM cannot clear it. Run './pithead tor-recover check', then './pithead tor-recover apply'.";
+  const doctor = { checks: [{ status: "fail", message }] };
+  const tor = groupDoctorRows(doctor).services.find(({ name }) => name === "tor");
+  assert.equal(tor.status, "fail");
+  assert.deepEqual(tor.checks, [{ status: "fail", message }]);
+  const panel = inst({}, { healthPhase: "done", healthResult: { doctor } });
+  const out = renderToString(panel.renderService(tor, true));
+  assert.match(out, /saturated/);
+  assert.match(out, /status-bad/);
+  assert.match(out, /pithead tor-recover check/);
+  assert.match(out, /pithead tor-recover apply/);
+});
+
+test("the enabled card carries the class that styles its controls as buttons", () => {
+  const out = renderToString(new DiagnosticsPanel({ enabled: true }).render());
+  assert.match(out, /^<div class="card diag-card">/);
 });

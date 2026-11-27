@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # A failed backup restore must stop later faults before they touch an unhealthy stack (#2501).
 set -uo pipefail
+lifecycle_mining_step() {
+    shift
+    "$@"
+}
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
@@ -8,7 +12,7 @@ source "$HERE/../lib.sh"
 
 echo "== lifecycle restore health gates fault injection (#2501) =="
 
-LIFECYCLE_SRC="$(sed -n '/^run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
+LIFECYCLE_SRC="$(sed -n '/^_run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecycle.sh" | sed '1s/^_run_lifecycle/run_lifecycle/')"
 assert_eq "the extraction is the whole lifecycle function" \
     "$(printf '%s\n' "$LIFECYCLE_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_lifecycle() { } "
 
@@ -18,32 +22,109 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 RESTORED=no
         OUT_DIR="$(mktemp -d)"
         trap 'rm -rf "$OUT_DIR"' EXIT
+        # A file carries failures out of command substitutions and redirected/conditional calls.
+        command_not_found_handle() {
+            printf 'restore fixture: command not found: %s\n' "$1" >>"$OUT_DIR/missing-command"
+            printf 'restore fixture: command not found: %s\n' "$1" >&2
+            return 127
+        }
         it_log() { :; }
         it_step() { :; }
-        it_pass() { :; }
+        it_pass() {
+            case "${1:-}" in
+            "injected step failure retained its step, rc and sanitized output (#3641)") touch "$OUT_DIR/injected-diag-pass" ;;
+            esac
+        }
         it_skip_leg() { :; }
-        it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
+        it_fail() {
+            IT_FAIL=$((IT_FAIL + 1))
+            printf '%s\n' "${2:-}" >>"$OUT_DIR/failure-reasons"
+        }
+        trace_lifecycle() { [ -z "${LIFECYCLE_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$LIFECYCLE_TRACE_OUT"; }
+        trace_restore_order() { [ -z "${RESTORE_ORDER_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$RESTORE_ORDER_TRACE_OUT"; }
+        capture_artifacts() {
+            printf 'CAPTURE:%s\n' "$1"
+            trace_lifecycle "capture:$1"
+        }
         pithead() {
+            [ "$RESTORE_CASE:$1:$PUSH_COUNT" != carry-apply-fails:down:3 ] || trace_lifecycle carry-cleanup-down
             case "$RESTORE_CASE:$1" in
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
                 echo 'carry apply failed before health wait'
                 return 1
             } ;; # the third push is the carry
-            backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
+            backup-fails:backup | down-fails:down | restore-fails:restore) return 1 ;;
+            apply-fails:apply)
+                if [ "${RAWCHECK:-no}" = yes ]; then
+                    find "$OUT_DIR" -name '*.raw' 2>/dev/null | wc -l | tr -d ' ' >"$OUT_DIR/raw-at-apply"
+                fi
+                printf 'apply-boom PASSWORD=fixture-secret\n'
+                return 1
+                ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
         }
-        wait_status_ok() { [ "$RESTORE_HEALTHY" = yes ]; }
+        wait_status_ok() { [ "$RESTORE_HEALTHY" = yes ] && [ "$RESTORE_CASE:$PUSH_COUNT" != carry-health-fails:3 ]; }
         # carry-* cases also run the local-node legs, including the #2360 dashboard carry.
         env_on_box() { case "$RESTORE_CASE" in carry-*) printf /data/dashboard ;; esac }
         has_compose_profile() { case "$RESTORE_CASE" in carry-*) return 0 ;; *) return 1 ;; esac }
         wait_for() { :; }
         assert_rc() { :; }
-        dashboard_durable_rows() { printf 'blocks -'; }
+        dashboard_durable_rows() { [ "$RESTORE_CASE" = carry-rows-unreadable ] || printf 'blocks -'; }
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
-        run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
+        run_cli_wizard_defaults() { [ "$RESTORE_CASE" != wizard-defaults-fails ] || {
+            it_fail
+            return 1
+        }; }
+        lifecycle_gate_sample() { :; }
+        run_support_bundle() { :; }
+        run_source_image_reconcile() { :; }
+        run_image_permissions() { :; }
+        run_restore_dashboard_probe() {
+            trace_restore_order dashboard-probe
+            [ "$RESTORE_CASE" != dashboard-probe-fails ] || {
+                it_fail
+                return 1
+            }
+        }
+        run_tari_background_sync() {
+            trace_restore_order tari
+            [ "$RESTORE_CASE" != tari-fails ] || {
+                it_fail
+                return 1
+            }
+        }
+        dashboard_tls_identity() { printf identity; }
+        assert_dashboard_tls_continuity() { [ "$RESTORE_CASE" != tls-changed ] || {
+            it_fail
+            return 1
+        }; }
+        run_password_tls_continuity() { :; }
+        sync_gate_marker_state() {
+            case "$RESTORE_CASE:$RESTORED" in
+            marker-before-fails:* | marker-after-fails:yes) return 1 ;;
+            marker-preserved:* | marker-changed:no | marker-introduced:yes) printf tari-only ;;
+            *) printf absent ;;
+            esac
+        }
+        prove_wallet_supersession() { :; }
+        prove_wallet_recovery() { :; }
+        tor_recovery_healthy_probe() { :; }
+        run_connection_announcements() { :; }
+        # shellcheck disable=SC2034 # RESET_RESTORE_STACK_INTACT is read by the extracted lifecycle function
+        run_reset_restore() {
+            trace_restore_order reset-restore
+            case "$RESTORE_CASE" in
+            reset-refused-intact)
+                RESET_RESTORE_STACK_INTACT=1
+                return 1
+                ;;
+            reset-failed-late) return 1 ;;
+            esac
+        }
+        run_uninstall_round_trip() { touch "$OUT_DIR/uninstall"; } # own selftest: selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
         secret_fingerprint() { printf fingerprint; }
@@ -72,17 +153,72 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             "test -f dashboard/Dockerfile") [ "${SRC_CHECKOUT:-no}" = yes ] ;;
             *"config --images") [ "$RESTORE_CASE" != no-proxy-image ] && printf 'tecnativa/docker-socket-proxy@sha256:x\n' ;;
             *"image inspect --format"*) printf 'sha256:id' ;;
+            "docker image inspect "*) [ "$RESTORE_CASE" != up-fails ] || trace_lifecycle post-up-image-inspect ;;
             ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;;
             "rm -rf -- "*) [ "$RESTORE_CASE" != carry-cleanup-fails ] ;;
             esac
         }
         eval "$LIFECYCLE_SRC"
         run_lifecycle >"${LIFECYCLE_OUT:-/dev/null}"
-        printf '%s|%s' "$?" "$IT_FAIL"
+        local lifecycle_rc=$?
+        if [ -s "$OUT_DIR/missing-command" ]; then
+            printf '127|%s' "$((IT_FAIL + 1))"
+            exit 127
+        fi
+        printf '%s|%s' "$lifecycle_rc" "$IT_FAIL"
+        if [ "${STEP_REASONS:-no}" = yes ]; then
+            printf '|%s' "$(sed "s|$OUT_DIR/||g" "$OUT_DIR/failure-reasons" 2>/dev/null | tr '\n' '~')"
+            [ -e "$OUT_DIR/injected-diag-pass" ] && printf '|injected-diag-pass'
+        fi
+        if [ "${STEP_LOGS:-no}" = yes ] && [ -s "$OUT_DIR/lifecycle-restore/apply.log" ]; then
+            printf '|log=%s' "$(tr '\n' '~' <"$OUT_DIR/lifecycle-restore/apply.log")"
+        fi
+        if [ "${RAWCHECK:-no}" = yes ]; then
+            printf '|raw=%s' "$(cat "$OUT_DIR/raw-at-apply" 2>/dev/null)"
+        fi
         [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
+        [ "$RESTORE_CASE" != carry-rows-unreadable ] || printf '|applied=%s' "$([ -e "$OUT_DIR/dashboard-carry.apply.log" ] && echo yes || echo no)"
+        case "$RESTORE_CASE" in reset-*) printf '|intact=%s|uninstall=%s' "${LIFECYCLE_STACK_INTACT:-0}" "$([ -e "$OUT_DIR/uninstall" ] && echo yes || echo no)" ;; esac
     )
 }
 
+ORDER_TRACE=$(mktemp) || exit 1
+assert_eq "the dashboard probe runs before a failing Tari trial" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes tari-fails)" "1|1"
+assert_eq "Tari failure stops the later reset recovery" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari'
+: >"$ORDER_TRACE"
+assert_eq "a dashboard probe failure prevents the Tari trial" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes dashboard-probe-fails)" "1|1"
+assert_eq "a failed dashboard probe stops before Tari and reset" "$(cat "$ORDER_TRACE")" dashboard-probe
+: >"$ORDER_TRACE"
+assert_eq "healthy dashboard and Tari probes still reach reset recovery" \
+    "$(RESTORE_ORDER_TRACE_OUT="$ORDER_TRACE" drive_restore yes)" "0|0"
+assert_eq "healthy probes keep the full recovery order" "$(cat "$ORDER_TRACE")" $'dashboard-probe\ntari\nreset-restore'
+rm -f "$ORDER_TRACE"
+
+assert_eq "restore TLS divergence fails lifecycle" "$(drive_restore yes tls-changed)" "1|1"
+assert_eq "restore preserves an existing Tari background policy" "$(drive_restore yes marker-preserved)" "0|0"
+assert_eq "restore rejects a newly introduced marker" "$(drive_restore yes marker-introduced)" "1|1"
+assert_eq "restore rejects a changed marker" "$(drive_restore yes marker-changed)" "1|1"
+assert_eq "an unreadable pre-restore marker fails closed" "$(drive_restore yes marker-before-fails)" "1|1"
+assert_eq "an unreadable restored marker fails closed" "$(drive_restore yes marker-after-fails)" "1|1"
+# A refusal row that fails before anything destructive keeps the phases after lifecycle runnable (#3342).
+assert_eq "a reset-restore refusal that left the stack intact fails lifecycle but flags the stack healthy" \
+    "$(drive_restore yes reset-refused-intact)" "1|0|intact=1|uninstall=yes"
+assert_eq "a reset-restore failure after a destructive step stops lifecycle and does not flag the stack" \
+    "$(drive_restore yes reset-failed-late)" "1|0|intact=0|uninstall=no"
+# A missing helper must survive shell contexts that can mask its status or stderr.
+for missing_call in \
+    'pithead_restore_fixture_missing' \
+    'local result="$(pithead_restore_fixture_missing 2>/dev/null)"' \
+    'if pithead_restore_fixture_missing >/dev/null 2>&1; then :; fi'; do
+    missing_result="$(LIFECYCLE_SRC="run_lifecycle() { $missing_call; :; }" drive_restore yes 2>/dev/null)"
+    missing_rc=$?
+    assert_eq "the restore fixture rejects a missing command: $missing_call" \
+        "$missing_rc|$missing_result" "127|127|1"
+done
+
+assert_eq "a failed wizard defaults proof stops lifecycle" "$(drive_restore yes wizard-defaults-fails)" "1|1"
 assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
 assert_eq "an unhealthy restore fails lifecycle" "$(drive_restore no)" "1|1"
 assert_eq "a failed backup fails lifecycle" "$(drive_restore yes backup-fails)" "1|1"
@@ -99,15 +235,29 @@ assert_eq "an unreadable restored secret fingerprint fails lifecycle" "$(drive_r
 assert_eq "an unreadable backed-up pool state fails lifecycle" "$(drive_restore yes pool-state-fails)" "1|1"
 assert_eq "a healthy dashboard carry keeps lifecycle passing (#2360)" "$(drive_restore yes carry-ok)" "0|0"
 assert_eq "a failed dashboard carry apply fails lifecycle and retains its diagnostic (#2785)" "$(drive_restore yes carry-apply-fails)" "1|1|carry apply failed before health wait"
+assert_eq "a healthy apply whose carry never becomes healthy fails lifecycle (#2785)" "$(drive_restore yes carry-health-fails)" "1|1"
 assert_eq "lost durable rows across the carry fail lifecycle (#2360)" "$(drive_restore yes carry-rows-diverge)" "1|1"
+assert_eq "an unreadable pre-move dashboard probe fails lifecycle and skips the carry apply (#3664)" "$(drive_restore yes carry-rows-unreadable)" "1|1|applied=no"
 assert_eq "a failed dashboard carry cleanup fails lifecycle (#2360)" "$(drive_restore yes carry-cleanup-fails)" "1|1"
 assert_eq "a source checkout's missing-image leg keeps lifecycle passing (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes)" "0|0"
 assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes no-proxy-image)" "1|1"
 assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
 LIFECYCLE_OUT="$(mktemp)"
-SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null
+LIFECYCLE_TRACE_OUT="$(mktemp)"
+SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null || it_fail "missing-image diagnostic fixture executes"
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
-rm -f "$LIFECYCLE_OUT"
+assert_contains "a failed missing-image up captures Tor's first unhealthy state (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
+assert_eq "missing-image up captures Tor before the next image operation (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-up\npost-up-image-inspect'
+: >"$LIFECYCLE_TRACE_OUT"
+LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-apply-fails >/dev/null || it_fail "carry apply diagnostic fixture executes"
+assert_contains "a failed carry captures Tor before cleanup (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
+assert_eq "carry captures Tor before cleanup stops it (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-carry\ncarry-cleanup-down'
+: >"$LIFECYCLE_TRACE_OUT"
+LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-health-fails >/dev/null || it_fail "carry health diagnostic fixture executes"
+assert_contains "a carry health timeout captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
+SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore no >/dev/null || it_fail "missing-image health diagnostic fixture executes"
+assert_contains "a later missing-image health failure captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
+rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT"
 
 eval "$(grep '^carried_rows()' "$HERE/../lib/live-state-support.sh")"
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
@@ -142,13 +292,17 @@ fi
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1 _gated$/,/^    fi # fault-injection gate$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"
 
-drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
+drive_gate() {
     (
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
-        RUN_LIFECYCLE=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
-            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
-        run_lifecycle() { return "$lifecycle_rc"; }
+        RUN_LIFECYCLE=1 RUN_RESET_DASHBOARD=0 RUN_ROTATE_SECRETS=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_SVC_RESTART=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_FAILOVER_VIEW=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
+        run_lifecycle() {
+            LIFECYCLE_STACK_INTACT="${intact:-0}"
+            return "$lifecycle_rc"
+        }
         run_fault_injection() { fault_ran=yes; }
+        run_fault_injection_maybe() { run_fault_injection; }
         it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         gate() { eval "$MAIN_SRC"; }
         gate >/dev/null 2>&1 || true
@@ -158,7 +312,70 @@ drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
 
 assert_eq "fault injection runs after a healthy lifecycle" "$(drive_gate 0)" "yes"
 assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)" "$(drive_gate 1)" "skipped:fault-injection "
-assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:fault-injection "
+assert_eq "fault injection runs after a lifecycle row failed with the stack intact (#3342)" "$(intact=1 drive_gate 1)" "yes"
+assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:rotate-secrets skipped:fault-injection "
+
+drive_abort() {
+    (
+        # shellcheck disable=SC2034
+        RUN_LIFECYCLE=1 RUN_RESET_DASHBOARD=0 RUN_ROTATE_SECRETS=0 RUN_FAULTS=0 RUN_AUTH_FAIL_CLOSED=0 RUN_SVC_RESTART=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_FAILOVER_VIEW=0 RUN_SUBNET=0 rig_control_ok=1 IT_FAIL=0 rows="" lc_rc="$1" lc_step="$2" lc_own="$3"
+        # shellcheck disable=SC2034
+        run_lifecycle() {
+            [ -z "$lc_step" ] || IT_LC_STEP="$lc_step"
+            [ "$lc_own" = 0 ] || it_fail "own row"
+            return "$lc_rc"
+        }
+        it_fail() {
+            IT_FAIL=$((IT_FAIL + 1))
+            rows="$rows$1|"
+        }
+        it_skip_phase() { :; }
+        gate() { eval "$MAIN_SRC"; }
+        gate >/dev/null 2>&1 || true
+        printf '%s' "$rows"
+    )
+}
+
+assert_eq "a lifecycle that stops silently gets a failure row naming the step (#3986)" "$(drive_abort 1 run_support_bundle 0)" "lifecycle phase stopped at run_support_bundle without recording a failure|"
+assert_eq "a lifecycle that fails its verdict silently still gets a failure row (#3986)" "$(drive_abort 1 '' 0)" "lifecycle phase stopped without recording a failure|"
+assert_eq "a lifecycle that recorded its own failure gets no second row (#3986)" "$(drive_abort 1 run_support_bundle 1)" "own row|"
+assert_eq "a passing lifecycle adds no failure row (#3986)" "$(drive_abort 0 '' 0)" ""
+
+assert_eq "a failed backup names the backup step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes backup-fails)" \
+    "1|1|backup returned non-zero (rc 1); see lifecycle-restore/backup.log~|injected-diag-pass"
+assert_eq "a failed config push names the config-write step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes push-config-fails)" \
+    "1|1|config-write returned non-zero (rc 1); see lifecycle-restore/config-write.log~|injected-diag-pass"
+assert_eq "a failed round-trip apply names the apply step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes apply-fails)" \
+    "1|1|apply returned non-zero (rc 1); see lifecycle-restore/apply.log~|injected-diag-pass"
+assert_eq "the failed round-trip apply retains its redacted output (#3641)" \
+    "$(STEP_LOGS=yes drive_restore yes apply-fails)" \
+    "1|1|log=apply-boom PASSWORD=<redacted>~"
+assert_eq "a failed round-trip down names the down step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes down-fails)" \
+    "1|1|down returned non-zero (rc 1); see lifecycle-restore/down.log~|injected-diag-pass"
+assert_eq "a failed round-trip restore names the restore step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes restore-fails)" \
+    "1|1|restore returned non-zero (rc 1); see lifecycle-restore/restore.log~|injected-diag-pass"
+assert_eq "a failed round-trip up names the up step and its log (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes up-fails)" \
+    "1|1|up returned non-zero (rc 1); see lifecycle-restore/up.log~|injected-diag-pass"
+assert_eq "a failed carry cleanup names the cleanup step that failed (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes carry-cleanup-fails)" \
+    "1|1|cleanup-remove returned non-zero (rc 1); see lifecycle-restore/cleanup-remove.log~|injected-diag-pass"
+assert_contains "the injected step-failure self-check passes in a healthy run (#3641)" \
+    "$(STEP_REASONS=yes drive_restore yes)" "injected-diag-pass"
+assert_contains "the injected step failure keeps its sanitized fixture out of the log (#3641)" \
+    "$(STEP_LOGS=yes drive_restore yes apply-fails)" "<redacted>"
+case "$(STEP_LOGS=yes drive_restore yes apply-fails)" in
+*fixture-secret*) it_fail "the retained step log drops the planted secret value (#3641)" ;;
+*) it_pass "the retained step log drops the planted secret value (#3641)" ;;
+esac
+assert_eq "no raw capture survives under the results tree (#3641)" \
+    "$(RAWCHECK=yes drive_restore yes apply-fails)" "1|1|raw=0"
 
 echo "selftest-lifecycle-restore-health: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

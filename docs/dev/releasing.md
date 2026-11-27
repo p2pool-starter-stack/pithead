@@ -36,7 +36,7 @@ The product version lives in a top-level [`VERSION`](../../VERSION) file: plain 
 
 ## Component pins = an ingredients manifest
 
-Every component stays pinned (build ARGs and image tags). The pins are the ingredients lockfile
+Every component stays pinned (build ARGs, commit refs and image tags). The pins are the ingredients lockfile
 of each product release, not independent releases:
 
 - The dashboard surfaces them as "what's inside vX.Y.Z" (component info is already shown).
@@ -44,30 +44,60 @@ of each product release, not independent releases:
   release: bump the pin → cut a stack patch → re-run the integration gate → ship. The bundle
   ships re-tested.
 
+For Caddy, update the digest in Compose, the Quadlet renderer, and its three fixtures together;
+the render parity test checks that they agree. Release preflight checks the Compose tag against
+the registry index, including on a dry run.
+
 Noticing that a bump is available is a separate job from making one, and nothing did it until
 `scripts/watch/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
-against the component's latest upstream release, checks whether each exact Go module raise still
-changes its pinned upstream graph, compares the vendored Tari gRPC schema with the pinned node's
-upstream tag, and keeps one tracking issue up to date. It reports and never bumps: a Tari or
+against the component's latest stable upstream release by numeric version and prerelease precedence,
+lists newer Tari prereleases separately for review without treating them as approved upgrades, checks
+whether each exact Go module raise still changes its pinned upstream graph, compares the vendored
+Tari gRPC schema with the pinned node's upstream tag, and keeps one tracking issue up to date. It
+reports and never bumps: a Tari or
 `monerod` minor can carry a one-time data migration, which is work to schedule rather than a pull
 request to merge. Dependabot covers the base images it can see and is set to ignore minor and major
 bumps on the component pins for the same reason.
 
+The release ingredients manifest records the appliance's baked RigForge commit from
+`RIGFORGE_REF` in `os/rootfs/Dockerfile` alongside the stack component pins.
+The built-in miner's RigForge tree is baked at image build because nothing can be installed later: apt cannot
+run on the read-only root, and a read-write-remount install leaves its `/etc` state on the volatile overlay,
+where the first reboot breaks the compiler.
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
-cannot change what is baked; that row resolves the latest release tag to the commit it names and
+cannot change what is baked; the pin watcher resolves the latest release tag to the commit it names and
 compares the two commits. Comparing the commit against the tag directly would read stale for ever,
 including straight after a correct bump.
 
-A lookup that could not be made is reported as unchecked, never as current, and the run fails. The
-report carries the date of the last fully successful check, so a watcher that has stopped looks
-different from one with nothing to say.
+A lookup or version comparison that could not be made is reported as unchecked, never as current,
+and the run fails. The report carries the date of the last fully successful check, so a watcher
+that has stopped looks different from one with nothing to say.
 
 ## The Monday sweep, and who reads it
 
 CI runs a weekly CVE sweep on Mondays at 05:00 UTC from `develop`. It answers two questions with
-two jobs: `build-images` rebuilds every image from the branch and scans the rebuild, so a fixable
-CVE is caught before a cut; `sweep-shipped` scans the images already published, each tag resolved
-to a digest, so a CVE in the bytes users are running is caught after one.
+two jobs: `build-images` rebuilds the stack images from the branch and scans them, while
+`os-rootfs.yml` does the same for the appliance rootfs, so a fixable CVE is caught before a cut;
+`sweep-shipped` scans all six images already published, each tag resolved to a digest, so a CVE in
+the bytes users are running is caught after one.
+
+A digest-pinned base can lag a published security fix until upstream rebuilds the image. The Alpine
+image builds name the base's openssl and musl packages in their apk upgrade list, and the Debian
+builds name packages such as apt and zlib1g in their install lists, so an installable fix lands on
+the next rebuild without an ignore (#1438, #3923, #3929).
+
+The Tor image pins its apk package by `ARG TOR_VERSION` in `build/tor/Dockerfile`, because Alpine's
+repository would otherwise change the Tor in the image between builds with no commit here (#4125): the
+0.4.9.17 bump changed state-file semantics and turned the `tor-heal` proof red. `apk add` refuses a pin
+the repository no longer carries, and the build then runs `tor --version` and fails unless it reports the
+pinned version. The Dockerfile also names the base's openssl and musl libs in `--upgrade` and installs
+netcat for the bootstrap healthcheck; it deliberately omits `xxd`, which busybox already provides (#1372).
+Alpine moves the pin: `.github/workflows/tor-bump.yml` runs daily, reads the `tor` package for the pinned
+Alpine branch, and when Alpine carries a newer one opens a `dependencies`-labelled PR against `develop`
+that edits only the pin (`scripts/watch/tor-bump.sh`, #4158) — the apk package no Dependabot ecosystem
+can see. Every bump, from the watcher or by hand, re-runs the `tier4-kvm` `tor-heal` phase before it
+merges: it is the live proof of Tor's state-file behaviour. The release notes name the shipped Tor in
+the `tor` pin row.
 
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
@@ -101,11 +131,11 @@ this workflow does not claim it ([#1418](https://github.com/p2pool-starter-stack
 Images are published to GitHub Container Registry (`ghcr.io/p2pool-starter-stack/*`). Public
 images pull without a Docker Hub-style rate limit.
 
-The stack is multi-container. Every built image (`pithead-dashboard`, `pithead-p2pool`,
-`pithead-xmrig-proxy`, `pithead-monero`, `pithead-tor`) is published, all tagged with the single
-stack version, and compose references one `${STACK_VERSION}`. `docker compose pull` fetches the
-set with one knob, replacing the "git pull + rebuild" upgrade path. The version is the bundle,
-not the layers.
+The stack is multi-container. Every stack image (`pithead-dashboard`, `pithead-p2pool`,
+`pithead-xmrig-proxy`, `pithead-monero`, `pithead-tor`) and the appliance rootfs
+(`pithead-os-rootfs`) is published, all tagged with the single product version. Compose references
+one `${STACK_VERSION}` for the five images it runs. `docker compose pull` fetches that set with one
+knob, replacing the "git pull + rebuild" upgrade path. The version is the bundle, not the layers.
 
 ## Release process
 
@@ -137,6 +167,22 @@ is no back-merge and no post-release repair step ([#1076]; releases through v1.1
 `develop` after the final cut commit sit ahead of `main`, the normal state between releases.
 `release.sh` warns (it does not abort) when the working tree is on any branch other than `develop`.
 
+The release is pinned to the commit preflight read. Preflight refuses a tag that already exists
+locally or on `origin`, and refuses (outside `--dry-run` and `PITHEAD_REHEARSAL=1`, where it only
+warns) a version whose `:vX.Y.Z` image tag is already in the registry. Before building the bundle,
+publish refuses if `HEAD` is no longer the gated commit or the tree is dirty, and the tag is created
+with `git tag -a "$TAG" "$GIT_COMMIT"`, so a `git pull` during the multi-hour gate cannot make the
+tag, images and bundle disagree.
+
+That publish check runs after the images are promoted. If it stops a cut, rerunning `release.sh`
+is refused, because the `:vX.Y.Z` image tag now exists. Recover by hand instead. Check out the
+gated commit that the refusal names, and review `git status --porcelain` until it is empty (remove
+any files the release tests left behind). Nothing was tagged, and no manifest or bundle was built.
+Then run the remaining steps of `publish()` in `scripts/release/bundle.sh` from that commit:
+`write_manifest`, `make_bundle`, `append_bundle_sha256` and, on a signed cut, `sign_bundle`; then
+tag the commit, push the tag, fast-forward `main`, and create the GitHub Release with the bundle,
+its signature and the manifest.
+
 The fast-forward push cannot ride a PR: GitHub merges a PR by merge commit, squash, or rebase,
 each of which mints a new commit, and the point is that `main` gains no object the tag does not
 already name. The Main Branch ruleset requires PRs from everyone except organization admins, so
@@ -150,12 +196,55 @@ Release notes, where operators actually read it. The branch model itself is in
 
 [#1076]: https://github.com/p2pool-starter-stack/pithead/issues/1076
 
+### Forward merges into release-line branches
+
+Work for upcoming releases integrates on release-line branches named `develop-vX.Y.Z`: the
+patch line while a patch cut is in flight (for example `develop-v2.0.3`) and the next feature
+line (`develop-v2.1.0`). After every patch release is published, forward-merge `develop` into
+each open release-line branch, so the cut commit and every fix on `develop` reach those lines.
+
+The `develop-v*` branches carry the same protection as `develop`: the same required checks and
+`adversarial-review` status, one approving review, stale approvals dismissed, admins included,
+and no force-push or deletion. A direct push is refused, so a forward merge travels as a PR.
+Cut a `forward/` branch from the target, merge `develop` into it, and push it:
+
+```bash
+git fetch origin develop develop-v2.1.0
+git switch -c forward/develop-into-develop-v2.1.0 origin/develop-v2.1.0
+git merge --no-ff origin/develop
+git push origin forward/develop-into-develop-v2.1.0
+```
+
+Resolve conflicts on that branch. Version metadata takes `develop`'s values: `VERSION`, the
+`version` line in `dashboard/pyproject.toml`, and the `mining-dashboard` entry in
+`dashboard/uv.lock` must equal `develop`'s, or lifecycle end-to-end proofs on the release-line
+head fail on version skew ([#3664]). Until the forward merge lands,
+lifecycle and safety-backup proofs on a lagging release line wait for it: the seeded `config.json` carries the live stamp and is never rewritten.
+
+Open the PR from the `forward/` branch into the target. Never use `develop` itself as the head:
+conflict resolutions need a branch of their own, and a head that is `develop` changes under
+review every time `develop` moves. Once the checks, the review status, and the approval are on
+the head, merge with a merge commit:
+
+```bash
+gh pr merge <n> --merge
+```
+
+This is the one PR that is not squashed. A squash or rebase mints new commits, so `develop`
+never becomes an ancestor of the release line, and every later forward merge conflicts again on
+changes that were already merged. Merge commits are enabled on the repository for this case only.
+
+[#3664]: https://github.com/p2pool-starter-stack/pithead/issues/3664
+
 ### Pipeline: stage → smoke-test → promote
 
 Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
 additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
 release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
-and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. The
+and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. They
+may come from the [release env file](release-server.md#the-lintrelease-toolchain). Dry runs enforce
+the lint/test toolchain on the run's effective PATH, just as a real cut does. A dry run still does
+not run `make test` or the integration matrix: it prints their commands. The
 bench publishes that status only after its full tier-4 suite completes; a missing, failed,
 unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
 verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
@@ -168,18 +257,28 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    the `pithead` shell suite + compose validation) and the
    [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration matrix against
    the real nodes. Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
-3. Build: build the first-party images with the pinned upstream versions baked in and OCI labels
+3. Build: build the five stack images with the pinned upstream versions baked in and OCI labels
    stamped (`org.opencontainers.image.version` = the `VERSION` value, source revision, etc.). The
    dashboard already reads `PITHEAD_VERSION` / git build-args for its header badge
    ([#58](https://github.com/p2pool-starter-stack/pithead/issues/58)); a release build must pass
    `PITHEAD_RELEASE=1` (and `PITHEAD_VERSION` from `VERSION`) so the badge shows the clean
-   `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds.
+   `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds. Then build the
+   appliance rootfs with that staged dashboard digest baked in. The rootfs builder receives
+   `PITHEAD_PIN_TAG=$STAGING_TAG` and resolves all five first-party index digests from that tag,
+   while the baked Compose references retain their version tags. Without an override, the
+   builder resolves the version tag; an empty override uses that same default. Its push guard
+   reads the exported rootfs and refuses any artifact carrying the debug SSH key. It records that tar's SHA-256; the
+   production appliance image and RAUC bundle refuse any other export.
 4. Push to staging: push to a staging tag on GHCR (e.g. `:vX.Y.Z-rc.N`) and capture the
    immutable digests. Nothing user-facing points here yet. The digests exist only for this pipeline
-   run: a failed run must start again and never recovers them from the mutable staging tag.
-5. Staging smoke test (gate): pull each staged image back from GHCR and verify it resolves,
-   reports the release version in its OCI label, and carries every target platform (the v1.0.0
-   wrong-arch guard). This validates the bytes actually pushed, not the local build — but it does
+   run: a failed run must start again and never recovers them from the mutable staging tag. The first
+   `pithead-os-rootfs` push creates a private package because that is GHCR's default: change its
+   visibility to public and start the release again; the smoke gate refuses promotion until an
+   anonymous pull resolves to the captured digest.
+5. Staging smoke test (gate): pull each staged image back from GHCR. Verify the stack images report
+   the release version in their OCI labels and carry every target platform (the v1.0.0 wrong-arch
+   guard); verify the rootfs is amd64, stamped `release`, and carries no root SSH key. This validates
+   the bytes actually pushed, not the local build — but it does
    not start a stack, which would collide with the release host's live deployment. A fuller
    functional run is opt-in: set `RELEASE_SMOKE_CMD` to a command to run during this stage, or
    point the [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) harness at the
@@ -187,12 +286,15 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 6. Promote by digest: re-tag the exact digests just smoke-tested to `:vX.Y.Z` and `:latest`,
    then push. Promotion is by digest (no rebuild), so the released bundle is bit-for-bit what was
    validated. Same version on every image.
-7. Sign ([#376](https://github.com/p2pool-starter-stack/pithead/issues/376)): cosign-sign each
-   promoted manifest-list digest and the install bundle with the key on the release server. See
+7. Sign ([#376](https://github.com/p2pool-starter-stack/pithead/issues/376)): cosign-sign all six
+   promoted digests and the install bundle with the key on the release server. See
    [Signed releases](#signed-releases).
 8. Publish GitHub Release: create the git tag `vX.Y.Z`, fast-forward `main` to the tagged commit
    (see [Branch mechanics](#branch-mechanics)), write the release notes from the `CHANGELOG.md`
-   entry, and attach release assets: a pinned `docker-compose.yml` / config bundle referencing
+   entry matching the tag (including its Known issues section, excluding Unreleased and other
+   versions). If the tag has no entry, warn on stderr and use the first non-Unreleased section;
+   if the changelog is absent, use `Pithead <TAG>`. Attach release assets: a pinned
+   `docker-compose.yml` / config bundle referencing
    `${STACK_VERSION}=vX.Y.Z`, its detached signature (`pithead.tar.gz.sig`), plus the ingredients
    manifest (exact component versions + promoted image digests). The install bundle includes the
    generated CLI and top-level operator guides, but no source slices, appliance code, tests,
@@ -200,7 +302,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 
    **When the version ships the appliance channel too, pass `--draft`.** Published release
    assets are immutable — v1.18.0 shipped an asset that could not be amended and the whole
-   version had to be withdrawn — and the appliance's `.img`/`.raucb` are built,
+   version had to be withdrawn — and the appliance's `.img.xz`, `.raucb`, and checksum files are built,
    battery-tested and attached by hand *after* this stage (see
    [appliance-release.md](appliance-release.md#cutting-a-release)). Publishing before they
    are attached burns the tag. Draft first, attach both channels' artifacts, publish once.
@@ -215,6 +317,37 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
    upgrade. See [Post-publish smoke test](#post-publish-smoke-test-459). This is the only step gated
    *behind* the publish, because it checks the published artifact, not a branch.
 
+### Rehearsing against a scratch registry
+
+Set `PITHEAD_REHEARSAL=1` and `PITHEAD_REGISTRY` to a non-production registry namespace.
+Rehearsal refuses the production namespace even with `--dry-run`. It runs every normal gate
+(preflight including signing, tier-4 status, the test gate and smoke), promotes and signs the
+scratch images, then stops before `publish`: no git tag, GitHub Release or install bundle is
+published. Release runs, including draft releases, require the owner's sign-off.
+
+For a registry other than `ghcr.io`, set `PITHEAD_REGISTRY_USER` and `PITHEAD_REGISTRY_TOKEN` if
+login is needed. The token goes to Docker on stdin; GitHub credentials and `gh` fallbacks apply
+only to `ghcr.io`. Without both scratch credentials, login is skipped with a warning and Docker's
+existing authentication is used. The rootfs anonymous-read check is skipped with a log message
+outside GHCR; all other smoke checks still run. A custom namespace without the rehearsal marker
+is allowed for a real cut, with a warning that the published bundle will name that registry.
+
+Prepare registry trust on the release host. For a private CA or plain HTTP, set
+`PITHEAD_BUILDKITD_CONFIG` to a readable BuildKit daemon configuration file and choose a separate
+`PITHEAD_BUILDX_BUILDER` name. The configuration is used when creating that builder; an existing
+builder is never reconfigured. Promotion and inspection also select that builder when the
+configuration is set. Configure Docker daemon CA trust and cosign's `SSL_CERT_FILE` on the host
+as needed; the release script does not install certificates or change daemon configuration.
+
+Registry reads allow 12 attempts with a 10-second delay by default; override with
+`PITHEAD_REGISTRY_READ_RETRIES` and `PITHEAD_REGISTRY_READ_BACKOFF`. Verification compares the
+parsed index digest exactly, including when inspect pads its fields. Registry writes allow
+3 total attempts with an initial 10-second delay, doubled per retry up to 60 seconds. Set
+`PITHEAD_REGISTRY_WRITE_RETRIES` (1–10) and `PITHEAD_REGISTRY_WRITE_BACKOFF` (0–60 seconds) to tune
+writes. Only classified transient registry statuses (500, 502, 503, 504) and connection failures
+retry; authentication, missing manifests, invalid or mismatched digests and unclassified failures
+stop immediately. Rootfs retries repeat the push, not the build or export verification.
+
 ### Pre-release gate (#54)
 
 The [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration test matrix is a
@@ -225,7 +358,7 @@ a single, validated bundle.
 Two runs of the matrix are required, and the automated one is the smaller of the two:
 
 1. `release.sh` stage 2 runs the non-destructive `--readiness` assessment against the live
-   stack. Export the harness arguments on the release box before `make release`:
+   stack. Set the harness arguments in the release env file or export them before `make release`:
 
    ```bash
    export RELEASE_INTEGRATION_ARGS="--local --dir <live-stack-dir> --readiness"
@@ -291,6 +424,167 @@ previously carried a `push: [main]` trigger behind a repo variable nobody set, s
 recorded a *skipped* run — and a skipped job is green, which made `main` display a passing
 live-node gate that had never once executed
 ([#1048](https://github.com/p2pool-starter-stack/pithead/issues/1048)).
+
+Rehearse the status gate on a `develop` SHA before the freeze, then repeat it on the final cut
+commit. The bench-ci publisher accepts `main`, `release/*`, or a tag as the job ref, not `develop`.
+Push `release/<full-sha>` at that same commit. Load the bench-ci environment and run the following
+commands in Bash from that checkout. Tiers 1–3 remain GitHub checks.
+
+Before the cut, seed the provision baseline. The provision phase's migration legs
+([#3260](https://github.com/p2pool-starter-stack/pithead/issues/3260),
+[#3267](https://github.com/p2pool-starter-stack/pithead/issues/3267)) need an old image with the
+same `VERSION` as the candidate: an earlier `develop` build of this release, never the previous
+release. Pick the first `develop` commit that carries the new `VERSION`. On one KVM bench, add it
+to `[retention] image_cache_pins` and restart that runner while idle. Then submit a `local_only`
+`tier4-kvm` job with `phases=["boot"]` on that commit to that bench's endpoint. That job only has to
+publish the image: its verdict does not matter, and no job may wait on it with `after`, because a
+failed predecessor cancels its dependents. A pin protects the
+cached build only once bench-ci's retention sweep reports it held: the sweep refuses new holds
+while the bench is short of disk headroom, which includes any running KVM job, and the cache
+budget can then evict the unprotected baseline. Keep other KVM jobs off that bench until the sweep
+reports the pin held, and confirm the image cache still lists the commit right before submitting
+provision. The cut cannot seed itself: `old_image` needs a strictly older build.
+
+Submit seven KVM jobs, each with a 240-minute timeout. A single `phases=["all"]` job exceeds that
+cap, and so does the boot group with provision.
+
+- Boot group: boot, update, install.
+- Rig group: the [#1651](https://github.com/p2pool-starter-stack/pithead/issues/1651) phases as
+  the four splits the last three release gates ran — rig, rigmedia and media; fault and reset;
+  image-upgrade; stack. In the 2.0.1 and 2.0.2 gates the combined seven-phase job failed one
+  phase each time and reran all seven; the splits keep a rerun to its own phase. The
+  rig/rigmedia/media split is submitted with `require_complete` (#3996): bench-ci appends
+  `--require-complete` to each of its three phases, so a rig phase that skipped the accepted-share
+  leg for want of the reserved Monero node fails the gate instead of concluding success, and
+  rigmedia or media carry the same guard for any input they later start skipping on. The rig phase
+  also missing-skips the card-render leg (#1867) on a harness host without `node`, so until
+  bench-ci#2480 provisions it there, a rig/rigmedia/media job whose only failed row names that
+  card-render row is the guard refusing a skip, not a candidate defect: read the row before
+  blaming the tree.
+- Provision: provision and setup-defaults against the seeded baseline, pinned to the seeded bench.
+- Crossupdate: the update from the previous release, which is the path existing installs take,
+  pinned to a bench that keeps that release's image.
+
+Set four inputs first: `BASELINE_SHA`, the seeded baseline; `PROVISION_BENCH_URL`, the API base of
+the bench that pins it; `PREVIOUS_RELEASE_SHA`, from `git rev-parse "vX.Y.Z^{commit}"` for the
+previous release; and `CROSSUPDATE_BENCH_URL`, the API base of a bench that keeps that release's
+image. Keep the SHA, ref and returned job IDs for the final e2e submission:
+
+```bash
+set -euo pipefail
+: "${BASELINE_SHA:?full SHA of the seeded baseline}"
+: "${PROVISION_BENCH_URL:?API base of the bench that pins BASELINE_SHA}"
+: "${PREVIOUS_RELEASE_SHA:?full SHA of the previous release}"
+: "${CROSSUPDATE_BENCH_URL:?API base of a bench that keeps the previous release image}"
+SHA=$(git rev-parse HEAD) # run from the final develop commit
+REF=release/${SHA}
+git push origin "${SHA}:refs/heads/$REF"
+KVM_BOOT_KEY=$(uuidgen)
+printf 'KVM boot group idempotency key: %s\n' "$KVM_BOOT_KEY"
+KVM_BOOT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_BOOT_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["boot","update","install"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM boot group",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_RIG_KEY=$(uuidgen)
+printf 'KVM rig/rigmedia/media split idempotency key: %s\n' "$KVM_RIG_KEY"
+KVM_RIG_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_RIG_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["rig","rigmedia","media"],require_complete:true},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM rig split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_FAULT_KEY=$(uuidgen)
+printf 'KVM fault/reset split idempotency key: %s\n' "$KVM_FAULT_KEY"
+KVM_FAULT_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_FAULT_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["fault","reset"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM fault/reset split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_IMGUP_KEY=$(uuidgen)
+printf 'KVM image-upgrade split idempotency key: %s\n' "$KVM_IMGUP_KEY"
+KVM_IMGUP_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_IMGUP_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["image-upgrade"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM image-upgrade split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_STACK_KEY=$(uuidgen)
+printf 'KVM stack split idempotency key: %s\n' "$KVM_STACK_KEY"
+KVM_STACK_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_STACK_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["stack"]},timeout_minutes:240,submitted_by:"release/devops",note:"release KVM stack split",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_PROV_KEY=$(uuidgen)
+printf 'KVM provision idempotency key: %s\n' "$KVM_PROV_KEY"
+KVM_PROV_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_PROV_KEY" --arg base "$BASELINE_SHA" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["provision","setup-defaults"],old_image_commit:$base},local_only:true,timeout_minutes:240,submitted_by:"release/devops",note:"release KVM provision",idempotency_key:$key}' \
+  | curl -fsS -X POST "$PROVISION_BENCH_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_CROSS_KEY=$(uuidgen)
+printf 'KVM crossupdate idempotency key: %s\n' "$KVM_CROSS_KEY"
+KVM_CROSS_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_CROSS_KEY" --arg prev "$PREVIOUS_RELEASE_SHA" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["crossupdate"],old_image_commit:$prev},local_only:true,timeout_minutes:240,submitted_by:"release/devops",note:"release KVM crossupdate",idempotency_key:$key}' \
+  | curl -fsS -X POST "$CROSSUPDATE_BENCH_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+printf 'KVM jobs: %s %s %s %s %s %s %s @%s\n' "$KVM_BOOT_ID" "$KVM_RIG_ID" "$KVM_FAULT_ID" \
+  "$KVM_IMGUP_ID" "$KVM_STACK_ID" "$KVM_PROV_ID" "$KVM_CROSS_ID" "$SHA"
+```
+
+Read all seven completed KVM jobs' full status, logs, artifacts and evidence. Require `success`, zero failed
+rows and a reason for every skip. These jobs run before e2e, so an e2e failure cannot cancel their
+battery proof. A failed KVM group prevents the final e2e gate from running.
+
+Every KVM job is bound to the exact tag SHA. `SHA` is the commit that will be tagged; a job whose
+`commit` differs from it is not evidence for the release, however recently it passed. Any change
+after the battery, including a digest re-pin or a version bump, makes the whole KVM set stale:
+rerun the boot group, the four rig-group splits, provision and crossupdate on the new SHA and
+read them again before submitting e2e. `release.sh` refuses to publish unless the tag SHA itself carries a successful
+`bench-ci/tier4` status from the bench-ci App, but that check reads only the status on the
+release commit and never the KVM jobs' `commit` fields (`require_bench_tier4` in
+`scripts/release/preflight.sh`). Confirming the rerun before publishing is therefore a
+procedural step the operator verifies, not a tool enforcement. The
+2.0.2 release shipped one commit after the commit its crossupdate and provision jobs proved
+([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)). Each job is capped at 240
+minutes.
+
+The update fault leg (`update` phase, leg 5) installs a bundle whose dashboard healthcheck fails
+through the dashboard's own update door, so the in-flight flag is armed. After the fallback it
+requires the flag's `blocking` list to name the dashboard container and the served banner module to
+carry its `Blocked by:` clause. Both slots of that phase are built from one tree, so they share a
+version and pithead-boot writes no `rolled_back` verdict there; the verdict itself is asserted by
+the real-upgrade scenario ([#3911](https://github.com/p2pool-starter-stack/pithead/issues/3911)),
+whose slots differ. On any failure the job keeps the failed boot's
+`pithead-boot` journal, the verdict JSON, grubenv and the doctor output in
+`pithead-os-serial.log.leg5-evidence` and prints it, bounded, to the job log.
+
+Immediately before submitting e2e, have Devops prepare the canonical payout wallet on **every**
+bench eligible for this e2e leg. Submit `wallet-prepare` with empty options to each owning bench's
+endpoint, using its exact canonical checkout SHA, and inspect its rows and
+`wallet-preparation.json`: catch-up, authenticated RPC/configured identity, graceful save,
+persisted advancement and ordinary reopening must pass. Until bench-ci#1113 is deployed, that
+tier's missing exit record makes its conclusion unreliable; use the rows and artifact as the
+owner ruled. bench-ci#1114 owns enabling and proving these fixtures and the retained onion
+baseline across the eligible fleet. The e2e leg cannot be pinned to the prepared bench. Keep
+nightly lifecycle runs off those benches until this e2e job starts: uninstall removes the wallet
+fixture. If preparation or that scheduling window is unavailable, stop before submitting e2e.
+
+Use `targeted` until the frozen SHA includes the harness fix from
+[#3026](https://github.com/p2pool-starter-stack/pithead/issues/3026); then set `E2E_MODE=matrix`.
+Keep the real rig in the run. Only the owner may authorize `no_rig` after reviewing failures
+confined to rigforge-control harness rows. The final e2e job alone requests the aggregate status,
+with the boot group and the four rig-group splits in `after`. A bench resolves `after` only
+against its own jobs, and the provision and crossupdate jobs belong to their pinned benches, so
+the block first refuses to submit unless both of those completed with `success`:
+
+```bash
+for leg in "$PROVISION_BENCH_URL/jobs/$KVM_PROV_ID" "$CROSSUPDATE_BENCH_URL/jobs/$KVM_CROSS_ID"; do
+  curl -fsS "$leg" | jq -e '.job.status == "completed" and .job.conclusion == "success"' >/dev/null
+done
+E2E_MODE=targeted
+E2E_KEY=$(uuidgen)
+printf 'e2e idempotency key: %s\n' "$E2E_KEY"
+jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" --arg mode "$E2E_MODE" \
+  --argjson boot "$KVM_BOOT_ID" --argjson rig "$KVM_RIG_ID" --argjson fault "$KVM_FAULT_ID" \
+  --argjson imgup "$KVM_IMGUP_ID" --argjson stack "$KVM_STACK_ID" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:$mode},after:[$boot,$rig,$fault,$imgup,$stack],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
+```
+
+Read the completed e2e job's full status, log, artifacts and evidence. All eight jobs must carry
+the same SHA and ref. A failed or cancelled leg cannot yield a
+successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
+`success` and its creator is the configured bench-ci App before running `release.sh`; record all
+eight job IDs and the SHA in the release issue. Remove a rehearsal branch after confirming its
+status with `git push origin --delete "$REF"`. If a submission is refused, stop and report it to
+bench-ci; retain its printed idempotency key for a retry.
 
 | Gate | When | Run by | Blocking |
 | --- | --- | --- | --- |

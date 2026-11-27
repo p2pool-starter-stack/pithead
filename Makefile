@@ -1,6 +1,5 @@
-# Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-clearnet-replay-proof test-frontend test-browser test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-bridge-awk test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
@@ -11,18 +10,35 @@ test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (de
 	cd dashboard && uv run --locked --extra test python -m pytest \
 		--cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 
+test-clearnet-replay-proof: ## Retained Linux ext4 proof of all 100 marker replay cases
+	bash dashboard/tests/service/network/prove-clearnet-replay.sh
+
 test-frontend: pithead ## Frontend logic tests with Node's built-in runner (#632; same invocation as CI)
 	cd dashboard/tests/frontend && node --test
+
+test-browser: ## Cross-browser GUI regressions (install locked dependencies first; see testing guide)
+	cd dashboard/tests/browser && ./node_modules/.bin/playwright test
+	node --test dashboard/tests/browser/backup-download.test.mjs
 
 test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% on changed lines (run after test-dashboard)
 	bash scripts/lint/patch-coverage.sh
 
 test-stack: pithead ## pithead shell test suite
 	bash tests/stack/run.sh
+	bash tests/stack/standalone/test_tor_recovery.sh
+	bash tests/stack/standalone/test_tor_recovery_info.sh
+	bash tests/stack/standalone/test_tor_bootstrap_recovery.sh
+	bash tests/stack/standalone/test_tor_heal_outage_recovery.sh
+	bash tests/stack/standalone/test_tor_unsaturated_reset.sh
+	bash tests/stack/standalone/test_tor_reset.sh
 	bash tests/stack/standalone/test_data_reset.sh
+	bash tests/stack/standalone/test_directory_linebreaks.sh
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
+	python3 tests/stack/standalone/test_clearnet_attestation.py
+	python3 tests/stack/standalone/test_stratum_port.py
+	python3 tests/stack/standalone/test_quadlet_provenance.py
 
 test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-tool coverage guard (no bench, no network)
 	@# Tier 1 on purpose. The capture needs a bench; the JUDGEMENT does not, and the judgement is
@@ -35,24 +51,38 @@ test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-to
 
 test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
+	bash tests/stack/standalone/test_tari_wallet_permissions.sh
 	bash tests/stack/standalone/test_caddyfile.sh
 
-test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)
+test-integration-selftest: pithead ## Integration harness logic and local transport fixtures (no live host needed)
 	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
 	# any self-test added later, and a check that never runs reads exactly like one that passed.
 	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
 	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
 
-test-tools: ## Bounded-log sanitizer and shell workflow budget (no services or dependencies)
+test-tools: ## Build-tool contracts and CI workflow guards (no live services)
 	bash scripts/lint/test-sanitize-test-log.sh
+	bash scripts/lint/test-package-appliance.sh
 	python3 scripts/lint/test-ci-uv-install.py
-	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 30( |$$)'
+	python3 tests/stack/standalone/test_tor_saturated_fixture.py
+	python3 tests/stack/standalone/test_monero_download.py
+	python3 tests/stack/standalone/test_appliance_release_docs.py
+	bash scripts/watch/tor-bump.sh --self-test
+	bash tests/watch/test-find-open-issue.sh
+	sed -n '/^  shell-block:$$/,/^  shell-fragment:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
+	sed -n '/^  shell-fragment:$$/,/^  shell:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 12( |$$)'
+	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 5( |$$)'
+	sed -n '/^  pull_request:$$/,/^permissions:$$/p' .github/workflows/integration-mini-stack.yml | grep -Fqx '      - "lib/pithead/**"'
+
+test-bridge-awk: pithead
+	bash tests/stack/standalone/test_bridge_awk.sh
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q
 
-test-mini-stack: ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
+test-mini-stack: pithead ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
 	bash tests/integration/mini-stack/run-mini-stack.sh
+	bash tests/integration/mini-stack/test-boot-health-proxy.sh
 
 test-tari-config-parse: pithead ## Feed the rendered Tari config to the pinned minotari_node image (needs docker; CI, #2341)
 	bash tests/stack/standalone/test_tari_config_parse.sh
@@ -85,6 +115,8 @@ SHELLCHECK_VERSION := 0.11.0
 # literal in ci.yml until now. Bumping it here is likewise most of the bump — ci.yml's shfmt sha256
 # is tied to one binary and fails loudly until it matches.
 SHFMT_VERSION := 3.13.1
+
+SHELLCHECK_FILE_BUDGET := 120
 
 print-shellcheck-version: ## Print the pinned shellcheck version (ci.yml's installer reads this)
 	@echo $(SHELLCHECK_VERSION)
@@ -120,20 +152,16 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
 		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
-		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages \
-		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version \
+		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages os/overlay/pithead-address-watch os/overlay/pithead-miner-recovery os/overlay/pithead-serial-port-present \
+		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version os/overlay/pithead-tor \
 		tests/os/*.sh tests/os/*/*.sh tests/netwatch/*.sh \
-		| xargs -0 -n 1 -P 4 shellcheck -x --severity=warning
+		| xargs -0 -n 1 -P 4 bash scripts/lint/shellcheck-budget.sh $(SHELLCHECK_FILE_BUDGET)
 # CLI slices are checked through the generated pithead above: their semantic context
 # depends on concatenation order. Listing them separately duplicates a large analysis
 # and reports false unused-global warnings. shfmt checks every slice independently.
 	shellcheck --severity=warning tests/stack/run.sh
-	@# Three non-.sh files are named outright below, so a dead enumeration still hands shfmt
-	@# three real arguments and exits 0 — 3 files checked of 100, reported as a pass. Guard the
-	@# enumeration itself, the way lint-toml already does. (lint-yaml needs no guard: yamllint
-	@# with no arguments is rc=2.)
 	@test -n "$$(git ls-files '*.sh' | grep -v '^docs/research/')" || { echo "lint-sh: zero tracked *.sh files — refusing a vacuous pass"; exit 1; }
-	shfmt -i 4 -d pithead pithead-completion.bash os/installer/pithead-install $(shell git ls-files '*.sh' | grep -v '^docs/research/')
+	shfmt -i 4 -d pithead pithead-completion.bash os/installer/pithead-install os/overlay/pithead-miner-recovery $(shell git ls-files '*.sh' | grep -v '^docs/research/')
 
 lint-py: ## ruff lint + format check on all repo Python (ruff runs via uv from the locked dev extra)
 	uv run --locked --project dashboard --extra dev ruff check .
@@ -166,6 +194,7 @@ lint-topology: ## Fail if a real-looking IPv6/IPv4/hostname/path/user@host liter
 
 lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, or an existing offender grows past its docs/dev/file-budget.tsv ceiling (#1105 Phase 0)
 	bash scripts/lint/lint-file-budget.sh --self-test
+	bash scripts/lint/selftest-file-budget-release.sh
 	bash scripts/lint/lint-file-budget.sh
 
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards

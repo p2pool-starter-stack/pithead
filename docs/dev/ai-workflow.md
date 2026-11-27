@@ -122,7 +122,9 @@ Use `state=failure` for a RETURN. The order matters, because the required checks
 are strict and a new head clears the status: bring the branch up to date with
 `develop` first (`gh pr update-branch <n>`), let the checks go green at that head,
 review that head, record the status, then merge right away with
-`gh pr merge <n> --squash`, the same shape every commit on `develop` has. Do not
+`gh pr merge <n> --squash`, the same shape every commit on `develop` has. The one
+exception is a forward merge into a `develop-v*` line, which merges with `--merge`; see
+[Forward merges](releasing.md#forward-merges-into-release-line-branches). Do not
 use `--admin`, and do not enable auto-merge: tier 4 runs on the bench through the
 private bench-ci runner, on an exact commit, and reports to the PR rather than to
 GitHub checks. When a change needs that tier, record the job's tier, SHA, and result

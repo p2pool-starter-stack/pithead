@@ -12,9 +12,19 @@
 // dashboard answers again; the post-reboot verdict (updated / rolled back) arrives via the
 // host-persisted state in state.os_update and renders as a banner.
 
+import { holdWhile } from "../app/freshness.mjs";
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
-import { osBadgeLabel, rebootAskPane, rebootConfirmPane, vtag } from "./osreboot.mjs";
+import { controlFetch, requirePreviewResponse } from "../config/controlclient.mjs";
+import {
+  hostAnswered,
+  osBadgeLabel,
+  rebootAskPane,
+  rebootConfirmPane,
+  verifyingPane,
+  vtag,
+  waitForDashboard,
+} from "./osreboot.mjs";
 import { verdictText } from "./osverdict.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
@@ -24,26 +34,22 @@ const OS_POLL_MAX = 450;
 // Resume attempts chained per Download/Retry click: 48 x ~10 min covers a very slow Tor night
 // while a genuinely dead route still terminates.
 const OS_RESUME_MAX = 48;
+const BUSY_PHASES = ["checking", "downloading", "verifying", "installing", "rebooting"];
 
 export const fmtMiB = (bytes) =>
   Number.isFinite(bytes) && bytes > 0 ? Math.round(bytes / 1048576) + " MiB" : "";
 
-// POST one OS-update step; resolves to the intent id (the server always answers 202).
 export async function osAction(action, version) {
   const body = version ? { action, version } : { action };
-  const res = await fetch("/api/control/os-update", {
+  const res = await controlFetch("/api/control/os-update", {
     method: "POST",
     headers: CONTROL_HEADERS,
     body: JSON.stringify(body),
   });
-  if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+  await requirePreviewResponse(res);
   return (await res.json()).id;
 }
 
-// Poll one intent to its terminal result, surfacing in-flight progress ("downloading",
-// "installing") through onProgress instead of skipping it — the difference from configview's
-// pollResult, which has no progress to show. Rides out dropped connections and proxy 50x the
-// same way (the host result file is the durable outcome).
 export async function pollOsResult(id, onProgress, max = OS_POLL_MAX) {
   for (let i = 0; i < max; i++) {
     await new Promise((r) => setTimeout(r, POLL_MS));
@@ -55,7 +61,7 @@ export async function pollOsResult(id, onProgress, max = OS_POLL_MAX) {
     }
     if (res.status === 202 || res.status === 502 || res.status === 503 || res.status === 504)
       continue;
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await requirePreviewResponse(res);
     const out = await res.json();
     if (out.status === "downloading" || out.status === "installing") {
       if (onProgress) onProgress(out);
@@ -127,8 +133,6 @@ export const OsVerdictBanner = ({ os }) => {
 export class OsUpdateControl extends Component {
   constructor(props) {
     super(props);
-    // phase: closed | idle | checking | downloading | verifying | verified | installing |
-    //        reboot-ask | reboot-pending | confirm-reboot | rebooting | error
     this.state = {
       phase: "closed",
       check: null,
@@ -140,17 +144,24 @@ export class OsUpdateControl extends Component {
     this.cancelled = false;
     this.modalRef = createRef();
   }
+  componentWillUnmount() {
+    holdWhile(this, false);
+  }
+  componentDidUpdate() {
+    holdWhile(this, BUSY_PHASES.includes(this.state.phase));
+    if (this.state.phase === "rebooting" && hostAnswered(this.props.os, this.rebootVerdictTs))
+      this.setState({ phase: "closed", confirmText: "" });
+  }
   cancel() {
-    const busy = ["checking", "downloading", "verifying", "installing", "rebooting"];
-    if (busy.includes(this.state.phase)) return;
+    if (BUSY_PHASES.includes(this.state.phase)) return;
     this.modalRef.current?.close();
   }
-  // What the host remembers across reloads/reboots: reopen the modal mid-flow honestly.
   stepPhase() {
     const step = (this.props.os && this.props.os.step) || "idle";
-    if (step === "downloaded") return "verified-pending"; // downloaded but not yet verified
+    if (step === "downloaded") return "verified-pending";
     if (step === "verified") return "verified";
     if (step === "reboot-pending") return "reboot-pending";
+    if (step === "verifying") return "slot-verifying";
     if (step === "downloading") return "resume-pending";
     return "idle";
   }
@@ -259,6 +270,7 @@ export class OsUpdateControl extends Component {
   }
 
   async reboot() {
+    this.rebootVerdictTs = this.props.os && this.props.os.verdict && this.props.os.verdict.ts;
     this.setState({ phase: "rebooting", error: "" });
     try {
       const id = await osAction("reboot");
@@ -270,21 +282,9 @@ export class OsUpdateControl extends Component {
     this.reconnect();
   }
 
-  // The static "reconnecting" behaviour: poll until the dashboard answers again, then reload —
-  // the fresh state carries the post-reboot verdict banner.
-  async reconnect(max = 300) {
-    for (let i = 0; i < max; i++) {
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      try {
-        const res = await fetch("/api/state?range=1h");
-        if (res.ok) {
-          window.location.reload();
-          return;
-        }
-      } catch {
-        /* still rebooting */
-      }
-    }
+  // Poll until the dashboard answers again, then reload (the fresh state carries the verdict).
+  reconnect(max = 300) {
+    return waitForDashboard(() => !hostAnswered(this.props.os, this.rebootVerdictTs), POLL_MS, max);
   }
 
   renderBody() {
@@ -295,7 +295,7 @@ export class OsUpdateControl extends Component {
     if (phase === "error")
       return html`<p class="status-bad">${error}</p>
           <div class="config-modal-actions">
-              <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", error: "" })}>Close</button>
+              <button class="btn-toggle" onClick=${() => this.cancel()}>Close</button>
               ${version ? html`<button class="btn-toggle active" onClick=${() => this.download()}>Retry</button>` : null}
           </div>`;
     if (phase === "checking")
@@ -332,6 +332,7 @@ export class OsUpdateControl extends Component {
         onNotNow: () => this.cancel(),
         onReboot: () => this.setState({ phase: "reboot-pending" }),
       });
+    if (phase === "slot-verifying") return verifyingPane({ version });
     if (phase === "reboot-pending" || phase === "confirm-reboot")
       return rebootConfirmPane({
         version,
@@ -343,7 +344,6 @@ export class OsUpdateControl extends Component {
     if (phase === "rebooting")
       return html`<p>Rebooting — this page reconnects when the dashboard returns. This can't be
           interrupted; leave it open. The result appears as a banner after the restart.</p>`;
-    // idle: current version, what the host knows, and the next honest step.
     const stepPhase = this.stepPhase();
     const size = (check && check.size) || (passive && passive.raucb_size);
     const newer = check ? check.newer : !!(passive && passive.available);
@@ -351,7 +351,7 @@ export class OsUpdateControl extends Component {
       releaseNotesHref(check && check.notes) || releaseNotesHref(passive && passive.url);
     return html`<p>Running ${running || "this release"}.</p>
         ${
-          newer && version
+          newer && version && stepPhase !== "slot-verifying"
             ? html`<p>Update ${version} is available${size ? ` (${fmtMiB(size)} download)` : ""}.
                 ${
                   notes
@@ -371,7 +371,7 @@ export class OsUpdateControl extends Component {
                   ? html`<button class="btn-toggle active" onClick=${() => this.verify()}>Verify staged download</button>`
                   : stepPhase === "reboot-pending"
                     ? html`<button class="btn-toggle active" onClick=${() => this.setState({ phase: "reboot-pending" })}>Reboot to finish</button>`
-                    : newer && version
+                    : newer && version && stepPhase !== "slot-verifying"
                       ? html`<button class="btn-toggle active" onClick=${() => this.download()}>
                           ${stepPhase === "resume-pending" ? "Resume download" : "Download"}</button>`
                       : null
@@ -392,7 +392,7 @@ export class OsUpdateControl extends Component {
     const open = phase !== "closed";
     return html`<button class=${"badge version-badge ml-2" + attention}
             title="Check for and apply signed OS image updates"
-            onClick=${() => this.setState({ phase: open ? "closed" : this.stepPhase() === "reboot-pending" ? "reboot-pending" : "idle" })}>
+            onClick=${() => this.setState({ phase: open ? "closed" : ["reboot-pending", "slot-verifying"].includes(this.stepPhase()) ? this.stepPhase() : "idle" })}>
             ${label}
         </button>${
           open

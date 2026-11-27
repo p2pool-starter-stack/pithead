@@ -14,12 +14,7 @@ prepare_control_dirs() {
     if is_appliance && [ ! -f "$CONTROL_DIR/results/os-update-state.json" ]; then
         os_state_write "$CONTROL_DIR" '{"step":"idle"}'
     fi
-    # Re-render the masked prefill copy on every setup/apply/upgrade (#440) — any path that can
-    # change config.json runs through here, so the copy can never serve a stale schema for long.
     render_masked_config "$CONTROL_DIR"
-    # Caddy access-log dir (#349): root-owned so the capability-stripped caddy container (uid 0,
-    # no CAP_DAC_OVERRIDE) can write it; the dashboard (uid 1000) reads it via a ro mount — the
-    # Caddyfile's `mode 0644` keeps the files readable.
     mkdir -p "$CADDY_LOG_DIR"
     ensure_owner "$CADDY_LOG_DIR" 0 0
 }
@@ -69,11 +64,12 @@ ensure_owner() {
 # owned by the uid its container runs as. ensure_owner is conditional, so a routine apply stays
 # sudo-free once ownership is correct; the first run after the non-root switch migrates the data.
 ensure_directories() {
-    local d created=()
+    local d
     for d in "$MONERO_DIR" "$TARI_DIR" "$P2POOL_DIR" "$TOR_DATA_DIR" "$DASHBOARD_DIR" "$PROXY_TLS_DIR"; do
-        [ -d "$d" ] || { mkdir -p "$d" && created+=("$d"); }
+        [ -d "$d" ] || mkdir -p "$d"
     done
-    mkdir -p "$P2POOL_DIR/stats"
+    # shellcheck disable=SC2174
+    mkdir -p -m 755 "$P2POOL_DIR/stats"
     ensure_owner "$TOR_DATA_DIR" 100 101
     ensure_owner "$MONERO_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$TARI_DIR" "$APP_UID" "$APP_GID"
@@ -81,7 +77,6 @@ ensure_directories() {
     ensure_owner "$DASHBOARD_DIR" "$APP_UID" "$APP_GID"
     prepare_control_dirs    # #33: spool dirs exist + requests/ writable by the dashboard uid
     ensure_stratum_tls_cert # #261: keypair exists before compose mounts $PROXY_TLS_DIR
-    [ "${#created[@]}" -gt 0 ] && sudo chmod -R 755 "$P2POOL_DIR/stats"
     return 0
 }
 
@@ -121,8 +116,7 @@ announce_stratum_tls() {
     [ "$enabled" = "true" ] && [ -n "$dir" ] && [ -f "$dir/cert.pem" ] || return 0
     command -v openssl >/dev/null 2>&1 || return 0
     local fp
-    fp=$(openssl x509 -in "$dir/cert.pem" -noout -fingerprint -sha256 2>/dev/null |
-        cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+    fp=$(STRATUM_TLS="$enabled" PROXY_TLS_DIR="$dir" stratum_tls_fingerprint)
     [ -n "$fp" ] || return 0
     log "Stratum TLS is ON: rigs may connect with TLS on the same stratum port (cleartext still accepted). Pin this fingerprint on each rig (pools[].tls-fingerprint): $fp"
 }

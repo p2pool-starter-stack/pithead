@@ -6,6 +6,17 @@
 LKW="$SANDBOX/lockwiring"
 mkdir -p "$LKW/bin"
 make_stubs "$LKW/bin"
+# A second CLI process used to unlink the first one's apply/preview staging files on EXIT,
+# including while the first was waiting for the mutation lock (#2943).
+stage_paths=$(PITHEAD_ENV_FILE="$LKW/staged.env" bash -c 'source "$1"; printf "%s\n%s\n" "${PITHEAD_ENV_STAGE:-${ENV_FILE}.new}" "${PITHEAD_ENV_DRYRUN:-${ENV_FILE}.dryrun}"' _ "$STACK")
+apply_stage=${stage_paths%%$'\n'*}
+preview_stage=${stage_paths#*$'\n'}
+printf 'pending apply\n' >"$apply_stage"
+printf 'pending preview\n' >"$preview_stage"
+PITHEAD_ENV_FILE="$LKW/staged.env" bash "$STACK" version >/dev/null
+assert_eq "another pithead exit keeps the waiting apply's staged env" "$(cat "$apply_stage" 2>/dev/null)" "pending apply"
+assert_eq "another pithead exit keeps the waiting preview's staged env" "$(cat "$preview_stage" 2>/dev/null)" "pending preview"
+rm -f "$apply_stage" "$preview_stage"
 cat >"$LKW/bin/sudo" <<'SUDOEOF'
 #!/usr/bin/env bash
 # restore's chown to the container uid cannot work unprivileged; everything else runs as the

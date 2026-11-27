@@ -1,37 +1,27 @@
 # Pinned by digest (#135) so the ubuntu:24.04 tag can't be silently re-pointed.
-FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
 ARG P2POOL_VERSION=v4.18.1
 ARG P2POOL_HASH=eeab5aca0edf4756cb295c5fda5b2d5344208aecbbdcb2ffd8471dfe14e6c2c5
 
-# Install runtime dependencies. socat (#278): the entrypoint bridges 127.0.0.1 -> the real monerod
-# (node RPC/ZMQ) and the Tari base node (merge-mine gRPC) so those intra-stack legs stay DIRECT while
-# --socks5 routes only the sidechain/merge-mine P2P over Tor (p2pool proxies everything but loopback
-# when --socks5 is set, so a private Docker IP would otherwise be dialled through Tor and rejected).
-RUN apt-get update && apt-get install -y \
+RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
+    apt \
     wget ca-certificates libgomp1 socat \
     && rm -rf /var/lib/apt/lists/*
 
-RUN wget -O p2pool.tar.gz https://github.com/SChernykh/p2pool/releases/download/${P2POOL_VERSION}/p2pool-${P2POOL_VERSION}-linux-x64.tar.gz \
+RUN wget --tries=3 --timeout=180 --waitretry=10 -O p2pool.tar.gz https://github.com/SChernykh/p2pool/releases/download/${P2POOL_VERSION}/p2pool-${P2POOL_VERSION}-linux-x64.tar.gz \
     && echo "${P2POOL_HASH}  p2pool.tar.gz" | sha256sum -c - \
     && tar xzf p2pool.tar.gz \
     && mv p2pool-${P2POOL_VERSION}-linux-x64/p2pool /usr/local/bin/p2pool \
     && chmod +x /usr/local/bin/p2pool \
     && rm -rf p2pool*
 
-# Copy the wrapper script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
 
-# Stratum-port liveness healthcheck (#90)
 COPY healthcheck.sh /usr/local/bin/p2pool-healthcheck.sh
-RUN chmod +x /usr/local/bin/p2pool-healthcheck.sh
+RUN chmod 755 /usr/local/bin/p2pool-healthcheck.sh
 
-# Run non-root (#255). Reuse ubuntu:24.04's built-in 'ubuntu' user (uid 1000) and keep p2pool's data
-# under that user's home; pithead chowns the ${P2POOL_DATA_DIR} bind-mount (mapped to /home/ubuntu)
-# + /stats to match, so the cache and data-api writes succeed as uid 1000. The IPC_LOCK/SYS_NICE
-# caps granted in compose are not effective for a non-root process, but p2pool only needs them for
-# mlock (covered by the unlimited memlock ulimit) and best-effort thread priority — neither is fatal.
 RUN install -d -o ubuntu -g ubuntu /home/ubuntu
 WORKDIR /home/ubuntu
 USER ubuntu

@@ -22,6 +22,10 @@ export function osBadgeLabel(os, passive) {
     const target = os.version ? vtag(os.version) : "the installed release";
     return `Reboot to finish the update to ${target}`;
   }
+  if (os.step === "verifying") {
+    const target = os.version ? vtag(os.version) : "the installed release";
+    return `Verifying the update to ${target} — leave the machine running`;
+  }
   if (passive && passive.available) return `OS update ${passive.latest}`;
   return "OS updates";
 }
@@ -35,6 +39,13 @@ export function rebootAskPane({ version, onNotNow, onReboot }) {
           <button class="btn-toggle" onClick=${onNotNow}>Not now</button>
           <button class="btn-toggle active" onClick=${onReboot}>Reboot</button>
       </div>`;
+}
+
+export function verifyingPane({ version }) {
+  return html`<p class="status-ok">Verifying ${version || "the installed update"} — leave the machine running.</p>
+      <p class="text-muted">The new version booted and its health checks are still running. Do not
+      reboot while this is in progress: when the checks pass the machine keeps the new version, and
+      if they fail it returns to the previous one on its own. Mining resumes when the stack is up.</p>`;
 }
 
 // The typed gate, one click behind the ask. Mining pauses here, so the confirmation is deliberate
@@ -51,4 +62,31 @@ export function rebootConfirmPane({ version, confirmText, onConfirmText, onLater
           <button class="btn-toggle active" disabled=${confirmText !== "REBOOT"}
               onClick=${onReboot}>Reboot now</button>
       </div>`;
+}
+
+// A terminal host verdict (idle step, updated or rolled back) answers a reboot this tab started;
+// it supersedes the local Rebooting phase, which the bounded reconnect loop never clears. A verdict
+// with the ts the reboot began under is an earlier update's, and a pending reboot is not an answer.
+export function hostAnswered(os, startedTs) {
+  const v = os && os.verdict;
+  const terminal = v && (v.outcome === "updated" || v.outcome === "rolled_back");
+  return !!(os && os.step === "idle" && terminal && v.ts !== startedTs);
+}
+
+// Poll until the dashboard answers again, then reload: the fresh state carries the verdict banner.
+// Stops quietly once `waiting()` is false, i.e. the host's verdict already answered the reboot.
+export async function waitForDashboard(waiting, pollMs, max) {
+  for (let i = 0; i < max; i++) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    if (!waiting()) return;
+    try {
+      const res = await fetch("/api/state?range=1h");
+      if (res.ok) {
+        window.location.reload();
+        return;
+      }
+    } catch {
+      /* still rebooting */
+    }
+  }
 }

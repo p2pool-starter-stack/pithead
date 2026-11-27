@@ -12,6 +12,7 @@ append_bundle_sha256() { # <manifest> <bundle>
 
 publish() {
     stage "7/7  Publish GitHub Release $TAG"
+    require_gated_commit
     local manifest="$WORKDIR/ingredients-$TAG.md"
     write_manifest "$manifest"
     local bundle="$WORKDIR/pithead.tar.gz" # versionless name → stable /releases/latest/download/ URL
@@ -32,7 +33,7 @@ publish() {
             return 0
         }
 
-    run git tag -a "$TAG" -m "Pithead $TAG"
+    run git tag -a "$TAG" "$GIT_COMMIT" -m "Pithead $TAG"
     run git push origin "$TAG"
 
     # Move main to the released commit (docs/dev/releasing.md § Branch mechanics). A plain push can
@@ -68,7 +69,7 @@ write_manifest() {
         printf '## Ingredients — Pithead %s\n\n' "$TAG"
         printf -- '- **Version:** %s\n- **Commit:** `%s`\n- **Built:** %s\n\n' "$STACK_VERSION" "$GIT_COMMIT" "$BUILD_DATE"
         printf '### Published images (`%s`, tags `%s` + `latest`)\n\n' "$REGISTRY" "$TAG"
-        for suffix in "${IMAGES[@]}"; do
+        for suffix in "${PUBLISHED_IMAGES[@]}"; do
             repo="$(image_for "$suffix")"
             dg="$(get_digest "$suffix")"
             printf -- '- `%s`\n  - digest: `%s`\n' "$repo:$TAG" "${dg:-<not staged>}"
@@ -77,11 +78,13 @@ write_manifest() {
         printf -- '- p2pool: `%s`\n' "$(pin p2pool)"
         printf -- '- monerod: `%s`\n' "$(pin monero)"
         printf -- '- xmrig-proxy: `%s`\n' "$(pin xmrig-proxy)"
+        printf -- '- tor: `%s`\n' "$(pin tor)"
         printf -- '- tor base: `%s`\n' "$(pin tor-base)"
         printf -- '- tari node: `%s`\n' "$(pin tari)"
         printf -- '- tari console wallet: `%s`\n' "$(pin tari-wallet)"
         printf -- '- caddy: `%s`\n' "$(pin caddy)"
         printf -- '- docker-socket-proxy: `%s`\n' "$(pin socket-proxy)"
+        printf -- '- rigforge: `%s`\n' "$(pin rigforge)"
     } >"$out"
     log "Wrote ingredients manifest: $out"
 }
@@ -186,12 +189,28 @@ make_bundle() (
     log "Wrote install bundle: $out"
 )
 
-# Release notes = the top (newest) section of CHANGELOG.md — the curated, user-facing summary.
+# Release notes = the CHANGELOG section for the tag being published.
 changelog_notes() {
     if [ ! -f CHANGELOG.md ]; then
         printf 'Pithead %s\n' "$TAG"
         return
     fi
-    # Print from the first "## [" heading up to (but not including) the next one.
-    awk '/^## \[/{ if (seen) exit; seen=1 } seen' CHANGELOG.md
+    # Compare literal bracketed versions: Unreleased and other releases are excluded.
+    awk -v heading="[${TAG#v}]" '
+        /^## \[/ {
+            if (seen) exit
+            if ($2 == heading) seen=1
+        }
+        seen
+        END { if (!seen) exit 1 }
+    ' CHANGELOG.md || {
+        printf 'Warning: no CHANGELOG.md entry for release %s; using the first non-Unreleased section\n' "$TAG" >&2
+        awk '
+            /^## \[/ {
+                if (seen) exit
+                if ($2 != "[Unreleased]") seen=1
+            }
+            seen
+        ' CHANGELOG.md
+    }
 }

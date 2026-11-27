@@ -32,6 +32,12 @@ the `Makefile` pins, as a non-root user. It needs Docker on the host and nothing
 verdict is the one CI reaches. Tier 4's appliance battery stays out — it needs KVM and libvirt on
 the machine itself, which no container supplies on macOS or Windows.
 
+The standalone Quadlet provenance regression also runs on macOS with Bash 5 or
+newer on `PATH` and Python 3.9 or newer. Run `make`, then
+`python3 tests/stack/standalone/test_quadlet_provenance.py`. It checks image
+selection and all three fixture sets without starting containers; it does not
+replace the Linux shell suite or the required live rendering proof.
+
 ```bash
 make test-container       # all of the below in the pinned Linux image (any host with Docker)
 make test-container ARGS="make test-mini-stack"   # tier 3 in the image (host daemon via the socket)
@@ -42,6 +48,9 @@ make test-container ARGS="--ssh make test-integration ARGS='--host user@box --di
 make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate
 make test-stack           # pithead shell suite
+bash tests/stack/run.sh 3 # one of the shell suite's five blocks, as one CI leg runs it
+# Run one #2048 prerequisite independently, with no predecessor fragment:
+bash -uo pipefail -c 'source tests/stack/lib.sh; source tests/stack/test-spool-audit.sh; [ "$PASS" -gt 0 ] && [ "$FAIL" -eq 0 ]'
 make test-fakes           # tier-2 contract test (real clients vs fakes)
 make test-integration-selftest   # the integration harness's own logic
 make test-inventory       # write a generated (git-ignored) coverage list to docs/dev/test-inventory.md
@@ -153,6 +162,21 @@ structurally cannot.
 - Shell: pure logic goes in `lib.sh`/`scenarios.sh` and is tested by `selftest.sh`. I/O (ssh,
   docker, RPC) is thin wrappers that aren't unit-tested. Everything stays
   `shellcheck --severity=warning` clean.
+- Hermetic against the host. The release gate runs `make test` on a box that has a live stack, no
+  `TMPDIR`/`RUNNER_TEMP` and no GitHub runner image, so a shell test takes its inputs from its
+  fixture, not the host. The harness covers scratch under `${TMPDIR:-${RUNNER_TEMP:-/tmp}}`,
+  addresses and bridges through `stub_host_addrs`, systemd units through the sandboxed
+  `PITHEAD_UNIT_DIR`, and the iptables, nft and systemctl verbs: `tests/stack/lib/host-fence.sh` puts a
+  `sudo` and a recording no-op for each of those tools first on PATH, so a fixture that stubs only docker
+  cannot rewrite the host's Tor-only egress fence, and neither can a fixture's own pass-through `sudo`
+  or a `sudo env PATH=...` that keeps the inherited PATH. Run no such tool by absolute path, and never
+  build a PATH that drops the inherited one. `test-harness-tooling.sh` runs a canary down each route and
+  every block ends by checking the stubs still lead PATH. A fixture stubs everything else it reaches:
+  other `sudo` commands, read-only `systemctl` queries, the dashboard on `127.0.0.1:8000`, the Avahi
+  config (`PITHEAD_AVAHI_CONF`). A fixture whose path reaches `apply_tor_egress_firewall` stubs it too:
+  the fenced `iptables -S` reads as an absent rule and warns.
+  A test that genuinely needs a tool (Go 1.21 or newer for the raise-watch self-test) fails by
+  naming it and its version, and the release preflight requires it; it never skips.
 - `make test-inventory` writes a generated (git-ignored) coverage list you can read locally — handy
   for seeing what already exists before you add a test.
 - Secrets: never print tokens, creds, or onions. The harness redacts artifacts and hashes secrets
@@ -184,3 +208,34 @@ now baked into the tests.
 - Run `--check` first. Against any real box, `run.sh --check` asserts the current live state
   non-destructively (no config change). It's the safe way to validate before the config-churning
   matrix.
+
+## Native browser regressions
+
+Install the locked Playwright runner and browsers, then run the suite:
+
+```bash
+npm ci --prefix dashboard/tests/browser --ignore-scripts
+dashboard/tests/browser/node_modules/.bin/playwright install chromium firefox webkit
+make test-browser
+```
+
+On Linux, add `--with-deps` to the install command. The separate `browser.yml` workflow
+installs these dependencies and runs Chromium, Firefox, WebKit and mobile Chromium.
+The job allows 45 minutes for cold browser/system-library downloads and the full suite;
+individual Playwright tests retain their 30-second deadline and run without retries.
+Missing dependencies fail the suite. Pure frontend tests remain dependency-free.
+See [browser testing](browser-testing.md) for focused runs, failure artifacts and coverage limits.
+The backup regression serves the production backup component over
+self-signed HTTPS, accepts the browser's certificate interstitial, and records the exact Chromium
+version in both fresh-profile and explicitly disabled-extension runs. CI repeats the backup tests
+with Google Chrome for Testing 141.0.7390.37; its executable can also be selected with
+`PITHEAD_BACKUP_BROWSER_EXECUTABLE`. It saves the kit and a
+22 MiB encrypted fixture through the GUI, compares archive length and SHA-256, decrypts with the
+saved kit, and verifies gzip/tar integrity and member bytes. A client-blocked transfer must leave
+the kit available for retry without another backup request; an interrupted transfer must report
+a failed download and permit a complete retry. These fixtures do not contact an
+appliance, prove host backup creation, or identify an operator's extension or managed policy.
+
+The configuration draft browser regression exercises valid edits and invalid JSON through
+Simple, Advanced and Backup, dirty markers, reset, failed apply and successful apply. The
+provision phase also fetches the shipped editor modules through the appliance dashboard.

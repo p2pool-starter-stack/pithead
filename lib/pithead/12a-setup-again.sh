@@ -43,3 +43,17 @@ wizard_keep_requested() { # <spool-dir>
     rm -f "$1/keep-role"
     _console "Setup closed: the saved settings are kept. The machine is starting as it was."
 }
+
+setup_again_commit_slot() {
+    setup_again_mode || return 0
+    [ -e config.json ] || [ -e machine-role ] || return 0
+    command -v rauc >/dev/null 2>&1 || return 0
+    [ ! -e data/os-update/in-flight.json ] || return 0
+    local slot state
+    slot=$(os_booted_slot) || return 1
+    case "$slot" in A | B) ;; *) return 1 ;; esac
+    state=$(grub-editenv "${PITHEAD_GRUBENV:-/boot/efi/grub/grubenv}" list) || return 1
+    printf '%s\n' "$state" | grep -qx "${slot}_OK=1" || return 1
+    [ "$("$1" inspect --format '{{.State.Running}}' pithead-wizard)" = true ] || return 1
+    rauc status mark-good
+}

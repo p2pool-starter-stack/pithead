@@ -30,6 +30,7 @@ else
     chk "NO SSH authorized_keys" '[ ! -s "$ROOT/root/.ssh/authorized_keys" ]'
     chk "the baked cosign key IS the release key (a test key here is a backdoor)" 'cmp -s ./cosign.pub "$ROOT/opt/pithead/cosign.pub"'
     chk "ssh service disabled" '! ls "$ROOT"/etc/systemd/system/multi-user.target.wants/ssh.service'
+    chk "NO debug boot-menu label" '[ ! -e "$ROOT/opt/pithead/BUILD_LABEL" ] && [ ! -L "$ROOT/opt/pithead/BUILD_LABEL" ]'
     chk "variant stamp says release" '[ "$(cat "$ROOT/etc/pithead-variant")" = "release" ]'
     # The keyring is the fleet's update trust root. A dev build auto-generates a CN=pithead-dev
     # cert; if that baked as the release keyring, every device would trust a throwaway,

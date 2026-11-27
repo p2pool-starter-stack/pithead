@@ -9,24 +9,6 @@ CONFIG_PATH="${CONFIG_PATH:-/home/ubuntu/.bitmonero/bitmonero.conf}"
 # sync already completed — come up on Tor." Default matches the compose mount; overridable for tests.
 CLEARNET_MARKER="${CLEARNET_MARKER:-/clearnet-state/monero.synced}"
 
-# Optional clearnet initial sync (#183). DEFAULT OFF. For the fast clearnet sync window only, this
-# makes monerod match the connectivity P2Pool v4.18 recommends for a clearnet node:
-#   - strip the single `proxy=` line that forces ALL P2P over Tor → monerod dials its compiled-in
-#     clearnet seed nodes (and the priority nodes below) directly, at clearnet speed instead of
-#     crawling over bandwidth-capped Tor circuits.
-#   - out-peers → 32 (P2Pool v4.18's clearnet recommendation; the Tor render uses 48, a circuit-
-#     bandwidth workaround). in-peers stays 64 — the open-files cap, which is the rec we always honor.
-#   - add P2Pool's recommended priority nodes for guaranteed-good peers + block templates. These are
-#     CLEARNET hostnames, so they're added ONLY here: in Tor mode their resolution would leak a
-#     clearnet DNS lookup tied to this host's IP (#161). Connections still arrive over clearnet,
-#     which is exactly the exposure this opt-in window already accepts.
-# `tx-proxy=tor,...` is LEFT IN PLACE so transaction broadcast stays on Tor (tx-origin privacy
-# preserved) — and there's no tx broadcast during a sync anyway. The DNS blocklist / DNS
-# checkpointing the rec also lists are MINING-time protections (bad-node bans, selfish-mining
-# defense) that don't apply to a download-only sync; in Tor mining mode they'd leak DNS (#161), so
-# we keep them off and rely on monerod's compiled-in checkpoints. The Tor render (the untouched
-# template) restores every private default the moment the dashboard flips back.
-# Kept as a function (portable sed, no in-place -e) so the shell test suite can exercise it directly.
 apply_clearnet_initial_sync() {
     local cfg="$1" tmp="$1.tmp"
     sed -e '/^proxy=/d' -e 's/^out-peers=.*/out-peers=32/' "$cfg" >"$tmp" && mv "$tmp" "$cfg"
@@ -43,7 +25,29 @@ PRIONODES
 # comes back up Tor-only — and stays there across restarts/`apply`, so a node is never silently
 # re-exposed. Kept as a function for direct unit testing.
 clearnet_sync_active() {
-    [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && [ ! -f "$CLEARNET_MARKER" ]
+    [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]
+}
+
+# LAN-only sources (#2749). A bind other than 127.0.0.1 publishes this port on every host interface,
+# and only pithead's LAN-only source rule limits who can reach it. While that rule is live, pithead
+# keeps the host's boot id in the marker; it deletes the marker when it removes the rule, and a
+# reboot changes the boot id. Without a current marker this start exits before anything listens,
+# however the container was started: `docker start`, `docker compose up` or `start` outside pithead,
+# a restart policy.
+lan_guard_gate() { # <bind>...
+    local bind boot
+    for bind in "$@"; do
+        case "$bind" in
+        "" | 127.0.0.1) ;;
+        *)
+            # An unreadable boot id must not match a missing marker.
+            boot=$(cat "${BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null) || boot=""
+            [ -n "$boot" ] && [ "$(cat "${LAN_GUARD_MARKER:-/lan-guard/enforced}" 2>/dev/null)" = "$boot" ] && continue
+            echo "Refusing to start: a port is published on $bind, but the host's LAN-only source rule is not in place (#2749). Run ./pithead up." >&2
+            exit 78
+            ;;
+        esac
+    done
 }
 
 # When sourced by the test harness (PITHEAD_TEST_SOURCE=1), expose the functions and stop —
@@ -51,6 +55,8 @@ clearnet_sync_active() {
 if [ "${PITHEAD_TEST_SOURCE:-0}" = "1" ]; then
     return 0 2>/dev/null || exit 0
 fi
+
+lan_guard_gate "${MONERO_RPC_BIND:-127.0.0.1}" "${MONERO_ZMQ_BIND:-127.0.0.1}"
 
 # Ensure the data directory exists
 mkdir -p "$(dirname "$CONFIG_PATH")"

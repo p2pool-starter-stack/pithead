@@ -5,9 +5,10 @@ echo "== unit: coordinator hostname follows saved config only at mutation bounda
 HN="$SANDBOX/hostname"
 mkdir -p "$HN"
 
-hn_run() { # engine-kind, configured host, operation, optional apply state
+hn_run() {
     (
         cd "$HN" || exit 1
+        printf '{}\n' >config.json
         # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$STACK"
         set -e
@@ -18,6 +19,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
         printf 'HOST_IP=old-name.local\n' >.env
         local kind="$1" mode="${4:-changed}" f
         DASHBOARD_HOST="$2" PITHEAD_DRY_RUN=0
+        PITHEAD_AVAHI_CONF="$PWD/absent-avahi.conf"
         is_appliance() { [ "$kind" = appliance ]; }
         hostname() {
             case "${1:-}" in
@@ -101,7 +103,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
             is_deployed() { return 0; }
             render_env() { printf 'HOST_IP=%s\n' "$HOST_IP" >"${1:-.env}"; }
             env_changed_keys() { [ "$mode" = unchanged ] || echo HOST_IP; }
-            env_get_file() { sed -n 's/^HOST_IP=//p' "$1"; }
+            env_get_file() { sed -n "s/^$2=//p" "$1"; }
             describe_change() { printf 'INFO\tname changes\n'; }
             generate_caddyfile() { echo "$HOST_IP" >Caddyfile; }
             docker() { :; }

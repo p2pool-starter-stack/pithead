@@ -115,6 +115,16 @@ test('Header renders the brand, server badges, version + update badges', () => {
     assert.match(html, /New release v9\.9\.9 available/); // update badge (#224)
 });
 
+test('Header renders the paused-mining line as a single bad badge', () => {
+    const text = 'Mining paused here: node out of sync, 8 rigs on backup pool';
+    assert.doesNotMatch(renderApp(), /Mining paused here/);
+    const s = clone();
+    s.badges = [{ text, variant: 'bad' }, ...s.badges];
+    const html = renderApp({ state: s });
+    assert.equal(html.split('Mining paused here').length - 1, 1);
+    assert.match(html, /class="badge badge-bad"[^>]*>Mining paused here: node out of sync, 8 rigs on backup pool</);
+});
+
 test('the theme switcher lives inside the header, not fixed over the page (#1860)', () => {
     // It used to render as a sibling of Header, position: fixed over the viewport (overlapping the
     // chart and the phone hint). It now mounts inside the header's own markup, right of the
@@ -248,7 +258,7 @@ test('XMR Network collapses to the headline stats by default', () => {
     assert.doesNotMatch(card, /Current Block Hash/);
     assert.doesNotMatch(card, /Network Time/);
     assert.match(card, /class="more-stats-toggle" aria-expanded="false"/);
-    assert.match(card, /Show all \(8\)/); // 7 + the node's local/remote location (#1040)
+    assert.match(card, /Show all \(11\)/); // 7 + the node location (#1040) + health, peers and last-advance (#2499)
 });
 
 test('THE WIDER POOL label is gated like its own cards, not shown over an empty grid in Simple view (#1862)', () => {

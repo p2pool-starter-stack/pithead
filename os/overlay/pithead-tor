@@ -1,0 +1,102 @@
+#!/bin/bash
+set -uo pipefail
+
+tor_bin="${PITHEAD_TOR_BIN:-tor}"
+tor_user="${PITHEAD_TOR_USER:-debian-tor}"
+socks_port="${PITHEAD_TOR_SOCKS_PORT:-9253}"
+run_root="${PITHEAD_TOR_RUN_DIR:-/run/pithead-tor}"
+lock_file="${PITHEAD_TOR_LOCK:-/run/lock/pithead-tor.lock}"
+timeout_s="${PITHEAD_TOR_TIMEOUT:-120}"
+now="${PITHEAD_TOR_CLOCK_EPOCH:-$(date +%s)}"
+
+die() {
+    printf 'pithead-tor: %s\n' "$1" >&2
+    exit "${2:-1}"
+}
+
+[ "$#" -ge 1 ] || die "usage: pithead-tor COMMAND [ARGS...]" 2
+[[ "$timeout_s" =~ ^[0-9]+$ ]] || die "PITHEAD_TOR_TIMEOUT must be a whole number of seconds, got '$timeout_s'" 2
+[[ "$socks_port" =~ ^[0-9]+$ ]] || die "PITHEAD_TOR_SOCKS_PORT must be a number, got '$socks_port'" 2
+command -v "$tor_bin" >/dev/null 2>&1 || die "no tor binary at $tor_bin"
+[[ "$now" =~ ^[0-9]+$ ]] || die "clock probe is not a number" 65
+os_build="$(stat -c %Y /etc/os-release 2>/dev/null || echo 0)"
+if [ "$os_build" != 0 ] && [ "$now" -lt "$os_build" ]; then
+    die "system clock ($now) is behind the installed OS build ($os_build) — Tor requires a correct clock" 65
+fi
+if [ "$now" -gt 4102444800 ]; then
+    die "system clock ($now) is past 2100 — Tor requires a correct clock" 65
+fi
+
+mkdir -p "${lock_file%/*}" 2>/dev/null || true
+exec 9>"$lock_file" || die "cannot open the lock file $lock_file"
+flock -n 9 || die "another pithead-tor fetch is already running ($lock_file)"
+
+rundir="$(mktemp -d "${run_root}.XXXXXX")" || die "cannot create a run directory under ${run_root%/*}"
+torrc="$rundir/torrc"
+statedir="$rundir/state"
+torlog="$rundir/tor.log"
+torpid=""
+
+cleanup() {
+    local waited=0
+    if [ -n "$torpid" ] && kill -0 -- "-${torpid}" 2>/dev/null; then
+        kill -TERM -- "-${torpid}" 2>/dev/null
+        while kill -0 -- "-${torpid}" 2>/dev/null && [ "$waited" -lt 50 ]; do
+            sleep 0.2
+            waited=$((waited + 1))
+        done
+        kill -KILL -- "-${torpid}" 2>/dev/null
+    fi
+    wait "$torpid" 2>/dev/null
+    rm -rf "$rundir"
+}
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap cleanup EXIT
+
+chmod 711 "$rundir"
+mkdir -p "$statedir" || die "cannot create $statedir"
+chmod 700 "$statedir"
+if [ "$(id -u)" -eq 0 ]; then
+    chown "$tor_user" "$statedir" || die "cannot hand $statedir to $tor_user"
+fi
+
+cat >"$torrc" <<EOF
+SocksPort 127.0.0.1:$socks_port
+DataDirectory $statedir
+Log info stdout
+__OwningControllerProcess $$
+EOF
+chmod 644 "$torrc"
+
+if [ "$(id -u)" -eq 0 ]; then
+    setsid runuser -u "$tor_user" -- "$tor_bin" -f "$torrc" >"$torlog" 2>&1 &
+else
+    setsid "$tor_bin" -f "$torrc" >"$torlog" 2>&1 &
+fi
+torpid=$!
+
+ticks=0
+cap=$((timeout_s * 2))
+ready=0
+while :; do
+    if grep -q 'Bootstrapped 100%' "$torlog" 2>/dev/null; then
+        ready=1
+        break
+    fi
+    kill -0 "$torpid" 2>/dev/null || break
+    [ "$ticks" -ge "$cap" ] && break
+    sleep 0.5
+    ticks=$((ticks + 1))
+done
+if [ "$ready" != 1 ]; then
+    progress="$(grep -o 'Bootstrapped [0-9]*%' "$torlog" 2>/dev/null | tail -n 1)"
+    tail_line="$(grep -v 'Monitored process' "$torlog" 2>/dev/null | tail -n 3 | tr '\n' ' ')"
+    die "tor did not complete a circuit within ${timeout_s}s (progress: ${progress:-none}; last: ${tail_line:-no output})" 69
+fi
+
+export ALL_PROXY="socks5h://127.0.0.1:$socks_port"
+export all_proxy="$ALL_PROXY"
+"$@"
+rc=$?
+exit "$rc"

@@ -27,7 +27,7 @@ infrastructure.
 | Channel | Artifact | Runtime | Audience |
 |---|---|---|---|
 | **curl installer** | `curl -fsSL <url>/install.sh \| bash` — installs/uses Docker CE, fetches the signed release bundle, runs `pithead setup` | Docker Compose (today's stack, unchanged) | homelabs, VPS, existing Docker users |
-| **Appliance image** | `pithead-os-vX.Y.Z.img` + RAUC update bundles | Podman/Quadlet | zero-Linux-setup users, fleets |
+| **Appliance image** | `pithead-os-vX.Y.Z.img.xz` + RAUC update bundles | Podman/Quadlet | zero-Linux-setup users, fleets |
 | **git clone** | the repo | Docker Compose | developers, contributors |
 
 Flash target: the image is written to the machine's **internal SSD/NVMe** — running
@@ -90,6 +90,13 @@ the DIY channel changes nothing.
      `HealthStartPeriod=`; `--remove-orphans` → obsolete, systemd owns lifecycle.
   5. Tooling uses stop-then-start: `systemctl restart` racing an in-flight start job
      fails spuriously.
+  6. Each `Environment=` value taken from `.env` is one quoted assignment
+     (`Environment="A=1 2" B=3`) and every such value passes the same escaper —
+     `systemd.exec` space-splits the line, so a value holding a space silently
+     lost its tail before #2040. `\`,
+     `"` and `%` are escaped, `%` doubled (systemd expands specifiers in unit
+     files); `$` stays literal so `${VAR}` expands in `ExecStart`, never in an
+     `Environment=` value.
 - Docker-API consumers (dashboard start/stop/logs via the two socket proxies) point at
   Podman's Docker-compat socket on the appliance; the four endpoints used
   (`GET containers/json`, `GET logs`, `POST start`, `POST stop`) are spike-verified.
@@ -373,8 +380,11 @@ minimization instead:
 - Only-when-unprovisioned, and the window closes permanently at handoff.
 - The token is **short and human-typable** — 6 characters from an unambiguous
   alphabet (no 0/O/1/l), e.g. `pit-X7KM2Q`, printed on the console/terminal. It is
-  used once to reach the form; attempts are throttled and N failures mint a fresh
-  token. No form field renders before it.
+  used once to reach the form. The fifth failure from one direct peer starts a fixed
+  60-second cooldown for that peer; blocked requests do not extend it, the token remains
+  valid, and authenticated sessions continue. A custom token pre-seeded on removable media
+  needs at least 16 letters, digits or dashes after the optional `pit-` prefix. No form field
+  renders before authentication.
 - The wizard collects wallet **addresses** and shape choices only. The dashboard
   password is generated host-side and **displayed once** at handoff; view keys and
   other secrets are day-2 entries through the authenticated HTTPS dashboard.
@@ -430,7 +440,8 @@ the #54 matrix per cut, same mandate as the targeted e2e.
   (`build/*`, `dashboard/`, `docker-compose.yml`, `os/rootfs`), the weekly CI sweeps rebuild and
   Trivy-scan the stack images (ci.yml) and the rootfs (os-rootfs.yml), and
   pin-watch.yml files an issue when one of the hand-pinned upstreams (docker-compose,
-  cosign, and the baked RigForge tree) falls behind its latest release. A
+  cosign, and the baked RigForge tree) falls behind its latest release, and
+  tor-bump.yml opens a `dependencies` PR when Alpine ships a newer tor (#4158). A
   security-relevant bump landing on the integration branch is a release trigger,
   not just a green check.
 
@@ -560,20 +571,16 @@ a machine that runs continuously and syncs 250+ GB.
 
 ### The design: one image, two modes
 
-The USB carries a compressed copy of the pristine system image on its data partition.
-When the appliance boots from removable media and finds an internal disk, the wizard's
-first screen becomes a disk picker instead of the setup form. Installing is:
+The release download is compressed before publication and decompressed while writing the USB.
+The USB carries the bootable filesystem, not an embedded installer payload. When the appliance
+boots from removable media and finds an internal disk, the wizard's first screen becomes a disk
+picker instead of the setup form. `pithead-install` creates the target layout and copies the
+running slot and ESP; it does not unpack a second image from the USB.
 
-```bash
-zstd -dc /data/install/system.img.zst | dd of=/dev/<target> bs=4M
-```
+The target bootstraps itself on first boot through the same code path the USB used. There
+is no second image payload to build, sign, or release.
 
-then reboot. The target bootstraps itself on first boot through the same code path the
-USB would have used. There is no second install mechanism to write, test, or sign — the
-installer's whole job is choosing a disk and copying bytes.
-
-Cost: roughly doubles the USB artifact (~1.8 GiB compressed today). The alternative, a
-separate slim installer image, is smaller but adds an artifact to build, sign, release
+The alternative, a separate slim installer image, adds an artifact to build, sign, release
 and test, and the destructive path would then be exercised by different code than the
 one users boot. Sized deliberately.
 

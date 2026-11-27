@@ -154,7 +154,18 @@ def new_worker_entries(live_cfg, staged_cfg):
     live_list = live_list if isinstance(live_list, list) else []
     if not isinstance(staged_list, list):
         return []
-    if staged_list[: len(live_list)] != live_list:
+
+    # The live editor copy masks credentials, while a submitted prefix may contain a newly
+    # typed string. Compare existing entries by their public fields; the host's add-only gate
+    # remains responsible for refusing an actual credential edit.
+    def public_entry(entry):
+        if not isinstance(entry, dict):
+            return entry
+        return {k: v for k, v in entry.items() if k not in ("token", "api_token")}
+
+    if [public_entry(e) for e in staged_list[: len(live_list)]] != [
+        public_entry(e) for e in live_list
+    ]:
         return []
     return staged_list[len(live_list) :]
 
@@ -175,3 +186,23 @@ def validate_new_worker_entries(live_cfg, staged_cfg):
                 "own network — a rig's control address must be a distinct machine on your LAN."
             )
     return ""
+
+
+# The host's exact wording (``validate_worker_endpoints``), so both layers read the same.
+FLEET_API_PORT_ERROR = (
+    "workers.api_port must be an integer between 1 and 65535 (the fleet default worker API port)."
+)
+
+
+def validate_fleet_api_port(proposed):
+    """Return ``FLEET_API_PORT_ERROR`` if a proposed fleet ``workers.api_port`` is not an integer in
+    1-65535, else ``""`` (#3358). Mirrors the host so a bad port is refused at preview; absent or
+    null means the 8080 default. An integer-valued float such as 8080.0 is refused too: the
+    renderer would write it verbatim into ``XMRIG_API_PORT``."""
+    workers = proposed.get("workers") if isinstance(proposed, dict) else None
+    if not isinstance(workers, dict) or workers.get("api_port") is None:
+        return ""
+    port = workers["api_port"]
+    if isinstance(port, bool) or not isinstance(port, int):
+        return FLEET_API_PORT_ERROR
+    return "" if 1 <= port <= 65535 else FLEET_API_PORT_ERROR

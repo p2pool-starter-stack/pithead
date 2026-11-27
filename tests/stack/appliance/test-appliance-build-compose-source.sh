@@ -260,7 +260,7 @@ chain_out="$({
     set +eu
     DRY_RUN=0 SKIP_SMOKE=0 ASSUME_YES=1
     STACK_VERSION=v2.0.0 TAG=v2.0.0 STAGING_TAG=v2.0.0-rc.1
-    PLATFORMS=linux/amd64 REGISTRY=ghcr.io/test IMAGES=(tor)
+    PLATFORMS=linux/amd64 REGISTRY=ghcr.io/test IMAGES=(tor) PUBLISHED_IMAGES=(tor)
     WORKDIR="$CHAIN"
     set_digest tor "ghcr.io/test/pithead-tor@$CHAIN_DIGEST"
     docker() {
@@ -291,7 +291,8 @@ mismatch_out="$({
     cd "$ROOT" || exit
     set --
     source "$REL" 2>/dev/null
-    DRY_RUN=0 ASSUME_YES=1 TAG=v2.0.0 REGISTRY=ghcr.io/test IMAGES=(tor)
+    DRY_RUN=0 ASSUME_YES=1 TAG=v2.0.0 REGISTRY=ghcr.io/test IMAGES=(tor) PUBLISHED_IMAGES=(tor)
+    REGISTRY_READ_BACKOFF=0
     WORKDIR="$CHAIN-mismatch"
     mkdir -p "$WORKDIR"
     set_digest tor "ghcr.io/test/pithead-tor@$CHAIN_DIGEST"
@@ -317,6 +318,8 @@ assert_contains "promotion mismatch names latest and the captured digest" "$mism
 assert_rc "manifest_digest refuses uppercase hex" "$?" "1"
 
 echo "== wiring: the build stages, the Dockerfile copies, verify-image compares (#1215) =="
+assert_contains "rootfs images link back to the public source package" "$(cat "$ROOT/os/build-image.sh")" \
+    'org.opencontainers.image.source=https://github.com/p2pool-starter-stack/pithead'
 # The three scripts cannot be run together at this tier; what CAN be proven is that each end
 # speaks the other's path — the shape #1064's guard failed on when the two ends disagreed.
 CS_BI="$(cat "$ROOT/os/build-image.sh")"
@@ -367,7 +370,7 @@ CS_VI="$(cat "$ROOT/tests/os/verify-image.sh")"
 assert_contains "build-image stages into os/build/stage from STACK_VERSION" "$CS_BI" 'COMPOSE_SOURCE="$(stage_compose "$STACK_VERSION" os/build/stage)" || exit 1'
 assert_contains "an immutable wizard source is pulled by digest" "$CS_BI" 'docker pull -q "$WIZARD_SOURCE"'
 assert_contains "the pulled wizard digest is tagged with the runtime name" "$CS_BI" 'docker tag "$WIZARD_SOURCE" "$WIZARD_IMAGE"'
-assert_contains "the marker layer inherits from the immutable wizard source" "$CS_BI" '"$WIZARD_SOURCE" "$PITHEAD_TEST_MARKER"'
+assert_contains "the signed marker reference is pinned before archiving" "$CS_BI" '"${PITHEAD_PIN_TAG:-$STACK_VERSION}" "${MARKER_DASHBOARD_IMAGE:-}"'
 assert_contains "the runtime-tagged wizard image is saved" "$CS_BI" 'docker save "$WIZARD_IMAGE"'
 assert_contains "the Dockerfile copies the STAGED compose file" "$CS_DF" 'os/build/stage/docker-compose.yml'
 assert_contains "the Dockerfile copies the stamp beside it" "$CS_DF" 'os/build/stage/COMPOSE_SOURCE'
@@ -377,3 +380,12 @@ assert_not_contains "the appliance excludes Monero image-build sources" "$CS_DF"
 assert_not_contains "the Dockerfile no longer copies the tree's compose file" "$CS_DF" 'VERSION docker-compose.yml'
 assert_contains "verify-image compares against what the stamp resolves to, not the tree" "$CS_VI" 'compose_reference "$ROOT" "$COMPOSE_REF"'
 assert_not_contains "verify-image's old tree comparison is gone" "$CS_VI" 'docker-compose.yml" ./docker-compose.yml'
+
+rigforge_pin_ref="04f8799955989120cf0a36121d3391cc5b5f5661"
+assert_contains "the appliance pins RigForge v1.19.0 by commit" "$CS_DF" "ARG RIGFORGE_REF=$rigforge_pin_ref"
+assert_contains "the XMRig prebuild patches the default donate level like RigForge" "$CS_DF" "s/kDefaultDonateLevel = 1;/kDefaultDonateLevel = 0;/"
+assert_contains "the XMRig prebuild patches the minimum donate level like RigForge" "$CS_DF" "s/kMinimumDonateLevel = 1;/kMinimumDonateLevel = 0;/"
+assert_contains "the XMRig prebuild verifies the patched donate header" "$CS_DF" "grep -Fxq 'constexpr const int kMinimumDonateLevel = 0;' /tmp/xmrig/src/donate.h"
+assert_contains "the XMRig prebuild writes the donate minimum marker RigForge checks" "$CS_DF" ">/opt/rigforge/prebuilt/xmrig/.rigforge-donate-min"
+assert_contains "the XMRig prebuild patches before it configures the build" "$(printf '%s' "${CS_DF%%cmake -S /tmp/xmrig*}")" "kMinimumDonateLevel = 0;"
+unset rigforge_pin_ref

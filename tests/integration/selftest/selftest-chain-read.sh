@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# A read-guarded chain-safe run never recreates a protected container on drift.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
@@ -92,6 +91,7 @@ main_source="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../e2e.sh")"
     preflight() { :; }
     provision() { :; }
     backup_stack() { echo backup >>"$commands"; }
+    wallet_fixture_capture() { :; }
     borrow_miner() { :; }
     deploy_branch() { :; }
     run_harness() { :; }
@@ -109,6 +109,8 @@ restore_source="$(sed -n '/^restore_all() {$/,/^}$/p' "$HERE/../e2e.sh")"
     # shellcheck disable=SC2034 # the evaluated restore_all consumes these globals
     RESTORE_DIR=/base BENCH_HOST=test SAFETY_ARCHIVE=''
     drain_harness_or_refuse() { :; }
+    step() { :; }
+    wallet_fixture_restore() { :; }
     parent_lock_checkpoint() { :; }
     parent_lock_miner_restore() { :; }
     log() { :; }

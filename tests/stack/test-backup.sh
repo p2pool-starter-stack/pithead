@@ -159,49 +159,7 @@ assert_not_contains "the archive never carries a \$PWD-doubled override path" "$
 unset CJ CJALT out rc cjarchive cjlist
 
 echo "== black-box: backup -> restore round-trip (#140) =="
-# backup/restore touch irreplaceable state (onion keys, the dashboard DB) and have fiddly logic
-# (leading-'/' strip, the disk pre-check, stop->backup->start). They shell out only to tar/du/df/
-# docker/sudo, so a full round-trip is stubbable: the docker stub reports the stack NOT running, and
-# a smart sudo runs tar/du/df for real (so the archive is genuinely created/extracted) but no-ops
-# chown (we can't chown to 100:101 unprivileged). The archive stores paths relative to '/', and every
-# path is under the sandbox, so `restore`'s `tar -C /` can only write back inside it (asserted below).
-# Use the sandbox's PHYSICAL path (pwd -P): `restore` extracts at '/', and on macOS the /var ->
-# /private/var symlink would otherwise make BSD tar refuse to "extract through symlink" (Linux /tmp
-# isn't symlinked, so this is a no-op there).
-BK="$(cd "$SANDBOX" && pwd -P)/backup"
-mkdir -p "$BK/build/tari" "$BK/data/tor" "$BK/data/dashboard" "$BK/bin"
-cp "$STACK" "$BK/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$BK/build/tari/"
-cat >"$BK/bin/docker" <<'EOF'
-#!/usr/bin/env bash
-case "$*" in
-  "compose ps --status running -q") exit 0 ;;   # empty output -> stack treated as not running
-esac
-exit 0
-EOF
-cat >"$BK/bin/sudo" <<'EOF'
-#!/usr/bin/env bash
-# Run backup/restore's privileged commands as the test user, except chown (can't set 100:101
-# unprivileged) which is accepted as a no-op so restore doesn't abort.
-printf '%s\n' "$*" >>"${SUDO_LOG:-/dev/null}"
-[ "$1" = "chown" ] && exit 0
-if [ "$1" = cp ] && [ "$3" = --remove-destination ]; then cmd="$1" arg="$2"; shift 3; exec "$cmd" "$arg" "$@"; fi
-exec "$@"
-EOF
-chmod +x "$BK/bin/docker" "$BK/bin/sudo"
-cat >"$BK/.env" <<EOF
-MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
-TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion
-P2POOL_ONION_ADDRESS=cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion
-PROXY_AUTH_TOKEN=0123456789abcdef01234567
-HOST_IP=box.lan
-DEPLOYMENT_COMPLETED=true
-COMPOSE_PROFILES=local_node
-EOF
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$BK/config.json"
-printf 'CADDY-ORIG\n' >"$BK/Caddyfile"
-printf 'ONIONKEY-ORIG\n' >"$BK/data/tor/hs_ed25519_secret_key"
-printf 'DBDATA-ORIG\n' >"$BK/data/dashboard/dashboard.db"
+build_backup_sandbox
 
 # 1) Backup creates a timestamped archive. --no-encrypt keeps this #140 round-trip on the plaintext
 # path (encryption is exercised in the #374 block below); an unattended run without a passphrase
@@ -218,6 +176,7 @@ assert_contains "archive has config.json" "$listing" "config.json"
 assert_contains "archive has .env" "$listing" ".env"
 assert_contains "archive has Caddyfile" "$listing" "Caddyfile"
 assert_contains "archive has the tor onion key" "$listing" "hs_ed25519_secret_key"
+assert_contains "legacy archive carries Tor circuit state" "$listing" "data/tor/state"
 assert_contains "archive has the dashboard db" "$listing" "dashboard.db"
 case "$listing" in
 *data/monero* | *data/p2pool/* | *data/tari*) bad "archive excludes blockchains by default" "chain data present without --with-chains" ;;
@@ -232,12 +191,14 @@ assert_eq "archive paths stay inside the sandbox" "$escaped" ""
 printf 'CORRUPTED\n' >"$BK/Caddyfile"
 printf 'CORRUPTED\n' >"$BK/data/dashboard/dashboard.db"
 rm -f "$BK/data/tor/hs_ed25519_secret_key"
+printf 'CircuitBuildAbandonedCount 1000\n' >"$BK/data/tor/state"
 out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$archive" 2>&1)" rc=$?
 assert_rc "restore exits 0" "$rc" "0"
 assert_contains "restore regenerates the Caddyfile from config" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_eq "restore brings back the dashboard db" "$(cat "$BK/data/dashboard/dashboard.db")" "DBDATA-ORIG"
 assert_eq "restore leaves no sync-gate marker (#2626 operator ruling: same-box recovery is out of scope)" "$([ -e "$BK/data/dashboard/sync-gate-reset" ] || echo none)" none
 assert_eq "restore brings back the onion key" "$(cat "$BK/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-ORIG"
+assert_eq "restore discards Tor circuit state" "$([ -e "$BK/data/tor/state" ] || echo absent)" absent
 
 # 4) Low-space pre-check (#127): a df reporting almost no free space makes backup prompt; answering
 # "no" cancels and writes nothing, while --yes proceeds with a warning. The check runs BEFORE the

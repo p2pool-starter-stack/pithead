@@ -43,41 +43,69 @@ caddy_hash_password_b64() {
     # for a short name, podman's native path refuses one outright — the compose pull worked (the
     # compat API keeps docker semantics) while this exact line killed appliance provisioning.
     img="docker.io/library/$img"
-    hash=$(docker run --rm "$img" caddy hash-password --plaintext "$pw" 2>/dev/null) || return 1
+    # Keep the credential hash out of the runtime journal while capturing stdout here.
+    hash=$(printf '%s\n' "$pw" | docker run --rm -i --log-driver none "$img" caddy hash-password 2>/dev/null) || return 1
     [ -n "$hash" ] || return 1
     printf '%s' "$hash" | openssl base64 -A
 }
 
-generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
+generate_caddyfile() {
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
-    # Every vhost forwards the authenticated basic_auth username as X-Auth-User (#33) — the audit
-    # `actor` for control-channel requests. header_up SETS the header, so a client-supplied
-    # X-Auth-User can never spoof it; with auth off the placeholder renders empty.
-    #
-    # Optional basic_auth block (#8), rendered only when a dashboard password is configured. The
-    # hash is decoded from its base64 .env form back to the raw bcrypt string Caddy expects; it
-    # protects every route, so the dashboard prompts for login before anything is served.
-    local auth=""
+    local auth="" gate verify_site="" proxy_user_hdr="" epoch
     if [ -n "${DASHBOARD_AUTH_HASH_B64:-}" ]; then
         local hash
         hash=$(printf '%s' "$DASHBOARD_AUTH_HASH_B64" | openssl base64 -d -A)
-        auth=$(printf '    basic_auth {\n        %s %s\n    }' "$DASHBOARD_AUTH_USER" "$hash")
+        auth=$(printf '        basic_auth {\n            %s %s\n        }' "$DASHBOARD_AUTH_USER" "$hash")
+        epoch=$(printf 'pithead-session-epoch-v1:%s:%s' "$DASHBOARD_AUTH_USER" "$DASHBOARD_AUTH_HASH_B64" | sha256_hex)
+        gate=$(printf '%s\n' \
+            '    request_header -X-Auth-User' \
+            '    request_header -X-Pithead-Session-Refresh' \
+            '    @pithead_public path /login /api/auth/login /api/auth/logout /static/login.js /static/dashboard.css /static/styles/* /static/theme-init.js /static/pithead-mark.svg' \
+            '    reverse_proxy @pithead_public 127.0.0.1:8000 {' \
+            "        header_up X-Pithead-Auth-Epoch \"$epoch\"" \
+            '        header_up X-Forwarded-For {http.request.remote.host}' \
+            '        header_up -X-Pithead-Boot-Probe' \
+            '    }' \
+            '    @pithead_basic {' \
+            '        header_regexp Authorization (?i)^basic\s' \
+            '        not header_regexp Cookie (^|;\s*)pithead_session=' \
+            '    }' \
+            '    @pithead_page {' \
+            '        method GET' \
+            '        header Accept *text/html*' \
+            '        not path /api/*' \
+            '    }' \
+            '    route @pithead_basic {' \
+            '        vars pithead_basic 1' \
+            '        redir @pithead_page /login 303' \
+            "$auth" \
+            '        request_header X-Auth-User {http.auth.user.id}' \
+            '    }' \
+            '    @pithead_session not vars pithead_basic 1' \
+            '    forward_auth @pithead_session 127.0.0.1:8000 {' \
+            '        uri /api/auth/check' \
+            "        header_up X-Pithead-Auth-Epoch \"$epoch\"" \
+            '        copy_headers X-Auth-User X-Pithead-Session-Refresh' \
+            '    }')
+        verify_site=$(printf 'http://127.0.0.1:8001 {\n    bind 127.0.0.1\n    route {\n        basic_auth {\n            %s %s\n        }\n        respond 204\n    }\n}\n' "$DASHBOARD_AUTH_USER" "$hash")
+    else
+        gate=$(printf '%s\n' \
+            '    @pithead_auth_paths path /login /api/auth/*' \
+            '    respond @pithead_auth_paths 404')
+        proxy_user_hdr='            header_up X-Auth-User {http.auth.user.id}'
     fi
-    # Access log (#349): every vhost writes a JSON line per request (timestamp, status, method,
-    # URI, authenticated user) to one shared file under the host-mounted CADDY_LOG_DIR; the
-    # dashboard tails it read-only, and repeated 401s there are the operator's "someone is
-    # guessing the password" signal. Caddy redacts credential headers (Authorization, Cookie)
-    # unless the log_credentials global option is set — it never is here — so no password material
-    # lands in the log. Growth is bounded by Caddy's native rolling: 4 MiB per file, the current
-    # file plus 2 rolled ones. mode 0644 lets the non-root dashboard read what root-run Caddy
-    # writes (Caddy's default is 0600).
     local logblk='    log {
         output file /var/log/caddy/access.log {
             roll_size 4MiB
             roll_keep 2
             mode 0644
         }
-        format json
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Pithead-Boot-Probe delete
+            }
+        }
     }'
     # Caddy LAN listen port (#740). An empty HOST_PORT — or a value that equals the scheme's own
     # default (443 for HTTPS, 80 for HTTP) — keeps the standard port and renders today's Caddyfile
@@ -153,10 +181,17 @@ generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     # dashboard.host — a documented, supported choice — got a single-host site list and NO bind at
     # all, which is the wildcard listener and the whole exposure, back again for exactly the
     # operators who configured the box most deliberately.
-    local bind_addrs="" _bh
+    local bind_addrs="" _bh _bridge_addrs
     if is_appliance && [ "${DASHBOARD_EXPOSE_PUBLIC_IP:-false}" != "true" ]; then
+        # Container-bridge gateways are not bound: they belong to the engine, not the box. A stale
+        # one (wizard bridge, previous boot) is in `hostname -I` now and gone when `up` starts
+        # Caddy, which then crash-loops on "cannot assign requested address" (#3406). The onion
+        # vhost binds mining_net's gateway on its own line, and loopback reaches the host-networked
+        # dashboard.
+        _bridge_addrs=" $(container_bridge_addrs | tr '\n' ' ') "
         for _bh in $(hostname -I 2>/dev/null); do
             is_public_ip "$_bh" && continue
+            case "$_bridge_addrs" in *" $_bh "*) continue ;; esac
             case "$_bh" in
             *:*) ;;                # IPv6 literal
             *[!0-9.]*) continue ;; # not an address literal
@@ -274,38 +309,43 @@ $(_bind_line)
             warn "Could not provide a certificate for the dashboard — falling back to Caddy's own."
         fi
     fi
-    if [ "$DASHBOARD_SECURE" == "true" ]; then
-        log "Generating Caddyfile for automatic HTTPS ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
-        cat <<EOF >>"$target"
-$(_site_addresses https) {
-$tls_line
+    # The boot capability is derived from the private salted auth hash, never the password.
+    # Missing login disables the 401 exemption. A local fronting proxy cannot mint the
+    # capability for its untrusted clients; the header is removed from logs and upstreams.
+    local boot_capability boot_marker=""
+    boot_capability=$(printf 'pithead-boot-health-v1:%s' "${DASHBOARD_AUTH_HASH_B64:-}" | sha256_hex)
+    [ -z "$auth" ] || boot_marker='        log_append @boot_health <pithead_probe boot-health-v1'
+    # Only the host's exact credential-free boot request earns this log field. remote_ip
+    # uses the socket peer, never a client-supplied forwarding header. Onion sites do not
+    # carry the matcher. Keep marking before rewrite/auth, including the locked 401 path.
+    local scheme=http
+    [ "$DASHBOARD_SECURE" != "true" ] || scheme=https
+    log "Generating Caddyfile for $scheme ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
+    cat <<EOF >>"$target"
+$(_site_addresses "$scheme") {
+$([ "$scheme" != https ] || printf '%s' "$tls_line")
 $(_bind_line)
-$auth
 $logblk
-    reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
+    @boot_health {
+        remote_ip 127.0.0.1 ::1
+        method GET
+        expression {http.request.uri} == "/.pithead-boot-health"
+        not header Authorization *
+        header X-Pithead-Boot-Probe "$boot_capability"
+    }
+    route {
+$boot_marker
+        rewrite @boot_health /
+$gate
+        reverse_proxy 127.0.0.1:8000 {
+$proxy_user_hdr
+            header_up -X-Pithead-Boot-Probe
+        }
     }
 }
 EOF
-    else
-        log "Generating Caddyfile for HTTP ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
-        cat <<EOF >>"$target"
-$(_site_addresses http) {
-$(_bind_line)
-$auth
-$logblk
-    reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
-    }
-}
-EOF
-    fi
+    [ -z "$verify_site" ] || printf '\n%s' "$verify_site" >>"$target"
 
-    # Onion vhost (#343): a second site reachable ONLY from the tor container, via the bridge gateway
-    # (NETWORK_PREFIX.1 — the /24's first host, where host-networked Caddy binds and bridge containers
-    # route out). It is never on the LAN. Plain HTTP: Tor provides the transport encryption inside the
-    # tunnel, so no `tls internal` here. It MUST carry the same auth block — refuse to publish an
-    # unauthenticated control panel (config validation already fails closed; this is belt-and-suspenders).
     if [ "${DASHBOARD_ONION_ENABLED:-false}" == "true" ]; then
         if [ -z "$auth" ]; then
             error "Refusing to render the dashboard onion vhost without a login: dashboard.onion.enabled is on but no auth hash is set."
@@ -315,10 +355,12 @@ EOF
 
 http://${NETWORK_PREFIX}.1 {
 $(_onion_bind_line)
-$auth
 $logblk
-    reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
+    route {
+$gate
+        reverse_proxy 127.0.0.1:8000 {
+            header_up -X-Pithead-Boot-Probe
+        }
     }
 }
 EOF
@@ -337,10 +379,12 @@ EOF
 https://${DASHBOARD_ONION} {
     tls internal
 $(_onion_bind_line)
-$auth
 $logblk
-    reverse_proxy 127.0.0.1:8000 {
-        header_up X-Auth-User {http.auth.user.id}
+    route {
+$gate
+        reverse_proxy 127.0.0.1:8000 {
+            header_up -X-Pithead-Boot-Probe
+        }
     }
 }
 EOF

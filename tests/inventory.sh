@@ -174,23 +174,24 @@ check_source_set() { # <sourcer> <expected-list> <minimum>
 }
 
 stack_expected=$(
-    printf '%s\n' lib.sh
+    printf '%s\n' lib.sh tests/stack/lib/suite-blocks.sh | sed 's|^tests/stack/||'
     find tests/stack -type f -name 'test-*.sh' -print | sed 's|^tests/stack/||'
 )
 stack_expected=$(printf '%s\n' "$stack_expected" | sort)
 check_source_set tests/stack/run.sh "$stack_expected" 50
 
-# live-*-support.sh are excluded for the skip-accounting.sh reason: run.sh sources live-gates.sh,
-# which sources them, so run.sh reaches them transitively and never names them itself.
 integration_expected=$(
     printf '%s\n' lib.sh scenarios.sh
     find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
-        ! -name rig-supply.sh ! -name restore-proof.sh ! -name chain-keep.sh ! -name skip-accounting.sh \
+        ! -name rig-supply.sh ! -name restore-proof.sh ! -name restore-unit-state.sh ! -name restore-chain-sync.sh ! -name chain-keep.sh ! -name restore-mining-ready.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
-        ! -name harness-args.sh \
-        ! -name redact-it-password.sh \
-        ! -name remote-endpoints.sh \
-        ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh -print |
+        ! -name harness-args.sh ! -name e2e-env.sh ! -name run-channel.sh ! -name run-lifecycle-wallet-fixture.sh ! -name run-lifecycle-miners.sh ! -name run-tari-background-sync.sh ! -name run-lifecycle-tls.sh \
+        ! -name redact-it-password.sh ! -name wallet-diagnostics.sh ! -name egress-probe.sh ! -name tor-control-dial.sh ! -name worker-detail-diagnostics.sh ! -name onion-baseline-diagnostics.sh ! -name lan-guard-snapshot.sh \
+        ! -name step-diagnostics.sh \
+        ! -name remote-endpoints.sh ! -name wallet-fixture.sh ! -name wallet-fixture-recovery.sh \
+        ! -name readiness-churn.sh ! -name restore-dashboard-guest.sh ! -name reset-restore-web.sh ! -name reset-restore-startup.sh ! -name reset-restore-miner.sh \
+        ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh ! -name live-tari-identity.sh \
+        ! -name lan-crash-evidence.sh ! -name miner-connection.sh ! -name tari-readiness.sh ! -name xvb-off-dwell.sh -print |
         sed 's|^tests/integration/||'
 )
 integration_expected=$(printf '%s\n' "$integration_expected" | sort)

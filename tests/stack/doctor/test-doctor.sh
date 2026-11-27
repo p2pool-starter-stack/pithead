@@ -64,56 +64,9 @@ assert_contains "doctor OK: bind narrowed to a LAN IP" "$out" "not all interface
 
 echo "== unit: doctor runtime checks — egress firewall / stratum listening / dashboard probe (#383) =="
 # Each check degrades to an info skip on every can't-check path and only judges what it confirmed.
-# Stub the whole toolchain: docker answers the running-container filter from RUNNING_CONTAINERS,
-# sudo denies via SUDO_DENY or execs through to the iptables stub (tag presence via IPT_TAGGED),
-# ss prints SS_OUT, curl exits CURL_RC.
-DRBIN="$SANDBOX/drbin"
-mkdir -p "$DRBIN"
-cat >"$DRBIN/docker" <<'EOF'
-#!/usr/bin/env bash
-name=$(printf '%s' "$*" | sed -n 's/.*name=\^\([a-z0-9-]*\)\$.*/\1/p')
-case " ${RUNNING_CONTAINERS:-} " in *" $name "*) echo cid123 ;; esac
-exit 0
-EOF
-cat >"$DRBIN/sudo" <<'EOF'
-#!/usr/bin/env bash
-[ "${SUDO_DENY:-0}" = "1" ] && exit 1
-[ "$1" = "-n" ] && shift
-exec "$@"
-EOF
-cat >"$DRBIN/iptables" <<'EOF'
-#!/usr/bin/env bash
-# `-S FORWARD` answers the jump Docker adds with its first network. This stub ignored its arguments,
-# so once the check asserted REACHABILITY (#2091) it read a healthy host as an orphaned chain.
-[ "$*" = "-S FORWARD" ] && exec echo '-A FORWARD -j DOCKER-USER'
-[ "${IPT_TAGGED:-0}" = "1" ] || exec echo '-P DOCKER-USER ACCEPT'
-echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT'
-echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
-EOF
-cat >"$DRBIN/ss" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "${SS_OUT:-}"
-EOF
-cat >"$DRBIN/curl" <<'EOF'
-#!/usr/bin/env bash
-[ -n "${CURL_BODY:-}" ] && printf '%s' "$CURL_BODY"
-exit "${CURL_RC:-0}"
-EOF
-# nft for the podman/netavark doctor path: `list tables` always answers (the sudo-readable probe);
-# `list table inet pithead_egress` emits a forward-hooked, dropping ruleset only when NFT_HOOK=1,
-# else exits 1 (table absent). Lets a test distinguish "installed & traversed" from "missing".
-cat >"$DRBIN/nft" <<'EOF'
-#!/usr/bin/env bash
-# Speaks JSON: the check reads `nft -j` to ask if the drop is a rule IN the forward-hooked chain.
-case "$*" in
-*"list tables") echo "table inet netavark" ;;
-*"list table inet pithead_egress")
-    [ "${NFT_HOOK:-0}" = "1" ] || exit 1
-    printf '%s\n' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}' ;;
-esac
-exit 0
-EOF
-chmod +x "$DRBIN"/*
+# Stub the whole toolchain: docker answers the running-container filter from RUNNING_CONTAINERS, sudo denies
+# via SUDO_DENY or execs through to the iptables stub (tag presence via IPT_TAGGED), ss prints SS_OUT, curl exits CURL_RC.
+build_doctor_stubs
 
 # container_is_running: filter answered vs not.
 RUNNING_CONTAINERS="tor" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" container_is_running tor
@@ -272,6 +225,22 @@ out="$(RUNNING_CONTAINERS="monerod" CURL_RC=7 PATH="$DRBIN:$PATH" run_sourced "$
 assert_contains "monerod sync: RPC silent -> info skip" "$out" "did not answer"
 out="$(RUNNING_CONTAINERS="" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" check_monerod_synchronized 2>&1)"
 assert_eq "monerod sync: no container -> silent skip" "$out" ""
+mkdir -p "$SANDBOX/authbin"
+cat >"$SANDBOX/authbin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${0%/*}/args.log"
+cat >>"${0%/*}/stdin.log"
+printf '%s' "${CURL_BODY:-}"
+EOF
+chmod +x "$SANDBOX/authbin/curl"
+printf 'MONERO_NODE_USERNAME=op\nMONERO_NODE_PASSWORD=pw-S3cret\n' >"$SANDBOX/.env"
+RUNNING_CONTAINERS="monerod" CURL_BODY='{"status":"OK","synchronized":true}' PATH="$SANDBOX/authbin:$DRBIN:$PATH" \
+    run_sourced "$SANDBOX" check_monerod_synchronized </dev/null >/dev/null 2>&1
+assert_contains "monerod sync: both node probes ran" "$(cat "$SANDBOX/authbin/args.log")" "/json_rpc"
+assert_not_contains "monerod sync: the node login is not in curl's arguments" "$(cat "$SANDBOX/authbin/args.log")" "pw-S3cret"
+assert_eq "monerod sync: both node probes read the login on standard input" \
+    "$(grep -c '^user = "op:pw-S3cret"$' "$SANDBOX/authbin/stdin.log")" "2"
+rm -rf "$SANDBOX/authbin" "$SANDBOX/.env"
 
 echo "== unit: clock_sync_status (mining is time-sensitive) =="
 # doctor's NTP check classifies timedatectl's NTPSynchronized: yes→synced, no→unsynced, else unknown.
@@ -393,6 +362,12 @@ esac
 exit 0
 EOF
     chmod +x "$bin/docker"
+    cat >"$bin/curl" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >>"${0%/*}/curl.log"
+exit 7
+EOF
+    chmod +x "$bin/curl"
 }
 ST="$SANDBOX/status"
 mkdir -p "$ST/bin"
@@ -413,12 +388,17 @@ rc=$?
 assert_rc "status: node down exits 1" "$rc" "1"
 assert_contains "status: proxy stop is intentional" "$out" "likely intentional"
 
-# A genuinely stopped miner is the intentional #35 sync hold, so status exits 0.
 PROXY_ONLY="${ALL_UP/xmrig-proxy=running:none/xmrig-proxy=exited:none}"
+: >"$ST/bin/curl.log"
 out="$(cd "$ST" && FAKE_STATES="$PROXY_ONLY" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?
 assert_rc "status: proxy stop under sync hold exits 0" "$rc" "0"
 assert_contains "status: proxy stop notes sync hold" "$out" "finish syncing"
+if command -v jq >/dev/null 2>&1; then
+    assert_contains "status: the sync probe reached the stub, not a live dashboard" "$(cat "$ST/bin/curl.log" 2>/dev/null)" "http://127.0.0.1:8000/api/state"
+else
+    bad "status: the sync probe reached the stub, not a live dashboard" "jq is not on PATH, so status never probes /api/state; install jq"
+fi
 
 P2POOL_ONLY="${ALL_UP/p2pool=running:none/p2pool=exited:none}"
 out="$(cd "$ST" && FAKE_STATES="$P2POOL_ONLY" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"

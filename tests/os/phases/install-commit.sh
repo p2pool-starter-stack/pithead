@@ -45,6 +45,11 @@ _phase_install_commit() {
     # ATTEMPTS slot A, which already happened by the time SSH answers, seed or no seed.
     local genv
     genv=$(_read_genv)
+    if [ "$(_genv_field "$genv" MEDIA)" = internal ]; then
+        ok "installed target records internal media in the real grubenv"
+    else
+        bad "installed target did not record internal media in the real grubenv"
+    fi
     if [ "$(_genv_field "$genv" A_OK)" = 1 ] && [ "$(_genv_field "$genv" B_OK)" = 0 ]; then
         ok "pithead-install seeded the installed disk's grubenv good before any boot gate ran: $genv"
     else
@@ -71,7 +76,6 @@ _phase_install_commit() {
     # the same choice provision-reboot.sh makes on its own reboot leg.
     _reboot_wait reboot 300 || {
         bad "installed system never returned from the unaided reboot"
-        unset -f _read_genv _genv_field _rauc_status _assert_rauc_committed
         return 1
     }
     local rootdev
@@ -97,5 +101,4 @@ _phase_install_commit() {
     done
     _assert_rauc_committed "after boot 2 (the unaided reboot)"
     info "grubenv after boot 2: $(_read_genv)"
-    unset -f _read_genv _genv_field _rauc_status _assert_rauc_committed
 }

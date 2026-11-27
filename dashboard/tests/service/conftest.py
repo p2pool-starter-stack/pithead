@@ -49,7 +49,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from mining_dashboard.config.config import TIER_DEFAULTS
-from mining_dashboard.service.network.egress import LOCAL, compute_egress_posture, compute_topology
+from mining_dashboard.service.network.egress import LOCAL, compute_egress_posture
+from mining_dashboard.service.network.topology import compute_topology
 from mining_dashboard.service.xvb.algo_service import AlgoService
 
 # The privacy-safe resting config: firewall on, p2pool over Tor, XvB over Tor, local node, no sync,
@@ -153,3 +154,13 @@ def _down():
         return [{"name": n, "status": "offline"} for n in names]
 
     return _down
+
+
+@pytest.fixture(autouse=True)
+def _no_tari_explorer_fetch(monkeypatch):
+    """No test reaches the public Tari explorer (#2464). A DataService built by a test would otherwise
+    dial it through a Tor SOCKS that does not exist here and wait out its timeout. The explorer tests
+    pass ``explorer_url`` and ``explorer`` explicitly, so the default being off costs them nothing."""
+    from mining_dashboard.service.health import tari_health
+
+    monkeypatch.setattr(tari_health, "TARI_EXPLORER_URL", "")

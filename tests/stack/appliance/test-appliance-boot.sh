@@ -393,10 +393,10 @@ boot_fn() { # <function> <args...>
 }
 gtu() { boot_fn gate_target_url "$@"; }
 grs() { boot_fn gate_resolve_spec "$@"; }
-assert_eq "a name goes in the URL as-is" "$(gtu https panel.example 443)" "https://panel.example:443/"
+assert_eq "a name goes in the URL as-is" "$(gtu https panel.example 443)" "https://panel.example:443/.pithead-boot-health"
 assert_eq "an IPv6 literal is bracketed, or the port joins the address" \
-    "$(gtu https 2001:db8::1 443)" "https://[2001:db8::1]:443/"
-assert_eq "an IPv4 literal needs no brackets" "$(gtu http 192.0.2.5 80)" "http://192.0.2.5:80/"
+    "$(gtu https 2001:db8::1 443)" "https://[2001:db8::1]:443/.pithead-boot-health"
+assert_eq "an IPv4 literal needs no brackets" "$(gtu http 192.0.2.5 80)" "http://192.0.2.5:80/.pithead-boot-health"
 # --resolve is for names only. It is what keeps a name's dial on loopback without the box having to
 # resolve its own mDNS name; a literal is already an address and needs no lookup.
 assert_eq "a name gets a --resolve spec pointing at loopback" \
@@ -485,9 +485,7 @@ assert_contains "the hold changes nothing for a miner" "$(rcv p2pool running 'Up
 unset -f rcv
 
 echo "== unit: pithead-sync's rigforge leg — program replaced, state preserved, prebuilt seeded =="
-# The baked tree is program; config.json (pithead-rendered) and the data/ workspace (the XMRig
-# build cache) are state. The prebuilt binary seeds the workspace so the appliance never needs
-# RigForge's clone path — github over clearnet, unreachable from a Tor-only box.
+# The baked tree is program, config.json and data/ are state, and the prebuilt seeds data/ for a Tor-only box.
 SYNCSCRIPT="$ROOT/os/overlay/pithead-sync"
 mk_tmpdir SSB
 mkdir -p "$SSB/opt-pithead" "$SSB/opt-rigforge/util" "$SSB/opt-rigforge/prebuilt/xmrig/build"
@@ -510,10 +508,8 @@ run_sync >/dev/null 2>&1
 assert_rc "sync runs clean" "$?" "0"
 [ -x "$SSB/data/rigforge/rigforge.sh" ] && ok "rigforge program delivered beside pithead's" ||
     bad "rigforge program delivered beside pithead's" "missing"
-assert_eq "prebuilt seeded into the workspace where 'already built' finds it" \
-    "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig" 2>/dev/null)" "bin-v2"
-assert_eq "the commit marker rides with the seed" \
-    "$(cat "$SSB/data/rigforge/data/worker/xmrig/.rigforge-commit" 2>/dev/null)" "commit-B"
+assert_eq "prebuilt seeded into the workspace where 'already built' finds it" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig" 2>/dev/null)" "bin-v2"
+assert_eq "the commit marker rides with the seed" "$(cat "$SSB/data/rigforge/data/worker/xmrig/.rigforge-commit" 2>/dev/null)" "commit-B"
 assert_eq "the debug registry CA reaches the runtime verifier" "$(cat "$SSB/data/pithead/cosign.registry-ca.crt" 2>/dev/null)" "pithead-program"
 [ -e "$SSB/data/rigforge/prebuilt" ] && bad "prebuilt/ is a seed, never a synced tree" "synced" ||
     ok "prebuilt/ is a seed, never a synced tree"
@@ -525,8 +521,11 @@ assert_eq "config.json (state) survives the resync" "$(cat "$SSB/data/rigforge/c
 assert_eq "a same-pin native rebuild is left alone" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
 rm -f "$SSB/opt-pithead/cosign.registry-ca.crt" && run_sync >/dev/null 2>&1
 [ ! -e "$SSB/data/pithead/cosign.registry-ca.crt" ] && ok "a later release removes the stale debug registry CA" || bad "a later release removes the stale debug registry CA" "still present"
-# A new pin arrives with a new image AND its new prebuilt: the cached build is replaced, so the
-# on-box clone path never needs to run.
+printf '0\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-donate-min" && run_sync >/dev/null 2>&1
+assert_eq "a same-pin build missing the donate minimum marker is replaced by the prebuilt" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "bin-v2"
+printf 'native-rebuild' >"$SSB/data/rigforge/data/worker/xmrig/build/xmrig" && run_sync >/dev/null 2>&1
+assert_eq "a same-pin build that carries the marker is left alone" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
+# A new pin arrives with a new image and its new prebuilt, so the cached build is replaced.
 printf 'commit-C\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-commit"
 printf 'bin-v3' >"$SSB/opt-rigforge/prebuilt/xmrig/build/xmrig"
 printf 'program-v3' >"$SSB/opt-rigforge/rigforge.sh"
@@ -580,6 +579,7 @@ bg_rebooted2=$(ls "$BG"/rebooted.* 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "the fallback slot failing the same way does NOT reboot again" "$bg_rebooted2" "0"
 assert_eq "the attempt is still counted" "$(cat "$BG/.boot-gate-failures" 2>/dev/null)" "2"
 assert_contains "and the console says the fault is not the slot" "$bg_out2" "the fault is not the slot"
+assert_contains "and names the no-dashboard bundle verb and where it writes" "$bg_out2" "/opt/pithead/pithead recovery-bundle to write a redacted support bundle under /data/pithead/support-bundles"
 
 # A healthy boot clears the counter, or one transient failure months ago would spend the machine's
 # single rollback attempt on the update that actually needs it.

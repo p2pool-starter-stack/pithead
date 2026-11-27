@@ -20,7 +20,9 @@ clear_restore_stage() { # <volatile-stage-dir>
     }
 }
 clear_setup_candidate() { # <secret-file>...
-    rm -f -- "$@" || {
+    local file sidecars=()
+    for file in "$@"; do sidecars+=("$file.stratum-password"); done
+    rm -f -- "$@" "${sidecars[@]}" || {
         warn "Could not clear temporary setup credentials — do not leave the machine unattended."
         return 1
     }

@@ -184,6 +184,40 @@ rm -rf "$VTC_TMP"
 unset -f mk_vtc_fixture vtc vtc_norepo
 unset VTC_TMP VTC_HEAD_SHA VTC_HEAD
 
+# --- production rootfs handoff guard. The release push records the guarded tar's digest; both
+# non-dev consumers require that exact tar and refuse debug SSH access even after a same-commit
+# rebuild. This is a pure tar fixture because the refusal happens before image construction.
+echo "== unit: os/rauc production rootfs handoff guard =="
+mk_tmpdir RGT_TMP
+mkdir -p "$RGT_TMP/root/etc"
+printf 'release\n' >"$RGT_TMP/root/etc/pithead-variant"
+tar -cf "$RGT_TMP/root.tar" -C "$RGT_TMP/root" etc
+sha256sum "$RGT_TMP/root.tar" | awk '{print $1}' >"$RGT_TMP/root.tar.sha256"
+rgt() {
+    (
+        # shellcheck disable=SC1090
+        . "$ROOT/os/rauc/populate-slot.sh"
+        set +e
+        verify_guarded_rootfs_tar "$1" 2>"$RGT_TMP/err"
+        echo "rc=$?"
+    )
+}
+assert_eq "the guarded release export is accepted" "$(rgt "$RGT_TMP/root.tar")" "rc=0"
+rm "$RGT_TMP/root.tar.sha256"
+assert_eq "a production build refuses an unrecorded export" "$(rgt "$RGT_TMP/root.tar")" "rc=2"
+assert_contains "the refusal names the missing digest handoff" "$(cat "$RGT_TMP/err")" ".sha256"
+sha256sum "$RGT_TMP/root.tar" | awk '{print $1}' >"$RGT_TMP/root.tar.sha256"
+printf 'changed\n' >>"$RGT_TMP/root.tar"
+assert_eq "a production build refuses an export changed after publication" "$(rgt "$RGT_TMP/root.tar")" "rc=2"
+assert_contains "the refusal names the post-push change" "$(cat "$RGT_TMP/err")" "changed after"
+assert_contains "mkimage requires the guarded rootfs handoff" "$(cat "$ROOT/os/rauc/mkimage.sh")" \
+    'verify_guarded_rootfs_tar "$TARBALL"'
+assert_contains "mkbundle requires the guarded rootfs handoff" "$(cat "$ROOT/os/rauc/mkbundle.sh")" \
+    'verify_guarded_rootfs_tar "$TARBALL"'
+rm -rf "$RGT_TMP"
+unset RGT_TMP
+unset -f rgt
+
 # --- mkbundle metadata validation (fails fast, before the multi-minute image build) ---
 echo "== unit: mkbundle compatibility-metadata validation =="
 out=$(cd "$ROOT" && PITHEAD_DATA_MIGRATION=maybe bash os/rauc/mkbundle.sh /dev/null 2>&1)
@@ -195,6 +229,21 @@ assert_contains "the message asks for the migration floor" "$out" "PITHEAD_MIN_O
 out=$(cd "$ROOT" && PITHEAD_MIN_OS_VERSION=1.2 bash os/rauc/mkbundle.sh /dev/null 2>&1)
 assert_rc "a non-semver floor is refused" "$?" "2"
 assert_contains "the message names the floor field" "$out" "PITHEAD_MIN_OS_VERSION"
+out=$(cd "$ROOT" && env -u PITHEAD_DATA_MIGRATION -u PITHEAD_MIN_OS_VERSION bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_rc "a release bundle that declares neither field is refused (#3167)" "$?" "2"
+assert_contains "the refusal asks for the declaration" "$out" "must declare PITHEAD_DATA_MIGRATION"
+out=$(cd "$ROOT" && env -u PITHEAD_MIN_OS_VERSION PITHEAD_DATA_MIGRATION=false bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_rc "a release bundle with an undeclared floor is refused" "$?" "2"
+assert_contains "a release bundle must declare the floor too, even empty" "$out" "must declare PITHEAD_DATA_MIGRATION"
+out=$(cd "$ROOT" && env -u PITHEAD_DATA_MIGRATION PITHEAD_MIN_OS_VERSION='' bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_rc "a release bundle with an undeclared migration field is refused" "$?" "2"
+assert_contains "a release bundle must declare the migration field too" "$out" "must declare PITHEAD_DATA_MIGRATION"
+out=$(cd "$ROOT" && PITHEAD_DATA_MIGRATION=false PITHEAD_MIN_OS_VERSION='' bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_contains "a declared non-migrating release reaches the tarball check" "$out" "missing os/build/pithead-root.tar"
+out=$(cd "$ROOT" && PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0 bash os/rauc/mkbundle.sh /dev/null 2>&1)
+assert_contains "a declared 2.0.0 migrating release reaches the tarball check" "$out" "missing os/build/pithead-root.tar"
+out=$(cd "$ROOT" && env -u PITHEAD_DATA_MIGRATION -u PITHEAD_MIN_OS_VERSION bash os/rauc/mkbundle.sh --dev /dev/null 2>&1)
+assert_contains "a --dev bundle keeps the defaults and reaches the tarball check" "$out" "missing os/build/pithead-root.tar"
 
 # ---------------------------------------------------------------------------
 # os/rauc signing-material guard (resolve_signing_material in populate-slot.sh). A release build

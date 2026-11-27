@@ -350,16 +350,15 @@ assert_eq "upgrade on a source checkout is rejected" "$(jq -r '.status' "$RESULT
 assert_contains "source-checkout refusal points at git pull" "$(jq -r '.error' "$RESULTS/$UUPG.json" 2>/dev/null)" "git pull"
 rm -f "$RESULTS/$UUPG.json"
 
-# Channel off: the runner refuses to process ANYTHING — the intent stays unclaimed, no result.
 seed_upgrade_env false
 reset_upgrade_state
 upgrade_intent "$UUPG" "v9.9.9"
 out="$(urun)"
-assert_rc "upgrade runner refuses when the channel is off" "$?" "1"
-assert_contains "channel-off refusal names the flag" "$out" "not enabled"
-[ -f "$UPGREQS/$UUPG.json" ] && ok "channel-off intent left unclaimed" || bad "channel-off intent left unclaimed" "claimed"
-[ ! -f "$UPGRESULTS/$UUPG.json" ] && ok "channel-off intent gets no result" || bad "channel-off intent gets no result" "result written"
-rm -f "$UPGREQS/$UUPG.json"
+assert_rc "upgrade runner rejects instead of failing when the channel is off" "$?" "0"
+[ ! -f "$UPGREQS/$UUPG.json" ] && ok "channel-off intent is claimed" || bad "channel-off intent is claimed" "left in the spool"
+assert_eq "channel-off upgrade is rejected" "$(jq -r '.status' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "rejected"
+assert_contains "channel-off rejection names the flag" "$(jq -r '.error' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "dashboard.control.enabled"
+rm -f "$UPGRESULTS/$UUPG.json"
 seed_upgrade_env true
 
 # #1023: no cosign on the host -> refused before a single dial, whether or not this install already
@@ -500,11 +499,11 @@ assert_contains "the .env copy holds the pre-upgrade content (#637)" "$(cat "$up
 upg_bak_cfg2="$(ls "$UPG"/config.json.bak-upgrade-* 2>/dev/null | head -1)"
 assert_eq "the config.json copy holds the pre-upgrade content (#637)" "$(cat "$upg_bak_cfg2" 2>/dev/null)" "{}"
 
-# #637 fail-closed: no snapshot, no upgrade. With config.json unreadable the runner must refuse
-# BEFORE a byte of the bundle lands — the whole point of the restore point is that it exists
-# before the mutation does.
+# #637: with a valid source but failed snapshot copy, refuse before extraction. An absent
+# source now fails earlier at the raw-document guard, before an upgrade request is claimed.
 reset_upgrade_state
-mv "$UPG/config.json" "$UPG/config.json.hidden"
+printf '%s\n' '#!/usr/bin/env bash' 'case "${*: -1}" in */.bak-upgrade.*) exit 1 ;; esac' 'exec /bin/cp "$@"' >"$UPG/bin/cp"
+chmod +x "$UPG/bin/cp"
 upgrade_intent "$UUPG" "v9.9.9"
 urun >/dev/null
 assert_eq "failed snapshot fails the upgrade (#637)" "$(jq -r '.status' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "failed"
@@ -512,7 +511,7 @@ assert_contains "snapshot refusal names the missing restore point (#637)" "$(jq 
 assert_eq "failed snapshot extracts nothing (#637)" "$(cat "$UPG/VERSION")" "1.3.1"
 [ -z "$(ls "$UPG"/.bak-upgrade.* 2>/dev/null)" ] && ok "failed snapshot leaves no mktemp residue (#637)" ||
     bad "failed snapshot leaves no mktemp residue (#637)" "leftover temp file"
-mv "$UPG/config.json.hidden" "$UPG/config.json"
+rm -f "$UPG/bin/cp"
 
 # #637 hardening: the snapshot destination name is predictable, so a co-tenant can plant a
 # symlink there and hope root writes through it (the #629 attack class) — the runner must
@@ -746,6 +745,7 @@ upgrade_intent "$UUPG" "v9.9.9"
 usign >/dev/null
 assert_eq "signed bundle with a valid signature upgrades" "$(jq -r '.status' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "upgraded"
 assert_eq "signature fetched over Tor SOCKS" "$(grep -c -- '--socks5-hostname 10.9.0.25:9050.*pithead\.tar\.gz\.sig' "$UPG/curl.log")" "1"
+assert_eq "both downloads pin https for the request and redirects" "$(grep -c -- '--proto =https --proto-redir =https.*releases/download' "$UPG/curl.log")" "2"
 assert_contains "bundle verified against the existing key, no Rekor" \
     "$(cat "$UPG/cosign.log")" "verify-blob --key cosign.pub --signature"
 # Bad signature: FAIL CLOSED — nothing extracted, the install untouched. The red test for the
@@ -785,11 +785,10 @@ assert_eq "verifier-missing refusal downloads no bundle" "$(grep -c 'releases/do
 rm -f "$UPG/cosign.pub" "$UPG/nodocker/jq"
 reset_upgrade_state
 
-# The runner refuses to run at all when the channel is off (fail-closed).
 control_config main
 "$C/bin/docker" >/dev/null 2>&1 || true
 sed -i.bak 's/"control":{"enabled":true}/"control":{"enabled":false}/' "$C/config.json" 2>/dev/null || true
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 out="$(run_pending)"
-assert_rc "runner refuses when the channel is disabled" "$?" "1"
-assert_contains "runner disabled message" "$out" "not enabled"
+assert_rc "runner runs in export-only mode when the channel is disabled" "$?" "0"
+assert_not_contains "runner no longer refuses with a not-enabled error" "$out" "not enabled"

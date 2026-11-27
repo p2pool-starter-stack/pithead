@@ -1,7 +1,10 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 safety_backup() {
-    [ "$SAFETY_BACKUP" = "1" ] || return 0
+    if [ "$SAFETY_BACKUP" != "1" ]; then
+        [ "$RUN_ROTATE_ONION" != "1" ] || arm_safety_abort_restore
+        return 0
+    fi
     [ "$RUN_IMAGE_UPGRADE" != "1" ] || UPGRADE_TELEMETRY_EPOCH="$(rx 'date +%s')"
     it_log "Taking a safety backup before destructive scenarios (pithead backup -y)…"
     # Read the archive path the CLI itself reports, not `ls -t backups/*` — a concurrent bench
@@ -68,13 +71,13 @@ safety_secret_drift_categories() { # <baseline category=hash lines> <actual cate
 }
 
 safety_restore_exact() {
-    local restored_secrets
+    local restored_secrets sr_dir="${OUT_DIR:-}/safety-restore"
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
-    if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
-        SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
-    elif ! baseline_up >/dev/null 2>&1; then
-        SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
+    if ! it_run_logged "$sr_dir" restore pithead restore -y "$SAFETY_ARCHIVE"; then
+        SAFETY_RESTORE_FAIL_REASON="pithead restore returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
+    elif ! it_run_logged "$sr_dir" up baseline_up; then
+        SAFETY_RESTORE_FAIL_REASON="stack did not come back up (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}"
     elif ! wait_status_ok 240; then
         SAFETY_RESTORE_FAIL_REASON="pithead status did not become healthy within 240s"
     elif [ "$(rx 'cat config.json' 2>/dev/null)" != "$BASELINE_CONFIG" ]; then
@@ -116,19 +119,26 @@ safety_rollback_if_failed() {
 # — e.g. the rig-key ledger's (#1379) — because `trap … EXIT` replaces rather than appends.
 safety_abort_restore() {
     local original_rc=$? restore_failed=0
+    [ -z "${RESET_DASHBOARD_DECOY_DASHBOARD:-}" ] || reset_dashboard_remove_blocker || restore_failed=1
+    # config.json/.env backups do not include the onion identity directory.
+    if [ "${ROTATE_ONION_RESTORE_ARMED:-0}" = "1" ] && ! rotate_onion_restore; then
+        restore_failed=1
+        it_warn "interrupted onion rotation could not restore its original identity"
+    fi
     # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
     # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
     # so the restore is attempted.
-    if [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
+    if [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
         safety_restore_exact || restore_failed=1
-    elif [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
+    elif [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
         # A restore already failed this run. Retrying it here would repeat its opening `pithead
         # down` and fail the same way, so the run would END with the stack stopped even after the
         # in-run restore had put it back. One attempt, then hand the box to a human with the
         # archive still on it.
         it_warn "a rollback already failed this run — not retrying at exit; archive retained at ${SAFETY_ARCHIVE:-<none>}"
     fi
+    reset_dashboard_cleanup || restore_failed=1
     [ -z "$_SAFETY_FOREIGN_TRAP" ] || eval "$_SAFETY_FOREIGN_TRAP"
     [ "$restore_failed" = 0 ] || exit 1
     return "$original_rc"
@@ -146,8 +156,30 @@ arm_safety_abort_restore() {
     trap safety_abort_restore EXIT
 }
 
+reset_dashboard_remove_blocker() {
+    rx "ids=\$(docker ps -aq --filter label=pithead.itest=reset-dashboard-blocker) && { [ -z \"\$ids\" ] || docker rm -f \$ids; }" >/dev/null 2>&1 || {
+        it_fail "reset-dashboard name blocker removed" "could not remove the labelled p2pool blocker container"
+        return 1
+    }
+}
+
+reset_dashboard_cleanup() {
+    [ -n "${RESET_DASHBOARD_DECOY_DASHBOARD:-}" ] || return 0
+    if [ -n "${BASELINE_CONFIG:-}" ] && ! push_config "$BASELINE_CONFIG"; then
+        it_fail "reset-dashboard baseline config restored" "cleanup failed; decoy paths and safety archive retained"
+        return 1
+    fi
+    if ! rx "rm -rf -- $(quote_arg "$RESET_DASHBOARD_DECOY_DASHBOARD") $(quote_arg "$RESET_DASHBOARD_DECOY_P2POOL")" >/dev/null 2>&1; then
+        it_fail "reset-dashboard decoys removed" "cleanup failed; decoy paths and safety archive retained"
+        return 1
+    fi
+    RESET_DASHBOARD_DECOY_DASHBOARD=""
+    RESET_DASHBOARD_DECOY_P2POOL=""
+}
+
 # Remove the generated safety archive once we're done (kept on --keep, or if restore failed).
 safety_cleanup() {
+    reset_dashboard_cleanup || return 1
     [ -n "$SAFETY_ARCHIVE" ] || return 0
     if [ "$SAFETY_RESTORE_FAILED" != "0" ]; then
         it_warn "retaining the safety backup after a failed rollback: $SAFETY_ARCHIVE"
@@ -169,9 +201,21 @@ restore_baseline() {
     it_log "Restoring original config.json and re-applying…"
     # A restore that reports a warning and moves on leaves the next run on an unknown baseline.
     # Every step is binding, and the config/secret state is re-read and compared afterwards.
-    if ! push_config "$BASELINE_CONFIG" || ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
+    local br_dir="${OUT_DIR:-}/baseline-restore"
+    if ! it_run_logged "$br_dir" config-write push_config "$BASELINE_CONFIG"; then
         SAFETY_RESTORE_FAILED=1
-        it_fail "restore original config and healthy stack" "config write, apply, or health wait failed; safety archive retained"
+        it_fail "restore original config and healthy stack" \
+            "config write returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}; safety archive retained"
+        return 1
+    elif ! it_run_logged "$br_dir" apply pithead apply -y; then
+        SAFETY_RESTORE_FAILED=1
+        it_fail "restore original config and healthy stack" \
+            "pithead apply returned non-zero (rc $IT_STEP_RC)${IT_STEP_LOG:+; see $IT_STEP_LOG}; safety archive retained"
+        return 1
+    elif ! wait_status_ok 240; then
+        SAFETY_RESTORE_FAILED=1
+        it_fail "restore original config and healthy stack" \
+            "pithead status did not become healthy within 240s${IT_STEP_LOG:+; see $IT_STEP_LOG for the apply}; safety archive retained"
         return 1
     fi
     if [ "$(rx 'cat config.json')" != "$BASELINE_CONFIG" ] ||

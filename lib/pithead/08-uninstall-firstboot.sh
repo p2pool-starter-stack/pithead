@@ -1,8 +1,8 @@
 # `uninstall` (#77 phase 1, #2379): the clean exit for the DIY channel — stop and remove
 # everything pithead put on this host, and delete NO data, ever, on any flag. Three named
-# volumes (caddy_data, wallet_data, tari_wallet_data) are pithead's, not the operator's — all
+# volumes (caddy_data, wallet_data, tari_wallet_db) are pithead's, not the operator's — all
 # three are derived (view-only wallets rebuild from the view keys in config.json, Caddy
-# re-issues its ACME state) — so they go with the containers via `compose down -v`. Everything
+# re-issues its ACME state). Everything
 # an operator would call "their data" (chains, Tor onion keys, dashboard history, the p2pool
 # sidechain) is a bind mount and is never touched. The appliance has no uninstall — its
 # equivalents are the reset tiers.
@@ -51,7 +51,7 @@ stack_uninstall() {
     detect_os
 
     # Every path below is read from .env BEFORE uninstall deletes it.
-    local checkout_dir="$PWD" kept_dirs=() derived_dirs=() d dkey
+    local checkout_dir="$PWD" kept_dirs=() derived_dirs=() d dkey units_left=0
     for dkey in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do
         d=$(env_get_file .env "$dkey")
         [ -n "$d" ] && kept_dirs+=("$d")
@@ -91,12 +91,12 @@ stack_uninstall() {
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
     local secret_file="$checkout_dir/data/tari-wallet-secret.env"
 
-    local kept_list derived_list
+    local kept_list derived_list unit down_out
     kept_list=$(printf '%s\n' "${kept_dirs[@]}" | sort -u | tr '\n' ' ')
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
     warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
-    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_data volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
+    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_db volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit and pithead-egress.timer check; the LAN-only source rule, its pithead-lan-guard.service boot unit, pithead-lan-hold.service and pithead-lan.timer check; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
     log "Kept (yours): $checkout_dir/config.json, $checkout_dir/backups/, and the data dirs: ${kept_list:-none recorded}"
     log "Left behind (shared with the machine, not pithead's alone to remove): the apt packages setup installed (jq, openssl, docker.io, docker-compose-v2); the GRUB HugePages cmdline; the runtime HugePages pool."
     if [ "$yes" -ne 1 ]; then
@@ -108,18 +108,25 @@ stack_uninstall() {
         }
     fi
     mutation_lock_acquire uninstall
-    remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
-    remove_lan_guard
-    docker compose down --remove-orphans -v 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
+    for unit in remove_egress_check_units remove_lan_guard_check_units; do "$unit" || units_left=1; done
+    if down_out=$(docker compose down --remove-orphans -v 2>&1); then
+        remove_deactivated_profile_containers
+    else
+        printf '%s\n' "$down_out" >&2
+        warn "compose down failed with the error above — continuing with cleanup. Once the stack is stopped, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    fi
+    remove_tor_egress_when_idle ||
+        warn "A stack container is still active or could not be checked, so the Tor-only egress rules stay for now, but their boot unit is already removed and nothing re-applies them after a reboot. Run '$0 down' before rebooting."
+    lan_guard_teardown uninstall && { remove_lan_guard_boot_unit || error "uninstall stopped: $LAN_GUARD_BOOT_UNIT or $LAN_GUARD_HOLD_UNIT could not be removed; retry."; } # (#2749)
+    remove_tari_wallet_volumes
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
     # stderr kept: the drain's timeout warning is the message for a request still in flight.
-    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false provision_control_runner || true
+    CONTROL_DIR="$control_dir" provision_control_runner remove || true
     # The view-key secret goes first: nothing after it may leave a 0600 key behind.
     rm -f "$secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
@@ -143,7 +150,7 @@ stack_uninstall() {
     fi
     mutation_lock_release
 
-    log "Uninstalled."
+    [ "$units_left" -ne 0 ] || log "Uninstalled."
     log "Every data directory is still here. To delete pithead's data, run:"
     if [ "${#kept_dirs[@]}" -gt 0 ]; then
         local q quoted_kept=""
@@ -162,6 +169,7 @@ stack_uninstall() {
     log "Then, to remove the program itself:${inside}"
     printf '  rm -rf %s\n' "$(uninstall_quote "$checkout_dir")"
     # error, not a bare non-zero return: that would also print the ERR trap's "aborted unexpectedly".
+    [ "$units_left" -eq 0 ] || error "Uninstall finished, but a firewall check timer or service could not be fully removed: see the warning above."
     [ "$failed" -eq 0 ] || error "Uninstall finished, but a derived directory could not be removed: run the command in the warning above."
 }
 

@@ -1,75 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Control-channel spool + audit hardening domain (#1105 Phase 1, appliance lane): the sections
-# that prove the control channel's own storage cannot be grown without bound by a caller. The
-# audit log is trimmed to its newest entries BEFORE an append once it passes the size cap, so the
-# file shrinks instead of growing forever and the fresh entry is always last (#349); and the
-# request spool enforces an intake cap per run, refuses symlinked intents, and sweeps stale ones,
-# with the overflow left for the next run to drain (#33 hardening).
-# Sourced by tests/stack/run.sh.
-#
-# THIS FILE IS DELIBERATELY NOT STANDALONE-SOURCEABLE, AND THAT IS THE CORRECT CALL HERE.
-# It follows the shipped add-only-ssrf disclosure precedent — source in place, position-locked,
-# dependency disclosed here — rather than the self-arm pattern most domain files use. "It should
-# self-arm like its neighbours" is the obvious review note and it is wrong for this domain:
-#
-# - This domain is a pure CONSUMER of the control sandbox. It never calls build_control_sandbox();
-#   test-control-core.sh calls it once, in the control-core domain sourced ahead, and $C reaches
-#   here from it.
-#   (That section lived in run.sh until #1105 R12 moved it into its own domain file.)
-# - This domain is position-locked by EXECUTION ORDER relative to the sibling sections that
-#   accumulate what it counts, not by anything a second builder call would overwrite. Calling
-#   build_control_sandbox() here would be harmless, and that is why it buys
-#   nothing: $C is the fixed path "$SANDBOX/control", its mkdir -p only creates, its copies are
-#   static inputs, and seed_control_env/control_config are DEFINED inside it and never called — so
-#   the builder writes no config.json and touches nothing under data/control/{requests,staged,
-#   results,audit}. It could not establish the state this domain depends on, only running in
-#   position after the sections that accumulate it can.
-#   Every assertion here is a COUNT against an exact number — audit lines and bytes either side of
-#   a trim, spool files left after a capped run, then zero after the next drain — taken against the
-#   shared spool and audit log this run has accumulated. Run out of position it would be counting a
-#   spool nothing had written to yet.
-#   The coupling that DOES bite here is write-side, and it has a recorded firing: the rig-worker
-#   token-mask cluster moved with a re-derived $C, its applies wrote EXTRA result files into the
-#   shared results dir, and a still-in-run.sh assertion counting that dir went red. That is
-#   pollution of a counted directory — a different mechanism from anything being reset.
-#   This domain is the counting side of that same rule.
-#   RETRACTED (#1105 R12): that firing's stated MECHANISM does not reproduce at the tip — the
-#   apply path writes nothing into results/ unless is_appliance(), which no sandbox run
-#   satisfies. The RED was real; WHY is not established, and the full re-derivation is in
-#   test-rig-worker.sh's header. This domain's position-lock rests on what it READS, not on it.
-#
-# Re-derivations, audited over this WHOLE file, this header included. The audit script is
-# lane-local and is NOT in this repo, so nothing below rests on it: each claim is written to be
-# re-derived here with git and grep alone, and should be treated as a claim to check.
-# - $REQS, $RESULTS, $STAGED and $AUDIT are NOT the builder's. They are assigned by the
-#   control-run-pending section, in test-control-core.sh, sourced before this stanza — an ordering
-#   dependency, same class as any other. They are deliberately NOT seeded here: each is a plain
-#   derivation from $C, so a seed would duplicate that file's definitions and could drift from them,
-#   and it would buy nothing, because $C itself keeps this file non-standalone either way.
-# - $UUID5 IS INHERITED FROM ANOTHER DOMAIN — the approval-gate section assigns it, and this
-#   domain reuses that id to post an intent. It is not assigned anywhere in the moved text.
-#   (That section lived in run.sh until #1105 R13 reunited it into test-control-add-only-ssrf.sh,
-#   whose stanza run.sh still sources ahead of this one.) This is the ambient ordering dependency
-#   in its plainest form: nothing about the moved text reveals it, and only the whole-file
-#   read-versus-assign audit surfaces it.
-# - $UUID4, $out, $audit_lines and $audit_size are assigned HERE, in the moved text.
-# - This domain reads NO $WALLET at all, unlike the two sibling domains split out beside it.
-#   That is recorded because it was CHECKED rather than assumed: an absence deserves the same
-#   whole-file audit as a presence, and `/usr/bin/grep WALLET` over this file, comments
-#   stripped, returns nothing.
-# - Every provider function this domain calls is top-level in lib.sh: assert_eq, assert_contains,
-#   run_pending, and ok/bad beneath the assertions. It calls none of the three functions nested
-#   inside the sandbox builders (seed_env, seed_control_env, control_config), so unlike the two
-#   sibling domains in this cut its dependency is in variables only. It defines no functions.
-#
-# The source stanza sits at this block's own vacated position — after the masking domain, before
-# the control-deploy stanza — so every count is taken against exactly the spool and audit state it
-# was always taken against. The anchor is a correctness requirement in this cut, not a preference.
-#
-# The guard below is the ambient contract made executable: sourced out of position, this file
-# stops on a named variable instead of counting an unbuilt spool and passing.
-: "${C:?}" "${UUID5:?}" "${REQS:?}" "${RESULTS:?}" "${STAGED:?}" "${AUDIT:?}"
+# Audit growth, request intake, stale sweeps and result retention remain bounded.
+# The shared fixture seeds fresh processes and preserves existing config and spool state.
+
+ensure_control_fixture
 
 echo "== black-box: audit log growth is bounded (#349) =="
 # Seed the log past the 512 KiB cap, then let the runner audit one more event: the writer trims
@@ -177,3 +111,60 @@ run_pending >/dev/null
 result_count=$(find "$RESULTS" -maxdepth 1 -type f \( -name "$UUID6.json" -o -name "$UUID7.json" \) | wc -l | tr -d ' ')
 assert_eq "each request in one drain reapplies the result count cap" "$result_count" "1"
 unset CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S UUID6 UUID7 result_count
+
+echo "== black-box: non-file spool entries are removed without leaving requests/ =="
+: >"$AUDIT"
+mkdir -p "$C/outside-dir" "$REQS/dir-entry.json"
+printf 'keep' >"$C/outside-dir/kept"
+printf 'inner' >"$REQS/dir-entry.json/inner"
+ln -s "$C/outside-dir" "$REQS/dir-link.json"
+ln -s "$C/outside-missing" "$REQS/dangling.json"
+printf 'x' >"$REQS/"$'two\nlines.json'
+out="$(run_pending)"
+for entry in dir-entry.json dir-link.json dangling.json; do
+    if [ -e "$REQS/$entry" ] || [ -L "$REQS/$entry" ]; then bad "non-file request $entry removed" "still present"; else ok "non-file request $entry removed"; fi
+done
+[ ! -e "$REQS/"$'two\nlines.json' ] && ok "request with a line break in its name removed" || bad "request with a line break in its name removed" "still present"
+assert_eq "file behind a linked folder untouched" "$(cat "$C/outside-dir/kept" 2>/dev/null)" "keep"
+[ ! -e "$C/outside-missing" ] && ok "dangling link target not created" || bad "dangling link target not created" "target exists"
+assert_eq "each removed request audited, the one with a line break included" "$(grep -c refused-nonregular "$AUDIT")" "4"
+assert_contains "non-file sweep drains the spool" "$(run_pending)" "No pending control requests."
+
+echo "== black-box: id and actor are matched as whole strings =="
+UUID8="a8a8a8a8-a8a8-48a8-8a8a-a8a8a8a8a8a8"
+UUID9="a9a9a9a9-a9a9-49a9-8a9a-a9a9a9a9a9a9"
+jq -n --arg id "$UUID8"$'\n'"tail" '{id:$id,action:"unknown",actor:"x"}' >"$REQS/$UUID8.json"
+jq -n --arg id "$UUID9" --arg a "admin"$'\n'"tail" '{id:$id,action:"unknown",actor:$a}' >"$REQS/$UUID9.json"
+: >"$AUDIT"
+out="$(run_pending)"
+assert_contains "id with a line break refused as malformed" "$out" "malformed id"
+assert_eq "no result file carries the extra id text" "$(find "$RESULTS" -name '*tail*' | wc -l | tr -d ' ')" "0"
+assert_eq "actor with a line break audited as untrusted" "$(jq -r --arg id "$UUID9" 'select(.id == $id) | .actor' "$AUDIT")" "untrusted"
+
+echo "== black-box: one drain stops starting requests after its time budget =="
+mkdir -p "$C/slow-bin"
+cat >"$C/slow-bin/chmod" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}:${2:-}" in 600:*/.claim.*) sleep 1 ;; esac
+exec /bin/chmod "$@"
+EOF
+/bin/chmod +x "$C/slow-bin/chmod"
+for i in $(seq 1 6); do printf 'notjson' >"$REQS/slow-$i.json"; done
+old_path="$PATH"
+PATH="$C/slow-bin:$PATH"
+out="$(CONTROL_DRAIN_BUDGET_S=2 run_pending)"
+PATH="$old_path"
+assert_contains "time budget announced" "$out" "per-run time budget"
+left="$(find "$REQS" -name 'slow-*.json' | wc -l | tr -d ' ')"
+[ "$left" -gt 0 ] && [ "$left" -lt 6 ] && ok "budget leaves the rest for the next run" || bad "budget leaves the rest for the next run" "$left left"
+assert_contains "next run drains the remainder" "$(run_pending)" "Processed $left control request(s)"
+
+echo "== black-box: a spool too large for one command line is still listed =="
+long_name=$(printf 'x%.0s' $(seq 1 240))
+for i in $(seq 1 9000); do : >"$REQS/$i-$long_name.json"; done
+: >"$REQS/"$'late\nname.json'
+assert_contains "a spool of 9000 long names is seen by the runner" "$(CONTROL_DRAIN_BUDGET_S=0 run_pending)" "per-run time budget"
+[ -e "$REQS/"$'late\nname.json' ] && ok "a spent budget also stops the removal of names with a line break" || bad "a spent budget also stops the removal of names with a line break" "removed"
+find "$REQS" -mindepth 1 -delete
+assert_eq "claim failure messages carry no request name" "$(grep -c 'claimed control request [$]name' "$STACK")" "0"
+unset UUID8 UUID9 left entry long_name i

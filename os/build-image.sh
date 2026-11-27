@@ -9,9 +9,9 @@
 #                  builds omit it and stay shell-less. Sets the same PITHEAD_TEST_SSH_PUBKEY the
 #                  env path always honored — the flag exists so the bench recipe is one word,
 #                  not a rediscovered env var.
-#   --fresh-index  bust ONLY the rootfs Dockerfile's apt-update layer (#929): a warm builder
-#                  cache reuses that layer's apt index for weeks, and when the mirror rotates a
-#                  package the stale index 404s on install. Later layers still cache normally.
+#   --fresh-index  rebuild the rootfs package layer with a current apt index. The apt update
+#                  and install share one layer; a cache hit reuses both. Later layers rebuild
+#                  from the changed package layer as needed.
 #   --stage-only   stage os/build/stage/ (the compose file and its stamp, see stage_compose) and
 #                  stop before docker: the CI rootfs scan runs the Dockerfile itself and needs
 #                  exactly this step first, since the Dockerfile COPYs from that directory.
@@ -57,11 +57,11 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# apt_fetch_failure_hint (#929): given a build log tail, detect the stale-apt-index 404 signature
-# and print the remedy. Split out so it's testable without docker (tests/stack/run.sh covers it).
+# apt_fetch_failure_hint (#929): detect an apt fetch failure and print a rebuild command.
+# Split out so it's testable without docker (tests/stack/run.sh covers it).
 apt_fetch_failure_hint() {
     if grep -qE '404  Not Found|Unable to fetch some archives' <<<"$1"; then
-        echo "==> looks like a stale apt index (mirror rotated a package since the last build)." >&2
+        echo "==> apt could not fetch a package (the mirror may have changed during this build)." >&2
         echo "==> rerun with: os/build-image.sh --fresh-index" >&2
     fi
 }
@@ -77,19 +77,15 @@ fi
 
 is_immutable_image_ref() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; }
 
-# Resolve each first-party image to the digest the RELEASE SIGNED, and pin the compose to it.
-# The resolution is scripts/release/release.sh's manifest_digest, on purpose and to the letter: the
-# `Digest:` line of `docker buildx imagetools inspect`, which is the manifest-LIST (index) digest,
-# and the index digest is what sign_images hands to `cosign sign`. A multi-arch tag's per-platform
-# children are NOT signed: `docker manifest inspect --verbose` returns those children, so pinning
-# one (`.[0]`) pins bytes no signature covers and verify_release_images then fails closed on every
-# boot — the exact brick #1891 exists to avoid. `^Digest:` is anchored and `exit` takes the first
-# line because the child entries this output also lists are indented beneath `Manifests:`.
-pin_first_party_images() { # <compose-file> <registry> <stack-version>
-    local compose="$1" registry="$2" version="$3" svc digest
+pin_first_party_images() {
+    local compose="$1" registry="$2" version="$3" dashboard="${4:-}" svc digest
     for svc in tor monero p2pool xmrig-proxy dashboard; do
-        digest="$(docker buildx imagetools inspect "${registry}/pithead-${svc}:${version}" 2>/dev/null |
-            awk '/^Digest:/{print $2; exit}')"
+        if [ "$svc" = dashboard ] && [ -n "$dashboard" ]; then
+            digest="${dashboard##*@}"
+        else
+            digest="$(docker buildx imagetools inspect "${registry}/pithead-${svc}:${version}" 2>/dev/null |
+                awk '/^Digest:/{print $2; exit}')"
+        fi
         [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             echo "build-image: could not resolve an immutable digest for pithead-${svc}:${version}" >&2
             return 1
@@ -101,12 +97,26 @@ pin_first_party_images() { # <compose-file> <registry> <stack-version>
     done
 }
 
-# Harness builds only, fault injection (#2383): force the dashboard's OWN healthcheck to fail,
-# reproducing manual battery M9, a container that starts and answers HTTP while its healthcheck
-# stays failed. The fault goes in the shipped compose file, not the image: the dashboard is pinned
-# to its signed registry digest above, so a layer rebuilt onto the baked archive never runs (#2694).
-# Exactly one dashboard healthcheck must be rewritten, or the bundle would hold no fault at all.
-break_dashboard_healthcheck() { # <compose-file>
+select_marker_dashboard() {
+    local manifest="$1" marker="$2" registry="$3" commit image
+    [ -n "$manifest" ] || {
+        echo "build-image: signed marker image manifest is required" >&2
+        return 1
+    }
+    commit="${PITHEAD_TEST_IMAGE_COMMIT:-}"
+    [ -n "$commit" ] || commit=$(git rev-parse HEAD) || return 1
+    image=$(jq -er --arg commit "$commit" --arg marker "$marker" 'select(.version == 1 and .source_commit == $commit) | .images[$marker] | select(type == "string")' <<<"$manifest") || {
+        echo "build-image: signed marker image is missing or belongs to another commit" >&2
+        return 1
+    }
+    is_immutable_image_ref "$image" && [ "${image%@*}" = "$registry/pithead-dashboard" ] || {
+        echo "build-image: marker image must be an immutable dashboard reference in the test registry" >&2
+        return 1
+    }
+    printf '%s\n' "$image"
+}
+
+break_dashboard_healthcheck() {
     local compose="$1" probe='^[[:space:]]*test: \["CMD", "/app/healthcheck\.sh"\]$'
     [ "$(grep -cE "$probe" "$compose")" = 1 ] || {
         echo "build-image: no single dashboard healthcheck to break in $compose" >&2
@@ -251,12 +261,17 @@ fi
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -z "$TEST_REGISTRY" ]; then
     require_pullable_services "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
 fi
-# A synthetic-compose build (PITHEAD_OS_SYNTHETIC_COMPOSE, see stage_compose above) stamps a
-# version no registry ever published on purpose — tests/os/data-floor-fallback-leg.sh relies on
-# `pithead up` failing to pull it at guest runtime, not on the build refusing to produce the
-# bundle. Pinning digests here would turn that into a build-time failure instead.
+MARKER_DASHBOARD_IMAGE=""
+if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
+    [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
+        echo "marker images require a debug harness build" >&2
+        exit 1
+    }
+    MARKER_DASHBOARD_IMAGE=$(select_marker_dashboard "${PITHEAD_TEST_MARKER_IMAGES:-}" "$PITHEAD_TEST_MARKER" "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}") || exit 1
+    PITHEAD_WIZARD_IMAGE="$MARKER_DASHBOARD_IMAGE"
+fi
 if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
-    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
+    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "${PITHEAD_PIN_TAG:-$STACK_VERSION}" "${MARKER_DASHBOARD_IMAGE:-}" || exit 1
 fi
 if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
     [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
@@ -276,34 +291,12 @@ if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
     docker pull -q "$WIZARD_SOURCE" >/dev/null
     docker tag "$WIZARD_SOURCE" "$WIZARD_IMAGE"
 elif [ "${PITHEAD_WIZARD_FROM_REGISTRY:-0}" = "1" ]; then
-    # Release path: the published image carries the wizard module.
     docker pull -q "$WIZARD_IMAGE" >/dev/null
 else
-    # No mtime cache, EVER. The old test compared the archive against dashboard — the
-    # DIRECTORY, whose mtime only moves when a direct child is added or removed. Editing a file
-    # deep inside it changes nothing, so the cache said "fresh" forever and stale wizards
-    # reached three separate benches. Docker's own layer cache makes the rebuild cheap; a
-    # correctness decision must not hang on directory-mtime semantics.
-    # Development path, and the default until a release ships the wizard: mining_dashboard.wizard
-    # only exists in this working tree, so a pulled image would start and immediately exit with
-    # "No module named mining_dashboard.wizard". Build the image the appliance will actually run.
     docker build -q -t "$WIZARD_IMAGE" dashboard >/dev/null
-fi
-# Harness builds only: stamp the marker INTO the dashboard image, at a path the wizard serves
-# (/static/os-test-marker.txt). The tag is identical across builds, so this is the only way a
-# battery can tell which dashboard actually answers after an update or reinstall — the #798
-# regression was precisely "new OS, old dashboard, every check green". Release builds set no
-# marker and get no extra layer.
-if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
-    # USER root/pithead mirrors dashboard/Dockerfile: the runtime user cannot write /app.
-    printf 'FROM %s\nUSER root\nRUN printf %%s "%s" >/app/mining_dashboard/web/static/os-test-marker.txt\nUSER pithead\n' \
-        "$WIZARD_SOURCE" "$PITHEAD_TEST_MARKER" | docker build -q -t "$WIZARD_IMAGE" - >/dev/null
 fi
 docker save "$WIZARD_IMAGE" | gzip -1 >os/rootfs/images/dashboard.tar.gz
 
-# Stamp the commit into the image. A release build once shipped a dashboard two commits stale
-# because it pulled from an intermediate clone, and nothing in the artifact could reveal it —
-# the image looked correct and behaved like the previous build. verify-image asserts this.
 BUILD_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 BUILD_DIRTY=""
 git diff --quiet 2>/dev/null || BUILD_DIRTY="-dirty"
@@ -316,13 +309,16 @@ echo "==> building from commit ${BUILD_COMMIT}${BUILD_DIRTY}"
 ROOTFS_TAG="${PITHEAD_ROOTFS_TAG:-pithead-os-rootfs}"
 
 echo "==> rootfs: container build + export"
-# --fresh-index (#929) stamps a new value into the Dockerfile's APT_INDEX_STAMP ARG, which busts
-# only the apt-update layer it precedes — every other layer still caches normally.
+# --fresh-index (#929) stamps a new value into APT_INDEX_STAMP, rebuilding the package layer.
 apt_index_stamp=0
 [ "${FRESH_INDEX:-0}" = "1" ] && apt_index_stamp="$(date +%s)"
 build_log="$(mktemp)"
 trap 'rm -f "$build_log"' EXIT
 if ! docker build -f os/rootfs/Dockerfile -t "$ROOTFS_TAG" \
+    --label "org.opencontainers.image.title=Pithead OS rootfs" \
+    --label "org.opencontainers.image.version=${STACK_VERSION#v}" \
+    --label "org.opencontainers.image.revision=$BUILD_COMMIT" \
+    --label "org.opencontainers.image.source=https://github.com/p2pool-starter-stack/pithead" \
     --build-arg PITHEAD_TEST_SSH_PUBKEY="${PITHEAD_TEST_SSH_PUBKEY:-}" \
     --build-arg PITHEAD_TEST_MARKER="${PITHEAD_TEST_MARKER:-}" \
     --build-arg PITHEAD_UPDATER="${PITHEAD_UPDATER:-rauc}" \
@@ -371,5 +367,13 @@ if [ -n "$TEST_REGISTRY" ]; then
     (cd "$stage" && find etc opt -type f) |
         tar --append -f os/build/pithead-root.tar --owner=0 --group=0 --mode=0644 -C "$stage" -T -
     rm -r "$stage"
+fi
+rootfs_mib=$(($(stat -c %s os/build/pithead-root.tar) / 1048576))
+slot_mib=4096
+headroom_floor_mib=1536
+echo "==> rootfs headroom: ${rootfs_mib} MiB used of the ${slot_mib} MiB slot, $((slot_mib - rootfs_mib)) MiB margin"
+if [ "$rootfs_mib" -gt $((slot_mib - headroom_floor_mib)) ]; then
+    echo "build-image: rootfs of ${rootfs_mib} MiB leaves less than the ${headroom_floor_mib} MiB floor below the ${slot_mib} MiB slot" >&2
+    exit 1
 fi
 echo "==> rootfs: os/build/pithead-root.tar ($(du -h os/build/pithead-root.tar | cut -f1))"

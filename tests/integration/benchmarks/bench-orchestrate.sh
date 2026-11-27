@@ -39,7 +39,7 @@ now() { date -u +%s; }
 pstat() { docker exec p2pool cat "/stats/$1" 2>/dev/null | jq -c . 2>/dev/null || true; }
 
 # --- config edits (only the two transport toggles; never touches wallets/tier/other secrets) -------
-set_arm() { # <tor|clearnet>  — flip p2pool.clearnet + the #270 egress firewall together (XvB stays DISABLED), then apply (recreates p2pool+dashboard)
+set_arm() { # <tor|clearnet>  — reproduce the recorded pre-#2790 arms (XvB disabled), then apply
     local arm="$1" cn xt fw
     if [ "$arm" = tor ]; then
         cn=false
@@ -51,10 +51,10 @@ set_arm() { # <tor|clearnet>  — flip p2pool.clearnet + the #270 egress firewal
         fw=false
     fi
     log "switching to arm=$arm (p2pool.clearnet=$cn, tor_egress_firewall=$fw, xvb.tor=$xt, xvb.enabled=false) — pithead apply"
-    # The #270 Tor-egress firewall MUST track the arm. With it ON it DROPs direct clearnet dials from
-    # the container subnet, so the clearnet arm would get 0 sidechain peers / 0 shares (silent garbage).
+    # The recorded pre-#2790 experiment switched the firewall off for clearnet P2Pool. Current
+    # deployments admit only P2Pool's address with the firewall on; these historical arms are unchanged.
     #   tor arm      → firewall ON  (fail-closed; the switch is egress-gated before data counts)
-    #   clearnet arm → firewall OFF so p2pool can actually peer over clearnet — the baseline we measure.
+    #   clearnet arm → firewall OFF, matching the baseline measured in that experiment.
     # monerod + Tari keep their own Tor app-config in BOTH arms (so only p2pool's transport differs);
     # firewall-off can't make them dial clearnet except Tari's upstream direct-dial bug (tari#7883),
     # which is immaterial to the p2pool reward_share metric and self-heals on the switch back to tor.

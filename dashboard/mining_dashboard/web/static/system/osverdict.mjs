@@ -38,6 +38,11 @@ export function verdictText(verdict) {
   if (!verdict || !verdict.outcome) return null;
   if (verdict.outcome === "updated") return `System updated to v${verdict.to}.`;
   if (verdict.outcome !== "rolled_back") return null;
+  if (verdict.interrupted)
+    return (
+      `The update to v${verdict.to} was interrupted before its verification finished and was rolled back automatically` +
+      ` — still on v${verdict.from}. The new version's health checks never reached a verdict.`
+    );
   return (
     `The update to v${verdict.to} failed its health checks and was rolled back automatically` +
     ` — still on v${verdict.from}.${blockingCause(verdict)}`

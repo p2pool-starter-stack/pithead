@@ -48,6 +48,12 @@ test("wipe everything (or an empty disk): the full form asks everything", async 
   assert.match(empty, /Payout address/);
 });
 
+test("payout field explains why a dedicated mining wallet matters", async () => {
+  const out = await appWithPick("sdb", "keep");
+  assert.match(out, /dedicated mining wallet: P2Pool payout addresses are public/);
+  assert.ok(out.indexOf("dedicated mining wallet") < out.indexOf("Monero payout address"));
+});
+
 test("chain size, healthchecks and time zone sit under Advanced, not the first-run form", async () => {
   // Audit-confirmed slim first-run (Home Assistant model): these three are the only appliance
   // questions beyond the DIY CLI's own core shortlist, so they move to day-2, not day-1.

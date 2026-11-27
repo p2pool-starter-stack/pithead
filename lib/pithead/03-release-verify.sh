@@ -131,6 +131,43 @@ verify_release_images() {
     log "All 5 release images verify against their pinned digest (cosign.pub)."
 }
 
+reconcile_compose_images() {
+    local config services svc image cid declared running
+    config=$(docker compose config --format json) || return 1
+    services=$(docker compose config --services) || return 1
+    while IFS= read -r svc; do
+        [ -n "$svc" ] || continue
+        case " ${PITHEAD_KEEP_RUNNING:-} " in *" $svc "*) continue ;; esac
+        if [ "${PITHEAD_HOLD_CHAIN:-0}" = 1 ]; then
+            case " $REVENUE_CHAIN_CONTAINERS " in *" $svc "*) continue ;; esac
+        fi
+        image=$(jq -r --arg svc "$svc" '.services[$svc].image // empty' <<<"$config") || return 1
+        [ -n "$image" ] || {
+            warn "No declared image for $svc after startup."
+            return 1
+        }
+        cid=$(docker compose ps -a -q "$svc") || return 1
+        [ -n "$cid" ] || {
+            warn "No container for $svc after startup."
+            return 1
+        }
+        declared=$(docker image inspect --format '{{.Id}}' "$image") || return 1
+        running=$(docker inspect --format '{{.Image}}' "$cid") || return 1
+        [ -n "$declared" ] && [ -n "$running" ] || return 1
+        if [ "$running" != "$declared" ]; then
+            log "Recreating $svc: its container still uses the previous image."
+            compose_up_checked -d --no-deps --force-recreate "$svc" || return 1
+            cid=$(docker compose ps -a -q "$svc") || return 1
+            [ -n "$cid" ] || return 1
+            running=$(docker inspect --format '{{.Image}}' "$cid") || return 1
+            [ "$running" = "$declared" ] || {
+                warn "$svc still uses an image other than its Compose declaration after recreation."
+                return 1
+            }
+        fi
+    done <<<"$services"
+}
+
 stack_upgrade() {
     if is_appliance; then
         error "This is a Pithead OS appliance: the program tree is delivered by OS images and resynced from the system slot at every boot, so a tarball upgrade here would silently revert at the next reboot. Updates arrive as signed OS images — see the appliance guide."
@@ -155,8 +192,8 @@ stack_upgrade() {
     # flag to false and the next require_deployed command (up/apply/upgrade) errors "run setup". We
     # only reach here past require_deployed, so the stack IS deployed and the flag must stay true.
     DEPLOYMENT_COMPLETED=true
-    render_env "${ENV_FILE}.new"
-    mv "${ENV_FILE}.new" "$ENV_FILE"
+    render_env "$PITHEAD_ENV_STAGE"
+    mv "$PITHEAD_ENV_STAGE" "$ENV_FILE"
     # #2636: a Tari major that migrates chain data needs room for the old database again. Refuse
     # on the freshly rendered .env and before provision_node_onions, whose onion step can start tor:
     # nothing is started or recreated first, so the migrating node never starts on a full volume.
@@ -168,33 +205,15 @@ stack_upgrade() {
     provision_console_login
     log "Re-rendered generated config for the current release."
     migrate_compose_project
-    # (Re)assert the Tor-only egress firewall BEFORE compose — same ordering as stack_up (#276), for
-    # the same reason: if the firewall isn't already installed (e.g. `down` then `upgrade`), starting
-    # containers first opens a startup window where a clearnet app (Tari, #271) can dial out unfenced
-    # before the rules go in (#291). In normal operation it's already installed from `up` and this
-    # is a cheap idempotent re-apply. Runs after the .env render above so the toggle/subnet are
-    # current.
-    apply_tor_egress_firewall # Tor-only egress (#270), consistent with up/apply
-    # One-time move of the dashboard data out of the install dir (#455) — after the .env commit
-    # (a failed move is retried on re-run) and before the recreate mounts the new location.
+    apply_tor_egress_firewall
     migrate_dashboard_data
-    # Source checkout: rebuild the images from build/. Release install: pull the new published images
-    # instead — force a re-pull so a moved tag is refreshed (#44).
     if is_source_checkout; then
-        # Source checkouts build the first-party images locally (--build); compose_up_checked pulls
-        # a bumped third-party digest, a missing image, before its `--pull never` up (#2654).
         compose_up_checked -d --build || error "Upgrade failed during 'docker compose up' — see the error above."
+        reconcile_compose_images || error "Upgrade failed to recreate a container on its rebuilt image."
     else
-        verify_release_images # #376: fail closed BEFORE the pull when a release key is on disk
+        verify_release_images
         PITHEAD_PULL=always compose_up_checked -d || error "Upgrade failed during 'docker compose up' — see the error above."
     fi
-    # #356: if the dashboard onion (#343) was just turned on, the recreated tor generated its hostname —
-    # read it back into .env so `status`/`onion-client-key` show the address (mirrors apply's capture at
-    # the end of a change). No-op when the onion is off or already captured. Without this, enabling the
-    # onion via `upgrade` left the address uncaptured (apply's capture only runs when config changed).
-    # #546: and regenerate the Caddyfile + restart caddy, exactly like apply's capture — the render
-    # preamble above ran while the address was still the placeholder, so without this the HTTPS onion
-    # vhost (#360) would never appear (the next apply no-ops on an unchanged config).
     if [ "${DASHBOARD_ONION_ENABLED:-false}" == "true" ] && onion_missing "${DASHBOARD_ONION:-}"; then
         if provision_dashboard_onion && render_env; then
             generate_caddyfile
@@ -216,6 +235,8 @@ stack_upgrade() {
     # legitimate takeover — the old versioned dir still exists (it is the rollback), and without
     # the escape the ownership guard would refuse and leave the units on the previous install.
     provision_control_runner steal
+    provision_egress_check_units steal
+    provision_lan_guard_check_units steal
     log "Stack upgraded."
     mutation_lock_release
 }

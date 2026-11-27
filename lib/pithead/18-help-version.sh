@@ -29,8 +29,8 @@ Lifecycle:
                             hand after replacing the program under an existing config.
   up                        Start the stack.
   down                      Stop the stack.
-  restart [tor|monerod]     Restart the stack — or one container: 'tor' picks fresh
-                            guards when Tor clearnet egress is stuck (drops and rebuilds
+  restart [tor|monerod]     Restart the stack — or one container: 'tor' rebuilds
+                            circuits when Tor clearnet egress is stuck (drops and rebuilds
                             all Tor circuits; a local monerod restarts alongside);
                             'monerod' re-dials peers when the node reports not
                             synchronized after a Tor restart.
@@ -46,15 +46,23 @@ Inspection:
                             webhook, and ntfy sink. Reports each result without printing its
                             URL or token; Healthchecks is excluded because a ping moves its
                             dead-man switch.
+  tor-recover check|apply   Check saturated Tor history with stalled Monero or bootstrap;
+                            apply backs up only circuit state and restarts Tor after a
+                            persistent cooldown. Requires explicit operator action.
   doctor [--json]           Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk,
                             .env/onion state, and container status — a paste-able health report.
                               --json           machine-readable report on stdout (the human
                                                report moves to stderr); same checks, same
                                                non-zero exit on critical failures.
-  support-bundle            Collect a chmod-600 diagnostics tarball for a bug report: host
-                            facts, doctor (prose + JSON), masked config, redacted .env, and
-                            the last 200 log lines per container (launch-line credentials
-                            scrubbed). Read-only; nothing leaves the box — review, then share.
+  support-bundle            Collect a chmod-600 .zip for a bug report: host facts, doctor
+                            (prose + JSON), masked config, redacted .env, every container's
+                            log for the window and the DIY pithead units' journal, with a
+                            manifest. [--since TIME] [--until TIME] (RFC 3339, UTC) or
+                            [--hours N, default 72]. Read-only; nothing leaves the box.
+  recovery-bundle           Appliance only: collect the same redacted bundle from the journal
+                            alone — no dashboard, no container engine, no network — for a box
+                            whose stack is down. Prints the archive path under /data.
+                            [--hours N, default 72].
   version, -V, --version    Print the installed stack version (offline; no update check).
 
 Maintenance:
@@ -100,7 +108,7 @@ Maintenance:
 
   uninstall [-y|--yes]      DESTRUCTIVE: the clean exit. Removes everything pithead put on
                             this host — containers, images, the caddy_data/wallet_data/
-                            tari_wallet_data volumes, this checkout's control-runner units, the
+                            tari_wallet_db volumes, this checkout's control-runner units, the
                             egress firewall rules, .env, Caddyfile, and every other pithead-
                             derived file and directory — and deletes NO data, on any flag.
                             Keeps what is yours: config.json, backups/, and the data dirs
@@ -116,8 +124,10 @@ Maintenance:
                             token-gated form on http://<this-host>/ (the dashboard image in
                             wizard mode), validates the answers host-side, then runs setup.
                             A pre-seeded config.json skips the form; --cli runs the terminal
-                            wizard instead. The one-time token prints here; five wrong tries
-                            mint a fresh one. See $DOCS_URL/docs/appliance.md.
+                            wizard instead. The one-time token prints here. Five wrong tries
+                            from one network peer pause new authentication for 60 seconds;
+                            retry the same token. The wizard and authenticated sessions keep
+                            running. See $DOCS_URL/docs/appliance.md.
 
   load-images               Load the baked container-image archives (/opt/pithead/images)
                             into the engine when their content changed since the last load.
@@ -163,6 +173,16 @@ Maintenance:
                             or a release upgrade (target verified against the GitHub
                             release API host-side). Normally fired by the pithead-control
                             systemd path unit when dashboard.control.enabled is true.
+
+  egress-run-pending        Close completed clearnet-sync firewall exemptions when dashboard
+                            control is off. Normally fired by pithead-egress-sync.path.
+  egress-status             Check the Tor-only egress firewall and write the verdict to
+                            the dashboard (control results dir). Read-only. Normally
+                            fired every 2 minutes by the pithead-egress timer.
+  lan-guard-check           Check the live LAN-only source rule. If it is missing,
+                            invalidate the node start marker and stop nodes that
+                            publish LAN ports. If it is live, start a node that
+                            crashed (non-zero exit). Fired by pithead-lan.timer.
 
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a

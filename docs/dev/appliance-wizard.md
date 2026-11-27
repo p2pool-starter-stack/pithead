@@ -23,10 +23,26 @@ action — validation, disk installs, provisioning — happens host-side, the sa
 the [#33 control channel](../dashboard.md#configuration-view). A compromised container can
 write the spool and nothing more.
 
+## Authentication gate
+
+Failed tokens are counted per direct peer address from `request.remote`; forwarded-address
+headers do not select the bucket. Entries below the threshold expire 60 seconds after their
+latest failure. The fifth failure starts a fixed 60-second cooldown and returns `429` with
+`Retry-After`; blocked requests do not extend it, and even the correct token must wait. The
+wizard keeps running and keeps the same token, so the browser tells that peer when to retry it
+instead of asking for a replacement. Successful authentication clears only that
+peer's failures and creates its session. Existing authenticated cookies retain access,
+including for operators sharing the blocked peer. The failure map holds at most 1,024 peers and
+evicts the entry it began tracking first when full, even if that peer is still in cooldown. Guessing is bounded per peer (five tries a minute), not globally, and the token does not rotate, so several peers multiply the rate; the six-character token holds about 29.7 bits. A network failure is reported separately from throttling.
+
 ## The stage machine
 
 `wizard_stage()` in `wizard/server.py` derives the step from **spool files only**, and the client
 renders what it is told. The client must never infer the stage.
+
+`/status` exposes coarse progress without authentication. Stored `error.txt` details require
+the current wizard session; anonymous failed or rejected states use generic text. Status
+responses use `Cache-Control: no-store`, as does the authenticated `/api/wizard-state` payload.
 
 | Stage | True when | View |
 |---|---|---|
@@ -50,6 +66,19 @@ root-owned volatile storage while the installer applies it directly to target da
 finishes either path headlessly, with no second wizard. A missing ack installs nothing: the erase
 waits for a human, and a timeout hands the form back intact.
 
+The connection card includes a stratum password or explicit absence and, when enabled, the
+TLS fingerprint. The password question defaults off in the CLI, JavaScript page and form-submit
+fallback. The typed wizard stores an enabled password as a generated literal; existing `"auto"`
+configurations retain their mode and rendered seed. A config-only installer restore publishes
+only its validated stratum seed beside the private candidate, then removes that sidecar.
+
+Before the card, the host resolves credentials once. Installed setup reuses or creates its
+stratum certificate in its final data directory. The installer retains a kept target's existing
+pair through a read-only mount, or creates one in the root-only volatile carry directory. After
+installation it copies that pair directly to target data, never to the ESP. The install request
+must still name the target and wipe choice whose identity the card showed. Cleanup removes the
+carry along with the existing restore credentials.
+
 On a reinstall the form opens with the previous machine's answers. When the inventory holds
 exactly one disk that already carries an install, the host mounts its data partition
 read-only, reads the previous `config.json`, strips every secret
@@ -63,8 +92,11 @@ wins and no config crosses.
 
 Before a pre-fill reaches the form, the server moves the removed `xmrig_proxy.*` and
 `dashboard.workers[]` names to `xvb.*` and `workers.list[]`. It then drops keys absent from the
-current reference schema. The same preparation runs again on submit, so a hand-edited JSON pane
-cannot put an obsolete or unknown name back into the host's candidate. Known keys keep their
+current reference schema. The JSON pane refuses duplicate keys before updating the form.
+The submit endpoint also refuses duplicates and case-insensitive `PASTE_` / `YOUR_` string
+placeholders before normalization or staging, including in unknown keys. Refusals name the
+key path without echoing values. The same preparation runs again on submit, so a hand-edited
+JSON pane cannot put an obsolete or unknown name back into the host's candidate. Known keys keep their
 values and types for the host parser to validate; the wizard never weakens that gate. The page
 lists changed key paths without rendering their values.
 
@@ -98,9 +130,12 @@ reshapes to the answer the same way the disk choice already reshapes the form:
 | Pithead + RigForge | the default. Pithead's form, opening with the mine-on-this-machine switch already on. The role IS `local_miner.enabled` — the select and the switch are two views of ONE value, so moving either moves the other, and choosing Pithead submits today's config unchanged | `config.json` with `local_miner.enabled: true`; the boot contract's step 5 starts the miner |
 | RigForge | collapses to a pool address, a worker name and an optional stratum password. The pool field opens pre-filled when the host found a Pithead answering `pithead.local:3333` — dialed HOST-side and published to the spool as `rig-defaults.json`, the way the disk inventory travels, failing open to an empty field. The disk section gains **Run from this USB stick** as a first-class target: a rig holds almost no state, so the stick can BE the system — no erase, no commitment on machines whose disks belong to something else. The card shows the worker name and where it points; a rig has no dashboard and no login | `machine-role` + `rig.json` (below) |
 
-Validation-before-erase, the keep semantics, the card-then-ack gate, self-power-off and the
-headless first boot are identical in every role — one flow, three shapes. And keep means KEEP
-whatever the role says: the survivor config wins, and no role change crosses.
+Validation-before-erase, the card-then-ack gate, self-power-off and the headless first boot
+apply to every fresh install. On a disk holding an existing installation, keep preserves the
+survivor configuration and role. On a blank disk, keep is a fresh install: a pending rig
+submission must reach pool validation and its token-bearing card before installation. The
+bare keep-reinstall shortcut accepts neither a role marker nor a rig request, including
+an unusable request entry.
 
 The rig submission travels on its own spool channel (`rig-request.json`; the server never
 writes a `config.json` candidate for it), and the host dials the pool BEFORE anything
@@ -119,9 +154,14 @@ and returns the report as `node_probe`; nothing writes a `config.json` candidate
 The server resolves a name once, dials that vetted address and stores its numeric form in the
 accepted candidate. Loopback, unspecified, link-local,
 multicast and reserved addresses are refused, including names that resolve to one (#1946). With
-the Tor egress firewall on, every answer must also be in the private LAN or VPN IPv4 ranges the
-mining container can dial. Credentials are used only for the RPC request and never enter the
-report.
+the Tor egress firewall on, a name must answer with at least one address in the private LAN or VPN
+IPv4 ranges the mining container can dial and with no public IPv4 at all; the lowest such address
+is the one pinned. Other IPv6 answers (global or unique-local) are ignored rather than refused:
+the firewall is an IPv4 allowlist and only the pinned address reaches the config, so a dual-stack
+LAN name is accepted on its A record instead of sending the operator back to typing the literal
+address (#2351). The host-side preflight a day-two configuration commit runs
+(`remote_node_address` in `lib/pithead/10-node-probe.sh`) applies the same acceptance rule.
+Credentials are used only for the RPC request and never enter the report.
 
 | Field | Meaning |
 |---|---|
@@ -202,9 +242,13 @@ rig — keep means keep whatever the role says.
 `os/rauc/grub.cfg`'s fourth entry boots the slot the default would have booted and appends
 `pithead.setup=1` to that one boot's kernel cmdline. `pithead-setup-again.service`, the flag's
 only reader, runs `pithead firstboot-wizard` on a provisioned machine with `PITHEAD_SETUP_AGAIN=1`
-and `Before=pithead-boot.service`, so the role's normal boot waits behind the page. Under the
-switch (`lib/pithead/12a-setup-again.sh`) three things change and nothing else: the "already a
-rig" and "config.json present" short-circuits are skipped; `stage_wizard_spool` publishes
+and `Before=pithead-boot.service`, so the role's normal boot waits behind the page. Each
+announcement atomically publishes the URL, one-time token and certificate fingerprint to
+`/run/issue.d/pithead-setup.issue` with mode `0600`. The login prompts reload that file and
+print it again when either getty starts; the same text is copied directly to tty1 and ttyS0.
+A new round replaces the file. The wizard's exit trap and both units' `ExecStopPost` remove it.
+Under the switch (`lib/pithead/12a-setup-again.sh`) three things change and nothing else:
+the "already a rig" and "config.json present" short-circuits are skipped; `stage_wizard_spool` publishes
 `saved-role.json` and points the pre-fill at the saved answers (`rig-defaults.json` gets the saved
 pool + worker; `last-attempt.json` gets `config.json` through `strip_config_secrets`, unless a
 failed retry's context is already there); and the inner loop honours `keep-role`. The page shows
@@ -216,7 +260,10 @@ its Keep it / Set up again screen exactly when `saved-role.json` exists (`saved_
 | `saved-role.json` | host | present only on a set-up-again boot: `{role, pool, worker}` for a rig, `{role}` for a coordinator, never a secret |
 | `keep-role` | page | Keep it: the host ends the session with nothing on `/data` touched, the unit exits, pithead-boot runs the normal boot |
 
-Set up again is the ordinary submit. A rig accepted with the same worker name keeps its
+Set up again is the ordinary submit. On an installed coordinator, an accepted browser
+submission calls the confirmed setup worker after the credential handoff. It can re-provision
+the saved deployment without a terminal prompt; direct headless `pithead setup` still refuses
+an existing deployment, even with `PITHEAD_SETUP_AGAIN=1`. A rig accepted with the same worker name keeps its
 `access_token` (`firstboot_consume_rig` carries it over); any other change mints a new one on the
 next render. `record_machine_role` removes `rig.json` when the accepted role is not `rig`, so a
 role's data goes with the role. A coordinator's `config.json` is NOT removed by a change to `rig`:
@@ -309,6 +356,13 @@ real state immediately (no staging) and is written for an operator who already h
 which the wizard's pre-provisioning trust level does not assume.
 
 ## The certificate lifecycle
+
+The plain setup port redirects to HTTPS. The host passes its global interface addresses
+in `WIZARD_HOST_ADDRESSES`, excluding bridge interfaces before starting the container.
+The console and log banners use the same list. A recognised Host header keeps the typed
+address or machine name; an unknown header uses the first host address, or `pithead.local`
+when the inventory is unavailable. The container socket address never selects a redirect.
+Caddy keeps a recognised typed host after provisioning.
 
 **One certificate for the machine's whole life**, at `appliance_tls_dir()`
 (`/data/pithead/data/tls`), presented by the wizard *and* by Caddy afterwards.
@@ -427,23 +481,31 @@ Five steps, each answering a hardware-validated failure:
    exactly that on hardware: new slot, RC-old dashboard, every shipped fix absent). Keyed on
    the archive's digest, recorded beside the store it describes; a normal boot pays one
    sha256 per archive. The first-boot wizard runs the same loader before it serves, so both
-   boot owners converge the same way.
+   boot owners converge the same way. Harness marker variants are signed before Compose
+   digest pinning; the archive and runtime declaration select that same final image.
 2. **`pithead render`** — regenerate every *derived* file (`.env`, Caddyfile, service configs,
    host units) from `config.json` plus the program that is actually running. Derived files are
    never inspected or repaired, only rebuilt: an A/B update swaps the whole program, and a
    bench machine once served a days-old Caddyfile whose site list predated the code around it.
    On the read-only root, host units render into `/run/systemd/system` (`--runtime`
    enablement) and are recreated here each boot.
-3. **`pithead up`** — compose owns the containers' lifecycle, and recreates containers when
-   an image behind a constant tag changed identity. After each compose pass it renames a
+3. **`pithead up`** — start the selected services, compare each container's immutable image
+   ID with its Compose image declaration, and force recreation of mismatches. Verify the
+   replacement ID before reporting success; a failed comparison or recreation fails boot
+   before slot commit. Services held for data migration stay deferred until commit. After each compose pass it renames a
    container that an interrupted recreate left under its temporary `<id>_<service>` name,
    once the old container no longer holds the name. Its predecessor, `podman-restart`,
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it
    had just spawned.
 4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes three gates.
-   First the dashboard must answer through caddy on a *listed* vhost (`localhost`; bare
-   `127.0.0.1` hits Caddy's empty default site and proves nothing) — the end of the
-   derived-config → caddy → dashboard chain. Second `pithead doctor --json` must exit clean: it
+   First the dashboard must answer through Caddy on the vhost rendered in `.env`, with the
+   connection forced to loopback and the exact `/.pithead-boot-health` path rewritten to `/`.
+   The probe sends a capability derived from the owner-only salted login hash on curl's stdin.
+   Caddy requires the capability and removes it from logs and upstream requests; only this
+   credential-free local request gets the boot marker in its access log. Its locked 401
+   proves the login gate answers without adding a failed-login warning. With login off, the
+   dashboard must return a nonempty page. This checks the derived-config → Caddy → dashboard
+   chain. Second `pithead doctor --json` must exit clean: it
    FAILs on a crashed revenue container (monerod/p2pool/tari, including one an interrupted compose
    recreate left under its temporary `<id>_<service>` name), a dead Tor backbone, or a missing
    egress firewall, so a slot that serves a dashboard while mining is dead does not commit. Third
@@ -464,12 +526,35 @@ Five steps, each answering a hardware-validated failure:
    `pithead status` passes (#1265): that drift is the machine's address list, not the slot. A slot
    that boots but is not healthy stays uncommitted on purpose: that is the state A/B fallback exists
    for.
-   Unprovisioned machines never commit — GRUB's clear-and-retry keeps them booting, and a bad
-   update before provisioning reverts.
+   Fresh unprovisioned machines never commit, and an unverified update before provisioning
+   reverts. `config-reset` records an already-good booted slot with its exact `BUILD_COMMIT`,
+   only after the provisioned boot unit has completed successfully in the current boot. Once the
+   reset wizard container starts, firstboot restores that slot's good state on each configless
+   boot, including a reboot with setup still open. The record remains until the provisioned
+   health gate succeeds. A different slot or source cannot use it. The next provisioned boot
+   still runs all three health gates; reset does not commit an unverified update.
+
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
-   passenger (`|| true`). When enabled, this runs RigForge's setup in appliance mode from the
+   passenger (`|| true`). The appliance checks an active, enabled local miner every 30 seconds.
+   A successful proxy worker-list reading that finds the proxy container restarted since the
+   recorded identity while the local miner still has no connection queues an immediate XMRig
+   restart — a proxy replaced underneath a live miner is the stall XMRig never recovers from
+   itself, so it does not wait out the window. The guard brackets each reading with the container
+   identity and moves the recorded identity only on a successful reading that saw no change
+   across it, so a proxy recreated during a failed or connected reading still reads as a
+   recreation on the next reading. Otherwise five minutes of successful proxy
+   worker-list readings with no connection for the local miner’s rendered identity queue an
+   XMRig restart, logged by `pithead-miner-recovery.service`. On a rig the same service reads the rig's
+   own XMRig API and restarts XMRig after 120 seconds without a pool connection or hashing with no new
+   share, with a 300 second cooldown between restarts.
+   Other connected rigs do not reset that window. Missing readings, a connected local miner, a stopped
+   miner, or a busy stack operation reset that window. The guard holds the mutation lock only for
+   that busy check and around the restart, never while it reads the proxy, so a zero-wait command
+   such as `pithead tor-recover` is not refused because of it. The guard honors `PITHEAD_LOCK_FILE`
+   when supplied to its service, matching the CLI mutation lock. This guard runs only on coordinators;
+   it does not start a disabled miner or change slot-commit policy. When enabled, this runs RigForge's setup in appliance mode from the
    tree `pithead-sync` keeps on `/data/rigforge`: its unit renders into `/run` with
    `--runtime` enablement (gone every boot, recreated here, like the control-runner units),
    and the cached XMRig build on `/data` makes the run a re-render rather than a recompile.
@@ -511,7 +596,7 @@ had a gap between it and the next one.
 | the artifact | `tests/os/verify-image.sh` | both role paths present in the shipped image: the boot script's fork, the unit conditions that admit each role, the baked prebuilt, no swap anywhere |
 | the real thing | `tests/os/run.sh --phase provision` | token from the console → submit → handoff → ack → running stack → built-in miner up and its shares accepted → reboot through a corrupted Caddyfile → no failed units → slot self-commit → miner back |
 | the other real thing | `tests/os/run.sh --phase rig` | the same page answered `RigForge` → rig card with no login → mining from the byte-identical baked binary → **no containers at all** → reboot owned by `pithead-boot`, wizard closed → slot self-commit on an unanswered pool → A/B install, uncommitted rollback, self-commit, persistence |
-| the restore leg | `tests/os/run.sh --phase install` | a real encrypted backup taken off a live machine after its provisioning units have finished (the wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps` looks live, #1945), then a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, each uploaded through `/submit-restore` on a FRESH installer boot instead of the form, the second onto the first's kept disk; the powered-off installer medium is inspected for leftover restore credentials, and the powered-off target is inspected before first boot to prove its ESP has no restore secret and its data partition has the validated state plus only a non-secret handoff marker. The running wallet, Tor identity and opaque RPC/onion secrets must match each archive, the dashboard hash and fingerprint follow the rule in step 4 of the restore flow (kept while the fingerprint matches the preserved password), both the fixture's chain sentinel and the target's pre-restore sentinel must survive, and the fixture's removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
+| the restore leg | `tests/os/run.sh --phase install` | a real encrypted backup taken off a live machine after its provisioning units have finished (the wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps` looks live, #1945), then a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, each uploaded through `/submit-restore` on a FRESH installer boot instead of the form, the second onto the first's kept disk; the powered-off installer medium is inspected for leftover restore credentials, and the powered-off target is inspected before first boot to prove its ESP has no restore secret and its data partition has the validated state plus only a non-secret handoff marker. The created P2Pool container's configured wallet, Tor identity and opaque RPC/onion secrets must match each archive. The startup probe requires the fresh sync-gate hold first. Before its one start, it rejects prior crashes, restarts and OOM kills; a stopped exit 137 is eligible only when bounded logs from that container start show both SIGTERM and stopping. After proving the sync-gate hold, the harness pauses the dashboard, starts that restored P2Pool container once, and requires it to remain running with exit code zero and zero restarts across four samples over 30 seconds. It then stops P2Pool, restores the dashboard and rechecks the sync gate; failures name the probe checkpoint and include bounded daemon and kernel diagnostics. Prior stop evidence is escaped and limited to 30 lines of 240 columns; the start bound uses the shared Go-time-to-RFC3339 converter. This proves startup, not synced mining. The dashboard hash and fingerprint follow the rule in step 4 of the restore flow (kept while the fingerprint matches the preserved password), both the fixture's chain sentinel and the target's pre-restore sentinel must survive, and the fixture's removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
 
 The orchestration row is the one that was missing. pytest proved the endpoint published the
 credentials; a render probe proved the card renders given them; nothing proved the app *asked*.

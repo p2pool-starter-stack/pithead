@@ -1,16 +1,22 @@
 import logging
 import os
+import stat
+import time
 
 from mining_dashboard.config.config import DISK_PATH
+from mining_dashboard.service.health.mining_guard import (
+    container_triggers,
+    log_triggers,
+    monero_triggers,
+    p2pool_triggers,
+)
 
 logger = logging.getLogger("DataService")
 
-# Written by the cross-hardware restore doors only — the wizard and carried restores through
-# restore_apply(), never `./pithead restore`'s same-box recovery (#2626 operator ruling: that
-# door's chains never desynced, so it keeps whatever gate state the backup carried). The
-# snapshot's #35 sync-gate latch came from the machine the backup was taken on, so while this
-# file exists the dashboard ignores the persisted release and re-derives it from this machine's
-# chains. Removed once the gate releases here.
+# Full markers come from cross-hardware restore or a changed Monero endpoint. They
+# revoke the snapshot's release until these chains are ready; the gate then removes them.
+# Same-box recovery preserves its latch (#2626). A typed Tari-only marker preserves an
+# earned release and remains as durable background scope until a full reset replaces it.
 SYNC_GATE_RESET_PATH = os.path.join(DISK_PATH, "sync-gate-reset")
 
 
@@ -27,11 +33,11 @@ def chain_synced(sync):
     (``reachable is True``) and said it isn't syncing (``is_syncing is False``). An empty,
     partial or unreachable result is not synced (#2472).
 
-    When the reading carries monerod's own ``synchronized`` flag (the local RPC path), that flag
+    When the reading carries monerod's own ``synchronized`` flag (the RPC path), that flag
     must be True too. A monerod that has just restarted and has no peers yet reports
     ``target_height: 0`` with ``synchronized: false``, which the client maps to "not syncing".
     Before this check the gate took that as synced and released the miner on a chain that had
-    never synced. A reading without the key (a remote node, Tari) has no such verdict to wait on.
+    never synced. A reading without the key (the log/stats fallback, Tari) has no such verdict to wait on.
     """
     return (
         sync.get("reachable") is True
@@ -41,39 +47,134 @@ def chain_synced(sync):
 
 
 class DataGateMixin:
-    async def _apply_worker_rejection(self, monero_down):
-        """
-        Reject workers (stop the proxy) when monerod is DOWN so miners fail over to their
-        backup pools; readmit them (start the proxy) once monerod is confirmed healthy again.
+    _rejected_at = None
+    _readmit_wait = None
+    _stop_logged = False
+    _start_failed = False
+    _persisted_logged = False
 
-        monerod is required to mine, so a monerod outage always rejects. Tari never rejects
-        workers (Issue #897): it's merge-mining gravy, and p2pool keeps mining Monero through
-        a Tari-only outage, so stopping the proxy over Tari alone traded partial revenue for
-        none. `TARI_REQUIRED` (dashboard.tari_required) still gates the initial-sync hold and
-        the full-screen sync view (see `_apply_sync_gate`); a Tari outage still surfaces
-        through the Tari panel and alerts. Only acts on transitions (tracked by
-        `workers_rejected`), and Docker treats a repeat stop/start as already-done (HTTP 304),
-        so it's safe every cycle.
-        """
-        if monero_down and not self.workers_rejected:
-            logger.warning(
-                f"Required node unreachable — stopping {_runtime().REJECT_WORKERS_CONTAINER} so workers "
-                f"fail over to their backup pools."
+    def _restore_sync_gate(self):
+        """Tari-only resets preserve an earned release; full resets revoke it."""
+        self.sync_gate_monero_only = bool(self.latest_data.get("sync_gate_monero_only", False))
+        marker = _runtime().SYNC_GATE_RESET_PATH
+        if not os.path.lexists(marker):
+            return
+        try:
+            fd = os.open(marker, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as stream:
+                tari_only = stat.S_ISREG(os.fstat(stream.fileno()).st_mode) and (
+                    stream.read(32) == b"tari-only\n"
+                )
+        except OSError:
+            tari_only = False
+        self.sync_gate_monero_only = tari_only and (
+            self.miner_released or self.sync_gate_monero_only
+        )
+        self.miner_released = self.sync_gate_monero_only
+        if self.miner_released:
+            # This unchanged endpoint was reachable when the release was earned;
+            # a cold outage after apply still uses the debounced worker-failover path.
+            self.monero_health.ever_up = True
+        self.latest_data["miner_released"] = self.miner_released
+        self.latest_data["sync_gate_monero_only"] = self.sync_gate_monero_only
+
+    async def _update_mining_guard(self, monero_sync, p2pool_stats):
+        from mining_dashboard.collector import pools
+
+        health = monero_sync.get("health") or {}
+        triggers = monero_triggers(health, monero_sync)
+        triggers.update(p2pool_triggers(p2pool_stats.get("p2p") or {}))
+        triggers.update(container_triggers(await _runtime().get_container_health()))
+        triggers.update(
+            log_triggers(await pools.get_p2pool_log_signals(), health.get("advance_age_sec"))
+        )
+        self.mining_guard.update(triggers)
+
+    def _rejection_reasons(self, monero_down, tari_down):
+        reasons = []
+        if self.mining_guard.pause:
+            reasons.append(self.mining_guard.pause["reason"])
+        pending = [k for k in self.mining_guard.holding_keys if k not in self.mining_guard.active]
+        if pending:
+            reasons.append("also holding inside its grace: " + ", ".join(pending))
+        if monero_down:
+            reasons.append("Monero node unreachable past the debounce")
+        if _runtime().TARI_REQUIRED and tari_down:
+            reasons.append("Tari node unreachable past the debounce")
+        return "; ".join(reasons) or "required node unreachable"
+
+    def _readmit_blockers(self):
+        blockers = []
+        if not self.monero_health.healthy:
+            blockers.append("Monero node not yet confirmed healthy")
+        if _runtime().TARI_REQUIRED and not self.tari_health.healthy:
+            blockers.append("Tari node not yet confirmed healthy")
+        if self.mining_guard.holding:
+            blockers.append(
+                "guard triggers still holding or recovering: "
+                + ", ".join(self.mining_guard.holding_keys)
             )
-            if await self.docker_control.stop(_runtime().REJECT_WORKERS_CONTAINER):
-                self.workers_rejected = True
+        return "; ".join(blockers)
+
+    async def _apply_worker_rejection(self, monero_down, tari_down=False):
+        container = _runtime().REJECT_WORKERS_CONTAINER
+        required_down = (
+            monero_down
+            or (_runtime().TARI_REQUIRED and tari_down)
+            or bool(self.mining_guard.active)
+        )
+        if required_down:
+            self._readmit_wait = None
+            if self.workers_rejected and self._rejected_at is None and not self._persisted_logged:
+                self._persisted_logged = True
+                logger.warning(
+                    f"{container} was already stopped when this dashboard started (persisted "
+                    f"workers_rejected); still held by: {self._rejection_reasons(monero_down, tari_down)}."
+                )
+            if not self.workers_rejected:
+                if not self._stop_logged:
+                    self._stop_logged = True
+                    logger.warning(
+                        f"Mining work is not valid ({self._rejection_reasons(monero_down, tari_down)}) — "
+                        f"stopping {container} so workers fail over to their backup pools."
+                    )
+                if await self.docker_control.stop(container):
+                    self.workers_rejected = True
+                    self._stop_logged = False
+                    self._rejected_at = time.monotonic()
             return
 
-        # Readmit once monerod is confirmed healthy (not merely 'not down'), so a dashboard
-        # restart mid-outage doesn't bring workers back to a stack that can't mine. Tari can no
-        # longer be the reason workers were rejected, so its health plays no part in readmission.
-        recovered = self.monero_health.healthy
-        if self.workers_rejected and recovered:
-            logger.info(
-                f"Required nodes recovered — starting {_runtime().REJECT_WORKERS_CONTAINER} to readmit workers."
+        self._stop_logged = False
+        recovered = (
+            self.monero_health.healthy
+            and (not _runtime().TARI_REQUIRED or self.tari_health.healthy)
+            and not self.mining_guard.holding
+        )
+        if not self.workers_rejected:
+            return
+        if not recovered:
+            blockers = self._readmit_blockers()
+            if blockers != self._readmit_wait:
+                self._readmit_wait = blockers
+                logger.info(f"{container} stays stopped: {blockers}")
+            return
+        if await self.docker_control.start(container):
+            self.workers_rejected = False
+            since = self._rejected_at
+            self._rejected_at = None
+            self._readmit_wait = None
+            self._start_failed = False
+            elapsed = (
+                f"{int(time.monotonic() - since)}s after it was stopped"
+                if since is not None
+                else "after a stop that predates this dashboard process"
             )
-            if await self.docker_control.start(_runtime().REJECT_WORKERS_CONTAINER):
-                self.workers_rejected = False
+            logger.info(
+                f"Required nodes recovered — started {container} to readmit workers, {elapsed}."
+            )
+        elif not self._start_failed:
+            self._start_failed = True
+            logger.warning(f"Readmitting workers failed: {container} did not start; retrying.")
 
     async def _stop_gate_containers(self, quiet):
         """Stop every ``SYNC_GATE_CONTAINERS`` container; shared by the #35 sync gate and the
@@ -114,13 +215,16 @@ class DataGateMixin:
         if gate_satisfied:
             if await self._start_gate_containers():
                 self.miner_released = True
-                # The release is now this machine's own; a restore's marker has done its job.
+                # The release is now earned on the chains this machine dials; the marker (a restore's
+                # or an apply's node change) has done its job.
                 try:
                     os.remove(_runtime().SYNC_GATE_RESET_PATH)
                 except FileNotFoundError:
                     pass
                 except OSError as e:
-                    logger.warning(f"Could not remove the restore's sync-gate marker: {e}")
+                    logger.warning(
+                        f"Could not remove the sync-gate marker (restore or node change): {e}"
+                    )
                 self.miner_held = False
                 logger.info(
                     f"Required chain(s) synced — starting {', '.join(_runtime().SYNC_GATE_CONTAINERS)}; mining can begin."

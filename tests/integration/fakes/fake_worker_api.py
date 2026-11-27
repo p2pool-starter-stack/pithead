@@ -51,6 +51,10 @@ _XMRIG_SUMMARY = {
 # so the shape guard has the whole block to compare, not because a consumer depends on them.
 _RIGFORGE_BLOCK = {
     "version": "1.16.0",
+    "appliance": False,
+    "stamp": None,
+    "os_version": None,
+    "rig_id": None,
     "xmrig_version": "6.24.0",
     "xmrig_commit": "abcdef0",
     "tune": {
@@ -109,6 +113,8 @@ _RIGFORGE_BLOCK = {
         "status": "rolled_back",
         "reason": "miner did not return to a live hashrate; rolled back and live",
     },
+    # Recent control outcomes, newest last; the producer serves an empty list when none is recorded.
+    "control_history": [],
 }
 
 

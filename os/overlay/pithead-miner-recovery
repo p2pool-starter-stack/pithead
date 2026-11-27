@@ -1,0 +1,119 @@
+#!/bin/bash
+set -eu
+umask 077
+STATE=${PITHEAD_MINER_RECOVERY_STATE:-/run/pithead-miner-recovery.state}
+reset_window() {
+    rm -f "$STATE"
+    exit 0
+}
+stall_age() {
+    read -r uptime _ <"${PITHEAD_MINER_RECOVERY_UPTIME:-/proc/uptime}"
+    now=${uptime%%.*}
+    start=$(cat "$STATE" 2>/dev/null || true)
+    case "$start" in '' | *[!0-9]*) start=$now ;; esac
+    if [ "$start" -gt "$now" ]; then start=$now; fi
+    printf '%s\n' "$start" >"$STATE"
+    age=$((now - start))
+}
+rig_recovery() {
+    systemctl is-active --quiet xmrig.service || reset_window
+    local cfg=${PITHEAD_MINER_RECOVERY_CONFIG:-/data/rigforge/data/worker/xmrig/build/config.json}
+    local port token summary up hr shares prev last
+    port=$(jq -er '.http.port | tostring' "$cfg" 2>/dev/null) || port=8080
+    case "$port" in '' | *[!0-9]*) port=8080 ;; esac
+    token=$(jq -er '.http["access-token"] | select(type == "string" and length > 0)' "$cfg" 2>/dev/null) ||
+        token=$(jq -er '.access_token | select(type == "string" and length > 0)' rig.json 2>/dev/null) || token=
+    summary=$(curl -fsS --max-time 5 ${token:+-H "Authorization: Bearer $token"} "http://127.0.0.1:$port/2/summary" 2>/dev/null |
+        jq -er '[(.connection.uptime // 0), (.hashrate.total[0] // 0), (.results.shares_total // 0)] | map(floor) | @tsv' 2>/dev/null) || reset_window
+    read -r up hr shares <<<"$summary"
+    case "$up$hr$shares" in '' | *[!0-9]*) reset_window ;; esac
+    prev=$(cat "$STATE.shares" 2>/dev/null || true)
+    printf '%s\n' "$shares" >"$STATE.shares"
+    if [ "$up" -gt 0 ] && { [ "$hr" -gt 0 ] || [ "$shares" != "$prev" ]; }; then reset_window; fi
+    stall_age
+    [ "$age" -ge 120 ] || exit 0
+    last=$(cat "$STATE.rig-restart" 2>/dev/null || true)
+    case "$last" in '' | *[!0-9]*) last= ;; esac
+    if [ -n "$last" ] && [ "$last" -le "$now" ] && [ "$((now - last))" -lt 300 ]; then exit 0; fi
+    flock -n 9 || reset_window
+    systemctl is-active --quiet xmrig.service || reset_window
+    printf '%s\n' 'pithead-miner-recovery: rig miner stalled for 120 seconds; restarting xmrig'
+    systemctl --no-block try-restart xmrig.service
+    printf '%s\n' "$now" >"$STATE.rig-restart"
+    rm -f "$STATE"
+    exit 0
+}
+mark_proxy() { [ -z "$proxy_now" ] || printf '%s\n' "$proxy_now" >"$STATE.proxy"; }
+cd "${PITHEAD_DIR:-/data/pithead}" 2>/dev/null || reset_window
+lock_file=${PITHEAD_LOCK_FILE:-.pithead.lock}
+(umask 022 && : >>"$lock_file") || reset_window
+exec 9>>"$lock_file"
+flock -n 9 || reset_window
+flock -u 9
+[ "$(cat machine-role 2>/dev/null || true)" != rig ] || rig_recovery
+jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
+systemctl is-active --quiet xmrig.service || reset_window
+worker_config=${PITHEAD_MINER_RECOVERY_CONFIG:-/data/rigforge/data/worker/xmrig/build/config.json}
+worker=$(jq -er '.pools[0].user | select(type == "string" and length > 0)' "$worker_config" 2>/dev/null) || reset_window
+rig_id=$(jq -er '.pools[0]["rig-id"] // "" | select(type == "string")' "$worker_config" 2>/dev/null) || reset_window
+proxy_before=$(timeout 5 podman inspect -f '{{.State.StartedAt}}' xmrig-proxy 2>/dev/null) || proxy_before=
+reading=$(
+    timeout 15 podman exec -i dashboard python - "$worker" "$rig_id" <<'PY'
+import os
+import sys
+from mining_dashboard.helper.http import bounded_get
+try:
+    token = os.environ.get("PROXY_AUTH_TOKEN", "")
+    headers = {"Authorization": "Bearer " + token} if token else {}
+    url = "http://{}:{}/1/workers".format(
+        os.environ.get("PROXY_HOST", "xmrig-proxy"),
+        os.environ.get("PROXY_API_PORT", "3344"))
+    response = bounded_get(url, headers=headers, timeout=5)
+    response.raise_for_status()
+    body = response.json()
+    mode = body["mode"]
+    if mode not in ("rig_id", "user"):
+        raise ValueError("unsupported worker grouping")
+    name = (sys.argv[2] or sys.argv[1]) if mode == "rig_id" else sys.argv[1]
+    rows = body["workers"]
+    if type(rows) is not list:
+        raise ValueError("invalid workers")
+    count = 0
+    for row in rows:
+        if (type(row) is not list or len(row) < 3 or type(row[0]) is not str
+                or type(row[2]) is not int or row[2] < 0):
+            raise ValueError("invalid worker")
+        if row[0] == name:
+            count += row[2]
+    print("idle" if count == 0 else "reset")
+except Exception:
+    print("error")
+PY
+) 2>/dev/null || reset_window
+proxy_now=$(timeout 5 podman inspect -f '{{.State.StartedAt}}' xmrig-proxy 2>/dev/null) || proxy_now=
+seen_proxy=$(cat "$STATE.proxy" 2>/dev/null || true)
+[ "$reading" = idle ] || {
+    if [ "$reading" = reset ] && [ "$proxy_before" = "$proxy_now" ]; then
+        mark_proxy
+    fi
+    reset_window
+}
+if [ -n "$seen_proxy" ] && [ -n "$proxy_now" ] && [ "$seen_proxy" != "$proxy_now" ]; then
+    flock -n 9 || reset_window
+    jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
+    systemctl is-active --quiet xmrig.service || reset_window
+    mark_proxy
+    printf '%s\n' 'pithead-miner-recovery: local miner proxy was recreated while the miner was disconnected; restarting xmrig'
+    systemctl --no-block try-restart xmrig.service
+    rm -f "$STATE"
+    exit 0
+fi
+mark_proxy
+stall_age
+[ "$age" -ge 300 ] || exit 0
+flock -n 9 || reset_window
+jq -e '.local_miner.enabled == true' config.json >/dev/null 2>&1 || reset_window
+systemctl is-active --quiet xmrig.service || reset_window
+printf '%s\n' 'pithead-miner-recovery: active local miner disconnected for 300 seconds; restarting xmrig'
+systemctl --no-block try-restart xmrig.service
+rm -f "$STATE"

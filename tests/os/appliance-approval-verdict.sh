@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329  # fake functions and dynamic globals are the controls
+# shellcheck source=tests/os/lib/redact-addr.sh
+source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 # Verdicts and pure self-tests for the appliance approval and node-runtime legs.
 #
 # #2076 removed the Telegram approval round-trip, and with it the fake-provider transport this file
@@ -7,10 +9,8 @@
 # prompt and approver verdicts, and the four fixture self-tests that existed only to prove that
 # harness could not silently no-op. A sensitive commit now goes through the ordinary authenticated
 # control route, so the leg needs no privileged loopback identity and no guest-side fake at all.
-#
-# What is left is what the removal did not touch: the consumer proof that a repointed Tari endpoint
-# is the one p2pool actually merge-mines against, and the two pure self-tests that keep this file
-# honest without a guest.
+# What is left is the consumer proof that a repointed Tari endpoint is the one p2pool actually
+# merge-mines against, and the two pure self-tests that keep this file honest without a guest.
 
 # WHICH of the four bindings failed, for the row that reported only that one of them did (#2060).
 # The row's own `if` is a four-way conjunction and prints one red for all four. The three cheap
@@ -24,8 +24,8 @@
 # the verdict it used to call (approval_audit_verdict) went with the Telegram leg.
 approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
     local result="$1" audit="$2" rid="$3" landed="${4:-}" apply audit_v
-    apply=$(printf '%s' "${result:-null}" | jq -r '"\(.status // "none")/\(.error // "no error")"' 2>/dev/null) ||
-        apply="unparseable: ${result:0:120}"
+    apply=$({ printf '%s' "${result:-null}" | jq -r '"\(.status // "none")/\(.error // "no error")"' 2>/dev/null ||
+        printf 'unparseable: %s' "$result"; } | os_redact_addr | head -c 200)
     if [ -z "$result" ]; then
         if [ "$landed" = landed ]; then
             apply="requested hostname change landed, but no result file was written — runner completion is unknown"
@@ -45,8 +45,17 @@ approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
     printf 'apply=%s audit=%.240s; live identity is the row printed above this one' "$apply" "$audit_v"
 }
 
-physical_presence_password_refusal_verdict() { # <control-result-json>
-    printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
+# #2367: the dashboard password left the physical-presence set and now commits behind typed
+# APPLY like any other unlisted leaf, so this proves the commit APPLIES rather than refuses.
+dashboard_password_repoint_applied_verdict() { # <control-result-json>
+    printf '%s' "$1" | jq -e '.status == "applied"' >/dev/null
+}
+
+# #2367: before the password commit, the host preview must be a real preview, envelope-gated, and
+# name both costs the owner required (session lockout, appliance console login) in one message.
+dashboard_password_preview_warns_verdict() { # <preview-json>
+    printf '%s' "$1" | jq -e '.status == "previewed" and .approval_required == true and
+        ([.changes[]?.msg] | any(contains("locks this session out") and contains("console root login")))' >/dev/null
 }
 
 # The pre-commit half of remote_node_runtime_verdict: the preview's rendered .env rows name the
@@ -348,18 +357,30 @@ MergeMiningClientTari tari://tari.fixture:18142 uses chain_id 0123456789abcdef'
     return 0
 )
 
-# The one invariant behind #2060's control rows: the POST must outlast the window the dashboard
-# itself waits before handing back a pollable id. Both numbers are read from their own sources — a
-# literal repeated here would keep passing after either side moved, which is exactly how an 8s cap
-# survived beside a 30s server wait and a 420s outer deadline.
+# The actual POST timeout must outlast the server answer window (#2060).
+# Also exercise the retry override; reading a declared default would miss a hard-coded curl cap.
 _control_post_timeout_self_test() (
     local here cap window
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-    cap=$(awk '/^dashboard_control_post\(\)/, /^}/' "$here/appliance-config-approval-leg.sh" |
-        sed -n 's/.* -m \([0-9][0-9]*\) .*/\1/p')
+    # shellcheck source=tests/os/appliance-config-approval-leg.sh
+    . "$here/appliance-config-approval-leg.sh"
+    # shellcheck disable=SC2034 # POST URL reads ip through dynamic scope
+    local ip=fixture
+    dashboard_curl() {
+        cat >/dev/null
+        while [ "$#" -gt 0 ]; do
+            if [ "$1" = -m ]; then
+                printf '%s' "$2"
+                return 0
+            fi
+            shift
+        done
+        return 1
+    }
+    cap=$(dashboard_control_post preview '{}') || return 1
+    [ "$(dashboard_control_post preview '{}' 7)" = 7 ] || return 1
     window=$(sed -n 's/^CONTROL_WAIT_S *= *float(os.environ.get("CONTROL_WAIT_S", *\([0-9][0-9.]*\))).*/\1/p' \
         "$here/../../dashboard/mining_dashboard/config/config.py")
-    # Either read coming back empty means the shape it keys on moved; that is a failure, not a pass.
     [ -n "$cap" ] && [ -n "$window" ] || return 1
     awk -v c="$cap" -v w="$window" 'BEGIN { exit !(c > w) }'
 )
@@ -410,10 +431,10 @@ _approval_bind_payload_self_test() {
     printf 'approval-bind-payload self-test passed\n'
 }
 
-_physical_presence_password_refusal_self_test() {
-    physical_presence_password_refusal_verdict '{"status":"rejected","error":"use the configuration stick"}' || return 1
-    physical_presence_password_refusal_verdict '{"status":"applied"}' && return 1
-    physical_presence_password_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
+_dashboard_password_repoint_applied_self_test() {
+    dashboard_password_repoint_applied_verdict '{"status":"applied"}' || return 1
+    dashboard_password_repoint_applied_verdict '{"status":"rejected","error":"use the configuration stick"}' && return 1
+    dashboard_password_repoint_applied_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
     return 0
 }
 
@@ -422,7 +443,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     f=0
     _approval_bind_payload_self_test || f=1
     _reserved_node_preview_payload_self_test || f=1
-    _physical_presence_password_refusal_self_test || f=1
+    _dashboard_password_repoint_applied_self_test || f=1
     _reserved_node_rendered_endpoints_self_test || f=1
     exit "$f"
 fi
