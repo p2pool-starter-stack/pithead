@@ -120,6 +120,18 @@ class TestLogin:
         other = await login(stack, headers={**EPOCH, "X-Forwarded-For": "10.0.0.2"})
         assert other.status == 200
 
+    async def test_rate_limit_counts_one_ipv6_network_as_one_client(self, stack):
+        for n in range(auth.FAILURE_LIMIT):
+            await login(
+                stack,
+                password="nope",
+                headers={**EPOCH, "X-Forwarded-For": f"2001:db8:1:2::{n + 1}"},
+            )
+        same_net = await login(stack, headers={**EPOCH, "X-Forwarded-For": "2001:db8:1:2:abcd::9"})
+        assert same_net.status == 429
+        other_net = await login(stack, headers={**EPOCH, "X-Forwarded-For": "2001:db8:1:3::1"})
+        assert other_net.status == 200
+
     async def test_concurrent_verifications_beyond_the_cap_are_refused(self, stack):
         release = asyncio.Event()
         started = []
@@ -308,3 +320,20 @@ class TestAttempts:
         assert len(attempts._failures) == auth.MAX_TRACKED_CLIENTS
         assert "c0" not in attempts._failures
         assert "new" in attempts._failures
+
+
+@pytest.mark.parametrize(
+    ("address", "key"),
+    [
+        ("192.0.2.7", "192.0.2.7"),
+        ("2001:db8:1:2:3:4:5:6", "2001:db8:1:2::/64"),
+        ("2001:db8:1:2::", "2001:db8:1:2::/64"),
+        ("::ffff:192.0.2.7", "192.0.2.7"),
+        ("::1", "::/64"),
+        ("not-an-address", "not-an-address"),
+        (None, "unknown"),
+        ("", "unknown"),
+    ],
+)
+def test_limiter_key_groups_ipv6_by_64_and_keeps_ipv4_whole(address, key):
+    assert auth.limiter_key(address) == key

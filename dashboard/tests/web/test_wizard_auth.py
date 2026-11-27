@@ -110,6 +110,26 @@ async def test_authenticated_operator_sharing_blocked_peer_keeps_session(auth_cl
     assert (await offender.get("/api/wizard-state")).status == 401
 
 
+async def test_lockout_counts_one_ipv6_network_as_one_client(auth_clients):
+    operator, _, exits = auth_clients
+    for attempt in range(wizard.MAX_FAILURES):
+        r = await operator.post(
+            "/auth",
+            data={"token": "pit-WRONGX"},
+            headers={"X-Test-Peer": f"2001:db8:5:6::{attempt + 1}"},
+        )
+        assert r.status == (403 if attempt < wizard.MAX_FAILURES - 1 else 429)
+    same_net = await operator.post(
+        "/auth", data={"token": "pit-WRONGX"}, headers={"X-Test-Peer": "2001:db8:5:6:ffff::1"}
+    )
+    assert same_net.status == 429
+    other_net = await operator.post(
+        "/auth", data={"token": "pit-WRONGX"}, headers={"X-Test-Peer": "2001:db8:5:7::1"}
+    )
+    assert other_net.status == 403
+    assert exits == []
+
+
 async def test_failure_tracking_is_bounded_without_resetting_existing_peer(
     auth_clients, monkeypatch
 ):

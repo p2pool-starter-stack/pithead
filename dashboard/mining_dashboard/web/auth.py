@@ -55,14 +55,26 @@ def trusted_proxy(request) -> bool:
         return False
 
 
+def limiter_key(address):
+    try:
+        ip = ipaddress.ip_address(address)
+    except (ValueError, TypeError):
+        return address or "unknown"
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        return str(ip.ipv4_mapped)
+    if ip.version == 6:
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip)
+
+
 def client_key(request):
     forwarded = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
     if trusted_proxy(request) and forwarded:
         try:
-            return str(ipaddress.ip_address(forwarded))
+            return limiter_key(str(ipaddress.ip_address(forwarded)))
         except ValueError:
             pass
-    return request.remote or "unknown"
+    return limiter_key(request.remote)
 
 
 def secure(request):

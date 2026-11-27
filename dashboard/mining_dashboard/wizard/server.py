@@ -36,6 +36,7 @@ from time import monotonic
 from aiohttp import web
 
 from mining_dashboard.config import documents
+from mining_dashboard.web.auth import limiter_key
 from mining_dashboard.wizard.defaults import (
     disk_inventory,
     explicit_wizard_config,
@@ -219,7 +220,7 @@ async def auth(request: web.Request) -> web.Response:
     for peer, (_, until) in list(failures.items()):
         if until <= now:
             del failures[peer]
-    peer = request.remote
+    peer = limiter_key(request.remote)
     count, until = failures.get(peer, (0, now + AUTH_COOLDOWN_SECONDS))
     if count >= MAX_FAILURES:
         return _auth_throttled(until - now)
