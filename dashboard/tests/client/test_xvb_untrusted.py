@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from mining_dashboard.client.xvb_client import XvbClient, parse_winners
+from mining_dashboard.client.xvb_client import XvbClient, parse_round_stats, parse_winners
 
 WALLET = "48M2j8GjINNERPARTd8KgGBwa"
 ROW = "48M2j8Gj...d8KgGBwa\t{when}\t{rate}\t{height}\t\t{block}\t1/1\t1\tdonor\n"
@@ -87,3 +87,22 @@ def test_winners_rows_dated_in_the_future_are_dropped():
         when="2026-07-18 20:41:38", rate="1kH/s", height=2, block="past"
     )
     assert [win["block_id"] for win in parse_winners(text, WALLET)] == ["past"]
+
+
+@pytest.mark.parametrize("players", ["9" * 400, "9" * 4000, str(10**9 + 1), "0"])
+def test_round_stats_rows_with_a_players_count_out_of_range_are_skipped(players):
+    when = "2026-07-18 20:41:38"
+    text = ROW.format(when=when, rate="1kH/s", height=1, block="a").replace(
+        "\t1\tdonor", "\t27\tdonor"
+    )
+    text += ROW.format(when=when, rate="1kH/s", height=2, block="b").replace(
+        "\t1\tdonor", f"\t{players}\tdonor"
+    )
+    assert parse_round_stats(text)["types"] == {"donor": {"rounds": 1, "players_avg": 27.0}}
+
+
+def test_round_stats_keep_a_players_count_at_the_limit():
+    text = ROW.format(when="2026-07-18 20:41:38", rate="1kH/s", height=1, block="a").replace(
+        "\t1\tdonor", f"\t{10**9}\tdonor"
+    )
+    assert parse_round_stats(text)["types"] == {"donor": {"rounds": 1, "players_avg": 1e9}}

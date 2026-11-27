@@ -1,8 +1,11 @@
+import json
+
 from mining_dashboard.helper.utils import finite_number, plausible_rate, safe_text
 
 _TEXT_MAX = 1024
 _NUMBER_MAX = 2**63 - 1
 _DEPTH_MAX = 16
+_CONFIG_MAX = 65536
 
 
 def _flag(value):
@@ -20,6 +23,11 @@ def _clipped(limit):
         return "".join(char if char.isprintable() else " " for char in value[:limit])
 
     return clip
+
+
+def _config(value):
+    value = _bounded(value)
+    return value if isinstance(value, dict) and len(json.dumps(value)) <= _CONFIG_MAX else None
 
 
 _SHAPE = {
@@ -47,7 +55,7 @@ _SHAPE = {
             "max_temp_c": finite_number,
         },
         "control": {"change_id": _text(64), "status": _text(64), "reason": _clipped(500)},
-        "config": {},
+        "config": _config,
         "config_meta": {},
     },
 }
@@ -72,7 +80,11 @@ def _bounded(value, depth=0):
     if depth > _DEPTH_MAX:
         return None
     if isinstance(value, dict):
-        return {key[:_TEXT_MAX]: _bounded(item, depth + 1) for key, item in value.items()}
+        return {
+            key[:_TEXT_MAX]: _bounded(item, depth + 1)
+            for key, item in value.items()
+            if key.isprintable()
+        }
     if isinstance(value, list):
         return [_bounded(item, depth + 1) for item in value]
     if isinstance(value, str):

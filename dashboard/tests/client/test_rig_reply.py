@@ -170,6 +170,31 @@ def test_a_large_unlisted_counter_is_kept():
     }
 
 
+def test_keys_that_are_not_printable_text_are_dropped_with_their_value():
+    reply = _reply(
+        '{"extra": {"a\\u202eb": 1, "ok": 2}, "rigforge": {"config": {"x\\ny": "v",'
+        ' "pools": [{"u\\u202erl": "h:1", "url": "h:2"}], "DONATION": 1}}}'
+    )
+    assert reply["extra"] == {"ok": 2}
+    assert reply["rigforge"]["config"] == {"pools": [{"url": "h:2"}], "DONATION": 1}
+
+
+def test_a_config_block_over_the_size_limit_is_dropped_and_the_rest_kept():
+    config = {f"k{i}": "v" * 1000 for i in range(70)}
+    reply = _reply(json.dumps({"uptime": 5, "rigforge": {"version": "1.2.3", "config": config}}))
+    assert reply["uptime"] == 5 and reply["rigforge"] == {"version": "1.2.3"}
+    assert parse_rigforge(reply)["config"] is None
+    assert _reply('{"rigforge": {"config": "x"}}')["rigforge"] == {}
+
+
+def test_a_config_block_under_the_size_limit_is_kept():
+    config = {f"k{i}": "v" * 1000 for i in range(60)}
+    config["DONATION"] = 1
+    reply = _reply(json.dumps({"rigforge": {"config": config}}))
+    assert reply["rigforge"]["config"] == config
+    assert parse_rigforge(reply)["config"] == {"DONATION": 1}
+
+
 class _Response:
     def __init__(self, status, payload):
         self.status, self._raw, self.content = status, json.dumps(payload).encode(), self

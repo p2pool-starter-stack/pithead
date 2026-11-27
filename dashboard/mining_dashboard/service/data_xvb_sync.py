@@ -3,6 +3,7 @@ import logging
 import time
 
 from mining_dashboard.client.xvb_client import (
+    _WINNERS_MAX_FUTURE_S,
     REG_INVALID,
     REG_NOT_ELIGIBLE,
     REG_OK,
@@ -117,7 +118,14 @@ class DataXvbSyncMixin:
             xvb.get("avg_1h", 0) or 0,
             xvb.get("avg_24h", 0) or 0,
             self.state_manager.get_tiers(),
-            max((w.get("ts", 0) or 0 for w in recent_wins), default=0.0),
+            max(
+                (
+                    ts
+                    for w in recent_wins
+                    if (ts := w.get("ts", 0) or 0) <= now + _WINNERS_MAX_FUTURE_S
+                ),
+                default=0.0,
+            ),
             now,
         )
         if now - self._last_xvb_winners_sync < gate:
