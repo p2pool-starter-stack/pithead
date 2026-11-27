@@ -32,6 +32,12 @@ test("offline and silent rigs never read as a healthy zero; unmanaged mining rig
   assert.deepEqual([behind.status, behind.attention, behind.version, behind.latest], ["Behind", true, "0.9.0", "1.0.0"]);
 });
 
+test("a healthy rig with an empty proxy minute reads its own rate, then the proxy's 10-minute rate", () => {
+  const own = rigView({ name: "a", status: "online", h60: 0, h15: 0, telemetry_h60: 36000, api_ok: true, adopted: true });
+  assert.deepEqual([own.reporting, own.note, own.attention, own.rate], [true, null, false, 36000]);
+  assert.equal(rigView({ name: "b", status: "online", h60: 0, h15: 2400, adopted: true }).rate, 2400);
+});
+
 test("rigs order attention first then name, stable for duplicate names, with find and sort", () => {
   const workers = [
     { name: "zeta", status: "online", h60: 10, adopted: true, marker: 0 },

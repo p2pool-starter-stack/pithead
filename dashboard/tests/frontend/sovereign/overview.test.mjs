@@ -30,6 +30,8 @@ test("healthy, off, empty, stale and partial-fleet overview stay truthful on eve
     assert.equal((out.match(/<button|<input/g) || []).length, 0);
     assert.equal((out.match(/<article/g) || []).length, 3);
     assert.equal(out.includes("Appliance OS"), platform === "appliance");
+    state.workers[0] = { name: "rig-a", status: "online", h60: 0, telemetry_h60: 1500 };
+    assert.match(renderToString(html`<${Overview} state=${state} connected=${true} range="24h" />`), /1 of 1 mining/);
     state.workers.push({ name: "rig-b", status: "offline", h60: null });
     out = renderToString(html`<${Overview} state=${state} connected=${false} range="24h" />`);
     assert.match(out, /1 of 2 mining/);

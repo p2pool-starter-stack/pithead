@@ -25,7 +25,7 @@ export class DonationControl extends Component {
   render({ worker, rigConfig, earnings, canEdit }, { choice, review, confirm, busy, result }) {
     const current = rigDonation(worker, rigConfig);
     const selected = choice ?? current.configured ?? current.reported;
-    const hashrate = Number(worker?.h15) || Number(worker?.h60);
+    const hashrate = Number(worker?.telemetry_h15) || Number(worker?.h15) || Number(worker?.h60);
     const cost = dailyCost(choice ?? 0, hashrate, earnings?.available ? earnings.coeff_day : 0);
     return html`<fieldset class="rig-donation" disabled=${busy || !canEdit}>
       <legend>Support the XMRig developers</legend>

@@ -113,6 +113,12 @@ test("the preview shows share, time and cost, and APPLY gates the write", async 
   assert.deepEqual(calls, ["done"]);
 });
 
+test("the cost uses the rig's own 15-minute rate when the proxy's rates are empty", () => {
+  const { instance } = control({ worker: { ...managed, h60: 0, h15: 0, telemetry_h15: 100 } });
+  instance.setState({ choice: 2, review: true });
+  assert.match(instance.view(), /Estimated cost at this rig's current hashrate: 0.00200000 XMR a day/);
+});
+
 test("a missing hashrate or network figure says the cost is unavailable and the current level is not re-applied", () => {
   const { instance } = control({ earnings: { available: false } });
   instance.setState({ choice: 1, review: true });

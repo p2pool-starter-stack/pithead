@@ -1,5 +1,6 @@
 import { Component, html } from "../app/preact.mjs";
 import { verdictText } from "../system/osverdict.mjs";
+import { rigRate } from "./machines-model.mjs";
 import { OverviewChart } from "./overview-chart.mjs";
 import {
   activityEntries,
@@ -85,7 +86,7 @@ export function Overview({ state, connected, range, window, onRange, onWindow, f
   const readings = state?.overview;
   const workers = state?.workers || [];
   const mining = workers.filter(
-    (worker) => worker.status === "online" && number(worker.h60) && worker.h60 > 0,
+    (worker) => worker.status === "online" && rigRate(worker) > 0,
   ).length;
   const last = state?.overview?.last_payout;
   const issues = attention(state);
