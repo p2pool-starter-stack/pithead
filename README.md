@@ -101,14 +101,13 @@ This is the DIY path. For the appliance, download `pithead-os-vX.Y.Z.img.xz` fro
 [the appliance guide](docs/appliance.md) instead — no Linux to set up, no command line to learn.
 
 ```bash
-# Grab the latest release — pulls the published, tested images (no local build)
-curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/download/pithead.tar.gz | tar xz
-cd pithead
-./pithead setup
+# Fetch the latest release, check its sha256 and signature, unpack it and start setup
+curl -fsSL https://raw.githubusercontent.com/p2pool-starter-stack/pithead/main/install.sh | bash
 ```
 
 > Leave `config.json` absent for the setup wizard; have a Monero payout address ready, and a
-> Tari payout address only if you enable merge-mining. For manual configuration, copy
+> Tari payout address only if you enable merge-mining. For manual configuration, check and unpack the
+> bundle by hand ([Get the code](docs/getting-started.md#2-get-the-code)), then copy
 > `config.minimal.json` or `config.reference.json` and edit it before setup; those files inherit
 > reference defaults rather than the wizard's new-install choices. To build from source (a `dev`
 > build), e.g. to contribute, see [Install from source](docs/getting-started.md#alternative-build-from-source).
