@@ -143,11 +143,11 @@ assert_eq "the advisory is bounded so one wall of text cannot flood the banner" 
 
 echo "== unit: doctor's own messages stay word-for-word what the classifier matches (#4049) =="
 assert_eq "the Monero chain FAIL the classifier allows is doctor's message, verbatim at source" \
-    "$(grep -c 'dr_fail "Monero node is NOT following the chain; mining sits on a stale tip:' "$ROOT/lib/pithead/05-doctor-checks.sh")" "1"
+    "$(grep -c 'dr_fail monero-chain "Monero node is NOT following the chain; mining sits on a stale tip:' "$ROOT/lib/pithead/05-doctor-checks.sh")" "1"
 assert_eq "the Tari chain FAIL the classifier allows is doctor's message, verbatim at source" \
-    "$(grep -c 'dr_fail "Tari node is NOT following the chain; merge-mined Tari work is wasted:' "$ROOT/lib/pithead/05-doctor-checks.sh")" "1"
+    "$(grep -c 'dr_fail tari-chain "Tari node is NOT following the chain; merge-mined Tari work is wasted:' "$ROOT/lib/pithead/05-doctor-checks.sh")" "1"
 assert_eq "the saturated-history FAIL both arms of which the classifier allows is doctor's message at source" \
-    "$(grep -c "dr_fail_surface \"Tor's circuit-build-time history is saturated and clearnet egress is down" "$ROOT/lib/pithead/21-doctor-stack-checks.sh")" "1"
+    "$(grep -c "dr_fail_surface tor-circuit-history \"Tor's circuit-build-time history is saturated and clearnet egress is down" "$ROOT/lib/pithead/21-doctor-stack-checks.sh")" "1"
 assert_eq "the down shape the classifier allows is the revenue verdict's own" \
     "$(grep -c "printf 'fail:%s is down (%s) — a chain node down means the slot is not healthy to commit" "$ROOT/lib/pithead/21-doctor-stack-checks.sh")" "1"
 assert_eq "the not-ready half of that shape, pinned too" \
