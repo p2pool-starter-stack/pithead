@@ -31,9 +31,11 @@ def _wallets(monkeypatch):
 def _scan(chain, payouts):
     if chain == "monero":
         client = MagicMock()
+        client.payout_addresses.return_value = ["fixture-wallet"]
         client.scan.return_value = (payouts, True)
         return client, payout_sync.sync_monero
     client = MagicMock()
+    client.payout_addresses = AsyncMock(return_value=(["fixture-wallet"], True))
     client.scan = AsyncMock(return_value=(payouts, True))
     return client, payout_sync.sync_tari
 

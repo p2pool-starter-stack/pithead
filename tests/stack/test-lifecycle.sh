@@ -25,3 +25,5 @@ source "$HERE/lifecycle/recreate-names.sh" || return $?
 source "$HERE/lifecycle/keep-running.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/tari-upgrade-space.sh
 source "$HERE/lifecycle/tari-upgrade-space.sh" || return $?
+# shellcheck source=tests/stack/lifecycle/root-step-links.sh
+source "$HERE/lifecycle/root-step-links.sh" || return $?

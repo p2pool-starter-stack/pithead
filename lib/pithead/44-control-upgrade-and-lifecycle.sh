@@ -102,7 +102,7 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
     control_audit "$cdir/audit/control.log" "$id" "$actor" "upgrade" "started"
     # Bundle URL built from the HOST-derived tag only; fetched over the same Tor SOCKS.
     local bundle="$cdir/staged/.$id.tar.gz" logf="$cdir/staged/.$id.log"
-    if ! curl -fsSL --max-time 900 --max-filesize "$CURL_CAP_BUNDLE" --socks5-hostname "$GH_SOCKS" -o "$bundle" \
+    if ! curl -fsSL --proto =https --proto-redir =https --max-time 900 --max-filesize "$CURL_CAP_BUNDLE" --socks5-hostname "$GH_SOCKS" -o "$bundle" \
         "https://github.com/p2pool-starter-stack/pithead/releases/download/$tag/pithead.tar.gz" 2>/dev/null; then
         rm -f "$bundle"
         _upg_fail "could not download the $tag release bundle over Tor — the stack keeps running v$PITHEAD_VERSION."
@@ -115,7 +115,7 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
     # TLS to GitHub plus tag pinning — with one loud line in the journal.
     if [ -f cosign.pub ]; then
         local sig="$cdir/staged/.$id.tar.gz.sig"
-        if ! curl -fsSL --max-time 120 --max-filesize "$CURL_CAP_SMALL" --socks5-hostname "$GH_SOCKS" -o "$sig" \
+        if ! curl -fsSL --proto =https --proto-redir =https --max-time 120 --max-filesize "$CURL_CAP_SMALL" --socks5-hostname "$GH_SOCKS" -o "$sig" \
             "https://github.com/p2pool-starter-stack/pithead/releases/download/$tag/pithead.tar.gz.sig" 2>/dev/null; then
             rm -f "$bundle" "$sig"
             _upg_fail "the $tag release carries no bundle signature (pithead.tar.gz.sig) — refusing to install it unverified; the stack keeps running v$PITHEAD_VERSION."
