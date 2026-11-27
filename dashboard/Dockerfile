@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 \
     libzstd1 \
     libssl3t64 \
+    libzstd1 \
     openssl \
     openssl-provider-legacy \
     perl-base \
