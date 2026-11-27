@@ -67,7 +67,7 @@ write_grub_hugepages() {
         return 1
     fi
     if ! sudo cmp -s "$tmp" "$dropin"; then
-        if ! sudo install -m 0644 "$tmp" "$dropin"; then
+        if ! sudo_install_file "$tmp" "$dropin" 0644; then
             rm -f "$tmp"
             return 1
         fi

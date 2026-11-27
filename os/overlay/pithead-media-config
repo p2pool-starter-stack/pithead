@@ -334,7 +334,14 @@ main() {
         return 0
     fi
 
-    if ! install -m 600 "$validated" "$RUNNING_CONFIG" 2>/dev/null; then
+    if ! (
+        landing=$(mktemp "${RUNNING_CONFIG}.pithead.XXXXXXXXXX") || exit 1
+        cp -- "$validated" "$landing" && chmod 600 "$landing" &&
+            mv -f -- "$landing" "$RUNNING_CONFIG" || {
+            rm -f -- "$landing"
+            exit 1
+        }
+    ) 2>/dev/null; then
         _console "Media configuration channel: could not write the new configuration — no changes applied."
         rm -f "$validated"
         return 0

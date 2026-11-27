@@ -8,15 +8,24 @@ DST="${PITHEAD_SYNC_DST:-/data/pithead}"
 RF_SRC="${PITHEAD_SYNC_RIGFORGE_SRC:-/opt/rigforge}"
 RF_DST="${PITHEAD_SYNC_RIGFORGE_DST:-/data/rigforge}"
 
+land_file() { # <source> <destination> <mode>
+    local t
+    t=$(mktemp "${2}.pithead.XXXXXXXXXX") || return 1
+    cp -- "$1" "$t" && chmod "$3" "$t" && mv -f -- "$t" "$2" || {
+        rm -f -- "$t"
+        return 1
+    }
+}
+
 mkdir -p "$DST"
 for f in pithead pithead-completion.bash VERSION docker-compose.yml \
     config.reference.json config.core-keys.json config.minimal.json cosign.pub; do
-    [ -f "$SRC/$f" ] && install -m 644 "$SRC/$f" "$DST/$f"
+    [ -f "$SRC/$f" ] && land_file "$SRC/$f" "$DST/$f" 644
 done
 # A debug TLS build carries this CA only for the containerized Cosign verifier. It is program
 # material rather than state, so copy it when present and remove it on the next release image.
 if [ -f "$SRC/cosign.registry-ca.crt" ]; then
-    install -m 644 "$SRC/cosign.registry-ca.crt" "$DST/cosign.registry-ca.crt"
+    land_file "$SRC/cosign.registry-ca.crt" "$DST/cosign.registry-ca.crt" 644
 else
     rm -f "$DST/cosign.registry-ca.crt"
 fi

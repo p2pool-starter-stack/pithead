@@ -79,7 +79,7 @@ restore_commit_items() ( # <staged root> <scratch dir> [<destination root>, defa
             ;;
         *)
             staged=$(mktemp "$dest.restore.XXXXXXXXXX") && staged_paths+=("$staged") &&
-                install -m 600 "$source" "$staged" || failed=1
+                install_file "$source" "$staged" || failed=1
             ;;
         esac
         [ "$failed" = 0 ] || break

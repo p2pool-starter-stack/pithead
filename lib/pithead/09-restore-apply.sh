@@ -62,7 +62,7 @@ restore_setup_tar_list() { # <archive> <tar-list-option> <output> [max-KiB] [sec
 restore_setup_publish_file() { # <source> <destination>
     local publish
     publish=$(mktemp "${2}.restore.XXXXXXXXXX") || return 1
-    if ! install -m 600 "$1" "$publish" || ! mv -fT -- "$publish" "$2"; then
+    if ! cp -- "$1" "$publish" || ! chmod 600 -- "$publish" || ! mv -fT -- "$publish" "$2"; then
         clear_setup_candidate "$publish" || true
         return 1
     fi

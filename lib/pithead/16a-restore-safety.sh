@@ -269,7 +269,8 @@ restore_commit_stage() {
         # appliance's life (#2329).
         local mode=600
         [ "$path" != "$PWD/Caddyfile" ] || mode=644
-        [ ! -e "$RESTORE_STAGE_DIR/$rel" ] || sudo install -o "$owner_uid" -g "$owner_gid" -m "$mode" "$RESTORE_STAGE_DIR/$rel" "$path" || {
+        [ ! -e "$RESTORE_STAGE_DIR/$rel" ] ||
+            sudo_install_file "$RESTORE_STAGE_DIR/$rel" "$path" "$mode" "$owner_uid:$owner_gid" || {
             restore_discard_stage
             error "Restore failed while committing $path; inspect the destination before retrying."
         }

@@ -338,6 +338,24 @@ doctor() {
 
     check_data_wipe_note
 
+    # --- Coreutils implementation ---
+    echo ""
+    echo "Coreutils:"
+    local cu_banner
+    cu_banner=$(coreutils_banner)
+    [ -n "$cu_banner" ] || cu_banner="coreutils implementation unknown"
+    local cu_probe=0
+    detect_coreutils || cu_probe=$?
+    if [ "$cu_probe" = 0 ] && [ "${#GNU_FEATURES[@]}" -eq 0 ]; then
+        dr_ok "$cu_banner — all file-utility behaviors pithead needs behave as expected."
+    elif [ "$cu_probe" = 0 ]; then
+        dr_warn_surface "coreutils: $cu_banner — missing: ${GNU_FEATURES[*]}. pithead needs these behaviors; if this host runs a non-GNU coreutils replacement, install GNU coreutils ('sudo apt-get install -y coreutils') and re-run '$0 doctor'." \
+            "coreutils: $cu_banner — missing behaviors pithead needs: ${GNU_FEATURES[*]}. Contact support."
+    else
+        dr_warn_surface "coreutils: $cu_banner — the behavior probe could not run (no writable temp directory?)." \
+            "coreutils: the behavior probe could not run on this machine."
+    fi
+
     # --- Summary ---
     echo ""
     log "Diagnostics summary: ${DR_OK} OK, ${DR_WARN} warning(s), ${DR_FAIL} failure(s)."
