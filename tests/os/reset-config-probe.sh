@@ -16,6 +16,11 @@ docker() {
     [ ! -f "$PITHEAD_RESET_PROBE_DIR/config.json" ] || config_present=yes
     command docker "$@" >"$PITHEAD_RESET_PROBE_DIR/.reset-compose.log" 2>&1
     stop_rc=$?
+    if [ "$stop_rc" -ne 0 ] && grep -q 'unmount' "$PITHEAD_RESET_PROBE_DIR/.reset-compose.log"; then
+        sleep 5
+        command docker "$@" >>"$PITHEAD_RESET_PROBE_DIR/.reset-compose.log" 2>&1
+        stop_rc=$?
+    fi
     printf 'compose_exit=%s\nconfig_present=%s\n' "$stop_rc" "$config_present" >"$PITHEAD_RESET_PROBE_DIR/.reset-compose.result" || return 1
     cat "$PITHEAD_RESET_PROBE_DIR/.reset-compose.log" >&2
     return "$stop_rc"

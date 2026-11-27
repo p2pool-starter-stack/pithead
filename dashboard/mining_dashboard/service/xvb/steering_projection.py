@@ -23,13 +23,14 @@ def won_round_live(state_manager, hold_s, now=None, logger=None) -> bool:
     this holds. Fails open to False (normal steering) on any read error — the
     hold is a yield optimization, never a safety path."""
     try:
-        since = (now if now is not None else time.time()) - hold_s
+        now = now if now is not None else time.time()
+        since = now - hold_s
         wins = state_manager.get_raffle_wins(since=since)
+        return isinstance(wins, list) and any(since <= w["ts"] <= now + 60 for w in wins)
     except Exception as e:
         if logger is not None:
             logger.debug(f"Raffle-win read failed; steering normally: {e}")
         return False
-    return isinstance(wins, list) and len(wins) > 0
 
 
 def max_donation_fraction(current_hr, window_duration, p2pool_stats, reserve_factor, max_fraction):

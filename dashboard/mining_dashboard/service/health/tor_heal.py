@@ -1,10 +1,3 @@
-"""Bounded Tor clearnet recovery when tor.auto_heal is enabled.
-
-Corroborate failed probes on isolated circuits and two targets before bounded NEWNYM requests.
-For saturated history, the final step requests host-gated tor-recover, including its persistent
-six-hour cooldown and identity checks. Otherwise a final restart re-dials local Monero.
-"""
-
 import asyncio
 import logging
 import time
@@ -25,7 +18,6 @@ from mining_dashboard.service.health.tor_heal_history import TorHistoryMixin
 
 logger = logging.getLogger("TorHeal")
 
-# Independent targets: any response on either fresh circuit proves clearnet egress works.
 PROBE_URL = "https://www.google.com/generate_204"
 SECOND_PROBE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
 PROBE_TIMEOUT_SEC = 15
@@ -35,11 +27,13 @@ FIRST_ACTION_AFTER_SEC = 5 * 60
 BROKEN_AFTER_SEC = 15 * 60
 FAST_PROBE_SEC = 60
 COOLDOWN_SEC = 30 * 60  # minimum gap between actions
-MAX_ATTEMPTS = 3  # two circuit refreshes, then one container restart
-# Consecutive OK probes required to declare an outage OVER once we've spent an action. A single
-# lucky 204 must NOT close the outage: under the issue's own scenario (overloaded Tor, egress
-# flapping) that would refill the budget and clear the cooldown every blip.
-RECOVERY_CONFIRM_PROBES = 2  # ~10 min sustained egress before the budget resets
+NEWNYM_ATTEMPTS = 2
+MAX_ATTEMPTS = 4
+MAX_DISRUPTIVE_PER_DAY = 4
+DISRUPTIVE_WINDOW_SEC = 24 * 3600
+EXHAUSTED_PROBE_SEC = 15 * 60
+RE_ALERT_SEC = 60 * 60
+RECOVERY_CONFIRM_PROBES = 2
 # Tor's stop: SIGTERM, `t` seconds of grace, then SIGKILL. Docker holds the request open until the
 # container is down, and a wedged Tor took over 60 s (#3032). The HTTP timeout outlasts grace + kill.
 TOR_STOP_GRACE_SEC = 15
@@ -72,8 +66,6 @@ class TorEgressHealer(TorHistoryMixin):
         ping_failing_since=None,
     ):
         self.enabled = TOR_AUTO_HEAL if enabled is None else enabled
-        # Cycle monerod after a successful tor restart (#972) — only when the node is local
-        # (a remote monerod has no container here and keeps its own tor).
         if restart_monerod is None:
             restart_monerod = MONERO_NODE_HOST == LOCAL_MONERO_HOST
         self._restart_monerod = restart_monerod
@@ -88,7 +80,10 @@ class TorEgressHealer(TorHistoryMixin):
         self._attempts = 0  # recovery actions spent on the current outage
         self._last_attempt = None  # cooldown anchor
         self._ok_streak = 0  # consecutive OK probes (sustained-recovery counter, post-restart)
-        self._warned_exhausted = False  # give-up warning is logged once per outage, not every probe
+        self._warned_exhausted = False
+        self._exhausted_alerted_at = None
+        self._past_cap = False
+        self._disruptive = []
         self._pending_recovery = None
         self._tor_started = None  # last seen Tor container start (epoch); None until observed
         self._own_restart = False  # the healer restarted Tor since that reading
@@ -98,12 +93,14 @@ class TorEgressHealer(TorHistoryMixin):
         self._failure_evidence = ""
         self._recovery_step = None
         self._newnym_unconfirmed = False  # last NEWNYM round got no applied result
+        self._newnym_retried = False
         self._history_since = None
         self._history_outage = None
         self._clear_history = False
         self._pending_history = None  # read-only tor-history request awaiting its result
         self._warned_saturated = False  # saturated-history alert is sent once per outage
-        self.saturated_history = False  # latest host reading, for status surfaces
+        self.saturated_history = False
+        self.circuits_wedged = False
         if self.enabled:
             logger.info(
                 "Tor egress self-heal enabled: probing every %ds; first recovery after %dm "
@@ -132,17 +129,11 @@ class TorEgressHealer(TorHistoryMixin):
         return False, "; ".join(evidence)
 
     def decide(self, ok, now):
-        """Fold a probe into outage state; return heal, exhausted, recovered, or None.
-
-        Recovery requires two corroborated successes."""
         if ok:
             if self._attempts == 0 and not self._newnym_unconfirmed and not self.saturated_history:
-                # A healthy probe clears a blip that never reached a recovery action.
                 self._failing_since = None
                 self._ok_streak = 0
                 return None
-            # Two successes confirm recovery; a lone response during a flapping outage
-            # preserves the attempt budget and cooldown, including rejected NEWNYM rounds.
             self._ok_streak += 1
             if self._ok_streak < RECOVERY_CONFIRM_PROBES:
                 return None
@@ -151,8 +142,9 @@ class TorEgressHealer(TorHistoryMixin):
             self._last_attempt = None
             self._ok_streak = 0
             self._warned_exhausted = False
+            self._exhausted_alerted_at = None
+            self._past_cap = False
             return "recovered"
-        # ok is False — any failure breaks a would-be recovery streak.
         self._ok_streak = 0
         if self._failing_since is None:
             hint = self._ping_failing_since() if self._ping_failing_since else None
@@ -160,23 +152,25 @@ class TorEgressHealer(TorHistoryMixin):
         threshold = FIRST_ACTION_AFTER_SEC if self._attempts == 0 else BROKEN_AFTER_SEC
         if (now - self._failing_since) < threshold:
             return None
-        # Retry cap: past the budget we never restart again this outage — warn instead.
-        if self._attempts >= MAX_ATTEMPTS:
-            return "exhausted"
-        # Cooldown: give the previous action time to prove itself.
         if self._last_attempt is not None and (now - self._last_attempt) < COOLDOWN_SEC:
             return None
+        if self._attempts >= MAX_ATTEMPTS:
+            self._past_cap = True
+            return "exhausted"
+        if self._attempts >= NEWNYM_ATTEMPTS:
+            self._disruptive = [t for t in self._disruptive if now - t < DISRUPTIVE_WINDOW_SEC]
+            if len(self._disruptive) >= MAX_DISRUPTIVE_PER_DAY:
+                self._past_cap = True
+                return "exhausted"
+            self._disruptive.append(now)
         self._attempts += 1
         self._last_attempt = now
+        self._warned_exhausted = False
+        self._exhausted_alerted_at = None
+        self._past_cap = False
         return "heal"
 
     async def _observe_tor_start(self) -> None:
-        """Start a fresh outage window when Tor restarted without the healer's doing.
-
-        A restart by the operator, ``./pithead`` or Docker is a recovery the healer did not
-        perform, so the old clock, budget and cooldown no longer describe the Tor that is running.
-        A restart the healer issued itself is adopted into the baseline and keeps counting. A Tor that
-        restarts more often than FIRST_ACTION_AFTER_SEC (a crash loop) therefore never reaches an action."""
         started = (await get_container_health()).get(self.CONTAINER, {}).get("started_at")
         if started is None:
             return
@@ -187,12 +181,15 @@ class TorEgressHealer(TorHistoryMixin):
             self._last_attempt = None
             self._ok_streak = 0
             self._warned_exhausted = False
+            self._exhausted_alerted_at = None
+            self._past_cap = False
             self._newnym_unconfirmed = False
+            self._newnym_retried = False
+            self.circuits_wedged = False
         self._tor_started = started
         self._own_restart = False
 
     def refund_attempt(self):
-        """Refund an unconfirmed NEWNYM; keep the ongoing outage clock."""
         if self._attempts > 0:
             self._attempts -= 1
         self._last_attempt = None
@@ -236,6 +233,8 @@ class TorEgressHealer(TorHistoryMixin):
         hint = self._ping_failing_since() if self._ping_failing_since else None
         pinging_badly = self._attempts == 0 and hint is not None
         interval = FAST_PROBE_SEC if pinging_badly else PROBE_INTERVAL_SEC
+        if self._past_cap:
+            interval = EXHAUSTED_PROBE_SEC
         onset = pinging_badly and not self._was_pinging_badly
         self._was_pinging_badly = pinging_badly
         if not onset and self._last_probe is not None and (now - self._last_probe) < interval:
@@ -257,9 +256,11 @@ class TorEgressHealer(TorHistoryMixin):
                 self._pending_refresh = None
                 self._pending_since = None
                 if result.get("status") != "applied":
-                    # An unconfirmed NEWNYM never escalates to the disruptive restart; the
-                    # saturated-history reading below tells the operator what will help.
-                    self.refund_attempt()
+                    if result.get("status") == "rejected":
+                        self._attempts = max(self._attempts, NEWNYM_ATTEMPTS)
+                    elif not self._newnym_retried:
+                        self._newnym_retried = True
+                        self.refund_attempt()
                     self._last_attempt = now
                     self._newnym_unconfirmed = True
                     logger.warning(
@@ -273,20 +274,24 @@ class TorEgressHealer(TorHistoryMixin):
                 self._recovery_step = "NEWNYM"
             probe = await asyncio.to_thread(self._probe)
             ok, evidence = probe
+            if self._attempts:
+                self._request_history()
+            if not ok and self.circuits_wedged:
+                evidence = f"{evidence}; control port reports wedged circuits"
             if not ok:
                 self._failure_evidence = evidence
             outage_minutes = (now - self._failing_since) / 60 if self._failing_since else 0
             action = self.decide(ok, now)
             if action == "heal":
-                self._request_history()  # Read on the first round, then refresh each round.
-                if self._attempts < MAX_ATTEMPTS:
+                self._request_history()
+                if self._attempts <= NEWNYM_ATTEMPTS:
                     logger.warning(
                         "Tor clearnet egress failed for %.0f minutes: %s. "
                         "Requesting NEWNYM (%d/%d).",
                         outage_minutes,
                         evidence,
                         self._attempts,
-                        MAX_ATTEMPTS - 1,
+                        NEWNYM_ATTEMPTS,
                     )
                     try:
                         self._pending_refresh = control_service.submit(
@@ -301,7 +306,7 @@ class TorEgressHealer(TorHistoryMixin):
                         return
                     self._pending_since = now
                     return
-                if self.saturated_history:
+                if self._attempts == NEWNYM_ATTEMPTS + 1:
                     try:
                         self._pending_recovery = control_service.submit(
                             "tor-recover", actor="tor-heal"
@@ -361,17 +366,46 @@ class TorEgressHealer(TorHistoryMixin):
                             "monerod' (#972)."
                         )
             elif action == "exhausted":
-                # Keep diagnostics and undelivered warnings alive without another mutation.
                 if self._history_since is None or now - self._history_since >= COOLDOWN_SEC:
                     self._request_history()
                 if not self._warned_exhausted:
                     self._warned_exhausted = True
                     logger.warning(
-                        "Tor clearnet egress is STILL broken after %d recovery attempts: %s. "
+                        "Tor clearnet egress is STILL broken after %d recovery attempts "
+                        "(%d disruptive in the last day, cap %d): %s. "
                         "No more automatic action; run './pithead doctor' for current evidence.",
-                        MAX_ATTEMPTS,
+                        self._attempts,
+                        len(self._disruptive),
+                        MAX_DISRUPTIVE_PER_DAY,
                         evidence,
                     )
+                    try:
+                        control_service.submit("tor-heal-exhausted", actor="tor-heal")
+                    except OSError:
+                        logger.warning("Tor heal exhaustion could not be audited by the host")
+                if self._exhausted_alerted_at is None or (
+                    now - self._exhausted_alerted_at >= RE_ALERT_SEC
+                ):
+                    self._exhausted_alerted_at = now
+                    logger.warning(
+                        "Tor auto-heal is past its cap (%d attempts, %d disruptive in the last "
+                        "day, cap %d) with egress still broken %.0f minutes into the outage; "
+                        "probing every %d minutes and re-alerting hourly until it recovers: %s",
+                        self._attempts,
+                        len(self._disruptive),
+                        MAX_DISRUPTIVE_PER_DAY,
+                        outage_minutes,
+                        EXHAUSTED_PROBE_SEC // 60,
+                        evidence,
+                    )
+                    if self._notify is not None:
+                        await self._notify(
+                            f"\U0001f9c5 Tor auto-heal is past its cap: {self._attempts} attempts "
+                            f"spent ({len(self._disruptive)} disruptive in the last day, "
+                            f"cap {MAX_DISRUPTIVE_PER_DAY}); outage {outage_minutes:.0f} minutes; "
+                            f"probing every {EXHAUSTED_PROBE_SEC // 60} minutes and re-alerting "
+                            f"hourly until Tor recovers. Failed probes {evidence}."
+                        )
             elif action == "recovered":
                 logger.info(
                     "Tor clearnet egress recovered following %s: failed probes %s; recovery probe %s",
@@ -380,9 +414,11 @@ class TorEgressHealer(TorHistoryMixin):
                     evidence,
                 )
                 self._newnym_unconfirmed = False
+                self._newnym_retried = False
                 self._warned_saturated = False
                 self._pending_history = None
                 self.saturated_history = False
+                self.circuits_wedged = False
                 if self._history_outage is not None:
                     self._history_outage = None
                     self._clear_history = True

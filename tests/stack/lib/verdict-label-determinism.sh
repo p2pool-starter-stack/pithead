@@ -133,6 +133,7 @@ test-backup-data-paths.sh|i
 test-backup-data-paths.sh|label
 test-cli.sh|first_run_case
 test-config-document.sh|raw
+test-config-document.sh|sec
 test-config-document.sh|verb
 test-config.sh|2
 test-config.sh|bad_port
@@ -179,6 +180,7 @@ test-secrets.sh|host_ram_mb
 test-secrets.sh|mem
 test-spool-audit.sh|audit_lines
 test-spool-audit.sh|audit_size
+test-spool-audit.sh|entry
 test-suite-blocks.sh|1
 test-suite-blocks.sh|arg
 test-tor-network.sh|v

@@ -2,6 +2,20 @@
 # shellcheck source=tests/os/lib/redact-addr.sh
 source "${BASH_SOURCE[0]%/*}/lib/redact-addr.sh"
 
+recovery_bundle_stop_script() {
+    cat <<'STOP'
+for c in $(podman ps --format '{{.Names}}' 2>/dev/null); do
+    systemctl stop "$c.service" 2>/dev/null || true
+done
+podman stop -a -t 5 >/dev/null 2>&1
+stop_deadline=$(($(date +%s) + 30))
+while [ -n "$(podman ps -q 2>/dev/null)" ] && [ "$(date +%s)" -lt "$stop_deadline" ]; do
+    sleep 2
+done
+[ -z "$(podman ps -q 2>/dev/null)" ] || { echo "recovery bundle leg: containers are still running, the stack is not down"; exit 1; }
+STOP
+}
+
 recovery_bundle_guest_script() {
     cat <<'GUEST'
 set -uo pipefail
@@ -14,13 +28,14 @@ for u in p2pool.service xmrig.service docker-control.service xmrig-proxy.service
     fi
 done
 [ -n "$unit" ] || { echo "recovery bundle leg: no unloaded pithead unit name to fault"; exit 1; }
-podman stop -a -t 5 >/dev/null 2>&1
-[ -z "$(podman ps -q 2>/dev/null)" ] || { echo "recovery bundle leg: containers are still running, the stack is not down"; exit 1; }
+GUEST
+    recovery_bundle_stop_script
+    cat <<'GUEST'
 dummy=pithead-zzdummy
 printf '[Unit]\nDescription=support bundle leg dummy\n[Service]\nType=oneshot\nExecStart=/bin/sh -c "echo recovery-leg-dummy-marker"\n' >/etc/systemd/system/$dummy.service
 systemctl daemon-reload
 systemctl start "$dummy.service"
-systemd-run --quiet --unit="${unit%.service}" --wait -p Type=oneshot sh -c 'echo recovery-leg-marker; exit 3' >/dev/null 2>&1
+systemd-run --quiet --unit="${unit%.service}" --wait -p Type=oneshot sh -c 'echo recovery-leg-marker --rpc-login legrpcuser:legsecretpass9; exit 3' >/dev/null 2>&1
 systemctl is-failed --quiet "$unit" || { echo "recovery bundle leg: $unit did not fail"; exit 1; }
 out=$(mktemp)
 "$cli" recovery-bundle --since "$(date -u -d "-1 hour" +%Y-%m-%dT%H:%M:%SZ)" --until "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$out" 2>&1
@@ -34,6 +49,8 @@ case "$arch" in /data/pithead/support-bundles/support-bundle-*.zip) ;; *) echo "
 ex=$(mktemp -d)
 python3 -I -m zipfile -e "$arch" "$ex" || { echo "recovery bundle leg: the archive is not a readable zip"; exit 1; }
 grep -q recovery-leg-marker "$ex/bundle/logs/$unit.log" || { echo "recovery bundle leg: no journal line from failed $unit in the archive"; exit 1; }
+grep -q 'rpc-login \[redacted\]' "$ex/bundle/logs/$unit.log" || { echo "recovery bundle leg: the seeded --rpc-login was not redacted in the archive"; exit 1; }
+! grep -rqF legsecretpass9 "$ex" || { echo "recovery bundle leg: a seeded secret survived in the archive"; exit 1; }
 grep -q recovery-leg-dummy-marker "$ex/bundle/logs/$dummy.service.log" || { echo "recovery bundle leg: the unit installed at run time was not collected"; exit 1; }
 grep -q recovery-leg-dummy-marker "$ex/bundle/journal/all.log" || { echo "recovery bundle leg: the whole-journal file lacks the dummy unit's line"; exit 1; }
 [ -s "$ex/bundle/journal/kernel.log" ] && [ -s "$ex/bundle/journal/boots.txt" ] || { echo "recovery bundle leg: kernel log or boot list is empty"; exit 1; }
