@@ -107,6 +107,17 @@ sed -i.bak '/CircuitBuildTimeBin/d' "$WORK/tor/state"
 rm -f "$WORK/tor/state.bak"
 ln -s state "$WORK/tor/linked"
 if tor_recovery_signature "$WORK/tor/linked" "$bad" "$bad"; then exit 1; fi
+tor_recovery_state_saturated "$WORK/tor/state"
+mkdir -p "$WORK/sat/folder"
+mkfifo "$WORK/sat/fifo" "$WORK/sat/fed"
+for path in tor/linked sat/folder sat/missing; do if tor_recovery_state_saturated "$WORK/$path"; then exit 1; fi; done
+rc=0
+timeout 10 bash -c 'source "$1"; sudo() { "$@"; }; tor_recovery_state_saturated "$2"' _ "$ROOT/lib/pithead/02e-tor-recovery.sh" "$WORK/sat/fifo" || rc=$?
+[ "$rc" = 1 ]
+exec 3<>"$WORK/sat/fed"
+cat "$WORK/tor/state" >&3
+if tor_recovery_state_saturated "$WORK/sat/fed"; then exit 1; fi
+exec 3>&-
 
 realpath() { if command -v grealpath >/dev/null; then grealpath "$@"; else command realpath "$@"; fi; }
 TOR_EXPECTED="$WORK/tor"

@@ -145,7 +145,7 @@ bundle_support_collect() {
     bundle_support_cap_py >"$tmp/cap.py"
     bundle_support_pack_py >"$tmp/pack.py"
     : >"$tmp/steps.tsv"
-    bundle_support_snap_py >"$tmp/snap.py"
+    { bundle_support_read_py && bundle_support_snap_py; } >"$tmp/snap.py"
     _BUNDLE_DEADLINE=$((SECONDS + ${PITHEAD_SUPPORT_TOTAL_TIMEOUT:-1500}))
     since_epoch=$(date -u -d "$since" +%s 2>/dev/null) || since_epoch=0
     until_epoch=$(date -u -d "$until" +%s 2>/dev/null) || until_epoch=0

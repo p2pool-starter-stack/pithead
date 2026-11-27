@@ -151,8 +151,8 @@ def tor(datadir, addr):
     try:
         if not (ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback):
             raise ValueError("control address is not private")
-        with open(os.path.join(datadir, "control_auth_cookie"), "rb") as fh:
-            cookie = fh.read().hex()
+        with regular(os.path.join(datadir, "control_auth_cookie"), "rb", size=32) as fh:
+            cookie = fh.read(32).hex()
         sock = socket.create_connection((host, int(port)), timeout=5)
         sock.settimeout(5)
         fh = sock.makefile("rwb")
@@ -267,7 +267,7 @@ def markers(root):
             print("%s %d %s %s" % (kind, st.st_size, iso(st.st_mtime), os.path.relpath(path, root)))
             if kind == "f" and st.st_size <= 256 and not skip.search(name):
                 try:
-                    with open(path, errors="replace") as fh:
+                    with regular(path, errors="replace") as fh:
                         body = fh.read(256).strip()
                 except OSError:
                     continue
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     if mode in ("caddy", "history"):
         {"caddy": caddy, "history": history}[mode](args[0], float(args[1]), float(args[2]))
     else:
-        {"tari": tari, "monerod": monerod, "p2pool": p2pool, "tor": tor, "markers": markers}[mode](*args)
+        {"tari": tari, "monerod": monerod, "p2pool": p2pool, "tor": tor, "markers": markers, "guards": guards}[mode](*args)
 PY
 }
 
@@ -350,7 +350,7 @@ bundle_support_snapshots() {
     fi
     bundle_support_snap "$tmp" status/p2pool.json python3 -I "$py" p2pool "$p2dir/stats"
     bundle_support_snap "$tmp" tor/control.txt python3 -I "$py" tor "$tordir" "$tor_addr"
-    bundle_support_snap "$tmp" tor/state-guards.txt awk '/^(TorVersion|LastWritten|Guard) / { gsub(/bridge_addr=[^ ]+/, "bridge_addr=[redacted]"); print }' "$tordir/state"
+    bundle_support_snap "$tmp" tor/state-guards.txt python3 -I "$py" guards "$tordir/state"
 
     bundle_support_snap "$tmp" network/networkctl.txt networkctl status --no-pager
     bundle_support_snap "$tmp" network/ip-addr.txt ip addr
