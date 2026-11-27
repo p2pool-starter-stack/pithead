@@ -6,8 +6,9 @@ fail() {
     exit 1
 }
 
-export FAKE_M="4$(printf 'A%.0s' {1..94})"
-export FAKE_T="12$(printf 'B%.0s' {1..89})"
+FAKE_M="4$(printf 'A%.0s' {1..94})"
+FAKE_T="12$(printf 'B%.0s' {1..89})"
+export FAKE_M FAKE_T
 
 # shellcheck source=tests/os/rollback-verdict.sh
 source "$HERE/rollback-verdict.sh"
