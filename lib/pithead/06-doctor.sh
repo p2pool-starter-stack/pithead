@@ -146,6 +146,7 @@ doctor() {
     echo "Network:"
     check_stratum_exposure doctor
     check_stratum_listening
+    check_stratum_tls_keypair
     check_tor_running
     check_egress_firewall_installed
     check_lan_guard

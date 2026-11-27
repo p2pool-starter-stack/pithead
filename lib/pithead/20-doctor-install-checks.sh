@@ -302,3 +302,18 @@ check_reset_requested() {
     echo "Factory reset:"
     dr_warn "A factory reset is still requested: the next boot erases /data. If the machine already rebooted for it, the reset did not complete; the pithead-data-reset service journal may say why."
 }
+
+check_stratum_tls_keypair() {
+    [ "$(normalize_bool "$(env_get PROXY_STRATUM_TLS)")" = true ] || return 0
+    local dir f missing=""
+    dir=$(env_get PROXY_TLS_DIR)
+    [ -n "$dir" ] || dir="$PWD/data/proxy-tls"
+    for f in cert.pem key.pem; do
+        [ -f "$dir/$f" ] || missing="${missing:+$missing and }$f"
+    done
+    if [ -z "$missing" ]; then
+        dr_ok "Stratum TLS key pair is present."
+    else
+        dr_fail_surface "Stratum TLS is on but the key pair is incomplete (missing: $missing in $dir) — xmrig-proxy starts without TLS and rigs that pin the certificate can't connect. Fix: run './pithead apply' to create the key pair again, then pin the new fingerprint on each rig." "Stratum TLS is on but the key pair is incomplete (missing: $missing) — the proxy starts without TLS and rigs that pin the certificate can't connect. Open Configuration and complete the confirmation step to create the key pair again, then pin the new fingerprint on each rig."
+    fi
+}

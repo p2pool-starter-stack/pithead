@@ -44,3 +44,31 @@ rm -f "$XPTLS/key.pem"
 assert_eq "xmrig-proxy entrypoint: TLS on but keypair incomplete appends nothing (#261)" \
     "$(xp_tls_argv true "$XPTLS")" "[-b][0.0.0.0:3333]"
 rm -rf "$XPTLS"
+xp_tls_err() {
+    { xp_tls_argv "$1" "$2" >/dev/null; } 2>&1
+}
+mk_tmpdir XPTLS
+assert_eq "xmrig-proxy entrypoint: TLS on with no key pair starts with the same argv" \
+    "$(xp_tls_argv true "$XPTLS" 2>/dev/null)" "[-b][0.0.0.0:3333]"
+assert_eq "xmrig-proxy entrypoint: TLS on with no key pair and a closed stderr starts with the same argv" \
+    "$(xp_tls_argv true "$XPTLS" 2>&-)" "[-b][0.0.0.0:3333]"
+_xp_err=$(xp_tls_err true "$XPTLS")
+assert_eq "xmrig-proxy entrypoint: TLS on with no key pair prints one line" "$(printf '%s\n' "$_xp_err" | grep -c .)" 1
+assert_contains "xmrig-proxy entrypoint: no key pair names both files" "$_xp_err" "missing: $XPTLS/cert.pem and $XPTLS/key.pem"
+assert_contains "xmrig-proxy entrypoint: no key pair says it starts without TLS" "$_xp_err" "starting without TLS"
+assert_contains "xmrig-proxy entrypoint: no key pair names apply" "$_xp_err" "./pithead apply"
+assert_eq "xmrig-proxy entrypoint: TLS off with no key pair prints nothing" "$(xp_tls_err false "$XPTLS")" ""
+printf 'key' >"$XPTLS/key.pem"
+_xp_err=$(xp_tls_err true "$XPTLS")
+assert_contains "xmrig-proxy entrypoint: missing cert is named" "$_xp_err" "missing: $XPTLS/cert.pem"
+assert_not_contains "xmrig-proxy entrypoint: present key is not named" "$_xp_err" "key.pem"
+assert_eq "xmrig-proxy entrypoint: TLS on with only the key starts with the same argv" \
+    "$(xp_tls_argv true "$XPTLS" 2>/dev/null)" "[-b][0.0.0.0:3333]"
+printf 'cert' >"$XPTLS/cert.pem"
+assert_eq "xmrig-proxy entrypoint: TLS on with the key pair prints nothing" "$(xp_tls_err true "$XPTLS")" ""
+rm -f "$XPTLS/key.pem"
+_xp_err=$(xp_tls_err true "$XPTLS")
+assert_contains "xmrig-proxy entrypoint: missing key is named" "$_xp_err" "missing: $XPTLS/key.pem"
+assert_not_contains "xmrig-proxy entrypoint: present cert is not named" "$_xp_err" "cert.pem"
+rm -f "$XPTLS/cert.pem"
+rmdir "$XPTLS"
