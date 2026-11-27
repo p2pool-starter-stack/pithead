@@ -315,6 +315,7 @@ pin_publish() {
         append_bundle_sha256() { :; }
         WORKDIR="$SANDBOX/pin-work"
         mkdir -p "$WORKDIR"
+        printf 'tor Alpine:v3.24 musl 1.2.5-r10\n' >"$WORKDIR/os-packages.txt"
         git() {
             case "$1" in
             tag) printf 'TAG %s\n' "$*" ;;
