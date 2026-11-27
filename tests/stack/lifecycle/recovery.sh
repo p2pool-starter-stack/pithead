@@ -248,7 +248,7 @@ HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 EOF
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$A/config.json"
+printf '{ "network":{"tor_egress_firewall":false}, "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$A/config.json"
 # First apply: real config delta committed, but `compose up` FAILS -> marker left, rc 1, guidance.
 out="$(cd "$A" && DOCKER_LOG="$A/docker.log" FAIL_UP=1 PATH="$A/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
@@ -307,7 +307,7 @@ DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 MONERO_OUT_PEERS=48
 EOF
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","out_peers":49}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$R2/config.json"
+printf '{ "network":{"tor_egress_firewall":false}, "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","out_peers":49}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$R2/config.json"
 RACE_CNT="$R2/race-count"
 out="$(cd "$R2" && RACE_CNT_FILE="$RACE_CNT" PATH="$R2/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
@@ -393,7 +393,7 @@ apply_noop_steps() {
         apply
     ) | grep -xE 'provision|compose' | tr '\n' ','
 }
-: >"$SANDBOX/.env"
+printf 'TOR_EGRESS_FIREWALL=false\n' >"$SANDBOX/.env"
 printf '{}\n' >"$SANDBOX/config.json"
 assert_eq "a no-change apply still converges the control units, and recreates nothing" \
     "$(apply_noop_steps)" "provision,"
