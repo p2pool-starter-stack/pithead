@@ -317,3 +317,45 @@ if miner_watch_restore; then
 fi
 [ -e "$T3375/paused" ]
 printf '%s\n' 'PASS: failed watchdog restoration retains its control files'
+MINER_RECOVERY_BIN="$work/recovery"
+printf '%s\n' 'pithead-miner-recovery: local miner proxy was recreated while the miner was disconnected; restarting xmrig' >"$MINER_RECOVERY_BIN"
+printf '%s\n' 's=0000000000000000;i=0;b=0;m=0;r=0;u=00000000000000000000000000000000' >"$T3375/fastpath-cursor"
+printf '%s\n' 1700000000 >"$T3375/backup-at"
+journalctl() {
+    case "$*" in
+    *--after-cursor*) printf '%s\n' 'Nov 26 10:00:00 guest pithead-miner-recovery[9]: pithead-miner-recovery: proxy was recreated' ;;
+    *) : ;;
+    esac
+}
+miner_fastpath_receipt >"$work/receipt"
+grep -Fxq 'pithead-t3375: fastpath_restart=observed' "$work/receipt"
+journalctl() { :; }
+if miner_fastpath_receipt >"$work/receipt"; then
+    echo 'FAIL: a trial with no recovery restart line passed the receipt'
+    exit 1
+fi
+grep -Fq 'fastpath_restart=missing window=journal-cursor' "$work/receipt"
+grep -Fq 'no recovery restart line in the last 30 minutes' "$work/receipt"
+printf '%s\n' 'PASS: a restart recorded only before the trial cursor window is never credited to it'
+journalctl() {
+    case "$*" in
+    *'--since @'*) printf '%s\n' 'Nov 26 10:00:00 guest pithead-miner-recovery[9]: pithead-miner-recovery: proxy was recreated' ;;
+    *) : ;;
+    esac
+}
+rm -f "$T3375/fastpath-cursor"
+miner_fastpath_receipt >"$work/receipt"
+grep -Fxq 'pithead-t3375: fastpath_restart=observed' "$work/receipt"
+journalctl() {
+    case "$*" in
+    *'--since -30 minutes'*) printf '%s\n' 'Nov 26 10:00:00 guest pithead-miner-recovery[9]: pithead-miner-recovery: active local miner disconnected for 300 seconds; restarting xmrig' ;;
+    *) : ;;
+    esac
+}
+if miner_fastpath_receipt >"$work/receipt"; then
+    echo 'FAIL: an absent restart inside the marker window passed the receipt'
+    exit 1
+fi
+grep -Fq 'fastpath_restart=missing window=backup-at-marker' "$work/receipt"
+grep -Fq 'disconnected for 300 seconds; restarting xmrig' "$work/receipt"
+printf '%s\n' 'PASS: the fastpath receipt keeps the marker fallback and records why a missing restart was judged'
