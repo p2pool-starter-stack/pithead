@@ -45,6 +45,7 @@ listing v9.9.9
 printf '{"tag_name":"v9.9.9/../../x","assets":[{"name":"pithead-os-x.raucb","size":1000}]}' >"$SB/api-evil-tag.json"
 printf '{"tag_name":"v9.9.9","assets":[]}' >"$SB/api-no-bundle.json"
 printf 'http://seam.invalid/os' >"$SB/os-update-test-base"
+: >"$SB/test-marker"
 
 cat >"$SB/bin/curl" <<'EOF'
 #!/usr/bin/env bash
@@ -158,7 +159,7 @@ rig() {
     done
     (cd "$SB" && PATH="$SB/bin:$PATH" CURL_LOG="$SB/curl.log" CH_API_RESPONSE="$SB/api.json" \
         CH_BUNDLE="$SB/fixture.raucb" RAUC_LOG="$SB/rauc.log" TOR_LOG="$SB/tor.log" \
-        REBOOT_LOG="$tmp/reboot.log" CH_RC28_FILE="$SB/rc28.n" PITHEAD_APPLIANCE=1 PITHEAD_OS_UPDATE_DIR="$STAGE" \
+        REBOOT_LOG="$tmp/reboot.log" CH_RC28_FILE="$SB/rc28.n" PITHEAD_TEST_MARKER_FILE="$SB/test-marker" PITHEAD_APPLIANCE=1 PITHEAD_OS_UPDATE_DIR="$STAGE" \
         PITHEAD_RIG_UPDATE_STATE="$SB/rig-update.json" PITHEAD_RIG_UPDATE_ATTEMPTS=3 \
         PITHEAD_VARIANT_FILE="$SB/variant-release" PITHEAD_RAUC_SYSTEM_CONF="$SB/system.conf" \
         PITHEAD_DATA_FLOOR_FILE="$SB/floor" PITHEAD_REBOOT_CMD="$SB/reboot-stub" \
