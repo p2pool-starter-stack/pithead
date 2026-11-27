@@ -104,7 +104,6 @@ if mode == "local":
         require(request(PROBE, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
     data = summary(0, False)
     require(any(e["uri"] == PROBE and e["status"] == 401 for e in data["entries"]), data)
-    # Even local wrong credentials on the exact health path are ordinary failures.
     require(request(PROBE, BAD_AUTH, headers={"X-Pithead-Boot-Probe": CAPABILITY})[0] == 401)
     for _ in range(3):
         require(request("/", BAD_AUTH)[0] == 401)
