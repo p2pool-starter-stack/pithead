@@ -135,6 +135,46 @@ out=$(irun sig-nokey) && rc=0 || rc=$?
 assert_rc "signature without a fetchable pinned key refuses" "$rc" "1"
 assert_contains "the failure names the pinned key" "$out" "pinned key could not be fetched"
 touch "$ISB/srv/cosign.pub"
+mkdir -p "$ISB/bin-nocosign"
+cp "$ISB/bin/uname" "$ISB/bin/curl" "$ISB/bin-nocosign/"
+cat >"$ISB/bin-nocosign/sha256sum" <<'EOF'
+#!/bin/bash
+if [ -n "${PIN_MATCH:-}" ] && [ "${1##*/}" = cosign ]; then
+    echo "7c78a7f2efc00088bd788a758db6e0928e79f3e0eb83eb5d3c499ed98da4c4f4  $1"
+    exit 0
+fi
+if command -v /usr/bin/sha256sum >/dev/null; then exec /usr/bin/sha256sum "$@"; fi
+exec shasum -a 256 "$@"
+EOF
+printf '#!/bin/bash\n[ "$1" != version ] || exit 0\nexit "${COSIGN_RC:-0}"\n' >"$ISB/srv/cosign-linux-amd64"
+chmod +x "$ISB/bin-nocosign/sha256sum" "$ISB/srv/cosign-linux-amd64"
+irun_nocosign() {
+    (
+        cd "$ISB/work" || exit
+        CURL_SRV="$ISB/srv" PITHEAD_VERSION="${IRUN_TAG-v9.9.9}" PITHEAD_ALLOW_ANY_DISTRO=1 PITHEAD_DIR="$ISB/work/$1" \
+            PITHEAD_TTY="$ISB/tty" PATH="$ISB/bin-nocosign:/usr/bin:/bin" bash "$ROOT/install.sh" 2>&1 </dev/null
+    )
+}
+out=$(PIN_MATCH=1 irun_nocosign nocosign-ok)
+assert_contains "without cosign the pinned cosign is fetched" "$out" "fetching the pinned cosign"
+assert_contains "and the bundle signature is still checked" "$out" "signature verified"
+assert_contains "and the install goes on to setup" "$out" "SETUP-REACHED"
+out=$(irun_nocosign nocosign-bad-pin) && rc=0 || rc=$?
+assert_rc "a fetched cosign that does not match its pin refuses" "$rc" "1"
+assert_contains "the refusal names the pin" "$out" "does not match its pinned sha256"
+assert_eq "nothing was installed on a pin mismatch" "$([ -e "$ISB/work/nocosign-bad-pin" ] && echo present || echo absent)" "absent"
+out=$(PIN_MATCH=1 COSIGN_RC=1 irun_nocosign nocosign-sig-bad) && rc=0 || rc=$?
+assert_rc "the fetched cosign still refuses a bad signature" "$rc" "1"
+assert_contains "that refusal names the signature" "$out" "signature verification FAILED"
+mv "$ISB/srv/cosign-linux-amd64" "$ISB/srv/cosign-linux-amd64.off"
+out=$(irun_nocosign nocosign-no-download) && rc=0 || rc=$?
+assert_rc "a cosign that cannot be downloaded refuses" "$rc" "1"
+assert_contains "that refusal says how to go on" "$out" "Could not download the pinned cosign"
+mv "$ISB/srv/cosign-linux-amd64.off" "$ISB/srv/cosign-linux-amd64"
+rm -f "$ISB/srv/pithead.tar.gz.sig"
+out=$(IRUN_TAG=v1.18.0 irun_nocosign nocosign-unsigned-old)
+assert_contains "an unsigned old release needs no cosign download" "$out" "No bundle signature"
+touch "$ISB/srv/pithead.tar.gz.sig"
 printf '{"tag_name": "v9.9.9"}\n' >"$ISB/srv/latest"
 out=$(IRUN_TAG='' CURL_LOG="$ISB/curl.log" irun latest-tag)
 assert_contains "the latest tag is resolved and installed" "$out" "SETUP-REACHED"

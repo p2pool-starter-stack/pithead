@@ -10,6 +10,8 @@
 set -euo pipefail
 
 REPO="p2pool-starter-stack/pithead"
+COSIGN_PIN_URL="https://github.com/sigstore/cosign/releases/download/v2.6.3/cosign-linux-amd64"
+COSIGN_PIN_SHA256="7c78a7f2efc00088bd788a758db6e0928e79f3e0eb83eb5d3c499ed98da4c4f4"
 fail() {
     echo "[install] ERROR: $*" >&2
     exit 1
@@ -68,20 +70,28 @@ signed_release() {
     [[ $1 =~ ^v([0-9]{1,6})\.([0-9]{1,6})\.([0-9]{1,6})$ ]] || return 0
     ((10#${BASH_REMATCH[1]} * 1000000000000 + 10#${BASH_REMATCH[2]} * 1000000 + 10#${BASH_REMATCH[3]} >= 1000018000001))
 }
-if command -v cosign >/dev/null 2>&1; then
-    if curl -fsSL --proto =https --proto-redir =https -o "$TMP/pithead.tar.gz.sig" "https://github.com/$REPO/releases/download/$TAG/pithead.tar.gz.sig" 2>/dev/null; then
-        curl -fsSL --proto =https --proto-redir =https -o "$TMP/cosign.pub" "https://raw.githubusercontent.com/$REPO/main/cosign.pub" ||
-            fail "The release carries a signature but the pinned key could not be fetched from the repo."
-        cosign verify-blob --key "$TMP/cosign.pub" --signature "$TMP/pithead.tar.gz.sig" \
-            --insecure-ignore-tlog=true "$TMP/pithead.tar.gz" >/dev/null 2>&1 ||
-            fail "Bundle signature verification FAILED — the download does not match the release key. Refusing to install."
-        note "Bundle signature verified (cosign, repo-pinned key)."
-    else
-        signed_release "$TAG" && fail "Release $TAG should carry a signature, but the signature could not be downloaded. Refusing to install. If this was a network error, run the installer again."
-        note "No bundle signature on this release (pre-signing era) — sha256/HTTPS are the trust anchors."
+if curl -fsSL --proto =https --proto-redir =https -o "$TMP/pithead.tar.gz.sig" "https://github.com/$REPO/releases/download/$TAG/pithead.tar.gz.sig" 2>/dev/null; then
+    curl -fsSL --proto =https --proto-redir =https -o "$TMP/cosign.pub" "https://raw.githubusercontent.com/$REPO/main/cosign.pub" ||
+        fail "The release carries a signature but the pinned key could not be fetched from the repo."
+    COSIGN=$(command -v cosign || true)
+    if [ -z "$COSIGN" ]; then
+        note "cosign not installed — fetching the pinned cosign v2.6.3 into a temporary folder to check the signature."
+        curl -fsSL --proto =https --proto-redir =https -o "$TMP/cosign" "$COSIGN_PIN_URL" ||
+            fail "Could not download the pinned cosign to check the bundle signature. Install cosign, or run the installer again."
+        [ "$(sha256sum "$TMP/cosign" | cut -d' ' -f1)" = "$COSIGN_PIN_SHA256" ] ||
+            fail "The downloaded cosign does not match its pinned sha256. Refusing to install."
+        chmod 700 "$TMP/cosign"
+        COSIGN="$TMP/cosign"
+        "$COSIGN" version >/dev/null 2>&1 ||
+            fail "The downloaded cosign could not run (is the temporary folder mounted noexec?). Install cosign, or set TMPDIR to a folder that allows running programs."
     fi
+    "$COSIGN" verify-blob --key "$TMP/cosign.pub" --signature "$TMP/pithead.tar.gz.sig" \
+        --insecure-ignore-tlog=true "$TMP/pithead.tar.gz" >/dev/null 2>&1 ||
+        fail "Bundle signature verification FAILED — the download does not match the release key. Refusing to install."
+    note "Bundle signature verified (cosign, repo-pinned key)."
 else
-    note "cosign not installed — skipping signature verification (sha256/HTTPS are the trust anchors)."
+    signed_release "$TAG" && fail "Release $TAG should carry a signature, but the signature could not be downloaded. Refusing to install. If this was a network error, run the installer again."
+    note "No bundle signature on this release (pre-signing era) — sha256/HTTPS are the trust anchors."
 fi
 
 mkdir -p "$DIR"
