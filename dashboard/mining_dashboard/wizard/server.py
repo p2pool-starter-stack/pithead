@@ -194,13 +194,13 @@ def _disks() -> list[dict]:
     return disk_inventory(_spool_read("disks.tsv") or "")
 
 
-def _session_value(tok: str) -> str:
+def _mac(tok: str) -> str:
     return hmac.new(tok.encode(), COOKIE.encode(), "sha256").hexdigest()
 
 
 def _authed(request: web.Request) -> bool:
     tok = os.environ.get("WIZARD_TOKEN", "")
-    return bool(tok) and hmac.compare_digest(request.cookies.get(COOKIE, ""), _session_value(tok))
+    return bool(tok) and hmac.compare_digest(request.cookies.get(COOKIE, ""), _mac(tok))
 
 
 async def index(request: web.Request) -> web.Response:
@@ -234,11 +234,7 @@ async def auth(request: web.Request) -> web.Response:
         failures.pop(peer, None)
         resp = web.HTTPFound("/")
         resp.set_cookie(
-            COOKIE,
-            _session_value(tok),
-            httponly=True,
-            secure=request.app["secure_cookie"],
-            samesite="Strict",
+            COOKIE, _mac(tok), httponly=True, secure=request.app["secure_cookie"], samesite="Strict"
         )
         raise resp
     if peer not in failures and len(failures) >= MAX_AUTH_CLIENTS:
