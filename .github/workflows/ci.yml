@@ -4,21 +4,12 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-  # Two Monday sweeps hang off this schedule (every other job gates itself off the event):
-  # build-images (#833) rebuilds this branch and scans the rebuild, the only sweep that can go red
-  # before a release; sweep-shipped (#1313) scans the published ghcr images by resolved digest
-  # and reports into a tracking issue rather than reddening: a fixable CVE in a shipped image asks for a patch release.
-  # THIS cron block is the one that fires (`schedule:` reads the DEFAULT branch, `develop`). Prove
-  # a cadence change fired with `gh run list --json event`: a schedule that never runs looks
-  # exactly like one that ran and found nothing (#1162).
   schedule:
     - cron: "0 5 * * 1" # Mondays 05:00 UTC
 
-# Least privilege (#282): no job here pushes, comments or publishes; a narrow GITHUB_TOKEN limits a compromised step.
 permissions:
   contents: read
 
-# Cancel superseded PR runs; never push runs on main/develop (diff-cover baseline, required checks). #415.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

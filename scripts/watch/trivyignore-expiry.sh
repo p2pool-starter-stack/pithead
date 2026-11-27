@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Report .config/trivyignore mutes that are expired or expire within 7 days; report-only, exit 0.
-# Usage: trivyignore-expiry.sh [ignorefile]   |   trivyignore-expiry.sh --self-test
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WARN_DAYS=7
 
-plus_days() { # <date> <days>
+plus_days() {
     date -u -d "$1 +$2 days" +%F 2>/dev/null || date -u -j -v"+$2d" -f %F "$1" +%F
 }
 
-report() { # <ignorefile> <today>
+report() {
     local file="$1" today="$2" soon id exp rest rows="" expired=0 expiring=0 undated=0
     soon="$(plus_days "$today" "$WARN_DAYS")"
     while read -r id rest; do

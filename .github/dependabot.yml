@@ -1,7 +1,3 @@
-# Dependabot (Wave 7 tooling, #282): automated dependency + CVE update PRs across every
-# supply-chain surface. Grouped + weekly to keep PR volume sane; each `*-security` group
-# (applies-to: security-updates) sends a security fix as its own PR at once.
-#
 # Dependabot reads this file from the DEFAULT branch (`develop`) only and resolves every `directory:`
 # there; one entry per surface covers everything (CONTRIBUTING.md § One integration branch, #1163, #1425).
 version: 2
@@ -149,7 +145,6 @@ updates:
         applies-to: security-updates
         patterns: ["*"]
 
-  # Merge-mining fixture crates (#2586): test-only, tracked like the other test harnesses.
   - package-ecosystem: "cargo"
     directory: "/tests/integration/mergemine/fixture"
     schedule:
