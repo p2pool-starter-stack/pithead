@@ -36,7 +36,7 @@ caddy_onion="$(
     cat Caddyfile
 )"
 assert_contains "onion vhost bound to the bridge gateway" "$caddy_onion" "http://172.28.0.1 {"
-assert_contains "onion vhost carries basic_auth" "$caddy_onion" "basic_auth"
+assert_contains "onion vhost carries the counted basic check" "${caddy_onion#*172.28.0.1}" "uri /api/auth/basic"
 assert_contains "onion vhost carries the session gate" "${caddy_onion#*172.28.0.1}" "forward_auth @pithead_session 127.0.0.1:8000"
 assert_contains "onion vhost serves the sign-in endpoints" "${caddy_onion#*172.28.0.1}" "@pithead_public path /login"
 onion_site="${caddy_onion#*172.28.0.1}"
@@ -81,7 +81,7 @@ case "$https_site" in
 *"tls internal"*) ok "onion HTTPS vhost uses a self-signed cert (tls internal)" ;;
 *) bad "onion HTTPS vhost uses tls internal" "no 'tls internal' on the https onion site" ;;
 esac
-assert_contains "onion HTTPS vhost carries the same basic_auth (#343)" "$https_site" "basic_auth"
+assert_contains "onion HTTPS vhost carries the same counted basic check (#343)" "$https_site" "uri /api/auth/basic"
 # Not yet provisioned (placeholder address) -> HTTP onion vhost only, no HTTPS one (a later apply adds it).
 # shellcheck disable=SC1090  # STACK path is dynamic by design
 caddy_onion_ph="$(

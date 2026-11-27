@@ -482,7 +482,7 @@ How it works and what to keep in mind:
   [`p2pool.stratum_password`](#configuration-reference) and `p2pool.stratum_bind`.
 - Exposing to the public internet is still discouraged. A password plus HTTPS is the right baseline,
   but for reaching the dashboard from outside the LAN, publish it as a Tor onion service (below)
-  rather than forwarding a port. Basic-auth has no rate-limiting or lockout on its own.
+  rather than forwarding a port.
 
 On DIY installs, accepting Caddy's current leaf certificate in the browser can warn again after
 an internal renewal (leaves last 12 hours by default). Trust this installation's root CA once
@@ -515,7 +515,8 @@ the page is served over HTTPS.
   the disk is writable again.
 - **Wrong passwords:** five failures from one address in a minute lock sign-in from that address
   for the rest of the minute. Each attempt appears in the access log shown in the Security panel.
-  Basic-auth requests are not rate-limited. On the onion address every visitor reaches the
+  Basic-auth requests count toward the same limit, so a script with a wrong password is locked
+  out for the rest of the minute too. On the onion address every visitor reaches the
   dashboard from the Tor container, so they share one failure count.
 - **Scripts and API clients** keep sending the username and password as HTTP basic auth, for
   example `curl -u admin:PASSWORD`. A basic-auth request for a page that asks for HTML

@@ -22,7 +22,9 @@ assert_contains "login: session check goes through forward_auth" "$caddy_on" "fo
 assert_contains "login: forward_auth targets the dashboard check endpoint" "$caddy_on" "uri /api/auth/check"
 assert_contains "login: forward_auth copies the actor from the session" "$caddy_on" "copy_headers X-Auth-User X-Pithead-Session-Refresh"
 assert_contains "login: basic auth still gates scripts and API clients" "$caddy_on" "route @pithead_basic {"
-assert_contains "login: the basic-auth actor reaches the dashboard" "$caddy_on" "        request_header X-Auth-User {http.auth.user.id}"
+assert_contains "login: basic credentials are checked by the dashboard, which counts failures" "$caddy_on" "            uri /api/auth/basic"
+assert_contains "login: the basic-auth actor comes back from that check" "$caddy_on" "            copy_headers X-Auth-User"
+assert_not_contains "login: the gate itself checks no basic credentials" "${caddy_on%%http://127.0.0.1:8001*}" "basic_auth"
 assert_contains "login: client-supplied actor header is stripped first" "$caddy_on" "request_header -X-Auth-User"
 assert_contains "login: the sign-in endpoints skip the gate" "$caddy_on" "@pithead_public path /login /api/auth/login /api/auth/logout"
 public_line=$(printf '%s\n' "$caddy_on" | grep -F "@pithead_public path")
