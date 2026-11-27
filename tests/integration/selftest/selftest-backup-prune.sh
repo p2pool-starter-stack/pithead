@@ -95,7 +95,7 @@ fi
 assert_eq "run-safety prunes only after the archive is located" \
     "$(grep -B1 'backup_prune' "$HERE/../lib/run-safety.sh" | grep -c 'Safety backup: ')" "1"
 assert_eq "run-lifecycle prunes only on the successful-backup path" \
-    "$(grep -B3 'backup_prune' "$HERE/../lib/run-lifecycle.sh" | grep -c 'if backup_out=')" "1"
+    "$(grep -B3 'backup_prune' "$HERE/../lib/run-lifecycle.sh" | grep -c 'if it_run_logged "\$rt_dir" backup pithead backup ')" "1"
 assert_eq "run-lifecycle protects the safety anchor" \
     "$(grep -c 'backup_prune rx backups "\$arch" "\${SAFETY_ARCHIVE:-}"' "$HERE/../lib/run-lifecycle.sh")" "1"
 assert_eq "e2e backup_stack prunes only after the archive is located" \

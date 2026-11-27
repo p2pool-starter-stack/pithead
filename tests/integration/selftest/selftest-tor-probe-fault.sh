@@ -193,7 +193,7 @@ echo "== A peerless Monero node fails the precondition before any fault is insta
 )
 echo "== Failed mining and recovery rows carry the dashboard's own log lines =="
 (
-    BASELINE_CONFIG='{}'
+    BASELINE_CONFIG='{}' OUT_DIR="$SCRATCH/dashboard-lines"
     env_on_box() { echo true; }
     fault_rules_clear_all() { :; }
     fault_rules_trap_arm() { :; }
@@ -225,7 +225,7 @@ echo "== Failed mining and recovery rows carry the dashboard's own log lines =="
         esac
     }
     fault_tor_probe_egress >"$SCRATCH/dashboard-detail.out"
-    check grep -Fq 'sample 0 had no live proxy worker or accepted-share counter; dashboard: 2026-11-22 10:00:17,201 [WARNING] Mining work is not valid (Monero node unreachable past the debounce) — stopping xmrig-proxy' "$SCRATCH/dashboard-detail.out"
+    check grep -Fq 'sample 1 had no live proxy worker or accepted-share counter; dashboard: 2026-11-22 10:00:17,201 [WARNING] Mining work is not valid (Monero node unreachable past the debounce) — stopping xmrig-proxy' "$SCRATCH/dashboard-detail.out"
     check grep -Fq 'no corroborated recovery log; last dashboard Tor lines: 2026-11-22 10:04:02,917 [WARNING] Tor clearnet egress failed for 5 minutes' "$SCRATCH/dashboard-detail.out"
     check grep -q '^2026-11-22 10:20:40,005 \[WARNING\] Tor clearnet egress is STILL broken after 2 recovery attempts' "$SCRATCH/dashboard-detail.out"
     printf 'dashboard detail fixture: %s passed, %s failed\n' "$PASS" "$FAIL"

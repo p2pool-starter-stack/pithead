@@ -67,10 +67,12 @@ drive() (
         assert_fresh_tari_synced_required >"$work/output" 2>&1 || rc=$?
         ;;
     rr_caddy_stable)
+        rx() { :; }
         rr_caddy_snapshot() { obs >/dev/null && is_ready && echo 'id 0 t true healthy'; }
         rr_caddy_stable >"$work/output" 2>&1 || rc=$?
         ;;
     rr_caddy_restarted)
+        rx() { :; }
         rr_caddy_snapshot() { obs >/dev/null && is_ready && echo "id $(cat "$work/reads") t true healthy"; }
         rr_caddy_stable >"$work/output" 2>&1 || rc=$?
         ;;
