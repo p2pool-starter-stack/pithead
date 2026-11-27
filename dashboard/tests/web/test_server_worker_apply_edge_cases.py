@@ -30,3 +30,14 @@ class TestWorkerApplyEdgeCases:
         assert resp.status == 202
         assert (await resp.json())["status"] == "pending"
         assert worker_client.sm.get_worker_config_history("rig1") == []  # no terminal outcome yet
+
+
+@pytest.mark.parametrize("confirm", [None, "", "apply", "yes"])
+async def test_pools_change_without_typed_apply_is_refused(worker_client, control_spool, confirm):
+    body = {"worker": "rig1", "changes": {"pools": [{"url": "pool.example:3333"}]}}
+    if confirm is not None:
+        body["confirm"] = confirm
+    resp = await worker_client.post("/api/control/worker-apply", json=body, headers=CONTROL_HEADERS)
+    assert resp.status == 400
+    assert "typed APPLY" in await resp.text()
+    assert not list((control_spool / "requests").glob("*.json"))

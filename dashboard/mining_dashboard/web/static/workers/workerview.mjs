@@ -28,6 +28,7 @@ import {
   parseJsonChanges,
   rigforgeReportsTarget,
 } from "./workerlogic.mjs";
+import { applyRequest, POOLS_HOLD, PoolsConfirm, poolsHeld } from "./workerpools.mjs";
 import {
   CONTROL_HEADERS,
   pollWorkerResult,
@@ -105,9 +106,7 @@ export class WorkerInspect extends Component {
       jsonError: null,
       busy: false,
       result: null,
-      // Per-worker hashrate chart (#1013): its own range preference (persisted, like the editor
-      // mode above) and its own loading flag — a range switch refetches ONLY the chart data
-      // (loadChart), never the full load(), so it can't wipe an in-progress config edit.
+      poolsConfirm: "",
       chartRange: loadPref("dashboardWorkerChartRange", ["24h", "1w", "all"], "24h"),
       chartLoading: false,
       waitVersion: null,
@@ -244,17 +243,18 @@ export class WorkerInspect extends Component {
       this.setState({ result: { status: "error", error: "No changes to apply." } });
       return;
     }
+    if (poolsHeld(changes, this.state)) return this.setState(POOLS_HOLD);
     this.setState({ busy: true, result: { status: "running" } });
     try {
       const res = await fetch("/api/control/worker-apply", {
         method: "POST",
         headers: CONTROL_HEADERS,
-        body: JSON.stringify({ worker: this.props.name, changes }),
+        body: JSON.stringify(applyRequest(this.props.name, changes)),
       });
       let out = await res.json();
       if (out.status === "pending") out = await pollWorkerResult(out.id);
       this.setState({ busy: false, result: out });
-      this.load(); // refresh telemetry + history with the new row
+      this.load();
     } catch (e) {
       this.setState({ busy: false, result: { status: "error", error: String(e) } });
     }
@@ -334,6 +334,7 @@ export class WorkerInspect extends Component {
             }
             <div class="mt-1">
                 <button class="btn-toggle" disabled=${busy} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
+                <${PoolsConfirm} view=${this} />
             </div>
             ${!busy && this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
             <${StatusLine} result=${result} />`
