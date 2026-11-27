@@ -235,7 +235,7 @@ services:
   docker-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0
     container_name: itest-docker-proxy
-    command: &socket-proxy-command ["sh", "-c", "sed -i '/timeout server 0/d' /tmp/haproxy.cfg; exec haproxy -W -db -f /tmp/haproxy.cfg"]
+    command: &socket-proxy-command ["sh", "-c", "sed -i 's/timeout server 0/timeout server 10m/' /tmp/haproxy.cfg; exec haproxy -W -db -f /tmp/haproxy.cfg"]
     networks: [itestnet]
     environment: ["CONTAINERS=1", "LOGS=1"]
     volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]

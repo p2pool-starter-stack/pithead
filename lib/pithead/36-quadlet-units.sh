@@ -351,7 +351,7 @@ ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true
 PodmanArgs=--memory 128m --memory-swap 128m
-Exec=sh -c "sed -i '/timeout server 0/d' /tmp/haproxy.cfg; exec haproxy -W -db -f /tmp/haproxy.cfg"
+Exec=sh -c "sed -i 's/timeout server 0/timeout server 10m/' /tmp/haproxy.cfg; exec haproxy -W -db -f /tmp/haproxy.cfg"
 [Service]
 Restart=always
 [Install]
