@@ -47,7 +47,6 @@ _xvb_short_state() {
 
 good_route='{"xvb_url":"x.example:4247","donor":"fixturew","pools":[{"url":"x.example:4247","user":"fixturew","enabled":true,"tor":true},{"url":"p2pool:3333","user":"fixturewalletaddress0123456789","enabled":false,"tor":false}]}'
 
-# <label> <want pass> <want fail> <want skips> <want applies> <want restores> [VAR=value ...]
 case_run() {
     local label="$1" wp="$2" wf="$3" ws="$4" wa="$5" wr="$6" rc=0 got
     shift 6

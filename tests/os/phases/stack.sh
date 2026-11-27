@@ -38,7 +38,6 @@ stack_browser_config() {
     # because the DIY bench's own persistent config happens to carry it disabled; that is a gap
     # in the assertion's expected list, filed separately, not a config choice for this phase to
     # suppress by diverging from the wizard's default.
-    # XvB stays off for the battery; phase_stack_xvb_short turns it on for one bounded leg.
     cfg=$(printf '%s' "$1" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
         '.monero.wallet_address = $m | .tari.wallet_address = $t | .p2pool.pool = "mini" |
          .xvb.enabled = false') || return 1

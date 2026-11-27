@@ -1,16 +1,15 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154
-# One bounded XvB-on leg for the stack guest, built on the routing and config-approval legs' helpers.
 
 _XVB_SHORT_OFF='P2POOL (XvB Disabled)'
 _XVB_SHORT_ROUTED=0
 
-_xvb_short_state() { # prints "<mode name><TAB><fetch fail count>", nothing when unreadable
+_xvb_short_state() {
     _ssh 'curl -fsS --max-time 10 http://127.0.0.1:8000/api/state' 2>/dev/null |
         jq -r '[(.hashrate.mode_name // ""), (.hashrate.xvb_fail_count // 0)] | @tsv' 2>/dev/null
 }
 
-_xvb_short_state_is() { # <on|off> <state line>
+_xvb_short_state_is() {
     local mode="${2%%$'\t'*}" fails="${2##*$'\t'}"
     case "$1:$mode" in
     off:"$_XVB_SHORT_OFF") return 0 ;;
@@ -19,7 +18,7 @@ _xvb_short_state_is() { # <on|off> <state line>
     esac
 }
 
-_xvb_short_wait() { # <on|off> -> 0 once the dashboard reads that state, else prints the last read
+_xvb_short_wait() {
     local state="" deadline
     deadline=$(($(date +%s) + ${XVB_SHORT_STATE_TIMEOUT:-180}))
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -40,7 +39,7 @@ _xvb_short_route_payload() {
         base64 | tr -d '\n'
 }
 
-_xvb_short_route_ok() { # <route json> <wallet>: the one enabled pool is XvB, over Tor, as the wallet's donor id
+_xvb_short_route_ok() {
     printf '%s' "$1" | jq -e --arg w "$2" '
         .donor as $d | .xvb_url as $u |
         ($d | length) >= 8 and ($w | startswith($d)) and
@@ -48,7 +47,7 @@ _xvb_short_route_ok() { # <route json> <wallet>: the one enabled pool is XvB, ov
         >/dev/null 2>&1
 }
 
-_xvb_short_no_route() { # prints the reason and returns 0 when the guest cannot reach XvB
+_xvb_short_no_route() {
     local status
     if ! status="$(_xvb_wait_for_tor)"; then
         printf 'guest Tor never bootstrapped (last health: %s), so XvB is unreachable' "$status"
