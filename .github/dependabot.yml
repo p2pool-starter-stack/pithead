@@ -121,6 +121,7 @@ updates:
       - "/tests/integration/tor-client"
       - "/tests/runner"
       - "/tests/integration/mergemine"
+      - "/.config/hadolint"
     schedule:
       interval: "weekly"
     groups:

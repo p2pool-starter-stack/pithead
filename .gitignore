@@ -52,8 +52,6 @@ htmlcov/
 
 # OS
 .DS_Store
-
-.pr-body
 os/certs-test/
 os/build/
 os/rauc/build/
