@@ -291,8 +291,9 @@ enables this by default; a custom/rootless install (or `setup --skip-deps`) may 
 `sudo systemctl enable --now docker`.
 
 The Tor-egress firewall lives in the kernel, so a reboot clears it while the containers restart.
-`up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start pulls in and
-waits for: it puts the rules back into `DOCKER-USER` before any container starts. `doctor` warns
+`up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start requires and
+waits for: it puts the rules back into `DOCKER-USER` before any container starts. If it fails,
+Docker does not start, and stopping or restarting the unit by hand stops or restarts Docker too. `doctor` warns
 when the rules are live but the unit is not enabled, and FAILs when the rules are missing. The
 dashboard learns the same state from `pithead-egress.timer`, which runs `pithead egress-status`
 every two minutes, and alerts when the rules go missing while the stack runs. See

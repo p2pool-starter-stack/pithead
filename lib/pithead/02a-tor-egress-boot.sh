@@ -81,7 +81,7 @@ EOF
     cat <<EOF
 
 [Install]
-WantedBy=docker.service
+RequiredBy=docker.service
 EOF
 }
 
@@ -108,7 +108,7 @@ provision_tor_egress_boot_unit() { # <subnet> <tor_ip> [sync-ip ...]
         return 0
     fi
     if printf '%s\n' "$want" | sudo tee "$unit_dir/$TOR_EGRESS_BOOT_UNIT" >/dev/null &&
-        sudo systemctl daemon-reload && sudo systemctl enable "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1; then
+        sudo systemctl daemon-reload && sudo systemctl reenable "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1; then
         log "Tor-egress firewall will be restored at boot, before Docker starts the containers ($TOR_EGRESS_BOOT_UNIT)."
     else
         warn "egress-boot:unit-install-failed — could not install $TOR_EGRESS_BOOT_UNIT. The firewall is live now, but a host reboot will bring the containers back WITHOUT it until './pithead up' runs."

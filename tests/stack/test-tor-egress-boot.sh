@@ -33,7 +33,8 @@ EB_UNIT="$EB/units/pithead-egress.service"
 echo "== unit: render_tor_egress_boot_unit — ordered ahead of docker, pulled in by it (#2460) =="
 BU=$(run_sourced "$SANDBOX" render_tor_egress_boot_unit /usr/sbin/iptables 172.28.0.0/24 172.28.0.25)
 assert_contains "runs before docker.service starts the containers" "$BU" "Before=docker.service"
-assert_contains "every docker start pulls it in (boot and socket activation)" "$BU" "WantedBy=docker.service"
+assert_contains "every docker start requires it, so Docker does not start when it fails (boot and socket activation)" "$BU" "RequiredBy=docker.service"
+assert_eq "Docker does not merely want it" "$(printf '%s\n' "$BU" | grep -c '^WantedBy=')" "0"
 assert_contains "runs after the host's own firewall loaders, so they cannot flush it" "$BU" \
     "After=ufw.service firewalld.service netfilter-persistent.service nftables.service"
 assert_contains "a oneshot that stays active" "$BU" "RemainAfterExit=yes"
@@ -180,3 +181,4 @@ SYSTEMCTL_ENABLED=0 eb_run apply_tor_egress_firewall >/dev/null 2>&1
 assert_eq "an enabled unit without the lock wait is rewritten by the next apply" "$(cat "$EB_UNIT")" \
     "$(run_sourced "$SANDBOX" render_tor_egress_boot_unit "$EB/bin/iptables" 172.28.0.0/24 172.28.0.25)"
 assert_contains "and systemd is reloaded for it" "$(cat "$EB/systemctl.log")" "daemon-reload"
+assert_contains "and it is re-linked from its [Install] section, so an older WantedBy link goes" "$(cat "$EB/systemctl.log")" "reenable pithead-egress.service"
