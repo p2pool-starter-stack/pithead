@@ -167,6 +167,8 @@ printf '{"id":"%s","action":"egress-sync","chain":"tari"}\n' "$CN_RID" >"$CN_CDI
 )
 assert_eq "control-off retry records the other chain's success" "$(jq -r .status "$CN_CDIR/results/$CN_RID.json")" "applied"
 assert_eq "control-off result names the verified chain" "$(jq -r .chain "$CN_CDIR/results/$CN_RID.json")" "tari"
+# shellcheck source=tests/stack/firewall/egress-run-pending.sh
+source "$ROOT/tests/stack/firewall/egress-run-pending.sh"
 printf '00000000-0000-4000-8000-000000000001\n' >"$CN_SDIR/monero.synced"
 CN_RESTART_PROBE=$(
     cd "$V" || exit
